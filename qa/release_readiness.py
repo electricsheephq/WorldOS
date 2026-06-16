@@ -51,6 +51,18 @@ Targets for 10/10 (each dimension is a gate; all must hold on ONE build):
   native gate PASS · arc completed · cross-persona satisfaction >=7 & no give-up ·
   0 critical bugs · story >=4.3 · mech >=4.5 · behavioral GREEN · ui-audit PASS ·
   image-render >=95% · palette-live true
+
+ADDITIVE Phase-3 capabilities (every one is opt-in; absent inputs == today's output):
+  - LATENCY GATES (latency_s_per_beat / latency_coldopen): per-beat GENERATION budget
+    from qa/latency_baseline.json, sourced from the SAME on-disk artifacts already read
+    (a run's latency.json sidecar / a latency block in run.json / score.json). They gate
+    ONLY when latency evidence is PRESENT and over budget; when latency is ABSENT the gate
+    is a documented EVIDENCE-GAP SKIP (excluded from passed/total), never a new false fail —
+    so every pre-existing RRI result is byte-identical.
+  - --deterministic-only: evaluate ONLY the gates needing no live LLM/persona evidence
+    (native_gate, ui_audit, image_render, palette_live, + latency when present) and mark the
+    LLM/persona gates SKIPPED (not FAILED) — an early advisory "do the deterministic release
+    gates hold?" signal. NEVER claims a release verdict (release_ready stays false).
 """
 from __future__ import annotations
 
@@ -59,10 +71,42 @@ import json
 import re
 import sys
 from pathlib import Path
+from typing import Optional
 
 
 REQUIRED_RELEASE_PERSONAS = ["newbie", "veteran", "adversarial", "narrative", "optimizer"]
 RELEASE_VERDICT_GATE = "full_five_persona_rri"
+
+# --- ADDITIVE Phase-3 signal taxonomy -----------------------------------------
+# The gates that depend on LIVE LLM / persona evidence (a real `claude -p` DM beat,
+# a persona's self-reported satisfaction, a model-scored story/mech lens). In
+# --deterministic-only mode these are SKIPPED (not failed) so CI / the agent get an
+# early "do the DETERMINISTIC release gates hold?" signal with no live model run.
+LLM_PERSONA_GATES = (
+    "arc_completed",
+    "cross_persona_sat",
+    "no_give_up",
+    "zero_critical",
+    "story_craft",
+    "mechanical",
+    "behavioral",
+)
+# The deterministic complement (need no live LLM/persona evidence). The two latency
+# gates are deterministic measurements and join this set ONLY when latency evidence
+# is present (otherwise they are an evidence-gap skip, never a deterministic fail).
+DETERMINISTIC_GATES = (
+    "native_gate",
+    "ui_audit",
+    "image_render",
+    "palette_live",
+)
+LATENCY_GATES = ("latency_s_per_beat", "latency_coldopen")
+
+# Default per-beat latency budget — overridden by qa/latency_baseline.json when present.
+# Healthy ledger figures (qa/scores_ledger.md) are ~78 s/beat and ~157 cold-open; these
+# defaults add headroom so routine scorer/host variance never trips the gate.
+DEFAULT_LATENCY_BASELINE = {"s_per_beat_budget": 120.0, "coldopen_s_budget": 240.0}
+LATENCY_BASELINE_PATH = Path(__file__).resolve().parent / "latency_baseline.json"
 REQUIRED_HANDOFF_GATES = ["web_scripted_smoke", "built_app_scripted_smoke", "built_app_codex_playtest"]
 REQUIRED_HANDOFF_EVIDENCE_KINDS = [
     "screenshots",
@@ -201,6 +245,55 @@ def image_render_rate(run: Path, score: dict) -> tuple[float, int, int, str, str
     return 0.0, 0, 0, str(run / "score.json"), (
         f"{f404} image 404s recorded but no denominator"
     )
+
+
+def _latency_float(value) -> Optional[float]:
+    """Coerce a latency column to a positive float, or None when it is absent/NULL.
+
+    latency_rollup.py writes NULL (None) for s_per_beat/coldopen_s when a run has no
+    derivable beat — that is ABSENT evidence (skip the gate), never a fabricated 0.0
+    that would silently pass. Booleans and non-numerics are also treated as absent."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    f = float(value)
+    if f != f:  # NaN guard
+        return None
+    return f
+
+
+def read_latency(run: Path, run_json: dict, score: dict) -> tuple[Optional[float], Optional[float], str]:
+    """Read (s_per_beat, coldopen_s, source) from the same on-disk artifacts the rollup
+    already reads — a run's ``latency.json`` sidecar first (what qa/run_duo.sh writes via
+    qa/latency_rollup.py --out), then a ``latency`` block inside run.json, then top-level
+    latency fields on run.json / score.json. ABSENT everywhere -> (None, None, "none"),
+    which makes the latency gates a documented EVIDENCE-GAP/skip, never a new false fail."""
+    sidecar = read_json(run / "latency.json")
+    candidates: list[tuple[dict, str]] = [
+        (sidecar, str(run / "latency.json")),
+        (run_json.get("latency") if isinstance(run_json.get("latency"), dict) else {}, str(run / "run.json")),
+        (run_json, str(run / "run.json")),
+        (score, str(run / "score.json")),
+    ]
+    for blob, src in candidates:
+        if not isinstance(blob, dict):
+            continue
+        s_per_beat = _latency_float(blob.get("s_per_beat"))
+        coldopen_s = _latency_float(blob.get("coldopen_s"))
+        if s_per_beat is not None or coldopen_s is not None:
+            return s_per_beat, coldopen_s, src
+    return None, None, "none"
+
+
+def load_latency_baseline(path: Path = LATENCY_BASELINE_PATH) -> dict:
+    """Per-beat latency BUDGET. Falls back to DEFAULT_LATENCY_BASELINE when the baseline
+    file is absent or malformed (additive: a missing baseline never changes behavior)."""
+    payload = read_json(path)
+    out = dict(DEFAULT_LATENCY_BASELINE)
+    for key in ("s_per_beat_budget", "coldopen_s_budget"):
+        val = _latency_float(payload.get(key))
+        if val is not None:
+            out[key] = val
+    return out
 
 
 def split_csv(value: str) -> list[str]:
@@ -634,6 +727,11 @@ def main() -> int:
                     "exists the rollup is forced to an ABORTED status (infra abort, not a product RRI)")
     ap.add_argument("--out", default="qa/RRI.json")
     ap.add_argument("--scorecard-row", action="store_true")
+    ap.add_argument("--deterministic-only", dest="deterministic_only", action="store_true",
+                    help="evaluate ONLY the gates that need no live LLM/persona evidence "
+                    "(native_gate, ui_audit, image_render, palette_live, + latency when present) "
+                    "and mark the LLM/persona gates SKIPPED (not FAILED) — an early advisory "
+                    "'do the deterministic release gates hold?' signal, never the release verdict")
     args = ap.parse_args()
 
     run_dirs = [Path(p) for p in split_csv(args.runs)]
@@ -683,6 +781,7 @@ def main() -> int:
             })
             continue
         rate, ok, total, image_source, image_gap = image_render_rate(rd, sc)
+        lat_s_per_beat, lat_coldopen, lat_source = read_latency(rd, rj, sc)
         persona = sc.get("persona") or expected_for_run or infer_persona(rd)
         if persona:
             completed_personas.append(str(persona))
@@ -707,6 +806,11 @@ def main() -> int:
             "image_evidence_gap": image_gap,
             "image_404s": int(sc.get("image_404s", 0) or 0),
             "image_404s_unexpected": unexpected_404s,
+            # ADDITIVE latency evidence (Phase-3): None when this run carries no derivable
+            # latency (a documented evidence-gap/skip for the latency gates, never a fail).
+            "s_per_beat": lat_s_per_beat,
+            "coldopen_s": lat_coldopen,
+            "latency_source": lat_source,
             "run_build_sha": rj.get("build_sha") or "",
             "part_b_result": (rj.get("part_b") or {}).get("persona_loop") or "n/a",
             "part_b_score_pass": bool((rj.get("part_b") or {}).get("score_pass")),
@@ -740,6 +844,17 @@ def main() -> int:
     image_evidence_complete = bool(persona_scores) and not image_missing_personas
     img_rate = (sum(p["image_ok"] for p in img_runs) / sum(p["image_total"] for p in img_runs)) if img_runs else 0.0
     total_image_denominator = sum(p["image_total"] for p in img_runs)
+
+    # ADDITIVE latency gates (Phase-3): the WORST (max) per-beat figure across personas that
+    # actually recorded latency, judged against qa/latency_baseline.json. The aggregate is the
+    # max so a single slow persona cannot be hidden by faster ones (the worldos-latency-forensics
+    # discipline: a slow beat that trips a persona is a release blocker). When NO persona recorded
+    # latency, the aggregate is None -> the gate is a documented evidence-gap/skip, never a new fail.
+    latency_budget = load_latency_baseline()
+    s_per_beat_values = [p["s_per_beat"] for p in persona_scores if p.get("s_per_beat") is not None]
+    coldopen_values = [p["coldopen_s"] for p in persona_scores if p.get("coldopen_s") is not None]
+    agg_s_per_beat = max(s_per_beat_values) if s_per_beat_values else None
+    agg_coldopen_s = max(coldopen_values) if coldopen_values else None
 
     # image_render source selection. The VM cannot serve gitignored _private art and runs
     # a null image provider, so every VM /image request 404s BY CONSTRUCTION — those are
@@ -950,7 +1065,25 @@ def main() -> int:
         image_render_ok = image_evidence_complete and img_rate >= 0.95 and "image_render" not in evidence_gap_gates
         image_render_detail = f"source={image_render_source}; rate={img_rate:.2%}; denominator={total_image_denominator}"
 
-    # ---- the 11 gates (each contributes to RRI; all must hold for 10/10) ----
+    # ---- ADDITIVE latency gates (Phase-3) ----
+    # s_per_beat / coldopen are HARD gates ONLY when latency evidence is present AND over
+    # budget; ABSENT latency -> the gate is SKIPPED with a documented evidence gap, never a
+    # new false fail. A skipped gate is excluded from passed/total so an evidence-less run's
+    # RRI + release_ready are byte-identical to today (every pre-existing result is unchanged).
+    s_per_beat_budget = latency_budget["s_per_beat_budget"]
+    coldopen_s_budget = latency_budget["coldopen_s_budget"]
+    latency_s_per_beat_ok = agg_s_per_beat is None or agg_s_per_beat <= s_per_beat_budget
+    latency_coldopen_ok = agg_coldopen_s is None or agg_coldopen_s <= coldopen_s_budget
+    latency_s_per_beat_detail = (
+        f"s_per_beat={agg_s_per_beat if agg_s_per_beat is not None else 'n/a (evidence gap)'}; "
+        f"budget={s_per_beat_budget}"
+    )
+    latency_coldopen_detail = (
+        f"coldopen_s={agg_coldopen_s if agg_coldopen_s is not None else 'n/a (evidence gap)'}; "
+        f"budget={coldopen_s_budget}"
+    )
+
+    # ---- the gate set (each evaluated gate contributes to RRI; all must hold for 10/10) ----
     gates = {
         "native_gate":        (native == "PASS" and not (evidence_gap_gates & native_evidence_gap_gates),
                                native_gate_detail),
@@ -973,19 +1106,52 @@ def main() -> int:
         "image_render":       (image_render_ok, image_render_detail),
         "palette_live":       (args.palette_live == "true" and "palette_live" not in evidence_gap_gates,
                                f"palette_live={args.palette_live or 'n/a'}"),
+        "latency_s_per_beat": (latency_s_per_beat_ok, latency_s_per_beat_detail),
+        "latency_coldopen":   (latency_coldopen_ok, latency_coldopen_detail),
     }
-    passed = sum(1 for ok, _ in gates.values() if ok)
-    total_gates = len(gates)
 
-    # RRI: each gate worth 10/total; HARD FLOOR — a missed gate can't be hidden by others.
-    # (Equal weight keeps it honest: "10/10" literally means every gate held.)
-    rri = round(10.0 * passed / total_gates, 1)
-    failed = [name for name, (ok, _) in gates.items() if not ok]
+    # SKIPPED gates are excluded from passed / total_gates (never counted as pass OR fail):
+    #   * a latency gate with NO evidence -> evidence-gap skip (additive invariant).
+    #   * EVERY LLM/persona gate in --deterministic-only -> SKIPPED, not FAILED (early signal).
+    skipped_gates: list[str] = []
+    if agg_s_per_beat is None:
+        skipped_gates.append("latency_s_per_beat")
+    if agg_coldopen_s is None:
+        skipped_gates.append("latency_coldopen")
+    if args.deterministic_only:
+        skipped_gates.extend(g for g in LLM_PERSONA_GATES if g not in skipped_gates)
+    skipped_set = set(skipped_gates)
+
+    evaluated = {name: ok for name, (ok, _) in gates.items() if name not in skipped_set}
+    passed = sum(1 for ok in evaluated.values() if ok)
+    total_gates = len(evaluated)
+
+    # RRI: each EVALUATED gate worth 10/total; HARD FLOOR — a missed gate can't be hidden by
+    # others. (Equal weight keeps it honest: "10/10" literally means every evaluated gate held.)
+    rri = round(10.0 * passed / total_gates, 1) if total_gates else 0.0
+    failed = [name for name, ok in evaluated.items() if not ok]
+    # Deterministic-only is an early ADVISORY signal, never the release verdict: report the
+    # deterministic subset's verdict separately so CI/the agent can read "do the deterministic
+    # gates hold?" without conflating it with the full five-persona release decision.
+    deterministic_gate_names = [
+        name for name in (*DETERMINISTIC_GATES, *LATENCY_GATES)
+        if name not in skipped_set
+    ]
+    deterministic_failed_gates = [name for name in deterministic_gate_names if not evaluated.get(name, True)]
+    deterministic_pass = not deterministic_failed_gates
     if missing_release_personas and "missing_release_personas" not in failed:
         failed.insert(0, "missing_release_personas")
     if missing_personas and "missing_personas" not in failed:
         failed.insert(0, "missing_personas")
-    release_ready = passed == total_gates and not evidence_gaps and not missing_personas and not harness_failures
+    # --deterministic-only NEVER claims a release verdict (the LLM gates are unproven, only
+    # skipped). The full-mode release_ready logic is unchanged.
+    release_ready = (
+        not args.deterministic_only
+        and passed == total_gates
+        and not evidence_gaps
+        and not missing_personas
+        and not harness_failures
+    )
 
     # Distinct build SHAs across ALL persona runs (diagnostic output field; the native_gate CONTRACT is
     # release-persona-scoped via build_sha_evidence_gaps). Restored in main()'s scope after #723 factored
@@ -1046,6 +1212,13 @@ def main() -> int:
         "gates_passed": passed,
         "gates_total": total_gates,
         "failed_gates": failed,
+        # ADDITIVE Phase-3 signal fields. Empty/false in the default (full) mode with latency
+        # evidence absent, so every pre-existing field above is unchanged.
+        "deterministic_only": bool(args.deterministic_only),
+        "deterministic_gates": deterministic_gate_names,
+        "deterministic_failed_gates": deterministic_failed_gates,
+        "deterministic_pass": deterministic_pass,
+        "skipped_gates": skipped_gates,
         "build_sha": args.build_sha,
         "artifact_sources": {
             "behavioral": args.behavioral_path or "argument",
@@ -1084,6 +1257,16 @@ def main() -> int:
             ],
             "palette_live": args.palette_live,
             "run_build_shas": build_shas,
+            # ADDITIVE latency signals (Phase-3). None when no persona recorded latency
+            # (the latency gates are an evidence-gap skip, never a fabricated 0.0).
+            "latency_s_per_beat": agg_s_per_beat,
+            "latency_coldopen_s": agg_coldopen_s,
+            "latency_s_per_beat_budget": s_per_beat_budget,
+            "latency_coldopen_budget": coldopen_s_budget,
+            "latency_sources": sorted({
+                str(p["latency_source"]) for p in persona_scores
+                if p.get("latency_source") and p.get("latency_source") != "none"
+            }),
         },
         "gate_detail": {name: detail for name, (ok, detail) in gates.items()},
         "personas": persona_scores,
@@ -1097,7 +1280,14 @@ def main() -> int:
         print(f"QUOTA-ABORTED — claude account session limit (HTTP 429): {abort_detail}")
         print(f"  This is an INFRA abort, NOT a product RRI. The {rri}/10 below is NOT a measurement; "
               f"re-run after the quota resets.")
-    print(f"RRI {rri}/10  ({passed}/{total_gates} gates)  release_ready={release_ready}")
+    if args.deterministic_only:
+        print(f"DETERMINISTIC-ONLY RRI {rri}/10  ({passed}/{total_gates} deterministic gates)  "
+              f"deterministic_pass={deterministic_pass}  (advisory — NOT the release verdict; "
+              f"LLM/persona gates SKIPPED: {', '.join(g for g in skipped_gates if g not in LATENCY_GATES) or 'none'})")
+    else:
+        print(f"RRI {rri}/10  ({passed}/{total_gates} gates)  release_ready={release_ready}")
+    if skipped_gates:
+        print("  SKIPPED (not failed): " + ", ".join(skipped_gates))
     if failed:
         details = []
         for f in failed:
@@ -1125,6 +1315,10 @@ def main() -> int:
                f"RRI {passed}/{total_gates}; failed: {', '.join(failed) or 'none'} |")
         print(row)
 
+    if args.deterministic_only:
+        # Advisory exit: green when the deterministic subset holds (LLM gates are skipped,
+        # never failed), red when a deterministic gate misses. Never claims release_ready.
+        return 0 if (deterministic_pass and not aborted) else 1
     return 0 if release_ready else 1
 
 

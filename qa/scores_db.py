@@ -535,6 +535,168 @@ def compare_rc(db_path: Path | str = DB_PATH, rc: Optional[str] = None,
 
 
 # ---------------------------------------------------------------------------
+# Phase-3 observability reader (1): trends_json — machine-readable per-field time-series
+# ---------------------------------------------------------------------------
+# Lets the agent ask "story trend over the last N runs?" in ONE call instead of hand-reading the
+# ledger. PURE READER over the same rows fetch_rows returns; additive (no schema change). Points are
+# emitted OLDEST-FIRST (chronological, the natural reading order for a trend) — the opposite of
+# fetch_rows' newest-first, which is for the human table. Optional fences (surface / lens ruler) let
+# the caller line up an apples-to-apples series; an unset fence == every row (today's behavior).
+TREND_FIELDS_DEFAULT: tuple[str, ...] = (
+    "story_overall", "mech_overall", "angrydm_overall", "rri", "s_per_beat", "coldopen_s",
+)
+
+
+def trends_json(
+    db_path: Path | str = DB_PATH,
+    *,
+    fields: Optional[list[str]] = None,
+    surface: Optional[str] = None,
+    lens_config_version: Optional[str] = None,
+    limit: Optional[int] = None,
+) -> dict:
+    """Return a machine-readable per-field time-series so a trend can be read in one call.
+
+    Shape::
+
+        {
+          "fields": ["story_overall", ...],            # the metrics being tracked
+          "fence":  {"surface": ..., "lens_config_version": ..., "limit": ...},
+          "points": [                                  # OLDEST-FIRST (chronological)
+            {"run_id": ..., "ts": ..., "build_sha": ..., "rc_label": ...,
+             "<field>": value, ...},                   # one entry per requested field (None if unscored)
+            ...
+          ],
+        }
+
+    ``fields`` defaults to :data:`TREND_FIELDS_DEFAULT` (story/mech/angrydm/rri/s_per_beat/coldopen_s);
+    an unknown field raises (a typo is caught, not silently dropped). ``surface`` and
+    ``lens_config_version`` are optional fences — when set, only rows matching that exact value are
+    included (the comparability axes that fence a quality trend). ``limit`` keeps the N MOST-RECENT
+    matching runs (then re-orders them oldest-first). With no fence and no limit the series is every
+    row (additive: empty/unset == today). READ-ONLY — never writes the db.
+    """
+    flds = list(fields) if fields is not None else list(TREND_FIELDS_DEFAULT)
+    unknown = [f for f in flds if f not in COLUMNS]
+    if unknown:
+        raise ValueError(f"unknown trend field(s) {unknown}; valid: {sorted(COLUMNS)}")
+
+    rows = fetch_rows(db_path)  # newest-first
+    if surface is not None:
+        rows = [r for r in rows if r.get("surface") == surface]
+    if lens_config_version is not None:
+        rows = [r for r in rows if r.get("lens_config_version") == lens_config_version]
+    if limit is not None:
+        rows = rows[:limit]  # fetch_rows is newest-first → the N most recent
+    rows = list(reversed(rows))  # emit oldest-first (chronological trend order)
+
+    points: list[dict] = []
+    for r in rows:
+        pt: dict[str, Any] = {
+            "run_id": r.get("run_id"),
+            "ts": r.get("ts"),
+            "build_sha": r.get("build_sha"),
+            "rc_label": r.get("rc_label"),
+        }
+        for f in flds:
+            pt[f] = r.get(f)
+        points.append(pt)
+
+    return {
+        "fields": flds,
+        "fence": {
+            "surface": surface,
+            "lens_config_version": lens_config_version,
+            "limit": limit,
+        },
+        "points": points,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Phase-3 observability reader (2): reconcile — READ-ONLY ledger <-> INDEX.jsonl consistency
+# ---------------------------------------------------------------------------
+# Reports runs in the scores ledger missing from qa/INDEX.jsonl and vice-versa, so a drift between
+# the two catalogs surfaces in one call. TOLERANT READER of INDEX.jsonl: it is JSONL with ARBITRARY
+# keys (an open sibling PR #573 is reshaping run-naming), so this assumes ONLY "a per-line JSON object
+# with some run-id field" — it tries several known id-key names, SKIPS (and reports) any line it can't
+# parse or that carries no recognizable id, and NEVER rewrites INDEX.jsonl. Strictly read-only on both
+# sides (the engine/harness owns INDEX.jsonl; the ledger is appended via add_run, never here).
+
+# Candidate run-id key names, in priority order. The real INDEX.jsonl uses "id" (a row also carries
+# "kind":"run"); "run_id"/"run"/"run_name" are accepted defensively so a PR-#573 rename doesn't make
+# every row look orphaned. The FIRST present non-empty string key wins.
+_INDEX_ID_KEYS: tuple[str, ...] = ("run_id", "id", "run", "run_name")
+
+
+def _index_run_id(obj: dict) -> Optional[str]:
+    """Best-effort extract a run id from one INDEX.jsonl object; None if no recognizable id."""
+    for k in _INDEX_ID_KEYS:
+        v = obj.get(k)
+        if isinstance(v, str) and v.strip():
+            return v
+    return None
+
+
+def reconcile(db_path: Path | str = DB_PATH, index_path: Path | str = QA_DIR / "INDEX.jsonl") -> dict:
+    """READ-ONLY consistency check between the scores ledger and ``qa/INDEX.jsonl``.
+
+    Returns::
+
+        {
+          "in_ledger_not_index": [run_id, ...],   # scored but not catalogued in the index (sorted)
+          "in_index_not_ledger": [run_id, ...],   # catalogued but never scored into the ledger (sorted)
+          "matched_count":  int,                  # run ids present in BOTH
+          "ledger_count":   int,                  # distinct run ids in scores.db
+          "index_count":    int,                  # distinct run ids parsed from INDEX.jsonl
+          "skipped_lines":  [ {"line": int, "reason": str, "raw": str}, ... ],  # tolerant warnings
+        }
+
+    The INDEX reader is deliberately tolerant: each line must be a JSON OBJECT carrying one of
+    :data:`_INDEX_ID_KEYS` (``run_id`` / ``id`` / ``run`` / ``run_name``). Blank lines, malformed
+    JSON, non-object JSON, and objects with no recognizable id are SKIPPED and reported in
+    ``skipped_lines`` (never raise). A missing index file is treated as an empty index (every ledger
+    row becomes a ledger-only orphan). This function NEVER writes either file.
+    """
+    ledger_ids = {r["run_id"] for r in fetch_rows(db_path)}
+
+    index_ids: set[str] = set()
+    skipped: list[dict] = []
+    idx = Path(index_path)
+    if idx.exists():
+        with idx.open("r", encoding="utf-8") as fh:
+            for lineno, raw in enumerate(fh, start=1):
+                line = raw.strip()
+                if not line:
+                    continue  # blank line — not an error, not a row
+                try:
+                    obj = json.loads(line)
+                except (json.JSONDecodeError, ValueError):
+                    skipped.append({"line": lineno, "reason": "unparseable JSON",
+                                    "raw": line[:200]})
+                    continue
+                if not isinstance(obj, dict):
+                    skipped.append({"line": lineno, "reason": "not a JSON object",
+                                    "raw": line[:200]})
+                    continue
+                rid = _index_run_id(obj)
+                if rid is None:
+                    skipped.append({"line": lineno, "reason": "no recognizable run-id key",
+                                    "raw": line[:200]})
+                    continue
+                index_ids.add(rid)
+
+    return {
+        "in_ledger_not_index": sorted(ledger_ids - index_ids),
+        "in_index_not_ledger": sorted(index_ids - ledger_ids),
+        "matched_count": len(ledger_ids & index_ids),
+        "ledger_count": len(ledger_ids),
+        "index_count": len(index_ids),
+        "skipped_lines": skipped,
+    }
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 def _build_parser() -> argparse.ArgumentParser:
@@ -551,6 +713,21 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--compare-rc-surface", action="store_true",
                    help="with --compare: also show GUI-built-app RC rows (RRI sweeps) in their own "
                         "blocks, fenced on the FULL scoring ruler")
+    # --- Phase-3 observability readers (pure readers; print JSON to stdout) ---
+    p.add_argument("--trends-json", action="store_true",
+                   help="print a machine-readable per-field time-series (oldest-first) as JSON; "
+                        "fence with --surface / --lens-config-version, cap with --trends-limit, "
+                        "pick metrics with --trends-fields")
+    p.add_argument("--trends-fields", default=None,
+                   help="with --trends-json: comma-separated metric columns (default: "
+                        "story_overall,mech_overall,angrydm_overall,rri,s_per_beat,coldopen_s)")
+    p.add_argument("--trends-limit", type=int, default=None,
+                   help="with --trends-json: keep only the N most-recent matching runs")
+    p.add_argument("--reconcile", action="store_true",
+                   help="READ-ONLY consistency check between qa/INDEX.jsonl and scores.db; print "
+                        "the orphan lists (ledger-only / index-only) as JSON")
+    p.add_argument("--index", default=str(QA_DIR / "INDEX.jsonl"),
+                   help="with --reconcile: path to INDEX.jsonl (default qa/INDEX.jsonl)")
     p.add_argument("--run-id")
     for col in COLUMNS:
         p.add_argument(f"--{col.replace('_', '-')}", dest=col, default=None)
@@ -589,7 +766,20 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.compare:
         print(compare_rc(db, rc=args.rc, include_rc_surface=args.compare_rc_surface))
 
-    if not any([args.init, args.add, args.list, args.render, args.compare]):
+    if args.trends_json:
+        flds = ([f.strip() for f in args.trends_fields.split(",") if f.strip()]
+                if args.trends_fields else None)
+        print(json.dumps(
+            trends_json(db, fields=flds, surface=args.surface,
+                        lens_config_version=args.lens_config_version, limit=args.trends_limit),
+            indent=2, ensure_ascii=False,
+        ))
+
+    if args.reconcile:
+        print(json.dumps(reconcile(db, args.index), indent=2, ensure_ascii=False))
+
+    if not any([args.init, args.add, args.list, args.render, args.compare,
+                args.trends_json, args.reconcile]):
         _build_parser().print_help()
     return 0
 

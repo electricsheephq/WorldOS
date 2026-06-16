@@ -348,3 +348,221 @@ def test_seed_flags_the_decisive_rows(tmp_path):
     nar = by_id["str2-narrative"]
     assert nar["surface"] == "GUI-headless-proxy" and nar["cross_persona_sat"] == 9
     assert "latency" in nar["notes"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Phase-3 observability reader (1): trends_json — per-field time-series
+# ---------------------------------------------------------------------------
+
+def test_trends_json_shape_and_default_fields(tmp_path):
+    """Default call returns the documented per-field time-series shape over the spec fields."""
+    db = tmp_path / "t.db"
+    scores_db.add_run("a", db_path=db, surface="engine-duo", ts="2026-05-01T00:00:00+00:00",
+                      build_sha="aaa", story_overall=3.9, mech_overall=3.5)
+    scores_db.add_run("b", db_path=db, surface="engine-duo", ts="2026-05-02T00:00:00+00:00",
+                      build_sha="bbb", story_overall=4.2, mech_overall=3.8, rri=6.0)
+    out = scores_db.trends_json(db)
+    # top-level shape
+    assert set(out) >= {"fields", "fence", "points"}
+    # the spec's default fields are all present
+    assert set(out["fields"]) == {
+        "story_overall", "mech_overall", "angrydm_overall", "rri", "s_per_beat", "coldopen_s",
+    }
+    # one point per run, each carries identity + ts + the field values
+    assert len(out["points"]) == 2
+    pt = out["points"][0]
+    assert {"run_id", "ts"} <= set(pt)
+    # every requested field key is present on every point (NULL/None when unscored)
+    for p in out["points"]:
+        for f in out["fields"]:
+            assert f in p
+
+
+def test_trends_json_is_chronological_oldest_first(tmp_path):
+    """A trend reads left-to-right in time: points are ordered oldest-first (opposite of fetch_rows)."""
+    db = tmp_path / "t.db"
+    scores_db.add_run("new", db_path=db, surface="engine-duo", ts="2026-05-30T00:00:00+00:00")
+    scores_db.add_run("old", db_path=db, surface="engine-duo", ts="2026-05-01T00:00:00+00:00")
+    scores_db.add_run("mid", db_path=db, surface="engine-duo", ts="2026-05-15T00:00:00+00:00")
+    out = scores_db.trends_json(db)
+    assert [p["run_id"] for p in out["points"]] == ["old", "mid", "new"]
+
+
+def test_trends_json_values_carry_through(tmp_path):
+    db = tmp_path / "t.db"
+    scores_db.add_run("a", db_path=db, surface="engine-duo", ts="2026-05-01T00:00:00+00:00",
+                      story_overall=4.0, s_per_beat=80.5, coldopen_s=170.0)
+    out = scores_db.trends_json(db, fields=["story_overall", "s_per_beat", "coldopen_s"])
+    p = out["points"][0]
+    assert p["story_overall"] == 4.0
+    assert p["s_per_beat"] == 80.5
+    assert p["coldopen_s"] == 170.0
+
+
+def test_trends_json_custom_fields(tmp_path):
+    db = tmp_path / "t.db"
+    scores_db.add_run("a", db_path=db, surface="engine-duo", angrydm_overall=4.1)
+    out = scores_db.trends_json(db, fields=["angrydm_overall"])
+    assert out["fields"] == ["angrydm_overall"]
+    assert out["points"][0]["angrydm_overall"] == 4.1
+    assert "story_overall" not in out["points"][0]
+
+
+def test_trends_json_rejects_unknown_field(tmp_path):
+    db = tmp_path / "t.db"
+    scores_db.connect(db).close()
+    with pytest.raises(ValueError):
+        scores_db.trends_json(db, fields=["not_a_column"])
+
+
+def test_trends_json_fences_by_surface(tmp_path):
+    """surface= keeps only matching-surface runs out of the trend (fencing)."""
+    db = tmp_path / "t.db"
+    scores_db.add_run("duo", db_path=db, surface="engine-duo", ts="2026-05-01T00:00:00+00:00",
+                      story_overall=4.0)
+    scores_db.add_run("gui", db_path=db, surface="GUI-built-app", ts="2026-05-02T00:00:00+00:00",
+                      cross_persona_sat=2.0)
+    out = scores_db.trends_json(db, surface="engine-duo")
+    assert [p["run_id"] for p in out["points"]] == ["duo"]
+    assert out["fence"]["surface"] == "engine-duo"
+
+
+def test_trends_json_fences_by_lens_config_version(tmp_path):
+    """lens_config_version= keeps only runs scored under that lens ruler (the comparability fence)."""
+    db = tmp_path / "t.db"
+    scores_db.add_run("rulerA", db_path=db, surface="engine-duo", ts="2026-05-01T00:00:00+00:00",
+                      lens_config_version="lc_aaaaaaaaaaaa", story_overall=4.5)
+    scores_db.add_run("rulerB", db_path=db, surface="engine-duo", ts="2026-05-02T00:00:00+00:00",
+                      lens_config_version="lc_bbbbbbbbbbbb", story_overall=3.6)
+    out = scores_db.trends_json(db, lens_config_version="lc_aaaaaaaaaaaa")
+    assert [p["run_id"] for p in out["points"]] == ["rulerA"]
+    assert out["fence"]["lens_config_version"] == "lc_aaaaaaaaaaaa"
+
+
+def test_trends_json_limit_keeps_last_n(tmp_path):
+    """limit=N keeps the N most-recent runs (still emitted oldest-first)."""
+    db = tmp_path / "t.db"
+    for d in range(1, 6):  # 5 runs, ts 2026-05-01..05
+        scores_db.add_run(f"r{d}", db_path=db, surface="engine-duo",
+                          ts=f"2026-05-0{d}T00:00:00+00:00", story_overall=float(d))
+    out = scores_db.trends_json(db, limit=2)
+    # the two newest runs (r4, r5), chronological
+    assert [p["run_id"] for p in out["points"]] == ["r4", "r5"]
+
+
+def test_trends_json_empty_db(tmp_path):
+    db = tmp_path / "t.db"
+    scores_db.connect(db).close()
+    out = scores_db.trends_json(db)
+    assert out["points"] == []
+    assert set(out["fields"]) >= {"story_overall", "rri"}
+
+
+# ---------------------------------------------------------------------------
+# Phase-3 observability reader (2): reconcile — READ-ONLY ledger<->INDEX.jsonl check
+# ---------------------------------------------------------------------------
+
+def _write_index(path: Path, lines: list) -> None:
+    """Write an INDEX.jsonl-shaped file (one JSON object per line)."""
+    with path.open("w", encoding="utf-8") as fh:
+        for obj in lines:
+            if isinstance(obj, str):
+                fh.write(obj + "\n")          # raw line (for malformed-line tests)
+            else:
+                fh.write(json.dumps(obj) + "\n")
+
+
+def test_reconcile_detects_orphans_both_directions(tmp_path):
+    """A ledger row with no index line, and an index line with no ledger row, are each reported."""
+    db = tmp_path / "scores.db"
+    idx = tmp_path / "INDEX.jsonl"
+    # ledger: two rows
+    scores_db.add_run("shared-run", db_path=db, surface="engine-duo", story_overall=4.0)
+    scores_db.add_run("orphan-ledger", db_path=db, surface="engine-duo", story_overall=3.5)
+    # index: the shared run + one index-only row (real INDEX uses the "id" key)
+    _write_index(idx, [
+        {"kind": "run", "id": "shared-run", "path": "qa/ui_playtest_runs/shared-run"},
+        {"kind": "run", "id": "orphan-index", "path": "qa/ui_playtest_runs/orphan-index"},
+    ])
+    rep = scores_db.reconcile(db, idx)
+    assert rep["in_ledger_not_index"] == ["orphan-ledger"]
+    assert rep["in_index_not_ledger"] == ["orphan-index"]
+    assert "shared-run" not in rep["in_ledger_not_index"]
+    assert "shared-run" not in rep["in_index_not_ledger"]
+    assert rep["matched_count"] == 1
+    assert rep["ledger_count"] == 2
+    assert rep["index_count"] == 2
+
+
+def test_reconcile_is_tolerant_of_run_id_key_variants(tmp_path):
+    """INDEX may use id / run_id / run for the run identifier — all are recognized."""
+    db = tmp_path / "scores.db"
+    idx = tmp_path / "INDEX.jsonl"
+    scores_db.add_run("by-id", db_path=db, surface="engine-duo")
+    scores_db.add_run("by-run-id", db_path=db, surface="engine-duo")
+    scores_db.add_run("by-run", db_path=db, surface="engine-duo")
+    _write_index(idx, [
+        {"id": "by-id"},
+        {"run_id": "by-run-id"},
+        {"run": "by-run"},
+    ])
+    rep = scores_db.reconcile(db, idx)
+    assert rep["in_ledger_not_index"] == []
+    assert rep["in_index_not_ledger"] == []
+    assert rep["matched_count"] == 3
+
+
+def test_reconcile_skips_unparseable_and_idless_lines(tmp_path):
+    """Malformed JSON, blank lines, and JSON objects with no run-id key are SKIPPED + warned, never crash."""
+    db = tmp_path / "scores.db"
+    idx = tmp_path / "INDEX.jsonl"
+    scores_db.add_run("good", db_path=db, surface="engine-duo")
+    _write_index(idx, [
+        {"id": "good"},
+        "",                                   # blank line
+        "{not valid json",                    # malformed
+        {"kind": "rubric", "note": "no id here"},  # object w/o any run-id key
+        "[1,2,3]",                            # valid JSON but not an object
+    ])
+    rep = scores_db.reconcile(db, idx)
+    assert rep["in_ledger_not_index"] == []        # "good" matched
+    assert rep["in_index_not_ledger"] == []
+    assert rep["matched_count"] == 1
+    # the unparseable / id-less lines are reported as skipped (tolerant, never raises)
+    assert len(rep["skipped_lines"]) >= 2
+
+
+def test_reconcile_does_not_rewrite_index(tmp_path):
+    """reconcile is READ-ONLY: INDEX.jsonl bytes are unchanged after the check."""
+    db = tmp_path / "scores.db"
+    idx = tmp_path / "INDEX.jsonl"
+    scores_db.add_run("r", db_path=db, surface="engine-duo")
+    _write_index(idx, [{"id": "r"}, {"id": "extra"}])
+    before = idx.read_bytes()
+    scores_db.reconcile(db, idx)
+    assert idx.read_bytes() == before
+
+
+def test_reconcile_missing_index_file(tmp_path):
+    """A missing INDEX.jsonl yields all ledger rows as orphans, with index_count 0 (no crash)."""
+    db = tmp_path / "scores.db"
+    idx = tmp_path / "does-not-exist.jsonl"
+    scores_db.add_run("only-ledger", db_path=db, surface="engine-duo")
+    rep = scores_db.reconcile(db, idx)
+    assert rep["index_count"] == 0
+    assert rep["in_ledger_not_index"] == ["only-ledger"]
+    assert rep["in_index_not_ledger"] == []
+
+
+def test_reconcile_orphan_lists_are_sorted(tmp_path):
+    """Orphan lists are deterministically sorted so the report diffs cleanly."""
+    db = tmp_path / "scores.db"
+    idx = tmp_path / "INDEX.jsonl"
+    for rid in ("zeta", "alpha", "mike"):
+        scores_db.add_run(rid, db_path=db, surface="engine-duo")
+    _write_index(idx, [{"id": "yankee"}, {"id": "bravo"}])
+    rep = scores_db.reconcile(db, idx)
+    assert rep["in_ledger_not_index"] == sorted(rep["in_ledger_not_index"])
+    assert rep["in_index_not_ledger"] == sorted(rep["in_index_not_ledger"])
+    assert rep["in_ledger_not_index"] == ["alpha", "mike", "zeta"]
+    assert rep["in_index_not_ledger"] == ["bravo", "yankee"]

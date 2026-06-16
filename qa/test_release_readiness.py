@@ -2542,6 +2542,126 @@ class ReleaseReadinessContractTests(unittest.TestCase):
             self.assertFalse(payload["release_ready"])
             self.assertIn("resets 3:50pm (UTC)", payload["abort_detail"])
 
+    # --- ADDITIVE Phase-3: latency gates + --deterministic-only mode. Every gate/field/mode
+    # here is opt-in; with latency absent + no flag the result is byte-identical to today
+    # (the five-persona-release tests above all still assert evidence_gaps==[] / release_ready). ---
+
+    def _five_clean_runs_with_latency(self, tmp: Path, latency: dict | None) -> list[Path]:
+        runs = []
+        for persona in ("newbie", "veteran", "adversarial", "narrative", "optimizer"):
+            run = self.write_persona_run(tmp, persona)
+            if latency is not None:
+                (run / "latency.json").write_text(json.dumps(latency), encoding="utf-8")
+            runs.append(run)
+        return runs
+
+    def test_latency_evidence_over_budget_fails_release(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            runs = self._five_clean_runs_with_latency(tmp, {"s_per_beat": 300.0, "coldopen_s": 500.0})
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs", ",".join(str(r) for r in runs),
+                "--expected-personas", "newbie,veteran,adversarial,narrative,optimizer",
+                "--story", str(story), "--mech", str(mech),
+                "--behavioral", "GREEN", "--behavioral-path", str(behavioral),
+                "--ui-audit", "PASS", "--ui-audit-log", str(audit),
+                "--palette-live", "true", "--palette-source", str(palette),
+                "--build-sha", "deadbee",
+            )
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(payload["release_ready"])
+            self.assertIn("latency_s_per_beat", payload["failed_gates"])
+            self.assertIn("latency_coldopen", payload["failed_gates"])
+            self.assertEqual(payload["signals"]["latency_s_per_beat"], 300.0)
+            self.assertEqual(payload["signals"]["latency_coldopen_s"], 500.0)
+            # latency gates are now EVALUATED so they join the gate total.
+            self.assertEqual(payload["gates_total"], 13)
+
+    def test_latency_evidence_under_budget_keeps_release_ready(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            # healthy ledger figures — both under budget
+            runs = self._five_clean_runs_with_latency(tmp, {"s_per_beat": 78.2, "coldopen_s": 157.0})
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs", ",".join(str(r) for r in runs),
+                "--expected-personas", "newbie,veteran,adversarial,narrative,optimizer",
+                "--story", str(story), "--mech", str(mech),
+                "--behavioral", "GREEN", "--behavioral-path", str(behavioral),
+                "--ui-audit", "PASS", "--ui-audit-log", str(audit),
+                "--palette-live", "true", "--palette-source", str(palette),
+                "--build-sha", "deadbee",
+            )
+
+            self.assertEqual(rc, 0)
+            self.assertTrue(payload["release_ready"])
+            self.assertEqual(payload["evidence_gaps"], [])
+            self.assertNotIn("latency_s_per_beat", payload["failed_gates"])
+            self.assertNotIn("latency_coldopen", payload["failed_gates"])
+            self.assertEqual(payload["gates_total"], 13)
+
+    def test_latency_absent_is_skip_and_byte_identical_release(self):
+        # The ADDITIVE invariant proof: no latency evidence -> latency gates are skipped
+        # (never failed), gate total stays 11, and a clean five-persona run is STILL
+        # release_ready with evidence_gaps == [] exactly as before Phase-3.
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            runs = self._five_clean_runs_with_latency(tmp, None)
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs", ",".join(str(r) for r in runs),
+                "--expected-personas", "newbie,veteran,adversarial,narrative,optimizer",
+                "--story", str(story), "--mech", str(mech),
+                "--behavioral", "GREEN", "--behavioral-path", str(behavioral),
+                "--ui-audit", "PASS", "--ui-audit-log", str(audit),
+                "--palette-live", "true", "--palette-source", str(palette),
+                "--build-sha", "deadbee",
+            )
+
+            self.assertEqual(rc, 0)
+            self.assertTrue(payload["release_ready"])
+            self.assertEqual(payload["evidence_gaps"], [])
+            self.assertEqual(payload["gates_total"], 11)
+            self.assertEqual(sorted(payload["skipped_gates"]), ["latency_coldopen", "latency_s_per_beat"])
+            self.assertIsNone(payload["signals"]["latency_s_per_beat"])
+            self.assertIsNone(payload["signals"]["latency_coldopen_s"])
+
+    def test_deterministic_only_marks_llm_gates_skipped_not_failed(self):
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            runs = self._five_clean_runs_with_latency(tmp, None)
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs", ",".join(str(r) for r in runs),
+                "--expected-personas", "newbie,veteran,adversarial,narrative,optimizer",
+                "--story", str(story), "--mech", str(mech),
+                "--behavioral", "GREEN", "--behavioral-path", str(behavioral),
+                "--ui-audit", "PASS", "--ui-audit-log", str(audit),
+                "--palette-live", "true", "--palette-source", str(palette),
+                "--build-sha", "deadbee",
+                "--deterministic-only",
+            )
+
+            self.assertEqual(rc, 0)  # deterministic subset holds
+            self.assertTrue(payload["deterministic_only"])
+            self.assertFalse(payload["release_ready"])  # never the release verdict
+            self.assertTrue(payload["deterministic_pass"])
+            for gate in ("arc_completed", "cross_persona_sat", "no_give_up", "zero_critical",
+                         "story_craft", "mechanical", "behavioral"):
+                self.assertIn(gate, payload["skipped_gates"])
+                self.assertNotIn(gate, payload["failed_gates"])
+            self.assertEqual(payload["deterministic_failed_gates"], [])
+
 
 if __name__ == "__main__":
     unittest.main()
