@@ -838,6 +838,83 @@ def build_options_response(campaign_id: Optional[str], character_id: Optional[st
     }
 
 
+def level_roadmap_response(
+    campaign_id: Optional[str], character_id: Optional[str], through_level: int = 20
+) -> dict:
+    """GET /level-roadmap read model — the "see your path to 20" planning view.
+
+    Mirrors build_options_response: validates the campaign path + character id, then calls
+    the engine-owned read-only level_roadmap projection (current level + 1 through
+    ``through_level``). It NEVER writes a snapshot and exposes no level_up relay — it is a
+    planning view, not an action. A non-class entity (stat-block NPC/monster) or a PC
+    already at ``through_level`` comes back with an empty ``roadmap`` (the UI renders
+    nothing), which is correct, not an error.
+    """
+    safe_campaign = _safe_campaign_id(campaign_id)
+    if not safe_campaign:
+        return _progression_error("invalid_campaign", "missing or unsafe campaign id")
+
+    safe_character = _clean_character_id(character_id)
+    if not safe_character:
+        return _progression_error(
+            "invalid_character",
+            "missing or unsafe character id",
+            campaign_id=safe_campaign,
+        )
+
+    snapshot = _read_snapshot(safe_campaign)
+    if not snapshot:
+        return _progression_error(
+            "state_unavailable",
+            "campaign snapshot is unavailable",
+            campaign_id=safe_campaign,
+            character_id=safe_character,
+        )
+    chars = snapshot.get("characters")
+    if not isinstance(chars, dict) or safe_character not in chars:
+        return _progression_error(
+            "invalid_character",
+            "character is not present in this campaign snapshot",
+            campaign_id=safe_campaign,
+            character_id=safe_character,
+        )
+
+    try:
+        through = int(through_level)
+    except (TypeError, ValueError):
+        through = 20
+    through = max(1, min(20, through))
+
+    engine = _load_engine_server()
+    if engine is None or not hasattr(engine, "level_roadmap"):
+        detail = _ENGINE_IMPORT_ERROR or "engine level_roadmap is unavailable"
+        return _progression_error(
+            "engine_unavailable",
+            f"engine level roadmap unavailable: {detail}",
+            campaign_id=safe_campaign,
+            character_id=safe_character,
+        )
+
+    try:
+        roadmap = engine.level_roadmap(safe_campaign, safe_character, through)
+    except Exception as exc:
+        return _progression_error(
+            "engine_error",
+            str(exc),
+            campaign_id=safe_campaign,
+            character_id=safe_character,
+        )
+    return {
+        "ok": True,
+        "code": "ok",
+        "campaign_id": safe_campaign,
+        "character_id": safe_character,
+        "source": "engine.level_roadmap",
+        "roadmap": roadmap,
+        "errors": [],
+    }
+
+
 def build_bestiary_response(query: str = "", limit: int = 20, campaign_id: str = "", reference: bool = False) -> dict:
     """GET /bestiary-surface read model.
 
@@ -8133,6 +8210,20 @@ class _Handler(BaseHTTPRequestHandler):
             cid = (qs.get("campaign") or [""])[0] or self._view_campaign(qs)
             character_id = (qs.get("character") or [""])[0]
             self._json(build_options_response(cid, character_id))
+        elif route == "/level-roadmap":
+            # Read-only multi-level progression roadmap ("see your path to 20"). Same
+            # campaign/character scoping as /build-options, then engine.level_roadmap — a
+            # pure projection of the SRD tables from current level + 1 through ?through
+            # (default/cap 20). It exposes NO level_up relay; it's a planning view only.
+            qs = parse_qs(parsed.query)
+            cid = (qs.get("campaign") or [""])[0] or self._view_campaign(qs)
+            character_id = (qs.get("character") or [""])[0]
+            raw_through = (qs.get("through") or ["20"])[0]
+            try:
+                through = int(raw_through)
+            except (TypeError, ValueError):
+                through = 20
+            self._json(level_roadmap_response(cid, character_id, through))
         elif route == "/item-catalog":
             # #756 read-only SRD item stat-block lookup by name. Lets the Market inspector
             # enrich a client-side ware (which carries only name/weight/price) with its real

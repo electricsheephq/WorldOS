@@ -364,6 +364,12 @@ function LevelUpModal({ hero, campaignId, onClose, onDone, toast }) {
   // loaded the first time the feat pane opens (`takingFeat`), then filtered client-side by `featSearch`.
   const [feats, setFeats] = React.useState(null);   // null = not yet loaded; [] = loaded/empty
   const [featSearch, setFeatSearch] = React.useState("");
+  // #882 roadmap: the "see your path to 20" planning view. Lazily fetched (GET /level-roadmap) the
+  // first time the player expands it, so the common confirm-the-next-level flow pays no extra fetch.
+  // This is a READ-ONLY projection of the SRD tables — it relays NOTHING (not an action, a plan).
+  const [roadmapOpen, setRoadmapOpen] = React.useState(false);
+  const [roadmap, setRoadmap] = React.useState(null);   // null = not yet loaded; [] = loaded/empty
+  const [roadmapError, setRoadmapError] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
   // #robustness: synchronous in-flight lock (mirrors screen-table.jsx). The `submitting` STATE
   // only updates on re-render, so a rapid double-click would otherwise relay TWO level-up intents
@@ -412,6 +418,32 @@ function LevelUpModal({ hero, campaignId, onClose, onDone, toast }) {
     })();
     return () => { cancelled = true; };
   }, [takingFeat, feats]);
+
+  // #882 roadmap: load the multi-level projection the first time the player expands the "path to 20"
+  // panel (so the common flow pays no fetch). Read-only GET /level-roadmap — a pure projection of the
+  // SRD tables, relays nothing. On any failure we leave `roadmap` as [] (the panel shows a quiet note).
+  React.useEffect(() => {
+    if (!roadmapOpen || roadmap !== null) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const url = "/level-roadmap?campaign=" + encodeURIComponent(campaignId || "") +
+                    "&character=" + encodeURIComponent(hero.id || "") + "&through=20";
+        const response = await fetch(url, { cache: "no-store" });
+        const payload = await response.json();
+        if (cancelled) return;
+        if (payload && payload.ok && payload.roadmap && Array.isArray(payload.roadmap.roadmap)) {
+          setRoadmap(payload.roadmap.roadmap);
+        } else {
+          setRoadmap([]);
+          setRoadmapError((payload && Array.isArray(payload.errors) && payload.errors[0]) || "");
+        }
+      } catch (e) {
+        if (!cancelled) { setRoadmap([]); setRoadmapError("Could not reach the roadmap planner."); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [roadmapOpen, roadmap, campaignId, hero.id]);
 
   // a11y (WCAG 2.1.2 — no keyboard trap): Escape dismisses the dialog, mirroring toast.jsx.
   React.useEffect(() => {
@@ -840,6 +872,100 @@ function LevelUpModal({ hero, campaignId, onClose, onDone, toast }) {
                         data-worldos-testid="levelup-asi-remaining">
                         {2 - asiTotal > 0 ? (2 - asiTotal) + " point" + (2 - asiTotal === 1 ? "" : "s") + " left to spend" : "All set — +2 allocated"}
                       </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* #882 roadmap: "See your path to 20" — a READ-ONLY projection of the upcoming levels
+                  (features, ASI/feat markers, prof bonus, slot/resource notes) so a build-optimizing
+                  player can theorycraft beyond the single next level. It relays NOTHING — purely a
+                  planning view. Lazily fetched on expand; renders nothing when the roadmap is empty
+                  (already at 20 / a non-class entity) beyond a quiet note. */}
+              {Number(hero.level) < 20 && (
+                <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid rgba(140,100,60,0.25)" }}
+                  data-worldos-testid="levelup-roadmap-section">
+                  <button type="button" onClick={() => setRoadmapOpen((v) => !v)}
+                    aria-expanded={roadmapOpen}
+                    data-worldos-testid="levelup-roadmap-toggle"
+                    style={{
+                      display: "flex", alignItems: "center", gap: 8, width: "100%",
+                      padding: "8px 12px", cursor: "pointer", textAlign: "left",
+                      boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.35)",
+                      background: roadmapOpen ? "rgba(176,141,87,0.12)" : "transparent",
+                      color: "var(--ink-800)", fontFamily: "var(--f-display)", fontSize: 13,
+                    }}>
+                    <span style={{ transform: roadmapOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>▸</span>
+                    See your path to 20
+                  </button>
+                  {roadmapOpen && (
+                    <div data-worldos-testid="levelup-roadmap-pane" style={{ marginTop: 10 }}>
+                      {roadmap === null ? (
+                        <p className="body-sm muted" style={{ margin: 0 }}>Charting your path…</p>
+                      ) : roadmap.length === 0 ? (
+                        <p className="body-sm muted" style={{ margin: 0 }}
+                          data-worldos-testid="levelup-roadmap-empty">
+                          {roadmapError || "No further progression to project from here."}
+                        </p>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 300, overflowY: "auto" }}
+                          data-worldos-testid="levelup-roadmap-list">
+                          {roadmap.map((row) => {
+                            const feats = Array.isArray(row.features) ? row.features : [];
+                            const subFeats = Array.isArray(row.subclass_features) ? row.subclass_features : [];
+                            return (
+                              <div key={row.level}
+                                data-worldos-testid={"levelup-roadmap-level-" + row.level}
+                                style={{
+                                  padding: "8px 12px",
+                                  boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.3)",
+                                  background: "rgba(255,250,235,0.4)",
+                                }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                                  <span style={{ fontFamily: "var(--f-display)", fontSize: 13, color: "var(--ink-900)" }}>
+                                    Level {row.level}
+                                  </span>
+                                  <span className="body-sm" style={{ opacity: 0.8, whiteSpace: "nowrap" }}>
+                                    Prof +{row.prof_bonus}
+                                    {row.is_asi_or_feat ? (
+                                      <span style={{ color: "var(--emerald)", marginLeft: 6 }}
+                                        data-worldos-testid={"levelup-roadmap-asi-" + row.level}>• ASI / feat</span>
+                                    ) : null}
+                                  </span>
+                                </div>
+                                {feats.length > 0 && (
+                                  <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+                                    {feats.map((f) => (
+                                      <li key={f.name} className="body-sm" style={{ opacity: 0.9 }}>
+                                        <span style={{ fontFamily: "var(--f-body)", color: "var(--ink-800)" }}>{f.name}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                                {subFeats.length > 0 && (
+                                  <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+                                    {subFeats.map((f) => (
+                                      <li key={f.name} className="body-sm" style={{ opacity: 0.85, fontStyle: "italic" }}>
+                                        {f.name}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                                {(row.resources_note || row.spell_slots_note) && (
+                                  <div className="body-sm muted" style={{ marginTop: 4 }}>
+                                    {[row.spell_slots_note, row.resources_note].filter(Boolean).join(" · ")}
+                                  </div>
+                                )}
+                                {feats.length === 0 && subFeats.length === 0 && !row.resources_note && !row.spell_slots_note && (
+                                  <div className="body-sm muted" style={{ marginTop: 4, opacity: 0.7 }}>
+                                    No new features — ability/proficiency growth only.
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

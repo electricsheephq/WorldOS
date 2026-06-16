@@ -6401,6 +6401,59 @@ def build_options(campaign_id: str, character_id: str) -> dict:
 
 
 @mcp.tool()
+def level_roadmap(campaign_id: str, character_id: str, through_level: int = 20) -> dict:
+    """A READ-ONLY projection of what a character GAINS at each level from its current
+    level + 1 through ``through_level`` (≤20) — the "see your path to 20" planning view
+    (the build-optimizer persona's last gap: "no upcoming-features view / nothing to
+    theorycraft against"; build_options only shows the SINGLE next level).
+
+    Projects the PC's PRIMARY class (the one with the most levels — the engine cannot know
+    a player's FUTURE multiclass picks) forward along the real SRD tables: class features
+    gained (srd_tables.features_at), subclass features newly owed if a subclass is chosen
+    (subclass_features_through delta), whether the level grants an ASI/feat
+    (is_asi_level), the proficiency bonus (proficiency_bonus of the TOTAL level), notable
+    class-resource changes (class_resources_through delta), and — for casters — a
+    spell-slot change note. Returns ``{character_id, character_name, primary_class,
+    subclass, from:{total_level, class_level}, through_level, multiclass, roadmap:[…]}``.
+
+    Pure projection — NEVER writes campaign state, NEVER fabricates (an entry exists only
+    when an SRD table carries it). GUARDED: an empty ``roadmap`` when the PC is already at
+    ``through_level``, has no class (a stat-block NPC/monster), or the primary class is
+    unknown to the tables. Mirrors the read-only feats()/feature_catalog pattern."""
+    c = _require(campaign_id)
+    ch = _char(c, character_id)
+    base = {
+        "character_id": ch.id,
+        "character_name": ch.name,
+        "through_level": min(20, int(through_level)),
+    }
+    # Guard: a stat-block entity with no class track (monster/NPC) has nothing to project.
+    if not ch.classes:
+        return {**base, "primary_class": None, "subclass": None, "multiclass": False,
+                "from": {"total_level": ch.total_level, "class_level": 0}, "roadmap": []}
+    # The continuation track is the PRIMARY class — most levels, ties broken by sheet order
+    # (the player keeps leveling their main class; we don't invent a future multiclass dip).
+    primary = max(ch.classes, key=lambda cl: cl.level)
+    cha_mod = ch.ability_modifier(Ability.CHA)
+    roadmap = srd_tables.level_roadmap(
+        primary.name,
+        primary.level,
+        subclass=primary.subclass,
+        current_total_level=ch.total_level,
+        through_level=int(through_level),
+        cha_mod=cha_mod,
+    )
+    return {
+        **base,
+        "primary_class": primary.name.lower(),
+        "subclass": primary.subclass,
+        "multiclass": len(ch.classes) > 1,
+        "from": {"total_level": ch.total_level, "class_level": primary.level},
+        "roadmap": roadmap,
+    }
+
+
+@mcp.tool()
 def spell_save_dc(campaign_id: str, character_id: str) -> dict:
     """Return a caster's spell save DC (8 + proficiency + casting modifier) and
     spell attack bonus (proficiency + casting modifier)."""
