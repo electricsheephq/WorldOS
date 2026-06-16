@@ -335,7 +335,7 @@ dm_turn() {
   # SYN-01: pre-beat log-tail mark — ONCE per beat, BEFORE attempt 1 (the in-function retry
   # below must not re-mark: attempt 1's logged prose still counts as this beat's), so the
   # caller's clawdnd_resolve_dm_reply can tell a GENUINE #357 recovery from RECYCLED prose.
-  clawdnd_dm_prebeat_mark "$STATE_DIR"
+  clawdnd_dm_prebeat_mark "$STATE_DIR" "$first"
   # #623: prepend the live-progress rule (the ONE shared CLAWDND_LIVE_PROGRESS_RULE in
   # qa/lib_beat_driver.sh — parity with scripts/play_party.sh + scripts/play_codex_dm.sh) so the DM
   # logs an EARLY /events narration beat. Its ABSENCE in this SOLO path was the #623 bug: the DM
@@ -380,10 +380,21 @@ dm_turn() {
     # Surface attempt 1's REAL error (it's a stdout result event in $out; only stderr reaches
     # $DM_LOG.err, so without this the run log shows just a downstream "Session ID … in use").
     clawdnd_report_attempt_failure "$out" "$rc"
-    # timeout(1) exits 124 on the deadline; any nonzero gets ONE retry — on a FRESH session id. A
-    # failed attempt STILL registered its --session-id, so reusing it dies "Session ID … is already
-    # in use." → 0-byte → empty narration. A lean beat re-mints via clawdnd_dm_lean_args; the
-    # cold-open / legacy --resume path re-mints via clawdnd_dm_remint_session_on_retry. (The
+    # FIX 2(b) (#623): a DEADLINE-KILLED (rc=124) ROUTINE beat (first=0) must NOT retry — the retry
+    # ESCALATES to the cold-open tier (500/550s), so a routine beat that already burned its full
+    # 360s deadline would then burn a SECOND ~500s deadline → a ~14-15min single-beat wall blocking
+    # the sequential queue, for a beat the model clearly can't resolve in time. Send it STRAIGHT to
+    # the visible-failure path (clawdnd_resolve_dm_reply → clawdnd_chatlog_dm_failed in the caller).
+    # We STILL retry: (a) any NON-124 failure (real transient API/session errors recover on a fresh
+    # session id) and (b) a deadline-killed COLD OPEN (first=1) — the one-time max-effort world-build
+    # legitimately needs the escalated budget. Only the rc==124 && first==0 case is dropped.
+    if [ "$rc" -eq 124 ] && [ "$first" = "0" ]; then
+      echo "[play] DM turn rc=124 (deadline) on a routine beat — NOT retrying (a 2nd escalated deadline would block the queue); routing to the visible-failure path." >&2
+    else
+    # timeout(1) exits 124 on the deadline; a retriable failure gets ONE retry — on a FRESH session
+    # id. A failed attempt STILL registered its --session-id, so reusing it dies "Session ID … is
+    # already in use." → 0-byte → empty narration. A lean beat re-mints via clawdnd_dm_lean_args;
+    # the cold-open / legacy --resume path re-mints via clawdnd_dm_remint_session_on_retry. (The
     # re-ground directive $extra is unchanged — we only refresh the session id.)
     # F12-1: the retry must NOT reuse attempt 1's deadline verbatim — a healthy-but-long beat that
     # tripped the routine deadline would just be killed again at the same mark. Escalate attempt 2
@@ -413,6 +424,7 @@ dm_turn() {
     out="$DM_LOG.$(date +%s%N).jsonl"
     _dm_invoke; rc=$?
     [ "$rc" -ne 0 ] && echo "[play] DM turn retry also rc=$rc — relying on engine-logged narration" >&2
+    fi
   fi
   cat "$out" >> "$COMBINED" 2>/dev/null
   # SYN-01: shared classification front door — notes the FINAL attempt's $out for the caller's

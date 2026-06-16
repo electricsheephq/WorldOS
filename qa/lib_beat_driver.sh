@@ -433,8 +433,15 @@ clawdnd_dm_final_text() {
 # beat's. Best-effort (never fails a beat); standalone python — no heredoc-in-$() (bash 3.2).
 clawdnd_dm_prebeat_mark() {
   local state_dir="$1"
+  # FIX 2(a) (#623): pass the beat's first/cold-open signal ("1"=cold open, "0"=continuing) so
+  # dm_beat_mark.py can force-fail a CONTINUING beat whose mark came back empty (a mark-write bug
+  # that else recycles the previous beat's prose). Default "1" (treat as cold open / fail-open)
+  # when the caller did not pass it — never tightens an unknown caller's behavior.
+  local first="${2:-1}"
   local mark_py="${CLAWDND_LIB_DIR:-$(dirname "${BASH_SOURCE[0]}")}/dm_beat_mark.py"
-  python3 "$mark_py" mark "$state_dir" "$state_dir/.dm_prebeat_mark" 2>/dev/null || true
+  # Drop the 2>/dev/null swallow (FIX 2(a)): an empty/failed mark must surface on stderr so a
+  # mark-write bug is visible in the beat log instead of silently producing a recycled beat.
+  python3 "$mark_py" mark "$state_dir" "$state_dir/.dm_prebeat_mark" "$first" || true
   return 0
 }
 

@@ -766,6 +766,99 @@ class ReleaseReadinessContractTests(unittest.TestCase):
             self.assertEqual(payload["failed_gates"], ["cross_persona_sat"])
             self.assertEqual(payload["signals"]["image_request_denominator"], 5)
 
+    def test_part_b_harness_error_is_inconclusive_evidence_gap_not_quality_fail(self):
+        # FIX 1 (#623 false-cap): one persona's player process CRASHED (part_b.harness_error=true,
+        # persona_loop=FAIL, score_pass=false). It must be reclassified as INCONCLUSIVE: surfaced
+        # as a cross_persona_sat EVIDENCE GAP (harness_contaminated), EXCLUDED from
+        # score_pass_failed_personas, and it must still BLOCK release (RED). The other four
+        # personas played clean (score_pass=true, harness_error absent).
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            runs = []
+            for persona in ("newbie", "veteran", "adversarial", "narrative", "optimizer"):
+                run = tmp / f"gate-{persona}"
+                player = run / "player"
+                player.mkdir(parents=True)
+                crashed = persona == "adversarial"
+                (run / "score.json").write_text(
+                    json.dumps(
+                        {
+                            "run": f"gate-{persona}",
+                            "persona": persona,
+                            "pass": not crashed,
+                            "completed_intro_flow": not crashed,
+                            "persona_satisfaction": 2 if crashed else 9,
+                            "gave_up": False,
+                            "bug_reports_critical": 0,
+                            "console_errors": 0,
+                            "image_404s": 0,
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                part_b = (
+                    {"persona_loop": "FAIL", "score_pass": False, "harness_error": True}
+                    if crashed
+                    else {"persona_loop": "PASS", "score_pass": True}
+                )
+                (run / "run.json").write_text(
+                    json.dumps({"build_sha": "deadbee", "part_a": {"result": "PASS"}, "part_b": part_b}),
+                    encoding="utf-8",
+                )
+                (player / "network.ndjson").write_text(
+                    json.dumps({"url": f"http://127.0.0.1/image?scope={persona}", "status": 200}),
+                    encoding="utf-8",
+                )
+                runs.append(run)
+
+            story = tmp / "story.json"
+            mech = tmp / "mech.json"
+            behavioral = tmp / "behavioral.txt"
+            audit = tmp / "audit.log"
+            palette = tmp / "session_surface.final.json"
+            story.write_text(json.dumps({"overall": 5}), encoding="utf-8")
+            mech.write_text(json.dumps({"overall": 5}), encoding="utf-8")
+            behavioral.write_text("GREEN\n", encoding="utf-8")
+            audit.write_text("PASS\n", encoding="utf-8")
+            palette.write_text(json.dumps({"can_act": True}), encoding="utf-8")
+
+            rc, _text, payload = self.run_rri(
+                tmp,
+                "--runs", ",".join(str(r) for r in runs),
+                "--expected-personas", "newbie,veteran,adversarial,narrative,optimizer",
+                "--story", str(story),
+                "--mech", str(mech),
+                "--behavioral", "GREEN",
+                "--behavioral-path", str(behavioral),
+                "--ui-audit", "PASS",
+                "--ui-audit-log", str(audit),
+                "--palette-live", "true",
+                "--palette-source", str(palette),
+                "--build-sha", "deadbee",
+            )
+
+            # INCONCLUSIVE, not a clean quality RED: still blocks release.
+            self.assertEqual(rc, 1)
+            self.assertFalse(payload["release_ready"])
+            # Reclassified: harness_contaminated (evidence gap), NOT a score_pass quality fail.
+            self.assertTrue(payload["harness_contaminated"])
+            self.assertNotIn("adversarial", payload["signals"]["score_pass_failed_personas"])
+            self.assertEqual(payload["signals"]["score_pass_failed_personas"], [])
+            self.assertIn("adversarial", payload["signals"]["harness_error_personas"])
+            # The crash is surfaced as a cross_persona_sat evidence gap referencing harness_error.
+            gap_gates = {g["gate"] for g in payload["evidence_gaps"]}
+            self.assertIn("cross_persona_sat", gap_gates)
+            self.assertTrue(
+                any("harness_error" in (g.get("missing") or "") for g in payload["evidence_gaps"]),
+                payload["evidence_gaps"],
+            )
+            # NOT attributed as a dropped product arc (that path is for played non-PASS runs).
+            self.assertFalse(
+                any(g["gate"] == "arc_completed" and "adversarial" in (g.get("detail") or "")
+                    for g in payload["evidence_gaps"]),
+                payload["evidence_gaps"],
+            )
+
     def test_green_arguments_without_evidence_paths_are_not_release_ready(self):
         with tempfile.TemporaryDirectory() as td:
             tmp = Path(td)

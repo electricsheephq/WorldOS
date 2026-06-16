@@ -73,11 +73,17 @@ PLAYER_AGENT="${WOS_APP_PLAYER_AGENT:-claude}"
 NATIVE_AUTOSTART="${WOS_APP_NATIVE_AUTOSTART:-0}"
 CODEX_HOME_FOR_APP="${WOS_APP_CODEX_HOME:-${CODEX_HOME:-}}"
 # Part-A cold-open mint deadline (seconds). The #356 banner spawns the DM cold open, whose
-# --effort max world-build runs ~280–400s (qa/lib_beat_driver.sh WORLDOS_COLDOPEN_TIMEOUT=400);
-# the old 210s poll (70 × 3s) was SHORTER than a max-effort cold open, so a slow-but-healthy
-# mint timed out as a spurious FAIL. Give the poll a 420s budget (just past the cold-open
-# deadline), env-overridable for fast inner loops.
-PART_A_DEADLINE="${WOS_APP_PART_A_DEADLINE:-420}"
+# --effort max world-build runs ~280–400s. FIX 3 (#623): the old FLAT 420 was SHORTER than the
+# DM cold-open's OWN model-aware timeout (clawdnd_dm_timeout 1 = 500 opus / 550 non-opus), so a
+# healthy-but-slow cold open in the 420–500s band was abandoned by THIS poll ~80s before the DM
+# itself would have given up — a coin-flip flaky leg. Derive the deadline FROM that same tier
+# (cold-open timeout + a ~90s mint/IO margin) so the poll always outlasts the cold open it waits
+# on. lib_beat_driver.sh is already sourced (line 62), so clawdnd_dm_timeout is in scope. The
+# WORLDOS_COLDOPEN_TIMEOUT env flows through clawdnd_dm_timeout; the explicit
+# WOS_APP_PART_A_DEADLINE override still wins (fast inner loops).
+_part_a_coldopen_tier="$(CLAWDND_DM_MODEL="$(worldos_env DM_MODEL opus)" clawdnd_dm_timeout 1)"
+case "$_part_a_coldopen_tier" in ''|*[!0-9]*) _part_a_coldopen_tier=500 ;; esac
+PART_A_DEADLINE="${WOS_APP_PART_A_DEADLINE:-$(( _part_a_coldopen_tier + 90 ))}"
 # Launcher-viewer readiness window (seconds). The .app's built-in viewer must answer
 # /openworlds/ 200 before we click/auto-start. Two regimes:
 #  * CLICK path (default): a launcher UI shell serves /openworlds/ 200 almost immediately,
@@ -310,6 +316,45 @@ dm_spend() {
     total="$(awk -v a="$total" -v b="${c:-0}" 'BEGIN{printf "%.4f", a+b}')"
   done
   printf '%s' "$total"
+}
+
+# FIX 3 (#623): Part-A cold-open LIVENESS. A poll that abandons a healthy-but-slow cold open at a
+# flat deadline is a coin-flip flaky leg; a poll that just inflates the timeout blindly lets a
+# DEAD cold open hang. So distinguish the two: the cold open is "alive" while its DM stream is
+# still being written (dm.combined.jsonl mtime advanced within the freshness window) OR the
+# play.sh/play_party.sh DM process for this run is still up. A dead/never-started cold open (no
+# run dir, stale log, AND no proc) is NOT alive → it fails PROMPTLY at the deadline.
+COLDOPEN_LIVENESS_WINDOW_S="${WOS_APP_COLDOPEN_LIVENESS_WINDOW_S:-120}"
+# Portable file mtime in epoch seconds (BSD stat on macOS, GNU stat on the Linux VM). Echoes ''
+# when the file is absent/unreadable.
+_file_mtime_epoch() {  # $1=path
+  local p="$1"
+  [ -f "$p" ] || return 1
+  stat -f %m "$p" 2>/dev/null || stat -c %Y "$p" 2>/dev/null || return 1
+}
+# rc 0 if the cold-open for run dir $1 still shows forward progress (fresh DM stream OR a live DM
+# proc). Empty $1 (nothing minted yet) ⇒ not-live (rc 1) so a never-started cold open fails fast.
+coldopen_is_live() {  # $1=run_dir_name
+  local run_dir="$1"
+  [ -n "$run_dir" ] || return 1
+  # (i) DM stream freshness: dm.combined.jsonl mtime advanced within the window.
+  local log mt now
+  log="$ROOT/play-state/$run_dir/dm.combined.jsonl"
+  mt="$(_file_mtime_epoch "$log")" || mt=""
+  if [ -n "$mt" ]; then
+    now="$(date +%s)"
+    if [ $(( now - mt )) -le "$COLDOPEN_LIVENESS_WINDOW_S" ]; then
+      return 0
+    fi
+  fi
+  # (ii) DM process still alive (the play.sh/play_party.sh loop carries the run id positionally,
+  # the SAME signal the teardown pkill matches). A live proc = the cold open is still working.
+  if pgrep -f " $run_dir " >/dev/null 2>&1 \
+     || pgrep -f "play_party.sh .* $run_dir" >/dev/null 2>&1 \
+     || pgrep -f "play.sh .* $run_dir" >/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
 }
 
 ###############################################################################################
@@ -618,9 +663,23 @@ PY
   # nothing has minted: on a busy multi-app desktop another window can steal focus between the
   # activate and the CGEvent, swallowing the click — a re-click recovers it.
   local part_a_polls=$(( PART_A_DEADLINE / 3 )); [ "$part_a_polls" -lt 1 ] && part_a_polls=1
-  a_log "[A] polling for a minted live session (new run dir + can_act:true on a new port; deadline ${PART_A_DEADLINE}s / ${part_a_polls} polls)…"
+  # FIX 3 (#623): the poll is LIVENESS-AWARE. The hard deadline is PART_A_DEADLINE (now derived
+  # from the cold-open tier, so it already outlasts the cold open). Past it, we grant a BOUNDED
+  # grace extension ONLY while the cold open is still making forward progress (coldopen_is_live:
+  # fresh DM stream OR a live DM proc) — a healthy-but-slow mint finishes instead of a coin-flip
+  # FAIL. A DEAD/never-started cold open (no run dir, stale log, no proc) is NOT live, so the
+  # grace never triggers and it fails PROMPTLY at the deadline. The grace is capped so a
+  # pathologically-slow-but-"alive" cold open still terminates. The PASS condition below
+  # (can_act:true && minted_run) is UNCHANGED — the real integrity assertion.
+  local part_a_grace_cap_s="${WOS_APP_PART_A_GRACE_CAP_S:-$(( COLDOPEN_LIVENESS_WINDOW_S * 3 ))}"
+  local part_a_start; part_a_start="$(date +%s)"
+  local part_a_hard_deadline=$(( part_a_start + PART_A_DEADLINE ))
+  local part_a_max_deadline=$(( part_a_hard_deadline + part_a_grace_cap_s ))
+  a_log "[A] polling for a minted live session (new run dir + can_act:true on a new port; deadline ${PART_A_DEADLINE}s, liveness grace ≤${part_a_grace_cap_s}s)…"
   local minted_port="" minted_run="" can_act="false"
-  for i in $(seq 1 "$part_a_polls"); do
+  local i=0 grace_logged=0
+  while :; do
+    i=$(( i + 1 ))
     # (i) a new play-state dir
     local now_dirs new_dir
     now_dirs="$(ls -1 "$ROOT/play-state" 2>/dev/null | sort || true)"
@@ -651,6 +710,25 @@ PY
     if [ "$can_act" = "true" ] && [ -n "$minted_run" ]; then
       a_log "[A] MINTED: run=$minted_run port=$minted_port can_act=true (after ${i} polls)"
       break
+    fi
+    # Deadline + liveness gate. Before the hard deadline: keep polling. Past it: keep polling ONLY
+    # while the cold open is demonstrably alive (and still under the grace cap); otherwise STOP and
+    # fall through to the FAIL classification — a dead/never-started cold open fails promptly.
+    local _now; _now="$(date +%s)"
+    if [ "$_now" -ge "$part_a_hard_deadline" ]; then
+      if [ "$_now" -ge "$part_a_max_deadline" ]; then
+        a_log "[A] grace cap reached (${part_a_grace_cap_s}s past the ${PART_A_DEADLINE}s deadline) — giving up the mint poll."
+        break
+      fi
+      if coldopen_is_live "$minted_run"; then
+        if [ "$grace_logged" = "0" ]; then
+          a_log "[A] past the ${PART_A_DEADLINE}s deadline but the cold open is STILL LIVE (run='${minted_run:-none}') — extending within the ${part_a_grace_cap_s}s grace."
+          grace_logged=1
+        fi
+      else
+        a_log "[A] past the ${PART_A_DEADLINE}s deadline and the cold open is NOT live (run='${minted_run:-none}', stale stream + no DM proc) — failing promptly."
+        break
+      fi
     fi
     sleep 3
   done
@@ -739,6 +817,12 @@ PY
 # PART B — PERSONA LOOP (the .app-faithful backend + the real palette persona)
 ###############################################################################################
 PART_B_RESULT="skipped"; PART_B_PLAYER_COST="0"; PART_B_SCORE_PASS="false"; PART_B_FAILURE_BUCKET=""; PART_B_FAILURE_DETAIL=""
+# FIX 1 (#623 false-cap): a NON-zero player PROCESS exit (a harness/player CRASH) that is NOT a
+# 429 is INCONCLUSIVE evidence — a "re-measure", not a product-quality FAIL. This flag threads
+# that fact into run.json (part_b.harness_error) so release_readiness.py RED-caps it as an
+# evidence gap, never as a score_pass quality fail. Default false; only a non-zero, non-quota
+# player_rc flips it true.
+PART_B_HARNESS_ERROR="false"
 run_part_b() {
   log "=== PART B: persona loop on the .app-faithful backend ==="
   [ -f "$PERSONA_FILE" ] || { log "[B] no persona brief at $PERSONA_FILE — skipping"; PART_B_RESULT="no_persona"; set_bucket_pair B "$(bucket_pair no_actor "persona brief missing: $PERSONA_FILE")"; return 1; }
@@ -1026,6 +1110,18 @@ PY
     PART_B_RESULT="FAIL"
     PART_B_SCORE_PASS="false"
     set_bucket_pair B "$(classify_part_b_failure_from_artifacts "$RUNDIR" "$PART_B_RESULT")"
+    # FIX 1 (#623 false-cap): discriminate a HARNESS/player CRASH from a quality fail. The
+    # discriminator is player_rc (the PROCESS exit), NEVER the quality score — a persona that
+    # PLAYS to completion and scores low (incl. give_up) exits rc=0 and flows through the
+    # unchanged score_pass quality gate above. Only a NON-ZERO player-process exit is a crash.
+    # A 429/session-limit is its OWN honest infra path (release_readiness infra_abort_hint /
+    # the sweep's QUOTA_ABORT), so exclude it here — only a NON-quota crash is "inconclusive".
+    if [ "$player_rc" -ne 0 ] \
+       && ! grep -qriE "session limit|HTTP 429|hit your (session|usage) limit" \
+            "$RUNDIR/backend.log" "$PLAYERDIR/player.err" 2>/dev/null; then
+      PART_B_HARNESS_ERROR="true"
+      log "[B] player_rc=$player_rc (non-quota harness/player crash) — marking part_b.harness_error=true (INCONCLUSIVE, re-measure; NOT a quality fail)"
+    fi
   fi
   [ -f "$RUNDIR/summary.md" ] && { echo "----- part B summary.md -----"; cat "$RUNDIR/summary.md"; }
 }
@@ -1152,13 +1248,20 @@ python3 - "$RUNDIR/run.json" "$RUN" "$WORLD" "$PERSONA" "$BEATS" "$BUDGET" "$BUI
           "$FINAL_DM_SPEND" "$PART_B_PLAYER_COST" "$TOTAL_SPEND" \
           "$PART_A_FAILURE_BUCKET" "$PART_A_FAILURE_DETAIL" "$PART_B_FAILURE_BUCKET" "$PART_B_FAILURE_DETAIL" \
           "$PART_B_PROVIDER" "$PLAYER_AGENT" "$TOP_PROVIDER_FAMILY" "$TOP_AUTH_SURFACE" "$TOP_DM_MODEL" "$TOP_PLAYER_MODEL" \
-          "deterministic-ui-playtest" "qa/ui_playtest_score.py" <<'PY'
+          "deterministic-ui-playtest" "qa/ui_playtest_score.py" "$PART_B_HARNESS_ERROR" <<'PY'
 import json, sys, datetime
 (out, run, world, persona, beats, budget, sha, ver, part, a_res, a_run, a_port,
  a_kept, a_first_turn_ready, b_res, b_score_pass, dm_spend, player_cost, total) = sys.argv[1:20]
 a_bucket, a_detail, b_bucket, b_detail = sys.argv[20:24]
 provider, player_agent = sys.argv[24:26]
 provider_family, auth_surface, dm_model, player_model, scorer_provider, scorer_model = sys.argv[26:32]
+# FIX 1 (#623 false-cap): appended as the LAST trailing argv so the existing positional slices
+# above are untouched (the two literals at argv[30]/[31] are pre-existing/unused; the flag is
+# argv[32]). A NON-quota player_rc!=0 crash sets this true → run.json part_b.harness_error, which
+# release_readiness.py reads to RED-cap the persona as INCONCLUSIVE (evidence gap), NOT a
+# score_pass quality fail. Bounds-guarded so it defaults false when absent (Part-A-only / older
+# runs that predate this trailing arg).
+b_harness_error = (sys.argv[32] == "true") if len(sys.argv) > 32 else False
 json.dump({
     "run": run, "world": world, "persona": persona, "beats_cap": int(beats),
     "budget_usd": float(budget), "build_sha": sha, "version": ver, "part": part,
@@ -1175,6 +1278,7 @@ json.dump({
                "dm_model": dm_model, "player_model": player_model,
                "scorer_provider": scorer_provider, "scorer_model": scorer_model,
                "original_result": b_res,
+               "harness_error": b_harness_error,
                "failure_bucket": b_bucket or None,
                "failure_detail": b_detail or None},
     "spend_usd": {"dm_and_companions": round(float(dm_spend or 0), 4),
