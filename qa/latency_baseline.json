@@ -1,0 +1,11 @@
+{
+  "schema": "worldos.latency-baseline.v1",
+  "_comment": "ADDITIVE per-beat latency BUDGET for the release-readiness latency gates (Phase-3). These budgets gate ONLY when a run actually carries latency evidence AND that evidence exceeds the budget; when latency data is ABSENT the gate is a documented EVIDENCE-GAP/skip, never a new false fail, so every existing RRI result is unchanged. Budgets are the healthy ledger figures (qa/scores_ledger.md: duo-baseline s/beat ~78.2, cold-open ~157-161) with headroom so normal scorer/host variance does not trip the gate. s/beat is the MEAN GENERATION seconds over CONTINUING (routine) beats (cold open excluded); coldopen_s is the one-time world-build first beat. Both are sourced from the same on-disk artifacts release_readiness already reads (a run's latency.json sidecar, or a latency block in run.json / score.json) via qa/latency_rollup.py's columns.",
+  "s_per_beat_budget": 120.0,
+  "coldopen_s_budget": 240.0,
+  "_baseline_evidence": {
+    "s_per_beat_healthy": 78.2,
+    "coldopen_s_healthy": 157.0,
+    "source": "qa/scores_ledger.md duo-baseline-rc1b (s/beat 78.2, cold-open 161) and the GUI VM sweeps (cold-open 156.6); budgets add headroom above the healthy figure so routine variance does not false-fail."
+  }
+}
