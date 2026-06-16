@@ -21,6 +21,70 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+# Shared structural-coverage helper (the owner's "full circle"; pairs with the #961
+# structural_completeness gate). Importable so this scorer AND the sweep compute the block
+# from the SAME logic the readout stamp uses — they cannot drift. story_readout.py sits
+# beside this file in qa/.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    from story_readout import structural_coverage_from_state
+except Exception:  # pragma: no cover - defensive; the scorer must still run without it
+    structural_coverage_from_state = None  # type: ignore[assignment]
+
+
+def _resolve_snapshot(rundir: Path, meta: dict) -> Path | None:
+    """Best-effort locate the campaign snapshot.json for this run from the run dir alone.
+
+    The GUI/sweep persona plays through a SEPARATE play-state store (play-state/<run>-b/),
+    so the snapshot is NOT under the run dir — in that case this returns None and the SWEEP
+    injects the block (it knows the state dir). But when meta.json pins a state_dir (or a
+    snapshot lives under the run dir's own state/, as the engine-duo path lays it out), pick
+    the largest non-empty snapshot under it. Never fabricates: returns None when unresolved.
+    """
+    candidates: list[Path] = []
+    # 1) an explicit pointer in meta.json (additive — older meta lacks it → skipped).
+    for key in ("state_dir", "snapshot_path", "snapshot"):
+        v = meta.get(key)
+        if v:
+            p = Path(v)
+            if p.name == "snapshot.json" and p.is_file():
+                return p
+            if p.is_dir():
+                candidates.append(p)
+    # 2) the run dir's own state/ tree (the in-run-dir layout some harnesses use).
+    candidates.append(rundir / "state")
+    candidates.append(rundir)
+    best: Path | None = None
+    best_size = 1  # require > 1 byte (a lock-only orphan dir writes an empty snapshot)
+    for base in candidates:
+        if not base.exists():
+            continue
+        for snap in base.glob("campaigns/*/snapshot.json"):
+            try:
+                size = snap.stat().st_size
+            except OSError:
+                continue
+            if size > best_size:
+                best, best_size = snap, size
+    return best
+
+
+def structural_coverage_for_run(rundir: Path, meta: dict) -> dict | None:
+    """Compute the structural_coverage block when the snapshot is resolvable from the run dir
+    alone; else None (the sweep injects it from the persona's state dir). Read-only."""
+    if structural_coverage_from_state is None:
+        return None
+    snap = _resolve_snapshot(rundir, meta)
+    if snap is None:
+        return None
+    try:
+        state = json.loads(snap.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    if not isinstance(state, dict) or not state:
+        return None
+    return structural_coverage_from_state(state)
+
 
 def read_ndjson(path: Path) -> list[dict]:
     out: list[dict] = []
@@ -232,6 +296,13 @@ def main() -> int:
         "player_cost_usd": meta.get("player_cost_usd"),
         "pass": passed,
     }
+    # Structural coverage (the owner's "full circle"; pairs with the #961 gate). Additive: only
+    # stamped when the campaign snapshot is resolvable from the run dir alone — the GUI/sweep
+    # persona plays through a separate play-state store, so for those runs the SWEEP injects the
+    # block (it knows the state dir + DM transcript). Never fabricated; absent ⇒ not resolvable here.
+    sc = structural_coverage_for_run(rundir, meta)
+    if sc is not None:
+        score["structural_coverage"] = sc
     (rundir / "score.json").write_text(json.dumps(score, indent=2), encoding="utf-8")
 
     # --- summary.md ----------------------------------------------------------

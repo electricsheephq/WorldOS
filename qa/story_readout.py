@@ -52,6 +52,154 @@ def coverage_from_tool_counts(counts) -> dict:
     the readout's coverage stamp. `counts` is any mapping (a Counter, a dict) of short
     tool names to call counts. Returns {bucket: total_calls_in_bucket}."""
     return {k: sum(int(counts.get(t, 0) or 0) for t in tools) for k, tools in COVERAGE.items()}
+
+
+# Match an "(Act 1)" / "(Act II)" / "Act 3 -" tag in a location NAME. Authored adventures
+# tag their location names with the act they belong to ("The Emerald Grove (Act 1)"); a
+# distinct-act count over the VISITED locations is the ground-truth "how far did the arc
+# get" signal. Roman numerals I-III + arabic 1-3 are both accepted.
+_ACT_TAG = re.compile(r'\bact\s*(?:(1|2|3)|(iii|ii|i))\b', re.I)
+_ROMAN_ACT = {"i": 1, "ii": 2, "iii": 3}
+
+
+def _act_of(name) -> int | None:
+    """The act number (1/2/3) tagged in a location NAME, or None when untagged."""
+    if not name:
+        return None
+    m = _ACT_TAG.search(str(name))
+    if not m:
+        return None
+    if m.group(1):
+        return int(m.group(1))
+    return _ROMAN_ACT.get((m.group(2) or "").lower())
+
+
+def structural_coverage_from_state(state: dict, tool_counts=None) -> dict:
+    """A per-run STRUCTURAL-COVERAGE block derived from GROUND TRUTH (the final engine
+    snapshot), not the player's actions — the owner's "full circle" (pairs with the #961
+    structural_completeness gate). The persona scorer reads only actions.ndjson (no DM tool
+    calls); the structural outcomes live in the campaign snapshot + the DM transcript's tool
+    counts, so this reads BOTH:
+
+      * From the snapshot (``state``): recruited (a kind=companion in ``party``),
+        approval_moved (any companion ``attitude_value`` != 0), camped (any character with a
+        ``last_long_rest_day`` >= 0), quest_resolved (any quest ``status`` == completed),
+        quest_evolved (a completed quest carrying ``evolves_to`` OR a scheduled
+        ``consequences`` entry), traveled (>= 2 distinct ``visited`` locations), and
+        acts_reached (distinct "(Act N)" tags over the VISITED location NAMES, with a
+        visited-count/``day`` proxy when the world is untagged).
+      * From ``tool_counts`` (optional — a {short_tool_name: count} mapping, reusing
+        ``coverage_from_tool_counts``): combat (a start_combat fired) and betrayal (a
+        companion betrayal/agenda tool engaged). When ``tool_counts`` is None those two
+        ride the snapshot only (combat ⇒ any kind=monster engaged; betrayal stays False).
+
+    Additive + defensive: every field defaults to a safe falsy value, so a system-skipping
+    run yields a LOW/false block and a complete run yields acts 3/3 + all ✓. Returns a dict
+    with the booleans/ints above plus a one-line human ``summary``."""
+    state = state or {}
+    chars = state.get("characters", {}) or {}
+    char_list = list(chars.values()) if isinstance(chars, dict) else (chars if isinstance(chars, list) else [])
+    companions = [c for c in char_list if isinstance(c, dict) and c.get("kind") == "companion"]
+    party = state.get("party", []) or []
+
+    # recruited: a kind=companion is IN the party (engaged, not just present in the roster).
+    recruited = any(
+        isinstance(cid, str) and isinstance(chars.get(cid), dict)
+        and chars[cid].get("kind") == "companion"
+        for cid in party
+    ) if isinstance(chars, dict) else False
+    # Fall back to "a companion exists but there's no party list to consult" (a list-shaped
+    # roster, or a snapshot that doesn't track membership via `party`) so a recruited companion
+    # the party array omits still counts. A populated party that simply has no companion → False.
+    if not recruited and companions and not party:
+        recruited = True
+
+    approval_moved = any(int((c.get("attitude_value") or 0)) != 0 for c in companions)
+
+    # camped: any character finished a long rest (last_long_rest_day stamped >= 0). -1/absent
+    # == never rested. This is the snapshot ground truth for camp/long_rest (the tool-count
+    # camp bucket is the transcript proxy; either proves it).
+    camped = any(
+        isinstance(c, dict) and int((c.get("last_long_rest_day", -1)) or -1) >= 0
+        for c in char_list
+    )
+
+    quests = state.get("quests", {}) or {}
+    quest_list = list(quests.values()) if isinstance(quests, dict) else (quests if isinstance(quests, list) else [])
+    completed = [q for q in quest_list if isinstance(q, dict) and q.get("status") == "completed"]
+    quest_resolved = bool(completed)
+    consequences = state.get("consequences", []) or []
+    # quest_evolved: a completed quest carries an `evolves_to` seed (rule-of-three echo) OR the
+    # engine scheduled a follow-on consequence — either proves a resolved thread evolved.
+    quest_evolved = any(bool(q.get("evolves_to")) for q in completed) or bool(consequences)
+
+    locs = state.get("locations", {}) or {}
+    loc_list = list(locs.values()) if isinstance(locs, dict) else (locs if isinstance(locs, list) else [])
+    visited_locs = [l for l in loc_list if isinstance(l, dict) and l.get("visited")]
+    distinct_visited = len(visited_locs)
+    traveled = distinct_visited >= 2
+
+    # acts_reached: distinct act-tags over VISITED location names (authored adventures tag
+    # "(Act 1)/(Act 2)/(Act 3)"). When NO visited location is tagged, fall back to a proxy:
+    # >= ~6 visited locations OR a multi-day arc suggests the party pushed past Act 1, but
+    # without authored tags we can only PROVE act 1 — so the proxy caps at 1 (honest: never
+    # claim an act the world didn't tag). The proxy still distinguishes "moved at all".
+    tagged_acts = {a for l in visited_locs if (a := _act_of(l.get("name"))) is not None}
+    if tagged_acts:
+        acts_reached = max(tagged_acts)
+    else:
+        # Untagged world: we cannot prove Act 2/3 from names. acts_reached = 1 once any
+        # location was visited (the run is at least in Act 1), else 0.
+        acts_reached = 1 if distinct_visited >= 1 else 0
+
+    # combat / betrayal from the transcript tool counts (ground truth for "a system fired"),
+    # reusing the SAME bucket logic the readout stamp + the #961 gate share. When no tool
+    # counts are given, derive combat from the snapshot (a kind=monster was engaged) and leave
+    # betrayal False (it needs a transcript/result signal).
+    combat = False
+    betrayal = False
+    if tool_counts is not None:
+        cov = coverage_from_tool_counts(tool_counts)
+        combat = bool(cov.get("combat"))
+        # betrayal: an engaged companion-agenda / betrayal tool. coverage_from_tool_counts
+        # has no betrayal bucket, so read the raw counts for the known signals.
+        betrayal = bool(
+            int(tool_counts.get("trigger_companion_agenda", 0) or 0)
+            or int(tool_counts.get("companion_betrayal", 0) or 0)
+            or int(tool_counts.get("resolve_companion_agenda", 0) or 0)
+        )
+    if not combat:
+        combat = any(isinstance(c, dict) and c.get("kind") == "monster" for c in char_list)
+
+    block = {
+        "acts_reached": int(acts_reached),
+        "recruited": bool(recruited),
+        "approval_moved": bool(approval_moved),
+        "camped": bool(camped),
+        "quest_resolved": bool(quest_resolved),
+        "quest_evolved": bool(quest_evolved),
+        "traveled": bool(traveled),
+        "combat": bool(combat),
+        "betrayal": bool(betrayal),
+        "distinct_visited": int(distinct_visited),
+    }
+    block["summary"] = structural_summary(block)
+    return block
+
+
+def structural_summary(block: dict) -> str:
+    """A one-line human summary of a structural_coverage block, e.g.
+    'acts 3/3 · recruit ✓ · camp ✓ · approval · · quest-resolved ✓ · evolved · · travel ✓ · combat ✓'."""
+    def mark(b):
+        return "✓" if b else "·"
+    acts = int(block.get("acts_reached") or 0)
+    return (
+        f"acts {acts}/3 · recruit {mark(block.get('recruited'))} · "
+        f"camp {mark(block.get('camped'))} · approval {mark(block.get('approval_moved'))} · "
+        f"quest-resolved {mark(block.get('quest_resolved'))} · evolved {mark(block.get('quest_evolved'))} · "
+        f"travel {mark(block.get('traveled'))} · combat {mark(block.get('combat'))} · "
+        f"betrayal {mark(block.get('betrayal'))}"
+    )
 _OUT_KEYS = re.compile(
     r'"(roll|total|dc|success|failed|degree|crit|hit|damage|hp|remaining|defeated|dead|'
     r'attitude|approval|standing|status|evolves_to|xp|day)"\s*:\s*([^,}\]\n]+)')

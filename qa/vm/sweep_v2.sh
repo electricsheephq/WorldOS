@@ -117,8 +117,17 @@ run_persona(){  # $1=persona $2=port  -> writes results/score-$1.json
   pkill -f "play_party.sh baldurs-gate vm2-$persona" 2>/dev/null
   local sc="qa/ui_playtest_runs/vm2-$persona/score.json"
   if [ -f "$sc" ]; then
+    # STRUCTURAL COVERAGE (the owner's "full circle"; pairs with the #961 gate). The persona
+    # scorer reads only the player's actions.ndjson — blind to the DM's tool calls + the engine
+    # end-state. The sweep KNOWS the persona's Part-B play-state store (play-state/vm2-$persona-b:
+    # the campaign snapshot.json is the GROUND TRUTH; dm.combined.jsonl carries the tool counts),
+    # so it computes structural_coverage_from_state HERE and MERGES it into score.json (additive —
+    # a missing snapshot leaves the score untouched). The shared story_readout helper keeps this
+    # block, the readout stamp, and the #961 assertion from drifting.
+    local bstore="play-state/vm2-$persona-b"
+    SC_STRUCTURAL="$(python3 qa/inject_structural_coverage.py "$sc" "$bstore" 2>/dev/null)"
     cp "$sc" "$RES/score-$persona.json"
-    note "  $persona rc=$rc $(python3 -c "import json;d=json.load(open('$sc'));print('sat=%s gaveup=%s crit=%s arc=%s turns=%s'%(d.get('persona_satisfaction'),d.get('gave_up'),d.get('bug_reports_critical'),d.get('completed_intro_flow'),d.get('in_story_turns')))" 2>/dev/null)"
+    note "  $persona rc=$rc $(python3 -c "import json;d=json.load(open('$sc'));print('sat=%s gaveup=%s crit=%s arc=%s turns=%s'%(d.get('persona_satisfaction'),d.get('gave_up'),d.get('bug_reports_critical'),d.get('completed_intro_flow'),d.get('in_story_turns')))" 2>/dev/null)${SC_STRUCTURAL:+ | $SC_STRUCTURAL}"
   else
     note "  $persona rc=$rc - NO SCORE (see vm2-$persona.log)"
   fi
@@ -206,6 +215,45 @@ sleep 6
 # driver support lands (tracked); the VM ui_audit verdict = the structural + ui-gate checks.
 WORLDOS_STATE_DIR=/root/worldos-qa/auditstate timeout 600 bash qa/ui_audit_health.sh --port $aport --quick --ui-gate > "$RES/ui_audit.log" 2>&1
 note "ui_audit rc=$?"; [ -f "$RES/av.pid" ] && kill "$(cat "$RES/av.pid")" 2>/dev/null
+
+# 3.5) STRUCTURAL-COVERAGE ROLL-UP (the owner's "full circle"; pairs with the #961 gate). Each
+# score-$persona.json now carries a structural_coverage block (merged in run_persona). Roll it up
+# so the sweep summary SHOWS, across personas, which whole systems the build is exercising vs. dead
+# (e.g. "max acts 1/3 · recruit 3/5 · camp 0/5 · quest-resolved 1/5"). REPORT-ONLY (never gates) —
+# it feeds the human + Agent-2's RRI rollup; the #961 behavioral gate is what actually caps a run.
+note "structural coverage roll-up..."
+python3 - "$RES" >> "$LOG" 2>&1 <<'PY' || note "  (structural roll-up skipped — see log)"
+import json, sys, glob, os
+res = sys.argv[1]
+rows = []
+for f in sorted(glob.glob(os.path.join(res, "score-*.json"))):
+    try:
+        d = json.load(open(f))
+    except Exception:
+        continue
+    sc = d.get("structural_coverage")
+    if isinstance(sc, dict):
+        rows.append((os.path.basename(f)[len("score-"):-len(".json")], sc))
+if not rows:
+    print("[structural] no structural_coverage blocks found in score-*.json")
+    raise SystemExit(0)
+n = len(rows)
+def cnt(k): return sum(1 for _, sc in rows if sc.get(k))
+max_acts = max((int(sc.get("acts_reached") or 0) for _, sc in rows), default=0)
+print(f"[structural] {n} persona(s) | max acts {max_acts}/3 | "
+      f"recruit {cnt('recruited')}/{n} · camp {cnt('camped')}/{n} · "
+      f"approval {cnt('approval_moved')}/{n} · quest-resolved {cnt('quest_resolved')}/{n} · "
+      f"evolved {cnt('quest_evolved')}/{n} · travel {cnt('traveled')}/{n} · combat {cnt('combat')}/{n}")
+for name, sc in rows:
+    print(f"[structural]   {name}: {sc.get('summary','')}")
+rollup = {"personas": n, "max_acts_reached": max_acts,
+          "recruited": cnt('recruited'), "camped": cnt('camped'),
+          "approval_moved": cnt('approval_moved'), "quest_resolved": cnt('quest_resolved'),
+          "quest_evolved": cnt('quest_evolved'), "traveled": cnt('traveled'),
+          "combat": cnt('combat'),
+          "per_persona": {name: sc for name, sc in rows}}
+json.dump(rollup, open(os.path.join(res, "structural_coverage.json"), "w"), indent=2)
+PY
 
 # 4) RRI
 behav=RED; grep -q 'behavioral=GREEN' "$RES/duo.log" 2>/dev/null && behav=GREEN   # run_duo.sh runs assert_behavioral itself + prints the verdict; the old $DCOMB path was wrong -> false RED in the RRI

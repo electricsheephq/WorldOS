@@ -566,3 +566,44 @@ def test_reconcile_orphan_lists_are_sorted(tmp_path):
     assert rep["in_index_not_ledger"] == sorted(rep["in_index_not_ledger"])
     assert rep["in_ledger_not_index"] == ["alpha", "mike", "zeta"]
     assert rep["in_index_not_ledger"] == ["bravo", "yankee"]
+
+
+# --- structural coverage columns (the owner's "full circle"; pairs with the #961 gate) ---
+
+def test_structural_coverage_columns_registered():
+    """acts_reached (INT) + structural_coverage (TEXT) are registered with the right types."""
+    assert "acts_reached" in scores_db.COLUMNS
+    assert "structural_coverage" in scores_db.COLUMNS
+    assert scores_db._coltype("acts_reached") == "INTEGER"
+    assert scores_db._coltype("structural_coverage") == "TEXT"
+
+
+def test_structural_coverage_roundtrips(tmp_path):
+    db = tmp_path / "t.db"
+    summary = "acts 1/3 · recruit ✓ · camp · · quest-resolved ·"
+    scores_db.add_run("sc1", db_path=db, surface="GUI-headless-proxy",
+                      acts_reached=1, structural_coverage=summary)
+    row = scores_db.fetch_rows(db)[0]
+    assert row["acts_reached"] == 1
+    assert row["structural_coverage"] == summary
+
+
+def test_add_run_backward_compatible_without_structural_fields(tmp_path):
+    """An old-style call (no structural fields) still works; the columns read back NULL."""
+    db = tmp_path / "t.db"
+    scores_db.add_run("legacy", db_path=db, surface="engine-duo", story_overall=4.2)
+    row = scores_db.fetch_rows(db)[0]
+    assert row["acts_reached"] is None
+    assert row["structural_coverage"] is None
+    assert row["story_overall"] == 4.2
+
+
+def test_render_includes_structural_columns(tmp_path):
+    db = tmp_path / "t.db"
+    md_path = tmp_path / "ledger.md"
+    scores_db.add_run("sc2", db_path=db, surface="GUI-headless-proxy",
+                      acts_reached=2, structural_coverage="acts 2/3 · recruit ✓ · camp ✓")
+    md = scores_db.render_markdown(db, md_path)
+    assert "| Acts |" in md
+    assert "Structural coverage" in md
+    assert "acts 2/3 · recruit ✓ · camp ✓" in md
