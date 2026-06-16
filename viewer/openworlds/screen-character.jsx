@@ -359,6 +359,11 @@ function LevelUpModal({ hero, campaignId, onClose, onDone, toast }) {
   const [asiBumps, setAsiBumps] = React.useState({});
   const [takingFeat, setTakingFeat] = React.useState(false);
   const [featName, setFeatName] = React.useState("");
+  // #feat-browser: the browsable SRD feat list (from GET /feat-catalog), so the feat choice is a
+  // real picker showing each feat's effect text + prerequisite — not a blind free-text box. Lazily
+  // loaded the first time the feat pane opens (`takingFeat`), then filtered client-side by `featSearch`.
+  const [feats, setFeats] = React.useState(null);   // null = not yet loaded; [] = loaded/empty
+  const [featSearch, setFeatSearch] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
   // #robustness: synchronous in-flight lock (mirrors screen-table.jsx). The `submitting` STATE
   // only updates on re-render, so a rapid double-click would otherwise relay TWO level-up intents
@@ -388,6 +393,25 @@ function LevelUpModal({ hero, campaignId, onClose, onDone, toast }) {
     })();
     return () => { cancelled = true; };
   }, [campaignId, hero.id]);
+
+  // #feat-browser: load the SRD feat catalog the first time the player opens the feat pane (so the
+  // common ASI path pays no fetch). Read-only GET /feat-catalog — the chosen feat name still rides
+  // the existing level_up relay. On any failure we leave `feats` as [] so the text input still works.
+  React.useEffect(() => {
+    if (!takingFeat || feats !== null) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch("/feat-catalog", { cache: "no-store" });
+        const payload = await response.json();
+        if (cancelled) return;
+        setFeats(Array.isArray(payload && payload.feats) ? payload.feats : []);
+      } catch (e) {
+        if (!cancelled) setFeats([]);  // honest empty -> the free-text input remains usable
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [takingFeat, feats]);
 
   // a11y (WCAG 2.1.2 — no keyboard trap): Escape dismisses the dialog, mirroring toast.jsx.
   React.useEffect(() => {
@@ -697,10 +721,66 @@ function LevelUpModal({ hero, campaignId, onClose, onDone, toast }) {
                   {takingFeat ? (
                     <div data-worldos-testid="levelup-feat-pane">
                       <p className="body-sm muted" style={{ marginTop: 0 }}>
-                        Name the feat your character takes — the DM finalizes it against the world's options.
+                        Pick a feat below — each shows its effect and any prerequisite — or type a different one
+                        your world offers. The DM finalizes it.
                       </p>
+                      {/* #feat-browser: the browsable SRD feat list (GET /feat-catalog). Selecting a
+                          feat fills `featName` (which rides the existing level_up relay), mirroring the
+                          subclass-options picker above. The free-text input REMAINS below for any
+                          world-canon feat the SRD list doesn't enumerate (additive). */}
+                      {Array.isArray(feats) && feats.length > 0 && (
+                        <>
+                          <input type="text" value={featSearch} onChange={(e) => setFeatSearch(e.target.value)}
+                            placeholder="Filter feats…"
+                            data-worldos-testid="levelup-feat-search"
+                            style={{
+                              width: "100%", padding: "6px 10px", boxSizing: "border-box", marginBottom: 8,
+                              boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.4)",
+                              background: "rgba(255,250,235,0.5)", fontFamily: "var(--f-body)", fontSize: 13,
+                            }} />
+                          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10, maxHeight: 280, overflowY: "auto" }}
+                            data-worldos-testid="levelup-feat-options">
+                            {feats
+                              .filter((f) => {
+                                const q = featSearch.trim().toLowerCase();
+                                if (!q) return true;
+                                return ((f.name || "").toLowerCase().indexOf(q) !== -1)
+                                  || ((f.prerequisite || "").toLowerCase().indexOf(q) !== -1)
+                                  || ((f.desc || "").toLowerCase().indexOf(q) !== -1);
+                              })
+                              .map((f) => {
+                                const selected = featName.trim().toLowerCase() === (f.name || "").toLowerCase();
+                                return (
+                                  <button key={f.name} type="button"
+                                    aria-pressed={selected}
+                                    onClick={() => setFeatName(f.name)}
+                                    data-worldos-testid={"levelup-feat-option-" + (f.name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-")}
+                                    style={{
+                                      textAlign: "left", padding: "8px 12px", cursor: "pointer",
+                                      background: selected ? "linear-gradient(180deg, var(--b-200), var(--b-400))" : "transparent",
+                                      boxShadow: "inset 0 0 0 1px rgba(140,100,60,0.35)",
+                                      color: selected ? "var(--w-300)" : "var(--ink-800)",
+                                      fontFamily: "var(--f-body)", fontSize: 13,
+                                    }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                                      <span style={{ fontFamily: "var(--f-display)", fontSize: 13 }}>{f.name}</span>
+                                      {f.prerequisite ? (
+                                        <span className="body-sm" style={{ opacity: 0.8, whiteSpace: "nowrap" }}>
+                                          Prereq: {f.prerequisite}
+                                        </span>
+                                      ) : null}
+                                    </div>
+                                    {f.desc && (
+                                      <div className="body-sm" style={{ opacity: 0.85, marginTop: 3, whiteSpace: "pre-line" }}>{f.desc}</div>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                          </div>
+                        </>
+                      )}
                       <input type="text" value={featName} onChange={(e) => setFeatName(e.target.value)}
-                        placeholder="e.g. Great Weapon Master"
+                        placeholder={Array.isArray(feats) && feats.length > 0 ? "…or type another feat your world offers" : "e.g. Great Weapon Master"}
                         data-worldos-testid="levelup-feat-input"
                         style={{
                           width: "100%", padding: "8px 10px", boxSizing: "border-box",
@@ -789,8 +869,11 @@ function LevelUpModal({ hero, campaignId, onClose, onDone, toast }) {
   );
 }
 
-function RestPrepareModal({ hero, party, campaignId, canAct, dmBusy, onClose, onDone, toast, setState }) {
-  const [step, setStep] = React.useState("rest");
+function RestPrepareModal({ hero, party, campaignId, canAct, dmBusy, onClose, onDone, toast, setState, initialStep }) {
+  // initialStep lets a caller open this modal straight at the "prep" step (the camp long-rest
+  // affordance — the rest already happened, the player just wants to set their prepared spells).
+  // Defaults to "rest" so every existing caller (the sheet's "Rest & Prepare" button) is unchanged.
+  const [step, setStep] = React.useState(initialStep === "prep" ? "prep" : "rest");
   const [restType, setRestType] = React.useState("long");
   const [prepared, setPrepared] = React.useState({});
   const [submitting, setSubmitting] = React.useState(false);
@@ -1881,6 +1964,16 @@ function SpellsTab({ hero }) {
         </div>
       ) : null}
       <SpellSlotTrack slots={slots} />
+      {/* #half-caster: a muted line naming the next LOCKED slot level for a slower-than-full
+          caster (server.py _caster_tier_and_note), so an SRD-correct half-caster slot count
+          (e.g. an L10 Paladin topping out at 3rd-level slots) reads as intentional, not missing.
+          Guarded: renders NOTHING when the read-model has no note (full casters, top-slot
+          half-casters, non-casters). */}
+      {hero.spellcasting && hero.spellcasting.slotProgressionNote ? (
+        <div className="muted body-sm" style={{ marginTop: -10, marginBottom: 16 }}>
+          {hero.spellcasting.slotProgressionNote}
+        </div>
+      ) : null}
       {groups.length ? (
         groups.map((group) => (
           <div key={group.level} style={{ marginTop: 16 }}>

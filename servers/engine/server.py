@@ -30,6 +30,7 @@ import dice as dice_mod
 import encounter
 import events as events_mod
 import faction_arc as faction_arc_mod
+import featcatalog
 import feature_catalog as feature_catalog_mod
 import generator
 import imagegen
@@ -7499,6 +7500,17 @@ def find_items(query: str, limit: int = 10) -> dict:
     first `limit` items. The DM's catalog browser for handing out loot."""
     matches = itemcatalog.find(query, max(1, min(int(limit), 50)))
     return {"query": query, "count": len(matches), "items": matches}
+
+
+@mcp.tool()
+def feats(query: str = "") -> dict:
+    """List the bundled SRD 5.2 feats, each {name, desc, prerequisite, type} — the browsable feat
+    catalog the level-up planner reads so a player picks a REAL feat (with its full effect text)
+    instead of a blind free-text box (the planner's one remaining gap). `query` (optional) filters
+    by name / prerequisite / effect text (case-insensitive substring); empty lists ALL feats.
+    Read-only; mirrors find_items / feature_catalog — it never authors content."""
+    matches = featcatalog.find(query)
+    return {"query": query, "count": len(matches), "feats": matches}
 
 
 @mcp.tool()

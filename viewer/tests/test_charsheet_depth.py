@@ -126,6 +126,47 @@ class CharsheetDepthTests(unittest.TestCase):
         self.assertEqual(cast["spellSaveDc"], 15)
         self.assertEqual(cast["spellAttackBonus"], 7)
 
+    # ── caster-tier slot-progression context (the L10-Paladin "missing slots" false alarm) ──
+
+    def test_half_caster_paladin_emits_tier_and_unlock_note(self):
+        """A L10 Paladin (half-caster, SRD-correct 4/3/2 slots) surfaces casterTier=="half" and a
+        progression note naming the NEXT locked slot unlock — 4th-level slots at L13 — so a reader
+        does not misread the (correct) absence of a 4th slot as a missing slot."""
+        paladin = {
+            "id": "wyll", "name": "Wyll",
+            "classes": [{"name": "Paladin", "level": 10, "subclass": "Oath of Vengeance"}],
+            "abilities": {"strength": 16, "dexterity": 10, "constitution": 14,
+                          "intelligence": 10, "wisdom": 11, "charisma": 16},
+            "proficiency_bonus": 4,
+        }
+        cast = server._character_spellcasting(paladin)
+        self.assertIsNotNone(cast)
+        self.assertEqual(cast["casterTier"], "half")
+        self.assertIsNotNone(cast["slotProgressionNote"])
+        self.assertIn("13", cast["slotProgressionNote"])
+        self.assertIn("4th", cast["slotProgressionNote"])
+
+    def test_full_caster_has_tier_but_no_progression_note(self):
+        """A full caster (Wizard) is tagged casterTier=="full" but gets NO unlock note — its slots
+        already track level, so there is nothing to clarify (guarded: renders nothing)."""
+        cast = server._character_spellcasting(_SNAPSHOT["characters"]["elara"])
+        self.assertEqual(cast["casterTier"], "full")
+        self.assertIsNone(cast["slotProgressionNote"])
+
+    def test_max_level_half_caster_has_no_progression_note(self):
+        """A L17 Paladin already has 5th-level slots (the half-caster top) — there is nothing
+        further to unlock, so the note is None (no fabricated 'unlocks at L21')."""
+        paladin = {
+            "id": "wyll", "name": "Wyll",
+            "classes": [{"name": "Paladin", "level": 17}],
+            "abilities": {"charisma": 16, "strength": 16, "dexterity": 10,
+                          "constitution": 14, "intelligence": 10, "wisdom": 11},
+            "proficiency_bonus": 6,
+        }
+        cast = server._character_spellcasting(paladin)
+        self.assertEqual(cast["casterTier"], "half")
+        self.assertIsNone(cast["slotProgressionNote"])
+
     # ── prepared-spell CAP (Rest & Prepare budget) ──────────────────────────────
 
     def test_prepared_cap_full_caster_is_level_plus_ability_mod(self):

@@ -75,11 +75,15 @@ function makeReact() {
 }
 
 let PLANNER = null;
+let FEATS = null;   // the /feat-catalog payload (set per test that exercises the browsable feat picker)
 const posts = [];
 function fetchStub(url, opts) {
   const u = String(url).split('?')[0];
   if (u === '/build-options') {
     return Promise.resolve({ ok: true, json: () => Promise.resolve(PLANNER || { ok: false, errors: ['no planner'] }) });
+  }
+  if (u === '/feat-catalog') {
+    return Promise.resolve({ ok: true, json: () => Promise.resolve(FEATS || { feats: [] }) });
   }
   if (u === '/move') {
     let body = {}; try { body = JSON.parse((opts && opts.body) || '{}'); } catch (_e) {}
@@ -146,6 +150,7 @@ async function settle() { await new Promise((r) => setImmediate(r)); await new P
 const h = {
   mountLevelUp: (props) => { reactHost.mount(() => sandbox.window.LevelUpModal(props)); },
   setPlanner: (p) => { PLANNER = p; },
+  setFeats: (f) => { FEATS = f; },
   tree: () => reactHost.api(),
   settle,
   props: (id) => firstProps(reactHost.api(), id),
@@ -358,6 +363,69 @@ class LevelUpFeatPickerTests(_Harness):
         # mutually exclusive: an ASI was never allocated, so the intent must NOT also claim an ASI bump.
         self.assertNotIn("+1 str", text)
         self.assertNotIn("+2 str", text)
+
+
+# A small /feat-catalog payload the browsable picker loads when the feat pane opens (mirrors the
+# shape of GET /feat-catalog: {name, desc, prerequisite, type}).
+_FEAT_CATALOG = json.dumps({
+    "count": 2,
+    "feats": [
+        {"name": "Alert", "desc": "Initiative Proficiency: add your proficiency to initiative.",
+         "prerequisite": "", "type": "Origin"},
+        {"name": "Grappler", "desc": "You have advantage on attacks against grappled creatures.",
+         "prerequisite": "Level 4+, Strength or Dexterity 13+", "type": "General"},
+    ],
+})
+
+
+class LevelUpFeatBrowserTests(_Harness):
+    """#feat-browser — the feat pane is now a BROWSABLE picker (GET /feat-catalog) showing each
+    feat's effect + prerequisite; selecting one fills featName which rides the existing relay. The
+    free-text input REMAINS for world-canon feats the SRD list doesn't enumerate."""
+
+    def _mount(self):
+        return (
+            "h.setPlanner(" + _PLANNER_ASI_AND_FEAT + ");"
+            "h.setFeats(" + _FEAT_CATALOG + ");"
+            "h.mountLevelUp({ hero: " + _HERO_L3_FIGHTER + ", campaignId: 'camp1',"
+            " onClose: function(){}, onDone: function(){}, toast: function(){} });"
+            "await h.settle();"
+        )
+
+    def test_feat_options_render_after_opening_the_feat_pane(self):
+        out = self._run(
+            self._mount() +
+            "await h.click('levelup-feat-toggle');"   # opens the feat pane -> loads /feat-catalog
+            "return ({ options: h.exists('levelup-feat-options'),"
+            "  alert: h.exists('levelup-feat-option-alert'),"
+            "  grappler: h.exists('levelup-feat-option-grappler'),"
+            "  free_text: h.exists('levelup-feat-input'), text: h.text() });"
+        )
+        self.assertGreaterEqual(out["options"], 1, "the browsable feat list must render in the feat pane")
+        self.assertGreaterEqual(out["alert"], 1, "each SRD feat is a selectable option")
+        self.assertGreaterEqual(out["grappler"], 1)
+        self.assertGreaterEqual(out["free_text"], 1, "the free-text override input must remain (world-canon feats)")
+        # the option shows the feat's effect text + prerequisite (a real browse, not a name list)
+        self.assertIn("advantage on attacks against grappled", out["text"].lower())
+        self.assertIn("Strength or Dexterity 13+", out["text"])
+
+    def test_selecting_a_feat_option_fills_the_name_and_rides_the_move(self):
+        out = self._run(
+            self._mount() +
+            "await h.click('levelup-feat-toggle');"
+            "var before = h.props('levelup-confirm');"
+            "await h.click('levelup-feat-option-grappler');"   # selecting fills featName
+            "var after = h.props('levelup-confirm');"
+            "await h.click('levelup-confirm');"
+            "return ({ blocked_before: !!before.disabled, ready: !!after.disabled,"
+            "  post: (h.posts()[0] || null) });"
+        )
+        self.assertTrue(out["blocked_before"], "no feat chosen yet -> Confirm is blocked")
+        self.assertFalse(out["ready"], "selecting a feat option enables Confirm")
+        self.assertIsNotNone(out["post"])
+        text = out["post"]["body"]["text"].lower()
+        self.assertIn("grappler", text, "the chosen feat name must ride the existing level_up relay")
+        self.assertIn("feat", text)
 
 
 if __name__ == "__main__":

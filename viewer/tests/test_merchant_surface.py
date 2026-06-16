@@ -138,6 +138,34 @@ class MerchantSurfaceTests(unittest.TestCase):
         ls_names = {w.get("name") for w in ls.get("catalog", [])}
         self.assertIn("Longsword", ls_names, "the SRD catalog must hold the canonical Longsword")
 
+    def test_default_supply_is_mostly_priced_buyable_gear(self):
+        # The "empty market" complaint: the raw alphabetical catalog slice is dominated by
+        # PRICELESS magic items (price None → disabled Take), so only a handful are buyable. The
+        # default (no-query) supply must lead with PRICED, mundane gear so the market reads stocked.
+        status, surface = self._get_json("/merchant-surface?limit=40")
+        self.assertEqual(status, 200)
+        catalog = surface.get("catalog", [])
+        self.assertTrue(catalog, "the default supply must carry wares")
+        priced = [w for w in catalog if isinstance(w.get("price"), int) and w["price"] > 0]
+        self.assertGreater(
+            len(priced), len(catalog) // 2,
+            f"the default merchant supply must be MOSTLY priced/buyable gear, "
+            f"got {len(priced)}/{len(catalog)} priced",
+        )
+
+    def test_default_supply_leads_with_priced_before_priceless(self):
+        # Sort contract: every priced ware sorts AHEAD of every priceless one in the default slice
+        # (priceless items still appear, just after the buyable gear — never dropped).
+        status, surface = self._get_json("/merchant-surface?limit=80")
+        self.assertEqual(status, 200)
+        flags = [bool(isinstance(w.get("price"), int) and w["price"] > 0)
+                 for w in surface.get("catalog", [])]
+        first_priceless = next((i for i, p in enumerate(flags) if not p), len(flags))
+        self.assertFalse(
+            any(flags[first_priceless:]),
+            "no priced ware may appear after the first priceless one in the default supply",
+        )
+
     def test_catalog_query_filters_wares(self):
         status, surface = self._get_json("/merchant-surface?q=longsword&limit=50")
         self.assertEqual(status, 200)

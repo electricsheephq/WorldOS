@@ -33,6 +33,7 @@ from pathlib import Path
 
 _OPENWORLDS = Path(__file__).resolve().parents[1] / "openworlds"
 _SCREEN_CHARACTER = _OPENWORLDS / "screen-character.jsx"
+_CAMP_SIDEBAR = _OPENWORLDS / "camp-sidebar.jsx"
 _BABEL = _OPENWORLDS / "vendor" / "babel-standalone-7.29.0.min.js"
 
 
@@ -85,11 +86,15 @@ function makeReact() {
 
 // ---- a SCRIPTED fetch capturing POST bodies; /build-options returns the scripted planner --------
 let PLANNER = null;            // the /build-options planner payload (set per test)
+let SURFACE = null;            // the /character-surface read-model (set per camp-sidebar test)
 const posts = [];              // every /move POST {url, body}
 function fetchStub(url, opts) {
   const u = String(url).split('?')[0];
   if (u === '/build-options') {
     return Promise.resolve({ ok: true, json: () => Promise.resolve(PLANNER || { ok: false, errors: ['no planner'] }) });
+  }
+  if (u === '/character-surface') {
+    return Promise.resolve({ ok: true, json: () => Promise.resolve(SURFACE || {}) });
   }
   if (u === '/move') {
     let body = {}; try { body = JSON.parse((opts && opts.body) || '{}'); } catch (_e) {}
@@ -135,6 +140,10 @@ sandbox.slug = (n) => (n || '').toLowerCase().replace(/[^a-z0-9]+/g, '-');
 sandbox.combatSurfaceFromCampaign = () => '';
 
 load(%(screen_character)s);
+// camp-sidebar.jsx defines CampSidebar (CS-prep: the camp long-rest → Prepare-spells affordance).
+// It's loaded AFTER screen-character.jsx (same order as index.html) so window.RestPrepareModal is
+// already defined when CampSidebar routes it. Loading it is additive — existing tests ignore it.
+load(%(camp_sidebar)s);
 
 // ---- tree helpers ----------------------------------------------------------------------------
 function findByTestId(node, id, hits) {
@@ -158,13 +167,28 @@ function collectText(node, out) {
   return out;
 }
 function firstProps(node, id) { const hits = findByTestId(node, id); return hits.length ? (hits[0].props || {}) : null; }
+// Find a rendered element whose `type` is a given component FUNCTION (this stub does not recurse
+// into function children, so to verify CampSidebar ROUTES RestPrepareModal we inspect the element
+// it emitted — its props carry the hero + initialStep the camp path wires through). Returns props.
+function findByType(node, fn, hits) {
+  hits = hits || [];
+  if (node == null || typeof node !== 'object') return hits;
+  if (Array.isArray(node)) { for (const c of node) findByType(c, fn, hits); return hits; }
+  if (node.type === fn) hits.push(node);
+  const props = node.props || {};
+  const kids = (node.children && node.children.length ? node.children : (props.children !== undefined ? [].concat(props.children) : []));
+  for (const c of kids) findByType(c, fn, hits);
+  return hits;
+}
 
 async function settle() { await new Promise((r) => setImmediate(r)); await new Promise((r) => setImmediate(r)); reactHost.commit(); }
 
 const h = {
   mountRest: (props) => { reactHost.mount(() => sandbox.window.RestPrepareModal(props)); },
   mountLevelUp: (props) => { reactHost.mount(() => sandbox.window.LevelUpModal(props)); },
+  mountCamp: (props) => { reactHost.mount(() => sandbox.window.CampSidebar(props)); },
   setPlanner: (p) => { PLANNER = p; },
+  setSurface: (s) => { SURFACE = s; },
   tree: () => reactHost.api(),
   settle,
   // find a node by testid and read a prop (disabled/title/etc.)
@@ -175,6 +199,8 @@ const h = {
   posts: () => posts,
   toasts: () => toastCalls,
   exists: (id) => findByTestId(reactHost.api(), id).length,
+  // props of the RestPrepareModal element CampSidebar routed (null if none rendered).
+  routedModal: () => { const hits = findByType(reactHost.api(), sandbox.window.RestPrepareModal); return hits.length ? (hits[0].props || {}) : null; },
 };
 
 const script = %(script)s;
@@ -190,13 +216,14 @@ class _Harness(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        for p in (_SCREEN_CHARACTER, _BABEL):
+        for p in (_SCREEN_CHARACTER, _CAMP_SIDEBAR, _BABEL):
             assert p.exists(), f"missing {p}"
 
     def _run(self, script: str):
         program = _HARNESS % {
             "babel": json.dumps(str(_BABEL)),
             "screen_character": json.dumps(str(_SCREEN_CHARACTER)),
+            "camp_sidebar": json.dumps(str(_CAMP_SIDEBAR)),
             "script": json.dumps(script),
         }
         proc = subprocess.run(
@@ -580,6 +607,82 @@ class LevelUpOverdueSubclassTests(_Harness):
         self.assertTrue(out["disabled_before"], "an overdue, unnamed archetype must block Confirm")
         self.assertIn("Martial Archetype", out["title"], "the reason must name the overdue archetype group")
         self.assertFalse(out["disabled_after"], "naming the archetype enables Confirm")
+
+
+class CampPrepareSpellsWiringTests(_Harness):
+    """CS-prep — the prominent camp long-rest (camp-sidebar.jsx beginRest) now surfaces a
+    Prepare-spells affordance that ROUTES THE EXISTING RestPrepareModal at its `prep` step for each
+    prepared caster, closing the gap where the camp rest skipped the spell-prep the sheet offers."""
+
+    # A live read-model surface with ONE prepared caster (preparedCap>0) + one non-preparing hero.
+    _SURFACE = json.dumps({
+        "can_act": True,
+        "campaign_id": "camp1",
+        "party": [
+            {"id": "wyll", "name": "Wyll Ravengard", "short": "Wyll",
+             "preparedCap": 8, "preparableSpells": [{"name": "Cure Wounds", "level": 1}]},
+            {"id": "karlach", "name": "Karlach Cliffgate", "short": "Karlach"},  # Barbarian — no cap
+        ],
+    })
+
+    def _mount(self, can_act="true", dm_busy="false"):
+        return (
+            "h.setSurface(" + self._SURFACE + ");"
+            "h.mountCamp({ state: { activeCampaign: 'camp1', campaigns: [{ id: 'camp1' }] },"
+            " onExit: function(){}, onBeginRest: function(){}, onTalk: function(){},"
+            " talkPartner: null, dmBusy: " + dm_busy + " });"
+            "await h.settle();"
+        )
+
+    def test_no_prepare_affordance_before_resting(self):
+        # The Prepare-spells panel only appears AFTER a camp rest lands — not on first open.
+        out = self._run(
+            self._mount() +
+            "return ({ panel: h.exists('camp-prepare-spells'),"
+            "  rest_btn: h.exists('camp-begin-rest') });"
+        )
+        self.assertEqual(out["rest_btn"], 1, "the camp Begin-Resting CTA must render")
+        self.assertEqual(out["panel"], 0, "no Prepare-spells affordance until a rest has been taken")
+
+    def test_prepare_affordance_appears_after_camp_rest_for_prepared_caster(self):
+        # After the camp long rest relays, a per-caster Prepare button appears for the prepared
+        # caster (Wyll) but NOT for the non-preparing hero (Karlach — no preparedCap).
+        out = self._run(
+            self._mount() +
+            "await h.click('camp-begin-rest');"   # relays the long rest -> restedThisVisit
+            "return ({ panel: h.exists('camp-prepare-spells'),"
+            "  wyll: h.exists('camp-prepare-wyll'), karlach: h.exists('camp-prepare-karlach'),"
+            "  rest_posts: h.posts().length, rest_post: h.posts()[0] || null });"
+        )
+        self.assertEqual(out["rest_posts"], 1, "the camp Begin-Resting must relay exactly one /move long rest")
+        self.assertEqual(out["rest_post"]["body"]["kind"], "do")
+        self.assertIn("long rest", out["rest_post"]["body"]["text"].lower())
+        self.assertGreaterEqual(out["panel"], 1, "after resting, the Prepare-spells affordance must render")
+        self.assertGreaterEqual(out["wyll"], 1, "a prepared caster (Wyll) gets a Prepare button")
+        self.assertEqual(out["karlach"], 0, "a non-preparing hero (Barbarian) gets NO Prepare button")
+
+    def test_prepare_button_routes_the_existing_modal_at_its_prep_step(self):
+        # Clicking the per-caster Prepare button ROUTES the EXISTING RestPrepareModal — opened
+        # straight at its `prep` step for THAT hero. We inspect the routed element's props (the camp
+        # path reuses the same component, not a new prep UI). The modal's own internal relay is
+        # covered by RestPrepareWiringTests.test_prepare_spells_button_is_wired_after_resting.
+        out = self._run(
+            self._mount() +
+            "var before = h.routedModal();"          # no modal before a Prepare click
+            "await h.click('camp-begin-rest');"      # rest relay
+            "await h.click('camp-prepare-wyll');"    # routes RestPrepareModal at prep step
+            "var m = h.routedModal();"
+            "return ({ before: before, routed: !!m,"
+            "  initial_step: m && m.initialStep, hero_id: m && m.hero && m.hero.id,"
+            "  campaign: m && m.campaignId, can_act: m && m.canAct });"
+        )
+        self.assertIsNone(out["before"], "no RestPrepareModal is routed before the Prepare button is clicked")
+        self.assertTrue(out["routed"], "clicking Prepare must route the EXISTING RestPrepareModal")
+        self.assertEqual(out["initial_step"], "prep",
+                         "the camp path must open the modal at its prep step (rest already happened)")
+        self.assertEqual(out["hero_id"], "wyll", "the routed modal targets the chosen prepared caster")
+        self.assertEqual(out["campaign"], "camp1", "the campaign id rides through to the modal's relay")
+        self.assertTrue(out["can_act"], "the live-session can_act flows through so the relay is enabled")
 
 
 if __name__ == "__main__":

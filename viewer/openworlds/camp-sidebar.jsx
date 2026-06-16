@@ -53,7 +53,17 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner, dmBusy }
   const [useRations, setUseRations] = React.useState(true);
   const [draggingHero, setDraggingHero] = React.useState(null);
   const [resting, setResting] = React.useState(false);
+  // After a camp long rest lands, surface a "Prepare spells" step for each prepared caster —
+  // routing the EXISTING RestPrepareModal (screen-character.jsx) at its `prep` step. `restedThisVisit`
+  // gates the affordance (the rest already happened); `prepHeroId` is the caster whose modal is open.
+  const [restedThisVisit, setRestedThisVisit] = React.useState(false);
+  const [prepHeroId, setPrepHeroId] = React.useState(null);
   const talkHero = talkPartner ? party.find((p) => p.id === talkPartner) : null;
+  // Prepared casters in camp = the party members the read-model gives a positive prepared-spell CAP
+  // (Cleric/Druid/Wizard/Paladin/Ranger). Known-casters (Bard/Sorcerer/Warlock) and non-casters have
+  // no cap, so they never get a (meaningless) "Prepare" affordance — the guard renders nothing.
+  const preparedCasters = party.filter((p) => typeof p.preparedCap === "number" && p.preparedCap > 0);
+  const prepHero = prepHeroId ? party.find((p) => p.id === prepHeroId) : null;
 
   // Engine-write gate. The camp sidebar is a READER of /character-surface; resting is an
   // engine action, so it only lands when a live session is attached (`can_act`). When the
@@ -135,6 +145,10 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner, dmBusy }
         throw new Error(payload.reason || `move ${response.status}`);
       }
       toast({ kind: "rest", eyebrow: "Camp", title: "Resting", body: "Move relayed to the DM — the engine resolves the long rest, refreshes the party, and advances the clock to morning." });
+      // A long rest recovers all spell slots — now offer to (re)prepare spells for each prepared
+      // caster via the existing two-step modal's `prep` step, so the prominent camp rest matches the
+      // sheet's "Rest & Prepare" (CS-prep). Guarded below so it only shows when a prepared caster exists.
+      setRestedThisVisit(true);
     } catch (error) {
       toast({ kind: "danger", eyebrow: "Camp", title: "Rest not sent", body: error?.message || "The viewer could not reach /move." });
     } finally {
@@ -363,6 +377,7 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner, dmBusy }
             disabled={!canAct || dmBusy || party.length === 0 || resting}
             onClick={beginRest}
             style={{ flex: 1 }}
+            data-worldos-testid="camp-begin-rest"
             title={
               !canAct
                 ? "The chronicle is read-only — start a session to rest"
@@ -386,6 +401,50 @@ function CampSidebar({ state, onExit, onBeginRest, onTalk, talkPartner, dmBusy }
           </div>
         ) : null}
       </div>
+
+      {/* CS-prep: after a camp long rest (which recovers all spell slots), surface a per-caster
+          "Prepare" affordance that opens the EXISTING RestPrepareModal at its `prep` step — closing
+          the gap where the prominent camp rest skipped the spell-prep step the sheet's "Rest &
+          Prepare" button offers. Guarded three ways: only after a rest landed THIS visit, only when a
+          prepared caster is in the party, and only when the modal component is actually loaded. */}
+      {restedThisVisit && preparedCasters.length > 0 && window.RestPrepareModal && (
+        <Panel framed style={{ padding: 12, flex: "0 0 auto" }} data-worldos-testid="camp-prepare-spells">
+          <SectionTitle>Prepare Spells</SectionTitle>
+          <div className="hand muted" style={{ fontSize: 11, margin: "2px 0 8px" }}>
+            The long rest refreshed everyone's slots. Set today's prepared spells:
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {preparedCasters.map((p) => (
+              <BrassButton
+                key={p.id}
+                tone="ghost"
+                size="sm"
+                onClick={() => setPrepHeroId(p.id)}
+                title={`Open ${p.name}'s spell preparation`}
+                data-worldos-testid={`camp-prepare-${p.id}`}
+              >
+                Prepare {p.name.split(" ")[0]}'s spells
+              </BrassButton>
+            ))}
+          </div>
+        </Panel>
+      )}
+
+      {/* Route the EXISTING two-step modal at its `prep` step (no new prep UI). It relays the
+          prepare_spells intent through /move exactly as the sheet's flow does. */}
+      {prepHero && window.RestPrepareModal && (
+        <window.RestPrepareModal
+          hero={prepHero}
+          party={party}
+          campaignId={campaignId}
+          canAct={canAct}
+          dmBusy={dmBusy}
+          initialStep="prep"
+          onClose={() => setPrepHeroId(null)}
+          onDone={() => { setPrepHeroId(null); loadSurface(); }}
+          toast={toast}
+        />
+      )}
     </div>
   );
 }

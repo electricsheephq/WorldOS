@@ -1035,6 +1035,32 @@ def _merchant_ware(rec: dict) -> dict:
     }
 
 
+# Kind-grouping order for the default (no-query) merchant supply — the gear an adventurer actually
+# walks in to BUY, surfaced ahead of the priceless magic-item long tail. Lower rank = earlier.
+_MERCHANT_KIND_ORDER = {
+    "weapon": 0, "armor": 1, "shield": 1, "potion": 2,
+    "gear": 3, "adventuring gear": 3, "tool": 3, "ammunition": 3, "equipment": 3,
+}
+
+
+def _merchant_ware_sort_key(ware: dict) -> tuple:
+    """Sort key for the DEFAULT (no-query) merchant supply so the first wares are the PRICED,
+    mundane, actually-BUYABLE gear (weapons/armor/potions/adventuring gear) instead of the
+    alphabetical slice the raw catalog returns — which is dominated by PRICELESS magic items
+    (price None → "—", a disabled Take button), the "empty market" complaint.
+
+    Order: (1) priced-before-priceless, (2) kind-grouped (weapon→armor→potion→gear→…), (3) alpha.
+    Priceless items still SORT — they just land AFTER the priced gear, so the long tail stays
+    reachable by scrolling or by search (which bypasses this key). Keys off the PROJECTED ware's
+    own ``price`` (the value the screen displays + the Take button gates on), so the ordering and
+    the buyability the user sees always agree. Honest: fabricates nothing, drops nothing."""
+    price = ware.get("price")
+    priced = isinstance(price, int) and price > 0
+    kind = _text(ware.get("kind")).lower()
+    kind_rank = _MERCHANT_KIND_ORDER.get(kind, 9)
+    return (0 if priced else 1, kind_rank, _text(ware.get("name")).lower())
+
+
 def build_merchant_surface(
     campaign_id: str = "",
     query: str = "",
@@ -1105,10 +1131,25 @@ def build_merchant_surface(
     cat_mod = _engine_module("itemcatalog")
     if cat_mod is not None:
         try:
-            for rec in cat_mod.find(_text(query), limit=lim):
-                ware = _merchant_ware(rec)
-                if ware.get("name"):
-                    catalog.append(ware)
+            q = _text(query)
+            if q:
+                # A real search bypasses the priced-first reorder — the shopper asked for these
+                # exact items, so return the engine's name-match slice as-is (priceless magic
+                # items included, the whole point of searching for one).
+                for rec in cat_mod.find(q, limit=lim):
+                    ware = _merchant_ware(rec)
+                    if ware.get("name"):
+                        catalog.append(ware)
+            else:
+                # Default supply: project the FULL catalog (no slice yet), reorder priced-buyable
+                # gear ahead of the priceless long tail, THEN slice — otherwise the alphabetical
+                # first-`lim` would still be ~all magic items (the "empty market" complaint). We
+                # sort the PROJECTED wares so the ordering keys off the same `price` the screen
+                # shows (sub-1gp items that round to "—" land with the priceless tail, honestly).
+                wares = [w for r in cat_mod.find("", limit=cat_mod.count())
+                         if (w := _merchant_ware(r)).get("name")]
+                wares.sort(key=_merchant_ware_sort_key)
+                catalog = wares[:lim]
         except Exception:
             catalog = []  # the merchant roster still rides along; the screen shows wares only when present
     return {
@@ -4290,21 +4331,96 @@ def _spell_attack_bonus(ch: dict) -> int | None:
     return prof + _ability_mod(abilities.get(ability))
 
 
+_ORDINAL = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th", 5: "5th",
+            6: "6th", 7: "7th", 8: "8th", 9: "9th"}
+
+
+def _caster_tier_and_note(ch: dict) -> tuple[str | None, str | None]:
+    """Classify the PC's spell-slot progression and, for a SLOWER-than-full caster, phrase the
+    next LOCKED slot level + the class level it unlocks at — context so a reader does NOT misread
+    an SRD-correct half-caster slot count as "missing slots" (the L10-Paladin false alarm).
+
+    Returns ``(casterTier, slotProgressionNote)`` where casterTier is the engine's own caster_type
+    of the PC's FIRST caster class ("full" / "half" / "third" / "pact"), and slotProgressionNote is
+    a short muted line like "Half-caster — 4th-level slots unlock at L13." or None when there is
+    nothing honest to say (full-casters, a half-caster already at its top slot, non-casters, or when
+    the engine srd_tables module can't be imported). The unlock LEVEL is DERIVED from the engine's
+    own SRD slot table (srd_tables.multiclass_slots), never a hardcoded fabrication — we scan the
+    PC's own class forward until its highest slot level rises, so the note tracks the real table.
+
+    Read-only: reads engine-bundled SRD tables and the snapshot's classes; writes nothing."""
+    srd = _engine_module("srd_tables")
+    if srd is None:
+        return (None, None)
+    classes = ch.get("classes") if isinstance(ch.get("classes"), list) else []
+    if not classes:
+        cname = _text(ch.get("class") or ch.get("klass"))
+        lvl = _num(ch.get("level"))
+        if cname:
+            classes = [{"name": cname, "level": int(lvl) if lvl is not None else 1}]
+    # First caster class (the ability/DC the rest of the summary keys off).
+    tier: str | None = None
+    cname = ""
+    clevel = 1
+    for cl in classes:
+        if not isinstance(cl, dict):
+            continue
+        nm = _text(cl.get("name") or cl.get("class_name"))
+        try:
+            ct = srd.caster_type(nm)
+        except Exception:
+            continue
+        if ct in ("full", "half", "third", "pact"):
+            tier = ct
+            cname = nm
+            lvl = _num(cl.get("level"))
+            clevel = int(lvl) if lvl is not None else 1
+            break
+    if tier is None:
+        return (None, None)
+    # Only slower-than-full single-class casters get a "next slot unlocks at LX" note — a full
+    # caster's slots already track level, and a multiclass blend has no single class column.
+    if tier not in ("half", "third") or len(classes) != 1:
+        return (tier, None)
+    try:
+        cur = srd.multiclass_slots([(cname, clevel)])
+        cur_hi = max(cur) if cur else 0
+        for nxt in range(clevel + 1, 21):
+            slots = srd.multiclass_slots([(cname, nxt)])
+            hi = max(slots) if slots else 0
+            if hi > cur_hi:
+                nxt_slot = _ORDINAL.get(cur_hi + 1, f"{cur_hi + 1}th")
+                label = "Half-caster" if tier == "half" else "Third-caster"
+                return (tier, f"{label} — {nxt_slot}-level slots unlock at L{nxt}.")
+    except Exception:
+        return (tier, None)
+    # Already at the class's top slot level — nothing further to unlock.
+    return (tier, None)
+
+
 def _character_spellcasting(ch: dict) -> dict | None:
     """Character-level spellcasting summary for the TOP of the Spells tab — the once-at-the-top
     Spell Save DC + Spell Attack Bonus a caster needs to plan (the way D&D Beyond shows them),
     derived from the PC's spellcasting ability + proficiency. Returns None for a non-caster
     (no SRD caster class) so the screen omits the block entirely — an honest Fighter shows
-    nothing, never a fabricated DC 0. Reuses the same #410 formula helpers (no new math)."""
+    nothing, never a fabricated DC 0. Reuses the same #410 formula helpers (no new math).
+
+    Also emits ``casterTier`` (full/half/third/pact) and, for a slower-than-full caster, a short
+    ``slotProgressionNote`` naming the next LOCKED slot level — context so a reader does not misread
+    an SRD-correct half-caster slot count as missing slots. Both are None/absent when there is
+    nothing honest to say (the guard lives in _caster_tier_and_note)."""
     ability = _casting_ability(ch)
     if ability is None:
         return None
+    tier, note = _caster_tier_and_note(ch)
     return {
         "ability": ability,
         # short SRD code (int/wis/cha) for a compact "INT" badge in the UI
         "abilityShort": ability[:3],
         "spellSaveDc": _spell_save_dc(ch),
         "spellAttackBonus": _spell_attack_bonus(ch),
+        "casterTier": tier,
+        "slotProgressionNote": note,
     }
 
 
@@ -4598,6 +4714,40 @@ def _catalog_stat_block(name: str) -> dict:
         "properties": _catalog_property_chips(meta),
         "description": _text(meta.get("description")),
     }
+
+
+def feat_catalog_response(query: str = "") -> dict:
+    """GET /feat-catalog read model — the browsable SRD feat list the level-up planner's feat pane
+    reads so a player picks a REAL feat (with its full effect text + prerequisite) instead of a
+    blind free-text box (the planner's one remaining gap). Mirrors the /item-catalog reader: it
+    bridges to the engine-owned PURE ``featcatalog`` module (the same data the engine ``feats`` tool
+    returns), filters by name/prerequisite/effect text when ``query`` is given, and projects each
+    feat into ``{name, desc, prerequisite, type}``. READ-ONLY: it never writes state and exposes no
+    mutate lane (the chosen feat name still rides the existing /move level_up relay). Returns an
+    empty ``feats`` list (with an ``error``) when the engine module can't be imported — never a
+    fabricated feat."""
+    cat = _engine_module("featcatalog")
+    if cat is None or not hasattr(cat, "find"):
+        detail = _ENGINE_IMPORT_ERROR or "engine feat catalog is unavailable"
+        return {"query": _text(query), "count": 0, "feats": [], "error": f"engine import failed: {detail}"}
+    try:
+        rows = cat.find(_text(query))
+    except Exception as exc:
+        return {"query": _text(query), "count": 0, "feats": [], "error": str(exc)}
+    feats: list[dict] = []
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        name = _text(r.get("name"))
+        if not name:
+            continue
+        feats.append({
+            "name": name,
+            "desc": _text(r.get("desc")),
+            "prerequisite": _text(r.get("prerequisite")),
+            "type": _text(r.get("type")),
+        })
+    return {"query": _text(query), "count": len(feats), "feats": feats, "state_authority": "engine"}
 
 
 def _weapon_range_display(rng: "int | None", rng_long: "int | None") -> str:
@@ -8007,6 +8157,14 @@ class _Handler(BaseHTTPRequestHandler):
                     flat.append(key)
             flat = flat[:64]  # bound the batch so a query can't sweep the whole catalog
             self._json({"items": {n: _catalog_stat_block(n) for n in flat}})
+        elif route == "/feat-catalog":
+            # Read-only SRD feat list for the level-up planner's feat pane (mirrors /item-catalog).
+            # `?q=` filters by name / prerequisite / effect text; empty lists all 17 SRD feats. Pure
+            # reader: resolves against the bundled SRD feat catalog, mutates nothing, touches no
+            # campaign state. The CHOSEN feat name still rides the existing /move level_up relay.
+            qs = parse_qs(parsed.query)
+            query = (qs.get("q") or qs.get("query") or [""])[0]
+            self._json(feat_catalog_response(query))
         elif route == "/bestiary-surface":
             # Read-only player-safe bestiary/codex projection. No campaign or combat
             # mutation route is exposed here; the engine returns only public preview fields.
