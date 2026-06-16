@@ -33,6 +33,11 @@ jobs:
         # Phase-2 (AUTONOMY-6): proves the agent's pre-PR fix self-check computes the median + GREEN/
         # below-bar verdict + exit codes correctly, with the live runner stubbed (no model key).
         run: bash qa/test_dry_run_gate_fix.sh
+      - name: run_duo retry robustness test (transient-vs-real failure classification; pure bash)
+        # Proves turn_retry now retries a TRANSIENT 500/overload/429/timeout cluster up to 4x with
+        # backoff (the gs-ember-18b overnight-run killer) but FAILS FAST on a 401/403 auth error,
+        # with the claude turn fully stubbed (no model key).
+        run: bash qa/test_run_duo_retry_robustness.sh
 
   viewer-tests:
     # The viewer is where most recent regressions landed, but its suite was not in
@@ -103,7 +108,9 @@ jobs:
             ../../qa/test_behavioral_gate_corpus.py \
             ../../qa/test_deterministic_rri_gate.py \
             ../../qa/test_orchestrate_split_rri.py \
-            ../../qa/test_visual_regression_check.py
+            ../../qa/test_visual_regression_check.py \
+            ../../qa/test_structural_coverage.py \
+            ../../qa/test_story_readout_approval.py
 
   server-contracts:
     # Phase-1 (DETERMINISTIC-2): deterministic cross-service MCP contract tests

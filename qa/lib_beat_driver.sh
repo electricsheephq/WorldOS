@@ -418,6 +418,10 @@ clawdnd_dm_result_is_error() {
 clawdnd_dm_final_text() {
   local out="$1" state_dir="$2" rc="${3:-0}"
   printf '%s\n' "$out" > "$state_dir/.dm_last_result" 2>/dev/null || true
+  # Persist the attempt's exit code too (the turn helpers run inside $(...) subshells, so the
+  # caller's transient-vs-real retry classifier can't see a local rc) — paired with .dm_last_result
+  # so clawdnd_dm_failure_is_transient gets the SAME (out, rc) this attempt produced.
+  printf '%s\n' "$rc" > "$state_dir/.dm_last_rc" 2>/dev/null || true
   if clawdnd_dm_result_is_error "$out"; then
     clawdnd_report_attempt_failure "$out" "$rc"
     return 0
@@ -865,6 +869,66 @@ clawdnd_report_attempt_failure() {
     401|403) echo "[dm-attempt] -> HTTP $status is an AUTH failure and is NOT retryable: check 'claude' login / ANTHROPIC_API_KEY (apiKeySource was likely \"none\"). The retry will also fail until auth is restored." >&2 ;;
   esac
   return 0
+}
+
+# TRANSIENT-vs-REAL FAILURE CLASSIFICATION (the overnight-run killer fix). A long playtest
+# (gs-ember-18b) died at beat 4 when a DM turn hit a SERVER-SIDE HTTP 500 AND the single retry
+# also 500'd — one transient cluster aborted a 2-3h run. turn_retry retried only ONCE on empty
+# output and could not tell a SERVER blip (worth several backed-off retries) from a DETERMINISTIC
+# failure (an auth 401/403, a bad request — retrying is pointless and just burns time + budget).
+# This shared classifier is the front door both harnesses' retry loops consult.
+#
+# clawdnd_dm_failure_is_transient OUT RC — is THIS failed DM attempt a TRANSIENT/server-side blip
+# that a backed-off retry could recover from? Reads the SAME per-attempt stream-json ($out) +
+# exit code the report/extract helpers use; never touches engine state.
+#   return 0 (TRANSIENT — retry): rc=124 timeout; HTTP 408/409/425/429/500/502/503/504/520-529;
+#            or error text naming overload / rate-limit / internal-server / unavailable / gateway /
+#            connection-reset / timeout. These are server-side or load-shed and clear on retry.
+#   return 1 (REAL / fail-fast):  HTTP 400/401/403/404/422 (auth/permission/bad-request — the
+#            #357 + clawdnd_report_attempt_failure re-auth path owns 401/403); error text naming
+#            authenticate / permission / invalid-request / budget; OR no recognizable transient
+#            signal at all (a deterministic bad turn — do NOT retry 4× and mask it).
+# Auth ALWAYS wins over a co-occurring 5xx token (a 401 body must never be read as transient).
+clawdnd_dm_failure_is_transient() {
+  local out="$1" rc="${2:-0}" status body
+  # An rc=124 timeout writes no result event — it is a server/network slowness signal: TRANSIENT.
+  [ "$rc" = "124" ] && return 0
+  status="$(grep -oE '"(api_error_status|status)":[[:space:]]*[0-9]{3}' "$out" 2>/dev/null | grep -oE '[0-9]{3}' | head -n1)"
+  # FAIL-FAST classes first — a deterministic status is NEVER overridden by a transient text token.
+  case "$status" in
+    400|401|403|404|405|422) return 1 ;;
+  esac
+  case "$status" in
+    408|409|425|429|500|502|503|504|520|521|522|523|524|525|526|527|529) return 0 ;;
+  esac
+  # No decisive status — fall back to the error text. Auth/permission/bad-request markers are REAL
+  # and checked FIRST so an "authentication_error" body can never be mistaken for transient.
+  body="$(jq -rs 'map(select(.type=="result"))[-1].result // ""' "$out" 2>/dev/null)"
+  [ -n "$body" ] || body="$(grep -oE '"result":[[:space:]]*"[^"]*"' "$out" 2>/dev/null | head -n1)"
+  printf '%s' "$body" | grep -qiE 'authenticat|unauthor|permission|forbidden|invalid[_ ]?(request|api[_ ]?key)|x-api-key|credit balance|budget|max.budget' && return 1
+  printf '%s' "$body" | grep -qiE 'overloaded|rate[_ ]?limit|too many requests|internal server|service unavailable|bad gateway|gateway time|server error|temporarily|connection (reset|error|refused)|econnreset|etimedout|timed? ?out|503|529|500 ' && return 0
+  # Nothing recognizably transient -> treat as REAL (fail fast; do not mask a deterministic failure).
+  return 1
+}
+
+# clawdnd_dm_retry_backoff ATTEMPT — sleep before retry #ATTEMPT (1-indexed: the wait BEFORE the
+# 2nd, 3rd, 4th try) on a TRANSIENT failure, giving a server-side 500/overload cluster time to
+# clear instead of hammering it. Schedule: 3s, 8s, 20s (capped). Bounded + finite by design — the
+# caller also caps the attempt count, so a transient cluster can never loop forever. Override the
+# whole sleep via CLAWDND_RETRY_SLEEP_CMD (a test seam — a bash test substitutes a no-op that just
+# records the requested seconds, so the suite doesn't actually wait ~30s).
+clawdnd_dm_retry_backoff() {
+  local attempt="${1:-1}" secs
+  case "$attempt" in
+    1) secs=3 ;;
+    2) secs=8 ;;
+    *) secs=20 ;;
+  esac
+  if [ -n "${CLAWDND_RETRY_SLEEP_CMD:-}" ]; then
+    "$CLAWDND_RETRY_SLEEP_CMD" "$secs"
+  else
+    sleep "$secs"
+  fi
 }
 
 # COLD-OPEN RETRY: RESUME the minted campaign instead of re-seeding (#719). The DEFAULT cold-open
