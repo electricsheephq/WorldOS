@@ -1,0 +1,41 @@
+{
+  "party": [
+    "pc1",
+    "c1",
+    "c2"
+  ],
+  "leveling_mode": "xp",
+  "day": 2,
+  "time_of_day": "evening",
+  "current_location_id": "loc_camp",
+  "characters": {
+    "pc1": {
+      "name": "Dal",
+      "kind": "player",
+      "xp": 300,
+      "location_id": "loc_camp"
+    },
+    "c1": {
+      "name": "Shadowheart",
+      "kind": "companion",
+      "location_id": "loc_camp",
+      "xp": 300
+    },
+    "c2": {
+      "name": "shadowheart ",
+      "kind": "companion",
+      "location_id": "loc_camp",
+      "xp": 300
+    }
+  },
+  "locations": {
+    "loc_start": {
+      "name": "Tavern",
+      "visited": true
+    },
+    "loc_camp": {
+      "name": "Camp",
+      "visited": true
+    }
+  }
+}

@@ -1,0 +1,128 @@
+{
+  "schema": "worldos.verdict-requirements.v1",
+  "description": "Per-verdict REQUIRED evidence declaration consumed by qa/evidence_audit.py. For each verdict type it lists the evidence items the release_readiness.py rollup needs, and — for each way an item can be missing — whether the gap is RECOVERABLE (re-run / more personas / more budget / supply an artifact) or a REAL failing signal (the build missed a threshold with full evidence present). evidence_audit.py is a PURE READER: it never re-runs anything, it only reads an RRI.json (or a run dir's RRI.json) and reports REQUIRED vs PRESENT, classifying each gap. The classification rule is: a failed gate that has a matching entry in RRI.json.evidence_gaps is an EVIDENCE_GAP (the gap kind is matched against the patterns below to pick the recovery action); a failed gate with NO evidence_gaps entry means the evidence was present and the measured value missed the gate threshold -> REAL_BLOCKER.",
+  "abort_is_not_a_blocker": {
+    "note": "When RRI.json.aborted is true (quota/session-limit 429, abort_reason=quota_session_limit), the rollup is an INFRA abort, NOT a product verdict. Every gap is reclassified as ABORTED_RECOVERABLE and the suggested action is to re-run after the quota resets (abort_detail carries the reset hint). The RRI number is not a measurement.",
+    "recoverable": true,
+    "verdict": "ABORTED_RECOVERABLE",
+    "action": "Infra abort (account session limit / HTTP 429), not a product blocker. Re-run the sweep after the quota resets; see RRI.json.abort_detail for the reset hint."
+  },
+  "gap_recovery_rules": [
+    {
+      "id": "missing_personas",
+      "match_any": ["canonical five-persona release set", "missing release persona", "missing expected persona"],
+      "match_missing_equals": ["missing_personas", "missing_release_personas"],
+      "recoverable": true,
+      "verdict": "EVIDENCE_GAP",
+      "action": "Run the missing persona(s) at the same build SHA (more personas needed), then re-roll RRI. This is not a product failure — the gate has no evidence yet."
+    },
+    {
+      "id": "image_denominator",
+      "match_any": ["network.ndjson image denominator", "image 404 denominator", "image denominator"],
+      "recoverable": true,
+      "verdict": "EVIDENCE_GAP",
+      "action": "No success denominator for /image traffic. Re-capture the run with image network logging (network.ndjson with /image 200 rows), OR supply a same-SHA Mac --handoff-json proving health.image_probe_ok + the private art root. UNEXPECTED 404s recorded with no denominator are a harder gap: confirm whether they are designed no-art (X-Image-Outcome) before treating them as recoverable."
+    },
+    {
+      "id": "artifact_path_not_supplied",
+      "match_any": ["--story", "--mech", "--behavioral", "--behavioral-path", "--ui-audit", "--ui-audit-log", "--palette-live", "--palette-source", "--build-sha", "--handoff-json", "--support-preflight-json", "lens path not supplied", "result not supplied", "evidence path not supplied", "evidence source not supplied", "log path not supplied"],
+      "recoverable": true,
+      "verdict": "EVIDENCE_GAP",
+      "action": "A required evidence input was not passed to the rollup (or its scorer was never run). Supply the artifact path / run the scorer, then re-roll RRI. The gate has no signal yet — this is not a failing measurement."
+    },
+    {
+      "id": "artifact_path_missing_on_disk",
+      "match_any": ["lens JSON missing overall", "evidence path missing", "evidence source missing", "log path missing", "JSON missing overall"],
+      "recoverable": true,
+      "verdict": "EVIDENCE_GAP",
+      "action": "The supplied evidence path is missing on disk or malformed. Regenerate the artifact (re-run its scorer/harness) and re-roll RRI."
+    },
+    {
+      "id": "same_build_sha",
+      "match_any": ["per-run build_sha", "same-build persona evidence", "single build_sha", "build_sha mismatch", "build_sha values"],
+      "recoverable": true,
+      "verdict": "EVIDENCE_GAP",
+      "action": "Release personas were measured on mixed/missing build SHAs. Re-run the canonical five at ONE build SHA (same-SHA evidence required), then re-roll RRI with --build-sha."
+    },
+    {
+      "id": "native_gate_evidence",
+      "match_any": ["part_a PASS", "part_a.result or --handoff-json", "native built-app transition evidence"],
+      "recoverable": true,
+      "verdict": "EVIDENCE_GAP",
+      "action": "No native built-app proof. Re-run ui_playtest_app.sh to record part_a=PASS, OR supply a valid same-SHA Mac --handoff-json. Note: a part_a result that is present-but-not-PASS is a REAL native failure, not a gap — see native_gate_real below."
+    },
+    {
+      "id": "handoff_evidence",
+      "match_any": ["handoff", "evidence_manifest", "manifest", "app-status", "image_probe_ok", "evidence_files", "private art", "private_root_present"],
+      "match_gate": ["native_gate", "support_preflight"],
+      "recoverable": true,
+      "verdict": "EVIDENCE_GAP",
+      "action": "The Mac --handoff-json (or its evidence manifests/snapshots) is missing, stale-SHA, or incomplete. Re-run qa/app_handoff_gate.py at the candidate SHA and pass a complete --handoff-json. For a split VM/persona sweep also supply a same-SHA --support-preflight-json."
+    },
+    {
+      "id": "support_preflight",
+      "match_any": ["--support-preflight-json", "support preflight", "support_preflight"],
+      "match_gate": ["support_preflight"],
+      "recoverable": true,
+      "verdict": "EVIDENCE_GAP",
+      "action": "A split sweep that rides --handoff-json for Mac proof needs a same-SHA support-VM preflight artifact. Re-run qa/support_vm_preflight.py at the candidate SHA and pass --support-preflight-json."
+    },
+    {
+      "id": "harness_failure",
+      "match_any": ["score.json", "score.json invalid", "score.json required fields"],
+      "recoverable": true,
+      "verdict": "EVIDENCE_GAP",
+      "action": "A persona run produced no usable score.json (harness/backend failure, not a product verdict). Re-run that persona; inspect run.json failure_bucket/failure_detail for whether the harness or backend aborted."
+    }
+  ],
+  "verdicts": {
+    "rri_release": {
+      "summary": "Full WorldOS Release Readiness Index: 11 gates must all hold on ONE build SHA across the canonical five personas plus Mac handoff. This is the only release verdict.",
+      "rri_status_pass": "READY",
+      "required_personas": ["newbie", "veteran", "adversarial", "narrative", "optimizer"],
+      "required_gates": [
+        "native_gate",
+        "arc_completed",
+        "cross_persona_sat",
+        "no_give_up",
+        "zero_critical",
+        "story_craft",
+        "mechanical",
+        "behavioral",
+        "ui_audit",
+        "image_render",
+        "palette_live"
+      ],
+      "real_blocker_gates": {
+        "_doc": "When one of these gates is in RRI.json.failed_gates and has NO matching evidence_gaps entry, the evidence was present and the measured value missed the threshold -> REAL_BLOCKER. The action is to FIX THE PRODUCT, not re-run. Thresholds mirror release_readiness.py.",
+        "cross_persona_sat": {"threshold": "avg persona_satisfaction >= 7.0/10 and every persona score_pass", "action": "Product/UX blocker: cross-persona satisfaction below 7 (or a persona score_pass failed) with full evidence. Fix the experience, not the sweep."},
+        "no_give_up": {"threshold": "no persona gave_up", "action": "Product blocker: a persona abandoned the game. Fix the give-up cause."},
+        "zero_critical": {"threshold": "0 critical bug reports and 0 console errors", "action": "Product blocker: a critical bug / console error was observed. Fix the defect."},
+        "story_craft": {"threshold": "story overall >= 4.3", "action": "Quality blocker: story-craft lens below 4.3 with the lens present. Improve narrative quality."},
+        "mechanical": {"threshold": "mech overall >= 4.5", "action": "Quality blocker: mechanical/5e lens below 4.5 with the lens present. Fix rules adherence."},
+        "behavioral": {"threshold": "behavioral == GREEN", "action": "Product blocker: behavioral assertions are RED with evidence present. Fix the asserted behavior."},
+        "ui_audit": {"threshold": "ui_audit == PASS", "action": "Product blocker: UI audit FAILed with the log present. Fix the audited UI defects."},
+        "arc_completed": {"threshold": "completed_intro_flow on >=1 persona / part_b PASS", "action": "Product blocker: the arc/part_b did not complete with evidence present. Fix the blocking flow."},
+        "native_gate": {"threshold": "part_a == PASS (or valid same-SHA handoff)", "action": "Product blocker: a recorded part_a result is not PASS (the built app failed a native transition with evidence). Fix the native shell."},
+        "palette_live": {"threshold": "palette_live == true", "action": "Product blocker: the live palette/session-surface read was false with the source present. Fix the live surface."},
+        "image_render": {"threshold": "render rate >= 95% over a real denominator", "action": "Product blocker: image render rate below 95% over a real denominator (recorded unexpected 404s). Fix image resolution — this is NOT recoverable by more runs."}
+      }
+    },
+    "duo_quality": {
+      "summary": "Story + mechanical quality lenses from a duo (player+DM) run. Used to answer whether a quality dip is a real craft regression or just an un-scored / un-supplied lens.",
+      "required_gates": ["story_craft", "mechanical"],
+      "real_blocker_gates": {
+        "story_craft": {"threshold": "story overall >= 4.3", "action": "Real craft regression: story lens below 4.3 with the lens present. Improve narrative quality (story is the north star)."},
+        "mechanical": {"threshold": "mech overall >= 4.5", "action": "Real rules regression: mechanical lens below 4.5 with the lens present. Fix 5e adherence."}
+      }
+    },
+    "combat_sprint_median": {
+      "summary": "Fast combat-fidelity bug-finder. The mechanical signal is the median of N sprint runs; a single low run is an evidence gap (need more runs), a low median with N>=3 runs present is a real adherence blocker.",
+      "required_gates": ["mechanical"],
+      "min_runs_for_signal": 3,
+      "real_blocker_gates": {
+        "mechanical": {"threshold": "median mech over >= 3 runs >= 4.5", "action": "Real combat-adherence blocker: median mechanical over >=3 runs below 4.5. Fix the action-economy / rules defect. (A low single run with <3 runs is an EVIDENCE_GAP — run more sprints.)"}
+      }
+    }
+  }
+}
