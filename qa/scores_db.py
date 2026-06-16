@@ -113,6 +113,13 @@ COLUMNS: tuple[str, ...] = (
     "s_per_beat",         # mean GENERATION seconds per CONTINUING (routine) beat (cold open excluded)
     "coldopen_s",         # cold-open (first/world-build beat) GENERATION seconds
     "turns_per_beat",     # mean claude -p `num_turns` per CONTINUING beat (ToolSearch / round-trip proxy)
+    # --- structural coverage (the owner's "full circle"; pairs with the #961 structural_completeness
+    # gate). Tracks whether a run actually EXERCISED whole systems (not just scored prose+dice): how
+    # far the arc got + a one-line human roll-up. Derived from the engine snapshot + DM tool counts by
+    # qa/story_readout.structural_coverage_from_state. NULL on rows recorded before this stamping
+    # (additive, migration-free). ---
+    "acts_reached",       # max distinct authored act reached (1/2/3), NULL if not measured
+    "structural_coverage",# one-line human roll-up, e.g. "acts 1/3 · recruit ✓ · camp · · quest-resolved ·"
     "pass",               # 1 (pass) / 0 (fail) / NULL (no pass/fail verdict)
     "source_path",        # where the evidence lives (file/dir, LEXAR or repo-relative)
     "notes",              # free-text context: what was under test, caveats, confidence flags
@@ -130,7 +137,7 @@ _REAL_COLS = {
     # F13-4 latency ledger (all wall-clock seconds / turn counts → REAL)
     "s_per_beat", "coldopen_s", "turns_per_beat",
 }
-_INT_COLS = {"critical_bugs", "pass", "is_canonical_baseline"}
+_INT_COLS = {"critical_bugs", "pass", "is_canonical_baseline", "acts_reached"}
 
 
 def _coltype(col: str) -> str:
@@ -383,6 +390,8 @@ _MD_COLS = [
     ("s_per_beat", "s/beat"),
     ("coldopen_s", "cold-open s"),
     ("turns_per_beat", "turns/beat"),
+    ("acts_reached", "Acts"),
+    ("structural_coverage", "Structural coverage"),
     ("pass", "Pass"),
     ("source_path", "Source"),
     ("notes", "Notes"),
