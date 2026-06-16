@@ -1,0 +1,2 @@
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t_roll", "name": "mcp__engine__roll", "input": {"sides": 20}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t_roll", "content": [{"type": "text", "text": "{\"total\": 14}"}], "is_error": false}]}}

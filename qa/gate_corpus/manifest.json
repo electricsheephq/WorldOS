@@ -1,0 +1,174 @@
+{
+  "_doc": "Behavioral-gate regression corpus. Each case is a minimal known-RED bundle that must trip its expected_red_check. Regenerate with qa/gate_corpus/builder.py.",
+  "cases": [
+    {
+      "case_dir": "dm_produced_output",
+      "expected_red_check": "dm_produced_output",
+      "artifacts": [
+        "run.jsonl",
+        "state.json"
+      ],
+      "real_red_provenance": "",
+      "multi_fatal": true,
+      "multi_fatal_reason": "a truly dead/blank run necessarily also trips dice_used + player_in_party"
+    },
+    {
+      "case_dir": "both_sides_acted",
+      "expected_red_check": "both_sides_acted",
+      "artifacts": [
+        "run.jsonl",
+        "state.json",
+        "chat.jsonl"
+      ],
+      "real_red_provenance": ""
+    },
+    {
+      "case_dir": "player_turns_structured",
+      "expected_red_check": "player_turns_structured",
+      "artifacts": [
+        "run.jsonl",
+        "state.json",
+        "chat.jsonl",
+        "moves.jsonl"
+      ],
+      "real_red_provenance": ""
+    },
+    {
+      "case_dir": "dm_voices_characters",
+      "expected_red_check": "dm_voices_characters",
+      "artifacts": [
+        "run.jsonl",
+        "state.json",
+        "chat.jsonl"
+      ],
+      "real_red_provenance": "ow-rv1-134258 (0/9 DM turns with quoted dialogue, companion present)"
+    },
+    {
+      "case_dir": "player_used_facade",
+      "expected_red_check": "player_used_facade",
+      "artifacts": [
+        "run.jsonl",
+        "state.json",
+        "chat.jsonl",
+        "moves.jsonl"
+      ],
+      "real_red_provenance": ""
+    },
+    {
+      "case_dir": "dm_resolved_player_moves",
+      "expected_red_check": "dm_resolved_player_moves",
+      "artifacts": [
+        "run.jsonl",
+        "state.json",
+        "chat.jsonl",
+        "moves.jsonl"
+      ],
+      "real_red_provenance": ""
+    },
+    {
+      "case_dir": "combat_resolved",
+      "expected_red_check": "combat_resolved",
+      "artifacts": [
+        "run.jsonl",
+        "state.json"
+      ],
+      "real_red_provenance": ""
+    },
+    {
+      "case_dir": "dice_used",
+      "expected_red_check": "dice_used",
+      "artifacts": [
+        "run.jsonl",
+        "state.json"
+      ],
+      "real_red_provenance": "openworlds-c2-234542 (roll=attack=save=social=skill_check=0)"
+    },
+    {
+      "case_dir": "combat_not_left_active",
+      "expected_red_check": "combat_not_left_active",
+      "artifacts": [
+        "run.jsonl",
+        "state.json",
+        "chat.jsonl",
+        "moves.jsonl"
+      ],
+      "real_red_provenance": ""
+    },
+    {
+      "case_dir": "party_traveled",
+      "expected_red_check": "party_traveled",
+      "artifacts": [
+        "run.jsonl",
+        "state.json",
+        "chat.jsonl"
+      ],
+      "real_red_provenance": "cue-thaw, ow-dal-003502 (visited 1/N after >=6 beats)"
+    },
+    {
+      "case_dir": "world_advanced_time",
+      "expected_red_check": "world_advanced_time",
+      "artifacts": [
+        "run.jsonl",
+        "state.json",
+        "chat.jsonl"
+      ],
+      "real_red_provenance": ""
+    },
+    {
+      "case_dir": "player_in_party",
+      "expected_red_check": "player_in_party",
+      "artifacts": [
+        "run.jsonl",
+        "state.json"
+      ],
+      "real_red_provenance": "ow-duoF-112226, ow-rv1-134258, ow-swA-123842 (party=1 players=0)"
+    },
+    {
+      "case_dir": "no_duplicate_companion",
+      "expected_red_check": "no_duplicate_companion",
+      "artifacts": [
+        "run.jsonl",
+        "state.json"
+      ],
+      "real_red_provenance": ""
+    },
+    {
+      "case_dir": "no_rejected_tool_calls",
+      "expected_red_check": "no_rejected_tool_calls",
+      "artifacts": [
+        "run.jsonl",
+        "state.json"
+      ],
+      "real_red_provenance": "ow-swB-123842 (extra_forbidden update_character), baseline-rc1 (persist_beat)"
+    },
+    {
+      "case_dir": "end_combat_no_living_hostiles",
+      "expected_red_check": "end_combat_no_living_hostiles",
+      "artifacts": [
+        "run.jsonl",
+        "state.json"
+      ],
+      "real_red_provenance": ""
+    },
+    {
+      "case_dir": "xp_not_orphaned",
+      "expected_red_check": "xp_not_orphaned",
+      "artifacts": [
+        "run.jsonl",
+        "state.json"
+      ],
+      "real_red_provenance": ""
+    },
+    {
+      "case_dir": "xp_awarded_on_progression",
+      "expected_red_check": "xp_awarded_on_progression",
+      "artifacts": [
+        "run.jsonl",
+        "state.json",
+        "chat.jsonl",
+        "moves.jsonl"
+      ],
+      "real_red_provenance": ""
+    }
+  ]
+}

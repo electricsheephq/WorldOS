@@ -1,0 +1,3 @@
+{"type": "assistant", "message": {"content": [{"type": "text", "text": "The tavern door swings open."}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t_log", "name": "mcp__engine__log_event", "input": {"kind": "narration", "text": "A hush falls."}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t_log", "content": [{"type": "text", "text": "{\"ok\": true}"}], "is_error": false}]}}

@@ -1,0 +1,160 @@
+name: LLM Quality Gate (advisory)
+
+# The deterministic CI (.github/workflows/ci.yml) proves the engine/rules/voice code is
+# correct, but it CANNOT see story-craft or mechanical *quality* — those live only in what a
+# live model narrates. This workflow surfaces an LLM-quality regression to a PR EARLY: it runs
+# ONE duo (qa/run_duo.sh: a real `claude -p` DM + a constrained player) and 3-lens-scores it
+# against RELAXED thresholds (story>=4.0, mech>=4.2 — looser than the nightly north-star bar so a
+# PR isn't nagged over scorer noise).
+#
+# ADVISORY, NEVER BLOCKING. continue-on-error keeps the job from ever going red / blocking merge;
+# a below-bar result ANNOTATES (::warning) and the runlog + scorecards upload as artifacts for
+# triage. This is a signal, not a gate.
+#
+# The duo path needs a live model key (ANTHROPIC_API_KEY repo secret):
+#   * secret PRESENT  -> run the live duo + relaxed-threshold scorecard.
+#   * secret ABSENT   -> SKIP the live duo and run a deterministic self-check (validate
+#                        qa/detect_regression.py, qa/score.sh guard path, qa/run_duo.sh parse)
+#                        so the job is ALWAYS present and green-able even before the secret exists.
+#
+# Gateway-free / null-backend: never touches Eva, the gateway, or any global mcp config. The
+# uv / checkout + secret-gating pattern mirrors .github/workflows/nightly-quality-loop.yml.
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      world:
+        description: "World id for the duo run."
+        required: false
+        default: "baldurs-gate"
+      beats:
+        description: "Beats for the duo run."
+        required: false
+        default: "6"
+      budget:
+        description: "Per-call budget (USD) passed to qa/run_duo.sh."
+        required: false
+        default: "1.20"
+
+# One advisory run per PR ref; supersede an in-flight run when the PR is updated.
+concurrency:
+  group: llm-quality-gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality-gate:
+    runs-on: ubuntu-latest
+    # ADVISORY: this job never blocks merge. continue-on-error keeps a below-bar duo (or even a
+    # harness hiccup) from going red — the warning annotation + uploaded scorecards carry the signal.
+    continue-on-error: true
+    env:
+      # RELAXED PR thresholds (looser than the nightly north-star CLAWDND_STORY_MIN/MECH_MIN of
+      # 4.3/4.5) so a single PR duo isn't flagged over scorer noise. Below these -> soft warning.
+      QG_STORY_MIN: "4.0"
+      QG_MECH_MIN: "4.2"
+      QG_WORLD: ${{ github.event.inputs.world || 'baldurs-gate' }}
+      QG_BEATS: ${{ github.event.inputs.beats || '6' }}
+      QG_BUDGET: ${{ github.event.inputs.budget || '1.20' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Detect live model key
+        id: keycheck
+        # The duo path needs a live model key. Gate the live duo on the repository secret
+        # ANTHROPIC_API_KEY; if it's absent we fall back to the deterministic self-check so the
+        # workflow is always present and green-able even before the secret is added.
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+            echo "has_key=true" >> "$GITHUB_OUTPUT"
+            echo "::notice title=LLM Quality Gate::ANTHROPIC_API_KEY present — running the live advisory duo (relaxed bar: story>=${QG_STORY_MIN} mech>=${QG_MECH_MIN})."
+          else
+            echo "has_key=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=LLM Quality Gate::ANTHROPIC_API_KEY absent — skipping live duo, running deterministic self-check only."
+          fi
+
+      - name: Deterministic self-check (no model key needed)
+        # ALWAYS runs. Proves the quality harness is structurally intact (the duo runner parses,
+        # the regression detector imports + answers --help, the scorer's guard path emits a
+        # hashed artifact) WITHOUT touching a model, the gateway, Eva, or any global mcp config.
+        # All artifacts land under a temp dir — NEVER the committed qa/scores.db or ledger.
+        run: |
+          set -euo pipefail
+          echo "[selfcheck] bash -n on the duo runner + scorer"
+          bash -n qa/run_duo.sh
+          bash -n qa/score.sh
+          test -x qa/run_duo.sh
+          test -x qa/score.sh
+
+          echo "[selfcheck] regression detector imports + answers --help (pure reader, no DB write)"
+          uv run --directory servers/engine python "${GITHUB_WORKSPACE}/qa/detect_regression.py" --help >/dev/null
+
+          echo "[selfcheck] scorer guard path emits a hashed artifact into a TEMP dir (gateway-free)"
+          tmp="$(mktemp -d)"
+          printf '# transcript\n' > "$tmp/t.md"
+          printf '{}\n'           > "$tmp/state.json"
+          CLAWDND_SCORE_GUARD_ONLY=1 bash qa/score.sh \
+            "$tmp/t.md" "$tmp/state.json" qa/rubric.md qa/score_schema.json "$tmp/out.json" 0.01
+          test -s "$tmp/out.json"
+          rm -rf "$tmp"
+
+          echo "[selfcheck] jq present (scorecard tool)"
+          command -v jq >/dev/null || { echo "::error title=LLM Quality Gate::jq missing on runner"; exit 1; }
+          echo "[selfcheck] OK"
+
+      - name: Run one advisory duo + relaxed 3-lens score (live)
+        if: steps.keycheck.outputs.has_key == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        # run_duo.sh plays a constrained-player duo, dual-lens-scores it (story-craft +
+        # mechanical), runs the behavioral gate, and writes qa/transcripts/<RUN>.tolkien.json
+        # (story), <RUN>.score.json (mech) + echoes `behavioral=GREEN|RED`. We never let it fail
+        # the step (`|| true`) — this cadence ALERTS, it does not block the PR.
+        run: |
+          set -uo pipefail
+          mkdir -p qa/transcripts
+          RUN="qg-${GITHUB_RUN_ID}"
+          echo "RUN=$RUN" >> "$GITHUB_ENV"
+          echo "[quality-gate] qa/run_duo.sh $RUN $QG_WORLD qa/play_player_duo.txt $QG_BEATS $QG_BUDGET"
+          qa/run_duo.sh "$RUN" "$QG_WORLD" qa/play_player_duo.txt "$QG_BEATS" "$QG_BUDGET" \
+            2>&1 | tee "qa/transcripts/${RUN}.runlog" || true
+
+          T="qa/transcripts"
+          story="$(jq -r '.overall // 0' "$T/${RUN}.tolkien.json" 2>/dev/null || echo 0)"
+          mech="$(jq -r '.overall // 0'  "$T/${RUN}.score.json"   2>/dev/null || echo 0)"
+          gate="$(grep -o 'behavioral=[A-Z]*' "$T/${RUN}.runlog" 2>/dev/null | tail -1 | cut -d= -f2)"; gate="${gate:-RED}"
+          echo "[quality-gate] story=$story mech=$mech behavioral=$gate (bar: story>=$QG_STORY_MIN mech>=$QG_MECH_MIN)"
+
+          bad=""
+          awk -v s="$story" -v m="$QG_STORY_MIN" 'BEGIN{exit !(s+0 < m+0)}' && bad="$bad story=$story<$QG_STORY_MIN"
+          awk -v s="$mech"  -v m="$QG_MECH_MIN"  'BEGIN{exit !(s+0 < m+0)}' && bad="$bad mech=$mech<$QG_MECH_MIN"
+          [ "$gate" != "GREEN" ] && bad="$bad behavioral=$gate"
+          if [ -n "$bad" ]; then
+            echo "::warning title=LLM Quality Gate::Advisory duo BELOW the relaxed bar —$bad. See the uploaded scorecards (advisory; not blocking)."
+          else
+            echo "::notice title=LLM Quality Gate::Advisory duo cleared the relaxed bar (story=$story mech=$mech behavioral=$gate)."
+          fi
+
+      - name: Upload runlog + scorecards
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: llm-quality-gate-${{ github.run_id }}
+          # The duo writes <RUN>.runlog / .tolkien.json (story) / .score.json (mech) /
+          # .angrydm.json (3rd lens) into qa/transcripts/. Upload whatever exists — the
+          # self-check-only (no-key) path leaves none, so if-no-files-found: ignore keeps it green.
+          path: |
+            qa/transcripts/qg-*.runlog
+            qa/transcripts/qg-*.tolkien.json
+            qa/transcripts/qg-*.score.json
+            qa/transcripts/qg-*.angrydm.json
+          if-no-files-found: ignore
+          retention-days: 14

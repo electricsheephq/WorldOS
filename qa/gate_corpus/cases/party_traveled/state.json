@@ -1,0 +1,23 @@
+{
+  "party": [
+    "pc1"
+  ],
+  "leveling_mode": "xp",
+  "day": 2,
+  "time_of_day": "evening",
+  "current_location_id": "loc_start",
+  "characters": {
+    "pc1": {
+      "name": "Dal",
+      "kind": "player",
+      "xp": 300,
+      "location_id": "loc_start"
+    }
+  },
+  "locations": {
+    "loc_start": {
+      "name": "Tavern",
+      "visited": true
+    }
+  }
+}
