@@ -113,6 +113,27 @@ run_persona(){  # $1=persona $2=port  -> writes results/score-$1.json
     > "$RES/vm2-$persona.log" 2>&1
   local rc=$?
   lsof -ti:$port 2>/dev/null | xargs kill -9 2>/dev/null
+  # FIX 1 (#623 false-cap): a NON-ZERO player/harness PROCESS exit (rc!=0) is a harness CRASH,
+  # not a product-quality signal — it must NOT be laundered into a score_pass quality fail.
+  # RETRY ONCE on a clean store before we believe it. A 429 still short-circuits to the honest
+  # quota path (reuse quota_tripped), so a quota abort is never spent on a pointless retry. Only
+  # when the RE-RUN also exits rc!=0 do we keep the result (ui_playtest_app.sh has by then
+  # stamped part_b.harness_error=true, which the RRI rollup reads as INCONCLUSIVE, not a FAIL).
+  local _bl="qa/ui_playtest_runs/vm2-$persona/backend.log"
+  if [ "$rc" -ne 0 ] && ! quota_tripped "$_bl"; then
+    note "  $persona rc=$rc (non-quota harness crash) — retrying ONCE on a clean store"
+    pkill -f "play.sh baldurs-gate vm2-$persona" 2>/dev/null
+    pkill -f "play_party.sh baldurs-gate vm2-$persona" 2>/dev/null
+    if [ -n "$persona" ]; then
+      rm -rf "play-state/vm2-$persona" "play-state/vm2-$persona-b" 2>/dev/null
+    fi
+    WOS_APP_PART=B WOS_APP_SKIP_BUILD=1 WOS_APP_PREFERRED_PORT=$port \
+      timeout 2400 bash qa/ui_playtest_app.sh "vm2-$persona" baldurs-gate "$persona" 40 18.00 \
+      >> "$RES/vm2-$persona.log" 2>&1
+    rc=$?
+    note "  $persona retry rc=$rc"
+    lsof -ti:$port 2>/dev/null | xargs kill -9 2>/dev/null
+  fi
   pkill -f "play.sh baldurs-gate vm2-$persona" 2>/dev/null
   pkill -f "play_party.sh baldurs-gate vm2-$persona" 2>/dev/null
   local sc="qa/ui_playtest_runs/vm2-$persona/score.json"

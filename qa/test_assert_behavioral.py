@@ -661,3 +661,90 @@ def test_structural_completeness_silent_in_combat_sprint(tmp_path):
     rc, out = _run_gate(tmp_path, events, state, env=env)
     assert rc == 0, out
     assert "structural_completeness" not in out
+
+
+# ── FIX 4: party_traveled in-place-progression exception (#623 false-cap) ─────────
+# A multi-beat arc that RESOLVED in a single location (clock advanced + quest completed,
+# beats >= 8) is a SUCCESS — it must PASS party_traveled. A frozen opening (day 1/morning,
+# no resolved quest) must STILL fail (RED). The AND keeps the frozen stall red.
+
+def _single_scene_state(*, day, tod=None, quest_completed, visited_count=1):
+    """A single-location final state (visited_count locations visited). `day`/`tod` drive
+    clock_advanced; `quest_completed` drives arc_resolved. No companion → the structural
+    floor (>=10 beats + companion) stays silent so we isolate party_traveled."""
+    locs = {"loc_a": {"visited": True}}
+    if visited_count >= 2:
+        locs["loc_b"] = {"visited": True}
+    state = {
+        "leveling_mode": "milestone",
+        "day": day,
+        "party": ["pc1"],
+        "locations": locs,
+        "characters": {"pc1": {"name": "Dal", "kind": "player", "location_id": "loc_a"}},
+    }
+    if tod is not None:
+        state["time_of_day"] = tod
+    if quest_completed:
+        state["quests"] = {"q1": {"title": "Tavern Negotiation", "status": "completed",
+                                  "objectives": ["strike the bargain"],
+                                  "completed_objectives": ["strike the bargain"]}}
+    else:
+        state["quests"] = {"q1": {"title": "Tavern Negotiation", "status": "active",
+                                  "objectives": ["strike the bargain"],
+                                  "completed_objectives": []}}
+    return state
+
+
+def test_party_traveled_passes_single_scene_arc_that_progressed_in_place(tmp_path):
+    # visited=1, but day advanced (day 2) AND the quest completed AND beats>=8 → the in-place
+    # progression exception fires → party_traveled PASSES (a resolved one-location drama).
+    events = _dm_text_turns(9)  # session_beats=9 (>= SINGLE_SCENE_MIN_BEATS 8)
+    state = _single_scene_state(day=2, quest_completed=True, visited_count=1)
+    rc, out = _run_gate(tmp_path, events, state)
+    assert "[PASS] party_traveled" in out, out
+    assert "[FAIL] party_traveled" not in out, out
+    assert rc == 0, out  # clock advanced too, so world_advanced_time also passes
+
+
+def test_party_traveled_still_red_on_frozen_run(tmp_path):
+    # visited=1, day==1/morning (clock never moved), no completed quest, beats>=8 → the
+    # exception's AND fails (clock_advanced False, arc_resolved False) → party_traveled RED.
+    events = _dm_text_turns(9)
+    state = _single_scene_state(day=1, tod="morning", quest_completed=False, visited_count=1)
+    rc, out = _run_gate(tmp_path, events, state)
+    assert "[FAIL] party_traveled" in out, out
+    assert rc == 1, out
+
+
+def test_party_traveled_still_red_when_clock_advanced_but_arc_unresolved(tmp_path):
+    # Guard against broadening to clock-only: day advanced but NO completed quest → the AND
+    # still fails (arc_resolved False) → party_traveled stays RED.
+    events = _dm_text_turns(9)
+    state = _single_scene_state(day=3, quest_completed=False, visited_count=1)
+    rc, out = _run_gate(tmp_path, events, state)
+    assert "[FAIL] party_traveled" in out, out
+    assert rc == 1, out
+
+
+def test_party_traveled_red_despite_status_blind_quest_tool_count(tmp_path):
+    # GATE-WEAKENING REGRESSION (adversarial-verified): a FROZEN single scene where the DM
+    # advanced the clock AND called set_quest_status — the OLD status-blind quest_resolved
+    # tool-count would have flipped arc_resolved True and let this DEAD scene PASS via the
+    # in-place exception. arc_resolved now requires a snapshot quest at status=="completed";
+    # the quest stays "active" (quest_completed=False) → arc_resolved False → party_traveled
+    # stays RED even though set_quest_status was called.
+    events = _dm_text_turns(9) + _toolcall("set_quest_status")
+    state = _single_scene_state(day=3, quest_completed=False, visited_count=1)
+    rc, out = _run_gate(tmp_path, events, state)
+    assert "[FAIL] party_traveled" in out, out
+    assert rc == 1, out
+
+
+def test_party_traveled_still_red_when_arc_resolved_but_too_few_beats(tmp_path):
+    # Guard against broadening to beats-only / arc-only: clock advanced + quest completed but
+    # only 7 beats (< SINGLE_SCENE_MIN_BEATS 8) → exception not met → party_traveled RED.
+    events = _dm_text_turns(7)
+    state = _single_scene_state(day=2, quest_completed=True, visited_count=1)
+    rc, out = _run_gate(tmp_path, events, state)
+    assert "[FAIL] party_traveled" in out, out
+    assert rc == 1, out

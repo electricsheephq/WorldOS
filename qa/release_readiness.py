@@ -817,6 +817,13 @@ def main() -> int:
             "run_build_sha": rj.get("build_sha") or "",
             "part_b_result": (rj.get("part_b") or {}).get("persona_loop") or "n/a",
             "part_b_score_pass": bool((rj.get("part_b") or {}).get("score_pass")),
+            # FIX 1 (#623 false-cap): a NON-quota player_rc!=0 CRASH is INCONCLUSIVE evidence
+            # (re-measure), not a product-quality fail. ui_playtest_app.sh stamps this true on
+            # such a crash. We EXCLUDE these personas from score_pass_failed_personas / the
+            # cross_persona_sat quality gate and instead surface them as an evidence gap (RED-cap
+            # as harness_contaminated). The discriminator is the PROCESS exit, never the score —
+            # a played low-score run exits rc=0, harness_error=False, and stays a clean quality RED.
+            "part_b_harness_error": bool((rj.get("part_b") or {}).get("harness_error")),
             "part_a_result": (rj.get("part_a") or {}).get("result") or "n/a",
             "part_a_failure_bucket": (rj.get("part_a") or {}).get("failure_bucket") or "",
             "part_a_failure_detail": (rj.get("part_a") or {}).get("failure_detail") or "",
@@ -835,7 +842,13 @@ def main() -> int:
     avg_sat = sum(sats) / len(sats) if sats else 0.0
     any_gave_up = any(p["gave_up"] for p in persona_scores)
     any_completed = any(p["completed_intro_flow"] for p in persona_scores)
-    score_pass_failed_personas = [str(p["persona"]) for p in persona_scores if not p.get("part_b_score_pass")]
+    # FIX 1 (#623 false-cap): a persona whose player process CRASHED (part_b_harness_error) is
+    # INCONCLUSIVE, not a quality fail — exclude it from the score_pass quality gate and route it
+    # through the evidence_gaps/harness_contaminated machinery below (RED-cap as a re-measure).
+    # A played low-score run has harness_error=False and STILL fails the gate (a clean quality RED).
+    harness_error_personas = [p for p in persona_scores if p.get("part_b_harness_error")]
+    score_pass_failed_personas = [str(p["persona"]) for p in persona_scores
+                                  if not p.get("part_b_score_pass") and not p.get("part_b_harness_error")]
     score_pass_complete = bool(persona_scores) and not score_pass_failed_personas
     total_critical = sum(p["critical"] for p in persona_scores)
     total_console_errors = sum(p["console_errors"] for p in persona_scores)
@@ -947,7 +960,23 @@ def main() -> int:
             "missing": f"{h['run']}/{h.get('missing') or 'score.json'}",
             "detail": f"persona={h.get('persona') or 'unknown'} detail={h.get('detail') or ''} part_a={h.get('part_a') or 'n/a'} part_b={h.get('part_b') or 'n/a'} {buckets}".strip(),
         })
-    failed_part_b = [p for p in persona_scores if p.get("part_b_result") != "PASS"]
+    # FIX 1 (#623 false-cap): a persona whose player process CRASHED (non-quota player_rc!=0) is
+    # INCONCLUSIVE — surface it as a cross_persona_sat EVIDENCE GAP (re-measure), exactly like a
+    # harness_failure, so it RED-caps as harness_contaminated rather than a quality FAIL. It is
+    # already excluded from score_pass_failed_personas (the quality gate) above.
+    for p in harness_error_personas:
+        evidence_gaps.append({
+            "gate": "cross_persona_sat",
+            "missing": f"{p['run']}/run.json part_b.harness_error",
+            "detail": f"persona={p.get('persona') or 'unknown'} part_b player process crashed (non-quota player_rc!=0) "
+                      f"— INCONCLUSIVE, re-measure (not a quality fail) "
+                      f"failure_bucket={p.get('part_b_failure_bucket') or ''} failure_detail={p.get('part_b_failure_detail') or ''}".strip(),
+        })
+    # A crashed (harness_error) persona's part_b is "FAIL", but it is INCONCLUSIVE, not a dropped
+    # product arc — exclude it from the arc_completed product-failure attribution (it's already a
+    # cross_persona_sat evidence gap above). Genuine non-PASS played runs still flow through here.
+    failed_part_b = [p for p in persona_scores
+                     if p.get("part_b_result") != "PASS" and not p.get("part_b_harness_error")]
     for p in failed_part_b:
         bucket = p.get("part_b_failure_bucket") or ""
         detail = p.get("part_b_failure_detail") or ""
@@ -1242,6 +1271,9 @@ def main() -> int:
             "arc_completed": any_completed,
             "cross_persona_satisfaction": round(avg_sat, 1),
             "score_pass_failed_personas": score_pass_failed_personas,
+            # FIX 1 (#623 false-cap): personas reclassified as INCONCLUSIVE (player-process crash,
+            # non-quota) — excluded from score_pass_failed_personas, surfaced as evidence gaps.
+            "harness_error_personas": [str(p["persona"]) for p in harness_error_personas],
             "any_gave_up": any_gave_up,
             "total_critical_bugs": total_critical,
             "total_console_errors": total_console_errors,

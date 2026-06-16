@@ -520,9 +520,30 @@ def main() -> int:
             f"(advance_time / travel_to(advance_time=True) / long_rest)")
         locs = state.get("locations", {}) or {}
         visited = sum(1 for l in locs.values() if isinstance(l, dict) and l.get("visited"))
-        chk("party_traveled", visited >= 2,
+        # IN-PLACE PROGRESSION EXCEPTION (#623 false-cap): a multi-beat arc that genuinely
+        # RESOLVED in a single location (e.g. a 9-beat tavern negotiation) is a SUCCESS, not a
+        # frozen stall — but the bare `visited >= 2` rule false-REDs it (RED-capping every lens
+        # ≤ 2.5). Distinguish the two with signals already in scope: a COMPLETE single-scene
+        # drama advanced the clock AND resolved its arc; a FROZEN opening did neither. The AND
+        # keeps a frozen stall RED (day==1/morning ⇒ clock_advanced False, no completed quest ⇒
+        # arc_resolved False — it fails ≥2 conjuncts). Deliberately NOT broadened to clock-only
+        # or beats-only.
+        clock_advanced = day > 1 or (tod not in ("", "morning"))
+        # arc_resolved requires an ACTUAL completed quest in the snapshot — NOT the status-blind
+        # quest_resolved tool-count (coverage_from_tool_counts counts set_quest_status(...,"active"
+        # /"failed") too, which would let a FROZEN DM game this exception with one cheap call:
+        # advance_time + set_quest_status(status="active") on a dead scene. Adversarial-verified.
+        arc_resolved = any(
+            isinstance(q, dict) and q.get("status") == "completed" for q in quest_iter)
+        SINGLE_SCENE_MIN_BEATS = 8  # strictly above MIN_BEATS(6): a real arc, not a smoke test
+        in_place_progression = (visited >= 1 and clock_advanced and arc_resolved
+                                and session_beats >= SINGLE_SCENE_MIN_BEATS)
+        chk("party_traveled", visited >= 2 or in_place_progression,
             f"visited {visited}/{len(locs)} location(s) after {session_beats} beats — the party never "
-            f"left the opening scene (travel_to / add_location make_current=True)")
+            f"left the opening scene (travel_to / add_location make_current=True); "
+            f"in-place-progression exception NOT met "
+            f"(clock_advanced={clock_advanced} arc_resolved={arc_resolved} "
+            f"beats>={SINGLE_SCENE_MIN_BEATS}? {session_beats >= SINGLE_SCENE_MIN_BEATS})")
         # WARN (the metric is softer): did the world gain/engage faces, or just sit in the seed?
         npcs_met = sum(1 for c in chars.values()
                        if isinstance(c, dict) and c.get("kind") == "npc" and c.get("met"))

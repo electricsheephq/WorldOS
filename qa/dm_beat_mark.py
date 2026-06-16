@@ -118,11 +118,18 @@ def _is_new_prose(row):
     return True
 
 
-def cmd_mark(state_dir, mark_file):
+def cmd_mark(state_dir, mark_file, first=None):
     snap = _snapshot_path(state_dir)
     log_path = _session_log_path(snap) if snap else ""
     lines = _line_count(log_path) if log_path and os.path.isfile(log_path) else 0
     payload = {"session": os.path.abspath(log_path) if log_path else "", "lines": lines}
+    # FIX 2(a) (#623): record the beat's first/cold-open signal so cmd_check can tell a TRUE
+    # cold open (first=1: no prior session legitimately existed) from a CONTINUING beat whose
+    # mark came back EMPTY (first=0: a mark-write bug — the baseline was lost, so any "later"
+    # prose the #357 fallback recovers is the PREVIOUS beat's, recycled). Only "0"/"1" are
+    # recorded; anything else (or absent) leaves the legacy fail-open behavior in cmd_check.
+    if first in ("0", "1"):
+        payload["first"] = first
     with open(mark_file, "w", encoding="utf-8") as f:
         json.dump(payload, f)
     return 0
@@ -134,6 +141,7 @@ def cmd_check(state_dir, mark_file):
             mark = json.load(f)
         marked_session = str(mark.get("session") or "")
         marked_lines = int(mark.get("lines") or 0)
+        marked_first = str(mark.get("first") or "")
     except Exception:
         return 0  # unreadable mark -> fail OPEN (assume genuine; legacy behavior)
     snap = _snapshot_path(state_dir)
@@ -141,6 +149,15 @@ def cmd_check(state_dir, mark_file):
         return 1  # nothing recoverable exists at all
     cur = _session_log_path(snap)
     if not cur or not os.path.isfile(cur):
+        return 1
+    # FIX 2(a) (#623): an EMPTY marked_session on a CONTINUING beat (first=0) is a mark-write
+    # bug — no baseline was captured, so scanning from line 0 would match the PREVIOUS beat's
+    # prose as "new" and stamp a recycled (dead) beat fallback_recovered:true. Force-fail (1 =
+    # NOT genuine) here. We require BOTH an empty mark AND the recorded first=0 signal so a TRUE
+    # first-prose-then-die cold open (first=1, where no session legitimately existed at mark
+    # time) is NOT wrongly failed — it keeps the legacy scan-from-0 path below. A mark WITHOUT a
+    # recorded first signal (legacy/external callers) also keeps the legacy fail-open path.
+    if not marked_session and cur and marked_first == "0":
         return 1
     # A DIFFERENT session file than the marked one (the beat started a new session, or no
     # session existed at mark time) means every row in it is new — scan from line 0.
@@ -166,10 +183,14 @@ def cmd_check(state_dir, mark_file):
 
 def main(argv):
     if len(argv) < 4 or argv[1] not in ("mark", "check"):
-        print("usage: dm_beat_mark.py mark|check <state_dir> <mark_file>", file=sys.stderr)
+        print("usage: dm_beat_mark.py mark|check <state_dir> <mark_file> [first]", file=sys.stderr)
         return 0  # never fail a beat over a usage error
     try:
-        return (cmd_mark if argv[1] == "mark" else cmd_check)(argv[2], argv[3])
+        if argv[1] == "mark":
+            # FIX 2(a) (#623): optional 5th arg = the beat's first/cold-open signal ("1"|"0").
+            first = argv[4] if len(argv) > 4 else None
+            return cmd_mark(argv[2], argv[3], first)
+        return cmd_check(argv[2], argv[3])
     except Exception:
         return 0  # any internal failure fails OPEN
 
