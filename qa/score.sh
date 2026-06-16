@@ -11,16 +11,61 @@
 set -uo pipefail
 
 MD="$1"; STATE="$2"; RUBRIC="$3"; SCHEMA="$4"; OUT="$5"; BUDGET="${6:-1.50}"
-# The scorer model is held CONSTANT at sonnet by default (the gate baseline; never flip it casually).
-# Overridable via CLAWDND_SCORER_MODEL ONLY for a deliberate scorer-calibration probe / re-baseline
-# (e.g. "does a stronger scorer read Opus craft higher than sonnet does?") — see docs/MODEL-TIERING.
-SCORER_MODEL="${CLAWDND_SCORER_MODEL:-sonnet}"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# --- (a) Scorer-model pinning (DETERMINISM GUARD; additive — unset env == today) --------
+# The scorer model is PINNED at a single canonical model (sonnet — the documented gate
+# baseline; never flip it casually). Setting CLAWDND_SCORER_MODEL swaps the scorer, which
+# silently skews every score on the gate. So an override is only honored with an EXPLICIT
+# opt-in (CLAWDND_ALLOW_SCORER_OVERRIDE=1) for a deliberate scorer-calibration probe /
+# re-baseline (e.g. "does a stronger scorer read Opus craft higher than sonnet does?") —
+# see docs/MODEL-TIERING. CLAWDND_SCORER_MODEL set WITHOUT the opt-in is an ERROR, so a
+# stray env var can't quietly move the baseline.
+CANONICAL_SCORER_MODEL="sonnet"
+if [ -n "${CLAWDND_SCORER_MODEL:-}" ] && [ "${CLAWDND_ALLOW_SCORER_OVERRIDE:-}" != "1" ]; then
+  echo "[score] REFUSING scorer-model override: CLAWDND_SCORER_MODEL='${CLAWDND_SCORER_MODEL}' is set but CLAWDND_ALLOW_SCORER_OVERRIDE=1 is NOT." >&2
+  echo "[score]   The scorer is pinned to '${CANONICAL_SCORER_MODEL}' (the gate baseline); a silent model swap skews every score." >&2
+  echo "[score]   To deliberately re-baseline with a different scorer, also export CLAWDND_ALLOW_SCORER_OVERRIDE=1." >&2
+  exit 3
+fi
+SCORER_MODEL="${CLAWDND_SCORER_MODEL:-$CANONICAL_SCORER_MODEL}"
+
+# --- (b) prompt_construction_hash: rubric+schema+template fingerprint (NOT the transcript)
+# Computed by the shared helper so score.sh and the test agree by construction. Used to
+# detect rubric/prompt-template drift across versions. Additive: it's stamped into the OUT
+# JSON after the scorecard is produced; the scorecard content is otherwise unchanged.
+PROMPT_HASH="$(python3 "$HERE/_score_prompt_hash.py" "$RUBRIC" "$SCHEMA")" || {
+  echo "[score] failed to compute prompt_construction_hash from $RUBRIC + $SCHEMA" >&2
+  exit 4
+}
 
 INPUT="$(printf '%s\n\n# ===== OUTPUT FORMAT =====\nRespond with ONLY a single JSON object conforming to this schema — no prose, no markdown, no code fences:\n%s\n\n# ===== DISTILLED TRANSCRIPT =====\n%s\n\n# ===== FINAL ENGINE STATE (ground truth) =====\n%s\n' \
   "$(cat "$RUBRIC")" "$(cat "$SCHEMA")" "$(cat "$MD")" "$(cat "$STATE")")"
 
 ERR="${OUT%.json}.err"
 RAW="${OUT%.json}.raw.json"   # raw claude --output-format json envelope (kept for the guard)
+
+# stamp_prompt_hash <json-file>: merge the prompt_construction_hash into a score JSON in place.
+stamp_prompt_hash() {
+  local f="$1" tmp
+  tmp="$(mktemp "${f}.XXXXXX")"
+  if jq --arg h "$PROMPT_HASH" '. + {prompt_construction_hash: $h}' "$f" > "$tmp" 2>/dev/null; then
+    mv "$tmp" "$f"
+  else
+    rm -f "$tmp"
+  fi
+}
+
+# --- test-only dry-run hook (additive; unset == today) ---------------------------------
+# CLAWDND_SCORE_GUARD_ONLY=1 runs all guards + emits the hashed artifact, then exits 0
+# BEFORE the live `claude -p` loop. This keeps the determinism test gateway-free / offline
+# (it never touches Eva, the gateway, or any LLM). In normal use this is unset and the
+# script behaves exactly as before.
+if [ "${CLAWDND_SCORE_GUARD_ONLY:-}" = "1" ]; then
+  printf '{}\n' > "$OUT"
+  stamp_prompt_hash "$OUT"
+  exit 0
+fi
 
 attempt=0
 while [ "$attempt" -lt 3 ]; do
@@ -46,6 +91,7 @@ while [ "$attempt" -lt 3 ]; do
 
   # A valid scorecard parses as JSON AND carries a .scores object.
   if jq -e '.scores' "$OUT" >/dev/null 2>&1; then
+    stamp_prompt_hash "$OUT"   # (b) record rubric/prompt-template fingerprint for drift detection
     rm -f "$RAW"
     exit 0
   fi

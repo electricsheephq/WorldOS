@@ -1,0 +1,23 @@
+# Coverage configuration for WorldOS / ClawDnD (QA Lab Phase-1, additive).
+#
+# Report-only: this file controls what coverage.py measures and which paths it
+# omits. It deliberately does NOT set fail_under -- coverage stays advisory so
+# CI cannot flake on a threshold. The ci-integrator wires the actual
+# `--cov=. --cov-report=term-missing` report flags onto the pytest steps.
+[run]
+branch = True
+omit =
+    */tests/*
+    */__pycache__/*
+    */.venv/*
+    */.venv-viewer/*
+
+[report]
+omit =
+    */tests/*
+    */__pycache__/*
+    */.venv/*
+    */.venv-viewer/*
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:

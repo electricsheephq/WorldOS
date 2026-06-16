@@ -12,17 +12,23 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
       - name: Engine tests
-        run: uv run --directory servers/engine --group dev pytest -q
+        # Phase-1 (DETERMINISTIC-3): coverage is report-only (no --cov-fail-under yet) so it
+        # surfaces untested paths without flaking CI. pytest-cov is in the dev group.
+        run: uv run --directory servers/engine --group dev pytest -q --cov=. --cov-report=term-missing
       - name: Rules tests
         env:
           CLAWDND_RULES_OFFLINE: "1"
-        run: uv run --directory servers/rules --group dev pytest -q
+        run: uv run --directory servers/rules --group dev pytest -q --cov=. --cov-report=term-missing
       - name: Voice tests (torch-free; null backend + static metadata)
-        run: uv run --directory servers/voice --group dev pytest -q
+        run: uv run --directory servers/voice --group dev pytest -q --cov=. --cov-report=term-missing
       - name: Single-flight launch-guard test (scripts/launch_common.sh lock)
         # Pure bash + POSIX mkdir/kill -0/rm — no uv/claude/viewer. Proves a second concurrent
         # play_party.sh cold-open is cleanly rejected and the lock self-heals (release / dead holder).
         run: bash qa/test_play_party_single_flight.sh
+      - name: Velocity-gates test (fast_gate green-cache + release_gate RAM preflight; pure bash)
+        # Phase-1 (VELOCITY-1/4): proves the opt-in fast_gate cache short-circuits a same-SHA
+        # rerun and the release_gate RAM preflight refuses a sweep under a forced-low-RAM stub.
+        run: bash qa/test_velocity_gates.sh
 
   viewer-tests:
     # The viewer is where most recent regressions landed, but its suite was not in
@@ -82,7 +88,28 @@ jobs:
             ../../qa/test_scores_db.py \
             ../../qa/test_release_gate_static.py \
             ../../qa/test_ui_playtest_score_image_outcomes.py \
-            ../../qa/test_claude_auth_isolation.py
+            ../../qa/test_claude_auth_isolation.py \
+            ../../qa/test_snapshot_world_state.py \
+            ../../qa/test_score_determinism.py \
+            ../../qa/test_lens_variance.py
+
+  server-contracts:
+    # Phase-1 (DETERMINISTIC-2): deterministic cross-service MCP contract tests
+    # (engine<->rules<->voice; null/torch-free voice backend, offline rules). The rules
+    # boundary runs through the rules venv (rapidfuzz), so sync BOTH servers before running.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Sync rules venv (rapidfuzz/httpx for the offline rules worker)
+        env:
+          CLAWDND_RULES_OFFLINE: "1"
+        run: uv sync --directory servers/rules
+      - name: Cross-service MCP contract tests
+        env:
+          CLAWDND_RULES_OFFLINE: "1"
+        run: uv run --directory servers/engine --group dev python -m pytest -q -p no:xdist ../../servers/integration_tests
 
   license-check:
     runs-on: ubuntu-latest

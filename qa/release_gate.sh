@@ -47,6 +47,63 @@ fail()  { echo "❌ GATE-ABORT: $*" >&2; exit 1; }
 ok()    { echo "✓ $*"; }
 warn()  { echo "⚠ $*" >&2; }
 
+# ── RAM-aware preflight ─────────────────────────────────────────────────────────
+# Codifies the single most expensive bottleneck this project has hit: the 16GB Mac OOMs
+# mid-sweep (PROVEN — cratered to ~147M free, later personas never minted a backend, and the run
+# shipped a junk PARTIAL RRI). A 5-persona heavy claude -p sweep needs real headroom; launching
+# one on a memory-starved host fabricates/dies. Before committing to the sweep we measure
+# available RAM and, if it is below a safe floor, REFUSE (strict) or WARN (default), pointing at
+# the two safe lanes (GitHub CI / the support VM). Additive + default-soft: today's behavior is a
+# warning only — set CLAWDND_RAM_PREFLIGHT_STRICT=1 to make it a hard abort.
+#   CLAWDND_RAM_PREFLIGHT_FLOOR_MB   — safe floor (default 4096 MB; a 5-persona sweep wants headroom).
+#   CLAWDND_RAM_PREFLIGHT_STRICT=1   — turn the WARN into a hard GATE-ABORT.
+#   CLAWDND_RAM_PREFLIGHT_AVAIL_MB   — test seam: force the "available MB" reading (skip vm_stat).
+ram_available_mb() {
+  # Test override first so a low-RAM refusal can be exercised without starving the host.
+  if [ -n "${CLAWDND_RAM_PREFLIGHT_AVAIL_MB:-}" ]; then
+    printf '%s' "${CLAWDND_RAM_PREFLIGHT_AVAIL_MB}"
+    return 0
+  fi
+  # macOS: free + inactive + speculative pages are reclaimable-for-launch memory. Use the page size
+  # vm_stat itself reports; the BWK awk on macOS has no gawk match()-capture, so parse line by line.
+  if command -v vm_stat >/dev/null 2>&1; then
+    local ps; ps="$(sysctl -n hw.pagesize 2>/dev/null || echo 16384)"
+    vm_stat 2>/dev/null | awk -v ps="$ps" '
+      /Pages free/        {gsub(/\./,"",$3); free=$3}
+      /Pages inactive/    {gsub(/\./,"",$3); inact=$3}
+      /Pages speculative/ {gsub(/\./,"",$3); spec=$3}
+      END { if (ps=="") ps=16384; printf "%d", (free+inact+spec)*ps/1048576 }'
+    return 0
+  fi
+  # Linux fallback (support VM): MemAvailable in /proc/meminfo (kB).
+  if [ -r /proc/meminfo ]; then
+    awk '/^MemAvailable:/ {printf "%d", $2/1024}' /proc/meminfo
+    return 0
+  fi
+  printf ''   # unknown — caller treats empty as "unverified"
+}
+ram_preflight() {
+  local floor avail strict
+  floor="${CLAWDND_RAM_PREFLIGHT_FLOOR_MB:-4096}"
+  strict="${CLAWDND_RAM_PREFLIGHT_STRICT:-0}"
+  avail="$(ram_available_mb)"
+  if [ -z "$avail" ]; then
+    warn "could not read available RAM (no vm_stat / /proc/meminfo) — sweep headroom UNVERIFIED"
+    return 0
+  fi
+  if [ "$avail" -lt "$floor" ]; then
+    local msg="available RAM ${avail}MB is BELOW the safe floor ${floor}MB for a 5-persona sweep — \
+the host will likely OOM mid-sweep and ship a junk PARTIAL RRI. Run the heavy sweep on GitHub CI \
+or the support VM (root@support, ~/worldos-qa) instead, or free RAM first."
+    if [ "$strict" = "1" ]; then
+      fail "RAM preflight (strict): $msg"
+    fi
+    warn "RAM preflight: $msg (warning-only; set CLAWDND_RAM_PREFLIGHT_STRICT=1 to make this a hard refusal)"
+  else
+    ok "RAM headroom OK (available ${avail}MB ≥ floor ${floor}MB)"
+  fi
+}
+
 port_pids() { lsof -nP -iTCP:"$1" -sTCP:LISTEN -t 2>/dev/null || true; }
 pid_cwd() { lsof -a -p "$1" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1; }
 pid_cmd() { ps -p "$1" -o command= 2>/dev/null || true; }
@@ -87,6 +144,9 @@ free_port_range() {
 # (Every one of these maps to a real failure that cost real time this project.)
 preflight() {
   echo "── PREFLIGHT (integrity) ─────────────────────────────────────────"
+
+  # 0. RAM HEADROOM — refuse/warn before a 5-persona sweep can OOM the host (the proven bottleneck).
+  ram_preflight
 
   # 1. CANONICAL repo, not the deprecated LEXAR copy or a random worktree.
   case "$ROOT" in

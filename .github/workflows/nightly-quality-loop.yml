@@ -1,0 +1,136 @@
+name: Nightly Quality Loop
+
+# The STANDING fitness cadence the harness lacked: qa/loop.sh (the recursive-improvement
+# loop gate) is never scheduled today, so a post-release regression in story-craft /
+# mechanical quality has nothing watching for it. This workflow runs the loop on a nightly
+# cron (plus on-demand) against the north-star thresholds (CLAWDND_STORY_MIN / CLAWDND_MECH_MIN).
+#
+# The duo path (qa/run_duo.sh) cold-opens a real `claude -p` DM+player, so it needs a live
+# model key. That key is provided as the repository secret ANTHROPIC_API_KEY:
+#   * secret PRESENT  -> run the live loop (K small) and post the scorecard.
+#   * secret ABSENT   -> SKIP the live loop and run a deterministic dry-run / self-check
+#                        instead, so this workflow is always present and green-able even
+#                        before the secret is added.
+#
+# Soft-fail by design: this cadence ALERTS, it never blocks merges. continue-on-error keeps
+# the job from going red on a below-bar loop result; the runlog + scorecard are uploaded as
+# an artifact for triage. The uv / checkout setup mirrors .github/workflows/ci.yml.
+
+on:
+  schedule:
+    # 09:17 UTC nightly (~02:17 America/Los_Angeles) — off the top of the hour to avoid
+    # the GitHub-cron thundering herd. cron is UTC-only on GitHub Actions.
+    - cron: "17 9 * * *"
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: "Number of duo runs (K) for the loop (small by default)."
+        required: false
+        default: "2"
+      beats:
+        description: "Beats per duo run."
+        required: false
+        default: "8"
+      budget:
+        description: "Per-call budget (USD) passed to qa/run_duo.sh."
+        required: false
+        default: "1.20"
+
+# Don't pile up nightly runs on top of each other; cancel an in-flight nightly when a newer
+# trigger lands. Manual dispatches still queue behind the cron group cleanly.
+concurrency:
+  group: nightly-quality-loop
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  quality-loop:
+    runs-on: ubuntu-latest
+    # Soft-fail: a below-bar loop (loop.sh exit 1) ALERTS via the uploaded scorecard but does
+    # NOT fail the job or block other merges. The deterministic self-check step below is the
+    # only hard gate, so a structurally broken harness is still caught.
+    continue-on-error: true
+    env:
+      # North-star thresholds the loop gates against (defaults mirror qa/loop.sh).
+      CLAWDND_STORY_MIN: "4.3"
+      CLAWDND_MECH_MIN: "4.5"
+      # K small (2 duos) for a nightly cadence; overridable on manual dispatch.
+      LOOP_RUNS: ${{ github.event.inputs.runs || '2' }}
+      LOOP_BEATS: ${{ github.event.inputs.beats || '8' }}
+      LOOP_BUDGET: ${{ github.event.inputs.budget || '1.20' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Detect live model key
+        id: keycheck
+        # The duo path needs a live model key. Gate the live loop on the repository secret
+        # ANTHROPIC_API_KEY; if it's absent we fall back to the deterministic self-check so the
+        # workflow is always present and green-able even before the secret is added.
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+            echo "has_key=true" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Nightly Quality Loop::ANTHROPIC_API_KEY present — running the live loop (K=${LOOP_RUNS})."
+          else
+            echo "has_key=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Nightly Quality Loop::ANTHROPIC_API_KEY absent — skipping live loop, running deterministic self-check only."
+          fi
+
+      - name: Deterministic dry-run / self-check (no model key needed)
+        # ALWAYS runs. This is the hard gate of the workflow: it proves the loop harness is
+        # structurally intact (loop.sh parses, the per-run worker + thresholds resolve) without
+        # touching a model, the gateway, Eva, or any global mcp config. Gateway-free / null-backend.
+        run: |
+          set -euo pipefail
+          echo "[selfcheck] bash -n on the loop gate + its per-run worker"
+          bash -n qa/loop.sh
+          bash -n qa/run_duo.sh
+          echo "[selfcheck] loop gate + worker are present and executable"
+          test -x qa/loop.sh
+          test -x qa/run_duo.sh
+          echo "[selfcheck] north-star thresholds resolve: story>=${CLAWDND_STORY_MIN} mech>=${CLAWDND_MECH_MIN}"
+          # jq is the loop's scorecard tool; ubuntu-latest ships it, but assert it explicitly so a
+          # runner-image change can't silently neuter the loop's scoring.
+          command -v jq >/dev/null || { echo "::error title=Nightly Quality Loop::jq missing on runner"; exit 1; }
+          echo "[selfcheck] OK"
+
+      - name: Run the loop (live) — K small against the north-star bar
+        if: steps.keycheck.outputs.has_key == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        # The loop wraps K duo runs (each isolated, dual-lens scored + behavioral gate) and exits
+        # 1 if any run is below the bar. We DON'T let that fail the step (`|| true`) because this
+        # cadence is an alert, not a merge gate — the scorecard artifact carries the verdict.
+        run: |
+          set -uo pipefail
+          mkdir -p qa/transcripts
+          echo "[nightly] qa/loop.sh ${LOOP_RUNS} (beats=${LOOP_BEATS} budget=${LOOP_BUDGET})"
+          qa/loop.sh "${LOOP_RUNS}" baldurs-gate qa/play_player_duo.txt "${LOOP_BEATS}" "${LOOP_BUDGET}" \
+            2>&1 | tee qa/transcripts/nightly-loop.runlog || true
+          # Surface a below-bar result as a workflow annotation (soft alert, non-blocking).
+          if grep -qE '\[BELOW\]' qa/transcripts/nightly-loop.runlog 2>/dev/null; then
+            echo "::warning title=Nightly Quality Loop::One or more duo runs are BELOW the north-star bar — see the uploaded scorecard."
+          fi
+
+      - name: Upload loop runlog + scorecard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-quality-loop-${{ github.run_id }}
+          # The loop writes per-run *.runlog / *.tolkien.json / *.score.json / *.gate.txt into
+          # qa/transcripts/. Upload whatever exists (the self-check-only path leaves just the
+          # runlog from this step, if any) — if-no-files-found: ignore keeps the no-key path green.
+          path: |
+            qa/transcripts/nightly-loop.runlog
+            qa/transcripts/loop-*.runlog
+            qa/transcripts/loop-*.tolkien.json
+            qa/transcripts/loop-*.score.json
+            qa/transcripts/loop-*.gate.txt
+          if-no-files-found: ignore
+          retention-days: 14

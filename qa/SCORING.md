@@ -63,3 +63,49 @@ Default DM/player model = `sonnet` (`CLAWDND_DM_MODEL` / `CLAWDND_ACTOR_MODEL` e
 `[duo] done. story-craft=X mechanical=Y angry-dm=Z behavioral=GREEN|RED`
 - **RED** ⇒ X/Y/Z are RED-capped; read `$RUN.gate.txt` for the failed checks.
 - **GREEN** ⇒ real scores; compare against the North-Star targets and append via `qa/scores_db.py` `add_run(...)` (→ `scores_ledger.md`; `SCORECARD.md` is legacy).
+
+## 6. Variance & noise floor
+The three LLM lenses are **stochastic graders**: re-scoring the *same comparable run* yields
+a slightly different `overall` each time. You cannot read a score without knowing this
+jitter — a single 4.2 and a single 4.4 may be the same run scored twice. This section
+records the measured per-lens noise and the rule for when a single run is trustworthy.
+
+**How it's measured.** A "comparable cluster" = ≥2 **GREEN** runs that share the same
+`build_sha` + `surface` + `methodology` + `scorer_model` (+ ruler, when stamped). The
+spread (population stdev / range) of `overall` *within* a cluster is the scoring noise,
+because everything else is held fixed. We read this from the on-disk ledger
+(`qa/scores.db`: `story_overall` / `mech_overall` / `angrydm_overall`) and from any
+committed per-lens scorecards in `qa/transcripts/` (`*.tolkien.json` / `*.score.json` /
+`*.angrydm.json`). RED-capped scores are excluded (they're rubric-capped, not real).
+
+**Measured per-lens noise floor** (max within-cluster spread, GREEN, comparable; from the
+committed `qa/scores.db`, 2026-06-16 snapshot, 75 rows):
+
+| Lens | Measured max stdev | Measured max range | Documented floor (stdev / range) |
+|---|---|---|---|
+| **Story-craft** (Tolkien) | 0.15 | 0.30 | **0.20 / 0.40** |
+| **Mechanical** | 0.25 | 0.50 | **0.30 / 0.60** |
+| **Angry-DM** (5e fidelity) | 0.35 | 0.70 | **0.40 / 0.80** |
+
+The **documented floor** rounds the measured spread UP for a little headroom and is the
+contract enforced by `qa/test_lens_variance.py` (the test goes RED if a future re-score
+blows past it, forcing a conscious re-derivation of *both* this table and the test
+constant — they must stay mirrored). **Angry-DM is the noisiest lens** (adversarial,
+exhaustive 5e checklist), so it leans on median-of-N hardest. As the corpus grows, re-run
+the test's `__main__` diagnostic (`python3 qa/test_lens_variance.py`) and tighten the floor
+toward the new measured max.
+
+**The rule — single-duo for velocity, median-of-N for gating:**
+- **Velocity / inner loop:** a **single duo** is fine. Treat any score as `X ± floor`; a
+  delta smaller than the lens floor (e.g. story moved 4.2 → 4.3, < 0.40 range) is **noise,
+  not signal** — don't chase it.
+- **Release / auto-merge gating:** use the **median of N ≥ 3** comparable re-scores. The
+  median of 3 collapses worst-case single-run jitter to well inside the noise band (a
+  single run can sit a full half-floor from truth; the median of a straddling triple does
+  not), so a North-Star call (story ≥ 4.3, mech ≥ 4.5) is made against the median, not a
+  lucky/unlucky single draw. When a release decision hinges on a margin **smaller than the
+  lens floor**, N=3 is the minimum; widen to N=5 for the angry-dm lens specifically.
+- A score reported without N is implicitly N=1 — acceptable for velocity, **never** for a
+  gate. `qa/test_lens_variance.py` is the deterministic, CI-safe guard that keeps this
+  floor honest (it reads only on-disk artifacts; live re-derivation is an explicit,
+  opt-in, non-CI step gated behind `CLAWDND_LIVE_SCORER=1`).

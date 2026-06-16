@@ -155,6 +155,146 @@ def test_schema_migration_adds_missing_column(tmp_path):
     assert "story_overall" in cols and "notes" in cols and "rri" in cols
 
 
+# --- P1: persona + is_canonical_baseline (additive comparability columns) ---
+
+def test_persona_and_canonical_columns_are_registered(tmp_path):
+    # Both new columns exist in COLUMNS; persona is TEXT, is_canonical_baseline is INTEGER.
+    assert "persona" in scores_db.COLUMNS, "persona missing from COLUMNS"
+    assert "is_canonical_baseline" in scores_db.COLUMNS, "is_canonical_baseline missing from COLUMNS"
+    assert scores_db._coltype("persona") == "TEXT"
+    assert scores_db._coltype("is_canonical_baseline") == "INTEGER"
+
+
+def test_persona_roundtrips_and_canonical_defaults_zero(tmp_path):
+    # add_run accepts persona; is_canonical_baseline defaults to 0 (NOT canonical) when omitted.
+    db = tmp_path / "t.db"
+    scores_db.add_run(
+        "duo-p", db_path=db, surface="engine-duo", persona="qa/play_player_duo.txt",
+        story_overall=4.2,
+    )
+    row = scores_db.fetch_rows(db)[0]
+    assert row["persona"] == "qa/play_player_duo.txt"
+    assert row["is_canonical_baseline"] == 0  # default — today's behavior is "not canonical"
+
+
+def test_persona_defaults_none_when_omitted(tmp_path):
+    # A row recorded without a persona reads back NULL (additive, old-snapshot behavior).
+    db = tmp_path / "t.db"
+    scores_db.add_run("duo-np", db_path=db, surface="engine-duo", story_overall=4.0)
+    row = scores_db.fetch_rows(db)[0]
+    assert row["persona"] is None
+
+
+def test_new_columns_read_default_on_pre_p1_rows(tmp_path):
+    # ADDITIVITY: a row written to a db created BEFORE these columns existed reads back
+    # the defaults (persona NULL, is_canonical_baseline 0) once the column is ALTER-added.
+    db = tmp_path / "old.db"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        'CREATE TABLE runs ("run_id" TEXT PRIMARY KEY, "surface" TEXT, "story_overall" REAL)'
+    )
+    conn.execute('INSERT INTO runs ("run_id", "surface", "story_overall") VALUES (?,?,?)',
+                 ("legacy", "engine-duo", 4.5))
+    conn.commit()
+    conn.close()
+    rows = scores_db.fetch_rows(db)  # connect() ALTERs in the new columns
+    legacy = {r["run_id"]: r for r in rows}["legacy"]
+    assert legacy["persona"] is None
+    # ALTER TABLE ADD COLUMN gives existing rows NULL (not 0) — the read path / add_run is what
+    # supplies the 0 default for NEW rows; old rows are simply "unstamped" (NULL), which is fine.
+    assert legacy["is_canonical_baseline"] is None
+
+
+def test_new_columns_alter_into_an_old_db(tmp_path):
+    # A db created before P1 (no persona/is_canonical_baseline) gets them ALTER-added on connect.
+    db = tmp_path / "old.db"
+    conn = sqlite3.connect(db)
+    conn.execute('CREATE TABLE runs ("run_id" TEXT PRIMARY KEY, "surface" TEXT)')
+    conn.commit()
+    conn.close()
+    conn = scores_db.connect(db)
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(runs)")}
+    conn.close()
+    assert {"persona", "is_canonical_baseline"} <= cols
+
+
+def test_migration_is_idempotent(tmp_path):
+    # Connecting twice (re-running the ADD COLUMN migration) does not error or duplicate columns.
+    db = tmp_path / "t.db"
+    scores_db.connect(db).close()
+    scores_db.connect(db).close()  # second connect must be a no-op migration
+    conn = scores_db.connect(db)
+    cols = [r["name"] for r in conn.execute("PRAGMA table_info(runs)")]
+    conn.close()
+    # no duplicate columns, and both new ones present exactly once
+    assert cols.count("persona") == 1
+    assert cols.count("is_canonical_baseline") == 1
+
+
+def test_set_and_get_canonical_baseline_roundtrip(tmp_path):
+    db = tmp_path / "t.db"
+    key = dict(surface="engine-duo", dm_model="sonnet",
+               methodology="3-lens duo 8-beat", lens_config_version="lc_aaaaaaaaaaaa")
+    scores_db.add_run("duo-base", db_path=db, story_overall=4.3, **key)
+    # before marking, there is no canonical baseline for this key
+    assert scores_db.get_canonical_baseline(db_path=db, **key) is None
+    scores_db.set_canonical_baseline("duo-base", db_path=db)
+    got = scores_db.get_canonical_baseline(db_path=db, **key)
+    assert got is not None
+    assert got["run_id"] == "duo-base"
+    assert got["is_canonical_baseline"] == 1
+
+
+def test_single_canonical_per_comparability_key_enforced(tmp_path):
+    # Setting a new canonical baseline for the SAME comparability key clears the prior one.
+    db = tmp_path / "t.db"
+    key = dict(surface="engine-duo", dm_model="opus",
+               methodology="3-lens duo 8-beat", lens_config_version="lc_bbbbbbbbbbbb")
+    scores_db.add_run("base-1", db_path=db, story_overall=4.1, **key)
+    scores_db.add_run("base-2", db_path=db, story_overall=4.4, **key)
+    scores_db.set_canonical_baseline("base-1", db_path=db)
+    scores_db.set_canonical_baseline("base-2", db_path=db)  # supersedes base-1
+
+    by_id = {r["run_id"]: r for r in scores_db.fetch_rows(db)}
+    assert by_id["base-1"]["is_canonical_baseline"] == 0  # cleared
+    assert by_id["base-2"]["is_canonical_baseline"] == 1
+    got = scores_db.get_canonical_baseline(db_path=db, **key)
+    assert got["run_id"] == "base-2"
+
+
+def test_canonical_baselines_isolated_across_keys(tmp_path):
+    # Two DIFFERENT comparability keys may EACH have their own canonical baseline simultaneously.
+    db = tmp_path / "t.db"
+    key_a = dict(surface="engine-duo", dm_model="sonnet",
+                 methodology="duo", lens_config_version="lc_111111111111")
+    key_b = dict(surface="GUI-built-app", dm_model="opus",
+                 methodology="5-persona", lens_config_version="lc_222222222222")
+    scores_db.add_run("a", db_path=db, **key_a)
+    scores_db.add_run("b", db_path=db, **key_b)
+    scores_db.set_canonical_baseline("a", db_path=db)
+    scores_db.set_canonical_baseline("b", db_path=db)  # must NOT clear "a" (different key)
+
+    by_id = {r["run_id"]: r for r in scores_db.fetch_rows(db)}
+    assert by_id["a"]["is_canonical_baseline"] == 1
+    assert by_id["b"]["is_canonical_baseline"] == 1
+    assert scores_db.get_canonical_baseline(db_path=db, **key_a)["run_id"] == "a"
+    assert scores_db.get_canonical_baseline(db_path=db, **key_b)["run_id"] == "b"
+
+
+def test_set_canonical_baseline_unknown_run_raises(tmp_path):
+    db = tmp_path / "t.db"
+    scores_db.connect(db).close()
+    with pytest.raises(ValueError):
+        scores_db.set_canonical_baseline("nope-not-here", db_path=db)
+
+
+def test_add_run_accepts_is_canonical_baseline_directly(tmp_path):
+    # add_run can stamp is_canonical_baseline=1 at insert time (e.g. a backfill of a known baseline).
+    db = tmp_path / "t.db"
+    scores_db.add_run("direct", db_path=db, surface="engine-duo", is_canonical_baseline=1)
+    assert scores_db.fetch_rows(db)[0]["is_canonical_baseline"] == 1
+
+
 # --- the forensic seed itself (proves the reconstruction is reproducible) ---
 
 def test_seed_is_reproducible_and_classified(tmp_path):
