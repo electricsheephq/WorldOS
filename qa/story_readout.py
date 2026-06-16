@@ -277,6 +277,22 @@ _APPROVAL_RESULT = re.compile(
     r'|"(attitude|approval)_delta"\s*:',
     re.I,
 )
+# A companion is ENGAGED when one of these fires. This covers the AUTHORED-adventure case: the
+# companion is PRE-SEEDED by start_adventure, so recruit_companion is NEVER called, yet the session
+# plays them (camp beats, arc checks, regard movement). The transcript-only stamp can't read the
+# snapshot party (the snapshot-coverage path already marks a pre-seeded companion `recruited`), so it
+# DERIVES engagement from these signals — otherwise a 54-beat run that camps with the companion and
+# moves their regard +27 reads `recruit ·`, contradicting its own `camp ✓ approval ✓`. Bare
+# long_rest is intentionally EXCLUDED (a solo rest must not imply a companion).
+_COMPANION_ENGAGE_TOOLS = {
+    "recruit_companion", "camp_scene", "record_camp_beat",
+    "check_companion_arc", "advance_companion_quest_arc",
+}
+# The engine stamps `current_location_id` into look_around / scene_context / travel_to results, so
+# the set of these over the whole transcript IS the set of locations the party actually OCCUPIED —
+# including the START location (which travel_to inputs alone miss when the party never travels back
+# to it) and excluding world-build noise. Field-shaped so a prose mention can't false-positive.
+_CURRENT_LOC = re.compile(r'"current_location_id"\s*:\s*"([^"]+)"')
 
 
 def analyze(path: str):
@@ -302,8 +318,17 @@ def analyze(path: str):
                     render.append(f"  ▶ PLAYER: {s[:280]}")
         elif kind == "tool_use":
             calls[name] = calls.get(name, 0) + 1
-            if name in ("start_adventure", "start_world", "add_location", "travel_to"):
-                loc = payload.get("name") or payload.get("location") or payload.get("adventure_id")
+            if name == "travel_to":
+                # Count where the party actually GOES. travel_to's destination is `destination_id`
+                # (canonical) with aliases destination / to / location_id (see server.py travel_to).
+                # The old code looked at name/location/adventure_id for start_adventure/add_location
+                # — none of which is an OCCUPIED location (adventure_id is an id, add_location is
+                # world-building, a world name isn't a place) — and never read travel_to's real
+                # field, so a 4-location arc (gs-ember-deep: cinderhollow→hollowmere-mill→
+                # ashen-barrow→crypt) stamped locs=1. Occupied locations come from travel
+                # destinations here + current_location_id in results (below).
+                loc = (payload.get("destination_id") or payload.get("destination")
+                       or payload.get("to") or payload.get("location_id"))
                 if loc:
                     locations.add(str(loc))
             if name == "complete_quest" and isinstance(payload, dict) and payload.get("evolves_to"):
@@ -327,6 +352,10 @@ def analyze(path: str):
                 render.append(f"    ⚙ {name}({s})")
         elif kind == "tool_result":
             low = (payload or "").lower()
+            # Every location the party OCCUPIED — the engine reports current_location_id in
+            # look_around / scene_context / travel_to results. Captures the start location too.
+            for _loc in _CURRENT_LOC.findall(payload or ""):
+                locations.add(_loc)
             # Flag a betrayal/loyalty fork only on an engine SIGNAL (a JSON field / gauge), never a
             # prose mention: start_adventure's premise text names "betrayal" as a THEME, not a fired
             # gate, so a bare-word match false-positives. Require a field-shaped signal.
@@ -352,6 +381,13 @@ def analyze(path: str):
     cov["approval_delta"] = approval_deltas
     cov["betrayal_foreshadowed"] = betrayal_flag
     cov["distinct_locations"] = len(locations)
+    # companion_engaged: a companion is in play and the session played them — including the AUTHORED
+    # case where they were pre-seeded (recruit_companion never called). approval_moved is conclusive
+    # (you only move a companion's regard); the companion-specific tools are too. The stamp marks
+    # `recruit` from this so a pre-seeded engaged companion isn't read as a structural gap — matching
+    # the snapshot-coverage path, which already marks a party companion `recruited`.
+    cov["companion_engaged"] = bool(cov.get("approval_moved")) or any(
+        calls.get(t, 0) for t in _COMPANION_ENGAGE_TOOLS)
     cov["calls"] = calls
     return render, cov
 
@@ -361,7 +397,7 @@ def stamp(cov: dict) -> str:
         return "✓" if b else "·"
     return (
         f"COVERAGE | beats={cov['beats']} locs={cov['distinct_locations']} "
-        f"| recruit {mark(cov['recruit'])} | camp {mark(cov['camp'])} "
+        f"| recruit {mark(cov.get('companion_engaged') or cov['recruit'])} | camp {mark(cov['camp'])} "
         f"| approval-moved {mark(cov['approval_moved'] or cov['decision'])} "
         f"| combat {mark(cov['combat'])} "
         f"| quest-resolved {mark(cov['quest_resolved'])} evolved {mark(cov['quest_evolved'])} "
