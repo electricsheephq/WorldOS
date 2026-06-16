@@ -50,8 +50,12 @@ HERE = Path(__file__).resolve().parent
 REQUIREMENTS_PATH = HERE / "verdict_requirements.json"
 DEFAULT_VERDICT = "rri_release"
 
-# The canonical 11 RRI gates (mirrors release_readiness.py — kept here so the audit
-# can report REQUIRED items even when a gate did not appear in the rollup output).
+# The always-present RRI gates (mirrors release_readiness.py — kept here so the audit can
+# report REQUIRED items even when a gate did not appear in the rollup output). The EVALUATED
+# set is 11 by default and 13 once the two additive latency gates (latency_s_per_beat /
+# latency_coldopen) carry evidence; release_readiness counts gates_total dynamically and the
+# audit reads gates_passed/gates_total straight from the rollup, so this list stays the
+# always-required baseline (the conditional latency gates are intentionally not in it).
 RRI_GATE_NAMES = [
     "native_gate",
     "arc_completed",

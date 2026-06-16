@@ -49,8 +49,14 @@ import glob
 import json
 import os
 import re
+import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Iterable, Optional
+
+# The latency columns release_readiness.py:read_latency() reads from a <run>/latency.json
+# sidecar (it only consumes s_per_beat + coldopen_s; turns_per_beat is carried for parity
+# with scores_db.add_run and is harmless extra detail for the reader).
+SIDECAR_COLUMNS = ("s_per_beat", "coldopen_s", "turns_per_beat")
 
 # A beat transcript is "<run>.dm.<nanoseconds>.jsonl"; capture the nanos for beat ordering.
 _DM_RE = re.compile(r"\.dm\.(\d+)\.jsonl$")
@@ -153,11 +159,42 @@ def rollup_run(transcript_dir: str | Path, run_id: str) -> dict[str, Any]:
     return rollup_files(beat_files(transcript_dir, run_id))
 
 
+def stamp_sidecars(rollup: dict[str, Any], run_dirs: Iterable[str | Path]) -> list[str]:
+    """Write a run's latency ``rollup`` as a ``<run>/latency.json`` sidecar into each run dir,
+    in the exact shape ``qa/release_readiness.py:read_latency()`` reads
+    (``{s_per_beat, coldopen_s, turns_per_beat}``).
+
+    This is the bridge that ACTIVATES the additive RRI latency gate on a real sweep: the runners
+    derive the per-beat ledger into the TRANSCRIPT dir (``$T/$RUN.latency.json``), but
+    release_readiness reads each PERSONA run dir's sidecar — so without this stamp the gate is a
+    dormant evidence-gap SKIP. The rollup is a BUILD-level measurement (one deep duo play), so it
+    is replicated into every persona run dir; the gate aggregates the MAX across personas, and
+    identical values yield exactly that build figure.
+
+    NULL columns are preserved verbatim — read_latency treats a null ``s_per_beat``/``coldopen_s``
+    as ABSENT evidence (an evidence-gap skip), never a fabricated 0.0 that would silently pass.
+    A run dir that does not already exist is SKIPPED (never created), so a stale/typo path can
+    never fabricate latency evidence. Returns the sidecar paths actually written."""
+    sidecar = {k: rollup.get(k) for k in SIDECAR_COLUMNS}
+    written: list[str] = []
+    for raw in run_dirs:
+        d = Path(raw)
+        if not d.is_dir():
+            continue
+        target = d / "latency.json"
+        target.write_text(json.dumps(sidecar) + "\n", encoding="utf-8")
+        written.append(str(target))
+    return written
+
+
 def _main(argv: Optional[list[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Derive the F13-4 latency ledger from DM beat transcripts.")
     ap.add_argument("--dir", help="transcript directory ($T) — used with --run")
     ap.add_argument("--run", help="run id ($RUN) — used with --dir")
     ap.add_argument("--out", help="write the rollup JSON here (also printed to stdout)")
+    ap.add_argument("--stamp-into", default="", help="comma-separated PERSONA run dirs to stamp the "
+                    "rollup into as <dir>/latency.json (the shape release_readiness.read_latency reads) "
+                    "— this is what ACTIVATES the additive RRI latency gate on a real sweep")
     ap.add_argument("files", nargs="*", help="explicit beat transcript paths (overrides --dir/--run)")
     args = ap.parse_args(argv)
 
@@ -169,6 +206,13 @@ def _main(argv: Optional[list[str]] = None) -> int:
     else:
         ap.error("pass either explicit transcript files, or --dir and --run")
         return 2
+
+    if args.stamp_into:
+        dirs = [p.strip() for p in args.stamp_into.split(",") if p.strip()]
+        written = stamp_sidecars(result, dirs)
+        # stderr so --out / stdout stay pure JSON for piping; a no-op (no existing dirs) is silent.
+        if written:
+            print(f"latency: stamped sidecar into {len(written)} run dir(s)", file=sys.stderr)
 
     blob = json.dumps(result, indent=2)
     if args.out:

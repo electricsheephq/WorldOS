@@ -298,6 +298,24 @@ else
   [ -f "$STORY" ] && ok "story: $(python3 -c "import json;print(json.load(open('$STORY')).get('overall'))" 2>/dev/null)" || warn "no story score"
   [ -f "$MECH" ] && ok "mech:  $(python3 -c "import json;print(json.load(open('$MECH')).get('overall'))" 2>/dev/null)" || warn "no mech score"
 
+  # ── LATENCY SIDECAR — activate the additive RRI latency gate (Phase-3) ──────────
+  # run_duo.sh just derived the per-beat latency ledger from the duo's *.dm.<ns>.jsonl beats, but it
+  # wrote it to the TRANSCRIPT dir (qa/transcripts/${RUNID}-duo.latency.json). release_readiness.py's
+  # read_latency() reads each PERSONA run dir's latency.json sidecar instead, so on a real sweep the
+  # s_per_beat/coldopen_s gates were a dormant evidence-gap SKIP. Re-derive the SAME rollup and stamp it
+  # into every persona run dir in the shape the reader expects, so the figures are judged against
+  # qa/latency_baseline.json (s_per_beat>120 or coldopen_s>240 -> FAIL). Non-fatal: a stamp hiccup (or a
+  # duo that produced no derivable beat -> NULL columns) leaves the gate a documented SKIP, never a new
+  # false fail — additive, exactly today's behavior when latency evidence is absent.
+  if [ -n "$RUN_DIRS" ]; then
+    if python3 qa/latency_rollup.py --dir "$ROOT/qa/transcripts" --run "${RUNID}-duo" \
+         --stamp-into "$RUN_DIRS" >/dev/null 2>&1; then
+      ok "latency sidecar stamped into persona run dirs (RRI latency gate active)"
+    else
+      warn "latency sidecar stamp skipped — RRI latency gate stays an evidence-gap skip"
+    fi
+  fi
+
   # ── BEHAVIORAL + AXE/UI-AUDIT ────────────────────────────────────────────────
   echo "── BEHAVIORAL + UI-AUDIT ─────────────────────────────────────────"
   BEHAV_PATH="$ROOT/qa/ui_playtest_runs/${RUNID}-behavioral.txt"

@@ -124,3 +124,65 @@ def test_cli_writes_out_json(tmp_path, capsys):
     assert rc == 0
     data = json.loads(out.read_text())
     assert data["coldopen_s"] == 240.0 and data["s_per_beat"] == 100.0
+
+
+# ── stamp_sidecars: the bridge that activates the RRI latency gate ─────────────────
+# The runners derive the ledger into the TRANSCRIPT dir; release_readiness reads each PERSONA
+# run dir's <run>/latency.json sidecar. These cover the stamp that closes that gap.
+
+def test_stamp_sidecars_writes_per_run_latency_json(tmp_path):
+    run = "duo-stamp"
+    _write_beat(tmp_path, run, 1000, api_ms=240000, num_turns=18)   # cold open 240s
+    _write_beat(tmp_path, run, 2000, api_ms=100000, num_turns=4)    # routine 100s
+    r = latency_rollup.rollup_run(tmp_path, run)
+    rundirs = [tmp_path / "gate-newbie", tmp_path / "gate-veteran"]
+    for d in rundirs:
+        d.mkdir()
+    written = latency_rollup.stamp_sidecars(r, rundirs)
+    assert len(written) == 2
+    for d in rundirs:
+        sidecar = json.loads((d / "latency.json").read_text())
+        # exactly the columns release_readiness.read_latency() consumes
+        assert sidecar["s_per_beat"] == 100.0
+        assert sidecar["coldopen_s"] == 240.0
+        assert sidecar["turns_per_beat"] == 4.0
+
+
+def test_stamp_sidecars_skips_nonexistent_dirs_never_creating_them(tmp_path):
+    # A stale/typo run-dir path must never fabricate latency evidence by creating a dir.
+    run = "duo-skip"
+    _write_beat(tmp_path, run, 1000, api_ms=200000, num_turns=10)
+    _write_beat(tmp_path, run, 2000, api_ms=90000, num_turns=4)
+    r = latency_rollup.rollup_run(tmp_path, run)
+    real = tmp_path / "gate-real"; real.mkdir()
+    missing = tmp_path / "gate-missing"          # does NOT exist
+    written = latency_rollup.stamp_sidecars(r, [real, missing])
+    assert written == [str(real / "latency.json")]
+    assert not missing.exists()
+
+
+def test_stamp_sidecars_preserves_null_columns_not_zero(tmp_path):
+    # A cold-open-only run has NULL routine stats; the sidecar must keep null so read_latency
+    # treats it as ABSENT (a skip), never a fabricated 0.0 that silently passes the gate.
+    run = "duo-null"
+    _write_beat(tmp_path, run, 1000, api_ms=180000, num_turns=12)   # cold open only
+    r = latency_rollup.rollup_run(tmp_path, run)
+    d = tmp_path / "gate-x"; d.mkdir()
+    latency_rollup.stamp_sidecars(r, [d])
+    sidecar = json.loads((d / "latency.json").read_text())
+    assert sidecar["s_per_beat"] is None
+    assert sidecar["coldopen_s"] == 180.0
+
+
+def test_cli_stamp_into_writes_sidecars(tmp_path):
+    # The exact path qa/release_gate.sh drives: --dir/--run + --stamp-into "dir1,dir2".
+    run = "duo-clistamp"
+    _write_beat(tmp_path, run, 1000, api_ms=240000, num_turns=18)
+    _write_beat(tmp_path, run, 2000, api_ms=130000, num_turns=5)
+    d1 = tmp_path / "gate-a"; d1.mkdir()
+    d2 = tmp_path / "gate-b"; d2.mkdir()
+    rc = latency_rollup._main(["--dir", str(tmp_path), "--run", run, "--stamp-into", f"{d1},{d2}"])
+    assert rc == 0
+    for d in (d1, d2):
+        sidecar = json.loads((d / "latency.json").read_text())
+        assert sidecar["coldopen_s"] == 240.0 and sidecar["s_per_beat"] == 130.0

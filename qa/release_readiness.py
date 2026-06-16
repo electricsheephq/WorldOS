@@ -263,10 +263,13 @@ def _latency_float(value) -> Optional[float]:
 
 def read_latency(run: Path, run_json: dict, score: dict) -> tuple[Optional[float], Optional[float], str]:
     """Read (s_per_beat, coldopen_s, source) from the same on-disk artifacts the rollup
-    already reads — a run's ``latency.json`` sidecar first (what qa/run_duo.sh writes via
-    qa/latency_rollup.py --out), then a ``latency`` block inside run.json, then top-level
-    latency fields on run.json / score.json. ABSENT everywhere -> (None, None, "none"),
-    which makes the latency gates a documented EVIDENCE-GAP/skip, never a new false fail."""
+    already reads — a run's ``latency.json`` sidecar first (the per-run ledger qa/release_gate.sh
+    stamps into each persona run dir via ``qa/latency_rollup.py --stamp-into``, derived from the
+    duo's per-beat transcripts; NOTE the runners themselves write the rollup to the TRANSCRIPT dir,
+    so without that stamp this gate stays a dormant evidence-gap skip), then a ``latency`` block
+    inside run.json, then top-level latency fields on run.json / score.json. ABSENT everywhere ->
+    (None, None, "none"), which makes the latency gates a documented EVIDENCE-GAP/skip, never a
+    new false fail."""
     sidecar = read_json(run / "latency.json")
     candidates: list[tuple[dict, str]] = [
         (sidecar, str(run / "latency.json")),
