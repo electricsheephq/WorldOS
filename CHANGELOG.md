@@ -18,6 +18,37 @@ WorldOS is source-available commercial software; world seeds are licensed separa
 
 ---
 
+## [1.0.4-rc3] — 2026-06-16
+
+**The autonomy unblock — popup P0 fixes + an honest Beta baseline.** rc3 removes the macOS
+prompts that blocked every shell-launched GUI run (and any future user's first launch), then
+captures a clean same-SHA 5-persona measurement to steer the road to Beta.
+
+- **No more keychain/codesign prompt on every build (#945).** `script/build_and_run.sh` now
+  ad-hoc signs by default and never auto-searches the keychain for a signing identity. A bare
+  `security find-identity` scanned *every* keychain in the macOS search list — including an
+  unrelated product's signing keychain on a removable volume — and fired a keychain-password
+  *and* removable-volume prompt on each build. Stable-cdhash signing is now opt-in via
+  `WORLDOS_SIGN_IDENTITY`.
+- **No more removable-volume prompt + viewer-not-ready on shell launch (#946).** The `.app`
+  merged its full inherited environment into every child it spawns, so a foreign env var pointing
+  at a removable volume (`GBRAIN_SKILLS_DIR=/Volumes/…`, exported by `~/.zshenv` and inherited via
+  `open -n`) made the viewer/provider enumerate the volume → a modal TCC prompt that can't be
+  answered headlessly and stalled viewer startup ("Viewer did not become ready"). One root cause,
+  both symptoms. `EnvironmentBootstrap.withoutRemovableVolumeLeaks()` now strips `/Volumes`-prefixed
+  inherited vars before spawning children (the app's own roots survive via the post-strip overlay);
+  the QA harness mirrors the filter. Verified popup-free end-to-end on the canonical `.app`.
+- **Honest Beta baseline.** A clean same-SHA 5-persona VM sweep: newbie **8**, veteran **7**,
+  adversarial **7**, narrative **8** — Beta-quality for four of five personas. The engine
+  re-validated **SRD-correct** (a reported "critical" Lv-10 Paladin spell-slot bug is a
+  half-caster-rules false alarm — the engine knows `L10 Paladin → L3 slots`). The RRI single
+  number stays measurement-noisy (a `party_traveled` behavioral false-cap when an emergent session
+  stays in one scene). The one real feature gap surfaced by the build-optimizer persona is the
+  **planning/theorycraft layer** (spell-preparation UI, market catalogue, level-up planner) — the
+  next milestone toward Beta.
+
+---
+
 ## [1.0.4-rc2] — 2026-06-16
 
 **The felt bundle — battle, atlas, and a companion soul.** Building on rc1's playable
