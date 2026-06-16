@@ -36,7 +36,7 @@ class MacOSAppStaticContractTests(unittest.TestCase):
         self.assertIn("StatusStrip(repoPath: activeRepoPath", root_view)
         self.assertIn("repoPath: activeRepoPathBinding", root_view)
         self.assertIn("artRepoPath: activeArtRepoPathBinding", root_view)
-        self.assertIn("campaignStore.reload(repoPath: activeRepoPath)", root_view)
+        self.assertIn("campaignStore.reload(repoPath: activeRepoPath, stateDir: stateDir)", root_view)
 
     def test_native_viewer_and_provider_forward_art_repo_env(self):
         app_process = self.read("macos/WorldOSApp/Sources/WorldOSApp/Services/AppProcessService.swift")
