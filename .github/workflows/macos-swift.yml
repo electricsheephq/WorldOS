@@ -39,3 +39,10 @@ jobs:
 
       - name: Build native app
         run: swift build --package-path macos/WorldOSApp
+
+      - name: Run native app unit tests (XCTest)
+        # Phase-1 (DETERMINISTIC-1): first real test coverage for the macOS app — hermetic unit
+        # tests for EnvironmentBootstrap (login-PATH + /Volumes leak-strip, the recent P0s) and
+        # PortFinder. macos-latest ships full Xcode, so XCTest is available here (it is NOT on a
+        # CommandLineTools-only host, which is why this could only be verified in CI).
+        run: swift test --package-path macos/WorldOSApp
