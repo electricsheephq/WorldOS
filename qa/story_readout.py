@@ -262,11 +262,33 @@ def _outcome(txt: str) -> str:
     return " ".join(f"{k}={v.strip()[:18]}" for k, v in m[:7])
 
 
+# Tool calls whose INPUT can carry a companion approval move via `approval_tags`. In real play
+# the DM most often moves regard by persisting the beat's DECISION (persist_beat / record_decision
+# carrying approval_tags) — the engine returns `approval_results` and stamps attitude_value — NOT
+# by a bare adjust_attitude. coverage_from_tool_counts only counts adjust_attitude /
+# check_companion_arc / advance_companion_quest_arc, so the stamp read `approval ·` while the
+# engine state showed attitude moved. These names let analyze() detect the persist_beat path too.
+_APPROVAL_TAG_TOOLS = {"persist_beat", "record_decision"}
+# A tool_RESULT that proves the engine MOVED regard: it returned approval_results, or an attitude/
+# approval delta field. Field-shaped (a JSON key), never a bare prose mention of "approval".
+_APPROVAL_RESULT = re.compile(
+    r'"(approval_results|attitude_results)"\s*:\s*[\[{]'           # the engine's approval payload
+    r'|"(attitude|approval)(_value|_delta|_change)?"\s*:\s*-?\d'  # a numeric attitude/approval field
+    r'|"(attitude|approval)_delta"\s*:',
+    re.I,
+)
+
+
 def analyze(path: str):
     """Return (render_lines, coverage_dict)."""
     render, beat = [], 0
     calls: dict[str, int] = {}
     evolves, approval_deltas, betrayal_flag = [], 0, False
+    # Did approval MOVE via the persist_beat/record_decision path (approval_tags in an input, or
+    # an approval_results/attitude-delta in a result)? coverage_from_tool_counts can't see this —
+    # it only rolls up the adjust_attitude/check_companion_arc tool NAMES — so the stamp showed
+    # `approval ·` on a run where the engine state had attitude_value moved. Detect it here.
+    approval_signal = False
     locations, days = set(), set()
     for role, kind, name, payload, raw in _events(path):
         if kind == "text":
@@ -291,6 +313,15 @@ def analyze(path: str):
                     approval_deltas += int(payload.get("delta") or 0)
                 except Exception:
                     pass
+            # A persist_beat / record_decision carrying non-empty approval_tags MOVES regard via
+            # the decision path (the engine returns approval_results). This is the common real-play
+            # path the tool-NAME counts miss.
+            if name in _APPROVAL_TAG_TOOLS and isinstance(payload, dict):
+                tags = payload.get("approval_tags")
+                if isinstance(payload.get("decision"), dict):
+                    tags = tags or payload["decision"].get("approval_tags")
+                if tags not in (None, "", [], {}):
+                    approval_signal = True
             if name in STORY_TOOLS:
                 s = _tool_summary(name, payload)
                 render.append(f"    ⚙ {name}({s})")
@@ -303,11 +334,19 @@ def analyze(path: str):
                     or '"attitude_below"' in low
                     or re.search(r'"agenda[_a-z]*"\s*:\s*("?fir|true|\{)', low)):
                 betrayal_flag = True
+            # An engine RESULT proving regard moved (approval_results payload, or an attitude/
+            # approval delta) — the persist_beat decision path's return shape.
+            if _APPROVAL_RESULT.search(payload or ""):
+                approval_signal = True
             o = _outcome(payload)
             if o and any(s in o for s in ("roll=", "success=", "hit=", "damage=", "defeated=",
                                           "attitude=", "approval=", "evolves_to=")):
                 render.append(f"      → {o}")
     cov = coverage_from_tool_counts(calls)
+    # Fold the persist_beat/record_decision approval-move signal into the approval_moved bucket so
+    # the stamp reflects the SAME movement the engine state records. coverage_from_tool_counts is
+    # left intact (the #961 behavioral assertion reuses it for the camp/quest buckets only).
+    cov["approval_moved"] = bool(cov.get("approval_moved")) or approval_signal
     cov["beats"] = beat
     cov["quest_evolved"] = len(evolves)
     cov["approval_delta"] = approval_deltas

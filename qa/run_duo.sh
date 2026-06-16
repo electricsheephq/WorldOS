@@ -209,17 +209,49 @@ turn() {
   fi
 }
 
-# A turn, with ONE retry on empty output (a transient CLI/auth/rate blip shouldn't
-# silently truncate a run). Echoes the reply text (possibly empty after the retry).
+# A turn, with TRANSIENT-AWARE retry on empty output. A blip shouldn't silently truncate a run —
+# but the RIGHT number of retries depends on WHY the turn came back empty:
+#   • TRANSIENT (server-side HTTP 500/502/503/529, an "overloaded"/429 rate-limit, an rc=124
+#     timeout, an empty-result blip) — retry up to CLAWDND_DM_MAX_ATTEMPTS (default 4) total, with
+#     a short 3s/8s/20s backoff between, so a 500 CLUSTER no longer aborts a 2-3h overnight run
+#     (the gs-ember-18b beat-4 death: a 500 + a single retry that also 500'd killed the whole run).
+#   • REAL / fail-fast (a 401/403 auth error, a deterministic bad turn) — do NOT hammer it 4×: take
+#     the ONE historical retry (which also re-mints a cold-open session id — see below) and stop.
+#     An auth failure stays loudly NON-retryable via clawdnd_report_attempt_failure's re-auth hint.
+# The classifier reads the SAME (out, rc) the just-finished attempt persisted to
+# $STATE_DIR/.dm_last_result + .dm_last_rc (the turn helpers run in $(...) subshells, so a local rc
+# can't escape — the files are the subshell-safe channel). Bounded by the attempt cap → never loops
+# forever. Echoes the reply text (possibly empty after the last attempt).
 turn_retry() {
-  local r
-  # SYN-01: pre-beat log-tail mark — ONCE per beat, BEFORE attempt 1 (the retry must not
+  local r last_out last_rc transient attempt max
+  max="${CLAWDND_DM_MAX_ATTEMPTS:-4}"
+  # SYN-01: pre-beat log-tail mark — ONCE per beat, BEFORE attempt 1 (the retries must not
   # re-mark: attempt 1's logged prose still counts as this beat's), so the resolve path can
   # tell a GENUINE #357 recovery from RECYCLED pre-beat prose. File-based (subshell-safe).
   clawdnd_dm_prebeat_mark "$STATE_DIR"
   r="$(turn "$@")"
-  if [ -z "$r" ]; then
-    echo "[duo] empty turn ($1) — retrying once…" >&2
+  attempt=1
+  while [ -z "$r" ] && [ "$attempt" -lt "$max" ]; do
+    # Classify WHY attempt #$attempt came back empty, from what it just persisted.
+    last_out="$(cat "$STATE_DIR/.dm_last_result" 2>/dev/null | tail -n1)"
+    last_rc="$(cat "$STATE_DIR/.dm_last_rc" 2>/dev/null | tail -n1)"; last_rc="${last_rc:-0}"
+    transient=0
+    clawdnd_dm_failure_is_transient "$last_out" "$last_rc" && transient=1
+    # FAIL-FAST: a REAL failure (auth/deterministic) gets exactly the ONE historical retry, never 4×.
+    # We allow that single retry (attempt==1) because it ALSO re-mints a cold-open session id that an
+    # auth-failed-but-registered attempt 1 would otherwise collide on; past that, stop and don't mask
+    # a deterministic failure as flakiness. (clawdnd_report_attempt_failure already surfaced the
+    # 401/403 re-auth hint when the attempt ran.)
+    if [ "$transient" != "1" ] && [ "$attempt" -ge 2 ]; then
+      echo "[duo] empty turn ($1) — failure looks REAL (not transient); not retrying further." >&2
+      break
+    fi
+    if [ "$transient" = "1" ]; then
+      echo "[duo] empty turn ($1) — TRANSIENT failure (rc=$last_rc); retry $((attempt + 1))/$max after backoff…" >&2
+      clawdnd_dm_retry_backoff "$attempt"
+    else
+      echo "[duo] empty turn ($1) — retrying once…" >&2
+    fi
     # A cold-open ($3=1) retry must NOT reuse $2's already-registered --session-id (a failed but
     # registered attempt → "Session ID … is already in use." → empty output again). F12-11: re-mint
     # via the SHARED clawdnd_dm_remint_session_on_retry (qa/lib_beat_driver.sh) — the SAME re-mint
@@ -228,8 +260,8 @@ turn_retry() {
     # mode is `--session-id $2`, so it populates CLAWDND_DM_RETRY_SESSION with a FRESH `--session-id
     # <uuid>` we hand back to turn as the new sid. Continuing beats ($3=0) use --resume (safe to
     # repeat) — the helper leaves the array empty and we retry verbatim; lean continuing beats already
-    # mint their own fresh id inside turn(). The empty-output trigger above is preserved (it now ALSO
-    # fires on a timeout, which clawdnd_dm_final_text turns into an empty reply).
+    # mint their own fresh id inside turn(). The empty-output trigger also fires on a timeout, which
+    # clawdnd_dm_final_text turns into an empty reply.
     if [ "${3:-}" = "1" ]; then
       clawdnd_dm_remint_session_on_retry --session-id "$2"
       local _fresh="$2"
@@ -238,7 +270,8 @@ turn_retry() {
     else
       r="$(turn "$@")"
     fi
-  fi
+    attempt=$((attempt + 1))
+  done
   printf '%s' "$r"
 }
 

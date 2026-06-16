@@ -18,6 +18,7 @@ import store
 from models import (
     ArcGate,
     Campaign,
+    CampBeatRecord,
     Character,
     CompanionArc,
     CompanionDossier,
@@ -107,6 +108,77 @@ def test_camp_overdue_when_last_rest_is_three_days_old():
     comp = _companion(likes=["mercy"], attitude=10, last_long_rest_day=2)
     c = _campaign_with(comp, day=5)  # 5 - 2 == 3 days since rest
     assert "camp_overdue" in _kinds(server._compute_beat_obligations(c))
+
+
+# --- camp_scene_skipped: rested TODAY but no camp scene landed --------------
+
+
+def test_camp_scene_skipped_fires_when_party_rested_today_with_no_camp_record():
+    """The live-run bug: the DM long_rest'd (companion's last_long_rest_day == today) but never
+    called camp_scene — so there's NO CampBeatRecord for the companion today. The obligation fires,
+    names the companion, and cues camp_scene."""
+    comp = _companion(name="Karlach", attitude=10, last_long_rest_day=5)
+    c = _campaign_with(comp, day=5)  # rested TODAY (day 5), no camp record at all
+    obligations = server._compute_beat_obligations(c)
+    assert "camp_scene_skipped" in _kinds(obligations)
+    skipped = next(o for o in obligations if o["kind"] == "camp_scene_skipped")
+    assert skipped["names"] == ["Karlach"]
+    assert comp.id in skipped["character_ids"]
+    assert "camp_scene" in skipped["detail"]
+    # It is NOT also camp_overdue (the rest is FRESH today, not 3+ days stale).
+    assert "camp_overdue" not in _kinds(obligations)
+
+
+def test_camp_scene_skipped_does_not_fire_when_a_camp_record_exists_today():
+    """A camp record FOR THIS companion ON THIS DAY means camp happened — do not fire."""
+    comp = _companion(name="Karlach", attitude=10, last_long_rest_day=5)
+    c = _campaign_with(comp, day=5)
+    c.camp_beats.records.append(
+        CampBeatRecord(id="banter-1", day=5, companion_ids=[comp.id], kind="solo")
+    )
+    assert "camp_scene_skipped" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_camp_scene_skipped_does_not_fire_when_rest_was_a_prior_day():
+    """If the companion rested YESTERDAY (last_long_rest_day != today) the 'rested-today-but-no-
+    camp' gap doesn't apply — camp_overdue owns the stale-rest case, not this obligation."""
+    comp = _companion(name="Karlach", attitude=10, last_long_rest_day=4)
+    c = _campaign_with(comp, day=5)  # rested day 4, today is 5
+    assert "camp_scene_skipped" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_camp_scene_skipped_fires_only_for_the_companion_without_a_record_today():
+    """Two companions rested today; one got a camp beat, the other didn't — only the one WITHOUT a
+    record today is flagged."""
+    camped = _companion(name="Shadowheart", attitude=10, last_long_rest_day=5)
+    skipped_comp = _companion(name="Lae'zel", attitude=10, last_long_rest_day=5)
+    c = _campaign_with(camped, skipped_comp, day=5)
+    c.camp_beats.records.append(
+        CampBeatRecord(id="banter-1", day=5, companion_ids=[camped.id], kind="solo")
+    )
+    obligations = server._compute_beat_obligations(c)
+    assert "camp_scene_skipped" in _kinds(obligations)
+    skipped = next(o for o in obligations if o["kind"] == "camp_scene_skipped")
+    assert skipped["names"] == ["Lae'zel"]
+    assert camped.id not in skipped["character_ids"]
+    assert skipped_comp.id in skipped["character_ids"]
+
+
+def test_camp_scene_skipped_silent_for_companionless_party():
+    pc = Character(name="Hero", kind="player", last_long_rest_day=5)
+    c = _campaign_with(pc, day=5)
+    assert "camp_scene_skipped" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_camp_scene_skipped_record_from_a_prior_day_does_not_suppress():
+    """A camp record exists, but from a PRIOR day — today's rest still has no camp scene, so it
+    fires (the record must match TODAY's day to suppress)."""
+    comp = _companion(name="Karlach", attitude=10, last_long_rest_day=5)
+    c = _campaign_with(comp, day=5)
+    c.camp_beats.records.append(
+        CampBeatRecord(id="banter-old", day=2, companion_ids=[comp.id], kind="solo")
+    )
+    assert "camp_scene_skipped" in _kinds(server._compute_beat_obligations(c))
 
 
 def test_quest_stalled_surfaces():

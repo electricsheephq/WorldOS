@@ -10972,6 +10972,46 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
                 ),
             })
 
+    # 2b. camp_scene_skipped — the party RESTED today (a companion's last_long_rest_day == today)
+    #     but NO camp scene was recorded for them this day. A live run showed the DM call long_rest
+    #     (3x) yet SKIP camp_scene — companions recover HP/slots but never get their social beat, so
+    #     regard + arcs stay frozen despite the rest. This catches the "rested-but-no-camp" gap that
+    #     camp_overdue (which fires on a STALE rest) can't see: here the rest is FRESH but the camp
+    #     beat is missing. If a camp record DOES exist for a companion today, they are NOT flagged.
+    if party_companions:
+        # Companion ids that already got a camp beat recorded TODAY (defensive: tolerate a missing
+        # camp_beats / records / malformed record without raising).
+        camp_state = getattr(c, "camp_beats", None)
+        records = getattr(camp_state, "records", None) or [] if camp_state is not None else []
+        camped_today: set = set()
+        for rec in records:
+            rec_day = getattr(rec, "day", None)
+            if rec_day != day:
+                continue
+            for cid in getattr(rec, "companion_ids", None) or []:
+                camped_today.add(str(cid))
+        rested_no_camp = []
+        for comp in party_companions:
+            rest_day = getattr(comp, "last_long_rest_day", -1)
+            rest_day = rest_day if isinstance(rest_day, int) else -1
+            # Rested TODAY (the party made camp today) but this companion has no camp record today.
+            if rest_day == day and str(getattr(comp, "id", "")) not in camped_today:
+                rested_no_camp.append(comp)
+        if rested_no_camp:
+            names = [getattr(comp, "name", None) or "the companion" for comp in rested_no_camp]
+            who = names[0] if len(names) == 1 else ", ".join(names[:-1]) + f" and {names[-1]}"
+            obligations.append({
+                "kind": "camp_scene_skipped",
+                "severity": "med",
+                "character_ids": [getattr(comp, "id", None) for comp in rested_no_camp],
+                "names": names,
+                "detail": (
+                    f"The party rested but skipped camp — call camp_scene now to give {who} a real "
+                    f"beat (a worry, a memory, an arc moment) and move their regard. A long_rest that "
+                    f"refreshes HP/slots but lands no camp scene leaves the relationship system inert."
+                ),
+            })
+
     # 3. quest_resolvable / quest_stalled — active quests the engine can SEE are ripe or
     #    stuck. (Both read engine-mutated state, never Decision prose.)
     quests = getattr(c, "quests", None) or {}
