@@ -1,0 +1,870 @@
+{
+  "id": "the-ledger-of-mercy",
+  "title": "The Ledger of Mercy",
+  "ruleset": "SRD 5.2",
+  "level_range": [
+    3,
+    7
+  ],
+  "session_length_minutes": 240,
+  "premise": "In the hungry winter after the Absolute fell, the Lower City of Baldur's Gate is full of the ruined: tadpole-survivors no one will hire, war-widows, refugees who lost everything when the Netherbrain breached the streets. Into that wound steps a mercy: the Ledger House on Gratitude Row, a debt-relief almonry where the beloved Almoner-General Lucan Ferreth pays off a desperate soul's debts, feeds their children, and asks only that they sign his Book of Grace and 'serve the House until the kindness is repaid.' What no one says aloud is that the kindness is never repaid. Ferreth has quietly turned charity into bondage — the signers become the Gilded Hand, an off-the-books labour and enforcement network that moves Guild smuggling, breaks rival almshouses, and disappears anyone who reads too far into the ledgers. Ferreth believes, with his whole gentle heart, that a person owned and fed is better off than a person free and starving; that mercy without a leash is just abandonment with extra steps. Every debt he clears tightens the Hand's grip on the Lower City, and the deeper the party reads his Book of Grace, the closer they come to the truth: the most generous man in Baldur's Gate owns more of its poor than the patriars own of its land.",
+  "hook": "A ledger-clerk named Halsa Renn has gone missing from the Ledger House, and her sister Pell — a tadpole-scarred laundress who scrubs floors for the Open Hand — is the only one who will say his name in fear instead of gratitude. She corners the party in the Elfsong's quietest corner with her last three silver: Halsa started copying pages out of Almoner Ferreth's Book of Grace, whispering that the sums didn't add up and that signers who 'completed their service' were never seen again. Six nights ago Halsa didn't come home, and the House says she 'transferred to the country chapter' that no one can find. Pell can't go to the Flaming Fist — half of them owe Ferreth their pensions — so she's begging the only people in the Gate who don't: find her sister, and find out what the kindest man in the Lower City is really writing in that book.",
+  "themes": [
+    "charity weaponized into bondage — mercy with a leash",
+    "a beloved benefactor who is the villain",
+    "the desperate made complicit in their own predation",
+    "debt, dignity, and what a person will sign away to be fed",
+    "a city that mistakes ownership for kindness"
+  ],
+  "voices": {
+    "narrator-dm": "The Dungeon Master's narration voice. Used for boxed read-aloud text and scene description.",
+    "companion-default": "Sergeant Ondine Marsh, the party's companion — a debt-bonded ex-Flaming Fist soldier who signed Ferreth's Book of Grace to bury her dead.",
+    "npc-elder": "Almoner-General Lucan Ferreth, the House's beloved benefactor (and hidden antagonist), and old Brother Cassian of the Open Hand.",
+    "npc-rogue": "Veil, Ferreth's velvet-voiced collections-mistress and the Gilded Hand's whip-hand.",
+    "npc-male-1": "Tobias Quayle, the House's nervous head-clerk, and assorted frightened signers of the Book of Grace.",
+    "npc-female-1": "Pell Renn, the laundress quest-giver, and Halsa Renn, her missing ledger-clerk sister."
+  },
+  "antagonist": {
+    "id": "antagonist",
+    "name": "Almoner-General Lucan Ferreth",
+    "title": "The Open Hand of the Lower City",
+    "voice_id": "npc-elder",
+    "hidden": true,
+    "goal": "To own the Lower City's poor outright — every debt cleared a soul signed into the Gilded Hand, his off-the-books network of bonded labour and quiet enforcement — and to be thanked for it. Ferreth genuinely believes that a person fed and owned is safer than a person free and starving, and that his Book of Grace is the most loving institution in a city that let the Netherbrain breach its streets. He poses as the most generous man in Baldur's Gate, dispensing real bread and real debt-relief with one hand while the other tightens a bondage no one is allowed to read, so that the city loves the man who is quietly buying it.",
+    "scheme_by_act": [
+      "ACT 1: Ferreth's collections-mistress Veil has 'transferred' the clerk Halsa Renn into the Hand for reading too far — bonded, gagged, and set to scrubbing the House's hidden lower vaults. The party investigates her disappearance through the Ledger House's public almonry, discovering that signers of the Book of Grace are quietly worked, leased to the Guild, and made to vanish if they balk. The first thread: charity here has a basement.",
+      "ACT 2: With the party asking questions, Ferreth tightens the Hand. Veil moves the most valuable bonded signers — and the incriminating duplicate ledgers — down to the Drowned Counting House beneath the Lower City, the flooded Guild vault Ferreth secretly leases. The party must descend into the bonded-labour underbelly, free Halsa or recover her copied pages, and confront how deep the indenture runs: the Hand isn't a side-business, it's the whole point.",
+      "ACT 3: Exposed, Ferreth makes his move to become untouchable: he calls in his debts at once, marshalling the patriar Almsmoot — a gala where he means to be voted Steward of the Poor, a chartered city office that would make the Gilded Hand a LEGAL institution and his ownership of the Lower City's desperate the law of the Gate. The party must break his hold at the Almsmoot — with the recovered ledgers, with the bonded signers' testimony, and against Veil and the Hand's enforcers — before mercy becomes statute and the city signs the whole Lower City into the Book of Grace."
+    ],
+    "reveal": "Ferreth is presented in Act 1 as the most beloved, most generous figure in the Lower City — the man who feeds tadpole-survivors the Fist won't hire. Clues accumulate: signers thank him with the flat eyes of the frightened; his Book of Grace has pages no clerk is allowed to read; 'completed' debtors are never seen again; the Open Hand's true almoners (Brother Cassian) are quietly being pushed out. The reveal that the kindness is a cage should land at the end of Act 1 or across Act 2; the reveal that Ferreth KNOWS and intends it — that he is not a corrupt steward but a true believer in benevolent ownership — lands when the party finally meets him without the mask, at the Almsmoot or the vault.",
+    "stat_block": "Ferreth fights only if cornered in the Act 3 climax, and even then prefers to talk, to offer, to BUY. Use the bundled Mage stat block (AC 12/15 with mage armor, HP 81, CR 6) reflavored as a silver-tongued benefactor: his spells are gilded — Suggestion and Hold Person as 'the weight of an unpayable debt,' a Counterspell as 'I'm afraid the House does not permit that,' and he surrounds himself with bonded Gilded Hand enforcers (Veil + Thugs/Toughs/a Spy) rather than fighting alone. He is a CR 6 social-control villain, not a brawler; run him last and let him keep trying to make the party sign.",
+    "max_hp": 81,
+    "armor_class": 15,
+    "hit_dice": "18d8",
+    "proficiency_bonus": 3,
+    "abilities": {
+      "strength": 9,
+      "dexterity": 14,
+      "constitution": 11,
+      "intelligence": 17,
+      "wisdom": 15,
+      "charisma": 16
+    },
+    "damage_resistances": [],
+    "damage_immunities": [],
+    "condition_immunities": []
+  },
+  "companions": [
+    {
+      "id": "companion-ondine",
+      "name": "Sergeant Ondine Marsh",
+      "voice_id": "companion-default",
+      "race": "Human",
+      "background": "Soldier",
+      "classes": [
+        {
+          "name": "Fighter",
+          "level": 3
+        }
+      ],
+      "abilities": {
+        "strength": 16,
+        "dexterity": 13,
+        "constitution": 15,
+        "intelligence": 10,
+        "wisdom": 12,
+        "charisma": 11
+      },
+      "proficiency_bonus": 2,
+      "armor_class": 17,
+      "max_hp": 28,
+      "hit_dice": "3d10",
+      "hit_dice_remaining": 3,
+      "skill_proficiencies": [
+        "Athletics",
+        "Intimidation",
+        "Perception",
+        "Insight"
+      ],
+      "saving_throw_proficiencies": [
+        "str",
+        "con"
+      ],
+      "spells_known": [],
+      "spells_prepared": [],
+      "spell_slots": {},
+      "personality": "A broad-shouldered ex-sergeant of the Flaming Fist, cashiered in the lean months after the Absolute war when the company couldn't pay the dead's pensions and Ondine couldn't pay to bury her own. She buried her wife Calla and her brother out of Ferreth's almonry — he cleared the gravediggers' debt, fed her, and slid the Book of Grace across the table when she had nothing left to refuse with. She signed. Now she is BONDED to the Ledger House: a quiet, dangerous, deeply decent woman wearing the Gilded Hand's debt like a collar she's learned not to feel. She joined the party because Ferreth 'lent' her to watch them — and because some honest part of her hopes they're the ones who finally pull the floor out from under the kindest man she's ever hated owing. She is blunt, loyal to a fault, allergic to cant, and carries the particular shame of someone who knows exactly what she signed and signed anyway. She'll argue for the bonded as people, not villains — most of them are just grief that got a bill — but she has no soft words for Ferreth's enforcers who chose the whip.",
+      "notes": "Front-line defender, intimidation/insight social muscle, and the campaign's MORAL CORE — a victim of the very predation the party is unwinding, walking the line between freeing the bonded and protecting the family Ferreth still holds over her. In combat she is the party's anvil: Second Wind, Action Surge by Act 2, a reliable Great-Weapon or sword-and-board tank who puts herself between Ferreth's enforcers and the squishy. Out of combat she is the inside witness — she knows how the Book of Grace works, which signers can be turned, and where the House hides its real ledgers, but she is RISKY to lean on, because every step toward exposing Ferreth tightens the screws on the leverage he holds (her dead wife's grave-debt is technically still 'owed,' and her surviving people can be re-bonded). This is the FORK (see arc + agenda): honored and trusted, Ondine breaks her own bond and becomes the party's fiercest ally, the bonded signers' captain at the Almsmoot. Curdled — treated as a thug, her people endangered, or actively bought back by Ferreth (debt cleared, kin made safe) — she can TURN, and her betrayal fires as a real attack at the worst moment. The DM should give Ondine her own voiced line each scene and reach her combat choices through companion_suggest_action. As the party levels, treat Ondine as leveling with them (Fighter matching party level) — grant Action Surge and a second attack by Act 2, a Battlemaster-style maneuver or third Fighter tier by Act 3.",
+      "companion_dossier": {
+        "wound": "She signed Ferreth's Book of Grace to bury her wife Calla and her brother when the Fist couldn't pay its dead — and she is still bonded to the House, wearing a debt she chose like a collar, certain that the day she breaks it is the day Ferreth re-bonds everyone she has left.",
+        "wants": [
+          "buy back her own name and walk out of the Book of Grace a free woman",
+          "get the other bonded signers out alive — they are grief with a bill, not criminals",
+          "be a soldier she doesn't have to be ashamed of again"
+        ],
+        "fears": [
+          "that the people she still loves will be re-bonded the moment she defies the House",
+          "that she is too far in the Hand's debt to ever be anything but owned",
+          "becoming one of Veil's whip-hands — choosing the leash over the cold the way the enforcers did"
+        ],
+        "values": [
+          "loyalty paid in deeds, not words",
+          "the dignity of the desperate — no one is their debt",
+          "an honest reckoning over a comfortable lie",
+          "protecting the people behind you, whatever it costs"
+        ],
+        "approval_likes": [
+          "free_the_bonded",
+          "protect_the_desperate",
+          "honor_a_debt_of_blood",
+          "blunt_honesty",
+          "stand_between_danger_and_the_weak",
+          "spare_a_frightened_pawn",
+          "keep_your_word",
+          "refuse_a_bribe"
+        ],
+        "approval_dislikes": [
+          "exploit_the_desperate",
+          "treat_the_bonded_as_criminals",
+          "take_ferreths_coin",
+          "abandon_an_ally",
+          "needless_cruelty",
+          "honeyed_lies",
+          "break_your_word",
+          "bow_to_the_powerful"
+        ],
+        "banter_tags": [
+          "old_fist_war_stories",
+          "grief_for_calla",
+          "contempt_for_charity_with_strings",
+          "soldier_practicality"
+        ],
+        "camp_prompts": [
+          "Ondine turns her old Fist signet over and over by the fire and finally asks, not looking up, whether the party thinks a person can buy back a thing they signed away of their own free hand.",
+          "She names the bonded signers she grew up beside in the House — a baker, a boy who lost an arm to a tadpole, a widow — and asks the party, quietly, which of them they think can be saved when this is over.",
+          "After a hard day she admits the worst part isn't owing Ferreth. It's that on the cold nights, some animal part of her is still GRATEFUL to him. She hates that part. She asks if that makes her one of them."
+        ]
+      },
+      "arc": {
+        "arc_gates": [
+          {
+            "id": "ondine-gate-trust",
+            "kind": "loyalty",
+            "threshold": 25,
+            "note": "Ondine lets the party see the bond for what it is — shows them the Gilded Hand's mark inked at her collarbone, admits Ferreth 'lent' her to watch them, and chooses, out loud, to watch HIM instead. The first real crack in the collar."
+          },
+          {
+            "id": "ondine-gate-quest",
+            "kind": "personal_quest",
+            "threshold": 50,
+            "note": "Ondine's own quest opens — to recover the original page of the Book of Grace that holds her name and her dead's grave-debt, the leverage Ferreth keeps over her. She asks the party's help to buy back her name with deeds instead of coin, knowing it makes her a target."
+          },
+          {
+            "id": "ondine-gate-betrayal",
+            "kind": "betrayal",
+            "threshold": 18,
+            "note": "THE FORK. If the party has treated Ondine as a thug, endangered the bonded for expedience, taken Ferreth's coin, or let her dead's debt be used against her — and especially if they let Ferreth BUY HER BACK (debt cleared, kin made safe) — her bond reasserts itself. She turns: not from greed but from the cold arithmetic of a woman protecting the last people she has, fighting the party as a real attack at the moment they're most exposed. Reachable only when approval has curdled; honored, this gate stays locked forever."
+          },
+          {
+            "id": "ondine-gate-loyalty",
+            "kind": "loyalty",
+            "threshold": 75,
+            "note": "Ondine breaks her own bond for good. At the Almsmoot she stands up as captain of the bonded signers, marshals the ones the party freed, and turns the Gilded Hand's own muscle against Ferreth — the soldier she was always ashamed she'd stopped being, free at last and choosing the party's banner over the leash."
+          }
+        ],
+        "agenda": {
+          "trigger": "attitude_below",
+          "value": 18,
+          "note": "Ondine's bond wins. Pushed past her breaking point — treated as Ferreth's creature, her people endangered, her dead's debt turned against her — she does the cold soldier's math and chooses the leash that keeps her kin safe over a party that gave her nothing better. The turn fires as a real attack, ideally at the Almsmoot or the vault when the party is most exposed: she stands at Veil's shoulder, sick with it, and tells the party they should have made her a better offer than freedom she can't afford.",
+          "decision_flag": "took_ferreths_coin"
+        }
+      }
+    }
+  ],
+  "npcs": [
+    {
+      "id": "pell-renn",
+      "name": "Pell Renn",
+      "voice_id": "npc-female-1",
+      "personality": "A wiry, tadpole-scarred laundress in her thirties — a faint grey ceremorphosis-scar runs from her left ear down her neck, the mark that costs her every honest job in the Gate. She scrubs the Ledger House's floors for bread and is the rare soul in Gratitude Row who fears Almoner Ferreth instead of blessing him, because her sister Halsa read the wrong pages and vanished. She is exhausted, frightened, and fierce — she has nothing left to lose but Halsa, and she will spend her last three silver and her last shred of safety on anyone who'll take her sister's disappearance seriously.",
+      "attitude": "frightened, desperate, testing",
+      "role": "primary quest-giver",
+      "wants": "To get her sister Halsa back — alive — and to make someone with a sword understand that the kindest man in the Lower City has a basement nobody walks out of.",
+      "knows": [
+        "Halsa was a ledger-clerk inside the Ledger House and started copying pages out of Ferreth's Book of Grace, whispering that the sums didn't add up and that 'completed' debtors were never seen again.",
+        "Six nights ago Halsa didn't come home; the House says she 'transferred to the country chapter,' which no one can name or find.",
+        "Half the Flaming Fist owe Ferreth their pensions, so the Fist will not investigate the most generous man in the Lower City.",
+        "Halsa hid her copied pages somewhere in the House before she vanished — Pell doesn't know where, only that Halsa said 'the truth is in the laundry' the last night they spoke."
+      ],
+      "secret": "Pell herself is a half-signer — she took Ferreth's bread but never signed the Book, and lives in daily terror that her own desperation will be the thing that bonds her. She'll confess this only to a party that earns her trust, and it's the human stake that makes her fear credible.",
+      "stat_block": "Noncombatant. If ever endangered, treat as Commoner; she will not fight but will hide, run, or shield a child before herself."
+    },
+    {
+      "id": "ferreth",
+      "name": "Almoner-General Lucan Ferreth",
+      "voice_id": "npc-elder",
+      "personality": "The Lower City's most beloved man: a silver-haired almoner of perhaps sixty with warm, tired eyes, ink-stained fingers, and a voice like a hand on your shoulder. He remembers every name and every grief; he weeps, genuinely, at funerals he paid for; he feeds tadpole-survivors the Fist won't hire and widows the patriars won't see. Every kindness is real — which is exactly what makes him monstrous. After a long life watching the Gate let its poor freeze and starve and breach under the Netherbrain, Ferreth decided that freedom is a luxury the desperate cannot afford, and that a person owned and fed is better off than a person free and dead. The Book of Grace is, to him, the most loving institution in Baldur's Gate. He does not see himself as a villain. He sees himself as the only one who ever truly took the poor IN — collar and all — and he will price you, kindly, the moment he meets you.",
+      "attitude": "warm and beloved (publicly); serenely certain (once unmasked)",
+      "role": "hidden antagonist — see top-level 'antagonist' for stats and scheme",
+      "wants": "To own the Lower City's desperate outright through the Book of Grace, to be made Steward of the Poor so the Gilded Hand becomes LAW — and to be thanked for all of it, loved to the very end, so he works through Veil and his bonded enforcers and never lets his own hand be seen as the cage until he chooses to.",
+      "knows": [
+        "Everything about the Gilded Hand: he designed the Book of Grace, set Veil to collections, leases bonded labour to the Guild, and 'transfers' anyone who reads too far.",
+        "Exactly what happened to Halsa Renn (bonded and put to scrubbing the lower vaults for copying his pages) and where her copied pages are hidden.",
+        "The leverage he holds over every signer, including Ondine — and that the surest way to neutralize the party is to BUY one of them, especially their bonded companion.",
+        "The full design of the Almsmoot: how the patriar vote can be made to charter him Steward of the Poor and make benevolent ownership the law of the Gate."
+      ],
+      "secret": "He IS the architect of the Gilded Hand and a true believer in benevolent bondage, not a corrupt steward who can be shamed straight. Public clues: signers thank him with frightened eyes; his Book of Grace has pages no clerk may read; 'completed' debtors vanish; the Open Hand's real almoners are being quietly pushed out; his collections-mistress Veil answers only to him.",
+      "stat_block": "See top-level 'antagonist'. He fights only if cornered in Act 3 (Mage stats, reflavored as a silver-tongued benefactor: Suggestion/Hold Person as 'the weight of a debt,' Counterspell as 'the House does not permit that'). He prefers to talk and to BUY; surround him with Veil and bonded enforcers and run him last.",
+      "max_hp": 81,
+      "armor_class": 15,
+      "hit_dice": "18d8",
+      "proficiency_bonus": 3,
+      "abilities": {
+        "strength": 9,
+        "dexterity": 14,
+        "constitution": 11,
+        "intelligence": 17,
+        "wisdom": 15,
+        "charisma": 16
+      }
+    },
+    {
+      "id": "veil",
+      "name": "Veil",
+      "voice_id": "npc-rogue",
+      "personality": "Ferreth's collections-mistress and the Gilded Hand's whip-hand: a poised, velvet-voiced woman in widow's grey who was the FIRST signer of the Book of Grace and chose, where Ondine chose the collar, to become the one who holds the leash. She is unfailingly courteous, never raises her voice, and has personally 'transferred' a dozen clerks who read too far. She believes in Ferreth's vision more purely than he does — she has seen what freedom did to her and decided ownership is mercy — and she enforces the Book with a smiling, total devotion. Smooth in conversation, lethal when the House is threatened.",
+      "attitude": "deceptively gracious, then implacable",
+      "role": "antagonist's lieutenant (recurring across all three acts)",
+      "wants": "To keep the Book of Grace's secrets, deliver the party's silence by bond or by burial, and see Ferreth chartered Steward of the Poor so the Hand she helped build becomes eternal.",
+      "knows": [
+        "That 'the Almoner' (Ferreth) commands the Gilded Hand — though she is careful never to put his name to the worst of it aloud, a lever a captured party can press.",
+        "Where Halsa Renn is held and where the duplicate ledgers and the bonded labour were moved (the Drowned Counting House).",
+        "Ondine's exact leverage — her dead's grave-debt, her surviving kin — and that Ferreth means to buy the companion back if the party gets close (Veil will execute that offer herself if she can)."
+      ],
+      "secret": "Her devotion is real but brittle at one seam: she chose the whip over the collar to survive, and a party that confronts her with that choice — that she was a victim who became the predator — can rattle her in a way force never will. She will not turn, but she can falter.",
+      "stat_block": "Recurring villain. In Act 1 she fronts the Ledger House and withdraws rather than fights (Spy stats if forced, AC 12, HP 27, CR 1 — but she prefers to glide away with a courteous threat). In Act 2 she is the mid-boss of the Drowned Counting House (use Assassin, AC 15, HP 78, CR 8, OR Spy + Gilded Hand muscle scaled to party level). In Act 3 she stands at Ferreth's shoulder at the Almsmoot. Scale her support, not her menace.",
+      "max_hp": 78,
+      "armor_class": 15,
+      "hit_dice": "12d8+24",
+      "proficiency_bonus": 3,
+      "abilities": {
+        "strength": 11,
+        "dexterity": 16,
+        "constitution": 14,
+        "intelligence": 13,
+        "wisdom": 11,
+        "charisma": 14
+      }
+    },
+    {
+      "id": "halsa-renn",
+      "name": "Halsa Renn",
+      "voice_id": "npc-female-1",
+      "personality": "Pell's missing sister: a sharp, bookish ledger-clerk in her late twenties, the rare honest hand inside the Ledger House, found bonded and half-broken in the lower vaults — gagged with a 'transfer order,' set to scrubbing, her clerk's spectacles confiscated. She joined the House as honest work and was naive about it for two years until the sums stopped adding up. She copied the damning pages and hid them before Veil's people took her. Found, she is terrified, defiant, and burning to testify — she has the clerk's exact memory of which debts were never meant to be repayable.",
+      "attitude": "broken and afraid, then fiercely cooperative",
+      "role": "rescued witness / key informant (Act 2)",
+      "wants": "To get out alive, get back to Pell, and put the Book of Grace's true arithmetic in front of someone who can use it to end the Gilded Hand.",
+      "knows": [
+        "The Book of Grace's hidden math: the 'service debts' are calculated never to be repayable, so no signer ever 'completes' — they are bonded for life and leased to the Guild.",
+        "Where she hid her copied pages ('the truth is in the laundry' — sewn into the lining of a House laundry-basket in the public almonry, Act 1's findable clue).",
+        "That Veil 'transfers' readers like her down to the Drowned Counting House, and that Ferreth is preparing something at the patriars' Almsmoot to make it all legal.",
+        "Ondine's bond and the leverage Ferreth holds — Halsa clerked the page with Ondine's name on it and can confirm to the party (and to Ondine) exactly what it says."
+      ],
+      "secret": "She blames herself for being too useful too long — she balanced the Hand's books for two years before her conscience caught up, and dreads the party (and Pell) learning how much of the machine she greased before she broke it.",
+      "stat_block": "Begins bonded/noncombatant (Commoner). If freed and cornered she defends herself feebly but would far rather run with the evidence; her testimony and copied pages are the act's true prize, not her sword-arm.",
+      "max_hp": 9,
+      "armor_class": 10,
+      "hit_dice": "2d8",
+      "proficiency_bonus": 2,
+      "abilities": {
+        "strength": 9,
+        "dexterity": 11,
+        "constitution": 10,
+        "intelligence": 15,
+        "wisdom": 13,
+        "charisma": 12
+      }
+    },
+    {
+      "id": "tobias-quayle",
+      "name": "Tobias Quayle",
+      "voice_id": "npc-male-1",
+      "personality": "The Ledger House's nervous head-clerk: a fastidious, sweating man in his forties with ink-cuffs and a permanent flinch, who runs the public almonry's day-book and knows in his gut that something is rotten under his own feet but has too much to lose to look. He is not cruel — he is COMPLICIT, the everyman who keeps the records clean and the questions un-asked because Ferreth pays his mother's apothecary bills. He is the party's softest seam into the House: pushed gently (or frightened), he leaks; pushed too hard, he runs to Veil to cover himself.",
+      "attitude": "anxious, evasive, turnable",
+      "role": "reluctant insider / clue-leaker (Act 1)",
+      "wants": "To keep his head down, keep his mother's bills paid, and not be the next clerk to 'transfer to the country chapter.'",
+      "knows": [
+        "That Halsa was 'transferred' the same night she was caught copying pages, and that 'transfers' are a thing that happens to clerks who read too far.",
+        "The layout of the House, including the locked lower stair to the vaults that 'isn't almonry business.'",
+        "That Veil, not Ferreth, signs the transfer orders — and that he files them without reading them, on purpose.",
+        "That a House laundry-basket went missing from the public almonry the night Halsa vanished, and was 'sent down' — the thread to her hidden pages."
+      ],
+      "secret": "He found one of Halsa's copied pages weeks ago and burned it in terror without reading it fully — and the guilt is eating him. A party that offers him a way out (protection, a clean exit) rather than just leverage can turn him into a real witness.",
+      "stat_block": "Noncombatant. Treat as Commoner; he will not fight and will faint, flee, or talk before he bleeds."
+    },
+    {
+      "id": "brother-cassian",
+      "name": "Brother Cassian",
+      "voice_id": "npc-elder",
+      "personality": "An old, genuinely holy almoner of the Order of the Open Hand — Ilmater's faith — who ran the Lower City's charity for thirty years before Ferreth's Ledger House eclipsed it with coin Cassian's god never gave him. Stooped, half-blind, and quietly furious, Cassian is the moral mirror to Ferreth: the man who chose to give without a leash and watched the desperate flock to the man who fed them better and owned them after. He suspects what Ferreth is and has no proof and no power; he is the party's lore-anchor for what charity is SUPPOSED to be, and the living argument that Ferreth's 'kindness' is a theft of the very mercy Cassian spent his life on.",
+      "attitude": "weary, principled, grateful for allies",
+      "role": "ally / moral compass / lore-giver",
+      "wants": "To see the Open Hand's mercy un-poisoned — to prove that the man the city loves is selling the thing Cassian gave away, and to take the bonded poor back into a charity that doesn't own them.",
+      "knows": [
+        "What true almonry is, and how Ferreth's Book of Grace perverts it — the theological and practical difference between relief and bondage.",
+        "That signers 'complete' and vanish, that the Open Hand's own people are being pushed out, and that he has begged the Fist and the temples to look, to no avail.",
+        "The history of the Almsmoot and how a Steward of the Poor would be chartered — and why Ferreth's bid must be stopped THERE, in the open, where the city can see.",
+        "A safe house for freed signers (his half-empty Open Hand chapel), and a willingness to shelter anyone the party pulls out of the Book."
+      ],
+      "secret": "He once, years ago, sent a starving family to Ferreth's House because he himself had no bread to give them — and they signed, and he never saw them free again. That guilt is why he fights now. Sharing it with the party is his trust-gift.",
+      "stat_block": "Noncombatant by age and oath, but not helpless — if the chapel is attacked he defends the sheltered as a Priest (AC 13, HP 27, CR 2), casting to protect, never to kill. He'd rather pray and shield than strike.",
+      "max_hp": 27,
+      "armor_class": 13,
+      "hit_dice": "5d8+5",
+      "proficiency_bonus": 2,
+      "abilities": {
+        "strength": 10,
+        "dexterity": 10,
+        "constitution": 12,
+        "intelligence": 13,
+        "wisdom": 16,
+        "charisma": 13
+      }
+    }
+  ],
+  "locations": [
+    {
+      "id": "loc-elfsong",
+      "name": "The Elfsong Tavern & Gratitude Row",
+      "description": "The party's hub: the famous Elfsong Tavern in the Lower City, where a long-dead elf-ghost's song drifts through the rafters at odd hours, and the crowded almonry-lane called Gratitude Row just outside it, where the Lower City's ruined queue every dawn for Ferreth's bread. Refugees, tadpole-survivors, and war-widows crowd the benches; everyone here has a Ferreth story, and almost all of them are grateful. This is the safe base — the party returns between acts to rest, resupply, share findings with Pell and Brother Cassian, and slowly learn that the most blessed name in the Lower City is the one they should fear most.",
+      "connections": [
+        "loc-ledger-house",
+        "loc-drowned-counting-house",
+        "loc-almsmoot-hall"
+      ],
+      "notes": "HOME-BASE HUB. Pell Renn (quest-giver), Brother Cassian (moral compass/lore), and a recovering Halsa (after Act 2) gather here. Ondine, the companion, is the party's inside view of the Book of Grace. The party rests, levels, and gathers social clues here; Ferreth's beloved-ness is reinforced every act by the grateful dawn queue on Gratitude Row. Connections fan out to one site per act."
+    },
+    {
+      "id": "loc-ledger-house",
+      "name": "The Ledger House on Gratitude Row (Act 1)",
+      "description": "Ferreth's almonry: a handsome, lamplit hall of long tables, soup-coppers, and ranked ledger-desks where clerks record every kindness in fair copperplate, the great brass-clasped Book of Grace open on a lectern like a shrine. Upstairs are dormitories of grateful signers; the public almonry smells of bread and ink and gratitude. But a locked lower stair 'that isn't almonry business' descends to vaults no clerk is allowed into, the transfer-orders are signed by a woman in widow's grey, and somewhere in the laundry a missing clerk hid the pages that don't add up.",
+      "connections": [
+        "loc-elfsong"
+      ],
+      "notes": "ACT 1 SITE (levels 3-4). Three beats: EXPLORATION (search the public almonry and the locked lower stair — find Halsa's hidden copied pages sewn into a laundry-basket lining, the un-repayable 'service debt' math, a transfer-order ledger; a trapped/warded vault door); SOCIAL (lean on the nervous head-clerk Tobias Quayle for the House's secrets and the vault; meet Veil fronting the House, gracious and chilling); COMBAT (Gilded Hand enforcers catch the party in the vaults — bonded muscle, not monsters). Veil appears here and withdraws with a courteous threat. See scenes scene-a1-*."
+    },
+    {
+      "id": "loc-drowned-counting-house",
+      "name": "The Drowned Counting House (Act 2)",
+      "description": "Beneath the Lower City, in the flooded ghost of old Baldur's Gate, lies a half-submerged Guild vault Ferreth secretly leases: the Drowned Counting House, where the Gilded Hand keeps what the almonry upstairs can't be seen to hold. Bonded signers labour by lantern-light in ankle-deep black water, sorting smuggled Guild cargo and re-copying the real ledgers; cages of 'transferred' readers wait in the drowned cells; and Veil runs it all from a dry counting-room above the waterline. This is where charity's true face is kept — and where Halsa Renn scrubs the floor, waiting to testify.",
+      "connections": [
+        "loc-elfsong",
+        "loc-almsmoot-hall"
+      ],
+      "notes": "ACT 2 SITE (levels 4-6). Three beats: EXPLORATION (the flooded vault — bonded-labour floor, drowned cells, the dry counting-room with the duplicate ledgers; water/dark hazards, a Guild alarm-line); SOCIAL (free Halsa Renn, the rescued witness who carries the FULL TRUTH of the Book's un-repayable math and the leverage Ferreth holds over Ondine; turn bonded signers; the companion FORK pressure-tests hardest here as Veil tries to buy Ondine back); COMBAT (Gilded Hand enforcers + Veil as mid-boss; recover the ledgers). A passage/stair leads on toward the Almsmoot Hall (the Act 3 venue), revealed here. Ondine's betrayal agenda may fire here if approval has curdled."
+    },
+    {
+      "id": "loc-almsmoot-hall",
+      "name": "The Almsmoot Hall, Upper City (Act 3)",
+      "description": "Behind the Basilisk Gate, in a marble patriar gala-hall hung with charity-banners, the Almsmoot convenes: the once-a-year assembly where the Upper City's noble families and the Council vote the chartered offices of the Gate. Tonight, by candlelight and old money, Almoner-General Lucan Ferreth means to be voted Steward of the Poor — a city office that would make his Book of Grace law and the Gilded Hand a legal institution. The Lower City's most beloved man stands to be handed ownership of its desperate by acclamation. This is where the kind almoner's mask finally falls — in front of everyone, or not at all.",
+      "connections": [
+        "loc-elfsong",
+        "loc-drowned-counting-house"
+      ],
+      "notes": "ACT 3 SITE (levels 6-7). Three beats: EXPLORATION/INFILTRATION (get into a patriar gala the party doesn't belong in — forged invitations, the servants' stair, Cassian's old contacts; locate Ferreth, the vote-tally, and where Veil has the enforcers staged); SOCIAL (the confrontation/exposure — table the recovered ledgers and Halsa's testimony before the Council, sway or shame the patriar vote, give the bonded signers and Ondine their stand; Ferreth's unmasked true-believer monologue and his last attempt to BUY the party or buy Ondine back); COMBAT (the climax: Veil + Gilded Hand enforcers, and a cornered Ferreth [Mage stats] if it comes to blades; breaking his hold on the vote/the Hand is the true win, not a body count). Reachable directly from the hub only AFTER Act 2 reveals the Almsmoot plan."
+    }
+  ],
+  "arcs": [
+    {
+      "id": "arc-1-ledger-house",
+      "title": "Act 1 — The Book of Grace",
+      "level_range": [
+        3,
+        4
+      ],
+      "beats": [
+        {
+          "id": "a1-hook",
+          "title": "Hook — The Sister Who Reads",
+          "location_id": "loc-elfsong",
+          "summary": "In the Elfsong's quiet corner, the laundress Pell Renn spends her last silver to beg the party to find her missing clerk-sister Halsa, who read too far in Almoner Ferreth's Book of Grace — while out on Gratitude Row the grateful queue for the kindest man in the Lower City, the first quiet glimpse of the villain wearing a benefactor's face."
+        },
+        {
+          "id": "a1-challenge",
+          "title": "Challenge — Inside the Almonry",
+          "location_id": "loc-ledger-house",
+          "summary": "The party works the Ledger House: the public almonry, the un-repayable 'service debt' math, the nervous head-clerk Tobias Quayle, Halsa's pages hidden in the laundry, and the locked lower stair that 'isn't almonry business.' The clue trail points down into the vaults and to a woman in widow's grey who signs the transfer-orders."
+        },
+        {
+          "id": "a1-climax",
+          "title": "Climax — What's Kept Downstairs",
+          "location_id": "loc-ledger-house",
+          "summary": "In the warded lower vault the party finds the first bonded signers and the Gilded Hand's muscle. Veil arrives, gracious and chilling — 'the Almoner so dislikes unpaid debts' — and withdraws rather than fights, leaving enforcers to cover her and a courteous promise that the party now owes the House. They carry the first proof of the cage back to the hub."
+        }
+      ]
+    },
+    {
+      "id": "arc-2-drowned-vault",
+      "title": "Act 2 — The Drowned Counting House",
+      "level_range": [
+        4,
+        6
+      ],
+      "beats": [
+        {
+          "id": "a2-hook",
+          "title": "Hook — The Math That Doesn't Close",
+          "location_id": "loc-elfsong",
+          "summary": "Back at the hub, Brother Cassian and Ondine help the party read Halsa's copied pages: the 'service debts' are built never to be repaid — every signer bonded for life. Cassian names the Drowned Counting House where readers are 'transferred,' and the party descends — over Veil's gracious warning and Ferreth's untouchable reputation."
+        },
+        {
+          "id": "a2-challenge",
+          "title": "Challenge — The Bonded Below",
+          "location_id": "loc-drowned-counting-house",
+          "summary": "The party infiltrates the flooded Guild vault: bonded-labour floors, drowned cells, the dry counting-room of duplicate ledgers. They free Halsa Renn — who carries the full truth of the Book's math AND the leverage Ferreth holds over Ondine. The companion fork pressure-tests hard as Veil offers to buy Ondine back: debt cleared, kin safe."
+        },
+        {
+          "id": "a2-climax",
+          "title": "Climax — Collecting the Debt",
+          "location_id": "loc-drowned-counting-house",
+          "summary": "Veil and the Gilded Hand fight to keep the ledgers and the bonded from leaving. Recovering the evidence and the witnesses is the act's payoff — but even beaten, Veil reveals the endgame: Ferreth means to be chartered Steward of the Poor at the Almsmoot, and flees to warn him. If Ondine's bond has curdled, her betrayal fires here."
+        }
+      ]
+    },
+    {
+      "id": "arc-3-almsmoot",
+      "title": "Act 3 — The Steward of the Poor",
+      "level_range": [
+        6,
+        7
+      ],
+      "beats": [
+        {
+          "id": "a3-hook",
+          "title": "Hook — The Mask in Marble",
+          "location_id": "loc-elfsong",
+          "summary": "The party returns with the ledgers, Halsa's testimony, and freed signers — and learns Ferreth has called in his debts at once and gone to the patriar Almsmoot to be voted Steward of the Poor, which would make the Gilded Hand law. Pell, Cassian, and a recovering Halsa rally; Ondine reaches her crisis. The party must crash a gala they don't belong in before mercy becomes statute."
+        },
+        {
+          "id": "a3-challenge",
+          "title": "Challenge — Crashing the Gala",
+          "location_id": "loc-almsmoot-hall",
+          "summary": "Into the marble Almsmoot through forged invitations, the servants' stair, and Cassian's old contacts: locate Ferreth, the vote-tally, and Veil's staged enforcers among the patriars and charity-banners. Get the evidence in front of the Council before Ferreth's allies can bury the party as gate-crashers — and before he can buy the room, or the companion, out from under them."
+        },
+        {
+          "id": "a3-climax",
+          "title": "Climax — Breaking the Hold",
+          "location_id": "loc-almsmoot-hall",
+          "summary": "Ferreth's mask falls: not a corrupt steward but a true believer in benevolent ownership, offering the party — and Ondine — a place in the Book before the blades come out. The party must table the truth and break the vote, turn the bonded against the Hand, and defeat or expose Veil and a cornered Ferreth before the Steward of the Poor is chartered. Breaking the hold, not the man, is the victory."
+        }
+      ]
+    }
+  ],
+  "scenes": [
+    {
+      "id": "scene-a1-hook",
+      "name": "The Sister Who Reads",
+      "type": "social",
+      "location_id": "loc-elfsong",
+      "read_aloud": "The Elfsong's dead elf-ghost is singing tonight — a thread of grief in the rafters that the regulars have learned not to hear. In the quietest corner, a wiry woman with a grey ceremorphosis-scar running down her neck sets three worn silver pieces on the table between you, one at a time, as if each one costs her a tooth. 'They told me you don't owe him,' she says, low. 'Everyone in the Lower City owes Almoner Ferreth something. Not you. That's why I'm here.' Out the window, even at this hour, the queue is forming on Gratitude Row for the dawn bread — the ruined and the scarred, thanking a silver-haired old man's name like a prayer. 'My sister clerked his books,' the laundress says. 'She started reading the pages she wasn't meant to. Six nights ago she didn't come home. The House says she transferred to a country chapter. There is no country chapter. Please. Find Halsa.'",
+      "dm_notes": "Establish the hub, the stakes, and — crucially — plant the villain in plain sight, beloved and OFF-screen (Ferreth never appears in person in Act 1; his absence is his power — everyone speaks of him with love). Pell Renn (npc-female-1) is the quest-giver: frightened, desperate, spending her last safety. Play the dramatic irony HARD — the grateful dawn queue, every NPC's Ferreth-blessing, against Pell's lonely fear. Make the player feel that fearing Ferreth marks Pell as the strange one. Plant exactly one or two quiet wrongnesses a sharp player might catch: the signers who thank Ferreth do it with FLAT, frightened eyes; 'transferred to the country chapter' is a phrase that doesn't survive a follow-up question. Brother Cassian (npc-elder, pitch him frail, weary, holy — NOT Ferreth's warm register) may be found here or nearby and gives the FIRST lore-crumb: that he ran the Lower City's charity for thirty years before Ferreth's coin eclipsed it, and that 'a kindness with a signature on it isn't a kindness, it's a contract.' THE COMPANION: Ondine Marsh (companion-default) is HERE and is herself bonded to Ferreth — she's quiet when his name comes up, and a sharp party (Insight) may catch that the ex-Fist sergeant flinches at 'the Book of Grace.' She does NOT yet reveal her bond; she's been 'lent' to watch the party and is deciding whether she'd rather watch Ferreth. Do NOT tip Ferreth's full hand; the reveal that the kindness is a cage is Act 1's payoff, the reveal that he MEANS it is later. 40-60 gp / room-and-board is NOT the lever here — Pell has almost nothing; the hook is moral (a frightened woman no one will help) plus Ondine's quiet stake.",
+      "checks": [
+        {
+          "skill": "Insight",
+          "dc": 13,
+          "success": "You read the room under the gratitude: the signers thank Ferreth with the careful, flat eyes of people who've learned what happens to the ungrateful, and your own companion Ondine has gone very still at the laundress's story — a stillness that isn't boredom. Pell is telling the truth, and she is far more afraid than a missing-clerk case should make her. (Flags Ondine's hidden stake and the first unease about the beloved Almoner.)",
+          "failure": "You take it at face value: a missing sister, a frightened woman, a job. The Almoner's good name and the grateful queue read as exactly what they appear to be. No harm — the unease keeps for later."
+        },
+        {
+          "skill": "Persuasion",
+          "dc": 12,
+          "success": "Your steadiness reaches Pell. She tells you the rest: Halsa was copying pages out of the Book of Grace, whispering that 'completed' debtors were never seen again, and the last thing she said was 'the truth is in the laundry.' Pell also confesses, barely, that she took Ferreth's bread but never signed his Book — and lives in terror that her own hunger will be the thing that bonds her. (The human stake that makes the cage real.)",
+          "failure": "Pell holds the worst of it back, too frightened to trust strangers fully — she gives you Halsa's name, the House, and 'transferred to the country chapter,' enough to start, but the laundry clue and her own half-signer fear wait until you've earned more trust."
+        }
+      ],
+      "encounter": null,
+      "transitions": "When the party takes Pell's case and sets out for the Ledger House on Gratitude Row, move to scene-a1-house at loc-ledger-house."
+    },
+    {
+      "id": "scene-a1-house",
+      "name": "Inside the Almonry",
+      "type": "exploration",
+      "location_id": "loc-ledger-house",
+      "read_aloud": "The Ledger House smells of bread and ink and gratitude. Long tables feed the queue from steaming soup-coppers; ranked clerk-desks scratch out every kindness in fair copperplate; and on a lectern at the hall's heart, lit like a shrine, the great brass-clasped Book of Grace lies open for all to admire and none to read closely. A sweating, ink-cuffed clerk hurries between the desks, flinching at the brass clasp every time he passes it. Behind a velvet rope at the back of the hall, a narrow stair descends into the dark beneath a small brass plaque: NOT ALMONRY BUSINESS. And in the laundry-nook off the kitchens, a stack of House baskets waits to be 'sent down.'",
+      "dm_notes": "EXPLORATION + the start of the SOCIAL beat. Threads: (1) Read the Book of Grace and the public ledgers (Investigation): the 'service debts' are calculated so the interest and 'board' always outrun the labour — no signer ever 'completes.' A sharp clerk's-eye read (or Ondine, who's lived it) confirms the bondage is BY DESIGN. (2) Find Halsa's hidden pages: 'the truth is in the laundry' — her copied pages are sewn into the lining of a House laundry-basket (Investigation/Perception; the basket is about to be 'sent down,' a soft clock). (3) The locked lower stair ('NOT ALMONRY BUSINESS') is warded/trapped (Perception to spot a Guild alarm-line + a glyph; Thieves' Tools/Arcana to beat it) — tripping it summons the Gilded Hand muscle of scene-a1-vault early, no surprise. (4) SOCIAL: the head-clerk Tobias Quayle (npc-male-1) is the soft seam — frightened, complicit, turnable. Pressed gently or offered a way out, he leaks the vault, the transfers, and that VEIL (not Ferreth) signs the orders; pressed too hard, he bolts to warn her. COMPANION: Ondine recognizes the Book's math from the inside and, at the DM's discretion, lets the first crack show — 'I signed one of these. Don't let it sound noble to you.' (Her trust-gate at threshold 25 may open here if the party's been decent to her.) Atmosphere: every clerk and signer is grateful and afraid in equal measure; lingering too long reading restricted pages risks a clerk fetching Veil (a soft social clock, not a death-trap).",
+      "checks": [
+        {
+          "skill": "Investigation",
+          "dc": 14,
+          "success": "The Book of Grace resolves into something monstrous in plain copperplate: every 'service debt' is built so that board, interest, and 'tithes of gratitude' always outrun what a signer can ever repay — the debts are designed never to close. Cross-referenced against the day-book, 'completed' signers don't graduate; they're struck through and 'transferred.' You're holding proof that the kindest charity in the Gate is a life-bondage machine. (Ondine, reading over your shoulder, confirms it with a soldier's flat certainty.)",
+          "failure": "The ledgers are a fortress of fair-looking sums and you can't make the arithmetic damn anyone at a glance in the busy hall — but you DO catch the recurring word 'transferred' struck beside name after name, enough to know the House loses signers it never graduates. The full math waits for Halsa's pages or a quieter read."
+        },
+        {
+          "skill": "Perception",
+          "dc": 13,
+          "success": "Two finds. First, in the laundry-nook, one House basket sits heavier than its fellows — its lining stitched with a clumsy, recent hand: Halsa's copied pages, sewn in before she vanished ('the truth is in the laundry'). Second, the lower stair behind the velvet rope is guarded by more than a plaque — a near-invisible Guild alarm-line runs along the third step, and a faint warding-glyph sits under the rail. Spot them and you can disarm or step past (DC 13 Thieves' Tools / Arcana) without bringing the House down on you.",
+          "failure": "If anyone forces the lower stair without spotting the line, the alarm-cord trips a muffled bell somewhere below and the Gilded Hand muscle in the vault is now ALERT (no surprise for the party). The laundry basket's secret can still be found later — but the easy moment to grab it, before it's 'sent down,' may pass."
+        },
+        {
+          "skill": "Persuasion",
+          "dc": 13,
+          "success": "You read Tobias Quayle right — not a villain, a frightened man drowning in complicity — and offer him a way out instead of just a threat. He cracks: Halsa was 'transferred' the night she was caught copying; transfers go DOWN, not to any country chapter; VEIL signs the orders and he files them unread on purpose; and yes, the lower vault is where 'not almonry business' is kept. He'll even look the other way at the stair if you swear to get him and his mother clear when it breaks. (Turns the head-clerk into a real witness.)",
+          "failure": "Quayle sweats, stammers about 'channels' and 'the Almoner's good works,' and edges toward the back — push him any harder and he'll scuttle off to fetch Veil, putting the House on alert. You get the shape of his fear but not his confession; work the ledgers and the laundry instead."
+        }
+      ],
+      "encounter": null,
+      "transitions": "Taking the lower stair (quietly, or with the House alerted if the alarm tripped) descends into the warded vault — move to scene-a1-vault. Halsa's laundry-pages and the ledger math point the party down, and onward in Act 2 to the Drowned Counting House and the truth of the Book's design."
+    },
+    {
+      "id": "scene-a1-vault",
+      "name": "What's Kept Downstairs",
+      "type": "combat",
+      "location_id": "loc-ledger-house",
+      "read_aloud": "The stair ends in a low brick vault that the soup-and-bread smell never reaches — here it's tallow, damp, and fear. Bonded signers in House grey labour by lantern-light at sorting-tables stacked with Guild-marked cargo, none of them meeting your eyes; against the far wall, a row of barred holding-cells waits, two of them occupied. Three broad-shouldered enforcers in House livery turn from the tables, cudgels already in hand. And down the stair behind you, unhurried, comes a poised woman in widow's grey, gloved hands folded, a transfer-order half-written in one of them. She smiles as though you are expected guests. 'The Almoner so dislikes an unpaid debt,' she says, gently. 'And you've run up rather a large one, reading what wasn't yours.'",
+      "dm_notes": "First COMBAT and Veil's (npc-rogue) introduction. Veil is a TALKER who WITHDRAWS, not a boss to kill here — she is gracious, names the party's 'debt' to the House, and on round 2-3 glides back up the stair with a courteous promise that the House always collects, leaving her enforcers to cover her. If the party somehow corners and forces her to fight, use Spy stats (AC 12, HP 27, CR 1) — but strongly prefer her exit; she's needed for Acts 2 and 3. The fight proper: 3 Gilded Hand enforcers — use bundled Thug/Tough (AC 12, HP 32, CR 1/2) — plus optionally 1 harder hand (a Spy, AC 12, HP 27, OR a Veteran/Warrior Veteran if the party is strong). For a level 3-4 party of 3-4 that's a fair fight; see scaling. The bonded signers are NOT enemies — they're frightened victims who will NOT fight the party and may help if reassured (a chance to free the two caged 'readers' and learn the Drowned Counting House is where the rest went). COMPANION: this is the moral knife — Ondine recognizes the bonded as her own kind and will NOT raise a hand against a signer; she puts herself between the party and the cages, and how the party treats the bonded here is a major approval beat (free_the_bonded / spare_a_frightened_pawn vs treat_the_bonded_as_criminals). If Ondine's trust-gate (25) hasn't opened, a decent showing here can open it. If the alarm was tripped upstairs, the enforcers act first with the party surprised.",
+      "checks": [
+        {
+          "skill": "Persuasion",
+          "dc": 14,
+          "success": "You speak past Veil to her enforcers and the bonded — reminding the muscle they were signers once too, telling the caged readers help has come. One enforcer falters and stands down (he throws his cudgel down and steps back), and the two caged prisoners, freed, name the Drowned Counting House where Halsa and the rest were 'transferred.' Veil herself only inclines her head, unmoved — 'How kind. They'll thank you in the Book' — and withdraws up the stair. You can't hold her; you can only learn from her.",
+          "failure": "Veil's enforcers hold, loyal or too afraid not to be. She covers her own unhurried exit with a gloved gesture and a soft word — 'Do try not to bleed on the cargo' — and is gone up the stair, leaving you the fight and the cages."
+        },
+        {
+          "skill": "Intimidation",
+          "dc": 13,
+          "success": "You break the enforcers' nerve — bonded muscle has families too, and a hard enough showing convinces one or more to drop their cudgels and flee or surrender rather than die for Ferreth's secret. A cowed enforcer can be pressed for the Drowned Counting House and the name 'Veil,' damning testimony to carry up. (Ondine backs this play hard — these are people she knows.)",
+          "failure": "The enforcers fight on, more afraid of Veil and the Book than of you. You'll win the vault the hard way and piece the route to the Drowned Counting House together from the freed prisoners and the cargo-marks."
+        }
+      ],
+      "encounter": {
+        "monsters": [
+          {
+            "name": "Thug",
+            "count": 3,
+            "reflavor": "Gilded Hand enforcers in House livery — bonded signers who took the cudgel over the cold, not gleeful villains. Resolves to the bundled 'Tough' (CR 1/2). At least one can be talked or frightened down; a spared one may become a future informant."
+          },
+          {
+            "name": "Spy",
+            "count": 1,
+            "reflavor": "Veil's quiet hand among the enforcers — a Gilded Hand collector who fights dirty and slips toward the stair when the tide turns. Use only for a stronger party; otherwise Veil's withdrawal is the only 'boss' presence."
+          }
+        ],
+        "tactics": "Veil gives a round of velvet menace and a name-drop ('the Almoner,' never quite Ferreth aloud), then withdraws up the stair on round 2-3 (do NOT let the party trap her; she is recurring). The enforcers fight reluctantly, clustering to guard the cargo and the cages, and break under Intimidation or once one of their own goes down or flees — a chance for the party to take a prisoner or turn a witness. The bonded signers at the sorting-tables never fight the party; treat freeing/reassuring them as the act's heart. Use the cramped vault and the cargo-stacks as light cover/difficult terrain.",
+        "scaling": "Party of 1-2 or all-squishy: 2 Thugs (Toughs), no Spy. Party of 4+ or running hot: 3 Thugs + 1 Spy (or a Warrior Veteran in the Spy's place). Veil withdraws rather than fights regardless of party size.",
+        "xp": 450,
+        "xp_note": "3x Thug/Tough (100 each) + optional Spy (200) ~= 300-500; budget ~450 with the story-stakes of the cage reveal. Award full value whether the party kills, captures, frees, or scatters — and a story bonus for freeing the caged readers and turning an enforcer."
+      },
+      "transitions": "With the enforcers scattered and the vault's truth in hand (Halsa's pages, the un-repayable math, the freed readers' word of the Drowned Counting House, Veil's name), the party returns to loc-elfsong. They are now level 4-ish; Act 2's hook (Cassian and Ondine reading the pages, the descent below) opens. Veil is gone up the stair with a promise that the House always collects."
+    },
+    {
+      "id": "scene-a2-hook",
+      "name": "The Math That Doesn't Close",
+      "type": "social",
+      "location_id": "loc-elfsong",
+      "read_aloud": "Back in the Elfsong's corner, you spread Halsa's stolen pages on the table, and old Brother Cassian leans his half-blind eyes close to the copperplate while Ondine reads over his shoulder with a soldier's grim quiet. The ghost-song threads the rafters above. Cassian's gnarled finger stops on a column of figures, and he goes very still. 'I gave bread for thirty years and never asked a name in return,' he says, hoarse. 'This — this asks the name first. Look. The board outpaces the labour. The interest outpaces the board. The gratitude-tithe outpaces them both.' He looks up, and there is thirty years of grief in it. 'No one signs this and ever leaves it. It was never meant to be repaid. It's not an almonry, child. It's a fishhook with a soup-kitchen on the end of it.' Beside him, Ondine pulls back her collar an inch — and there, inked at her collarbone, is a small gilded hand.",
+      "dm_notes": "ACT 2 HOOK and a SOCIAL beat that turns the screw and detonates the companion's stake. Brother Cassian (npc-elder, frail/holy register) reads Halsa's pages and confirms the bondage is BY DESIGN — the moral thesis of the campaign stated plainly by the man who gave charity the honest way. The big beat: ONDINE'S BOND IS REVEALED to the party (the gilded hand inked at her collarbone). This is her trust-gate (threshold 25) and ideally her personal-quest gate (threshold 50) territory: she admits she signed to bury her wife Calla and her brother, that Ferreth 'lent' her to watch the party, and that she'd rather watch HIM — but that every step toward exposing the Book tightens the leverage he holds (her dead's grave-debt is still 'owed'; her surviving kin can be re-bonded). Play her FORK live from here on: honored, she's the party's fiercest ally; if the party's been treating her as muscle, taking coin, or trading the bonded for expedience, her approval curdles toward the betrayal gate (18). Cassian names the DROWNED COUNTING HOUSE — the flooded Guild vault Ferreth leases, where readers are 'transferred' and the real ledgers and bonded labour are kept — and offers his chapel as a safe house for anyone freed. Veil may send a gracious WARNING here (a note, a watcher) — 'the Almoner hopes you'll let an old man's charity be'; Ferreth's reputation is still a fortress (the Fist won't touch him). This is the level-4->onward springboard. NOTE: if the party hasn't yet recovered Halsa's pages, Cassian and a freed vault-prisoner can supply the same revelation; don't hard-gate the descent on the pages.",
+      "checks": [
+        {
+          "skill": "Insight",
+          "dc": 13,
+          "success": "Watching Ondine show you the gilded hand, you see exactly what it costs her — and what she's risking. Naming it gently ('He's still holding your dead over you, isn't he?') wins her completely: she tells you the leverage in full (Calla's grave-debt, her surviving kin), that Ferreth means to buy her back if you get close, and that she's choosing you anyway — for now. (Opens her trust and, if approval's high, her personal-quest gate; the surest way to keep the fork on the loyalty side.)",
+          "failure": "You catch that Ondine is frightened under the soldier's calm and holding something back, but pressing makes her shut the collar and go quiet. She'll still guide you to the Drowned Counting House — but the depth of her bind, and the warmth of her trust, waits until you've shown her you're worth the risk."
+        },
+        {
+          "skill": "Investigation",
+          "dc": 13,
+          "success": "Working Halsa's pages with Cassian, you reconstruct the route the 'transfers' take: cargo-marks, lease-codes, and a recurring drowned-vault cipher all point to the same place under the Lower City — the Drowned Counting House, a flooded Guild vault the Gilded Hand runs below the streets. You go in knowing the layout's rough shape: a bonded-labour floor, drowned cells, and a dry counting-room where the real ledgers are kept.",
+          "failure": "The cipher resists you, but Cassian knows the old drowned vaults from his charity days and can name the Drowned Counting House regardless — you'll go in knowing WHERE but not the interior until you're in it."
+        }
+      ],
+      "encounter": null,
+      "transitions": "Armed with the truth of the Book and the route below, the party descends to the Drowned Counting House — move to scene-a2-vault at loc-drowned-counting-house. (A wary party may try to tail Veil or watch the Ledger House; reward investigation with atmosphere, but the trail leads below either way.)"
+    },
+    {
+      "id": "scene-a2-vault",
+      "name": "The Bonded Below",
+      "type": "exploration",
+      "location_id": "loc-drowned-counting-house",
+      "read_aloud": "Down through a Guild sluice-gate, the Lower City gives way to the drowned ghost of the old one: flooded streets gone to black water, and at the end of a half-submerged hall, the Drowned Counting House. Lantern-light wavers off ankle-deep water where bonded signers in House grey sort Guild-marked cargo and re-copy ledgers they're not allowed to read aloud; barred cells stand in the deeper water, a 'transferred' clerk slumped in one of them; and up a short stair, dry above the waterline, a warm counting-room glows where the real books are kept. The air is cold and close and smells of wet stone and tallow — and somewhere, on her knees with a scrubbing-brush, a thin clerk with no spectacles looks up at the sound of boots that don't belong to the House.",
+      "dm_notes": "ACT 2 EXPLORATION + the SOCIAL/RESCUE heart of the act. The vault is a small dungeon: the bonded-labour floor (bonded signers who will NOT fight the party and can be reassured/freed/turned — a major approval surface for Ondine), drowned cells (a 'transferred' reader to free), water hazards (DC 13 Strength/Athletics in the deep water; a Guild alarm-line on the sluice; dark/cold). The dry counting-room up the stair holds the DUPLICATE LEDGERS — the evidence the Act 3 exposure needs (Investigation to find and grab the right books fast). Deeper in, the party finds HALSA RENN (npc-female-1), bonded and scrubbing — the RESCUED WITNESS who carries the full truth: the Book's un-repayable math, the route to the Almsmoot plan, and the page with Ondine's name on it (she clerked it; she can tell the party AND Ondine exactly what Ferreth holds). Freeing and steadying Halsa is the act's social payoff. THE FORK PRESSURE-TESTS HARDEST HERE: Veil (or a note from Ferreth) makes the OFFER to Ondine — her debt cleared, Calla's grave-debt forgiven, her surviving kin made safe — if she'll deliver the party or simply stand aside. If approval has curdled (threshold 18) and especially if the party has set the 'took_ferreths_coin' decision_flag, Ondine's betrayal agenda may FIRE here or at the climax. If the party has honored her, she refuses the offer to Ondine's own visible cost — a huge loyalty beat. Combat with the Gilded Hand may interrupt; let the rescue and the fork breathe before or after the fight.",
+      "checks": [
+        {
+          "skill": "Investigation",
+          "dc": 14,
+          "success": "In the dry counting-room you find the real books fast: the duplicate Book of Grace, the Guild lease for the vault, and the transfer-ledger naming every 'reader' sent down — including Halsa, and including a page with SERGEANT ONDINE MARSH and her dead's grave-debt. This is the evidence that can break Ferreth in the open at the Almsmoot. Grab the right volumes before Veil's people realize the counting-room's been reached.",
+          "failure": "The counting-room is a wall of identical ledgers and you can't be sure which damn him until Halsa (who clerked them) points you at the right three. You'll need her cooperation to leave with evidence that proves anything — making the rescue not just kind but necessary."
+        },
+        {
+          "skill": "Persuasion",
+          "dc": 13,
+          "success": "Your kindness reaches the broken, spectacle-less clerk. Halsa stops scrubbing, weeps, and talks: the Book's debts were built never to close; Veil 'transfers' readers down here; Ferreth is preparing something at the patriars' Almsmoot to make the whole machine LEGAL; and — she clerked it herself — she can tell you, and Ondine, exactly what Ferreth holds over your companion. She begs to be gotten to Pell and swears she'll testify. (THE RESCUE + the lever for the Act 3 exposure AND the companion fork.)",
+          "failure": "Halsa is too frightened and too ashamed — she balanced these books for two years before her conscience caught up — to trust you at once. Free her and give her time (Insight, or simply getting her out) and she'll come round; for now she'll only whisper 'the Almsmoot' and 'don't let them buy your soldier' before she clams up."
+        },
+        {
+          "skill": "Insight",
+          "dc": 13,
+          "success": "Reading the bonded floor, you see at once these are not criminals — they're grief that got a bill, signers who took the soup and the collar in the same desperate hour. Treating them as victims rather than obstacles unlocks the room: they'll point you to Halsa, the counting-room, and the sluice-route out, and several will follow you up into Cassian's keeping if you offer it. (Ondine's approval surges; the surest counter to Veil's buy-back offer is showing Ondine you free her people.)",
+          "failure": "The bonded keep their heads down and their eyes on the water, too afraid of Veil to risk you — you'll have to win their trust one at a time, or do the act the hard way without their help."
+        }
+      ],
+      "encounter": null,
+      "transitions": "The Counting House's heart — the counting-room and Veil's collectors — is where the evidence is contested; move to scene-a2-collect. Halsa, if freed, will NOT follow into the fight but waits at the sluice to be guided out and testify (and carries the truth of Ondine's bond, and the Almsmoot plan, home if the party doesn't already hold it)."
+    },
+    {
+      "id": "scene-a2-collect",
+      "name": "Collecting the Debt",
+      "type": "combat",
+      "location_id": "loc-drowned-counting-house",
+      "read_aloud": "The warm counting-room sits dry above the black water like a held breath, ledgers ranked floor to ceiling — and Veil is already there, waiting for you among them, gloved hands folded, perfectly calm. Around her, Gilded Hand collectors fan out across the stair and the waterline, blades wet and ready; in the deep water below, something heavy shifts. 'You've cost the House a great deal of trouble,' Veil says, with no anger at all, 'and the Almoner is a forgiving man. He's authorized me to settle ALL your debts tonight — the laundress's, the clerk's...' Her gaze slides, gentle as a knife, to your companion. '...the sergeant's dead. Her wife's grave, paid clean. Her people, safe forever. All it costs is that you walk away, and she stays.' She lets it land. 'Or we collect the other way. The Almoner does so prefer the kind one.'",
+      "dm_notes": "ACT 2 CLIMAX — the second major COMBAT, Veil's mid-boss turn, AND the loudest beat of the companion fork. THE OFFER is real and on the table: Veil offers to clear EVERYONE's debt — and pointedly Ondine's (Calla's grave-debt, her kin's safety) — if the party abandons the rescue and leaves Ondine to the Book. How the party answers is a major approval fork: refusing on Ondine's behalf (refuse_a_bribe / free_the_bonded) sends approval up hard; taking the deal, or hesitating audibly, or having already set 'took_ferreths_coin,' pushes toward the betrayal gate (18) and can FIRE Ondine's agenda — she does the cold math and turns, fighting at Veil's side, sick with it ('You should have made me a better offer than freedom I can't afford'). NOW VEIL FIGHTS if it comes to blades: use Assassin (AC 15, HP 78, CR 8) for a level 5-6 party, OR Spy (AC 12, HP 27) + heavier Gilded Hand muscle for a lighter table — scale to the party. Her support: 2-3 Gilded Hand collectors (Thug/Tough, AC 12, HP 32) and optionally 1 Wererat or Spy (a Guild touch) or a Warrior Veteran; the 'something heavy in the water' can be a Swarm of Rats or a Guild thug for atmosphere. THE OBJECTIVE is twofold: beat/drive off Veil AND leave with the EVIDENCE (the duplicate ledgers) and the WITNESSES (Halsa, freed bonded). Veil, if reduced below ~1/3 HP or clearly losing, WITHDRAWS toward the Almsmoot to warn Ferreth and ready the charter (she survives to Act 3 unless the party is exceptional; capturing her is a win and yields the Almsmoot plan in full). COMPANION (loyalty path): if honored, Ondine refuses Veil's offer to her own visible cost and fights like the soldier she was ashamed she'd stopped being — a Second Wind/Action Surge anvil between Veil and the party's casters, the emotional core of the act. The water and the stair (difficult/hazard terrain) keep positioning tense.",
+      "checks": [
+        {
+          "skill": "Arcana",
+          "dc": 14,
+          "success": "You spot the Guild ward-cipher protecting the most damning ledgers and crack it under fire — so when you leave, you leave with books that will hold up in front of the Council, not blanks that Ferreth's lawyers can dismiss. (Secures the Act 3 evidence; narrate the wards guttering as the cipher breaks.)",
+          "failure": "The ward-cipher resists you mid-fight; you can still grab the ledgers, but some pages are blanked or keyed, and you'll lean harder on Halsa's testimony to make them damn Ferreth at the Almsmoot."
+        },
+        {
+          "skill": "Intimidation",
+          "dc": 14,
+          "success": "Driving the fight hard, you break the collectors' nerve — bonded muscle has limits, and a hard enough showing peels one or more off Veil to flee, surrender, or even switch sides. A cornered collector (or Veil, if trapped) confirms the endgame in full: Ferreth means to be voted Steward of the Poor at the Almsmoot, which would make the Book LAW. Damning, and the lever for Act 3.",
+          "failure": "The collectors hold, more afraid of the Book than of you, and you win the counting-room the hard way — piecing the Almsmoot plan together from the ledgers and Halsa rather than a confession."
+        }
+      ],
+      "encounter": {
+        "monsters": [
+          {
+            "name": "Thug",
+            "count": 3,
+            "reflavor": "Gilded Hand collectors guarding the ledgers — bonded muscle, surrender-prone once the fight turns or once Veil withdraws. Resolves to bundled 'Tough' (CR 1/2). Scale to 2 for a light party, hold a 4th for a strong one."
+          },
+          {
+            "name": "Swarm of Rats",
+            "count": 1,
+            "reflavor": "The 'something heavy in the water' — the drowned vault's vermin, a hazard that boils up from the black water to harry anyone knocked prone in the deep. Atmosphere/difficulty dial; swap for a Wererat for a Guild touch on a strong party."
+          }
+        ],
+        "boss": {
+          "name": "Veil",
+          "npc_id": "veil",
+          "stats": "Assassin (AC 15, HP 78, CR 8) for a level 5-6 party; Spy (AC 12, HP 27, CR 1) + heavier Gilded Hand support for a lighter table.",
+          "note": "Mid-boss. Makes THE OFFER (buy back the party's/Ondine's debts) before blades; withdraws toward the Almsmoot to warn Ferreth if reduced below ~1/3 HP or clearly losing — she must survive to Act 3 unless the party is exceptional. Capturing her counts as a full victory and yields the Almsmoot plan."
+        },
+        "tactics": "Veil opens with the OFFER, not an attack — give it real weight and let the companion fork land before initiative. If it comes to blades she fights cold and efficient (Assassin's Sneak Attack/Assassinate on the squishiest PC, or Spy's cunning hit-and-fade on a light table), positioning to keep collectors between herself and the party so she can withdraw up the Almsmoot stair when the tide turns. The collectors cluster to guard the ledger-room and break under Intimidation or once Veil withdraws. The bonded signers do NOT fight the party. The deep water is difficult terrain; a prone or shoved character draws the rat-swarm. If Ondine's agenda fires, run her turn HERE at Veil's side as a real attack — heartbreaking, not cartoonish.",
+        "scaling": "Party of 1-2 or all-squishy: Veil as Spy + 1 Thug. Party of 3-4: Veil as Assassin (or Spy + 2 Thugs + rats) + 2 Thugs. Party of 4+ or running hot: Veil as Assassin + 3 Thugs + a Wererat/Warrior Veteran. Keep the dual objective (beat Veil AND leave with evidence + witnesses) live so the fight is about the books, not just the body count.",
+        "xp": 1800,
+        "xp_note": "Veil (Assassin, 3900 at CR 8 — a deliberate spike for a climactic lieutenant; soften to Spy 200 for a light party) + 3x Thug/Tough (100) + Swarm of Rats (50); budget ~1800 toward the act (or ~600 if Veil is run as a Spy). Award FULL value for routing, capturing, or driving off Veil and for leaving with the evidence and the freed bonded, however it's done."
+      },
+      "transitions": "With Veil beaten or withdrawn, the evidence in hand (duplicate ledgers, transfer-ledger, Halsa's testimony), and the bonded freed, the party returns to loc-elfsong to regroup, level toward 6-7, and act on the Almsmoot plan — move to scene-a3-hook. The way to the Almsmoot Hall (loc-almsmoot-hall) and the endgame is now open. If Ondine's agenda fired, the party climbs out of the vault a member down (or pursued); if she stood firm, they climb out with the fiercest ally in the Gate."
+    },
+    {
+      "id": "scene-a3-hook",
+      "name": "The Mask in Marble",
+      "type": "social",
+      "location_id": "loc-elfsong",
+      "read_aloud": "You bring the truth up out of the black water — the ledgers, Halsa restored to a weeping Pell, the freed bonded blinking in the lamplight of Cassian's chapel — and for one night Gratitude Row feels like it might tip. Then the crier comes through, ringing his bell, and the Lower City lifts its grateful face: 'By acclamation of the Parliament of Peers, the Almsmoot convenes this very night — and the most generous heart in the Gate, Almoner-General Lucan Ferreth, stands to be named STEWARD OF THE POOR!' Cassian's cup stops halfway to his mouth. Ondine goes white. 'Steward of the Poor is a chartered office,' the old almoner breathes. 'If they vote it to him, the Book of Grace stops being a secret and becomes the LAW. Every bond legal. Every signer his by statute. He won't have to hide the cage anymore — the city will hand him the key and thank him for it.' He sets the cup down with a hand that has aged a decade. 'It's tonight, child. In the marble, where we don't belong. And we are out of time to do this quietly.'",
+      "dm_notes": "ACT 3 HOOK and the turn from investigation to confrontation. The villain's endgame is named and IMMINENT: Ferreth means to be chartered Steward of the Poor at the Almsmoot TONIGHT, making the Gilded Hand legal and his ownership of the Lower City's poor the law of the Gate. This scene is about RESOLVE and STAKES: Brother Cassian explains the charter and why it must be stopped in the OPEN, at the Almsmoot, where the city can see — not in a back-alley; killing Ferreth quietly just martyrs a saint and leaves the Book. Pell and a recovering Halsa are here (the rescue paying off); Halsa steels herself to testify before the Council. ONDINE REACHES HER CRISIS: this is the fork's last fork. If honored (approval high, loyalty gate 75), she stands up as the captain the bonded need — she'll marshal the freed signers, walk into the marble she was bonded to, and turn the Hand's own muscle at the gala. If curdled (and not already turned in Act 2), this is the last chance for her betrayal to loom — Ferreth's buy-back offer is at its most tempting now that he's about to win. Play her choice as the emotional spine of the finale. Let the party PREPARE: forged invitations, the servants' stair, Cassian's old patriar contacts who owe the Open Hand, last supplies (Cassian's chapel may yield a Potion of Healing or two and a writ of the Open Hand's standing). Then they crash the gala. NOTE: if the party somehow reached here WITHOUT the full reveal, this is the backstop — the public charter forces the confrontation into the open regardless.",
+      "checks": [
+        {
+          "skill": "Persuasion",
+          "dc": 14,
+          "success": "You rally your allies and your evidence into a plan that can actually win the room: Cassian calls in a patriar or two who still owe the Open Hand a debt of conscience and will hear you out on the floor; Pell and Halsa will testify; the freed bonded will show their gilded-hand marks to the Council as living proof. You go into the marble with a wedge to crack the vote, not just a sword. (Mechanical perk: advantage on the first Almsmoot social check, an extra ally voice on the floor, or a Potion of Healing or two from the chapel.)",
+          "failure": "Grief, fear, and short time rule the room; you can rally the will to crash the gala but not to stage it cleanly — you'll go in cold, on forged invitations and nerve, and make your case to the Council from a standing start. No penalty beyond a harder room."
+        },
+        {
+          "skill": "Insight",
+          "dc": 13,
+          "success": "You read Ondine at her crisis and meet it true — naming that she's about to walk back into the cage she was bonded to, FREE this time, on her own terms. It settles her: she commits to standing up at the Almsmoot as captain of the bonded, whatever Ferreth offers her tonight. (Locks the loyalty path; the single best insurance against the buy-back at the climax.)",
+          "failure": "You miss the depth of what tonight asks of her, and Ondine goes quiet and grim — she'll come, but the question of what she does when Ferreth makes his last offer stays open, and dangerous, into the climax."
+        }
+      ],
+      "encounter": null,
+      "transitions": "When the party is ready, they cross to the Upper City and into the Almsmoot Hall — move to scene-a3-gala at loc-almsmoot-hall."
+    },
+    {
+      "id": "scene-a3-gala",
+      "name": "Crashing the Gala",
+      "type": "exploration",
+      "location_id": "loc-almsmoot-hall",
+      "read_aloud": "Behind the Basilisk Gate the world turns to marble and old money: the Almsmoot Hall blazes with candle-chandeliers and charity-banners stitched in gold thread, patriars in furs nodding over wine while clerks tally a vote on a baize-covered table at the room's heart. You do not belong here, and everything — the livery, the perfume, the cool patriar glances sliding off your too-practical boots — is built to remind you of it. Up on the dais, the most beloved man in the Lower City accepts the room's warmth like a benediction, silver head bowed in modesty, the great brass-clasped Book of Grace displayed beside him like a holy relic. And along the gallery, in immaculate Almsmoot livery that fools every eye but yours, Veil's Gilded Hand enforcers are already in place, waiting to make any unpleasantness disappear before the patriars have to see it.",
+      "dm_notes": "ACT 3 EXPLORATION/INFILTRATION beat and the run-up to the climax. The party has to operate in a hostile SOCIAL dungeon: a patriar gala where they're the intruders and Ferreth holds every advantage of reputation and place. Threads: (1) GET IN AND STAY IN — forged invitations (Deception/Sleight of Hand), the servants' stair (Stealth), or Cassian's patriar contacts vouching them onto the floor (Persuasion); blow it and Veil's liveried enforcers move to quietly eject (or worse) the party before they can be heard. (2) LOCATE THE LEVERS — the vote-tally table (how close is the charter to passing?), Ferreth on the dais, and Veil's staged enforcers in the gallery (Investigation/Perception to map the room before the confrontation). (3) GET THE EVIDENCE READY TO TABLE — choose the moment and the patriar voices to put the ledgers and Halsa's testimony in front of the Council (sets up the climax's social win-condition). HAZARD/TENSION: this is a place where a drawn blade loses the room — the party must resist the urge to just attack Ferreth, because killing a beloved saint in front of the Council hands him martyrdom and leaves the Book intact. COMPANION: Ondine in the marble she was bonded to is a powerful image — give her a voiced beat (steeling herself, or her old Fist bearing turning patriar heads). If she's on the loyalty path she's positioning the freed bonded to reveal themselves; if her fork is still live, this is where Ferreth's people make the buy-back offer one last time. EXPLORATION checks let the party set up the climax's two win-conditions (break the vote / expose Ferreth) before they're in the thick of it.",
+      "checks": [
+        {
+          "skill": "Deception",
+          "dc": 14,
+          "success": "Your forged invitations and borrowed manners hold — you move onto the Almsmoot floor as guests, not gate-crashers, with time to read the room and choose your moment before Veil's people can act. (Buys the party position and initiative for the confrontation; narrate a patriar actually believing the party's cover.)",
+          "failure": "A liveried enforcer clocks the forgery — no alarm yet, but the clock starts: Veil's people begin converging to ease the party out quietly, and the confrontation will have to be forced sooner and louder than the party would like (no surprise, a harder opening at the climax)."
+        },
+        {
+          "skill": "Investigation",
+          "dc": 14,
+          "success": "Reading the room cold, you map the levers: the vote-tally shows the charter ONE or TWO patriar voices short of passing (so swaying the floor can still stop it), Ferreth's dais and the displayed Book are the room's focus, and you count Veil's enforcers staged along the gallery — you know exactly who'll move, and from where, the instant the mask comes off. (Sets up both climax win-conditions and the fight's shape concretely.)",
+          "failure": "You can see Ferreth has the room and that something's staged in the gallery, but not the vote-count or the enforcer positions until the confrontation breaks — you'll go into the climax knowing 'break the vote OR expose him' but not the specifics until you're in it."
+        },
+        {
+          "skill": "Stealth",
+          "dc": 13,
+          "success": "Taking the servants' stair, the party slips a face or two (or the freed bonded, or Halsa) into the hall unseen and positioned — so when the confrontation breaks, you have a witness or an ally already where Veil doesn't expect them (advantage on the opening round of the climax, or a surprise testimony that wrong-foots Ferreth).",
+          "failure": "A clatter on the servants' stair, a livery that doesn't quite match — a Gilded Hand enforcer marks your people moving and quietly tightens the gallery. No surprise; the confrontation begins with Veil's hands already closing."
+        }
+      ],
+      "encounter": null,
+      "transitions": "When the party is positioned and the evidence ready to table — or when Veil's people force their hand — the mask comes off and the confrontation breaks at the dais; move to scene-a3-climax."
+    },
+    {
+      "id": "scene-a3-climax",
+      "name": "Breaking the Hold",
+      "type": "combat",
+      "location_id": "loc-almsmoot-hall",
+      "read_aloud": "You table it in front of the whole bright room — the drowned ledgers, the un-repayable math, the freed bonded baring the gilded hands inked on their skin, Halsa's clear clerk's voice naming the dead — and for one held breath the marble is utterly silent. On the dais, Almoner-General Lucan Ferreth lifts his silver head and looks at you with no fear at all, and no anger, only a vast and gentle sorrow. 'You think you've found a crime,' he says, soft enough that the whole hall leans in to hear the saint speak. 'You've found a MERCY. I took them in — collar and all — when this city would have let them freeze in the gutter you crawled out of. Fed. Housed. OWNED, yes, and safe in it.' His warm eyes move, deliberately, to your companion. 'Sergeant. I cleared your wife's grave. I can clear the rest — your brother's debt, your people, your name struck clean from the Book — tonight, in front of these witnesses, a free woman. All you have to do is stand with the hand that fed you.' Along the gallery, Veil's enforcers draw their blades. 'No?' Ferreth sighs, like a disappointed father. 'Then I'm afraid the House must collect.'",
+      "dm_notes": "THE CLIMAX — final COMBAT, the villain unmasked, and the campaign's resolution. Ferreth (npc-elder, see top-level 'antagonist') is finally seen WITHOUT the mask — and the horror is that the mask was real: he is a TRUE BELIEVER in benevolent ownership, not a corrupt steward who can be shamed straight. He offers, not threatens, first — and his cruelest move is the LAST BUY-BACK aimed at Ondine (clear her dead's debt, her kin, her name, in front of witnesses, for her loyalty). This is the fork's final test: if honored, Ondine refuses him to his face and turns the freed bonded against the Hand (her loyalty gate 75 — the soldier she was ashamed she'd stopped being, free at last); if curdled and not already turned, her betrayal agenda (18) can fire HERE as she takes his offer and stands at Veil's shoulder, sick with it. TWO WIN CONDITIONS, and the second is the real one: (1) defeat/drive off Veil and a cornered Ferreth, and (2) BREAK THE HOLD — table the evidence and SWAY THE VOTE so the charter fails (Persuasion/Investigation before the Council) AND/OR turn the bonded so the Hand collapses from within. Run a soft CLOCK: each round the confrontation drags without the party landing the exposure, Ferreth's patriar allies edge the charter toward passing and the room toward having the gate-crashers removed — so the party races to break the vote, not just the boss's HP. STATS if it comes to blades: Ferreth = Mage (AC 12/15, HP 81, CR 6), his spells reflavored as gilded coercion — Suggestion/Hold Person as 'the weight of a debt,' Counterspell as 'the House does not permit that,' but he PREFERS to talk and buy and will flee or surrender a lost vote rather than die a martyr (a Ferreth who escapes to 'reform' is a fine dangling thread). Veil = Assassin/Spy (per Act 2) at his side; support = 2-3 Gilded Hand enforcers (Thug/Tough) and optionally a Spy or Warrior Veteran in the gallery. THE GILDED HAND ITSELF is the real boss — its hold on the city, not Ferreth's HP; a party that breaks the vote and frees the bonded WINS even if Ferreth talks his way out the side door. SOCIAL OPTION: a brilliant party can turn Ferreth's own thesis against him before the Council (a very hard Persuasion, DC 17) — not to redeem him, but to strip the room's love from him in real time, collapsing his support and his composure. COMPANION: Ondine's whole arc culminates here — give her the climactic stand (refusing the buy-back, captaining the bonded, the Second Wind/Action Surge anvil) and let her be the one to speak the line that turns the gallery if the party enables it.",
+      "checks": [
+        {
+          "skill": "Persuasion",
+          "dc": 17,
+          "success": "You turn Ferreth's own gospel against him in front of the Council — not redeeming him, but making the bright room SEE the saint plainly: that 'owned and safe' is a cage with a soup-kitchen on the front, that mercy with a signature is a fishhook, that the man they were about to charter would own them all in time. The love drains out of the marble in real time; patriars who were about to vote him Steward look at the gilded hands on the freed signers' skin and cannot un-see them. The charter dies on the table, and Ferreth — for the first time — has nothing left to offer. (Breaks the hold by exposure; the cleanest win. At an exceptional table, a Ferreth stripped of his city's love may even falter into something like doubt.)",
+          "failure": "Ferreth meets your appeal with that vast, gentle sorrow and turns it back on the room — 'they would let you freeze; I would not' — and some patriars nod. The exposure doesn't land clean; win the hold the other way: break the vote with the hard evidence, turn the bonded, or put down the Hand by force."
+        },
+        {
+          "skill": "Investigation",
+          "dc": 15,
+          "success": "Working the tabled ledgers before the Council while your allies hold the floor, you walk the patriars line by line through the un-repayable math — board outpacing labour, interest outpacing board, every 'completed' debtor struck through and 'transferred' — until the charter's last waverers cannot pretend it's charity. THIS is a win condition: make the evidence undeniable to the room (typically over 2-3 rounds of coordinated effort) and the Steward-of-the-Poor charter fails, the Gilded Hand stripped of its bid for legality.",
+          "failure": "The ledgers resist a quick public reading and Ferreth's people cry forgery; a single failed attempt costs the round but not the case. Try again, lean on Halsa's first-hand testimony (Persuasion), or break the hold by turning the bonded or by force."
+        },
+        {
+          "skill": "Intimidation",
+          "dc": 15,
+          "success": "You break the Gilded Hand from within — calling across the gallery to the bonded enforcers that the Book is finished, that the patriars have SEEN it, that there's no debt left to collect for a saint who's about to fall. One by one the liveried hands lower their blades; Veil is left with empty livery and a vote already dead. (Turning the Hand against itself is the third win-condition — the most fitting, since the Hand was always made of victims; Ondine, on the loyalty path, leads this.)",
+          "failure": "The enforcers hold, too deep in the Book to break on a word, and you'll have to win the floor the hard way — by the vote or by blades."
+        }
+      ],
+      "encounter": {
+        "monsters": [
+          {
+            "name": "Thug",
+            "count": 3,
+            "reflavor": "Gilded Hand enforcers in Almsmoot livery — bonded muscle, the most turnable enemies in the room (Intimidation/Ondine can peel them off). Resolves to bundled 'Tough' (CR 1/2)."
+          },
+          {
+            "name": "Spy",
+            "count": 1,
+            "reflavor": "A Gilded Hand collector working the gallery for Veil — used to flank or to silence a witness; drop for a light party, hold a second for a strong one."
+          }
+        ],
+        "boss": {
+          "name": "Almoner-General Lucan Ferreth",
+          "npc_id": "antagonist",
+          "stats": "Mage (AC 12/15 with mage armor, HP 81, CR 6) — a silver-tongued benefactor; Suggestion/Hold Person reflavored as 'the weight of a debt,' Counterspell as 'the House does not permit that.' He talks and buys before he fights, and flees or surrenders a lost vote rather than die a martyr.",
+          "note": "The architect of the Gilded Hand. Defeating, exposing, or driving him off stops the charter — OR break the vote and turn the bonded before he can buy the room. He fights from the dais beside the Book and would far rather coerce than kill; a Ferreth who escapes to 'reform' elsewhere is a fine dangling thread."
+        },
+        "support_boss": {
+          "name": "Veil",
+          "npc_id": "veil",
+          "stats": "Assassin (AC 15, HP 78, CR 8) or Spy (AC 12, HP 27, CR 1) per the Act 2 scaling.",
+          "note": "At Ferreth's shoulder. Executes the last buy-back offer to Ondine if she can; fights cold to cover Ferreth's escape; if he falls or the vote breaks, a cornered Veil surrenders, flees, or — confronted with having chosen the whip over the collar — may falter. Present at full menace if she survived Act 2; scaled down if captured."
+        },
+        "tactics": "Ferreth opens with the OFFER and the buy-back aimed at Ondine — give it real weight; the fork resolves before initiative. If it comes to blades he is a CONTROLLER, not a brawler: Hold Person on the party's anvil, Suggestion to make a PC 'stand down and let the House settle this,' Counterspell on the party's exposure-magic, always keeping enforcers and Veil between himself and the party so he can slip out a side door if the vote is lost. Run the RITE-CLOCK equivalent as a VOTE-CLOCK: each round the party fails to land the exposure, Ferreth's patriar allies edge the charter closer to passing and the room closer to ejecting the gate-crashers; at the hard limit the charter passes (a bad ending — the Book becomes law) unless the party breaks the hold. The enforcers are the most turnable foes (Intimidation/Ondine). Veil plays bodyguard and executes the buy-back. The three win-conditions (sway the vote / turn the bonded / put down the Hand by force) let social, martial, AND skill-focused parties each have a path to victory. The Gilded Hand's hold on the city — not Ferreth's HP — is the real boss; freeing the bonded and killing the charter is the win even if Ferreth himself talks his way out.",
+        "scaling": "Party of 1-2 or all-squishy: Ferreth (Mage) + Veil as Spy + 1 Thug; soften the vote-clock to ~6 rounds. Party of 3-4: Ferreth (Mage) + Veil (Assassin) + 2-3 Thugs + 1 Spy, vote-clock ~5 rounds. Party of 4+ or running hot: add a Warrior Veteran or a second Spy in the gallery and a Flaming Fist Sergeant (a bought officer) for spice, vote-clock ~4 rounds. Always keep ALL win-conditions live so the finale is about the hold, not just the body count.",
+        "xp": 4200,
+        "xp_note": "Ferreth (Mage, 2300) + Veil (Assassin, 3900, or Spy 200 on a light table) + 3x Thug/Tough (100) + Spy (200) ~= 3000-6700; budget ~4200 for the climax. Award the FULL value for breaking the hold — killing the charter and freeing the bonded — even if Ferreth is exposed/driven off rather than slain, or Veil flees. Stopping the Gilded Hand, not slaying a saint, is the victory."
+      },
+      "transitions": "When the hold is broken — the charter dead, the bonded freed, Veil beaten or fled, and Ferreth defeated, exposed, or run to ground — the Gilded Hand's grip on the Lower City comes apart in the candlelight, and the Book of Grace is finished as an instrument of bondage. Return to loc-elfsong for the conclusion."
+    }
+  ],
+  "rewards": {
+    "xp": 8000,
+    "xp_breakdown": {
+      "act1-ledger-vault": 450,
+      "act2-drowned-counting-house": 1800,
+      "act3-almsmoot-climax": 4200,
+      "social-exploration-bonuses": 1550,
+      "note": "~8000 XP across three acts plus social/exploration story bonuses, tuned for a party starting around level 3 and finishing near level 7 (a higher tier than embergloom's 1-5, fitting Baldur's Gate's mature, post-Absolute stakes). Many DMs will prefer MILESTONE leveling: level 4 after the Ledger House (Act 1), level 5-6 across the Drowned Counting House (Act 2), level 7 before or during the Almsmoot climax (Act 3). Award full encounter XP for diplomatic and stealth resolutions — swaying the vote, turning the bonded, or exposing Ferreth without a blade drawn counts fully as overcoming the finale."
+    },
+    "currency": {
+      "gp": 350,
+      "note": "Pell has almost nothing; the early reward is moral, not monetary. The real coin comes later: the Drowned Counting House holds the Gilded Hand's smuggling-skim (~150 gp in Guild silver, Act 2), and a grateful Council or a freed patriar conscience may settle ~200 gp on the party after the Almsmoot (Act 3). Cassian's Open Hand has no coin to give but its gratitude and its safe house."
+    },
+    "loot": [
+      {
+        "item": "Potion of Healing",
+        "rarity": "common",
+        "count": "2-4 across the campaign",
+        "note": "Found among the Gilded Hand's supplies in the vaults and given by Brother Cassian's chapel before the Almsmoot. 2d4+2 HP each."
+      },
+      {
+        "item": "The Drowned Ledgers (duplicate Book of Grace + transfer-ledger)",
+        "value": "the campaign's true prize",
+        "note": "The evidence that breaks Ferreth in the open at the Almsmoot: the un-repayable math, the lease of the Drowned Counting House, and the transfer-ledger naming every bonded reader — including Ondine. A story-reward and the Act 3 win-lever, not a saleable item."
+      },
+      {
+        "item": "Ondine's page from the Book of Grace",
+        "value": "0 gp (story item)",
+        "note": "The original page bearing Sergeant Ondine Marsh's name and her dead's grave-debt — the leverage Ferreth held over her. Recovered, it frees her bond for good (her personal-quest payoff); a keepsake of a collar broken by deeds, not coin."
+      },
+      {
+        "item": "Cassian's Writ of the Open Hand",
+        "rarity": "uncommon (story/social)",
+        "note": "An Order of the Open Hand standing-writ pressed on the party by Brother Cassian — opens temple doors, vouches the party to a patriar conscience or two, and helps get them onto the Almsmoot floor (Act 3). A social key more than a magic item."
+      },
+      {
+        "item": "Veil's collections-seal",
+        "value": "evidence / leverage",
+        "note": "The widow's-grey collections-mistress's personal seal, used to sign the transfer-orders. Proof that ties the 'transfers' to a hand below Ferreth's — and, if Veil is captured, the lever that turns her testimony against the Almoner."
+      }
+    ],
+    "story_rewards": [
+      "If Halsa was freed and reunited with Pell, she testifies at the Almsmoot, recovers, and becomes the honest clerk who helps Cassian's Open Hand rebuild a charity that doesn't own anyone — a survivor who turned the books she balanced against the man who kept them.",
+      "If the bonded signers were freed rather than fought, they walk out of the Book of Grace into Cassian's keeping and, at the Almsmoot, become the living proof that breaks the charter — the Gilded Hand undone by the very people it was made of, the campaign's most fitting victory.",
+      "If Ondine was honored to the loyalty gate, she breaks her own bond, stands as captain of the freed at the Almsmoot, and walks out of the Book a free woman and a soldier she's no longer ashamed of — staying on as a permanent companion or taking up the Open Hand's protection. If she was curdled and turned, the party carries the harder ending: a decent woman they failed into Ferreth's arms, and the knowledge that the buy-back worked because they made freedom cost more than the collar.",
+      "If Ferreth was exposed and his charter broken but he escaped rather than fell, the Gilded Hand is finished as a legal bid but the Almoner is loose in the Gate to 'reform' his mercy elsewhere — a deliberate dangling thread for a future return, and a darker mirror: a saint who still believes he was right.",
+      "Breaking the HOLD rather than merely killing the man means the Book of Grace ends as an instrument of bondage but the QUESTION it asked the city — what the desperate will sign away to be fed, and whether a kindness with a leash is a kindness at all — lingers over the Lower City's rebuilding. Brother Cassian's harder, leashless mercy inherits the Row."
+    ]
+  },
+  "conclusion": "Dawn finds Gratitude Row changed. The dawn queue still forms — the hungry are still hungry, the tadpole-scarred still shunned — but the bread is Brother Cassian's now, given the old way, with no book to sign and no hand to ink at the collarbone. The Almsmoot's charter is dead in committee; the Steward of the Poor is no one; the Gilded Hand has come apart into the frightened, grateful people it was always made of, blinking in a freedom that costs them their certainty along with their collars. How the Lower City remembers it is up to the party: as the night they pulled the floor out from under a swindler and freed a hundred bonded souls, or as the night they unmasked the most loving man in Baldur's Gate — a true believer who took the poor in collar and all because the city never would, and who may, even now, be somewhere warmer than this, certain he was the only mercy these streets ever had. Either way, the Book of Grace is closed. But a book is not a conscience. Somewhere in the Gate, the hungry are still signing whatever is put in front of them to be fed — and the only difference the party made is that, this winter, the hand that feeds them isn't trying to own them too. (Hook for a future return: a beloved swindler at large, a city still desperate, and a charity that has to prove mercy can be given without a leash.)",
+  "dm_quickref": {
+    "definition_of_done_mapping": {
+      "exploration": "scene-a1-house (search the almonry, the Book's math, the laundry-pages, the warded lower stair), scene-a2-vault (the flooded Counting House, bonded floor, drowned cells, the counting-room of ledgers, water hazards), and scene-a3-gala (infiltrate the patriar Almsmoot, map the vote-tally and the staged enforcers, set up the exposure).",
+      "social": "scene-a1-hook (Pell + the beloved-but-absent villain Ferreth), scene-a1-house (turn the head-clerk Tobias Quayle; meet Veil fronting the House), scene-a2-hook (Cassian reads the math + Ondine's bond revealed), scene-a2-vault (Halsa, the rescued witness who carries the truth AND the companion lever — bonded/broken -> fiercely cooperative on Persuasion/Insight), scene-a3-hook (the charter named, Ondine's crisis), and the climax's expose-the-saint Persuasion (DC 17) + turn-the-bonded Intimidation.",
+      "combat_act1": "scene-a1-vault — 3x Thug (Tough) + optional Spy (Veil withdraws).",
+      "combat_act2": "scene-a2-collect — Veil (Assassin/Spy) + 3x Thug (Tough) + Swarm of Rats, with a recover-the-evidence objective and the companion fork's loudest beat.",
+      "combat_act3": "scene-a3-climax — Ferreth (Mage) + Veil (Assassin/Spy, if survived) + 3x Thug (Tough) + Spy/Warrior Veteran, with the VOTE-CLOCK objective and three win-conditions (sway the vote / turn the bonded / force)."
+    },
+    "bundled_assets_used": {
+      "monsters_act1": [
+        "Thug -> Tough (x3, scene-a1-vault Gilded Hand enforcers)",
+        "Spy (x1 optional, harder enforcer)"
+      ],
+      "monsters_act2": [
+        "Thug -> Tough (x3, scene-a2-collect collectors)",
+        "Swarm of Rats (x1, the drowned vault's vermin / atmosphere)",
+        "Assassin OR Spy (Veil, mid-boss — scale to party)",
+        "Wererat / Warrior Veteran (optional Guild muscle for a strong party)"
+      ],
+      "monsters_act3": [
+        "Mage (Ferreth, the Almoner — final boss, a social-control villain)",
+        "Assassin OR Spy (Veil, if she survived Act 2)",
+        "Thug -> Tough (x3, gilded enforcers in Almsmoot livery)",
+        "Spy / Warrior Veteran / Flaming Fist Sergeant (optional gallery muscle)"
+      ],
+      "monsters_optional": [
+        "Commoner (Pell, Tobias, Halsa, freed bonded — noncombatants)",
+        "Priest (Brother Cassian, if his chapel is attacked — defends, never kills)"
+      ],
+      "spells_in_play": [
+        "Ferreth (Mage): Mage Armor, Suggestion, Hold Person, Counterspell, Misty Step (escape), Fireball (only if truly cornered) — reflavored as gilded coercion",
+        "Brother Cassian (Priest): Bless, Cure Wounds, Spirit Guardians, Sanctuary — protective only",
+        "party casters across the almonry, the drowned vault, and the gala"
+      ],
+      "conditions_in_play": [
+        "Charmed / unable-to-act (Ferreth's Hold Person/Suggestion as 'the weight of a debt' in Act 3)",
+        "Prone / difficult terrain (the cramped vault, the drowned Counting House's deep water, the crowded gala floor)",
+        "Grappled/Restrained (collectors and the rat-swarm in the water, Act 2)",
+        "Frightened (optional — the drowned cells, the social pressure of the marble Almsmoot)"
+      ]
+    },
+    "the_gilded_hand_note": "The real antagonist is the GILDED HAND — Ferreth's network of bonded souls and the bondage it represents — not Ferreth's HP. Ferreth (Mage stats) is the human architect the party confronts, but he prefers to talk and to BUY, and a Ferreth who escapes to 'reform' elsewhere is a fine dangling thread. The campaign's WIN is breaking the HOLD: killing the Steward-of-the-Poor charter and freeing the bonded so the Hand collapses into the victims it was made of. The LOSS state is the Act 3 vote-clock running out — the charter passing and the Book of Grace becoming the law of the Gate. Do NOT make this a fight to a saint's death; make it a fight for the city's conscience.",
+    "the_companion_fork_note": "Ondine Marsh is the campaign's deliberate FORK and its moral core — a victim of the very predation the party unwinds, bonded to Ferreth by her own dead. Her arc has FOUR gates: trust (25), personal_quest (50, recover her page/free her bond), a BETRAYAL gate (18, reachable only when approval curdles), and loyalty (75, captain the bonded at the Almsmoot). Her CompanionAgenda (trigger attitude_below 18, decision_flag 'took_ferreths_coin') fires her turn as a REAL attack if the party treats her as a thug, trades the bonded for expedience, or — especially — takes Ferreth's coin / lets him buy her back. Honored, she's the fiercest ally in the Gate and the one who turns the Hand against itself; curdled, she's the heartbreak the party earns. Set 'took_ferreths_coin' via record_decision/set_flag when the party accepts Ferreth's or Veil's money or stands aside in the buy-back beats (scene-a2-collect, scene-a3-climax).",
+    "pacing": "Designed as a ~4-session arc (one act per ~80-min session, or a long single sitting). Act 1 ~ levels 3-4 (hook + almonry + vault). Act 2 ~ levels 4-6 (drowned vault + rescue + the fork's loudest beat). Act 3 ~ levels 6-7 (gala infiltration + Almsmoot climax). Use the per-scene scaling notes to tune each fight to party size, and prefer milestone leveling (4 / 5-6 / 7) for clean act breaks. Higher-tier than embergloom (3-7 vs 1-5), matching Baldur's Gate's mature post-Absolute register.",
+    "originality_note": "This campaign is original prose written for WorldOS, set in the bundled 'baldurs-gate' world seed (post-BG3, 1492 DR) and released as FAN CONTENT under the same terms as content/worlds/baldurs-gate/world.json (Wizards Fan Content Policy + Larian for BG3 elements; SRD 5.2 / CC-BY-4.0 rules). It uses only SRD 5.2 mechanics and the bundled creature stat blocks (Thug/Tough, Spy, Swarm of Rats, Assassin, Mage, Priest, Commoner, optional Wererat/Warrior Veteran/Flaming Fist Sergeant). No published or copyrighted adventure text is reproduced; the Ledger House, the Gilded Hand, the Book of Grace, Almoner Ferreth, Veil, Ondine Marsh, the Renn sisters, Tobias Quayle, Brother Cassian, and the Drowned Counting House and Almsmoot Hall set-pieces are original creations staged against the canon BG factions and geography (the Lower City, Gratitude Row, the Elfsong, the Open Hand, the Guild, the Flaming Fist, the patriars' Almsmoot) in our own words."
+  }
+}
