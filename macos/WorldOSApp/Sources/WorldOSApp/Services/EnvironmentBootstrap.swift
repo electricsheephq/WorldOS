@@ -43,6 +43,30 @@ enum EnvironmentBootstrap {
         return merged.joined(separator: ":")
     }
 
+    /// Strip inherited env vars whose VALUE points at a removable volume (`/Volumes/...`) before
+    /// they reach a child process. A child handed such a var enumerates the volume to read it,
+    /// which fires a modal "WorldOS would like to access files on a removable volume" TCC prompt.
+    ///
+    /// WHY (the P0 this fixes): the launching shell's `~/.zshenv` can export a foreign tool's path
+    /// onto a removable disk — observed: `GBRAIN_SKILLS_DIR=/Volumes/LEXAR/repos/eva-brain/skills`.
+    /// `.zshenv` is sourced by EVERY zsh, so any shell-launched app (`open -n` from a build/QA
+    /// script) inherits it; we then merge the full inherited environment into every viewer/provider
+    /// we spawn (`AppProcessService.launchManagedProcess`), and the provider's skills loader reads
+    /// `GBRAIN_SKILLS_DIR` → enumerates `/Volumes/LEXAR` → the prompt. It can't be answered
+    /// headlessly, so it blocks unattended/CI builds and every shell-launched GUI run, and the
+    /// modal stalls viewer startup ("viewer did not become ready"). The app needs NONE of these
+    /// foreign vars.
+    ///
+    /// The app's OWN repo/art roots — which may legitimately live on a removable-volume worktree —
+    /// are re-applied by the caller's explicit `environment` overlay (merged AFTER this filter), so
+    /// an intentional `/Volumes` WorldOS root still survives. We match `hasPrefix("/Volumes/")` on
+    /// the VALUE: this targets bare single-path vars (the real-world offender) and never touches
+    /// PATH or any `:`-separated list (those don't START with `/Volumes/`), so tool discovery is
+    /// unaffected. Pure + deterministic.
+    static func withoutRemovableVolumeLeaks(_ environment: [String: String]) -> [String: String] {
+        environment.filter { _, value in !value.hasPrefix("/Volumes/") }
+    }
+
     /// The well-known macOS dev-tool install locations, filtered to those that actually exist on
     /// this machine. Covers the overwhelming majority of setups: `claude`/`uv` via the standard
     /// installer (`~/.local/bin`) and `codex`/`openclaw`/`uv`/`node`/`gh`/`python3` via Homebrew
