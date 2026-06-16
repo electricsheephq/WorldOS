@@ -301,6 +301,28 @@ def case_xp_not_orphaned():
     return _roll(), state, None, None
 
 
+def case_structural_completeness():
+    # chk (relationship-cues): a SUBSTANTIAL session (>= 10 DM beats) with a companion present in
+    # the final state that NEVER engaged a core system — approval frozen at 0 AND no camp/long_rest,
+    # AND an active quest left unresolved across a multi-location arc with no quest-resolution call.
+    # No chat/moves -> session_beats == dm_text, so we drive >= 10 with assistant TEXT turns. The
+    # baseline state (day=2, 2 visited locations, xp=300) keeps the world/xp floors passing, so this
+    # is the SOLE fatal fail. Models the proven 18-beat playtest where the DM narrated the companion+
+    # quest story but never moved attitude / resolved the quest / made camp.
+    state = _clean_player_state()
+    state["characters"]["cmp1"] = {"name": "Brother Toll", "kind": "companion",
+                                   "attitude_value": 0, "location_id": "loc_camp", "xp": 300}
+    state["party"].append("cmp1")
+    state["quests"] = {
+        "q1": {"id": "q1", "title": "The Embergloom Pact", "status": "active",
+               "objectives": ["free the prisoners"], "completed_objectives": []},
+    }
+    # 12 DM text beats (>= the STRUCTURAL_MIN_BEATS of 10) + a clean roll for dice_used. No camp_scene/
+    # long_rest, no complete_quest/adjust_attitude anywhere -> every core system stays unengaged.
+    events = _roll() + [_assistant_text(f"The scene unfolds, beat {i}.") for i in range(12)]
+    return events, state, None, None
+
+
 def case_xp_awarded_on_progression():
     # chk A5: xp mode, session advanced (day>1 AND visited>=2 so the world floors pass), a
     # reward-worthy seam (a COMPLETED quest — NOT a dead monster, so xp_not_orphaned stays inert),
@@ -344,6 +366,7 @@ _CASES_SPEC: list[tuple] = [
      "end_combat_no_living_hostiles"),
     ("xp_not_orphaned", case_xp_not_orphaned, "xp_not_orphaned"),
     ("xp_awarded_on_progression", case_xp_awarded_on_progression, "xp_awarded_on_progression"),
+    ("structural_completeness", case_structural_completeness, "structural_completeness"),
 ]
 
 

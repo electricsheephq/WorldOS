@@ -25,6 +25,15 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+# Reuse the readout's coverage bucket logic so the structural_completeness assertion and
+# the story_readout COVERAGE stamp can't drift (Task D). story_readout.py sits beside this
+# file in qa/; make the import robust to being run from any cwd.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    from story_readout import coverage_from_tool_counts
+except Exception:  # pragma: no cover - defensive: never let an import break the gate
+    coverage_from_tool_counts = None
+
 
 def _load_jsonl(p: str) -> list[dict]:
     out: list[dict] = []
@@ -520,6 +529,75 @@ def main() -> int:
         chk("world_peopled", npcs_met >= 2,
             f"only {npcs_met} NPC(s) engaged (met) across {session_beats} beats — a living world "
             f"should introduce new faces, not just sit in the seeded roster", fatal=False)
+
+    # STRUCTURAL-COMPLETENESS FLOOR (relationship-cues — the owner's "full circle"). The
+    # scorers reward prose + dice but are BLIND to structural gaps: the proven failure was an
+    # 18-beat run where the DM told the companion + quest story in prose yet NEVER engaged the
+    # engine — a companion stayed at attitude 0 all run, a multi-location quest ended still
+    # `active`, camp never happened — and every LLM lens called it "doing well". This makes a
+    # system-skipping run score like the failure it is.
+    #
+    # CONTEXTUAL by design (a short combat-sprint or a companion-less session must NOT trip it):
+    # gated on a SUBSTANTIAL session (>= STRUCTURAL_MIN_BEATS) AND a kind=companion present in
+    # the FINAL state. Reads the engine snapshot (ground truth for end-state) + the readout's
+    # coverage buckets (ground truth for whether a system was ever engaged), so it agrees with
+    # the story_readout COVERAGE stamp by construction.
+    STRUCTURAL_MIN_BEATS = 10
+    companions = [c for c in chars.values()
+                  if isinstance(c, dict) and c.get("kind") == "companion"]
+    if (session_beats >= STRUCTURAL_MIN_BEATS and companions
+            and not os.environ.get("CLAWDND_GATE_COMBAT_SPRINT")):
+        # Coverage buckets from the SAME tool counts the readout stamp uses (no drift). Fall
+        # back to a direct count if the shared helper failed to import (defensive — never skips
+        # the gate, just recomputes the camp/quest buckets inline).
+        if coverage_from_tool_counts is not None:
+            cov = coverage_from_tool_counts(tools)
+            camp_engaged = bool(cov.get("camp"))
+            quest_resolution_engaged = bool(cov.get("quest_resolved"))
+        else:
+            camp_engaged = bool(tools.get("camp_scene") or tools.get("record_camp_beat")
+                                or tools.get("long_rest"))
+            quest_resolution_engaged = bool(tools.get("complete_quest")
+                                            or tools.get("set_quest_status"))
+
+        # (a) APPROVAL FROZEN + NO CAMP: not one companion's regard moved off 0 all run AND
+        # no camp/long_rest ever happened — the relationship system was narrated, never engaged.
+        any_approval_moved = any(
+            int((c.get("attitude_value") or 0)) != 0 for c in companions
+        )
+        approval_frozen_run = (not any_approval_moved) and (not camp_engaged)
+
+        # (b) UNRESOLVED ARC: an active quest reached session end still open in a MULTI-LOCATION
+        # arc (>= 2 visited locations ⇒ the party traversed an arc, so a quest left hanging is a
+        # dropped thread, not a legitimately-mid-quest single scene). Gated on never having
+        # engaged a quest-resolution tool, so a run that DID resolve quests (and simply has
+        # another still open) isn't flagged.
+        active_quests = [q for q in quest_iter
+                         if isinstance(q, dict) and q.get("status") == "active"]
+        # Recompute visited locations locally (don't depend on the world-progression block's
+        # local, even though session_beats>=10 ⇒ that block ran): >= 2 ⇒ the party traversed
+        # an arc.
+        _locs = state.get("locations", {}) or {}
+        visited = sum(1 for l in _locs.values() if isinstance(l, dict) and l.get("visited"))
+        multi_location_arc = visited >= 2
+        unresolved_arc = bool(active_quests and multi_location_arc
+                              and not quest_resolution_engaged)
+
+        bad_bits = []
+        if approval_frozen_run:
+            bad_bits.append(
+                f"approval frozen all run (no companion left attitude 0; companions="
+                f"{[c.get('name','?') for c in companions]}) AND no camp/long_rest happened")
+        if unresolved_arc:
+            bad_bits.append(
+                f"{len(active_quests)} quest(s) still active at session end across a "
+                f"{visited}-location arc with no quest-resolution call "
+                f"({[q.get('title') or q.get('id') or '?' for q in active_quests]})")
+        chk("structural_completeness", not bad_bits,
+            f"a {session_beats}-beat session with a companion never engaged a core system: "
+            + "; ".join(bad_bits)
+            + " — the engine relationship/quest tools (record_decision approval_tags / "
+              "adjust_attitude / camp_scene / complete_quest evolves_to) were narrated, not used")
 
     # ── SECTION A: RESULT-SIDE + per-record state gates (audit-tests.md §A) ───────────────
     # These read artifacts the existing gates ignore: the tool_RESULT payloads (A1/A2/A8) and

@@ -10881,6 +10881,206 @@ def set_seed_param(campaign_id: str, param: str, value, force: bool = False) -> 
 # byte-identical to before (an unused combined tool ships nothing).
 
 
+def _compute_beat_obligations(c: Campaign) -> list[dict]:
+    """The EVERY-BEAT obligations digest — the engine names, in imperative DM cues, the
+    relationship/quest systems that have gone UNENGAGED and want an action THIS beat.
+
+    The proven failure (an 18-beat authored playtest): the DM narrates the companion +
+    quest story in prose but never engages the engine — a companion stayed at
+    attitude_value 0 the whole run, a quest stayed active with empty evolves_to, camp
+    never happened. The lesson: *surfacing info != the DM using it — fold the obligation
+    into a tool the DM hits EVERY beat.* persist_beat is that tool (called every beat);
+    scene_context.durable is the lean-on re-ground twin. So this digest rides BOTH.
+
+    PURE + READ-ONLY: it only inspects `c`, never mutates (engine = sole writer; the
+    obligation is advisory — the DM takes the named action via the real tools). EVERY
+    field read is a defensive getattr with a safe default, so a partially-built or
+    older-schema object DEGRADES an obligation to "skipped" rather than raising and
+    tanking persist_beat / scene_context.
+
+    Returns a list of ``{"kind","detail","severity", + ids}`` dicts. Empty when the
+    campaign is healthy / has nothing actionable, so the caller can omit the key
+    entirely (additive: an old return shape is byte-identical when this is empty)."""
+    obligations: list[dict] = []
+    day = getattr(c, "day", 1) or 1
+
+    characters = getattr(c, "characters", None) or {}
+    party_ids = getattr(c, "party", None) or []
+    # Party companions, resolved id -> Character (party holds ids; mirror the long_rest
+    # camp_hint census at server.py ~7935 which iterates c.party -> c.characters.get(i)).
+    party_companions = [
+        characters.get(cid)
+        for cid in party_ids
+        if characters.get(cid) is not None
+        and getattr(characters.get(cid), "kind", None) == "companion"
+    ]
+
+    # 1. companion_approval_frozen — a present companion whose regard hasn't moved off 0
+    #    a few days in, AND the engine KNOWS what would move it (authored approval_likes).
+    #    Cue: tag the next values-moment or play a camp_scene.
+    for comp in party_companions:
+        attitude = getattr(comp, "attitude_value", 0) or 0
+        if attitude != 0 or day < 3:
+            continue
+        dossier = getattr(comp, "companion_dossier", None)
+        likes = list(getattr(dossier, "approval_likes", []) or []) if dossier is not None else []
+        name = getattr(comp, "name", None) or "the companion"
+        # Fire for ANY frozen companion — the gauge is inert either way, and an inert companion
+        # is the exact bug. When the content authored approval_likes, point at a tagged choice
+        # (auto-move); when it didn't (the common un-augmented case), the DM still moves the gauge
+        # directly via adjust_attitude (and the content should grow the vocabulary — Phase 3).
+        if likes:
+            detail = (
+                f"{name}'s regard hasn't moved (still 0). On a values-relevant choice, "
+                f"record_decision(..., approval_tags={likes}); or play a camp_scene to land "
+                f"a character beat that moves the gauge."
+            )
+        else:
+            detail = (
+                f"{name}'s regard hasn't moved (still 0), and no approval vocabulary is authored. "
+                f"Move it directly with adjust_attitude on a values-moment, or play a camp_scene — "
+                f"a companion whose gauge never moves is an inert arc, not a relationship."
+            )
+        obligations.append({
+            "kind": "companion_approval_frozen",
+            "character_id": getattr(comp, "id", None),
+            "name": name,
+            "approval_likes": likes,
+            "severity": "med",
+            "detail": detail,
+        })
+
+    # 2. camp_overdue — the party has companions but nobody has rested (no camp beats land
+    #    without a long_rest), or the last rest was 3+ in-world days ago. Camp is the pillar
+    #    where companion regard + arcs move; an overdue camp starves all of that.
+    if party_companions and day >= 3:
+        # NB: a value of 0 is a VALID rest day (rested on day 0), so coalesce only None, not
+        # falsy-0 — `or -1` would wrongly read a day-0 rest as "never rested".
+        def _rest_day(comp):
+            v = getattr(comp, "last_long_rest_day", -1)
+            return v if isinstance(v, int) else -1
+        rest_days = [_rest_day(comp) for comp in party_companions]
+        never_rested = all(d < 0 for d in rest_days)
+        latest_rest = max(rest_days)
+        if never_rested or (latest_rest >= 0 and day - latest_rest >= 3):
+            obligations.append({
+                "kind": "camp_overdue",
+                "severity": "med" if never_rested else "low",
+                "detail": (
+                    "Camp is overdue — long_rest then camp_scene to land companion beats "
+                    "(banter, worries, ripe arc/quest beats) and move regard."
+                ),
+            })
+
+    # 3. quest_resolvable / quest_stalled — active quests the engine can SEE are ripe or
+    #    stuck. (Both read engine-mutated state, never Decision prose.)
+    quests = getattr(c, "quests", None) or {}
+    for q in quests.values():
+        if getattr(q, "status", "active") != "active":
+            continue
+        title = getattr(q, "title", None) or "a quest"
+        qid = getattr(q, "id", None)
+        objectives = list(getattr(q, "objectives", []) or [])
+        completed = list(getattr(q, "completed_objectives", []) or [])
+        # ALL objectives done -> the quest is mechanically resolvable; the DM should close
+        # it AND give it an echo (evolves_to) so a win isn't one-and-done (rule of three).
+        if objectives and all(o in completed for o in objectives):
+            obligations.append({
+                "kind": "quest_resolvable",
+                "quest_id": qid,
+                "title": title,
+                "severity": "med",
+                "detail": (
+                    f"Quest '{title}' objectives are all done — "
+                    f"complete_quest(quest_id, evolves_to='...') to resolve it AND echo it."
+                ),
+            })
+            continue  # a resolvable quest isn't ALSO flagged as stalled
+        # last_progress_day stamped 3+ days ago -> the engine knows this thread has stalled.
+        last_progress = getattr(q, "last_progress_day", -1)
+        if last_progress is not None and last_progress >= 0 and day - last_progress >= 3:
+            obligations.append({
+                "kind": "quest_stalled",
+                "quest_id": qid,
+                "title": title,
+                "severity": "low",
+                "detail": (
+                    f"Quest '{title}' has stalled (no progress in {day - last_progress} days) — "
+                    f"push an objective (complete_objective) or complete_quest it."
+                ),
+            })
+
+    # 4. quest_no_echo — a RESOLVED quest with empty evolves_to AND no consequence that
+    #    names it: the win has no callback (the rule-of-three echo never armed).
+    consequences = getattr(c, "consequences", None) or []
+
+    def _quest_has_echo(title: str, qid) -> bool:
+        needle_title = (title or "").strip().lower()
+        needle_id = (str(qid) if qid else "").strip().lower()
+        for cs in consequences:
+            blob = f"{getattr(cs, 'text', '')} {getattr(cs, 'note', '')}".lower()
+            if needle_title and needle_title in blob:
+                return True
+            if needle_id and needle_id in blob:
+                return True
+        return False
+
+    for q in quests.values():
+        if getattr(q, "status", "active") != "completed":
+            continue
+        if (getattr(q, "evolves_to", "") or "").strip():
+            continue
+        title = getattr(q, "title", None) or "a quest"
+        qid = getattr(q, "id", None)
+        if _quest_has_echo(title, qid):
+            continue
+        obligations.append({
+            "kind": "quest_no_echo",
+            "quest_id": qid,
+            "title": title,
+            "severity": "low",
+            "detail": (
+                f"Quest '{title}' resolved with no echo — set evolves_to / add_consequence "
+                f"so the thread lingers (rule of three)."
+            ),
+        })
+
+    # 5. companion_arc_gate_near — a not-yet-unlocked ArcGate within 20 points of unlocking;
+    #    a small push (a values-moment, a camp beat) lands a real loyalty/romance/quest beat.
+    #    (Reads Character.arc.arc_gates — verified: Character.arc: Optional[CompanionArc],
+    #    CompanionArc.arc_gates: list[ArcGate], ArcGate.threshold/unlocked/note.)
+    for comp in party_companions:
+        arc = getattr(comp, "arc", None)
+        if arc is None:
+            continue
+        gates = getattr(arc, "arc_gates", None) or []
+        attitude = getattr(comp, "attitude_value", 0) or 0
+        for g in gates:
+            if getattr(g, "unlocked", False):
+                continue
+            threshold = getattr(g, "threshold", None)
+            if threshold is None:
+                continue
+            points_away = threshold - attitude
+            if 0 < points_away <= 20:
+                name = getattr(comp, "name", None) or "the companion"
+                note = getattr(g, "note", "") or getattr(g, "kind", "") or "an arc beat"
+                obligations.append({
+                    "kind": "companion_arc_gate_near",
+                    "character_id": getattr(comp, "id", None),
+                    "name": name,
+                    "gate_id": getattr(g, "id", None),
+                    "points_away": points_away,
+                    "severity": "low",
+                    "detail": (
+                        f"{name}'s {note} is {points_away} points away — move regard toward it "
+                        f"(record_decision approval_tags / a camp beat)."
+                    ),
+                })
+
+    return obligations
+
+
 def _scene_durable_threads(c: Campaign) -> dict:
     """Derive the compact, continuity-CRITICAL durable threads a transcript-free
     re-ground must not lose (#compact-scene-context).
@@ -11071,6 +11271,14 @@ def _scene_durable_threads(c: Campaign) -> dict:
                 "character round (banter, worries, ripe arc/quest beats) between adventures"
             ),
         }
+    # The EVERY-BEAT obligations digest (relationship-cues): the SAME digest persist_beat
+    # returns, mirrored on the lean-on re-ground path (the production runner re-grounds via
+    # scene_context rather than relying on the persist_beat return). Reuse the one helper so
+    # the two surfaces can't drift. ADDITIVE: the key is ABSENT when nothing is actionable,
+    # so a healthy / solo / combat-sprint re-ground keeps today's durable shape byte-for-byte.
+    obligations = _compute_beat_obligations(c)
+    if obligations:
+        out["obligations"] = obligations
     return out
 
 
@@ -11462,6 +11670,22 @@ def persist_beat(
     # (today's default) returns the exact four-key shape it always has.
     if approval_results:
         out["approval_results"] = approval_results
+    # The EVERY-BEAT obligations digest (relationship-cues): persist_beat is the one tool
+    # the DM hits every beat, so it's the vehicle that folds the relationship/quest
+    # obligations into the DM's reliable flow (the proven fix for "surfacing info != the DM
+    # using it"). READ-ONLY: re-load the saved snapshot and inspect it; never mutate.
+    # ADDITIVE: the key is ABSENT when nothing is actionable (or no campaign resolved), so
+    # an old/healthy beat's return is byte-for-byte today's shape. Defensive: a load failure
+    # never breaks the persistence that already succeeded above.
+    if campaign_id:
+        try:
+            c_read = load_campaign(campaign_id)
+            if c_read is not None:
+                obligations = _compute_beat_obligations(c_read)
+                if obligations:
+                    out["obligations"] = obligations
+        except Exception:
+            pass
     return out
 
 
