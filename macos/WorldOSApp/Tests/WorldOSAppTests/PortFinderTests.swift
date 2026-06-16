@@ -44,7 +44,7 @@ final class PortFinderTests: XCTestCase {
             XCTFail("could not open a loopback listener to occupy a port")
             return
         }
-        defer { close(fd) }
+        defer { Darwin.close(fd) }
         XCTAssertFalse(
             PortFinder.isAvailable(port),
             "a port held by a live bound listener must be reported unavailable"
@@ -69,7 +69,7 @@ final class PortFinderTests: XCTestCase {
             XCTFail("could not open a loopback listener to occupy a port")
             return
         }
-        defer { close(fd) }
+        defer { Darwin.close(fd) }
         let chosen = PortFinder.firstFreePort(startingAt: port)
         XCTAssertNotNil(chosen)
         if let chosen {
@@ -95,22 +95,22 @@ final class PortFinderTests: XCTestCase {
     /// the live fd (caller must close) and the concrete port number it landed on, so the test can
     /// assert against a port that is genuinely occupied for the lifetime of the fd.
     private func openLoopbackListener() -> (fd: Int32, port: Int)? {
-        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        let fd = Darwin.socket(AF_INET, SOCK_STREAM, 0)
         guard fd >= 0 else { return nil }
 
         var addr = sockaddr_in()
         addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
         addr.sin_family = sa_family_t(AF_INET)
         addr.sin_port = 0  // ask the kernel for an ephemeral port
-        addr.sin_addr = in_addr(s_addr: inet_addr("127.0.0.1"))
+        addr.sin_addr = in_addr(s_addr: Darwin.inet_addr("127.0.0.1"))
 
         let bindResult = withUnsafePointer(to: &addr) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
+                Darwin.bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size))
             }
         }
-        guard bindResult == 0, listen(fd, 1) == 0 else {
-            close(fd)
+        guard bindResult == 0, Darwin.listen(fd, 1) == 0 else {
+            Darwin.close(fd)
             return nil
         }
 
@@ -118,11 +118,11 @@ final class PortFinderTests: XCTestCase {
         var len = socklen_t(MemoryLayout<sockaddr_in>.size)
         let nameResult = withUnsafeMutablePointer(to: &bound) {
             $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                getsockname(fd, $0, &len)
+                Darwin.getsockname(fd, $0, &len)
             }
         }
         guard nameResult == 0 else {
-            close(fd)
+            Darwin.close(fd)
             return nil
         }
         let port = Int(UInt16(bigEndian: bound.sin_port))
@@ -133,7 +133,7 @@ final class PortFinderTests: XCTestCase {
     /// was free a moment ago (best-effort "free port" probe for the available-path tests).
     private func bindEphemeralThenRelease() -> Int? {
         guard let (fd, port) = openLoopbackListener() else { return nil }
-        close(fd)
+        Darwin.close(fd)
         return port
     }
 }
