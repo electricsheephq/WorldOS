@@ -726,6 +726,20 @@ def test_party_traveled_still_red_when_clock_advanced_but_arc_unresolved(tmp_pat
     assert rc == 1, out
 
 
+def test_party_traveled_red_despite_status_blind_quest_tool_count(tmp_path):
+    # GATE-WEAKENING REGRESSION (adversarial-verified): a FROZEN single scene where the DM
+    # advanced the clock AND called set_quest_status — the OLD status-blind quest_resolved
+    # tool-count would have flipped arc_resolved True and let this DEAD scene PASS via the
+    # in-place exception. arc_resolved now requires a snapshot quest at status=="completed";
+    # the quest stays "active" (quest_completed=False) → arc_resolved False → party_traveled
+    # stays RED even though set_quest_status was called.
+    events = _dm_text_turns(9) + _toolcall("set_quest_status")
+    state = _single_scene_state(day=3, quest_completed=False, visited_count=1)
+    rc, out = _run_gate(tmp_path, events, state)
+    assert "[FAIL] party_traveled" in out, out
+    assert rc == 1, out
+
+
 def test_party_traveled_still_red_when_arc_resolved_but_too_few_beats(tmp_path):
     # Guard against broadening to beats-only / arc-only: clock advanced + quest completed but
     # only 7 beats (< SINGLE_SCENE_MIN_BEATS 8) → exception not met → party_traveled RED.

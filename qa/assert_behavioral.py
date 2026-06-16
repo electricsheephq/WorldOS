@@ -529,8 +529,11 @@ def main() -> int:
         # arc_resolved False — it fails ≥2 conjuncts). Deliberately NOT broadened to clock-only
         # or beats-only.
         clock_advanced = day > 1 or (tod not in ("", "morning"))
-        cov = coverage_from_tool_counts(tools) if coverage_from_tool_counts is not None else {}
-        arc_resolved = bool(cov.get("quest_resolved")) or any(
+        # arc_resolved requires an ACTUAL completed quest in the snapshot — NOT the status-blind
+        # quest_resolved tool-count (coverage_from_tool_counts counts set_quest_status(...,"active"
+        # /"failed") too, which would let a FROZEN DM game this exception with one cheap call:
+        # advance_time + set_quest_status(status="active") on a dead scene. Adversarial-verified.
+        arc_resolved = any(
             isinstance(q, dict) and q.get("status") == "completed" for q in quest_iter)
         SINGLE_SCENE_MIN_BEATS = 8  # strictly above MIN_BEATS(6): a real arc, not a smoke test
         in_place_progression = (visited >= 1 and clock_advanced and arc_resolved
