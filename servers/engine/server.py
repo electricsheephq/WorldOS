@@ -65,6 +65,7 @@ from models import (
     ClassResource,
     Combat,
     Combatant,
+    CompanionAgenda,
     CompanionArc,
     CompanionDossier,
     CompanionQuestArc,
@@ -9571,6 +9572,79 @@ def set_companion_arc(campaign_id: str, companion_id: str = "", arc: dict = None
 
 
 @mcp.tool()
+def author_companion_gauges(
+    campaign_id: str,
+    companion_id: str = "",
+    approval_likes: Optional[list] = None,
+    approval_dislikes: Optional[list] = None,
+    values: Optional[list] = None,
+    wants: Optional[list] = None,
+    fears: Optional[list] = None,
+    betrayal_threshold: Optional[int] = None,
+    betrayal_decision_flag: str = "",
+    companion: str = "",
+    character_id: str = "",
+) -> dict:
+    """Author a companion's APPROVAL VOCABULARY (and, optionally, a betrayal agenda) so their
+    relationship gauge can MOVE on the player's choices.
+
+    A freely-recruited or live-generated companion is seeded with an operational dossier but an
+    EMPTY approval vocabulary (approval_likes/dislikes) — so ``record_decision(approval_tags=…)``
+    has nothing to match and the engine SKIPS them (their regard stays narrated-not-gauged, the
+    arc never turns). The hand-authored campaign companions (Brother Toll, Sergeant Ondine) only
+    work because content authored these lists for them. Call this once when a companion joins to
+    give a recruited/generated companion the same SOUL the engine can gauge.
+
+    ``approval_likes``/``approval_dislikes`` are the lowercase cause-keys you'll tag choices with
+    (e.g. ``"free_the_bonded"``, ``"refuse_a_bribe"``) — pick a few that fit WHO THIS COMPANION
+    IS; ``values``/``wants``/``fears`` are the short moral-spine tags behind them. Pass
+    ``betrayal_threshold`` (an attitude_value such as ``-30``) to ALSO arm an ``attitude_below``
+    agenda so the bond can BREAK if the player drives their regard below it — optionally gated on
+    a recorded ``betrayal_decision_flag``; omit it and the companion can deepen but never turn.
+
+    ADDITIVE + engine-sole-writer: only the fields you pass are written; the dossier's
+    ``camp_prompts`` and any existing arc gates are preserved. Identify the companion via
+    ``companion_id`` (canonical) or the aliases ``companion``/``character_id``."""
+    companion_id = companion_id or companion or character_id
+    if not companion_id:
+        raise ValueError("author_companion_gauges needs a companion id (`companion_id` or an alias)")
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        ch = _require_companion(c, companion_id)
+        # Patch the dossier vocabulary: start from the existing/minimal dossier so camp_prompts
+        # and any field NOT passed are preserved; only a non-None list overwrites its field.
+        data = (ch.companion_dossier or CompanionDossier()).model_dump()
+        for key, val in (("approval_likes", approval_likes), ("approval_dislikes", approval_dislikes),
+                         ("values", values), ("wants", wants), ("fears", fears)):
+            if val is not None:
+                data[key] = [str(x).strip() for x in val if str(x).strip()]
+        ch.companion_dossier = CompanionDossier.model_validate(data)
+        # Optionally arm a betrayal agenda so a generated companion CAN turn. Mirror the default
+        # arc _seed_companion_operational_state attaches when none exists, then set the agenda —
+        # the arc's existing gates are preserved.
+        agenda_armed = False
+        if betrayal_threshold is not None:
+            if ch.arc is None:
+                ch.arc = CompanionArc.model_validate({"arc_gates": [
+                    {"kind": "loyalty", "threshold": 25,
+                     "note": f"a deepening trust with {ch.name}, earned fighting beside them"}]})
+            ch.arc.agenda = CompanionAgenda.model_validate({
+                "trigger": "attitude_below",
+                "value": int(betrayal_threshold),
+                "decision_flag": (betrayal_decision_flag or "").strip(),
+            })
+            agenda_armed = True
+        save_campaign(c)
+        return {
+            "id": ch.id,
+            "name": ch.name,
+            "approval_likes": ch.companion_dossier.approval_likes,
+            "approval_dislikes": ch.companion_dossier.approval_dislikes,
+            "betrayal_agenda_armed": agenda_armed,
+        }
+
+
+@mcp.tool()
 def set_companion_quest_arc(campaign_id: str, companion_id: str, arc: dict) -> dict:
     """Create or replace an engine-owned companion personal quest arc."""
     with campaign_lock(campaign_id):
@@ -11024,32 +11098,51 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
         and getattr(characters.get(cid), "kind", None) == "companion"
     ]
 
-    # 1. companion_approval_frozen — a present companion whose regard hasn't moved off 0
-    #    a few days in, AND the engine KNOWS what would move it (authored approval_likes).
-    #    Cue: tag the next values-moment or play a camp_scene.
+    # 0. companion_gauge_unauthored — a party companion with an EMPTY approval vocabulary (the
+    #    freely-recruited / live-generated case). record_decision(approval_tags=…) cannot move
+    #    them — _apply_approval_tags SKIPS a companion whose likes/dislikes match nothing, and an
+    #    empty list matches nothing — so their regard, arc, and any betrayal stay inert until the
+    #    DM authors a vocabulary. This is the ROOT cue (it gates everything below): the proven
+    #    golden-spine engagement only works because content authored these lists; a recruited /
+    #    generated companion gets none, so cue authoring one as soon as they join.
+    for comp in party_companions:
+        dossier = getattr(comp, "companion_dossier", None)
+        likes = list(getattr(dossier, "approval_likes", []) or []) if dossier is not None else []
+        if likes:
+            continue
+        name = getattr(comp, "name", None) or "the companion"
+        obligations.append({
+            "kind": "companion_gauge_unauthored",
+            "character_id": getattr(comp, "id", None),
+            "name": name,
+            "severity": "med",
+            "detail": (
+                f"{name} has no approval vocabulary, so record_decision(approval_tags=…) can't move "
+                f"their regard and their whole arc is inert. author_companion_gauges(companion_id, "
+                f"approval_likes=[…], approval_dislikes=[…]) now — a few lowercase cause-keys that fit "
+                f"who they are; add betrayal_threshold to let the bond break if you mistreat them. A "
+                f"recruited companion with no vocabulary is narrated, not gauged."
+            ),
+        })
+
+    # 1. companion_approval_frozen — a present companion WITH an authored vocabulary whose regard
+    #    still hasn't moved off 0 a few days in. (A vocab-LESS companion is covered by #0 above —
+    #    there the fix is to AUTHOR the vocabulary, not nudge a number.) Cue: tag the next
+    #    values-moment or play a camp_scene.
     for comp in party_companions:
         attitude = getattr(comp, "attitude_value", 0) or 0
         if attitude != 0 or day < 3:
             continue
         dossier = getattr(comp, "companion_dossier", None)
         likes = list(getattr(dossier, "approval_likes", []) or []) if dossier is not None else []
+        if not likes:
+            continue  # no vocabulary → #0 (companion_gauge_unauthored) owns this case
         name = getattr(comp, "name", None) or "the companion"
-        # Fire for ANY frozen companion — the gauge is inert either way, and an inert companion
-        # is the exact bug. When the content authored approval_likes, point at a tagged choice
-        # (auto-move); when it didn't (the common un-augmented case), the DM still moves the gauge
-        # directly via adjust_attitude (and the content should grow the vocabulary — Phase 3).
-        if likes:
-            detail = (
-                f"{name}'s regard hasn't moved (still 0). On a values-relevant choice, "
-                f"record_decision(..., approval_tags={likes}); or play a camp_scene to land "
-                f"a character beat that moves the gauge."
-            )
-        else:
-            detail = (
-                f"{name}'s regard hasn't moved (still 0), and no approval vocabulary is authored. "
-                f"Move it directly with adjust_attitude on a values-moment, or play a camp_scene — "
-                f"a companion whose gauge never moves is an inert arc, not a relationship."
-            )
+        detail = (
+            f"{name}'s regard hasn't moved (still 0). On a values-relevant choice, "
+            f"record_decision(..., approval_tags={likes}); or play a camp_scene to land "
+            f"a character beat that moves the gauge."
+        )
         obligations.append({
             "kind": "companion_approval_frozen",
             "character_id": getattr(comp, "id", None),
