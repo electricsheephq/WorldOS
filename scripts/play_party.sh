@@ -508,7 +508,7 @@ viewer_supervisor &  SUP=$!
 _party_cleanup() {
   if [ "${PROVIDER_STOPPED_CLEANLY:-0}" != "1" ] && [ -n "${PROVIDER_STATUS:-}" ] \
      && declare -F clawdnd_write_provider_status >/dev/null 2>&1; then
-    clawdnd_write_provider_status "$PROVIDER_STATUS" failed crashed "ClawDnD DM provider exited unexpectedly. Restart the session to continue." "${AGENT_TURNS:-0}" "scripts/play_party.sh"
+    clawdnd_write_provider_status "$PROVIDER_STATUS" failed crashed "WorldOS DM provider exited unexpectedly. Restart the session to continue." "${AGENT_TURNS:-0}" "scripts/play_party.sh"
   fi
   declare -F clawdnd_release_launch_lock >/dev/null 2>&1 && clawdnd_release_launch_lock "$ROOT"
   kill "$SUP" 2>/dev/null
@@ -543,7 +543,7 @@ COMP_NAME_LIST="$(printf '%s' "$SEED_JSON" | jq -r '[.companions[].name] | join(
 # heartbeat INGEST. Same shared helper play.sh calls (its exact wrapper lines are what app.jsx
 # filters and the #763 fallback recognizes — never a local text bank). first=1 → opening teaser.
 clawdnd_emit_progress_heartbeat "$CAMPAIGN_ID" 1 0
-DMSG="$(turn dm "$DSID" 1 "You are the Dungeon Master for a ClawDnD adventure played by ONE human plus an AI PARTY. Activate and follow your \`dungeon-master\` skill — run its \"Generating a world live\" mode and hold its craft bar (mechanics sourced from the engine, NPCs speak, the world pushes back, scenes played not logged).
+DMSG="$(turn dm "$DSID" 1 "You are the Dungeon Master for a WorldOS adventure played by ONE human plus an AI PARTY. Activate and follow your \`dungeon-master\` skill — run its \"Generating a world live\" mode and hold its craft bar (mechanics sourced from the engine, NPCs speak, the world pushes back, scenes played not logged).
 
 Begin a session in a living world for a single human player (who acts through the dashboard) traveling with a party of companions who ALREADY EXIST in the world:
 - This session's campaign ALREADY EXISTS: use campaign_id=$CAMPAIGN_ID for EVERY engine call. The world, party, and companions were pre-seeded for you. DO NOT call start_world — it would mint a NEW campaign id and ORPHAN the pre-seeded companions; DO NOT recruit or create companions yourself.
@@ -645,7 +645,7 @@ fi
 # the viewer shows a live provider. Shared writer; AGENT_TURNS is this lane's turn counter. (play.sh
 # parity; the EXIT trap relabels it "failed" on a crash, over_budget/idle relabel "stopped".)
 provider_status_set() { clawdnd_write_provider_status "$PROVIDER_STATUS" "$1" "$2" "$3" "$AGENT_TURNS" "scripts/play_party.sh"; }
-provider_status_set running active "ClawDnD party DM provider is running."
+provider_status_set running active "WorldOS party DM provider is running."
 
 # --- session ceiling (aggregate cost + turn cap), mirrors play.sh + run_party.sh --------
 # F12-10: a clean cap/budget stop writes the "stopped" sidecar (with the reason) + a short grace
@@ -655,7 +655,7 @@ over_budget() {
   local spent
   if [ "$AGENT_TURNS" -ge "$MAX_TURNS" ]; then
     echo "[play-party] turn cap ($MAX_TURNS) reached — stopping (raise CLAWDND_PLAY_MAX_TURNS)."
-    provider_status_set stopped turn_cap "ClawDnD party DM stopped after reaching the configured max turns. Increase Max turns or start a new session to continue."
+    provider_status_set stopped turn_cap "WorldOS party DM stopped after reaching the configured max turns. Increase Max turns or start a new session to continue."
     PROVIDER_STOPPED_CLEANLY=1
     sleep "${WORLDOS_PROVIDER_STOP_GRACE_SECONDS:-${CLAWDND_PROVIDER_STOP_GRACE_SECONDS:-20}}"
     return 0
@@ -663,7 +663,7 @@ over_budget() {
   spent="$(jq -rs '[.[]|select(.type=="result")|.total_cost_usd//0]|add // 0' "$COMBINED" 2>/dev/null)"
   if awk -v s="${spent:-0}" -v b="$SESSION_BUDGET" 'BEGIN{exit !(s+0>=b+0)}'; then
     echo "[play-party] session budget reached (~\$$spent/\$$SESSION_BUDGET) — stopping (raise CLAWDND_PLAY_SESSION_BUDGET)."
-    provider_status_set stopped budget "ClawDnD party DM stopped after reaching the session budget (~\$$spent/\$$SESSION_BUDGET). Raise CLAWDND_PLAY_SESSION_BUDGET or start a new session."
+    provider_status_set stopped budget "WorldOS party DM stopped after reaching the session budget (~\$$spent/\$$SESSION_BUDGET). Raise CLAWDND_PLAY_SESSION_BUDGET or start a new session."
     PROVIDER_STOPPED_CLEANLY=1
     sleep "${WORLDOS_PROVIDER_STOP_GRACE_SECONDS:-${CLAWDND_PROVIDER_STOP_GRACE_SECONDS:-20}}"
     return 0
@@ -764,7 +764,7 @@ Then PLAY the next beat as a full lived scene — NOT a fragment: any NPC (or co
     if [ $((SECONDS - last_activity)) -ge "$MAX_IDLE" ]; then
       echo "[play-party] idle ${MAX_IDLE}s with no player move — stopping (relaunch when ready; raise CLAWDND_PLAY_MAX_IDLE to wait longer)."
       # F12-10: an idle stop is CLEAN (not a crash) — write "stopped"/idle + set the flag.
-      provider_status_set stopped idle "ClawDnD party DM stopped after ${MAX_IDLE}s with no player move. Relaunch to continue (raise CLAWDND_PLAY_MAX_IDLE to wait longer)."
+      provider_status_set stopped idle "WorldOS party DM stopped after ${MAX_IDLE}s with no player move. Relaunch to continue (raise CLAWDND_PLAY_MAX_IDLE to wait longer)."
       PROVIDER_STOPPED_CLEANLY=1
       break
     fi

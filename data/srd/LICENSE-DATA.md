@@ -49,7 +49,7 @@ this data is redistributed:
 
 This dataset has been **converted from the original SRD 5.2.1 document into
 structured JSON** by the Open5e project (the conversion source below), and is
-vendored here unmodified from that source. ClawDnD's rules server further
+vendored here unmodified from that source. WorldOS's rules server further
 *adapts* these records at load time (field normalization into a lookup index);
 the on-disk JSON under `data/srd/srd524/` is a verbatim copy of the upstream
 Open5e files.
@@ -67,7 +67,7 @@ data project, which converts the SRD into machine-readable JSON:
   above.
 
 Open5e's conversion work is gratefully acknowledged. Open5e is not affiliated
-with, nor does it endorse, ClawDnD.
+with, nor does it endorse, WorldOS.
 
 ## Scope of what is vendored
 

@@ -1,8 +1,8 @@
 ---
-description: Start a brand-new ClawDnD campaign — create your character, meet your AI companion, and begin an adventure.
+description: Start a brand-new WorldOS campaign — create your character, meet your AI companion, and begin an adventure.
 argument-hint: "[campaign name or theme] (optional; defaults to the \"Cellar Rats\" starter)"
 ---
-The player wants to start a NEW ClawDnD campaign.
+The player wants to start a NEW WorldOS campaign.
 
 Arguments (optional campaign name / theme): $ARGUMENTS
 

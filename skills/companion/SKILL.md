@@ -1,6 +1,6 @@
 ---
 name: companion
-description: Play the AI companion party member in a ClawDnD campaign — a distinct character with its own sheet, personality, and voice who adventures alongside the player. Use when the companion needs to act in combat, react in roleplay, or weigh in on a decision. The DM invokes the companion through the CompanionProvider boundary so it can later be promoted to a standalone OpenClaw sub-session (Tier 2).
+description: Play the AI companion party member in a WorldOS campaign — a distinct character with its own sheet, personality, and voice who adventures alongside the player. Use when the companion needs to act in combat, react in roleplay, or weigh in on a decision. The DM invokes the companion through the CompanionProvider boundary so it can later be promoted to a standalone OpenClaw sub-session (Tier 2).
 ---
 
 # Companion

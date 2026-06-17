@@ -8,7 +8,7 @@ The SRD 5.2.1 is licensed under the **Creative Commons Attribution 4.0
 International License** (CC-BY-4.0), available at
 https://creativecommons.org/licenses/by/4.0/legalcode.
 
-ClawDnD includes and adapts this material under that license. The following
+WorldOS includes and adapts this material under that license. The following
 attribution is required by CC-BY-4.0 and must be retained:
 
 > This work includes material from the System Reference Document 5.2.1 ("SRD 5.2.1")
@@ -17,5 +17,5 @@ attribution is required by CC-BY-4.0 and must be retained:
 > International License, available at
 > https://creativecommons.org/licenses/by/4.0/legalcode.
 
-ClawDnD uses only SRD content. It does not include or redistribute any non-SRD,
+WorldOS uses only SRD content. It does not include or redistribute any non-SRD,
 copyrighted Wizards of the Coast material.

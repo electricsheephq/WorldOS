@@ -16,4 +16,4 @@ Do this:
 5. Activate the **dungeon-master** skill and run its **"Generating a world live"** mode: drop the party at a starting option; generate each scene on arrival and PERSIST it (`add_location`, `create_character`, `remember`); pull canon on demand with `lookup_lore`; let the standing threads move on their own (weave in the `world_beats` from `travel_to`/`downtime`/`world_tick`); hold the story-craft bar (felt menace, a wounded companion, the unforgettable beat).
 6. `start_session` (for the recap + continuity) and `end_session` when the player stops.
 
-This is ClawDnD at its best — an epic, living world you inhabit, different every time. Make it sing.
+This is WorldOS at its best — an epic, living world you inhabit, different every time. Make it sing.

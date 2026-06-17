@@ -1,6 +1,6 @@
 ---
 name: world-author
-description: Author a new ClawDnD WORLD SEED — a persistent living setting the DM generates within (regions, factions, a cast, history, standing threads, lore). Use when the player wants to create a new world to adventure in (e.g. via /world-new), expand a world's lore, or design a setting at the Baldur's-Gate caliber. Distinct from campaign-author, which builds fixed adventure MODULES.
+description: Author a new WorldOS WORLD SEED — a persistent living setting the DM generates within (regions, factions, a cast, history, standing threads, lore). Use when the player wants to create a new world to adventure in (e.g. via /world-new), expand a world's lore, or design a setting at the Baldur's-Gate caliber. Distinct from campaign-author, which builds fixed adventure MODULES.
 ---
 
 # World Author

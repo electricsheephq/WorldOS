@@ -29,7 +29,7 @@ clawdnd_missing_commands() {
     command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
   done
   if [ "${#missing[@]}" -gt 0 ]; then
-    echo "ClawDnD cannot start yet: missing command(s): ${missing[*]}" >&2
+    echo "WorldOS cannot start yet: missing command(s): ${missing[*]}" >&2
     echo >&2
     echo "Install the missing tools, then double-click the launcher again." >&2
     echo "Required for dashboard play: python3, claude, uv, jq, curl." >&2

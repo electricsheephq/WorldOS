@@ -957,7 +957,7 @@ clawdnd_coldopen_retry_msg() {
     printf '%s' "$base_msg"
     return 0
   fi
-  printf '%s' "You are the Dungeon Master for a solo ClawDnD adventure. Activate and follow your \`dungeon-master\` skill — run its \"Generating a world live\" mode and hold its craft bar (mechanics sourced from the engine, NPCs speak, the world pushes back, scenes played not logged).
+  printf '%s' "You are the Dungeon Master for a solo WorldOS adventure. Activate and follow your \`dungeon-master\` skill — run its \"Generating a world live\" mode and hold its craft bar (mechanics sourced from the engine, NPCs speak, the world pushes back, scenes played not logged).
 
 A previous cold-open attempt already minted THIS session's campaign, so the world ALREADY EXISTS — RESUME it, do NOT start over:
 - This session's campaign ALREADY EXISTS: use campaign_id=$live_cid for EVERY engine call. DO NOT call start_world(\"$world\") — it would mint a NEW campaign id and ORPHAN this save (the player's seated party would vanish).

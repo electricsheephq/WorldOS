@@ -1,4 +1,4 @@
-# Coverage configuration for WorldOS / ClawDnD (QA Lab Phase-1, additive).
+# Coverage configuration for WorldOS (QA Lab Phase-1, additive).
 #
 # Report-only: this file controls what coverage.py measures and which paths it
 # omits. It deliberately does NOT set fail_under -- coverage stays advisory so

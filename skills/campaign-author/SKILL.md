@@ -1,6 +1,6 @@
 ---
 name: campaign-author
-description: Create or import a ClawDnD campaign — generate an original adventure (regions, factions, quest beats, NPC roster with assigned voices) from SRD primitives, or import a campaign module. Use when the player wants to start a new adventure, generate a campaign, or load authored content. Ships only original/CC content; copyrighted adventures are imported privately and never redistributed.
+description: Create or import a WorldOS campaign — generate an original adventure (regions, factions, quest beats, NPC roster with assigned voices) from SRD primitives, or import a campaign module. Use when the player wants to start a new adventure, generate a campaign, or load authored content. Ships only original/CC content; copyrighted adventures are imported privately and never redistributed.
 ---
 
 # Campaign Author
@@ -17,7 +17,7 @@ Build an original campaign from SRD primitives: a premise and hook; a region wit
 4. **Validate before saving.** Call `validate_adventure(adv)` — it returns a list of problem strings (empty means valid: no duplicate ids, no unknown voice ids, no dangling scene references, title present). Fix every reported problem, then write the module under `content/campaigns/<id>/adventure.json`.
 
 ## Import
-Load an authored campaign module. **Licensing matters:** ClawDnD ships only original or CC-licensed content. Adventures the player legally owns may be imported for **private** local play — these live under a git-ignored directory and are never committed or redistributed. Never reproduce copyrighted adventure text into the repository.
+Load an authored campaign module. **Licensing matters:** WorldOS ships only original or CC-licensed content. Adventures the player legally owns may be imported for **private** local play — these live under a git-ignored directory and are never committed or redistributed. Never reproduce copyrighted adventure text into the repository.
 
 ## Voices
 Assign every NPC and the companion a stable logical `voice_id` at creation (see `content/voices/voice-map.json`) so each character sounds consistent across sessions.
