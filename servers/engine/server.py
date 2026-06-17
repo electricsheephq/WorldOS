@@ -564,6 +564,16 @@ def start_adventure(adventure_id: str) -> dict:
     the player + companion with create_character."""
     adv = content_mod.load_adventure_data(adventure_id)
     c = content_mod.seed_campaign(adv)
+    # content.seed_campaign does NOT run the companion operational-state finisher (that helper
+    # lives in server.py), so a dossier-authored adventure companion enters the party with
+    # arc=None — its gauge moves but no arc gate ever lingers, leaving the relationship system
+    # half-inert. Seed the missing arc/dossier here. Both writes inside the helper are
+    # None-GUARDED, so an authored arc/dossier (e.g. Vesper's, the spine companions') is NEVER
+    # overwritten — only a missing arc gets the light default.
+    for cid in getattr(c, "party", None) or []:
+        ch = c.characters.get(cid)
+        if ch is not None and getattr(ch, "kind", None) == "companion":
+            _seed_companion_operational_state(ch)
     save_campaign(c)
     loc = c.locations.get(c.current_location_id) if c.current_location_id else None
     return {
@@ -10446,20 +10456,50 @@ def _normalize_approval_tags(approval_tags) -> list[tuple[str, Optional[int]]]:
     +/-10 default) OR a list of ``{"key": str, "delta": int}`` dicts (an explicit per-tag
     swing). A bare string and a dict may be mixed. ``None`` / empty -> ``[]`` (the additive
     no-op). Keys are lowercased + stripped so they match the dossier's lowercase_snake
-    vocabulary regardless of the DM's casing; an empty/blank key is dropped."""
+    vocabulary regardless of the DM's casing; an empty/blank key is dropped.
+
+    A cause is COUNTED ONCE per decision: duplicate keys (``["mercy", "mercy"]`` — the same
+    moral cause named twice in one decision) are collapsed to a single (key, delta) pair so
+    the gauge moves +10 once, not +20 (the double-count regression). The FIRST occurrence's
+    explicit delta wins; a later bare-string repeat does not clobber an earlier explicit one.
+
+    A non-numeric explicit delta (``{"key": "mercy", "delta": "lots"}``) raises a CLEAR
+    ValueError naming the offending key — never a bare ``int()`` crash that aborts the whole
+    record_decision with an opaque message."""
     if not approval_tags:
         return []
+    # Dedup-preserving-order: collapse duplicate keys to ONE pair per distinct cause-key so a
+    # cause named twice in a single decision moves the gauge once. seen maps key -> index in out.
     out: list[tuple[str, Optional[int]]] = []
+    seen: dict[str, int] = {}
     for item in approval_tags:
         if isinstance(item, dict):
             key = str(item.get("key") or "").strip().lower()
             raw_delta = item.get("delta")
-            delta = None if raw_delta is None else int(raw_delta)
+            if raw_delta is None:
+                delta: Optional[int] = None
+            else:
+                try:
+                    delta = int(raw_delta)
+                except (TypeError, ValueError):
+                    raise ValueError(
+                        f"approval_tags delta for key {key or '(blank)'!r} must be an integer, "
+                        f"got {raw_delta!r}"
+                    )
         else:
             key = str(item or "").strip().lower()
             delta = None
-        if key:
-            out.append((key, delta))
+        if not key:
+            continue
+        if key in seen:
+            # Same cause already recorded this decision — keep the first pair, but let an
+            # explicit delta fill in for an earlier bare-string occurrence (None).
+            idx = seen[key]
+            if out[idx][1] is None and delta is not None:
+                out[idx] = (key, delta)
+            continue
+        seen[key] = len(out)
+        out.append((key, delta))
     return out
 
 
@@ -11128,7 +11168,11 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
     for comp in party_companions:
         dossier = getattr(comp, "companion_dossier", None)
         likes = list(getattr(dossier, "approval_likes", []) or []) if dossier is not None else []
-        if likes:
+        dislikes = list(getattr(dossier, "approval_dislikes", []) or []) if dossier is not None else []
+        # GAUGEABLE if EITHER list is non-empty: the mover (_apply_approval_tags) matches a tag
+        # against likes OR dislikes, so a companion authored with only approval_dislikes can still
+        # be moved. Gating on likes alone falsely nags a dislikes-only companion as un-gauged forever.
+        if likes or dislikes:
             continue
         name = getattr(comp, "name", None) or "the companion"
         obligations.append({

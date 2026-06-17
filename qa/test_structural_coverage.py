@@ -51,14 +51,18 @@ def _skipping_state() -> dict:
 def _complete_state() -> dict:
     """A COMPLETE run's final snapshot: companion recruited + approval moved + camped, a quest
     resolved AND carrying an `evolves_to`, three AUTHORED act-tagged visited locations, a monster
-    engaged (combat), a scheduled consequence."""
+    engaged (combat), a scheduled consequence, and a companion whose sealed betrayal agenda FIRED
+    (`arc.agenda.fired` True — the snapshot ground truth for `betrayal`)."""
     return {
         "day": 20,
         "party": ["pc1", "comp1"],
         "characters": {
             "pc1": {"name": "Dal", "kind": "player", "last_long_rest_day": 5},
             "comp1": {"name": "Karlach", "kind": "companion",
-                      "attitude_value": 40, "last_long_rest_day": 5},
+                      "attitude_value": 40, "last_long_rest_day": 5,
+                      "arc": {"arc_gates": [],
+                              "agenda": {"trigger": "attitude_below", "value": -20,
+                                         "fired": True, "note": "she turns"}}},
             "mon1": {"name": "Goblin Boss", "kind": "monster"},
         },
         "quests": {"q1": {"title": "The Embergloom Pact", "status": "completed",
@@ -94,7 +98,7 @@ def test_skipping_run_yields_low_block():
 
 def test_complete_run_yields_full_block():
     block = sr.structural_coverage_from_state(
-        _complete_state(), {"start_combat": 1, "trigger_companion_agenda": 1})
+        _complete_state(), {"start_combat": 1, "check_companion_arc": 1})
     assert block["acts_reached"] == 3
     assert block["recruited"] is True
     assert block["approval_moved"] is True
@@ -122,10 +126,74 @@ def test_acts_from_authored_tags_partial():
 
 
 def test_roman_numeral_act_tags():
+    """Roman-numeral act tags parse (Act I/II/III). Coverage rule still applies: the chain must
+    be contiguous from act 1, so BOTH the Act-I and Act-II sites must be visited to read 2."""
     state = _skipping_state()
-    state["locations"] = {"a": {"name": "Ruins (Act II)", "visited": True}}
+    state["locations"] = {"a": {"name": "Ruins (Act I)", "visited": True},
+                          "b": {"name": "Deeper Ruins (Act II)", "visited": True}}
     block = sr.structural_coverage_from_state(state)
     assert block["acts_reached"] == 2
+
+
+def test_visiting_only_act3_site_does_not_read_acts_3of3():
+    """REGRESSION (acts_reached false-pass): a run that visits ONLY the Act-3 site has SKIPPED
+    acts 1-2 — it is NOT "in act 3/3". acts_reached is the highest CONTIGUOUS act from 1, so a
+    sole Act-3 visit proves NO act (act 1 itself was never reached) → 0, summary 'acts 0/3'.
+    The OLD max-tag logic stamped 3/3, a lie that hides a malformed/shortcut arc."""
+    state = _skipping_state()
+    state["locations"] = {"c": {"name": "The Lower City (Act 3)", "visited": True}}
+    block = sr.structural_coverage_from_state(state)
+    assert block["acts_reached"] == 0, block["acts_reached"]
+    assert block["summary"].startswith("acts 0/3 ·")
+
+
+def test_acts_require_contiguous_coverage_not_max():
+    """acts_reached caps at the highest CONTIGUOUS act visited from 1. Visiting acts {1,3}
+    (the act-2 site skipped) credits only act 1 — the chain breaks at the missing act 2."""
+    state = _skipping_state()
+    state["locations"] = {
+        "a": {"name": "The Grove (Act 1)", "visited": True},
+        "c": {"name": "The Lower City (Act 3)", "visited": True},
+    }
+    block = sr.structural_coverage_from_state(state)
+    assert block["acts_reached"] == 1, block["acts_reached"]
+
+
+def test_betrayal_stamps_only_when_agenda_actually_fired():
+    """REGRESSION (betrayal coverage stamp lies): betrayal is keyed on the snapshot ground truth
+    `character.arc.agenda.fired`, NOT on non-existent tool names. A run whose companion's sealed
+    agenda FIRED stamps `betrayal ✓` even though the fake trigger_companion_agenda tool was never
+    called; a run where the agenda is armed-but-unfired stamps `betrayal ·`."""
+    # Armed but NOT fired → no betrayal, regardless of any check_companion_arc calls.
+    armed = _skipping_state()
+    armed["characters"]["comp1"]["arc"] = {
+        "arc_gates": [],
+        "agenda": {"trigger": "attitude_below", "value": -20, "fired": False},
+    }
+    block = sr.structural_coverage_from_state(armed, {"check_companion_arc": 12})
+    assert block["betrayal"] is False
+    assert "betrayal ·" in block["summary"]
+
+    # The agenda actually fired (the companion turned) → betrayal ✓, with NO fake tool present.
+    turned = _skipping_state()
+    turned["characters"]["comp1"]["arc"] = {
+        "arc_gates": [],
+        "agenda": {"trigger": "attitude_below", "value": -20, "fired": True},
+    }
+    block = sr.structural_coverage_from_state(turned, {"check_companion_arc": 3})
+    assert block["betrayal"] is True
+    assert "betrayal ✓" in block["summary"]
+
+
+def test_fake_betrayal_tool_names_no_longer_stamp_betrayal():
+    """The OLD code keyed betrayal on tool names that DO NOT EXIST in the engine
+    (trigger_companion_agenda / companion_betrayal / resolve_companion_agenda). Passing those
+    counts now proves nothing — without a fired agenda in the snapshot, betrayal stays False."""
+    block = sr.structural_coverage_from_state(
+        _skipping_state(),
+        {"trigger_companion_agenda": 9, "companion_betrayal": 9, "resolve_companion_agenda": 9},
+    )
+    assert block["betrayal"] is False
 
 
 def test_combat_from_snapshot_when_no_tool_counts():

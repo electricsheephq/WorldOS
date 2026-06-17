@@ -857,6 +857,21 @@ def seed_campaign(adv: dict) -> Campaign:
         quest = Quest(title=adv.get("title", "Adventure"), description=adv["hook"])
         c.quests[quest.id] = quest
 
+    # F06-10/F06-11 (audit 2026-06-18): fold an OPTIONAL top-level `companion_quest_arcs` block
+    # so an AUTHORED campaign (not just a world/ending seed) can SHIP a first-class companion
+    # personal-quest arc. Without this, hollow-mile's Doctor Eline Mourn personal_quest gate
+    # links quest_arc_id 'cqarc-eline-stillwater' that nothing seeds — the link dangles forever
+    # (F06-11 latches a one-shot link_error and the gate stays locked-but-recoverable). Runs LAST
+    # in seed_campaign — AFTER the companions loop (so the arc's `companion_id` owner exists and
+    # is a companion) and AFTER quest seeding (so any `quest_ids` projection ref-checks). Reuses
+    # the same loader the world/overlay paths use: validates via CompanionQuestArc.model_validate,
+    # degrades-not-aborts a malformed/dangling entry, keys into c.companion_quest_arcs by id.
+    # Additive: an adventure with no `companion_quest_arcs` key seeds nothing (today's behavior;
+    # default {} round-trips).
+    _seed_companion_quest_arcs_block(
+        c, adv.get("companion_quest_arcs"), where="adventure companion_quest_arcs block"
+    )
+
     return c
 
 

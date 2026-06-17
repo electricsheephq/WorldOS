@@ -74,6 +74,35 @@ def _act_of(name) -> int | None:
     return _ROMAN_ACT.get((m.group(2) or "").lower())
 
 
+# Short tool NAMES that, when carrying a fired/agenda signal in their RESULT, prove a betrayal
+# actually turned. The engine's only companion-arc evaluator is `check_companion_arc` (server.py)
+# — it returns the companion_arc.evaluate() shape: a `results` list whose entries carry
+# `agenda_fired: true` / a fired `agenda` dump / a `betrayal_warning`. The OLD code keyed betrayal
+# on `trigger_companion_agenda` / `companion_betrayal` / `resolve_companion_agenda` — tool names
+# that DO NOT EXIST in the engine — so a real betrayal could never stamp `betrayal ✓` and (worse)
+# the count for a non-existent tool was always 0, so the bucket was dead. We key on the real tool.
+_ARC_EVAL_TOOLS = ("check_companion_arc",)
+
+
+def _agenda_fired_in_state(state: dict) -> bool:
+    """GROUND-TRUTH betrayal signal from the snapshot: any companion whose sealed agenda has
+    actually FIRED (``character.arc.agenda.fired == True``). A fired agenda is the durable record
+    that the companion turned — companion_arc.evaluate() flips ``fired`` and the engine persists
+    it (the snapshot is the sole writer). Defensive: tolerates a missing/None arc or agenda, and a
+    list- OR dict-shaped ``characters`` collection. This is the snapshot analog of the transcript's
+    `check_companion_arc` ``agenda_fired`` result signal — either proves the betrayal landed."""
+    chars = (state or {}).get("characters", {}) or {}
+    char_list = list(chars.values()) if isinstance(chars, dict) else (chars if isinstance(chars, list) else [])
+    for c in char_list:
+        if not isinstance(c, dict):
+            continue
+        arc = c.get("arc")
+        agenda = arc.get("agenda") if isinstance(arc, dict) else None
+        if isinstance(agenda, dict) and bool(agenda.get("fired")):
+            return True
+    return False
+
+
 def structural_coverage_from_state(state: dict, tool_counts=None) -> dict:
     """A per-run STRUCTURAL-COVERAGE block derived from GROUND TRUTH (the final engine
     snapshot), not the player's actions — the owner's "full circle" (pairs with the #961
@@ -85,13 +114,15 @@ def structural_coverage_from_state(state: dict, tool_counts=None) -> dict:
         approval_moved (any companion ``attitude_value`` != 0), camped (any character with a
         ``last_long_rest_day`` >= 0), quest_resolved (any quest ``status`` == completed),
         quest_evolved (a completed quest carrying ``evolves_to`` OR a scheduled
-        ``consequences`` entry), traveled (>= 2 distinct ``visited`` locations), and
-        acts_reached (distinct "(Act N)" tags over the VISITED location NAMES, with a
-        visited-count/``day`` proxy when the world is untagged).
+        ``consequences`` entry), traveled (>= 2 distinct ``visited`` locations),
+        acts_reached (the highest CONTIGUOUS "(Act N)" tag visited from act 1 — coverage,
+        not max: visiting only the act-3 site reads 0, not 3 — with a visited-count proxy
+        when the world is untagged), and betrayal (a companion's sealed agenda actually
+        FIRED — ``character.arc.agenda.fired`` is True in the snapshot).
       * From ``tool_counts`` (optional — a {short_tool_name: count} mapping, reusing
-        ``coverage_from_tool_counts``): combat (a start_combat fired) and betrayal (a
-        companion betrayal/agenda tool engaged). When ``tool_counts`` is None those two
-        ride the snapshot only (combat ⇒ any kind=monster engaged; betrayal stays False).
+        ``coverage_from_tool_counts``): combat (a start_combat fired). When ``tool_counts``
+        is None, combat rides the snapshot only (any kind=monster engaged). betrayal is
+        snapshot-ground-truth and does not depend on ``tool_counts``.
 
     Additive + defensive: every field defaults to a safe falsy value, so a system-skipping
     run yields a LOW/false block and a complete run yields acts 3/3 + all ✓. Returns a dict
@@ -144,32 +175,44 @@ def structural_coverage_from_state(state: dict, tool_counts=None) -> dict:
     # >= ~6 visited locations OR a multi-day arc suggests the party pushed past Act 1, but
     # without authored tags we can only PROVE act 1 — so the proxy caps at 1 (honest: never
     # claim an act the world didn't tag). The proxy still distinguishes "moved at all".
+    #
+    # COVERAGE, not max-tag: an arc that visits ONLY the Act-3 site is not "in act 3/3" — the
+    # party skipped acts 1-2 (a fast-travel/QA shortcut, or a malformed run), so the structural
+    # claim "reached act 3" is a LIE. acts_reached is the highest CONTIGUOUS act actually
+    # visited from 1: act 1 if 1 is tagged, act 2 only if 1 AND 2 are, act 3 only if 1, 2 AND 3
+    # are. Visiting {3} reads 0 (act 1 itself never proven); {1,3} reads 1; {1,2,3} reads 3.
     tagged_acts = {a for l in visited_locs if (a := _act_of(l.get("name"))) is not None}
     if tagged_acts:
-        acts_reached = max(tagged_acts)
+        acts_reached = 0
+        for n in (1, 2, 3):
+            if n in tagged_acts:
+                acts_reached = n
+            else:
+                break  # a gap breaks the chain — never credit an act past the first missing one
     else:
         # Untagged world: we cannot prove Act 2/3 from names. acts_reached = 1 once any
         # location was visited (the run is at least in Act 1), else 0.
         acts_reached = 1 if distinct_visited >= 1 else 0
 
-    # combat / betrayal from the transcript tool counts (ground truth for "a system fired"),
-    # reusing the SAME bucket logic the readout stamp + the #961 gate share. When no tool
-    # counts are given, derive combat from the snapshot (a kind=monster was engaged) and leave
-    # betrayal False (it needs a transcript/result signal).
+    # combat from the transcript tool counts (ground truth for "a system fired"), reusing the
+    # SAME bucket logic the readout stamp + the #961 gate share. When no tool counts are given,
+    # derive combat from the snapshot (a kind=monster was engaged).
     combat = False
-    betrayal = False
     if tool_counts is not None:
         cov = coverage_from_tool_counts(tool_counts)
         combat = bool(cov.get("combat"))
-        # betrayal: an engaged companion-agenda / betrayal tool. coverage_from_tool_counts
-        # has no betrayal bucket, so read the raw counts for the known signals.
-        betrayal = bool(
-            int(tool_counts.get("trigger_companion_agenda", 0) or 0)
-            or int(tool_counts.get("companion_betrayal", 0) or 0)
-            or int(tool_counts.get("resolve_companion_agenda", 0) or 0)
-        )
     if not combat:
         combat = any(isinstance(c, dict) and c.get("kind") == "monster" for c in char_list)
+
+    # betrayal: a companion's sealed agenda ACTUALLY FIRED. The ground truth is the snapshot
+    # (`character.arc.agenda.fired == True`) — the durable record the engine writes when
+    # companion_arc.evaluate() flips the agenda. The OLD code keyed this on tool NAMES that don't
+    # exist in the engine (trigger_companion_agenda / companion_betrayal / resolve_companion_agenda),
+    # so a real betrayal stamped `betrayal ·` AND a system-skipping run could never disprove it —
+    # the bucket was dead. A bare `check_companion_arc` CALL is necessary-but-not-sufficient (the DM
+    # calls it every beat to evaluate; it usually returns nothing fired), so a call count alone must
+    # NOT stamp betrayal — only the fired agenda does. The snapshot is the sole, honest source.
+    betrayal = _agenda_fired_in_state(state)
 
     block = {
         "acts_reached": int(acts_reached),

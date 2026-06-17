@@ -188,6 +188,122 @@ def validate_adventure(adv: dict) -> list[str]:
             if _is_nonempty_str(voice_id) and voice_id not in KNOWN_VOICE_IDS:
                 problems.append(f"antagonist has unknown voice_id {voice_id!r}")
 
+    # --- companions: arc gates / agendas / quest-arc links / approval keys ---
+    problems.extend(_validate_companions(adv))
+
+    return problems
+
+
+def _validate_companions(adv: dict) -> list[str]:
+    """Validate the companion-relationship structure of an adventure dict (arc gates,
+    sealed agendas, personal-quest links, and approval keys).
+
+    This is the author-time guard the audit found MISSING: ``validate_adventure`` had ZERO
+    companion-arc coverage, so a spine could ship with the inversion bugs the engine quietly
+    mis-fires on. The declarative shape mirrors the live models 1:1 (see ``models.ArcGate`` /
+    ``CompanionAgenda`` / ``CompanionQuestArc``, and the authored ``content/campaigns/*/
+    adventure.json``): ``adv['companions'][i].arc = {arc_gates: [...], agenda: {...}}`` with
+    a top-level ``adv['companion_quest_arcs']`` registry, and approval keys under
+    ``companion_dossier.approval_likes`` / ``approval_dislikes``.
+
+    Flags (each a ship-blocking authoring mistake the engine can't catch at play time):
+
+      * a ``personal_quest`` arc-gate whose ``quest_arc_id`` does NOT resolve to an authored
+        ``companion_quest_arc`` (a dangling link — the gate can never make a real arc available);
+      * a ``betrayal``-kind arc-gate with a POSITIVE ``threshold`` (the INVERSION bug — an
+        ArcGate unlocks when ``attitude_value >= threshold``, i.e. on HIGH approval, but a
+        betrayal must unlock on LOW/curdled approval, so a positive betrayal threshold means
+        the turn unlocks when the companion likes you most — backwards; should not ship);
+      * an ``attitude_below`` agenda with a POSITIVE ``value`` (the same inversion: the agenda
+        fires while ``attitude_value < value``, so a positive value arms the betrayal at HIGH
+        approval — a saboteur who turns the more you befriend them; real spines use NEGATIVE
+        values like -20/-30);
+      * a space-separated approval key in ``approval_likes`` / ``approval_dislikes`` (approval
+        keys are matched token-for-token against the ``approval_tags`` the engine records —
+        a key with whitespace can NEVER match, so the regard move it gates is silently dead).
+
+    Tolerant of everything optional: an adventure with no companions, a companion with no arc,
+    an arc with no gates/agenda, a companion with no dossier — all clean. Returns a list of
+    human-readable problem strings (empty == valid)."""
+    problems: list[str] = []
+
+    companions = adv.get("companions", [])
+    if companions in (None, []):
+        return problems
+    if not isinstance(companions, list):
+        problems.append(f"'companions' must be a list, got {type(companions).__name__}")
+        return problems
+
+    # The authored companion-quest-arc registry the personal_quest gates link into.
+    quest_arc_ids: set[str] = set()
+    cqa = adv.get("companion_quest_arcs", [])
+    if isinstance(cqa, list):
+        for arc in cqa:
+            if isinstance(arc, dict) and _is_nonempty_str(arc.get("id")):
+                quest_arc_ids.add(arc["id"])
+
+    for i, comp in enumerate(companions):
+        if not isinstance(comp, dict):
+            problems.append(f"companion[{i}] must be an object, got {type(comp).__name__}")
+            continue
+        label = comp.get("id") if _is_nonempty_str(comp.get("id")) else f"companion[{i}]"
+
+        arc = comp.get("arc")
+        if isinstance(arc, dict):
+            gates = arc.get("arc_gates", [])
+            if isinstance(gates, list):
+                for gate in gates:
+                    if not isinstance(gate, dict):
+                        continue
+                    kind = gate.get("kind")
+                    threshold = gate.get("threshold")
+                    # A betrayal gate must unlock on LOW (negative) approval — a positive
+                    # threshold inverts it (unlocks when liked most). Should not ship.
+                    if kind == "betrayal" and isinstance(threshold, (int, float)) \
+                            and not isinstance(threshold, bool) and threshold > 0:
+                        problems.append(
+                            f"companion {label!r} betrayal gate has a POSITIVE threshold "
+                            f"{threshold!r} (inverted — a betrayal must unlock on LOW/negative "
+                            f"approval, not high)"
+                        )
+                    # A personal_quest gate's quest_arc_id must resolve to an authored arc.
+                    if kind == "personal_quest":
+                        qid = gate.get("quest_arc_id")
+                        if _is_nonempty_str(qid) and qid not in quest_arc_ids:
+                            problems.append(
+                                f"companion {label!r} personal_quest gate links unknown "
+                                f"companion_quest_arc {qid!r}"
+                            )
+
+            agenda = arc.get("agenda")
+            if isinstance(agenda, dict):
+                # An attitude_below agenda fires while attitude_value < value, so its value is
+                # the breaking point — a POSITIVE value arms the betrayal at high approval
+                # (a saboteur who turns the MORE you befriend them). Real spines use -20/-30.
+                if agenda.get("trigger") == "attitude_below":
+                    val = agenda.get("value")
+                    if isinstance(val, (int, float)) and not isinstance(val, bool) and val > 0:
+                        problems.append(
+                            f"companion {label!r} attitude_below agenda has a POSITIVE value "
+                            f"{val!r} (inverted — it would arm the betrayal at HIGH approval; "
+                            f"the breaking point must be negative)"
+                        )
+
+        # Approval keys must be whitespace-free tokens (matched against engine approval_tags).
+        dossier = comp.get("companion_dossier")
+        if isinstance(dossier, dict):
+            for field in ("approval_likes", "approval_dislikes"):
+                keys = dossier.get(field, [])
+                if not isinstance(keys, list):
+                    continue
+                for key in keys:
+                    if isinstance(key, str) and any(ch.isspace() for ch in key):
+                        problems.append(
+                            f"companion {label!r} {field} key {key!r} contains whitespace "
+                            f"(approval keys must be whitespace-free tokens to match the "
+                            f"engine's approval_tags)"
+                        )
+
     return problems
 
 

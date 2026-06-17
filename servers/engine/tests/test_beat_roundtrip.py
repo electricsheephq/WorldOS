@@ -338,14 +338,16 @@ def test_scene_context_durable_threads_present(cid):
         assert set(q) == {"id", "title", "status", "open_objectives"}
 
     # companions: standing bond shape (gauge + arc/betrayal flags), one row per companion.
-    # `quest_arcs` (F06-10) is ADDITIVE — present only when the companion owns a personal quest arc.
+    # Several keys are ADDITIVE — surfaced only when present: `quest_arcs` (F06-10, owns a personal
+    # quest arc); `approval_likes`/`approval_dislikes` (F6-2/#995, an authored vocabulary);
+    # `next_gate` (D2, the nearest un-unlocked gate's distance).
     comp_ids = {ch.id for ch in c.characters.values() if ch.kind == "companion"}
     assert {x["id"] for x in dur["companions"]} == comp_ids
     for x in dur["companions"]:
         assert {"id", "name", "attitude_value", "has_arc", "has_betrayal_agenda"} <= set(x)
         assert set(x) - {
             "id", "name", "attitude_value", "has_arc", "has_betrayal_agenda",
-        } <= {"quest_arcs"}
+        } <= {"quest_arcs", "approval_likes", "approval_dislikes", "next_gate"}
 
     # factions: both engine-mutated gauges surfaced.
     for f in dur["factions"]:
