@@ -137,20 +137,20 @@ if [ -n "$RUN" ]; then
 fi
 
 _DEFAULTS_SENTINEL="__worldos_defaults_missing__"
-ORIGINAL_SELECTED_PROVIDER="$(defaults read dev.clawdnd.app selectedProvider 2>/dev/null || printf '%s' "$_DEFAULTS_SENTINEL")"
-ORIGINAL_STATE_DIR="$(defaults read dev.clawdnd.app stateDir 2>/dev/null || printf '%s' "$_DEFAULTS_SENTINEL")"
-ORIGINAL_DEFAULT_WORLD="$(defaults read dev.clawdnd.app defaultWorld 2>/dev/null || printf '%s' "$_DEFAULTS_SENTINEL")"
-ORIGINAL_CODEX_HOME="$(defaults read dev.clawdnd.app codexHome 2>/dev/null || printf '%s' "$_DEFAULTS_SENTINEL")"
-ORIGINAL_QA_AUTOSTART_PROVIDER="$(defaults read dev.clawdnd.app qaAutoStartProvider 2>/dev/null || printf '%s' "$_DEFAULTS_SENTINEL")"
-ORIGINAL_QA_AUTOSTART_WORLD="$(defaults read dev.clawdnd.app qaAutoStartWorld 2>/dev/null || printf '%s' "$_DEFAULTS_SENTINEL")"
-ORIGINAL_QA_AUTOSTART_RUN_ID="$(defaults read dev.clawdnd.app qaAutoStartRunID 2>/dev/null || printf '%s' "$_DEFAULTS_SENTINEL")"
+ORIGINAL_SELECTED_PROVIDER="$(defaults read dev.worldos.app selectedProvider 2>/dev/null || printf '%s' "$_DEFAULTS_SENTINEL")"
+ORIGINAL_STATE_DIR="$(defaults read dev.worldos.app stateDir 2>/dev/null || printf '%s' "$_DEFAULTS_SENTINEL")"
+ORIGINAL_DEFAULT_WORLD="$(defaults read dev.worldos.app defaultWorld 2>/dev/null || printf '%s' "$_DEFAULTS_SENTINEL")"
+ORIGINAL_CODEX_HOME="$(defaults read dev.worldos.app codexHome 2>/dev/null || printf '%s' "$_DEFAULTS_SENTINEL")"
+ORIGINAL_QA_AUTOSTART_PROVIDER="$(defaults read dev.worldos.app qaAutoStartProvider 2>/dev/null || printf '%s' "$_DEFAULTS_SENTINEL")"
+ORIGINAL_QA_AUTOSTART_WORLD="$(defaults read dev.worldos.app qaAutoStartWorld 2>/dev/null || printf '%s' "$_DEFAULTS_SENTINEL")"
+ORIGINAL_QA_AUTOSTART_RUN_ID="$(defaults read dev.worldos.app qaAutoStartRunID 2>/dev/null || printf '%s' "$_DEFAULTS_SENTINEL")"
 
 restore_app_default() {
   local key="$1" value="$2"
   if [ "$value" = "$_DEFAULTS_SENTINEL" ]; then
-    defaults delete dev.clawdnd.app "$key" >/dev/null 2>&1 || true
+    defaults delete dev.worldos.app "$key" >/dev/null 2>&1 || true
   else
-    defaults write dev.clawdnd.app "$key" "$value" >/dev/null 2>&1 || true
+    defaults write dev.worldos.app "$key" "$value" >/dev/null 2>&1 || true
   fi
 }
 
@@ -200,10 +200,10 @@ log "build_sha=$BUILD_SHA version=$VERSION repo=$ROOT"
 if [ -n "$SELECTED_PROVIDER" ]; then
   case "$SELECTED_PROVIDER" in
     claude|codex|openclaw|scripted)
-      defaults write dev.clawdnd.app selectedProvider "$SELECTED_PROVIDER" >/dev/null 2>&1 || true
+      defaults write dev.worldos.app selectedProvider "$SELECTED_PROVIDER" >/dev/null 2>&1 || true
       log "selected provider preference set to $SELECTED_PROVIDER"
       if [ "$SELECTED_PROVIDER" = "codex" ] && [ -n "${CODEX_HOME_FOR_APP//[[:space:]]/}" ]; then
-        defaults write dev.clawdnd.app codexHome "$CODEX_HOME_FOR_APP" >/dev/null 2>&1 || true
+        defaults write dev.worldos.app codexHome "$CODEX_HOME_FOR_APP" >/dev/null 2>&1 || true
         log "native app Codex home seeded to $CODEX_HOME_FOR_APP"
       fi
       ;;
@@ -473,7 +473,7 @@ def say(m): print(m); tlog.write(m+"\n"); tlog.flush()
 if not AXIsProcessTrusted():
     say("[A] WARN: AXIsProcessTrusted() False — synthetic clicks may be dropped.")
 def worldos_app():
-    apps = NSRunningApplication.runningApplicationsWithBundleIdentifier_("dev.clawdnd.app")
+    apps = NSRunningApplication.runningApplicationsWithBundleIdentifier_("dev.worldos.app")
     exact = []
     for app in apps:
         bundle = app.bundleURL()
@@ -565,13 +565,13 @@ PY
   if [ "${WOS_APP_SKIP_BUILD:-0}" != "1" ]; then
     a_log "[A] seeding isolated launcher state ($WORLD) at ${NATIVE_LAUNCHER_STATE_DIR}..."
     if seed_native_launcher_state >> "$tlog" 2>&1; then
-      defaults write dev.clawdnd.app stateDir "$NATIVE_LAUNCHER_STATE_DIR" >/dev/null 2>&1 || true
-      defaults write dev.clawdnd.app defaultWorld "$WORLD" >/dev/null 2>&1 || true
+      defaults write dev.worldos.app stateDir "$NATIVE_LAUNCHER_STATE_DIR" >/dev/null 2>&1 || true
+      defaults write dev.worldos.app defaultWorld "$WORLD" >/dev/null 2>&1 || true
       if [ "$NATIVE_AUTOSTART" = "1" ]; then
         autostart_run="play-$(date +%Y%m%d%H%M%S)"
-        defaults write dev.clawdnd.app qaAutoStartProvider "${SELECTED_PROVIDER:-claude}" >/dev/null 2>&1 || true
-        defaults write dev.clawdnd.app qaAutoStartWorld "$WORLD" >/dev/null 2>&1 || true
-        defaults write dev.clawdnd.app qaAutoStartRunID "$autostart_run" >/dev/null 2>&1 || true
+        defaults write dev.worldos.app qaAutoStartProvider "${SELECTED_PROVIDER:-claude}" >/dev/null 2>&1 || true
+        defaults write dev.worldos.app qaAutoStartWorld "$WORLD" >/dev/null 2>&1 || true
+        defaults write dev.worldos.app qaAutoStartRunID "$autostart_run" >/dev/null 2>&1 || true
         a_log "[A] native QA auto-start requested: provider=${SELECTED_PROVIDER:-claude} run=$autostart_run."
       fi
       a_log "[A] launcher state seeded; native app will not depend on old local saves."

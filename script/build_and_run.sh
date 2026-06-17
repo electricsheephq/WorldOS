@@ -4,9 +4,9 @@ set -euo pipefail
 MODE="${1:-run}"
 APP_NAME="WorldOSApp"
 DISPLAY_NAME="WorldOS"
-# Bundle ID intentionally kept as dev.clawdnd.app: changing it orphans existing
+# Bundle ID dev.worldos.app (renamed from dev.clawdnd.app in the WorldOS cutover; a one-time
 # installs (no upgrade path). Revisit at v2.0 with a migration. See issue #295 (W0-B).
-BUNDLE_ID="dev.clawdnd.app"
+BUNDLE_ID="dev.worldos.app"
 MIN_SYSTEM_VERSION="13.0"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

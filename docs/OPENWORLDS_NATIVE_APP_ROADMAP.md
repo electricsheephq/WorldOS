@@ -60,7 +60,7 @@ Every OpenWorlds screen should expose one of these labels:
 1. Sprint 0: roadmap correction and trailing-slash bug fix.
 2. Sprint 1: full-window OpenWorlds host in the macOS app, including the first
    pass at single-frame custom chrome (#136).
-3. Sprint 2: `window.ClawDnDNative.request(type, payload)` bridge.
+3. Sprint 2: `window.WorldOSNative.request(type, payload)` bridge.
 4. Sprint 3: map Settings, Providers, and Logs into OpenWorlds.
 5. Sprint 4: make Chronicles the real app home with live/stale run state.
 6. Sprint 5+: finish gameplay surfaces in impact order: table, combat, atlas,
@@ -105,7 +105,7 @@ custom-chrome work in #136:
 Browser API:
 
 ```js
-window.ClawDnDNative.request(type, payload)
+window.WorldOSNative.request(type, payload)
 ```
 
 Supported request types:
