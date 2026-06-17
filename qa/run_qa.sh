@@ -42,7 +42,7 @@ python3 - "$ROOT/qa/qa.mcp.example.json" "$STATE_DIR" "$MCP_CONFIG" <<'PY'
 import json, sys
 src, state_dir, out = sys.argv[1], sys.argv[2], sys.argv[3]
 cfg = json.load(open(src))
-cfg["mcpServers"]["clawdnd-engine"]["env"]["CLAWDND_STATE_DIR"] = state_dir
+cfg["mcpServers"]["worldos-engine"]["env"]["CLAWDND_STATE_DIR"] = state_dir
 json.dump(cfg, open(out, "w"))
 PY
 

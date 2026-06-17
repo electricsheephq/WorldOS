@@ -366,7 +366,7 @@ async function resolveField(pg, target) {
 }
 
 // ---- MCP server -------------------------------------------------------------
-const server = new McpServer({ name: "clawdnd-uiplayer", version: "1.0.0" });
+const server = new McpServer({ name: "worldos-uiplayer", version: "1.0.0" });
 
 function textResult(obj) {
   return { content: [{ type: "text", text: typeof obj === "string" ? obj : JSON.stringify(obj) }] };

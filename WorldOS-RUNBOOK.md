@@ -68,13 +68,13 @@ every NPC; a voiced AI companion adventures alongside you with its own sheet and
 
 | MCP server | Dir | Role |
 |---|---|---|
-| `clawdnd-engine` | `servers/engine/` | Authoritative game state: dice, sheets, combat, conditions, XP/leveling, encounters, persistence. **Sole writer of campaign truth.** |
-| `clawdnd-rules` | `servers/rules/` | SRD 5.2.1 rules lookup (offline; `dnd5eapi.co` fallback). |
-| `clawdnd-voice` | `servers/voice/` | TTS behind a swappable `TtsBackend` (Kokoro default; null backend in QA). |
-| `clawdnd-player` | `servers/engine/player_server.py` | **The constrained move FACADE.** An actor acts ONLY through this limited, READ-ONLY-on-state surface; it can't narrate the world or assert outcomes. Parameterized by `CLAWDND_ACTOR_ID` / `CLAWDND_ACTOR_ROLE` so the same surface drives the player or any companion peer agent. |
+| `worldos-engine` | `servers/engine/` | Authoritative game state: dice, sheets, combat, conditions, XP/leveling, encounters, persistence. **Sole writer of campaign truth.** |
+| `worldos-rules` | `servers/rules/` | SRD 5.2.1 rules lookup (offline; `dnd5eapi.co` fallback). |
+| `worldos-voice` | `servers/voice/` | TTS behind a swappable `TtsBackend` (Kokoro default; null backend in QA). |
+| `worldos-player` | `servers/engine/player_server.py` | **The constrained move FACADE.** An actor acts ONLY through this limited, READ-ONLY-on-state surface; it can't narrate the world or assert outcomes. Parameterized by `CLAWDND_ACTOR_ID` / `CLAWDND_ACTOR_ROLE` so the same surface drives the player or any companion peer agent. |
 
 > **NOTE / spec correction:** there is **no `servers/player/` directory**. The player
-> facade is the file `servers/engine/player_server.py`, exposed as the `clawdnd-player`
+> facade is the file `servers/engine/player_server.py`, exposed as the `worldos-player`
 > MCP server. `.mcp.json` registers the 3 plugin servers (engine/rules/voice); the player
 > facade is wired per-run by the QA harness.
 
@@ -85,7 +85,7 @@ every NPC; a voiced AI companion adventures alongside you with its own sheet and
 | `models.py` | All Pydantic models. `_StrictModel` (`extra="forbid"`) base; `Character`, `Quest`, `Faction`, `CompanionArc/Agenda`, `ArcGate`, `CompanionQuestArc`, `WorldState`, `Campaign`, `SceneDebt`, `Event/ParleyOption/Outcome` (Quest-Arc L3), `PendingOnHitRider`, etc. The contract surface — **additive-only**. |
 | `server.py` | The big one (~300KB). All engine MCP tools (`start_world`, `start_combat`, `attack`, `cast_spell`, `next_turn`, `add_quest`, `get_campaign_director`, `roll`, …). |
 | `store.py` | **Sole-writer persistence.** `campaign_lock()` (fcntl), `_atomic_write` (tmp + `os.replace`), `save_campaign`, `load_campaign` (with the #165 **tolerant load**: drops unknown TOP-LEVEL keys so old/new snapshots round-trip; sub-model strictness preserved). |
-| `player_server.py` | The constrained move facade (the `clawdnd-player` MCP) — see above. |
+| `player_server.py` | The constrained move facade (the `worldos-player` MCP) — see above. |
 | `combat.py` | Action economy, attack-vs-AC, damage, conditions, the Multiattack enforcement (#181), turn-skip guard. |
 | `companion_arc.py` | The ONE engine-enforced arc system: betrayal/agenda rolls off the `attitude_value` gauge; `CompanionAgenda.decision_flag` (Quest-Arc L2). The reuse template for faction arcs. |
 | `companion.py` / `companion_banter.py` | Companion sheets, dossiers, banter. |
@@ -208,7 +208,7 @@ is LEGACY narrative; don't hand-edit it.)
 **Runners:**
 - `qa/run_duo.sh <run> <world> <persona> [beats] [budget]` — AI player + DM duo via
   `claude -p` (gateway-free). Threaded/cached: `--session-id` on beat 1, `--resume` after,
-  re-grounding from snapshot each beat (anti-mush). The player gets ONLY the `clawdnd-player`
+  re-grounding from snapshot each beat (anti-mush). The player gets ONLY the `worldos-player`
   facade; the DM gets the full engine+rules+voice (null backends) + the dungeon-master skill.
 - `qa/run_combat_sprint.sh <run>` — **the fast BUG-FINDER.** ~1.5–2 min: pre-seeds a fight
   (zero LLM) → ONE DM call for a 3-round combat → behavioral-gate → Angry-DM score.

@@ -181,7 +181,7 @@ wheels = [
 ]
 
 [[package]]
-name = "clawdnd-voice"
+name = "worldos-voice"
 version = "0.0.1"
 source = { virtual = "." }
 dependencies = [

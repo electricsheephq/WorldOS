@@ -11,7 +11,7 @@
 #   - DM agent:        full plugin (engine/rules/voice) + dungeon-master skill. Resolves
 #                      EVERY actor's declared moves through the engine and narrates the
 #                      beat. The engine is its memory (re-grounds via get_state each beat).
-#   - Player agent:    the constrained facade (clawdnd-player), DEFAULT actor — exactly
+#   - Player agent:    the constrained facade (worldos-player), DEFAULT actor — exactly
 #                      run_duo's player.
 #   - Companion agents: the SAME facade, each parameterized to ITS OWN character via
 #                      CLAWDND_ACTOR_ID + CLAWDND_ACTOR_ROLE=companion. Each validates
@@ -68,7 +68,7 @@ mkdir -p "$T" "$STATE_DIR"; rm -rf "$STATE_DIR/campaigns" 2>/dev/null
 DM_CFG="$STATE_DIR/dm.mcp.json"
 python3 - "$ROOT/qa/qa.mcp.example.json" "$STATE_DIR" "$DM_CFG" <<'PY'
 import json, sys
-cfg = json.load(open(sys.argv[1])); cfg["mcpServers"]["clawdnd-engine"]["env"]["CLAWDND_STATE_DIR"] = sys.argv[2]
+cfg = json.load(open(sys.argv[1])); cfg["mcpServers"]["worldos-engine"]["env"]["CLAWDND_STATE_DIR"] = sys.argv[2]
 json.dump(cfg, open(sys.argv[3], "w"))
 PY
 
@@ -135,7 +135,7 @@ PLAYER_MOVES="$STATE_DIR/player_moves.jsonl"; : > "$PLAYER_MOVES"
 python3 - "$ROOT" "$STATE_DIR" "$PLAYER_MOVES" "$CAMPAIGN_ID" "$PLAYER_CFG" <<'PY'
 import json, sys
 root, state, moves, campaign_id, out = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
-json.dump({"mcpServers": {"clawdnd-player": {"command": "uv",
+json.dump({"mcpServers": {"worldos-player": {"command": "uv",
   "args": ["run", "--directory", f"{root}/servers/engine", "python", "player_server.py"],
   "env": {"CLAWDND_STATE_DIR": state, "CLAWDND_PLAYER_MOVES": moves,
           "CLAWDND_CAMPAIGN_ID": campaign_id}}}}, open(out, "w"))
@@ -159,7 +159,7 @@ root, state, moves, actor_id, campaign_id, out = sys.argv[1], sys.argv[2], sys.a
 # CLAWDND_CAMPAIGN_ID (F12-15/SYN-07): pin THIS companion's campaign so the freshest-wins
 # heuristic can never resolve the facade onto a parallel campaign that lacks this actor and
 # silently mute it. The id is known here (the party harness pre-seeded the campaign above).
-json.dump({"mcpServers": {"clawdnd-player": {"command": "uv",
+json.dump({"mcpServers": {"worldos-player": {"command": "uv",
   "args": ["run", "--directory", f"{root}/servers/engine", "python", "player_server.py"],
   "env": {"CLAWDND_STATE_DIR": state, "CLAWDND_PLAYER_MOVES": moves,
           "CLAWDND_ACTOR_ID": actor_id, "CLAWDND_ACTOR_ROLE": "companion",

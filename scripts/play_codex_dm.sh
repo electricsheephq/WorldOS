@@ -132,7 +132,7 @@ if [ "$MODE" = "run" ]; then
 fi
 
 if [ "$MODE" = "smoke" ] || [ "$MODE" = "seed-smoke" ]; then
-  STATE_ROOT="${CLAWDND_STATE_ROOT:-$(mktemp -d "${TMPDIR:-/tmp}/clawdnd-codex-dm-smoke.XXXXXX")}"
+  STATE_ROOT="${CLAWDND_STATE_ROOT:-$(mktemp -d "${TMPDIR:-/tmp}/worldos-codex-dm-smoke.XXXXXX")}"
 else
   STATE_ROOT="${CLAWDND_STATE_ROOT:-$ROOT/play-state}"
 fi
@@ -169,19 +169,19 @@ from pathlib import Path
 root, state_dir, out = sys.argv[1:]
 servers = [
     (
-        "clawdnd-engine",
+        "worldos-engine",
         f"{root}/servers/engine",
         "server.py",
         {"CLAWDND_STATE_DIR": state_dir},
     ),
     (
-        "clawdnd-rules",
+        "worldos-rules",
         f"{root}/servers/rules",
         "server.py",
         {"WORLDOS_RULES_OFFLINE": "1"},
     ),
     (
-        "clawdnd-voice",
+        "worldos-voice",
         f"{root}/servers/voice",
         "server.py",
         {"WORLDOS_TTS_BACKEND": "null"},
@@ -310,13 +310,13 @@ campaign_tool_hint() {
 codex_lean_reground_rule() {
   local cid="${1:-}"
   if [ "${CLAWDND_LEAN_BEATS:-1}" != "1" ]; then
-    printf 'Codex lean re-ground rule: lean mode is disabled for this run, but still use clawdnd-engine state as truth and do not infer campaign state from transcript memory.\n'
+    printf 'Codex lean re-ground rule: lean mode is disabled for this run, but still use worldos-engine state as truth and do not infer campaign state from transcript memory.\n'
     return 0
   fi
   if [ -n "${cid//[[:space:]]/}" ]; then
-    printf 'Codex lean re-ground rule: each Codex provider turn is a fresh invocation. Your FIRST clawdnd-engine call after this prompt MUST be scene_context(campaign_id="%s", recent_narration=%s); resolve the player move from that live state plus rules tools, not from replaying chat history or reading files.\n' "$cid" "$CLAWDND_LEAN_TAIL"
+    printf 'Codex lean re-ground rule: each Codex provider turn is a fresh invocation. Your FIRST worldos-engine call after this prompt MUST be scene_context(campaign_id="%s", recent_narration=%s); resolve the player move from that live state plus rules tools, not from replaying chat history or reading files.\n' "$cid" "$CLAWDND_LEAN_TAIL"
   else
-    printf 'Codex lean re-ground rule: each Codex provider turn is a fresh invocation. Your FIRST clawdnd-engine calls MUST discover the active campaign with list_campaigns once, then scene_context(recent_narration=%s); resolve the player move from live state plus rules tools, not from replaying chat history or reading files.\n' "$CLAWDND_LEAN_TAIL"
+    printf 'Codex lean re-ground rule: each Codex provider turn is a fresh invocation. Your FIRST worldos-engine calls MUST discover the active campaign with list_campaigns once, then scene_context(recent_narration=%s); resolve the player move from live state plus rules tools, not from replaying chat history or reading files.\n' "$CLAWDND_LEAN_TAIL"
   fi
 }
 
@@ -730,21 +730,21 @@ _codex_exec_once() {
     ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} \
     --cd "$ROOT" \
     --output-last-message "$LAST_MESSAGE" \
-    -c "mcp_servers.clawdnd-engine.command=\"uv\"" \
-    -c "mcp_servers.clawdnd-engine.args=[\"run\",\"--directory\",\"$ROOT/servers/engine\",\"python\",\"server.py\"]" \
-    -c "mcp_servers.clawdnd-engine.env_vars=[\"CLAWDND_STATE_DIR\"]" \
-    -c "mcp_servers.clawdnd-engine.required=true" \
-    -c "mcp_servers.clawdnd-engine.default_tools_approval_mode=\"approve\"" \
-    -c "mcp_servers.clawdnd-rules.command=\"uv\"" \
-    -c "mcp_servers.clawdnd-rules.args=[\"run\",\"--directory\",\"$ROOT/servers/rules\",\"python\",\"server.py\"]" \
-    -c "mcp_servers.clawdnd-rules.env_vars=[\"WORLDOS_RULES_OFFLINE\"]" \
-    -c "mcp_servers.clawdnd-rules.required=true" \
-    -c "mcp_servers.clawdnd-rules.default_tools_approval_mode=\"approve\"" \
-    -c "mcp_servers.clawdnd-voice.command=\"uv\"" \
-    -c "mcp_servers.clawdnd-voice.args=[\"run\",\"--directory\",\"$ROOT/servers/voice\",\"python\",\"server.py\"]" \
-    -c "mcp_servers.clawdnd-voice.env_vars=[\"WORLDOS_TTS_BACKEND\"]" \
-    -c "mcp_servers.clawdnd-voice.required=true" \
-    -c "mcp_servers.clawdnd-voice.default_tools_approval_mode=\"approve\"" \
+    -c "mcp_servers.worldos-engine.command=\"uv\"" \
+    -c "mcp_servers.worldos-engine.args=[\"run\",\"--directory\",\"$ROOT/servers/engine\",\"python\",\"server.py\"]" \
+    -c "mcp_servers.worldos-engine.env_vars=[\"CLAWDND_STATE_DIR\"]" \
+    -c "mcp_servers.worldos-engine.required=true" \
+    -c "mcp_servers.worldos-engine.default_tools_approval_mode=\"approve\"" \
+    -c "mcp_servers.worldos-rules.command=\"uv\"" \
+    -c "mcp_servers.worldos-rules.args=[\"run\",\"--directory\",\"$ROOT/servers/rules\",\"python\",\"server.py\"]" \
+    -c "mcp_servers.worldos-rules.env_vars=[\"WORLDOS_RULES_OFFLINE\"]" \
+    -c "mcp_servers.worldos-rules.required=true" \
+    -c "mcp_servers.worldos-rules.default_tools_approval_mode=\"approve\"" \
+    -c "mcp_servers.worldos-voice.command=\"uv\"" \
+    -c "mcp_servers.worldos-voice.args=[\"run\",\"--directory\",\"$ROOT/servers/voice\",\"python\",\"server.py\"]" \
+    -c "mcp_servers.worldos-voice.env_vars=[\"WORLDOS_TTS_BACKEND\"]" \
+    -c "mcp_servers.worldos-voice.required=true" \
+    -c "mcp_servers.worldos-voice.default_tools_approval_mode=\"approve\"" \
     - < "$PROMPT_FILE" \
     > >(tee -a "$STDOUT_LOG" >/dev/null) \
     2> >(tee -a "$STDERR_LOG" >&2)
@@ -779,12 +779,12 @@ LOG_EVENT_TOOL_RULE="Tool argument rule: for log_event narration, omit the speak
 LIVE_PROGRESS_LOG_RULE="Live progress rule: after you know the live campaign and scene, call log_event(kind=\"narration\", text=\"...\") once with a short, non-duplicate, player-facing progress beat before any longer resolution work. This is how /events shows visible story progress while your turn is still running. The progress beat MUST be 2nd-person prose addressed to \"you\" (a vivid one-line teaser of where the player stands or what they sense) — it is rendered STRAIGHT into the player's Chronicle. NEVER log a 3rd-person scene summary, a \"Cold open —\"/\"Scene:\"/\"Setup:\" header, a \"Choice: X or Y\" branch list, bracketed stage directions, or any director/planning note: that scaffolding is your private scratchpad and shatters immersion if it reaches the player. Keep the final reply as the full 2nd-person scene; do not copy this progress beat verbatim, because the wrapper records the final reply through the engine after the turn."
 LIVE_DIALOGUE_LOG_RULE="Live dialogue rule: in this Codex app-provider wrapper, do not call log_event(kind=\"dialogue\"). Put quoted NPC speech inside a narration progress beat or your final reply instead; the wrapper records the final reply after the turn, and narration-only live events avoid provider safety cancellation without hiding dialogue from the player."
 OPENING_LOG_EVENT_RULE="Opening progress rule: during the opening, after get_state establishes the already-seated player and live scene, write one short sensory progress beat through log_event(kind=\"narration\", text=\"...\") before deeper setup or rules work. Do not log the full opening this way; your final reply must still be non-empty opening narration for the player."
-DM_CONTRACT_RULE="Self-contained DM contract: you are already inside the WorldOS Dungeon Master provider. Do not read skill files, ~/.codex skills, repo docs, or use shell commands for instructions during this live app turn. Use clawdnd-engine as the sole writer of campaign state, clawdnd-rules for rules grounding, and clawdnd-voice only if needed with the null backend. Final output must be 2nd-person player-facing narration."
+DM_CONTRACT_RULE="Self-contained DM contract: you are already inside the WorldOS Dungeon Master provider. Do not read skill files, ~/.codex skills, repo docs, or use shell commands for instructions during this live app turn. Use worldos-engine as the sole writer of campaign state, worldos-rules for rules grounding, and worldos-voice only if needed with the null backend. Final output must be 2nd-person player-facing narration."
 DM_VOICE_RULE="Voice rule: use a warm, fair, generous storyteller voice with Baldur's Gate 3 prestige narration energy; spotlight the player, say yes-and to clever ideas, and never invent dice, rules outcomes, or campaign state that should come from engine/rules tools."
-STATE_DISCOVERY_RULE="State discovery rule: use clawdnd-engine/clawdnd-rules MCP tools for live game state. Do not use shell commands, rg, find, or filesystem reads to discover campaign state."
+STATE_DISCOVERY_RULE="State discovery rule: use worldos-engine/worldos-rules MCP tools for live game state. Do not use shell commands, rg, find, or filesystem reads to discover campaign state."
 STARTUP_MUTATION_RULE="Startup mutation rule: the wrapper has already seated the one player before you are called. Before the first player-facing narration, do not call start_world, start_session, start_character, load_canon_character, create_character, or recruit_companion. Introduce scene NPCs in narration first; create or load a tracked NPC only after the player engages them."
 SOCIAL_CHECK_TARGET_RULE="Social check target rule: call social_check only when scene_context already shows a real tracked npc_id for the target. Do not call load_canon_character or create_character solely to manufacture a social-check target during the same turn. If the target is not already tracked, do not use persuasion, deception, intimidation, or another attitude-moving social skill. Use a non-attitude skill_check such as investigation or perception for what the player can infer, then narrate the scene-local response; persist a new NPC later only when the player keeps engaging them."
-RULES_LOOKUP_RULE="Rules lookup rule: during the opening turn, do not call lookup_class or other rules lookups just to restate the pre-seated player's class/race; get_state already includes enough player-facing identity for the opener. Use clawdnd-rules only when resolving an actual rule, spell, item, condition, or monster question."
+RULES_LOOKUP_RULE="Rules lookup rule: during the opening turn, do not call lookup_class or other rules lookups just to restate the pre-seated player's class/race; get_state already includes enough player-facing identity for the opener. Use worldos-rules only when resolving an actual rule, spell, item, condition, or monster question."
 PARLEY_TOOL_RULE="Parley tool rule: when using generate_parley_options, pass an explicit skills array such as persuasion, insight, performance, intimidation, deception. Do not rely on include_alignment or an implicit 'any' skill."
 REWARD_MUTATION_RULE="Reward mutation rule: Do not call award_xp, grant_xp, level_up, or reward-granting mutation tools in this built-app provider proof path. If a moment deserves reward accounting, mention the fictional consequence in final narration and persist only memory/decision context with persist_beat."
 OPENING_PERSIST_BEAT_RULE="Opening persist rule: do not call persist_beat during the opening turn. Opening state is recorded by the wrapper after your final reply; persist only on later turns after an actual player move has been resolved."

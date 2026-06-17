@@ -22,7 +22,7 @@ import stt
 from _env import env_var
 from interface import SpeakResult
 
-mcp = FastMCP("clawdnd-voice")
+mcp = FastMCP("worldos-voice")
 _backends: dict[str, object] = {}
 _stt_backend: stt.SttBackend | None = None
 
@@ -66,7 +66,7 @@ def _get_stt_backend() -> stt.SttBackend:
 def ping() -> str:
     """Health check. Returns ok and the active TTS + STT backend names."""
     return (
-        f"clawdnd-voice: ok (v0.0.1, tts={_backend_name()}, stt={stt.backend_name()})"
+        f"worldos-voice: ok (v0.0.1, tts={_backend_name()}, stt={stt.backend_name()})"
     )
 
 

@@ -79,7 +79,7 @@ wheels = [
 ]
 
 [[package]]
-name = "clawdnd-engine"
+name = "worldos-engine"
 version = "0.0.1"
 source = { virtual = "." }
 dependencies = [

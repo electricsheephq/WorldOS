@@ -24,7 +24,7 @@ CHAT="$T/$RUN.chat.jsonl"; : > "$CHAT"; COMBINED="$T/$RUN.jsonl"; : > "$COMBINED
 
 python3 - "$ROOT/qa/qa.mcp.example.json" "$STATE_DIR" "$DM_CFG" <<'PY'
 import json, sys
-cfg = json.load(open(sys.argv[1])); cfg["mcpServers"]["clawdnd-engine"]["env"]["CLAWDND_STATE_DIR"] = sys.argv[2]
+cfg = json.load(open(sys.argv[1])); cfg["mcpServers"]["worldos-engine"]["env"]["CLAWDND_STATE_DIR"] = sys.argv[2]
 json.dump(cfg, open(sys.argv[3], "w"))
 PY
 

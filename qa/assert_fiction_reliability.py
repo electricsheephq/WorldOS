@@ -100,7 +100,7 @@ def _load_artifact_text(path: Path) -> ArtifactText:
     # does not. Treat only explicit markers as tool-supported evidence.
     marker_tools = {
         _short_tool_name(match.group(1))
-        for match in re.finditer(r"(?:mcp__clawdnd-engine__|tool[_ -]?use[:= ]+|→\s*tool\s+)([A-Za-z_][\w-]*)", raw)
+        for match in re.finditer(r"(?:mcp__(?:clawdnd|worldos)-engine__|tool[_ -]?use[:= ]+|→\s*tool\s+)([A-Za-z_][\w-]*)", raw)
     }
     return ArtifactText(text=raw, tools=marker_tools, supports_tools=bool(marker_tools))
 

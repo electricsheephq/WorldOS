@@ -54,7 +54,7 @@ scores, and rubric numbers are *measurement*, never the target — no score-gami
 ## Architecture anchors (the surfaces a decision must respect — full detail in `WorldOS-RUNBOOK.md`)
 
 - **Three engine servers** (`servers/engine`, `/rules`, `/voice`). The engine writes `snapshot.json`
-  under `campaign_lock` (`store.py`); the **player facade** (`player_server.py`, the `clawdnd-player`
+  under `campaign_lock` (`store.py`); the **player facade** (`player_server.py`, the `worldos-player`
   MCP) is read-only on state and only appends move-intents the DM resolves.
 - **The OpenWorlds viewer** (`viewer/server.py` → `/openworlds/`) renders state + a `/move` sink +
   two-sided `/chat`; it never mutates state. The native macOS app hosts it.

@@ -183,17 +183,17 @@ python3 - "$ROOT" "$STATE_DIR" "$DM_CFG" <<'PY'
 import json, sys
 root, state_dir, out = sys.argv[1], sys.argv[2], sys.argv[3]
 cfg = {"mcpServers": {
-    "clawdnd-engine": {"type": "stdio", "command": "uv", "alwaysLoad": True,
+    "worldos-engine": {"type": "stdio", "command": "uv", "alwaysLoad": True,
         "args": ["run", "--directory", f"{root}/servers/engine", "server.py"],
         # Pin BOTH names to THIS run's per-$RUN dir (engine reads WORLDOS_STATE_DIR first, then
         # CLAWDND_STATE_DIR). Prevents an inherited bare WORLDOS_STATE_DIR=<user-root> (set by a
         # shipped .app) from pointing the engine at <user-root>/campaigns. Byte-identical with no
         # override (both name $STATE_DIR). Same fix as scripts/play.sh.
         "env": {"WORLDOS_STATE_DIR": state_dir, "CLAWDND_STATE_DIR": state_dir}},
-    "clawdnd-rules": {"type": "stdio", "command": "uv",
+    "worldos-rules": {"type": "stdio", "command": "uv",
         "args": ["run", "--directory", f"{root}/servers/rules", "server.py"],
         "env": {"WORLDOS_RULES_OFFLINE": "1"}},
-    "clawdnd-voice": {"type": "stdio", "command": "uv",
+    "worldos-voice": {"type": "stdio", "command": "uv",
         "args": ["run", "--directory", f"{root}/servers/voice", "server.py"],
         "env": {"WORLDOS_TTS_BACKEND": "null"}},
 }}
@@ -291,7 +291,7 @@ for i in $(seq 0 $((NUM_COMP - 1))); do
   python3 - "$ROOT" "$STATE_DIR" "$cmoves" "$cid" "$ccfg" <<'PY'
 import json, sys
 root, state, moves, actor_id, out = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
-json.dump({"mcpServers": {"clawdnd-player": {"command": "uv",
+json.dump({"mcpServers": {"worldos-player": {"command": "uv",
   "args": ["run", "--directory", f"{root}/servers/engine", "python", "player_server.py"],
   # Pin BOTH state-dir names to this run's per-$RUN dir (engine prefers WORLDOS_STATE_DIR), so an
   # inherited bare WORLDOS_STATE_DIR=<user-root> can't repoint the companion's player_server.

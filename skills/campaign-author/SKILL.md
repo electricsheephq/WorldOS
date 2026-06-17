@@ -8,7 +8,7 @@ description: Create or import a WorldOS campaign — generate an original advent
 Create the world the player will adventure in. Two modes:
 
 ## Generate
-Build an original campaign from SRD primitives: a premise and hook; a region with a few locations; factions with motives; a quest arc with branching beats; an NPC roster (each with a name, personality, and an assigned `voice_id`); and CR-appropriate encounters. Write it as a module under `content/campaigns/<id>/` and seed initial state in `clawdnd-engine`.
+Build an original campaign from SRD primitives: a premise and hook; a region with a few locations; factions with motives; a quest arc with branching beats; an NPC roster (each with a name, personality, and an assigned `voice_id`); and CR-appropriate encounters. Write it as a module under `content/campaigns/<id>/` and seed initial state in `worldos-engine`.
 
 ### Authoring workflow
 1. **Start from a skeleton.** Call `scaffold_adventure(title, premise, level_range)` (in `servers/engine/generator.py`) to get a schema-correct skeleton with the right top-level shape and empty `locations`/`npcs`/`scenes` lists.

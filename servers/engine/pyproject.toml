@@ -1,5 +1,5 @@
 [project]
-name = "clawdnd-engine"
+name = "worldos-engine"
 version = "0.0.1"
 description = "WorldOS game-engine MCP: authoritative D&D 5e state, dice, combat, encounters, XP, persistence."
 requires-python = ">=3.11,<3.13"

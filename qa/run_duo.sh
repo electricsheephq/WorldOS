@@ -110,7 +110,7 @@ for name, srv in cfg.get("mcpServers", {}).items():
         else:
             pkg = raw
         args[i + 1] = f"{root}/servers/{pkg}"
-    if name == "clawdnd-engine":
+    if name == "worldos-engine":
         srv.setdefault("env", {})["CLAWDND_STATE_DIR"] = state
         # Parity with scripts/play.sh: pin the engine tools (un-defer) so the DM stops burning
         # ~2 ToolSearch round-trips/beat re-discovering them. Set CLAWDND_ENGINE_ALWAYSLOAD=0 for
@@ -119,12 +119,12 @@ for name, srv in cfg.get("mcpServers", {}).items():
             srv["alwaysLoad"] = True
 json.dump(cfg, open(out, "w"))
 PY
-# The player gets ONLY the constrained move facade (clawdnd-player): it acts through
+# The player gets ONLY the constrained move facade (worldos-player): it acts through
 # tools, never free-text narration; moves land in $MOVES for the orchestrator to relay.
 python3 - "$ROOT" "$STATE_DIR" "$MOVES" "$PLAYER_CFG" <<'PY'
 import json, sys
 root, state, moves, out = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
-json.dump({"mcpServers": {"clawdnd-player": {"command": "uv",
+json.dump({"mcpServers": {"worldos-player": {"command": "uv",
   "args": ["run", "--directory", f"{root}/servers/engine", "python", "player_server.py"],
   "env": {"CLAWDND_STATE_DIR": state, "CLAWDND_PLAYER_MOVES": moves}}}}, open(out, "w"))
 PY

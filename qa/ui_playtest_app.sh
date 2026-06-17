@@ -979,7 +979,7 @@ run_part_b() {
   python3 - "$PW_DIR" "$b_url" "$RUNDIR" "$(worldos_env UIPT_CHANNEL "")" "$PERSONA" "$player_cfg" <<'PY'
 import json, sys
 pw_dir, url, rundir, channel, persona, out = sys.argv[1:7]
-json.dump({"mcpServers": {"clawdnd-uiplayer": {
+json.dump({"mcpServers": {"worldos-uiplayer": {
     "command": "node", "args": [f"{pw_dir}/palette_server.js"],
     "env": {"CLAWDND_UIPT_URL": url, "CLAWDND_UIPT_RUNDIR": rundir,
             "CLAWDND_UIPT_CHANNEL": channel, "CLAWDND_UIPT_PERSONA": persona},
@@ -1034,12 +1034,12 @@ EOF
         ${codex_player_model_args[@]+"${codex_player_model_args[@]}"} \
         --cd "$ROOT" \
         --output-last-message "$player_last" \
-        -c "mcp_servers.clawdnd-uiplayer.command=\"node\"" \
-        -c "mcp_servers.clawdnd-uiplayer.args=[\"$PW_DIR/palette_server.js\"]" \
-        -c "mcp_servers.clawdnd-uiplayer.env_vars=[\"CLAWDND_UIPT_URL\",\"CLAWDND_UIPT_RUNDIR\",\"CLAWDND_UIPT_CHANNEL\",\"CLAWDND_UIPT_PERSONA\"]" \
-        -c "mcp_servers.clawdnd-uiplayer.required=true" \
-        -c "mcp_servers.clawdnd-uiplayer.default_tools_approval_mode=\"approve\"" \
-        -c "mcp_servers.clawdnd-uiplayer.enabled_tools=[\"screenshot\",\"a11y_tree\",\"click\",\"type\",\"key\",\"wait\",\"report_bug\",\"give_up\",\"finish\"]" \
+        -c "mcp_servers.worldos-uiplayer.command=\"node\"" \
+        -c "mcp_servers.worldos-uiplayer.args=[\"$PW_DIR/palette_server.js\"]" \
+        -c "mcp_servers.worldos-uiplayer.env_vars=[\"CLAWDND_UIPT_URL\",\"CLAWDND_UIPT_RUNDIR\",\"CLAWDND_UIPT_CHANNEL\",\"CLAWDND_UIPT_PERSONA\"]" \
+        -c "mcp_servers.worldos-uiplayer.required=true" \
+        -c "mcp_servers.worldos-uiplayer.default_tools_approval_mode=\"approve\"" \
+        -c "mcp_servers.worldos-uiplayer.enabled_tools=[\"screenshot\",\"a11y_tree\",\"click\",\"type\",\"key\",\"wait\",\"report_bug\",\"give_up\",\"finish\"]" \
         - < "$player_prompt" > "$player_out" 2>> "$PLAYERDIR/player.err"
       ;;
   esac

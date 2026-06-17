@@ -44,7 +44,7 @@ def _fail(msg: str) -> None:
 
 
 def main() -> int:
-    state_dir = tempfile.mkdtemp(prefix="clawdnd-smoke-")
+    state_dir = tempfile.mkdtemp(prefix="worldos-smoke-")
     env = dict(os.environ, CLAWDND_STATE_DIR=state_dir)
 
     # ── Run the real seed entrypoint (subprocess, exactly like the harness) ──

@@ -189,7 +189,7 @@ python3 - "$ROOT" "$STATE_DIR" "$DM_CFG" <<'PY'
 import json, sys
 root, state_dir, out = sys.argv[1], sys.argv[2], sys.argv[3]
 cfg = {"mcpServers": {
-    "clawdnd-engine": {"type": "stdio", "command": "uv", "alwaysLoad": True,
+    "worldos-engine": {"type": "stdio", "command": "uv", "alwaysLoad": True,
         "args": ["run", "--directory", f"{root}/servers/engine", "server.py"],
         # Pin BOTH names to THIS run's per-$RUN dir. The engine resolves WORLDOS_STATE_DIR
         # FIRST (CLAWDND_STATE_DIR is the v1.x fallback); when a SHIPPED .app exported a bare
@@ -199,10 +199,10 @@ cfg = {"mcpServers": {
         # Setting both to state_dir keeps every game isolated to its own per-$RUN dir. When
         # neither was inherited (dev/QA), this is byte-identical (both name the same dir).
         "env": {"WORLDOS_STATE_DIR": state_dir, "CLAWDND_STATE_DIR": state_dir}},
-    "clawdnd-rules": {"type": "stdio", "command": "uv",
+    "worldos-rules": {"type": "stdio", "command": "uv",
         "args": ["run", "--directory", f"{root}/servers/rules", "server.py"],
         "env": {"WORLDOS_RULES_OFFLINE": "1"}},
-    "clawdnd-voice": {"type": "stdio", "command": "uv",
+    "worldos-voice": {"type": "stdio", "command": "uv",
         "args": ["run", "--directory", f"{root}/servers/voice", "server.py"],
         "env": {"WORLDOS_TTS_BACKEND": "null"}},
 }}

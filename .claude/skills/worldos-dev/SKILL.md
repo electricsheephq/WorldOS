@@ -95,7 +95,7 @@ pure harness-evidence plumbing. The corrected reference harness is checked in at
 ## Load-bearing INVARIANTS (never violate)
 1. **Engine = SOLE WRITER.** State is `snapshot.json` written under `campaign_lock` via
    atomic temp-file + `os.replace` (`servers/engine/store.py`). The player facade
-   (`servers/engine/player_server.py`, the `clawdnd-player` MCP) is READ-ONLY on state —
+   (`servers/engine/player_server.py`, the `worldos-player` MCP) is READ-ONLY on state —
    it only appends structured *moves* the DM resolves.
 2. **Additive-by-default.** Empty == today; old snapshots round-trip. Models are
    `_StrictModel` (`extra="forbid"`); the tolerant load (#165) drops only unknown
