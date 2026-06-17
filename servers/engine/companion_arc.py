@@ -289,6 +289,18 @@ def _betrayal_warning(character: Character, campaign: Campaign) -> dict | None:
     }
 
 
+def betrayal_telegraph(character: Character, campaign: Campaign) -> dict | None:
+    """PUBLIC, READ-ONLY telegraph for an approaching betrayal — the same advisory
+    ``evaluate`` surfaces, but with NO side effects, so a read-only caller (the every-beat
+    obligations digest / scene_context.durable) can foreshadow a curdling bond every beat
+    WITHOUT the mutation ``evaluate`` performs (it unlocks gates and FIRES agendas). Returns
+    the ``_betrayal_warning`` dict (companion_id / attitude_value / threshold / band /
+    deep_red / decision_flag_active / note) when a party companion carries a LIVE, unfired
+    ``attitude_below`` agenda whose bond has crossed its breaking point and soured past the
+    upper warning edge; None otherwise. Reads only the attitude gauge + flags."""
+    return _betrayal_warning(character, campaign)
+
+
 def _unlock_companion_quest_arc(character: Character, campaign: Campaign, gate) -> dict | None:
     """Mark a linked companion quest arc/stage available for a personal_quest gate.
 
