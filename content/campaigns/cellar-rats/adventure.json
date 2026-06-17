@@ -34,7 +34,15 @@
       "spells_prepared": ["Cure Wounds", "Healing Word", "Guiding Bolt", "Bless"],
       "spell_slots": { "1": { "maximum": 2, "used": 0 } },
       "personality": "A warm, quick-witted field medic who joined for the road and stayed for the people. Vesper fusses over everyone's scrapes, jokes about hazard pay, and keeps her chin up even when scared — and she IS scared, often, she just refuses to let it win. She argues for mercy and curiosity over the blade (she'll be the first to wonder aloud whether the 'monsters' are something sadder), patches the party up mid-fight with Healing Word, and will say so out loud when she thinks the player's plan is reckless — then back the play anyway, because that's what partners do.",
-      "notes": "Healer/support. In combat she favors Healing Word on a downed ally, Guiding Bolt or Sacred Flame otherwise. The DM should give Vesper her own voiced line every scene and reach her combat decisions through companion_suggest_action."
+      "notes": "Healer/support. In combat she favors Healing Word on a downed ally, Guiding Bolt or Sacred Flame otherwise. The DM should give Vesper her own voiced line every scene and reach her combat decisions through companion_suggest_action.",
+      "companion_dossier": {
+        "wound": "a patient she couldn't save on the road — the reason she fusses so hard now",
+        "values": ["mercy", "compassion", "curiosity over the blade"],
+        "wants": ["to save the savable", "to be proven right that the monster is something sadder"],
+        "fears": ["freezing when someone needs her", "a cruelty she could have stopped"],
+        "approval_likes": ["show_mercy", "spare_a_frightened_foe", "tend_the_wounded", "ask_before_you_strike", "protect_the_helpless"],
+        "approval_dislikes": ["needless_cruelty", "kill_a_prisoner", "a_reckless_plan_that_risks_the_party", "torture"]
+      }
     }
   ],
   "npcs": [

@@ -263,17 +263,30 @@ def test_companionless_campaign_is_silent():
     assert "camp_overdue" not in _kinds(obligations)
 
 
-def test_frozen_fires_without_likes_suggests_adjust_attitude():
-    """A frozen companion is flagged even with NO authored approval_likes — an inert
-    companion is the bug regardless. When the vocabulary isn't authored, the cue points at
-    adjust_attitude (not approval_tags), so an un-augmented companion still gets engaged."""
-    comp = _companion(likes=None, attitude=0, last_long_rest_day=4)  # no dossier
+def test_no_vocabulary_fires_gauge_unauthored_not_frozen():
+    """A companion with NO authored approval vocabulary is the freely-recruited/generated case:
+    it must surface companion_gauge_unauthored (author the vocabulary), NOT companion_approval_frozen
+    (which is for an AUTHORED-but-unused gauge). The fix is authoring a vocabulary, not nudging a
+    number."""
+    comp = _companion(likes=None, attitude=0, last_long_rest_day=4)  # no dossier / no vocab
     c = _campaign_with(comp, day=5)
-    frozen = [o for o in server._compute_beat_obligations(c)
-              if o["kind"] == "companion_approval_frozen"]
-    assert frozen, "a frozen companion should be flagged even without authored likes"
-    assert frozen[0]["approval_likes"] == []
-    assert "adjust_attitude" in frozen[0]["detail"]
+    kinds = _kinds(server._compute_beat_obligations(c))
+    assert "companion_gauge_unauthored" in kinds
+    assert "companion_approval_frozen" not in kinds  # owned by #0 now
+    cue = next(o for o in server._compute_beat_obligations(c)
+               if o["kind"] == "companion_gauge_unauthored")
+    assert cue["name"] == "Brother Toll"
+    assert "author_companion_gauges" in cue["detail"]
+
+
+def test_gauge_unauthored_absent_when_vocabulary_authored():
+    """A companion WITH an authored approval vocabulary does not trip the root cue — and a frozen
+    such companion trips companion_approval_frozen instead."""
+    comp = _companion(likes=["mercy", "protecting the weak"], attitude=0, last_long_rest_day=4)
+    c = _campaign_with(comp, day=5)
+    kinds = _kinds(server._compute_beat_obligations(c))
+    assert "companion_gauge_unauthored" not in kinds
+    assert "companion_approval_frozen" in kinds  # vocab exists but regard still frozen
 
 
 # --- persist_beat / scene_context surfaces ----------------------------------
