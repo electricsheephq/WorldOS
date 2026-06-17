@@ -24,6 +24,7 @@ from models import (
     CompanionArc,
     CompanionDossier,
     Consequence,
+    NarrativeArc,
     Quest,
 )
 
@@ -479,3 +480,121 @@ def test_scene_context_durable_surfaces_approaching_betrayal(cid):
     sc = server.scene_context(cid)
     assert "obligations" in sc["durable"]
     assert "companion_betrayal_approaching" in _kinds(sc["durable"]["obligations"])
+
+
+# --- act-transition cues (the engine-owned 3-act cursor) --------------------
+#
+# Three mutually-exclusive cues read the NarrativeArc cursor (act / day_act_entered /
+# beats_in_act / landed flags). At most ONE fires per beat (the cursor is a single integer
+# act). An arc-less / default campaign (act=1, day_in_act=0, beats_in_act=0) adds NONE of
+# them — the additive/empty contract (byte-identical empty digest).
+
+
+_ACT_KINDS = {"act_midpoint_owed", "act_climax_owed", "act_one_stalled"}
+
+
+def test_act_midpoint_owed_fires_in_act2_when_reversal_unlanded():
+    """Act 2, reversal not landed, far enough in (day_in_act>=2) -> the midpoint reversal is
+    owed (severity med)."""
+    c = Campaign(title="Arc")
+    c.narrative_arc = NarrativeArc(act=2, day_act_entered=1)
+    c.day = 4  # day_in_act == 3 (>= 2)
+    obligations = server._compute_beat_obligations(c)
+    kinds = _kinds(obligations)
+    assert "act_midpoint_owed" in kinds
+    owed = next(o for o in obligations if o["kind"] == "act_midpoint_owed")
+    assert owed["act"] == 2
+    assert owed["severity"] == "med"
+    assert "REVERSAL" in owed["detail"] or "reversal" in owed["detail"].lower()
+    # mutually exclusive: no other act cue
+    assert kinds & _ACT_KINDS == {"act_midpoint_owed"}
+
+
+def test_act_midpoint_owed_fires_on_beats_threshold():
+    """beats_in_act>=4 trips it even on the day it was entered (day_in_act==0)."""
+    c = Campaign(title="Arc")
+    c.narrative_arc = NarrativeArc(act=2, day_act_entered=1, beats_in_act=4)
+    c.day = 1  # day_in_act == 0, but beats_in_act >= 4
+    assert "act_midpoint_owed" in _kinds(server._compute_beat_obligations(c))
+
+
+def test_act_midpoint_owed_absent_once_reversal_landed():
+    """Once the engine stamps midpoint_reversal_landed, the cue clears."""
+    c = Campaign(title="Arc")
+    c.narrative_arc = NarrativeArc(act=2, day_act_entered=1, midpoint_reversal_landed=True)
+    c.day = 6
+    assert "act_midpoint_owed" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_act_midpoint_owed_silent_early_in_act2():
+    """Just entered Act 2 (day_in_act<2, beats_in_act<4) -> not yet owed."""
+    c = Campaign(title="Arc")
+    c.narrative_arc = NarrativeArc(act=2, day_act_entered=3, beats_in_act=1)
+    c.day = 3  # day_in_act == 0
+    assert "act_midpoint_owed" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_act_climax_owed_fires_in_act3_high_severity():
+    """Act 3, climax unlanded, day_in_act>=2 -> the climax is owed (severity HIGH)."""
+    c = Campaign(title="Arc")
+    c.narrative_arc = NarrativeArc(act=3, day_act_entered=1)
+    c.day = 3  # day_in_act == 2 (>= 2)
+    obligations = server._compute_beat_obligations(c)
+    kinds = _kinds(obligations)
+    assert "act_climax_owed" in kinds
+    owed = next(o for o in obligations if o["kind"] == "act_climax_owed")
+    assert owed["act"] == 3
+    assert owed["severity"] == "high"
+    assert "CLIMAX" in owed["detail"] or "climax" in owed["detail"].lower()
+    assert kinds & _ACT_KINDS == {"act_climax_owed"}
+
+
+def test_act_climax_owed_absent_once_climax_landed():
+    c = Campaign(title="Arc")
+    c.narrative_arc = NarrativeArc(act=3, day_act_entered=1, climax_landed=True)
+    c.day = 8
+    assert "act_climax_owed" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_act_one_stalled_fires_when_setup_runs_long_by_days():
+    """An ENGINE-DRIVEN Act 1 (beats bumped) that has run long on the day-clock
+    (day_in_act>=4, below the beats threshold) -> the setup has run long (severity med).
+    beats_in_act>0 means the engine engaged the arc, so the day-band counts."""
+    c = Campaign(title="Arc")
+    c.narrative_arc = NarrativeArc(act=1, day_act_entered=1, beats_in_act=3)
+    c.day = 5  # day_in_act == 4 (>= _ACT1_STALL_DAYS), beats 3 (< _ACT1_STALL_BEATS)
+    obligations = server._compute_beat_obligations(c)
+    kinds = _kinds(obligations)
+    assert "act_one_stalled" in kinds
+    stalled = next(o for o in obligations if o["kind"] == "act_one_stalled")
+    assert stalled["act"] == 1
+    assert stalled["severity"] == "med"
+    assert "advance_act" in stalled["detail"] or "Act 1" in stalled["detail"]
+    assert kinds & _ACT_KINDS == {"act_one_stalled"}
+
+
+def test_act_one_stalled_fires_on_beats_threshold():
+    """beats_in_act>=8 trips it even early in the day-clock."""
+    c = Campaign(title="Arc")
+    c.narrative_arc = NarrativeArc(act=1, day_act_entered=1, beats_in_act=8)
+    c.day = 1  # day_in_act == 0, but beats_in_act >= _ACT1_STALL_BEATS
+    assert "act_one_stalled" in _kinds(server._compute_beat_obligations(c))
+
+
+def test_act_one_not_stalled_when_setup_is_fresh():
+    """A fresh Act 1 (day_in_act<4, beats_in_act<8) does NOT nag."""
+    c = Campaign(title="Arc")
+    c.narrative_arc = NarrativeArc(act=1, day_act_entered=1, beats_in_act=3)
+    c.day = 3  # day_in_act == 2
+    assert "act_one_stalled" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_arcless_default_campaign_yields_no_act_cues():
+    """The ADDITIVE/EMPTY contract: a default-arc campaign (act=1, day_in_act=0,
+    beats_in_act=0) trips NONE of the three act cues -> byte-identical empty digest."""
+    c = Campaign(title="Arc")  # default narrative_arc
+    c.day = 1
+    obligations = server._compute_beat_obligations(c)
+    assert _kinds(obligations) & _ACT_KINDS == set()
+    # A healthy, companion-less, default-arc beat is still fully empty.
+    assert obligations == []

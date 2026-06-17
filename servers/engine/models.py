@@ -1685,6 +1685,27 @@ class PreludeBeat(_StrictModel):
     ref_id: str = ""      # the bound noun: companion id for 'meeting', grievance/hook id for 'inciting_incident'
 
 
+class NarrativeArc(_StrictModel):
+    """The engine-owned 3-act cursor — a single integer act plus the act-local bookkeeping
+    the 3-act-shape cues / felt-shape scorer read. ENGINE = SOLE WRITER: mutated only by the
+    engine under campaign_lock (persist_beat bumps ``beats_in_act``; advance_act / mark_reversal
+    / mark_climax stamp the rest).
+
+    ADDITIVE: every field is defaulted so this is a valid ``default_factory`` and an old
+    snapshot lacking the ``narrative_arc`` key deserializes to this all-defaulted instance —
+    EMPTY == today (act 1, day 1, no beats, nothing landed) — and round-trips byte-identically
+    under ``_StrictModel`` (extra=forbid). Mirrors the additive idiom of campaign_backlog /
+    scene_debts (present-by-default, empty == today's behavior)."""
+
+    act: int = 1                       # 1/2/3 — the contiguous act the engine ADVANCED into
+    day_act_entered: int = 1           # Campaign.day when the current act began
+    beats_in_act: int = 0              # act-local persist_beat tally (engine bumps each beat)
+    midpoint_reversal_landed: bool = False  # engine sets True when the Act-2 reversal is recorded
+    climax_landed: bool = False        # engine sets True when the Act-3 climax is recorded
+    reversal_day: int = 0              # Campaign.day the reversal landed (0 = not yet) — for day-banding
+    climax_day: int = 0                # Campaign.day the climax landed (0 = not yet)
+
+
 class Campaign(_StrictModel):
     id: str = Field(default_factory=lambda: _new_id("camp"))
     title: str
@@ -1764,6 +1785,13 @@ class Campaign(_StrictModel):
     # companion_quest_arcs; seeded from a world/ending `events` block (content.py). Engine
     # sole-writer (resolve_event under campaign_lock + save_campaign).
     events: dict[str, "Event"] = Field(default_factory=dict)
+    # The engine-owned 3-act cursor (setup -> midpoint reversal -> climax). The 3-act-shape
+    # obligation cues + felt-shape scorer read it; the engine is the SOLE WRITER (persist_beat
+    # ticks beats_in_act, advance_act / mark_reversal / mark_climax stamp the cursor, all under
+    # campaign_lock). Present-by-default with EVERY field defaulted, exactly like campaign_backlog/
+    # faction_arcs/events: EMPTY == today's behavior byte-for-byte, and an old snapshot lacking
+    # the key round-trips to this all-defaulted NarrativeArc (act=1).
+    narrative_arc: NarrativeArc = Field(default_factory=NarrativeArc)
 
     characters: dict[str, Character] = Field(default_factory=dict)  # id -> Character (PCs, companion, NPCs)
     # Intel-tier bestiary codex (#263): creature_slug -> the HIGHEST intel tier the party has
