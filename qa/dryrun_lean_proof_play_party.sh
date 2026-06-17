@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # DRY-RUN PROOF (no model call): shows that scripts/play_party.sh's DM turn now honors
 # CLAWDND_LEAN_BEATS AND the DM effort-tier — both via the SHARED helpers in
-# qa/lib_beat_driver.sh (clawdnd_dm_lean_args + clawdnd_dm_effort_arg). This matters because the
+# qa/lib_beat_driver.sh (worldos_dm_lean_args + worldos_dm_effort_arg). This matters because the
 # BUILT dist/WorldOS.app shells scripts/play_party.sh for its DM (see
 # macos/.../ProviderAdapters.swift ClaudeProvider), so the .app's DM must run the fast
 # lean+effort config or the G1-G5 gate would run the slow non-lean path and likely fail G3 on
@@ -43,12 +43,12 @@ turn_argv() {
   local kind="$1" sid="$2" first="$3" msg="$4" cfg="${5:-}" out resume=() extra=()
   [ "$first" = "0" ] && resume=(--resume "$sid") || resume=(--session-id "$sid")
   if [ "$kind" = "dm" ]; then
-    clawdnd_dm_lean_args "$first" "${CAMPAIGN_ID:-}" "$CLAWDND_LEAN_TAIL"
+    worldos_dm_lean_args "$first" "${CAMPAIGN_ID:-}" "$CLAWDND_LEAN_TAIL"
     if [ "${#CLAWDND_DM_LEAN_SESSION[@]}" -gt 0 ]; then
       resume=("${CLAWDND_DM_LEAN_SESSION[@]}")
       extra=("${CLAWDND_DM_LEAN_EXTRA[@]}")
     fi
-    clawdnd_dm_effort_arg "$first"
+    worldos_dm_effort_arg "$first"
     claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
       --model "$CLAWDND_DM_MODEL" ${CLAWDND_DM_EFFORT[@]+"${CLAWDND_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
       --output-format stream-json --verbose

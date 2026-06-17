@@ -51,7 +51,7 @@ env knob at `L39` all go with them.)
 | Role | Lines | Notes |
 |------|-------|-------|
 | Solo fallback (delegates to `scripts/play.sh`) | `scripts/play_party.sh:69-85` | When no companion-spec is given, `exec scripts/play.sh "${ARGS[@]}"`. **The solo path IS just `play.sh`** — same DM, same viewer, same move sink. |
-| Viewer supervisor | `scripts/play_party.sh:291-311` (party) and `scripts/play.sh:208-229` (solo) | Long-running supervised viewer at port 8765 (or `$CLAWDND_PLAY_PORT`, or `clawdnd_choose_port`). Same `CLAWDND_PLAYER_MOVES=$MOVES` + `CLAWDND_VIEWER_CHAT=$CHAT` wiring. PID file: `$STATE_DIR/.viewer.pid`. |
+| Viewer supervisor | `scripts/play_party.sh:291-311` (party) and `scripts/play.sh:208-229` (solo) | Long-running supervised viewer at port 8765 (or `$CLAWDND_PLAY_PORT`, or `worldos_choose_port`). Same `CLAWDND_PLAYER_MOVES=$MOVES` + `CLAWDND_VIEWER_CHAT=$CHAT` wiring. PID file: `$STATE_DIR/.viewer.pid`. |
 | DM agent (full plugin) | `scripts/play_party.sh:113-128` (config), `215-233` (turn), `331-340` (opening) — and `scripts/play.sh:70-85, 183-192, 251-273` for solo. | Same `--plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config --model "$CLAWDND_DM_MODEL"` invocation. The opening turn seats a PC + companion live. |
 | Human-paced beat loop | `scripts/play_party.sh:393-450` (party), `scripts/play.sh:286-326` (solo) | Tails `$MOVES`. New line → companion turns (party only) → `turn dm ... "The player does: ..."` → narrates back to `$CHAT`. |
 | Idle ceiling | `scripts/play_party.sh:399-403, 444-447` (party only — solo `play.sh` has none, see L286-326) | Party loop stops after `CLAWDND_PLAY_MAX_IDLE` (default 1800s) with no human move; solo loop spins on `sleep 2` forever until Ctrl-C. |
@@ -399,7 +399,7 @@ Backwards-compatible rollout in three steps:
   with distinct `$RUN` names get distinct `play-state/$RUN/.handshake.json`
   files; the Player chooses one by passing `--attach-to`. If a user runs two
   parents on the same port (e.g., both default 8765 and the second hits
-  `clawdnd_choose_port`'s fallback), the second's handshake correctly
+  `worldos_choose_port`'s fallback), the second's handshake correctly
   records its actual chosen port. No new code needed.
 
 ---

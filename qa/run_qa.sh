@@ -18,7 +18,7 @@ set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT" || exit 1
-# Shared beat-driver helpers — here for clawdnd_cap_score_red (honest scoring on a gate-RED run).
+# Shared beat-driver helpers — here for worldos_cap_score_red (honest scoring on a gate-RED run).
 # shellcheck source=lib_beat_driver.sh
 . "$ROOT/qa/lib_beat_driver.sh"
 
@@ -99,9 +99,9 @@ wait
 if [ "${GATE:-0}" != "0" ]; then
   GATE_REASON="$(grep -E '^\s*\[(FAIL)\]' "$T/$RUN.gate.txt" 2>/dev/null | sed 's/^[[:space:]]*//' | paste -sd'; ' - 2>/dev/null)"
   GATE_REASON="${GATE_REASON:-behavioral gate RED}"
-  clawdnd_cap_score_red "$T/$RUN.score.json" "$GATE_REASON" story
-  clawdnd_cap_score_red "$T/$RUN.tolkien.json" "$GATE_REASON" story
-  clawdnd_cap_score_red "$T/$RUN.angrydm.json" "$GATE_REASON"
+  worldos_cap_score_red "$T/$RUN.score.json" "$GATE_REASON" story
+  worldos_cap_score_red "$T/$RUN.tolkien.json" "$GATE_REASON" story
+  worldos_cap_score_red "$T/$RUN.angrydm.json" "$GATE_REASON"
 fi
 
 echo "[qa] ===== MECHANICAL scorecard ($RUN) ====="

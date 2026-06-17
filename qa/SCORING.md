@@ -26,7 +26,7 @@ so this deterministic gate does. Exit 0 = GREEN (warnings allowed), 1 = RED. FAT
 
 ### RED-cap (anti-loophole)
 If the gate is RED, all three LLM scorecards are **capped to ≤ 2.5 / INVALID** and
-annotated with the failed checks (`clawdnd_cap_score_red`). A dead/non-progressing scene
+annotated with the failed checks (`worldos_cap_score_red`). A dead/non-progressing scene
 can never display as 4.1 again. On a GREEN run, scores pass through untouched.
 
 ## 2. The three LLM lenses (1–5 each; run concurrently)

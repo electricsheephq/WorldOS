@@ -4,7 +4,7 @@
 #
 # The motivating incident (gs-ember-18b): a long overnight playtest died at beat 4 when a DM turn
 # hit HTTP 500 AND the single retry ALSO hit 500 — one transient cluster killed a 2-3h run. The fix:
-#   • clawdnd_dm_failure_is_transient (qa/lib_beat_driver.sh) classifies a failed attempt as
+#   • worldos_dm_failure_is_transient (qa/lib_beat_driver.sh) classifies a failed attempt as
 #     TRANSIENT (5xx / overloaded / 429 / rc=124 timeout) vs REAL/fail-fast (401/403 auth, a
 #     deterministic bad turn);
 #   • turn_retry retries a TRANSIENT failure up to CLAWDND_DM_MAX_ATTEMPTS (default 4) with a
@@ -27,7 +27,7 @@ BACKOFF_LOG="$TMP/backoff.log"; : > "$BACKOFF_LOG"
 fake_sleep() { printf '%s\n' "$1" >> "$BACKOFF_LOG"; }
 export BACKOFF_LOG
 CLAWDND_RETRY_SLEEP_CMD="fake_sleep"
-# fake_sleep is a bash function — clawdnd_dm_retry_backoff calls it directly (NOT via timeout/PATH),
+# fake_sleep is a bash function — worldos_dm_retry_backoff calls it directly (NOT via timeout/PATH),
 # so a function is fine here.
 export -f fake_sleep 2>/dev/null || true
 
@@ -43,45 +43,45 @@ CALLS="$TMP/calls"; echo 0 > "$CALLS"; export CALLS
 turn() {
   local role="$1" sid="$2" first="$3" msg="$4" out resume=() extra=() rc=0 beat_timeout
   [ "$first" = "0" ] && resume=(--resume "$sid") || resume=(--session-id "$sid")
-  clawdnd_dm_effort_arg "$first"
+  worldos_dm_effort_arg "$first"
   out="$T/$RUN.dm.$(date +%s%N).jsonl"
-  beat_timeout="$(clawdnd_dm_timeout "$first")"
+  beat_timeout="$(worldos_dm_timeout "$first")"
   worldos_timeout "$beat_timeout" \
     claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
       --model "$CLAWDND_DM_MODEL" ${CLAWDND_DM_EFFORT[@]+"${CLAWDND_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
       --output-format stream-json --verbose > "$out" 2>> "$T/$RUN.dm.err"
   rc=$?
   cat "$out" >> "$COMBINED"
-  if [ "$rc" -ne 0 ] && ! clawdnd_dm_result_is_error "$out"; then
-    clawdnd_report_attempt_failure "$out" "$rc"
+  if [ "$rc" -ne 0 ] && ! worldos_dm_result_is_error "$out"; then
+    worldos_report_attempt_failure "$out" "$rc"
   fi
-  clawdnd_dm_final_text "$out" "$STATE_DIR" "$rc"
+  worldos_dm_final_text "$out" "$STATE_DIR" "$rc"
 }
 
 # turn_retry copied VERBATIM from qa/run_duo.sh (the function under test).
 turn_retry() {
   local r last_out last_rc transient attempt max
   max="${CLAWDND_DM_MAX_ATTEMPTS:-4}"
-  clawdnd_dm_prebeat_mark "$STATE_DIR"
+  worldos_dm_prebeat_mark "$STATE_DIR"
   r="$(turn "$@")"
   attempt=1
   while [ -z "$r" ] && [ "$attempt" -lt "$max" ]; do
     last_out="$(cat "$STATE_DIR/.dm_last_result" 2>/dev/null | tail -n1)"
     last_rc="$(cat "$STATE_DIR/.dm_last_rc" 2>/dev/null | tail -n1)"; last_rc="${last_rc:-0}"
     transient=0
-    clawdnd_dm_failure_is_transient "$last_out" "$last_rc" && transient=1
+    worldos_dm_failure_is_transient "$last_out" "$last_rc" && transient=1
     if [ "$transient" != "1" ] && [ "$attempt" -ge 2 ]; then
       echo "[duo] empty turn ($1) — failure looks REAL (not transient); not retrying further." >&2
       break
     fi
     if [ "$transient" = "1" ]; then
       echo "[duo] empty turn ($1) — TRANSIENT failure (rc=$last_rc); retry $((attempt + 1))/$max after backoff…" >&2
-      clawdnd_dm_retry_backoff "$attempt"
+      worldos_dm_retry_backoff "$attempt"
     else
       echo "[duo] empty turn ($1) — retrying once…" >&2
     fi
     if [ "${3:-}" = "1" ]; then
-      clawdnd_dm_remint_session_on_retry --session-id "$2"
+      worldos_dm_remint_session_on_retry --session-id "$2"
       local _fresh="$2"
       [ "${#CLAWDND_DM_RETRY_SESSION[@]}" -ge 2 ] && _fresh="${CLAWDND_DM_RETRY_SESSION[1]}"
       r="$(turn "$1" "$_fresh" "$3" "${@:4}")"
@@ -96,24 +96,24 @@ turn_retry() {
 # ── Classifier unit checks (no turn loop) ──────────────────────────────────────────────────────
 mk_result() { printf '%s\n' "$1" > "$TMP/cls.jsonl"; printf '%s' "$TMP/cls.jsonl"; }
 F500="$(mk_result '{"type":"result","is_error":true,"api_error_status":500,"result":"API Error: 500 Internal server error"}')"
-chk "classify: HTTP 500 is TRANSIENT"        'clawdnd_dm_failure_is_transient "'"$F500"'" 0'
+chk "classify: HTTP 500 is TRANSIENT"        'worldos_dm_failure_is_transient "'"$F500"'" 0'
 F529="$(mk_result '{"type":"result","is_error":true,"api_error_status":529,"result":"Overloaded"}')"
-chk "classify: HTTP 529 overloaded is TRANSIENT" 'clawdnd_dm_failure_is_transient "'"$F529"'" 0'
+chk "classify: HTTP 529 overloaded is TRANSIENT" 'worldos_dm_failure_is_transient "'"$F529"'" 0'
 F429="$(mk_result '{"type":"result","is_error":true,"api_error_status":429,"result":"rate_limit_error"}')"
-chk "classify: HTTP 429 rate-limit is TRANSIENT" 'clawdnd_dm_failure_is_transient "'"$F429"'" 0'
+chk "classify: HTTP 429 rate-limit is TRANSIENT" 'worldos_dm_failure_is_transient "'"$F429"'" 0'
 F401="$(mk_result '{"type":"result","is_error":true,"api_error_status":401,"result":"API Error: 401 authentication_error"}')"
-chk "classify: HTTP 401 auth is REAL (fail-fast)"  '! clawdnd_dm_failure_is_transient "'"$F401"'" 0'
+chk "classify: HTTP 401 auth is REAL (fail-fast)"  '! worldos_dm_failure_is_transient "'"$F401"'" 0'
 F403="$(mk_result '{"type":"result","is_error":true,"api_error_status":403,"result":"permission_error"}')"
-chk "classify: HTTP 403 is REAL (fail-fast)"       '! clawdnd_dm_failure_is_transient "'"$F403"'" 0'
+chk "classify: HTTP 403 is REAL (fail-fast)"       '! worldos_dm_failure_is_transient "'"$F403"'" 0'
 FOVR="$(mk_result '{"type":"result","is_error":true,"result":"Overloaded: the service is temporarily unavailable, please retry"}')"
-chk "classify: text-only 'overloaded' is TRANSIENT" 'clawdnd_dm_failure_is_transient "'"$FOVR"'" 0'
-chk "classify: rc=124 timeout is TRANSIENT"        'clawdnd_dm_failure_is_transient "/nonexistent" 124'
+chk "classify: text-only 'overloaded' is TRANSIENT" 'worldos_dm_failure_is_transient "'"$FOVR"'" 0'
+chk "classify: rc=124 timeout is TRANSIENT"        'worldos_dm_failure_is_transient "/nonexistent" 124'
 FOK="$(mk_result '{"type":"result","is_error":false,"result":"a fine beat"}')"
-chk "classify: a clean result is NOT transient"    '! clawdnd_dm_failure_is_transient "'"$FOK"'" 0'
+chk "classify: a clean result is NOT transient"    '! worldos_dm_failure_is_transient "'"$FOK"'" 0'
 
 # ── Backoff schedule ───────────────────────────────────────────────────────────────────────────
 : > "$BACKOFF_LOG"
-clawdnd_dm_retry_backoff 1; clawdnd_dm_retry_backoff 2; clawdnd_dm_retry_backoff 3
+worldos_dm_retry_backoff 1; worldos_dm_retry_backoff 2; worldos_dm_retry_backoff 3
 chk "backoff schedule is 3s, 8s, 20s" '[ "$(tr "\n" " " < "$BACKOFF_LOG")" = "3 8 20 " ]'
 
 # ── (A) 500 twice then SUCCEED → the beat SUCCEEDS over 3 attempts (the gs-ember-18b fix) ──────

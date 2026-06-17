@@ -1,4 +1,4 @@
-"""Tests for clawdnd_isolate_claude_auth (qa/lib_beat_driver.sh) — the #892 follow-up that keeps
+"""Tests for worldos_isolate_claude_auth (qa/lib_beat_driver.sh) — the #892 follow-up that keeps
 the GUI .app's cold-open `claude -p` (the DM) off the macOS keychain + off any /Volumes TCC prompt.
 
 The helper is GATED + ADDITIVE:
@@ -30,7 +30,7 @@ LIB = ROOT / "qa" / "lib_beat_driver.sh"
 _HARNESS = r"""
 set -uo pipefail
 . "{lib}"
-clawdnd_isolate_claude_auth
+worldos_isolate_claude_auth
 printf 'CLAUDE_CONFIG_DIR=%s\n' "${{CLAUDE_CONFIG_DIR:-}}"
 printf 'CLAUDE_CODE_OAUTH_TOKEN=%s\n' "${{CLAUDE_CODE_OAUTH_TOKEN:-}}"
 printf 'ANTHROPIC_API_KEY=%s\n' "${{ANTHROPIC_API_KEY:-}}"
@@ -172,8 +172,8 @@ def test_idempotent_when_called_twice(tmp_path):
     harness = (
         'set -uo pipefail\n'
         f'. "{LIB}"\n'
-        "clawdnd_isolate_claude_auth\n"
-        "clawdnd_isolate_claude_auth\n"
+        "worldos_isolate_claude_auth\n"
+        "worldos_isolate_claude_auth\n"
         'printf \'CLAUDE_CONFIG_DIR=%s\\n\' "${CLAUDE_CONFIG_DIR:-}"\n'
         'printf \'CLAUDE_CODE_OAUTH_TOKEN=%s\\n\' "${CLAUDE_CODE_OAUTH_TOKEN:-}"\n'
     )

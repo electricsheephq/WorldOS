@@ -486,7 +486,7 @@ lands on app relaunch with NO Swift rebuild** (the swift build is a ~0.1s no-op)
   `current` campaign** so the surface binds to the DM-minted run, not a stale save the
   one-shot catalog pick had selected. Verify playable: `curl /session-surface` → `can_act:true`.
 - **Footguns (all fixed cont.26, watch for regressions):** (1) a Finder/Dock GUI launch gets
-  launchd's minimal PATH → `claude`/`uv` not found; `launch_common.sh:clawdnd_augment_path`
+  launchd's minimal PATH → `claude`/`uv` not found; `launch_common.sh:worldos_augment_path`
   prepends `~/.local/bin`+Homebrew. (2) `play.sh`/`play_party.sh` traps must SEPARATE EXIT
   (cleanup) from INT/TERM (cleanup+`exit`) or SIGTERM resumes the loop (wedged orphan). (3)
   `AppProcessService` does NOT kill its viewer child on app SIGTERM → orphaned viewers accrue

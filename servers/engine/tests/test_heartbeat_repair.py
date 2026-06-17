@@ -192,7 +192,7 @@ def test_dedup_guard_still_dedups_real_prose(state, cid):
 
 def _seed_fallback_campaign(state: Path, prose: str) -> None:
     """A minimal snapshot + session log shaped exactly like the engine's on-disk format,
-    so clawdnd_dm_narration_or_fallback (via qa/dm_narration_fallback.py) recovers prose."""
+    so worldos_dm_narration_or_fallback (via qa/dm_narration_fallback.py) recovers prose."""
     camp = state / "campaigns" / "c1"
     (camp / "sessions").mkdir(parents=True)
     (camp / "snapshot.json").write_text(
@@ -210,9 +210,9 @@ def test_resolve_dm_reply_flags_recovery_and_stamps_chat_row(tmp_path):
     chat = tmp_path / "chat.jsonl"
     script = (
         f'set -u; ROOT="{REPO_ROOT}"; STATE_DIR="{tmp_path}"; CHAT="{chat}"; . "{LIB}"\n'
-        f'clawdnd_resolve_dm_reply "" "$STATE_DIR"\n'
+        f'worldos_resolve_dm_reply "" "$STATE_DIR"\n'
         f'echo "recovered=$CLAWDND_FALLBACK_RECOVERED"\n'
-        f'clawdnd_chatlog_dm "$CLAWDND_DM_REPLY"\n'
+        f'worldos_chatlog_dm "$CLAWDND_DM_REPLY"\n'
     )
     r = _bash(script)
     assert r.returncode == 0, r.stderr
@@ -228,9 +228,9 @@ def test_resolve_dm_reply_no_flag_when_dm_replied(tmp_path):
     chat = tmp_path / "chat.jsonl"
     script = (
         f'set -u; ROOT="{REPO_ROOT}"; STATE_DIR="{tmp_path}"; CHAT="{chat}"; . "{LIB}"\n'
-        f'clawdnd_resolve_dm_reply {PROSE_2!r} "$STATE_DIR"\n'
+        f'worldos_resolve_dm_reply {PROSE_2!r} "$STATE_DIR"\n'
         f'echo "recovered=$CLAWDND_FALLBACK_RECOVERED"\n'
-        f'clawdnd_chatlog_dm "$CLAWDND_DM_REPLY"\n'
+        f'worldos_chatlog_dm "$CLAWDND_DM_REPLY"\n'
     )
     r = _bash(script)
     assert r.returncode == 0, r.stderr

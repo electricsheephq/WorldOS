@@ -145,7 +145,7 @@ DSID="$(python3 -c 'import uuid;print(uuid.uuid4())')"
 DM_BRIEF="$(cat "$ROOT/qa/play_dm_duo.txt")"
 # chatlog is the SHARED lib implementation (qa/lib_beat_driver.sh, reads ambient $CHAT at call
 # time). SYN-01/F12-7: a local 2-arg override here used to shadow it AFTER sourcing the lib,
-# silently discarding clawdnd_chatlog_dm's {"fallback_recovered":true} honesty stamp — never
+# silently discarding worldos_chatlog_dm's {"fallback_recovered":true} honesty stamp — never
 # re-define chatlog in a runner.
 # #745 (the newbie mid-stream-stall give-up): the GUI-sweep DM driver MUST bound every beat exactly
 # like scripts/play.sh's dm_turn — previously this helper ran `claude -p` with NO `timeout`, NO retry,
@@ -153,9 +153,9 @@ DM_BRIEF="$(cat "$ROOT/qa/play_dm_duo.txt")"
 # hung FOREVER: dm_turn never returned → `chatlog dm` (the turn-END /chat line) never fired → the turn
 # never RESOLVED on the client, leaving the player on the (now-fixed-but-slower) client stall path with
 # no backend recovery at all. Here we (1) wall-clock the beat with `timeout` (tiered off the cold-open
-# `first` signal via the shared clawdnd_dm_timeout; a frozen process is KILLED at the deadline so the
+# `first` signal via the shared worldos_dm_timeout; a frozen process is KILLED at the deadline so the
 # turn returns), and (2) if the killed/failed beat left empty result text, the CALLER stitches the
-# engine-logged narration tail as a fallback reply (clawdnd_resolve_dm_reply, which also flags the
+# engine-logged narration tail as a fallback reply (worldos_resolve_dm_reply, which also flags the
 # recovery — #749c) so the dm chat row always carries a real turn-END line → the client's pending
 # clears + the bar re-enables. CLAWDND_DM_MODEL lets the
 # timeout helper pick the opus cold-open tier. Bash 3.2-safe (timeout(1) from coreutils; ${arr[@]+…}).
@@ -164,17 +164,17 @@ dm_turn() {
   local first="$1" msg="$2" out resume=() beat_timeout rc
   # SYN-01: pre-beat log-tail mark (once per beat — this driver is single-attempt) so the
   # caller's resolve can tell a GENUINE #357 recovery from RECYCLED pre-beat prose.
-  clawdnd_dm_prebeat_mark "$STATE_DIR"
+  worldos_dm_prebeat_mark "$STATE_DIR"
   # #623 dogfood FIDELITY: prepend the live-progress rule (the ONE shared CLAWDND_LIVE_PROGRESS_RULE
   # in qa/lib_beat_driver.sh — parity with scripts/play.sh:288 + scripts/play_party.sh + the codex DM)
   # so the DM logs an EARLY /events narration beat. Its ABSENCE here mirrored the SOLO-path #623 bug:
   # the dogfood DM emitted nothing to /events until the full ~82s beat completed, so the viewer stayed
   # blank and the playtest OVERSTATED perceived latency vs production. This is the MODEL-COOPERATIVE
-  # half; the caller ALSO emits the model-INDEPENDENT heartbeat (clawdnd_emit_progress_heartbeat) per
+  # half; the caller ALSO emits the model-INDEPENDENT heartbeat (worldos_emit_progress_heartbeat) per
   # move before the resolve, exactly like scripts/play.sh:620. Additive — engine stays the sole writer.
   msg="$CLAWDND_LIVE_PROGRESS_RULE"$'\n\n'"$msg"
   [ "$first" = "0" ] && resume=(--resume "$DSID") || resume=(--session-id "$DSID")
-  beat_timeout="$(clawdnd_dm_timeout "$first")"
+  beat_timeout="$(worldos_dm_timeout "$first")"
   out="$RUNDIR/dm/turn.$(date +%s%N).jsonl"
   timeout "$beat_timeout" \
     claude -p "$msg" "${resume[@]}" --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
@@ -184,12 +184,12 @@ dm_turn() {
   [ "$rc" -ne 0 ] && echo "[uipt] DM turn rc=$rc (timeout=${beat_timeout}s) — relying on engine-logged narration fallback" >&2
   cat "$out" >> "$COMBINED"
   # Echo the beat's final result text via the SYN-01 shared classification front door: it notes
-  # $out for the caller's clawdnd_resolve_dm_reply and echoes NOTHING on an error-class result
+  # $out for the caller's worldos_resolve_dm_reply and echoes NOTHING on an error-class result
   # (a 401's "result" text is the API's error string, never a reply). The #357 fallback (recover
   # the engine-logged narration tail when a killed/failed beat left this empty) is applied by
-  # the CALLER via clawdnd_resolve_dm_reply — a direct call, because dm_turn runs in a command
+  # the CALLER via worldos_resolve_dm_reply — a direct call, because dm_turn runs in a command
   # substitution where the #749c fallback_recovered flag (a global) could never escape the subshell.
-  clawdnd_dm_final_text "$out" "$STATE_DIR" "$rc"
+  worldos_dm_final_text "$out" "$STATE_DIR" "$rc"
 }
 
 # --- DM opens the scene so a LIVE, playable game exists (the launcher's Chronicles
@@ -202,16 +202,16 @@ DMSG="$(dm_turn 1 "$DM_BRIEF
 
 Begin a SOLO session for a brand-new human player in this world: start_world(\"$WORLD\"), start_session, seat a fitting level-3 PLAYER CHARACTER (a LIVING canon figure via load_canon_character(kind=\"player\", add_to_party=true) — NEVER a dead/fallen character; apply sensible skills/spells), and bring in ONE roster companion the player meets in the scene. Then open a human-scale, personal scene with real quoted dialogue and hand the player an open moment + a clear choice. Their actions will arrive next as tagged moves.")"
 # #357/#749c: recover the engine-logged narration tail when the turn died with no result text;
-# a recovered reply stamps fallback_recovered:true on the dm chat row (clawdnd_chatlog_dm).
-clawdnd_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
+# a recovered reply stamps fallback_recovered:true on the dm chat row (worldos_chatlog_dm).
+worldos_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
 # SYN-01: an empty resolved reply is a FAILED beat. The old masking default ("The scene is
 # set. What do you do?") pretended a scene existed; record the wrapper-authored VISIBLE failure
 # row instead — it is still a real turn-END dm row, so the client's pending state clears.
 if [ -z "$DMSG" ]; then
   echo "[uipt] WARN: DM produced no opening (see $RUNDIR/dm/dm.err) — recording a visible failure beat; the player may land in a thin scene." >&2
-  clawdnd_chatlog_dm_failed
+  worldos_chatlog_dm_failed
 else
-  clawdnd_chatlog_dm "$DMSG"
+  worldos_chatlog_dm "$DMSG"
 fi
 
 # --- background DM-resolver loop: tail $MOVES, resolve each new move, append narration
@@ -220,7 +220,7 @@ fi
 (
   MCURSOR="$(wc -l < "$MOVES" 2>/dev/null | tr -d ' ')"; MCURSOR="${MCURSOR:-0}"
   # #623 dogfood FIDELITY: a 0-based continuing-beat index so the per-move heartbeat ROTATES its
-  # teaser (clawdnd_emit_progress_heartbeat, below) exactly as scripts/play.sh:620 rotates off DM_TURNS.
+  # teaser (worldos_emit_progress_heartbeat, below) exactly as scripts/play.sh:620 rotates off DM_TURNS.
   DMLOOP_BEAT=0
   while true; do
     total="$(wc -l < "$MOVES" 2>/dev/null | tr -d ' ')"; total="${total:-0}"
@@ -240,9 +240,9 @@ fi
       # can answer), falling back to the first subdir only if the engine can't. A blank id no-ops the
       # helper (best-effort; never fails a beat) — so the derivation is the crux. Engine stays the SOLE
       # writer (the heartbeat routes through log_engine_narration). first=0 + DMLOOP_BEAT → rotates.
-      HB_CID="$(clawdnd_live_campaign_id "$ROOT" "$STATE_DIR" "$WORLD")"
+      HB_CID="$(worldos_live_campaign_id "$ROOT" "$STATE_DIR" "$WORLD")"
       [ -z "$HB_CID" ] && HB_CID="$(find "$STATE_DIR/campaigns" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | head -n1)"
-      clawdnd_emit_progress_heartbeat "$HB_CID" 0 "$DMLOOP_BEAT"
+      worldos_emit_progress_heartbeat "$HB_CID" 0 "$DMLOOP_BEAT"
       DMLOOP_BEAT=$((DMLOOP_BEAT + 1))
       DMSG="$(dm_turn 0 "The player does:
 
@@ -252,11 +252,11 @@ Resolve it through the engine (roll checks, apply casts/attacks, voice NPCs) and
       # #357/#749c: same recovery + honesty stamp as the opening turn (direct call, see dm_turn).
       # SYN-01: an empty resolved reply is a FAILED beat — the visible failure row replaces the
       # old "..." masking default (still a turn-END dm row, so the client's pending clears).
-      clawdnd_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
+      worldos_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
       if [ -z "$DMSG" ]; then
-        clawdnd_chatlog_dm_failed
+        worldos_chatlog_dm_failed
       else
-        clawdnd_chatlog_dm "$DMSG"
+        worldos_chatlog_dm "$DMSG"
       fi
     else
       sleep 2

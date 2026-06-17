@@ -28,7 +28,7 @@ treated like bookkeeping and never reaches the chat; a real 2nd-person scene alw
 
 It lives as a standalone file (not a heredoc inside `$(...)`) because the macOS system bash
 (3.2.57) mis-parses a quoted heredoc nested in command substitution -- it is invoked by path
-from `clawdnd_dm_narration_or_fallback` in qa/lib_beat_driver.sh.
+from `worldos_dm_narration_or_fallback` in qa/lib_beat_driver.sh.
 
 Usage: python3 dm_narration_fallback.py <snapshot.json>
 Prints the recovered prose to stdout (empty when there is nothing player-facing to recover).

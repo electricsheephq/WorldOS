@@ -74,14 +74,14 @@ NATIVE_AUTOSTART="${WOS_APP_NATIVE_AUTOSTART:-0}"
 CODEX_HOME_FOR_APP="${WOS_APP_CODEX_HOME:-${CODEX_HOME:-}}"
 # Part-A cold-open mint deadline (seconds). The #356 banner spawns the DM cold open, whose
 # --effort max world-build runs ~280–400s. FIX 3 (#623): the old FLAT 420 was SHORTER than the
-# DM cold-open's OWN model-aware timeout (clawdnd_dm_timeout 1 = 500 opus / 550 non-opus), so a
+# DM cold-open's OWN model-aware timeout (worldos_dm_timeout 1 = 500 opus / 550 non-opus), so a
 # healthy-but-slow cold open in the 420–500s band was abandoned by THIS poll ~80s before the DM
 # itself would have given up — a coin-flip flaky leg. Derive the deadline FROM that same tier
 # (cold-open timeout + a ~90s mint/IO margin) so the poll always outlasts the cold open it waits
-# on. lib_beat_driver.sh is already sourced (line 62), so clawdnd_dm_timeout is in scope. The
-# WORLDOS_COLDOPEN_TIMEOUT env flows through clawdnd_dm_timeout; the explicit
+# on. lib_beat_driver.sh is already sourced (line 62), so worldos_dm_timeout is in scope. The
+# WORLDOS_COLDOPEN_TIMEOUT env flows through worldos_dm_timeout; the explicit
 # WOS_APP_PART_A_DEADLINE override still wins (fast inner loops).
-_part_a_coldopen_tier="$(CLAWDND_DM_MODEL="$(worldos_env DM_MODEL opus)" clawdnd_dm_timeout 1)"
+_part_a_coldopen_tier="$(CLAWDND_DM_MODEL="$(worldos_env DM_MODEL opus)" worldos_dm_timeout 1)"
 case "$_part_a_coldopen_tier" in ''|*[!0-9]*) _part_a_coldopen_tier=500 ;; esac
 PART_A_DEADLINE="${WOS_APP_PART_A_DEADLINE:-$(( _part_a_coldopen_tier + 90 ))}"
 # Launcher-viewer readiness window (seconds). The .app's built-in viewer must answer
@@ -1210,7 +1210,7 @@ app_pid_for_bundle() {
 # the human PC via load_canon_character/create_character; until it does, the table shows "no
 # active character"). $1 = play-state run dir. Echoes an integer (0 if no snapshot yet). Read-only.
 _seated_player_count() {
-  local snap; snap="$(clawdnd_snapshot_path "$1" 2>/dev/null)"
+  local snap; snap="$(worldos_snapshot_path "$1" 2>/dev/null)"
   [ -n "$snap" ] || { echo 0; return 0; }
   python3 - "$snap" <<'PY' 2>/dev/null || echo 0
 import json, sys

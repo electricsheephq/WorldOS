@@ -18,7 +18,7 @@ _ROOT = Path(__file__).resolve().parents[3]
 
 
 def _license_check():
-    spec = importlib.util.spec_from_file_location("clawdnd_license_check", _ROOT / "scripts" / "license_check.py")
+    spec = importlib.util.spec_from_file_location("worldos_license_check", _ROOT / "scripts" / "license_check.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -192,11 +192,11 @@ def test_coldopen_play_party_guards_player_pc_seating():
     assert 'create_character with kind=\\"player\\" and add_to_party=true' in text
     # (2) a snapshot-backed guard exists and matches the viewer's _action_actor notion of a
     #     seated PC (a party member whose record is kind="player"). F12-3 (#777) factored the
-    #     guard into the SHARED lib (clawdnd_pc_seated) so play.sh runs the identical check —
+    #     guard into the SHARED lib (worldos_pc_seated) so play.sh runs the identical check —
     #     the _action_actor-matching python now lives there, called from this lane.
-    assert "clawdnd_pc_seated" in text
+    assert "worldos_pc_seated" in text
     lib = (_ROOT / "qa" / "lib_beat_driver.sh").read_text(encoding="utf-8")
-    assert "clawdnd_pc_seated()" in lib
+    assert "worldos_pc_seated()" in lib
     assert 'get("kind") == "player"' in lib
     # (3) the guard retries the cold open ONCE, then aborts loudly on a still-unseated party.
     assert "retrying the cold open ONCE" in text
@@ -207,7 +207,7 @@ def test_coldopen_part_a_poll_window_outlasts_max_effort_coldopen():
     """Cold-open reliability: the Part-A (#356) mint poll must OUTLAST the max-effort cold open.
 
     FIX 3 (#623) made this provable rather than coincidental. The old flat ``420`` default was
-    SHORTER than the DM cold-open's OWN model-aware timeout (``clawdnd_dm_timeout 1`` = 500 opus /
+    SHORTER than the DM cold-open's OWN model-aware timeout (``worldos_dm_timeout 1`` = 500 opus /
     550 non-opus), so a healthy-but-slow mint in the 420–500s band was abandoned ~80s before the
     DM itself would give up — a coin-flip flaky leg. The deadline is now DERIVED from that same
     tier plus a positive mint/IO margin, so it is *structurally* longer than the cold open it waits
@@ -219,7 +219,7 @@ def test_coldopen_part_a_poll_window_outlasts_max_effort_coldopen():
 
     text = (_ROOT / "qa" / "ui_playtest_app.sh").read_text(encoding="utf-8")
     # (1) The deadline derives from the cold-open's own timeout tier (not a magic constant)...
-    assert "clawdnd_dm_timeout 1" in text
+    assert "worldos_dm_timeout 1" in text
     assert "_part_a_coldopen_tier=" in text
     # ...as `${WOS_APP_PART_A_DEADLINE:-$(( _part_a_coldopen_tier + <margin> ))}` — the override still
     # wins, and the margin is what makes the poll OUTLAST the cold open it waits on.

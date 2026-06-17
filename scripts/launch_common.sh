@@ -7,10 +7,10 @@
 # Make user-installed tools findable regardless of how play was started.
 # A GUI launch (Finder/Dock → LaunchServices, or the native app's provider bridge) inherits
 # launchd's minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin), so claude (~/.local/bin) and
-# uv/python3 (Homebrew) aren't on PATH and clawdnd_missing_commands would fail closed. Prepend
+# uv/python3 (Homebrew) aren't on PATH and worldos_missing_commands would fail closed. Prepend
 # the standard macOS tool locations so the dashboard launches identically from a Terminal, a
 # double-click, or the app. Idempotent — skips any dir already on PATH; skips dirs that don't exist.
-clawdnd_augment_path() {
+worldos_augment_path() {
   local d
   for d in "$HOME/.local/bin" /opt/homebrew/bin /opt/homebrew/sbin /usr/local/bin; do
     [ -d "$d" ] || continue
@@ -21,9 +21,9 @@ clawdnd_augment_path() {
   done
   export PATH
 }
-clawdnd_augment_path
+worldos_augment_path
 
-clawdnd_missing_commands() {
+worldos_missing_commands() {
   local missing=() cmd
   for cmd in "$@"; do
     command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
@@ -44,14 +44,14 @@ clawdnd_missing_commands() {
 # is no longer a HARD requirement and this check WARNS instead of failing the launch closed (a
 # fail would refuse a host the shim fully serves). The native tool is still preferred (no extra
 # interpreter per beat), hence the brew hint. Always returns 0.
-clawdnd_warn_if_no_timeout() {
+worldos_warn_if_no_timeout() {
   command -v timeout >/dev/null 2>&1 && return 0
   echo "[worldos] note: GNU timeout(1) not found — DM beat deadlines will use the built-in python3 fallback." >&2
   echo "[worldos]       For the native tool: brew install coreutils" >&2
   return 0
 }
 
-clawdnd_port_available() {
+worldos_port_available() {
   local port="$1"
   case "$port" in
     ''|*[!0-9]*)
@@ -76,7 +76,7 @@ finally:
 PY
 }
 
-clawdnd_choose_port() {
+worldos_choose_port() {
   local requested="$1" explicit="${2:-0}" p
   case "$requested" in
     ''|*[!0-9]*)
@@ -88,7 +88,7 @@ clawdnd_choose_port() {
     echo "Dashboard port must be between 1 and 65535: $requested" >&2
     return 1
   fi
-  if clawdnd_port_available "$requested"; then
+  if worldos_port_available "$requested"; then
     printf '%s\n' "$requested"
     return 0
   fi
@@ -99,7 +99,7 @@ clawdnd_choose_port() {
     return 1
   fi
   for p in $(seq $((requested + 1)) $((requested + 40))); do
-    if clawdnd_port_available "$p"; then
+    if worldos_port_available "$p"; then
       echo "Port $requested is already in use; using $p instead." >&2
       printf '%s\n' "$p"
       return 0
@@ -126,7 +126,7 @@ clawdnd_choose_port() {
 # Knob: CLAWDND_LAUNCH_LOCK_WAIT = seconds to wait for a LIVE holder before rejecting (default 5;
 # 0 = reject immediately). The short wait lets the native app's "restart" (terminate-old then
 # start-new) succeed — the old run releases on SIGTERM and the new one acquires within the window.
-clawdnd_acquire_launch_lock() {
+worldos_acquire_launch_lock() {
   local root="$1" lock="$1/play-state/.launch.lock" waited=0 held_pid
   local wait="${CLAWDND_LAUNCH_LOCK_WAIT:-5}"
   case "$wait" in ''|*[!0-9]*) wait=5 ;; esac   # tolerate a bad value → default
@@ -168,7 +168,7 @@ clawdnd_acquire_launch_lock() {
 
 # Release the launch lock, but ONLY if we are the recorded owner — a rejected second launch must
 # never delete the winner's lock. Safe to call unconditionally from cleanup. $1 = repo ROOT.
-clawdnd_release_launch_lock() {
+worldos_release_launch_lock() {
   local lock="$1/play-state/.launch.lock"
   if [ "$(cat "$lock/pid" 2>/dev/null || true)" = "$$" ]; then
     rm -rf "$lock" 2>/dev/null

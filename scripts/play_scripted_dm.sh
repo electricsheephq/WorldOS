@@ -9,7 +9,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-# Shared launcher helpers (clawdnd_choose_port / clawdnd_port_available), sourced like play.sh
+# Shared launcher helpers (worldos_choose_port / worldos_port_available), sourced like play.sh
 # so the scripted provider can pick a free dashboard port instead of colliding on a busy 8765.
 COMMON="$ROOT/scripts/launch_common.sh"
 # shellcheck source=launch_common.sh
@@ -51,8 +51,8 @@ export WORLDOS_STATE_DIR="$STATE_DIR" CLAWDND_STATE_DIR="$STATE_DIR"
 # back off a busy 8765 (the native launcher viewer) so the game viewer doesn't crash-loop on bind.
 PORT_REQUESTED="${CLAWDND_PLAY_PORT:-8765}"
 PORT_EXPLICIT=0; [ -n "${CLAWDND_PLAY_PORT:-}" ] && PORT_EXPLICIT=1
-if command -v clawdnd_choose_port >/dev/null 2>&1; then
-  PORT="$(clawdnd_choose_port "$PORT_REQUESTED" "$PORT_EXPLICIT")" || PORT="$PORT_REQUESTED"
+if command -v worldos_choose_port >/dev/null 2>&1; then
+  PORT="$(worldos_choose_port "$PORT_REQUESTED" "$PORT_EXPLICIT")" || PORT="$PORT_REQUESTED"
 else
   PORT="$PORT_REQUESTED"
 fi

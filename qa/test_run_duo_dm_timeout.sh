@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # BEHAVIORAL TEST (no model call): proves qa/run_duo.sh's DM turn is now (F12-2 audit finding F12-11)
-#   (1) BOUNDED by a per-beat deadline via worldos_timeout + the model-aware clawdnd_dm_timeout tier
+#   (1) BOUNDED by a per-beat deadline via worldos_timeout + the model-aware worldos_dm_timeout tier
 #       (cold-open vs routine) — before, the DM branch was an UNBOUNDED `claude -p`, so a wedged beat
 #       hung the whole sweep and the empty-output retry never fired (a hang never returns empty);
 #   (2) SURFACES the real failure cause on a nonzero rc with no error-class result (a timeout) AND on
 #       an error-class 401 result — the "[dm-attempt] …" reason + the 401/403 NOT-retryable re-auth
 #       hint, instead of masking it as a phantom empty turn;
 #   (3) re-mints a FRESH cold-open session id on retry via the SHARED helper
-#       (clawdnd_dm_remint_session_on_retry), not an inline uuid — so the three harnesses can't drift.
+#       (worldos_dm_remint_session_on_retry), not an inline uuid — so the three harnesses can't drift.
 #
 # It sources the REAL qa/lib_beat_driver.sh and reproduces run_duo.sh's DM branch + turn_retry remint
 # VERBATIM with stub claude/worldos_timeout. Self-contained under mktemp; macOS + ubuntu CI safe.
@@ -30,9 +30,9 @@ DM_OUT=""
 duo_dm_turn() {
   local first="$1" msg="$2" resume=() extra=() rc=0 out beat_timeout
   [ "$first" = "0" ] && resume=(--resume "DSID") || resume=(--session-id "DSID")
-  clawdnd_dm_effort_arg "$first"
+  worldos_dm_effort_arg "$first"
   out="$T/$RUN.dm.$(date +%s%N).jsonl"
-  beat_timeout="$(clawdnd_dm_timeout "$first")"
+  beat_timeout="$(worldos_dm_timeout "$first")"
   worldos_timeout "$beat_timeout" \
     claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
       --model "$CLAWDND_DM_MODEL" ${CLAWDND_DM_EFFORT[@]+"${CLAWDND_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
@@ -40,10 +40,10 @@ duo_dm_turn() {
   rc=$?
   DM_OUT="$out"
   cat "$out" >> "$COMBINED"
-  if [ "$rc" -ne 0 ] && ! clawdnd_dm_result_is_error "$out"; then
-    clawdnd_report_attempt_failure "$out" "$rc"
+  if [ "$rc" -ne 0 ] && ! worldos_dm_result_is_error "$out"; then
+    worldos_report_attempt_failure "$out" "$rc"
   fi
-  clawdnd_dm_final_text "$out" "$STATE_DIR" "$rc"
+  worldos_dm_final_text "$out" "$STATE_DIR" "$rc"
 }
 
 # (1) argv capture: the DM cold open IS wrapped in worldos_timeout with the sonnet cold-open 550.
@@ -60,7 +60,7 @@ unset -f claude worldos_timeout
 # of which can see a bash FUNCTION — so the behavior probes use real stub EXECUTABLES on PATH.
 BIN="$TMP/bin"; mkdir -p "$BIN"; PATH="$BIN:$PATH"
 
-# (2a) a 401 error-class RESULT (rc=0) → clawdnd_dm_final_text echoes EMPTY and surfaces the 401 hint.
+# (2a) a 401 error-class RESULT (rc=0) → worldos_dm_final_text echoes EMPTY and surfaces the 401 hint.
 cat > "$BIN/claude" <<'STUB'
 #!/usr/bin/env bash
 printf '%s\n' '{"type":"result","subtype":"error_during_execution","is_error":true,"api_error_status":401,"result":"API Error: 401 authentication_error"}'
@@ -89,7 +89,7 @@ chk "timeout → cause surfaced on stderr (dm-attempt)" 'grep -q "dm-attempt" "$
 # (3) the shared cold-open remint yields a FRESH --session-id (not the consumed one).
 unset -f claude
 CLAWDND_DM_RETRY_SESSION=()
-clawdnd_dm_remint_session_on_retry --session-id "DSID-consumed-0000"
+worldos_dm_remint_session_on_retry --session-id "DSID-consumed-0000"
 chk "shared remint emits a 2-token --session-id array" '[ "${#CLAWDND_DM_RETRY_SESSION[@]}" -ge 2 ]'
 chk "shared remint mode is --session-id"               '[ "${CLAWDND_DM_RETRY_SESSION[0]}" = "--session-id" ]'
 chk "shared remint id is FRESH (not the consumed id)"  '[ "${CLAWDND_DM_RETRY_SESSION[1]}" != "DSID-consumed-0000" ]'

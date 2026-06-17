@@ -550,7 +550,7 @@ def active_campaign_id(world_id: str = "") -> Optional[str]:
 
     Why this exists (issue #640 — lean re-ground cross-chronicle contamination):
     the play/QA harnesses used to pick the lean re-ground ``campaign_id`` by the
-    LARGEST snapshot on disk (``qa/lib_beat_driver.sh:clawdnd_snapshot_path`` ->
+    LARGEST snapshot on disk (``qa/lib_beat_driver.sh:worldos_snapshot_path`` ->
     ``ls -S | head -1``). When TWO campaigns coexist in one state dir — a cold-open
     ``start_world`` retry minting a parallel campaign, or a stale prior save — the
     largest snapshot can be the WRONG (parallel) campaign. The engine's

@@ -61,7 +61,7 @@ esac
 
 # --- Lean-per-beat context (PERF, default OFF → byte-identical to today). --------------
 # MIRRORS scripts/play.sh exactly (and shares its ONE implementation via the
-# clawdnd_dm_lean_args helper in qa/lib_beat_driver.sh). With CLAWDND_LEAN_BEATS=1, the DM's
+# worldos_dm_lean_args helper in qa/lib_beat_driver.sh). With CLAWDND_LEAN_BEATS=1, the DM's
 # CONTINUING beats (beats 1..N below — NOT the cold open D1) start a FRESH claude session (a
 # new --session-id, NO transcript replay) seeded with a re-ground directive: the DM re-grounds
 # from the engine's persisted truth via scene_context (state/director/events/companion_arcs +
@@ -80,7 +80,7 @@ mkdir -p "$T" "$STATE_DIR"; rm -rf "$STATE_DIR/campaigns" 2>/dev/null
 # TCC prompt so the duo QA harness runs headless. GATED no-op without an env/file credential (so the
 # Terminal/keychain path is byte-unchanged). Called ONCE here, after STATE_DIR, before the first DM
 # `claude -p` below. Defined in qa/lib_beat_driver.sh (sourced above). Never fails the run.
-clawdnd_isolate_claude_auth
+worldos_isolate_claude_auth
 
 # DM gets the engine (state dir patched in); the player gets an EMPTY strict config.
 DM_CFG="$STATE_DIR/dm.mcp.json"; PLAYER_CFG="$STATE_DIR/player.mcp.json"
@@ -134,7 +134,7 @@ PSID="$(python3 -c 'import uuid;print(uuid.uuid4())')"
 # The DM's campaign id (for the lean re-ground). Resolved AFTER the cold-open D1 mints the
 # world (start_world writes $STATE_DIR/campaigns/<id>/). Declared here (empty) so the DM
 # turn()'s lean branch can reference it safely under `set -u` even during the cold open —
-# when it's empty, clawdnd_dm_lean_args no-ops and the normal --resume path is used.
+# when it's empty, worldos_dm_lean_args no-ops and the normal --resume path is used.
 CAMPAIGN_ID=""
 DM_BRIEF="$(cat qa/play_dm_duo.txt)"; PLAYER_BRIEF="$(cat "$PLAYER_PROMPT_FILE")"
 COMBINED="$T/$RUN.jsonl"; : > "$COMBINED"
@@ -144,7 +144,7 @@ COMBINED="$T/$RUN.jsonl"; : > "$COMBINED"
 CHAT="$T/$RUN.chat.jsonl"; : > "$CHAT"
 # chatlog is the SHARED lib implementation (qa/lib_beat_driver.sh, reads ambient $CHAT at call
 # time). SYN-01/F12-7: a local 2-arg override here used to shadow it AFTER sourcing the lib,
-# silently discarding clawdnd_chatlog_dm's {"fallback_recovered":true} honesty stamp — never
+# silently discarding worldos_chatlog_dm's {"fallback_recovered":true} honesty stamp — never
 # re-define chatlog in a runner.
 echo "[duo] run=$RUN world=$WORLD beats=$BEATS dm=$DSID player=$PSID"
 
@@ -155,13 +155,13 @@ turn() {
   if [ "$role" = "dm" ]; then
     # LEAN beats (CLAWDND_LEAN_BEATS=1): a continuing DM beat starts a FRESH session + a
     # re-ground directive instead of --resume-ing the full transcript — the SAME implementation
-    # scripts/play.sh uses, via the shared clawdnd_dm_lean_args helper (qa/lib_beat_driver.sh),
+    # scripts/play.sh uses, via the shared worldos_dm_lean_args helper (qa/lib_beat_driver.sh),
     # so the two harnesses can't drift. CAMPAIGN_ID is resolved after the opening beat (it's
     # empty during the cold open D1, so lean correctly no-ops there); the helper ALSO only fires
     # on a continuing beat (first=0) and no-ops on the cold open (first!=0). When lean doesn't
     # fire (flag off / cold open / unknown id) the helper leaves both arrays empty and we keep
     # the --resume/--session-id behavior set above unchanged.
-    clawdnd_dm_lean_args "$first" "${CAMPAIGN_ID:-}" "$CLAWDND_LEAN_TAIL"
+    worldos_dm_lean_args "$first" "${CAMPAIGN_ID:-}" "$CLAWDND_LEAN_TAIL"
     if [ "${#CLAWDND_DM_LEAN_SESSION[@]}" -gt 0 ]; then
       resume=("${CLAWDND_DM_LEAN_SESSION[@]}")
       extra=("${CLAWDND_DM_LEAN_EXTRA[@]}")
@@ -170,16 +170,16 @@ turn() {
     # two harnesses can't drift: --effort max on the cold open (one-time world-build), --effort
     # medium on continuing beats (the bulk — cuts thinking-latency). Keyed off the SAME `first`
     # signal as lean. DM turn ONLY — the player branch below never gets --effort.
-    clawdnd_dm_effort_arg "$first"
+    worldos_dm_effort_arg "$first"
     out="$T/$RUN.dm.$(date +%s%N).jsonl"
     # F12-11 (audit 2026-06-11): the DM turn was UNBOUNDED here — run_duo had no per-beat deadline at
     # all, so a wedged DM beat (hung MCP startup, a stuck model call) hung the whole sweep, and
     # turn_retry's empty-output retry never fired because a hang never RETURNS empty (it never
-    # returns). Bound the DM turn through the SAME worldos_timeout shim + clawdnd_dm_timeout tier the
+    # returns). Bound the DM turn through the SAME worldos_timeout shim + worldos_dm_timeout tier the
     # product lanes use (cold-open vs routine, model-aware), so a hang is killed at the deadline (rc=124)
-    # → no result event → clawdnd_dm_final_text echoes empty → turn_retry's empty-output retry fires.
+    # → no result event → worldos_dm_final_text echoes empty → turn_retry's empty-output retry fires.
     # Player turn stays unbounded (it is a fast facade turn and was never the hang source).
-    local beat_timeout; beat_timeout="$(clawdnd_dm_timeout "$first")"
+    local beat_timeout; beat_timeout="$(worldos_dm_timeout "$first")"
     worldos_timeout "$beat_timeout" \
       claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
         --model "$CLAWDND_DM_MODEL" ${CLAWDND_DM_EFFORT[@]+"${CLAWDND_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
@@ -188,19 +188,19 @@ turn() {
     cat "$out" >> "$COMBINED"
     # F12-11: surface the REAL failure cause on a nonzero rc with NO error-class result (a timeout
     # rc=124 writes no result event; a CLI crash; a rate-limit exit) — these were MASKED because
-    # clawdnd_dm_final_text below reports only an error-class RESULT event, so a hang/timeout left the
+    # worldos_dm_final_text below reports only an error-class RESULT event, so a hang/timeout left the
     # structured cause buried in $out and the duo loop showed only "empty turn". The
     # is-error guard avoids a DOUBLE report when the result IS error-class (final_text handles that
     # one). Read-only; echoes a "[dm-attempt] …" reason (+ the 401/403 re-auth hint) to stderr. The
     # rc==0 path is byte-identical to before.
-    if [ "$rc" -ne 0 ] && ! clawdnd_dm_result_is_error "$out"; then
-      clawdnd_report_attempt_failure "$out" "$rc"
+    if [ "$rc" -ne 0 ] && ! worldos_dm_result_is_error "$out"; then
+      worldos_report_attempt_failure "$out" "$rc"
     fi
     # SYN-01: the shared classification front door (qa/lib_beat_driver.sh) — notes $out for the
-    # caller's clawdnd_resolve_dm_reply and echoes NOTHING on an error-class result (a 401's
+    # caller's worldos_resolve_dm_reply and echoes NOTHING on an error-class result (a 401's
     # "result" text is the API's error string, never a reply), so turn_retry's empty-only retry
     # now fires on error results too instead of chatting them as DM prose.
-    clawdnd_dm_final_text "$out" "$STATE_DIR" "$rc"
+    worldos_dm_final_text "$out" "$STATE_DIR" "$rc"
   else
     claude -p "$msg" "${resume[@]}" --mcp-config "$PLAYER_CFG" --strict-mcp-config \
       --model "$CLAWDND_ACTOR_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
@@ -217,7 +217,7 @@ turn() {
 #     (the gs-ember-18b beat-4 death: a 500 + a single retry that also 500'd killed the whole run).
 #   • REAL / fail-fast (a 401/403 auth error, a deterministic bad turn) — do NOT hammer it 4×: take
 #     the ONE historical retry (which also re-mints a cold-open session id — see below) and stop.
-#     An auth failure stays loudly NON-retryable via clawdnd_report_attempt_failure's re-auth hint.
+#     An auth failure stays loudly NON-retryable via worldos_report_attempt_failure's re-auth hint.
 # The classifier reads the SAME (out, rc) the just-finished attempt persisted to
 # $STATE_DIR/.dm_last_result + .dm_last_rc (the turn helpers run in $(...) subshells, so a local rc
 # can't escape — the files are the subshell-safe channel). Bounded by the attempt cap → never loops
@@ -228,7 +228,7 @@ turn_retry() {
   # SYN-01: pre-beat log-tail mark — ONCE per beat, BEFORE attempt 1 (the retries must not
   # re-mark: attempt 1's logged prose still counts as this beat's), so the resolve path can
   # tell a GENUINE #357 recovery from RECYCLED pre-beat prose. File-based (subshell-safe).
-  clawdnd_dm_prebeat_mark "$STATE_DIR"
+  worldos_dm_prebeat_mark "$STATE_DIR"
   r="$(turn "$@")"
   attempt=1
   while [ -z "$r" ] && [ "$attempt" -lt "$max" ]; do
@@ -236,11 +236,11 @@ turn_retry() {
     last_out="$(cat "$STATE_DIR/.dm_last_result" 2>/dev/null | tail -n1)"
     last_rc="$(cat "$STATE_DIR/.dm_last_rc" 2>/dev/null | tail -n1)"; last_rc="${last_rc:-0}"
     transient=0
-    clawdnd_dm_failure_is_transient "$last_out" "$last_rc" && transient=1
+    worldos_dm_failure_is_transient "$last_out" "$last_rc" && transient=1
     # FAIL-FAST: a REAL failure (auth/deterministic) gets exactly the ONE historical retry, never 4×.
     # We allow that single retry (attempt==1) because it ALSO re-mints a cold-open session id that an
     # auth-failed-but-registered attempt 1 would otherwise collide on; past that, stop and don't mask
-    # a deterministic failure as flakiness. (clawdnd_report_attempt_failure already surfaced the
+    # a deterministic failure as flakiness. (worldos_report_attempt_failure already surfaced the
     # 401/403 re-auth hint when the attempt ran.)
     if [ "$transient" != "1" ] && [ "$attempt" -ge 2 ]; then
       echo "[duo] empty turn ($1) — failure looks REAL (not transient); not retrying further." >&2
@@ -248,22 +248,22 @@ turn_retry() {
     fi
     if [ "$transient" = "1" ]; then
       echo "[duo] empty turn ($1) — TRANSIENT failure (rc=$last_rc); retry $((attempt + 1))/$max after backoff…" >&2
-      clawdnd_dm_retry_backoff "$attempt"
+      worldos_dm_retry_backoff "$attempt"
     else
       echo "[duo] empty turn ($1) — retrying once…" >&2
     fi
     # A cold-open ($3=1) retry must NOT reuse $2's already-registered --session-id (a failed but
     # registered attempt → "Session ID … is already in use." → empty output again). F12-11: re-mint
-    # via the SHARED clawdnd_dm_remint_session_on_retry (qa/lib_beat_driver.sh) — the SAME re-mint
+    # via the SHARED worldos_dm_remint_session_on_retry (qa/lib_beat_driver.sh) — the SAME re-mint
     # implementation scripts/play.sh + play_party.sh use, so the three harnesses can't drift. The
     # helper inspects the prior turn's resume MODE (which `turn` built from $3): on a cold open the
     # mode is `--session-id $2`, so it populates CLAWDND_DM_RETRY_SESSION with a FRESH `--session-id
     # <uuid>` we hand back to turn as the new sid. Continuing beats ($3=0) use --resume (safe to
     # repeat) — the helper leaves the array empty and we retry verbatim; lean continuing beats already
     # mint their own fresh id inside turn(). The empty-output trigger also fires on a timeout, which
-    # clawdnd_dm_final_text turns into an empty reply.
+    # worldos_dm_final_text turns into an empty reply.
     if [ "${3:-}" = "1" ]; then
-      clawdnd_dm_remint_session_on_retry --session-id "$2"
+      worldos_dm_remint_session_on_retry --session-id "$2"
       local _fresh="$2"
       [ "${#CLAWDND_DM_RETRY_SESSION[@]}" -ge 2 ] && _fresh="${CLAWDND_DM_RETRY_SESSION[1]}"
       r="$(turn "$1" "$_fresh" "$3" "${@:4}")"
@@ -334,17 +334,17 @@ $PMSG
 $SETUP_DIRECTIVE OUTPUT DISCIPLINE — your final reply IS the opening scene: write it as 2nd-person in-fiction PROSE + quoted dialogue ONLY. NEVER narrate your own setup/process — no \"State is grounded\", no \"the cold open is on the dashboard\", no \"Closing my turn on the scene\", no 3rd-person status line. The very first words the player reads must be INSIDE the fiction.")"
 # #357: recover the engine's logged narration if the DM turn ended on a tool call / status
 # line (empty final reply) — so a tool-final-but-narrated turn isn't mistaken for silence.
-clawdnd_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
+worldos_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
 echo "[duo] DM opened: ${DMSG:0:120}…"
 # SYN-01: an empty resolved reply is a FAILED beat (error-class result, recycled-only prose, or
 # nothing recovered). Record the wrapper-authored VISIBLE failure row — never the error text,
 # never a blank/hidden row — then abort loudly as before.
 if [ -z "$DMSG" ]; then
-  clawdnd_chatlog_dm_failed
+  worldos_chatlog_dm_failed
   echo "[duo] DM produced no opening — aborting (see $COMBINED)" >&2
   exit 1
 fi
-clawdnd_chatlog_dm "$DMSG"
+worldos_chatlog_dm "$DMSG"
 
 # Resolve the campaign id the cold open just minted (for the lean re-ground; harmless when
 # CLAWDND_LEAN_BEATS=0). D1's start_world wrote the snapshot to
@@ -356,10 +356,10 @@ clawdnd_chatlog_dm "$DMSG"
 # #640 cross-chronicle contamination. So pin the LEAN id to the ENGINE-authoritative LIVE save
 # (the most-recently-played campaign in this world), not a file-size/dir-order guess. Empty ⇒
 # the DM turn's lean branch no-ops and the normal --resume path is used (no regression).
-CAMPAIGN_ID="$(clawdnd_live_campaign_id "$ROOT" "$STATE_DIR" "$WORLD")"
+CAMPAIGN_ID="$(worldos_live_campaign_id "$ROOT" "$STATE_DIR" "$WORLD")"
 if [ -z "$CAMPAIGN_ID" ]; then
   # Defensive fallback (engine unreachable / no world_id match): the sole campaign subdir.
-  CAMPAIGN_SNAP="$(clawdnd_snapshot_path "$STATE_DIR")"
+  CAMPAIGN_SNAP="$(worldos_snapshot_path "$STATE_DIR")"
   if [ -n "$CAMPAIGN_SNAP" ]; then
     CAMPAIGN_ID="$(basename "$(dirname "$CAMPAIGN_SNAP")")"
   elif [ -d "$STATE_DIR/campaigns" ]; then
@@ -381,7 +381,7 @@ fi
 # clock-tick backstop (decision §C) so a frozen clock advances ONE phase via the engine.
 for b in $(seq 1 "$BEATS"); do
   # Progression snapshot at the START of this beat (drives both the runbook + the tick).
-  PROG_PRE="$(clawdnd_read_progress "$STATE_DIR")"
+  PROG_PRE="$(worldos_read_progress "$STATE_DIR")"
   PREV_DAY="$(printf '%s' "$PROG_PRE" | cut -f1)"; PREV_DAY="${PREV_DAY:-1}"
   PREV_TOD="$(printf '%s' "$PROG_PRE" | cut -f2)"; PREV_TOD="${PREV_TOD:-morning}"
   PREV_LOC="$(printf '%s' "$PROG_PRE" | cut -f5)"
@@ -395,18 +395,18 @@ Take your next action(s) for this beat using your tools — say / do / request_c
   [ -z "$PMSG" ] && { echo "[duo] player went silent at beat $b; stopping early"; break; }
   chatlog player "$PMSG"
 
-  RUNBOOK="$(clawdnd_runbook_for_beat "$b" "$BEATS" "$PREV_LOC" "$STATE_DIR")"
+  RUNBOOK="$(worldos_runbook_for_beat "$b" "$BEATS" "$PREV_LOC" "$STATE_DIR")"
   echo "[duo] beat $b runbook: ${RUNBOOK%% (*}…"
   # Campaign Director (#72): surface what the campaign OWES this beat (untracked hook -> add_quest,
   # silent NPC to voice, due consequence) so the DM is reminded structurally (closes the add_quest
   # reach-for gap). Empty when nothing's owed -> no change to the prompt.
-  DIRECTOR="$(clawdnd_director_advisory "$ROOT" "$STATE_DIR")"
+  DIRECTOR="$(worldos_director_advisory "$ROOT" "$STATE_DIR")"
   [ -n "$DIRECTOR" ] && echo "[duo] beat $b director: ${DIRECTOR:0:80}…"
   # Quest & Arc engine, Layer 3: surface any stumble-into EVENT whose contract-safe trigger holds
   # this beat (a set flag / faction rep / reached day) so the DM STAGES the decisional in-character
   # instead of leaving it dark (the present_events reach-for gap — same fix as the Director block
   # above). Read-only; empty when nothing's available -> no change to the prompt.
-  EVENT_ADV="$(clawdnd_event_advisory "$ROOT" "$STATE_DIR")"
+  EVENT_ADV="$(worldos_event_advisory "$ROOT" "$STATE_DIR")"
   [ -n "$EVENT_ADV" ] && echo "[duo] beat $b event: ${EVENT_ADV:0:80}…"
   DMSG="$(turn_retry dm "$DSID" 0 "The player does:
 
@@ -421,20 +421,20 @@ $DIRECTOR
 $EVENT_ADV")"
   # #357: recover engine-logged narration before the silence check, so a turn that ended on a
   # tool call but logged real prose isn't mis-flagged as a silent DM (and isn't blank in chat).
-  clawdnd_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
+  worldos_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
   echo "[duo] beat $b DM: ${DMSG:0:100}…"
   # SYN-01: an empty resolved reply is a FAILED beat — record the visible failure row (counted
   # by assert_behavioral's dm_beat_honesty) instead of masking with error text/recycled prose.
   if [ -z "$DMSG" ]; then
-    clawdnd_chatlog_dm_failed
+    worldos_chatlog_dm_failed
     echo "[duo] DM went silent at beat $b; stopping early"
     break
   fi
-  clawdnd_chatlog_dm "$DMSG"
+  worldos_chatlog_dm "$DMSG"
 
   # C — soft clock-tick backstop: if the DM didn't move the clock this beat, advance one
   # phase via the engine (sole writer). Defers to the DM when it advanced time in-fiction.
-  clawdnd_soft_tick "$ROOT" "$STATE_DIR" "$PREV_DAY" "$PREV_TOD"
+  worldos_soft_tick "$ROOT" "$STATE_DIR" "$PREV_DAY" "$PREV_TOD"
 done
 
 # Wrap + score the DM transcript (it carries the narration + all tool calls).
@@ -467,9 +467,9 @@ python3 qa/assert_behavioral.py "$COMBINED" "$T/$RUN.state.json" "$T/$RUN.chat.j
 if [ "${GATE:-0}" != "0" ]; then
   GATE_REASON="$(grep -E '^\s*\[(FAIL)\]' "$T/$RUN.gate.txt" 2>/dev/null | sed 's/^[[:space:]]*//' | paste -sd'; ' - 2>/dev/null)"
   GATE_REASON="${GATE_REASON:-behavioral gate RED}"
-  clawdnd_cap_score_red "$T/$RUN.tolkien.json" "$GATE_REASON" story
-  clawdnd_cap_score_red "$T/$RUN.score.json" "$GATE_REASON" story
-  clawdnd_cap_score_red "$T/$RUN.angrydm.json" "$GATE_REASON"
+  worldos_cap_score_red "$T/$RUN.tolkien.json" "$GATE_REASON" story
+  worldos_cap_score_red "$T/$RUN.score.json" "$GATE_REASON" story
+  worldos_cap_score_red "$T/$RUN.angrydm.json" "$GATE_REASON"
 fi
 # F13-4 (#753): derive the latency ledger (s_per_beat / coldopen_s / turns_per_beat) from the
 # per-beat $RUN.dm.<ns>.jsonl transcripts this run already wrote — the missing #753 budget ledger.

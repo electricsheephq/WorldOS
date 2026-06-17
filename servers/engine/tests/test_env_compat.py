@@ -32,7 +32,7 @@ def test_worldos_wins_over_clawdnd(monkeypatch, capsys):
     assert "DEPRECATION" not in capsys.readouterr().err
 
 
-def test_clawdnd_alone_still_works_and_warns_once(monkeypatch, capsys):
+def test_worldos_alone_still_works_and_warns_once(monkeypatch, capsys):
     monkeypatch.delenv("WORLDOS_STATE_DIR", raising=False)
     monkeypatch.setenv("CLAWDND_STATE_DIR", "/tmp/legacy")
     # Resolves the legacy value (non-breaking)...
@@ -67,7 +67,7 @@ def test_env_var_legacy_swaps_prefix(monkeypatch, capsys):
     assert "DEPRECATION" in capsys.readouterr().err
 
 
-def test_env_var_legacy_non_clawdnd_passthrough(monkeypatch, capsys):
+def test_env_var_legacy_non_worldos_passthrough(monkeypatch, capsys):
     # External vars (e.g. OpenClaw's own) are read straight — never aliased, never warned.
     monkeypatch.setenv("OPENCLAW_GATEWAY_TOKEN", "oc-tok")
     assert _env.env_var_legacy("OPENCLAW_GATEWAY_TOKEN", "") == "oc-tok"

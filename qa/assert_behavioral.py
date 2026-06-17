@@ -250,7 +250,7 @@ def main() -> int:
         # SYN-01 (#757 leg 3): dead-beat honesty counters. The wrappers stamp dm rows with
         # fallback_recovered:true (#357 prose recovered from the engine log, not the DM's own
         # reply) and beat_failed:true (a wrapper-authored VISIBLE failure beat for a dead /
-        # error-class DM turn — qa/lib_beat_driver.sh clawdnd_chatlog_dm_failed). COUNT + REPORT
+        # error-class DM turn — qa/lib_beat_driver.sh worldos_chatlog_dm_failed). COUNT + REPORT
         # both so a masked-dead run can never read as silently clean. The gate does NOT flip on
         # them — the discount/gate policy stays #757's call; this is the consumer that policy
         # was blocked on (the stamp was write-only: zero readers before this check).

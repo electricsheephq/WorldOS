@@ -11,13 +11,13 @@ nothing (or worse, an auth error rendered as narration):
       heartbeat lanes, ``record_dm_reply`` wrote an unflagged EMPTY dm row) — the beat looked
       resolved while the player saw nothing new;
   (c) three QA runners (qa/run_duo.sh, qa/ui_playtest.sh, qa/run_party.sh) re-defined a 3-arg
-      ``chatlog`` AFTER sourcing the lib, silently discarding ``clawdnd_chatlog_dm``'s
+      ``chatlog`` AFTER sourcing the lib, silently discarding ``worldos_chatlog_dm``'s
       ``{"fallback_recovered":true}`` honesty stamp — and nothing in qa/assert_behavioral.py
       consumed the stamp even where it worked.
 
 These tests pin the fix: the FINAL result event is classified FIRST (error-class ⇒ the beat
 FAILED — never chat the error text, never fallback-recycle, surface the re-auth hint via the
-existing clawdnd_report_attempt_failure pattern); ``record_dm_reply`` refuses blank text and
+existing worldos_report_attempt_failure pattern); ``record_dm_reply`` refuses blank text and
 records a wrapper-authored VISIBLE failure beat stamped ``{"beat_failed":true}``; the pre-beat
 log-tail mark preserves the GENUINE #357 win (NEW prose logged this beat, then the turn died);
 the 3 chatlog overrides are deleted so the shared lib (incl. the stamp) is the single
@@ -109,12 +109,12 @@ def _seed_campaign(state: Path, prose_rows: list[str]) -> Path:
 def test_final_text_error_class_echoes_nothing_and_surfaces_reauth_hint(tmp_path):
     """A 401-class result's text is the API's error string, NEVER a reply: the shared extraction
     front door must echo NOTHING (so the empty-only retries now fire on error results too) and
-    surface the failure + re-auth hint via the existing clawdnd_report_attempt_failure pattern."""
+    surface the failure + re-auth hint via the existing worldos_report_attempt_failure pattern."""
     out = _write_result_jsonl(tmp_path / "out.jsonl", result=ERR_TEXT, is_error=True, status=401)
     chat = tmp_path / "chat.jsonl"
     script = (
         _hdr(tmp_path, chat)
-        + f'txt="$(clawdnd_dm_final_text "{out}" "$STATE_DIR" 1)"\n'
+        + f'txt="$(worldos_dm_final_text "{out}" "$STATE_DIR" 1)"\n'
         + 'printf "TXT[%s]\\n" "$txt"\n'
     )
     r = _bash(script)
@@ -123,7 +123,7 @@ def test_final_text_error_class_echoes_nothing_and_surfaces_reauth_hint(tmp_path
     assert ERR_TEXT not in r.stdout
     assert "401" in r.stderr, f"the HTTP status must be surfaced: {r.stderr!r}"
     assert "AUTH" in r.stderr and "NOT retryable" in r.stderr, (
-        "the 401/403 re-auth operator hint (clawdnd_report_attempt_failure) must fire"
+        "the 401/403 re-auth operator hint (worldos_report_attempt_failure) must fire"
     )
     # The pointer file lets the caller's resolve classify the SAME final result event.
     ptr = tmp_path / ".dm_last_result"
@@ -134,7 +134,7 @@ def test_final_text_healthy_result_passes_through(tmp_path):
     out = _write_result_jsonl(tmp_path / "out.jsonl", result=PROSE_1)
     script = (
         _hdr(tmp_path, tmp_path / "chat.jsonl")
-        + f'txt="$(clawdnd_dm_final_text "{out}" "$STATE_DIR" 0)"\n'
+        + f'txt="$(worldos_dm_final_text "{out}" "$STATE_DIR" 0)"\n'
         + 'printf "TXT[%s]\\n" "$txt"\n'
     )
     r = _bash(script)
@@ -150,7 +150,7 @@ def test_final_text_resultless_stream_is_empty_not_error(tmp_path):
     out.write_text(json.dumps({"type": "system", "subtype": "init"}) + "\n", encoding="utf-8")
     script = (
         _hdr(tmp_path, tmp_path / "chat.jsonl")
-        + f'txt="$(clawdnd_dm_final_text "{out}" "$STATE_DIR" 124)"\n'
+        + f'txt="$(worldos_dm_final_text "{out}" "$STATE_DIR" 124)"\n'
         + 'printf "TXT[%s]\\n" "$txt"\n'
     )
     r = _bash(script)
@@ -168,8 +168,8 @@ def test_resolve_classifies_error_result_as_failed_beat_never_recycles(tmp_path)
     chat = tmp_path / "chat.jsonl"
     script = (
         _hdr(tmp_path, chat)
-        + f'_="$(clawdnd_dm_final_text "{out}" "$STATE_DIR" 1)"\n'
-        + 'clawdnd_resolve_dm_reply "" "$STATE_DIR"\n'
+        + f'_="$(worldos_dm_final_text "{out}" "$STATE_DIR" 1)"\n'
+        + 'worldos_resolve_dm_reply "" "$STATE_DIR"\n'
         + 'printf "failed=%s recovered=%s reply=[%s]\\n" "$CLAWDND_DM_BEAT_FAILED" "$CLAWDND_FALLBACK_RECOVERED" "$CLAWDND_DM_REPLY"\n'
     )
     r = _bash(script)
@@ -186,8 +186,8 @@ def test_resolve_healthy_reply_unchanged(tmp_path):
     out = _write_result_jsonl(tmp_path / "out.jsonl", result=PROSE_2)
     script = (
         _hdr(tmp_path, tmp_path / "chat.jsonl")
-        + f'_="$(clawdnd_dm_final_text "{out}" "$STATE_DIR" 0)"\n'
-        + f'clawdnd_resolve_dm_reply {PROSE_2!r} "$STATE_DIR"\n'
+        + f'_="$(worldos_dm_final_text "{out}" "$STATE_DIR" 0)"\n'
+        + f'worldos_resolve_dm_reply {PROSE_2!r} "$STATE_DIR"\n'
         + 'printf "failed=%s recovered=%s reply=[%s]\\n" "$CLAWDND_DM_BEAT_FAILED" "$CLAWDND_FALLBACK_RECOVERED" "$CLAWDND_DM_REPLY"\n'
     )
     r = _bash(script)
@@ -207,9 +207,9 @@ def test_resolve_recycled_prose_is_a_failed_beat(tmp_path):
     out = _write_result_jsonl(tmp_path / "out.jsonl", result="")  # died: empty result text
     script = (
         _hdr(tmp_path, tmp_path / "chat.jsonl")
-        + 'clawdnd_dm_prebeat_mark "$STATE_DIR"\n'
-        + f'_="$(clawdnd_dm_final_text "{out}" "$STATE_DIR" 124)"\n'
-        + 'clawdnd_resolve_dm_reply "" "$STATE_DIR"\n'
+        + 'worldos_dm_prebeat_mark "$STATE_DIR"\n'
+        + f'_="$(worldos_dm_final_text "{out}" "$STATE_DIR" 124)"\n'
+        + 'worldos_resolve_dm_reply "" "$STATE_DIR"\n'
         + 'printf "failed=%s recovered=%s reply=[%s]\\n" "$CLAWDND_DM_BEAT_FAILED" "$CLAWDND_FALLBACK_RECOVERED" "$CLAWDND_DM_REPLY"\n'
     )
     r = _bash(script)
@@ -225,7 +225,7 @@ def test_resolve_new_prose_after_mark_is_genuine_357_recovery(tmp_path):
     and then died before its final reply ⇒ the recovery is real (fallback_recovered=1)."""
     log = _seed_campaign(tmp_path, [PROSE_1])
     out = _write_result_jsonl(tmp_path / "out.jsonl", result="")
-    mark = _hdr(tmp_path, tmp_path / "chat.jsonl") + 'clawdnd_dm_prebeat_mark "$STATE_DIR"\n'
+    mark = _hdr(tmp_path, tmp_path / "chat.jsonl") + 'worldos_dm_prebeat_mark "$STATE_DIR"\n'
     r = _bash(mark)
     assert r.returncode == 0, r.stderr
     # The DM logs NEW prose mid-beat (P2), then the turn dies.
@@ -233,8 +233,8 @@ def test_resolve_new_prose_after_mark_is_genuine_357_recovery(tmp_path):
         fh.write(json.dumps({"t": 99.0, "kind": "narration", "text": PROSE_2}) + "\n")
     script = (
         _hdr(tmp_path, tmp_path / "chat.jsonl")
-        + f'_="$(clawdnd_dm_final_text "{out}" "$STATE_DIR" 124)"\n'
-        + 'clawdnd_resolve_dm_reply "" "$STATE_DIR"\n'
+        + f'_="$(worldos_dm_final_text "{out}" "$STATE_DIR" 124)"\n'
+        + 'worldos_resolve_dm_reply "" "$STATE_DIR"\n'
         + 'printf "failed=%s recovered=%s\\nreply=[%s]\\n" "$CLAWDND_DM_BEAT_FAILED" "$CLAWDND_FALLBACK_RECOVERED" "$CLAWDND_DM_REPLY"\n'
     )
     r = _bash(script)
@@ -250,7 +250,7 @@ def test_resolve_without_mark_keeps_legacy_recovery(tmp_path):
     _seed_campaign(tmp_path, [PROSE_1])
     script = (
         _hdr(tmp_path, tmp_path / "chat.jsonl")
-        + 'clawdnd_resolve_dm_reply "" "$STATE_DIR"\n'
+        + 'worldos_resolve_dm_reply "" "$STATE_DIR"\n'
         + 'printf "failed=%s recovered=%s reply=[%s]\\n" "$CLAWDND_DM_BEAT_FAILED" "$CLAWDND_FALLBACK_RECOVERED" "$CLAWDND_DM_REPLY"\n'
     )
     r = _bash(script)
@@ -270,7 +270,7 @@ def test_wrapper_heartbeat_lane_dead_beat_ends_in_visible_failure_row(tmp_path):
     log = _seed_campaign(tmp_path, [PROSE_1])
     out = _write_result_jsonl(tmp_path / "out.jsonl", result="")
     chat = tmp_path / "chat.jsonl"
-    r = _bash(_hdr(tmp_path, chat) + 'clawdnd_dm_prebeat_mark "$STATE_DIR"\n')
+    r = _bash(_hdr(tmp_path, chat) + 'worldos_dm_prebeat_mark "$STATE_DIR"\n')
     assert r.returncode == 0, r.stderr
     with log.open("a", encoding="utf-8") as fh:
         fh.write(
@@ -281,8 +281,8 @@ def test_wrapper_heartbeat_lane_dead_beat_ends_in_visible_failure_row(tmp_path):
         )
     script = (
         _hdr(tmp_path, chat)
-        + f'_="$(clawdnd_dm_final_text "{out}" "$STATE_DIR" 124)"\n'
-        + 'clawdnd_resolve_dm_reply "" "$STATE_DIR"\n'
+        + f'_="$(worldos_dm_final_text "{out}" "$STATE_DIR" 124)"\n'
+        + 'worldos_resolve_dm_reply "" "$STATE_DIR"\n'
         + 'printf "recovered=%s reply=[%s]\\n" "$CLAWDND_FALLBACK_RECOVERED" "$CLAWDND_DM_REPLY"\n'
         + 'record_dm_reply "c1" "$CLAWDND_DM_REPLY" beat\n'
     )
@@ -342,14 +342,14 @@ def test_record_dm_reply_nonblank_path_unchanged(tmp_path):
 
 
 def test_failure_row_helper_shape_and_consume_once(tmp_path):
-    """clawdnd_chatlog_dm_failed: stamps beat_failed (never fallback_recovered, even when the
+    """worldos_chatlog_dm_failed: stamps beat_failed (never fallback_recovered, even when the
     resolve flag was set) and consumes the resolve flags so the NEXT row is unflagged."""
     chat = tmp_path / "chat.jsonl"
     script = (
         _hdr(tmp_path, chat)
         + "CLAWDND_FALLBACK_RECOVERED=1\nCLAWDND_DM_BEAT_FAILED=1\n"
-        + "clawdnd_chatlog_dm_failed\n"
-        + f"clawdnd_chatlog_dm {PROSE_2!r}\n"
+        + "worldos_chatlog_dm_failed\n"
+        + f"worldos_chatlog_dm {PROSE_2!r}\n"
         + 'printf "post_failed=%s post_recovered=%s\\n" "$CLAWDND_DM_BEAT_FAILED" "$CLAWDND_FALLBACK_RECOVERED"\n'
     )
     r = _bash(script)
@@ -381,7 +381,7 @@ def test_failure_text_never_pollutes_engine_memory(tmp_path):
 
 def test_runner_chatlog_overrides_deleted():
     """F12-7: qa/run_duo.sh:135, qa/ui_playtest.sh:138, qa/run_party.sh:169 each re-defined a
-    3-arg chatlog AFTER sourcing the lib, silently discarding clawdnd_chatlog_dm's honesty
+    3-arg chatlog AFTER sourcing the lib, silently discarding worldos_chatlog_dm's honesty
     stamp. The shared lib chatlog (a verified drop-in superset — it reads ambient $CHAT at call
     time and writes a byte-identical row with no 3rd arg) must be the ONLY implementation."""
     override = re.compile(r"(?m)^\s*(function\s+)?chatlog\s*\(\)")
@@ -392,7 +392,7 @@ def test_runner_chatlog_overrides_deleted():
             f"{rel} re-defines chatlog() after sourcing the lib — the override shadows the "
             f"shared 3-arg chatlog and kills the fallback_recovered/beat_failed stamps"
         )
-        assert "clawdnd_chatlog_dm" in src, f"{rel} must write dm rows via the shared helper"
+        assert "worldos_chatlog_dm" in src, f"{rel} must write dm rows via the shared helper"
 
 
 def test_dm_wrappers_classify_and_mark():
@@ -400,11 +400,11 @@ def test_dm_wrappers_classify_and_mark():
     classification front door and takes the pre-beat mark (once per beat, before attempt 1)."""
     for rel in ALL_DM_WRAPPERS:
         src = (REPO_ROOT / rel).read_text(encoding="utf-8")
-        assert "clawdnd_dm_final_text" in src, f"{rel} must extract via clawdnd_dm_final_text"
-        assert "clawdnd_dm_prebeat_mark" in src, f"{rel} must take the pre-beat log-tail mark"
+        assert "worldos_dm_final_text" in src, f"{rel} must extract via worldos_dm_final_text"
+        assert "worldos_dm_prebeat_mark" in src, f"{rel} must take the pre-beat log-tail mark"
     for rel in QA_RUNNERS:
         src = (REPO_ROOT / rel).read_text(encoding="utf-8")
-        assert "clawdnd_chatlog_dm_failed" in src, (
+        assert "worldos_chatlog_dm_failed" in src, (
             f"{rel} must record the visible failure beat on a failed/blank DM beat"
         )
 
@@ -417,7 +417,7 @@ def test_lib_chatlog_three_arg_contract_for_runners(tmp_path):
         _hdr(tmp_path, chat)
         + f"chatlog player {PROSE_1!r}\n"
         + "CLAWDND_FALLBACK_RECOVERED=1\n"
-        + f"clawdnd_chatlog_dm {PROSE_2!r}\n"
+        + f"worldos_chatlog_dm {PROSE_2!r}\n"
     )
     r = _bash(script)
     assert r.returncode == 0, r.stderr

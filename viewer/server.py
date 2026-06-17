@@ -732,7 +732,7 @@ def _load_engine_server():
             _install_fastmcp_shim()
         if str(engine_dir) not in sys.path:
             sys.path.insert(0, str(engine_dir))
-        spec = importlib.util.spec_from_file_location("_clawdnd_engine_server_for_viewer", engine_dir / "server.py")
+        spec = importlib.util.spec_from_file_location("_worldos_engine_server_for_viewer", engine_dir / "server.py")
         if spec is None or spec.loader is None:
             raise RuntimeError("could not load engine server module")
         module = importlib.util.module_from_spec(spec)

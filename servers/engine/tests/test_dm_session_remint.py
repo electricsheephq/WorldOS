@@ -5,9 +5,9 @@ attempt 1 failed (a 401 auth error in all 3 runs) but had ALREADY registered its
 on disk; the ONE retry re-passed that SAME ``--session-id``, which ``claude -p`` rejects
 ("Session ID <uuid> is already in use.") -> 0-byte output -> empty DM narration -> the cold open
 never completes / ``can_act`` never flips. The fix is the shared helper
-``clawdnd_dm_remint_session_on_retry`` (qa/lib_beat_driver.sh), wired into the retry of
+``worldos_dm_remint_session_on_retry`` (qa/lib_beat_driver.sh), wired into the retry of
 scripts/play.sh + scripts/play_party.sh and qa/run_duo.sh's ``turn_retry``, plus
-``clawdnd_report_attempt_failure`` which stops the masking by surfacing attempt 1's real error.
+``worldos_report_attempt_failure`` which stops the masking by surfacing attempt 1's real error.
 
 NOTE: the single-flight launch lock (a DIFFERENT, concurrent-launch concern) is owned by PR #564
 (scripts/launch_common.sh) and intentionally NOT duplicated here.
@@ -41,9 +41,9 @@ def test_remint_returns_fresh_id_for_create_mode_and_nothing_for_resume():
     """--session-id (a CREATE) -> a NEW --session-id; --resume -> untouched (empty)."""
     script = (
         f'set -u; . "{LIB}"\n'
-        'clawdnd_dm_remint_session_on_retry --session-id OLD-UUID\n'
+        'worldos_dm_remint_session_on_retry --session-id OLD-UUID\n'
         'echo "create:${CLAWDND_DM_RETRY_SESSION[*]:-EMPTY}"\n'
-        'clawdnd_dm_remint_session_on_retry --resume OLD-UUID\n'
+        'worldos_dm_remint_session_on_retry --resume OLD-UUID\n'
         'echo "resume:${CLAWDND_DM_RETRY_SESSION[*]:-EMPTY}"\n'
     )
     r = _bash(script)
@@ -60,8 +60,8 @@ def test_remint_two_retries_yield_distinct_ids():
     """Real uuid path (no shim): two re-mints must differ -> proves genuine uniqueness."""
     script = (
         f'set -u; . "{LIB}"\n'
-        'clawdnd_dm_remint_session_on_retry --session-id OLD; a="${CLAWDND_DM_RETRY_SESSION[1]}"\n'
-        'clawdnd_dm_remint_session_on_retry --session-id OLD; b="${CLAWDND_DM_RETRY_SESSION[1]}"\n'
+        'worldos_dm_remint_session_on_retry --session-id OLD; a="${CLAWDND_DM_RETRY_SESSION[1]}"\n'
+        'worldos_dm_remint_session_on_retry --session-id OLD; b="${CLAWDND_DM_RETRY_SESSION[1]}"\n'
         'echo "a=$a"; echo "b=$b"; [ -n "$a" ] && [ "$a" != "$b" ] && echo DISTINCT || echo SAME\n'
     )
     r = _bash(script)
@@ -77,7 +77,7 @@ def test_report_attempt_failure_names_a_401_auth_error(tmp_path):
         '{"type":"result","subtype":"success","is_error":true,"api_error_status":401,'
         '"result":"Failed to authenticate. API Error: 401 Invalid authentication credentials"}\n'
     )
-    r = _bash(f'set -u; . "{LIB}"; clawdnd_report_attempt_failure "{fake}" 1')
+    r = _bash(f'set -u; . "{LIB}"; worldos_report_attempt_failure "{fake}" 1')
     assert r.returncode == 0, r.stderr
     # The message goes to stderr; it must name the 401 and flag it as a non-retryable AUTH failure.
     assert "401" in r.stderr, r.stderr
@@ -88,10 +88,10 @@ def test_report_attempt_failure_names_a_401_auth_error(tmp_path):
 
 def test_shared_helpers_exist_and_only_remint_create_mode():
     lib = _src("qa/lib_beat_driver.sh")
-    assert "clawdnd_dm_remint_session_on_retry()" in lib
+    assert "worldos_dm_remint_session_on_retry()" in lib
     assert "CLAWDND_DM_RETRY_SESSION" in lib
     assert 'if [ "${1:-}" = "--session-id" ]; then' in lib
-    assert "clawdnd_report_attempt_failure()" in lib
+    assert "worldos_report_attempt_failure()" in lib
 
 
 def test_all_three_harnesses_remint_on_retry():
@@ -99,9 +99,9 @@ def test_all_three_harnesses_remint_on_retry():
     play, party, duo = _src("scripts/play.sh"), _src("scripts/play_party.sh"), _src("qa/run_duo.sh")
     # play.sh + play_party.sh route their non-lean retry through the shared re-mint + error helper.
     for name, src in (("play.sh", play), ("play_party.sh", party)):
-        assert "clawdnd_dm_remint_session_on_retry" in src, name
+        assert "worldos_dm_remint_session_on_retry" in src, name
         assert "CLAWDND_DM_RETRY_SESSION" in src, name
-        assert "clawdnd_report_attempt_failure" in src, name
+        assert "worldos_report_attempt_failure" in src, name
     # play_party.sh gained a DM retry it did not have before.
     assert "retrying once with a fresh session" in party
     # run_duo.sh's cold-open ($3=1) retry mints a fresh id rather than reusing $2.
@@ -161,11 +161,11 @@ def test_play_party_single_flights_the_cold_open_campaign():
 
 def test_play_party_drives_the_arc_runbook():
     """G1 (2026-06-03): the .app DM path (play_party.sh) must DRIVE the story arc per beat via the
-    shared clawdnd_runbook_for_beat (the same arc-driver run_duo.sh uses, which reaches engine
+    shared worldos_runbook_for_beat (the same arc-driver run_duo.sh uses, which reaches engine
     combat/travel/rest). Without it the DM was purely reactive and free-play personas finished at
     the intro — the full 8-beat arc never fired (G1 fail). Mirrors play.sh/run_duo arc-driving."""
     party = _src("scripts/play_party.sh")
-    assert "clawdnd_runbook_for_beat" in party, "play_party.sh must call the shared arc runbook"
+    assert "worldos_runbook_for_beat" in party, "play_party.sh must call the shared arc runbook"
     assert "BEAT_NO=$((BEAT_NO + 1))" in party, "must advance a per-beat counter for the runbook"
     assert 'ARC CUE' in party and '$RUNBOOK' in party, "the runbook must be injected (framed as internal arc cue)"
     # the arc cue is INTERNAL planning the DM must NOT echo, and the reply must be prose not scaffolding
@@ -188,7 +188,7 @@ def test_coldopen_retry_resumes_existing_campaign_not_reseed():
     cold-open start_world prompt (which would orphan the seated save)."""
     script = (
         f'set -u; . "{LIB}"\n'
-        'printf "%s" "$(clawdnd_coldopen_retry_msg 1 "" camp-EXISTING baldurs-gate '
+        'printf "%s" "$(worldos_coldopen_retry_msg 1 "" camp-EXISTING baldurs-gate '
         '"FRESH_COLDOPEN_SENTINEL call start_world here")"\n'
     )
     r = _bash(script)
@@ -208,7 +208,7 @@ def test_coldopen_retry_unchanged_when_no_prior_campaign():
     cold-open verbatim (byte-unchanged)."""
     script = (
         f'set -u; . "{LIB}"\n'
-        'printf "%s" "$(clawdnd_coldopen_retry_msg 1 "" "" baldurs-gate "BASEMSG_SENTINEL")"\n'
+        'printf "%s" "$(worldos_coldopen_retry_msg 1 "" "" baldurs-gate "BASEMSG_SENTINEL")"\n'
     )
     r = _bash(script)
     assert r.returncode == 0, r.stderr
@@ -220,7 +220,7 @@ def test_coldopen_retry_unchanged_for_continuing_beat():
     if a campaign exists."""
     script = (
         f'set -u; . "{LIB}"\n'
-        'printf "%s" "$(clawdnd_coldopen_retry_msg 0 "" camp-EXISTING baldurs-gate "BASEMSG_SENTINEL")"\n'
+        'printf "%s" "$(worldos_coldopen_retry_msg 0 "" camp-EXISTING baldurs-gate "BASEMSG_SENTINEL")"\n'
     )
     r = _bash(script)
     assert r.returncode == 0, r.stderr
@@ -232,7 +232,7 @@ def test_coldopen_retry_unchanged_for_authored_hero():
     must not interfere (that branch owns its own resume directive)."""
     script = (
         f'set -u; . "{LIB}"\n'
-        'printf "%s" "$(clawdnd_coldopen_retry_msg 1 hero-camp-123 camp-EXISTING baldurs-gate "BASEMSG_SENTINEL")"\n'
+        'printf "%s" "$(worldos_coldopen_retry_msg 1 hero-camp-123 camp-EXISTING baldurs-gate "BASEMSG_SENTINEL")"\n'
     )
     r = _bash(script)
     assert r.returncode == 0, r.stderr
@@ -244,8 +244,8 @@ def test_play_sh_wires_the_coldopen_resume_helper():
     through it (so the cold-open retry resumes instead of re-seeding)."""
     lib = _src("qa/lib_beat_driver.sh")
     play = _src("scripts/play.sh")
-    assert "clawdnd_coldopen_retry_msg()" in lib, "the resume-directive helper must exist in the lib"
-    assert 'msg="$(clawdnd_coldopen_retry_msg "$first"' in play, "play.sh retry must reassign msg via the helper"
+    assert "worldos_coldopen_retry_msg()" in lib, "the resume-directive helper must exist in the lib"
+    assert 'msg="$(worldos_coldopen_retry_msg "$first"' in play, "play.sh retry must reassign msg via the helper"
 
 
 # --- #623: the SOLO play.sh path needs the SAME live-progress signal the party/codex paths have --
@@ -282,8 +282,8 @@ def test_progress_heartbeat_helpers_exist_in_the_lib():
     how long the model thinks (or whether it skips the cooperative early log_event). Mirrors the codex
     DM wrapper's proven OPENING_PROGRESS_TEXT / MOVE_PROGRESS_TEXTS pattern, factored to the shared lib."""
     lib = _src("qa/lib_beat_driver.sh")
-    assert "clawdnd_progress_beat_text()" in lib, "the heartbeat-text chooser must exist in the lib"
-    assert "clawdnd_emit_progress_heartbeat()" in lib, "the heartbeat emitter must exist in the lib"
+    assert "worldos_progress_beat_text()" in lib, "the heartbeat-text chooser must exist in the lib"
+    assert "worldos_emit_progress_heartbeat()" in lib, "the heartbeat emitter must exist in the lib"
     # the emitter routes through the shared engine-log helper (engine stays the sole writer).
     assert "log_engine_narration" in lib
 
@@ -294,9 +294,9 @@ def test_progress_beat_text_is_second_person_and_rotates():
     The cold open (first=1) gets its own opening teaser; continuing beats (first=0) cycle by index."""
     script = (
         f'set -u; . "{LIB}"\n'
-        'echo "open:$(clawdnd_progress_beat_text 1 0)"\n'
-        'echo "b0:$(clawdnd_progress_beat_text 0 0)"\n'
-        'echo "b1:$(clawdnd_progress_beat_text 0 1)"\n'
+        'echo "open:$(worldos_progress_beat_text 1 0)"\n'
+        'echo "b0:$(worldos_progress_beat_text 0 0)"\n'
+        'echo "b1:$(worldos_progress_beat_text 0 1)"\n'
     )
     r = _bash(script)
     assert r.returncode == 0, r.stderr
@@ -334,9 +334,9 @@ def test_emit_progress_heartbeat_logs_a_narration_event(tmp_path, monkeypatch):
         f'export ROOT="{ROOT}"; export STATE_DIR="{state}"\n'
         f'export CLAWDND_STATE_DIR="{state}"; export WORLDOS_STATE_DIR="{state}"\n'
         # blank campaign id must no-op (the heartbeat is best-effort, never fatal)
-        'clawdnd_emit_progress_heartbeat "" 1 0; echo "blank-rc=$?"\n'
+        'worldos_emit_progress_heartbeat "" 1 0; echo "blank-rc=$?"\n'
         # a real campaign id must log a narration progress beat
-        f'clawdnd_emit_progress_heartbeat "{camp}" 0 0; echo "real-rc=$?"\n'
+        f'worldos_emit_progress_heartbeat "{camp}" 0 0; echo "real-rc=$?"\n'
     )
     r = _bash(script)
     assert r.returncode == 0, r.stderr
@@ -359,7 +359,7 @@ def test_play_sh_emits_the_heartbeat_before_each_dm_turn():
     """Anti-drift: play.sh must call the heartbeat emitter on BOTH its openers and the per-beat turn,
     so a guaranteed /events row precedes the model's long think on every beat type."""
     play = _src("scripts/play.sh")
-    assert play.count("clawdnd_emit_progress_heartbeat") >= 2, (
+    assert play.count("worldos_emit_progress_heartbeat") >= 2, (
         "play.sh must emit the heartbeat on the cold-open AND per-beat paths"
     )
 
@@ -374,11 +374,11 @@ def test_play_sh_emits_the_heartbeat_before_each_dm_turn():
 # the engine-logged narration tail so a stalled beat always resolves on /chat.
 
 def test_ui_playtest_dm_turn_wraps_claude_in_a_bounded_timeout():
-    """The GUI-sweep dm_turn must wrap `claude -p` in `timeout` (tiered via the shared clawdnd_dm_timeout)
+    """The GUI-sweep dm_turn must wrap `claude -p` in `timeout` (tiered via the shared worldos_dm_timeout)
     so a frozen beat is KILLED at a deadline and dm_turn returns — never an indefinite hang."""
     src = _src("qa/ui_playtest.sh")
     # the shared, tiered deadline helper is resolved…
-    assert 'clawdnd_dm_timeout "$first"' in src, "ui_playtest.sh must resolve the per-beat deadline via the shared helper"
+    assert 'worldos_dm_timeout "$first"' in src, "ui_playtest.sh must resolve the per-beat deadline via the shared helper"
     # …and the claude invocation is wrapped in `timeout "$beat_timeout"` (the line continuation puts the
     # `claude -p` on the following line, so assert both tokens are present near each other).
     assert 'timeout "$beat_timeout"' in src, "ui_playtest.sh dm_turn must wall-clock `claude -p` with `timeout`"
@@ -388,28 +388,28 @@ def test_ui_playtest_dm_turn_wraps_claude_in_a_bounded_timeout():
 
 def test_ui_playtest_dm_turn_falls_back_to_engine_narration_on_a_stalled_beat():
     """A killed/empty beat must still RESOLVE on /chat: each dm_turn result routes through the shared
-    fallback front door (#749c: clawdnd_resolve_dm_reply — a DIRECT call wrapping
-    clawdnd_dm_narration_or_fallback, so the recovery flag survives) and the engine-logged narration
+    fallback front door (#749c: worldos_resolve_dm_reply — a DIRECT call wrapping
+    worldos_dm_narration_or_fallback, so the recovery flag survives) and the engine-logged narration
     tail becomes the turn-END line, with a recovered reply stamped fallback_recovered on the chat row."""
     src = _src("qa/ui_playtest.sh")
-    assert src.count('clawdnd_resolve_dm_reply "$DMSG" "$STATE_DIR"') >= 2, (
+    assert src.count('worldos_resolve_dm_reply "$DMSG" "$STATE_DIR"') >= 2, (
         "ui_playtest.sh must recover BOTH the opening and per-beat turns via the shared fallback "
         "front door so a stalled beat still resolves"
     )
-    assert "clawdnd_chatlog_dm" in src, (
-        "ui_playtest.sh must write dm rows via clawdnd_chatlog_dm so a recovered reply carries "
+    assert "worldos_chatlog_dm" in src, (
+        "ui_playtest.sh must write dm rows via worldos_chatlog_dm so a recovered reply carries "
         "the fallback_recovered honesty stamp (#749c)"
     )
 
 
 def test_ui_playtest_dm_timeout_is_bash32_clean_and_sourced():
-    """The driver sources the shared lib and clawdnd_dm_timeout resolves a positive integer under the
+    """The driver sources the shared lib and worldos_dm_timeout resolves a positive integer under the
     macOS system bash 3.2 — proving the new wiring is 3.2-clean and actually reachable from this script."""
     lib = ROOT / "qa" / "lib_beat_driver.sh"
     script = (
         f'set -u; . "{lib}"\n'
         # cold-open tier (first=1) and continuing tier (first=0) must both yield a positive integer.
-        'CLAWDND_DM_MODEL=opus; co="$(clawdnd_dm_timeout 1)"; bt="$(clawdnd_dm_timeout 0)"\n'
+        'CLAWDND_DM_MODEL=opus; co="$(worldos_dm_timeout 1)"; bt="$(worldos_dm_timeout 0)"\n'
         'echo "co=$co bt=$bt"\n'
         'case "$co" in (*[!0-9]*|"") echo BAD_CO; exit 1;; esac\n'
         'case "$bt" in (*[!0-9]*|"") echo BAD_BT; exit 1;; esac\n'

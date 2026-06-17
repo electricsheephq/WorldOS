@@ -26,10 +26,10 @@ only ever degrade to today's pre-SYN-01 behavior — it must never fail a health
 
 Session-log resolution mirrors dm_narration_fallback._recover (active_session_id, else the
 last session_ids entry, with the same bare-filename safety check); snapshot selection mirrors
-clawdnd_snapshot_path in qa/lib_beat_driver.sh (the LARGEST non-empty snapshot). It lives as a
+worldos_snapshot_path in qa/lib_beat_driver.sh (the LARGEST non-empty snapshot). It lives as a
 standalone file (not a heredoc inside ``$(...)``) because the macOS system bash 3.2 mis-parses
-a quoted heredoc nested in command substitution — invoked by path from clawdnd_dm_prebeat_mark
-/ clawdnd_dm_logged_new_prose in qa/lib_beat_driver.sh.
+a quoted heredoc nested in command substitution — invoked by path from worldos_dm_prebeat_mark
+/ worldos_dm_logged_new_prose in qa/lib_beat_driver.sh.
 """
 import json
 import os
@@ -56,7 +56,7 @@ except Exception:  # pragma: no cover - only on a broken checkout
 
 def _snapshot_path(state_dir):
     """The LARGEST non-empty snapshot under <state_dir>/campaigns — mirrors the shell-side
-    clawdnd_snapshot_path (find -size +1c | ls -S | head -1)."""
+    worldos_snapshot_path (find -size +1c | ls -S | head -1)."""
     best, best_size = "", 1  # >1 byte, matching find's -size +1c
     root = os.path.join(state_dir, "campaigns")
     try:
