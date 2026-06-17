@@ -143,7 +143,7 @@ def test_werewolf_third_attack_rejected(tmp_path, monkeypatch):
     """Integration (F01-1): the Werewolf's Multiattack is TWO attacks — the engine
     must reject the third attack in one action. On main the parser counted 3 and
     attack() permitted AND instructed all three (live probe: attacks [1,2,3] resolved)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("Werewolf F01-1")["id"]

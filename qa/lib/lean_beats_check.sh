@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# lean_beats_check.sh — A/B verify the CLAWDND_LEAN_BEATS perf flag on the REAL solo play
+# lean_beats_check.sh — A/B verify the WORLDOS_LEAN_BEATS perf flag on the REAL solo play
 # loop (scripts/play.sh — the exact backend the built .app and the 5-persona gate run).
 #
 # WHY: every beat the DM turn normally `--resume`s its growing claude -p session, replaying
 # the full transcript, so prefill (and wall-time) grows each beat — the latency a narrative
-# persona quit over. CLAWDND_LEAN_BEATS=1 makes beats 2+ start a fresh session that
+# persona quit over. WORLDOS_LEAN_BEATS=1 makes beats 2+ start a fresh session that
 # re-grounds from the engine (scene_context bundles state/threads/arcs + the recent
 # narration tail) instead of replaying the transcript. This harness measures whether that
 # (a) flattens per-beat latency and (b) keeps story continuity across the lean boundary.
@@ -76,8 +76,8 @@ run_phase() {  # $1 label, $2 lean(0/1) ; echoes "ms1 ms2 ..." and leaves state 
   state="$ROOT/play-state/$run"
   note "=== $label : launching play.sh (port=$port, world=$WORLD, run=$run) ==="
   rm -rf "$state"
-  ( cd "$ROOT" && CLAWDND_LEAN_BEATS="$lean" CLAWDND_DM_MODEL="${CLAWDND_DM_MODEL:-sonnet}" \
-      CLAWDND_PLAY_BUDGET="$BUDGET" CLAWDND_PLAY_MAX_IDLE=120 CLAWDND_PLAY_PORT="$port" \
+  ( cd "$ROOT" && WORLDOS_LEAN_BEATS="$lean" WORLDOS_DM_MODEL="${WORLDOS_DM_MODEL:-sonnet}" \
+      WORLDOS_PLAY_BUDGET="$BUDGET" WORLDOS_PLAY_MAX_IDLE=120 WORLDOS_PLAY_PORT="$port" \
       bash "$PLAY" "$WORLD" "$run" "$port" >"$state.driver.log" 2>&1 ) &
   local pid=$!
 

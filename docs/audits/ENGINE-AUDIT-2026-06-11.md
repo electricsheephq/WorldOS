@@ -1,6 +1,6 @@
 # WorldOS FULL-ENGINE ADVERSARIAL AUDIT — MASTER REPORT (SYNTHESIS)
 
-- Date: 2026-06-11. Repo: /Users/lume/ClawDnD-val. Tasked SHA f24a102; **all verification ran against actual main HEAD a245a2c** (3 commits ahead; delta = #760-#764 incl. the #749/#763 heartbeat-decontamination fix — accounted for per-finding; F12-14 and F11-1 were explicitly re-scoped onto it).
+- Date: 2026-06-11. Repo: /Users/lume/WorldOS-val. Tasked SHA f24a102; **all verification ran against actual main HEAD a245a2c** (3 commits ahead; delta = #760-#764 incl. the #749/#763 heartbeat-decontamination fix — accounted for per-finding; F12-14 and F11-1 were explicitly re-scoped onto it).
 - Inputs: 14 unit audits, each independently skeptic-verified (/tmp/engine-audit/unit-NN-verified.md). Dedup base: /tmp/engine-audit/open-issues.txt (146 open issues incl. in-flight #748-#758). Persona evidence: rc1 worldos-qa-results-fa97b34 bugs.ndjson + rc2 worldos-qa-results-033e4ba score-*.json.
 - Totals: **188 findings produced -> 141 confirmed, 46 corrected, 1 refuted** (F4-15 thread-id collision). After cross-component dedupe: **169 distinct backlog items** (11 cross-unit merges below + 2 in-unit folds F14-20->F14-8, F06-11->F06-10).
 
@@ -44,13 +44,13 @@ Fallback-masking reconciliation vs #757 (explicit task): nothing re-files the ma
 - what_is_broken: (a) a 401-class failure's error text appears in chat AS DM PROSE; (b) on play.sh a dead beat now (post-#763) yields an unflagged EMPTY dm row; on play_party (no heartbeat — F12-4) the fallback still recycles the PREVIOUS beat's prose into a row the client hides (engine_logged dedup -> app.jsx drops it); (c) the fallback_recovered honesty stamp never lands in any QA runner, so #757's planned gate discount is unimplementable.
 - why_broken: 401 results carry NON-empty result text (subtype:"success", is_error:true, api_error_status:401 — verified verbatim) so they bypass BOTH the empty-only retry (qa/run_duo.sh:176-190) and the empty-only fallback (qa/lib_beat_driver.sh:138); record_dm_reply accepts blank text (scripts/play.sh:437/:501); run_duo.sh:135, qa/ui_playtest.sh:138, qa/run_party.sh:169 redefine a 3-arg chatlog AFTER sourcing the lib, discarding worldos_chatlog_dm's extra_json (lib:295); zero consumers of the flag in qa/assert_behavioral.py.
 - how_to_fix: (1) in the shared resolve path, parse the final result event FIRST — is_error/api_error_status => beat FAILED: never chat the error text, never fallback-recycle, surface "DM needs re-auth", count into F13-4 beats_failed; budget pre-check before launch. (2) guard record_dm_reply against blank text; when FALLBACK_RECOVERED=1 AND prose dedups as already-logged, emit a wrapper-authored VISIBLE failure beat + {"beat_failed":true} (UX with #757/#745); preserve the genuine #357 win via pre-beat log-tail snapshot. (3) delete the 3 chatlog overrides (lib chatlog verified drop-in superset) + add an assert_behavioral counter/report (gate policy stays #757's).
-- test_strategy: 401 fixture -> beat recorded failed, chat row contains neither the error string nor recycled prose; pre-beat log has P1 + both attempts die -> visible failure row (not P1, not empty, not hidden); CLAWDND_FALLBACK_RECOVERED=1 + worldos_chatlog_dm in each runner's function set -> row carries the flag (all 3 FAIL today).
+- test_strategy: 401 fixture -> beat recorded failed, chat row contains neither the error string nor recycled prose; pre-beat log has P1 + both attempts die -> visible failure row (not P1, not empty, not hidden); WORLDOS_FALLBACK_RECOVERED=1 + worldos_chatlog_dm in each runner's function set -> row carries the flag (all 3 FAIL today).
 - effort: M (three S legs) ; confidence: high ; depends_on: F12-4 (party lane converges to empty-row mode after it) ; dup: enriches #757 + #745.
 
 #### SYN-02 [P1|high(mass)/med(seconds)|M] alwaysLoad pins ~40-44K tokens of tool schemas into every DM request (F13-1 + F14-6)
 - gates: latency budget (#753 line-item #1) — ~54% of the measured 73.7K-token lean first-request floor; 37% of the 200K window gone before beat 1.
 - why_broken: 141 @mcp.tool in servers/engine/server.py -> list_tools JSON 160-175KB (175,202B exact in plain serialization; docstrings alone 89,713B exact); per-SERVER "alwaysLoad": True at scripts/play.sh:115, scripts/play_party.sh:161, qa/run_duo.sh:109; no tool-level granularity exists.
-- how_to_fix: docstring diet (~400 chars/tool) is necessary but NOT sufficient (schema overhead dominates: ~145KB after diet); the load-bearing half is deferring/unpinning the dead tail to a NEW additive deferred server id (same process/store, campaign_lock, frozen clawdnd-engine id untouched). Usage-rank the split WITH THE COLD-OPEN LOOP IN MIND: start_world/get_prelude/get_quest_hooks/spawn_monster/generate_image are cold-open-path — keep pinned or explicitly measure the re-introduced ToolSearch turns inside the 22-turn cold-open (the #745/#748 give-up band). Gate on a same-SHA/seed duo A/B via F13-4 columns. CI byte-budget test on list_tools.
+- how_to_fix: docstring diet (~400 chars/tool) is necessary but NOT sufficient (schema overhead dominates: ~145KB after diet); the load-bearing half is deferring/unpinning the dead tail to a NEW additive deferred server id (same process/store, campaign_lock, frozen worldos-engine id untouched). Usage-rank the split WITH THE COLD-OPEN LOOP IN MIND: start_world/get_prelude/get_quest_hooks/spawn_monster/generate_image are cold-open-path — keep pinned or explicitly measure the re-introduced ToolSearch turns inside the 22-turn cold-open (the #745/#748 give-up band). Gate on a same-SHA/seed duo A/B via F13-4 columns. CI byte-budget test on list_tools.
 - test_strategy: pytest list_tools JSON budget (fails today); duo A/B with ToolSearch-count + api_ms columns.
 - effort: M ; confidence: high(mass)/med(wall-clock delta) ; depends_on: F13-4 ; dup: enriches #753.
 
@@ -85,7 +85,7 @@ Fallback-masking reconciliation vs #757 (explicit task): nothing re-files the ma
 #### SYN-07 [P2|high|M] Parley/actor binding instability (F10-2 + F12-15)
 - gates: story_craft + cross_persona_sat; the engine-side anchor for #751's "Parley NPC can switch mid-interaction" and the facade-side mechanism behind the 6 observed silent character switches (#640 class).
 - why_broken: (a) engine: generate_parley_options (server.py:6636-6731) accepts no npc_id, ignores attitude for DC (hostile -80 and helpful +80 yield the same menu), and `situation` (:6639) has zero body references while every real call ships 40-100 words into it (48 transcript calls). Docstring documents DM-supplied difficulty — design gap + dead param, not a broken contract (hence P2). (b) facade: player_server.py:53-62 _campaign() = max(updated_at) on EVERY tool call; with ACTOR_ID set, _pc() returns None when a parallel campaign takes the lead -> companion silenced / actor rebinds mid-session. The wrappers fixed this selector class via store.active_campaign_id (#640); the facade kept the heuristic.
-- how_to_fix: engine: additive npc_id="" + payload npc:{id,name,attitude band,attitude_value,met}; attitude-derived default difficulty as a band shift (explicit difficulty wins); unknown id degrades; echo situation; npc_id absent -> byte-identical. Facade: additive CLAWDND_CAMPAIGN_ID env pin (unset -> today's heuristic); wire first in play_party companion cfgs (:262-269) where the id is known at config-write time.
+- how_to_fix: engine: additive npc_id="" + payload npc:{id,name,attitude band,attitude_value,met}; attitude-derived default difficulty as a band shift (explicit difficulty wins); unknown id degrades; echo situation; npc_id absent -> byte-identical. Facade: additive WORLDOS_CAMPAIGN_ID env pin (unset -> today's heuristic); wire first in play_party companion cfgs (:262-269) where the id is known at config-write time.
 - test_strategy: hostile/-60 default -> hard band; explicit overrides; absent -> today's payload; red-first two-campaign fixture: ACTOR_ID=X + CAMPAIGN_ID=A -> my_sheet resolves X while B is fresher.
 - effort: M ; confidence: high ; dup: enriches #751 + #640 + #319.
 
@@ -337,7 +337,7 @@ Per-request input context (VM, lean-ON):
 - Total: **~42/417 invocations (≈10%) produced no usable DM beat** — each is a full player-visible wait + retry. One `error_max_budget_usd` kill at 232.9s/7 turns (ow-rv2) and one at 159.0s (vm2-opuslean-narr-b).
 
 ## DELIVERABLE B — Engine hot-path micro-bench (Task 2)
-`CLAWDND_STATE_DIR=$(mktemp -d) uv run --directory servers/engine python /tmp/engine-audit/bench.py`, real baldurs-gate content (2,459 files, 10 MB). Script: /tmp/engine-audit/bench.py.
+`WORLDOS_STATE_DIR=$(mktemp -d) uv run --directory servers/engine python /tmp/engine-audit/bench.py`, real baldurs-gate content (2,459 files, 10 MB). Script: /tmp/engine-audit/bench.py.
 
 | call | ms | return bytes (~tokens) |
 |---|---|---|
@@ -406,7 +406,7 @@ qa/scores_db.py COLUMNS (L80-110) has NO latency fields today; schema is explici
 ════════════════════════════════════════════════════════════════
 
 # UNIT 1 — COMBAT CORE: SKEPTIC-VERIFIED FINDINGS
-Verified 2026-06-11 against /Users/lume/ClawDnD-val. Audit SHA f24a102; repo HEAD a245a2c (3 commits ahead — diff touches ONLY level_up/subclass #750 + narration-heartbeat #749 in server.py; combat.py / bestiary.py / dice.py / encounter.py / models.py / spells.py byte-identical). All audit line citations re-opened on HEAD and hold (combat-region line numbers unshifted). Every measurement claim re-run from scratch. Dups re-checked vs /tmp/engine-audit/open-issues.txt (146 issues incl. #748–#758): no collisions.
+Verified 2026-06-11 against /Users/lume/WorldOS-val. Audit SHA f24a102; repo HEAD a245a2c (3 commits ahead — diff touches ONLY level_up/subclass #750 + narration-heartbeat #749 in server.py; combat.py / bestiary.py / dice.py / encounter.py / models.py / spells.py byte-identical). All audit line citations re-opened on HEAD and hold (combat-region line numbers unshifted). Every measurement claim re-run from scratch. Dups re-checked vs /tmp/engine-audit/open-issues.txt (146 issues incl. #748–#758): no collisions.
 
 **Verdict: 15 confirmed as written, 2 confirmed-with-corrections (F1-1 measurement understated + spec flaw; F1-2 fix spec INVALID as written — new companion defect found), 0 refuted.**
 
@@ -780,7 +780,7 @@ guards/demotion (1838-1892) — 21 _derive_canon_abilities parsing accepted (110
 
 > Re-verification pass (2026-06-11, HEAD still a245a2c): independently re-read every load-bearing code site from the f24a102 snapshots (_effective_armor_class 3773-3804; saving_throw 5523-5544; _commit_expiry/expire_clock_effects/expire_short_rest_effects/end_repeat_save_effect combat.py:549-655; tick_round_effects repeat-save exemption 560-574; cast_spell gate+spend 5283-5336; action_used set 5418-5419 vs use_action checks 3723-3726; learn_spells/prepare_spells raw store 6234-6253; _recompute_spellcasting pact 341-346; inverse sweep matcher 3620-3621) and re-dumped Bless/Shield-of-Faith curated mechanics (prose-only kind:"buff" confirmed). All findings, corrections, severities, and dup statuses below stand unchanged. open-issues re-check: #748-#758 own none of these (#754 = viewer spellbook/chargen; #753 = latency budget definition; #617/#618 = player-verb relays; #596 = viewer UI).
 
-Verifier: skeptic pass over /tmp/engine-audit/unit-03-audit.md. Repo /Users/lume/ClawDnD-val, READ-ONLY.
+Verifier: skeptic pass over /tmp/engine-audit/unit-03-audit.md. Repo /Users/lume/WorldOS-val, READ-ONLY.
 **Repo state note:** HEAD is `a245a2c` (6 commits ahead of the audited `f24a102`). Diff f24a102..HEAD touches server.py only in level_up/subclass-backfill (#750) and scene-narration (#749) — **zero spell-surface changes**, so every finding verified below holds on main RIGHT NOW (line numbers cited are f24a102's; everything below ~5097 shifts ~+22 at HEAD).
 
 Method: every cited file:line re-read from `git show f24a102:` snapshots; every measured census re-run from the same data files; QA field evidence re-grepped; fix-specs checked against engine invariants (sole-writer, additive/_StrictModel round-trip, engine-rolls, frozen wire contracts); dups re-checked against /tmp/engine-audit/open-issues.txt.
@@ -917,7 +917,7 @@ All 14 specs are additive (new optional params/fields with defaults = byte-ident
 ════════════════════════════════════════════════════════════════
 
 # UNIT 4 — WORLD / TRAVEL / REST / CLOCK — SKEPTIC-VERIFIED REPORT
-Verified at /Users/lume/ClawDnD-val @ a245a2c (HEAD; f24a102 ancestor), 2026-06-11.
+Verified at /Users/lume/WorldOS-val @ a245a2c (HEAD; f24a102 ancestor), 2026-06-11.
 Method: every cited file:line re-opened on main; measurement claims re-run (wander math via `uv run python`, 152-snapshot region census, F4-9 cap-stall repro); dup_status re-checked against /tmp/engine-audit/open-issues.txt; fix-specs checked against engine invariants (sole-writer, additive round-trip, engine-rolls, frozen wire contracts).
 
 **Tally: 10 confirmed, 4 corrected, 1 refuted.**
@@ -1049,7 +1049,7 @@ The auditor's report survives skeptical review almost intact: the pure modules a
 
 # UNIT 5 — VERIFIED FINDINGS (skeptic pass, 2026-06-11)
 
-Verification base: /Users/lume/ClawDnD-val, HEAD a245a2c (f24a102 is an ancestor, 6 commits back; the interval touches level-up backfill/#624, VM QA lane, narration heartbeat/#749 — none of unit-05's surfaces; every cited file:line re-checked against HEAD and matches). Method: repro R1–R5 re-run on HEAD (`uv run python /tmp/engine-audit/u05_repro.py`, throwaway state dir) — all five reproduce verbatim; F5-3 payload independently recomputed from world.json through the exact present_events projection = **6,569 B, byte-identical to the auditor's snapshot figure**; F5-10 field incidence independently measured across 176 campaign snapshots (play-state/** + qa/transcripts) = **59/173 meeting beats bind Raphael/The Emperor/Withers (34% ≈ the predicted 3/9)** — this measurement OVERTURNS an earlier skeptic draft's "zero field incidence" downgrade rationale (that draft's glob missed the snapshot layout). Dup re-scan against all 146 open issues incl. #745–#758: no owners.
+Verification base: /Users/lume/WorldOS-val, HEAD a245a2c (f24a102 is an ancestor, 6 commits back; the interval touches level-up backfill/#624, VM QA lane, narration heartbeat/#749 — none of unit-05's surfaces; every cited file:line re-checked against HEAD and matches). Method: repro R1–R5 re-run on HEAD (`uv run python /tmp/engine-audit/u05_repro.py`, throwaway state dir) — all five reproduce verbatim; F5-3 payload independently recomputed from world.json through the exact present_events projection = **6,569 B, byte-identical to the auditor's snapshot figure**; F5-10 field incidence independently measured across 176 campaign snapshots (play-state/** + qa/transcripts) = **59/173 meeting beats bind Raphael/The Emperor/Withers (34% ≈ the predicted 3/9)** — this measurement OVERTURNS an earlier skeptic draft's "zero field incidence" downgrade rationale (that draft's glob missed the snapshot layout). Dup re-scan against all 146 open issues incl. #745–#758: no owners.
 
 **Verdict: 9 confirmed, 1 corrected (F5-10: fix-spec repaired, severity P2 kept), 0 refuted.**
 
@@ -1131,7 +1131,7 @@ unit 05: **9 confirmed, 1 corrected (F05-10), 0 refuted.**
 
 # UNIT 6 — COMPANIONS: SKEPTIC-VERIFIED report
 
-Verifier pass on /Users/lume/ClawDnD-val @ a245a2c (main; brief said f24a102 = an ancestor —
+Verifier pass on /Users/lume/WorldOS-val @ a245a2c (main; brief said f24a102 = an ancestor —
 all findings re-checked on the NEWER tip, none invalidated by the intervening commits).
 Method: every cited file:line opened; both runnable repros re-executed fresh; the tool-call
 census re-run independently (matches the auditor exactly: 277 transcript files, 2,903
@@ -1376,7 +1376,7 @@ F6-10. F6-1 → F6-3 → F6-2 is the S+S+M spine the unit verdict hangs on — v
 
 # UNIT 7 VERIFIED — MEMORY / RECAP / FTS / SCENE_CONTEXT (skeptic pass)
 
-Repo: /Users/lume/ClawDnD-val @ a245a2c (actual main HEAD; the tasking said f24a102 which does not exist locally — auditor's SHA matches disk). Read-only verification 2026-06-11.
+Repo: /Users/lume/WorldOS-val @ a245a2c (actual main HEAD; the tasking said f24a102 which does not exist locally — auditor's SHA matches disk). Read-only verification 2026-06-11.
 Method: every cited file:line re-opened on main; measurement probes RE-RUN where cheap (recap_probe, kind_probe2, measure_sc, tool_census, tool_census2, a fresh s10 start_session/session_recap probe); dup_status re-checked against the full /tmp/engine-audit/open-issues.txt (146 lines, incl. #748–#758, #593, #17); fix-specs checked against the engine invariants (sole-writer, additive `_StrictModel` round-trip, engine-rolls, frozen wire contracts).
 
 Verdict summary: **9 confirmed as written, 4 confirmed with corrections (F7-1 fix-spec, F7-4 scope, F7-8 root-cause nuance + digest spec, plus 2 severity downgrades F7-2 P1→P2 and F7-9 P2→P3), 0 refuted.** The auditor's measurements are unusually reproducible — F7-1/2/3/4/7/13 all reproduced byte-for-byte on main today.
@@ -1384,7 +1384,7 @@ Verdict summary: **9 confirmed as written, 4 confirmed with corrections (F7-1 fi
 ---
 
 ### F7-1: Recap and FTS ledger contaminated by combat/system bookkeeping rows — CONFIRMED (P1), fix-spec CORRECTED
-**Verification:** recap.py:18 `_STORY_KINDS` includes "combat"; ledger.py:191 indexes combat+system as kind="events" with who=speaker (ledger.py:196). `_log_combat_event` (server.py:151-153) stamps `payload.schema == "clawdnd.combat_event.v1"` (server.py:130). RE-RAN recap_probe.py on main: recap opens with "Tough 1 takes 5 force damage… Turn advances to Tough 2…" exactly as claimed; recall('Rolan') is actually **4 of top 6** bookkeeping (worse than the audit's 3/6). Blast radius slightly WIDER than audited: `companion_advise` (server.py:6851) also pulls callbacks from the same contaminated index.
+**Verification:** recap.py:18 `_STORY_KINDS` includes "combat"; ledger.py:191 indexes combat+system as kind="events" with who=speaker (ledger.py:196). `_log_combat_event` (server.py:151-153) stamps `payload.schema == "worldos.combat_event.v1"` (server.py:130). RE-RAN recap_probe.py on main: recap opens with "Tough 1 takes 5 force damage… Turn advances to Tough 2…" exactly as claimed; recall('Rolan') is actually **4 of top 6** bookkeeping (worse than the audit's 3/6). Blast radius slightly WIDER than audited: `companion_advise` (server.py:6851) also pulls callbacks from the same contaminated index.
 **Correction to the fix spec:** the option "drop 'system' from the indexed tuple entirely" is WRONG — the auditor's grep covered engine-authored writers only, but log_event's docstring (server.py:7202) and **SKILL.md:47 explicitly prescribe DM-authored `system` rows via persist_beat *so they feed recall*** ("a terse mechanical/`system` note for recall… Loose prose only feeds recall if you log it"). Dropping the kind breaks that documented contract. Corrected spec: (1) recap.format_recap keeps kind=="combat" only when payload is None/lacks the combat-event schema (as audited — sound); (2) ledger.backfill skips rows with the combat-event payload schema AND skips the two engine session markers by exact-prefix match ("Session N began"/"Session ended.") — same exact-match discipline as #749 — keeping other system rows indexed. Real-data check: all 149 system rows in 810 are markers (0 DM-authored today), so observable behavior is identical, but the spec must not foreclose the documented path.
 **Invariants:** derived-index-only change, no schema change — clean. dup: new (re-confirmed: #749 is merged in HEAD a245a2c and exact-matches only wrapper-heartbeat lines; no open issue owns combat-row contamination). Severity P1 holds: the cold-open `previously_on` is consumed by every run's setup turn and the contamination is live and reproduced.
 
@@ -1393,7 +1393,7 @@ Verdict summary: **9 confirmed as written, 4 confirmed with corrections (F7-1 fi
 **Severity correction:** the auditor's own F7-7 census (re-run, exact: recall_npc = 0 across 277 QA + 68 play-state transcripts) proves zero behavioral exposure TODAY — nothing in any current run is degraded. The lean production prompt mandates the call, so this becomes P1 the moment F7-7's adoption fix lands — it is a hard prerequisite for that work, but by the gate definitions it is not P1 today. **P2**, depends_on noted as "must land with/before F7-7 adoption". dup: new.
 
 ### F7-3: scene_context re-sends full event prompts every beat (~1.6K tok/beat) — CONFIRMED (P1)
-**Verification:** RE-RAN measure_sc.py on main: events = 6,454 B (~1,613 tok), 78% of base bundle / 38% of the lean read (17,033 B) — byte-identical to the audit. events.py:34-49 `trigger_holds` returns True unconditionally for "manual" (read directly); present() serializes full Event records; server.py returns them verbatim. The "every beat" claim HOLDS for production: lean mode is default (CLAWDND_LEAN_BEATS=1) and the lean system prompt (qa/lib_beat_driver.sh:421-427) makes scene_context the mandatory FIRST action of every beat; SKILL.md step 1 prescribes it per beat.
+**Verification:** RE-RAN measure_sc.py on main: events = 6,454 B (~1,613 tok), 78% of base bundle / 38% of the lean read (17,033 B) — byte-identical to the audit. events.py:34-49 `trigger_holds` returns True unconditionally for "manual" (read directly); present() serializes full Event records; server.py returns them verbatim. The "every beat" claim HOLDS for production: lean mode is default (WORLDOS_LEAN_BEATS=1) and the lean system prompt (qa/lib_beat_driver.sh:421-427) makes scene_context the mandatory FIRST action of every beat; SKILL.md step 1 prescribes it per beat.
 **Fix-spec check:** Event is `_StrictModel` with documented additive discipline (models.py:383, "old snapshots round-trip") — `first_presented_day: Optional[int] = None` is round-trip safe. Stamping under campaign_lock keeps engine sole-writer; check_companion_arc precedent for a persisting sub-call is real (read in the docstring). Wire contracts: grep found NO viewer/GUI consumer of scene_context/present_events — consumers are the DM (tolerant LLM) + QA drivers, so the stub shape is not a frozen-wire break. One required addition: the scene_context docstring's "scene_context NEVER writes campaign state itself" sentence must be updated in the same PR. Standalone present_events keeps full payload (correct — it's the documented full-text escape hatch the stub points at). dup: new (re-checked: #753 is a budget-definition issue, no open issue touches event payload). P1 holds (paid on every current-era beat, generation-bound path).
 
 ### F7-4: session_recap returns "start of a new adventure" mid-campaign — CONFIRMED (P2), scope EXPANDED
@@ -1697,9 +1697,9 @@ F8-9 persist-the-validated-dump + raise-on-invalid flag.
 ════════════════════════════════════════════════════════════════
 
 # Unit 09 (economy) — SKEPTIC-VERIFIED report
-Repo: /Users/lume/ClawDnD-val. Audit baseline f24a102; verified against HEAD a245a2c (f24a102 is an ancestor; `git diff f24a102..HEAD` touches only level-up/subclass-backfill + #749 narration-heartbeat code in server.py — ZERO economy-surface changes, so all citations hold on main RIGHT NOW; server.py line numbers cited below are f24a102's, +~31 on HEAD past line 4827).
+Repo: /Users/lume/WorldOS-val. Audit baseline f24a102; verified against HEAD a245a2c (f24a102 is an ancestor; `git diff f24a102..HEAD` touches only level-up/subclass-backfill + #749 narration-heartbeat code in server.py — ZERO economy-surface changes, so all citations hold on main RIGHT NOW; server.py line numbers cited below are f24a102's, +~31 on HEAD past line 4827).
 
-Verification method: every cited file opened on HEAD; every "Measured" claim re-run live (uv run python against servers/engine); the F9-4 census re-run from scratch with the correct tool-name pattern (`"name":"mcp__clawdnd-engine__<tool>"`); dup-status re-checked against /tmp/engine-audit/open-issues.txt (146 issues, incl. #748–#758); fix-specs checked against engine invariants (sole-writer, additive/_StrictModel round-trip, engine-rolls, frozen wire contracts).
+Verification method: every cited file opened on HEAD; every "Measured" claim re-run live (uv run python against servers/engine); the F9-4 census re-run from scratch with the correct tool-name pattern (`"name":"mcp__worldos-engine__<tool>"`); dup-status re-checked against /tmp/engine-audit/open-issues.txt (146 issues, incl. #748–#758); fix-specs checked against engine invariants (sole-writer, additive/_StrictModel round-trip, engine-rolls, frozen wire contracts).
 
 **Tally: 11 confirmed, 2 corrected (F09-8 severity downgrade, F09-11 scope expansion to gain()), 0 refuted.**
 Zero refutations is unusual for this audit series, so the disproof attempts are documented per finding — every measured claim reproduced bit-for-bit, and three genuine disproof attempts (update_character compensation, in-flight issue ownership, existing-test coverage) all failed to refute.
@@ -1728,7 +1728,7 @@ Zero refutations is unusual for this audit series, so the disproof attempts are 
 - Severity P1 correct (same not-P0 logic as F09-1). dup: new.
 
 ## F09-4 — Entire economy/item toolchain DARK in real play: 0 calls — CONFIRMED (census re-run exactly) [P1|high|M]
-- Re-ran the census from scratch over qa/transcripts/*.jsonl + play-state/**/*.jsonl with pattern `"name":"mcp__clawdnd-engine__<tool>"`: all 12 economy tools (buy/sell/adjust_currency/add/remove/equip/attune/lookup/find_items/encumbrance_status/use_item/downtime) = **0**; controls match the auditor's histogram EXACTLY: award_xp 32, attack 59, skill_check 235, update_character 32. (Note: a naive unprefixed-name grep returns 0 for controls too — the auditor used the correct prefixed pattern; verified.)
+- Re-ran the census from scratch over qa/transcripts/*.jsonl + play-state/**/*.jsonl with pattern `"name":"mcp__worldos-engine__<tool>"`: all 12 economy tools (buy/sell/adjust_currency/add/remove/equip/attune/lookup/find_items/encumbrance_status/use_item/downtime) = **0**; controls match the auditor's histogram EXACTLY: award_xp 32, attack 59, skill_check 235, update_character 32. (Note: a naive unprefixed-name grep returns 0 for controls too — the auditor used the correct prefixed pattern; verified.)
 - NEW disproof attempt (the auditor missed this one, and it could have refuted the finding): `update_character` CAN patch list fields including inventory (server.py:2552+ docstring). Checked all 32 update_character calls in the corpus for patches touching "inventory" or "currency": **0**. No compensating persistence path exists. Finding is STRONGER than filed.
 - Prompt-side root confirmed: grep of skills/dungeon-master/ → only economy-tool mention is `adjust_currency` in reference/death-and-reroll.md:81; SKILL.md:15 states the generic state-through-engine principle; the bolded XP non-negotiable (which demonstrably drives 32 award_xp calls) exists in the persist_beat section — no economy equivalent.
 - Fix-spec check: prompt + qa/assert_behavioral.py (exists, verified) check — no engine/wire change. PASS. dup: new — enriches #602/#604 (their upstream data source); #620/#594 are player-verb move-kinds, not DM adoption — not dups (re-checked).
@@ -1786,7 +1786,7 @@ Items 1-3, 5-10, 12 re-confirmed by code-read and/or live run as part of the fin
 - #12 (weight 0.0 falsy quirk, server.py:5812): re-confirmed, still judged not-filed correctly.
 
 ## Census provenance (F09-4, replayable)
-`find qa/transcripts play-state -name "*.jsonl" | xargs grep -ho '"name":"mcp__clawdnd-engine__<tool>"' | wc -l` → buy_item 0, sell_item 0, adjust_currency 0, add_item 0, remove_item 0, equip_item 0, attune_item 0, lookup_item 0, find_items 0, encumbrance_status 0, use_item 0, downtime 0; award_xp 32, attack 59, skill_check 235, update_character 32. update_character patches touching inventory/currency: 0.
+`find qa/transcripts play-state -name "*.jsonl" | xargs grep -ho '"name":"mcp__worldos-engine__<tool>"' | wc -l` → buy_item 0, sell_item 0, adjust_currency 0, add_item 0, remove_item 0, equip_item 0, attune_item 0, lookup_item 0, find_items 0, encumbrance_status 0, use_item 0, downtime 0; award_xp 32, attack 59, skill_check 235, update_character 32. update_character patches touching inventory/currency: 0.
 
 ════════════════════════════════════════════════════════════════
 ## UNIT 10 — VERIFIED REPORT (verbatim from unit-10-verified.md)
@@ -1794,7 +1794,7 @@ Items 1-3, 5-10, 12 re-confirmed by code-read and/or live run as part of the fin
 
 # UNIT 10 — VERIFIED (skeptic pass)
 
-Repo: /Users/lume/ClawDnD-val @ a245a2c (main lineage of f24a102), read-only.
+Repo: /Users/lume/WorldOS-val @ a245a2c (main lineage of f24a102), read-only.
 Skeptic protocol: every cited file:line re-opened on main; measurements re-run where cheap
 (lore FTS repro, __notoc__ census, snapshot scans, session-log speaker split, roster size,
 transcript greps); fix-specs checked against engine invariants (sole-writer, additive
@@ -1917,7 +1917,7 @@ The auditor's unit holds up unusually well: every mechanism cited was re-found a
 ════════════════════════════════════════════════════════════════
 
 # Unit 11 (images) — SKEPTIC-VERIFIED report
-Verified: 2026-06-11 against /Users/lume/ClawDnD-val @ HEAD a245a2c (read-only).
+Verified: 2026-06-11 against /Users/lume/WorldOS-val @ HEAD a245a2c (read-only).
 IMPORTANT provenance correction: the audit was labeled "@ f24a102" but the cited release_readiness
 code (handoff_image_ok / image_render_source, lines 668–681) only exists AFTER PR #762 (commit
 6a8297b, merged 2026-06-10, i.e. between f24a102 and HEAD). The auditor effectively audited the
@@ -2137,7 +2137,7 @@ provider-configured image push; F11-6/F11-7/F11-8 are spend/observability/doc fi
 
 # UNIT 12 — BEAT PIPELINE (WRAPPER LAYER) — SKEPTIC-VERIFIED
 
-Verified against /Users/lume/ClawDnD-val @ HEAD **a245a2c** (the audit cited f24a102; HEAD has moved 3 commits —
+Verified against /Users/lume/WorldOS-val @ HEAD **a245a2c** (the audit cited f24a102; HEAD has moved 3 commits —
 notably **#763 = the #749 heartbeat fix**, which materially changes F12-14 and the dup wording of F12-7).
 Method: every cited file:line re-opened at HEAD; measurement re-run; cheapest-disproof attempted per finding;
 fix-specs checked against the engine invariants (sole-writer, additive, engine-rolls, frozen wire contracts);
@@ -2175,7 +2175,7 @@ counterfactual for the product lanes' 200s kill, same DM model/effort defaults (
   (play.sh:309-311) — typically far cheaper than the full world-build — so the failure is not terminal.
   Does not break a gate today → P2.
 - Fix unchanged (one-liner: non-opus cold-open default 400→500/550; optionally retry-escalate per F12-1).
-- Test: table-driven unit over CLAWDND_DM_MODEL asserting default ≥ measured-max + margin; pin opus ≥500.
+- Test: table-driven unit over WORLDOS_DM_MODEL asserting default ≥ measured-max + margin; pin opus ≥500.
 - dup: new.
 
 ## F12-3 — CONFIRMED [P1|high|M] play.sh cold open has NO failure abort and NO seating guard
@@ -2257,7 +2257,7 @@ counterfactual for the product lanes' 200s kill, same DM model/effort defaults (
 - Verified: codex_dm_turn (play_codex_dm.sh:628-665) — `codex exec` unbounded, no retry; callers :797-799/:827+
   hard-`fail` on nonzero. fail() (:12-15) exits 2; `_cleanup` trap kills SUP/viewer only — NO write_provider_status
   → sidecar stays `running`. viewer/server.py:5844-5845/5974-5976: no_provider bucket only on
-  {stopped,failed,exhausted}. CLAWDND_PLAY_BUDGET/SESSION_BUDGET required+regex-validated (:106-116) then NEVER
+  {stopped,failed,exhausted}. WORLDOS_PLAY_BUDGET/SESSION_BUDGET required+regex-validated (:106-116) then NEVER
   referenced again (grep) — no spend accounting, no over_budget.
 - Fix spec OK: EXIT trap writing status:"failed" after "running"; wrap codex exec in the F12-8 shim + ONE retry
   (codex turns stateless → retry session-safe); enforce or drop the budget envs.
@@ -2297,12 +2297,12 @@ counterfactual for the product lanes' 200s kill, same DM model/effort defaults (
 
 ## F12-13 — CONFIRMED [P2|high|S] play.sh has no idle ceiling and no launch lock
 - Verified: play.sh loop :459-508 — no MAX_IDLE (comment :352-353 acknowledges); play_party added
-  CLAWDND_PLAY_MAX_IDLE=1800 (:594-599) after the 8.5h orphan. Lock callers grep: play_party.sh:131-132 (AFTER the
+  WORLDOS_PLAY_MAX_IDLE=1800 (:594-599) after the 8.5h orphan. Lock callers grep: play_party.sh:131-132 (AFTER the
   solo `exec play.sh` at :103) + its test only → two solo launches stack two viewers + two DM sessions on the
   16GB OOM-prone host.
 - Fix spec OK: copy the MAX_IDLE block; acquire lock before the viewer supervisor / release in _play_cleanup
   (helper verified PID-staleness-safe, launch_common.sh:96-156).
-- Test: extend qa/test_play_party_single_flight.sh with a play.sh case; CLAWDND_PLAY_MAX_IDLE=3 idle test.
+- Test: extend qa/test_play_party_single_flight.sh with a play.sh case; WORLDOS_PLAY_MAX_IDLE=3 idle test.
 - dup: new.
 
 ## F12-14 — CORRECTED [P2|med|M] Dead-beat masking in the product lanes — mechanism CHANGED at HEAD (#763); the masked/zero-row UX remains
@@ -2336,14 +2336,14 @@ counterfactual for the product lanes' 200s kill, same DM model/effort defaults (
   ("no character yet") → ACTOR_ID-bound companion goes silent when a parallel campaign takes the lead. The wrappers
   fixed this selector class via store.active_campaign_id (#640, lib:53-59 documents why); the facade kept the
   heuristic (its H3 comment guards dir-order staleness, not divergence).
-- Fix spec OK (additive env pin CLAWDND_CAMPAIGN_ID, unset → byte-identical heuristic; wire first in play_party
+- Fix spec OK (additive env pin WORLDOS_CAMPAIGN_ID, unset → byte-identical heuristic; wire first in play_party
   companion cfgs :262-269 where the id is known at config-write time). Invariant-2 safe, read-only.
 - Test: red-first two-campaign fixture (A w/ companion X, fresher B): ACTOR_ID=X+CAMPAIGN_ID=A → my_sheet resolves X.
 - dup: enriches #640.
 
-## F12-16 — CONFIRMED [P3|high|S] play_party ensemble ignores WORLDOS_* model envs; viewer env block exports only CLAWDND_*
-- Verified: play_party.sh:74-75 plain `${CLAWDND_DM_MODEL:-opus}`/`${CLAWDND_ACTOR_MODEL:-sonnet}` (siblings use
-  worldos_env: play.sh:48, run_duo.sh:44/47); viewer_supervisor :424-426 exports CLAWDND_{STATE_DIR,VIEWER_CHAT,
+## F12-16 — CONFIRMED [P3|high|S] play_party ensemble ignores WORLDOS_* model envs; viewer env block exports only WORLDOS_*
+- Verified: play_party.sh:74-75 plain `${WORLDOS_DM_MODEL:-opus}`/`${WORLDOS_ACTOR_MODEL:-sonnet}` (siblings use
+  worldos_env: play.sh:48, run_duo.sh:44/47); viewer_supervisor :424-426 exports WORLDOS_{STATE_DIR,VIEWER_CHAT,
   PLAYER_MOVES} without WORLDOS twins (play.sh:338-341 + codex export both). Impact-today check confirmed none:
   viewer/server.py reads via env_var() with legacy fallback (:134-159, :7536) — breaks only the #295 forward
   contract + WORLDOS_DM_MODEL A/B ergonomics in party mode.
@@ -2372,7 +2372,7 @@ counterfactual for the product lanes' 200s kill, same DM model/effort defaults (
 - dup: new.
 
 ## F12-20 — CONFIRMED [P3|high|M] Consolidation bundle (drift-prone duplicates + the over_budget re-slurp)
-- Verified: (a) play_party.sh:153 re-defines CLAWDND_LIVE_PROGRESS_RULE after sourcing the lib — programmatic diff
+- Verified: (a) play_party.sh:153 re-defines WORLDOS_LIVE_PROGRESS_RULE after sourcing the lib — programmatic diff
   this review: byte-identical TODAY (pure shadow, will drift); (b) run_duo.sh:185-187 inline remint duplicates the
   shared helper; (c) codex carries local chatlog (extra_json-capable, verbatim-lib) + its own record path
   (no-idempotency append deliberate); (d) viewer_supervisor triplicated (play.sh:336-347, play_party:422-431,
@@ -2385,7 +2385,7 @@ counterfactual for the product lanes' 200s kill, same DM model/effort defaults (
 
 ## F12-21 — CONFIRMED [P3|med|S] Authored/canon hero pre-seed failure silently downgrades to DM-invents
 - Verified: play.sh:220 — empty HERO_SEED_JSON → one stderr line ("falling back to DM-invents-PC"), session
-  proceeds; in the .app the player picked canon hero X and silently gets a different PC. (The CLAWDND_PLAY_HERO
+  proceeds; in the .app the player picked canon hero X and silently gets a different PC. (The WORLDOS_PLAY_HERO
   block only runs when the spec was explicitly set — so ANY pre-seed failure here is a player-visible identity
   break.)
 - Fix/test as filed (fail the launch loudly on explicit spec; red-first nonexistent-canon launch → non-zero exit).
@@ -2406,7 +2406,7 @@ counterfactual for the product lanes' 200s kill, same DM model/effort defaults (
    holds; facade surface gaps already tracked #594/#599/#617-#621. 10. duo root/IS_SANDBOX preflight loud.
 11. file-based move cursors subshell-safe; trust boundary (structured moves only) holds in both ensembles.
 12. viewer supervisors wait-and-reap; INT/TERM traps cleanup AND exit in all three lanes. 13. codex input hygiene +
-    frozen wire contract (clawdnd-* ids, CLAWDND_* env) intact; atomic provider_status writes. 14. worldos_env
+    frozen wire contract (worldos-* ids, WORLDOS_* env) intact; atomic provider_status writes. 14. worldos_env
     precedence + once-per-run sentinel works in subshells. 15. duo qa.mcp re-rooting + alwaysLoad pin correct.
 
 ## VERDICT (amended)
@@ -2423,17 +2423,17 @@ discount is unimplementable until the three local chatlog overrides are deleted.
 ════════════════════════════════════════════════════════════════
 
 # UNIT 13 — CROSS-CUTTING LATENCY FORENSICS — SKEPTIC-VERIFIED
-Verified: 2026-06-11 against /Users/lume/ClawDnD-val @ HEAD **a245a2c** (audit was @ f24a102; HEAD moved +3 commits — notably a245a2c = the #749/#763 heartbeat-decontamination fix touching server.py, dm_narration_fallback.py, sweep_v2.sh — every finding re-checked at HEAD).
+Verified: 2026-06-11 against /Users/lume/WorldOS-val @ HEAD **a245a2c** (audit was @ f24a102; HEAD moved +3 commits — notably a245a2c = the #749/#763 heartbeat-decontamination fix touching server.py, dm_narration_fallback.py, sweep_v2.sh — every finding re-checked at HEAD).
 Auditor's full report: /tmp/engine-audit/unit-13-audit.md. Verdict: **6 confirmed, 2 corrected, 0 refuted.** The auditor's measurements were byte-exact reproducible (docstrings 89,713B, roster 180,630B, MISS 28,187B, HIT 271B — all re-measured identical at HEAD); credibility high.
 
 ## SKEPTIC METHOD / WHAT WAS RE-CHECKED
 - Re-ran the engine measurements at HEAD (uv run, tmp state dir, real baldurs-gate): 141 `@mcp.tool` confirmed (`grep -c`); `mcp.list_tools()` JSON = **175,202B in my serialization** vs auditor's 159,936B (FastMCP wire format) — same ~40K-token order, auditor's figure is the *conservative* one; docstring ast-scan = 89,713B **exact match**; list_canon_characters = 180,630B **exact** (roster now 2,076 records, was 2,074 — content drift, immaterial); load_canon MISS = 28,187B **exact**, HIT 271B.
-- Opened every cited file:line at HEAD: server.py:2274-2289 (list_canon — no limit/filter; note `find_npcs` immediately below it ALREADY has `limit: int = 50`, an in-file precedent for the fix), :2360 (MISS roster dump), :1550 (pickup miss, `"playable": avail`), :1527 (template miss), :7214 (log_event echo), :8906-9020 (_scene_durable_threads — verified NO cap on npc_relationships or open_quests, and the #763 commit did NOT add one), :9251 (persist_beat "logged" echo). alwaysLoad: play.sh:115, play_party.sh:161, run_duo.sh:109 ✓ (env-gated `CLAWDND_ENGINE_ALWAYSLOAD=1` default).
+- Opened every cited file:line at HEAD: server.py:2274-2289 (list_canon — no limit/filter; note `find_npcs` immediately below it ALREADY has `limit: int = 50`, an in-file precedent for the fix), :2360 (MISS roster dump), :1550 (pickup miss, `"playable": avail`), :1527 (template miss), :7214 (log_event echo), :8906-9020 (_scene_durable_threads — verified NO cap on npc_relationships or open_quests, and the #763 commit did NOT add one), :9251 (persist_beat "logged" echo). alwaysLoad: play.sh:115, play_party.sh:161, run_duo.sh:109 ✓ (env-gated `WORLDOS_ENGINE_ALWAYSLOAD=1` default).
 - Re-ran the Mac beat-loss census at HEAD: archives grew since the audit (294 files vs 269): **28 no-result + 3×401 / 294 ≈ 10.5%** — the ~10% claim HOLDS with drift. Opened the cited 401 sample (play-state/play-20260602022602/dm.1780367162967717000.jsonl): `subtype:"success", is_error:true, api_error_status:401, duration_ms:1164, result:"Failed to authenticate. API Error: 401 …"` — verified verbatim.
 - Checked qa/scores_db.py:80-110 (COLUMNS — zero latency fields) + _ensure_schema ALTER-add path ✓; qa/distill.py parses duration_ms/num_turns/cost from result events ✓ (minor: it does NOT parse duration_api_ms — the rollup must parse raw events, which the spec already does).
 - Checked the in-flight surface: #757 body explicitly says "Fix in flight (heartbeat-repair PR) … follow-up: discount flagged rows in behavioral tallies" — #763 IS that in-flight PR (landed at HEAD), and the follow-up classification work is exactly what F13-5 enriches. #753 body confirmed = budget definition (F13-1/F13-4 enrich it). All dup_statuses re-checked against /tmp/engine-audit/open-issues.txt.
-- Invariant check on every fix spec: F13-1 split keeps all writes in the same process/module under campaign_lock (sole-writer ✓), existing `clawdnd-*` ids/env untouched + a NEW additive id (wire ✓); F13-2 `limit:int=0` default = today's dump (additive ✓); F13-3/F13-7 are return-payload-only (no snapshot impact ✓); F13-6 is pure derivation, no state writes, snapshots untouched ✓ — but its default-cap IS a DM-visible behavior change (noted below). No engine-rolls surface touched anywhere.
-- Clean-verified list: spot-checked #3 (worldos_dm_effort_arg present in all 3 runners ✓) and #4 (run_duo.sh:70 `CLAWDND_LEAN_BEATS:-1`, sweep_v2.sh `export CLAWDND_LEAN_BEATS=1` with "#683/#685-fixed" header ✓ — the repo supersedes the stale 2026-06-05 lean-OFF guidance that still lives in the worldos-latency-forensics SKILL.md; flagged as doc-drift, separate task).
+- Invariant check on every fix spec: F13-1 split keeps all writes in the same process/module under campaign_lock (sole-writer ✓), existing `worldos-*` ids/env untouched + a NEW additive id (wire ✓); F13-2 `limit:int=0` default = today's dump (additive ✓); F13-3/F13-7 are return-payload-only (no snapshot impact ✓); F13-6 is pure derivation, no state writes, snapshots untouched ✓ — but its default-cap IS a DM-visible behavior change (noted below). No engine-rolls surface touched anywhere.
+- Clean-verified list: spot-checked #3 (worldos_dm_effort_arg present in all 3 runners ✓) and #4 (run_duo.sh:70 `WORLDOS_LEAN_BEATS:-1`, sweep_v2.sh `export WORLDOS_LEAN_BEATS=1` with "#683/#685-fixed" header ✓ — the repo supersedes the stale 2026-06-05 lean-OFF guidance that still lives in the worldos-latency-forensics SKILL.md; flagged as doc-drift, separate task).
 
 ---
 
@@ -2492,7 +2492,7 @@ Auditor's full report: /tmp/engine-audit/unit-13-audit.md. Verdict: **6 confirme
 1. Engine hot path innocent — bench reproduced at HEAD (worst call 161ms-class; list_canon 180KB/161ms is a SIZE problem, not a time problem); "engine ≈1-4%/beat" stands.
 2. alwaysLoad (#574) works — wiring verified in all 3 runners (env-gated, default on).
 3. Effort tiering (#551) — worldos_dm_effort_arg present in play.sh / run_duo.sh / play_party.sh ✓ (#561 covers the OTHER runners — no conflict).
-4. Lean-ON production+QA default — verified in-repo (run_duo.sh:70 default 1; sweep_v2.sh `export CLAWDND_LEAN_BEATS=1` "#683/#685-fixed"). The stale "lean is BROKEN/OFF" text in the worldos-latency-forensics SKILL.md is repo doc-drift (flagged separately) — the AUDITOR was right, the skill is behind.
+4. Lean-ON production+QA default — verified in-repo (run_duo.sh:70 default 1; sweep_v2.sh `export WORLDOS_LEAN_BEATS=1` "#683/#685-fixed"). The stale "lean is BROKEN/OFF" text in the worldos-latency-forensics SKILL.md is repo doc-drift (flagged separately) — the AUDITOR was right, the skill is behind.
 5. Combat returns lean ✓ (bench).
 6. Wall-clock trend right direction (lever bundle, not controlled A/B — caveat retained).
 7. Non-API outliers = rate-limit backoff (cited file verified to contain the rate_limit_event claim structure).
@@ -2501,7 +2501,7 @@ Auditor's full report: /tmp/engine-audit/unit-13-audit.md. Verdict: **6 confirme
 ## CAVEATS RETAINED + ADDED
 - VM duration_api_ms > duration_ms rows: clamp at 0 (parallel segments). Opus n=12 too thin. Era comparison = config+hardware confound.
 - ADDED: archives are live — censuses drift run-to-run (Mac 269→294 files during this audit cycle); F13-4's ledger is what makes these numbers stop rotting.
-- ADDED: CLAWDND_STATE_DIR is deprecation-warned in favor of WORLDOS_STATE_DIR (#295 rename in flight) — any new env knob in these fixes should use the WORLDOS_ prefix.
+- ADDED: WORLDOS_STATE_DIR is deprecation-warned in favor of WORLDOS_STATE_DIR (#295 rename in flight) — any new env knob in these fixes should use the WORLDOS_ prefix.
 
 ## VERDICT (unchanged in substance)
 Engine exonerated; the per-beat tax is the ~74K-token fixed input floor (~54% = 141 pinned tool schemas) + a few obese returns (45K-token roster, 7K-token roster-as-error) + an unledgered latency program. Baseline (current config, Sonnet): routine p50 80s/p90 118s; cold-open p50 174s/p90 239s.
@@ -2512,7 +2512,7 @@ Engine exonerated; the per-beat tax is the ~74K-token fixed input floor (~54% = 
 
 # UNIT 14 — API SURFACE / TOOL CONTRACT — SKEPTIC-VERIFIED (v3)
 
-Verified at repo /Users/lume/ClawDnD-val, HEAD a245a2c (6 commits past the audit base f24a102; f24a102 is an ancestor).
+Verified at repo /Users/lume/WorldOS-val, HEAD a245a2c (6 commits past the audit base f24a102; f24a102 is an ancestor).
 The delta (#760–#764) touched recap.py + server.py (_scene_recent_narration) — ONLY to filter the #749 wrapper-heartbeat
 line; no size caps were added, so the sizing findings survive the drift. Line numbers below are re-cited at HEAD.
 
@@ -2599,7 +2599,7 @@ VERDICT TALLY: 14 confirmed, 6 corrected, 0 refuted.
   only unpinning/deferring the dead tail (or a second facade) removes. So the "per-tool pinning only if needed" rider is
   actually the load-bearing half of the ≤110KB target. Revised spec: (1) docstring-tier the dead tail (~30KB, safe),
   (2) CI byte-budget test, (3) split alwaysLoad to the live ~53-tool surface with the tail deferred — gated on a duo A/B
-  (ToolSearch hops + api_ms) per latency-forensics discipline; never rename the frozen clawdnd-engine server id.
+  (ToolSearch hops + api_ms) per latency-forensics discipline; never rename the frozen worldos-engine server id.
 - Confidence: high on mass / med on seconds (unchanged). dup: new — engine-side lever toward #753, not a duplicate.
   depends_on F14-9. effort M.
 
@@ -2620,7 +2620,7 @@ VERDICT TALLY: 14 confirmed, 6 corrected, 0 refuted.
   mean 11,889B verified; start_session 146B verified (it DOES return a recap — 146B is the fresh-campaign empty-recap
   case, fine for cold opens). Composite spec is additive with parity test. dup: new. depends_on F14-1, F14-5. effort M.
 
-## F14-10: clawdnd-rules ZERO calls vs SKILL.md mandate — CORRECTED: P1 → P2 (med)
+## F14-10: worldos-rules ZERO calls vs SKILL.md mandate — CORRECTED: P1 → P2 (med)
 - Facts re-verified: census ZERO rules calls in 345 files; SKILL.md:14 mandates rules lookups for "every rule, spell,
   monster stat, or condition"; run_duo/play pin engine-only alwaysLoad (rules present but deferred).
 - DOWNGRADE rationale: the v2 upgrade to P1 leaned on "mech 3.0 vs 4.5" — but the finding's own fix step 1 is "score one
@@ -2677,8 +2677,8 @@ VERDICT TALLY: 14 confirmed, 6 corrected, 0 refuted.
   A/B on story_craft before changing defaults. dup: new. effort S.
 
 ## F14-18: voice/rules not alwaysLoad — ToolSearch hops to discover speak — CONFIRMED (P2, high)
-- Re-verified: play.sh:115-122 — engine alwaysLoad: True; clawdnd-rules and clawdnd-voice configured WITHOUT it;
-  run_duo.sh sets alwaysLoad only on clawdnd-engine (103-109). speak ×190 through discovery hops; pair with F14-6's trim
+- Re-verified: play.sh:115-122 — engine alwaysLoad: True; worldos-rules and worldos-voice configured WITHOUT it;
+  run_duo.sh sets alwaysLoad only on worldos-engine (103-109). speak ×190 through discovery hops; pair with F14-6's trim
   so the +~9KB is paid for. dup: new (enriches #753). effort S.
 
 ## F14-19: cross-server lookup_item name collision — CONFIRMED (P3, high)

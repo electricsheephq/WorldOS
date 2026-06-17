@@ -11,7 +11,7 @@ has a matching manual probe.
 Run:
     uv run --directory servers/engine python ../../qa/schema_mass.py
     # or, with the engine dir on PYTHONPATH:
-    CLAWDND_STATE_DIR=/tmp/x uv run --directory servers/engine python <abs path>/qa/schema_mass.py
+    WORLDOS_STATE_DIR=/tmp/x uv run --directory servers/engine python <abs path>/qa/schema_mass.py
 
 Source: docs/audits/ENGINE-AUDIT-2026-06-11.md (SYN-02 / F13-1 / F14-6).
 """
@@ -31,7 +31,7 @@ def _load_engine_server():
     engine = os.path.join(here, "..", "servers", "engine")
     if os.path.isdir(engine):
         sys.path.insert(0, os.path.abspath(engine))
-    os.environ.setdefault("CLAWDND_STATE_DIR", tempfile.mkdtemp(prefix="schema_mass_"))
+    os.environ.setdefault("WORLDOS_STATE_DIR", tempfile.mkdtemp(prefix="schema_mass_"))
     import server  # noqa: E402  (import after sys.path / env are set)
 
     return server

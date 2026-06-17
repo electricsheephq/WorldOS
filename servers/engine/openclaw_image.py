@@ -82,27 +82,27 @@ from _env import env_var_legacy
 
 # Gateway tool-invoke endpoint. Same port as the gateway WS (18789 default).
 DEFAULT_GATEWAY_URL = "http://127.0.0.1:18789"
-ENV_GATEWAY_URL = "CLAWDND_OPENCLAW_GATEWAY_URL"
+ENV_GATEWAY_URL = "WORLDOS_OPENCLAW_GATEWAY_URL"
 # Bearer token for gateway.auth.mode="token"/"password". REQUIRED for a live call.
-ENV_GATEWAY_TOKEN = "CLAWDND_OPENCLAW_GATEWAY_TOKEN"
+ENV_GATEWAY_TOKEN = "WORLDOS_OPENCLAW_GATEWAY_TOKEN"
 # OpenClaw also reads these for the same secret; accept them as fallbacks so an
 # operator doesn't have to duplicate the token.
 ENV_OPENCLAW_TOKEN = "OPENCLAW_GATEWAY_TOKEN"
 ENV_OPENCLAW_PASSWORD = "OPENCLAW_GATEWAY_PASSWORD"
 # Model ref the gateway should use. Codex OAuth uses the same gpt-image-2 ref.
-ENV_MODEL = "CLAWDND_OPENCLAW_IMAGE_MODEL"
+ENV_MODEL = "WORLDOS_OPENCLAW_IMAGE_MODEL"
 DEFAULT_MODEL = "openai/gpt-image-2"
 # Where the gateway saves generated images on the host (config dir + /media/...).
-ENV_MEDIA_DIR = "CLAWDND_OPENCLAW_MEDIA_DIR"
+ENV_MEDIA_DIR = "WORLDOS_OPENCLAW_MEDIA_DIR"
 ENV_OPENCLAW_HOME = "OPENCLAW_HOME"  # OpenClaw's own config-dir override.
 MEDIA_SUBDIR = ("media", "tool-image-generation")
 
 # Connection + poll budget (seconds). Image gen is slow; the gateway's own
 # default is ~120-180s. We keep the connect timeout short (fail fast if the
 # gateway is down) but allow a longer completion poll.
-ENV_CONNECT_TIMEOUT = "CLAWDND_OPENCLAW_CONNECT_TIMEOUT"
+ENV_CONNECT_TIMEOUT = "WORLDOS_OPENCLAW_CONNECT_TIMEOUT"
 DEFAULT_CONNECT_TIMEOUT = 5.0
-ENV_POLL_TIMEOUT = "CLAWDND_OPENCLAW_POLL_TIMEOUT"
+ENV_POLL_TIMEOUT = "WORLDOS_OPENCLAW_POLL_TIMEOUT"
 DEFAULT_POLL_TIMEOUT = 180.0
 POLL_INTERVAL = 1.0
 # Don't slurp giant files into memory; above this we return path-only.
@@ -481,7 +481,7 @@ class OpenClawImageClient:
 # --------------------------------------------------------------------------- #
 
 def _env(name: str, default: str) -> str:
-    # CLAWDND_OPENCLAW_* names resolve via the WORLDOS_* alias (warn-only legacy
+    # WORLDOS_OPENCLAW_* names resolve via the WORLDOS_* alias (warn-only legacy
     # fallback); OPENCLAW_* names pass through unchanged. See issue #295 (W0-E).
     return env_var_legacy(name, default) or default
 
@@ -497,7 +497,7 @@ def _env_float(name: str, default: float) -> float:
 def _resolve_media_dir() -> Path:
     """Resolve the gateway's host media dir: <config-dir>/media/tool-image-generation.
 
-    Honors an explicit override (CLAWDND_OPENCLAW_MEDIA_DIR), then OpenClaw's own
+    Honors an explicit override (WORLDOS_OPENCLAW_MEDIA_DIR), then OpenClaw's own
     OPENCLAW_HOME, then the conventional ~/.openclaw. Matches the install's
     `resolveMediaDir()` (config dir + "media") plus the tool's "tool-image-generation"
     subdir.
@@ -623,13 +623,13 @@ def _safe_read(exc: urllib.error.HTTPError) -> str:
 # NOT run by the test suite or by the build. Run it yourself when you want to
 # verify end-to-end against your own gateway:
 #
-#   export CLAWDND_OPENCLAW_GATEWAY_TOKEN=<your gateway token>
+#   export WORLDOS_OPENCLAW_GATEWAY_TOKEN=<your gateway token>
 #   uv run --directory servers/engine python openclaw_image.py --selftest \
 #       --prompt "a mossy stone dungeon door, torchlit, painterly"
 #
 # It spends one real image call on your OAuth/Codex budget and writes nothing
 # except whatever the gateway already saves to its media dir. Override the
-# gateway with --gateway-url / CLAWDND_OPENCLAW_GATEWAY_URL if needed.
+# gateway with --gateway-url / WORLDOS_OPENCLAW_GATEWAY_URL if needed.
 # --------------------------------------------------------------------------- #
 
 def _selftest(argv: Optional[list] = None) -> int:

@@ -287,24 +287,18 @@ def run_smoke(args: argparse.Namespace) -> int:
     env.update({
         "WORLDOS_ENABLE_SCRIPTED_PROVIDER": "1",
         "WORLDOS_PROVIDER": "scripted",
-        "CLAWDND_PROVIDER": "scripted",
         "WORLDOS_PROVIDER_FAMILY": "scripted",
-        "CLAWDND_PROVIDER_FAMILY": "scripted",
         "WORLDOS_AUTH_SURFACE": "dev-scripted",
-        "CLAWDND_AUTH_SURFACE": "dev-scripted",
         "WORLDOS_DM_MODEL": "scripted",
-        "CLAWDND_DM_MODEL": "scripted",
         "WORLDOS_ACTOR_MODEL": "scripted",
-        "CLAWDND_ACTOR_MODEL": "scripted",
         "WORLDOS_SCORER_MODEL": "scripted",
-        "CLAWDND_SCORER_MODEL": "scripted",
-        "CLAWDND_RUN_ID": run_id,
-        "CLAWDND_WORLD": args.world,
-        "CLAWDND_PLAY_PORT": str(args.port),
+        "WORLDOS_RUN_ID": run_id,
+        "WORLDOS_WORLD": args.world,
+        "WORLDOS_PLAY_PORT": str(args.port),
     })
     if args.art_root:
         env["WORLDOS_ART_REPO_ROOT"] = args.art_root
-        env["CLAWDND_ART_REPO_ROOT"] = args.art_root
+        env["WORLDOS_ART_REPO_ROOT"] = args.art_root
 
     log = (out / "run.log").open("w", encoding="utf-8")
     proc = subprocess.Popen(
@@ -446,7 +440,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--run-id", default="")
     parser.add_argument("--world", default="baldurs-gate")
     parser.add_argument("--timeout", type=float, default=60.0)
-    parser.add_argument("--art-root", default=os.environ.get("WORLDOS_ART_REPO_ROOT") or os.environ.get("CLAWDND_ART_REPO_ROOT") or "")
+    parser.add_argument("--art-root", default=os.environ.get("WORLDOS_ART_REPO_ROOT") or os.environ.get("WORLDOS_ART_REPO_ROOT") or "")
     return parser.parse_args(argv)
 
 

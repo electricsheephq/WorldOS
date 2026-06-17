@@ -40,7 +40,7 @@ def test_strip_wiki_directives_handles_case_and_position():
 
 # --- the load-time belt: snippet + record read are clean -----------------------------
 def _write_world(tmp_path, monkeypatch, rec):
-    monkeypatch.setenv("CLAWDND_CONTENT_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_CONTENT_DIR", str(tmp_path))
     cdir = tmp_path / "worlds" / "hygiene-test" / "characters"
     cdir.mkdir(parents=True)
     (cdir / "subject.json").write_text(json.dumps(rec), encoding="utf-8")

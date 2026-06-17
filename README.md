@@ -72,7 +72,7 @@ This builds `dist/WorldOS.app` from the Swift package under `macos/WorldOSApp/` 
 
 ### 4. Configure providers
 
-Use the native app provider/settings screens or wrapper environment variables to select a provider family and model. The code keeps modern `WORLDOS_*` names and legacy `CLAWDND_*` aliases additive for compatibility.
+Use the native app provider/settings screens or wrapper environment variables to select a provider family and model. The code keeps modern `WORLDOS_*` names and legacy `WORLDOS_*` aliases additive for compatibility.
 
 See:
 

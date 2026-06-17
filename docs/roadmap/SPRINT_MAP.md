@@ -6,7 +6,7 @@ Re-organized 2026-06-03 (15 → 5 open milestones; every open issue homed). Rend
 
 ## Releases
 - **Shipped:** v1.0.0 (engine) · v1.0.1 (action lanes + companions) · v1.0.2 (a11y / UI burndown) ·
-  v1.0.3 (ClawDnD → WorldOS rename). See `CHANGELOG.md`.
+  v1.0.3 (WorldOS → WorldOS rename). See `CHANGELOG.md`.
 - **Next ship — v1.0.4:** gated on the **non-partial 5-persona RRI verdict (#466)** on a fresh
   `dist/WorldOS.app`. The RRI is a hard-gate floor — native gate + arc complete + cross-persona
   satisfaction ≥7 (no give-up) + 0 critical bugs + story ≥4.3 + mechanical ≥4.5 + behavioral GREEN +

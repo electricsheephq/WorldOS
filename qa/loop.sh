@@ -18,7 +18,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$ROOT" || exit 2
 
 RUNS="${1:-2}"; WORLD="${2:-baldurs-gate}"; PERSONA="${3:-qa/play_player_duo.txt}"
 BEATS="${4:-8}"; BUDGET="${5:-1.20}"
-STORY_MIN="${WORLDOS_STORY_MIN:-${WORLDOS_STORY_MIN:-4.3}}"; MECH_MIN="${WORLDOS_MECH_MIN:-${WORLDOS_MECH_MIN:-4.5}}"
+STORY_MIN="${WORLDOS_STORY_MIN:-4.3}"; MECH_MIN="${WORLDOS_MECH_MIN:-4.5}"
 STAMP="$(date +%y%m%d-%H%M%S)"; T="qa/transcripts"
 mkdir -p "$T"
 

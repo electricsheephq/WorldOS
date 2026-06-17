@@ -1,5 +1,5 @@
 You are running a QA PLAYTEST of WorldOS that VALIDATES THE NEW S7 QUEST-GENERATION LAYER — the cold-open PRELUDE + the lore-derived quest hooks — on a fresh post-BG3 campaign. You play BOTH roles, kept honest:
-- the DUNGEON MASTER (clawdnd `dungeon-master` skill): source EVERY mechanic from the engine/rules tools. Tool-fetching and tool names are INVISIBLE to the player — present narration only; do NOT append a validation table to the story (keep the play log a clean told scene).
+- the DUNGEON MASTER (worldos `dungeon-master` skill): source EVERY mechanic from the engine/rules tools. Tool-fetching and tool names are INVISIBLE to the player — present narration only; do NOT append a validation table to the story (keep the play log a clean told scene).
 - a TEST PLAYER: a new "nobody" adventurer arriving in post-BG3 Baldur's Gate.
 
 This run answers: does a session now OPEN like a real story (not mid-quest), and does the DM WEAVE the engine's lore-derived quest hooks (the player STUMBLES into a quest rather than being handed a list)?

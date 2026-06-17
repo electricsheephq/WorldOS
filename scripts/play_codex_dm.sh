@@ -70,21 +70,21 @@ case "${1:-}" in
 Usage: scripts/play_codex_dm.sh [--dry-run|--smoke|--seed-smoke]
 
 Required environment:
-  CLAWDND_PROVIDER=codex
-  CLAWDND_WORLD
-  CLAWDND_RUN_ID
-  CLAWDND_PLAY_PORT
-  CLAWDND_PLAY_BUDGET
-  CLAWDND_PLAY_SESSION_BUDGET
-  CLAWDND_PLAY_MAX_TURNS
+  WORLDOS_PROVIDER=codex
+  WORLDOS_WORLD
+  WORLDOS_RUN_ID
+  WORLDOS_PLAY_PORT
+  WORLDOS_PLAY_BUDGET
+  WORLDOS_PLAY_SESSION_BUDGET
+  WORLDOS_PLAY_MAX_TURNS
 
 Optional:
-  CLAWDND_PLAY_COMPANIONS
-  CLAWDND_PLAY_HERO
-  CLAWDND_PLAY_CANON_HERO (canon name, or origin spec such as template:rolan-evoker)
+  WORLDOS_PLAY_COMPANIONS
+  WORLDOS_PLAY_HERO
+  WORLDOS_PLAY_CANON_HERO (canon name, or origin spec such as template:rolan-evoker)
   WORLDOS_CODEX_MODEL (default: gpt-5.5; set to auto/default/cli-default to let Codex CLI choose)
-  CLAWDND_CODEX_MODEL (legacy fallback)
-  CLAWDND_STATE_ROOT
+  WORLDOS_CODEX_MODEL (legacy fallback)
+  WORLDOS_STATE_ROOT
 EOF
     exit 0
     ;;
@@ -97,31 +97,31 @@ require_env() {
   [ -n "${value//[[:space:]]/}" ] || fail "missing required env: $name"
 }
 
-require_env CLAWDND_PROVIDER
-PROVIDER_LOWER="$(printf '%s' "$CLAWDND_PROVIDER" | tr '[:upper:]' '[:lower:]')"
-[ "$PROVIDER_LOWER" = "codex" ] || fail "CLAWDND_PROVIDER must be codex"
-require_env CLAWDND_WORLD
-require_env CLAWDND_RUN_ID
-require_env CLAWDND_PLAY_PORT
-require_env CLAWDND_PLAY_BUDGET
-require_env CLAWDND_PLAY_SESSION_BUDGET
-require_env CLAWDND_PLAY_MAX_TURNS
+require_env WORLDOS_PROVIDER
+PROVIDER_LOWER="$(printf '%s' "$WORLDOS_PROVIDER" | tr '[:upper:]' '[:lower:]')"
+[ "$PROVIDER_LOWER" = "codex" ] || fail "WORLDOS_PROVIDER must be codex"
+require_env WORLDOS_WORLD
+require_env WORLDOS_RUN_ID
+require_env WORLDOS_PLAY_PORT
+require_env WORLDOS_PLAY_BUDGET
+require_env WORLDOS_PLAY_SESSION_BUDGET
+require_env WORLDOS_PLAY_MAX_TURNS
 
-[[ "$CLAWDND_PLAY_PORT" =~ ^[0-9]+$ ]] || fail "CLAWDND_PLAY_PORT must be an integer"
-if [ "$CLAWDND_PLAY_PORT" -lt 1 ] || [ "$CLAWDND_PLAY_PORT" -gt 65535 ]; then
-  fail "CLAWDND_PLAY_PORT out of range: $CLAWDND_PLAY_PORT"
+[[ "$WORLDOS_PLAY_PORT" =~ ^[0-9]+$ ]] || fail "WORLDOS_PLAY_PORT must be an integer"
+if [ "$WORLDOS_PLAY_PORT" -lt 1 ] || [ "$WORLDOS_PLAY_PORT" -gt 65535 ]; then
+  fail "WORLDOS_PLAY_PORT out of range: $WORLDOS_PLAY_PORT"
 fi
-[[ "$CLAWDND_PLAY_MAX_TURNS" =~ ^[0-9]+$ ]] || fail "CLAWDND_PLAY_MAX_TURNS must be an integer"
-for budget_name in CLAWDND_PLAY_BUDGET CLAWDND_PLAY_SESSION_BUDGET; do
+[[ "$WORLDOS_PLAY_MAX_TURNS" =~ ^[0-9]+$ ]] || fail "WORLDOS_PLAY_MAX_TURNS must be an integer"
+for budget_name in WORLDOS_PLAY_BUDGET WORLDOS_PLAY_SESSION_BUDGET; do
   [[ "${!budget_name}" =~ ^[0-9]+([.][0-9]+)?$ ]] || fail "$budget_name must be a positive decimal"
 done
-[[ "$CLAWDND_RUN_ID" =~ ^[A-Za-z0-9._-]+$ ]] || fail "CLAWDND_RUN_ID may only contain letters, numbers, '.', '_' and '-'"
-CLAWDND_LEAN_BEATS="${CLAWDND_LEAN_BEATS:-1}"
-CLAWDND_LEAN_TAIL="${CLAWDND_LEAN_TAIL:-8}"
-[[ "$CLAWDND_LEAN_BEATS" =~ ^[01]$ ]] || fail "CLAWDND_LEAN_BEATS must be 0 or 1"
-if [ "$CLAWDND_LEAN_BEATS" = "1" ]; then
-  [[ "$CLAWDND_LEAN_TAIL" =~ ^[0-9]+$ ]] || fail "CLAWDND_LEAN_TAIL must be an integer when CLAWDND_LEAN_BEATS=1"
-  [ "$CLAWDND_LEAN_TAIL" -ge 1 ] || fail "CLAWDND_LEAN_TAIL must be >= 1 when CLAWDND_LEAN_BEATS=1"
+[[ "$WORLDOS_RUN_ID" =~ ^[A-Za-z0-9._-]+$ ]] || fail "WORLDOS_RUN_ID may only contain letters, numbers, '.', '_' and '-'"
+WORLDOS_LEAN_BEATS="${WORLDOS_LEAN_BEATS:-1}"
+WORLDOS_LEAN_TAIL="${WORLDOS_LEAN_TAIL:-8}"
+[[ "$WORLDOS_LEAN_BEATS" =~ ^[01]$ ]] || fail "WORLDOS_LEAN_BEATS must be 0 or 1"
+if [ "$WORLDOS_LEAN_BEATS" = "1" ]; then
+  [[ "$WORLDOS_LEAN_TAIL" =~ ^[0-9]+$ ]] || fail "WORLDOS_LEAN_TAIL must be an integer when WORLDOS_LEAN_BEATS=1"
+  [ "$WORLDOS_LEAN_TAIL" -ge 1 ] || fail "WORLDOS_LEAN_TAIL must be >= 1 when WORLDOS_LEAN_BEATS=1"
 fi
 
 command -v python3 >/dev/null 2>&1 || fail "python3 is required"
@@ -132,9 +132,9 @@ if [ "$MODE" = "run" ]; then
 fi
 
 if [ "$MODE" = "smoke" ] || [ "$MODE" = "seed-smoke" ]; then
-  STATE_ROOT="${CLAWDND_STATE_ROOT:-$(mktemp -d "${TMPDIR:-/tmp}/worldos-codex-dm-smoke.XXXXXX")}"
+  STATE_ROOT="${WORLDOS_STATE_ROOT:-$(mktemp -d "${TMPDIR:-/tmp}/worldos-codex-dm-smoke.XXXXXX")}"
 else
-  STATE_ROOT="${CLAWDND_STATE_ROOT:-$ROOT/play-state}"
+  STATE_ROOT="${WORLDOS_STATE_ROOT:-$ROOT/play-state}"
 fi
 STATE_ROOT="$(python3 - "$STATE_ROOT" <<'PY'
 import sys
@@ -143,7 +143,7 @@ print(Path(sys.argv[1]).expanduser().resolve(strict=False))
 PY
 )"
 
-RUN_DIR="$STATE_ROOT/$CLAWDND_RUN_ID"
+RUN_DIR="$STATE_ROOT/$WORLDOS_RUN_ID"
 PROVIDER_DIR="$RUN_DIR/codex-provider"
 MOVES="$RUN_DIR/player_moves.jsonl"
 CHAT="$RUN_DIR/chat.jsonl"
@@ -153,7 +153,7 @@ STDOUT_LOG="$PROVIDER_DIR/codex-dm.stdout.jsonl"
 STDERR_LOG="$PROVIDER_DIR/codex-dm.stderr.log"
 LAST_MESSAGE="$PROVIDER_DIR/codex-dm.last.txt"
 VIEWER_LOG="$RUN_DIR/viewer.log"
-VIEWER_URL="http://127.0.0.1:$CLAWDND_PLAY_PORT/openworlds/"
+VIEWER_URL="http://127.0.0.1:$WORLDOS_PLAY_PORT/openworlds/"
 PROVIDER_STATUS="$RUN_DIR/provider_status.json"
 
 mkdir -p "$PROVIDER_DIR"
@@ -172,7 +172,7 @@ servers = [
         "worldos-engine",
         f"{root}/servers/engine",
         "server.py",
-        {"CLAWDND_STATE_DIR": state_dir},
+        {"WORLDOS_STATE_DIR": state_dir},
     ),
     (
         "worldos-rules",
@@ -206,7 +206,7 @@ Path(out).write_text("\n".join(lines), encoding="utf-8")
 PY
 
 summary() {
-  python3 - "$MODE" "$ROOT" "$STATE_ROOT" "$CLAWDND_WORLD" "$CLAWDND_RUN_ID" "$CLAWDND_PLAY_PORT" "$CONFIG" "$MOVES" "$CHAT" "$VIEWER_URL" "${CLAWDND_PLAY_HERO:-}" "${CLAWDND_PLAY_CANON_HERO:-}" "$CODEX_MODEL" "$CLAWDND_LEAN_BEATS" "$CLAWDND_LEAN_TAIL" "$CLAWDND_PLAY_MAX_TURNS" "$GIT_SHA" <<'PY'
+  python3 - "$MODE" "$ROOT" "$STATE_ROOT" "$WORLDOS_WORLD" "$WORLDOS_RUN_ID" "$WORLDOS_PLAY_PORT" "$CONFIG" "$MOVES" "$CHAT" "$VIEWER_URL" "${WORLDOS_PLAY_HERO:-}" "${WORLDOS_PLAY_CANON_HERO:-}" "$CODEX_MODEL" "$WORLDOS_LEAN_BEATS" "$WORLDOS_LEAN_TAIL" "$WORLDOS_PLAY_MAX_TURNS" "$GIT_SHA" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -297,8 +297,8 @@ PY
 campaign_tool_hint() {
   local cid="${1:-}"
   if [ -n "${cid//[[:space:]]/}" ]; then
-    if [ "${CLAWDND_LEAN_BEATS:-1}" = "1" ]; then
-      printf 'Live campaign_id: "%s". Call scene_context(campaign_id="%s", recent_narration=%s) first; do not discover campaign state with shell commands, rg, find, or filesystem reads.\n' "$cid" "$cid" "$CLAWDND_LEAN_TAIL"
+    if [ "${WORLDOS_LEAN_BEATS:-1}" = "1" ]; then
+      printf 'Live campaign_id: "%s". Call scene_context(campaign_id="%s", recent_narration=%s) first; do not discover campaign state with shell commands, rg, find, or filesystem reads.\n' "$cid" "$cid" "$WORLDOS_LEAN_TAIL"
     else
       printf 'Live campaign_id: "%s". Call scene_context(campaign_id="%s") first; do not discover campaign state with shell commands, rg, find, or filesystem reads.\n' "$cid" "$cid"
     fi
@@ -309,14 +309,14 @@ campaign_tool_hint() {
 
 codex_lean_reground_rule() {
   local cid="${1:-}"
-  if [ "${CLAWDND_LEAN_BEATS:-1}" != "1" ]; then
+  if [ "${WORLDOS_LEAN_BEATS:-1}" != "1" ]; then
     printf 'Codex lean re-ground rule: lean mode is disabled for this run, but still use worldos-engine state as truth and do not infer campaign state from transcript memory.\n'
     return 0
   fi
   if [ -n "${cid//[[:space:]]/}" ]; then
-    printf 'Codex lean re-ground rule: each Codex provider turn is a fresh invocation. Your FIRST worldos-engine call after this prompt MUST be scene_context(campaign_id="%s", recent_narration=%s); resolve the player move from that live state plus rules tools, not from replaying chat history or reading files.\n' "$cid" "$CLAWDND_LEAN_TAIL"
+    printf 'Codex lean re-ground rule: each Codex provider turn is a fresh invocation. Your FIRST worldos-engine call after this prompt MUST be scene_context(campaign_id="%s", recent_narration=%s); resolve the player move from that live state plus rules tools, not from replaying chat history or reading files.\n' "$cid" "$WORLDOS_LEAN_TAIL"
   else
-    printf 'Codex lean re-ground rule: each Codex provider turn is a fresh invocation. Your FIRST worldos-engine calls MUST discover the active campaign with list_campaigns once, then scene_context(recent_narration=%s); resolve the player move from live state plus rules tools, not from replaying chat history or reading files.\n' "$CLAWDND_LEAN_TAIL"
+    printf 'Codex lean re-ground rule: each Codex provider turn is a fresh invocation. Your FIRST worldos-engine calls MUST discover the active campaign with list_campaigns once, then scene_context(recent_narration=%s); resolve the player move from live state plus rules tools, not from replaying chat history or reading files.\n' "$WORLDOS_LEAN_TAIL"
   fi
 }
 
@@ -325,7 +325,7 @@ codex_lean_reground_rule() {
 # ChatGPT-account-supported provider model unless the operator explicitly
 # selects another one. The Codex CLI account default can drift to a model this
 # auth surface rejects, so app playability should not depend on that default.
-CODEX_MODEL="${WORLDOS_CODEX_MODEL:-${CLAWDND_CODEX_MODEL:-gpt-5.5}}"
+CODEX_MODEL="${WORLDOS_CODEX_MODEL:-gpt-5.5}"
 MODEL_ARGS=()
 case "$(printf '%s' "$CODEX_MODEL" | tr '[:upper:]' '[:lower:]')" in
   ""|auto|default|cli-default) ;;
@@ -333,11 +333,11 @@ case "$(printf '%s' "$CODEX_MODEL" | tr '[:upper:]' '[:lower:]')" in
 esac
 GIT_SHA="$(git rev-parse HEAD 2>/dev/null || printf 'unknown')"
 
-echo "[codex-dm-provider] run=$CLAWDND_RUN_ID world=$CLAWDND_WORLD port=$CLAWDND_PLAY_PORT mode=$MODE"
+echo "[codex-dm-provider] run=$WORLDOS_RUN_ID world=$WORLDOS_WORLD port=$WORLDOS_PLAY_PORT mode=$MODE"
 echo "[codex-dm-provider] config=$CONFIG"
 echo "[codex-dm-provider] moves=$MOVES"
 echo "[codex-dm-provider] chat=$CHAT"
-echo "[codex-dm-provider] lean_beats=$CLAWDND_LEAN_BEATS recent_narration=$CLAWDND_LEAN_TAIL"
+echo "[codex-dm-provider] lean_beats=$WORLDOS_LEAN_BEATS recent_narration=$WORLDOS_LEAN_TAIL"
 
 if [ "$MODE" = "dry-run" ] || [ "$MODE" = "smoke" ]; then
   summary
@@ -345,7 +345,7 @@ if [ "$MODE" = "dry-run" ] || [ "$MODE" = "smoke" ]; then
 fi
 validate_codex_service_tier
 
-export CLAWDND_STATE_DIR="$RUN_DIR"
+export WORLDOS_STATE_DIR="$RUN_DIR"
 export WORLDOS_STATE_DIR="$RUN_DIR"
 export WORLDOS_RULES_OFFLINE=1
 export WORLDOS_TTS_BACKEND=null
@@ -358,7 +358,7 @@ HERO_PC_CLASS=""
 HERO_PC_SUBCLASS=""
 HERO_PC_LEVEL=""
 HERO_PC_SPELLS=""
-HERO_SEED_JSON="$(CLAWDND_STATE_DIR="$RUN_DIR" WORLDOS_STATE_DIR="$RUN_DIR" uv run --directory "$ROOT/servers/engine" python - "$CLAWDND_WORLD" "${CLAWDND_PLAY_HERO:-}" "${CLAWDND_PLAY_CANON_HERO:-Alfira}" <<'PY'
+HERO_SEED_JSON="$(WORLDOS_STATE_DIR="$RUN_DIR" uv run --directory "$ROOT/servers/engine" python - "$WORLDOS_WORLD" "${WORLDOS_PLAY_HERO:-}" "${WORLDOS_PLAY_CANON_HERO:-Alfira}" <<'PY'
 import json
 import sys
 
@@ -541,7 +541,7 @@ PY
 
 write_provider_status() {
   local status="$1" reason="$2" detail="$3"
-  python3 - "$PROVIDER_STATUS" "$status" "$reason" "$detail" "$CLAWDND_PROVIDER" "$CLAWDND_PLAY_MAX_TURNS" "$DM_TURNS" "$CODEX_MODEL" "${WORLDOS_ACTOR_MODEL:-${CLAWDND_ACTOR_MODEL:-}}" "${WORLDOS_SCORER_MODEL:-${CLAWDND_SCORER_MODEL:-}}" "$CLAWDND_LEAN_BEATS" "$CLAWDND_LEAN_TAIL" "$GIT_SHA" "${HERO_SEED_JSON:-}" <<'PY'
+  python3 - "$PROVIDER_STATUS" "$status" "$reason" "$detail" "$WORLDOS_PROVIDER" "$WORLDOS_PLAY_MAX_TURNS" "$DM_TURNS" "$CODEX_MODEL" "${WORLDOS_ACTOR_MODEL:-}" "${WORLDOS_SCORER_MODEL:-}" "$WORLDOS_LEAN_BEATS" "$WORLDOS_LEAN_TAIL" "$GIT_SHA" "${HERO_SEED_JSON:-}" <<'PY'
 import json
 import os
 import sys
@@ -604,7 +604,7 @@ log_engine_narration() {
   local campaign_id="$1" text="$2"
   [ -n "${campaign_id//[[:space:]]/}" ] || return 1
   [ -n "${text//[[:space:]]/}" ] || return 1
-  CLAWDND_STATE_DIR="$RUN_DIR" WORLDOS_STATE_DIR="$RUN_DIR" \
+  WORLDOS_STATE_DIR="$RUN_DIR" \
     uv run --directory "$ROOT/servers/engine" python - "$campaign_id" "$text" <<'PY'
 import sys
 
@@ -661,7 +661,7 @@ except KeyboardInterrupt:
 # estimate as a decimal, or 0 when nothing is parseable (so the turn cap stays the hard ceiling).
 # Read-only; jq-optional (a python fallback parses the same fields). No engine state touched.
 codex_session_spend_usd() {
-  local rate="${WORLDOS_CODEX_USD_PER_MTOK:-${CLAWDND_CODEX_USD_PER_MTOK:-10}}"
+  local rate="${WORLDOS_CODEX_USD_PER_MTOK:-10}"
   [ -f "$STDOUT_LOG" ] || { printf '0'; return 0; }
   python3 - "$STDOUT_LOG" "$rate" 2>/dev/null <<'PY' || printf '0'
 import json, sys
@@ -704,14 +704,14 @@ print("%.6f" % (best / 1_000_000.0 * rate))
 PY
 }
 
-# F12-9: stop the session "exhausted" when the estimated spend crosses CLAWDND_PLAY_SESSION_BUDGET.
+# F12-9: stop the session "exhausted" when the estimated spend crosses WORLDOS_PLAY_SESSION_BUDGET.
 # Called AFTER each completed turn (spend only changes then). Sets BUDGET_EXCEEDED=1 + PROVIDER_
 # STOPPED_CLEANLY=1 and stamps the sidecar; the loop honors BUDGET_EXCEEDED at the top and breaks.
 # Best-effort: an unparseable token stream leaves the estimate 0, so the turn cap stays the ceiling.
 enforce_session_budget() {
   local spent; spent="$(codex_session_spend_usd)"
-  if awk -v s="${spent:-0}" -v b="$CLAWDND_PLAY_SESSION_BUDGET" 'BEGIN{exit !(s+0>=b+0)}'; then
-    write_provider_status "exhausted" "budget" "Codex DM stopped after reaching the session budget (~\$$spent/\$$CLAWDND_PLAY_SESSION_BUDGET). Raise CLAWDND_PLAY_SESSION_BUDGET or start a new provider-backed session."
+  if awk -v s="${spent:-0}" -v b="$WORLDOS_PLAY_SESSION_BUDGET" 'BEGIN{exit !(s+0>=b+0)}'; then
+    write_provider_status "exhausted" "budget" "Codex DM stopped after reaching the session budget (~\$$spent/\$$WORLDOS_PLAY_SESSION_BUDGET). Raise WORLDOS_PLAY_SESSION_BUDGET or start a new provider-backed session."
     BUDGET_EXCEEDED=1
     PROVIDER_STOPPED_CLEANLY=1
   fi
@@ -723,7 +723,7 @@ enforce_session_budget() {
 # claude cold-open tier) caps it; rc=124 on a timeout. Writes the last message to $LAST_MESSAGE and
 # tees the JSON stream to $STDOUT_LOG (so codex_session_spend_usd can read cumulative token usage).
 _codex_exec_once() {
-  worldos_timeout "${WORLDOS_CODEX_TURN_TIMEOUT:-${CLAWDND_CODEX_TURN_TIMEOUT:-500}}" \
+  worldos_timeout "${WORLDOS_CODEX_TURN_TIMEOUT:-500}" \
     codex exec \
     --sandbox read-only \
     --json \
@@ -732,7 +732,7 @@ _codex_exec_once() {
     --output-last-message "$LAST_MESSAGE" \
     -c "mcp_servers.worldos-engine.command=\"uv\"" \
     -c "mcp_servers.worldos-engine.args=[\"run\",\"--directory\",\"$ROOT/servers/engine\",\"python\",\"server.py\"]" \
-    -c "mcp_servers.worldos-engine.env_vars=[\"CLAWDND_STATE_DIR\"]" \
+    -c "mcp_servers.worldos-engine.env_vars=[\"WORLDOS_STATE_DIR\"]" \
     -c "mcp_servers.worldos-engine.required=true" \
     -c "mcp_servers.worldos-engine.default_tools_approval_mode=\"approve\"" \
     -c "mcp_servers.worldos-rules.command=\"uv\"" \
@@ -803,9 +803,9 @@ choose_move_progress_text() {
   local count="${#MOVE_PROGRESS_TEXTS[@]}"
   printf '%s\n' "${MOVE_PROGRESS_TEXTS[$((idx % count))]}"
 }
-CLAWDND_PLAY_COMPANIONS="${CLAWDND_PLAY_COMPANIONS:-}"   # default empty — the codex/solo lane (ui_playtest_app) doesn't set it; set -u would otherwise abort
-if [ -n "${CLAWDND_PLAY_COMPANIONS//[[:space:]]/}" ]; then
-  COMPANION_TOOL_RULE="Companion rule: only add companions named by CLAWDND_PLAY_COMPANIONS (${CLAWDND_PLAY_COMPANIONS}). Do not add any other companion to the party."
+WORLDOS_PLAY_COMPANIONS="${WORLDOS_PLAY_COMPANIONS:-}"   # default empty — the codex/solo lane (ui_playtest_app) doesn't set it; set -u would otherwise abort
+if [ -n "${WORLDOS_PLAY_COMPANIONS//[[:space:]]/}" ]; then
+  COMPANION_TOOL_RULE="Companion rule: only add companions named by WORLDOS_PLAY_COMPANIONS (${WORLDOS_PLAY_COMPANIONS}). Do not add any other companion to the party."
 else
   COMPANION_TOOL_RULE="Companion rule: this is a solo provider launch. Do not call load_canon_character with kind=\"companion\" or add any companion to the party; stage canon NPCs in narration only unless the player later recruits them."
 fi
@@ -813,10 +813,10 @@ fi
 VPID_FILE="$RUN_DIR/.viewer.pid"
 viewer_supervisor() {
   while :; do
-    WORLDOS_STATE_DIR="$RUN_DIR" CLAWDND_STATE_DIR="$RUN_DIR" \
-    WORLDOS_VIEWER_CHAT="$CHAT" CLAWDND_VIEWER_CHAT="$CHAT" \
-    WORLDOS_PLAYER_MOVES="$MOVES" CLAWDND_PLAYER_MOVES="$MOVES" \
-      python3 viewer/server.py "" "$CLAWDND_PLAY_PORT" >> "$VIEWER_LOG" 2>&1 &
+    WORLDOS_STATE_DIR="$RUN_DIR" \
+    WORLDOS_VIEWER_CHAT="$CHAT" \
+    WORLDOS_PLAYER_MOVES="$MOVES" \
+      python3 viewer/server.py "" "$WORLDOS_PLAY_PORT" >> "$VIEWER_LOG" 2>&1 &
     local vp=$!
     echo "$vp" > "$VPID_FILE"
     wait "$vp" 2>/dev/null
@@ -859,7 +859,7 @@ fi
 
 if [ -n "$HERO_CAMP" ]; then
   OPENING_PROMPT="$(cat <<EOF
-You are the Dungeon Master for a solo WorldOS adventure in world "$CLAWDND_WORLD".
+You are the Dungeon Master for a solo WorldOS adventure in world "$WORLDOS_WORLD".
 
 $DM_CONTRACT_RULE
 $DM_VOICE_RULE
@@ -891,7 +891,7 @@ EOF
 )"
 else
   OPENING_PROMPT="$(cat <<EOF
-You are the Dungeon Master for a solo WorldOS adventure in world "$CLAWDND_WORLD".
+You are the Dungeon Master for a solo WorldOS adventure in world "$WORLDOS_WORLD".
 
 $DM_CONTRACT_RULE
 $DM_VOICE_RULE
@@ -909,7 +909,7 @@ $OPENING_PERSIST_BEAT_RULE
 $COMPANION_TOOL_RULE
 
 Start a live solo session:
-- call start_world("$CLAWDND_WORLD");
+- call start_world("$WORLDOS_WORLD");
 - call start_session for the campaign;
 - choose a playable canon character via list_canon_characters(playable_only=true) and load_canon_character(..., kind="player", add_to_party=true);
 - open a 2nd-person, player-facing scene with real sensory details, at least one quoted NPC line, and a clear open moment.
@@ -931,10 +931,10 @@ DM_TURNS=1
 write_provider_status "running" "active" "Codex DM provider is running."
 enforce_session_budget   # F12-9: the opening world-build can itself exhaust a tiny session budget.
 while true; do
-  if [ "$DM_TURNS" -ge "$CLAWDND_PLAY_MAX_TURNS" ]; then
+  if [ "$DM_TURNS" -ge "$WORLDOS_PLAY_MAX_TURNS" ]; then
     write_provider_status "stopped" "turn_cap" "Codex DM stopped after reaching the configured max turns. Increase Max turns or start a new provider-backed session to continue."
     PROVIDER_STOPPED_CLEANLY=1   # F12-9: a clean stop — the EXIT trap must not relabel it "failed".
-    sleep "${WORLDOS_PROVIDER_STOP_GRACE_SECONDS:-${CLAWDND_PROVIDER_STOP_GRACE_SECONDS:-20}}"
+    sleep "${WORLDOS_PROVIDER_STOP_GRACE_SECONDS:-20}"
     break
   fi
   # F12-9: budget enforcement is checked AFTER each completed turn (enforce_session_budget), not here

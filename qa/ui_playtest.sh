@@ -88,21 +88,21 @@ for name, srv in cfg.get("mcpServers", {}).items():
         else: pkg = raw
         args[i + 1] = f"{root}/servers/{pkg}"
     if name == "worldos-engine":
-        srv.setdefault("env", {})["CLAWDND_STATE_DIR"] = state
+        srv.setdefault("env", {})["WORLDOS_STATE_DIR"] = state
         # Dogfood FIDELITY (parity with scripts/play.sh:142 + qa/run_duo.sh): PIN the engine tools
         # (un-defer) so the DM stops burning a ~9s ToolSearch round-trip re-discovering the engine MCP
         # tools EVERY move — production has alwaysLoad default-on, so without this the dogfood overstates
-        # per-move latency vs the real player surface. Set CLAWDND_ENGINE_ALWAYSLOAD=0 for the deferred
+        # per-move latency vs the real player surface. Set WORLDOS_ENGINE_ALWAYSLOAD=0 for the deferred
         # baseline (the latency A/B arm). This generation block is LOCAL to this QA runner (it re-roots
         # qa/qa.mcp.example.json into the run's own $DM_CFG) — NOT shared with the production play.sh gen.
-        if os.environ.get("CLAWDND_ENGINE_ALWAYSLOAD", "1") == "1":
+        if os.environ.get("WORLDOS_ENGINE_ALWAYSLOAD", "1") == "1":
             srv["alwaysLoad"] = True
 json.dump(cfg, open(out, "w"))
 PY
 
 # --- PLAYER MCP config: ONLY the Playwright palette server (strict, no other tools).
 # This is the constrained surface — the player sees ONLY the screen. The palette treats
-# CLAWDND_UIPT_RUNDIR as the RUN ROOT (bugs.ndjson + status.json land there; screenshots/
+# WORLDOS_UIPT_RUNDIR as the RUN ROOT (bugs.ndjson + status.json land there; screenshots/
 # a11y/action/console/network logs go under player/), so pass $RUNDIR, not $PLAYERDIR.
 python3 - "$PW_DIR" "$URL" "$RUNDIR" "$PW_CHANNEL" "$PERSONA" "$PLAYER_CFG" <<'PY'
 import json, sys
@@ -111,10 +111,10 @@ json.dump({"mcpServers": {"worldos-uiplayer": {
     "command": "node",
     "args": [f"{pw_dir}/palette_server.js"],
     "env": {
-        "CLAWDND_UIPT_URL": url,
-        "CLAWDND_UIPT_RUNDIR": rundir,
-        "CLAWDND_UIPT_CHANNEL": channel,
-        "CLAWDND_UIPT_PERSONA": persona,
+        "WORLDOS_UIPT_URL": url,
+        "WORLDOS_UIPT_RUNDIR": rundir,
+        "WORLDOS_UIPT_CHANNEL": channel,
+        "WORLDOS_UIPT_PERSONA": persona,
     },
 }}}, open(out, "w"))
 PY
@@ -123,8 +123,8 @@ echo "[uipt] run=$RUN world=$WORLD persona=$PERSONA port=$PORT beats=$BEATS budg
 echo "[uipt] url=$URL"
 
 # --- start engine + viewer (move sink + chat wired) --------------------------
-CLAWDND_STATE_DIR="$STATE_DIR" WORLDOS_STATE_DIR="$STATE_DIR" \
-CLAWDND_VIEWER_CHAT="$CHAT" CLAWDND_PLAYER_MOVES="$MOVES" \
+WORLDOS_STATE_DIR="$STATE_DIR" \
+WORLDOS_VIEWER_CHAT="$CHAT" WORLDOS_PLAYER_MOVES="$MOVES" \
   python3 viewer/server.py "" "$PORT" > "$RUNDIR/viewer.log" 2>&1 &
 VIEWER=$!
 cleanup() { kill "$VIEWER" 2>/dev/null; [ -n "${DMLOOP:-}" ] && kill "$DMLOOP" 2>/dev/null; }
@@ -157,22 +157,22 @@ DM_BRIEF="$(cat "$ROOT/qa/play_dm_duo.txt")"
 # turn returns), and (2) if the killed/failed beat left empty result text, the CALLER stitches the
 # engine-logged narration tail as a fallback reply (worldos_resolve_dm_reply, which also flags the
 # recovery — #749c) so the dm chat row always carries a real turn-END line → the client's pending
-# clears + the bar re-enables. CLAWDND_DM_MODEL lets the
+# clears + the bar re-enables. WORLDOS_DM_MODEL lets the
 # timeout helper pick the opus cold-open tier. Bash 3.2-safe (timeout(1) from coreutils; ${arr[@]+…}).
-CLAWDND_DM_MODEL="$DM_MODEL"
+WORLDOS_DM_MODEL="$DM_MODEL"
 dm_turn() {
   local first="$1" msg="$2" out resume=() beat_timeout rc
   # SYN-01: pre-beat log-tail mark (once per beat — this driver is single-attempt) so the
   # caller's resolve can tell a GENUINE #357 recovery from RECYCLED pre-beat prose.
   worldos_dm_prebeat_mark "$STATE_DIR"
-  # #623 dogfood FIDELITY: prepend the live-progress rule (the ONE shared CLAWDND_LIVE_PROGRESS_RULE
+  # #623 dogfood FIDELITY: prepend the live-progress rule (the ONE shared WORLDOS_LIVE_PROGRESS_RULE
   # in qa/lib_beat_driver.sh — parity with scripts/play.sh:288 + scripts/play_party.sh + the codex DM)
   # so the DM logs an EARLY /events narration beat. Its ABSENCE here mirrored the SOLO-path #623 bug:
   # the dogfood DM emitted nothing to /events until the full ~82s beat completed, so the viewer stayed
   # blank and the playtest OVERSTATED perceived latency vs production. This is the MODEL-COOPERATIVE
   # half; the caller ALSO emits the model-INDEPENDENT heartbeat (worldos_emit_progress_heartbeat) per
   # move before the resolve, exactly like scripts/play.sh:620. Additive — engine stays the sole writer.
-  msg="$CLAWDND_LIVE_PROGRESS_RULE"$'\n\n'"$msg"
+  msg="$WORLDOS_LIVE_PROGRESS_RULE"$'\n\n'"$msg"
   [ "$first" = "0" ] && resume=(--resume "$DSID") || resume=(--session-id "$DSID")
   beat_timeout="$(worldos_dm_timeout "$first")"
   out="$RUNDIR/dm/turn.$(date +%s%N).jsonl"
@@ -203,7 +203,7 @@ DMSG="$(dm_turn 1 "$DM_BRIEF
 Begin a SOLO session for a brand-new human player in this world: start_world(\"$WORLD\"), start_session, seat a fitting level-3 PLAYER CHARACTER (a LIVING canon figure via load_canon_character(kind=\"player\", add_to_party=true) — NEVER a dead/fallen character; apply sensible skills/spells), and bring in ONE roster companion the player meets in the scene. Then open a human-scale, personal scene with real quoted dialogue and hand the player an open moment + a clear choice. Their actions will arrive next as tagged moves.")"
 # #357/#749c: recover the engine-logged narration tail when the turn died with no result text;
 # a recovered reply stamps fallback_recovered:true on the dm chat row (worldos_chatlog_dm).
-worldos_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
+worldos_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$WORLDOS_DM_REPLY"
 # SYN-01: an empty resolved reply is a FAILED beat. The old masking default ("The scene is
 # set. What do you do?") pretended a scene existed; record the wrapper-authored VISIBLE failure
 # row instead — it is still a real turn-END dm row, so the client's pending state clears.
@@ -252,7 +252,7 @@ Resolve it through the engine (roll checks, apply casts/attacks, voice NPCs) and
       # #357/#749c: same recovery + honesty stamp as the opening turn (direct call, see dm_turn).
       # SYN-01: an empty resolved reply is a FAILED beat — the visible failure row replaces the
       # old "..." masking default (still a turn-END dm row, so the client's pending clears).
-      worldos_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
+      worldos_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$WORLDOS_DM_REPLY"
       if [ -z "$DMSG" ]; then
         worldos_chatlog_dm_failed
       else

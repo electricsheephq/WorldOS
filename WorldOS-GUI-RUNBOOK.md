@@ -170,8 +170,8 @@ cd /Users/lume/WorldOS
 # This is the intended local app checkout. Verify it is synced before testing:
 git rev-parse --short HEAD && git rev-parse --short origin/main
 pkill -f 'viewer/server.py'; pkill -f 'scripts/play.sh'; pkill -f 'play_party.sh'   # NOT node:18789 (Eva gateway)
-CLAWDND_PLAY_PORT=8799 nohup bash scripts/play.sh baldurs-gate preview-$(git rev-parse --short HEAD) 8799 > /tmp/wos-8799.log 2>&1 &
-# play.sh sets CLAWDND_PLAYER_MOVES → can_act:true (the move sink = the palette is live)
+WORLDOS_PLAY_PORT=8799 nohup bash scripts/play.sh baldurs-gate preview-$(git rev-parse --short HEAD) 8799 > /tmp/wos-8799.log 2>&1 &
+# play.sh sets WORLDOS_PLAYER_MOVES → can_act:true (the move sink = the palette is live)
 ```
 Open `http://127.0.0.1:8799/openworlds/`. The DM cold-open takes ~30–90s; **wait for a SEATED PC**
 (party non-empty), not just `can_act:true` — `can_act` can flip true before the PC is seated.
@@ -347,7 +347,7 @@ reverts the goal to "fix" and outranks new work.
 
 ## Hard rules (carried from CLAUDE.md + this session's lessons)
 - Engine (`servers/engine`) = SOLE writer of campaign state. Don't touch wire contracts
-  (`clawdnd-*`/`CLAWDND_*` MCP ids, `dev.worldos.app`); you MAY read `WORLDOS_ART_REPO_ROOT`.
+  (`worldos-*`/`WORLDOS_*` MCP ids, `dev.worldos.app`); you MAY read `WORLDOS_ART_REPO_ROOT`.
 - `_private/` (the 2.9 GB art) is **never committed**. Building/serving from the local checkout is how the
   art is present; worktrees can read it via `WORLDOS_ART_REPO_ROOT=/Users/lume/WorldOS` when needed.
 - 16 GB Mac: tests on **GitHub CI / 32GB support VM** for heavyweight sweeps, never heavy local suites. Parallel read-only agents are

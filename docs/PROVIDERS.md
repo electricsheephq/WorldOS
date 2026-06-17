@@ -72,7 +72,7 @@ Advanced QA settings for player/test/scorer models should stay separate from nor
 
 ## Environment Names
 
-WorldOS is moving toward `WORLDOS_*` names while retaining legacy `CLAWDND_*` aliases for compatibility. Provider launchers should set both names when they bridge old and new scripts.
+WorldOS is moving toward `WORLDOS_*` names while retaining legacy `WORLDOS_*` aliases for compatibility. Provider launchers should set both names when they bridge old and new scripts.
 
 Do not remove legacy names in a provider change unless the migration is explicit and tested.
 

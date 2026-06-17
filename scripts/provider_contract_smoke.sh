@@ -16,13 +16,13 @@ from pathlib import Path
 
 ALLOWED_PROVIDERS = {"claude", "codex", "openclaw"}
 REQUIRED_NONEMPTY_ENV = (
-    "CLAWDND_PROVIDER",
-    "CLAWDND_WORLD",
-    "CLAWDND_RUN_ID",
-    "CLAWDND_PLAY_PORT",
-    "CLAWDND_PLAYER_MOVES",
+    "WORLDOS_PROVIDER",
+    "WORLDOS_WORLD",
+    "WORLDOS_RUN_ID",
+    "WORLDOS_PLAY_PORT",
+    "WORLDOS_PLAYER_MOVES",
 )
-REQUIRED_PRESENT_ENV = ("CLAWDND_PLAY_COMPANIONS",)
+REQUIRED_PRESENT_ENV = ("WORLDOS_PLAY_COMPANIONS",)
 SECRET_MARKERS = ("KEY", "TOKEN", "SECRET", "PASSWORD", "AUTH", "COOKIE")
 
 
@@ -63,26 +63,26 @@ missing.extend(name for name in REQUIRED_PRESENT_ENV if name not in os.environ)
 if missing:
     fail("missing required env: " + ", ".join(missing))
 
-provider = env_required("CLAWDND_PROVIDER").lower()
+provider = env_required("WORLDOS_PROVIDER").lower()
 if provider not in ALLOWED_PROVIDERS:
     fail(f"unknown provider {provider!r}; expected one of {sorted(ALLOWED_PROVIDERS)}")
 
-world = env_required("CLAWDND_WORLD")
-run_id = env_required("CLAWDND_RUN_ID")
-port_raw = env_required("CLAWDND_PLAY_PORT")
+world = env_required("WORLDOS_WORLD")
+run_id = env_required("WORLDOS_RUN_ID")
+port_raw = env_required("WORLDOS_PLAY_PORT")
 try:
     port = int(port_raw)
 except ValueError:
-    fail(f"CLAWDND_PLAY_PORT must be an integer, got {port_raw!r}")
+    fail(f"WORLDOS_PLAY_PORT must be an integer, got {port_raw!r}")
 if not (1 <= port <= 65535):
-    fail(f"CLAWDND_PLAY_PORT out of range: {port}")
+    fail(f"WORLDOS_PLAY_PORT out of range: {port}")
 
-moves_path = Path(env_required("CLAWDND_PLAYER_MOVES"))
+moves_path = Path(env_required("WORLDOS_PLAYER_MOVES"))
 if moves_path.exists() and moves_path.is_dir():
-    fail(f"CLAWDND_PLAYER_MOVES points at a directory: {moves_path}")
+    fail(f"WORLDOS_PLAYER_MOVES points at a directory: {moves_path}")
 if not is_temp_child(moves_path):
     fail(
-        "CLAWDND_PLAYER_MOVES must be under a temp directory for smoke mode "
+        "WORLDOS_PLAYER_MOVES must be under a temp directory for smoke mode "
     )
 
 move = {
@@ -93,7 +93,7 @@ moves_path.parent.mkdir(parents=True, exist_ok=True)
 with moves_path.open("a", encoding="utf-8") as handle:
     handle.write(json.dumps(move, separators=(",", ":")) + "\n")
 
-companions = os.environ.get("CLAWDND_PLAY_COMPANIONS", "")
+companions = os.environ.get("WORLDOS_PLAY_COMPANIONS", "")
 summary = {
     "ok": True,
     "provider": provider,

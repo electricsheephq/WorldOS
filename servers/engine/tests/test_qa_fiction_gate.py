@@ -28,7 +28,7 @@ def _write_jsonl(path: Path, rows: list[dict]) -> Path:
 def _assistant_event(*, text: str = "", tools: list[str] | None = None) -> dict:
     content = []
     for tool in tools or []:
-        content.append({"type": "tool_use", "name": f"mcp__clawdnd-engine__{tool}", "input": {}})
+        content.append({"type": "tool_use", "name": f"mcp__worldos-engine__{tool}", "input": {}})
     if text:
         content.append({"type": "text", "text": text})
     return {"type": "assistant", "message": {"content": content}}

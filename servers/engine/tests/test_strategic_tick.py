@@ -106,7 +106,7 @@ def test_legacy_strategic_board_initializes_tick_cursor_without_catchup():
 
 
 def test_world_tick_surfaces_strategic_events_without_firing_narrative_consequences(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     c = _camp(day=2)
     c.strategic_state.last_tick_day = 1
     c.strategic_state.clocks["clock-threat"] = StrategicClock(
@@ -127,7 +127,7 @@ def test_world_tick_surfaces_strategic_events_without_firing_narrative_consequen
 
 
 def test_downtime_completes_active_project_and_applies_structured_effect_once(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     c = _camp(day=1)
     c.factions["fac-civic"] = Faction(id="fac-civic", name="Civic League", reputation=10)
     c.strategic_state.last_tick_day = 1
@@ -159,7 +159,7 @@ def test_downtime_completes_active_project_and_applies_structured_effect_once(tm
 
 
 def test_day_rolling_travel_to_advances_strategic_projects(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     c = _camp(day=1)
     c.time_of_day = "night"
     c.current_location_id = "loc-a"
@@ -183,7 +183,7 @@ def test_day_rolling_travel_to_advances_strategic_projects(tmp_path, monkeypatch
 
 
 def test_day_rolling_travel_to_returns_empty_strategic_events_when_none_fire(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     c = _camp(day=1)
     c.time_of_day = "night"
     c.current_location_id = "loc-a"

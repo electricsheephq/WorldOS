@@ -138,7 +138,7 @@ def test_companion_still_gets_death_saves_at_zero():
 
 
 def test_award_party_xp_splits_evenly(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_adventure("cellar-rats")["campaign_id"]  # seeds Vesper
     server.create_character(cid, "Hero", kind="player", max_hp=10)
     out = server.award_party_xp(cid, 150, reason="cleared the cellar")
@@ -153,7 +153,7 @@ def test_update_character_skills_alias_maps_to_proficiencies(tmp_path, monkeypat
     # no_rejected_tool_calls gate RED. The tool now translates the intuitive 'skills' /
     # 'expertise' aliases the way it already folds level/class_name — a genuine typo
     # ("skilz") still raises so the strict-rejection guard stays load-bearing.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_adventure("cellar-rats")["campaign_id"]
     pc = server.create_character(cid, "Hero", kind="player", max_hp=10)["id"]
     out = server.update_character(
@@ -180,7 +180,7 @@ def _in_party(cid, needle):
 
 
 def test_update_character_in_party_true_adds_to_party(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_world("baldurs-gate")["campaign_id"]
     npc = server.create_character(cid, "Tagalong", kind="companion", max_hp=10,
                                   add_to_party=False)["id"]
@@ -192,7 +192,7 @@ def test_update_character_in_party_true_adds_to_party(tmp_path, monkeypatch):
 
 
 def test_update_character_in_party_false_removes_from_party(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_world("baldurs-gate")["campaign_id"]
     comp = server.create_character(cid, "Ally", kind="companion", max_hp=10,
                                    add_to_party=True)["id"]
@@ -204,7 +204,7 @@ def test_update_character_in_party_false_removes_from_party(tmp_path, monkeypatc
 
 def test_update_character_in_party_composes_with_other_fields(tmp_path, monkeypatch):
     """`in_party` is popped before model_validate, so it coexists with normal field edits."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_world("baldurs-gate")["campaign_id"]
     npc = server.create_character(cid, "Joiner", kind="companion", max_hp=10,
                                   add_to_party=False)["id"]
@@ -215,7 +215,7 @@ def test_update_character_in_party_composes_with_other_fields(tmp_path, monkeypa
 def test_update_character_validation_error_is_readable_and_bounded(tmp_path, monkeypatch):
     """A genuine type error returns ONE readable ValueError, not a multi-KB pydantic wall
     with an errors.pydantic.dev URL. The error must still RAISE (typo-forbid stays red)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_world("baldurs-gate")["campaign_id"]
     pc = server.create_character(cid, "Hero", kind="player", max_hp=10)["id"]
     with pytest.raises(ValueError) as ei:
@@ -232,7 +232,7 @@ def test_player_kind_always_in_party(tmp_path, monkeypatch):
     # but sat OUTSIDE c.party (add_to_party defaults False) → player_in_party gate RED with
     # only a recruited companion present. Invariant: a kind="player" character is ALWAYS in
     # the party regardless of add_to_party; a companion still joins only when add_to_party.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_world("baldurs-gate")["campaign_id"]
     # get_state hydrates party into member dicts (not raw ids), so match by id/name.
     def _in_party(needle: str) -> bool:
@@ -259,7 +259,7 @@ def test_attack_off_turn_is_a_reaction_then_blocked(tmp_path, monkeypatch):
     # attack): it resolves once (consuming the combatant's reaction), but a SECOND
     # off-turn attack the same round is REJECTED. An on-turn attack by the current
     # combatant is unaffected. (mechanical-correctness defect 1)
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_adventure("cellar-rats")["campaign_id"]
     ids = [
         server.create_character(cid, n, kind=k, max_hp=10, armor_class=30)["id"]
@@ -286,7 +286,7 @@ def test_attack_off_turn_is_a_reaction_then_blocked(tmp_path, monkeypatch):
 
 
 def test_apply_srd_defaults_sets_class_ac(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_adventure("cellar-rats")["campaign_id"]
     fid = server.create_character(
         cid, "Mira", kind="player", class_name="Fighter",
@@ -296,7 +296,7 @@ def test_apply_srd_defaults_sets_class_ac(tmp_path, monkeypatch):
 
 
 def test_apply_srd_defaults_respects_explicit_ac(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_adventure("cellar-rats")["campaign_id"]
     fid = server.create_character(
         cid, "Mage", kind="player", class_name="Wizard",
@@ -372,7 +372,7 @@ def test_bonus_action_heal_suggests_followup_attack():
 
 def test_create_character_rejects_duplicate_companion(tmp_path, monkeypatch):
     import pytest
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_adventure("embergloom-pact")["campaign_id"]  # seeds Brother Toll
     before = len([i for i in server.get_state(cid)["party"]])
     with pytest.raises(ValueError, match="already exists"):
@@ -390,7 +390,7 @@ def test_create_character_rejects_duplicate_companion(tmp_path, monkeypatch):
 
 
 def test_add_location_persists_world_for_live_play(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Generated World")["id"]
     # the first location becomes current (get_state.location was null before)
     a = server.add_location(cid, "Ashenveil", "an ash-choked village")
@@ -404,7 +404,7 @@ def test_add_location_persists_world_for_live_play(tmp_path, monkeypatch):
 
 
 def test_add_location_upserts_a_placeholder(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Gen")["id"]
     server.add_location(cid, "Placeholder", location_id="loc-fillme")
     out = server.add_location(cid, "Hollowmere", "now fully described", location_id="loc-fillme")
@@ -414,7 +414,7 @@ def test_add_location_upserts_a_placeholder(tmp_path, monkeypatch):
 
 def test_add_location_warns_on_orphan_dup_and_bad_connections(tmp_path, monkeypatch):
     # adversarial review #5: silent orphans + duplicate names break travel/recall.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("W")["id"]
     hub = server.add_location(cid, "Hub", "the hub")          # first -> current
     assert hub["is_current"] and not hub["warnings"]
@@ -428,7 +428,7 @@ def test_add_location_warns_on_orphan_dup_and_bad_connections(tmp_path, monkeypa
 
 
 def test_create_character_allows_distinct_companion_and_npc_dupes(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_adventure("embergloom-pact")["campaign_id"]
     # a differently-named companion is fine
     quill = server.create_character(cid, "Sister Quill", kind="companion", class_name="Bard")
@@ -449,7 +449,7 @@ def test_create_character_allows_distinct_companion_and_npc_dupes(tmp_path, monk
 
 
 def test_recruit_companion_promotes_roster_npc_in_place(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Recruit")["id"]
     # a thin roster NPC, as a world seed would create (flat stats, not in party)
     npc = server.create_character(cid, "Minsc", kind="npc", voice_id="companion-default")["id"]
@@ -481,7 +481,7 @@ def test_recruit_companion_colocates_to_current_location(tmp_path, monkeypatch):
     recruit_companion co-locates them to the party's CURRENT location immediately — they
     must not enter carrying a stale/None location_id that only _move_party_to fixes on the
     NEXT travel (QA: a just-recruited companion shown a scene behind the party)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Colocate")["id"]
     here = server.add_location(cid, "Here")["id"]            # becomes current
     far = server.add_location(cid, "Far Place", connections=[here])["id"]
@@ -500,7 +500,7 @@ def test_apply_srd_defaults_grants_and_overrides_skill_proficiencies(tmp_path, m
     # checks (incl. social_check) missed the proficiency bonus and the DM invented
     # modifiers. apply_srd_defaults now fills the class's default skills; an explicit
     # `skills` list overrides that default.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Skills")["id"]
     rid = server.create_character(
         cid, "Sneak", kind="player", class_name="Rogue", apply_srd_defaults=True,
@@ -518,7 +518,7 @@ def test_apply_srd_defaults_grants_and_overrides_skill_proficiencies(tmp_path, m
 
 def test_recruit_companion_is_idempotent_and_guards_kind(tmp_path, monkeypatch):
     import pytest
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Recruit2")["id"]
     npc = server.create_character(cid, "Bram", kind="npc")["id"]
     server.recruit_companion(cid, npc, class_name="Fighter")
@@ -541,7 +541,7 @@ def test_recruit_preserves_ending_seeded_arc_end_to_end(tmp_path, monkeypatch):
     # can later fire the betrayal/loyalty beat). A future refactor that rebuilt the
     # character on recruit would silently kill the synthesis — this catches it.
     import pytest
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_world("baldurs-gate", ending="gortash-tyranny")["campaign_id"]
 
     # the gortash post-state arms Astarion: a loyalty gate + an attitude_below defection.
@@ -585,7 +585,7 @@ def test_ability_scores_accept_5e_shorthand(tmp_path, monkeypatch):
         AbilityScores(**{"strenth": 12})
 
     # and end-to-end through the tool the QA actually used: create_character with shorthand
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Shorthand")["id"]
     pid = server.create_character(
         cid, "Mira", kind="player", class_name="Rogue",
@@ -618,7 +618,7 @@ def test_skill_check_uses_the_sheet_derived_modifier(tmp_path, monkeypatch):
     # got them wrong (Perception +4 vs +5, Intimidation +3 vs +2). skill_check derives the bonus
     # from the sheet (ability + proficiency/expertise) so it's never hand-computed.
     import pytest
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Checks")["id"]
     pid = server.create_character(cid, "Maren", kind="player", class_name="Ranger",
                                   abilities={"wis": 14, "dex": 16}, skills=["perception"])["id"]
@@ -636,7 +636,7 @@ def test_skill_check_failure_surfaces_agency_directive(tmp_path, monkeypatch):
     payload — surfacing 'a failed check must cost/complicate and hand the turn back to the
     player, not be resolved via an NPC or a freebie' in the channel the DM is already
     reading. The #1 scored story lever (the bridge agency-snap)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Agency")["id"]
     pid = server.create_character(cid, "Dal", kind="player", abilities={"str": 10})["id"]
     # An impossibly high DC guarantees the failed-check branch regardless of the d20.
@@ -658,7 +658,7 @@ def test_social_check_influence_failure_surfaces_agency_directive(tmp_path, monk
     surfaces the same agency directive — the exact bridge defect (Dal's failed Persuasion
     resolved by Wyll paying the toll). A failed READ keeps its own non-resolving guidance
     and does NOT carry the directive (reads already hand ambiguity back)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("SocAgency")["id"]
     pc = server.create_character(cid, "Dal", kind="player", abilities={"cha": 10})["id"]
     npc = server.create_character(cid, "Toll Collector", kind="npc")["id"]
@@ -681,7 +681,7 @@ def test_social_check_influence_failure_surfaces_agency_directive(tmp_path, monk
 def test_camp_scene_gathers_each_companion_with_standing_and_arc(tmp_path, monkeypatch):
     # The camp social hub (owner ask, Owlcat-style): gather EACH living party companion with a
     # voiceable beat (voice_id + a deliberate prompt), their standing, and a read-only arc summary.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Camp")["id"]
     server.create_character(cid, "Mira", kind="player")  # the PC is NOT a camp "companion" beat
     j = server.create_character(cid, "Jaheira", kind="companion")["id"]
@@ -708,7 +708,7 @@ def test_camp_scene_gathers_each_companion_with_standing_and_arc(tmp_path, monke
 
 
 def test_long_rest_hints_camp_only_when_companions_present(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Rest")["id"]
     pc = server.create_character(cid, "Lone", kind="player")["id"]
     assert "camp_hint" not in server.long_rest(cid, pc)           # solo -> no camp nudge
@@ -723,7 +723,7 @@ def test_recruit_auto_seeds_default_arc_but_never_overwrites_a_seeded_one(tmp_pa
     # camp-clarify QA: a freshly-recruited canon companion had arc=null, so camp/arcs were inert.
     # recruit now auto-seeds a light default loyalty arc when none exists — but must NOT clobber a
     # richer ending-seeded arc (the guard is `arc is None`).
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Arc")["id"]
     npc = server.create_character(cid, "Bram", kind="npc")["id"]
     out = server.recruit_companion(cid, npc, class_name="Fighter")
@@ -765,7 +765,7 @@ def test_set_quest_status_routes_a_tracked_quest_and_extra_attack_echo(tmp_path,
     # tracked add_quest quest too (hook word 'resolved' -> quest 'completed'); + start_combat
     # echoes Extra Attack so the DM makes the right number of attacks.
     import pytest
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("EE")["id"]
     qid = server.add_quest(cid, title="Claudan's Errand")["id"]
     upd = server.set_quest_status(cid, qid, "resolved")     # a QUEST id + hook-vocab -> completed
@@ -784,7 +784,7 @@ def test_set_quest_status_routes_a_tracked_quest_and_extra_attack_echo(tmp_path,
 def test_unarmored_defense_ac_is_ability_derived(tmp_path, monkeypatch):
     # camp-clarify2 QA: a Barbarian's seeded AC was 1 low — Unarmored Defense is 10 + DEX + CON
     # (Barbarian) / 10 + DEX + WIS (Monk), not a flat table value. Other classes keep the table.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("AC")["id"]
     b = server.create_character(cid, "Karlach", kind="player", class_name="Barbarian",
                                 apply_srd_defaults=True, abilities={"dex": 14, "con": 17})["id"]
@@ -800,7 +800,7 @@ def test_unarmored_defense_ac_is_ability_derived(tmp_path, monkeypatch):
 def test_advance_time_writes_clock_on_narrated_passage(tmp_path, monkeypatch):
     # camp-clarify2 QA: the DM narrated a full day passing but time_of_day stayed 'morning'
     # because nothing called a clock-advancing tool. advance_time fills that gap.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Clock")["id"]
     assert server.get_state(cid)["time_of_day"] == "morning"
     r = server.advance_time(cid, phases=1)
@@ -822,7 +822,7 @@ def test_set_class_resource_registers_and_survives_levelup(tmp_path, monkeypatch
     # camp-clarify2 QA: a Battle Master's Superiority Dice were untracked — the SRD class
     # tables only know base-class pools. set_class_resource registers the subclass pool; a
     # level-up re-derive must not wipe it (engine = mechanism, DM = the subclass numbers).
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Res")["id"]
     f = server.create_character(cid, "Duren", kind="player", class_name="Fighter",
                                 level=5, subclass="Battle Master", apply_srd_defaults=True)["id"]
@@ -843,7 +843,7 @@ def test_set_class_resource_registers_and_survives_levelup(tmp_path, monkeypatch
 def test_start_character_seeds_starting_gear_so_ac_and_inventory_agree(tmp_path, monkeypatch):
     # camp-clarify2 QA: a veteran_l5 Fighter had armor_class 16 but inventory [] — internally
     # inconsistent (AC implies armor that doesn't exist). start_character now seeds a kit.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Gear")["id"]
     f = server.start_character(cid, name="Duren", origin="veteran_l5", class_name="Fighter")["id"]
     inv = [i["name"] for i in server.get_character(cid, f)["inventory"]]
@@ -865,7 +865,7 @@ def test_add_location_make_current_arrives_in_one_call(tmp_path, monkeypatch):
     # Recurring QA gap: the DM creates the scene the party walks into (add_location) but never
     # travels there, so current_location lags the prose and the new place stays visited=false.
     # make_current arrives in the one call.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Move")["id"]
     sq = server.add_location(cid, "Town Square", description="A plaza.")["id"]
     # generate the next scene AND step onto it in one move, advancing the clock for the walk.
@@ -883,7 +883,7 @@ def test_combat_numbers_surface_authoritative_attack_bonus(tmp_path, monkeypatch
     # easter2 QA: the DM invented a Rogue's to-hit (+7) by copying another combatant; her sheet
     # gave +3. combat_numbers surfaces the real bonus at creation AND on get_character so the DM
     # passes the sheet's number to attack() instead of inventing one.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("CN")["id"]
     r = server.start_character(cid, name="Vesper", origin="veteran_l5", class_name="Rogue",
                                abilities={"dex": 10, "str": 10})
@@ -897,7 +897,7 @@ def test_combat_numbers_surface_authoritative_attack_bonus(tmp_path, monkeypatch
 def test_social_check_ephemeral_target_does_not_corrupt_a_roster_npc(tmp_path, monkeypatch):
     # easter2 QA: a Deception vs a dock extra reused a seeded companion's id as the target and
     # silently shifted her standing. An ephemeral target rolls without writing any roster NPC.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Soc")["id"]
     pc = server.create_character(cid, "Hero", kind="player", abilities={"cha": 16})["id"]
     npc = server.create_character(cid, "Jaheira", kind="npc")["id"]
@@ -913,7 +913,7 @@ def test_social_check_ephemeral_target_does_not_corrupt_a_roster_npc(tmp_path, m
 def test_spawn_monster_resolves_thug_alias_and_suggests_on_miss(tmp_path, monkeypatch):
     # fidelity1 QA: spawn_monster('Thug') failed with empty suggestions. 'Thug' is the 2014 name
     # for the 2024 'Tough'; alias it, and give any miss real recovery suggestions.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("B")["id"]
     r = server.spawn_monster(cid, "Thug")
     assert "spawned" in r and r["spawned"][0]["name"] == "Tough"
@@ -928,7 +928,7 @@ def test_apply_srd_defaults_computes_hp_for_higher_levels(tmp_path, monkeypatch)
     # CRITICAL (operator+wildcard): a level>1 character made with apply_srd_defaults
     # got max_hp:1 — HP was only computed at level 1, so every multi-level companion/
     # legend had 1 HP. Now computed across the full level (SRD fixed-HP).
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("HP")["id"]
     wid = server.create_character(
         cid, "Mage", kind="player", class_name="Wizard", level=3,
@@ -945,7 +945,7 @@ def test_apply_srd_defaults_computes_hp_for_higher_levels(tmp_path, monkeypatch)
 
 def test_rest_refused_during_active_combat(tmp_path, monkeypatch):
     import pytest
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Rest")["id"]
     a = server.create_character(cid, "A", kind="player", max_hp=10)["id"]
     g = server.create_character(cid, "G", kind="monster", max_hp=10)["id"]
@@ -959,7 +959,7 @@ def test_rest_refused_during_active_combat(tmp_path, monkeypatch):
 
 
 def test_level_up_keeps_hit_dice_string_in_sync(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("LU")["id"]
     wid = server.create_character(
         cid, "W", kind="player", class_name="Wizard", level=3, apply_srd_defaults=True,
@@ -972,7 +972,7 @@ def test_level_up_keeps_hit_dice_string_in_sync(tmp_path, monkeypatch):
 def test_remove_last_hostile_auto_ends_combat(tmp_path, monkeypatch):
     # brawler: after the enemies fled/died, only the party remained but combat stayed
     # active and the DM had to end it by hand. No hostiles left -> the fight is over.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("End")["id"]
     a = server.create_character(cid, "Hero", kind="player", max_hp=10)["id"]
     comp = server.create_character(cid, "Ally", kind="companion", max_hp=10)["id"]
@@ -988,7 +988,7 @@ def test_stabilize_closes_the_aid_downed_loop(tmp_path, monkeypatch):
     # brawler's top finding: companion_suggest_action returns aid_downed with spell:null
     # when there's no heal slot, but there was NO engine path to land a stabilize —
     # the DM had to hand-wave a Medicine check. stabilize() is that path now.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Stab")["id"]
     medic = server.create_character(
         cid, "Medic", kind="companion", abilities={"wisdom": 20}, skills=["medicine"],
@@ -1007,7 +1007,7 @@ def test_stabilize_closes_the_aid_downed_loop(tmp_path, monkeypatch):
 def test_created_npc_is_anchored_to_current_location(tmp_path, monkeypatch):
     # Dashboard "In the scene" was showing the whole seeded world roster. NPCs/monsters
     # are now anchored to where they're introduced, so the scene = the local cast.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Anchor")["id"]
     hub = server.add_location(cid, "Hub", "the hub")["id"]  # first location -> current
     npc = server.create_character(cid, "Barkeep", kind="npc")["id"]
@@ -1029,7 +1029,7 @@ def test_load_canon_character_as_player_keeps_player_kind(tmp_path, monkeypatch)
     """THE RED-RUN BUG: load_canon_character coerced kind down to "npc"/"companion", so using
     a canon figure AS THE PC left `party` with ZERO kind=="player" members and tripped the
     player_in_party behavioral gate (ow-duoF went RED). kind="player" must pass through."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     bg = server.start_world("baldurs-gate")["campaign_id"]
     out = server.load_canon_character(bg, "Charming Latham", kind="player", add_to_party=True)
     assert out["kind"] == "player" and out["in_party"] is True
@@ -1044,7 +1044,7 @@ def test_load_canon_character_grants_class_skill_proficiencies(tmp_path, monkeyp
     """B1: a canon PC must arrive with real class math (the Wizard-Arcana root cause). The
     canon-defaults block already applies SRD defaults at load; this pins the contract so a
     level-5 wizard's Arcana carries the proficiency bonus, not raw INT."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     bg = server.start_world("baldurs-gate")["campaign_id"]
     out = server.load_canon_character(bg, "Charming Latham", kind="player", add_to_party=True)
     ch = server.get_character(bg, out["id"])
@@ -1059,7 +1059,7 @@ def test_update_character_accepts_flat_level_class_aliases(tmp_path, monkeypatch
     """B3: the intuitive flat keys ({"level":3,"class_name":"Wizard","subclass":...}) are
     folded into the canonical `classes` patch and the retier recomputes prof bonus — while a
     genuine typo still trips extra='forbid' (the strict guard test_engine relies on)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     bg = server.start_world("baldurs-gate")["campaign_id"]
     out = server.load_canon_character(bg, "Charming Latham", kind="player", add_to_party=True)
     cidp = out["id"]
@@ -1078,7 +1078,7 @@ def test_update_character_accepts_flat_level_class_aliases(tmp_path, monkeypatch
 def test_update_character_flat_level_only_keeps_existing_class(tmp_path, monkeypatch):
     """The alias shim defaults the class name to the existing head class when only `level`
     is patched, so a bare level bump doesn't blank the class."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     bg = server.start_world("baldurs-gate")["campaign_id"]
     out = server.load_canon_character(bg, "Charming Latham", kind="player", add_to_party=True)
     ch = server.update_character(bg, out["id"], {"level": 6})
@@ -1094,7 +1094,7 @@ def test_update_character_canonical_classes_patch_recomputes_down_level(tmp_path
     seated a canon L12 Fighter then patched him to L3 this way; the old flat-alias-only guard
     skipped recompute, so he fought with PB+4 / 100 HP / 12d10 / extra_attacks=2 (the angry-dm
     'correctly-wrong numbers' that capped mech)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     bg = server.start_world("baldurs-gate")["campaign_id"]
     pid = server.create_character(bg, "Brick", kind="player")["id"]
     # UP to L12 via the canonical classes form (PB +4, 2nd Extra Attack at L11, big HP, 12d10).
@@ -1115,7 +1115,7 @@ def test_update_character_canonical_classes_patch_recomputes_down_level(tmp_path
 def test_update_character_explicit_stat_wins_over_classes_recompute(tmp_path, monkeypatch):
     """A stat the SAME class/level patch sets EXPLICITLY is honored — the recompute only fills the
     stats the patch didn't pin, so a custom-HP elite keeps its HP while prof bonus still recomputes."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     bg = server.start_world("baldurs-gate")["campaign_id"]
     pid = server.create_character(bg, "Elite", kind="player")["id"]
     ch = server.update_character(bg, pid, {"classes": [{"name": "Fighter", "level": 3}], "max_hp": 75})
@@ -1128,7 +1128,7 @@ def test_session_close_tops_up_zero_xp_companion(tmp_path, monkeypatch):
     """B4 / mech2 #3A: when the DM awards XP to the PC only, a companion who fought all
     session must not close at 0 while the PC banked XP. The per-member backstop tops the
     companion up to the party's max XP when the session advanced (never lowers anyone)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     bg = server.start_world("baldurs-gate")["campaign_id"]
     pc = server.load_canon_character(bg, "Charming Latham", kind="player", add_to_party=True)["id"]
     server.recruit_companion(bg, "npc-karlach", class_name="Barbarian", level=3,
@@ -1147,7 +1147,7 @@ def test_session_close_tops_up_zero_xp_companion(tmp_path, monkeypatch):
 def test_session_close_no_topup_when_not_advanced(tmp_path, monkeypatch):
     """The backstop only fires when the session ADVANCED — a static session that awarded the
     PC alone leaves the companion at 0 (no free parity for a smoke run)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     bg = server.start_world("baldurs-gate")["campaign_id"]
     pc = server.load_canon_character(bg, "Charming Latham", kind="player", add_to_party=True)["id"]
     server.recruit_companion(bg, "npc-karlach", class_name="Barbarian", level=3)
@@ -1162,7 +1162,7 @@ def test_end_combat_warns_on_living_hostiles(tmp_path, monkeypatch):
     """B2 / #E2: end_combat with a hostile monster still alive at >0 HP surfaces a
     NON-blocking warning_live_hostiles cue (it still ends the fight — a legit retreat ends
     with foes alive — but the DM/gate now sees the continuity risk)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     bg = server.start_world("baldurs-gate")["campaign_id"]
     pc = server.create_character(bg, "Hero", kind="player", max_hp=20)["id"]
     foe = server.create_character(bg, "Ghoul", kind="monster", max_hp=22)["id"]
@@ -1179,7 +1179,7 @@ def test_end_combat_warns_on_living_hostiles(tmp_path, monkeypatch):
 def test_end_combat_no_warning_when_hostiles_down(tmp_path, monkeypatch):
     """When every monster combatant is dead, end_combat carries NO warning (the all-clear
     path stays byte-identical to before)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     bg = server.start_world("baldurs-gate")["campaign_id"]
     pc = server.create_character(bg, "Hero", kind="player", max_hp=20)["id"]
     foe = server.create_character(bg, "Goblin", kind="monster", max_hp=1)["id"]

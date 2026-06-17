@@ -5,10 +5,9 @@ snapshot.json with an atomic temp-file + os.replace, so a crash or compaction
 never leaves a half-written campaign. A per-session append-only JSONL log
 captures the narrative beat-by-beat for recaps and post-compaction recovery.
 
-State lives outside the repo by default (~/.worldos/state, falling back to the
-legacy ~/.clawdnd/state), overridable with the WORLDOS_STATE_DIR env var
-(the legacy CLAWDND_STATE_DIR still works for v1.x), so it survives plugin
-reinstalls and is independent of the server's working directory.
+State lives outside the repo by default (``~/.worldos/state``), overridable with the
+``WORLDOS_STATE_DIR`` env var, so it survives plugin reinstalls and is independent of
+the server's working directory.
 """
 
 from __future__ import annotations
@@ -74,16 +73,11 @@ def engine_sha() -> str:
 
 
 def state_dir() -> Path:
-    # WORLDOS_STATE_DIR preferred; CLAWDND_STATE_DIR is the warn-only v1.x fallback.
+    # State lives outside the repo, at ~/.worldos/state, overridable with WORLDOS_STATE_DIR.
     raw = env_var("STATE_DIR")
     if raw:
         return Path(raw).expanduser()
-    # No override: prefer the new ~/.worldos home if it already exists, else fall
-    # back to the legacy ~/.clawdnd (no bulk migration — see issue #295, W0-E/4.2).
-    worldos_home = Path.home() / ".worldos" / "state"
-    if worldos_home.parent.exists():
-        return worldos_home
-    return Path.home() / ".clawdnd" / "state"
+    return Path.home() / ".worldos" / "state"
 
 
 def safe_path_segment(value: str, kind: str = "id") -> str:

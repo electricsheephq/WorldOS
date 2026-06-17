@@ -13,9 +13,9 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$ROOT" || exit 1
 WORLD="${1:-baldurs-gate}"; RUN="${2:-play-$(date +%H%M%S)}"; PORT="${3:-8765}"
-BUDGET="${CLAWDND_PLAY_BUDGET:-1.50}"            # per DM turn
-SESSION_BUDGET="${CLAWDND_PLAY_SESSION_BUDGET:-15.00}"  # M8: aggregate ceiling for the whole session
-MAX_TURNS="${CLAWDND_PLAY_MAX_TURNS:-40}"        # M8: hard turn cap (worst case = MAX_TURNS×BUDGET)
+BUDGET="${WORLDOS_PLAY_BUDGET:-1.50}"            # per DM turn
+SESSION_BUDGET="${WORLDOS_PLAY_SESSION_BUDGET:-15.00}"  # M8: aggregate ceiling for the whole session
+MAX_TURNS="${WORLDOS_PLAY_MAX_TURNS:-40}"        # M8: hard turn cap (worst case = MAX_TURNS×BUDGET)
 DM_TURNS=0
 T="qa/transcripts"; STATE_DIR="$ROOT/qa/state/$RUN"
 mkdir -p "$T" "$STATE_DIR"; rm -rf "$STATE_DIR/campaigns" 2>/dev/null
@@ -24,7 +24,7 @@ CHAT="$T/$RUN.chat.jsonl"; : > "$CHAT"; COMBINED="$T/$RUN.jsonl"; : > "$COMBINED
 
 python3 - "$ROOT/qa/qa.mcp.example.json" "$STATE_DIR" "$DM_CFG" <<'PY'
 import json, sys
-cfg = json.load(open(sys.argv[1])); cfg["mcpServers"]["worldos-engine"]["env"]["CLAWDND_STATE_DIR"] = sys.argv[2]
+cfg = json.load(open(sys.argv[1])); cfg["mcpServers"]["worldos-engine"]["env"]["WORLDOS_STATE_DIR"] = sys.argv[2]
 json.dump(cfg, open(sys.argv[3], "w"))
 PY
 
@@ -46,7 +46,7 @@ dm_turn() {
 
 # Launch OpenWorlds pointed at THIS game; the human acts via its palette (/move
 # appends to $MOVES) and watches the chat live.
-CLAWDND_STATE_DIR="$STATE_DIR" CLAWDND_VIEWER_CHAT="$CHAT" CLAWDND_PLAYER_MOVES="$MOVES" \
+WORLDOS_STATE_DIR="$STATE_DIR" WORLDOS_VIEWER_CHAT="$CHAT" WORLDOS_PLAYER_MOVES="$MOVES" \
   python3 viewer/server.py "" "$PORT" > "$T/$RUN.viewer.log" 2>&1 &
 VIEWER=$!; trap 'kill "$VIEWER" 2>/dev/null' EXIT
 ( sleep 1.5; (command -v open >/dev/null 2>&1 && open "http://127.0.0.1:$PORT/openworlds/") \
@@ -63,9 +63,9 @@ chatlog dm "$DMSG"; DM_TURNS=1
 # total_cost_usd is reported on each turn's result event (accumulated in $COMBINED).
 over_budget() {
   local spent; spent="$(jq -rs '[.[]|select(.type=="result")|.total_cost_usd//0]|add // 0' "$COMBINED" 2>/dev/null)"
-  [ "$DM_TURNS" -ge "$MAX_TURNS" ] && { echo "[play] turn cap ($MAX_TURNS) reached — stopping (raise CLAWDND_PLAY_MAX_TURNS)."; return 0; }
+  [ "$DM_TURNS" -ge "$MAX_TURNS" ] && { echo "[play] turn cap ($MAX_TURNS) reached — stopping (raise WORLDOS_PLAY_MAX_TURNS)."; return 0; }
   awk -v s="${spent:-0}" -v b="$SESSION_BUDGET" 'BEGIN{exit !(s+0>=b+0)}' \
-    && { echo "[play] session budget reached (~\$$spent/\$$SESSION_BUDGET) — stopping (raise CLAWDND_PLAY_SESSION_BUDGET)."; return 0; }
+    && { echo "[play] session budget reached (~\$$spent/\$$SESSION_BUDGET) — stopping (raise WORLDOS_PLAY_SESSION_BUDGET)."; return 0; }
   return 1
 }
 

@@ -2,7 +2,7 @@
 
 Covers GET /seed-surface (the de-faked identity block + live params + mutability matrix +
 session_started + empty-state) and the POST /seed-param intent bridge (mirrors /move: it
-appends a validated set_seed_param intent line to $CLAWDND_PLAYER_MOVES and NEVER writes
+appends a validated set_seed_param intent line to $WORLDOS_PLAYER_MOVES and NEVER writes
 snapshot state; read-only when there's no live game; refuses a write tagged for a non-live
 campaign). The engine remains the SOLE writer — this lane only relays a validated request.
 """
@@ -207,12 +207,12 @@ class _QuietHandler(server._Handler):
 class SeedRouteTests(unittest.TestCase):
     def setUp(self):
         self._tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        self._old_state = os.environ.get("CLAWDND_STATE_DIR")
-        self._old_moves = os.environ.get("CLAWDND_PLAYER_MOVES")
-        os.environ["CLAWDND_STATE_DIR"] = str(self._tmp)
+        self._old_state = os.environ.get("WORLDOS_STATE_DIR")
+        self._old_moves = os.environ.get("WORLDOS_PLAYER_MOVES")
+        os.environ["WORLDOS_STATE_DIR"] = str(self._tmp)
         # Live game: a writable moves sink flips POST /seed-param from read-only to accepting.
         self._moves = self._tmp / "player_moves.jsonl"
-        os.environ["CLAWDND_PLAYER_MOVES"] = str(self._moves)
+        os.environ["WORLDOS_PLAYER_MOVES"] = str(self._moves)
         self._write("camp_seed", _SNAPSHOT)
         _QuietHandler.campaign_id = "camp_seed"  # the viewer is "launched on" this campaign
         _QuietHandler.transcript_path = ""
@@ -227,7 +227,7 @@ class SeedRouteTests(unittest.TestCase):
         self._httpd.shutdown()
         self._httpd.server_close()
         self._thread.join(timeout=2)
-        for key, old in (("CLAWDND_STATE_DIR", self._old_state), ("CLAWDND_PLAYER_MOVES", self._old_moves)):
+        for key, old in (("WORLDOS_STATE_DIR", self._old_state), ("WORLDOS_PLAYER_MOVES", self._old_moves)):
             if old is None:
                 os.environ.pop(key, None)
             else:
@@ -327,14 +327,14 @@ class SeedRouteTests(unittest.TestCase):
 
     def test_post_seed_param_read_only_without_live_game(self):
         # Drop the moves sink → no live game → the lane refuses (same gate as /move).
-        os.environ.pop("CLAWDND_PLAYER_MOVES", None)
+        os.environ.pop("WORLDOS_PLAYER_MOVES", None)
         try:
             status, body = self._post("/seed-param", {"param": "tone", "value": "Grim"})
             self.assertEqual(status, 200)
             self.assertFalse(body["ok"])
             self.assertIn("read-only", body["reason"])
         finally:
-            os.environ["CLAWDND_PLAYER_MOVES"] = str(self._moves)
+            os.environ["WORLDOS_PLAYER_MOVES"] = str(self._moves)
 
 
 if __name__ == "__main__":

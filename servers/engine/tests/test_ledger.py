@@ -7,7 +7,7 @@ import server
 
 @pytest.fixture
 def cid(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     return server.start_adventure("embergloom-pact")["campaign_id"]
 
 
@@ -59,7 +59,7 @@ def test_recall_garbage_query_is_safe(cid):
 
 
 # ── F07-1 (issue #772): backfill skips combat/system bookkeeping ───────────────
-# Combat-event rows (schema clawdnd.combat_event.v1) and the two engine session
+# Combat-event rows (schema worldos.combat_event.v1) and the two engine session
 # markers ("Session N began" / "Session ended.") are mechanical bookkeeping — they
 # must NOT enter the FTS index and outrank story in recall. A DM-AUTHORED kind=system
 # note (a non-marker) MUST stay indexed (SKILL.md:47 contract).
@@ -69,7 +69,7 @@ def test_backfill_skips_schema_stamped_combat_events(cid):
     # A schema-stamped combat-event row is mechanical bookkeeping — never recalled.
     server.log_event(
         cid, "combat", "Tough 1 takes 5 force damage (12 -> 7).",
-        payload={"schema": "clawdnd.combat_event.v1", "target": "tough-1"},
+        payload={"schema": "worldos.combat_event.v1", "target": "tough-1"},
     )
     # A narrative combat beat IS story — recallable.
     server.log_event(cid, "combat", "The obsidian wyrm coiled through the smoke.")

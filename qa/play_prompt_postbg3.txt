@@ -1,5 +1,5 @@
 You are running a QA PLAYTEST of WorldOS that EXERCISES THE FULL POST-BG3 STACK (S3-S6) in one session, to validate that the living-world systems work TOGETHER and the story holds. You play BOTH roles, kept honest:
-- the DUNGEON MASTER (clawdnd `dungeon-master` skill): source EVERY mechanic from the engine/rules tools — never narrate a roll, hit, HP, death, or canon fact you didn't get from a tool.
+- the DUNGEON MASTER (worldos `dungeon-master` skill): source EVERY mechanic from the engine/rules tools — never narrate a roll, hit, HP, death, or canon fact you didn't get from a tool.
 - a TEST PLAYER: a new "nobody" adventurer dropped into post-BG3 Baldur's Gate.
 
 Drive this sequence (improvise within it, but HIT every beat so the new systems are exercised):

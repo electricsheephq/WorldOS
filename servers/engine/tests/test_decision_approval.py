@@ -34,7 +34,7 @@ from models import Campaign, Decision
 # --- helpers ----------------------------------------------------------------
 
 def _new_campaign(monkeypatch, tmp_path, title="Approval"):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     return server.create_campaign(title)["id"]
 
 
@@ -393,7 +393,7 @@ def test_shared_vocabulary_lets_one_tag_move_several_companions(tmp_path, monkey
     Ravengard") promoted in place by the canon-load dedup. All three carry the canon `mercy`
     like. Each is RECRUITED after load (the documented load -> recruit_companion seating that
     brings a companion into the party); recruit is idempotent for the fresh-loaded two."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     bg = server.start_world("baldurs-gate")["campaign_id"]
     ids = {}
     for name in ["Gale", "Wyll", "Halsin"]:
@@ -419,7 +419,7 @@ def test_loading_canon_wyll_promotes_roster_record_without_duplicate(tmp_path, m
     "Wyll" (a duplicate beside npc-wyll). Dedup must catch the fuller-display-name roster record
     (via _find_existing_roster_match) and promote it in place: already_present, NO duplicate, and
     after recruit a tagged moral choice moves him (his roster dossier already lists `mercy`)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     bg = server.start_world("baldurs-gate")["campaign_id"]
     res = server.load_canon_character(bg, "Wyll", kind="companion", add_to_party=True)
     assert res.get("already_present") is True and res["id"] == "npc-wyll"
@@ -438,7 +438,7 @@ def test_loading_canon_minsc_promotes_roster_record_without_duplicate(tmp_path, 
     """Same fuller-display-name class as Wyll: canon "Minsc" vs rostered "Minsc and Boo"
     (id npc-minsc). Dedup must promote the rostered record in place — already_present, no
     second Minsc minted."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     bg = server.start_world("baldurs-gate")["campaign_id"]
     res = server.load_canon_character(bg, "Minsc", kind="companion", add_to_party=True)
     assert res.get("already_present") is True and res["id"] == "npc-minsc"

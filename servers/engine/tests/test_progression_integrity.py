@@ -28,9 +28,9 @@ from models import Character, Ability
 
 @pytest.fixture(autouse=True)
 def isolated(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
-    monkeypatch.delenv("CLAWDND_ACTOR_ID", raising=False)
-    monkeypatch.delenv("CLAWDND_ACTOR_ROLE", raising=False)
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    monkeypatch.delenv("WORLDOS_ACTOR_ID", raising=False)
+    monkeypatch.delenv("WORLDOS_ACTOR_ROLE", raising=False)
     yield
 
 

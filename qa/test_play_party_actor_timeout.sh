@@ -21,7 +21,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 STATE_DIR="$TMP/state"; mkdir -p "$STATE_DIR"
 COMBINED="$STATE_DIR/dm.combined.jsonl"; : > "$COMBINED"
-CLAWDND_ACTOR_MODEL="sonnet"; BUDGET="1.50"
+WORLDOS_ACTOR_MODEL="sonnet"; BUDGET="1.50"
 CSID="CSID-fixed-0000"; COMP_CFG="$TMP/companion_0.mcp.json"; : > "$COMP_CFG"
 
 fail=0
@@ -38,9 +38,9 @@ party_actor_turn() {
   local msg="$1" sid="$2" cfg="$3" out resume
   resume=(--resume "$sid")
   out="$STATE_DIR/companion.$(date +%s%N).jsonl"
-  worldos_timeout "${WORLDOS_ACTOR_TIMEOUT:-${CLAWDND_ACTOR_TIMEOUT:-120}}" \
+  worldos_timeout "${WORLDOS_ACTOR_TIMEOUT:-120}" \
     claude -p "$msg" "${resume[@]}" --mcp-config "$cfg" --strict-mcp-config \
-      --model "$CLAWDND_ACTOR_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+      --model "$WORLDOS_ACTOR_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
       --output-format stream-json --verbose > "$out" 2>> "$STATE_DIR/companion.err" || true
   ACTOR_OUT="$out"
   cat "$out" >> "$COMBINED"

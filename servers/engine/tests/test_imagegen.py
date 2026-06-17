@@ -3,7 +3,7 @@
 They exercise the null provider (deterministic placeholder), env-var provider
 selection with graceful degradation to null, the hosted-provider stubs' loud
 NotImplementedError seam, and the content-hash cache write/read under a tmp
-CLAWDND_STATE_DIR. Real OpenAI/Stability generation is intentionally out of scope
+WORLDOS_STATE_DIR. Real OpenAI/Stability generation is intentionally out of scope
 here — the whole point of the null default is that this all runs offline.
 """
 
@@ -65,27 +65,27 @@ def test_known_kinds_pass_through(kind):
 # --------------------------------------------------------------------------- #
 
 def test_default_provider_is_null(monkeypatch):
-    monkeypatch.delenv("CLAWDND_IMAGE_PROVIDER", raising=False)
+    monkeypatch.delenv("WORLDOS_IMAGE_PROVIDER", raising=False)
     assert imagegen.provider_name() == "null"
     assert isinstance(imagegen.get_provider(), NullImageProvider)
 
 
 def test_unknown_provider_falls_back_to_null(monkeypatch):
-    monkeypatch.setenv("CLAWDND_IMAGE_PROVIDER", "no-such-provider")
+    monkeypatch.setenv("WORLDOS_IMAGE_PROVIDER", "no-such-provider")
     assert isinstance(imagegen.get_provider(), NullImageProvider)
 
 
 def test_named_real_provider_unconfigured_falls_back_to_null(monkeypatch):
     # Named but no API key wired -> degrade to null (never crash the server).
-    monkeypatch.delenv("CLAWDND_IMAGE_API_KEY", raising=False)
+    monkeypatch.delenv("WORLDOS_IMAGE_API_KEY", raising=False)
     for name in ("openai", "stability"):
-        monkeypatch.setenv("CLAWDND_IMAGE_PROVIDER", name)
+        monkeypatch.setenv("WORLDOS_IMAGE_PROVIDER", name)
         assert isinstance(imagegen.get_provider(), NullImageProvider)
 
 
 def test_selection_is_case_insensitive(monkeypatch):
-    monkeypatch.setenv("CLAWDND_IMAGE_PROVIDER", "OpenAI")
-    monkeypatch.setenv("CLAWDND_IMAGE_API_KEY", "sk-test")
+    monkeypatch.setenv("WORLDOS_IMAGE_PROVIDER", "OpenAI")
+    monkeypatch.setenv("WORLDOS_IMAGE_API_KEY", "sk-test")
     p = imagegen.get_provider()
     assert isinstance(p, OpenAIImageProvider) and p.name == "openai"
 
@@ -94,8 +94,8 @@ def test_configured_real_provider_is_selected(monkeypatch):
     # With a key present, the selector hands back the real provider (which then
     # raises on use — see below). This proves the configured() gate, not just the
     # fallback path.
-    monkeypatch.setenv("CLAWDND_IMAGE_PROVIDER", "stability")
-    monkeypatch.setenv("CLAWDND_IMAGE_API_KEY", "key-123")
+    monkeypatch.setenv("WORLDOS_IMAGE_PROVIDER", "stability")
+    monkeypatch.setenv("WORLDOS_IMAGE_API_KEY", "key-123")
     assert isinstance(imagegen.get_provider(), StabilityImageProvider)
 
 
@@ -110,28 +110,28 @@ def test_hosted_provider_generate_raises_clear_error(cls):
     msg = str(excinfo.value)
     assert "not implemented" in msg.lower()
     # Mentions the env var the user must set to wire it — the actionable seam.
-    assert "CLAWDND_IMAGE_API_KEY" in msg
+    assert "WORLDOS_IMAGE_API_KEY" in msg
 
 
 def test_configured_provider_still_raises_until_wired(monkeypatch):
     # Even fully "configured", the stub is not implemented — invoking it is a loud,
     # intentional failure, not a silent no-op.
-    monkeypatch.setenv("CLAWDND_IMAGE_PROVIDER", "openai")
-    monkeypatch.setenv("CLAWDND_IMAGE_API_KEY", "sk-live")
+    monkeypatch.setenv("WORLDOS_IMAGE_PROVIDER", "openai")
+    monkeypatch.setenv("WORLDOS_IMAGE_API_KEY", "sk-live")
     provider = imagegen.get_provider()
     with pytest.raises(NotImplementedError):
         provider.generate("map", "the underdark")
 
 
 # --------------------------------------------------------------------------- #
-# Content-hash cache: write/read by hash under a tmp CLAWDND_STATE_DIR.
+# Content-hash cache: write/read by hash under a tmp WORLDOS_STATE_DIR.
 # --------------------------------------------------------------------------- #
 
 @pytest.fixture
 def state(tmp_path, monkeypatch):
     """Point the engine's state dir at a tmp dir so the cache writes there."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
-    monkeypatch.delenv("CLAWDND_IMAGE_PROVIDER", raising=False)  # null by default
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    monkeypatch.delenv("WORLDOS_IMAGE_PROVIDER", raising=False)  # null by default
     return tmp_path
 
 
@@ -215,7 +215,7 @@ def test_generate_degrades_to_null_when_provider_raises(monkeypatch, tmp_path):
     """A hosted/gateway provider failure must NOT crash the caller — the skill promises
     generate_image is 'always safe, a cheap no-op'. It degrades to the null placeholder
     and is NOT cached, so a transient gateway blip stays retryable (review #1)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
 
     class _Boom:
         name = "boom"
@@ -641,9 +641,9 @@ def ingest_root(tmp_path, monkeypatch):
     """A tmp content/ root the engine's catalog consult will resolve via CONTENT_DIR."""
     content = tmp_path / "content"
     (content / "worlds" / "_private").mkdir(parents=True)
-    monkeypatch.setenv("CLAWDND_CONTENT_DIR", str(content))
-    monkeypatch.delenv("CLAWDND_ART_REPO_ROOT", raising=False)
-    monkeypatch.delenv("CLAWDND_REPO_ROOT", raising=False)
+    monkeypatch.setenv("WORLDOS_CONTENT_DIR", str(content))
+    monkeypatch.delenv("WORLDOS_ART_REPO_ROOT", raising=False)
+    monkeypatch.delenv("WORLDOS_REPO_ROOT", raising=False)
     return content
 
 
@@ -707,9 +707,9 @@ def test_async_generate_unknown_scope_still_generates(state, ingest_root, monkey
 
 def test_has_ingested_art_no_root_is_false(state, monkeypatch, tmp_path):
     """On an art-less host (no _private tree) the consult returns False (generates)."""
-    monkeypatch.setenv("CLAWDND_CONTENT_DIR", str(tmp_path / "empty-content"))
-    monkeypatch.delenv("CLAWDND_ART_REPO_ROOT", raising=False)
-    monkeypatch.delenv("CLAWDND_REPO_ROOT", raising=False)
+    monkeypatch.setenv("WORLDOS_CONTENT_DIR", str(tmp_path / "empty-content"))
+    monkeypatch.delenv("WORLDOS_ART_REPO_ROOT", raising=False)
+    monkeypatch.delenv("WORLDOS_REPO_ROOT", raising=False)
     assert imagegen.has_ingested_art("portrait-anyone") is False
 
 
@@ -723,7 +723,7 @@ def test_has_ingested_art_no_root_is_false(state, monkeypatch, tmp_path):
 def test_detached_resolver_off_by_default_uses_thread(state, monkeypatch):
     """Default behavior unchanged: no env -> daemon-thread worker, no `detached` key,
     no `generating` marker (additive, today's behavior preserved)."""
-    monkeypatch.delenv("CLAWDND_IMAGE_DETACHED_RESOLVER", raising=False)
+    monkeypatch.delenv("WORLDOS_IMAGE_DETACHED_RESOLVER", raising=False)
     slow = _SlowProvider(delay=0.05)
     monkeypatch.setattr(imagegen, "get_provider", lambda: slow)
     d = imagegen.async_generate("scene", "a quiet glade", scope="det-off")
@@ -736,8 +736,8 @@ def test_detached_resolver_enabled_spawns_detached(state, monkeypatch):
     """With the env flag on, async_generate reports the detached path and writes a
     `generating` marker (then the resolver subprocess clears it). We stub Popen so the
     test stays in-process and deterministic."""
-    monkeypatch.setenv("CLAWDND_IMAGE_DETACHED_RESOLVER", "1")
-    monkeypatch.setenv("CLAWDND_IMAGE_PROVIDER", "null")
+    monkeypatch.setenv("WORLDOS_IMAGE_DETACHED_RESOLVER", "1")
+    monkeypatch.setenv("WORLDOS_IMAGE_PROVIDER", "null")
 
     spawned = {"cmd": None}
 
@@ -762,8 +762,8 @@ def test_detached_resolver_enabled_spawns_detached(state, monkeypatch):
 def test_detached_young_generating_marker_suppresses_respawn(state, monkeypatch):
     """A fresh `generating` marker means a resolver is already in flight: a second
     async_generate must NOT spawn again (no double spend)."""
-    monkeypatch.setenv("CLAWDND_IMAGE_DETACHED_RESOLVER", "1")
-    monkeypatch.setenv("CLAWDND_IMAGE_PROVIDER", "null")
+    monkeypatch.setenv("WORLDOS_IMAGE_DETACHED_RESOLVER", "1")
+    monkeypatch.setenv("WORLDOS_IMAGE_PROVIDER", "null")
     spawns = {"n": 0}
 
     class _FakePopen:
@@ -781,9 +781,9 @@ def test_detached_young_generating_marker_suppresses_respawn(state, monkeypatch)
 def test_detached_stale_generating_marker_allows_respawn(state, monkeypatch):
     """A `generating` marker older than the TTL is treated as a crashed resolver — a
     later call may retry (re-spawn)."""
-    monkeypatch.setenv("CLAWDND_IMAGE_DETACHED_RESOLVER", "1")
-    monkeypatch.setenv("CLAWDND_IMAGE_PROVIDER", "null")
-    monkeypatch.setenv("CLAWDND_IMAGE_GENERATING_TTL", "1.0")
+    monkeypatch.setenv("WORLDOS_IMAGE_DETACHED_RESOLVER", "1")
+    monkeypatch.setenv("WORLDOS_IMAGE_PROVIDER", "null")
+    monkeypatch.setenv("WORLDOS_IMAGE_GENERATING_TTL", "1.0")
     key = imagegen.content_hash("portrait", "a ghost", provider="null")
     # Hand-write a stale marker (started 10s ago, TTL is 1s).
     p = imagegen.generating_path(key, "det-stale")
@@ -801,7 +801,7 @@ def test_detached_stale_generating_marker_allows_respawn(state, monkeypatch):
 def test_resolve_entry_writes_cache_and_clears_marker(state, monkeypatch):
     """The resolver BODY (what the detached subprocess runs) does the real generate(),
     writes the derived cache, and clears the `generating` marker (F11-3)."""
-    monkeypatch.setenv("CLAWDND_IMAGE_PROVIDER", "null")
+    monkeypatch.setenv("WORLDOS_IMAGE_PROVIDER", "null")
     key = imagegen.content_hash("scene", "a lone tower", provider="null")
     imagegen._write_generating_marker(key, "res-w")
     assert imagegen.generating_path(key, "res-w").exists()
@@ -828,9 +828,9 @@ def test_detached_resolver_survives_parent_exit(tmp_path, monkeypatch):
     prog = _tw.dedent(f"""
         import sys, os
         sys.path.insert(0, {engine_dir!r})
-        os.environ["CLAWDND_STATE_DIR"] = {str(state)!r}
-        os.environ["CLAWDND_IMAGE_DETACHED_RESOLVER"] = "1"
-        os.environ["CLAWDND_IMAGE_PROVIDER"] = "null"
+        os.environ["WORLDOS_STATE_DIR"] = {str(state)!r}
+        os.environ["WORLDOS_IMAGE_DETACHED_RESOLVER"] = "1"
+        os.environ["WORLDOS_IMAGE_PROVIDER"] = "null"
         import imagegen
         d = imagegen.async_generate("scene", "a detached crypt", scope="e2e")
         print(d["hash"])  # hand the key to the parent test
@@ -841,7 +841,7 @@ def test_detached_resolver_survives_parent_exit(tmp_path, monkeypatch):
     assert len(key) == 64
 
     # The spawning process has EXITED. The detached resolver must still write the cache.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(state))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(state))
     deadline = _time.monotonic() + 10.0
     cached = None
     while _time.monotonic() < deadline:

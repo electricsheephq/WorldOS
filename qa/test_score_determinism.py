@@ -3,8 +3,8 @@
 Covers the two ADDITIVE hardening features layered onto score.sh:
 
   (a) Scorer-model pinning. score.sh pins a single canonical scorer model unless
-      CLAWDND_SCORER_MODEL is set. Setting CLAWDND_SCORER_MODEL WITHOUT the explicit
-      opt-in CLAWDND_ALLOW_SCORER_OVERRIDE=1 must ERROR (non-zero + a clear message) so
+      WORLDOS_SCORER_MODEL is set. Setting WORLDOS_SCORER_MODEL WITHOUT the explicit
+      opt-in WORLDOS_ALLOW_SCORER_OVERRIDE=1 must ERROR (non-zero + a clear message) so
       a stray env var can't silently swap the scorer and skew the gate baseline. With the
       override flag, the script must proceed PAST the guard.
 
@@ -99,11 +99,11 @@ def _run_score(inputs: dict, env_overrides: dict, guard_only: bool = True) -> su
 # (a) Scorer-model pinning guard
 # ====================================================================================
 def test_scorer_override_without_optin_errors(tmp_path):
-    """CLAWDND_SCORER_MODEL set, no opt-in flag → non-zero exit + a clear guard message."""
+    """WORLDOS_SCORER_MODEL set, no opt-in flag → non-zero exit + a clear guard message."""
     inputs = _make_inputs(tmp_path)
-    proc = _run_score(inputs, {"CLAWDND_SCORER_MODEL": "opus"})
+    proc = _run_score(inputs, {"WORLDOS_SCORER_MODEL": "opus"})
     assert proc.returncode != 0, (
-        "score.sh must REFUSE a CLAWDND_SCORER_MODEL override without the opt-in flag; "
+        "score.sh must REFUSE a WORLDOS_SCORER_MODEL override without the opt-in flag; "
         f"got rc={proc.returncode}\nstdout={proc.stdout}\nstderr={proc.stderr}"
     )
     combined = (proc.stdout + proc.stderr).lower()
@@ -115,11 +115,11 @@ def test_scorer_override_without_optin_errors(tmp_path):
 
 
 def test_scorer_override_with_optin_proceeds(tmp_path):
-    """CLAWDND_SCORER_MODEL + CLAWDND_ALLOW_SCORER_OVERRIDE=1 → proceeds past the guard."""
+    """WORLDOS_SCORER_MODEL + WORLDOS_ALLOW_SCORER_OVERRIDE=1 → proceeds past the guard."""
     inputs = _make_inputs(tmp_path)
     proc = _run_score(
         inputs,
-        {"CLAWDND_SCORER_MODEL": "opus", "CLAWDND_ALLOW_SCORER_OVERRIDE": "1"},
+        {"WORLDOS_SCORER_MODEL": "opus", "WORLDOS_ALLOW_SCORER_OVERRIDE": "1"},
     )
     assert proc.returncode == 0, (
         "with the opt-in flag, score.sh must proceed past the guard (guard-only dry run "

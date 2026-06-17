@@ -307,7 +307,7 @@ def test_find_option_case_insensitive_and_first_match():
 @pytest.fixture
 def l3_campaign(tmp_path, monkeypatch):
     """A persisted campaign with a lead PC, a companion, and a faction. Returns (cid, pc, comp)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Layer 3 Test")["id"]
     pc = server.create_character(cid, "Vanya", kind="player", class_name="bard", level=3)["id"]
     comp = server.create_character(cid, "Dorn", kind="companion", class_name="fighter", level=3)["id"]

@@ -19,9 +19,9 @@ if [ "${1:-}" = "--dry-run" ]; then
   printf 'scripted provider dry-run: requires no Claude, Codex, or OpenClaw\n'
   printf 'gate=%s world=%s run=%s port=%s\n' \
     "${WORLDOS_ENABLE_SCRIPTED_PROVIDER:-0}" \
-    "${CLAWDND_WORLD:-baldurs-gate}" \
-    "${CLAWDND_RUN_ID:-scripted-smoke}" \
-    "${CLAWDND_PLAY_PORT:-8765}"
+    "${WORLDOS_WORLD:-baldurs-gate}" \
+    "${WORLDOS_RUN_ID:-scripted-smoke}" \
+    "${WORLDOS_PLAY_PORT:-8765}"
   exit 0
 fi
 
@@ -36,21 +36,21 @@ for cmd in python3 uv; do
   fi
 done
 
-WORLD="${CLAWDND_WORLD:-baldurs-gate}"
-RUN="${CLAWDND_RUN_ID:-scripted-smoke-$(date +%H%M%S)}"
+WORLD="${WORLDOS_WORLD:-baldurs-gate}"
+RUN="${WORLDOS_RUN_ID:-scripted-smoke-$(date +%H%M%S)}"
 STATE_DIR="$ROOT/play-state/$RUN"
 # Pin BOTH state-dir env names to THIS run's hermetic play-state dir. The native .app's
 # startProviderSession injects WORLDOS_STATE_DIR (its launcher stateDir) into our environment
-# (#933); the engine resolves WORLDOS_STATE_DIR BEFORE CLAWDND_STATE_DIR, so without this the
-# cold-open bootstrap (which set only CLAWDND_STATE_DIR) leaks the campaign into the launcher's
+# (#933); the engine resolves WORLDOS_STATE_DIR BEFORE WORLDOS_STATE_DIR, so without this the
+# cold-open bootstrap (which set only WORLDOS_STATE_DIR) leaks the campaign into the launcher's
 # dir while the viewer reads this one — a split write/read that yields an empty can_act:false
 # surface. Mirror play.sh:142 and export both up front so every child (bootstrap, viewer,
 # move-resolver) agrees on one dir regardless of inherited env.
-export WORLDOS_STATE_DIR="$STATE_DIR" CLAWDND_STATE_DIR="$STATE_DIR"
-# Choose a free dashboard port like play.sh: unless CLAWDND_PLAY_PORT is set explicitly, fall
+export WORLDOS_STATE_DIR="$STATE_DIR"
+# Choose a free dashboard port like play.sh: unless WORLDOS_PLAY_PORT is set explicitly, fall
 # back off a busy 8765 (the native launcher viewer) so the game viewer doesn't crash-loop on bind.
-PORT_REQUESTED="${CLAWDND_PLAY_PORT:-8765}"
-PORT_EXPLICIT=0; [ -n "${CLAWDND_PLAY_PORT:-}" ] && PORT_EXPLICIT=1
+PORT_REQUESTED="${WORLDOS_PLAY_PORT:-8765}"
+PORT_EXPLICIT=0; [ -n "${WORLDOS_PLAY_PORT:-}" ] && PORT_EXPLICIT=1
 if command -v worldos_choose_port >/dev/null 2>&1; then
   PORT="$(worldos_choose_port "$PORT_REQUESTED" "$PORT_EXPLICIT")" || PORT="$PORT_REQUESTED"
 else
@@ -160,7 +160,7 @@ PY
 }
 
 BOOTSTRAP_JSON="$(
-  CLAWDND_STATE_DIR="$STATE_DIR" uv run --directory "$ROOT/servers/engine" python - "$WORLD" "${CLAWDND_PLAY_HERO:-}" <<'PY'
+  WORLDOS_STATE_DIR="$STATE_DIR" uv run --directory "$ROOT/servers/engine" python - "$WORLD" "${WORLDOS_PLAY_HERO:-}" <<'PY'
 import json, sys
 import server
 
@@ -230,15 +230,15 @@ write_summary
 
 viewer_supervisor() {
   while :; do
-    WORLDOS_STATE_DIR="$STATE_DIR" CLAWDND_STATE_DIR="$STATE_DIR" \
-    WORLDOS_VIEWER_CHAT="$CHAT" CLAWDND_VIEWER_CHAT="$CHAT" \
-    WORLDOS_PLAYER_MOVES="$MOVES" CLAWDND_PLAYER_MOVES="$MOVES" \
-    WORLDOS_PROVIDER=scripted CLAWDND_PROVIDER=scripted \
-    WORLDOS_PROVIDER_FAMILY=scripted CLAWDND_PROVIDER_FAMILY=scripted \
-    WORLDOS_AUTH_SURFACE=dev-scripted CLAWDND_AUTH_SURFACE=dev-scripted \
-    WORLDOS_DM_MODEL=scripted CLAWDND_DM_MODEL=scripted \
-    WORLDOS_ACTOR_MODEL=scripted CLAWDND_ACTOR_MODEL=scripted \
-    WORLDOS_SCORER_MODEL=scripted CLAWDND_SCORER_MODEL=scripted \
+    WORLDOS_STATE_DIR="$STATE_DIR" \
+    WORLDOS_VIEWER_CHAT="$CHAT" \
+    WORLDOS_PLAYER_MOVES="$MOVES" \
+    WORLDOS_PROVIDER=scripted WORLDOS_PROVIDER=scripted \
+    WORLDOS_PROVIDER_FAMILY=scripted WORLDOS_PROVIDER_FAMILY=scripted \
+    WORLDOS_AUTH_SURFACE=dev-scripted WORLDOS_AUTH_SURFACE=dev-scripted \
+    WORLDOS_DM_MODEL=scripted WORLDOS_DM_MODEL=scripted \
+    WORLDOS_ACTOR_MODEL=scripted WORLDOS_ACTOR_MODEL=scripted \
+    WORLDOS_SCORER_MODEL=scripted WORLDOS_SCORER_MODEL=scripted \
     WORLDOS_BROWSER_CONSOLE_LOG="${WORLDOS_BROWSER_CONSOLE_LOG:-}" \
     WORLDOS_BROWSER_NETWORK_LOG="${WORLDOS_BROWSER_NETWORK_LOG:-}" \
       python3 viewer/server.py "" "$PORT" >> "$VIEWER_LOG" 2>&1 &
@@ -268,7 +268,7 @@ while :; do
       beat=$((processed + 1))
       json_append "$CHAT" "player" "$(move_chat_text "$line")"
       reply="$(
-        CLAWDND_STATE_DIR="$STATE_DIR" uv run --directory "$ROOT/servers/engine" python - "$CAMPAIGN_ID" "$line" <<'PY'
+        WORLDOS_STATE_DIR="$STATE_DIR" uv run --directory "$ROOT/servers/engine" python - "$CAMPAIGN_ID" "$line" <<'PY'
 import json, sys
 import server
 

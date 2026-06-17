@@ -34,7 +34,7 @@ def test_create_character_companion_seeds_arc_and_dossier(tmp_path, monkeypatch)
     """The DOMINANT path: a companion made via create_character must get a default arc
     AND a (possibly empty-but-present) dossier, so camp/gates/agendas have state to track.
     Before the fix this companion had arc=None / dossier=None (20/20 live snapshots)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Seed")["id"]
     res = server.create_character(cid, "Lyra", kind="companion", class_name="Ranger")
     ch = server.get_character(cid, res["id"])
@@ -47,7 +47,7 @@ def test_create_character_companion_seeds_arc_and_dossier(tmp_path, monkeypatch)
 def test_create_character_player_and_npc_unchanged(tmp_path, monkeypatch):
     """ONLY companions are seeded — a player / npc / monster is byte-identical to today
     (no arc/dossier), so the change is scoped and additive."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Seed")["id"]
     pc = server.get_character(cid, server.create_character(cid, "Hero", kind="player")["id"])
     npc = server.get_character(cid, server.create_character(cid, "Bartender", kind="npc")["id"])
@@ -60,7 +60,7 @@ def test_create_character_player_and_npc_unchanged(tmp_path, monkeypatch):
 def test_create_character_companion_synthesizes_dossier_from_prose(tmp_path, monkeypatch):
     """A companion created with personality prose gets that folded into a terse camp prompt —
     the same synthesis recruit_companion does, so the dossier isn't a blank slate."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Seed")["id"]
     res = server.create_character(
         cid, "Sable", kind="companion",
@@ -75,7 +75,7 @@ def test_create_character_companion_synthesizes_dossier_from_prose(tmp_path, mon
 def test_load_canon_character_seeds_arc(tmp_path, monkeypatch):
     """load_canon_character already seeds the DOSSIER but never an ARC — after the fix a
     canon-loaded companion carries both, so camp/gates work on the canon path too."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     bg = server.start_world("baldurs-gate", ending="netherbrain-destroyed-heroes-live")["campaign_id"]
     res = server.load_canon_character(bg, "Gale", kind="companion", add_to_party=True)
     ch = server.get_character(bg, res["id"])
@@ -86,7 +86,7 @@ def test_load_canon_character_seeds_arc(tmp_path, monkeypatch):
 def test_load_canon_character_npc_not_seeded(tmp_path, monkeypatch):
     """A canon figure pulled as an NPC (not a companion) gets NO arc — seeding is
     companion-only on every path."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     bg = server.start_world("baldurs-gate")["campaign_id"]
     res = server.load_canon_character(bg, "Gale", kind="npc")
     ch = server.get_character(bg, res["id"])
@@ -96,7 +96,7 @@ def test_load_canon_character_npc_not_seeded(tmp_path, monkeypatch):
 def test_seeding_never_overwrites_an_ending_seeded_arc(tmp_path, monkeypatch):
     """The None-guard discipline: an ending-seeded companion keeps its AUTHORED arc when
     recruited — the helper never clobbers a richer, character-specific arc."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     bg = server.start_world("baldurs-gate", ending="illithid-ascension")["campaign_id"]
     before = server.get_character(bg, "npc-the-emperor")
     before_arc = before.get("arc")
@@ -110,7 +110,7 @@ def test_seeding_never_overwrites_an_ending_seeded_arc(tmp_path, monkeypatch):
 
 def test_recruit_still_seeds_arc_and_dossier(tmp_path, monkeypatch):
     """The path that ALREADY worked must keep working after the extract-shared-helper refactor."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Seed")["id"]
     npc = server.create_character(cid, "Bram", kind="npc")["id"]
     server.update_character(cid, npc, {
@@ -175,7 +175,7 @@ def test_companion_advise_surfaces_band_and_approval_causes(tmp_path, monkeypatc
     """The live surface (companion_advise) now reads the seeded dossier + the approval gauge
     + the arc and folds them into its return — every existing advise beat gets richer at
     near-zero token cost."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Advise")["id"]
     res = server.create_character(cid, "Mira", kind="companion", class_name="Cleric")
     comp_id = res["id"]
@@ -199,7 +199,7 @@ def test_companion_advise_without_dossier_or_arc_degrades_cleanly(tmp_path, monk
     """A companion with no dossier and no arc (e.g. an old snapshot loaded pre-backfill, or
     an NPC mid-promotion) advises WITHOUT the optional keys rather than erroring — the
     enrichment is best-effort and the base frame always returns."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Advise")["id"]
     # build a bare companion record directly (no seeding) to mimic a pre-fix snapshot
     c = server.load_campaign(cid)
@@ -217,7 +217,7 @@ def test_companion_advise_standing_band_tracks_the_gauge(tmp_path, monkeypatch):
     """The band is a deterministic read of attitude_value only (the gauge) — a hostile and a
     devoted companion get DIFFERENT band labels from the SAME tool, so the DM voices the
     right leaning."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Advise")["id"]
     cold = server.create_character(cid, "Frost", kind="companion")["id"]
     warm = server.create_character(cid, "Ember", kind="companion")["id"]

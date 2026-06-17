@@ -104,8 +104,8 @@ def _record_dm_reply_script(state_dir: Path, chat: Path, campaign_id: str, text:
 def test_record_dm_reply_success_stamps_engine_logged_and_logs_to_engine(tmp_path, monkeypatch):
     """SUCCESS path: a real campaign exists -> the narration is appended to the engine session
     log AND the dm chat row carries engine_logged:true (so the client de-dups the blob)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
-    import server  # engine tools as plain functions; state dir from CLAWDND_STATE_DIR
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    import server  # engine tools as plain functions; state dir from WORLDOS_STATE_DIR
 
     campaign_id = server.start_world("sundered-reach")["campaign_id"]
 
@@ -222,7 +222,7 @@ def test_record_dm_reply_does_not_double_log_when_dm_already_logged(tmp_path, mo
     """The CLAUDE-path bug: the DM already logged the opening this turn. record_dm_reply must NOT
     append a SECOND copy (which would render twice in /events) — it detects the prose is present,
     skips the append, and STILL stamps engine_logged so the /chat blob is dropped → single render."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
     campaign_id = server.start_world("sundered-reach")["campaign_id"]
     opening = "You stand at the gate as rain hisses on the cobbles and a guard eyes your blade."
@@ -243,7 +243,7 @@ def test_record_dm_reply_idempotent_across_per_paragraph_logging(tmp_path, monke
     """The DM may log the opening as SEPARATE paragraph beats while record_dm_reply gets the whole
     reply. The whitespace-normalized membership check must still see it as already-logged and skip
     the append (no extra full-blob narration row added)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
     campaign_id = server.start_world("sundered-reach")["campaign_id"]
     para1 = "Morning in the Lower City arrives loud."
@@ -274,7 +274,7 @@ def test_record_dm_reply_appends_canonical_when_not_already_logged(tmp_path, mon
     """The CODEX-path / DM-didn't-self-log case: the prose is NOT in the engine log yet, so
     record_dm_reply MUST append it (the canonical /events + recap/memory copy) exactly once,
     then flag — keeping the engine_logged stamp truthful."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
     campaign_id = server.start_world("sundered-reach")["campaign_id"]
     prose = "A lantern gutters in the gatehouse; the sergeant waves you through without a word."

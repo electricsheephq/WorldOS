@@ -26,7 +26,7 @@ ABK = ("strength", "dexterity", "constitution", "intelligence", "wisdom", "chari
 
 
 def _seed(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     c = content.seed_world(content.load_world_data(WORLD))
     server.save_campaign(c)
     return c
@@ -200,7 +200,7 @@ def test_load_canon_lore_npc_stays_gearless(tmp_path, monkeypatch):
 
 
 def test_recruit_companion_seeds_gear_and_purse(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Recruit gear")["id"]
     npc = server.create_character(cid, "Bram", kind="npc")["id"]
     server.recruit_companion(cid, npc, class_name="Fighter")
@@ -212,7 +212,7 @@ def test_recruit_companion_seeds_gear_and_purse(tmp_path, monkeypatch):
 
 def test_recruit_companion_respects_authored_kit_and_purse(tmp_path, monkeypatch):
     # The seeder self-guards: an authored inventory AND a non-zero purse win verbatim.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Recruit guard")["id"]
     npc = server.create_character(cid, "Maeve", kind="npc")["id"]
     c = server._require(cid)
@@ -228,7 +228,7 @@ def test_recruit_companion_respects_authored_kit_and_purse(tmp_path, monkeypatch
 def test_recruit_companion_backfills_flat10_stub_abilities(tmp_path, monkeypatch):
     # Routing recruit through the SAME shared finisher means a bare roster stub gains a
     # class-appropriate array (and HP computed off real CON), not a +0-everything sheet.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Recruit backfill")["id"]
     npc = server.create_character(cid, "Bram", kind="npc")["id"]
     server.recruit_companion(cid, npc, class_name="Fighter")
@@ -239,7 +239,7 @@ def test_recruit_companion_backfills_flat10_stub_abilities(tmp_path, monkeypatch
 
 
 def test_recruit_companion_explicit_abilities_still_win(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Recruit explicit")["id"]
     npc = server.create_character(cid, "Bram", kind="npc")["id"]
     server.recruit_companion(cid, npc, class_name="Fighter",

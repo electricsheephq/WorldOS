@@ -10,7 +10,7 @@ struct RootView: View {
     @AppStorage("artRepoPath") private var artRepoPath: String = RepositoryLocator.defaultArtRepoPath() ?? ""
     @AppStorage("preferredPort") private var preferredPort: Int = 8765
     // A shipped .app must NOT read/write the dev repo — default the state dir to the engine's own
-    // per-user home (~/.worldos/state, else ~/.clawdnd/state). play.sh nests each game under it.
+    // per-user home (~/.worldos/state, else ~/.worldos/state). play.sh nests each game under it.
     @AppStorage("stateDir") private var stateDir: String = RepositoryLocator.defaultUserStateDir()
     @AppStorage("selectedProvider") private var selectedProviderRaw: String = ProviderKind.claude.rawValue
     @AppStorage("defaultWorld") private var defaultWorld: String = "baldurs-gate"

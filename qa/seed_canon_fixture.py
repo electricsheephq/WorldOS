@@ -10,7 +10,7 @@ the engine's seat guard (#305). Then travels to a real location (so scene art re
 recruits a canon companion, adds inventory + a quest — so every OpenWorlds screen has real
 content to render and audit.
 
-Usage (WORLDOS_STATE_DIR preferred; legacy CLAWDND_STATE_DIR still works for v1.x):
+Usage (set WORLDOS_STATE_DIR to override):
   WORLDOS_STATE_DIR=<dir> uv run --directory servers/engine python qa/seed_canon_fixture.py \
       ["Aubree"] ["Arthus"] ["loc-lower-city"]
 Prints the campaign_id on the last line.

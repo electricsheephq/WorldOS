@@ -170,7 +170,7 @@ def test_find_empty_filter_is_ignored_not_match_empty():
 # --- find_npcs MCP tool (server surface) ------------------------------------
 
 def test_find_npcs_tool_filters_and_shapes(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     w = content.load_world_data(WORLD)
     c = content.seed_world(w)
     server.save_campaign(c)
@@ -184,7 +184,7 @@ def test_find_npcs_tool_filters_and_shapes(tmp_path, monkeypatch):
 
 
 def test_find_npcs_tool_is_merchant_true_narrows(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     w = content.load_world_data(WORLD)
     c = content.seed_world(w)
     server.save_campaign(c)
@@ -251,7 +251,7 @@ def test_apply_ending_overlay_projects_death_status(tmp_path, monkeypatch):
 # --- load_canon_character carries the tags onto the live Character ----------
 
 def test_load_canon_character_carries_tags(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     w = content.load_world_data(WORLD)
     c = content.seed_world(w)
     server.save_campaign(c)

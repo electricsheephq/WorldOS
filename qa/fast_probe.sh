@@ -35,7 +35,7 @@ fi
 echo "[1/2] persona $P (headless GUI lane, no .app rebuild) …"
 qa/ui_playtest.sh "$RUN-$P" baldurs-gate "$P" 12 1.50 >"$LOGD/$RUN-$P.log" 2>&1 || echo "  (persona returned nonzero — see $LOGD/$RUN-$P.log)"
 echo "[2/3] 6-beat duo (G5 STORY — roleplay/arc craft; floors armed at ≥6 beats) …"
-CLAWDND_LEAN_BEATS=1 qa/run_duo.sh "$RUN-duo" baldurs-gate qa/play_player_duo.txt 6 0.80 >"$LOGD/$RUN-duo.log" 2>&1 || echo "  (duo returned nonzero — see $LOGD/$RUN-duo.log)"
+WORLDOS_LEAN_BEATS=1 qa/run_duo.sh "$RUN-duo" baldurs-gate qa/play_player_duo.txt 6 0.80 >"$LOGD/$RUN-duo.log" 2>&1 || echo "  (duo returned nonzero — see $LOGD/$RUN-duo.log)"
 
 # G5 MECH read MUST come from the combat-sprint, NOT the duo: an emergent duo player drifts to roleplay
 # and rarely fights (combat≈0), so the duo's mech/Angry-DM lens scores low for lack of mechanics to

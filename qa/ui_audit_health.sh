@@ -325,7 +325,7 @@ if [ "$UI_GATE" -eq 1 ]; then
     # smallest robust path; campaigns.json re-reads on snapshot mtime change so no viewer
     # restart is needed). Guarded: an already-seeded state dir is never touched, and a
     # failed/unavailable seed only WARNs — the probe then fails honestly on its own.
-    AUDIT_STATE_DIR="${WORLDOS_STATE_DIR:-${CLAWDND_STATE_DIR:-}}"
+    AUDIT_STATE_DIR="${WORLDOS_STATE_DIR:-}"
     if [ -n "$AUDIT_STATE_DIR" ]; then
       if ls "$AUDIT_STATE_DIR"/campaigns/*/snapshot.json >/dev/null 2>&1; then
         pass "ui-gate seed: state dir already has >=1 campaign ($AUDIT_STATE_DIR)"
@@ -333,7 +333,7 @@ if [ "$UI_GATE" -eq 1 ]; then
         warn "ui-gate seed: uv not on PATH — cannot seed empty state dir $AUDIT_STATE_DIR; play_reachable will fail honestly"
       else
         SEED_LOG=/tmp/ow-ui-gate-seed.log
-        if WORLDOS_STATE_DIR="$AUDIT_STATE_DIR" CLAWDND_STATE_DIR="$AUDIT_STATE_DIR" \
+        if WORLDOS_STATE_DIR="$AUDIT_STATE_DIR" \
            uv run --directory servers/engine python - >"$SEED_LOG" 2>&1 <<'PY'
 import server
 result = server.start_world("baldurs-gate")
@@ -349,7 +349,7 @@ PY
         fi
       fi
     else
-      warn "ui-gate seed: WORLDOS_STATE_DIR/CLAWDND_STATE_DIR not set — cannot verify/seed the viewer's state dir; play_reachable needs a resumable campaign"
+      warn "ui-gate seed: WORLDOS_STATE_DIR/WORLDOS_STATE_DIR not set — cannot verify/seed the viewer's state dir; play_reachable needs a resumable campaign"
     fi
     # Per-screen placeholder ceilings (Loop-9 baseline + 2 slack) — kept inline
     # in the python report block below (macOS ships bash 3.2 which has no

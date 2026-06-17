@@ -333,16 +333,16 @@ class TestViewerLatestDescriptorOrder(unittest.TestCase):
     def setUp(self):
         self._tmp = self.enterContext(tempfile.TemporaryDirectory())
         self._old_repo_root = _viewer._REPO_ROOT
-        self._old_state = os.environ.get("CLAWDND_STATE_DIR")
+        self._old_state = os.environ.get("WORLDOS_STATE_DIR")
         _viewer._REPO_ROOT = Path(self._tmp)
-        os.environ["CLAWDND_STATE_DIR"] = str(self._tmp)
+        os.environ["WORLDOS_STATE_DIR"] = str(self._tmp)
 
     def tearDown(self):
         _viewer._REPO_ROOT = self._old_repo_root
         if self._old_state is None:
-            os.environ.pop("CLAWDND_STATE_DIR", None)
+            os.environ.pop("WORLDOS_STATE_DIR", None)
         else:
-            os.environ["CLAWDND_STATE_DIR"] = self._old_state
+            os.environ["WORLDOS_STATE_DIR"] = self._old_state
 
     def _write_ingested(self, world_id: str, scope: str) -> None:
         safe = "".join(c if (c.isalnum() or c in "-_") else "_" for c in scope)[:128]
@@ -387,9 +387,9 @@ class TestViewerImageEndpoint(unittest.TestCase):
     def setUp(self):
         self._tmp = self.enterContext(tempfile.TemporaryDirectory())
         self._old_repo_root = _viewer._REPO_ROOT
-        self._old_state = os.environ.get("CLAWDND_STATE_DIR")
+        self._old_state = os.environ.get("WORLDOS_STATE_DIR")
         _viewer._REPO_ROOT = Path(self._tmp)
-        os.environ["CLAWDND_STATE_DIR"] = str(self._tmp)
+        os.environ["WORLDOS_STATE_DIR"] = str(self._tmp)
         _QuietHandler.campaign_id = ""
         _QuietHandler.transcript_path = ""
         _QuietHandler.chat_path = ""
@@ -405,9 +405,9 @@ class TestViewerImageEndpoint(unittest.TestCase):
         self._thread.join(timeout=2)
         _viewer._REPO_ROOT = self._old_repo_root
         if self._old_state is None:
-            os.environ.pop("CLAWDND_STATE_DIR", None)
+            os.environ.pop("WORLDOS_STATE_DIR", None)
         else:
-            os.environ["CLAWDND_STATE_DIR"] = self._old_state
+            os.environ["WORLDOS_STATE_DIR"] = self._old_state
 
     def _get(self, path: str) -> tuple[int, bytes]:
         conn = http.client.HTTPConnection(self._host, self._port, timeout=5)

@@ -125,7 +125,7 @@ def test_no_world_state_first_hook_is_spine_and_degrades_clean():
 
 def test_start_world_wires_s7_and_echoes_and_persists(tmp_path, monkeypatch):
     import server
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     out = server.start_world("baldurs-gate", ending="gortash-tyranny")
     cid = out["campaign_id"]
     # the echo surfaces the cold-open + the seeds at session open
@@ -141,7 +141,7 @@ def test_start_world_wires_s7_and_echoes_and_persists(tmp_path, monkeypatch):
 def test_s7_tools_read_filter_and_advance(tmp_path, monkeypatch):
     import pytest
     import server
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_world("baldurs-gate", ending="illithid-ascension")["campaign_id"]
 
     # get_prelude resolves ref names (location for arrival, companion for meeting, spine grievance)
@@ -188,7 +188,7 @@ def test_sundered_reach_gets_cold_open_but_no_hooks(tmp_path, monkeypatch):
     # (every world deserves an opening), but there are no lore-derived hooks. And questgen never
     # touches c.lore, so the quest_variants additive-default (byte-identical lore) is preserved.
     import server
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     out = server.start_world("sundered-reach")
     cid = out["campaign_id"]
     c = server._require(cid)

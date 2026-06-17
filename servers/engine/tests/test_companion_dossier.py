@@ -112,7 +112,7 @@ def test_seed_world_roster_dossier_degrades_on_malformed(tmp_path, monkeypatch):
     # A present-but-malformed roster dossier must SKIP (the NPC gets none), never abort the
     # whole world seed — mirroring the companion_seeds / world_state degrade guards. A valid
     # sibling roster NPC is unaffected.
-    monkeypatch.setenv("CLAWDND_CONTENT_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_CONTENT_DIR", str(tmp_path))
     (tmp_path / "worlds" / "w").mkdir(parents=True)
     world = {
         "id": "w", "schema_version": 1, "name": "W", "ruleset": "SRD 5.2",
@@ -144,7 +144,7 @@ def test_canon_character_record_carries_a_dossier():
 
 
 def test_load_canon_character_populates_dossier(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     bg = server.start_world("baldurs-gate", ending="netherbrain-destroyed-heroes-live")["campaign_id"]
     res = server.load_canon_character(bg, "Gale", kind="companion", add_to_party=True)
     assert not res.get("already_present")  # Gale isn't rostered -> real fresh load
@@ -161,7 +161,7 @@ def test_load_canon_character_derives_class_level_hp_through_the_tool(tmp_path, 
     # `_class_level_hp` helper (hit-die + CON per level) and seats current_hp==max_hp. Gale ships
     # no canon HP hint and is a Wizard L1 (CON +2 from the #322-derived array), so his max_hp is
     # d6 + CON = 8 — the sole reason it isn't the placeholder 1. Mirrors test_canon_maxhp.py.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     bg = server.start_world("baldurs-gate")["campaign_id"]
     res = server.load_canon_character(bg, "Gale")  # fresh load (Gale isn't rostered)
     assert not res.get("already_present")
@@ -260,7 +260,7 @@ def test_recruit_synthesizes_minimal_dossier_from_existing_state(tmp_path, monke
     # A freshly-recruited companion with no seeded dossier gets a MINIMAL one synthesized
     # from what the record already carries (a backstory clause + memory facts -> camp prompts),
     # so it isn't a blank slate at camp.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Dossier")["id"]
     npc = server.create_character(cid, "Bram", kind="npc")["id"]
     server.update_character(cid, npc, {
@@ -279,7 +279,7 @@ def test_recruit_synthesizes_minimal_dossier_from_existing_state(tmp_path, monke
 def test_recruit_never_overwrites_a_seeded_dossier(tmp_path, monkeypatch):
     # An ending-seeded companion (the Emperor carries a dossier from illithid-ascension) keeps
     # its authored dossier when recruited — the synthesis is guarded on `companion_dossier is None`.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     bg = server.start_world("baldurs-gate", ending="illithid-ascension")["campaign_id"]
     server.recruit_companion(bg, "npc-the-emperor", class_name="Wizard", abilities={"intelligence": 18})
     d = server.get_character(bg, "npc-the-emperor")["companion_dossier"]
@@ -289,7 +289,7 @@ def test_recruit_never_overwrites_a_seeded_dossier(tmp_path, monkeypatch):
 def test_recruit_synthesized_dossier_is_terse(tmp_path, monkeypatch):
     # The synthesized dossier must stay OPERATIONAL, not a copy of the whole biography: it caps
     # the camp prompts and truncates a long backstory clause rather than pasting prose.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Terse")["id"]
     npc = server.create_character(cid, "Verbose", kind="npc")["id"]
     long_clause = "x" * 500

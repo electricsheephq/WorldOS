@@ -26,7 +26,7 @@ _STORY_KINDS = frozenset({"narration", "dialogue", "combat"})
 # recites them reads as a damage log. We keep narrative combat (payload None or lacking
 # this schema) and drop only the schema-stamped rows. Distinct from #749/#763, which
 # exact-matched only the wrapper-progress heartbeat.
-_COMBAT_EVENT_SCHEMA = "clawdnd.combat_event.v1"
+_COMBAT_EVENT_SCHEMA = "worldos.combat_event.v1"
 
 
 def _is_combat_bookkeeping(entry: SessionLogEntry) -> bool:

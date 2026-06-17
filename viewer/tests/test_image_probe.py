@@ -49,18 +49,18 @@ class ImageProbeTests(unittest.TestCase):
         self._tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self._saved_env = {}
         for var in (
-            "CLAWDND_STATE_DIR",
+            "WORLDOS_STATE_DIR",
             "WORLDOS_ART_REPO_ROOT",
-            "CLAWDND_ART_REPO_ROOT",
+            "WORLDOS_ART_REPO_ROOT",
             "WORLDOS_REPO_ROOT",
-            "CLAWDND_REPO_ROOT",
+            "WORLDOS_REPO_ROOT",
             "WORLDOS_PLAYER_MOVES",
-            "CLAWDND_PLAYER_MOVES",
+            "WORLDOS_PLAYER_MOVES",
             "WORLDOS_PROVIDER",
-            "CLAWDND_PROVIDER",
+            "WORLDOS_PROVIDER",
         ):
             self._saved_env[var] = os.environ.pop(var, None)
-        os.environ["CLAWDND_STATE_DIR"] = str(self._tmp)
+        os.environ["WORLDOS_STATE_DIR"] = str(self._tmp)
         # Isolate from any real checkout's gitignored _private art (2k+ ingested dirs on
         # dev boxes would make probe outcomes nondeterministic via the fuzzy slug match).
         art_root = self._tmp / "art-root"

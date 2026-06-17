@@ -63,7 +63,7 @@ struct ProvidersView: View {
                                 .textFieldStyle(.roundedBorder)
                             TextField("OpenClaw launch command", text: $openClawProviderCommand)
                                 .textFieldStyle(.roundedBorder)
-                            Text("Configured commands receive both WORLDOS_* and CLAWDND_* provider, world, run, port, companion, model, auth-surface, and budget variables. They must route moves through existing engine/player contracts.")
+                            Text("Configured commands receive WORLDOS_* provider, world, run, port, companion, model, auth-surface, and budget variables. They must route moves through existing engine/player contracts.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }

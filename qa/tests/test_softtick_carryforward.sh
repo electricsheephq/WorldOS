@@ -25,7 +25,7 @@ STATE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/wos_f04_2_XXXXXX")"
 trap 'rm -rf "$STATE_DIR"' EXIT
 
 # --- Seed a campaign with a thread-beat due TODAY (fires on the next clock advance) ----------
-CID="$(WORLDOS_STATE_DIR="$STATE_DIR" CLAWDND_STATE_DIR="$STATE_DIR" \
+CID="$(WORLDOS_STATE_DIR="$STATE_DIR" \
   uv run --directory "$ROOT/servers/engine" python "$ROOT/qa/tests/_seed_softtick_fixture.py" 2>&1)"
 if [ -z "$CID" ] || printf '%s' "$CID" | grep -qi "error\|traceback"; then
   fail "fixture seed failed: $CID"

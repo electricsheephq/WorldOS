@@ -40,7 +40,7 @@ KINDS = ("events", "dialogue", "decision", "npc_fact", "quest_milestone", "conse
 #      by start_session/end_session — matched by exact prefix (same exact-match
 #      discipline as #749's wrapper-line filter), so a DM note that merely mentions a
 #      session is still indexed.
-_COMBAT_EVENT_SCHEMA = "clawdnd.combat_event.v1"
+_COMBAT_EVENT_SCHEMA = "worldos.combat_event.v1"
 # Anchored to the engine's own marker text; \b/(:|$) so a DM prose row that starts with
 # the same words but continues differently is NOT swallowed.
 _SESSION_MARKER_RE = re.compile(r"^(Session \d+ began\b|Session ended\.)")

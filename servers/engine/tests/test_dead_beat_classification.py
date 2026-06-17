@@ -162,7 +162,7 @@ def test_final_text_resultless_stream_is_empty_not_error(tmp_path):
 def test_resolve_classifies_error_result_as_failed_beat_never_recycles(tmp_path):
     """The dead-beat mask, leg (a)+(b) together: an error-class final result fails the beat —
     the reply is EMPTY (no error text, no recycled prose even though the log has prior prose)
-    and CLAWDND_DM_BEAT_FAILED=1."""
+    and WORLDOS_DM_BEAT_FAILED=1."""
     _seed_campaign(tmp_path, [PROSE_1])  # recycle bait: the previous beat's prose is recoverable
     out = _write_result_jsonl(tmp_path / "out.jsonl", result=ERR_TEXT, is_error=True, status=401)
     chat = tmp_path / "chat.jsonl"
@@ -170,7 +170,7 @@ def test_resolve_classifies_error_result_as_failed_beat_never_recycles(tmp_path)
         _hdr(tmp_path, chat)
         + f'_="$(worldos_dm_final_text "{out}" "$STATE_DIR" 1)"\n'
         + 'worldos_resolve_dm_reply "" "$STATE_DIR"\n'
-        + 'printf "failed=%s recovered=%s reply=[%s]\\n" "$CLAWDND_DM_BEAT_FAILED" "$CLAWDND_FALLBACK_RECOVERED" "$CLAWDND_DM_REPLY"\n'
+        + 'printf "failed=%s recovered=%s reply=[%s]\\n" "$WORLDOS_DM_BEAT_FAILED" "$WORLDOS_FALLBACK_RECOVERED" "$WORLDOS_DM_REPLY"\n'
     )
     r = _bash(script)
     assert r.returncode == 0, r.stderr
@@ -188,7 +188,7 @@ def test_resolve_healthy_reply_unchanged(tmp_path):
         _hdr(tmp_path, tmp_path / "chat.jsonl")
         + f'_="$(worldos_dm_final_text "{out}" "$STATE_DIR" 0)"\n'
         + f'worldos_resolve_dm_reply {PROSE_2!r} "$STATE_DIR"\n'
-        + 'printf "failed=%s recovered=%s reply=[%s]\\n" "$CLAWDND_DM_BEAT_FAILED" "$CLAWDND_FALLBACK_RECOVERED" "$CLAWDND_DM_REPLY"\n'
+        + 'printf "failed=%s recovered=%s reply=[%s]\\n" "$WORLDOS_DM_BEAT_FAILED" "$WORLDOS_FALLBACK_RECOVERED" "$WORLDOS_DM_REPLY"\n'
     )
     r = _bash(script)
     assert r.returncode == 0, r.stderr
@@ -210,7 +210,7 @@ def test_resolve_recycled_prose_is_a_failed_beat(tmp_path):
         + 'worldos_dm_prebeat_mark "$STATE_DIR"\n'
         + f'_="$(worldos_dm_final_text "{out}" "$STATE_DIR" 124)"\n'
         + 'worldos_resolve_dm_reply "" "$STATE_DIR"\n'
-        + 'printf "failed=%s recovered=%s reply=[%s]\\n" "$CLAWDND_DM_BEAT_FAILED" "$CLAWDND_FALLBACK_RECOVERED" "$CLAWDND_DM_REPLY"\n'
+        + 'printf "failed=%s recovered=%s reply=[%s]\\n" "$WORLDOS_DM_BEAT_FAILED" "$WORLDOS_FALLBACK_RECOVERED" "$WORLDOS_DM_REPLY"\n'
     )
     r = _bash(script)
     assert r.returncode == 0, r.stderr
@@ -235,7 +235,7 @@ def test_resolve_new_prose_after_mark_is_genuine_357_recovery(tmp_path):
         _hdr(tmp_path, tmp_path / "chat.jsonl")
         + f'_="$(worldos_dm_final_text "{out}" "$STATE_DIR" 124)"\n'
         + 'worldos_resolve_dm_reply "" "$STATE_DIR"\n'
-        + 'printf "failed=%s recovered=%s\\nreply=[%s]\\n" "$CLAWDND_DM_BEAT_FAILED" "$CLAWDND_FALLBACK_RECOVERED" "$CLAWDND_DM_REPLY"\n'
+        + 'printf "failed=%s recovered=%s\\nreply=[%s]\\n" "$WORLDOS_DM_BEAT_FAILED" "$WORLDOS_FALLBACK_RECOVERED" "$WORLDOS_DM_REPLY"\n'
     )
     r = _bash(script)
     assert r.returncode == 0, r.stderr
@@ -251,7 +251,7 @@ def test_resolve_without_mark_keeps_legacy_recovery(tmp_path):
     script = (
         _hdr(tmp_path, tmp_path / "chat.jsonl")
         + 'worldos_resolve_dm_reply "" "$STATE_DIR"\n'
-        + 'printf "failed=%s recovered=%s reply=[%s]\\n" "$CLAWDND_DM_BEAT_FAILED" "$CLAWDND_FALLBACK_RECOVERED" "$CLAWDND_DM_REPLY"\n'
+        + 'printf "failed=%s recovered=%s reply=[%s]\\n" "$WORLDOS_DM_BEAT_FAILED" "$WORLDOS_FALLBACK_RECOVERED" "$WORLDOS_DM_REPLY"\n'
     )
     r = _bash(script)
     assert r.returncode == 0, r.stderr
@@ -283,8 +283,8 @@ def test_wrapper_heartbeat_lane_dead_beat_ends_in_visible_failure_row(tmp_path):
         _hdr(tmp_path, chat)
         + f'_="$(worldos_dm_final_text "{out}" "$STATE_DIR" 124)"\n'
         + 'worldos_resolve_dm_reply "" "$STATE_DIR"\n'
-        + 'printf "recovered=%s reply=[%s]\\n" "$CLAWDND_FALLBACK_RECOVERED" "$CLAWDND_DM_REPLY"\n'
-        + 'record_dm_reply "c1" "$CLAWDND_DM_REPLY" beat\n'
+        + 'printf "recovered=%s reply=[%s]\\n" "$WORLDOS_FALLBACK_RECOVERED" "$WORLDOS_DM_REPLY"\n'
+        + 'record_dm_reply "c1" "$WORLDOS_DM_REPLY" beat\n'
     )
     r = _bash(script)
     assert r.returncode == 0, r.stderr
@@ -347,10 +347,10 @@ def test_failure_row_helper_shape_and_consume_once(tmp_path):
     chat = tmp_path / "chat.jsonl"
     script = (
         _hdr(tmp_path, chat)
-        + "CLAWDND_FALLBACK_RECOVERED=1\nCLAWDND_DM_BEAT_FAILED=1\n"
+        + "WORLDOS_FALLBACK_RECOVERED=1\nWORLDOS_DM_BEAT_FAILED=1\n"
         + "worldos_chatlog_dm_failed\n"
         + f"worldos_chatlog_dm {PROSE_2!r}\n"
-        + 'printf "post_failed=%s post_recovered=%s\\n" "$CLAWDND_DM_BEAT_FAILED" "$CLAWDND_FALLBACK_RECOVERED"\n'
+        + 'printf "post_failed=%s post_recovered=%s\\n" "$WORLDOS_DM_BEAT_FAILED" "$WORLDOS_FALLBACK_RECOVERED"\n'
     )
     r = _bash(script)
     assert r.returncode == 0, r.stderr
@@ -416,7 +416,7 @@ def test_lib_chatlog_three_arg_contract_for_runners(tmp_path):
     script = (
         _hdr(tmp_path, chat)
         + f"chatlog player {PROSE_1!r}\n"
-        + "CLAWDND_FALLBACK_RECOVERED=1\n"
+        + "WORLDOS_FALLBACK_RECOVERED=1\n"
         + f"worldos_chatlog_dm {PROSE_2!r}\n"
     )
     r = _bash(script)
@@ -438,7 +438,7 @@ def _minimal_green_run(tmp_path) -> tuple[Path, Path]:
                 "message": {
                     "content": [
                         {"type": "text", "text": "The scene unfolds."},
-                        {"type": "tool_use", "name": "mcp__clawdnd-engine__roll",
+                        {"type": "tool_use", "name": "mcp__worldos-engine__roll",
                          "id": "t1", "input": {}},
                     ]
                 },

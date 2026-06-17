@@ -246,7 +246,7 @@ const PENDING_BACKSTOP_MS = 12 * 60 * 1000;       // …with the original hard b
 // #746: the ceiling is BUDGET-AWARE by turn position, because the original flat 5-min value sat BELOW the
 // system's own healthy turn budgets and false-fired `stuck` on healthy slow turns: the cold open measures
 // ~300s with a 400–500s deadline (qa/lib_beat_driver.sh worldos_dm_timeout — 500s for Opus), and a healthy
-// CONTINUING beat can legitimately run ~400s (scripts/play.sh CLAWDND_BEAT_TIMEOUT=200s + ONE retry). When
+// CONTINUING beat can legitimately run ~400s (scripts/play.sh WORLDOS_BEAT_TIMEOUT=200s + ONE retry). When
 // the flat ceiling fired mid-flight on a working turn, pendingActive flipped false (the action bar
 // re-opened, screen-table.jsx), the "DM seems stuck" toast fired, and retryStuck re-POSTed the move — so
 // the SAME intent resolved TWICE once the in-flight beat landed. The fix: firstBeat (the cold open) ⇒

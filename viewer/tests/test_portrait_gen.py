@@ -8,7 +8,7 @@ scope keying, env-inheritance, verdict shaping — is exercised without spawning
 
 The end-to-end null-provider-returns-placeholder-with-no-network property is proven on
 the ENGINE side (servers/engine/tests/test_imagegen.py): the default provider is null and
-touches no network. Here we assert the route NEVER forces CLAWDND_IMAGE_PROVIDER=openclaw,
+touches no network. Here we assert the route NEVER forces WORLDOS_IMAGE_PROVIDER=openclaw,
 which is the one thing that could engage the gateway.
 """
 
@@ -40,8 +40,8 @@ class _QuietHandler(server._Handler):
 class PortraitGenRouteTests(unittest.TestCase):
     def setUp(self):
         self._tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        self._old_state = os.environ.get("CLAWDND_STATE_DIR")
-        os.environ["CLAWDND_STATE_DIR"] = str(self._tmp)
+        self._old_state = os.environ.get("WORLDOS_STATE_DIR")
+        os.environ["WORLDOS_STATE_DIR"] = str(self._tmp)
         _QuietHandler.campaign_id = ""
         _QuietHandler.transcript_path = ""
         _QuietHandler.chat_path = ""
@@ -56,9 +56,9 @@ class PortraitGenRouteTests(unittest.TestCase):
         self._httpd.server_close()
         self._thread.join(timeout=2)
         if self._old_state is None:
-            os.environ.pop("CLAWDND_STATE_DIR", None)
+            os.environ.pop("WORLDOS_STATE_DIR", None)
         else:
-            os.environ["CLAWDND_STATE_DIR"] = self._old_state
+            os.environ["WORLDOS_STATE_DIR"] = self._old_state
 
     def _post(self, path: str, body: object) -> tuple[int, dict]:
         conn = http.client.HTTPConnection(self._host, self._port, timeout=10)
@@ -148,9 +148,9 @@ class PortraitGenEngineTests(unittest.TestCase):
     spawned and no socket is ever opened — while still asserting the no-gateway guarantee."""
 
     def setUp(self):
-        self._old_state = os.environ.get("CLAWDND_STATE_DIR")
+        self._old_state = os.environ.get("WORLDOS_STATE_DIR")
         self._tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        os.environ["CLAWDND_STATE_DIR"] = str(self._tmp)
+        os.environ["WORLDOS_STATE_DIR"] = str(self._tmp)
         # Capture what env the route would hand the engine subprocess.
         self._captured = {}
 
@@ -178,12 +178,12 @@ class PortraitGenEngineTests(unittest.TestCase):
         subprocess.run = self._old_run  # type: ignore[assignment]
         server.subprocess.run = self._old_run
         if self._old_state is None:
-            os.environ.pop("CLAWDND_STATE_DIR", None)
+            os.environ.pop("WORLDOS_STATE_DIR", None)
         else:
-            os.environ["CLAWDND_STATE_DIR"] = self._old_state
+            os.environ["WORLDOS_STATE_DIR"] = self._old_state
 
     def test_no_provider_returns_placeholder_verdict(self):
-        os.environ.pop("CLAWDND_IMAGE_PROVIDER", None)
+        os.environ.pop("WORLDOS_IMAGE_PROVIDER", None)
         res = server._portrait_gen({"race": "half", "class": "wizard", "name": "Eira"})
         self.assertTrue(res.get("ok"))
         self.assertTrue(res.get("placeholder"))
@@ -191,24 +191,24 @@ class PortraitGenEngineTests(unittest.TestCase):
         self.assertTrue(str(res.get("scope", "")).startswith("portrait-pc-"))
 
     def test_route_never_forces_openclaw_provider(self):
-        # THE guardrail: the route must not set CLAWDND_IMAGE_PROVIDER=openclaw. With no
+        # THE guardrail: the route must not set WORLDOS_IMAGE_PROVIDER=openclaw. With no
         # provider in the parent env, the child env must NOT carry an openclaw provider.
-        os.environ.pop("CLAWDND_IMAGE_PROVIDER", None)
+        os.environ.pop("WORLDOS_IMAGE_PROVIDER", None)
         server._portrait_gen({"race": "human", "class": "fighter"})
         child_env = self._captured["env"]
-        self.assertNotEqual(child_env.get("CLAWDND_IMAGE_PROVIDER", ""), "openclaw")
+        self.assertNotEqual(child_env.get("WORLDOS_IMAGE_PROVIDER", ""), "openclaw")
         # It DOES bound the interactive poll so a slow gateway can't hang the call.
-        self.assertEqual(child_env.get("CLAWDND_OPENCLAW_POLL_TIMEOUT"), "60")
+        self.assertEqual(child_env.get("WORLDOS_OPENCLAW_POLL_TIMEOUT"), "60")
 
     def test_route_inherits_host_provider_unchanged(self):
         # If the HOST already configured a provider, the route inherits it verbatim — it
         # neither forces nor strips it (so a deliberately-configured box still works).
-        os.environ["CLAWDND_IMAGE_PROVIDER"] = "openclaw"
+        os.environ["WORLDOS_IMAGE_PROVIDER"] = "openclaw"
         try:
             server._portrait_gen({"race": "elf", "class": "rogue"})
-            self.assertEqual(self._captured["env"].get("CLAWDND_IMAGE_PROVIDER"), "openclaw")
+            self.assertEqual(self._captured["env"].get("WORLDOS_IMAGE_PROVIDER"), "openclaw")
         finally:
-            os.environ.pop("CLAWDND_IMAGE_PROVIDER", None)
+            os.environ.pop("WORLDOS_IMAGE_PROVIDER", None)
 
     def test_provisional_scope_is_deterministic(self):
         a = server._portrait_gen_scope("human", "fighter", "Eira", None)
@@ -232,18 +232,18 @@ class PortraitGenRealSubprocessTests(unittest.TestCase):
     def setUp(self):
         if not __import__("shutil").which("uv"):
             self.skipTest("uv not installed")
-        self._old_state = os.environ.get("CLAWDND_STATE_DIR")
+        self._old_state = os.environ.get("WORLDOS_STATE_DIR")
         self._tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        os.environ["CLAWDND_STATE_DIR"] = str(self._tmp)
-        self._old_provider = os.environ.pop("CLAWDND_IMAGE_PROVIDER", None)
+        os.environ["WORLDOS_STATE_DIR"] = str(self._tmp)
+        self._old_provider = os.environ.pop("WORLDOS_IMAGE_PROVIDER", None)
 
     def tearDown(self):
         if self._old_state is None:
-            os.environ.pop("CLAWDND_STATE_DIR", None)
+            os.environ.pop("WORLDOS_STATE_DIR", None)
         else:
-            os.environ["CLAWDND_STATE_DIR"] = self._old_state
+            os.environ["WORLDOS_STATE_DIR"] = self._old_state
         if self._old_provider is not None:
-            os.environ["CLAWDND_IMAGE_PROVIDER"] = self._old_provider
+            os.environ["WORLDOS_IMAGE_PROVIDER"] = self._old_provider
 
     def test_null_default_returns_placeholder_no_network(self):
         res = server._portrait_gen({"race": "half", "class": "wizard", "name": "Eira", "appearance": "scarred"})

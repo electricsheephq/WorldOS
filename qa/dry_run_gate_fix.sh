@@ -18,10 +18,10 @@
 #                          [--regress] [--db <scores.db>] [--baseline-key k=v,...] [-- <inner args>]
 #
 # Env (test/offline seams — additive, default empty == real live runs):
-#   CLAWDND_DRYRUN_RUNNER=<cmd>  Run <cmd> ONCE per gate run instead of the real combat-sprint. It must
+#   WORLDOS_DRYRUN_RUNNER=<cmd>  Run <cmd> ONCE per gate run instead of the real combat-sprint. It must
 #                                print ONE score JSON line to stdout: {"mech":N,"story":N,"behavioral":"GREEN|RED"}.
 #                                ("story" is optional for mech-only gates like combat-sprint.)
-#   CLAWDND_DRYRUN_STUB=1        Use a built-in fixed-score stub (offline, GREEN) — for smoke/demo.
+#   WORLDOS_DRYRUN_STUB=1        Use a built-in fixed-score stub (offline, GREEN) — for smoke/demo.
 #
 # Exit: 0 = GREEN (median clears the bar AND behavioral majority GREEN); 2 = BELOW bar / behavioral RED;
 #       3 = nothing ran. A regression verdict is ADVISORY unless it is a hard REGRESSED on a passing gate.
@@ -33,8 +33,8 @@ cd "$ROOT" || exit 3
 RUNS=3
 GATE_KIND="combat-sprint"
 # Combat-sprint is mech-focused (Angry-DM 5e fidelity). Match loop.sh's published north-star bars.
-MECH_MIN="${WORLDOS_MECH_MIN:-${CLAWDND_MECH_MIN:-4.5}}"
-STORY_MIN="${WORLDOS_STORY_MIN:-${CLAWDND_STORY_MIN:-4.3}}"
+MECH_MIN="${WORLDOS_MECH_MIN:-4.5}"
+STORY_MIN="${WORLDOS_STORY_MIN:-4.3}"
 DO_REGRESS=0
 DB_PATH="qa/scores.db"        # default ONLY used when --regress is given; tests always pass a temp --db
 BASELINE_KEY=""               # comma k=v list folded into the candidate JSON for detect_regression
@@ -61,14 +61,14 @@ case "$RUNS" in (''|*[!0-9]*) echo "[dryrun] --runs must be a positive integer" 
 echo "[dryrun] gate=$GATE_KIND runs=$RUNS  bars: mech>=$MECH_MIN story>=$STORY_MIN"
 
 # ── Inner runner: the SEAM. One call == one scored gate run; prints ONE score JSON line. ──────────
-# Order of preference: explicit CLAWDND_DRYRUN_RUNNER, then CLAWDND_DRYRUN_STUB, else the real gate.
+# Order of preference: explicit WORLDOS_DRYRUN_RUNNER, then WORLDOS_DRYRUN_STUB, else the real gate.
 run_one() { # run_one <run-id> -> prints one score JSON line on stdout
   local rid="$1"
-  if [ -n "${CLAWDND_DRYRUN_RUNNER:-}" ]; then
-    CLAWDND_DRYRUN_RUN_ID="$rid" "$CLAWDND_DRYRUN_RUNNER" ${INNER_ARGS[@]+"${INNER_ARGS[@]}"}
+  if [ -n "${WORLDOS_DRYRUN_RUNNER:-}" ]; then
+    WORLDOS_DRYRUN_RUN_ID="$rid" "$WORLDOS_DRYRUN_RUNNER" ${INNER_ARGS[@]+"${INNER_ARGS[@]}"}
     return $?
   fi
-  if [ "${CLAWDND_DRYRUN_STUB:-0}" = "1" ]; then
+  if [ "${WORLDOS_DRYRUN_STUB:-0}" = "1" ]; then
     # Built-in offline stub: a fixed GREEN, above-bar score. No model, no state, no I/O.
     printf '{"mech":4.7,"story":4.6,"behavioral":"GREEN"}\n'
     return 0

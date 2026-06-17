@@ -3,8 +3,8 @@
 
 Run (single-process):
     uv run --directory servers/engine python -m pytest ../../qa/test_triage_failure.py -q -p no:xdist
-    uv run --directory /Users/lume/clawdnd-qa-p2b/servers/engine python -m pytest \
-        /Users/lume/clawdnd-qa-p2b/qa/test_triage_failure.py -q -p no:xdist
+    uv run --directory /Users/lume/worldos-qa-p2b/servers/engine python -m pytest \
+        /Users/lume/worldos-qa-p2b/qa/test_triage_failure.py -q -p no:xdist
 
 triage_failure.py is a PURE READER: given a bucket name (and optionally a read-only run dir),
 it emits likely cause(s), a recommended next diagnostic + retry env vars, and an INFRA/MEASUREMENT

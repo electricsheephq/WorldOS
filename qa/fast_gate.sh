@@ -19,17 +19,17 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$ROOT" || exit 2
 LOG="${TMPDIR:-/tmp}/wos_fastgate_t0.log"
 
-# ── OPT-IN green-cache (CLAWDND_FASTGATE_CACHE=1; default OFF == today's behavior) ──────────────
+# ── OPT-IN green-cache (WORLDOS_FASTGATE_CACHE=1; default OFF == today's behavior) ──────────────
 # Re-running the gate on an UNCHANGED tree is pure waste: the deterministic tier is a pure function
 # of the working tree. When the cache is enabled we key a GREEN verdict on (git HEAD + persona +
 # gate args) and short-circuit an identical re-run to the cached verdict instead of re-running the
 # inner gate. This is an INNER-LOOP convenience only — strictly additive (off by default), never
 # wired into CI, and a RED result is NEVER cached (so a failure is always reproducible).
-#   CLAWDND_FASTGATE_CACHE=1        — turn the cache ON (default empty/0 = off = run every time).
-#   CLAWDND_FASTGATE_CACHE_DIR=...  — override the cache root (default qa/.cache/fastgate; gitignored).
-#   CLAWDND_FASTGATE_PERSONA=...    — persona discriminator folded into the key (default "default").
-#   CLAWDND_FASTGATE_INNER_CMD=...  — test seam: run this instead of the real pytest tier (mockable).
-_fastgate_cache_enabled() { [ "${CLAWDND_FASTGATE_CACHE:-0}" = "1" ]; }
+#   WORLDOS_FASTGATE_CACHE=1        — turn the cache ON (default empty/0 = off = run every time).
+#   WORLDOS_FASTGATE_CACHE_DIR=...  — override the cache root (default qa/.cache/fastgate; gitignored).
+#   WORLDOS_FASTGATE_PERSONA=...    — persona discriminator folded into the key (default "default").
+#   WORLDOS_FASTGATE_INNER_CMD=...  — test seam: run this instead of the real pytest tier (mockable).
+_fastgate_cache_enabled() { [ "${WORLDOS_FASTGATE_CACHE:-0}" = "1" ]; }
 
 _fastgate_cache_key() {
   # Key the cached verdict on the exact tree + persona + invocation. HEAD is the cheap proxy for the
@@ -37,7 +37,7 @@ _fastgate_cache_key() {
   # documented use). The persona + gate-args make the key persona/arg specific.
   local head persona args
   head="$(git rev-parse HEAD 2>/dev/null || echo nohead)"
-  persona="${CLAWDND_FASTGATE_PERSONA:-default}"
+  persona="${WORLDOS_FASTGATE_PERSONA:-default}"
   args="${FASTGATE_ARGS:-$*}"
   printf '%s' "$head|$persona|$args" \
     | { command -v shasum >/dev/null 2>&1 && shasum -a 256 || md5; } \
@@ -47,8 +47,8 @@ _fastgate_cache_key() {
 # Inner deterministic tier — the real work. Returns the inner gate exit code. The test seam lets a
 # bash test substitute a mock that does not need uv/pytest (and counts its own invocations).
 _fastgate_run_inner() {
-  if [ -n "${CLAWDND_FASTGATE_INNER_CMD:-}" ]; then
-    "$CLAWDND_FASTGATE_INNER_CMD"
+  if [ -n "${WORLDOS_FASTGATE_INNER_CMD:-}" ]; then
+    "$WORLDOS_FASTGATE_INNER_CMD"
     return $?
   fi
   echo "── FAST-GATE Tier 0 — deterministic engine + seat-path + rest/travel + combat ($0) ──"
@@ -71,13 +71,13 @@ _fastgate_run_inner() {
 
 CACHE_FILE=""
 if _fastgate_cache_enabled; then
-  CACHE_DIR="${CLAWDND_FASTGATE_CACHE_DIR:-$ROOT/qa/.cache/fastgate}"
+  CACHE_DIR="${WORLDOS_FASTGATE_CACHE_DIR:-$ROOT/qa/.cache/fastgate}"
   CACHE_FILE="$CACHE_DIR/$(_fastgate_cache_key "$@").pass"
   if [ -f "$CACHE_FILE" ]; then
-    echo "── FAST-GATE cache HIT (CLAWDND_FASTGATE_CACHE=1) — short-circuiting to the cached GREEN verdict ──"
-    echo "  key persona=${CLAWDND_FASTGATE_PERSONA:-default} sha=$(git rev-parse --short HEAD 2>/dev/null || echo nohead)"
+    echo "── FAST-GATE cache HIT (WORLDOS_FASTGATE_CACHE=1) — short-circuiting to the cached GREEN verdict ──"
+    echo "  key persona=${WORLDOS_FASTGATE_PERSONA:-default} sha=$(git rev-parse --short HEAD 2>/dev/null || echo nohead)"
     echo "  cached: $(cat "$CACHE_FILE" 2>/dev/null)"
-    echo "  (inner gate NOT re-run; delete $CACHE_FILE or unset CLAWDND_FASTGATE_CACHE to force.)"
+    echo "  (inner gate NOT re-run; delete $CACHE_FILE or unset WORLDOS_FASTGATE_CACHE to force.)"
     exit 0
   fi
 fi
@@ -87,7 +87,7 @@ if _fastgate_run_inner "$@"; then
     mkdir -p "$(dirname "$CACHE_FILE")"
     printf 'PASS %s sha=%s persona=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
       "$(git rev-parse --short HEAD 2>/dev/null || echo nohead)" \
-      "${CLAWDND_FASTGATE_PERSONA:-default}" > "$CACHE_FILE"
+      "${WORLDOS_FASTGATE_PERSONA:-default}" > "$CACHE_FILE"
     echo "  (cached GREEN verdict at $CACHE_FILE — re-run short-circuits while the tree is unchanged.)"
   fi
 else

@@ -25,7 +25,7 @@ def test_deliberate_frame_carries_voice_personality_callbacks_not_words():
 
 @pytest.fixture
 def cid(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     return server.start_adventure("embergloom-pact")["campaign_id"]
 
 

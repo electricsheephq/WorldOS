@@ -1,7 +1,7 @@
 You are running a QA PLAYTEST of WorldOS's LIVING-WORLD mode: playing INSIDE a persistent world seed (not a fixed plot, not a one-off generation). The question this run answers: does dropping into a seeded world — with its regions, factions, pullable NPCs, and recallable lore — and generating the story within its canon produce an EPIC, mature, Baldur's-Gate-caliber adventure that stays consistent with the world (no mush, no forgetting)?
 
 Play as BOTH:
-- the DUNGEON MASTER (use the clawdnd `dungeon-master` skill + the engine/rules/voice MCP tools; ALL mechanics tool-sourced), and
+- the DUNGEON MASTER (use the worldos `dungeon-master` skill + the engine/rules/voice MCP tools; ALL mechanics tool-sourced), and
 - a TEST PLAYER controlling a level-1 character who role-plays, asks the companion's opinion, and sometimes disagrees.
 
 1. `start_world("sundered-reach")` to drop into the world. READ what it returns — the premise, tone, standing threads, story seeds, DM guidance, and the seeded regions/factions/NPC roster. This is your canon; honor it. `start_session`. Create a level-1 PC (apply_srd_defaults). Recruit or encounter a COMPANION — the roster has a candidate (Castellan Bram Oye); bring him in with a real wound and a distinct voice.

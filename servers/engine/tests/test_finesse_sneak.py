@@ -49,7 +49,7 @@ def test_is_finesse_weapon_matching(item, expected):
 def test_rogue_with_finesse_weapon_uses_dex_on_melee(tmp_path, monkeypatch):
     # Red-first F01-4: DEX-16/STR-10 rogue (engine seeds an equipped Shortsword —
     # finesse). Today melee_attack_bonus is prof + STR = +2; it must be prof + DEX = +5.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Finesse")["id"]
     r = server.create_character(
         cid, "Sly", kind="player", class_name="Rogue", level=3,
@@ -67,7 +67,7 @@ def test_rogue_with_finesse_weapon_uses_dex_on_melee(tmp_path, monkeypatch):
 
 def test_str_fighter_without_finesse_weapon_unchanged(tmp_path, monkeypatch):
     # Greataxe barbarian: STR-only loadout — numbers byte-identical, no finesse key.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("NoFinesse")["id"]
     r = server.create_character(
         cid, "Krug", kind="player", class_name="Barbarian", level=1,
@@ -82,7 +82,7 @@ def test_str_fighter_without_finesse_weapon_unchanged(tmp_path, monkeypatch):
 
 def test_magic_finesse_weapon_name_still_matches(tmp_path, monkeypatch):
     # "Rapier +1" must still register as finesse (substring-tolerant matching).
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Magic")["id"]
     r = server.create_character(
         cid, "Duelist", kind="player", class_name="Fighter", level=1,
@@ -100,7 +100,7 @@ def test_magic_finesse_weapon_name_still_matches(tmp_path, monkeypatch):
 def test_carried_but_unequipped_finesse_weapon_still_counts(tmp_path, monkeypatch):
     # Equipped-first, else any carried (the spec's fallback): a dagger in the pack
     # still lets a DEX-martial fight with it.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Carried")["id"]
     r = server.create_character(
         cid, "Pock", kind="player", class_name="Fighter", level=1,
@@ -118,7 +118,7 @@ def test_carried_but_unequipped_finesse_weapon_still_counts(tmp_path, monkeypatc
 def test_str_winner_with_finesse_weapon_keeps_str_numbers(tmp_path, monkeypatch):
     # max(STR, DEX): a STR-16/DEX-10 fighter holding a dagger keeps the STR numbers
     # (finesse is "may use DEX", never a penalty).
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("StrWins")["id"]
     r = server.create_character(
         cid, "Bron", kind="player", class_name="Fighter", level=1,
@@ -137,7 +137,7 @@ def test_str_winner_with_finesse_weapon_keeps_str_numbers(tmp_path, monkeypatch)
 # --- sneak attack surfaced at the attack trigger ------------------------------
 
 def test_sneak_attack_surfaced_in_combat_numbers(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Sneak")["id"]
     r = server.start_character(cid, name="Vex", origin="veteran_l5", class_name="Rogue",
                                abilities={"dex": 16, "str": 10})
@@ -152,7 +152,7 @@ def test_sneak_attack_surfaced_in_combat_numbers(tmp_path, monkeypatch):
 
 
 def test_non_rogue_has_no_sneak_attack_key(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("NoSneak")["id"]
     r = server.create_character(
         cid, "Pious", kind="player", class_name="Cleric", level=3,
@@ -165,7 +165,7 @@ def test_non_rogue_has_no_sneak_attack_key(tmp_path, monkeypatch):
 def test_turn_brief_carries_finesse_and_sneak(tmp_path, monkeypatch):
     # The per-turn surface (the one the DM actually reads each turn, #166) must carry
     # both cues, not just get_character.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Brief")["id"]
     r = server.create_character(
         cid, "Shade", kind="player", class_name="Rogue", level=5,

@@ -73,10 +73,10 @@ def test_format_recap_dialogue_without_speaker():
 # ── F07-1: schema-stamped combat bookkeeping is decontaminated from the recap ──
 # (issue #772). The cold-open "previously on" must recite STORY, not the engine's
 # mechanical combat-event rows (`_log_combat_event` stamps payload schema
-# clawdnd.combat_event.v1). A NARRATIVE combat beat (no schema-stamped payload)
+# worldos.combat_event.v1). A NARRATIVE combat beat (no schema-stamped payload)
 # still survives — that is the existing goblins line above.
 
-_COMBAT_EVENT_SCHEMA = "clawdnd.combat_event.v1"
+_COMBAT_EVENT_SCHEMA = "worldos.combat_event.v1"
 
 
 def test_format_recap_drops_schema_stamped_combat_bookkeeping():
@@ -187,7 +187,7 @@ def test_format_recap_short_entries_byte_identical():
 
 
 def test_recap_from_store(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     campaign_id = "camp_test123"
     session_id = "sess_test123"
 
@@ -221,7 +221,7 @@ def _story(campaign_id, session_id, text, kind="narration", **kw):
 
 
 def test_recap_resume_falls_back_when_active_session_empty(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = "camp_resume1"
     # Session 1 has real story; session 2 is story-empty (only a system marker).
     _story(cid, "s1", "The party breached the ashen gate and slew the wight-lord.")
@@ -236,7 +236,7 @@ def test_recap_resume_falls_back_when_active_session_empty(tmp_path, monkeypatch
 
 
 def test_recap_resume_keeps_single_session_when_it_has_story(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = "camp_resume2"
     _story(cid, "s1", "An older beat about the swamp.")
     _story(cid, "s2", "The dragon descended on the keep.")
@@ -247,7 +247,7 @@ def test_recap_resume_keeps_single_session_when_it_has_story(tmp_path, monkeypat
 
 
 def test_recap_resume_truly_new_campaign_stays_empty(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = "camp_resume3"
     # Only the system marker anywhere -> no story at all -> stays the new-adventure msg.
     store.append_log(cid, "s1", SessionLogEntry(kind="system", text="Session 1 began"))
@@ -256,7 +256,7 @@ def test_recap_resume_truly_new_campaign_stays_empty(tmp_path, monkeypatch):
 
 
 def test_recap_resume_no_other_sessions_stays_empty(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = "camp_resume4"
     store.append_log(cid, "s1", SessionLogEntry(kind="system", text="Session 1 began"))
     # Empty active session, NO other sessions -> nothing to fall back to -> _EMPTY.

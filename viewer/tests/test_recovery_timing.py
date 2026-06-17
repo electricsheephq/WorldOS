@@ -436,7 +436,7 @@ class MidStreamStallTests(_BabelHarness):
 
     #746: the #745 ceiling was a FLAT 5 min — BELOW the system's own healthy turn budgets. The cold
     open measures ~300s with a 400–500s deadline (qa/lib_beat_driver.sh worldos_dm_timeout; 500s for
-    Opus), and a healthy CONTINUING beat can run ~400s (scripts/play.sh CLAWDND_BEAT_TIMEOUT=200s +
+    Opus), and a healthy CONTINUING beat can run ~400s (scripts/play.sh WORLDOS_BEAT_TIMEOUT=200s +
     ONE retry). So the ceiling false-fired `stuck` on healthy slow turns: the action bar re-opened
     mid-flight, the 'DM seems stuck' toast fired, and retryStuck re-POSTed the move — the SAME intent
     resolving TWICE once the in-flight beat landed. The fix makes the ceiling budget-aware by turn

@@ -42,9 +42,9 @@ def test_remint_returns_fresh_id_for_create_mode_and_nothing_for_resume():
     script = (
         f'set -u; . "{LIB}"\n'
         'worldos_dm_remint_session_on_retry --session-id OLD-UUID\n'
-        'echo "create:${CLAWDND_DM_RETRY_SESSION[*]:-EMPTY}"\n'
+        'echo "create:${WORLDOS_DM_RETRY_SESSION[*]:-EMPTY}"\n'
         'worldos_dm_remint_session_on_retry --resume OLD-UUID\n'
-        'echo "resume:${CLAWDND_DM_RETRY_SESSION[*]:-EMPTY}"\n'
+        'echo "resume:${WORLDOS_DM_RETRY_SESSION[*]:-EMPTY}"\n'
     )
     r = _bash(script)
     assert r.returncode == 0, r.stderr
@@ -60,8 +60,8 @@ def test_remint_two_retries_yield_distinct_ids():
     """Real uuid path (no shim): two re-mints must differ -> proves genuine uniqueness."""
     script = (
         f'set -u; . "{LIB}"\n'
-        'worldos_dm_remint_session_on_retry --session-id OLD; a="${CLAWDND_DM_RETRY_SESSION[1]}"\n'
-        'worldos_dm_remint_session_on_retry --session-id OLD; b="${CLAWDND_DM_RETRY_SESSION[1]}"\n'
+        'worldos_dm_remint_session_on_retry --session-id OLD; a="${WORLDOS_DM_RETRY_SESSION[1]}"\n'
+        'worldos_dm_remint_session_on_retry --session-id OLD; b="${WORLDOS_DM_RETRY_SESSION[1]}"\n'
         'echo "a=$a"; echo "b=$b"; [ -n "$a" ] && [ "$a" != "$b" ] && echo DISTINCT || echo SAME\n'
     )
     r = _bash(script)
@@ -89,7 +89,7 @@ def test_report_attempt_failure_names_a_401_auth_error(tmp_path):
 def test_shared_helpers_exist_and_only_remint_create_mode():
     lib = _src("qa/lib_beat_driver.sh")
     assert "worldos_dm_remint_session_on_retry()" in lib
-    assert "CLAWDND_DM_RETRY_SESSION" in lib
+    assert "WORLDOS_DM_RETRY_SESSION" in lib
     assert 'if [ "${1:-}" = "--session-id" ]; then' in lib
     assert "worldos_report_attempt_failure()" in lib
 
@@ -100,7 +100,7 @@ def test_all_three_harnesses_remint_on_retry():
     # play.sh + play_party.sh route their non-lean retry through the shared re-mint + error helper.
     for name, src in (("play.sh", play), ("play_party.sh", party)):
         assert "worldos_dm_remint_session_on_retry" in src, name
-        assert "CLAWDND_DM_RETRY_SESSION" in src, name
+        assert "WORLDOS_DM_RETRY_SESSION" in src, name
         assert "worldos_report_attempt_failure" in src, name
     # play_party.sh gained a DM retry it did not have before.
     assert "retrying once with a fresh session" in party
@@ -117,8 +117,8 @@ def test_play_party_dm_has_live_progress_rule():
     (sweep_v8 forensics: healthy beats, zero streaming refs). Guards against the rule being lost or
     the three harnesses drifting."""
     party = _src("scripts/play_party.sh")
-    assert "CLAWDND_LIVE_PROGRESS_RULE=" in party, "play_party.sh lost the live-progress rule definition"
-    assert 'msg="$CLAWDND_LIVE_PROGRESS_RULE"' in party, "the rule must be applied to the DM turn message"
+    assert "WORLDOS_LIVE_PROGRESS_RULE=" in party, "play_party.sh lost the live-progress rule definition"
+    assert 'msg="$WORLDOS_LIVE_PROGRESS_RULE"' in party, "the rule must be applied to the DM turn message"
     assert "Live progress rule" in party and "log_event" in party and "narration" in party
     # parity: the codex DM path already carried this intent.
     assert "LIVE_PROGRESS_LOG_RULE" in _src("scripts/play_codex_dm.sh")
@@ -263,7 +263,7 @@ def test_live_progress_rule_is_shared_in_the_lib():
     """Anti-drift: factor the live-progress rule into the ONE shared lib so the harnesses can't drift.
     The string must be defined in lib_beat_driver.sh and carry its load-bearing intent."""
     lib = _src("qa/lib_beat_driver.sh")
-    assert "CLAWDND_LIVE_PROGRESS_RULE=" in lib, "the live-progress rule must live in the shared lib"
+    assert "WORLDOS_LIVE_PROGRESS_RULE=" in lib, "the live-progress rule must live in the shared lib"
     assert "Live progress rule" in lib and "log_event" in lib and "narration" in lib
 
 
@@ -272,8 +272,8 @@ def test_play_sh_applies_the_live_progress_rule_to_the_beat_turn():
     rule to its per-beat DM turn — parity with play_party.sh + play_codex_dm.sh. Its ABSENCE is the
     bug: the solo DM emitted nothing to /events until the full 85-157s beat completed."""
     play = _src("scripts/play.sh")
-    assert "CLAWDND_LIVE_PROGRESS_RULE" in play, "play.sh must reference the shared live-progress rule"
-    assert "$CLAWDND_LIVE_PROGRESS_RULE" in play, "the rule must be spliced into the DM beat prompt"
+    assert "WORLDOS_LIVE_PROGRESS_RULE" in play, "play.sh must reference the shared live-progress rule"
+    assert "$WORLDOS_LIVE_PROGRESS_RULE" in play, "the rule must be spliced into the DM beat prompt"
 
 
 def test_progress_heartbeat_helpers_exist_in_the_lib():
@@ -321,7 +321,7 @@ def test_emit_progress_heartbeat_logs_a_narration_event(tmp_path, monkeypatch):
     state.mkdir()
     # Mint a real campaign + a session through the engine (the heartbeat needs a real campaign to log
     # into; an empty dir makes log_event raise — which the helper swallows, but then there's no row).
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(state))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(state))
     monkeypatch.setenv("WORLDOS_STATE_DIR", str(state))
     _sys.path.insert(0, str(ROOT / "servers" / "engine"))
     import server  # the engine module (servers/engine on sys.path)
@@ -332,7 +332,7 @@ def test_emit_progress_heartbeat_logs_a_narration_event(tmp_path, monkeypatch):
     script = (
         f'set -u; . "{LIB}"\n'
         f'export ROOT="{ROOT}"; export STATE_DIR="{state}"\n'
-        f'export CLAWDND_STATE_DIR="{state}"; export WORLDOS_STATE_DIR="{state}"\n'
+        f'export WORLDOS_STATE_DIR="{state}"; export WORLDOS_STATE_DIR="{state}"\n'
         # blank campaign id must no-op (the heartbeat is best-effort, never fatal)
         'worldos_emit_progress_heartbeat "" 1 0; echo "blank-rc=$?"\n'
         # a real campaign id must log a narration progress beat
@@ -409,7 +409,7 @@ def test_ui_playtest_dm_timeout_is_bash32_clean_and_sourced():
     script = (
         f'set -u; . "{lib}"\n'
         # cold-open tier (first=1) and continuing tier (first=0) must both yield a positive integer.
-        'CLAWDND_DM_MODEL=opus; co="$(worldos_dm_timeout 1)"; bt="$(worldos_dm_timeout 0)"\n'
+        'WORLDOS_DM_MODEL=opus; co="$(worldos_dm_timeout 1)"; bt="$(worldos_dm_timeout 0)"\n'
         'echo "co=$co bt=$bt"\n'
         'case "$co" in (*[!0-9]*|"") echo BAD_CO; exit 1;; esac\n'
         'case "$bt" in (*[!0-9]*|"") echo BAD_BT; exit 1;; esac\n'

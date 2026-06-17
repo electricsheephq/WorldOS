@@ -109,7 +109,7 @@ def test_bg_undercity_sewers_read_non_civilized_via_composite():
 def city_camp(tmp_path, monkeypatch):
     """A campaign whose current location is a CITY scene: region='Baldur's Gate',
     notes carry the 'city' tag (mirroring a real ingested BG area)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("City Test")["id"]
     start = server.add_location(cid, "The Lower City", region="Baldur's Gate")["id"]
     dest = server.add_location(

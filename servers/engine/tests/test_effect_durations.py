@@ -17,7 +17,7 @@ from models import ActiveEffect, Campaign, Character
 
 @pytest.fixture(autouse=True)
 def isolated(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     yield
 
 
@@ -309,7 +309,7 @@ def test_guiding_bolt_materialized_rider_auto_expires(monkeypatch):
     assert [e["name"] for e in _effects(cid, foe)] == ["Guiding Bolt"]
     # (the d20 stub stays patched; next_turn / use_action(skip) roll no attack, so the
     # turn advance below is unaffected — don't monkeypatch.undo(), which would also revert
-    # the autouse CLAWDND_STATE_DIR fixture and orphan the campaign.)
+    # the autouse WORLDOS_STATE_DIR fixture and orphan the campaign.)
     expired = None
     for _ in range(6):
         v = _advance_turn(cid)

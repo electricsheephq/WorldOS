@@ -46,11 +46,11 @@ def _src(rel: str) -> str:
     return (ROOT / rel).read_text(encoding="utf-8")
 
 
-# A lib preamble that neutralizes ambient WORLDOS_/CLAWDND_ knobs so defaults are what we test.
+# A lib preamble that neutralizes ambient WORLDOS_/WORLDOS_ knobs so defaults are what we test.
 _CLEAN = (
     'set -u\n'
-    'unset WORLDOS_BEAT_TIMEOUT CLAWDND_BEAT_TIMEOUT WORLDOS_COLDOPEN_TIMEOUT '
-    'CLAWDND_COLDOPEN_TIMEOUT CLAWDND_DM_MODEL WORLDOS_DM_MODEL 2>/dev/null || true\n'
+    'unset WORLDOS_BEAT_TIMEOUT WORLDOS_BEAT_TIMEOUT WORLDOS_COLDOPEN_TIMEOUT '
+    'WORLDOS_COLDOPEN_TIMEOUT WORLDOS_DM_MODEL WORLDOS_DM_MODEL 2>/dev/null || true\n'
     f'. "{LIB}"\n'
 )
 
@@ -157,10 +157,10 @@ def test_routine_beat_timeout_default_is_360():
 
 
 def test_routine_beat_timeout_env_override_still_wins():
-    """CLAWDND_BEAT_TIMEOUT keeps its name + precedence (frozen wire contract); WORLDOS_ twin wins."""
+    """WORLDOS_BEAT_TIMEOUT keeps its name + precedence (frozen wire contract); WORLDOS_ twin wins."""
     r = _bash(
         _CLEAN
-        + 'CLAWDND_BEAT_TIMEOUT=222; echo "c=$(worldos_dm_timeout 0)"\n'
+        + 'WORLDOS_BEAT_TIMEOUT=222; echo "c=$(worldos_dm_timeout 0)"\n'
         + 'WORLDOS_BEAT_TIMEOUT=233; echo "w=$(worldos_dm_timeout 0)"\n'
     )
     assert r.returncode == 0, r.stderr
@@ -173,10 +173,10 @@ def test_retry_timeout_escalates_to_the_coldopen_tier():
     tier (opus 500 / non-opus 550 after F12-2) and never DE-escalates below attempt 1's deadline."""
     r = _bash(
         _CLEAN
-        + 'CLAWDND_DM_MODEL=opus\n'
+        + 'WORLDOS_DM_MODEL=opus\n'
         + 'echo "opus360=$(worldos_dm_retry_timeout 360)"\n'
         + 'echo "opus600=$(worldos_dm_retry_timeout 600)"\n'
-        + 'CLAWDND_DM_MODEL=sonnet\n'
+        + 'WORLDOS_DM_MODEL=sonnet\n'
         + 'echo "sonnet360=$(worldos_dm_retry_timeout 360)"\n'
     )
     assert r.returncode == 0, r.stderr
@@ -188,7 +188,7 @@ def test_retry_timeout_escalates_to_the_coldopen_tier():
 
 def test_retry_timeout_tolerates_a_garbage_base():
     """3.2-clean robustness: a non-numeric base (an env typo) still yields the escalation tier."""
-    r = _bash(_CLEAN + 'CLAWDND_DM_MODEL=opus; echo "g=$(worldos_dm_retry_timeout banana)"')
+    r = _bash(_CLEAN + 'WORLDOS_DM_MODEL=opus; echo "g=$(worldos_dm_retry_timeout banana)"')
     assert r.returncode == 0, r.stderr
     assert "g=500" in r.stdout, r.stdout
 
@@ -204,10 +204,10 @@ def test_play_lanes_recompute_the_retry_deadline():
 
 
 def test_play_sh_documented_routine_default_matches_the_lib():
-    """play.sh's CLAWDND_BEAT_TIMEOUT line both documents AND seeds the routine default — it must
+    """play.sh's WORLDOS_BEAT_TIMEOUT line both documents AND seeds the routine default — it must
     agree with the lib's 360 (a 200 left here would silently pin the old kill deadline)."""
     play = _src("scripts/play.sh")
-    assert 'CLAWDND_BEAT_TIMEOUT="${CLAWDND_BEAT_TIMEOUT:-360}"' in play, (
+    assert 'WORLDOS_BEAT_TIMEOUT="${WORLDOS_BEAT_TIMEOUT:-360}"' in play, (
         "play.sh must seed/document the raised 360s routine default"
     )
     assert ':-200}' not in play, "the stale 200s default must not survive anywhere in play.sh"
@@ -318,8 +318,8 @@ def test_play_party_heartbeat_uses_the_shared_helper_not_a_local_bank():
     """#763 decontamination: the heartbeat MUST be the shared lib helper (its exact wrapper lines
     are what app.jsx filters and the #763 fallback recognizes) — never a local text bank."""
     party = _src("scripts/play_party.sh")
-    assert "CLAWDND_OPENING_PROGRESS_TEXT=" not in party, "no local heartbeat bank (lib owns the text)"
-    assert "CLAWDND_MOVE_PROGRESS_TEXTS=" not in party, "no local heartbeat bank (lib owns the text)"
+    assert "WORLDOS_OPENING_PROGRESS_TEXT=" not in party, "no local heartbeat bank (lib owns the text)"
+    assert "WORLDOS_MOVE_PROGRESS_TEXTS=" not in party, "no local heartbeat bank (lib owns the text)"
 
 
 # ===================== F12-5: play_party soft clock-tick backstop =====================

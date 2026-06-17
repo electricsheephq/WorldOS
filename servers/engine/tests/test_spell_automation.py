@@ -16,7 +16,7 @@ def test_srd_spell_lookup():
 
 @pytest.fixture
 def caster(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_adventure("cellar-rats")["campaign_id"]
     wid = server.create_character(
         cid, "Wizard", kind="player", class_name="Wizard", level=5,

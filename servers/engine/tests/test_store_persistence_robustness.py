@@ -32,7 +32,7 @@ from models import Campaign, SessionLogEntry
 # ---------------------------------------------------------------------------
 
 def _state(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
 
 
 def _snapshot_path(tmp_path, cid: str):
@@ -196,7 +196,7 @@ def test_start_session_surfaces_schema_drift_on_resume(tmp_path, monkeypatch):
 
 def test_start_session_no_drift_key_on_clean_campaign(tmp_path, monkeypatch):
     """A clean (strict-loadable) campaign must NOT carry a schema_drift key (no false alarm)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Clean resume")["id"]
     out = server.start_session(cid)
     assert "schema_drift" not in out
@@ -371,7 +371,7 @@ def test_append_to_clean_log_adds_no_extra_newline(tmp_path, monkeypatch):
 
 @pytest.fixture
 def cid(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     return server.create_campaign("F08-2 World")["id"]
 
 
@@ -438,7 +438,7 @@ def test_check_faction_arcs_pure_call_does_not_bump_updated_at(cid):
 def test_two_campaigns_pure_check_does_not_steal_live_pointer(tmp_path, monkeypatch):
     """End-to-end #640 class: with two campaigns coexisting, calling a pure check_* on
     the OLDER one must not make it the active (most-recently-updated) campaign."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import time as _t
     a = server.create_campaign("Camp A")["id"]
     _t.sleep(0.01)

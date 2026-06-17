@@ -10,7 +10,7 @@
         "server.py"
       ],
       "env": {
-        "CLAWDND_STATE_DIR": "qa/state"
+        "WORLDOS_STATE_DIR": "qa/state"
       }
     },
     "worldos-rules": {

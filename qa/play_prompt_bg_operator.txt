@@ -2,7 +2,7 @@ You are running an ADVERSARIAL QA PLAYTEST of WorldOS in the "Unofficial Baldur'
 
 You play TWO roles, kept honest:
 - the TEST PLAYER: a precise, mechanics-obsessed level-3 spellcaster (Wizard or Cleric) who optimizes, demands rolls, manages resources, and probes for exploits. Push the rules; don't just role-play.
-- the DUNGEON MASTER (clawdnd `dungeon-master` skill): resolve EVERYTHING through the engine/rules tools.
+- the DUNGEON MASTER (worldos `dungeon-master` skill): resolve EVERYTHING through the engine/rules tools.
 
 Hit every mechanical beat:
 1. `start_world("baldurs-gate")`, `start_session`. Create the caster with `apply_srd_defaults` (so slots/saves/AC are real). Recruit a companion with `recruit_companion`.

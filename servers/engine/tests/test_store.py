@@ -20,7 +20,7 @@ from models import Campaign, SessionLogEntry
 
 def _write_snapshot(tmp_path, monkeypatch, data: dict) -> str:
     """Write a raw snapshot dict to disk under a temp state dir and return the campaign id."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = data["id"]
     snap_dir = tmp_path / "campaigns" / cid
     snap_dir.mkdir(parents=True)
@@ -82,7 +82,7 @@ def test_load_with_multiple_unknown_keys_succeeds(tmp_path, monkeypatch, caplog)
 # ---------------------------------------------------------------------------
 
 def test_normal_roundtrip(tmp_path, monkeypatch, caplog):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
 
     c = Campaign(title="Round-trip Campaign")
     store.save_campaign(c)
@@ -194,7 +194,7 @@ def test_submodel_skew_error_names_both_shas_and_skew_direction(tmp_path, monkey
 # ---------------------------------------------------------------------------
 
 def test_save_stamps_and_roundtrips_version_fields(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
 
     c = Campaign(title="Versioned Campaign")
     store.save_campaign(c)
@@ -211,7 +211,7 @@ def test_save_stamps_and_roundtrips_version_fields(tmp_path, monkeypatch):
 
 def test_engine_sha_is_stamped_onto_disk(tmp_path, monkeypatch):
     """The serialized snapshot on disk carries engine_sha — the whole point of the stamp."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     c = Campaign(title="On-disk SHA")
     path = store.save_campaign(c)
     on_disk = json.loads(path.read_text(encoding="utf-8"))
@@ -248,7 +248,7 @@ def test_read_log_all_concatenates_sessions_in_order(tmp_path, monkeypatch):
     """read_log_all walks EVERY sessions/*.jsonl and returns them in canonical
     session order (session_ids first), within-file append order preserved — the
     cross-session continuity a single read_log misses under lean play."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = "camp-wide"
 
     store.append_log(cid, "s1", SessionLogEntry(t=1.0, kind="narration", text="a"))
@@ -269,7 +269,7 @@ def test_read_log_all_concatenates_sessions_in_order(tmp_path, monkeypatch):
 def test_read_log_all_empty_when_no_sessions(tmp_path, monkeypatch):
     """No sessions dir / no files → [] (never raises), so an early lean beat with
     nothing logged yet degrades to an empty tail."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     assert store.read_log_all("no-such-campaign", None) == []
     assert store.read_log_all("no-such-campaign", ["s1"]) == []
 
@@ -277,7 +277,7 @@ def test_read_log_all_empty_when_no_sessions(tmp_path, monkeypatch):
 def test_read_log_all_includes_files_not_in_session_ids(tmp_path, monkeypatch):
     """A *.jsonl on disk not named in session_ids (orphan/external) is still read
     (defensive tail), so no committed prose is silently lost."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = "camp-orphan"
     store.append_log(cid, "listed", SessionLogEntry(t=1.0, kind="narration", text="listed"))
     store.append_log(cid, "orphan", SessionLogEntry(t=2.0, kind="narration", text="orphan"))
@@ -288,7 +288,7 @@ def test_read_log_all_includes_files_not_in_session_ids(tmp_path, monkeypatch):
 
 def test_read_log_all_is_read_only(tmp_path, monkeypatch):
     """Sole-writer invariant: read_log_all must not create or modify any file."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = "camp-ro"
     store.append_log(cid, "s1", SessionLogEntry(t=1.0, kind="narration", text="x"))
     sessions_dir = tmp_path / "campaigns" / cid / "sessions"
@@ -328,7 +328,7 @@ def test_read_log_all_tail_equals_full_walk_tail(tmp_path, monkeypatch):
     """read_log_all(tail=N) returns EXACTLY the last N entries of the full walk —
     same texts, same order — across MULTIPLE session files (the tail must cross a
     file boundary, which is the whole point of a campaign-wide tail)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = "camp-tail"
     sids = [f"s{s}" for s in range(4)]
     _seed_multi_session(cid, sessions=4, per_session=5)  # 20 rows, 5/file
@@ -345,7 +345,7 @@ def test_read_log_all_tail_equals_full_walk_tail(tmp_path, monkeypatch):
 def test_read_log_all_tail_none_is_full_walk(tmp_path, monkeypatch):
     """tail=None (the default) is byte-identical to today's full walk — no behavior
     change for any existing caller."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = "camp-tail-none"
     sids = [f"s{s}" for s in range(3)]
     _seed_multi_session(cid, sessions=3, per_session=4)
@@ -360,7 +360,7 @@ def test_read_log_all_tail_parses_fewer_rows(tmp_path, monkeypatch):
     """The bounded tail must actually SHORT-CIRCUIT: with a small tail over a large
     history it parses far fewer SessionLogEntry rows than the full walk. We count
     model_validate_json calls — the linear-in-campaign-size parse is the defect."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = "camp-count"
     sids = [f"s{s}" for s in range(10)]
     _seed_multi_session(cid, sessions=10, per_session=20)  # 200 rows
@@ -383,7 +383,7 @@ def test_read_log_all_tail_parses_fewer_rows(tmp_path, monkeypatch):
 
 def test_read_log_all_tail_zero_or_negative_is_empty(tmp_path, monkeypatch):
     """tail<=0 is a degenerate window -> [] (never the full walk; that's tail=None)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = "camp-tail-zero"
     _seed_multi_session(cid, sessions=2, per_session=3)
     assert store.read_log_all(cid, ["s0", "s1"], tail=0) == []
@@ -393,7 +393,7 @@ def test_read_log_all_tail_zero_or_negative_is_empty(tmp_path, monkeypatch):
 def test_read_log_all_tail_includes_orphan_files(tmp_path, monkeypatch):
     """The defensive disk tail (files not in session_ids) must still be reachable by
     the bounded walk — newest content wins regardless of which file holds it."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = "camp-tail-orphan"
     store.append_log(cid, "listed", SessionLogEntry(t=1.0, kind="narration", text="old-listed"))
     store.append_log(cid, "orphan", SessionLogEntry(t=2.0, kind="narration", text="new-orphan"))
@@ -403,7 +403,7 @@ def test_read_log_all_tail_includes_orphan_files(tmp_path, monkeypatch):
 
 def test_read_log_all_tail_is_read_only(tmp_path, monkeypatch):
     """Bounded tail keeps the sole-writer invariant: no file created or touched."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = "camp-tail-ro"
     store.append_log(cid, "s0", SessionLogEntry(t=1.0, kind="narration", text="x"))
     sessions_dir = tmp_path / "campaigns" / cid / "sessions"

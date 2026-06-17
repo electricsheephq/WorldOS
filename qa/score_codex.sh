@@ -17,7 +17,7 @@ fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MD="$1"; STATE="$2"; RUBRIC="$3"; SCHEMA="$4"; OUT="$5"; BUDGET="${6:-1.50}"
-SCORER_MODEL="${WORLDOS_SCORER_MODEL:-${CLAWDND_SCORER_MODEL:-${WORLDOS_CODEX_MODEL:-${CLAWDND_CODEX_MODEL:-gpt-5.5}}}}"
+SCORER_MODEL="${WORLDOS_SCORER_MODEL:-${WORLDOS_CODEX_MODEL:-gpt-5.5}}"
 
 command -v codex >/dev/null 2>&1 || {
   echo "[score_codex] codex CLI is required for Codex/GPT scoring" >&2

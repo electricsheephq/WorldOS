@@ -17,7 +17,7 @@ import store
 def fight(tmp_path, monkeypatch):
     """A campaign with a hero (player) + a goblin (monster) in active combat.
     Returns (campaign_id, hero_id, goblin_id)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("S2.7 Zones")["id"]
     hero = server.create_character(cid, "Hero", kind="player", max_hp=20, armor_class=12)["id"]
     gob = server.create_character(cid, "Goblin", kind="monster", max_hp=15, armor_class=10)["id"]
@@ -130,7 +130,7 @@ def test_move_to_zone_logs_structured_combat_event_payload(fight):
     move_entry = next(e for e in entries if e.payload and e.payload.get("event") == "zone_movement")
 
     assert move_entry.kind == "combat"
-    assert move_entry.payload["schema"] == "clawdnd.combat_event.v1"
+    assert move_entry.payload["schema"] == "worldos.combat_event.v1"
     assert move_entry.payload["actor"] == {"id": hero, "name": "Hero"}
     assert move_entry.payload["from_zone"] == "doorway"
     assert move_entry.payload["to_zone"] == "dais"

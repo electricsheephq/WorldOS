@@ -58,7 +58,7 @@ USAGE
 
 Re-run after ingesting new race-attributable portraits to widen coverage. When run from a
 git worktree (where the gitignored pool is absent), point WORLDOS_ART_REPO_ROOT /
-CLAWDND_ART_REPO_ROOT at the canonical checkout so the filter sees the real pool.
+WORLDOS_ART_REPO_ROOT at the canonical checkout so the filter sees the real pool.
 """
 
 from __future__ import annotations
@@ -79,7 +79,7 @@ _MANIFEST_PATH = _OPENWORLDS_DIR / "portrait-gallery.json"
 def _pool_dir() -> Path:
     """The ingested portrait pool. Honor the same art-root override the viewer uses so the
     generator can run from a worktree against the canonical checkout's gitignored pool."""
-    for env in ("WORLDOS_ART_REPO_ROOT", "CLAWDND_ART_REPO_ROOT"):
+    for env in ("WORLDOS_ART_REPO_ROOT", "WORLDOS_ART_REPO_ROOT"):
         root = os.environ.get(env)
         if root:
             return Path(root) / "content" / "worlds" / "_private" / "baldurs-gate" / "images"

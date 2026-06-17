@@ -21,15 +21,15 @@ def _env(tmp_path: Path, **overrides: str) -> dict[str, str]:
     env = {
         "PATH": os.environ.get("PATH", ""),
         "TMPDIR": os.environ.get("TMPDIR", ""),
-        "CLAWDND_PROVIDER": "codex",
-        "CLAWDND_WORLD": "baldurs-gate",
-        "CLAWDND_RUN_ID": "codex-smoke",
-        "CLAWDND_PLAY_PORT": "8765",
-        "CLAWDND_PLAY_BUDGET": "0.05",
-        "CLAWDND_PLAY_SESSION_BUDGET": "0.25",
-        "CLAWDND_PLAY_MAX_TURNS": "1",
-        "CLAWDND_PLAY_COMPANIONS": "",
-        "CLAWDND_STATE_ROOT": str(tmp_path),
+        "WORLDOS_PROVIDER": "codex",
+        "WORLDOS_WORLD": "baldurs-gate",
+        "WORLDOS_RUN_ID": "codex-smoke",
+        "WORLDOS_PLAY_PORT": "8765",
+        "WORLDOS_PLAY_BUDGET": "0.05",
+        "WORLDOS_PLAY_SESSION_BUDGET": "0.25",
+        "WORLDOS_PLAY_MAX_TURNS": "1",
+        "WORLDOS_PLAY_COMPANIONS": "",
+        "WORLDOS_STATE_ROOT": str(tmp_path),
         "WORLDOS_PROVIDER_STOP_GRACE_SECONDS": "0",
     }
     env.update(overrides)
@@ -88,10 +88,10 @@ def test_codex_wrapper_fails_closed_without_required_env(tmp_path):
 
 
 def test_codex_wrapper_rejects_non_codex_provider(tmp_path):
-    result = _run(["--dry-run"], _env(tmp_path, CLAWDND_PROVIDER="openclaw"))
+    result = _run(["--dry-run"], _env(tmp_path, WORLDOS_PROVIDER="openclaw"))
 
     assert result.returncode != 0
-    assert "CLAWDND_PROVIDER must be codex" in result.stderr
+    assert "WORLDOS_PROVIDER must be codex" in result.stderr
 
 
 def test_codex_wrapper_rejects_unknown_options_before_run_mode(tmp_path):
@@ -113,7 +113,7 @@ def test_codex_wrapper_smoke_generates_player_facade_config_only(tmp_path):
     config = Path(summary["config"]).read_text(encoding="utf-8")
     assert "[mcp_servers.worldos-player]" in config
     assert "player_server.py" in config
-    assert "CLAWDND_PLAYER_MOVES" in config
+    assert "WORLDOS_PLAYER_MOVES" in config
     assert 'default_tools_approval_mode = "approve"' in config
     assert "servers/engine/server.py" not in config
     assert "qa/" not in config
@@ -124,7 +124,7 @@ def test_codex_wrapper_smoke_generates_player_facade_config_only(tmp_path):
 
 
 def test_codex_wrapper_dry_run_uses_play_state_layout(tmp_path):
-    result = _run(["--dry-run"], _env(tmp_path, CLAWDND_RUN_ID="layout-check"))
+    result = _run(["--dry-run"], _env(tmp_path, WORLDOS_RUN_ID="layout-check"))
 
     assert result.returncode == 0, result.stdout + result.stderr
     summary = json.loads(result.stdout[result.stdout.index("{") :])
@@ -133,7 +133,7 @@ def test_codex_wrapper_dry_run_uses_play_state_layout(tmp_path):
 
 
 def test_codex_dm_wrapper_dry_run_generates_dm_contract(tmp_path):
-    result = _run_dm(["--dry-run"], _env(tmp_path, CLAWDND_RUN_ID="dm-layout"))
+    result = _run_dm(["--dry-run"], _env(tmp_path, WORLDOS_RUN_ID="dm-layout"))
 
     assert result.returncode == 0, result.stdout + result.stderr
     summary = json.loads(result.stdout[result.stdout.index("{") :])
@@ -163,7 +163,7 @@ def test_codex_dm_wrapper_dry_run_generates_dm_contract(tmp_path):
     assert '"server.py"' in config
     assert config.count('default_tools_approval_mode = "approve"') == 3
     assert "player_server.py" not in config
-    assert "CLAWDND_STATE_DIR" in config
+    assert "WORLDOS_STATE_DIR" in config
 
     assert Path(summary["moves"]).exists()
     assert Path(summary["chat"]).exists()
@@ -171,7 +171,7 @@ def test_codex_dm_wrapper_dry_run_generates_dm_contract(tmp_path):
 
 def test_codex_dm_wrapper_dry_run_surfaces_native_selected_hero(tmp_path):
     hero = json.dumps({"canon": True, "name": "Abby"})
-    result = _run_dm(["--dry-run"], _env(tmp_path, CLAWDND_PLAY_HERO=hero))
+    result = _run_dm(["--dry-run"], _env(tmp_path, WORLDOS_PLAY_HERO=hero))
 
     assert result.returncode == 0, result.stdout + result.stderr
     summary = json.loads(result.stdout[result.stdout.index("{") :])
@@ -180,7 +180,7 @@ def test_codex_dm_wrapper_dry_run_surfaces_native_selected_hero(tmp_path):
 
 def test_codex_dm_wrapper_dry_run_surfaces_origin_template_hero(tmp_path):
     hero = json.dumps({"origin": "template:rolan-evoker"})
-    result = _run_dm(["--dry-run"], _env(tmp_path, CLAWDND_PLAY_HERO=hero))
+    result = _run_dm(["--dry-run"], _env(tmp_path, WORLDOS_PLAY_HERO=hero))
 
     assert result.returncode == 0, result.stdout + result.stderr
     summary = json.loads(result.stdout[result.stdout.index("{") :])
@@ -190,7 +190,7 @@ def test_codex_dm_wrapper_dry_run_surfaces_origin_template_hero(tmp_path):
 def test_codex_dm_wrapper_dry_run_surfaces_fallback_origin_template_hero(tmp_path):
     result = _run_dm(
         ["--dry-run"],
-        _env(tmp_path, CLAWDND_PLAY_CANON_HERO="template:rolan-evoker"),
+        _env(tmp_path, WORLDOS_PLAY_CANON_HERO="template:rolan-evoker"),
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
@@ -201,7 +201,7 @@ def test_codex_dm_wrapper_dry_run_surfaces_fallback_origin_template_hero(tmp_pat
 def test_codex_dm_wrapper_seed_smoke_surfaces_origin_template_sheet(tmp_path):
     result = _run_dm(
         ["--seed-smoke"],
-        _env(tmp_path, CLAWDND_PLAY_CANON_HERO="template:rolan-evoker"),
+        _env(tmp_path, WORLDOS_PLAY_CANON_HERO="template:rolan-evoker"),
         timeout=30,
     )
 
@@ -225,8 +225,8 @@ def test_codex_dm_wrapper_seed_smoke_surfaces_origin_template_sheet(tmp_path):
 def test_codex_dm_wrapper_honors_native_selected_hero():
     source = DM_SCRIPT.read_text(encoding="utf-8")
 
-    assert "CLAWDND_PLAY_HERO" in source
-    assert "CLAWDND_PLAY_CANON_HERO" in source
+    assert "WORLDOS_PLAY_HERO" in source
+    assert "WORLDOS_PLAY_CANON_HERO" in source
     assert "--seed-smoke" in source
     assert "origin_spec" in source
     assert 'server.start_character(camp, origin=origin_spec, name=name_override)' in source
@@ -297,15 +297,15 @@ def test_codex_dm_wrapper_prompts_use_engine_state_discovery():
 def test_codex_dm_wrapper_honors_lean_reground_contract():
     source = DM_SCRIPT.read_text(encoding="utf-8")
 
-    assert 'CLAWDND_LEAN_BEATS="${CLAWDND_LEAN_BEATS:-1}"' in source
-    assert 'CLAWDND_LEAN_TAIL="${CLAWDND_LEAN_TAIL:-8}"' in source
-    assert "CLAWDND_LEAN_TAIL must be an integer when CLAWDND_LEAN_BEATS=1" in source
+    assert 'WORLDOS_LEAN_BEATS="${WORLDOS_LEAN_BEATS:-1}"' in source
+    assert 'WORLDOS_LEAN_TAIL="${WORLDOS_LEAN_TAIL:-8}"' in source
+    assert "WORLDOS_LEAN_TAIL must be an integer when WORLDOS_LEAN_BEATS=1" in source
     assert "codex_lean_reground_rule()" in source
     assert 'scene_context(campaign_id="%s", recent_narration=%s)' in source
     assert "each Codex provider turn is a fresh invocation" in source
     assert "not from replaying chat history or reading files" in source
     assert "CODEX_LEAN_REGROUND_RULE" in source
-    assert 'lean_beats=$CLAWDND_LEAN_BEATS recent_narration=$CLAWDND_LEAN_TAIL' in source
+    assert 'lean_beats=$WORLDOS_LEAN_BEATS recent_narration=$WORLDOS_LEAN_TAIL' in source
 
     start = source.index("You are the Dungeon Master mid-session")
     move_prompt = source[start : source.index("Player move:", start)]
@@ -337,7 +337,7 @@ def test_codex_dm_wrapper_forbids_unconfigured_solo_companions():
     assert "COMPANION_TOOL_RULE" in source
     assert "this is a solo provider launch" in source
     assert 'Do not call load_canon_character with kind=\\"companion\\"' in source
-    assert "only add companions named by CLAWDND_PLAY_COMPANIONS" in source
+    assert "only add companions named by WORLDOS_PLAY_COMPANIONS" in source
 
 
 def test_codex_dm_wrapper_constrains_startup_roster_mutation():
@@ -430,9 +430,9 @@ printf '{"type":"result","result":"Opening narration from fake Codex."}\n'
     env = _env(
         tmp_path,
         PATH=f"{bin_dir}:{os.environ.get('PATH', '')}",
-        CLAWDND_RUN_ID="fake-codex-run",
-        CLAWDND_PLAY_PORT="8797",
-        CLAWDND_PLAY_HERO=json.dumps({"canon": True, "name": "Abby"}),
+        WORLDOS_RUN_ID="fake-codex-run",
+        WORLDOS_PLAY_PORT="8797",
+        WORLDOS_PLAY_HERO=json.dumps({"canon": True, "name": "Abby"}),
     )
 
     result = _run_dm([], env, timeout=20)
@@ -475,10 +475,10 @@ printf '{"type":"result","result":"Opening narration from fake Codex."}\n'
     env = _env(
         tmp_path,
         PATH=f"{bin_dir}:{os.environ.get('PATH', '')}",
-        CLAWDND_RUN_ID="fake-codex-cli-default",
-        CLAWDND_PLAY_PORT="8799",
+        WORLDOS_RUN_ID="fake-codex-cli-default",
+        WORLDOS_PLAY_PORT="8799",
         WORLDOS_CODEX_MODEL="auto",
-        CLAWDND_PLAY_HERO=json.dumps({"canon": True, "name": "Abby"}),
+        WORLDOS_PLAY_HERO=json.dumps({"canon": True, "name": "Abby"}),
     )
 
     result = _run_dm([], env, timeout=20)
@@ -508,12 +508,12 @@ while [ "$#" -gt 0 ]; do
 	  esac
 	done
 	prompt="$(cat)"
-	marker="$CLAWDND_STATE_DIR/.fake-opening-seen"
+	marker="$WORLDOS_STATE_DIR/.fake-opening-seen"
 	if [ ! -f "$marker" ]; then
 	  touch "$marker"
-	  mkdir -p "$CLAWDND_STATE_DIR/campaigns/camp_fake"
-	  printf '{"id":"camp_fake","active_session_id":"session_fake","characters":{"pc":{"kind":"player"}}}' > "$CLAWDND_STATE_DIR/campaigns/camp_fake/snapshot.json"
-	  printf '{"role":"player","kind":"do","text":"queued during opening"}\\n' >> "$CLAWDND_STATE_DIR/player_moves.jsonl"
+	  mkdir -p "$WORLDOS_STATE_DIR/campaigns/camp_fake"
+	  printf '{"id":"camp_fake","active_session_id":"session_fake","characters":{"pc":{"kind":"player"}}}' > "$WORLDOS_STATE_DIR/campaigns/camp_fake/snapshot.json"
+	  printf '{"role":"player","kind":"do","text":"queued during opening"}\\n' >> "$WORLDOS_STATE_DIR/player_moves.jsonl"
 	  printf 'Opening narration from fake Codex.' > "$last"
 	  printf '{"type":"result","result":"Opening narration from fake Codex."}\\n'
 	else
@@ -535,9 +535,9 @@ while [ "$#" -gt 0 ]; do
     env = _env(
         tmp_path,
         PATH=f"{bin_dir}:{os.environ.get('PATH', '')}",
-        CLAWDND_RUN_ID="queued-opening-move",
-        CLAWDND_PLAY_PORT="8798",
-        CLAWDND_PLAY_MAX_TURNS="2",
+        WORLDOS_RUN_ID="queued-opening-move",
+        WORLDOS_PLAY_PORT="8798",
+        WORLDOS_PLAY_MAX_TURNS="2",
     )
 
     result = _run_dm([], env, timeout=20)
@@ -564,7 +564,7 @@ def test_native_codex_provider_passes_selected_hero_to_wrapper():
         encoding="utf-8"
     )
 
-    assert 'environment["CLAWDND_PLAY_HERO"] = trimmedHero' in source
+    assert 'environment["WORLDOS_PLAY_HERO"] = trimmedHero' in source
     assert "hero: hero," in source
 
 
@@ -625,7 +625,7 @@ def test_codex_dm_wrapper_enforces_session_budget():
     assert "enforce_session_budget()" in source
     assert "WORLDOS_CODEX_USD_PER_MTOK" in source
     assert 'write_provider_status "exhausted"' in source
-    assert "CLAWDND_PLAY_SESSION_BUDGET" in source
+    assert "WORLDOS_PLAY_SESSION_BUDGET" in source
     # the spend check actually gates the loop (sets BUDGET_EXCEEDED, honored at the loop top)
     assert "BUDGET_EXCEEDED" in source
     # checked AFTER turns (opening + each move), not on every idle poll
@@ -656,9 +656,9 @@ exit 1
     env = _env(
         tmp_path,
         PATH=f"{bin_dir}:{os.environ.get('PATH', '')}",
-        CLAWDND_RUN_ID="codex-crash",
-        CLAWDND_PLAY_PORT="8801",
-        CLAWDND_PLAY_HERO=json.dumps({"canon": True, "name": "Abby"}),
+        WORLDOS_RUN_ID="codex-crash",
+        WORLDOS_PLAY_PORT="8801",
+        WORLDOS_PLAY_HERO=json.dumps({"canon": True, "name": "Abby"}),
     )
     result = _run_dm([], env, timeout=30)
 
@@ -689,14 +689,14 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 cat >/dev/null
-ctr="$CLAWDND_STATE_DIR/.fake-attempts"
+ctr="$WORLDOS_STATE_DIR/.fake-attempts"
 n=0; [ -f "$ctr" ] && n="$(cat "$ctr")"; n=$((n + 1)); printf '%s' "$n" > "$ctr"
 # Fail the very first attempt (forces the retry), then succeed on every subsequent attempt.
 if [ "$n" -eq 1 ]; then
   exit 1
 fi
-mkdir -p "$CLAWDND_STATE_DIR/campaigns/camp_fake"
-printf '{"id":"camp_fake","active_session_id":"session_fake","characters":{"pc":{"kind":"player"}}}' > "$CLAWDND_STATE_DIR/campaigns/camp_fake/snapshot.json"
+mkdir -p "$WORLDOS_STATE_DIR/campaigns/camp_fake"
+printf '{"id":"camp_fake","active_session_id":"session_fake","characters":{"pc":{"kind":"player"}}}' > "$WORLDOS_STATE_DIR/campaigns/camp_fake/snapshot.json"
 printf 'Opening narration after a retry.' > "$last"
 printf '{"type":"result","result":"Opening narration after a retry."}\\n'
 """,
@@ -706,10 +706,10 @@ printf '{"type":"result","result":"Opening narration after a retry."}\\n'
     env = _env(
         tmp_path,
         PATH=f"{bin_dir}:{os.environ.get('PATH', '')}",
-        CLAWDND_RUN_ID="codex-retry",
-        CLAWDND_PLAY_PORT="8802",
-        CLAWDND_PLAY_MAX_TURNS="1",
-        CLAWDND_PLAY_HERO=json.dumps({"canon": True, "name": "Abby"}),
+        WORLDOS_RUN_ID="codex-retry",
+        WORLDOS_PLAY_PORT="8802",
+        WORLDOS_PLAY_MAX_TURNS="1",
+        WORLDOS_PLAY_HERO=json.dumps({"canon": True, "name": "Abby"}),
     )
     result = _run_dm([], env, timeout=30)
 
@@ -739,8 +739,8 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 cat >/dev/null
-mkdir -p "$CLAWDND_STATE_DIR/campaigns/camp_fake"
-printf '{"id":"camp_fake","active_session_id":"session_fake","characters":{"pc":{"kind":"player"}}}' > "$CLAWDND_STATE_DIR/campaigns/camp_fake/snapshot.json"
+mkdir -p "$WORLDOS_STATE_DIR/campaigns/camp_fake"
+printf '{"id":"camp_fake","active_session_id":"session_fake","characters":{"pc":{"kind":"player"}}}' > "$WORLDOS_STATE_DIR/campaigns/camp_fake/snapshot.json"
 printf 'Opening narration with heavy token usage.' > "$last"
 printf '{"type":"token_count","info":{"total_token_usage":{"input_tokens":4000000,"output_tokens":1000000}}}\\n'
 printf '{"type":"result","result":"Opening narration with heavy token usage."}\\n'
@@ -751,12 +751,12 @@ printf '{"type":"result","result":"Opening narration with heavy token usage."}\\
     env = _env(
         tmp_path,
         PATH=f"{bin_dir}:{os.environ.get('PATH', '')}",
-        CLAWDND_RUN_ID="codex-budget",
-        CLAWDND_PLAY_PORT="8803",
-        CLAWDND_PLAY_MAX_TURNS="50",                # high, so the BUDGET (not the turn cap) stops it
-        CLAWDND_PLAY_SESSION_BUDGET="0.10",          # 5M tokens @ $10/Mtok = $50 >> $0.10
+        WORLDOS_RUN_ID="codex-budget",
+        WORLDOS_PLAY_PORT="8803",
+        WORLDOS_PLAY_MAX_TURNS="50",                # high, so the BUDGET (not the turn cap) stops it
+        WORLDOS_PLAY_SESSION_BUDGET="0.10",          # 5M tokens @ $10/Mtok = $50 >> $0.10
         WORLDOS_CODEX_USD_PER_MTOK="10",
-        CLAWDND_PLAY_HERO=json.dumps({"canon": True, "name": "Abby"}),
+        WORLDOS_PLAY_HERO=json.dumps({"canon": True, "name": "Abby"}),
     )
     result = _run_dm([], env, timeout=30)
 

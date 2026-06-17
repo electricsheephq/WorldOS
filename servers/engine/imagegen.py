@@ -2,7 +2,7 @@
 
 Mirrors the voice TTS/STT design (see ../voice/interface.py, ../voice/stt.py): the
 caller asks for one thing, generate(kind, prompt), and a provider selected by
-CLAWDND_IMAGE_PROVIDER turns that request into an image descriptor. Providers are
+WORLDOS_IMAGE_PROVIDER turns that request into an image descriptor. Providers are
 interchangeable — a hosted model (OpenAI / Stability, later) or a null provider
 that returns a deterministic placeholder for tests/CI — so swapping one out never
 touches campaign state.
@@ -17,7 +17,7 @@ Two layers, deliberately separate:
     misconfiguration never crashes the server, exactly like the STT selector.
   - A real provider, once selected and actually invoked, either produces an image
     or fails LOUDLY. The OpenAI/Stability backends are still stubs: invoking one
-    raises NotImplementedError with a clear "set CLAWDND_IMAGE_* to wire" message.
+    raises NotImplementedError with a clear "set WORLDOS_IMAGE_* to wire" message.
     The "openclaw" backend is wired (it rides the local OpenClaw gateway's
     image_generate tool + its Codex OAuth — no raw API key here); when it can't
     reach/complete a generation it raises a clean RuntimeError so the caller can
@@ -219,7 +219,7 @@ class _UnconfiguredHostedProvider:
 
     name = "hosted"
     # The env var that would carry this provider's credential, e.g. an API key.
-    api_key_env = "CLAWDND_IMAGE_API_KEY"
+    api_key_env = "WORLDOS_IMAGE_API_KEY"
 
     def configured(self) -> bool:
         """True once the credential env var is set. get_provider() uses this to
@@ -229,8 +229,8 @@ class _UnconfiguredHostedProvider:
     def generate(self, kind: str, prompt: str, *, seed: Optional[int] = None) -> dict:
         raise NotImplementedError(
             f"{self.name} image provider not implemented yet — "
-            f"set CLAWDND_IMAGE_PROVIDER=null for now, or wire this backend and "
-            f"set {self.api_key_env} (plus CLAWDND_IMAGE_MODEL) to enable it."
+            f"set WORLDOS_IMAGE_PROVIDER=null for now, or wire this backend and "
+            f"set {self.api_key_env} (plus WORLDOS_IMAGE_MODEL) to enable it."
         )
 
 
@@ -239,24 +239,24 @@ class OpenAIImageProvider(_UnconfiguredHostedProvider):
 
     Real wiring would call the Images API (e.g. gpt-image-1 / DALL·E) over HTTPS
     using stdlib urllib or an optional client in an `image-openai` dependency
-    group, read the model from CLAWDND_IMAGE_MODEL, and return {"bytes": ...} or
-    {"url": ...} for generate() to cache. Needs CLAWDND_IMAGE_API_KEY.
+    group, read the model from WORLDOS_IMAGE_MODEL, and return {"bytes": ...} or
+    {"url": ...} for generate() to cache. Needs WORLDOS_IMAGE_API_KEY.
     """
 
     name = "openai"
-    api_key_env = "CLAWDND_IMAGE_API_KEY"
+    api_key_env = "WORLDOS_IMAGE_API_KEY"
 
 
 class StabilityImageProvider(_UnconfiguredHostedProvider):
     """Stability AI image generation (stub seam).
 
     Real wiring would call the Stability REST API (e.g. SDXL) over HTTPS, read the
-    model/engine from CLAWDND_IMAGE_MODEL, and return image bytes for generate() to
-    cache. Needs CLAWDND_IMAGE_API_KEY.
+    model/engine from WORLDOS_IMAGE_MODEL, and return image bytes for generate() to
+    cache. Needs WORLDOS_IMAGE_API_KEY.
     """
 
     name = "stability"
-    api_key_env = "CLAWDND_IMAGE_API_KEY"
+    api_key_env = "WORLDOS_IMAGE_API_KEY"
 
 
 class OpenClawImageProvider:
@@ -269,8 +269,8 @@ class OpenClawImageProvider:
     the transport (stdlib HTTP against the always-on `/tools/invoke` endpoint) and
     the async/host-filesystem retrieval details.
 
-    Selection: `CLAWDND_IMAGE_PROVIDER=openclaw`. The gateway URL/token/model are
-    read from `CLAWDND_OPENCLAW_*` env (with `OPENCLAW_GATEWAY_TOKEN` /
+    Selection: `WORLDOS_IMAGE_PROVIDER=openclaw`. The gateway URL/token/model are
+    read from `WORLDOS_OPENCLAW_*` env (with `OPENCLAW_GATEWAY_TOKEN` /
     `OPENCLAW_GATEWAY_PASSWORD` accepted as token fallbacks).
 
     `configured()` is true once a gateway token is resolvable, so get_provider()
@@ -289,7 +289,7 @@ class OpenClawImageProvider:
         """True when a gateway bearer token is resolvable from env.
 
         Construction of the client is cheap and reads no secrets beyond env, so
-        this is safe to probe during selection. Token from CLAWDND_OPENCLAW_GATEWAY_TOKEN
+        this is safe to probe during selection. Token from WORLDOS_OPENCLAW_GATEWAY_TOKEN
         or the OPENCLAW_GATEWAY_TOKEN / OPENCLAW_GATEWAY_PASSWORD fallbacks.
         """
         try:
@@ -340,7 +340,7 @@ class OpenClawImageProvider:
         return descriptor
 
 
-# Real, hosted providers keyed by CLAWDND_IMAGE_PROVIDER value.
+# Real, hosted providers keyed by WORLDOS_IMAGE_PROVIDER value.
 _HOSTED: dict[str, type] = {
     "openai": OpenAIImageProvider,
     "stability": StabilityImageProvider,
@@ -349,12 +349,12 @@ _HOSTED: dict[str, type] = {
 
 
 def provider_name() -> str:
-    """The selected image provider name (env CLAWDND_IMAGE_PROVIDER, default 'null')."""
+    """The selected image provider name (env WORLDOS_IMAGE_PROVIDER, default 'null')."""
     return (env_var("IMAGE_PROVIDER", "null") or "null").strip().lower()
 
 
 def get_provider() -> ImageProvider:
-    """Construct the image provider selected by CLAWDND_IMAGE_PROVIDER.
+    """Construct the image provider selected by WORLDOS_IMAGE_PROVIDER.
 
     Defaults to the null provider. A named hosted provider (openai/stability) is
     returned only if it's actually configured (its API-key env var is set);
@@ -434,8 +434,8 @@ def _ingested_art_root() -> Optional[Path]:
     <content>/worlds/_private/. Honors the same env contract the viewer uses so a
     cross-checkout launcher (the .app / a Lexar worktree running code from one checkout
     while the private art lives in the canonical one) resolves the right tree:
-    WORLDOS_ART_REPO_ROOT/CLAWDND_ART_REPO_ROOT (an art checkout), then
-    WORLDOS_REPO_ROOT/CLAWDND_REPO_ROOT, then CONTENT_DIR, then the in-repo content/.
+    WORLDOS_ART_REPO_ROOT/WORLDOS_ART_REPO_ROOT (an art checkout), then
+    WORLDOS_REPO_ROOT/WORLDOS_REPO_ROOT, then CONTENT_DIR, then the in-repo content/.
     Returns None when no _private tree exists (art-less host -> caller falls through)."""
     candidates: list[Path] = []
     for raw in (env_var("ART_REPO_ROOT"), env_var("REPO_ROOT")):
@@ -935,7 +935,7 @@ def _spawn_detached_resolver(kind: str, prompt: str, seed: Optional[int],
             stderr=subprocess.DEVNULL,
             start_new_session=True,  # detach from the parent's process group/session
             close_fds=True,
-            env=dict(os.environ),    # carry CLAWDND_*/WORLDOS_* provider + gateway config
+            env=dict(os.environ),    # carry WORLDOS_*/WORLDOS_* provider + gateway config
         )
         return True
     except (OSError, ValueError):

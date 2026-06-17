@@ -7,7 +7,7 @@
 #   • worldos_dm_failure_is_transient (qa/lib_beat_driver.sh) classifies a failed attempt as
 #     TRANSIENT (5xx / overloaded / 429 / rc=124 timeout) vs REAL/fail-fast (401/403 auth, a
 #     deterministic bad turn);
-#   • turn_retry retries a TRANSIENT failure up to CLAWDND_DM_MAX_ATTEMPTS (default 4) with a
+#   • turn_retry retries a TRANSIENT failure up to WORLDOS_DM_MAX_ATTEMPTS (default 4) with a
 #     short backoff, but a REAL failure gets only the ONE historical retry (never 4×), preserving
 #     the 401/403 re-auth fail-fast.
 #
@@ -21,12 +21,12 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 STATE_DIR="$TMP/state"; mkdir -p "$STATE_DIR"
 T="$TMP"; RUN="r"; COMBINED="$TMP/combined.jsonl"; : > "$COMBINED"
 DM_CFG="$TMP/dm.json"; : > "$DM_CFG"
-CLAWDND_DM_MODEL="sonnet"; BUDGET="1.50"; CLAWDND_LEAN_TAIL=8
+WORLDOS_DM_MODEL="sonnet"; BUDGET="1.50"; WORLDOS_LEAN_TAIL=8
 # Test seam: a backoff that records the seconds it was asked to wait instead of actually sleeping.
 BACKOFF_LOG="$TMP/backoff.log"; : > "$BACKOFF_LOG"
 fake_sleep() { printf '%s\n' "$1" >> "$BACKOFF_LOG"; }
 export BACKOFF_LOG
-CLAWDND_RETRY_SLEEP_CMD="fake_sleep"
+WORLDOS_RETRY_SLEEP_CMD="fake_sleep"
 # fake_sleep is a bash function — worldos_dm_retry_backoff calls it directly (NOT via timeout/PATH),
 # so a function is fine here.
 export -f fake_sleep 2>/dev/null || true
@@ -48,7 +48,7 @@ turn() {
   beat_timeout="$(worldos_dm_timeout "$first")"
   worldos_timeout "$beat_timeout" \
     claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
-      --model "$CLAWDND_DM_MODEL" ${CLAWDND_DM_EFFORT[@]+"${CLAWDND_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+      --model "$WORLDOS_DM_MODEL" ${WORLDOS_DM_EFFORT[@]+"${WORLDOS_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
       --output-format stream-json --verbose > "$out" 2>> "$T/$RUN.dm.err"
   rc=$?
   cat "$out" >> "$COMBINED"
@@ -61,7 +61,7 @@ turn() {
 # turn_retry copied VERBATIM from qa/run_duo.sh (the function under test).
 turn_retry() {
   local r last_out last_rc transient attempt max
-  max="${CLAWDND_DM_MAX_ATTEMPTS:-4}"
+  max="${WORLDOS_DM_MAX_ATTEMPTS:-4}"
   worldos_dm_prebeat_mark "$STATE_DIR"
   r="$(turn "$@")"
   attempt=1
@@ -83,7 +83,7 @@ turn_retry() {
     if [ "${3:-}" = "1" ]; then
       worldos_dm_remint_session_on_retry --session-id "$2"
       local _fresh="$2"
-      [ "${#CLAWDND_DM_RETRY_SESSION[@]}" -ge 2 ] && _fresh="${CLAWDND_DM_RETRY_SESSION[1]}"
+      [ "${#WORLDOS_DM_RETRY_SESSION[@]}" -ge 2 ] && _fresh="${WORLDOS_DM_RETRY_SESSION[1]}"
       r="$(turn "$1" "$_fresh" "$3" "${@:4}")"
     else
       r="$(turn "$@")"

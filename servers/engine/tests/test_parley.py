@@ -71,7 +71,7 @@ def test_dc_band_full_matrix():
 def parley_campaign(tmp_path, monkeypatch):
     """A campaign with a lead PC (a CHA-forward face: persuasion proficiency, deception
     expertise) and a companion. Returns (cid, pc_id, comp_id)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Parley Test")["id"]
     pc = server.create_character(
         cid, "Vanya", kind="player", class_name="bard", level=3,
@@ -354,7 +354,7 @@ def test_overmatch_exactly_2x_at_low_level_trips():
 @pytest.fixture
 def outlook_campaign(tmp_path, monkeypatch):
     """A 4x level-3 party so the deadly budget is the canonical 1600 XP. Returns cid."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Outlook Test")["id"]
     for i in range(4):
         server.create_character(cid, f"PC{i}", kind="player", class_name="fighter", level=3)
@@ -385,7 +385,7 @@ def test_outlook_dragon_l3_must_offer_out(outlook_campaign):
 
 
 def test_outlook_same_dragon_at_l6_no_out(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("L6")["id"]
     for i in range(4):
         server.create_character(cid, f"PC{i}", kind="player", class_name="fighter", level=6)

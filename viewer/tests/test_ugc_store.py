@@ -115,8 +115,8 @@ class UgcRouteTests(unittest.TestCase):
     def setUp(self):
         # load server.py fresh with an isolated state dir
         self._tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        self._old_state = os.environ.get("CLAWDND_STATE_DIR")
-        os.environ["CLAWDND_STATE_DIR"] = str(self._tmp)
+        self._old_state = os.environ.get("WORLDOS_STATE_DIR")
+        os.environ["WORLDOS_STATE_DIR"] = str(self._tmp)
         spec = importlib.util.spec_from_file_location("viewer_server_ugc", _VIEWER / "server.py")
         self.server = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.server)
@@ -138,9 +138,9 @@ class UgcRouteTests(unittest.TestCase):
         self._httpd.server_close()
         self._thread.join(timeout=2)
         if self._old_state is None:
-            os.environ.pop("CLAWDND_STATE_DIR", None)
+            os.environ.pop("WORLDOS_STATE_DIR", None)
         else:
-            os.environ["CLAWDND_STATE_DIR"] = self._old_state
+            os.environ["WORLDOS_STATE_DIR"] = self._old_state
 
     def _req(self, method, path, body=None):
         conn = http.client.HTTPConnection(self._host, self._port, timeout=5)

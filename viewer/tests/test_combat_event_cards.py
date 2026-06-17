@@ -26,7 +26,7 @@ class CombatEventCardTests(unittest.TestCase):
                 "kind": "combat",
                 "text": "Vela hits Goblin.",
                 "payload": {
-                    "schema": "clawdnd.combat_event.v1",
+                    "schema": "worldos.combat_event.v1",
                     "event": "attack",
                     "outcome": "crit",
                     "actor": {"name": 'Vela <script>alert("x")</script>'},
@@ -40,7 +40,7 @@ class CombatEventCardTests(unittest.TestCase):
                 "kind": "combat",
                 "text": "Vela moves.",
                 "payload": {
-                    "schema": "clawdnd.combat_event.v1",
+                    "schema": "worldos.combat_event.v1",
                     "event": "zone_movement",
                     "actor": {"name": "Vela"},
                     "from_zone": "Doorway",
@@ -54,7 +54,7 @@ class CombatEventCardTests(unittest.TestCase):
                 "kind": "combat",
                 "text": "Turn advances.",
                 "payload": {
-                    "schema": "clawdnd.combat_event.v1",
+                    "schema": "worldos.combat_event.v1",
                     "event": "turn_advanced",
                     "round": 3,
                     "new_round": True,
@@ -68,7 +68,7 @@ class CombatEventCardTests(unittest.TestCase):
                 "kind": "combat",
                 "text": "Vela rolls a death save.",
                 "payload": {
-                    "schema": "clawdnd.combat_event.v1",
+                    "schema": "worldos.combat_event.v1",
                     "event": "death_save",
                     "target": {"name": "Vela"},
                     "roll": {"total": 1, "natural": 1},
@@ -81,7 +81,7 @@ class CombatEventCardTests(unittest.TestCase):
             "unknown": {
                 "kind": "combat",
                 "text": "Plain fallback text.",
-                "payload": {"schema": "clawdnd.combat_event.v1", "event": "new_future_event"},
+                "payload": {"schema": "worldos.combat_event.v1", "event": "new_future_event"},
             },
             "plain": {"kind": "combat", "text": "Plain combat text."},
         }

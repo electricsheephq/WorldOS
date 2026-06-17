@@ -19,7 +19,7 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 STATE_DIR="$TMP/state"; mkdir -p "$STATE_DIR"
 T="$TMP"; RUN="r"; COMBINED="$TMP/combined.jsonl"; : > "$COMBINED"
 DM_CFG="$TMP/dm.json"; : > "$DM_CFG"
-CLAWDND_DM_MODEL="sonnet"; BUDGET="1.50"; CLAWDND_LEAN_TAIL=8
+WORLDOS_DM_MODEL="sonnet"; BUDGET="1.50"; WORLDOS_LEAN_TAIL=8
 
 fail=0
 chk() { if eval "$2"; then echo "PASS: $1"; else echo "FAIL: $1"; fail=1; fi; }
@@ -35,7 +35,7 @@ duo_dm_turn() {
   beat_timeout="$(worldos_dm_timeout "$first")"
   worldos_timeout "$beat_timeout" \
     claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
-      --model "$CLAWDND_DM_MODEL" ${CLAWDND_DM_EFFORT[@]+"${CLAWDND_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+      --model "$WORLDOS_DM_MODEL" ${WORLDOS_DM_EFFORT[@]+"${WORLDOS_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
       --output-format stream-json --verbose > "$out" 2>> "$T/$RUN.dm.err"
   rc=$?
   DM_OUT="$out"
@@ -80,7 +80,7 @@ sleep 600
 STUB
 chmod +x "$BIN/claude"
 start=$SECONDS
-reply_to="$(WORLDOS_COLDOPEN_TIMEOUT=2 CLAWDND_BEAT_TIMEOUT=2 duo_dm_turn 0 'Resolve.' 2>"$TMP/errto")"
+reply_to="$(WORLDOS_COLDOPEN_TIMEOUT=2 WORLDOS_BEAT_TIMEOUT=2 duo_dm_turn 0 'Resolve.' 2>"$TMP/errto")"
 elapsed=$((SECONDS - start))
 chk "timeout → DM reply text is EMPTY"                '[ -z "$reply_to" ]'
 chk "timeout → killed at the deadline (<=10s, not 600s)" '[ "$elapsed" -le 10 ]'
@@ -88,12 +88,12 @@ chk "timeout → cause surfaced on stderr (dm-attempt)" 'grep -q "dm-attempt" "$
 
 # (3) the shared cold-open remint yields a FRESH --session-id (not the consumed one).
 unset -f claude
-CLAWDND_DM_RETRY_SESSION=()
+WORLDOS_DM_RETRY_SESSION=()
 worldos_dm_remint_session_on_retry --session-id "DSID-consumed-0000"
-chk "shared remint emits a 2-token --session-id array" '[ "${#CLAWDND_DM_RETRY_SESSION[@]}" -ge 2 ]'
-chk "shared remint mode is --session-id"               '[ "${CLAWDND_DM_RETRY_SESSION[0]}" = "--session-id" ]'
-chk "shared remint id is FRESH (not the consumed id)"  '[ "${CLAWDND_DM_RETRY_SESSION[1]}" != "DSID-consumed-0000" ]'
-chk "shared remint id is non-empty"                    '[ -n "${CLAWDND_DM_RETRY_SESSION[1]}" ]'
+chk "shared remint emits a 2-token --session-id array" '[ "${#WORLDOS_DM_RETRY_SESSION[@]}" -ge 2 ]'
+chk "shared remint mode is --session-id"               '[ "${WORLDOS_DM_RETRY_SESSION[0]}" = "--session-id" ]'
+chk "shared remint id is FRESH (not the consumed id)"  '[ "${WORLDOS_DM_RETRY_SESSION[1]}" != "DSID-consumed-0000" ]'
+chk "shared remint id is non-empty"                    '[ -n "${WORLDOS_DM_RETRY_SESSION[1]}" ]'
 
 [ "$fail" = 0 ] && echo "ALL ASSERTIONS PASSED" || echo "SOME ASSERTIONS FAILED"
 exit "$fail"

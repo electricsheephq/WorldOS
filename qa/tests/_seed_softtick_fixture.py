@@ -5,7 +5,7 @@ channels the leak used to discard. The expiry channel is list[{character_id, nam
 strings like the others), which is why its carry line must render the effect NAME, not the raw
 dict repr (F04-2 follow-up).
 
-Run with WORLDOS_STATE_DIR/CLAWDND_STATE_DIR pointed at a temp state dir (the shell proof
+Run with WORLDOS_STATE_DIR/WORLDOS_STATE_DIR pointed at a temp state dir (the shell proof
 does this). Prints ONLY the campaign id on success so the caller can capture it.
 """
 import os

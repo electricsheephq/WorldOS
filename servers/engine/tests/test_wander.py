@@ -258,7 +258,7 @@ def test_undercity_substring_does_not_leak_to_city():
 def party_camp(tmp_path, monkeypatch):
     """A campaign with a connected start->forest graph, a level-3 PC + companion in
     the party, both anchored at the start. Returns (cid, start_id, forest_id)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Wander Test")["id"]
     # both locations carry a recognized region ("greenwood" -> wood/forest pool)
     start = server.add_location(cid, "Trailhead", region="the Greenwood")["id"]  # first -> current

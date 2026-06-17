@@ -71,7 +71,7 @@ every NPC; a voiced AI companion adventures alongside you with its own sheet and
 | `worldos-engine` | `servers/engine/` | Authoritative game state: dice, sheets, combat, conditions, XP/leveling, encounters, persistence. **Sole writer of campaign truth.** |
 | `worldos-rules` | `servers/rules/` | SRD 5.2.1 rules lookup (offline; `dnd5eapi.co` fallback). |
 | `worldos-voice` | `servers/voice/` | TTS behind a swappable `TtsBackend` (Kokoro default; null backend in QA). |
-| `worldos-player` | `servers/engine/player_server.py` | **The constrained move FACADE.** An actor acts ONLY through this limited, READ-ONLY-on-state surface; it can't narrate the world or assert outcomes. Parameterized by `CLAWDND_ACTOR_ID` / `CLAWDND_ACTOR_ROLE` so the same surface drives the player or any companion peer agent. |
+| `worldos-player` | `servers/engine/player_server.py` | **The constrained move FACADE.** An actor acts ONLY through this limited, READ-ONLY-on-state surface; it can't narrate the world or assert outcomes. Parameterized by `WORLDOS_ACTOR_ID` / `WORLDOS_ACTOR_ROLE` so the same surface drives the player or any companion peer agent. |
 
 > **NOTE / spec correction:** there is **no `servers/player/` directory**. The player
 > facade is the file `servers/engine/player_server.py`, exposed as the `worldos-player`
@@ -138,7 +138,7 @@ change must respect them.
    stays DM-advisory and only gauge-backed things get engine teeth.)
 4. **QA uses null voice / null image and NEVER the Eva / OpenClaw gateway-by-accident.**
    The QA harness runs gateway-free `claude -p` (or a *scoped* gpt-5.4 OpenClaw path with
-   isolated `clawdnd-qa*` agents). **NEVER touch Eva** (the owner's live agent): don't
+   isolated `worldos-qa*` agents). **NEVER touch Eva** (the owner's live agent): don't
    restart/reconfigure the gateway, don't touch agents `main`/`operations`, no
    `doctor --fix`, no global `mcp set`.
 5. **Engine rolls the probability; the DM is TOLD the result.** Wander/betrayal/variant
@@ -213,7 +213,7 @@ is LEGACY narrative; don't hand-edit it.)
 - `qa/run_combat_sprint.sh <run>` — **the fast BUG-FINDER.** ~1.5–2 min: pre-seeds a fight
   (zero LLM) → ONE DM call for a 3-round combat → behavioral-gate → Angry-DM score.
 - `qa/run_duo_openclaw.sh` — the same duo via **gpt-5.4** (OpenClaw gateway, off the claude
-  quota; scoped `clawdnd-qa*` agents only; needs `--thinking low`).
+  quota; scoped `worldos-qa*` agents only; needs `--thinking low`).
 - `qa/run_party.sh` — player + up to 3 companion peer AGENTS + DM (exercises recruit/banter/
   the betrayal path; restore this to the cadence to feel-validate Quest-Arc L2).
 - `qa/run_parallel.sh` — 2–3 isolated concurrent runs (the velocity model; 2 `claude -p` is fine).
@@ -277,8 +277,8 @@ Fair-test shape:
 - DM provider: `CODEX_HOME=~/.codex-worldos-qa WORLDOS_CODEX_MODEL=gpt-5.5` or `gpt-5.4`
   through `scripts/play_codex_dm.sh`, which wires engine/rules/voice MCP per `codex exec -c`.
 - Fixture: use an explicit origin template, not a loose canon-name pickup, when comparing providers.
-  The Codex provider accepts `CLAWDND_PLAY_HERO='{"origin":"template:rolan-evoker"}'`
-  or `CLAWDND_PLAY_CANON_HERO=template:rolan-evoker`, seating `Rolan - Tiefling Evoker`
+  The Codex provider accepts `WORLDOS_PLAY_HERO='{"origin":"template:rolan-evoker"}'`
+  or `WORLDOS_PLAY_CANON_HERO=template:rolan-evoker`, seating `Rolan - Tiefling Evoker`
   through the engine's `start_character(origin="template:rolan-evoker")` path so subclass,
   level, ability scores, and spell list are preserved in evidence.
 - Same-family Codex proof: Codex DM + Codex/GPT player/test agent + `qa/score_codex.sh`.
@@ -462,8 +462,8 @@ lands on app relaunch with NO Swift rebuild** (the swift build is a ~0.1s no-op)
   port and returns `{url}`; the JS then `window.location.assign(reply.url)` — drive the reload from
   **JS**, not the Swift `webURL` @State (which didn't repoint reliably across the async hop).
 - The Claude provider still shells **`scripts/play.sh`** / `scripts/play_party.sh`. `play.sh` IS the play loop:
-  it binds a viewer with `CLAWDND_PLAYER_MOVES` +
-  `CLAWDND_VIEWER_CHAT` set (→ `_live_play()` true) and runs a `claude -p` DM watching the
+  it binds a viewer with `WORLDOS_PLAYER_MOVES` +
+  `WORLDOS_VIEWER_CHAT` set (→ `_live_play()` true) and runs a `claude -p` DM watching the
   move sink. `POST /move` → sink; `/chat?since=` → DM narration the Session tails.
 - The checked-in Codex provider now defaults to `scripts/play_codex_dm.sh`, a DM wrapper that owns
   the live viewer, the engine/rules/voice MCP contract, `chat.jsonl`, and `player_moves.jsonl`.

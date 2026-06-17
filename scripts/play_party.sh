@@ -7,7 +7,7 @@
 # adds the proven multi-agent ENSEMBLE from qa/run_party.sh on top of that same human
 # play surface: when you name companions, each becomes its OWN agent acting through the
 # SAME constrained move facade as you do (NOT the DM voicing them), parameterized to its
-# own character via CLAWDND_ACTOR_ID + CLAWDND_ACTOR_ROLE=companion. Every beat the human's
+# own character via WORLDOS_ACTOR_ID + WORLDOS_ACTOR_ROLE=companion. Every beat the human's
 # dashboard move AND each living companion's structured moves are relayed to the DM, who
 # resolves them all through the engine and narrates the next beat in the chat — so the
 # OpenWorlds shows YOU + your companions + the DM, turn by turn, live.
@@ -26,11 +26,11 @@
 # Usage: scripts/play_party.sh [world-id] [run-id] [port] [companion-spec]
 #   world-id   a living world to drop into (default: baldurs-gate). See `/world-list`.
 #   run-id     names this game's save dir under play-state/ (default: a timestamp).
-#   port       the OpenWorlds port (default: 8765 or $CLAWDND_PLAY_PORT).
+#   port       the OpenWorlds port (default: 8765 or $WORLDOS_PLAY_PORT).
 #   companion-spec  COMMA-separated tokens, each  Name:class:persona_file[:spell1|spell2|…]
 #                   (same grammar as run_party.sh). The optional 4th field names a caster's
 #                   known spells (SRD defaults give slots, not spell CHOICE). May also be
-#                   set via $CLAWDND_PLAY_COMPANIONS (the positional arg wins if both set).
+#                   set via $WORLDOS_PLAY_COMPANIONS (the positional arg wins if both set).
 #                   e.g. "Seraphine:cleric:qa/play_companion.txt:Cure Wounds|Sacred Flame"
 #                        ",Brogan:fighter:qa/play_companion.txt"
 #   Default (no spec, no env) = solo play.sh, EXACTLY.
@@ -38,12 +38,12 @@
 #   scripts/play_party.sh                              # solo (== scripts/play.sh)
 #   scripts/play_party.sh baldurs-gate '' 8765 \
 #     "Seraphine:cleric:qa/play_companion.txt:Cure Wounds|Guiding Bolt"
-#   CLAWDND_PLAY_COMPANIONS="Brogan:fighter:qa/play_companion.txt" scripts/play_party.sh
+#   WORLDOS_PLAY_COMPANIONS="Brogan:fighter:qa/play_companion.txt" scripts/play_party.sh
 #
 # Safety caps (a runaway loop self-stops; companions count toward the SAME session ceiling):
-#   CLAWDND_PLAY_BUDGET           per-turn USD budget for one agent turn  (default 1.50)
-#   CLAWDND_PLAY_SESSION_BUDGET   aggregate USD ceiling for the session   (default 15.00)
-#   CLAWDND_PLAY_MAX_TURNS        hard cap on agent turns (DM + companions)(default 40)
+#   WORLDOS_PLAY_BUDGET           per-turn USD budget for one agent turn  (default 1.50)
+#   WORLDOS_PLAY_SESSION_BUDGET   aggregate USD ceiling for the session   (default 15.00)
+#   WORLDOS_PLAY_MAX_TURNS        hard cap on agent turns (DM + companions)(default 40)
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$ROOT" || exit 1
 COMMON="$ROOT/scripts/launch_common.sh"
@@ -70,32 +70,32 @@ if declare -F worldos_warn_if_no_timeout >/dev/null 2>&1; then
 fi
 WORLD="${1:-baldurs-gate}"
 RUN="${2:-play-$(date +%Y%m%d-%H%M%S)}"
-PORT="${3:-${CLAWDND_PLAY_PORT:-8765}}"
+PORT="${3:-${WORLDOS_PLAY_PORT:-8765}}"
 PORT_EXPLICIT=0
-[ -n "${3:-}" ] || [ -n "${CLAWDND_PLAY_PORT:-}" ] && PORT_EXPLICIT=1
-COMPANION_SPEC="${4:-${CLAWDND_PLAY_COMPANIONS:-}}"
+[ -n "${3:-}" ] || [ -n "${WORLDOS_PLAY_PORT:-}" ] && PORT_EXPLICIT=1
+COMPANION_SPEC="${4:-${WORLDOS_PLAY_COMPANIONS:-}}"
 # Model knobs (default sonnet → unchanged behavior). The DM model is the structural-adherence
 # lever (decision §3); the actor model drives the companion facade agents. The solo path below
-# delegates to play.sh, which honors CLAWDND_DM_MODEL on its own (the env var carries through).
-CLAWDND_DM_MODEL="${CLAWDND_DM_MODEL:-opus}"
-CLAWDND_ACTOR_MODEL="${CLAWDND_ACTOR_MODEL:-sonnet}"
+# delegates to play.sh, which honors WORLDOS_DM_MODEL on its own (the env var carries through).
+WORLDOS_DM_MODEL="${WORLDOS_DM_MODEL:-opus}"
+WORLDOS_ACTOR_MODEL="${WORLDOS_ACTOR_MODEL:-sonnet}"
 # Lean-beat re-ground depth: how many recent player-facing beats the LEAN RE-GROUND directive
 # asks scene_context to fold in (default 8 — SAME as scripts/play.sh + qa/run_duo.sh). Used by
 # the DM turn's worldos_dm_lean_args call below; the helper also defaults to 8 if unset.
-CLAWDND_LEAN_TAIL="${CLAWDND_LEAN_TAIL:-8}"
+WORLDOS_LEAN_TAIL="${WORLDOS_LEAN_TAIL:-8}"
 # Which provider drives this run. The viewer's /app-status readiness gates ALL play controls on
 # a non-empty PROVIDER in {codex,claude,openclaw,scripted} (viewer/server.py: provider_ready +
 # ready_for_play). play_party.sh IS the Claude party play path, so default to "claude" and export
 # it into the viewer launch below; without it /app-status reports no_provider and every action
 # button stays locked even though /session-surface reports can_act:true. Resolves through the same
-# WORLDOS_/CLAWDND_ fallback as everything else (worldos_env), so an explicit env override wins.
+# WORLDOS_/WORLDOS_ fallback as everything else (worldos_env), so an explicit env override wins.
 PROVIDER="$(worldos_env PROVIDER claude)"
 
 # --- NO companions specified → today's solo human-play, byte-for-byte. -----------------
 # Delegate to scripts/play.sh with the SAME positional args (it ignores any 4th). exec
 # replaces this process, so a solo launch is indistinguishable from running play.sh
 # directly — no ensemble code path, no extra cost, no behavior drift. NOTE: exec PRESERVES
-# the environment, so an authored-hero spec in CLAWDND_PLAY_HERO (set by the Creation
+# the environment, so an authored-hero spec in WORLDOS_PLAY_HERO (set by the Creation
 # wizard's Bind, which always launches solo with companions:"") carries straight through to
 # play.sh, where it pre-seeds the player's PC. No handling is needed here.
 if [ -z "${COMPANION_SPEC//[[:space:]]/}" ]; then
@@ -119,13 +119,13 @@ fi
 # world-build — costs ~5x a Sonnet turn, so the Sonnet-tuned $1.50/$15 caps trip error_max_budget_usd
 # on the Opus cold-open → the backend never seats a PC. CAPS, not spends — routine beats (and the
 # Sonnet companion facade) spend far less than the cap; the session ceiling bounds any runaway turn.
-case "$CLAWDND_DM_MODEL" in
+case "$WORLDOS_DM_MODEL" in
   *opus*) _PT_DEF=12.00; _SESS_DEF=30.00 ;;
   *)      _PT_DEF=1.50;  _SESS_DEF=15.00 ;;
 esac
-BUDGET="${CLAWDND_PLAY_BUDGET:-$_PT_DEF}"                    # per agent turn (DM or companion; model-aware)
-SESSION_BUDGET="${CLAWDND_PLAY_SESSION_BUDGET:-$_SESS_DEF}"  # aggregate session ceiling (model-aware)
-MAX_TURNS="${CLAWDND_PLAY_MAX_TURNS:-40}"               # hard cap on agent turns (DM + companions)
+BUDGET="${WORLDOS_PLAY_BUDGET:-$_PT_DEF}"                    # per agent turn (DM or companion; model-aware)
+SESSION_BUDGET="${WORLDOS_PLAY_SESSION_BUDGET:-$_SESS_DEF}"  # aggregate session ceiling (model-aware)
+MAX_TURNS="${WORLDOS_PLAY_MAX_TURNS:-40}"               # hard cap on agent turns (DM + companions)
 if declare -F worldos_choose_port >/dev/null 2>&1; then
   PORT="$(worldos_choose_port "$PORT" "$PORT_EXPLICIT")" || exit 1
 fi
@@ -140,15 +140,15 @@ fi
 AGENT_TURNS=0
 
 # Product play state under the play-state ROOT (git-ignored), same layout + override as play.sh:
-# WORLDOS_STATE_DIR (legacy CLAWDND_STATE_DIR) lets a SHIPPED .app point this at a per-USER root
+# WORLDOS_STATE_DIR lets a SHIPPED .app point this at a per-USER root
 # (~/.worldos/state) instead of the dev repo; unset → BYTE-IDENTICAL to the old "$ROOT/play-state".
-STATE_ROOT="${WORLDOS_STATE_DIR:-${CLAWDND_STATE_DIR:-$ROOT/play-state}}"
+STATE_ROOT="${WORLDOS_STATE_DIR:-$ROOT/play-state}"
 STATE_DIR="$STATE_ROOT/$RUN"
 mkdir -p "$STATE_DIR"
 # Re-pin BOTH env names to THIS run's per-$RUN dir so a bare inherited WORLDOS_STATE_DIR=<user-root>
 # (the play-state ROOT the .app set above) can't leak into the engine subprocesses and resolve
 # <user-root>/campaigns instead of this game's <user-root>/$RUN. (Same rationale as play.sh.)
-export WORLDOS_STATE_DIR="$STATE_DIR" CLAWDND_STATE_DIR="$STATE_DIR"
+export WORLDOS_STATE_DIR="$STATE_DIR"
 # #892 follow-up: keep the .app-spawned cold-open `claude -p` (the DM) off the macOS keychain +
 # off any /Volumes TCC prompt so it runs headless. GATED no-op without an env/file credential.
 # Called ONCE here (the ENSEMBLE path; the solo path execs play.sh above, which calls it itself),
@@ -175,7 +175,7 @@ PROVIDER_STOPPED_CLEANLY=0
 # zero streaming refs). Instructing the DM to log ONE early narration progress-beat makes /events
 # show visible story progress while the turn is still composing (the #571 streaming lever, which
 # play_party.sh — the .app's AND the VM sweep's DM path — was missing while play_codex_dm.sh had it).
-CLAWDND_LIVE_PROGRESS_RULE="Live progress rule: after you know the live campaign and scene, call log_event(kind=\"narration\", text=\"...\") ONCE with a short, non-duplicate, player-facing progress beat BEFORE any longer resolution work. This is how /events shows visible story progress while your turn is still running. The progress beat MUST be 2nd-person prose addressed to \"you\" (a vivid one-line teaser of where the player stands or what they sense) — it is rendered STRAIGHT into the player's Chronicle. NEVER log a 3rd-person scene summary, a \"Cold open —\"/\"Scene:\"/\"Setup:\" header, a \"Choice: X or Y\" branch list, bracketed stage directions, or any director/planning note: that scaffolding is your private scratchpad and shatters immersion if it reaches the player. Keep the final reply as the full 2nd-person scene; do not copy this progress beat verbatim, because the wrapper records the final reply through the engine after the turn."
+WORLDOS_LIVE_PROGRESS_RULE="Live progress rule: after you know the live campaign and scene, call log_event(kind=\"narration\", text=\"...\") ONCE with a short, non-duplicate, player-facing progress beat BEFORE any longer resolution work. This is how /events shows visible story progress while your turn is still running. The progress beat MUST be 2nd-person prose addressed to \"you\" (a vivid one-line teaser of where the player stands or what they sense) — it is rendered STRAIGHT into the player's Chronicle. NEVER log a 3rd-person scene summary, a \"Cold open —\"/\"Scene:\"/\"Setup:\" header, a \"Choice: X or Y\" branch list, bracketed stage directions, or any director/planning note: that scaffolding is your private scratchpad and shatters immersion if it reaches the player. Keep the final reply as the full 2nd-person scene; do not copy this progress beat verbatim, because the wrapper records the final reply through the engine after the turn."
 
 # --- DM config: the three plugin MCP servers, engine pointed at this game's state dir,
 # silent voice backend — IDENTICAL wiring to play.sh (the DM runs the full plugin). -----
@@ -186,10 +186,10 @@ cfg = {"mcpServers": {
     "worldos-engine": {"type": "stdio", "command": "uv", "alwaysLoad": True,
         "args": ["run", "--directory", f"{root}/servers/engine", "server.py"],
         # Pin BOTH names to THIS run's per-$RUN dir (engine reads WORLDOS_STATE_DIR first, then
-        # CLAWDND_STATE_DIR). Prevents an inherited bare WORLDOS_STATE_DIR=<user-root> (set by a
+        # WORLDOS_STATE_DIR). Prevents an inherited bare WORLDOS_STATE_DIR=<user-root> (set by a
         # shipped .app) from pointing the engine at <user-root>/campaigns. Byte-identical with no
         # override (both name $STATE_DIR). Same fix as scripts/play.sh.
-        "env": {"WORLDOS_STATE_DIR": state_dir, "CLAWDND_STATE_DIR": state_dir}},
+        "env": {"WORLDOS_STATE_DIR": state_dir}},
     "worldos-rules": {"type": "stdio", "command": "uv",
         "args": ["run", "--directory", f"{root}/servers/rules", "server.py"],
         "env": {"WORLDOS_RULES_OFFLINE": "1"}},
@@ -202,7 +202,7 @@ PY
 
 # --- PRE-SEED the COMPANIONS via the engine; capture each companion's id ---------------
 # We must know each companion's character id UP FRONT to wire its facade (the facade
-# binds to CLAWDND_ACTOR_ID). So — exactly like run_party.sh — we call the engine's own
+# binds to WORLDOS_ACTOR_ID). So — exactly like run_party.sh — we call the engine's own
 # tools to create the world, the session, and each companion with a REAL SRD sheet before
 # any agent runs. UNLIKE run_party.sh we DO NOT pre-create the player PC: in human play the
 # DM creates the human's character live (preserving play.sh's "the DM hands you a character"
@@ -210,10 +210,10 @@ PY
 # The companion SPEC is Name:class:persona[:spells]; only Name+class+spells touch state
 # (the persona/agenda NEVER does). Prints JSON: {campaign_id, companions:[{id,name,persona}]}.
 # Run under `uv` from the engine dir (its venv has mcp/pydantic; bare python3 lacks them).
-SEED_JSON="$(CLAWDND_STATE_DIR="$STATE_DIR" uv run --directory "$ROOT/servers/engine" python - "$WORLD" "$COMPANION_SPEC" <<'PY'
+SEED_JSON="$(WORLDOS_STATE_DIR="$STATE_DIR" uv run --directory "$ROOT/servers/engine" python - "$WORLD" "$COMPANION_SPEC" <<'PY'
 import json, sys, os, glob, time
 world, spec = sys.argv[1], sys.argv[2]
-import server  # engine tools as plain functions (state dir from CLAWDND_STATE_DIR; cwd is the engine dir)
+import server  # engine tools as plain functions (state dir from WORLDOS_STATE_DIR; cwd is the engine dir)
 
 # Single-flight (#640): REUSE a RECENT, fully-seeded campaign in this state dir rather than minting a
 # parallel one. The .app's native RESUME and the part-B harness each run this pre-seed; minting a
@@ -223,7 +223,7 @@ import server  # engine tools as plain functions (state dir from CLAWDND_STATE_D
 # stale cross-run campaign in the same state dir is never resurrected.
 camp = None
 companions = []
-_camps_dir = os.path.join(os.environ.get("CLAWDND_STATE_DIR", ""), "campaigns")
+_camps_dir = os.path.join(os.environ.get("WORLDOS_STATE_DIR", ""), "campaigns")
 for _snap in sorted(glob.glob(os.path.join(_camps_dir, "camp_*", "snapshot.json")), key=os.path.getmtime, reverse=True):
     if time.time() - os.path.getmtime(_snap) > 1800:
         break  # newest-first list; once we pass the window, all the rest are older too
@@ -276,7 +276,7 @@ NUM_COMP="$(printf '%s' "$SEED_JSON" | jq -r '.companions | length')"
 
 # --- COMPANION facade configs (one per companion, each bound to its own actor id) ------
 # Lifted verbatim from run_party.sh: each companion gets the SAME constrained facade but
-# with CLAWDND_ACTOR_ID set to ITS character + role "companion", its OWN moves file,
+# with WORLDOS_ACTOR_ID set to ITS character + role "companion", its OWN moves file,
 # cursor, and session id. The persona file (incl. any sealed agenda) is passed to the
 # agent's PROMPT only — never into the config or state. NOTE the companions write to
 # SEPARATE moves files, NOT the human's $MOVES — the human's relay path stays pristine.
@@ -295,8 +295,8 @@ json.dump({"mcpServers": {"worldos-player": {"command": "uv",
   "args": ["run", "--directory", f"{root}/servers/engine", "python", "player_server.py"],
   # Pin BOTH state-dir names to this run's per-$RUN dir (engine prefers WORLDOS_STATE_DIR), so an
   # inherited bare WORLDOS_STATE_DIR=<user-root> can't repoint the companion's player_server.
-  "env": {"WORLDOS_STATE_DIR": state, "CLAWDND_STATE_DIR": state, "CLAWDND_PLAYER_MOVES": moves,
-          "CLAWDND_ACTOR_ID": actor_id, "CLAWDND_ACTOR_ROLE": "companion"}}}}, open(out, "w"))
+  "env": {"WORLDOS_STATE_DIR": state, "WORLDOS_PLAYER_MOVES": moves,
+          "WORLDOS_ACTOR_ID": actor_id, "WORLDOS_ACTOR_ROLE": "companion"}}}}, open(out, "w"))
 PY
   COMP_CFGS+=("$ccfg"); COMP_MOVES+=("$cmoves"); COMP_CURSORS+=("$ccur")
   COMP_SIDS+=("$(uuidgen 2>/dev/null || python3 -c 'import uuid;print(uuid.uuid4())')")
@@ -329,18 +329,18 @@ turn() {
     worldos_dm_prebeat_mark "$STATE_DIR" "$first"
     # #623: prepend the live-progress rule so the DM logs an early /events narration beat (parity
     # with play_codex_dm.sh) — without it the long beat shows blank → the perceived drop/hang.
-    msg="$CLAWDND_LIVE_PROGRESS_RULE"$'\n\n'"$msg"
-    # LEAN beats (CLAWDND_LEAN_BEATS=1, now the default): a CONTINUING DM beat (first=0) starts a
+    msg="$WORLDOS_LIVE_PROGRESS_RULE"$'\n\n'"$msg"
+    # LEAN beats (WORLDOS_LEAN_BEATS=1, now the default): a CONTINUING DM beat (first=0) starts a
     # FRESH session + a re-ground directive instead of --resume-ing the fat transcript — the SAME
     # shared implementation scripts/play.sh + qa/run_duo.sh use (worldos_dm_lean_args in
     # qa/lib_beat_driver.sh), so the three harnesses can't drift. play_party already knows the
     # campaign id ($CAMPAIGN_ID, resolved up front from the pre-seed), so lean re-grounds against
-    # the real campaign on beats 2+; on the cold open (first!=0) or with CLAWDND_LEAN_BEATS=0 the
+    # the real campaign on beats 2+; on the cold open (first!=0) or with WORLDOS_LEAN_BEATS=0 the
     # helper leaves both arrays empty and we keep the --resume/--session-id path set above unchanged.
-    worldos_dm_lean_args "$first" "${CAMPAIGN_ID:-}" "$CLAWDND_LEAN_TAIL"
-    if [ "${#CLAWDND_DM_LEAN_SESSION[@]}" -gt 0 ]; then
-      resume=("${CLAWDND_DM_LEAN_SESSION[@]}")
-      extra=("${CLAWDND_DM_LEAN_EXTRA[@]}")
+    worldos_dm_lean_args "$first" "${CAMPAIGN_ID:-}" "$WORLDOS_LEAN_TAIL"
+    if [ "${#WORLDOS_DM_LEAN_SESSION[@]}" -gt 0 ]; then
+      resume=("${WORLDOS_DM_LEAN_SESSION[@]}")
+      extra=("${WORLDOS_DM_LEAN_EXTRA[@]}")
     fi
     # EFFORT TIER (shared helper, qa/lib_beat_driver.sh) — SAME implementation play.sh + run_duo.sh
     # use: --effort max on the cold open (one-time world-build), --effort medium on continuing beats
@@ -349,7 +349,7 @@ turn() {
     worldos_dm_effort_arg "$first"
     # TIMEOUT TIER (shared helper, qa/lib_beat_driver.sh) — SAME implementation scripts/play.sh's
     # dm_turn uses: the cold open's --effort max world-build runs ~280–400s, so it gets
-    # WORLDOS_COLDOPEN_TIMEOUT (default 400s); continuing beats get CLAWDND_BEAT_TIMEOUT (default
+    # WORLDOS_COLDOPEN_TIMEOUT (default 400s); continuing beats get WORLDOS_BEAT_TIMEOUT (default
     # 360s). Keyed off the SAME `first` signal as the effort tier above. This wraps the DM turn in
     # `timeout` (parity with play.sh dm_turn — play_party is the native app's entry point and
     # previously had NO per-beat deadline, so a wedged DM turn could hang the session indefinitely;
@@ -366,7 +366,7 @@ turn() {
     _dm_invoke() {
       worldos_timeout "$beat_timeout" \
         claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
-          --model "$CLAWDND_DM_MODEL" ${CLAWDND_DM_EFFORT[@]+"${CLAWDND_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+          --model "$WORLDOS_DM_MODEL" ${WORLDOS_DM_EFFORT[@]+"${WORLDOS_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
           --output-format stream-json --verbose > "$out" 2>> "$DM_LOG.err"
     }
     _dm_invoke; rc=$?
@@ -388,12 +388,12 @@ turn() {
       # model-aware cold-open tier (never de-escalating below attempt 1's), same as play.sh.
       beat_timeout="$(worldos_dm_retry_timeout "$beat_timeout")"
       echo "[play-party] DM turn rc=$rc — retrying once with a fresh session (deadline escalated to ${beat_timeout}s)" >&2
-      worldos_dm_lean_args "$first" "${CAMPAIGN_ID:-}" "$CLAWDND_LEAN_TAIL"
-      if [ "${#CLAWDND_DM_LEAN_SESSION[@]}" -gt 0 ]; then
-        resume=("${CLAWDND_DM_LEAN_SESSION[@]}")
+      worldos_dm_lean_args "$first" "${CAMPAIGN_ID:-}" "$WORLDOS_LEAN_TAIL"
+      if [ "${#WORLDOS_DM_LEAN_SESSION[@]}" -gt 0 ]; then
+        resume=("${WORLDOS_DM_LEAN_SESSION[@]}")
       else
         worldos_dm_remint_session_on_retry ${resume[@]+"${resume[@]}"}
-        [ "${#CLAWDND_DM_RETRY_SESSION[@]}" -gt 0 ] && resume=("${CLAWDND_DM_RETRY_SESSION[@]}")
+        [ "${#WORLDOS_DM_RETRY_SESSION[@]}" -gt 0 ] && resume=("${WORLDOS_DM_RETRY_SESSION[@]}")
       fi
       out="$DM_LOG.$(date +%s%N).jsonl"
       _dm_invoke; rc=$?
@@ -417,9 +417,9 @@ turn() {
     # (its `[ -n "$cm" ] &&` guard) — graceful degradation: the beat still reaches the DM. The
     # companion is NOT retried (unlike the DM): a missed companion move is recoverable next beat, and a
     # retry would double its latency ahead of the DM. Cost still accrues via $COMBINED on whatever ran.
-    worldos_timeout "${WORLDOS_ACTOR_TIMEOUT:-${CLAWDND_ACTOR_TIMEOUT:-120}}" \
+    worldos_timeout "${WORLDOS_ACTOR_TIMEOUT:-120}" \
       claude -p "$msg" "${resume[@]}" --mcp-config "$cfg" --strict-mcp-config \
-        --model "$CLAWDND_ACTOR_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+        --model "$WORLDOS_ACTOR_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
         --output-format stream-json --verbose > "$out" 2>> "$STATE_DIR/companion.err" || true
     cat "$out" >> "$COMBINED"   # companion tool-call cost counts toward the session ceiling
     jq -rs 'map(select(.type=="result"))[-1].result // ""' "$out" 2>/dev/null
@@ -487,8 +487,8 @@ $cm"; chatlog "companion:${COMP_NAMES[$i]}" "$cm"; }
 VPID_FILE="$STATE_DIR/.viewer.pid"
 viewer_supervisor() {
   while :; do
-    CLAWDND_STATE_DIR="$STATE_DIR" CLAWDND_VIEWER_CHAT="$CHAT" CLAWDND_PLAYER_MOVES="$MOVES" \
-    WORLDOS_PROVIDER="$PROVIDER" CLAWDND_PROVIDER="$PROVIDER" \
+    WORLDOS_STATE_DIR="$STATE_DIR" WORLDOS_VIEWER_CHAT="$CHAT" WORLDOS_PLAYER_MOVES="$MOVES" \
+    WORLDOS_PROVIDER="$PROVIDER" \
       python3 viewer/server.py "" "$PORT" >> "$VIEWER_LOG" 2>&1 &
     local vp=$!; echo "$vp" > "$VPID_FILE"
     wait "$vp" 2>/dev/null   # blocks until the viewer exits (and reaps it)
@@ -557,7 +557,7 @@ CRITICAL — your FINAL output THIS turn MUST BE the opening SCENE itself, writt
 Each beat, declarations arrive as tagged moves — [say] (dialogue), [do] (an attempt), [check] (roll that skill), [cast]/[use]/[attack] (resolve via the engine) — from the HUMAN (their PC) and from each companion (banner-tagged with the companion's name). Resolve EACH actor's moves through the engine.")"
 # #357: recover the engine's logged opening narration if the DM's first turn ended on a tool
 # call rather than prose — BEFORE the abort check, so a tool-final-but-narrated opener stands.
-worldos_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
+worldos_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$WORLDOS_DM_REPLY"
 [ -z "$DMSG" ] && { echo "[play-party] DM produced no opening — aborting (see $COMBINED)" >&2; exit 1; }
 # #720: route the opening through record_dm_reply — engine_logged stamp on success so the
 # OpenWorlds client renders the cold-open opening ONCE (this is the dup source on the VM sweep).
@@ -589,7 +589,7 @@ if ! worldos_pc_seated "$STATE_DIR" "$CAMPAIGN_ID"; then
 - use campaign_id=$CAMPAIGN_ID for EVERY engine call. DO NOT call start_world (it would mint a NEW campaign id and ORPHAN the pre-seeded companions). The companions already present are: $COMP_NAME_LIST.
 - SEAT THE PLAYER CHARACTER: generate_ability_scores + create_character with kind=\"player\" and add_to_party=true, apply_srd_defaults, sensible skills/spells. Pick a fitting concept and tell the player who they are. This is the ONLY character you create. The party MUST contain the human's kind=\"player\" PC when this turn ends.
 - Then CLOSE the turn by writing the opening SCENE as 2nd-person player-facing prose addressed to \"you\" (where the player IS, what they see/hear/smell, who is present + a real quoted line), ending on a clear open moment + choice. NEVER end on a tool call or a 3rd-person setup brief.")"
-  worldos_resolve_dm_reply "$RESEAT_DMSG" "$STATE_DIR"; RESEAT_DMSG="$CLAWDND_DM_REPLY"
+  worldos_resolve_dm_reply "$RESEAT_DMSG" "$STATE_DIR"; RESEAT_DMSG="$WORLDOS_DM_REPLY"
   AGENT_TURNS=$((AGENT_TURNS + 1))
   # #720: the reseat turn re-writes the opening scene — route it through record_dm_reply too.
   if [ -n "$RESEAT_DMSG" ]; then DMSG="$RESEAT_DMSG"; record_dm_reply "$CAMPAIGN_ID" "$DMSG" reseat; echo "[play-party] reseat turn opened: ${DMSG:0:120}…"; fi
@@ -636,7 +636,7 @@ $INTRO_BLOCK
 
 Narrate the RESULT of each declared move (never invent a companion's internal choice), then weave the open moment back to the human PLAYER inside the scene — never a bare 'Your move.'")"
   # #357: recover engine-logged narration if this DM turn ended on a tool call.
-  worldos_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
+  worldos_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$WORLDOS_DM_REPLY"
   # #720: route the after-intros DM beat through record_dm_reply (engine_logged stamp on success).
   [ -n "$DMSG" ] && { record_dm_reply "$CAMPAIGN_ID" "$DMSG" after_intros; AGENT_TURNS=$((AGENT_TURNS + 1)); echo "[play-party] DM after intros: ${DMSG:0:120}…"; }
 fi
@@ -654,18 +654,18 @@ provider_status_set running active "WorldOS party DM provider is running."
 over_budget() {
   local spent
   if [ "$AGENT_TURNS" -ge "$MAX_TURNS" ]; then
-    echo "[play-party] turn cap ($MAX_TURNS) reached — stopping (raise CLAWDND_PLAY_MAX_TURNS)."
+    echo "[play-party] turn cap ($MAX_TURNS) reached — stopping (raise WORLDOS_PLAY_MAX_TURNS)."
     provider_status_set stopped turn_cap "WorldOS party DM stopped after reaching the configured max turns. Increase Max turns or start a new session to continue."
     PROVIDER_STOPPED_CLEANLY=1
-    sleep "${WORLDOS_PROVIDER_STOP_GRACE_SECONDS:-${CLAWDND_PROVIDER_STOP_GRACE_SECONDS:-20}}"
+    sleep "${WORLDOS_PROVIDER_STOP_GRACE_SECONDS:-20}"
     return 0
   fi
   spent="$(jq -rs '[.[]|select(.type=="result")|.total_cost_usd//0]|add // 0' "$COMBINED" 2>/dev/null)"
   if awk -v s="${spent:-0}" -v b="$SESSION_BUDGET" 'BEGIN{exit !(s+0>=b+0)}'; then
-    echo "[play-party] session budget reached (~\$$spent/\$$SESSION_BUDGET) — stopping (raise CLAWDND_PLAY_SESSION_BUDGET)."
-    provider_status_set stopped budget "WorldOS party DM stopped after reaching the session budget (~\$$spent/\$$SESSION_BUDGET). Raise CLAWDND_PLAY_SESSION_BUDGET or start a new session."
+    echo "[play-party] session budget reached (~\$$spent/\$$SESSION_BUDGET) — stopping (raise WORLDOS_PLAY_SESSION_BUDGET)."
+    provider_status_set stopped budget "WorldOS party DM stopped after reaching the session budget (~\$$spent/\$$SESSION_BUDGET). Raise WORLDOS_PLAY_SESSION_BUDGET or start a new session."
     PROVIDER_STOPPED_CLEANLY=1
-    sleep "${WORLDOS_PROVIDER_STOP_GRACE_SECONDS:-${CLAWDND_PROVIDER_STOP_GRACE_SECONDS:-20}}"
+    sleep "${WORLDOS_PROVIDER_STOP_GRACE_SECONDS:-20}"
     return 0
   fi
   return 1
@@ -679,8 +679,8 @@ over_budget() {
 MCURSOR="$(wc -l < "$MOVES" 2>/dev/null | tr -d ' ')"; MCURSOR="${MCURSOR:-0}"
 # IDLE CEILING: this loop waits for a HUMAN move in $MOVES. With no human acting (a dry-run, or a
 # player who walked away) it would otherwise spin `sleep 2` forever — the 8.5h orphan. Stop after
-# CLAWDND_PLAY_MAX_IDLE seconds (default 30 min) with no new move; relaunch when you're ready.
-MAX_IDLE="${CLAWDND_PLAY_MAX_IDLE:-1800}"
+# WORLDOS_PLAY_MAX_IDLE seconds (default 30 min) with no new move; relaunch when you're ready.
+MAX_IDLE="${WORLDOS_PLAY_MAX_IDLE:-1800}"
 last_activity=$SECONDS
 # G1: drive the story arc per beat via the SHARED runbook (worldos_runbook_for_beat in
 # lib_beat_driver.sh) — the SAME arc-driver run_duo.sh uses (which reaches combat/travel/rest).
@@ -748,7 +748,7 @@ For EACH companion this beat, call check_companion_arc(companion_id) — the eng
 Then PLAY the next beat as a full lived scene — NOT a fragment: any NPC (or companion) present SPEAKS at least one quoted line in their own voice; let them push back when it's real. Narrate the RESULT of each declared move (never invent a companion's choice). Weave the open moment back to the human PLAYER inside the scene — never a bare 'Your move.' ALWAYS end your turn on 2nd-person player-facing narration (addressed to \"you\"), never on a tool call or a 3rd-person status line — the player reads your final reply text as the scene, so the beat's prose MUST be in it. Your reply IS the scene: write FLOWING 2nd-person PROSE, NEVER your planning notes or terse scaffolding. (Wrong — internal shorthand the player must never see: \"Devella presses Renn on the seal. Renn: the rangers made that call — no log filed.\" Right — render it lived: her jaw tightening, the quoted line in her own voice, the weight of the answer in the room.)")"
     # #357: if the DM turn ended on a tool call / 3rd-person status line, recover the
     # player-facing narration the engine logged this beat so the chat is never blank.
-    worldos_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
+    worldos_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$WORLDOS_DM_REPLY"
     # #720: route the per-beat DM reply through record_dm_reply (engine_logged stamp on success).
     record_dm_reply "$CAMPAIGN_ID" "$DMSG" beat; AGENT_TURNS=$((AGENT_TURNS + 1))
     # F12-5 (#791) — C soft clock-tick backstop (the SAME shared helper play.sh:504 + both duo
@@ -762,9 +762,9 @@ Then PLAY the next beat as a full lived scene — NOT a fragment: any NPC (or co
     PREV_LOC="$(printf '%s' "$(worldos_read_progress "$STATE_DIR")" | cut -f5)"
   else
     if [ $((SECONDS - last_activity)) -ge "$MAX_IDLE" ]; then
-      echo "[play-party] idle ${MAX_IDLE}s with no player move — stopping (relaunch when ready; raise CLAWDND_PLAY_MAX_IDLE to wait longer)."
+      echo "[play-party] idle ${MAX_IDLE}s with no player move — stopping (relaunch when ready; raise WORLDOS_PLAY_MAX_IDLE to wait longer)."
       # F12-10: an idle stop is CLEAN (not a crash) — write "stopped"/idle + set the flag.
-      provider_status_set stopped idle "WorldOS party DM stopped after ${MAX_IDLE}s with no player move. Relaunch to continue (raise CLAWDND_PLAY_MAX_IDLE to wait longer)."
+      provider_status_set stopped idle "WorldOS party DM stopped after ${MAX_IDLE}s with no player move. Relaunch to continue (raise WORLDOS_PLAY_MAX_IDLE to wait longer)."
       PROVIDER_STOPPED_CLEANLY=1
       break
     fi

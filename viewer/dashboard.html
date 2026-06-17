@@ -982,7 +982,7 @@ const $ = (id) => document.getElementById(id);
 // Escape for BOTH text nodes AND double-quoted attributes (LLM-authored names land in
 // title="..."/data-loc="..." — an unescaped " breaks out of the attribute → DOM/attr injection).
 const esc = (s) => (s ?? "").toString().replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const COMBAT_EVENT_SCHEMA = "clawdnd.combat_event.v1";
+const COMBAT_EVENT_SCHEMA = "worldos.combat_event.v1";
 function hpText(state) {
   if (!state) return "";
   if (state.hp) return state.hp;
@@ -1578,7 +1578,7 @@ function wireSayDo() {
 
 // ---- C1a: live vs read-only ("director's view") -----------------------------
 // The action layer (Say/Do/Continue + dice/skill/save/combat palette + map click-to-
-// travel) only lands a move when the server reports state.live (CLAWDND_PLAYER_MOVES
+// travel) only lands a move when the server reports state.live (WORLDOS_PLAYER_MOVES
 // set + writable). In the default documented mode the dashboard is the read-only
 // director's view, so clicking would silently 4s-flash an error — it looks broken.
 // We instead gray + disable the whole layer and show one honest hint. `body.read-only`

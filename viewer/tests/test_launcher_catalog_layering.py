@@ -2,7 +2,7 @@
 LAYERED saves, with the correct run_id, or Resume is unreachable.
 
 THE DEFECT (empirically reproduced): the shipped .app exports a BARE user state home
-(~/.worldos/state else ~/.clawdnd/state) as WORLDOS_STATE_DIR, and scripts/play.sh nests each game
+(~/.worldos/state else ~/.worldos/state) as WORLDOS_STATE_DIR, and scripts/play.sh nests each game
 under ``<home>/<run>/campaigns/<id>`` (STATE_DIR = <home>/<run>). The viewer launcher catalog
 (``_campaign_catalog_roots``) used to scan only ``<home>/campaigns`` (the BARE current root — empty
 under the .app, since games live under per-run subdirs), plus repo-local play-state/* and
@@ -66,9 +66,9 @@ class LauncherCatalogLayeringTests(unittest.TestCase):
         self.addCleanup(self._tmpdir.cleanup)
         # The BARE user state home, exactly what the shipped .app exports as WORLDOS_STATE_DIR.
         self._home = Path(self._tmpdir.name)
-        self._saved = {k: os.environ.get(k) for k in ("CLAWDND_STATE_DIR", "WORLDOS_STATE_DIR")}
+        self._saved = {k: os.environ.get(k) for k in ("WORLDOS_STATE_DIR", "WORLDOS_STATE_DIR")}
         os.environ["WORLDOS_STATE_DIR"] = str(self._home)
-        os.environ["CLAWDND_STATE_DIR"] = str(self._home)
+        os.environ["WORLDOS_STATE_DIR"] = str(self._home)
         server._openworlds_catalog_cache = None
         self.addCleanup(self._restore_env)
 

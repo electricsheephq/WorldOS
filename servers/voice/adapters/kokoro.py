@@ -82,7 +82,7 @@ class KokoroBackend:
             )
         audio = np.concatenate(chunks) if len(chunks) > 1 else chunks[0]
         path = out_path or str(
-            Path(tempfile.gettempdir()) / f"clawdnd_{abs(hash((text, voice))) % 10**10}.wav"
+            Path(tempfile.gettempdir()) / f"worldos_{abs(hash((text, voice))) % 10**10}.wav"
         )
         sf.write(path, audio, _SAMPLE_RATE)
         played = _play(path) if play else False

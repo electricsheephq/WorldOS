@@ -49,7 +49,7 @@ PROSE_2 = "Mirelda lowers her voice; the ledger between you suddenly feels heavi
 
 @pytest.fixture
 def state(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     return tmp_path
 
 
@@ -211,8 +211,8 @@ def test_resolve_dm_reply_flags_recovery_and_stamps_chat_row(tmp_path):
     script = (
         f'set -u; ROOT="{REPO_ROOT}"; STATE_DIR="{tmp_path}"; CHAT="{chat}"; . "{LIB}"\n'
         f'worldos_resolve_dm_reply "" "$STATE_DIR"\n'
-        f'echo "recovered=$CLAWDND_FALLBACK_RECOVERED"\n'
-        f'worldos_chatlog_dm "$CLAWDND_DM_REPLY"\n'
+        f'echo "recovered=$WORLDOS_FALLBACK_RECOVERED"\n'
+        f'worldos_chatlog_dm "$WORLDOS_DM_REPLY"\n'
     )
     r = _bash(script)
     assert r.returncode == 0, r.stderr
@@ -229,8 +229,8 @@ def test_resolve_dm_reply_no_flag_when_dm_replied(tmp_path):
     script = (
         f'set -u; ROOT="{REPO_ROOT}"; STATE_DIR="{tmp_path}"; CHAT="{chat}"; . "{LIB}"\n'
         f'worldos_resolve_dm_reply {PROSE_2!r} "$STATE_DIR"\n'
-        f'echo "recovered=$CLAWDND_FALLBACK_RECOVERED"\n'
-        f'worldos_chatlog_dm "$CLAWDND_DM_REPLY"\n'
+        f'echo "recovered=$WORLDOS_FALLBACK_RECOVERED"\n'
+        f'worldos_chatlog_dm "$WORLDOS_DM_REPLY"\n'
     )
     r = _bash(script)
     assert r.returncode == 0, r.stderr
@@ -244,7 +244,7 @@ def test_record_dm_reply_failure_path_carries_flag_and_consumes_it(tmp_path):
     chat = tmp_path / "chat.jsonl"
     script = (
         f'set -u; ROOT="{REPO_ROOT}"; STATE_DIR="{tmp_path}"; CHAT="{chat}"; . "{LIB}"\n'
-        f"CLAWDND_FALLBACK_RECOVERED=1\n"
+        f"WORLDOS_FALLBACK_RECOVERED=1\n"
         f'record_dm_reply "" {PROSE_1!r} beat\n'
         f'record_dm_reply "" {PROSE_2!r} beat\n'
     )
@@ -261,7 +261,7 @@ def test_record_dm_reply_success_path_carries_both_flags(state, cid):
     chat = state / "chat.jsonl"
     script = (
         f'set -u; ROOT="{REPO_ROOT}"; STATE_DIR="{state}"; CHAT="{chat}"; . "{LIB}"\n'
-        f"CLAWDND_FALLBACK_RECOVERED=1\n"
+        f"WORLDOS_FALLBACK_RECOVERED=1\n"
         f"record_dm_reply {cid!r} {PROSE_1!r} beat\n"
     )
     r = _bash(script)

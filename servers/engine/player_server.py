@@ -4,7 +4,7 @@ assert outcomes. The durable lesson made structural: enforce roles in CODE, not 
 
 The actor *declares*; the DM + dice *resolve*. This facade is READ-ONLY on campaign
 state (the engine stays the sole writer) and only appends structured MOVES to the
-file named by ``CLAWDND_PLAYER_MOVES`` for the DM (and the dashboard) to consume.
+file named by ``WORLDOS_PLAYER_MOVES`` for the DM (and the dashboard) to consume.
 ``cast_spell`` / ``use_item`` / ``request_check`` validate against the actor's ACTUAL
 sheet, so you can only attempt what you actually have. This is the same move palette
 the human play UI (It.2) will emit.
@@ -13,11 +13,11 @@ ACTOR PARAMETERIZATION (S3 — the harness-ensemble model). Two env vars retarge
 facade so the SAME constrained surface drives every party member, each as its own
 ``claude -p`` peer agent:
 
-- ``CLAWDND_ACTOR_ID``   — a character id. When set, the facade resolves THAT
+- ``WORLDOS_ACTOR_ID``   — a character id. When set, the facade resolves THAT
   character (whatever its ``kind``: companion / a 2nd PC / etc.) and validates every
   move against ITS sheet (its own spells/slots/inventory). Unset = today's behavior:
   resolve the ``kind=="player"`` PC in the most-recently-updated campaign.
-- ``CLAWDND_ACTOR_ROLE`` — the role string stamped on every emitted move (default
+- ``WORLDOS_ACTOR_ROLE`` — the role string stamped on every emitted move (default
   ``"player"``). A companion run sets ``"companion"`` so the DM/dashboard can tell
   whose declaration it is.
 
@@ -53,7 +53,7 @@ mcp = FastMCP("worldos-player")
 def _campaign():
     """The live campaign this facade speaks to.
 
-    F12-15 / SYN-07 — PIN, don't re-resolve. ``CLAWDND_CAMPAIGN_ID`` (when set) names the
+    F12-15 / SYN-07 — PIN, don't re-resolve. ``WORLDOS_CAMPAIGN_ID`` (when set) names the
     EXACT campaign this actor belongs to, so the facade reads THAT campaign on every call
     regardless of which one is freshest. This closes the #640 silent-switch family: with a
     parallel campaign B running, the old max(updated_at) heuristic re-resolved "the live
@@ -97,7 +97,7 @@ def _actor_role() -> str:
     """The role stamped on emitted moves. Default "player" == today's behavior; a
     companion agent sets "companion" so the DM can tell whose declaration it is.
 
-    A-LOW-2: ``CLAWDND_ACTOR_ROLE`` is operator-supplied free text. Clamp it to the
+    A-LOW-2: ``WORLDOS_ACTOR_ROLE`` is operator-supplied free text. Clamp it to the
     allowlist so a typo (or an injected value) can't smuggle an arbitrary role onto
     every move the DM/dashboard then trusts — blank -> "player" (today's default),
     any unknown value -> "companion" (the safe non-narrator peer role)."""
@@ -108,7 +108,7 @@ def _actor_role() -> str:
 
 
 def _pc() -> Optional[Character]:
-    """Resolve the character this facade acts for. When ``CLAWDND_ACTOR_ID`` is set,
+    """Resolve the character this facade acts for. When ``WORLDOS_ACTOR_ID`` is set,
     return THAT character by id (any kind — a companion, a 2nd PC), so its moves
     validate against its OWN sheet. Unset = today's behavior: the ``kind=="player"``
     PC of the live campaign (party first, then any player record)."""
@@ -157,7 +157,7 @@ def _scene() -> dict:
 
 def _record(kind: str, text: str, **fields) -> dict:
     """Append a structured move to the moves file the orchestrator/dashboard reads.
-    The move is tagged with the actor's ROLE (``CLAWDND_ACTOR_ROLE``, default
+    The move is tagged with the actor's ROLE (``WORLDOS_ACTOR_ROLE``, default
     "player") and, when an explicit actor is bound, its ``actor_id`` — so the
     orchestrator can relay each actor's moves to the DM under the right banner and
     the dashboard can attribute them. Default (no env) == the original

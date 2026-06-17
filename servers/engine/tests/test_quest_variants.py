@@ -131,7 +131,7 @@ def test_pure_random_quest_resolves_to_some_valid_outcome_seeded_deterministic()
 def test_resolved_outcomes_land_in_quest_outcomes_and_as_recallable_lore(tmp_path, monkeypatch):
     # The resolved outcome is BOTH a structured record (quest_outcomes) AND prose appended
     # to c.lore as [Outcome]/[Hook] lines — so recall surfaces it under the canon header.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     out = server.start_world("baldurs-gate", ending="netherbrain-destroyed-heroes-live")
     cid = out["campaign_id"]
     from models import Campaign  # noqa: F401  (load via server)
@@ -156,7 +156,7 @@ def test_resolved_outcomes_land_in_quest_outcomes_and_as_recallable_lore(tmp_pat
 
 
 def test_get_quest_outcomes_tool_returns_the_resolved_map(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     out = server.start_world("baldurs-gate", ending="dark-urge-bhaal")
     cid = out["campaign_id"]
     got = server.get_quest_outcomes(cid)
@@ -190,7 +190,7 @@ def test_additive_default_no_quest_variants_is_byte_identical():
 
 
 def test_get_quest_outcomes_empty_for_world_without_variants(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_world("sundered-reach")["campaign_id"]
     got = server.get_quest_outcomes(cid)
     assert got == {"quest_outcomes": {}, "count": 0}
@@ -240,7 +240,7 @@ import pytest  # noqa: E402  (local to the Defect-3 block, mirrors the file's la
 def _quest_with_objectives(tmp_path, monkeypatch, title="Objectives", objectives=None):
     """A fresh xp-mode campaign + one PC + a quest carrying the given objectives.
     Returns (cid, pc_id, quest_id)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign(title)["id"]
     pc = server.create_character(cid, "Vex", kind="player", class_name="Fighter",
                                  apply_srd_defaults=True)["id"]

@@ -6,8 +6,8 @@ runtime data) is empty. The analyzer is a PURE READER — these tests never writ
 artifact, never touch qa/scores.db, never run a game.
 
 Run with the engine venv (which has pytest):
-    uv run --directory /Users/lume/clawdnd-qa-p2b/servers/engine \
-        python -m pytest /Users/lume/clawdnd-qa-p2b/qa/test_root_cause_analyzer.py -q -p no:xdist
+    uv run --directory /Users/lume/worldos-qa-p2b/servers/engine \
+        python -m pytest /Users/lume/worldos-qa-p2b/qa/test_root_cause_analyzer.py -q -p no:xdist
 """
 
 from __future__ import annotations

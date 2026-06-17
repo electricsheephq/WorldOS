@@ -3,7 +3,7 @@
 # cold-open `first` signal via the SHARED helper worldos_dm_timeout (qa/lib_beat_driver.sh), the
 # sibling of worldos_dm_effort_arg. The cold open's --effort max world-build runs ~280–400s, so the
 # routine 200s deadline was KILLING it; the cold open now gets WORLDOS_COLDOPEN_TIMEOUT (default
-# 400s) while continuing/routine beats keep CLAWDND_BEAT_TIMEOUT (default 200s, unchanged).
+# 400s) while continuing/routine beats keep WORLDOS_BEAT_TIMEOUT (default 200s, unchanged).
 #
 # It sources the REAL qa/lib_beat_driver.sh and reproduces BOTH product cold-open paths' DM-turn
 # `timeout` wrapper VERBATIM — scripts/play.sh dm_turn AND scripts/play_party.sh turn() — plus the
@@ -13,7 +13,7 @@
 #       non-opus 550 — F12-2);
 #   (2) a ROUTINE/continuing DM argv is `timeout 360 claude …`  (routine deadline — F12-1 raised the
 #       flat 200s to 360s; this proof is updated to match);
-#   (3) the env override works:  WORLDOS_COLDOPEN_TIMEOUT bumps the cold open, CLAWDND_BEAT_TIMEOUT
+#   (3) the env override works:  WORLDOS_COLDOPEN_TIMEOUT bumps the cold open, WORLDOS_BEAT_TIMEOUT
 #       bumps the routine tier, independently;
 #   (4) the PLAYER / COMPANION turn argv has NO `timeout` wrapper at all (player turn unaffected);
 #   (5) the SAME resolved deadline (not the stale global) is echoed in the retry log line;
@@ -25,9 +25,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 DSID="DSID-fixed-0000"; PSID="PSID-fixed-0000"; CSID="CSID-fixed-0000"
 CAMPAIGN_ID="camp-abc123"
-CLAWDND_LEAN_TAIL="${CLAWDND_LEAN_TAIL:-8}"
+WORLDOS_LEAN_TAIL="${WORLDOS_LEAN_TAIL:-8}"
 DM_CFG="/tmp/dm.mcp.json"; PLAYER_CFG="/tmp/player.mcp.json"; COMP_CFG="/tmp/companion_0.mcp.json"
-CLAWDND_DM_MODEL="sonnet"; CLAWDND_ACTOR_MODEL="sonnet"; BUDGET="1.50"
+WORLDOS_DM_MODEL="sonnet"; WORLDOS_ACTOR_MODEL="sonnet"; BUDGET="1.50"
 
 # Stub `claude`: print the exact argv (each arg in «»). Stub `timeout`: print TIMEOUT-WRAP <secs>
 # then exec-through to the stubbed claude with the REST of the argv — so the proof shows the
@@ -40,15 +40,15 @@ timeout() { printf 'TIMEOUT-WRAP «%s»\n' "$1"; shift; "$@"; }
 # `timeout "$beat_timeout" claude -p …` wrapper. Sinks (> "$out", retry, jq) dropped. $1=first $2=msg
 play_dm_turn_argv() {
   local first="$1" msg="$2" campaign_id="${CAMPAIGN_ID:-}" resume=() extra=() beat_timeout
-  worldos_dm_lean_args "$first" "$campaign_id" "$CLAWDND_LEAN_TAIL"
-  if [ "${#CLAWDND_DM_LEAN_SESSION[@]}" -gt 0 ]; then
-    resume=("${CLAWDND_DM_LEAN_SESSION[@]}"); extra=("${CLAWDND_DM_LEAN_EXTRA[@]}")
+  worldos_dm_lean_args "$first" "$campaign_id" "$WORLDOS_LEAN_TAIL"
+  if [ "${#WORLDOS_DM_LEAN_SESSION[@]}" -gt 0 ]; then
+    resume=("${WORLDOS_DM_LEAN_SESSION[@]}"); extra=("${WORLDOS_DM_LEAN_EXTRA[@]}")
   elif [ "$first" = "0" ]; then resume=(--resume "$DSID"); else resume=(--session-id "$DSID"); fi
   worldos_dm_effort_arg "$first"
   beat_timeout="$(worldos_dm_timeout "$first")"
   timeout "$beat_timeout" \
     claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
-      --model "$CLAWDND_DM_MODEL" ${CLAWDND_DM_EFFORT[@]+"${CLAWDND_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+      --model "$WORLDOS_DM_MODEL" ${WORLDOS_DM_EFFORT[@]+"${WORLDOS_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
       --output-format stream-json --verbose
   # Prove the retry log line uses the resolved $beat_timeout, not the stale global.
   printf 'RETRY-LOG-LINE: [play] DM turn rc=124 (timeout=%ss) — retrying once with a fresh session\n' "$beat_timeout"
@@ -60,35 +60,35 @@ party_turn_argv() {
   local kind="$1" first="$2" msg="$3" sid="$4" cfg="${5:-}" resume=() extra=() beat_timeout
   [ "$first" = "0" ] && resume=(--resume "$sid") || resume=(--session-id "$sid")
   if [ "$kind" = "dm" ]; then
-    worldos_dm_lean_args "$first" "${CAMPAIGN_ID:-}" "$CLAWDND_LEAN_TAIL"
-    if [ "${#CLAWDND_DM_LEAN_SESSION[@]}" -gt 0 ]; then
-      resume=("${CLAWDND_DM_LEAN_SESSION[@]}"); extra=("${CLAWDND_DM_LEAN_EXTRA[@]}")
+    worldos_dm_lean_args "$first" "${CAMPAIGN_ID:-}" "$WORLDOS_LEAN_TAIL"
+    if [ "${#WORLDOS_DM_LEAN_SESSION[@]}" -gt 0 ]; then
+      resume=("${WORLDOS_DM_LEAN_SESSION[@]}"); extra=("${WORLDOS_DM_LEAN_EXTRA[@]}")
     fi
     worldos_dm_effort_arg "$first"
     beat_timeout="$(worldos_dm_timeout "$first")"
     timeout "$beat_timeout" \
       claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
-        --model "$CLAWDND_DM_MODEL" ${CLAWDND_DM_EFFORT[@]+"${CLAWDND_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+        --model "$WORLDOS_DM_MODEL" ${WORLDOS_DM_EFFORT[@]+"${WORLDOS_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
         --output-format stream-json --verbose
   else
     # Companion facade: NO timeout wrapper — exactly as today.
     claude -p "$msg" "${resume[@]}" --mcp-config "$cfg" --strict-mcp-config \
-      --model "$CLAWDND_ACTOR_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+      --model "$WORLDOS_ACTOR_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
       --output-format stream-json --verbose
   fi
 }
 
 hr() { printf '\n========== %s ==========\n' "$1"; }
 
-# Default CLAWDND_DM_MODEL here is "sonnet" (set above) -> the cold-open default is the non-opus 550s.
+# Default WORLDOS_DM_MODEL here is "sonnet" (set above) -> the cold-open default is the non-opus 550s.
 hr "S1 play.sh COLD OPEN (first=1, sonnet), no env -> timeout 550"
 out1="$(play_dm_turn_argv 1 'Begin the session.')"; printf '%s\n' "$out1"
 hr "S2 play.sh ROUTINE beat (first=0), no env -> timeout 360"
 out2="$(play_dm_turn_argv 0 'The player does: opens the door.')"; printf '%s\n' "$out2"
 hr "S3 play.sh COLD OPEN + WORLDOS_COLDOPEN_TIMEOUT=600 -> timeout 600"
 out3="$(WORLDOS_COLDOPEN_TIMEOUT=600 play_dm_turn_argv 1 'Begin the session.')"; printf '%s\n' "$out3"
-hr "S4 play.sh ROUTINE + CLAWDND_BEAT_TIMEOUT=150 -> timeout 150 (cold open unaffected)"
-out4="$(CLAWDND_BEAT_TIMEOUT=150 play_dm_turn_argv 0 'The player does: opens the door.')"; printf '%s\n' "$out4"
+hr "S4 play.sh ROUTINE + WORLDOS_BEAT_TIMEOUT=150 -> timeout 150 (cold open unaffected)"
+out4="$(WORLDOS_BEAT_TIMEOUT=150 play_dm_turn_argv 0 'The player does: opens the door.')"; printf '%s\n' "$out4"
 hr "S5 play_party.sh COLD OPEN DM (first=1, sonnet) -> timeout 550"
 out5="$(party_turn_argv dm 1 'You are the Dungeon Master. Begin.' "$DSID")"; printf '%s\n' "$out5"
 hr "S6 play_party.sh ROUTINE DM beat (first=0) -> timeout 360"
@@ -97,10 +97,10 @@ hr "S7 play_party.sh COMPANION facade turn -> NO timeout wrapper (player turn un
 out7="$(party_turn_argv actor 0 'Take your action through your tools.' "$CSID" "$COMP_CFG")"; printf '%s\n' "$out7"
 # F12-2: the cold-open deadline is model-aware. Opus (the DEFAULT DM model in every lane) -> 500;
 # sonnet / any non-opus (the explicit A/B opt-in) -> 550 (cleared the 400s band-top thin-margin bug).
-hr "S8 play.sh COLD OPEN with CLAWDND_DM_MODEL=opus -> timeout 500"
-out8="$(CLAWDND_DM_MODEL=opus play_dm_turn_argv 1 'Begin the session.')"; printf '%s\n' "$out8"
-hr "S9 play.sh COLD OPEN with CLAWDND_DM_MODEL=sonnet -> timeout 550 (NOT the old 400 band-top)"
-out9="$(CLAWDND_DM_MODEL=sonnet play_dm_turn_argv 1 'Begin the session.')"; printf '%s\n' "$out9"
+hr "S8 play.sh COLD OPEN with WORLDOS_DM_MODEL=opus -> timeout 500"
+out8="$(WORLDOS_DM_MODEL=opus play_dm_turn_argv 1 'Begin the session.')"; printf '%s\n' "$out8"
+hr "S9 play.sh COLD OPEN with WORLDOS_DM_MODEL=sonnet -> timeout 550 (NOT the old 400 band-top)"
+out9="$(WORLDOS_DM_MODEL=sonnet play_dm_turn_argv 1 'Begin the session.')"; printf '%s\n' "$out9"
 
 # ---- Assertions -------------------------------------------------------------------
 hr "ASSERTIONS"
@@ -115,7 +115,7 @@ chk "S2 play.sh routine wraps timeout 360"       'printf "%s" "$out2" | grep -q 
 chk "S2 play.sh routine still --effort medium"    'printf "%s" "$out2" | grep -A1 -- "«--effort»" | grep -q -- "«medium»"'
 # (3) env overrides, independent per tier.
 chk "S3 WORLDOS_COLDOPEN_TIMEOUT=600 -> timeout 600" 'printf "%s" "$out3" | grep -q -- "TIMEOUT-WRAP «600»"'
-chk "S4 CLAWDND_BEAT_TIMEOUT=150 -> routine timeout 150" 'printf "%s" "$out4" | grep -q -- "TIMEOUT-WRAP «150»"'
+chk "S4 WORLDOS_BEAT_TIMEOUT=150 -> routine timeout 150" 'printf "%s" "$out4" | grep -q -- "TIMEOUT-WRAP «150»"'
 # (5) retry log line uses the RESOLVED deadline (the cold open's, the routine's) — not stale.
 chk "S1 retry log line says timeout=550s"        'printf "%s" "$out1" | grep -q -- "timeout=550s"'
 chk "S2 retry log line says timeout=360s"        'printf "%s" "$out2" | grep -q -- "timeout=360s"'

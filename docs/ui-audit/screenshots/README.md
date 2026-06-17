@@ -14,7 +14,7 @@ commit; the same logic applies to derivative screenshots that embed them.
 ```sh
 # From the repo root.
 # Viewer must be running (default port 8799):
-CLAWDND_STATE_DIR="$(mktemp -d)" CLAWDND_REPO_ROOT="$PWD" \
+WORLDOS_STATE_DIR="$(mktemp -d)" WORLDOS_REPO_ROOT="$PWD" \
   python3 viewer/server.py "" 8799 &
 
 # Then capture all 16 screens:

@@ -88,7 +88,7 @@ venv/
 
 # fast-gate rotation counter (Tier 1)
 /qa/.fast_gate_iter
-# fast-gate OPT-IN green-cache (CLAWDND_FASTGATE_CACHE=1) — cached GREEN verdicts keyed on
+# fast-gate OPT-IN green-cache (WORLDOS_FASTGATE_CACHE=1) — cached GREEN verdicts keyed on
 # (git HEAD + persona + gate args). Pure inner-loop convenience; regenerable; never committed.
 /qa/.cache/
 # pytest-cov data files (coverage is report-only in CI; the .coverage db is never committed)

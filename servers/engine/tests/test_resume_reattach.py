@@ -24,7 +24,7 @@ import store
 @pytest.fixture
 def state_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     return tmp_path
 
 

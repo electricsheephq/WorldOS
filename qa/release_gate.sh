@@ -54,14 +54,14 @@ warn()  { echo "⚠ $*" >&2; }
 # one on a memory-starved host fabricates/dies. Before committing to the sweep we measure
 # available RAM and, if it is below a safe floor, REFUSE (strict) or WARN (default), pointing at
 # the two safe lanes (GitHub CI / the support VM). Additive + default-soft: today's behavior is a
-# warning only — set CLAWDND_RAM_PREFLIGHT_STRICT=1 to make it a hard abort.
-#   CLAWDND_RAM_PREFLIGHT_FLOOR_MB   — safe floor (default 4096 MB; a 5-persona sweep wants headroom).
-#   CLAWDND_RAM_PREFLIGHT_STRICT=1   — turn the WARN into a hard GATE-ABORT.
-#   CLAWDND_RAM_PREFLIGHT_AVAIL_MB   — test seam: force the "available MB" reading (skip vm_stat).
+# warning only — set WORLDOS_RAM_PREFLIGHT_STRICT=1 to make it a hard abort.
+#   WORLDOS_RAM_PREFLIGHT_FLOOR_MB   — safe floor (default 4096 MB; a 5-persona sweep wants headroom).
+#   WORLDOS_RAM_PREFLIGHT_STRICT=1   — turn the WARN into a hard GATE-ABORT.
+#   WORLDOS_RAM_PREFLIGHT_AVAIL_MB   — test seam: force the "available MB" reading (skip vm_stat).
 ram_available_mb() {
   # Test override first so a low-RAM refusal can be exercised without starving the host.
-  if [ -n "${CLAWDND_RAM_PREFLIGHT_AVAIL_MB:-}" ]; then
-    printf '%s' "${CLAWDND_RAM_PREFLIGHT_AVAIL_MB}"
+  if [ -n "${WORLDOS_RAM_PREFLIGHT_AVAIL_MB:-}" ]; then
+    printf '%s' "${WORLDOS_RAM_PREFLIGHT_AVAIL_MB}"
     return 0
   fi
   # macOS: free + inactive + speculative pages are reclaimable-for-launch memory. Use the page size
@@ -84,8 +84,8 @@ ram_available_mb() {
 }
 ram_preflight() {
   local floor avail strict
-  floor="${CLAWDND_RAM_PREFLIGHT_FLOOR_MB:-4096}"
-  strict="${CLAWDND_RAM_PREFLIGHT_STRICT:-0}"
+  floor="${WORLDOS_RAM_PREFLIGHT_FLOOR_MB:-4096}"
+  strict="${WORLDOS_RAM_PREFLIGHT_STRICT:-0}"
   avail="$(ram_available_mb)"
   if [ -z "$avail" ]; then
     warn "could not read available RAM (no vm_stat / /proc/meminfo) — sweep headroom UNVERIFIED"
@@ -98,7 +98,7 @@ or the support VM (root@support, ~/worldos-qa) instead, or free RAM first."
     if [ "$strict" = "1" ]; then
       fail "RAM preflight (strict): $msg"
     fi
-    warn "RAM preflight: $msg (warning-only; set CLAWDND_RAM_PREFLIGHT_STRICT=1 to make this a hard refusal)"
+    warn "RAM preflight: $msg (warning-only; set WORLDOS_RAM_PREFLIGHT_STRICT=1 to make this a hard refusal)"
   else
     ok "RAM headroom OK (available ${avail}MB ≥ floor ${floor}MB)"
   fi
@@ -150,14 +150,14 @@ preflight() {
 
   # 1. CANONICAL repo, not the deprecated LEXAR copy or a random worktree.
   case "$ROOT" in
-    */ClawDnD-val|*/WorldOS) ok "repo root looks canonical: $ROOT";;
+    */WorldOS-val|*/WorldOS) ok "repo root looks canonical: $ROOT";;
     *) warn "repo root is $ROOT — confirm this is the canonical checkout (NOT /Volumes/LEXAR deprecated copy)";;
   esac
 
   # 2. _private ART PRESENT — the single check that catches the "zero images" trap.
   #    A gitignored worktree has none → every /image 404s → a meaningless sweep.
   local art_root="" candidate art
-  for candidate in "${WORLDOS_ART_REPO_ROOT:-}" "${CLAWDND_ART_REPO_ROOT:-}" "${WORLDOS_REPO_ROOT:-}" "${CLAWDND_REPO_ROOT:-}" "$ROOT"; do
+  for candidate in "${WORLDOS_ART_REPO_ROOT:-}" "${WORLDOS_ART_REPO_ROOT:-}" "${WORLDOS_REPO_ROOT:-}" "${WORLDOS_REPO_ROOT:-}" "$ROOT"; do
     [ -n "$candidate" ] || continue
     art="$candidate/content/worlds/_private/baldurs-gate/images"
     if [ -d "$art" ] && [ "$(find "$art" -name 'image.png' 2>/dev/null | head -5 | wc -l | tr -d ' ')" -ge 1 ]; then
@@ -167,10 +167,10 @@ preflight() {
   done
   art="${art_root:-$ROOT}/content/worlds/_private/baldurs-gate/images"
   if [ -d "$art" ] && [ "$(find "$art" -name 'image.png' 2>/dev/null | head -5 | wc -l | tr -d ' ')" -ge 1 ]; then
-    export WORLDOS_ART_REPO_ROOT="$art_root" CLAWDND_ART_REPO_ROOT="$art_root"
+    export WORLDOS_ART_REPO_ROOT="$art_root"
     ok "_private art present at $art ($(find "$art" -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ') scopes)"
   else
-    fail "_private art MISSING. Checked WORLDOS_ART_REPO_ROOT/CLAWDND_ART_REPO_ROOT, WORLDOS_REPO_ROOT/CLAWDND_REPO_ROOT, and $ROOT. Set WORLDOS_ART_REPO_ROOT to the canonical private-art checkout before running the gate from a clean worktree."
+    fail "_private art MISSING. Checked WORLDOS_ART_REPO_ROOT/WORLDOS_ART_REPO_ROOT, WORLDOS_REPO_ROOT/WORLDOS_REPO_ROOT, and $ROOT. Set WORLDOS_ART_REPO_ROOT to the canonical private-art checkout before running the gate from a clean worktree."
   fi
 
   # 3. LOCAL main == origin/main — don't gate a stale build (the trap that started it all).
@@ -236,7 +236,7 @@ preflight() {
 preflight
 [ "$PREFLIGHT_ONLY" = "1" ] && { echo "preflight-only: done."; exit 0; }
 
-[ "$LEAN" = "1" ] && export CLAWDND_LEAN_BEATS=1 && ok "lean-beats ENABLED (CLAWDND_LEAN_BEATS=1)"
+[ "$LEAN" = "1" ] && export WORLDOS_LEAN_BEATS=1 && ok "lean-beats ENABLED (WORLDOS_LEAN_BEATS=1)"
 
 # ── SWEEP — 5 personas, ONE heavy stream at a time (host discipline) ────────────
 echo "── SWEEP (${PERSONAS}) on the BUILT .app ─────────────────────────"

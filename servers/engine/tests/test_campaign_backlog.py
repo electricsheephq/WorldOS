@@ -7,7 +7,7 @@ content seed (derived from the world's arc anchors). P1 = the PURE mechanical ti
 by elapsed days, wired into the same five time-passage tools that already call worldsim.tick.
 
 Mirrors test_worldsim.py / test_consequences.py: direct module import + Campaign(...) for the
-pure helpers; an isolated CLAWDND_STATE_DIR fixture for the tool layer.
+pure helpers; an isolated WORLDOS_STATE_DIR fixture for the tool layer.
 """
 
 import pytest
@@ -28,7 +28,7 @@ def _camp(day: int = 1) -> Campaign:
 @pytest.fixture
 def cid(tmp_path, monkeypatch):
     # A world that SEEDS a backlog (sundered-reach has standing threads + factions).
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     return server.start_world("sundered-reach")["campaign_id"]
 
 
@@ -77,7 +77,7 @@ def test_backlog_item_defaults():
 
 
 def test_seed_world_populates_backlog_from_threads_and_factions(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     c = content.seed_world(content.load_world_data("sundered-reach"))
     bl = c.campaign_backlog
     assert bl.items, "no backlog items seeded from a world with threads+factions"
@@ -104,7 +104,7 @@ def test_seed_world_populates_backlog_from_threads_and_factions(tmp_path, monkey
 
 def test_seed_spine_hook_becomes_world_event(tmp_path, monkeypatch):
     # baldurs-gate has quest_variants -> questgen produces a spine hook -> a world_event item.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     c = content.seed_world(content.load_world_data("baldurs-gate"))
     spine_ids = {h.id for h in c.quest_hooks if h.spine}
     assert spine_ids, "fixture expects at least one spine hook in baldurs-gate"
@@ -117,7 +117,7 @@ def test_seed_spine_hook_becomes_world_event(tmp_path, monkeypatch):
 def test_seed_skips_malformed_authored_items_without_aborting(tmp_path, monkeypatch):
     # Degrade-not-abort (the companion_seeds path, NOT the loud adventure path): a malformed
     # authored item is skipped with a diagnostic; a valid sibling survives; seed never raises.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     world = {
         "name": "Testland", "id": "testland", "premise": "x",
         "regions": [{"id": "loc-a", "name": "A"}],
@@ -143,7 +143,7 @@ def test_seed_skips_malformed_authored_items_without_aborting(tmp_path, monkeypa
 def test_seed_no_anchors_yields_empty_backlog(tmp_path, monkeypatch):
     # A world with no threads / factions / spine hooks -> empty backlog (today's behavior),
     # last_tick_day still initialized to c.day.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     world = {"name": "Barren", "id": "barren", "premise": "x",
              "regions": [{"id": "loc-a", "name": "A"}]}
     c = content.seed_world(world)

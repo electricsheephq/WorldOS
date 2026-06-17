@@ -75,7 +75,7 @@ def test_rider_registry_curates_exactly_the_four_spells():
 # --- Shield of Faith: +2 AC via the effective-AC path -------------------------
 
 def test_shield_of_faith_raises_target_effective_ac(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("SoF")["id"]
     cleric = server.create_character(cid, "Pious", kind="player", class_name="Cleric",
                                      level=1, apply_srd_defaults=True)["id"]
@@ -100,7 +100,7 @@ def test_shield_of_faith_raises_target_effective_ac(tmp_path, monkeypatch):
 def test_shield_reaction_self_buff_adds_5_ac(tmp_path, monkeypatch):
     # Shield (1 round, self) — non-concentration, so the rider lands on the caster's
     # own tracked effect and the effective-AC path sums it.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Shield")["id"]
     wiz = server.create_character(cid, "Mim", kind="player", class_name="Wizard",
                                   level=1, apply_srd_defaults=True, max_hp=20)["id"]
@@ -116,7 +116,7 @@ def test_shield_reaction_self_buff_adds_5_ac(tmp_path, monkeypatch):
 # --- Bless / Bane: the engine rolls the d4 and surfaces it --------------------
 
 def test_blessed_attacker_gets_engine_rolled_d4(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("BlessAtk")["id"]
     cleric = server.create_character(cid, "Pious", kind="player", class_name="Cleric",
                                      level=1, apply_srd_defaults=True)["id"]
@@ -136,7 +136,7 @@ def test_blessed_attacker_gets_engine_rolled_d4(tmp_path, monkeypatch):
 
 
 def test_blessed_save_includes_d4(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("BlessSave")["id"]
     cleric = server.create_character(cid, "Pious", kind="player", class_name="Cleric",
                                      level=1, apply_srd_defaults=True)["id"]
@@ -151,7 +151,7 @@ def test_blessed_save_includes_d4(tmp_path, monkeypatch):
 
 
 def test_baned_target_save_subtracts_d4(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Bane")["id"]
     caster = server.create_character(cid, "Hex", kind="player", max_hp=10)["id"]
     server.update_character(cid, caster, patch={
@@ -168,7 +168,7 @@ def test_baned_target_save_subtracts_d4(tmp_path, monkeypatch):
 
 
 def test_blessed_concentration_save_includes_d4(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("BlessConc")["id"]
     cleric = server.create_character(cid, "Pious", kind="player", class_name="Cleric",
                                      level=1, apply_srd_defaults=True)["id"]
@@ -184,7 +184,7 @@ def test_blessed_concentration_save_includes_d4(tmp_path, monkeypatch):
 # --- concentration break releases the linked children (BOTH paths) ------------
 
 def test_drop_concentration_frees_linked_children(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("DropConc")["id"]
     cleric = server.create_character(cid, "Pious", kind="player", class_name="Cleric",
                                      level=1, apply_srd_defaults=True)["id"]
@@ -201,7 +201,7 @@ def test_drop_concentration_frees_all_aoe_linked_children(tmp_path, monkeypatch)
     # Multi-target Bless via target_ids: dropping concentration must release the linked child on
     # EVERY blessed ally, not just one — the sweep is keyed on the caster's concentration, so all
     # children fall together.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("DropConcAoE")["id"]
     cleric = server.create_character(cid, "Pious", kind="player", class_name="Cleric",
                                      level=1, apply_srd_defaults=True)["id"]
@@ -221,7 +221,7 @@ def test_failed_concentration_save_frees_linked_children_immediately(tmp_path, m
     # F3-6: a failed concentration save now releases the blessed ally's linked child in the
     # SAME call (surfaced in freed_targets), not deferred to the next next_turn sweep. The
     # sweep remains a clean no-op backstop afterward.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("SweepConc")["id"]
     caster = server.create_character(cid, "Priest", kind="monster", max_hp=20)["id"]
     server.update_character(cid, caster, patch={
@@ -240,7 +240,7 @@ def test_failed_concentration_save_frees_linked_children_immediately(tmp_path, m
 
 
 def test_cast_result_advertises_engine_applied_riders(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Advert")["id"]
     cleric = server.create_character(cid, "Pious", kind="player", class_name="Cleric",
                                      level=1, apply_srd_defaults=True)["id"]
@@ -259,7 +259,7 @@ def test_bless_via_target_ids_blesses_each_ally_not_the_caster(tmp_path, monkeyp
     # EVERY named ally — not just one, and NOT the caster (who blessed others). The bug: the rider
     # logic only handled the singular target_id, so a target_ids cast landed the rider on the
     # caster-twin and left the named allies with nothing.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("BlessAoE")["id"]
     cleric = server.create_character(cid, "Pious", kind="player", class_name="Cleric",
                                      level=1, apply_srd_defaults=True)["id"]
@@ -288,7 +288,7 @@ def test_bless_via_target_ids_blesses_each_ally_not_the_caster(tmp_path, monkeyp
 def test_bless_via_target_ids_including_caster_blesses_both(tmp_path, monkeypatch):
     # The exact gs-ember-deep cast: Bless target_ids=[ally, caster]. BOTH must carry the rider — the
     # ally via a concentration-linked child, the caster via its own twin (it IS a beneficiary here).
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("BlessSelfAlly")["id"]
     cleric = server.create_character(cid, "Toll", kind="player", class_name="Cleric",
                                      level=1, apply_srd_defaults=True)["id"]
@@ -303,7 +303,7 @@ def test_bless_via_target_ids_including_caster_blesses_both(tmp_path, monkeypatc
 
 def test_cast_result_advertises_all_rider_holders_for_multi_target(tmp_path, monkeypatch):
     # The cast result surfaces EVERY rider holder so the DM (and the GUI) can see who got blessed.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("AdvertAoE")["id"]
     cleric = server.create_character(cid, "Pious", kind="player", class_name="Cleric",
                                      level=1, apply_srd_defaults=True)["id"]
@@ -318,7 +318,7 @@ def test_cast_result_advertises_all_rider_holders_for_multi_target(tmp_path, mon
 def test_shield_of_faith_via_target_ids_buffs_each_ally(tmp_path, monkeypatch):
     # The multi-target rider path is rider-AGNOSTIC (not Bless-specific): Shield of Faith
     # (ac_bonus, concentration) cast on a target_ids list gives EACH ally the +2 AC linked child.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("SoFAoE")["id"]
     cleric = server.create_character(cid, "Pious", kind="player", class_name="Cleric",
                                      level=1, apply_srd_defaults=True)["id"]
@@ -338,7 +338,7 @@ def test_bane_via_target_ids_applies_rider_to_each_foe_and_deals_no_damage(tmp_p
     # saving_throw_ability='charisma'. A target_ids cast used to enter the AoE save-for-damage
     # path and hard-crash on Ability('charisma') (the enum code is 'cha') — AFTER the slot was
     # already spent. Bane must instead apply its -1d4 save rider to EACH foe and deal NO damage.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("BaneAoE")["id"]
     caster = server.create_character(cid, "Hex", kind="player", max_hp=10)["id"]
     server.update_character(cid, caster, patch={
@@ -368,7 +368,7 @@ def test_srd_only_area_damage_spell_with_full_word_save_ability_resolves(tmp_pat
     # fed it straight to Ability(...) (which only knows the 3-letter codes). A real SRD-only area
     # damage spell (Cone of Cold: 8d8 cold, CON save) cast via target_ids must resolve the engine
     # save-for-half table — not crash AFTER the slot spend.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("ConeAoE")["id"]
     caster = server.create_character(cid, "Evoker", kind="player", max_hp=20)["id"]
     server.update_character(cid, caster, patch={
@@ -392,7 +392,7 @@ def test_recast_concentration_rider_on_new_target_frees_old_targets_child(tmp_pa
     # concentration-displacement release fired only when the spell NAME changed, so a same-spell
     # recast onto a DIFFERENT target left the old ally still carrying the +1d4 rider of a Bless
     # it is no longer part of (it would keep rolling the engine d4 forever).
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("BlessRecast")["id"]
     cleric = server.create_character(cid, "Pious", kind="player", class_name="Cleric",
                                      level=1, apply_srd_defaults=True)["id"]

@@ -84,11 +84,10 @@ final class AppProcessService: ObservableObject {
         let baseURL = URL(string: "http://127.0.0.1:\(port)")!
         var env: [String: String] = [:]
         if !stateDir.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            // Set BOTH names; the viewer/engine prefer WORLDOS_* and keep CLAWDND_*
+            // Set the WORLDOS_* env names (read via env_var())
             // as the v1.x warn-only fallback (issue #295, W0-E).
             let expandedStateDir = (stateDir as NSString).expandingTildeInPath
             env["WORLDOS_STATE_DIR"] = expandedStateDir
-            env["CLAWDND_STATE_DIR"] = expandedStateDir
         }
         // IMPORTANT: launch the viewer with an ABSOLUTE script path and an
         // internal-disk working directory — NOT a relative path with cwd=repoURL.
@@ -101,10 +100,8 @@ final class AppProcessService: ObservableObject {
         // on the internal disk avoids that volume enumeration entirely; server.py
         // resolves all of its assets from __file__, so cwd is irrelevant to it.
         env["WORLDOS_REPO_ROOT"] = repoURL.path
-        env["CLAWDND_REPO_ROOT"] = repoURL.path
         if let artRepo = try resolvedArtRepoPath(artRepoPath, repoURL: repoURL) {
             env["WORLDOS_ART_REPO_ROOT"] = artRepo
-            env["CLAWDND_ART_REPO_ROOT"] = artRepo
         }
         let serverScript = repoURL.appendingPathComponent("viewer/server.py").path
         let safeCWD = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
@@ -211,26 +208,26 @@ final class AppProcessService: ObservableObject {
         // EXACTLY as startViewer does for the viewer. The adapter builds budget/provider/model
         // env but never the state dir, so without this the play script falls back to its own
         // "$ROOT/play-state" default — i.e. it reads/writes the DEV REPO instead of the user's
-        // state dir. play.sh honors WORLDOS_STATE_DIR (legacy CLAWDND_STATE_DIR) as the play-state
+        // state dir. play.sh honors WORLDOS_STATE_DIR as the play-state
         // ROOT and nests this run under $RUN. We set BOTH names (the viewer/engine prefer
-        // WORLDOS_*; CLAWDND_* is the v1.x warn-only fallback, issue #295). When stateDir is empty
+        // WORLDOS_*; WORLDOS_* is the v1.x warn-only fallback, issue #295). When stateDir is empty
         // we add nothing, so dev/QA-harness runs are byte-identical (no key written → script default).
         var launchEnvironment = request.environment
         let trimmedStateDir = stateDir.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedStateDir.isEmpty {
             let expandedStateDir = (trimmedStateDir as NSString).expandingTildeInPath
             launchEnvironment["WORLDOS_STATE_DIR"] = expandedStateDir
-            launchEnvironment["CLAWDND_STATE_DIR"] = expandedStateDir
+            launchEnvironment["WORLDOS_STATE_DIR"] = expandedStateDir
         }
         // RESUME re-attach: when the launcher's Resume passes a saved campaign id (alongside its
         // saved runId, which the caller already routed to `runId` → the per-run state dir), tell the
         // play script to RE-OPEN that existing campaign instead of cold-opening a new empty world.
-        // play.sh reads WORLDOS_RESUME_CAMPAIGN (legacy CLAWDND_RESUME_CAMPAIGN), confirms the
+        // play.sh reads WORLDOS_RESUME_CAMPAIGN, confirms the
         // snapshot is on disk under the run's state dir, and re-attaches it (writable move sink,
         // saved party/progress). Absent → a fresh cold open, byte-identical to before.
         if let resume = resumeCampaignID?.trimmingCharacters(in: .whitespacesAndNewlines), !resume.isEmpty {
             launchEnvironment["WORLDOS_RESUME_CAMPAIGN"] = resume
-            launchEnvironment["CLAWDND_RESUME_CAMPAIGN"] = resume
+            launchEnvironment["WORLDOS_RESUME_CAMPAIGN"] = resume
         }
 
         if let providerProcess {

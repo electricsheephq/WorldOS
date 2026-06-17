@@ -57,7 +57,7 @@ Scored by `qa/score.sh` (claude -p) or `qa/score_openclaw.sh` (gpt-5.4, off the 
 | `run_parallel.sh` | 2–3 isolated concurrent runs (the velocity model) |
 | `run_qa.sh` | single-agent full-plugin playtest |
 
-Default DM/player model = `sonnet` (`CLAWDND_DM_MODEL` / `CLAWDND_ACTOR_MODEL` env override; Opus for key structural-adherence runs).
+Default DM/player model = `sonnet` (`WORLDOS_DM_MODEL` / `WORLDOS_ACTOR_MODEL` env override; Opus for key structural-adherence runs).
 
 ## 5. Reading a result line
 `[duo] done. story-craft=X mechanical=Y angry-dm=Z behavioral=GREEN|RED`
@@ -108,4 +108,4 @@ toward the new measured max.
 - A score reported without N is implicitly N=1 — acceptable for velocity, **never** for a
   gate. `qa/test_lens_variance.py` is the deterministic, CI-safe guard that keeps this
   floor honest (it reads only on-disk artifacts; live re-derivation is an explicit,
-  opt-in, non-CI step gated behind `CLAWDND_LIVE_SCORER=1`).
+  opt-in, non-CI step gated behind `WORLDOS_LIVE_SCORER=1`).

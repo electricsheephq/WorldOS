@@ -138,7 +138,7 @@ final class EnvironmentBootstrapTests: XCTestCase {
     /// which is intentional: the caller re-applies its own repo/art roots via an explicit
     /// `environment` overlay merged AFTER this filter, so this function alone must drop it.
     func testRemovableVolumeLeakStripsEvenWorldOSOwnRoot() {
-        let env = ["WORLDOS_REPO": "/Volumes/LEXAR/ClawDnD"]
+        let env = ["WORLDOS_REPO": "/Volumes/LEXAR/WorldOS"]
         XCTAssertTrue(
             EnvironmentBootstrap.withoutRemovableVolumeLeaks(env).isEmpty,
             "filter alone must drop /Volumes values; caller re-applies intentional roots after"

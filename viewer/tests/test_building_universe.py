@@ -177,7 +177,7 @@ const h = {
   clear: () => B.clear(),
   rawStore: () => Object.assign({}, _store),
   backstopMs: () => B.backstopMs,
-  beginEventsFired: () => _dispatched.filter((t) => t === 'clawdnd:building-begin').length,
+  beginEventsFired: () => _dispatched.filter((t) => t === 'worldos:building-begin').length,
   // write a raw record directly (the script string runs in the OUTER node scope where `window`
   // is not global — go through the sandbox's storage via this helper instead).
   seedRaw: (k, v) => { sessionStorage.setItem(k, v); },
@@ -226,7 +226,7 @@ class BuildingUniverseTests(unittest.TestCase):
         self.assertEqual(out["startedAt"], "number")
         self.assertEqual(out["world"], "baldurs-gate")
         self.assertEqual(out["kind"], "play")
-        self.assertGreaterEqual(out["announced"], 1, "begin() must dispatch clawdnd:building-begin so a mounted App shows it pre-reload")
+        self.assertGreaterEqual(out["announced"], 1, "begin() must dispatch worldos:building-begin so a mounted App shows it pre-reload")
 
     def test_clear_removes_the_flag(self):
         out = self._run(

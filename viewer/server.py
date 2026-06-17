@@ -10,7 +10,7 @@ imports the engine planner lazily and degrades to JSON errors if unavailable.
 It has exactly two side effects,
 both opt-in and local:
 - `POST /move` appends a player *move intent* (NOT campaign state) to the
-  append-only log at $CLAWDND_PLAYER_MOVES — inert (refuses, writes nothing)
+  append-only log at $WORLDOS_PLAYER_MOVES — inert (refuses, writes nothing)
   unless that env is set.
 - `POST /speak` shells out to the existing voice server (servers/voice) to
   synthesize + play one line of narration audio. It NEVER writes game state and
@@ -26,7 +26,7 @@ It reads the engine's on-disk truth directly:
   engine-owned read-only build planner; it never calls level_up or saves.
 
 Usage:  python3 viewer/server.py [campaign_id] [port]
-        (CLAWDND_STATE_DIR is honored, mirroring the engine's store.state_dir())
+        (WORLDOS_STATE_DIR is honored, mirroring the engine's store.state_dir())
 """
 
 from __future__ import annotations
@@ -132,15 +132,15 @@ def sanitize_move(raw: object) -> tuple[Optional[dict], str]:
 
 def _state_dir() -> Path:
     """Mirror servers/engine/store.state_dir(): $WORLDOS_STATE_DIR (or the legacy
-    $CLAWDND_STATE_DIR), else ~/.worldos/state if that home exists, else the legacy
-    ~/.clawdnd/state."""
+    $WORLDOS_STATE_DIR), else ~/.worldos/state if that home exists, else the legacy
+    ~/.worldos/state."""
     env = env_var("STATE_DIR")
     if env:
         return Path(env)
     worldos_home = Path.home() / ".worldos" / "state"
     if worldos_home.parent.exists():
         return worldos_home
-    return Path.home() / ".clawdnd" / "state"
+    return Path.home() / ".worldos" / "state"
 
 
 def _campaigns_dir() -> Path:
@@ -154,7 +154,7 @@ def _ugc_root() -> Path:
 
 
 def _moves_path() -> Path | None:
-    """The single write target: $CLAWDND_PLAYER_MOVES, an append-only log of player
+    """The single write target: $WORLDOS_PLAYER_MOVES, an append-only log of player
     *move intents* (NOT campaign state). Unset ⇒ no live game ⇒ no write path."""
     env = env_var("PLAYER_MOVES")
     return Path(env) if env else None
@@ -163,7 +163,7 @@ def _moves_path() -> Path | None:
 def _live_play() -> bool:
     """True when the dashboard's action layer (Say/Do/Continue + the dice/skill/save/
     combat palette + click-to-travel) can actually land a move — i.e. POST /move will
-    accept it. That requires $CLAWDND_PLAYER_MOVES to be set AND its target writable
+    accept it. That requires $WORLDOS_PLAYER_MOVES to be set AND its target writable
     (the sink dir exists-or-can-be-made and is writable, or the file already exists and
     is writable). When false the dashboard is the read-only "director's view" and grays
     the palette out instead of letting clicks silently fail. Mirrors the do_POST /move
@@ -228,8 +228,8 @@ def _art_repo_root() -> Path:
 
     The macOS app and Lexar worktrees can run code from one checkout while the
     gitignored private art lives in the canonical checkout. Prefer the explicit
-    WORLDOS_ART_REPO_ROOT/CLAWDND_ART_REPO_ROOT contract when it points at an art
-    checkout. Fall back to WORLDOS_REPO_ROOT/CLAWDND_REPO_ROOT for v1.x launchers,
+    WORLDOS_ART_REPO_ROOT/WORLDOS_ART_REPO_ROOT contract when it points at an art
+    checkout. Fall back to WORLDOS_REPO_ROOT/WORLDOS_REPO_ROOT for v1.x launchers,
     then to the server.py parent checkout. Keep `_REPO_ROOT` as the fallback seam because
     the engine image tests patch it to isolate private-art descriptors.
     """
@@ -479,7 +479,7 @@ def _image_serve_roots() -> list[Path]:
     _oh = os.environ.get("OPENCLAW_HOME")
     return [
         _state_dir() / "images",
-        Path(env_var_legacy("CLAWDND_OPENCLAW_MEDIA_DIR")
+        Path(env_var_legacy("WORLDOS_OPENCLAW_MEDIA_DIR")
              or ((Path(_oh) if _oh else Path.home() / ".openclaw") / "media" / "tool-image-generation")),
         # W2b: ingested wiki art (gitignored _private; never committed).
         _ingested_images_root(),
@@ -1419,7 +1419,7 @@ def _catalog_run_id(state_root: Path) -> str:
     """Stable display id for a state root.
 
     Product runs live under play-state/<run-id> and QA under qa/state/<run-id>.
-    A bare CLAWDND_STATE_DIR (for example ~/.clawdnd/state, or a temp dir in
+    A bare WORLDOS_STATE_DIR (for example ~/.worldos/state, or a temp dir in
     tests) is the viewer's active state root rather than a named run, so expose it
     as "state" instead of leaking a random local folder name into the UI.
     """
@@ -1438,7 +1438,7 @@ def _campaign_catalog_roots() -> list[dict]:
     engine and without opening any write path.
 
     USER-HOME PER-RUN SCAN (#933 follow-up — the GA blocker): the shipped .app exports a
-    BARE user state home (~/.worldos/state else ~/.clawdnd/state) as WORLDOS_STATE_DIR, and
+    BARE user state home (~/.worldos/state else ~/.worldos/state) as WORLDOS_STATE_DIR, and
     scripts/play.sh nests each game under ``<home>/<run>/campaigns/<id>``. The bare-root
     "play" scan below only sees ``<home>/campaigns`` (empty under the .app), so a freshly
     played save would be INVISIBLE to the launcher — no Resume affordance, Group B
@@ -2477,7 +2477,7 @@ def _combat_battle_log(raw_events: list[dict] | None) -> list[dict]:
         payload = row.get("payload")
         text = _text(row.get("text") or row.get("detail") or row.get("summary"))
         item = {"event": _text(row.get("kind") or row.get("type"), "combat"), "text": text[:1000]}
-        if isinstance(payload, dict) and payload.get("schema") == "clawdnd.combat_event.v1":
+        if isinstance(payload, dict) and payload.get("schema") == "worldos.combat_event.v1":
             event = _text(payload.get("event"), "combat")
             actor = _combat_ref(payload.get("actor"))
             target = _combat_ref(payload.get("target"))
@@ -7353,10 +7353,10 @@ def _speak(text: str, voice_id: str = "narrator-dm") -> dict:
 # content-scope (portrait-pc-<stableHash of name|race|class|seed>) that the wizard can render
 # immediately via <Img scope=…>; play.sh re-keys it onto portrait-<char_id> at PC-mint time.
 #
-# CRITICAL — QA/tests never hit the gateway: this route does NOT set CLAWDND_IMAGE_PROVIDER.
+# CRITICAL — QA/tests never hit the gateway: this route does NOT set WORLDOS_IMAGE_PROVIDER.
 # It inherits the process env, so on a normal dev/QA box (provider unset → null) the call
 # returns a placeholder with NO network, and the UI keeps the gallery selection. The gateway
-# path engages ONLY when the host already has CLAWDND_IMAGE_PROVIDER=openclaw + a token wired.
+# path engages ONLY when the host already has WORLDOS_IMAGE_PROVIDER=openclaw + a token wired.
 
 # Runs in the engine's environment (cwd = servers/engine; `import imagegen`/`store` resolve).
 # Reads one JSON request from stdin {race,class,name?,appearance?,seed?,scope}, builds the
@@ -7401,7 +7401,7 @@ except Exception as exc:  # never let an exception escape — caller maps to ok:
 """
 
 # Interactive budget: the OpenClaw client's default 180s poll is far too long for a wizard
-# button. Bound the wait via CLAWDND_OPENCLAW_POLL_TIMEOUT (the engine client honors it) so a
+# button. Bound the wait via WORLDOS_OPENCLAW_POLL_TIMEOUT (the engine client honors it) so a
 # slow/remote gateway can't hang the call, and cap the whole subprocess just above it.
 _PORTRAIT_GEN_POLL_TIMEOUT = "60"
 _PORTRAIT_GEN_TIMEOUT = 75  # seconds — above the poll budget; never unbounded.
@@ -7449,12 +7449,12 @@ def _portrait_gen(payload: dict) -> dict:
     # Inherit env so the provider stays whatever the HOST configured (null on a normal box —
     # no network, no gateway). Add ONLY the interactive poll bound; never set the provider here.
     env = dict(os.environ)
-    # Set BOTH names so the engine child resolves the bound regardless of which
-    # convention it reads (the engine prefers WORLDOS_*; CLAWDND_* is the v1.x
+    # Set the WORLDOS_* env names so the engine child resolves the bound regardless of which
+    # convention it reads (the engine prefers WORLDOS_*; WORLDOS_* is the v1.x
     # warn-only fallback). See issue #295 (W0-E).
-    if "WORLDOS_OPENCLAW_POLL_TIMEOUT" not in env and "CLAWDND_OPENCLAW_POLL_TIMEOUT" not in env:
+    if "WORLDOS_OPENCLAW_POLL_TIMEOUT" not in env and "WORLDOS_OPENCLAW_POLL_TIMEOUT" not in env:
         env["WORLDOS_OPENCLAW_POLL_TIMEOUT"] = _PORTRAIT_GEN_POLL_TIMEOUT
-        env["CLAWDND_OPENCLAW_POLL_TIMEOUT"] = _PORTRAIT_GEN_POLL_TIMEOUT
+        env["WORLDOS_OPENCLAW_POLL_TIMEOUT"] = _PORTRAIT_GEN_POLL_TIMEOUT
     cmd = [
         "uv", "run", "--directory", str(_ENGINE_DIR), "--no-project",
         "python", "-c", _PORTRAIT_GEN_SNIPPET,
@@ -8400,7 +8400,7 @@ class _Handler(BaseHTTPRequestHandler):
             snap = dict(raw_snap)
             snap["combat_view"] = build_combat_view(raw_snap)
             snap["live"] = live
-            # is_live_view: the move sink (CLAWDND_PLAYER_MOVES) belongs to the ATTACHED campaign;
+            # is_live_view: the move sink (WORLDOS_PLAYER_MOVES) belongs to the ATTACHED campaign;
             # a move only makes sense when the VIEWED campaign IS that one. The dashboard grays the
             # palette when this is false, so the switcher can't send moves to the wrong run (#49).
             snap["is_live_view"] = is_live_view
@@ -8452,7 +8452,7 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:  # noqa: N802
         """The write/effect paths. `/move` appends one player *move intent* (a JSON
-        line) to $CLAWDND_PLAYER_MOVES — mirroring the engine's player facade, NOT
+        line) to $WORLDOS_PLAYER_MOVES — mirroring the engine's player facade, NOT
         touching campaign state. `/speak` plays narration audio via the voice server
         (no state write). Anything else 404s."""
         route = urlparse(self.path).path
@@ -8544,7 +8544,7 @@ class _Handler(BaseHTTPRequestHandler):
     def _do_seed_param(self) -> None:
         """POST /seed-param — the World-Seed write lane (#266). Mirrors /move's intent bridge
         EXACTLY: the viewer NEVER writes campaign state; it appends a single validated
-        ``{kind:"set_seed_param", param, value[, force]}`` intent line to $CLAWDND_PLAYER_MOVES,
+        ``{kind:"set_seed_param", param, value[, force]}`` intent line to $WORLDOS_PLAYER_MOVES,
         which the live DM/engine session drains and applies via the engine's set_seed_param
         tool (the engine stays the SOLE WRITER). Read-only (refuses) when there is no live
         game; refuses a write tagged for a non-live (merely viewed) campaign (#49)."""
@@ -8684,7 +8684,7 @@ def main() -> int:
     print(
         f"Player moves → appending to: {moves}"
         if moves
-        else "Player moves: DISABLED (set CLAWDND_PLAYER_MOVES to enable POST /move)."
+        else "Player moves: DISABLED (set WORLDOS_PLAYER_MOVES to enable POST /move)."
     )
     tts = env_var("TTS_BACKEND", "kokoro")
     if _VOICE_DIR.is_dir():

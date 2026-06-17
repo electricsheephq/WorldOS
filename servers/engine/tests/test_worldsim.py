@@ -72,7 +72,7 @@ def test_start_world_seeds_threads_and_downtime_surfaces_them(tmp_path, monkeypa
     # Integration: start_world seeds the world's standing threads as recurring beats,
     # and advancing the clock (downtime / world_tick) makes them fire unprompted.
     import server
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_world("sundered-reach")["campaign_id"]
     early = server.world_tick(cid)
     assert early["world_beats"] == [] and len(early["pending"]) >= 1   # seeded, not yet due

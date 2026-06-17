@@ -20,11 +20,11 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # opt-in (WORLDOS_ALLOW_SCORER_OVERRIDE=1) for a deliberate scorer-calibration probe /
 # re-baseline (e.g. "does a stronger scorer read Opus craft higher than sonnet does?") —
 # see docs/MODEL-TIERING. WORLDOS_SCORER_MODEL set WITHOUT the opt-in is an ERROR, so a
-# stray env var can't quietly move the baseline. The legacy CLAWDND_* names are still read
-# as a fallback (the clawdnd->worldos rename bi-names direct readers) so old call sites work.
+# stray env var can't quietly move the baseline. The legacy WORLDOS_* names are still read
+# as a fallback (the worldos->worldos rename bi-names direct readers) so old call sites work.
 CANONICAL_SCORER_MODEL="sonnet"
-SCORER_MODEL_OVERRIDE="${WORLDOS_SCORER_MODEL:-${CLAWDND_SCORER_MODEL:-}}"
-ALLOW_SCORER_OVERRIDE="${WORLDOS_ALLOW_SCORER_OVERRIDE:-${CLAWDND_ALLOW_SCORER_OVERRIDE:-}}"
+SCORER_MODEL_OVERRIDE="${WORLDOS_SCORER_MODEL:-}"
+ALLOW_SCORER_OVERRIDE="${WORLDOS_ALLOW_SCORER_OVERRIDE:-}"
 if [ -n "$SCORER_MODEL_OVERRIDE" ] && [ "$ALLOW_SCORER_OVERRIDE" != "1" ]; then
   echo "[score] REFUSING scorer-model override: WORLDOS_SCORER_MODEL='${SCORER_MODEL_OVERRIDE}' is set but WORLDOS_ALLOW_SCORER_OVERRIDE=1 is NOT." >&2
   echo "[score]   The scorer is pinned to '${CANONICAL_SCORER_MODEL}' (the gate baseline); a silent model swap skews every score." >&2
@@ -64,7 +64,7 @@ stamp_prompt_hash() {
 # BEFORE the live `claude -p` loop. This keeps the determinism test gateway-free / offline
 # (it never touches Eva, the gateway, or any LLM). In normal use this is unset and the
 # script behaves exactly as before.
-if [ "${WORLDOS_SCORE_GUARD_ONLY:-${CLAWDND_SCORE_GUARD_ONLY:-}}" = "1" ]; then
+if [ "${WORLDOS_SCORE_GUARD_ONLY:-}" = "1" ]; then
   printf '{}\n' > "$OUT"
   stamp_prompt_hash "$OUT"
   exit 0

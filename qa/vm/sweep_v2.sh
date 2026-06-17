@@ -25,7 +25,7 @@
 # LEAN IS ON (2026-06-06) — the 2026-06-05 lean-OFF decision is SUPERSEDED. #683 fixed the
 # cross-campaign contamination (the lean re-ground was selecting the WRONG campaign by largest-
 # snapshot; now resolves the engine-authoritative live campaign) and #685 added the lean output-
-# discipline (clean prose). lean-ON matches the PRODUCTION default (CLAWDND_LEAN_BEATS:-1) and gives
+# discipline (clean prose). lean-ON matches the PRODUCTION default (WORLDOS_LEAN_BEATS:-1) and gives
 # FAST routine beats — lean-OFF would replay the growing Opus transcript (3-5+ min/beat), risking
 # latency give-ups / per-persona timeouts (the wasted-sweep vector). Set explicitly below.
 # -----------------------------------------------------------------------------
@@ -37,7 +37,7 @@
 # no set -e (one persona failing must not abort the batch). Explicit PATH + IS_SANDBOX.
 export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.local/bin:$PATH
 export IS_SANDBOX=1
-export CLAWDND_LEAN_BEATS=1   # lean-ON (production-matching; #683/#685-fixed; fast Opus beats). See header.
+export WORLDOS_LEAN_BEATS=1   # lean-ON (production-matching; #683/#685-fixed; fast Opus beats). See header.
 cd /root/worldos-qa/WorldOS || { echo "NO REPO"; exit 1; }
 RES=/root/worldos-qa/results; mkdir -p "$RES"
 SHA="$(git rev-parse --short HEAD)"; LOG="$RES/sweep2.log"; : > "$LOG"
