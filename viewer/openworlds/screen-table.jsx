@@ -13,6 +13,9 @@
 // #347 extends it with a SENTENCE-level pass that strips story-craft scaffolding (dice
 // tallies, plot-structure jargon, "beat complete" stage-directions) embedded mid-line —
 // see the `_isScaffoldingSentence` block below for the HIGH-CONFIDENCE-only patterns.
+// The #972-companion arm (`_AUTHORING_PREAMBLE`) extends that sentence-level pass to the
+// first-person OOC authoring-preamble family ("Now let me seat <X> as the player character",
+// "Continuity check — let me correct that") — the viewer backstop for the source fix in PR #972.
 const DM_ENGINE_TOOLS = [
   "remember", "recall", "recall_decisions", "log_event", "add_quest",
   "update_decision", "record_decision", "add_consequence", "check_consequences",
@@ -169,16 +172,56 @@ const _BEAT_TRANSITION = new RegExp(
     "\\bon to the next " + _STRUCT + "\\b" +
   ")", "i",
 );
-// True when a WHOLE sentence is plot-craft jargon or a stage-direction (drop the sentence).
-// The tally is handled separately (in-place excision), so it's NOT a whole-sentence-drop trigger.
+// (5) #972-companion / DEFENSE-IN-DEPTH: the first-person OOC AUTHORING-PREAMBLE family — the DM
+// agent "thinking out loud" as an author/operator ("Now let me seat <X> as the player character",
+// "Continuity check — let me correct that", "Let me set the order of it", "Here's how round one
+// actually went:", "let me set their advancement through the engine"). A 2026-06-17 craft audit
+// found these shipping to players verbatim. The PRIMARY fix landed at the SOURCE in PR #972 (the
+// DM SKILL.md FICTION-ONLY rule + the deterministic `narration_no_ooc_leak` gate in
+// qa/assert_behavioral.py). This viewer arm is the backstop for anything that still reaches the
+// chronicle (old transcripts, edge cases) — so the player never sees the seam.
+//
+// These patterns MIRROR qa/assert_behavioral.py::_NARRATION_LEAK byte-for-byte (the 5 authoring-
+// preamble arms; that file's 6th arm — `inciting incident` — is already covered above by
+// `_CRAFT_JARGON`, so it is not duplicated here). The two layers MUST stay consistent: keep this
+// in sync with `_NARRATION_LEAK` when either changes. As with the rest of this file, the arms are
+// HIGH-CONFIDENCE OOC-ONLY phrasings that never occur in in-character D&D fiction or dialogue, so a
+// clean beat is never stripped (the viewer DELETES the matched sentence, so it must be at least as
+// tight as the count-only gate). The gate's machine-checked FP-hardening is carried over verbatim:
+//   • `through the engine` is verb/noun-anchored to the game-ENGINE sense — a literal-machinery
+//     "Steam screamed through the engine block" (Gond/artificer/Steel-Watch fiction) MUST survive;
+//   • the seat arm is full-word "as the player character" only — a bare in-world "PC" initialism /
+//     "the player of the lute" MUST survive (the dropped `as the pc` collision);
+//   • the round-replay arm is anchored on "here's how round <n> … went" — a bare "round one went"
+//     in fiction MUST survive.
+const _AUTHORING_PREAMBLE = new RegExp(
+  "(?:" +
+    // "seat <X> as the player character" — full words only (never the bare "PC" initialism)
+    "\\bas the player character\\b|" +
+    // "<set their> advancement through the engine" — the game-ENGINE sense, not literal machinery
+    "\\b(?:advancement|leveling|progression|run it|route it|resolve it|process it" +
+      "|the (?:move|action|roll|turn)) through the engine\\b|" +
+    // first-person authoring self-correction
+    "\\bcontinuity check\\b|" +
+    // OOC combat-replay framing (round-anchored; a bare "round one went" is left alone)
+    "\\bhere'?s how round \\w+ (?:actually )?went\\b|" +
+    // OOC initiative / turn-ordering preamble
+    "\\blet me set the order of it\\b" +
+  ")", "i",
+);
+// True when a WHOLE sentence is plot-craft jargon, a stage-direction, or an OOC authoring preamble
+// (drop the sentence). The tally is handled separately (in-place excision), so it's NOT a
+// whole-sentence-drop trigger.
 function _isScaffoldingSentence(sentence) {
   const s = (sentence || "").trim();
   if (!s) return false;
-  return _CRAFT_JARGON.test(s) || _STAGE_DIRECTION.test(s) || _BEAT_TRANSITION.test(s);
+  return _CRAFT_JARGON.test(s) || _STAGE_DIRECTION.test(s) || _BEAT_TRANSITION.test(s)
+    || _AUTHORING_PREAMBLE.test(s);
 }
 function _hasScaffolding(text) {
   return _TALLY_TEST.test(text) || _CRAFT_JARGON.test(text)
-    || _STAGE_DIRECTION.test(text) || _BEAT_TRANSITION.test(text);
+    || _STAGE_DIRECTION.test(text) || _BEAT_TRANSITION.test(text)
+    || _AUTHORING_PREAMBLE.test(text);
 }
 // Clean scaffolding from one line, preserving the real prose. Two grains:
 //   1. excise dice/check TALLY phrases in place (keeps the rest of their sentence);

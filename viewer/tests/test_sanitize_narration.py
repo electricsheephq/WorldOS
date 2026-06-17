@@ -254,6 +254,66 @@ class SanitizeNarrationTests(unittest.TestCase):
         self.assertEqual(out["mixed"], "The guard leans closer.\nThe rooftop hand tightens on the dart.")
         self.assertEqual(out["near_miss"], cases["near_miss"])
 
+    # DEFENSE-IN-DEPTH viewer arm for the 2026-06-17 craft audit (source fix: PR #972 — the DM
+    # SKILL.md FICTION-ONLY rule + the deterministic `narration_no_ooc_leak` gate in
+    # qa/assert_behavioral.py::_NARRATION_LEAK). The audit found the first-person OOC AUTHORING-
+    # PREAMBLE family shipping to players verbatim. These are the exact 5 leak lines; the viewer
+    # must strip them even from an old transcript the source fix never touched.
+    def test_strips_ooc_authoring_preamble_leaks(self):
+        cases = {
+            "seat_as_pc": "Now let me seat Rolan as the player character.",
+            "continuity_check": "Continuity check — let me correct that.",
+            "set_order": "Let me set the order of it.",
+            "round_replay": "Here's how round one actually went:",
+            "advancement_through_engine": "Now let me set their advancement through the engine.",
+        }
+        out = self._sanitize_many(cases)
+        for key in cases:
+            with self.subTest(case=key):
+                self.assertEqual(out[key], "")
+
+    def test_authoring_preamble_stripped_inline_and_in_multiline_beat(self):
+        # The audit also saw these land as a trailing CLAUSE inside a real line and as their own
+        # line inside an otherwise-real beat. The real prose around them must survive (sentence-
+        # surgical strip), mirroring the #347 scaffolding behavior.
+        cases = {
+            "trailing_clause": (
+                "Rolan squares his shoulders beneath the portcullis. "
+                "Now let me seat Rolan as the player character."
+            ),
+            "multiline_beat": (
+                "The lantern gutters as Rolan steps into the ring of torchlight.\n"
+                "Now let me set their advancement through the engine.\n"
+                "He draws his blade, eyes fixed on the cultist."
+            ),
+        }
+        out = self._sanitize_many(cases)
+        self.assertEqual(out["trailing_clause"], "Rolan squares his shoulders beneath the portcullis.")
+        self.assertNotIn("as the player character", out["multiline_beat"].lower())
+        self.assertNotIn("through the engine", out["multiline_beat"].lower())
+        self.assertIn("The lantern gutters", out["multiline_beat"])
+        self.assertIn("He draws his blade", out["multiline_beat"])
+
+    def test_authoring_preamble_guard_preserves_legitimate_fiction(self):
+        # The false-positive guard, mirroring _NARRATION_LEAK's FP-hardening notes: a literal-
+        # machinery "through the engine" (the bare form that wrongly matched Gond/artificer/Steel-
+        # Watch fiction — now verb/noun-anchored), an in-world "PC" / "the player" that is NOT
+        # "the player character" (the full-word hardening), and ordinary "let me …" dialogue must
+        # all pass through verbatim. Story quality is the north star — never strip real fiction.
+        legit = {
+            "engine_block": "Steam screamed through the engine block, and the boiler shrieked.",
+            "engine_housing": "The acolyte guided the brass rod through the engine housing.",
+            "introduce_dialogue": '"Let me introduce you to the captain," she said.',
+            "set_table_dialogue": '"Let me set the table," the innkeeper said with a tired smile.',
+            "player_of_lute": "She nodded as the player of the lute began a slow, sad air.",
+            "round_went": "Round one went badly for the goblins; two fled into the dark.",
+            "order_of_battle": "Let me see the order of battle before we ride, the captain muttered.",
+        }
+        out = self._sanitize_many(legit)
+        for key, original in legit.items():
+            with self.subTest(case=key):
+                self.assertEqual(out[key], original)
+
 
 if __name__ == "__main__":
     unittest.main()
