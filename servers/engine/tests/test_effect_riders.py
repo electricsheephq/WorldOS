@@ -382,3 +382,34 @@ def test_srd_only_area_damage_spell_with_full_word_save_ability_resolves(tmp_pat
     assert len(aoe["targets"]) == 2
     for foe in (a, b):  # each foe took the engine-resolved damage (full on fail / half on save)
         assert server.get_character(cid, foe)["current_hp"] < 100
+
+
+# --- recasting a concentration spell on a NEW target frees the OLD target's orphaned child ---
+
+def test_recast_concentration_rider_on_new_target_frees_old_targets_child(tmp_path, monkeypatch):
+    # A caster concentrates on ONE Bless at a time, so casting Bless again ENDS the prior Bless.
+    # The first target's linked child must be released — not left orphaned. The bug: the
+    # concentration-displacement release fired only when the spell NAME changed, so a same-spell
+    # recast onto a DIFFERENT target left the old ally still carrying the +1d4 rider of a Bless
+    # it is no longer part of (it would keep rolling the engine d4 forever).
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("BlessRecast")["id"]
+    cleric = server.create_character(cid, "Pious", kind="player", class_name="Cleric",
+                                     level=1, apply_srd_defaults=True)["id"]
+    a = server.create_character(cid, "AllyA", kind="player", max_hp=30)["id"]
+    b = server.create_character(cid, "AllyB", kind="player", max_hp=30)["id"]
+    server.cast_spell(cid, cleric, "Bless", target_ids=[a])
+    assert [e for e in server.get_character(cid, a)["active_effects"] if e["name"] == "Bless"], \
+        "A should hold the first Bless"
+    # recast Bless on a DIFFERENT target — the caster can only concentrate on one Bless
+    server.cast_spell(cid, cleric, "Bless", target_ids=[b])
+    # B now holds the rider...
+    b_bless = [e for e in server.get_character(cid, b)["active_effects"] if e["name"] == "Bless"]
+    assert b_bless and b_bless[0]["save_bonus_dice"] == "1d4"
+    # ...and A's stale child is GONE — A is no longer part of the active Bless
+    a_bless = [e for e in server.get_character(cid, a)["active_effects"] if e["name"] == "Bless"]
+    assert a_bless == [], "A still carries a stale Bless rider after the recast moved to B"
+    # and the engine no longer rolls the +1d4 on A's save (A isn't blessed anymore)
+    _rig(monkeypatch, d20_natural=10, d4=3)
+    out = server.saving_throw(cid, a, "wis", dc=12)
+    assert "bonus_dice" not in out, "A's save still got an orphaned Bless d4"
