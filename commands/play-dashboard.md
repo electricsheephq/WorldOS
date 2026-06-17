@@ -8,9 +8,9 @@ Target world (optional id): $ARGUMENTS
 
 Tell the player how to launch it, then let them play in the browser:
 
-1. **Launch it** — the simplest path is to **double-click `clawdnd-play.command`** in the repo (a Desktop shortcut is installed by `scripts/install-desktop-shortcut.sh`). Or, from a terminal:
+1. **Launch it** — the simplest path is to **double-click `worldos-play.command`** in the repo (a Desktop shortcut is installed by `scripts/install-desktop-shortcut.sh`). Or, from a terminal:
    ```bash
-   ./clawdnd-play.command            # default world (baldurs-gate)
+   ./worldos-play.command            # default world (baldurs-gate)
    scripts/play.sh sundered-reach    # a specific world; see /world-list
    ```
    It opens `http://127.0.0.1:8765/dashboard`, flips the viewer into interactive (live) mode, and starts the DM, who opens the world live and hands the player a character + an open moment.
@@ -19,12 +19,12 @@ Tell the player how to launch it, then let them play in the browser:
 
 **Want AI companions in the party? (opt-in)** By default you play solo (just you + the DM). You can instead bring a party of **AI companions** who adventure alongside you — each is its OWN agent acting through the same constrained move palette you do (it can disagree, take the lead in its lane, even betray you), NOT the DM voicing it. The dashboard then shows you + your companions + the DM, beat by beat. Companions multiply the live AI cost (each is a separate `claude -p`), so they're **off unless you ask for them**:
 ```bash
-# Name companions with a 4th arg (or $CLAWDND_PLAY_COMPANIONS), COMMA-separated tokens
+# Name companions with a 4th arg (or $WORLDOS_PLAY_COMPANIONS), COMMA-separated tokens
 #   Name:class:persona_file[:spell1|spell2|…]   (the 4th field names a caster's spells)
 scripts/play_party.sh baldurs-gate '' 8765 \
   "Seraphine:cleric:qa/play_companion.txt:Cure Wounds|Guiding Bolt,Brogan:fighter:qa/play_companion.txt"
 # or via env (then double-click / run the .command as usual):
-CLAWDND_PLAY_COMPANIONS="Brogan:fighter:qa/play_companion.txt" ./clawdnd-play.command
+WORLDOS_PLAY_COMPANIONS="Brogan:fighter:qa/play_companion.txt" ./worldos-play.command
 ```
 `scripts/play_party.sh` (and the `.command`, which routes through it) is **identical to solo play when you give no companion spec** — so nothing changes for solo. With companions named, each is pre-seeded into the party with a real sheet, the DM creates *your* character live and opens the scene around the existing party, and every beat your move plus each living companion's moves are resolved together. The same budget / turn caps apply (companions count toward the session ceiling).
 

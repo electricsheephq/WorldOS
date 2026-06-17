@@ -4,7 +4,7 @@ argument-hint: "[world id] (e.g. sundered-reach) — optional; lists worlds if o
 ---
 The player wants to play in a living world (the generative / sandbox mode — the engine at its best).
 
-> Two ways to play this same living-world mode: **(a) here in Claude Code** — type your turns and the DM responds in chat (this command); **(b) in the dashboard** — play in the browser via the action palette while a live DM responds beside it (double-click `clawdnd-play.command`, or run `scripts/play.sh [world-id]`; see `/play-dashboard`). Same engine, same DM skill — pick the surface you prefer.
+> Two ways to play this same living-world mode: **(a) here in Claude Code** — type your turns and the DM responds in chat (this command); **(b) in the dashboard** — play in the browser via the action palette while a live DM responds beside it (double-click `worldos-play.command`, or run `scripts/play.sh [world-id]`; see `/play-dashboard`). Same engine, same DM skill — pick the surface you prefer.
 
 Target world (optional id): $ARGUMENTS
 
