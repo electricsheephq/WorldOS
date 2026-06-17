@@ -78,7 +78,7 @@ Operator-cleared two of the three Loop-4 asymptote items. Confidence rises **to 
 ### L5-B ✅ Native build verified (compile-clean)
 - `swift build --package-path macos/WorldOSApp` → **Build complete (1.74s)** — Swift code compiles cleanly against the macOS 13+ target.
 - `codesign --verify --deep --strict dist/WorldOS.app` → **valid on disk · satisfies its Designated Requirement**.
-- `Info.plist` clean (BundleID `dev.clawdnd.app`, MinSystemVersion 13.0, LocalNetworking allowed).
+- `Info.plist` clean (BundleID `dev.worldos.app`, MinSystemVersion 13.0, LocalNetworking allowed).
 - **Still pending:** the visual title-bar inspection against the real macOS traffic lights ([#260](https://github.com/electricsheephq/WorldOS/issues/260)) — needs a human eye on the rendered window. Build itself is sound.
 
 ### L5-C ✅ axe-core scan complete (16 screens)

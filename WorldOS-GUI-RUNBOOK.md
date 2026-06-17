@@ -347,7 +347,7 @@ reverts the goal to "fix" and outranks new work.
 
 ## Hard rules (carried from CLAUDE.md + this session's lessons)
 - Engine (`servers/engine`) = SOLE writer of campaign state. Don't touch wire contracts
-  (`clawdnd-*`/`CLAWDND_*` MCP ids, `dev.clawdnd.app`); you MAY read `WORLDOS_ART_REPO_ROOT`.
+  (`clawdnd-*`/`CLAWDND_*` MCP ids, `dev.worldos.app`); you MAY read `WORLDOS_ART_REPO_ROOT`.
 - `_private/` (the 2.9 GB art) is **never committed**. Building/serving from the local checkout is how the
   art is present; worktrees can read it via `WORLDOS_ART_REPO_ROOT=/Users/lume/ClawDnD-val` when needed.
 - 16 GB Mac: tests on **GitHub CI / 32GB support VM** for heavyweight sweeps, never heavy local suites. Parallel read-only agents are

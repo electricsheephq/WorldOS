@@ -934,10 +934,10 @@ function App() {
   React.useEffect(() => {
     refreshNative();
     const onReady = () => refreshNative();
-    window.addEventListener("clawdnd:native-ready", onReady);
+    window.addEventListener("worldos:native-ready", onReady);
     const timer = window.setInterval(refreshNative, 5000);
     return () => {
-      window.removeEventListener("clawdnd:native-ready", onReady);
+      window.removeEventListener("worldos:native-ready", onReady);
       window.clearInterval(timer);
     };
   }, [refreshNative]);

@@ -494,7 +494,7 @@ lands on app relaunch with NO Swift rebuild** (the swift build is a ~0.1s no-op)
   FRESH campaign (true resume-by-id is a later enhancement).
 - **Critical files:** `RootView.swift` (startProviderSession bridge), `ProviderAdapters.swift`
   (shells play.sh, ClaudeProvider.detect), `AppProcessService.swift` (PortFinder), `WebView.swift`
-  (bridge user-script `window.ClawDnDNative`), `screen-launcher.jsx` + `app.jsx`, `scripts/play.sh`.
+  (bridge user-script `window.WorldOSNative`), `screen-launcher.jsx` + `app.jsx`, `scripts/play.sh`.
 
 ---
 

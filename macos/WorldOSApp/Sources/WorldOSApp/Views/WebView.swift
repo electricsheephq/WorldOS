@@ -75,7 +75,7 @@ struct WebView: NSViewRepresentable {
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
         if nativeRequestHandler != nil {
             configuration.userContentController.addUserScript(Self.nativeBridgeScript)
-            configuration.userContentController.add(context.coordinator, name: "clawdnd")
+            configuration.userContentController.add(context.coordinator, name: "worldos")
             context.coordinator.hasNativeMessageHandler = true
         }
         let view = WKWebView(frame: .zero, configuration: configuration)
@@ -101,27 +101,27 @@ struct WebView: NSViewRepresentable {
 
     static func dismantleNSView(_ nsView: WKWebView, coordinator: Coordinator) {
         if coordinator.hasNativeMessageHandler {
-            nsView.configuration.userContentController.removeScriptMessageHandler(forName: "clawdnd")
+            nsView.configuration.userContentController.removeScriptMessageHandler(forName: "worldos")
         }
     }
 
     private static let nativeBridgeScript = WKUserScript(
         source: """
         (function () {
-          if (window.ClawDnDNative && window.ClawDnDNative.__installed) return;
+          if (window.WorldOSNative && window.WorldOSNative.__installed) return;
           const callbacks = {};
           function uuid() {
             if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
             return "native-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
           }
-          window.ClawDnDNative = {
+          window.WorldOSNative = {
             __installed: true,
             request: function (type, payload) {
               const requestId = uuid();
               const body = { requestId: requestId, type: type, payload: payload || {} };
               return new Promise(function (resolve, reject) {
                 callbacks[requestId] = { resolve: resolve, reject: reject };
-                window.webkit.messageHandlers.clawdnd.postMessage(body);
+                window.webkit.messageHandlers.worldos.postMessage(body);
               });
             },
             _reply: function (message) {
@@ -131,10 +131,10 @@ struct WebView: NSViewRepresentable {
                 if (message.ok) callback.resolve(message.payload || {});
                 else callback.reject(new Error(message.error || "Native bridge request failed."));
               }
-              window.dispatchEvent(new CustomEvent("clawdnd:native-reply", { detail: message }));
+              window.dispatchEvent(new CustomEvent("worldos:native-reply", { detail: message }));
             }
           };
-          window.dispatchEvent(new CustomEvent("clawdnd:native-ready"));
+          window.dispatchEvent(new CustomEvent("worldos:native-ready"));
         })();
         """,
         injectionTime: .atDocumentStart,
@@ -170,7 +170,7 @@ struct WebView: NSViewRepresentable {
         }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard message.name == "clawdnd" else { return }
+            guard message.name == "worldos" else { return }
             guard let request = NativeBridgeRequest(body: message.body) else {
                 send(.malformed())
                 return
@@ -197,7 +197,7 @@ struct WebView: NSViewRepresentable {
                     NSLog("WorldOS native bridge failed to encode reply as UTF-8: \(dictionary)")
                     return
                 }
-                webView?.evaluateJavaScript("window.ClawDnDNative && window.ClawDnDNative._reply(\(json));")
+                webView?.evaluateJavaScript("window.WorldOSNative && window.WorldOSNative._reply(\(json));")
             } catch {
                 NSLog("WorldOS native bridge reply serialization failed: \(error); reply=\(dictionary)")
             }

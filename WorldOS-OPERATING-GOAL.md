@@ -251,7 +251,7 @@ verifier; can revert the goal to "fix" anytime.
 - **Never** claim "100% confidence" / "audit complete." A merged PR is a hypothesis; a non-reproducing
   NEXT build is the evidence. Close issues only on next-build non-reproduction. **Honest scores only.**
 - Engine (`servers/engine`) = **SOLE writer** of campaign state. Don't touch wire contracts
-  (`clawdnd-*` / `CLAWDND_*` / `dev.clawdnd.app`). Build/run/test the Mac app from
+  (`clawdnd-*` / `CLAWDND_*` / `dev.worldos.app`). Build/run/test the Mac app from
   `/Users/lume/ClawDnD-val` so private art stays on the local disk and macOS does not prompt on Lexar
   files. Use **same-disk local worktrees** for GUI-affecting tracked edits, Lexar for evidence/snapshots,
   and the 32GB support VM / GitHub CI for heavy tests. `_private/` never committed.
@@ -293,7 +293,7 @@ verifier; can revert the goal to "fix" anytime.
   `worldos-racefix-first-turn-20260601T012110.png`, and
   `worldos-racefix-dm-response-dismissed-permission-20260601T012516.png`.
 - A Photos/Music permission prompt seen during this proof was traced through unified logs to
-  macOS TCC attribution contamination: `responsible=dev.clawdnd.app`, but the actual accessor was
+  macOS TCC attribution contamination: `responsible=dev.worldos.app`, but the actual accessor was
   `/usr/bin/find` launched by the test/diagnostic environment. Treat that screenshot prompt as harness
   contamination unless a clean run shows `WorldOSApp`/WebKit itself accessing a protected library path.
 - The next gate evidence step is issue #466: a clean non-partial five-persona RRI from one explicit SHA.

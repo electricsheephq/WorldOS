@@ -1,6 +1,6 @@
 (function () {
   function hasBridge() {
-    return Boolean(window.ClawDnDNative && typeof window.ClawDnDNative.request === "function");
+    return Boolean(window.WorldOSNative && typeof window.WorldOSNative.request === "function");
   }
 
   window.OpenWorldsNative = {
@@ -9,7 +9,7 @@
       if (!hasBridge()) {
         return Promise.reject(new Error("OpenWorlds is running without the native WorldOS bridge."));
       }
-      return window.ClawDnDNative.request(type, payload || {});
+      return window.WorldOSNative.request(type, payload || {});
     },
   };
 })();
