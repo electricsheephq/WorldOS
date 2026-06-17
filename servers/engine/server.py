@@ -6748,10 +6748,16 @@ def cast_spell(
             # effect registered below is authoritative). Do it BEFORE setting the field.
             displaced_conc = ch.concentration
             combat.expire_concentration_effects(ch)
-            # F3-6: a recast that DISPLACES a different prior concentration ends that spell —
-            # free its held victims NOW (e.g. the cleric drops Hold Person to cast Bless), not
-            # a round later. Skip when recasting the SAME spell (the fresh marker rewrites it).
-            if displaced_conc and displaced_conc != canonical:
+            # F3-6: displacing a prior concentration ends that spell — free its held victims NOW
+            # (e.g. the cleric drops Hold Person to cast Bless), not a round later. This fires
+            # even when RECASTING THE SAME spell, because the new cast targets a possibly-DIFFERENT
+            # set: a prior target that drops out of the new set (Bless on [a] then [b]) must be
+            # released here, or it keeps an orphaned linked child of a Bless it's no longer part
+            # of. The fresh children are re-registered below, so a same-target refresh frees-then-
+            # re-adds (idempotent); only targets dropped from the new set stay freed. The release
+            # never touches the caster's own twin — that is concentration-flagged (already expired
+            # just above), not a linked_to_concentration child.
+            if displaced_conc:
                 _release_held_targets(c, character_id, displaced_conc)
             ch.concentration = canonical  # replaces (breaks) any prior concentration
         # Register an engine-tracked timed effect so the spell auto-expires (instead of
