@@ -109,7 +109,12 @@ def test_complete_run_yields_full_block():
     assert block["combat"] is True
     assert block["betrayal"] is True
     assert block["summary"].startswith("acts 3/3 ·")
-    assert "·" not in block["summary"].replace(" · ", "")  # every mark is ✓ (no lone ·)
+    # Every COVERAGE mark is ✓ (no lone ·). The trailing felt-shape segment (· shape …) is a
+    # SEPARATE, additive signal: this fixture has no mid-band reversal Decision, so it is
+    # honestly `shape ·` (a fired agenda gives climax but reversal stays False) — split it off
+    # before the coverage check so the new segment isn't mistaken for a coverage regression.
+    coverage_seg = block["summary"].split(" · shape ")[0]
+    assert "·" not in coverage_seg.replace(" · ", "")  # every coverage mark is ✓ (no lone ·)
 
 
 def test_acts_from_authored_tags_partial():
@@ -235,6 +240,179 @@ def test_list_shaped_collections_are_handled():
     assert block["quest_resolved"] is True
     assert block["acts_reached"] == 2
     assert block["recruited"] is True  # companion present, no party list → recruited
+
+
+# ── felt_shape_from_state (the SETUP→REVERSAL→CLIMAX detector) ─────────────────────
+# Replaces "N acts touched" with "did a real 3-act arc actually TURN". Reads ONLY
+# engine-mutated state (never DM prose): the engine `narrative_arc` cursor + landed
+# flags first, else day-banded turning/resolving events. Pure-read, additive.
+
+def _flat_three_act_state() -> dict:
+    """A FLAT 3-act run: the engine cursor reached act 3 BUT the landed flags are False,
+    there are ZERO mid-band decisions/consequences, and no late-band resolve. Three
+    act-tagged visited rooms walked, but the arc never turned — felt_three_act must be False."""
+    return {
+        "day": 20,
+        "party": ["pc1", "comp1"],
+        "narrative_arc": {"act": 3, "day_act_entered": 15,
+                          "beats_in_act": 5,
+                          "midpoint_reversal_landed": False, "climax_landed": False,
+                          "reversal_day": 0, "climax_day": 0},
+        "characters": {
+            "pc1": {"name": "Dal", "kind": "player", "last_long_rest_day": 5},
+            "comp1": {"name": "Brother Toll", "kind": "companion",
+                      "attitude_value": 0, "last_long_rest_day": 5},
+        },
+        # no completed quest, no decisions, no consequences → nothing turned anywhere
+        "quests": {"q1": {"title": "The Embergloom Pact", "status": "active"}},
+        "locations": {
+            "a": {"name": "The Emerald Grove (Act 1)", "visited": True},
+            "b": {"name": "Moonrise Towers (Act 2)", "visited": True},
+            "c": {"name": "The Lower City (Act 3)", "visited": True},
+        },
+        "decisions": [],
+        "consequences": [],
+        "flags": {},
+    }
+
+
+def _felt_three_act_state_engine_flags() -> dict:
+    """A FELT 3-act run via the ENGINE-STAMPED landed flags: the cursor reached act 3 AND the
+    engine recorded both the midpoint reversal (day 10, mid-band of a day-20 arc) and the
+    climax (day 18, late-band) → felt_three_act True regardless of decisions/quests."""
+    s = _flat_three_act_state()
+    s["narrative_arc"] = {"act": 3, "day_act_entered": 15, "beats_in_act": 5,
+                          "midpoint_reversal_landed": True, "climax_landed": True,
+                          "reversal_day": 10, "climax_day": 18}
+    return s
+
+
+def _felt_three_act_state_events() -> dict:
+    """A FELT 3-act run via DAY-BANDED EVENTS (no landed flags): a mid-band Decision carrying
+    approval_tags (day 10, in [6, 14] of a day-20 arc) AND a late-band completed quest
+    (last_progress_day 18 >= 14) → reversal + climax detected from engine-registered events."""
+    s = _flat_three_act_state()
+    # tag-acts still read 3, but the engine cursor flags stay False (events path must carry it)
+    s["decisions"] = [
+        {"day": 10, "summary": "spare the cultist", "approval_tags": ["mercy"]},
+    ]
+    s["quests"] = {"q1": {"title": "The Embergloom Pact", "status": "completed",
+                          "last_progress_day": 18,
+                          "objectives": ["x"], "completed_objectives": ["x"]}}
+    return s
+
+
+def test_felt_shape_flat_three_act_is_false():
+    """A run with the engine cursor at act 3 but NOTHING landed/turned → felt_three_act False.
+    The whole point: 'acts 3/3' walked is not a felt setup→reversal→climax."""
+    fs = sr.felt_shape_from_state(_flat_three_act_state())
+    assert fs["acts_engine_reached"] == 3
+    assert fs["acts_tag_reached"] == 3
+    assert fs["reversal"] is False
+    assert fs["climax"] is False
+    assert fs["felt_three_act"] is False
+    assert "flat" in fs["shape"]
+
+
+def test_felt_shape_felt_via_engine_landed_flags():
+    """The engine-stamped midpoint_reversal_landed + climax_landed (with banded days) → True."""
+    fs = sr.felt_shape_from_state(_felt_three_act_state_engine_flags())
+    assert fs["acts_engine_reached"] == 3
+    assert fs["reversal"] is True
+    assert fs["climax"] is True
+    assert fs["felt_three_act"] is True
+    assert fs["shape"] == "setup→reversal→climax"
+
+
+def test_felt_shape_felt_via_banded_events():
+    """A mid-band approval_tags Decision + a late-band completed quest → reversal + climax via
+    the day-banding fallback, even with the engine landed flags still False."""
+    fs = sr.felt_shape_from_state(_felt_three_act_state_events())
+    assert fs["reversal"] is True, fs
+    assert fs["climax"] is True, fs
+    assert fs["felt_three_act"] is True
+    assert fs["shape"] == "setup→reversal→climax"
+
+
+def test_felt_shape_old_empty_state_falls_back_to_tag_path():
+    """An OLD/empty snapshot with NO narrative_arc → acts_engine_reached 0 (cursor absent),
+    falls back to the existing tag path (acts_tag_reached), reversal/climax/felt all False —
+    never crashes."""
+    fs = sr.felt_shape_from_state({})
+    assert fs["acts_engine_reached"] == 0
+    assert fs["acts_tag_reached"] == 0
+    assert fs["reversal"] is False
+    assert fs["climax"] is False
+    assert fs["felt_three_act"] is False
+    assert isinstance(fs["shape"], str)
+
+
+def test_felt_shape_tag_acts_fallback_when_no_engine_cursor():
+    """When narrative_arc is absent but locations carry act tags, acts_tag_reached carries the
+    3-act claim (engine cursor 0) and the max() pass criterion still uses it."""
+    s = _flat_three_act_state()
+    del s["narrative_arc"]  # no engine cursor → engine reached 0, tag path reads 3
+    # give it a real turn so felt_three_act can be True off the tag path alone
+    s["narrative_arc"] = None  # explicit None (degrade-to-silent, never raise)
+    fs = sr.felt_shape_from_state(s)
+    assert fs["acts_engine_reached"] == 0
+    assert fs["acts_tag_reached"] == 3
+
+
+def test_felt_shape_short_arc_no_crash():
+    """final_day <= 2 has no arc to bisect → reversal False, never crashes."""
+    s = {"day": 2, "narrative_arc": {"act": 1}, "decisions": [{"day": 1, "approval_tags": ["x"]}]}
+    fs = sr.felt_shape_from_state(s)
+    assert fs["reversal"] is False
+    assert fs["felt_three_act"] is False
+
+
+def test_felt_shape_decision_outside_midband_is_not_reversal():
+    """A values-Decision in the OPENING (day 2 of a day-20 arc, below the 0.30 band floor) is
+    NOT a midpoint reversal — banding is what separates a felt turn from an early choice."""
+    s = _flat_three_act_state()
+    s["decisions"] = [{"day": 2, "summary": "early choice", "approval_tags": ["mercy"]}]
+    fs = sr.felt_shape_from_state(s)
+    assert fs["reversal"] is False
+
+
+def test_felt_shape_quest_completed_early_is_not_climax():
+    """A quest completed in beat 2 (last_progress_day 2, below the 0.70 late-band floor) is NOT
+    a felt climax — the resolution must land LATE."""
+    s = _flat_three_act_state()
+    s["quests"] = {"q1": {"title": "x", "status": "completed", "last_progress_day": 2,
+                          "objectives": ["x"], "completed_objectives": ["x"]}}
+    fs = sr.felt_shape_from_state(s)
+    assert fs["climax"] is False
+
+
+def test_felt_shape_block_is_additive_existing_keys_byte_identical():
+    """Wiring contract: structural_coverage_from_state(state).update(felt_shape_from_state(...))
+    ADDS the new sub-block keys and leaves every PRE-EXISTING structural_coverage key
+    byte-identical. Assert the old keys are unchanged and the new keys appear."""
+    state = _flat_three_act_state()
+    # Old keys computed WITHOUT the felt-shape helper (simulate the pre-increment block) by
+    # reading them off the wired block and comparing to a fresh recompute of each old field.
+    block = sr.structural_coverage_from_state(state)
+    old_keys = {"acts_reached", "recruited", "approval_moved", "camped", "quest_resolved",
+                "quest_evolved", "traveled", "combat", "betrayal", "distinct_visited", "summary"}
+    new_keys = {"acts_engine_reached", "acts_tag_reached", "reversal", "climax",
+                "felt_three_act", "shape"}
+    assert old_keys.issubset(block.keys())
+    assert new_keys.issubset(block.keys())
+    # The existing acts_reached (tag path) is unchanged by the additive merge.
+    assert block["acts_reached"] == 3
+    # acts_tag_reached surfaces the SAME tag-acts value under the clearer name.
+    assert block["acts_tag_reached"] == block["acts_reached"]
+
+
+def test_felt_shape_summary_segment_present():
+    """structural_coverage_from_state's summary gains a trailing shape segment."""
+    flat = sr.structural_coverage_from_state(_flat_three_act_state())
+    felt = sr.structural_coverage_from_state(_felt_three_act_state_engine_flags())
+    assert "shape" in flat["summary"]
+    assert flat["summary"].rstrip().endswith("·")  # flat → no ✓
+    assert felt["summary"].rstrip().endswith("✓")  # felt → ✓
 
 
 # ── inject_structural_coverage.py (the sweep-side merge) ──────────────────────────

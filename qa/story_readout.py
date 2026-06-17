@@ -84,6 +84,24 @@ def _act_of(name) -> int | None:
 _ARC_EVAL_TOOLS = ("check_companion_arc",)
 
 
+def _tag_acts_reached(visited_locs: list) -> int:
+    """The highest CONTIGUOUS act-tag visited from act 1 over a list of visited location dicts
+    (the existing name-tag `acts_reached` logic, factored out so structural_coverage_from_state
+    AND felt_shape_from_state derive it identically — no drift). Visiting {3} reads 0; {1,3}
+    reads 1; {1,2,3} reads 3. Untagged: 1 if any location was visited, else 0."""
+    tagged_acts = {a for l in visited_locs
+                   if isinstance(l, dict) and (a := _act_of(l.get("name"))) is not None}
+    if tagged_acts:
+        reached = 0
+        for n in (1, 2, 3):
+            if n in tagged_acts:
+                reached = n
+            else:
+                break  # a gap breaks the chain — never credit an act past the first missing one
+        return reached
+    return 1 if visited_locs else 0
+
+
 def _agenda_fired_in_state(state: dict) -> bool:
     """GROUND-TRUTH betrayal signal from the snapshot: any companion whose sealed agenda has
     actually FIRED (``character.arc.agenda.fired == True``). A fired agenda is the durable record
@@ -101,6 +119,169 @@ def _agenda_fired_in_state(state: dict) -> bool:
         if isinstance(agenda, dict) and bool(agenda.get("fired")):
             return True
     return False
+
+
+def _as_list(coll) -> list:
+    """A dict- OR list-shaped engine collection (characters/quests/locations/...) → a list of
+    its entries. Tolerant of None/other so a malformed snapshot never raises."""
+    if isinstance(coll, dict):
+        return list(coll.values())
+    if isinstance(coll, list):
+        return coll
+    return []
+
+
+def felt_shape_from_state(state: dict, tool_counts=None) -> dict:
+    """The SETUP→REVERSAL→CLIMAX detector — "did a real 3-act arc actually TURN", not just
+    "N act-tagged rooms walked". PURE-READ over ENGINE-MUTATED state ONLY (the engine
+    ``narrative_arc`` cursor + landed flags, Decisions/Quests/Consequences with engine-stamped
+    days) — never DM fiction prose. Additive: an old/empty snapshot with no ``narrative_arc``
+    yields ``acts_engine_reached=0`` and falls back to the existing name-tag acts, with
+    reversal/climax/felt_three_act all False.
+
+    Returns an additive sub-block merged into structural_coverage_from_state:
+      * ``acts_engine_reached``: the engine cursor act (0..3) — ``narrative_arc.act`` (0 absent/old).
+      * ``acts_tag_reached``:    the EXISTING name-tag acts (kept, surfaced under a clearer name).
+      * ``reversal``:  a real arc-turning event landed in the MIDDLE day-band.
+      * ``climax``:    a real arc-resolving event landed in the LATE day-band.
+      * ``felt_three_act``: ``max(engine, tag) >= 3 AND reversal AND climax`` — the pass criterion.
+      * ``shape``: human-readable — ``"setup→reversal→climax"`` when felt, else a flat stamp.
+
+    REVERSAL prefers the engine-stamped ``narrative_arc.midpoint_reversal_landed`` (banded on
+    ``reversal_day``); else a turning event in ``[0.30*final_day, 0.70*final_day]``: a Decision
+    with non-empty ``approval_tags`` (or, when any decision is in-band, a set campaign flag); a
+    Quest whose ``last_progress_day`` is in-band with progress made; a fired Consequence in-band.
+    CLIMAX prefers ``narrative_arc.climax_landed`` (banded on ``climax_day``); else a resolving
+    event with day ``>= 0.70*final_day``: a completed Quest whose ``last_progress_day`` is late;
+    a fired companion agenda; a late fired Consequence. ``final_day <= 2`` ⇒ no arc to bisect ⇒
+    reversal/climax False (never crashes)."""
+    state = state or {}
+    arc = state.get("narrative_arc")
+    if not isinstance(arc, dict):
+        arc = {}  # None / absent / variant → degrade to the all-default cursor (act unreadable)
+
+    acts_engine = 0
+    try:
+        acts_engine = int(arc.get("act") or 0)
+    except (TypeError, ValueError):
+        acts_engine = 0
+
+    # tag-acts: the EXISTING name-tag path (fallback when the engine cursor is absent/0).
+    locs = _as_list(state.get("locations", {}))
+    visited_locs = [l for l in locs if isinstance(l, dict) and l.get("visited")]
+    acts_tag = _tag_acts_reached(visited_locs)
+
+    try:
+        final_day = int(state.get("day") or 0)
+    except (TypeError, ValueError):
+        final_day = 0
+
+    # Day-banding (only meaningful once there's an arc to bisect — final_day > 2).
+    has_arc = final_day > 2
+    mid_lo = 0.30 * final_day
+    mid_hi = 0.70 * final_day
+    late_lo = 0.70 * final_day
+
+    def _day_of(obj, key="day", default=None):
+        try:
+            v = obj.get(key)
+            return int(v) if v is not None else default
+        except (AttributeError, TypeError, ValueError):
+            return default
+
+    decisions = _as_list(state.get("decisions", []))
+    quests = _as_list(state.get("quests", []))
+    consequences = _as_list(state.get("consequences", []))
+    flags = state.get("flags") if isinstance(state.get("flags"), dict) else {}
+    any_flag_set = any(bool(v) for v in flags.values())
+
+    # ── REVERSAL (the midpoint turn) ──────────────────────────────────────────────
+    reversal = False
+    # (1) engine-stamped, preferred — banded on reversal_day.
+    if bool(arc.get("midpoint_reversal_landed")):
+        rday = _day_of(arc, "reversal_day", default=0) or 0
+        # If the engine stamped a day, honor banding; if it stamped 0 (legacy) but the flag is
+        # set, trust the engine flag (it only flips when the engine recorded the reversal).
+        reversal = (not has_arc) is False and (rday <= 0 or (mid_lo <= rday <= mid_hi)) \
+            if has_arc else True
+        # A stamped reversal on a sub-3-day arc still counts (the engine is authoritative).
+        if not has_arc:
+            reversal = True
+    # (2) fallback — a turning event in the MIDDLE band (only if we have an arc to bisect).
+    if not reversal and has_arc:
+        for d in decisions:
+            if not isinstance(d, dict):
+                continue
+            dday = _day_of(d, "day")
+            if dday is None or not (mid_lo <= dday <= mid_hi):
+                continue
+            # a values-choice the engine REGISTERED moved something
+            if d.get("approval_tags") or any_flag_set:
+                reversal = True
+                break
+        if not reversal:
+            for q in quests:
+                if not isinstance(q, dict):
+                    continue
+                lpd = _day_of(q, "last_progress_day")
+                if lpd is None or not (mid_lo <= lpd <= mid_hi):
+                    continue
+                if q.get("objectives") and q.get("completed_objectives"):
+                    reversal = True
+                    break
+        if not reversal:
+            for cq in consequences:
+                if not isinstance(cq, dict) or not cq.get("fired"):
+                    continue
+                tday = _day_of(cq, "trigger_day")
+                if tday is not None and mid_lo <= tday <= mid_hi:
+                    reversal = True
+                    break
+
+    # ── CLIMAX (the late resolve) ─────────────────────────────────────────────────
+    climax = False
+    if bool(arc.get("climax_landed")):
+        cday = _day_of(arc, "climax_day", default=0) or 0
+        if not has_arc:
+            climax = True
+        else:
+            climax = cday <= 0 or (cday >= late_lo)
+    if not climax and has_arc:
+        for q in quests:
+            if not isinstance(q, dict) or q.get("status") != "completed":
+                continue
+            lpd = _day_of(q, "last_progress_day")
+            if lpd is not None and lpd >= late_lo:
+                climax = True
+                break
+        if not climax and _agenda_fired_in_state(state):
+            climax = True  # the betrayal landed — the strongest climax signal
+        if not climax:
+            for cq in consequences:
+                if not isinstance(cq, dict) or not cq.get("fired"):
+                    continue
+                tday = _day_of(cq, "trigger_day")
+                if tday is not None and tday >= late_lo:
+                    climax = True
+                    break
+
+    acts = max(acts_engine, acts_tag)
+    felt_three_act = (acts >= 3) and reversal and climax
+
+    if felt_three_act:
+        shape = "setup→reversal→climax"
+    else:
+        shape = (f"flat (acts {acts}/3, reversal {'✓' if reversal else '·'}, "
+                 f"climax {'✓' if climax else '·'})")
+
+    return {
+        "acts_engine_reached": int(acts_engine),
+        "acts_tag_reached": int(acts_tag),
+        "reversal": bool(reversal),
+        "climax": bool(climax),
+        "felt_three_act": bool(felt_three_act),
+        "shape": shape,
+    }
 
 
 def structural_coverage_from_state(state: dict, tool_counts=None) -> dict:
@@ -181,18 +362,7 @@ def structural_coverage_from_state(state: dict, tool_counts=None) -> dict:
     # claim "reached act 3" is a LIE. acts_reached is the highest CONTIGUOUS act actually
     # visited from 1: act 1 if 1 is tagged, act 2 only if 1 AND 2 are, act 3 only if 1, 2 AND 3
     # are. Visiting {3} reads 0 (act 1 itself never proven); {1,3} reads 1; {1,2,3} reads 3.
-    tagged_acts = {a for l in visited_locs if (a := _act_of(l.get("name"))) is not None}
-    if tagged_acts:
-        acts_reached = 0
-        for n in (1, 2, 3):
-            if n in tagged_acts:
-                acts_reached = n
-            else:
-                break  # a gap breaks the chain — never credit an act past the first missing one
-    else:
-        # Untagged world: we cannot prove Act 2/3 from names. acts_reached = 1 once any
-        # location was visited (the run is at least in Act 1), else 0.
-        acts_reached = 1 if distinct_visited >= 1 else 0
+    acts_reached = _tag_acts_reached(visited_locs)
 
     # combat from the transcript tool counts (ground truth for "a system fired"), reusing the
     # SAME bucket logic the readout stamp + the #961 gate share. When no tool counts are given,
@@ -226,6 +396,9 @@ def structural_coverage_from_state(state: dict, tool_counts=None) -> dict:
         "betrayal": bool(betrayal),
         "distinct_visited": int(distinct_visited),
     }
+    # FELT-SHAPE sub-block (additive — new keys only; the existing keys above are untouched).
+    # Did a real SETUP→REVERSAL→CLIMAX arc actually TURN, vs "N act-tagged rooms walked"?
+    block.update(felt_shape_from_state(state, tool_counts))
     block["summary"] = structural_summary(block)
     return block
 
@@ -236,13 +409,18 @@ def structural_summary(block: dict) -> str:
     def mark(b):
         return "✓" if b else "·"
     acts = int(block.get("acts_reached") or 0)
-    return (
+    base = (
         f"acts {acts}/3 · recruit {mark(block.get('recruited'))} · "
         f"camp {mark(block.get('camped'))} · approval {mark(block.get('approval_moved'))} · "
         f"quest-resolved {mark(block.get('quest_resolved'))} · evolved {mark(block.get('quest_evolved'))} · "
         f"travel {mark(block.get('traveled'))} · combat {mark(block.get('combat'))} · "
         f"betrayal {mark(block.get('betrayal'))}"
     )
+    # Trailing FELT-SHAPE segment — distinguishes a felt arc (setup→reversal→climax) from a
+    # walked one. Only appended when the felt-shape sub-block is present (additive).
+    if "felt_three_act" in block:
+        base += f" · shape {mark(block.get('felt_three_act'))}"
+    return base
 _OUT_KEYS = re.compile(
     r'"(roll|total|dc|success|failed|degree|crit|hit|damage|hp|remaining|defeated|dead|'
     r'attitude|approval|standing|status|evolves_to|xp|day)"\s*:\s*([^,}\]\n]+)')

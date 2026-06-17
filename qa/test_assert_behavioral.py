@@ -663,6 +663,100 @@ def test_structural_completeness_silent_in_combat_sprint(tmp_path):
     assert "structural_completeness" not in out
 
 
+# ── flat_arc (WARN-first) — a >=24-beat 3-act run whose arc never turned ───────────
+# A run that CLAIMS 3 acts (engine cursor or contiguous tags) but has felt_three_act False (no
+# real reversal+climax) is a flat fetch-quest shape, not a felt setup→reversal→climax. Shipped
+# WARN-first (fatal=False) behind FELT_SHAPE_MIN_BEATS=24, so it NEVER REDs yet and is silent
+# below 24 beats / on a non-3-act run. Graduates to fatal after a clean CI sweep.
+
+def _act3_completable_state(*, felt: bool) -> dict:
+    """A >=24-beat-eligible 3-act final state that satisfies the two FATAL structural clauses
+    (approval moved + quest resolved across the arc) so ONLY flat_arc can speak. `felt` toggles
+    whether the engine stamped a real midpoint reversal + climax (felt arc) or left them unlanded
+    (flat arc)."""
+    arc = {"act": 3, "day_act_entered": 15, "beats_in_act": 5}
+    if felt:
+        arc.update(midpoint_reversal_landed=True, reversal_day=10,
+                   climax_landed=True, climax_day=18)
+    else:
+        arc.update(midpoint_reversal_landed=False, reversal_day=0,
+                   climax_landed=False, climax_day=0)
+    return {
+        "leveling_mode": "milestone",
+        "day": 20,
+        "narrative_arc": arc,
+        "party": ["pc1", "comp1"],
+        "characters": {
+            "pc1": {"name": "Dal", "kind": "player", "location_id": "loc_c"},
+            # approval moved (attitude 20) → approval_frozen_run clause is clean
+            "comp1": {"name": "Brother Toll", "kind": "companion",
+                      "attitude_value": 20, "location_id": "loc_c",
+                      "last_long_rest_day": 5},
+        },
+        # quest resolved late → unresolved_arc clause is clean AND (when felt) the late climax lands
+        "quests": {"q1": {"title": "The Embergloom Pact", "status": "completed",
+                          "last_progress_day": 18,
+                          "objectives": ["x"], "completed_objectives": ["x"],
+                          "evolves_to": "the cult regroups"}},
+        "locations": {
+            "loc_a": {"name": "The Grove (Act 1)", "visited": True},
+            "loc_b": {"name": "Moonrise (Act 2)", "visited": True},
+            "loc_c": {"name": "The Lower City (Act 3)", "visited": True},
+        },
+        "decisions": [],
+        "consequences": [{"due": 21, "text": "the cult regroups"}],
+        "flags": {},
+    }
+
+
+def test_flat_arc_warns_not_red_on_24beat_flat_three_act(tmp_path):
+    # 24 DM beats, engine cursor at act 3, BOTH landed flags False, no mid-band reversal →
+    # felt_three_act False → flat_arc must WARN (not RED). The two fatal clauses are satisfied
+    # (approval moved + quest resolved) so the run stays GREEN overall.
+    events = _dm_text_turns(24) + _toolcall("long_rest") + _toolcall("complete_quest")
+    state = _act3_completable_state(felt=False)
+    rc, out = _run_gate(tmp_path, events, state)
+    assert rc == 0, out  # WARN-first: never RED
+    assert "[WARN] flat_arc" in out, out
+    assert "[FAIL] flat_arc" not in out
+
+
+def test_flat_arc_passes_clean_on_felt_three_act(tmp_path):
+    # A real 3-act run: the engine stamped a banded midpoint reversal + climax → felt_three_act
+    # True → flat_arc passes clean (PASS, no WARN).
+    events = _dm_text_turns(24) + _toolcall("long_rest") + _toolcall("complete_quest")
+    state = _act3_completable_state(felt=True)
+    rc, out = _run_gate(tmp_path, events, state)
+    assert rc == 0, out
+    assert "[PASS] flat_arc" in out, out
+    assert "[WARN] flat_arc" not in out
+
+
+def test_flat_arc_silent_below_24_beats(tmp_path):
+    # The SAME flat 3-act state at only 12 beats (>= STRUCTURAL_MIN_BEATS 10 but < 24) must NOT
+    # emit flat_arc at all — the higher floor keeps every currently-passing <24-beat run unaffected.
+    events = _dm_text_turns(12) + _toolcall("long_rest") + _toolcall("complete_quest")
+    state = _act3_completable_state(felt=False)
+    rc, out = _run_gate(tmp_path, events, state)
+    assert rc == 0, out
+    assert "flat_arc" not in out  # below the 24-beat floor → check skipped entirely
+
+
+def test_flat_arc_silent_on_non_three_act_run(tmp_path):
+    # A >=24-beat run that only reached act 2 (never CLAIMED 3 acts) must NOT be penalized for
+    # lacking a climax — flat_arc only fires when the run claims >=3 acts.
+    events = _dm_text_turns(24) + _toolcall("long_rest") + _toolcall("complete_quest")
+    state = _act3_completable_state(felt=False)
+    state["narrative_arc"]["act"] = 2
+    # drop the act-3 tag so the tag path also reads <3 (contiguous {1,2} → 2)
+    state["locations"]["loc_c"]["name"] = "The Lower City"  # untagged
+    rc, out = _run_gate(tmp_path, events, state)
+    assert rc == 0, out
+    # The clause runs (>=24 beats) but a <3-act run is never PENALIZED: it passes, never WARNs.
+    assert "[WARN] flat_arc" not in out, out
+    assert "[FAIL] flat_arc" not in out
+
+
 # ── FIX 4: party_traveled in-place-progression exception (#623 false-cap) ─────────
 # A multi-beat arc that RESOLVED in a single location (clock advanced + quest completed,
 # beats >= 8) is a SUCCESS — it must PASS party_traveled. A frozen opening (day 1/morning,
