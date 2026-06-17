@@ -67,6 +67,44 @@ def _tally(events: list[dict]) -> tuple[Counter, int]:
     return tools, dm_text_turns
 
 
+def _dm_narration_texts(events: list[dict]) -> list[str]:
+    """The DM's player-facing prose turns — each assistant top-level text block (what the player
+    actually reads). The OOC-leak gate scans these. Mirrors _tally's text extraction."""
+    out: list[str] = []
+    for ev in events:
+        if ev.get("type") != "assistant":
+            continue
+        for b in (ev.get("message", {}) or {}).get("content") or []:
+            if isinstance(b, dict) and b.get("type") == "text" and (b.get("text") or "").strip():
+                out.append(b["text"])
+    return out
+
+
+# OOC craft-scaffolding leaking into PLAYER-FACING prose — the defect class the LLM story scorer
+# reliably "blends away" (a 2026-06-17 adversarial audit found 5+ first-person authoring preambles
+# in a 4.6-prose run, entirely un-gated, inflating the score to 4.8). The DM SKILL.md FICTION-ONLY
+# rule is the source fix; this is the deterministic backstop the scorer can't be trusted for.
+# EVERY pattern is OOC-ONLY phrasing that does NOT occur in in-character D&D fiction or dialogue —
+# so a clean beat (even one full of combat prose, or a character saying "let me introduce you")
+# scores 0 and can never false-RED. (Kept deliberately high-confidence over exhaustive.) An
+# adversarial machine-checked sweep (2026-06-17) tightened three over-broad patterns: a bare
+# `through the engine` matched literal machinery (Gond/artificer/Steel-Watch fiction) — now
+# verb/noun-anchored to the game-engine sense; `as the pc` collided with any in-world "PC"
+# initialism — now full-word only; and `your nat...` collided with fictional stammering / `spine
+# hook` with a literal flensing tool — both dropped from the gate (the SKILL.md prose rule still
+# bans the raw die-vocab + craft jargon at the source).
+_NARRATION_LEAK = [
+    r"\bas the player character\b",                             # "seat <X> as the player character"
+    r"\b(?:advancement|leveling|progression|run it|route it|resolve it|process it"
+    r"|the (?:move|action|roll|turn)) through the engine\b",    # the game-ENGINE sense, not machinery
+    r"\bcontinuity check\b",                                    # first-person authoring self-correction
+    r"\bhere'?s how round \w+ (?:actually )?went\b",            # OOC combat-replay framing (round-anchored)
+    r"\blet me set the order of it\b",                          # OOC initiative / turn-ordering preamble
+    r"\binciting incident\b",                                   # plot-craft jargon (never in player fiction)
+]
+_NARRATION_LEAK_RE = [re.compile(p, re.I) for p in _NARRATION_LEAK]
+
+
 def _tool_events(events: list[dict]) -> list[tuple[str, dict, object, bool, str]]:
     """Ordered (short_name, input, result_obj_or_None, is_error, raw_text).
 
@@ -152,6 +190,22 @@ def main() -> int:
     # 1) the run produced real DM output (catches the dead/blank run)
     chk("dm_produced_output", dm_text > 0 or sum(tools.values()) > 0,
         f"dm_text_turns={dm_text} tool_calls={sum(tools.values())}")
+
+    # 1b) OOC narration-leak floor (2026-06-17 craft audit): craft scaffolding / first-person
+    # authoring preambles ("Now let me seat <X> as the player character", "Continuity check — let me
+    # correct that", "Here's how round one actually went") / raw system vocab leaking into the
+    # player-facing prose is a real felt-quality defect the LLM story scorer blends away (it scored
+    # a 5-leak / 4.6-prose run 4.8). Proportionate: 0 leaks pass; 1-2 incidental leaks WARN; >=3 in
+    # a substantial run is a pervasively-broken player surface -> RED (caps the lenses like any
+    # structural break). High-confidence OOC-only patterns ⇒ a clean in-fiction beat is always 0.
+    leak_hits = [t for t in _dm_narration_texts(events) if any(rx.search(t) for rx in _NARRATION_LEAK_RE)]
+    n_leak = len(leak_hits)
+    _leak_red = n_leak >= 3 and dm_text >= MIN_BEATS
+    chk("narration_no_ooc_leak", n_leak == 0,
+        f"{n_leak} player-facing beat(s) leaked OOC craft-scaffolding/bookkeeping/system-vocab"
+        + (f" — e.g. {' '.join(leak_hits[0].split())[:90]!r}" if leak_hits else "")
+        + (" [pervasive ⇒ RED]" if _leak_red else (" [WARN]" if n_leak else "")),
+        fatal=_leak_red)
 
     # 2) two-sided duo runs: BOTH the player and the DM took turns (catches the
     #    "1 player turn, 0 DM turns" botch). Only when a chat log exists.

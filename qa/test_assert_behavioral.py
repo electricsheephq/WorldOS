@@ -748,3 +748,81 @@ def test_party_traveled_still_red_when_arc_resolved_but_too_few_beats(tmp_path):
     rc, out = _run_gate(tmp_path, events, state)
     assert "[FAIL] party_traveled" in out, out
     assert rc == 1, out
+
+
+# ── narration_no_ooc_leak (2026-06-17 craft audit) — OOC scaffolding in player-facing prose ──────
+# The 5 VERBATIM leak lines the audit found in the 4.8-scored gs-ember-deep run.
+_LEAK_SEAT = "Now let me seat Kield Vant as the player character — an ex-Flaming Fist soldier fits a Fighter build in this world."
+_LEAK_CONTINUITY = "Continuity check — authored Garrick Donn is the *miller* (the dazed man up at the mill), so the cart in town is run by his hand. Let me correct that and bring a new face on-screen."
+_LEAK_ORDER = "The blade comes out and the room tips into violence. Let me set the order of it."
+_LEAK_REPLAY = "The grey miller never gets his answer, and neither do you — not yet. Here's how round one actually went: the dead mill-hand came at you first."
+_LEAK_ADVANCE = "The party hardens on the long way down — let me set their advancement through the engine before the climax."
+_ALL_LEAKS = [_LEAK_SEAT, _LEAK_CONTINUITY, _LEAK_ORDER, _LEAK_REPLAY, _LEAK_ADVANCE]
+
+# Clean in-fiction prose engineered to brush AGAINST the patterns without being a leak — the
+# false-positive guard that keeps the gate from ever RED-ing a clean beat.
+_CLEAN_NEARMISS = [
+    '"Let me introduce you to the captain," she says; "he\'ll want to hear this."',  # dialogue "let me introduce"
+    "The siege engine groaned as the crew hauled it through the gate.",              # engine, but not "through the engine"
+    "A natural spring fed the pool where the deer drank at dusk.",                   # "natural", not "natural 1"
+    '"Let me set the table," the innkeep mutters, clearing the mugs.',               # "let me set", not "the order of it"
+    "The bridge cracked at its midpoint and pitched you toward the black water.",    # "midpoint" in fiction
+    "He recounted how the night went, every ugly detail of it.",                    # "how the night went", not "round"
+    "You read the room: three farmers, a nervous barkeep, the door at your back.",   # clean tension prose
+    # the 2026-06-17 adversarial sweep's machine-checked killers — now clean after hardening:
+    "Steam screamed through the engine block as the Steel Watcher lurched upright.",  # literal machinery, not the game-engine sense
+    "She would serve as the PC — the Principal Courier — until the writ cleared.",    # in-world "PC" initialism, not "player character"
+    '"Your nat... your natural gift for trouble," he sighed, trailing off.',          # fictional stammer on a "nat-" word
+    "The torturer's spine hook glinted on the rack, wet and patient.",               # literal flensing implement, not craft jargon
+]
+
+
+def _dm_leak(text: str) -> dict:
+    return {"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}}
+
+
+def test_narration_leak_patterns_match_all_five_verbatim_leaks():
+    for line in _ALL_LEAKS:
+        assert any(rx.search(line) for rx in ab._NARRATION_LEAK_RE), f"missed leak: {line!r}"
+
+
+def test_narration_leak_patterns_do_not_match_clean_fiction():
+    for line in _CLEAN_NEARMISS:
+        hit = [rx.pattern for rx in ab._NARRATION_LEAK_RE if rx.search(line)]
+        assert not hit, f"false positive on clean line {line!r}: {hit}"
+
+
+def test_dm_narration_texts_extracts_assistant_prose():
+    events = [_dm_leak("First beat of fiction."), _assistant_tool_use("t1", "roll", {}),
+              _dm_leak("Second beat of fiction.")]
+    assert ab._dm_narration_texts(events) == ["First beat of fiction.", "Second beat of fiction."]
+
+
+def test_narration_leak_three_plus_in_substantial_run_is_red(tmp_path):
+    # 3 distinct OOC leaks across a substantial run (>= MIN_BEATS dm_text) -> the leak check is FATAL.
+    events = [_dm_leak(_LEAK_SEAT), _dm_leak(_LEAK_ORDER), _dm_leak(_LEAK_ADVANCE)] + _dm_text_turns(6)
+    rc, out = _run_gate(tmp_path, events, _with_party({"leveling_mode": "milestone"}))
+    assert "[FAIL] narration_no_ooc_leak" in out, out
+
+
+def test_narration_leak_one_or_two_is_warn_not_red(tmp_path):
+    # A single incidental leak in a substantial run is a WARN (surfaced), never a RED.
+    events = [_dm_leak(_LEAK_CONTINUITY)] + _dm_text_turns(6)
+    rc, out = _run_gate(tmp_path, events, _with_party({"leveling_mode": "milestone"}))
+    assert "[WARN] narration_no_ooc_leak" in out, out
+    assert "[FAIL] narration_no_ooc_leak" not in out, out
+
+
+def test_narration_leak_three_in_short_run_is_only_warn(tmp_path):
+    # 3 leaks but only 3 dm_text turns (< MIN_BEATS) -> WARN, not RED: a tiny smoke isn't RED-capped.
+    events = [_dm_leak(_LEAK_SEAT), _dm_leak(_LEAK_ORDER), _dm_leak(_LEAK_REPLAY)]
+    rc, out = _run_gate(tmp_path, events, _with_party({"leveling_mode": "milestone"}))
+    assert "[WARN] narration_no_ooc_leak" in out, out
+    assert "[FAIL] narration_no_ooc_leak" not in out, out
+
+
+def test_narration_leak_clean_run_passes(tmp_path):
+    # A clean session (even with near-miss fiction) PASSES the leak gate.
+    events = _dm_text_turns(4) + [_dm_leak(t) for t in _CLEAN_NEARMISS]
+    rc, out = _run_gate(tmp_path, events, _with_party({"leveling_mode": "milestone"}))
+    assert "[PASS] narration_no_ooc_leak" in out, out
