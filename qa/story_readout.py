@@ -257,9 +257,24 @@ def _tool_summary(name: str, inp) -> str:
     return " ".join(bits[:4])
 
 
+# Keys whose engine value is strictly boolean. On a beat with several tool results joined into
+# one blob, the permissive value capture can grab adjacent narration/lore prose as a "value"; a
+# boolean key whose captured value isn't true/false is such a mis-capture — drop it so the outcome
+# line never renders garble like `success="The Book of Grace …`.
+_BOOL_OUT_KEYS = {"success", "failed", "crit", "hit", "defeated", "dead"}
+
+
 def _outcome(txt: str) -> str:
     m = _OUT_KEYS.findall(txt or "")
-    return " ".join(f"{k}={v.strip()[:18]}" for k, v in m[:7])
+    bits = []
+    for k, v in m[:12]:
+        v = v.strip().strip('"').strip()
+        if k in _BOOL_OUT_KEYS and v.lower() not in ("true", "false"):
+            continue  # narration captured as a boolean value — skip the garble
+        if not v:
+            continue
+        bits.append(f"{k}={v[:18]}")
+    return " ".join(bits[:7])
 
 
 # Tool calls whose INPUT can carry a companion approval move via `approval_tags`. In real play
