@@ -16,7 +16,7 @@
       "command": "uv",
       "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}/servers/voice", "--group", "kokoro", "server.py"],
       "env": {
-        "CLAWDND_TTS_BACKEND": "kokoro"
+        "WORLDOS_TTS_BACKEND": "kokoro"
       }
     }
   }

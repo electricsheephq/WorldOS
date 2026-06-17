@@ -23,7 +23,7 @@
         "server.py"
       ],
       "env": {
-        "CLAWDND_RULES_OFFLINE": "1"
+        "WORLDOS_RULES_OFFLINE": "1"
       }
     },
     "clawdnd-voice": {
@@ -36,7 +36,7 @@
         "server.py"
       ],
       "env": {
-        "CLAWDND_TTS_BACKEND": "null"
+        "WORLDOS_TTS_BACKEND": "null"
       }
     }
   }

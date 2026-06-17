@@ -6,7 +6,7 @@ import server
 @pytest.fixture(autouse=True)
 def offline(monkeypatch):
     # Never hit the network in tests; exercise only the bundled SRD data.
-    monkeypatch.setenv("CLAWDND_RULES_OFFLINE", "1")
+    monkeypatch.setenv("WORLDOS_RULES_OFFLINE", "1")
     yield
 
 

@@ -22,7 +22,7 @@ preserved under ``_starter`` so the curated engine fields are never lost. Every
 full-set entry also carries its untouched upstream record under ``_open5e``.
 
 The live dnd5eapi.co fallback still covers anything absent from both layers. Set
-CLAWDND_RULES_OFFLINE=1 to disable network lookups (used in CI).
+WORLDOS_RULES_OFFLINE=1 to disable network lookups (used in CI).
 """
 
 from __future__ import annotations

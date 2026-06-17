@@ -52,7 +52,7 @@ jobs:
     # harness hiccup) from going red — the warning annotation + uploaded scorecards carry the signal.
     continue-on-error: true
     env:
-      # RELAXED PR thresholds (looser than the nightly north-star CLAWDND_STORY_MIN/MECH_MIN of
+      # RELAXED PR thresholds (looser than the nightly north-star WORLDOS_STORY_MIN/MECH_MIN of
       # 4.3/4.5) so a single PR duo isn't flagged over scorer noise. Below these -> soft warning.
       QG_STORY_MIN: "4.0"
       QG_MECH_MIN: "4.2"
@@ -101,7 +101,7 @@ jobs:
           tmp="$(mktemp -d)"
           printf '# transcript\n' > "$tmp/t.md"
           printf '{}\n'           > "$tmp/state.json"
-          CLAWDND_SCORE_GUARD_ONLY=1 bash qa/score.sh \
+          WORLDOS_SCORE_GUARD_ONLY=1 bash qa/score.sh \
             "$tmp/t.md" "$tmp/state.json" qa/rubric.md qa/score_schema.json "$tmp/out.json" 0.01
           test -s "$tmp/out.json"
           rm -rf "$tmp"

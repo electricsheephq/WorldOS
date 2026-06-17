@@ -192,10 +192,10 @@ cfg = {"mcpServers": {
         "env": {"WORLDOS_STATE_DIR": state_dir, "CLAWDND_STATE_DIR": state_dir}},
     "clawdnd-rules": {"type": "stdio", "command": "uv",
         "args": ["run", "--directory", f"{root}/servers/rules", "server.py"],
-        "env": {"CLAWDND_RULES_OFFLINE": "1"}},
+        "env": {"WORLDOS_RULES_OFFLINE": "1"}},
     "clawdnd-voice": {"type": "stdio", "command": "uv",
         "args": ["run", "--directory", f"{root}/servers/voice", "server.py"],
-        "env": {"CLAWDND_TTS_BACKEND": "null"}},
+        "env": {"WORLDOS_TTS_BACKEND": "null"}},
 }}
 json.dump(cfg, open(out, "w"))
 PY

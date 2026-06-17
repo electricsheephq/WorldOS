@@ -15,7 +15,7 @@ in-process (the suite runs under the engine venv, per the sprint spec):
     imports the rules ``server`` once, and answers JSON line-protocol requests
     over stdin/stdout. One process for the whole session keeps it fast
     (~0.3s cold, then near-instant) and single-process from the host's view —
-    no xdist, no per-test spawn. ``CLAWDND_RULES_OFFLINE=1`` is set in its env
+    no xdist, no per-test spawn. ``WORLDOS_RULES_OFFLINE=1`` is set in its env
     exactly as the rules suite does, so it never touches the network.
 
 The engine is the SOLE WRITER of state and the player facade is READ-ONLY; this
@@ -54,7 +54,7 @@ def voice_server(monkeypatch_session):
     NULL TTS backend so no audio / PyTorch is ever touched (CI-safe)."""
     # Force the null backend before the module (and any lazy backend build) runs.
     monkeypatch_session.setenv("WORLDOS_TTS_BACKEND", "null")
-    monkeypatch_session.setenv("CLAWDND_TTS_BACKEND", "null")
+    monkeypatch_session.setenv("WORLDOS_TTS_BACKEND", "null")
     # The voice package uses `pythonpath = ["."]`; mirror that so `import server`,
     # `import registry`, `from _env import ...`, `from interface import ...`
     # resolve to the voice package, not the engine one.
@@ -188,7 +188,7 @@ def rules_client():
     if not RULES_VENV_PY.exists():
         pytest.skip(f"rules venv python not found at {RULES_VENV_PY}")
     env = dict(os.environ)
-    env["CLAWDND_RULES_OFFLINE"] = "1"   # offline, exactly as the rules suite sets it
+    env["WORLDOS_RULES_OFFLINE"] = "1"   # offline, exactly as the rules suite sets it
     env["WORLDOS_RULES_OFFLINE"] = "1"   # canonical name too (no deprecation noise)
     env["PYTHONUNBUFFERED"] = "1"
     proc = subprocess.Popen(

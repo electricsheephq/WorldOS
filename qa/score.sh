@@ -57,11 +57,11 @@ stamp_prompt_hash() {
 }
 
 # --- test-only dry-run hook (additive; unset == today) ---------------------------------
-# CLAWDND_SCORE_GUARD_ONLY=1 runs all guards + emits the hashed artifact, then exits 0
+# WORLDOS_SCORE_GUARD_ONLY=1 runs all guards + emits the hashed artifact, then exits 0
 # BEFORE the live `claude -p` loop. This keeps the determinism test gateway-free / offline
 # (it never touches Eva, the gateway, or any LLM). In normal use this is unset and the
 # script behaves exactly as before.
-if [ "${CLAWDND_SCORE_GUARD_ONLY:-}" = "1" ]; then
+if [ "${WORLDOS_SCORE_GUARD_ONLY:-${CLAWDND_SCORE_GUARD_ONLY:-}}" = "1" ]; then
   printf '{}\n' > "$OUT"
   stamp_prompt_hash "$OUT"
   exit 0
