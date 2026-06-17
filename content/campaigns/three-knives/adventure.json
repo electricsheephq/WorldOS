@@ -1,0 +1,1135 @@
+{
+  "id": "three-knives",
+  "title": "Three Knives at the Ledger-Gate",
+  "ruleset": "SRD 5.2",
+  "level_range": [
+    3,
+    7
+  ],
+  "session_length_minutes": 240,
+  "world_id": "baldurs-gate",
+  "era": "1492 DR, the winter after the Absolute fell",
+  "premise": "Risen-Gate is a contested border town on the Risen Road, the last walled crossing before the Lower City of Baldur's Gate, and the war left it with no king. Three powers now hold it by the throat at once: a remnant of the Flaming Fist who still keep the law by the letter, the smugglers' Vine who keep the desperate fed by breaking that law, and the almshouse of the Pale Sister who keeps the dying alive and asks no questions of either. They have shared the gate-tolls in an uneasy three-way truce for a year — and now a road-reaver warlord called Maddox Crale, who calls himself the Tollwright, has set a noose around the town and means to own the gate and everyone who passes through it. The militia is broken, the truce is fraying, and the only people who can hold Risen-Gate are three who hate each other's methods: Sergeant Vael of the Fist, who will not bend the law to save a life; Korrin the Fence of the Vine, who will break any law to save one; and Sister Anwen of the almshouse, who will spend mercy on friend and enemy alike. They will each follow the party — and each of them is watching how the party answers the judgment-calls a siege forces, because every choice that satisfies one of the three curdles another. Maddox is the blade at the gate. The three knives are the ones at the party's back, and which of them turns depends entirely on which value the party betrays.",
+  "hook": "The truce keeper is dead. Old Reeve Hessom, who held Risen-Gate's three powers in balance for a year, was found at dawn with his throat open and the toll-strongbox emptied — and within the hour the Fist had arrested a starving Vine runner caught with three of the missing coins, the almshouse had taken in a man beaten half to death by that same Fist patrol, and the Tollwright's outriders had burned the eastern grain-barns in the night. Each of the three powers blames the others; each is one wrong move from open knives in the street; and a road-reaver army is two days out. The party arrives at the gate as outsiders with no debt to any faction, which is exactly why the dying reeve's clerk — a frightened girl named Pip who saw who really opened the strongbox — runs to them and no one else. She will only say it once, and quietly: it wasn't the runner, it wasn't the Fist, it wasn't the Vine. The reeve was killed to break the truce on purpose, two days before the Tollwright arrives — and whoever did it wanted Risen-Gate at its own throat when the army came. Find out who, before the town tears itself apart and hands Maddox the gate without a fight.",
+  "themes": [
+    "three good people whose definitions of 'good' cannot all be satisfied at once",
+    "law, survival, and mercy as competing — not complementary — virtues",
+    "a single choice that wins one ally by betraying another",
+    "the siege as a forge: every judgment-call has a human cost and a watching companion",
+    "the enemy at the gate is less dangerous than the knives at your back"
+  ],
+  "voices": {
+    "narrator-dm": "The Dungeon Master's narration voice. Used for boxed read-aloud text and scene description.",
+    "companion-default": "Sergeant Maelin Vael, the law-first companion — a by-the-book Flaming Fist sergeant holding Risen-Gate's order together with her bare hands.",
+    "npc-elder": "Sister Anwen of the Pale Sister's almshouse, the mercy-first companion, and old Reeve Hessom in his dying breath.",
+    "npc-rogue": "Korrin Vane, 'the Fence,' the survival-first companion — a Vine smuggler who keeps the desperate fed by breaking the law that keeps them in line.",
+    "npc-male-1": "Maddox Crale, the Tollwright — the road-reaver warlord besieging the gate — and assorted reavers, Fist troopers, and Vine runners.",
+    "npc-female-1": "Pip, the reeve's terrified clerk and the campaign's first witness, and Brannick, the doomed Vine runner the Fist arrests."
+  },
+  "antagonist": {
+    "id": "antagonist",
+    "name": "Maddox Crale, the Tollwright",
+    "title": "Reaver-Lord of the Risen Road",
+    "voice_id": "npc-male-1",
+    "hidden": false,
+    "goal": "To take Risen-Gate whole and undamaged and own the only walled crossing on the Risen Road — turning the toll-gate into his private tollwright's bench, where every wagon, refugee, and grain-cart between the city and the north pays him to live. Maddox does not want to storm the walls and burn what he means to keep; he wants the town to break ITSELF. A garrison at its own throat is a gate that opens from within. So before his army arrives he murders the one man holding the three-way truce together, seeds each faction's worst suspicion of the others, and lets law, survival, and mercy do his siege-work for him — arriving on the second day to accept the surrender of a town too busy knifing itself to fight him. He believes a wall is only as strong as the agreement behind it, and he has spent his whole reaver's career learning that the agreement is always the weak point.",
+    "scheme_by_act": [
+      "ACT 1: Maddox's work is already done before the party arrives — his planted killer murdered Reeve Hessom, emptied the toll-strongbox to frame the Vine, and slipped three marked coins onto a starving runner so the Fist would arrest him within the hour. The party investigates the murder through a town tearing along its three seams, and discovers the truth Pip the clerk saw: the reeve was killed to BREAK THE TRUCE on a timer, two days before the army comes. To learn anything, the party must work with all three factions at once — and recruit the three who lead them: Vael, Korrin, and Anwen. The first thread: someone wants this town at its own throat.",
+      "ACT 2: With the truce already cracking, Maddox tightens the screw from outside — outriders burn the grain, poison a well, and drag prisoners to the reaver-camp to be ransomed back at a price that empties the almshouse and the Vine's coffers both. The town's three powers are forced into impossible joint decisions under his pressure: who eats when the grain burns, who hangs for the reeve, who is left outside the wall when the gates close. Every one of these is a judgment-call that satisfies one companion's value and betrays another's — and the party, not the dead reeve, is now the balance-point. The midpoint: the party learns Maddox's planted agent is still INSIDE the walls, and that the truce can still be saved or shattered for good depending on which value the party has been spending.",
+      "ACT 3: Maddox arrives at the gate and offers terms — open the gate, name him Tollwright, and the town lives; resist, and he takes it over their corpses. But his real weapon is the fracture he's spent two days widening: at the climax, whichever companion the party has betrayed most across the siege reaches their breaking point, and Maddox (or his inside agent) has an offer waiting precisely for that wound. The party must hold the gate, expose and put down the inside agent, and break Maddox's host — but they must do it with three knives at their back, two of which stand with them and one of which, the one they failed, may turn. The win is holding Risen-Gate AND holding the three together; the loss is a gate that opens from within because the party spent one virtue too cheaply."
+    ],
+    "reveal": "Maddox is no hidden villain — every faction names him as the army on the road from the first scene. The REVEAL is not who he is but what his weapon actually is: not the host outside but the fracture inside, and the slow, dawning understanding that the murdered reeve, the framed runner, the burned grain, and every cruel either-or the siege forces are all ONE plan to make Risen-Gate destroy itself before he arrives. The second reveal is the inside agent — Maddox left one of his own people in the town a year ago, bonded into one of the three factions, and that agent is the hand that killed the reeve and keeps the wounds open. The hardest reveal lands last and is about the PARTY: that the companion who turns at the climax does so not because Maddox is persuasive but because the party, choosing among three good people under pressure, genuinely betrayed one of them — and the engine, not the DM, makes that betrayal real.",
+    "stat_block": "Maddox fights in the Act 3 climax at the gate, and unlike a schemer he WILL trade blades — he is a road-reaver who came up by the sword and respects only a wall that fights back. Use the bundled Knight stat block (AC 18, HP 52, CR 3) scaled up for a level 6-7 party (or a Veteran/Gladiator at a harder table; a Bandit Captain + Knight for a two-body boss), reflavored as a scarred toll-warlord with a reaver's banner. He commands from horseback at the gate, surrounded by his host (Bandits/Thugs/Scouts + a Berserker or two), and his real threat is the inside agent and the turned companion, not his own HP. He offers terms before blades and will withdraw a broken host to bleed the town another season rather than die on a held wall — a Tollwright who rides off to set a new toll elsewhere is a fine dangling thread.",
+    "max_hp": 52,
+    "armor_class": 18,
+    "hit_dice": "8d8+16",
+    "proficiency_bonus": 2,
+    "abilities": {
+      "strength": 16,
+      "dexterity": 11,
+      "constitution": 14,
+      "intelligence": 11,
+      "wisdom": 11,
+      "charisma": 15
+    },
+    "damage_resistances": [],
+    "damage_immunities": [],
+    "condition_immunities": []
+  },
+  "companions": [
+    {
+      "id": "companion-vael",
+      "name": "Sergeant Maelin Vael",
+      "voice_id": "companion-default",
+      "race": "Human",
+      "background": "Soldier",
+      "classes": [
+        {
+          "name": "Fighter",
+          "level": 3
+        }
+      ],
+      "abilities": {
+        "strength": 16,
+        "dexterity": 12,
+        "constitution": 15,
+        "intelligence": 11,
+        "wisdom": 13,
+        "charisma": 10
+      },
+      "proficiency_bonus": 2,
+      "armor_class": 18,
+      "max_hp": 28,
+      "hit_dice": "3d10",
+      "hit_dice_remaining": 3,
+      "skill_proficiencies": [
+        "Athletics",
+        "Intimidation",
+        "Perception",
+        "Investigation"
+      ],
+      "saving_throw_proficiencies": [
+        "str",
+        "con"
+      ],
+      "spells_known": [],
+      "spells_prepared": [],
+      "spell_slots": {},
+      "personality": "The last sergeant of the Flaming Fist garrison left holding Risen-Gate, and she holds it by the law or not at all. Vael came up in a company that fell apart around her during the Absolute war — officers who took bribes, troopers who looted the dead, a captain who hanged the wrong man because it was easier than finding the right one — and she decided, in the wreckage, that the only thing standing between a town and the mob is the LAW applied the same to everyone, no exceptions, no mercy bought and no rule bent. She is not cruel and she is not a zealot for cruelty; she is a zealot for PROCESS, certain that the moment you hang a man without trial because you're sure, or let a thief walk because he's hungry, you have become the thing the law exists to stop. She keeps her word like a debt of honor and despises a summary execution above all things — not because she's soft, but because a killing without due process is exactly the lawlessness she's bleeding to hold back. She'll follow the party because someone with no faction's debt is the only honest broker left in Risen-Gate, and because she needs the reeve's murder solved by EVIDENCE before the town hangs the wrong man and proves her worst fear true. Blunt, disciplined, allergic to expedience, and quietly terrified that holding the line will cost her every person she's trying to protect.",
+      "notes": "LAW-FIRST companion. Front-line anvil (sword-and-board Fighter: Second Wind, Action Surge by Act 2, a third tier by Act 3) and the party's INVESTIGATION/INTIMIDATION social muscle — she wants the murderer found by evidence and tried, not lynched. Her approval vocabulary is DELIBERATELY ORTHOGONAL to Korrin's and Anwen's: she rewards keeping_your_word and due_process and is wounded by summary_execution and bending the law for a sympathetic case — which means the SAME choice that wins Korrin (springing a desperate thief, cutting a deal that skirts the law) LOSES Vael, and the same choice that wins Anwen (sparing an enemy without trial) can read to Vael as exactly the lawlessness she's holding back. She is the moral pole of ORDER. THE FORK: honored, Vael becomes the party's incorruptible captain at the gate, the one who keeps the defense from becoming a massacre. Curdled — if the party breaks its word to her, executes a prisoner out of hand, or lets the law be spent like coin — her betrayal agenda fires on the decision_flag 'broke_your_oath': she does not join Maddox for gold, she WITHDRAWS the Fist from a defense she no longer believes is lawful, or stands aside / turns at the climax, certain the party has become the lawlessness she swore to stop. Reach her combat choices through companion_suggest_action; give her a voiced line each scene. Level her as a Fighter matching the party.",
+      "companion_dossier": {
+        "wound": "She watched her own company rot from the inside during the war — bribed officers, looted dead, a man hanged without trial because certainty was cheaper than evidence — and decided the law applied without exception is the only wall between a town and the mob, so she cannot bend it even once without feeling the whole wall give.",
+        "wants": [
+          "solve the reeve's murder by EVIDENCE and try the killer, not lynch a convenient suspect",
+          "hold Risen-Gate by the law so it's still worth holding when the siege ends",
+          "be a soldier of a law she doesn't have to be ashamed of, for once"
+        ],
+        "fears": [
+          "that holding the line by the book will get the very people she's protecting killed",
+          "becoming the kind of officer she watched destroy her old company — certain, expedient, lawless",
+          "that the law is already too broken to be worth the blood she's spending on it"
+        ],
+        "values": [
+          "due process over a convenient certainty",
+          "a word kept is a debt paid",
+          "the law applied the same to the powerful and the starving alike",
+          "order that protects, not order that punishes"
+        ],
+        "approval_likes": [
+          "keeping_your_word",
+          "due_process",
+          "try_the_accused",
+          "hold_the_law_under_pressure",
+          "refuse_a_bribe",
+          "evidence_over_certainty",
+          "protect_a_prisoner",
+          "treat_powerful_and_poor_alike"
+        ],
+        "approval_dislikes": [
+          "summary_execution",
+          "break_your_word",
+          "spring_the_framed_runner",
+          "bend_the_law_to_save_a_life",
+          "sparing_an_enemy",
+          "cut_a_lawless_deal",
+          "lynch_a_suspect",
+          "take_a_bribe"
+        ],
+        "banter_tags": [
+          "old_fist_company_that_rotted",
+          "law_as_the_only_wall",
+          "contempt_for_expedience",
+          "soldier_discipline"
+        ],
+        "camp_prompts": [
+          "Vael cleans her blade by the fire and asks the party, flatly, whether they think a law you bend for a good reason is still a law the next morning — or just a favor you'll have to do again for someone worse.",
+          "She names the man her old captain hanged without trial — wrong man, she's sure of it now — and admits she joined this fight so she'd never have to watch that happen again, then asks if the party means to make her watch it anyway.",
+          "After a hard day she says the part that frightens her isn't Maddox. It's how EASY it would be to do the lawless thing once, to save someone, and how she can already feel the party tempting her to it — and how much she wants to let them."
+        ]
+      },
+      "arc": {
+        "arc_gates": [
+          {
+            "id": "vael-gate-trust",
+            "kind": "loyalty",
+            "threshold": 25,
+            "note": "Vael decides the party is the honest broker Risen-Gate has lacked since the reeve died — she shows them the Fist's real evidence on the murder (the marked coins don't match the strongbox's tally; the framed runner couldn't have done it) and chooses to solve this by law WITH the party instead of around them. The first time she trusts an outsider with the truth."
+          },
+          {
+            "id": "vael-gate-quest",
+            "kind": "personal_quest",
+            "threshold": 50,
+            "note": "Vael's own quest opens — to find and TRY the reeve's true killer rather than let the town hang Brannick the runner, clearing the framed man and proving the murder was a deliberate strike at the truce. She asks the party's help to do it by the book under siege conditions, knowing every faction would rather she pick a convenient suspect and be done."
+          },
+          {
+            "id": "vael-gate-betrayal",
+            "kind": "betrayal",
+            "threshold": 20,
+            "note": "THE FORK FOR VAEL. If the party has broken its word to her, executed a prisoner out of hand, lynched a suspect, or spent the law like coin to please the Vine or the almshouse, her faith breaks. She does not turn for gold — she WITHDRAWS the Fist from a defense she's decided is no longer lawful, or at the climax stands aside / turns her troopers against a party that has become the very lawlessness she swore to hold back. Reachable only when approval has curdled and 'broke_your_oath' is set; honored, this gate stays locked forever."
+          },
+          {
+            "id": "vael-gate-loyalty",
+            "kind": "loyalty",
+            "threshold": 75,
+            "note": "Vael breaks the law's back the RIGHT way — once, knowingly, for the party — and survives it whole. At the gate she stands as the incorruptible captain of the defense, tries the true killer in front of the whole town instead of lynching him, and proves the law can hold a wall without becoming the mob. The soldier of an honest order she was afraid she'd never get to be."
+          }
+        ],
+        "agenda": {
+          "trigger": "attitude_below",
+          "value": 20,
+          "note": "Vael's faith in the party as honest brokers collapses. Pushed past her breaking point — her word broken, a prisoner executed without trial, the law spent like coin to buy the Vine or the almshouse's favor — she does the grim thing she fears most: she decides the party has become the lawlessness she's bleeding to stop, and withdraws the Fist from the defense (or turns her troopers) at the climax, certain that holding a gate for people who've abandoned the law is just helping the wrong mob win. The turn fires as a real event, ideally at the gate when the party is most exposed: she tells them she swore an oath to the law, not to them, and they made her choose.",
+          "decision_flag": "broke_your_oath"
+        }
+      }
+    },
+    {
+      "id": "companion-korrin",
+      "name": "Korrin Vane",
+      "voice_id": "npc-rogue",
+      "race": "Half-Elf",
+      "background": "Criminal",
+      "classes": [
+        {
+          "name": "Rogue",
+          "level": 3
+        }
+      ],
+      "abilities": {
+        "strength": 10,
+        "dexterity": 16,
+        "constitution": 13,
+        "intelligence": 13,
+        "wisdom": 12,
+        "charisma": 14
+      },
+      "proficiency_bonus": 2,
+      "armor_class": 15,
+      "max_hp": 21,
+      "hit_dice": "3d8",
+      "hit_dice_remaining": 3,
+      "skill_proficiencies": [
+        "Stealth",
+        "Deception",
+        "Sleight_of_Hand",
+        "Persuasion"
+      ],
+      "saving_throw_proficiencies": [
+        "dex",
+        "int"
+      ],
+      "spells_known": [],
+      "spells_prepared": [],
+      "spell_slots": {},
+      "personality": "Korrin 'the Fence' Vane runs the Vine — the smugglers' web that has kept Risen-Gate's poor alive through a year of war by moving grain past the Fist's tolls, springing debtors before the law could break them, and feeding the people the toll-takers and almshouses between them couldn't reach. Korrin learned the lesson young and hard: that the LAW is a luxury of people who've already eaten, that rigid rules applied to the desperate don't keep order, they keep the poor poor and dead, and that the only mercy worth a damn is the one that gets there before the funeral. Where Vael sees the wall between the town and the mob, Korrin sees the toll that starves the mob into existence. Korrin is a charmer and a cynic with a genuinely soft center under the patter — sparing a cornered thief, cutting a deal that lets a desperate person walk, bending or breaking a law that's about to get someone killed, these are not crimes to Korrin, they're the whole job. What Korrin can't abide is rigid law for its own sake — the rule that hangs the runner for three coins while the powerful skim the tolls, the process that takes two days a starving family doesn't have. Korrin follows the party because the reeve's murder is about to get a Vine runner hanged for a crime the Vine didn't commit, and because someone with no faction's collar is the only one who might cut the right deal instead of enforcing the wrong rule.",
+      "notes": "SURVIVAL-FIRST companion. Skirmisher/face (Rogue: Sneak Attack, Cunning Action, Expertise; Uncanny Dodge by Act 2, more Sneak dice by Act 3) and the party's DECEPTION/STEALTH/PERSUASION lever for the deals, springs, and back-channels the siege needs. Korrin's approval vocabulary is DELIBERATELY ORTHOGONAL to Vael's: Korrin rewards cutting_a_deal and sparing_a_desperate_thief and is wounded by rigid_law_that_gets_people_killed — which means the SAME by-the-book choice that wins Vael (try the accused, hold the law, refuse to spring the runner) LOSES Korrin, and the deal that delights Korrin is exactly the lawlessness that wounds Vael. Korrin sits ACROSS from Vael on the law/survival axis and at an ANGLE to Anwen (they agree on saving the desperate, but Korrin will cut a hard deal Anwen finds cruel, and Anwen will spare an enemy Korrin finds suicidal). The moral pole of SURVIVAL. THE FORK: honored, Korrin opens the Vine's whole web for the defense — smuggled grain, secret ways through the wall, a runner network worth an army. Curdled — if the party enforces a rigid law that gets Korrin's people killed, turns in a desperate thief, or lets a starving runner hang to keep the Fist happy — the betrayal agenda fires on 'turned_in_the_thief': Korrin doesn't join Maddox, Korrin takes the Vine and GOES, pulling the smuggled grain and the secret ways out from under a town that proved the law mattered more than its people — or worse, cuts a separate deal with the Tollwright to get the desperate out while the party holds an emptier wall. Reach combat choices via companion_suggest_action; voiced line each scene; level as a Rogue matching the party.",
+      "companion_dossier": {
+        "wound": "Korrin watched the law work exactly as written once — a starving cousin hanged for stealing bread while the toll-takers who skimmed the granary walked free — and learned that rigid rules applied to the desperate don't keep the peace, they keep the poor dying on schedule, so now the only mercy Korrin trusts is the one that breaks the rule in time.",
+        "wants": [
+          "keep the Vine's people — the desperate, the runners, the debtors — alive THROUGH the siege, by whatever deal it takes",
+          "see the framed runner Brannick walk free instead of hanging for the powerful's crime",
+          "prove that bending the law to save a life is the realest kind of order there is"
+        ],
+        "fears": [
+          "that the law will do what it always does — hang the poor on time, on the books, and call it justice",
+          "that being the one who cuts the hard deals has hollowed out the soft center Korrin still protects",
+          "that the party will choose the rule over the people and Korrin will have followed the wrong knife"
+        ],
+        "values": [
+          "the life in front of you over the rule in the book",
+          "a deal that saves someone over a process that's too slow to",
+          "mercy that gets there before the funeral",
+          "no one is worth less than the toll they couldn't pay"
+        ],
+        "approval_likes": [
+          "cutting_a_deal",
+          "sparing_a_desperate_thief",
+          "spring_the_framed_runner",
+          "bend_the_law_to_save_a_life",
+          "feed_the_desperate_first",
+          "spend_lives_to_save_lives",
+          "back_the_poor_over_the_powerful",
+          "find_the_third_option"
+        ],
+        "approval_dislikes": [
+          "rigid_law_that_gets_people_killed",
+          "turn_in_the_thief",
+          "let_the_runner_hang",
+          "hold_the_law_under_pressure",
+          "enforce_the_toll_on_the_starving",
+          "refuse_to_deal",
+          "side_with_the_powerful_on_principle",
+          "summary_execution"
+        ],
+        "banter_tags": [
+          "the_cousin_the_law_hanged",
+          "law_as_a_luxury_of_the_fed",
+          "the_vine_keeps_people_alive",
+          "charm_over_a_soft_center"
+        ],
+        "camp_prompts": [
+          "Korrin shuffles a deck of marked toll-chits by the fire and asks the party, lightly, whether they think there's a difference between a law and a leash — and whether Vael's noticed she can't tell them apart.",
+          "Korrin names the cousin the law hanged for a loaf of bread, all the proper paperwork in order, and asks the party — not lightly now — what good a wall is if it's built to keep the hungry on the wrong side of it.",
+          "After a hard day Korrin admits the deals have a cost: that cutting the hard one too many times leaves you good at it, and that the soft center the patter protects is getting harder to find, and asks if the party's noticed Korrin getting colder."
+        ]
+      },
+      "arc": {
+        "arc_gates": [
+          {
+            "id": "korrin-gate-trust",
+            "kind": "loyalty",
+            "threshold": 25,
+            "note": "Korrin decides the party might actually find the third option instead of enforcing the easy rule — and opens the first Vine secret: that Brannick the framed runner was set up, that the marked coins were planted, and that the Vine has a way through the wall the Fist doesn't know about. The first time Korrin trusts an outsider with a runner's life."
+          },
+          {
+            "id": "korrin-gate-quest",
+            "kind": "personal_quest",
+            "threshold": 50,
+            "note": "Korrin's own quest opens — to get Brannick and the most vulnerable of the Vine's people out of the gallows' and the siege's reach before the law or the reaver-camp claims them, using the smuggled ways Korrin has been holding in reserve. Korrin asks the party's help to spring a man the Fist has charged, knowing it puts them crosswise to Vael."
+          },
+          {
+            "id": "korrin-gate-betrayal",
+            "kind": "betrayal",
+            "threshold": 20,
+            "note": "THE FORK FOR KORRIN. If the party has enforced a rigid law that got Vine people killed, turned in a desperate thief, or let the framed runner hang to keep the Fist's favor, Korrin's last faith in the party breaks. Korrin doesn't ride to Maddox for coin — Korrin pulls the Vine OUT, taking the smuggled grain, the runner-network, and the secret ways with them, leaving a town that chose the rule over its people to hold an emptier wall; or cuts a separate evacuation deal with the Tollwright. Reachable only when approval has curdled and 'turned_in_the_thief' is set; honored, this gate stays locked forever."
+          },
+          {
+            "id": "korrin-gate-loyalty",
+            "kind": "loyalty",
+            "threshold": 75,
+            "note": "Korrin throws the whole Vine behind the defense — smuggled grain to feed the walls, the secret ways to flank the reaver-camp, the runner-network turned into the town's eyes and hands. Korrin proves that the web built to break the law can save the town the law alone couldn't, and finds, holding the line beside Vael of all people, that the soft center survived after all."
+          }
+        ],
+        "agenda": {
+          "trigger": "attitude_below",
+          "value": 20,
+          "note": "Korrin's faith that the party will choose people over rules collapses. Pushed past the breaking point — a rigid law enforced that got Vine people killed, a desperate thief turned in, the framed runner left to hang for the Fist's approval — Korrin does the survivor's math: a town that spends its poor to keep its rules is a town worth leaving. Korrin pulls the Vine and the smuggled grain and the secret ways out at the worst moment (or cuts a private deal with the Tollwright to evacuate the desperate while the party holds a hollow wall), and tells the party they should have saved the people in front of them instead of the principle behind them.",
+          "decision_flag": "turned_in_the_thief"
+        }
+      }
+    },
+    {
+      "id": "companion-anwen",
+      "name": "Sister Anwen",
+      "voice_id": "npc-elder",
+      "race": "Human",
+      "background": "Acolyte",
+      "classes": [
+        {
+          "name": "Cleric",
+          "level": 3
+        }
+      ],
+      "abilities": {
+        "strength": 11,
+        "dexterity": 12,
+        "constitution": 14,
+        "intelligence": 12,
+        "wisdom": 16,
+        "charisma": 13
+      },
+      "proficiency_bonus": 2,
+      "armor_class": 16,
+      "max_hp": 24,
+      "hit_dice": "3d8",
+      "hit_dice_remaining": 3,
+      "skill_proficiencies": [
+        "Medicine",
+        "Insight",
+        "Persuasion",
+        "Religion"
+      ],
+      "saving_throw_proficiencies": [
+        "wis",
+        "cha"
+      ],
+      "spells_known": [],
+      "spells_prepared": [
+        "Cure Wounds",
+        "Bless",
+        "Healing Word",
+        "Sanctuary",
+        "Spiritual Weapon",
+        "Lesser Restoration"
+      ],
+      "spell_slots": {
+        "1": {
+          "maximum": 4,
+          "used": 0
+        },
+        "2": {
+          "maximum": 2,
+          "used": 0
+        }
+      },
+      "personality": "Sister Anwen keeps the Pale Sister's almshouse just inside Risen-Gate's wall, and she has spent the war years learning the one lesson the Fist and the Vine both refuse: that the wounded man in front of you has no faction. She tends Fist troopers and Vine runners and reaver prisoners on the same cots with the same hands, asks no one's allegiance before she stops their bleeding, and has buried enough people killed by certainty — the law's and the lawless's both — to believe that the only thing worth defending is the person, not the cause. Anwen is not naive; she is the most clear-eyed person in the town about what cruelty costs, precisely because she's the one who sews it up afterward. She will spare an enemy who's down, tend a man both other factions want dead, and refuse, absolutely, to let the defense of the town become a slaughter of the people outside it — because the moment you decide some lives are collateral, you've already lost the thing the wall was supposed to protect. What wounds her is collateral cruelty: the prisoner killed to send a message, the well poisoned to starve the camp that holds women and children, the wounded left outside the gate to die so the town inside can feel safe. She follows the party because the siege is about to demand exactly those cruelties and someone has to be the voice that says the cost is too high — and because the reeve, before he died, was the one man who'd let her tend both sides without calling it treason.",
+      "notes": "MERCY-FIRST companion. Healer/support and the party's MEDICINE/INSIGHT/PERSUASION conscience (Cleric: Cure Wounds, Healing Word, Bless, Spiritual Weapon, Sanctuary; Channel Divinity and 2nd-tier slots by Act 2; 3rd-tier by Act 3 — keeps the anvil standing). Anwen's approval vocabulary is DELIBERATELY ORTHOGONAL: she rewards sparing_an_enemy and tending_the_wounded and is wounded by collateral_cruelty — which means a choice that satisfies Vael (execute the lawful sentence, hold the gate shut against the desperate-but-dangerous crowd outside) or Korrin (a hard deal that spends some lives to save more, a poisoned well that breaks the camp) can read to Anwen as the collateral cruelty she cannot abide. She agrees with Korrin on saving the desperate but splits on METHOD (she won't spend lives to save lives); she agrees with Vael on order but splits on MERCY (she'll spare the enemy the law would hang). The moral pole of MERCY. THE FORK: honored, Anwen's almshouse becomes the heart that keeps the defense human — healing the walls, turning prisoners into witnesses, brokering the surrender of reavers who'd rather not die. Curdled — if the party orders a massacre, kills prisoners to send a message, leaves the wounded outside to die, or poisons the well — the betrayal agenda fires on 'ordered_the_massacre': Anwen doesn't take up arms against the party, she WITHDRAWS her mercy and her sanctuary, throws open the almshouse to the enemy wounded the party left to die, declares the town's defense a thing she will not bless, and at the climax stands between the party and the people they mean to slaughter — a pacifist's betrayal that costs the party their healer and their conscience at once. Reach combat choices via companion_suggest_action; voiced line each scene; level as a Cleric matching the party.",
+      "companion_dossier": {
+        "wound": "She has buried too many people killed by other people's certainty — the law's righteous executions and the lawless's necessary sacrifices both — and learned in the burying that the moment you decide some lives are collateral, you've already lost the thing you were defending, so she will not let one more person become acceptable losses, not for law, not for survival, not for the town.",
+        "wants": [
+          "keep the defense of Risen-Gate from becoming a slaughter of the desperate outside its wall",
+          "tend every wounded soul — Fist, Vine, or reaver — as a person with no faction",
+          "prove that a town can be saved without spending the people it decides don't count"
+        ],
+        "fears": [
+          "that the siege will make collateral cruelty feel necessary and everyone will agree to it but her",
+          "that she's the only one left who counts the cost, and that her count doesn't matter",
+          "that mercy is a luxury the wall can't afford, and that she'll be proven a fool for spending it"
+        ],
+        "values": [
+          "the wounded man in front of you has no faction",
+          "no life is acceptable collateral",
+          "mercy spent on an enemy is still mercy, and still worth it",
+          "a town saved by cruelty has already lost what the wall was for"
+        ],
+        "approval_likes": [
+          "sparing_an_enemy",
+          "tending_the_wounded",
+          "shelter_the_desperate_at_the_gate",
+          "take_a_prisoner_alive",
+          "refuse_collateral_cruelty",
+          "broker_a_surrender",
+          "heal_friend_and_foe_alike",
+          "find_the_third_option"
+        ],
+        "approval_dislikes": [
+          "collateral_cruelty",
+          "order_the_massacre",
+          "kill_a_prisoner_to_send_a_message",
+          "leave_the_wounded_outside_to_die",
+          "poison_the_well",
+          "spend_lives_to_save_lives",
+          "execute_the_surrendered",
+          "summary_execution"
+        ],
+        "banter_tags": [
+          "the_wounded_have_no_faction",
+          "buried_by_others_certainty",
+          "mercy_is_not_a_luxury",
+          "clear_eyed_about_cruelty"
+        ],
+        "camp_prompts": [
+          "Anwen rolls bandages by the fire and asks the party, quietly, whether they've noticed that Vael and Korrin agree on exactly one thing — that there's a line of people who can be allowed to die for the cause — and that they only disagree on where to draw it.",
+          "She names a reaver boy she tended last winter who'd have died if she'd asked his allegiance first, and asks the party whether the wall they're about to defend is worth more than the boy on the wrong side of it.",
+          "After a hard day Anwen admits the thing she's most afraid of isn't the army. It's the moment the siege makes a cruelty feel reasonable to her too — and she asks the party to tell her, when it comes, if she's stopped counting the cost."
+        ]
+      },
+      "arc": {
+        "arc_gates": [
+          {
+            "id": "anwen-gate-trust",
+            "kind": "loyalty",
+            "threshold": 25,
+            "note": "Anwen decides the party can be trusted to count the cost with her — she lets them into the almshouse to see who she's really keeping alive (a reaver prisoner the Fist wants hanged, a Vine runner the law wants charged, both on the same cots) and tells them the one thing she knows that the factions don't: who among the wounded saw the reeve die. The first time she trusts an outsider with a life both sides want ended."
+          },
+          {
+            "id": "anwen-gate-quest",
+            "kind": "personal_quest",
+            "threshold": 50,
+            "note": "Anwen's own quest opens — to get the desperate non-combatants (and the wounded the factions want dead) safely through the siege without any of them becoming the acceptable losses the defense keeps demanding, and to broker the surrender of reavers who'd rather not die for the Tollwright. She asks the party's help to defend the town WITHOUT a massacre, knowing both Vael and Korrin have already drawn their lines."
+          },
+          {
+            "id": "anwen-gate-betrayal",
+            "kind": "betrayal",
+            "threshold": 20,
+            "note": "THE FORK FOR ANWEN. If the party has ordered a massacre, killed prisoners to send a message, left the wounded outside the gate to die, or poisoned the reaver-camp's well, Anwen's faith that the defense can stay human breaks. She does not raise a blade — she WITHDRAWS her mercy and sanctuary, opens the almshouse to the enemy wounded the party abandoned, declares the town's defense a thing she cannot bless, and at the climax stands between the party and the people they mean to slaughter. Reachable only when approval has curdled and 'ordered_the_massacre' is set; honored, this gate stays locked forever."
+          },
+          {
+            "id": "anwen-gate-loyalty",
+            "kind": "loyalty",
+            "threshold": 75,
+            "note": "Anwen makes the almshouse the heart of a defense that stays human — healing the walls, turning prisoners into witnesses against the inside agent, brokering the surrender of reavers who lay down arms rather than die for a toll. She proves that the town can be held without spending the people it decided didn't count, and stands at the gate as the conscience that kept the victory from costing the thing it was won to protect."
+          }
+        ],
+        "agenda": {
+          "trigger": "attitude_below",
+          "value": 20,
+          "note": "Anwen's faith that the defense can stay human collapses. Pushed past the breaking point — a massacre ordered, prisoners killed to send a message, the wounded left outside to die, the well poisoned — she does the one thing a healer can: she stops healing the party's war. She withdraws her mercy and her sanctuary, opens the almshouse to the enemy wounded the party abandoned, declares the town's defense a cruelty she will not bless, and at the climax stands unarmed between the party and the people they mean to slaughter, telling them she swore to count every cost and they made the cost too high.",
+          "decision_flag": "ordered_the_massacre"
+        }
+      }
+    }
+  ],
+  "npcs": [
+    {
+      "id": "pip",
+      "name": "Pip",
+      "voice_id": "npc-female-1",
+      "personality": "The dead reeve's clerk: a sharp, half-starved girl of perhaps sixteen who kept Reeve Hessom's toll-ledgers and slept in the gatehouse loft, which is why she was the one awake when the strongbox was opened and the reeve's throat was cut. She is terrified — she saw enough to know the killer wasn't who the Fist arrested, and not enough to be safe from whoever it really was — and she runs to the party precisely because they owe no faction and so can't be the one who silences her. Quick, frightened, fiercely loyal to the old reeve who fed her, and the first thread of the whole mystery.",
+      "attitude": "terrified, watchful, testing",
+      "role": "primary quest-giver / first witness",
+      "wants": "To stay alive, to see the reeve's real killer found, and to make someone with a sword understand that the murder was meant to break the truce on a timer — two days before the army comes.",
+      "knows": [
+        "She saw the strongbox opened from the inside — the killer had a key or knew where the reeve hid his, which the arrested Vine runner Brannick never could have.",
+        "The three marked coins found on Brannick don't match the strongbox's tally — they were planted; the rest of the toll-money went somewhere else.",
+        "The killer moved like someone who belonged in the gatehouse — not a stranger over the wall. Someone the reeve trusted enough to turn his back on.",
+        "The reeve, dying, said one word she didn't understand: 'Tollwright.' She didn't know then that it was a name."
+      ],
+      "secret": "Pip pocketed the reeve's real key-ring when she fled — the one that opens the strongbox and the gatehouse postern — and lives in terror that the killer knows she has it. It's the physical clue that the murder was an inside job; she'll surrender it only to a party that earns her trust, and it's the human stake (a hunted child holding the one piece of proof) that makes the conspiracy real.",
+      "stat_block": "Noncombatant. If endangered, treat as Commoner; she will hide, run, or trade her one secret for protection before she'll fight."
+    },
+    {
+      "id": "maddox",
+      "name": "Maddox Crale, the Tollwright",
+      "voice_id": "npc-male-1",
+      "personality": "The road-reaver warlord on the Risen Road: a broad, scarred man of fifty with a toll-collector's ledger chained at his belt and a reaver's banner over his host, who calls himself the Tollwright because he means to make the only walled crossing for forty miles into his private toll-bench. Maddox is not a berserker; he is a patient, almost genial siege-craftsman who learned over a long career that walls are strong and the agreements behind them are not, and that the cheapest way to take a town is to make it break itself. He murdered the reeve, framed the Vine, and seeded the factions' worst suspicions of each other not out of cruelty but out of economy — a garrison at its own throat surrenders a gate undamaged. He offers terms before blades, respects a wall that fights back, and will ride off to set a toll elsewhere rather than die on a held wall. The genial menace of a man who has done this to a dozen towns and expects this one to fall the same easy way.",
+      "attitude": "genial, patient, then implacable",
+      "role": "antagonist — see top-level 'antagonist' for stats and scheme",
+      "wants": "To take Risen-Gate whole and own its toll-gate — by making the town surrender itself, ideally without spending a reaver; and to use the fracture he planted (the murdered truce, the inside agent, whichever companion the party betrays) as his real siege-engine.",
+      "knows": [
+        "Everything about the plan: he ordered the reeve killed, the Vine framed, the suspicions seeded — and he left an inside agent in Risen-Gate a year ago, bonded into one of the three factions.",
+        "Exactly which pressures will crack the truce: who eats when the grain burns, who hangs for the reeve, who's left outside when the gates shut — every judgment-call the siege forces.",
+        "That a town divided three ways will hand him the gate, and that the surest lever is whichever of the three leaders the party has wounded most — he has an offer ready for that wound.",
+        "The reaver-host's true strength and weakness: it's a mercenary band that will break and ride off if the wall holds and the toll looks too expensive — he can't afford a real siege, only a cheap surrender."
+      ],
+      "secret": "His host is weaker than it looks — a reaver band that came for an easy toll, not a battle; if the town holds together and the wall fights back, the cost outruns the prize and Maddox rides off. His whole strategy depends on the town breaking first, which means the PARTY holding the three companions together is the thing that actually defeats him — the fracture is the weapon, and the party's choices are what arm or disarm it.",
+      "stat_block": "See top-level 'antagonist'. Knight (AC 18, HP 52, CR 3) scaled up for a level 6-7 party (Veteran/Gladiator, or Bandit Captain + Knight for a two-body boss at a strong table), reflavored as a scarred toll-warlord on horseback at the gate. He fights in the Act 3 climax, surrounded by his host (Bandits/Thugs/Scouts + a Berserker), offers terms before blades, and withdraws a broken host rather than die on a held wall.",
+      "max_hp": 52,
+      "armor_class": 18,
+      "hit_dice": "8d8+16",
+      "proficiency_bonus": 2,
+      "abilities": {
+        "strength": 16,
+        "dexterity": 11,
+        "constitution": 14,
+        "intelligence": 11,
+        "wisdom": 11,
+        "charisma": 15
+      }
+    },
+    {
+      "id": "brannick",
+      "name": "Brannick",
+      "voice_id": "npc-female-1",
+      "personality": "The Vine runner the Fist arrested for the reeve's murder: a gaunt, frightened young man caught with three of the missing toll-coins he swears he found in the gutter, now chained in the gatehouse cell awaiting a hanging the whole town wants over with. Brannick is no killer — he's a starving runner who moved grain for Korrin's Vine and happened to be the convenient body when the frame needed one. He is the living fulcrum of the campaign's central tension: Vael wants him TRIED (and is increasingly sure he's innocent), Korrin wants him SPRUNG (a man hanging for the powerful's crime), Anwen wants him SPARED (a life the siege would spend). Terrified, protesting, and the human face of every judgment-call the party makes.",
+      "attitude": "terrified, pleading, innocent",
+      "role": "the framed prisoner / the fulcrum of the central choice (Act 1-2)",
+      "wants": "To not hang for a murder he didn't commit, to get back to the Vine and the sister he runs grain for, and to make someone believe he found those coins instead of stealing them off a dead man.",
+      "knows": [
+        "Where he really found the three marked coins — dropped on the postern path, the way a planter would scatter a frame, not the way a thief would hide a haul.",
+        "That a hooded figure he took for a Fist trooper passed him on the postern path that night, going FROM the gatehouse — the inside agent, though Brannick doesn't know it.",
+        "The Vine's small secrets (a way through the wall, who runs which grain) that make him valuable to spring and dangerous to hang.",
+        "That he is going to die for nothing unless someone with no stake in the factions chooses to look."
+      ],
+      "secret": "Brannick recognized the hooded figure's gait and ring — he knows, without knowing he knows, who the inside agent is, because he's seen them in one of the three factions' colors. Drawing it out of him (Persuasion/Insight, and keeping him alive long enough) is a key to the Act 2 midpoint reveal — which is exactly why springing OR trying OR sparing him all matter, and why letting him hang buries the clue with him.",
+      "stat_block": "Noncombatant while chained (Commoner). If freed he'll run, not fight; his value is the clue he carries and the choice he forces, not his sword-arm."
+    },
+    {
+      "id": "reeve-hessom",
+      "name": "Reeve Hessom",
+      "voice_id": "npc-elder",
+      "personality": "The murdered truce-keeper, seen only in the opening and in flashback/testimony: an old, tired, scrupulously fair toll-reeve who held Risen-Gate's three powers in a year-long balance by being the one man all three trusted to be honest. Hessom believed the town survived only because law, survival, and mercy each got a third of the say and none got all of it — a living argument for the very balance the party must now keep. His murder is the inciting wound; his memory is the campaign's lost center, the thing the three companions are each, in their own incompatible way, trying to honor.",
+      "attitude": "dead (the inciting victim); fair and weary in testimony",
+      "role": "the murdered truce-keeper / the lost center (Act 1)",
+      "wants": "(In memory and final words) To have the truce survive him — to have the three powers hold together against the road instead of turning on each other, which is exactly what his killer engineered.",
+      "knows": [
+        "(Via his ledger, his hidden notes, and Pip's testimony) That he feared the truce was being undermined from inside — he'd noticed toll-money going missing in small amounts for months before the night it all vanished.",
+        "That he kept a private record of which faction each suspicious shortfall traced to — and that the pattern pointed not at any of the three powers but at a single hand moving among all of them.",
+        "That he said 'Tollwright' as he died — he'd learned the name of the army on the road, and learned it too late.",
+        "(His example) That the only thing that ever held Risen-Gate was no single virtue getting the whole say."
+      ],
+      "secret": "Hessom had begun to suspect the inside agent before he died, and hid his evidence (a coded ledger-page) where only someone who understood all three factions could find it — which means recovering it rewards a party that has engaged ALL THREE companions, not just one. His death proves he was right and too slow; his hidden page is the thread to the inside agent.",
+      "stat_block": "Deceased. Appears only as a body, a voice in his dying line, and as testimony/documents. Noncombatant."
+    },
+    {
+      "id": "corporal-dass",
+      "name": "Corporal Dass",
+      "voice_id": "npc-male-1",
+      "personality": "Vael's second in the broken Fist garrison: a hard, frightened veteran who wants the reeve's murder closed FAST — hang the runner, calm the town, hold the wall — and chafes against Vael's insistence on evidence and trial while an army marches. Dass is not corrupt, he's scared and tired, the everyman who thinks expedience is mercy when the clock's running. He's the soft seam in the Fist: pushed, he'll argue for the lynching that would shatter the truce and damn Vael's faith; turned, he becomes the trooper who helps the party try the real killer in the open. The voice of 'just hang him and be done' that the party (and Vael) must answer.",
+      "attitude": "tense, expedient, turnable",
+      "role": "Fist insider / pressure toward the easy injustice (Act 1-2)",
+      "wants": "To close the murder, quiet the town, and hold the gate alive — and to not have to think too hard about whether the runner's actually guilty.",
+      "knows": [
+        "The Fist's evidence on the murder (the marked coins, the cell, the timeline) — and, if pressed honestly, that the timeline doesn't fit the runner.",
+        "That half the garrison wants Brannick hanged tonight and that Vael is the only thing stopping it — a lynching that would break the truce exactly as the killer intends.",
+        "The gatehouse layout, the watch rotation, and who had access to the reeve's key the night he died (a short, damning list).",
+        "That a hooded figure in Fist colors was seen on the postern path — which he's been afraid to report because it points inside his own company."
+      ],
+      "secret": "Dass himself was briefly bribed months ago — a small thing, a toll waved through — by a smiling face he now realizes might have been the inside agent, and his fear of being exposed as the rot makes him push hardest for the quick hanging that would bury the question. A party that offers him a way to come clean rather than just leverage turns him into a witness instead of an obstacle.",
+      "stat_block": "If forced to fight, a Guard or Veteran (AC 16, HP 58, CR 3); but he is a turnable insider, not a combatant — he'd far rather argue for the lynching than draw on the party."
+    },
+    {
+      "id": "mother-sefin",
+      "name": "Mother Sefin",
+      "voice_id": "npc-elder",
+      "personality": "The eldest of the Vine and Korrin's old mentor — a wry, weather-beaten woman who ran grain past tolls before Korrin was born and remembers when Risen-Gate's law hanged her own people for feeding theirs. She's the Vine's institutional memory and its conscience-of-survival: the one who taught Korrin that the law is a luxury of the fed, and the one now quietly worried that Korrin has gotten too good at the hard deals. She's an ally and a lore-anchor — she knows the Vine's secret ways, the history of the three-way truce, and why the powerful have always skimmed the tolls the runners hang for. A wary friend to a party that proves it won't spend the poor.",
+      "attitude": "wary, dry-humored, loyal to her own",
+      "role": "ally / Vine lore-anchor / Korrin's mirror",
+      "wants": "To keep the Vine's people alive through the siege, to see Korrin stay the person under the patter, and to make the party understand that the wall starves the people it's supposed to protect.",
+      "knows": [
+        "The Vine's secret ways through and under Risen-Gate's wall — the smuggled routes that are worth an army in a siege.",
+        "The real history of the toll: that the powerful have skimmed it for generations while the runners hanged, which is why the Vine exists at all.",
+        "That the reeve was the rare honest toll-man and that his murder smells like an inside job to anyone who's watched the gate for thirty years.",
+        "Where the Vine has stockpiled grain the burned barns didn't reach — the supply that can feed the walls if the party keeps Korrin on side."
+      ],
+      "secret": "Sefin has long suspected there's a planted Tollwright agent in the town — she's seen a face move too easily between all three factions over the past year — but with no proof and no faction willing to hear the Vine accuse anyone, she's kept it to herself. She'll share the suspicion (and a description) with a party that has earned the Vine's trust, seeding the inside-agent reveal.",
+      "stat_block": "Noncombatant by age, but no fool — if the Vine's quarter is attacked she defends her people as a Spy (AC 12, HP 27, CR 1), fighting dirty and from cover; she'd rather smuggle the vulnerable out than stand and trade blows."
+    }
+  ],
+  "locations": [
+    {
+      "id": "loc-gatehouse",
+      "name": "The Risen-Gate Gatehouse & Toll-Yard (Hub)",
+      "description": "The party's hub: the great twin-towered gatehouse of Risen-Gate, where the Risen Road passes through the wall and every wagon, refugee, and grain-cart pays its toll — now a tense, ungoverned heart with the reeve dead, his strongbox empty, and his blood not yet scrubbed from the toll-bench. The toll-yard inside the gate is where the three powers meet and glare: a Fist watch-post on one side, the Vine's runners loitering in the shadow of the wall on the other, the Pale Sister's almshouse just within bowshot of the gate. Refugees from the burned barns crowd the yard; everyone has a side; the truce that held this all together died with the reeve. This is the safe base the party returns to between acts — to rest, resupply, share findings with Pip and the three companions, and feel the town tighten one notch closer to its own throat each day the army draws nearer.",
+      "connections": [
+        "loc-fist-post",
+        "loc-vine-quarter",
+        "loc-almshouse",
+        "loc-reaver-camp"
+      ],
+      "notes": "HOME-BASE HUB. Pip (quest-giver/first witness), Brannick (the chained fulcrum in the gatehouse cell), and the three companions (Vael at the Fist post, Korrin among the Vine, Anwen at the almshouse) all orbit here. The party rests, levels, and gathers clues here; the three-way tension is reinforced every act by the crowding refugees and the army's approach. The hub fans out to the three faction sites (Act 1-2) and the reaver-camp/gate (Act 3). CRITICAL STAGING: this is where the three competing-agenda companions are recruited (Act 1) and where the judgment-calls that move their gauges in opposite directions are presented (every act)."
+    },
+    {
+      "id": "loc-fist-post",
+      "name": "The Flaming Fist Watch-Post (Act 1 — Law)",
+      "description": "The remnant garrison's strong-point against the inner wall: a cramped barracks-and-cell of stacked arms, a duty-roster nailed to the door, and the gatehouse holding-cell where Brannick the framed runner waits to hang. Sergeant Vael runs it on discipline and too little sleep, Corporal Dass argues for the quick hanging, and half the garrison would lynch the runner tonight if Vael let them. This is where the LAW makes its claim on the murder — by evidence and trial if Vael has her way, by the noose if she doesn't — and where the party recruits the law-first knife.",
+      "connections": [
+        "loc-gatehouse"
+      ],
+      "notes": "ACT 1 SITE — the LAW pole (levels 3-4). Recruit Sergeant Vael here. Beats: SOCIAL (Vael wants the murder solved by evidence; Dass wants Brannick hanged tonight — the party's first orthogonal judgment-call: back due process [+Vael, -Korrin] or push for a fast resolution); EXPLORATION (the Fist's evidence — the marked coins that don't match the tally, the watch-rotation, the postern path; clues the murder was an inside job); the first taste of the central tension — that trying Brannick by the book pleases Vael and infuriates Korrin, and that the lynching half the garrison wants would shatter the truce on the killer's schedule. See scenes scene-a1-*."
+    },
+    {
+      "id": "loc-vine-quarter",
+      "name": "The Vine's Quarter (Act 1 — Survival)",
+      "description": "A warren of lean-tos and cellar-ways in the lee of the wall where the Vine keeps the desperate fed: smuggled grain in false-bottomed carts, runners coming and going through gaps the Fist doesn't know about, Mother Sefin holding court over a soup-pot that feeds the people the tolls and the almshouse between them can't reach. With the barns burned and a runner in the Fist's cell, the quarter is frightened and furious — the law is about to hang one of its own for the powerful's crime. This is where SURVIVAL makes its claim — that the rules are killing the poor on schedule — and where the party recruits the survival-first knife.",
+      "connections": [
+        "loc-gatehouse"
+      ],
+      "notes": "ACT 1 SITE — the SURVIVAL pole (levels 3-4). Recruit Korrin the Fence here. Beats: SOCIAL (Korrin wants Brannick SPRUNG — a man hanging for a crime the Vine didn't commit — and the Vine's grain and secret ways are the price of Korrin's loyalty; the orthogonal judgment-call sharpens: spring the runner [+Korrin, -Vael] or insist on the lawful trial [+Vael, -Korrin]); EXPLORATION (the Vine's secret ways through the wall, the stockpiled grain that can feed a siege, Mother Sefin's lore on the toll and her suspicion of an inside agent); the deepening tension — that the same mercy Korrin calls survival, Vael calls lawlessness. See scenes scene-a1-*."
+    },
+    {
+      "id": "loc-almshouse",
+      "name": "The Pale Sister's Almshouse (Act 1 — Mercy)",
+      "description": "A low, lime-washed hall of cots just inside the wall where Sister Anwen tends the wounded of every side — a Fist trooper and a Vine runner and a captured reaver boy on the same row of beds, all bleeding the same red. Refugees from the burned barns crowd the doorway; the man the Fist beat half to death lies in the corner; and Anwen moves among them all asking no one's allegiance. This is where MERCY makes its claim — that the wounded have no faction and no life is acceptable collateral — and where the party recruits the mercy-first knife, and first feels how her conscience cuts across both the law's and the survival's.",
+      "connections": [
+        "loc-gatehouse"
+      ],
+      "notes": "ACT 1 SITE — the MERCY pole (levels 3-4). Recruit Sister Anwen here. Beats: SOCIAL (Anwen tends all three factions' wounded and the captured reaver the Fist wants hanged; the orthogonal judgment-call completes the triangle — sparing the reaver prisoner [+Anwen] reads as lawlessness to Vael and naivety to Korrin, who'd trade the prisoner for leverage); EXPLORATION (a wounded witness who saw the reeve die, the reaver boy's intel on Maddox's host, Anwen's clear-eyed read of who really benefits from the truce breaking). Establishes that Anwen agrees with Korrin on saving the desperate but splits on method, and with Vael on order but splits on mercy. See scenes scene-a1-*."
+    },
+    {
+      "id": "loc-reaver-camp",
+      "name": "The Tollwright's Camp & the Held Gate (Act 2-3 — the Siege)",
+      "description": "Out beyond the wall on the Risen Road, the reaver-host's camp blooms like a wound: cookfires and ransom-pens and Maddox Crale's banner over a command-tent, with outriders ranging in to burn the grain, poison the wells, and drag prisoners back to be ransomed at a price that bleeds the town white. In Act 2 the party raids and reconnoiters here under the siege's pressure; in Act 3 Maddox brings the host to the gate itself and offers his terms, and the held gatehouse becomes the climactic battlefield where the town's three knives stand together or one turns. This is where the ENEMY makes his claim — and where the fracture he planted inside the wall finally pays out.",
+      "connections": [
+        "loc-gatehouse"
+      ],
+      "notes": "ACT 2-3 SITE (levels 4-7). Act 2 EXPLORATION/COMBAT: raid the reaver-camp to free ransomed prisoners, recover burned-grain intel, and discover Maddox's inside agent and the joint-decision pressures (who eats, who hangs, who's left outside) — every one a judgment-call that satisfies one companion and betrays another. The MIDPOINT REVERSAL lands here: the inside agent is still within the walls, and the truce can be saved or shattered for good. Act 3 SOCIAL/COMBAT: Maddox brings the host to the held gate, offers terms, and the climax turns on whether the three companions stand together — with whichever one the party betrayed most reaching their breaking point and, on their decision_flag, turning. The win is holding the gate AND the three. See scenes scene-a2-* and scene-a3-*."
+    }
+  ],
+  "arcs": [
+    {
+      "id": "arc-1-three-knives",
+      "title": "Act 1 — Three Knives, One Gate",
+      "level_range": [
+        3,
+        4
+      ],
+      "beats": [
+        {
+          "id": "a1-hook",
+          "title": "Hook — The Truce-Keeper's Throat",
+          "location_id": "loc-gatehouse",
+          "summary": "The reeve is dead, the strongbox empty, a starving runner arrested, the barns burning — and the three powers of Risen-Gate are one wrong move from open knives with a reaver army two days out. Pip the clerk, who saw the killer wasn't who the Fist arrested, runs to the only outsiders in town: the reeve was murdered to break the truce on a timer, two days before Maddox arrives. Find out who, before the town tears itself apart."
+        },
+        {
+          "id": "a1-recruit",
+          "title": "Challenge — Three Who Cannot Agree",
+          "location_id": "loc-gatehouse",
+          "summary": "To investigate the murder the party must work with all three factions — and recruit their three leaders, whose values cannot all be satisfied at once: Vael of the Fist (try the runner by law), Korrin of the Vine (spring the runner who's framed), and Anwen of the almshouse (spare the prisoner the law would hang). The first judgment-calls land: every choice that wins one of the three costs another. The party becomes the truce's new balance-point."
+        },
+        {
+          "id": "a1-climax",
+          "title": "Climax — The Runner's Rope",
+          "location_id": "loc-fist-post",
+          "summary": "The town's fury (and Maddox's design) come to a head over Brannick: half the Fist wants him lynched tonight, the Vine wants him sprung, the almshouse wants him spared. How the party handles the framed runner is the act's defining orthogonal choice — and the first to move all three gauges in different directions. The murder's first proof (it was an inside job, on a timer) is carried back to the hub as the truce holds or cracks by a thread."
+        }
+      ]
+    },
+    {
+      "id": "arc-2-the-siege-tightens",
+      "title": "Act 2 — The Siege Tightens",
+      "level_range": [
+        4,
+        6
+      ],
+      "beats": [
+        {
+          "id": "a2-hook",
+          "title": "Hook — The Screw Turns From Outside",
+          "location_id": "loc-gatehouse",
+          "summary": "Maddox's outriders burn the grain, poison a well, and drag prisoners to the reaver-camp to be ransomed at a price that bleeds the town. The three powers are forced into impossible joint decisions under the pressure — who eats, who hangs, who's left outside the wall — and the party, not the dead reeve, is now the balance-point. Every joint decision is a judgment-call that pleases one companion and wounds another."
+        },
+        {
+          "id": "a2-challenge",
+          "title": "Challenge — The Camp and the Agent",
+          "location_id": "loc-reaver-camp",
+          "summary": "The party raids the reaver-camp — freeing ransomed prisoners, recovering Maddox's plans, and turning a reaver or two — while the siege's joint-decisions keep splitting the three companions. The recovered intel and Brannick's half-known clue converge on the midpoint reversal: Maddox's planted agent is still INSIDE the walls, the hand that killed the reeve, and the truce can still be saved or shattered for good depending on which value the party has been spending."
+        },
+        {
+          "id": "a2-climax",
+          "title": "Climax — Which Virtue You Spent",
+          "location_id": "loc-reaver-camp",
+          "summary": "The midpoint cost lands: cornering the inside agent forces a final-stretch judgment-call that pleases one companion and betrays another (try the agent / cut a deal with them / spare them), and by act's end the party can see plainly which of the three they've wounded most. Whichever gauge has curdled below its breaking point is now armed — Vael's 'broke_your_oath,' Korrin's 'turned_in_the_thief,' or Anwen's 'ordered_the_massacre' — for the climax to turn."
+        }
+      ]
+    },
+    {
+      "id": "arc-3-the-held-gate",
+      "title": "Act 3 — The Held Gate",
+      "level_range": [
+        6,
+        7
+      ],
+      "beats": [
+        {
+          "id": "a3-hook",
+          "title": "Hook — The Tollwright at the Wall",
+          "location_id": "loc-gatehouse",
+          "summary": "Maddox brings the host to the gate and offers terms: open it, name him Tollwright, and the town lives. The party must rally the three factions to hold — but the fracture Maddox spent two days widening is at its worst, and whichever companion the party betrayed most across the siege reaches their breaking point, with the Tollwright's offer waiting precisely for that wound. The party prepares to hold a gate with three knives at their back, one of which may turn."
+        },
+        {
+          "id": "a3-challenge",
+          "title": "Challenge — Unmasking the Hand Within",
+          "location_id": "loc-reaver-camp",
+          "summary": "Before the assault, the party must expose and put down Maddox's inside agent — the hand that killed the reeve and kept the wounds open — and clear Brannick by trying the real killer in the open (or watch the truce shatter for good). Doing it WITH the three companions, or with one already turning, sets the shape of the final stand. The agent's exposure is the last lever that can pull the wounded companion back from the brink — or confirm the break."
+        },
+        {
+          "id": "a3-climax",
+          "title": "Climax — Three Knives at the Gate",
+          "location_id": "loc-reaver-camp",
+          "summary": "Maddox assaults the held gate. The climax turns on the three: two stand with the party and one — the value the party spent too cheaply — may turn on their decision_flag, withdrawing the Fist (Vael), pulling the Vine and the grain (Korrin), or throwing open the almshouse to the abandoned wounded (Anwen). The win is holding Risen-Gate AND holding the three together; breaking Maddox's host (which only ever came for a cheap toll) by keeping the town whole is the true victory, not a body count."
+        }
+      ]
+    }
+  ],
+  "scenes": [
+    {
+      "id": "scene-a1-hook",
+      "name": "The Truce-Keeper's Throat",
+      "type": "social",
+      "location_id": "loc-gatehouse",
+      "read_aloud": "Risen-Gate is a town holding its breath the wrong way — too tight, about to break. The reeve's blood is still a dark smear on the toll-bench under the gatehouse arch; the strongbox beside it hangs open and empty; and across the crowded toll-yard, three knots of armed and frightened people stare each other down: red-cloaked Fist troopers with a runner in chains, Vine folk muttering in the wall's shadow, and the almshouse doorway where a beaten man is carried in. Smoke from the burned eastern barns hazes the morning sun. And out of the press, a half-starved girl with ink-stained fingers catches your sleeve and pulls you into the lee of the gate-tower, her eyes everywhere at once. 'You don't owe any of them,' she breathes. 'That's why it has to be you.' She swallows. 'They arrested Brannick for killing the reeve. It wasn't him. I was awake. The strongbox opened from the INSIDE — and the reeve, before he... he said one word. Tollwright. Two days. The army's two days out, and someone killed the one man holding this town together two days before it gets here. On PURPOSE.' Her grip tightens. 'Find out who. Please. Before they all start killing each other and hand the gate over without a fight.'",
+      "dm_notes": "Establish the hub, the three-way fracture, and the central engine of the campaign: a murder engineered to break a three-way truce on a timer. Pip (npc-female-1) is the quest-giver/first witness — terrified, sharp, running to the party precisely because they owe no faction. Plant the THREE POLES visibly in the toll-yard: the Fist (law) with the chained runner, the Vine (survival) in the wall's shadow, the almshouse (mercy) taking in the beaten man — the party will recruit a leader from each, and those leaders' values CANNOT all be satisfied at once. Plant the antagonist by name through Pip's dying-word clue ('Tollwright') and the smoke of the burned barns — Maddox is not hidden, the mystery is WHO inside the walls is his hand and which value the party will spend. Do NOT resolve the murder here; the inside-job clue (strongbox opened from inside, marked coins don't fit) is the thread. CRITICAL FRAMING for the whole campaign: make the party feel, from this first scene, that there is no choice that pleases everyone — backing the Fist's arrest pleases law and wounds survival; freeing the runner pleases survival and wounds law; sheltering everyone pleases mercy and reads as weakness to both. The three companions are recruited next (scene-a1-recruit); seed their presence here (a hard-eyed sergeant by the cell, a charming half-elf among the Vine, a calm healer in the almshouse doorway). The hook is moral and civic, not monetary — Risen-Gate has almost no coin to offer, only its survival.",
+      "checks": [
+        {
+          "skill": "Insight",
+          "dc": 13,
+          "success": "You read the yard under the fear: the three factions aren't just grieving, they're being PLAYED — each one's worst suspicion of the others has been freshly fed, and the timing (a murder exactly two days before an army) is far too neat to be a robbery gone wrong. Pip is telling the truth and is more afraid of being silenced than of the reavers. Someone wanted this town at its own throat. (Flags the conspiracy and the inside-job nature of the murder.)",
+          "failure": "You take it as it looks: a robbery-murder, a caught thief, three frightened factions, an army coming. The pieces are there but you don't yet see the hand arranging them — the unease keeps for later, once you've met the three who lead the factions."
+        },
+        {
+          "skill": "Persuasion",
+          "dc": 12,
+          "success": "Your steadiness reaches Pip. She tells you the rest: the three marked coins on Brannick don't match the strongbox's tally — they were PLANTED — and the killer moved like someone the reeve trusted enough to turn his back on. She also admits, barely, that she pocketed the reeve's real key-ring when she fled and is terrified the killer knows she has it. (The human stake — a hunted child holding the one proof it was an inside job.)",
+          "failure": "Pip holds the worst back, too frightened to trust strangers fully — she gives you Brannick's name, the 'Tollwright' word, and that it wasn't the runner, enough to start. The planted coins and the key-ring she's hiding wait until you've earned more trust."
+        }
+      ],
+      "encounter": null,
+      "transitions": "Taking Pip's case, the party must work all three factions to investigate — move to scene-a1-recruit, where they meet and recruit Vael (loc-fist-post), Korrin (loc-vine-quarter), and Anwen (loc-almshouse), and feel the first orthogonal judgment-calls."
+    },
+    {
+      "id": "scene-a1-recruit",
+      "name": "Three Who Cannot Agree",
+      "type": "social",
+      "location_id": "loc-gatehouse",
+      "read_aloud": "To learn who killed the reeve, you have to walk into all three armed camps that hate each other — and each one wants something different from you before it will talk. At the Fist post, Sergeant Vael looks up from a duty-roster with the flat, tired eyes of someone holding a wall with her bare hands: 'You've no faction's coin in you. Good. Then help me do this RIGHT — by the evidence, by a trial — before my own troopers hang that runner tonight and prove this town's not worth saving.' In the Vine's quarter, a half-elf with a card-sharp's smile and a soft, furious center leans off a grain-cart: 'Vael wants to TRY him. Try him. There's an army coming and she wants to hold a hearing. That runner's going to hang for a crime the powerful committed, same as always — unless someone with no stake cuts him loose. You in?' And in the almshouse doorway, a calm woman with a healer's steady hands and a graveyard's worth of clear sight says, simply: 'They both want to USE him — try him, spring him, it's the same coin. I want him to LIVE. Him, and the reaver boy the Fist wants hanged, and the man they beat this morning. Nobody in this town is acceptable losses. Not yet. Will you help me keep it that way?'",
+      "dm_notes": "THE STRUCTURAL HEART of Act 1: recruit all three competing-agenda companions and establish their ORTHOGONAL approval vocabularies in one scene, so the player feels from the start that the gauges move in OPPOSITE directions on a single choice. VAEL (companion-default, law-first) wants Brannick TRIED — rewards due_process/keeping_your_word, wounded by summary_execution/bending the law. KORRIN (npc-rogue, survival-first) wants Brannick SPRUNG — rewards cutting_a_deal/sparing_a_desperate_thief, wounded by rigid_law_that_gets_people_killed/turning in the thief. ANWEN (npc-elder, mercy-first) wants Brannick (and the reaver prisoner) SPARED and ALIVE — rewards sparing_an_enemy/tending_the_wounded, wounded by collateral_cruelty. Recruit each via their own pole (the Fist post / the Vine quarter / the almshouse — the three Act-1 sites). KEY TEACHING BEAT: surface explicitly that you cannot satisfy all three on Brannick — backing the trial pleases Vael and stings Korrin; springing him pleases Korrin and stings Vael; insisting he simply be kept alive pleases Anwen but reads as weakness/lawlessness to the other two. Let the party make a provisional lean here and TAG it with the right approval cause-keys (record_decision / the approval system) so a player sees Vael's bar rise as Korrin's falls. This is the campaign's promise: a single tagged decision moves three gauges, and not in the same direction. Do NOT force a final answer on Brannick yet — that's the act's climax (scene-a1-climax). Use this scene to RECRUIT (all three join), to establish the triangle, and to let the party start spending — and feeling the cost of — their first virtue. Note the partial alignments: Korrin and Anwen both want to save the desperate (but split on method — Korrin will cut a hard deal Anwen finds cruel); Vael and Anwen both want order (but split on mercy — Vael will hang the guilty Anwen would spare).",
+      "checks": [
+        {
+          "skill": "Insight",
+          "dc": 13,
+          "success": "Talking to all three, you see the geometry of it clearly: these are three GOOD people whose definitions of good can't all be true at once. Vael's law would hang a man Korrin's mercy would free, and Anwen would spare the very enemy the law means to make an example of. There is no neutral ground — only which virtue you choose to spend. Naming this honestly to each of them earns a flicker of respect (and primes their trust gates): you, at least, see the trap they're in. (Best primer for keeping all three on side.)",
+          "failure": "You catch that the three don't get along but read it as ordinary faction rivalry, not a true collision of values — so you don't yet see that pleasing one will cost you another. You can still recruit all three, but the first time you make a real call on Brannick, the whiplash will surprise you."
+        },
+        {
+          "skill": "Persuasion",
+          "dc": 13,
+          "success": "You convince all three that an outsider with no faction's debt is exactly the honest broker Risen-Gate has lacked since the reeve died — and all three agree to follow you, each trusting you to honor THEIR value when the choices come. You leave with three companions, three secret advantages (the Fist's evidence, the Vine's secret ways, the almshouse's wounded witnesses), and three watching consciences. (Recruits the full trio; opens the investigation on all three threads.)",
+          "failure": "You win one or two of them readily but the third holds back, wary — recruit the holdout by proving your good faith on the next judgment-call rather than by argument. (The DM may let the party recruit all three across the act rather than all at once; the trio assembled by the climax is the goal.)"
+        }
+      ],
+      "encounter": null,
+      "transitions": "With the three knives recruited (and the triangle felt), the murder investigation and the fight over Brannick's fate come to a head — move to scene-a1-climax at loc-fist-post. The Fist's evidence, the Vine's secret ways, and the almshouse's witnesses all point at an inside job; the party's first defining orthogonal choice is how to handle the framed runner."
+    },
+    {
+      "id": "scene-a1-climax",
+      "name": "The Runner's Rope",
+      "type": "combat",
+      "location_id": "loc-fist-post",
+      "read_aloud": "It comes to a head at dusk in the toll-yard, around the gatehouse cell where Brannick sits chained and grey-faced. Half the Fist garrison has gathered with a rope and the certainty of frightened men — Corporal Dass at their head, arguing that a hanging tonight will quiet the town before the army comes. The Vine has gathered too, knives loose, ready to spring their runner or die trying. And in the almshouse doorway Sister Anwen stands with her arms folded, refusing to let it become a slaughter either way. Sergeant Vael plants herself between the rope and the cell, sword still sheathed, jaw set: 'No one hangs without a trial. Not while I hold this post.' Korrin slides up at your shoulder, all easy menace: 'Or we cut him loose right now and let the law catch up later — your call, friend.' The whole yard turns to look at YOU — the one with no faction's collar. Whatever you do next, two of these three are going to remember it.",
+      "dm_notes": "ACT 1 CLIMAX — the first defining orthogonal choice, dramatized as a powder-keg, and the act's combat IF it ignites. THE CHOICE on Brannick is the campaign's first three-way fork, and it MUST move the gauges in different directions — tag it with the right cause-keys: (a) BACK VAEL — insist on a lawful trial, hold the line against the lynching (+Vael: due_process/keeping_your_word/hold_the_law_under_pressure; -Korrin: rigid_law/process_over_a_dying_person, though Korrin grudgingly tolerates a trial over a hanging); (b) BACK KORRIN — spring Brannick from the cell (+Korrin: spring_the_framed_runner/cutting_a_deal/bend_the_law_to_save_a_life; -Vael: spring_a_thief_uncharged/break_the_law); (c) BACK DASS/THE LYNCHING — let or help the garrison hang him fast (-Vael HARD: summary_execution/lynch_a_suspect AND sets risk toward 'broke_your_oath'; -Korrin HARD: let_the_runner_hang/turned_in_the_thief — this is the worst option for the truce and the killer's preferred outcome; -Anwen: summary_execution/collateral_cruelty); (d) ANWEN'S THIRD WAY — get Brannick OUT of the rope's and the law's reach alive into the almshouse's sanctuary while the party investigates (+Anwen: sparing_an_enemy/shelter_the_desperate; partial +both others if framed as 'keep him alive to find the truth'). COMBAT may ignite: if the party (or events) tip toward the lynching or a Vine jailbreak-by-force, the yard erupts — Fist troopers (Guard/Thug) vs Vine runners (Bandit/Scout), with the party choosing a side or trying to stop both. Use this as the act's combat. The companions' reactions are the POINT: stage Vael, Korrin, and Anwen each visibly responding to the party's choice — bars moving in opposite directions on screen. Whatever happens, the murder's first proof (inside job, planted coins, the 'Tollwright' word) is secured and carried to the hub. If the party hangs Brannick, they bury his clue with him (a real cost — he knew the agent's gait); if they keep him alive (trial or sanctuary), his clue survives to Act 2. Set decision_flags HONESTLY: 'broke_your_oath' if the party betrays a promise to Vael or backs the lynching after siding with the law; 'turned_in_the_thief' if they let Brannick hang or hand him over; 'ordered_the_massacre' is not yet in play (saved for the siege's crueler choices). DO NOT fire any agenda this early — these flags ARM later turns; the gauges should only be nudged here.",
+      "checks": [
+        {
+          "skill": "Persuasion",
+          "dc": 14,
+          "success": "You take the yard's temperature and turn it — talking Dass's troopers down from the rope while promising the Vine their runner won't hang for nothing, buying the time to find the real killer. The lynching dissolves; the truce holds by a thread; and you've shown all three companions you can hold the center under pressure. (Best outcome for keeping the trio together: nobody dies, the clue survives in Brannick, and every gauge holds or rises.)",
+          "failure": "Your words aren't enough — the yard tips toward violence, and you'll have to choose a side with steel or watch the truce shatter into open fighting (roll initiative; see encounter). Whatever you choose, two of the three companions will remember which way you drew your blade."
+        },
+        {
+          "skill": "Intimidation",
+          "dc": 14,
+          "success": "You break the moment by force of will — facing down whichever mob is closest to the killing, Fist or Vine, until they back off the brink. It holds the peace, but it costs you: the side you cowed remembers being cowed, and the companion who led them marks how you used fear instead of fairness. (Holds the truce but spends a little trust; tag the cost to whichever pole you leaned on.)",
+          "failure": "The threat lands wrong and someone's nerve snaps — initiative; the yard goes to knives, and the party is in the middle of a riot that is exactly what the killer wanted."
+        }
+      ],
+      "encounter": {
+        "monsters": [
+          {
+            "name": "Guard",
+            "count": 3,
+            "reflavor": "Flaming Fist troopers in the lynch-mob — frightened, not evil; resolves to bundled 'Guard' (CR 1/8) or 'Thug' (Tough, CR 1/2) for a stronger fight. They break if Vael or the party stands them down, or once one of their own falls. Only fight if the yard ignites toward the lynching."
+          },
+          {
+            "name": "Scout",
+            "count": 3,
+            "reflavor": "Vine runners ready to spring Brannick by force — knife-fighters defending their own; resolves to bundled 'Scout' (CR 1/2) or 'Bandit' (CR 1/8). They fight only if a jailbreak-by-force is chosen or the yard erupts; Korrin can call them off."
+          }
+        ],
+        "tactics": "This combat is OPTIONAL — it ignites only if the party tips toward the lynching or a force-jailbreak, or fails to defuse the yard. If it happens, it's a RIOT, not a clean fight: Fist troopers vs Vine runners with the party caught in the middle, choosing whom to protect (each choice a gauge-mover). The companions act on their values — Vael interposes against the lynchers, Korrin moves to free Brannick, Anwen shields the wounded and the unarmed. The IDEAL resolution is stopping the violence entirely (Persuasion/Intimidation); award full XP for defusing the riot without a death. Keep it survivable for a level 3-4 party.",
+        "scaling": "Party of 1-2 or all-squishy: 2 Guards + 2 Scouts. Party of 3-4: 3 Guards + 3 Scouts. Party of 4+ or running hot: add a Veteran (a hard-line Fist officer) or a Thug to the side the party opposes. Defusing the riot (no combat) is always the best outcome and earns full value.",
+        "xp": 400,
+        "xp_note": "3x Guard (25) + 3x Scout (100) ~= 375; budget ~400 with the story-stakes of the riot. Award FULL value for DEFUSING the riot without bloodshed (the best outcome) exactly as for winning the fight — stopping the killing is the win, since a riot is what the killer wanted."
+      },
+      "transitions": "However Brannick's rope resolves, the party carries the murder's first proof (inside job, planted coins, the 'Tollwright' word) back to loc-gatehouse — and the first scored read of which virtue they've spent. They are now level 4-ish; Act 2's siege pressure (scene-a2-hook) opens. If Brannick lives, his clue survives; if he hanged, it's buried with him and 'turned_in_the_thief' may be set."
+    },
+    {
+      "id": "scene-a2-hook",
+      "name": "The Screw Turns From Outside",
+      "type": "social",
+      "location_id": "loc-gatehouse",
+      "read_aloud": "Maddox doesn't wait for you to solve his murder. In the night his outriders fire the last grain-stores and foul the north well, and at dawn his ransom-riders drag a dozen townsfolk — Fist, Vine, and almshouse-folk alike — out to the reaver-camp to be bought back at a price that would empty every coffer in Risen-Gate. By the time you reach the toll-yard the three factions are screaming at each other across the reeve's old bench: the Fist wants the remaining grain locked under guard and rationed by law; the Vine wants it OPENED to the starving now, rules be damned; and Sister Anwen stands between them with a list of the ransomed and the wounded, asking who, exactly, the town has decided it can afford to lose. Vael's hand is white on her sword-hilt. Korrin's smile is gone. And all three of them turn, again, to you — because the reeve who used to make these calls is a stain on the bench, and you're the one holding his balance now.",
+      "dm_notes": "ACT 2 HOOK and the engine's loudest move: the siege FORCES joint decisions that cannot satisfy all three companions, and the party — not the dead reeve — is now the balance-point. Maddox (npc-male-1, named but still off-screen) tightens from outside: burned grain, poisoned well, ransomed prisoners. The judgment-calls of Act 2 are RATION/RANSOM/RESCUE dilemmas, each orthogonal: (1) THE GRAIN — lock and ration it by law (+Vael: due_process/hold_the_law_under_pressure; -Korrin: rigid_law/enforce_the_toll_on_the_starving) vs open it to the desperate now (+Korrin: feed_the_desperate_first/bend_the_law_to_save_a_life; -Vael: bend_the_law/break_the_rule under siege); (2) THE RANSOM — pay it (drains the town but saves the prisoners; +Anwen if it saves lives), refuse it (hold the coin for defense; -Anwen: spend_lives_to_save_lives if prisoners are abandoned), or RAID the camp to free them (the Act 2 combat); (3) THE POISONED WELL / RETALIATION — a chance arises to poison the reaver-camp's OWN well in return (+Korrin/Vael as ruthless pragmatism, -Anwen HARD: poison_the_well/collateral_cruelty, arms 'ordered_the_massacre'). Stage each so the party SEES the gauges split. This is where the orthogonality does its real damage: a single ration-or-open call moves Vael and Korrin in opposite directions, and the retaliation calls put Anwen against both. Brother/Mother Sefin (Vine) and Corporal Dass (Fist) voice the factions' pressures. Seed the MIDPOINT here: the recovered intel and Brannick's clue (if he lives) start to converge on an INSIDE AGENT — someone moving between all three factions, the reeve's killer, still in the walls. Reveal it fully at scene-a2-challenge/climax. The companions' arc gates (trust 25, personal-quest 50) should be opening across Act 2 for the companions the party has honored; the betrayal gates (20) loom for any the party has wounded.",
+      "checks": [
+        {
+          "skill": "Insight",
+          "dc": 14,
+          "success": "Reading the three factions' panic, you see the trap Maddox built: every joint decision the siege forces is rigged so that helping one faction wounds another — the grain, the ransom, the wells, all of it. The reeve held this together by giving no virtue the whole say; you realize the ONLY way through is to keep doing the same impossible balancing he did, and that Maddox is counting on you to fail at it. (Names the campaign's core strategy: hold all three, or the gate falls from within.)",
+          "failure": "You see three factions in crisis and a hard set of calls to make, but not yet that the calls are RIGGED to divide them — so you make them as best you can, and only later feel how each one cost you a companion you didn't mean to wound."
+        },
+        {
+          "skill": "Investigation",
+          "dc": 13,
+          "success": "Cross-referencing the reeve's recovered ledger with the night's sabotage, you find the pattern he died noticing: the grain that burned, the well that fouled, the prisoners taken — all of it required INSIDE knowledge of the town's stores and watch-rotations. Someone within the walls is feeding Maddox, and has been for a year. The hunt for the inside agent begins. (Threads the midpoint reveal.)",
+          "failure": "The sabotage looks like ordinary reaver cruelty from outside — you don't yet see the inside hand guiding it. Mother Sefin's suspicion or Brannick's clue, drawn out later, will point you at the agent within."
+        }
+      ],
+      "encounter": null,
+      "transitions": "To break the ransom and chase the inside agent, the party strikes at the reaver-camp — move to scene-a2-challenge at loc-reaver-camp. The grain/ransom/retaliation calls made here are tagged to the three gauges and carried forward; honored companions open their trust/quest gates, wounded ones edge toward their breaking points."
+    },
+    {
+      "id": "scene-a2-challenge",
+      "name": "The Camp and the Agent",
+      "type": "exploration",
+      "location_id": "loc-reaver-camp",
+      "read_aloud": "Out past the wall, under a moonless sky, the Tollwright's camp sprawls along the Risen Road: cookfires and picket-lines, ransom-pens where Risen-Gate's taken folk huddle behind hurdles, and at the center a command-tent under a banner stitched with a toll-keeper's scales and a reaver's red hand. You came to free the prisoners and steal the enemy's plans — and as you move through the camp's edges, a reaver sentry you've cornered tells you something that turns the night cold: 'You think the Tollwright's clever? He's got a hand INSIDE your gate. Has done a year. Killed your reeve himself, that one — walks your streets in your own colors.' Behind you, your three companions go very still. Whatever you've made them feel about each other these past two days, every one of them is now wondering the same thing: which of the three factions is the killer wearing?",
+      "dm_notes": "ACT 2 CHALLENGE — the raid (EXPLORATION/COMBAT-adjacent) and the MIDPOINT REVERSAL. The party raids the reaver-camp: free the ransomed prisoners (a rescue and an approval surface — Anwen's value), steal Maddox's plans (the strength/weakness of his host: a mercenary band that will break if the wall holds and the toll looks too costly), and turn a reaver or two (Anwen's broker_a_surrender, or Korrin's cutting_a_deal). THE BIG REVEAL lands here: Maddox planted an INSIDE AGENT a year ago, bonded into one of the three factions — the hand that killed the reeve and keeps the wounds open. This is the midpoint reversal: the enemy isn't only outside, it's been at the party's back the whole time, and the truce can still be saved or shattered for good. Crucially, the reveal RAISES THE STAKES on the companion fork: now every faction suspects the others of harboring the killer, and the party's accumulated choices (which virtue they've spent) determine whether the three trust the party enough to hunt the agent TOGETHER or splinter into mutual accusation. Drawing out WHO the agent is should reward a party that engaged all three companions: the reeve's hidden coded page (recoverable only by someone who understands all three factions), Brannick's half-known clue (the agent's gait/ring, if he's alive), and Mother Sefin's year-long suspicion together name the agent — DM's choice of which faction the agent wears (a hard-liner in the Fist, a turncoat in the Vine, or a false penitent in the almshouse), staged to cut against whichever companion the party has leaned on least (so the reveal complicates rather than confirms). The siege's joint-decisions keep splitting the gauges throughout the raid (who to free first, whether to burn the camp's stores — collateral_cruelty risk for Anwen). Combat with reaver pickets may interrupt; let the reveal and the rescue breathe.",
+      "checks": [
+        {
+          "skill": "Stealth",
+          "dc": 14,
+          "success": "You move through the camp's pickets like smoke — reaching the ransom-pens to free the prisoners and the command-tent to lift Maddox's plans without raising the host. You learn the Tollwright's secret: his band came for a cheap toll, not a battle, and will break and ride off if the wall holds and the cost runs high. Holding the town TOGETHER is how you beat him. (The strategic key to Act 3, taken clean.)",
+          "failure": "A picket spots you and the camp stirs — you can still free the prisoners and grab the plans, but you'll fight your way out (reaver Bandits/Thugs/Scouts; see scaling) and Maddox now knows you raided him. The intel is the same; the exit is bloodier."
+        },
+        {
+          "skill": "Persuasion",
+          "dc": 14,
+          "success": "You turn a reaver — a tired sellsword who'd rather not die for a toll — and they confirm the inside agent in full: planted a year ago, bonded into one of your three factions, the hand that opened the strongbox and cut the reeve's throat. Combined with the reeve's hidden page or Brannick's clue, you can now name WHICH faction the killer wears. (Secures the inside-agent reveal and the lever to expose them in Act 3.)",
+          "failure": "The reaver won't talk, or talks too vaguely — you have the SHAPE of the inside agent (a year planted, the reeve's killer, in one of your factions) but not the name, until you work the reeve's hidden page, Brannick, or Mother Sefin's suspicion back at the hub. The hunt narrows but isn't done."
+        },
+        {
+          "skill": "Insight",
+          "dc": 13,
+          "success": "Watching your three companions absorb the news that the killer wears one of their colors, you read exactly where the trust stands: the ones you've honored look to YOU to find the truth; the one you've wounded looks at the other two with new suspicion. You see, plainly, which gauge has curdled and which agenda is arming — and you have one act left to pull them back or lose them. (A clear read of the fork's state going into Act 3.)",
+          "failure": "The companions take the reveal hard and you can't quite read who's closest to breaking — the fork's state stays murky until it resolves at the gate, and you may be surprised by which knife turns."
+        }
+      ],
+      "encounter": {
+        "monsters": [
+          {
+            "name": "Bandit",
+            "count": 4,
+            "reflavor": "Reaver pickets and ransom-guards — sellswords who came for a cheap toll; resolves to bundled 'Bandit' (CR 1/8) or 'Thug' (Tough, CR 1/2) for a harder camp. They break and surrender readily once the fight turns (Anwen's broker_a_surrender / Korrin's deal both work on them)."
+          },
+          {
+            "name": "Scout",
+            "count": 2,
+            "reflavor": "Maddox's outriders — the ones who burned the grain and fouled the well; resolves to bundled 'Scout' (CR 1/2). Hit-and-fade skirmishers guarding the camp's edges and the command-tent."
+          },
+          {
+            "name": "Berserker",
+            "count": 1,
+            "reflavor": "A reaver enforcer in the camp — used for a stronger party or to guard the ransom-pens; resolves to bundled 'Berserker' (CR 2). Drop for a light table."
+          }
+        ],
+        "tactics": "The raid rewards stealth (Stealth to avoid the fight, or to free prisoners before the alarm) but combat may ignite at the pickets or the pens. Reavers are sellswords, not fanatics — they surrender or flee once the fight turns or their pay looks unlikely (a major approval beat: Anwen wants them taken alive, Korrin wants them turned, Vael wants them tried). The ransomed prisoners are noncombatants to be freed and shielded. If the party chooses to BURN the camp's stores or POISON its well in retaliation, that's a collateral_cruelty beat that wounds Anwen hard and may arm 'ordered_the_massacre.' Keep the inside-agent reveal central — the fight is the cover for the intel, not the point.",
+        "scaling": "Party of 1-2 or all-squishy: 2 Bandits + 1 Scout, no Berserker. Party of 3-4: 4 Bandits + 2 Scouts + 1 Berserker. Party of 4+ or running hot: 5 Bandits + 2 Scouts + 2 Berserkers (or a Veteran reaver-captain). Stealth/Persuasion can skip or shrink the fight entirely; reward freeing the prisoners and lifting the plans however it's done.",
+        "xp": 900,
+        "xp_note": "4x Bandit (25) + 2x Scout (100) + Berserker (450) ~= 750-1000; budget ~900 toward the act. Award FULL value for freeing the ransomed prisoners and recovering Maddox's plans whether by stealth, parley, or blade — the rescue and the intel are the win, and turning/sparing reavers counts fully."
+      },
+      "transitions": "With the prisoners freed, Maddox's plans in hand, and the inside agent revealed (or nearly named), the party returns to close on the agent — move to scene-a2-climax at loc-reaver-camp/the gatehouse approach. The act's final judgment-call (how to handle the cornered agent) sets the gauges' final state going into the held gate."
+    },
+    {
+      "id": "scene-a2-climax",
+      "name": "Which Virtue You Spent",
+      "type": "combat",
+      "location_id": "loc-reaver-camp",
+      "read_aloud": "You corner the inside agent on the dark road back to the gate — Maddox's hand within the walls, the one who killed the reeve and kept all three factions bleeding at each other for two days. They don't run. They turn, calm, wearing the colors of one of your own factions, and they make the offer Maddox sent them to make: 'You've already done half my master's work, you know. You've spent these three like coin — I've watched you do it. So spend one more. Hand me to the faction that wants me hanged and call it justice. Cut me loose for what I know and call it a deal. Or kill me quiet and call it mercy on a town that can't afford a trial.' They smile, because they know the trap. 'Whatever you choose, one of your three is going to watch you do it. And the Tollwright will be at your gate by dawn.'",
+      "dm_notes": "ACT 2 CLIMAX — the second combat AND the final, sharpest orthogonal choice of the siege, which sets each gauge's state going into Act 3. The cornered INSIDE AGENT (the reeve's killer, wearing one faction's colors — DM's choice per scene-a2-challenge) forces a three-way judgment-call that is the mirror of Brannick's in Act 1, now with the stakes maxed: (a) TRY THE AGENT publicly by law (+Vael HARD: due_process/try_the_accused/evidence_over_certainty — this is Vael's whole quest; -Korrin if it's slow/rigid under siege; partial +Anwen if it spares a life); (b) CUT A DEAL — spare the agent for what they know, or turn them (+Korrin: cutting_a_deal/find_the_third_option; -Vael HARD: cut_a_lawless_deal/let_the_powerful_skip_the_rule — letting the reeve's MURDERER walk for information is the deepest cut to Vael, can set 'broke_your_oath'; partial +Anwen for sparing); (c) EXECUTE the agent on the road, quiet and certain (-Vael HARD: summary_execution — the thing she fears most, sets 'broke_your_oath'; -Anwen HARD: kill_a_prisoner/collateral_cruelty/execute_the_surrendered, sets 'ordered_the_massacre'; +Korrin only if framed as protecting the desperate, but Korrin dislikes summary_execution too); (d) HAND THE AGENT to a faction that wants them dead (similar to c, can set 'turned_in_the_thief' if done cynically). The POINT: by the end of this scene the party can SEE which of the three they've wounded most across the whole siege, and the matching decision_flag ('broke_your_oath' / 'turned_in_the_thief' / 'ordered_the_massacre') is set, ARMING that companion's attitude_below(20) agenda for the climax. COMBAT: the agent doesn't fight alone if the party moves on them — Maddox sent a covering squad (reaver Scouts/Bandits + the agent themselves, statted as a Spy or Assassin per party level). The agent is a Spy (AC 12, HP 27, CR 1) for a light table or an Assassin (AC 15, HP 78, CR 8) for a level 5-6 party — a mid-boss. THEY MAY ESCAPE to Maddox's side for the Act 3 finale if the party doesn't put them down cleanly (a fine setup — the agent at the gate in Act 3). CRITICAL: stage the companions watching. Whichever gauge is lowest after this scene is the knife that may turn at the gate. Do NOT fire the agenda yet — that's the climax; this scene sets the flag and the gauge. If the party has honored all three (no gauge below 20), no agenda arms and all three stand at the gate — the hardest, best outcome.",
+      "checks": [
+        {
+          "skill": "Investigation",
+          "dc": 15,
+          "success": "Before you decide the agent's fate, you wring the truth from them and the reeve's recovered page: the full plan (murder the truce, frame the Vine, let the town break itself), Maddox's timing, and the proof that clears Brannick for good. You can now expose the whole scheme in the open at the gate — the single best lever for pulling a wavering companion back AND for turning the town's fury outward at Maddox instead of inward at each other. (Secures the Act 3 exposure.)",
+          "failure": "The agent gives up fragments but keeps the worst back, or dies/flees before you can wring it out — you go into Act 3 knowing there WAS a plan but not able to prove it cleanly, leaning harder on the companions' testimony and the gate-stand to break Maddox."
+        },
+        {
+          "skill": "Insight",
+          "dc": 14,
+          "success": "You read the agent's offer for the trap it is — Maddox wants you to spend a third virtue here, to wound a third companion on the eve of the gate. Seeing it, you can choose the option that holds your three TOGETHER (try the agent with the others' consent, or expose them publicly) instead of the one that breaks a fourth thing. (The clearest path to keeping all three knives at your back for the climax.)",
+          "failure": "The offer rattles you and you can't quite see the manipulation under it — you make the call on the agent's fate half-blind to which companion it costs, and may arm a betrayal you didn't intend."
+        }
+      ],
+      "encounter": {
+        "monsters": [
+          {
+            "name": "Spy",
+            "count": 1,
+            "reflavor": "The INSIDE AGENT — Maddox's hand in the walls, the reeve's killer, wearing one faction's colors. Spy (AC 12, HP 27, CR 1) for a light table; upgrade to Assassin (AC 15, HP 78, CR 8) as a mid-boss for a level 5-6 party. May surrender (to be tried), flee to Maddox's side for Act 3, or die — per the party's choice."
+          },
+          {
+            "name": "Scout",
+            "count": 3,
+            "reflavor": "Maddox's covering squad sent to extract the agent — reaver outriders; resolves to bundled 'Scout' (CR 1/2). They cover the agent's escape if the fight turns; scale to 2 for a light party, 4 for a strong one."
+          }
+        ],
+        "boss": {
+          "name": "The Inside Agent",
+          "npc_id": "",
+          "stats": "Spy (AC 12, HP 27, CR 1) for a light table; Assassin (AC 15, HP 78, CR 8) as a mid-boss for a level 5-6 party. Wears one of the three factions' colors (DM's choice).",
+          "note": "The reeve's killer and Maddox's hand within. The act's final judgment-call is what to DO with them (try / deal / execute / hand over) — the choice that sets each companion's final gauge and arms a betrayal. They may surrender, flee to the gate for Act 3, or die. Wringing the full plan from them (Investigation) secures the Act 3 exposure."
+        },
+        "tactics": "If the party moves to seize or kill the agent, the covering Scouts engage to cover the agent's escape — the agent fights cunning and from cover (Spy/Assassin), aiming to flee to Maddox if losing. But the SCENE's real weight is the CHOICE, not the fight: the agent OFFERS the three-way trap (try/deal/execute/hand-over) before blades, and how the party answers sets the gauges and the decision_flag. Stage all three companions present and reacting. If the party tries the agent or exposes them, that's a clean win that holds the trio; if they execute or deal cynically, a gauge curdles and an agenda arms. Keep the agent escapable so they can reappear at the gate.",
+        "scaling": "Party of 1-2 or all-squishy: agent as Spy + 1 Scout. Party of 3-4: agent as Spy (or Assassin) + 3 Scouts. Party of 4+ or running hot: agent as Assassin + 4 Scouts + a Berserker. The choice matters more than the fight at every size; keep the agent able to flee to Act 3.",
+        "xp": 1500,
+        "xp_note": "Agent as Assassin (3900 at CR 8 — a deliberate spike for the inside-agent mid-boss; soften to Spy 200 for a light table) + 3x Scout (100); budget ~1500 toward the act (or ~500 if the agent is run as a Spy / talked down). Award FULL value for trying, turning, capturing, or putting down the agent and for wringing out the plan, however it's done."
+      },
+      "transitions": "With the inside agent handled (tried, dealt with, executed, or fled to Maddox), the party returns to loc-gatehouse to brace for the assault — move to scene-a3-hook. The gauges' final state is now set: whichever companion the party wounded most is armed to turn at the gate; honored companions stand ready to fight. The Tollwright will be at the wall by dawn."
+    },
+    {
+      "id": "scene-a3-hook",
+      "name": "The Tollwright at the Wall",
+      "type": "social",
+      "location_id": "loc-gatehouse",
+      "read_aloud": "Dawn comes the color of old iron, and so does Maddox Crale. The reaver-host stands in ranks on the Risen Road, banners dripping, and the Tollwright himself rides to within a stone's throw of the gate — a broad, scarred man with a toll-ledger chained at his belt and a smile like a closing account. 'Risen-Gate!' he calls, genial as a creditor. 'I've no quarrel with your walls. Open the gate, name me Tollwright, pay your toll like sensible folk — and you all live to grumble about it. Or hold out, and I'll take it over your corpses and charge your widows double.' He lets it land. 'You've spent two days at each other's throats. I know — I arranged it. So I'll make it easy: send me the one who's ready to be done with the rest, and the gate opens itself.' Behind you in the toll-yard, your three companions stand at the wall — Vael with her troopers, Korrin with the Vine, Anwen with the wounded — and one of them, the one you spent too cheap, will not quite meet your eyes.",
+      "dm_notes": "ACT 3 HOOK — the antagonist arrives, names his weapon out loud (the fracture he planted), and the companion fork reaches its crisis. Maddox (npc-male-1) offers terms and openly invites the betrayal: 'send me the one who's ready to be done with the rest.' This is RESOLVE and STAKES: the party must rally the three factions to HOLD the gate, but the fracture is at its worst, and whichever companion the party betrayed most (the lowest gauge, the set decision_flag) is at their breaking point with Maddox's offer aimed precisely at their wound. Stage the wounded companion's distance visibly ('will not quite meet your eyes'). This is the fork's LAST chance to pull them back: exposing the inside agent and clearing Brannick in the open (scene-a3-challenge) is the lever that can do it — proving the murder was Maddox's doing turns the town's fury outward and can reach a wavering companion. If the party honored all three (no gauge below 20), all three stand firm and the offer falls flat — the hardest, best position. Let the party PREPARE: rally the factions (each companion brings their faction's strength to the wall ONLY if their gauge holds — Vael's troopers, Korrin's grain and secret ways, Anwen's healing and brokered reaver-surrenders), recover last supplies, choose where the inside agent (if fled) will strike. Then they brace for the assault. The three companions' arc gates (loyalty 75) can lock here for the honored; the betrayal gates (20) loom for the wounded. NOTE: even a party that wounded one companion can still WIN the gate with the other two — the campaign does not require a perfect run, but the cost of the turned knife is real.",
+      "checks": [
+        {
+          "skill": "Persuasion",
+          "dc": 14,
+          "success": "You rally the wall — and, more importantly, you reach the companion you wounded. Naming honestly what you spent and why, and showing them the plan to expose Maddox's hand in the open, you give the wavering one a reason to stand that's better than the Tollwright's offer. The three factions take their places at the gate; if a gauge was low, this is the best chance to keep that knife from turning. (Rallies the defense and may pull a wavering companion back from the brink.)",
+          "failure": "You can rally the wall but not fully close the wound — the factions take their places, but the companion you spent too cheap stays distant, and whether they turn at the climax now rests on the exposure of the inside agent and the events at the gate, not your words here."
+        },
+        {
+          "skill": "Insight",
+          "dc": 14,
+          "success": "You read your three companions cold and know exactly where each stands: which two are solid, which one Maddox's offer has its hooks in, and what — the agent's exposure, a kept word, a spared life — might still reach them. You go into the assault knowing the shape of the knife at your back and how to keep it sheathed. (Clarifies the fork's state and the lever to pull before the climax.)",
+          "failure": "You can't quite tell which way the wounded companion will break — you go into the held gate uncertain whether the third knife stands with you or turns, and may learn the answer the hard way."
+        }
+      ],
+      "encounter": null,
+      "transitions": "Before the assault, the party moves to expose Maddox's inside agent and clear Brannick in the open — move to scene-a3-challenge. Whether they hold all three or one wavers, the held gate is where it all resolves."
+    },
+    {
+      "id": "scene-a3-challenge",
+      "name": "Unmasking the Hand Within",
+      "type": "exploration",
+      "location_id": "loc-reaver-camp",
+      "read_aloud": "With Maddox's host drawn up and the gate barred, you have one chance before the assault to do the thing that can save the town from itself: prove, in front of all three factions at once, that the reeve was murdered by the Tollwright's planted hand — not by the Vine, not by the Fist, not by any of them. You gather them in the torchlit toll-yard — Vael and her troopers, Korrin and the Vine, Anwen and the wounded, the freed prisoners, Pip with the reeve's key-ring, Brannick (if he lives) ready to name the gait he saw on the postern path. The evidence is on the bench: the reeve's coded page, the planted coins, the inside agent's confession or colors. The whole town leans in. If you can make them SEE it — that their two days of knives were Maddox's doing, not each other's — the fracture closes and the gate holds. If you can't, the wound the Tollwright opened stays open, and one of your three will walk through it.",
+      "dm_notes": "ACT 3 CHALLENGE — the EXPLORATION/SOCIAL set-up for the climax: expose Maddox's inside agent and clear Brannick in the OPEN, before all three factions, turning the town's fury outward at the Tollwright instead of inward at each other. This is the campaign's thesis-beat: the murder was engineered to break the truce, and PROVING it is what re-fuses the three. Threads: (1) TABLE THE EVIDENCE — the reeve's coded page (recoverable by a party that engaged all three factions), the planted coins, Pip's key-ring, Brannick's eyewitness gait-clue (if he lives — a real cost if he hanged in Act 1), the inside agent's confession/colors (if captured) — assembled into an undeniable public case (Investigation/Persuasion before the assembled factions); (2) CLEAR BRANNICK — trying the real killer in the open clears the framed runner and proves Vael's whole quest right (a huge loyalty beat for Vael; if Brannick hanged, this is a grief-beat instead — the clue died with him); (3) THE LAST LEVER ON THE FORK — a successful, public exposure is the single best chance to pull a WAVERING companion back: it shows the wounded one that the real enemy was always Maddox, that their two days of pain were manufactured, and gives them a reason to stand. Stage the wounded companion deciding in real time. If the exposure LANDS and the wounded gauge isn't too far gone, the agenda may be defused (the companion stands at the gate after all); if it FAILS or the gauge is too low, the agenda is confirmed and that knife turns at the climax. The inside agent, if they fled in Act 2, may try to SABOTAGE the exposure here (a chase/skill-challenge to stop them disrupting the assembly). The honored companions each contribute (Vael lends the law's weight to the trial, Korrin the Vine's testimony, Anwen the wounded witnesses) — IF their gauge holds. This scene is the hinge between the set-up and the final stand.",
+      "checks": [
+        {
+          "skill": "Persuasion",
+          "dc": 16,
+          "success": "You lay the whole plot bare before the assembled town — the murdered truce, the framed runner, the planted hand, the two days of manufactured knives — and you make them SEE it. The fury that was turning inward turns outward at the gate, at Maddox, where it belongs. Brannick is cleared; the inside agent is named; and the companion you wounded, watching the truth land, finds a reason to stand with you after all that's stronger than the Tollwright's offer. (The best outcome: the fracture closes, the fork is defused, all three knives face the enemy.)",
+          "failure": "The case doesn't quite land — Maddox's seeds of doubt are deep, or the evidence is thin (a clue died with Brannick, or the agent fled before confessing) — and the town stays half-convinced its enemy is across the yard, not across the wall. The wounded companion's wound stays open into the climax, and whether they turn now rests on the gate itself."
+        },
+        {
+          "skill": "Investigation",
+          "dc": 15,
+          "success": "You assemble the evidence into a chain no one can break: the reeve's coded page decoded, the coins traced to the agent's hand, the timeline that exonerates Brannick and damns the planted killer. Laid out cold, it's undeniable — the factions cannot pretend the murder was each other's doing. (Makes the public exposure land; the surest way to re-fuse the three and defuse the fork.)",
+          "failure": "Gaps remain — a missing page, a dead witness, a fled agent — and Ferreth's... Maddox's people cry frame-up; the case persuades some and not others. Lean on the companions' testimony (Persuasion) and the gate-stand to finish what the evidence couldn't."
+        }
+      ],
+      "encounter": null,
+      "transitions": "However the exposure lands, Maddox's host advances and the assault begins — move to scene-a3-climax at the held gate. If the exposure succeeded and the wounded gauge recovered, all three stand; if it failed or the gauge is too low, the betrayal agenda is confirmed and that knife turns at the gate."
+    },
+    {
+      "id": "scene-a3-climax",
+      "name": "Three Knives at the Gate",
+      "type": "combat",
+      "location_id": "loc-reaver-camp",
+      "read_aloud": "The horns sound and the Tollwright's host comes on — ladders against the wall, riders at the barred gate, the red hand and the toll-scales surging up the Risen Road. You take your place on the gatehouse, and so do your three: Vael with her troopers, Korrin with the Vine and the smuggled grain, Anwen with the wounded and the brokered prisoners — three knives at your back, drawn at last not against each other but against the wall-breakers. And then, in the thick of it, the one you spent too cheaply turns to look at you — and whether their blade comes up beside yours or against it depends entirely on which value you betrayed across these two long days. Maddox Crale rides into the gate's shadow, genial to the last. 'Last toll, friends,' he calls over the din. 'Open the gate — or let me show you what a town at its own throat is worth.'",
+      "dm_notes": "THE CLIMAX — the final combat at the held gate, where the THREE-COMPANION FORK pays out and the campaign resolves. THE CORE MECHANIC: whichever companion the party betrayed most across the siege (the lowest gauge, the SET decision_flag) reaches their breaking point and their attitude_below(20) agenda FIRES — but each turns DIFFERENTLY, per their value and decision_flag: (a) VAEL ('broke_your_oath') — does not join Maddox for gold; she WITHDRAWS the Fist from a defense she's decided is no longer lawful (her troopers stand down or leave the wall), or turns to stop the party if they've become the lawlessness she swore against — 'I swore an oath to the law, not to you, and you made me choose.' (b) KORRIN ('turned_in_the_thief') — pulls the Vine and the smuggled grain and the secret ways OUT at the worst moment, or cuts a private deal with Maddox to evacuate the desperate while the party holds a hollow wall — 'You should have saved the people in front of you instead of the principle behind them.' (c) ANWEN ('ordered_the_massacre') — withdraws her mercy and sanctuary, opens the almshouse to the enemy wounded the party abandoned, and stands unarmed between the party and the people they mean to slaughter — 'I swore to count every cost, and you made the cost too high.' IMPORTANT: only the MOST-betrayed companion (lowest gauge below 20 with its flag set) turns; the OTHER TWO stand with the party. If NO gauge is below 20 (the party honored all three — the hardest, best run), ALL THREE stand and Maddox's whole strategy collapses, because the fracture was his only real weapon. THE FIGHT: Maddox = Knight (AC 18, HP 52, CR 3) scaled up (Veteran/Gladiator, or Bandit Captain + Knight for a strong table) on horseback at the gate, with his host (Bandits/Thugs/Scouts + Berserker[s]) and the inside agent (if they fled/survived, as Spy/Assassin). TWO WIN CONDITIONS, and the second is the real one: (1) break/drive off Maddox's host, and (2) HOLD THE GATE WHOLE — keep the town from opening from within, which means keeping at least two of the three companions (and their factions' strength) at the wall. Run a soft CLOCK: each round the town's unity frays (a turned companion, a faltering faction), the gate edges toward being opened from inside; the party must shore up the wall AND the alliance. Maddox is a sellsword-lord, not a fanatic: if the wall HOLDS and his host's losses mount, he breaks off and rides away to set a toll elsewhere (a fine dangling thread — a Tollwright loose on the roads), because his band only ever came for a cheap toll. THE REAL BOSS is the FRACTURE, not Maddox's HP: a party that kept the three together wins even if Maddox escapes, because a whole town is a gate that doesn't open from within. COMPANION CULMINATIONS (loyalty path): an honored Vael tries the inside agent in the open instead of lynching him and keeps the defense lawful; an honored Korrin's Vine flanks the reaver-camp through the secret ways and feeds the wall; an honored Anwen brokers reaver-surrenders and keeps the victory from becoming a massacre. Give each their climactic beat. If a companion turned, the other two get a line acknowledging the cost. The win is holding Risen-Gate AND holding the three — or as many as the party didn't spend.",
+      "checks": [
+        {
+          "skill": "Persuasion",
+          "dc": 17,
+          "success": "At the height of the assault you turn Maddox's own weapon against him — calling out, so the whole wall hears, that the Tollwright's only real army was the lie that set the town against itself, and that the lie is DEAD now, exposed, and the gate is one town again. The wavering hold; the reavers, who came for a cheap toll and not a real fight, see a wall that won't break and a unity that won't crack. (Re-fuses any last fracture and breaks the host's nerve — the cleanest win, holding the three AND the gate.)",
+          "failure": "Maddox laughs it off — 'pretty words don't lower a drawbridge' — and the assault grinds on; win the gate the other way: hold the wall by force, keep the factions at their posts, and break the host's will by making the toll cost more than it's worth."
+        },
+        {
+          "skill": "Intimidation",
+          "dc": 15,
+          "success": "You break the reaver-host's nerve from the wall — showing the sellswords that this gate fights back, that the easy toll they were promised is a slaughter now, that Maddox lied to them about a town ready to fall. Reavers at the edges break and ride off; the host's momentum cracks. (A win-condition: make the toll too expensive and the mercenary band routs, even if Maddox himself escapes.)",
+          "failure": "The reavers hold under Maddox's eye, and you'll have to hold the wall the hard way — by the blade and by keeping your three companions at their posts — until the host breaks or the gate does."
+        },
+        {
+          "skill": "Athletics",
+          "dc": 15,
+          "success": "You hold the breach — bracing the gate, throwing back the ladder-parties, standing in the gap where the wall is thinnest — and buy the town the minutes it needs for the factions to rally and the host to break. (The martial win-condition: physically hold the gate WHOLE so it can't be opened from within or broken from without.)",
+          "failure": "The breach is hard-pressed and you give ground — the gate strains toward opening; lean on your companions' factions (an honored Vael's troopers, Korrin's flank, Anwen's rallied wounded) and the other win-conditions to hold what you can."
+        }
+      ],
+      "encounter": {
+        "monsters": [
+          {
+            "name": "Bandit",
+            "count": 4,
+            "reflavor": "Reaver assault-troops at the wall and gate — sellswords who came for a cheap toll; resolves to bundled 'Bandit' (CR 1/8) or 'Thug' (Tough, CR 1/2) for a harder fight. The most breakable enemies — they rout if the wall holds and the toll looks too costly (Intimidation / a held breach)."
+          },
+          {
+            "name": "Scout",
+            "count": 2,
+            "reflavor": "Maddox's outriders harrying the wall and the postern — hit-and-fade skirmishers; resolves to bundled 'Scout' (CR 1/2). Used to threaten a flank or the gate from inside if a companion turned and opened a way."
+          },
+          {
+            "name": "Berserker",
+            "count": 2,
+            "reflavor": "Reaver shock-troops leading the ladder-assault; resolves to bundled 'Berserker' (CR 2). The host's muscle; drop to 1 for a light party, hold 2-3 for a strong one."
+          }
+        ],
+        "boss": {
+          "name": "Maddox Crale, the Tollwright",
+          "npc_id": "antagonist",
+          "stats": "Knight (AC 18, HP 52, CR 3) scaled up for a level 6-7 party; Veteran (CR 3) or Gladiator (CR 5) at a harder table, or Bandit Captain + Knight for a two-body boss. On horseback at the gate, surrounded by his host.",
+          "note": "The reaver-lord. He offers terms before blades and fights from the gate's shadow; if the wall HOLDS and his host's losses mount, he breaks off and rides away to set a toll elsewhere rather than die (a fine dangling thread). Breaking his HOST's nerve and holding the gate whole is the win, not his corpse."
+        },
+        "support_boss": {
+          "name": "The Inside Agent",
+          "npc_id": "",
+          "stats": "Spy (AC 12, HP 27, CR 1) or Assassin (AC 15, HP 78, CR 8) per Act 2 — present only if they fled/survived scene-a2-climax.",
+          "note": "If the agent escaped Act 2, they're at the gate — trying to open it from within, or fighting at Maddox's side. Exposing them in scene-a3-challenge weakens them here; an unexposed agent may nearly open the gate (the soft clock's worst outcome). A turned companion may aid them — the fracture made flesh."
+        },
+        "tactics": "Maddox offers terms first; the fork resolves as the assault begins. If a companion turned (lowest gauge below 20, flag set), run their turn HERE per their decision_flag — Vael withdraws the Fist, Korrin pulls the Vine and grain, Anwen withdraws sanctuary and stands between the party and a slaughter — a real engine event, heartbreaking, not cartoonish. The OTHER TWO companions fight at full value (an honored companion's faction-strength is decisive: Vael's troopers hold the wall, Korrin's Vine flanks the camp through the secret ways, Anwen's healing and brokered surrenders keep the breach human). The reavers are sellswords who ROUT if the toll looks too costly (Intimidation / a held breach / a broken Maddox). The THREE WIN-CONDITIONS — re-fuse the town (Persuasion), break the host's nerve (Intimidation), or hold the gate whole by force (Athletics/combat) — let social, martial, and skill-focused parties each win. The real boss is the FRACTURE: holding the gate WHOLE (not opening from within) and keeping at least two knives at your back is the victory even if Maddox rides off. Run the soft unity-clock: a turned companion or a faltering faction edges the gate toward opening; shore up wall AND alliance.",
+        "scaling": "Party of 1-2 or all-squishy: Maddox (Knight) + 2 Bandits + 1 Berserker; unity-clock ~6 rounds. Party of 3-4: Maddox (Knight/Veteran) + 4 Bandits + 2 Scouts + 2 Berserkers + the agent (if survived); unity-clock ~5 rounds. Party of 4+ or running hot: Maddox (Gladiator, or Bandit Captain + Knight) + 5 Bandits + 2 Scouts + 3 Berserkers + the agent (Assassin); unity-clock ~4 rounds. Always keep ALL win-conditions live and the fork central — the finale is about holding the three and the gate, not the body count.",
+        "xp": 4500,
+        "xp_note": "Maddox (Knight 700, or Gladiator 1800) + agent (Assassin 3900 or Spy 200, if present) + 4x Bandit (25) + 2x Scout (100) + 2x Berserker (450) ~= 2800-7700; budget ~4500 for the climax. Award FULL value for HOLDING THE GATE WHOLE and keeping the town together — driving off Maddox's host and keeping the three (or the two you didn't spend) at the wall — even if Maddox himself escapes. Holding Risen-Gate as one town, not slaying a sellsword-lord, is the victory."
+      },
+      "transitions": "When the gate holds whole, the host breaks and Maddox is beaten or ridden off, and the inside agent is put down or taken — Risen-Gate stands as one town, and the truce the reeve died for outlives him. Return to loc-gatehouse for the conclusion. If a companion turned, the party holds the gate a knife short, and carries that cost into the dawn."
+    }
+  ],
+  "rewards": {
+    "xp": 8000,
+    "xp_breakdown": {
+      "act1-the-runners-rope": 400,
+      "act2-camp-and-agent": 2400,
+      "act3-held-gate": 4500,
+      "social-exploration-bonuses": 700,
+      "note": "~8000 XP across three acts plus social/exploration story bonuses, tuned for a party starting around level 3 and finishing near level 7 (Baldur's Gate's mature post-Absolute tier). Many DMs will prefer MILESTONE leveling: level 4 after the Runner's Rope (Act 1), level 5-6 across the reaver-camp and the inside-agent (Act 2), level 7 before or during the held gate (Act 3). Award full encounter XP for diplomatic and stealth resolutions — defusing the riot, turning reavers, re-fusing the town, or holding the gate by parley counts fully as overcoming the finale. NOTE: the campaign's hardest 'win' is holding all THREE companions together — a feat of balance, not of XP — and the loss state is a gate opened from within because the party spent one virtue too cheaply."
+    },
+    "currency": {
+      "gp": 300,
+      "note": "Risen-Gate is a poor border town bled by siege; the early reward is civic, not monetary. The real coin comes from the reaver-camp's loot (the ransom-chest the Tollwright meant to fill, ~150 gp recovered in Act 2) and a grateful (and surviving) town settling ~150 gp and the freedom of the road on the party after the gate holds (Act 3). The factions have little to give but their gratitude, their grain, and their secret ways."
+    },
+    "loot": [
+      {
+        "item": "Potion of Healing",
+        "rarity": "common",
+        "count": "2-4 across the campaign",
+        "note": "From the almshouse's stores (Anwen, if honored) and the reaver-camp's supplies. 2d4+2 HP each."
+      },
+      {
+        "item": "The Reeve's Coded Ledger-Page",
+        "value": "the campaign's true prize",
+        "note": "Reeve Hessom's hidden record naming the inside agent's pattern across all three factions — the evidence that exposes Maddox's plot in the open at the gate and re-fuses the town. Recoverable by a party that engaged ALL THREE companions (it takes all three factions' knowledge to read). A story-reward and the Act 3 exposure-lever, not a saleable item."
+      },
+      {
+        "item": "The Vine's Map of the Secret Ways",
+        "value": "0 gp (story item)",
+        "note": "Korrin's (and Mother Sefin's) map of the smuggled routes through and under Risen-Gate's wall — worth an army in a siege: a flank on the reaver-camp, a way to feed the walls, an escape for the vulnerable. A keepsake of Korrin's loyalty (granted on the loyalty path); pulled away if Korrin turns."
+      },
+      {
+        "item": "The Pale Sister's Writ of Sanctuary",
+        "rarity": "uncommon (story/social)",
+        "note": "Anwen's almshouse writ, recognized by all three factions and even by honorable reavers — lets the bearer claim sanctuary for the wounded and broker a surrender. A social key (granted on Anwen's loyalty path); withdrawn if she turns."
+      },
+      {
+        "item": "Vael's Sealed Writ of the Law",
+        "value": "evidence / authority",
+        "note": "Sergeant Vael's Fist commission and the reeve's seal of office, which let the bearer convene a lawful trial recognized by the town — the instrument that clears Brannick and tries the real killer in the open. Granted on Vael's loyalty path; the law's weight withdrawn if she turns."
+      },
+      {
+        "item": "The Tollwright's Ledger",
+        "value": "evidence / leverage",
+        "note": "Maddox Crale's own toll-ledger, recovered if he's beaten or driven off — proof of the dozen towns he's broken this same way, and a warning of where he'll set his next toll. Evidence, a future hook, and a grim trophy of the road."
+      }
+    ],
+    "story_rewards": [
+      "If all THREE companions were held together (no gauge spent below its breaking point), the party achieves the campaign's hardest victory: a town that held as ONE against the wall-breaker, three incompatible virtues balanced rather than spent — and Vael, Korrin, and Anwen, who could not agree on anything, agree at last that the party was the honest broker Risen-Gate needed. The truce the reeve died for outlives him, held by hands that learned to keep three knives sheathed at once.",
+      "If Vael was honored to the loyalty gate, she tries the inside agent in the open instead of lynching him, proves the law can hold a wall without becoming the mob, and stays on as the incorruptible captain of a Risen-Gate worth holding. If she was curdled and withdrew the Fist, the party held the gate without the law's weight — and carries the knowledge that they spent her oath like coin and she let them.",
+      "If Korrin was honored to the loyalty gate, the Vine's grain feeds the walls and its secret ways flank the reaver-camp, and Korrin finds the soft center survived after all, standing the line beside Vael of all people. If Korrin was curdled and pulled the Vine, the party held a hollower wall — and learned that a town which spends its poor to keep its rules is a town its people will leave.",
+      "If Anwen was honored to the loyalty gate, the almshouse keeps the victory human — brokered reaver-surrenders, prisoners turned to witnesses, a gate held without a massacre — and Anwen proves the town could be saved without spending the people it decided didn't count. If she was curdled and withdrew her mercy, the party won a crueler victory, with their healer and their conscience standing between them and the slaughter they'd ordered.",
+      "If Maddox was driven off rather than slain, the Tollwright is loose on the Risen Road with his ledger and his method intact — a sellsword-lord who'll set a new toll and break a new truce elsewhere, a deliberate dangling thread and a darker mirror: the fracture was always the weapon, and somewhere ahead is another town with three good people who can't all be right at once.",
+      "Holding the GATE WHOLE rather than merely killing the man means the question the siege asked — whether law, survival, and mercy can ever all be satisfied at once, and what a town becomes when it has to choose among them under the knife — lingers over Risen-Gate's rebuilding. The reeve's balance, kept or broken, is the campaign's true measure, not the body count at the wall."
+    ]
+  },
+  "conclusion": "Dawn finds Risen-Gate still standing — or standing wounded, depending on what the party spent to hold it. The reaver-host is gone from the Risen Road, broken on a wall that fought back or bought off by a toll the town refused to pay with its own people; Maddox Crale is dead in the gate's shadow or riding north with his ledger to find an easier truce to break. The strongbox is refilled, the reeve is buried with his murderer named beside the open grave, and Brannick the runner walks free with the truth on the record. How the town remembers it is up to the party: as the day three knives that could never agree stood together at the gate and held it as one — or as the day the party learned, the hard way, that you cannot spend law to buy survival, or survival to buy mercy, without one of the three turning in your hand. Either way the truce the old reeve died for has outlived him, fragile and real, held now by a town that knows exactly how easily it breaks. Vael keeps the law; Korrin keeps the people fed; Anwen keeps them alive; and the gate, this winter, opens only to those who pay an honest toll — and to no Tollwright at all. (Hook for a future return: a sellsword-lord loose on the roads with a proven method, a hard-won truce that has to prove it can hold without the party there to balance it, and three companions who will remember which virtue they were, the night the choices came.)",
+  "dm_quickref": {
+    "definition_of_done_mapping": {
+      "exploration": "scene-a1-recruit (work all three faction sites to recruit the trio and gather the murder evidence), scene-a2-challenge (raid the reaver-camp, free prisoners, lift Maddox's plans, surface the inside agent), and scene-a3-challenge (assemble and table the public exposure that re-fuses the town).",
+      "social": "scene-a1-hook (Pip + the engineered murder), scene-a1-recruit (recruit the three competing-agenda companions and establish their ORTHOGONAL vocabularies), scene-a1-climax (the Runner's Rope — the first three-way orthogonal choice), scene-a2-hook (the siege's joint-decisions split the gauges), scene-a2-climax (the inside agent's three-way trap sets the final gauges + decision_flags), scene-a3-hook (Maddox's offer + the fork's crisis), scene-a3-challenge (the public exposure as the last lever on the fork), and the climax's re-fuse-the-town Persuasion (DC 17).",
+      "combat_act1": "scene-a1-climax — OPTIONAL riot: 3x Guard (Fist) + 3x Scout (Vine), best resolved by defusing it (no deaths).",
+      "combat_act2": "scene-a2-challenge (reaver-camp: Bandits + Scouts + Berserker, with a free-the-prisoners objective) and scene-a2-climax (the inside agent as Spy/Assassin mid-boss + Scouts, with the three-way choice that arms a betrayal).",
+      "combat_act3": "scene-a3-climax — Maddox (Knight/Veteran/Gladiator) + the inside agent (Spy/Assassin, if survived) + Bandits/Scouts/Berserkers, with the UNITY-CLOCK objective, the THREE-COMPANION FORK paying out, and three win-conditions (re-fuse the town / break the host / hold the gate whole)."
+    },
+    "bundled_assets_used": {
+      "monsters_act1": [
+        "Guard (x3, scene-a1-climax Fist lynch-mob — or Thug/Tough for a harder fight)",
+        "Scout (x3, scene-a1-climax Vine runners — or Bandit)"
+      ],
+      "monsters_act2": [
+        "Bandit -> Thug/Tough (x4, scene-a2-challenge reaver pickets/ransom-guards)",
+        "Scout (x2-3, Maddox's outriders)",
+        "Berserker (x1, reaver enforcer — scale to party)",
+        "Spy OR Assassin (the inside agent, scene-a2-climax mid-boss — scale to party)"
+      ],
+      "monsters_act3": [
+        "Knight (Maddox, the Tollwright — final boss; Veteran/Gladiator or Bandit Captain + Knight for a strong table)",
+        "Spy OR Assassin (the inside agent, if survived Act 2)",
+        "Bandit -> Thug/Tough (x4, reaver assault-troops)",
+        "Scout (x2, outriders/flankers)",
+        "Berserker (x2, reaver shock-troops)"
+      ],
+      "monsters_optional": [
+        "Commoner (Pip, Brannick, Reeve Hessom, freed prisoners, refugees — noncombatants)",
+        "Veteran (Corporal Dass if forced to fight; a hard-line Fist officer)",
+        "Spy (Mother Sefin if the Vine quarter is attacked — defends, prefers to smuggle the vulnerable out)"
+      ],
+      "spells_in_play": [
+        "Sister Anwen (companion Cleric): Cure Wounds, Healing Word, Bless, Sanctuary, Spiritual Weapon, Lesser Restoration — keeps the anvil standing and the defense human",
+        "Sergeant Vael (companion Fighter): Second Wind, Action Surge (Act 2), martial maneuvers (Act 3) — the wall's anvil",
+        "Korrin (companion Rogue): Sneak Attack, Cunning Action, Uncanny Dodge (Act 2) — the skirmisher/face for the deals and the secret ways",
+        "party casters across the toll-yard, the reaver-camp, and the held gate"
+      ],
+      "conditions_in_play": [
+        "Prone / difficult terrain (the crowded toll-yard riot, the reaver-camp's picket-lines, the breach at the held gate)",
+        "Frightened (the siege pressure; reavers routing under Intimidation)",
+        "Grappled/Restrained (the ransom-pens and the wall-breach scrums)",
+        "Charmed/Surrendered (turned reavers, brokered surrenders — Anwen's and Korrin's social levers)"
+      ]
+    },
+    "the_three_knives_note": "The real engine of this campaign is THREE COMPANIONS WITH ORTHOGONAL APPROVAL VOCABULARIES, so a single tagged decision moves their gauges in OPPOSITE directions. VAEL is law-first (likes keeping_your_word/due_process, dislikes summary_execution); KORRIN is survival-first (likes cutting_a_deal/sparing_a_desperate_thief, dislikes rigid_law_that_gets_people_killed); ANWEN is mercy-first (likes sparing_an_enemy/tending_the_wounded, dislikes collateral_cruelty). On the central choices — Brannick's rope (Act 1), the grain/ransom/retaliation calls (Act 2), the inside agent's fate (Act 2) — pleasing one curdles another: a lawful trial pleases Vael and stings Korrin; springing the runner pleases Korrin and stings Vael; sparing an enemy pleases Anwen and reads as lawlessness to Vael and naivety to Korrin. TAG every central choice with the right cause-keys via record_decision/the approval system so the player SEES the gauges split. The campaign's hardest victory is holding all THREE — a feat of balance the dead reeve managed and Maddox is betting the party can't.",
+    "the_companion_fork_note": "Each of the three companions carries a 4-gate arc (trust 25, personal_quest 50, BETRAYAL 20, loyalty 75) and an attitude_below(20) CompanionAgenda with a DISTINCT decision_flag: Vael's 'broke_your_oath' (broken word / summary execution / law spent like coin), Korrin's 'turned_in_the_thief' (rigid law that got people killed / the runner left to hang / a desperate thief turned in), Anwen's 'ordered_the_massacre' (a massacre ordered / prisoners killed / wounded abandoned / the well poisoned). At the climax, ONLY the most-betrayed companion (lowest gauge below 20 with its flag set) turns, and each turns DIFFERENTLY per their value — Vael withdraws the Fist, Korrin pulls the Vine and grain, Anwen withdraws her sanctuary and stands between the party and a slaughter. The other two stand with the party. Honored, all three stay and Maddox's whole strategy (the fracture) collapses — the best, hardest run. Set the flags HONESTLY via record_decision/set_flag at the central choices (scene-a1-climax, scene-a2-hook, scene-a2-climax): 'broke_your_oath' when the party breaks faith with the law, 'turned_in_the_thief' when they spend the desperate to keep a rule, 'ordered_the_massacre' when they choose collateral cruelty. Those flags ARM the turns; the engine rolls them, the content names the cause.",
+    "pacing": "Designed as a ~4-session arc (one act per ~80-min session, or a long single sitting). Act 1 ~ levels 3-4 (the murder, recruiting the three knives, the Runner's Rope). Act 2 ~ levels 4-6 (the siege's joint-decisions, the reaver-camp raid, the inside agent, the gauges' final state). Act 3 ~ levels 6-7 (the Tollwright's terms, the public exposure, the held gate where the fork pays out). Use the per-scene scaling notes to tune each fight to party size, and prefer milestone leveling (4 / 5-6 / 7) for clean act breaks. The campaign's distinctive pressure is the THREE-WAY orthogonal choice — surface the gauges splitting on every central decision so the player feels the cost of each spent virtue.",
+    "originality_note": "This campaign is original prose written for WorldOS, set in the bundled 'baldurs-gate' world seed (post-BG3, 1492 DR) and released as FAN CONTENT under the same terms as content/worlds/baldurs-gate/world.json (Wizards Fan Content Policy + Larian for BG3 elements; SRD 5.2 / CC-BY-4.0 rules). It uses only SRD 5.2 mechanics and the bundled creature stat blocks (Guard, Scout, Bandit, Thug/Tough, Berserker, Spy, Assassin, Knight, Veteran, Gladiator, Bandit Captain, Commoner). No published or copyrighted adventure text is reproduced. Risen-Gate, the Risen Road, the three-way truce, Reeve Hessom, the Tollwright Maddox Crale and his inside agent, Sergeant Maelin Vael, Korrin 'the Fence' Vane, Sister Anwen, Pip, Brannick, Corporal Dass, and Mother Sefin are ALL ORIGINAL creations — and crucially, the three companions are NON-ORIGIN, ORIGINAL characters, never the seven banned BG3 origin heroes. They are staged against canon BG geography and factions (the Lower City, the Flaming Fist, a smugglers' web in the Vine, a Pale Sister's almshouse, the patriars' tolls) in our own words. The campaign's signature is its THREE COMPETING-AGENDA companions whose orthogonal approval vocabularies turn one choice into three opposite consequences."
+  }
+}

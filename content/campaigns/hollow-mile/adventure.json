@@ -1,0 +1,866 @@
+{
+  "id": "hollow-mile",
+  "title": "The Physician of Hollow Mile",
+  "ruleset": "SRD 5.2",
+  "level_range": [
+    3,
+    7
+  ],
+  "session_length_minutes": 240,
+  "premise": "Hollow Mile is a fen-locked hamlet of forty souls strung along a single sunken road, and for three winters it has been dying of a wasting plague the locals call the Grey Quiet: a sickness that does not kill so much as STILL — the afflicted go cold and slow and finally lie down in the reed-beds and do not get up, and on the third night after they lie down, they rise, grey and patient and wrong, and walk back toward the houses they loved. Between the hamlet and that horror stands one woman: Doctor Eline Mourn, a plague-doctor in a long oiled coat and a beaked leather mask, who came here three winters ago and has held the Grey Quiet at bay with a tincture of her own devising — the Stillwater Draught — that buys the dying a few more lucid weeks. The village worships her. What no one in Hollow Mile knows, and what Eline has buried with a physician's iron discipline, is that the Grey Quiet is HERS: it is the failed first version of the very cure she now doses them with, a draught she invented years ago in another town to save a single dying child — her ward, a girl named Wren — that instead unmade the girl into the first of the grey-walkers, and seeped from that one body into the water table and the fen and finally here, where Eline followed it to atone. She is not the plague's villain by malice. She is its MOTHER, dosing a wound she opened, certain that if she can only refine the draught one more time she can close it — and beneath the bog, in a drowned chapel-crypt, the Stillwater Spring still runs with the original cursed reagent, and the grey-walking remains of Wren still wait at its heart, the proof and the source and the thing Eline cannot bring herself to burn.",
+  "hook": "A reed-cutter's boy named Tomas Vane has gone cold. The Grey Quiet has him — he is slowing, going grey at the lips, and his mother Halda has spent the family's last coin and her last hope flagging down the only outsiders to take the sunken road into Hollow Mile in a season: the party. She does not want a cure she cannot buy; she wants someone with a strong arm and no village fear to walk her dying boy to Doctor Mourn's surgery at the end of the Mile before the cold takes him, and to stand watch on the third night if the worst comes — because the last family that lost someone to the Grey Quiet woke on the third night to find their dead at the door, grey and smiling, and the village will not speak of what they had to do. Bring the boy to the physician. Stand the third-night watch. And try not to ask why a hamlet of forty souls needs a plague-doctor who never takes off her mask.",
+  "themes": [
+    "the healer who is the disease — atonement that perpetuates the wound",
+    "a cure that became a curse, dosed daily to hide its source",
+    "the body saved at the cost of the soul — what 'saving' someone is worth",
+    "gothic dread: the dead who walk home, the bog that remembers, the mask that never comes off",
+    "mercy as a clinical decision — ending suffering vs. burning the sick to be safe"
+  ],
+  "voices": {
+    "narrator-dm": "The Dungeon Master's narration voice. Used for boxed read-aloud text and scene description.",
+    "companion-default": "Doctor Eline Mourn, the party's companion — a masked plague-doctor holding the Grey Quiet at bay in Hollow Mile, and the secret mother of the plague itself.",
+    "npc-elder": "Old Sexton Brell, the hamlet's grave-keeper and unofficial elder, and the drowned, grey-walking remains of the child Wren when she finally speaks.",
+    "npc-rogue": "Corliss Vane, a reed-smuggler turned grave-robber who has been quietly selling the bog's 'grey water' upriver — the antagonist who would seize the Spring for profit.",
+    "npc-male-1": "Tomas Vane, the dying reed-cutter's boy, and assorted frightened, grey-touched villagers of the Mile.",
+    "npc-female-1": "Halda Vane, the boy's mother and the quest-giver, and Sister Ovick, the bog-chapel's last lay-keeper."
+  },
+  "antagonist": {
+    "id": "antagonist",
+    "name": "Corliss Vane",
+    "title": "The Reed-Factor of Hollow Mile",
+    "voice_id": "npc-rogue",
+    "hidden": true,
+    "goal": "To seize the Stillwater Spring — the source of the cursed reagent under the bog — and sell its grey water as a miracle upriver, where rich men dying of ordinary things will pay a fortune for a draught that 'stills' their pain and, three nights later, makes more grey-walkers for him to harvest. Corliss does not believe in the curse as a curse; he believes in it as a RESERVE he has been quietly tapping for two winters, skimming bog-water past Sister Ovick's wards and Eline's vigilance and shipping it to a buyer he will not name. He poses as a put-upon local factor — kin to the dying Vanes, a man who 'just moves reeds' — while in truth he is the reason the Grey Quiet has begun to spread BEYOND Hollow Mile: he has been carrying it out by the bottle. His endgame is to get the party (or Eline) to break the chapel's last wards and open the Spring for him, then take it whole.",
+    "scheme_by_act": [
+      "ACT 1: As the party brings the dying boy down the Mile and stands the third-night watch, Corliss plays the helpful kinsman — lending a cart, pointing the way to Doctor Mourn, warning them off the bog 'for their own good.' In truth he is watching to see whether these outsiders can do what he cannot: get past Eline's secrecy and Ovick's wards to the Spring. He plants the first lie (that the physician's draught is what spreads the sickness) to turn the party against Eline early.",
+      "ACT 2: With the party drawn into the mystery and Eline's secret cracking open, Corliss makes his move on the bog. He has been grave-robbing the grey-walkers for the reagent in their veins and ships it upriver; the party's descent toward the drowned chapel-crypt threatens his supply. He sabotages the wards, frames Eline (or the party) for a fresh outbreak, and races them toward the Stillwater Spring — because whoever reaches the cursed reagent first controls it. The midpoint reversal: the 'cure' the party may have been fighting to protect is the plague, and the man who warned them off the bog is the one harvesting it.",
+      "ACT 3: At the Stillwater Spring in the drowned crypt, Corliss means to seize the reagent whole — and the only thing standing between him and an endless supply of grey-walkers to sell is the party, Eline, and the grey-walking child Wren at the Spring's heart. He will bargain, threaten, and finally fight to keep the Spring flowing; destroying the Spring (burning the cursed reagent at its source) is the cure for the whole fen, but it kills Wren — and forces Eline's choice. Corliss's victory is the Spring left running and sold; the party's is the Spring unmade, whatever it costs."
+    ],
+    "reveal": "Corliss is introduced in Act 1 as the dying family's helpful, harried kinsman — the one outsider-friendly local who lends a cart and 'just wants the sickness gone like everyone else.' Clues accumulate: bottles of bog-water that shouldn't exist; reed-barges that ride low and leave at odd hours; grey-walkers found grave-robbed of the very fluid that animates them; a warning to stay off the bog that sounds less like care and more like a man guarding a claim. The reveal that the 'helpful factor' is the one SPREADING the Grey Quiet for profit — and means to seize the Spring — lands across Act 2 and at the crypt; he is the human predator feeding on a tragedy Eline made and is trying to end.",
+    "stat_block": "Corliss fights at the Act 3 climax at the Spring, and prefers an ambush to a stand-up fight. Use the bundled Bandit Captain stat block (AC 15, HP 65, CR 2) reflavored as a fen-hardened reed-smuggler — twin gutting-knives, a thrown net, and a grey-water flask he'll smash to raise a fresh walker as cover. He surrounds himself with hired bog-runners (Thugs/Toughs) and, if the wards are down, the grey-walkers themselves (Zombies) drawn to the Spring. He is a CR 2-ish profiteer who controls a horror he doesn't fear; run him as a cornered animal protecting a claim, not a mastermind.",
+    "max_hp": 65,
+    "armor_class": 15,
+    "hit_dice": "10d8+20",
+    "proficiency_bonus": 3,
+    "abilities": {
+      "strength": 15,
+      "dexterity": 16,
+      "constitution": 14,
+      "intelligence": 12,
+      "wisdom": 11,
+      "charisma": 15
+    },
+    "damage_resistances": [],
+    "damage_immunities": [],
+    "condition_immunities": []
+  },
+  "companions": [
+    {
+      "id": "companion-eline",
+      "name": "Doctor Eline Mourn",
+      "voice_id": "companion-default",
+      "race": "Human",
+      "background": "Sage",
+      "classes": [
+        {
+          "name": "Cleric",
+          "level": 3,
+          "subclass": "Life Domain"
+        }
+      ],
+      "abilities": {
+        "strength": 10,
+        "dexterity": 12,
+        "constitution": 13,
+        "intelligence": 16,
+        "wisdom": 15,
+        "charisma": 11
+      },
+      "proficiency_bonus": 2,
+      "armor_class": 14,
+      "max_hp": 24,
+      "hit_dice": "3d8",
+      "hit_dice_remaining": 3,
+      "skill_proficiencies": [
+        "Medicine",
+        "Arcana",
+        "Insight",
+        "Investigation"
+      ],
+      "saving_throw_proficiencies": [
+        "wis",
+        "cha"
+      ],
+      "spells_known": [],
+      "spells_prepared": [
+        "Cure Wounds",
+        "Lesser Restoration",
+        "Spare the Dying",
+        "Bless",
+        "Detect Poison and Disease",
+        "Prayer of Healing"
+      ],
+      "spell_slots": {
+        "1": {
+          "maximum": 4,
+          "used": 0
+        },
+        "2": {
+          "maximum": 2,
+          "used": 0
+        }
+      },
+      "personality": "A spare, exact woman of perhaps forty whose face no one in Hollow Mile has ever seen — she wears the long oiled coat and the beaked leather plague-mask of her trade indoors and out, and removes it only to eat, alone, with her back to the door. She speaks in the clean, unhurried cadence of someone who has delivered too much bad news to flinch from it, and she is, by every visible measure, the best thing that ever happened to the Mile: she sits with the dying, eases the cold, and has held the Grey Quiet to a slow burn for three winters with a tincture of her own making. She believes in the body the way a faithless person believes in arithmetic — that flesh is a problem with a solution, that suffering is data, that there is no soul-sized wound she cannot, given time and a clean enough table, close. What she carries under the mask is not a face but a fact: the Grey Quiet is HERS, the failed first draught she brewed years ago to save one dying child — her ward, Wren — that unmade the girl instead, and she has spent every winter since dosing a poison she invented, certain that one more refinement will make it a cure at last. She is gentle with the suffering and merciless with sentiment; she will end a hopeless case cleanly rather than let it linger, and she has no patience for anyone who would let a person rot to keep a principle. She joined the party as the only hands in the hamlet who don't already worship or fear her — and because some buried part of her hopes they will be the ones who finally make her do the thing she cannot: go down to the Spring and burn it, Wren and all.",
+      "notes": "Healer, lore-anchor, and the campaign's MORAL CORE — the secret author of the plague, holding it at bay out of an atonement that quietly perpetuates it. In combat she is the party's medic and a Life-Domain anvil: Cure Wounds, Lesser Restoration to lift the grey-chill, Spare the Dying on a downed ally, Bless to steady the third-night watch; as the party levels treat her as leveling with them (Cleric matching party level — Channel Divinity: Preserve Life by Act 2, Spirit Guardians and a Mass Cure Wounds register by Act 3). Out of combat she is the inside view of the Grey Quiet — she knows the draught, the grey-walkers' patterns, the chapel wards, and the truth of the Spring, but she is RISKY to lean on, because every step toward the source is a step toward the thing she has hidden: that the cure is the curse and the curse has a name, Wren. This is the FORK (see arc + agenda). Honored — trusted with the truth, helped toward ending the suffering rather than hiding it — Eline confesses, leads the party to the Spring, and helps them unmake it even though it kills the child she's been keeping. Curdled — if the party treats the grey-walkers as monsters to be torched wholesale, lets the sick burn to be safe, or (the seal of it) SEIZES the cursed reagent for use or profit instead of destroying it and saving the ward — Eline does NOT snap in a rage. She decides, with clinical cold, that the party is now the disease: a thing spreading her wound for gain, to be excised. Her turn fires when the reagent is taken (prize_seized), and she stands against the party as a physician removing a contaminant — the most chilling thing she could become. The DM should give Eline her own voiced line each scene (a clinician's register: terse, kind, exact) and reach her combat choices through companion_suggest_action.",
+      "companion_dossier": {
+        "wound": "Years ago she invented a draught to save one dying child — her ward, Wren — and it unmade the girl into the first grey-walker and seeped into the water to make a plague; she has dosed the wound she opened ever since, certain one more refinement will close it, and cannot bring herself to burn the child still waiting at the Spring.",
+        "wants": [
+          "refine the Stillwater Draught into a true cure that closes the Grey Quiet for good",
+          "spare the people of Hollow Mile the suffering she set loose, one cold case at a time",
+          "be forgiven the thing she will not name — or made, finally, to end it"
+        ],
+        "fears": [
+          "that the only cure for the fen is burning the Spring and Wren with it — the one mercy she cannot perform herself",
+          "that her atonement is just a slower way of keeping the wound open",
+          "that someone will take the cursed reagent and spread her single failure across the whole river"
+        ],
+        "values": [
+          "saving the savable",
+          "the body over the soul"
+        ],
+        "approval_likes": [
+          "ending suffering quickly",
+          "trusting evidence over superstition",
+          "treat_the_grey_walkers_as_patients",
+          "ease_a_hopeless_case_cleanly",
+          "destroy_the_cursed_reagent",
+          "tell_a_hard_truth_plainly"
+        ],
+        "approval_dislikes": [
+          "letting someone suffer for a principle",
+          "burning the sick to be safe",
+          "torch_the_grey_walkers_wholesale",
+          "seize_the_reagent_for_use",
+          "sell_the_grey_water",
+          "sentiment_over_the_scalpel"
+        ],
+        "banter_tags": [
+          "clinical_grief_for_wren",
+          "physician_pragmatism",
+          "contempt_for_village_superstition",
+          "the_mask_and_what_it_hides"
+        ],
+        "camp_prompts": [
+          "Eline cleans her instruments by the fire long after they are clean, and finally asks the party, mask still on, whether they think a person can be SAVED and damned by the same hand — and which half they'd choose to be remembered for.",
+          "She describes the Grey Quiet's progression with terrible, gentle precision — the cold, the slowing, the third-night rising — and then stops, because she has just described it the way a mother describes a child's first steps, and she does not finish the sentence.",
+          "Pressed about the mask, she says only that a physician who shows the dying her face makes it about herself; then, quieter, that there is a face she could not stand to wear in front of certain people, and that one of them is waiting somewhere very cold and very patient."
+        ],
+        "relationships": {
+          "Wren": "the dead ward — the child her first cure unmade; the grey-walker at the Spring's heart",
+          "Sister Ovick": "wary ally — the chapel-keeper who suspects what Eline is and warded the Spring against her",
+          "Corliss Vane": "unknown predator — the factor skimming the Spring she is trying to seal"
+        }
+      },
+      "arc": {
+        "arc_gates": [
+          {
+            "id": "eline-gate-loyalty",
+            "kind": "loyalty",
+            "threshold": 20,
+            "note": "Eline lets the mask slip — not literally, but the discipline. After the party stands the third-night watch with her and does not flinch, she admits the draught is hers, that it only buys time, and that she does not believe the Grey Quiet is a natural sickness. The first crack: she trusts the party with the fact that she is hiding something larger, and that she is tired of hiding it alone."
+          },
+          {
+            "id": "eline-gate-quest",
+            "kind": "personal_quest",
+            "threshold": 40,
+            "quest_arc_id": "cqarc-eline-stillwater",
+            "stage_id": "cqstage-eline-confession",
+            "note": "Eline's own quest opens — the cure that became a curse. She confesses the whole of it: Wren, the first draught, the Spring beneath the bog where the original cursed reagent still runs and the grey-walking child still waits. She asks the party's help to reach the Stillwater Spring and do what she has never been able to do — unmake it at the source — knowing it means destroying the last of Wren. LINKED via quest_arc_id to the companion-quest-arc 'cqarc-eline-stillwater' (stage 'cqstage-eline-confession'); the personal_quest is the cure-that-became-a-curse made a first-class arc."
+          },
+          {
+            "id": "eline-gate-betrayal",
+            "kind": "betrayal",
+            "threshold": 15,
+            "note": "THE FORK. If the party has treated the grey-walkers as vermin to be torched, let the sick burn to be safe over Eline's objection, sided with Corliss's profit, or moved to SEIZE the cursed reagent rather than destroy it, Eline's clinical certainty curdles toward a verdict: that the party is a vector, not an ally — a thing spreading her wound. This gate is reachable only when approval has curdled; honored, it stays locked forever. It is not rage; it is a diagnosis."
+          }
+        ],
+        "agenda": {
+          "trigger": "prize_seized",
+          "value": null,
+          "note": "Eline's verdict lands. When the cursed reagent is SEIZED — taken from the Spring for use, study, or sale instead of destroyed — the engine flag 'prize_seized' is set and Eline's agenda fires DETERMINISTICALLY (the prize_seized trigger reads only campaign.flags['prize_seized']; it does NOT roll). She does not snap; she DECIDES. With the same unhurried calm she uses on the dying, she concludes that the party has become the disease — carriers who will spread her single failure across the whole river — and that a good physician excises a contaminant before it spreads. She turns against the party clinically, coldly, as a real attack: she will try to destroy the seized reagent and the hands that hold it, grieving and certain, telling them she is sorry, that this is the kindest cut, that she should never have let them near the Spring. NOTE on decision_flag: 'let_the_ward_burn' is the CONTENT-defined decision flag the DM sets (record_decision/set_flag) when the party CHOOSES to burn the Spring and end Wren — i.e. they paid the cost rather than took the prize. The engine reads decision_flag ONLY for attitude_below agendas (to escalate the snap roll), so it does NOT gate this prize_seized fire; it is carried here to record the campaign's central choice for recall and to mark the path that AVOIDS the turn (let the ward burn = unmake, don't seize = no prize_seized = no turn). To fire Eline's turn, set 'prize_seized' when the party takes the reagent; to keep her, let the ward burn and never set 'prize_seized'.",
+          "decision_flag": "let_the_ward_burn"
+        }
+      }
+    }
+  ],
+  "npcs": [
+    {
+      "id": "halda-vane",
+      "name": "Halda Vane",
+      "voice_id": "npc-female-1",
+      "personality": "A broad, weather-cracked reed-cutter's wife in her forties, hands scarred from forty years of cutting fen-reed, eyes hollowed by three winters of watching the Grey Quiet take her neighbors and now her boy. She is not a frightened woman by nature — she has buried a husband and held a hamlet's grief — but the Grey Quiet has worn her down to a single raw want: to get her son Tomas to Doctor Mourn before the cold takes him, and to not be alone on the third night if the worst comes. She flags the party down on the sunken road with the flat, practical desperation of someone who has stopped expecting miracles and will settle for strong arms and an outsider's nerve.",
+      "attitude": "exhausted, practical, desperate",
+      "role": "primary quest-giver",
+      "wants": "To get her dying boy Tomas safely to Doctor Mourn's surgery at the end of the Mile, and to have someone unafraid stand the third-night watch with her if he goes cold — because the last family that lost someone woke to find their dead at the door.",
+      "knows": [
+        "Tomas has the Grey Quiet — cold, grey at the lips, slowing — and only Doctor Mourn's Stillwater Draught buys the afflicted any lucid time at all.",
+        "The third night after someone 'lies down' is when they rise, grey and patient, and walk home; the village deals with it in ways no one will speak of.",
+        "Her kinsman Corliss Vane lent a cart and 'knows the road,' but warns everyone off the bog — and she's noticed his barges ride low and leave at odd hours.",
+        "Doctor Mourn never removes her mask, sits with the dying when no one else will, and is the only reason anyone in Hollow Mile is still alive."
+      ],
+      "secret": "Halda half-suspects that her husband, who 'lay down' two winters ago and whom she swears she put in the ground herself, is one of the grey-walkers that come to the edge of the reeds at night — and she has left bread out for him every third night since, unable to decide if it is mercy or madness. She'll confess this only to a party that has earned her trust, and it makes the horror's human cost unbearable.",
+      "stat_block": "Noncombatant. If endangered, treat as Commoner; she will not fight but will put herself between a grey-walker and her son without hesitation."
+    },
+    {
+      "id": "corliss-vane",
+      "name": "Corliss Vane",
+      "voice_id": "npc-rogue",
+      "personality": "A lean, affable reed-factor in his thirties with a fen-runner's easy smile and a barge-pole's reach, kin (distantly) to the dying Vanes and seemingly the most helpful man in Hollow Mile: he lends carts, knows the safe paths, and 'just wants the sickness gone like everyone else.' Under the helpfulness is a poacher's patience and a profiteer's cold arithmetic. He discovered two winters ago that the bog's grey water — the fluid in the grey-walkers' veins, the runoff of the Spring — fetches a fortune upriver as a 'stilling draught' among the dying rich, and he has been quietly grave-robbing the walkers and skimming the bog ever since, shipping it past Sister Ovick's wards and Doctor Mourn's vigilance. He is the reason the Grey Quiet has begun to spread BEYOND Hollow Mile, and he means to own the Spring outright. Charming, useful, and utterly without horror at what he traffics in.",
+      "attitude": "helpful and folksy (publicly); coldly possessive (once unmasked)",
+      "role": "hidden antagonist — see top-level 'antagonist' for stats and scheme",
+      "wants": "To seize the Stillwater Spring and its cursed reagent whole, and sell its grey water upriver forever — using the party (or Eline) to break the chapel's last wards and open the source he can't reach himself.",
+      "knows": [
+        "Everything about the grey water as a COMMODITY: how to harvest it from the walkers, how to ship it past the wards, who buys it upriver, and what it does (and that he does not care).",
+        "That Doctor Mourn is hiding something about the plague's origin — he doesn't know it's hers, but he knows her secrecy is a lever he can pull to turn the party against her.",
+        "Where the drowned chapel and the Stillwater Spring lie, and that Sister Ovick's wards and Eline's vigilance are the only things between him and an endless supply.",
+        "That the third-night rising follows a pattern he can predict and exploit — he plants a 'fresh outbreak' to frame Eline or the party when it suits him."
+      ],
+      "secret": "He is the spreader, not just a skimmer — three towns upriver have begun to report a grey wasting, and it is his barges that carried it there in stoppered bottles. If the party learns this before the crypt, his whole folksy cover collapses; he'll kill to keep it, or flee to the Spring to seize it before they can.",
+      "stat_block": "See top-level 'antagonist'. Bandit Captain (AC 15, HP 65, CR 2) reflavored as a fen-smuggler — twin gutting-knives, a thrown net, a grey-water flask he smashes to raise a walker as cover. Surrounds himself with hired bog-runners (Thugs/Toughs) and, with the wards down, the grey-walkers (Zombies). Fights cornered, prefers ambush, will bargain before blades.",
+      "max_hp": 65,
+      "armor_class": 15,
+      "hit_dice": "10d8+20",
+      "proficiency_bonus": 3,
+      "abilities": {
+        "strength": 15,
+        "dexterity": 16,
+        "constitution": 14,
+        "intelligence": 12,
+        "wisdom": 11,
+        "charisma": 15
+      }
+    },
+    {
+      "id": "sexton-brell",
+      "name": "Old Sexton Brell",
+      "voice_id": "npc-elder",
+      "personality": "Hollow Mile's grave-keeper and nearest thing to an elder: a stooped, mud-stained old man who has dug every grave in the hamlet for fifty years and, these last three winters, dug most of them twice. He is dry, fatalistic, and unexpectedly kind — the only villager who speaks plainly about the third-night rising, because someone has to, and he is too old to be afraid of much. He keeps the burial-ledger, knows who 'lay down' and when, and has noticed (though he can't prove it) that some of his graves have been opened from outside, the bodies robbed of nothing a thief would want. He is the party's lore-anchor for the Grey Quiet's pattern and the human memory of the hamlet's slow dying.",
+      "attitude": "dry, fatalistic, plain-spoken, willing",
+      "role": "ally / lore-giver / village memory",
+      "wants": "To see the Grey Quiet ended before he has to bury the last soul in the Mile, and to be able to keep his dead in the ground where he put them.",
+      "knows": [
+        "The exact pattern of the Grey Quiet: the cold, the slowing, the lying-down, the third-night rising, and that Doctor Mourn's draught only slows it, never stops it.",
+        "That his graves have been opened from OUTSIDE and the bodies tampered with — robbed of something only he would notice was missing (the grey fluid) — and that the reed-barges leave low and at odd hours.",
+        "The location of the old bog-chapel and the drowned crypt beneath it, abandoned a generation ago when the fen swallowed it, and that Sister Ovick still keeps its wards.",
+        "That Doctor Mourn came to the Mile three winters ago, the same winter the Grey Quiet started, and that he has never decided whether that is a blessing or the worst thing he knows."
+      ],
+      "secret": "Brell has known, in his bones, since the first winter, that Doctor Mourn arrived WITH the sickness, not against it — but she has done nothing but ease his neighbors' deaths since, and he has chosen, deliberately, not to look too hard at the timing, because a hamlet that loses its physician on a suspicion loses everything. Sharing that choice — and the grave evidence — is his trust-gift to the party.",
+      "stat_block": "Noncombatant by age, but not helpless — if cornered among the graves he swings a sexton's spade as a Commoner (or a Guard, AC 16, HP 11, if he must defend Ovick). He'd rather hand the party a lantern and a name than fight.",
+      "max_hp": 11,
+      "armor_class": 12,
+      "hit_dice": "2d8+2",
+      "proficiency_bonus": 2,
+      "abilities": {
+        "strength": 11,
+        "dexterity": 10,
+        "constitution": 12,
+        "intelligence": 11,
+        "wisdom": 14,
+        "charisma": 10
+      }
+    },
+    {
+      "id": "sister-ovick",
+      "name": "Sister Ovick",
+      "voice_id": "npc-female-1",
+      "personality": "The last lay-keeper of the drowned bog-chapel — a gaunt, soft-spoken woman in her fifties who tends a faith the hamlet has all but abandoned and keeps, almost alone, the wards that hold the Stillwater Spring sealed beneath the crypt. She is no warrior-priest; her power is patience, salt, candlewax, and a refusal to leave. She suspects more than anyone what lies at the Spring — she has heard the grey-walking child speak from beyond the wards — and she has warded the crypt as much against Doctor Mourn (whose grief she fears will open it) as against Corliss (whose greed she knows will). She is the moral counterweight: where Eline would refine the wound and Corliss would sell it, Ovick has spent her life simply HOLDING THE LINE so it spreads no further, and she is very tired.",
+      "attitude": "quiet, watchful, weary, principled",
+      "role": "ally / ward-keeper / moral counterweight",
+      "wants": "To keep the Stillwater Spring sealed so the Grey Quiet spreads no further — and, if it must be opened, to see it UNMADE rather than harvested, even at the cost of the child still bound there.",
+      "knows": [
+        "The wards on the drowned crypt: how they hold, how they're failing, and that someone (Corliss) has been damaging them from outside to skim the Spring.",
+        "The truth of the Spring — that the original cursed reagent runs there and that the first grey-walker, a child, is bound at its heart — and that this is the SOURCE, not a symptom.",
+        "That Doctor Mourn's draught is made from a refined, weakened form of the same cursed water, and that the physician's grief is the second-greatest danger to the wards after Corliss's greed.",
+        "How the Spring can be UNMADE — consecrated fire and the breaking of the binding at its heart — and that doing so will end the child Wren along with the curse."
+      ],
+      "secret": "Ovick once, in the first winter, let Doctor Mourn into the crypt to 'see the source,' believing the physician might cure it — and Eline knelt at the Spring and could not do what had to be done, and Ovick has kept her out ever since, blaming herself for nearly losing the line to a mother's love. That guilt is why she warded so hard. Sharing it tells the party exactly what Eline's fork is.",
+      "stat_block": "Noncombatant by oath, but defends the wards as a Priest (AC 13, HP 27, CR 2) — Bless, Cure Wounds, Sanctuary, and a consecrating flame she can call once at the Spring; she protects the crypt and the party, never strikes to kill the living.",
+      "max_hp": 27,
+      "armor_class": 13,
+      "hit_dice": "5d8+5",
+      "proficiency_bonus": 2,
+      "abilities": {
+        "strength": 9,
+        "dexterity": 10,
+        "constitution": 12,
+        "intelligence": 13,
+        "wisdom": 16,
+        "charisma": 13
+      }
+    },
+    {
+      "id": "tomas-vane",
+      "name": "Tomas Vane",
+      "voice_id": "npc-male-1",
+      "personality": "Halda's son, a reed-cutter's boy of perhaps fourteen, going grey at the lips and cold in the hands with the early Grey Quiet — lucid still, frightened, trying hard to be brave for his mother. He drifts between sharp clarity and the slow, dreamy stillness the sickness brings, and in his clear moments he is funny and kind and unbearably alive; in the still ones he talks about the reeds 'singing' and a cold light under the bog that wants him to lie down. He is the campaign's human stake made flesh: not a quest-object but a boy the party can save, lose, or be forced to watch through the third-night watch.",
+      "attitude": "frightened, lucid, fading",
+      "role": "the human stake / the ticking case (Act 1, recurring)",
+      "wants": "To not lie down. To get warm. To not frighten his mother. To beat the thing that took his neighbors.",
+      "knows": [
+        "How the Grey Quiet FEELS from inside — the cold, the slowing, the 'song' under the bog, the pull to lie down in the reeds — intelligence the party gets nowhere else.",
+        "That Doctor Mourn's draught helps, but that he can feel it stop working a little more each dose.",
+        "That he has seen the grey-walkers up close at the reed-line at night and that one of them 'looks at the chapel like it wants to go home.'",
+        "Small, true things about the hamlet a frightened boy notices: whose barge leaves at night, where the safe path is, which graves the dogs won't go near."
+      ],
+      "secret": "Tomas, in his stillest moments, has begun to HEAR the grey-walking child Wren at the Spring — a girl's voice asking, over and over, whether the cold doctor is going to come and make it stop or come and make it worse. He doesn't understand it, but a party that listens to him gently learns the Spring is awake and waiting, and that it remembers Eline.",
+      "stat_block": "Noncombatant (Commoner, but frail — treat as 1 HP of plot-health on the third-night clock). If the Grey Quiet claims him and he is not saved, he 'lies down' and rises on the third night as a Zombie reflavored grey — a horror the party may have to face as someone they knew.",
+      "max_hp": 4,
+      "armor_class": 10,
+      "hit_dice": "1d8",
+      "proficiency_bonus": 2,
+      "abilities": {
+        "strength": 9,
+        "dexterity": 11,
+        "constitution": 8,
+        "intelligence": 12,
+        "wisdom": 11,
+        "charisma": 13
+      }
+    }
+  ],
+  "locations": [
+    {
+      "id": "loc-mile-end",
+      "name": "Mile-End & Doctor Mourn's Surgery",
+      "description": "The party's hub: the lower end of Hollow Mile's single sunken road, where the reed-cutters' cottages crowd against the fen and, at the very end, past the chapel-path, stands Doctor Mourn's surgery — a tall, lamplit cottage of scrubbed tables, hanging herbs, and stoppered tinctures, the cleanest room in a hamlet of mud. This is the safe base: the party returns between acts to rest, dose the dying, share findings with Sexton Brell and (warily) Sister Ovick, and sit with Eline by the surgery fire. It is also where the third-night watch is stood, where the Grey Quiet's slow arithmetic is felt, and where the village's gratitude to its masked physician sits in plain sight against the dread the party slowly learns to feel.",
+      "connections": [
+        "loc-reedfen-graves",
+        "loc-drowned-chapel"
+      ],
+      "notes": "HOME-BASE HUB. Halda Vane (quest-giver) and the dying Tomas, Sexton Brell (lore/village memory), and Doctor Mourn's surgery anchor it; Eline, the companion, is the party's inside view of the Grey Quiet. The party rests, levels, doses, and stands the third-night watch here. Eline's loyalty gate (20) can open here after the watch. Connections fan out to the two field-sites; the drowned chapel (Act 2/3) is reached down the chapel-path through the reedfen."
+    },
+    {
+      "id": "loc-reedfen-graves",
+      "name": "The Reedfen & the Sexton's Graves (Act 1 / Act 2)",
+      "description": "The drowned country around Hollow Mile: black-water channels through head-high reed that 'sing' in the wind, plank-paths that sink underfoot, and on the only dry rise, the hamlet's crowded graveyard, where Sexton Brell has dug every plot twice. Will-o'-wisp lights drift over the deep water; at night the grey-walkers come slow and patient to the reed-line, looking toward the chapel like homesick things. By day the party reads the graves Brell says were opened from outside, follows the low-riding barge-tracks, and learns the Grey Quiet's pattern; by night they stand the third-night watch and meet the walking dead as people they may have known.",
+      "connections": [
+        "loc-mile-end",
+        "loc-drowned-chapel"
+      ],
+      "notes": "ACT 1 SITE + Act 2 approach (levels 3-5). Three beats: EXPLORATION (read the tampered graves and the burial-ledger, follow the barge-tracks, find a stoppered grey-water bottle that shouldn't exist; bog hazards — sinking plank-paths, will-o'-wisp lure, cold water); SOCIAL (Brell's plain testimony on the third-night pattern and the opened graves; Halda's bread-for-the-dead confession; Corliss playing the helpful kinsman while warning the party off the bog); COMBAT (the third-night watch — grey-walkers (Zombies) come to the reed-line; the moral knife is that one may be someone the party knew, and Eline treats them as patients, not monsters). See scenes scene-a1-*."
+    },
+    {
+      "id": "loc-drowned-chapel",
+      "name": "The Drowned Bog-Chapel & Crypt (Act 2)",
+      "description": "Down the chapel-path where the fen has swallowed the old shrine to the waist, the Drowned Bog-Chapel leans half-submerged in black water, its bell-tower a roost for fen-birds, its nave flooded to the altar-rail. Sister Ovick keeps a candle burning on the one dry step and the wards salted on the crypt-stair that descends, below the waterline, toward the Stillwater Spring. Here the party crosses from mystery into horror: the truth of the Grey Quiet's source, the failing wards Corliss has been damaging, the grave-robbed reagent, and the first cold breath of the drowned crypt where a child's voice waits in the dark.",
+      "connections": [
+        "loc-mile-end",
+        "loc-reedfen-graves",
+        "loc-stillwater-spring"
+      ],
+      "notes": "ACT 2 SITE (levels 4-6). Three beats: EXPLORATION (the flooded nave and the warded crypt-stair — sabotaged wards, grave-robbed reagent, the chapel's records of the first winter; water/dark hazards, a salt-line puzzle); SOCIAL (Sister Ovick, the ward-keeper who knows the Spring is the SOURCE and that Eline once knelt there and could not act — the midpoint reversal that the cure is the curse; Eline's personal-quest gate (40) and her confession land here, LINKING the cure-that-became-a-curse arc); COMBAT (Corliss's bog-runners and the grey-walkers drawn by the failing wards; the fork pressure-tests as Corliss makes his pitch to seize the Spring). The crypt-stair descends to the Stillwater Spring (Act 3 venue), revealed here. Eline's betrayal agenda may be armed here if approval has curdled."
+    },
+    {
+      "id": "loc-stillwater-spring",
+      "name": "The Stillwater Spring, Beneath the Crypt (Act 3)",
+      "description": "At the bottom of the drowned crypt-stair, below the waterline and the failing wards, a low vaulted chamber holds the Stillwater Spring — a still, grey, faintly luminous pool that does not ripple, where the original cursed reagent wells up from the deep fen and has run, slow and patient, for years. The cold here is the cold of the Grey Quiet itself; the walls are scratched with a child's tally-marks; and at the pool's heart, neither living nor properly dead, the grey-walking remains of the ward Wren sit waiting in the water, the first of the walkers and the binding that keeps the Spring awake. This is where the cure must be unmade at its source — and where Eline must finally do, or fail to do, the one thing three winters of atonement have been avoiding.",
+      "connections": [
+        "loc-drowned-chapel"
+      ],
+      "notes": "ACT 3 SITE (levels 6-7). Three beats: EXPLORATION (descend the warded crypt-stair to the Spring; the binding at its heart, the consecrating-fire method Ovick knows, the cold/horror hazards; the PRIZE — the cursed reagent — is here, seizable); SOCIAL (the confrontation: Wren speaks; Eline's fork resolves — confess-and-unmake (loyalty) or, if the party SEIZES the reagent over destroying it, her prize_seized agenda fires; Corliss arrives to seize the Spring whole and bargains/threatens); COMBAT (the climax: Corliss [Bandit Captain] + bog-runners [Thugs] + grey-walkers [Zombies]; the true win is UNMAKING the Spring — burning the cursed reagent at its source — not a body count, but it costs Wren; if the reagent is seized instead, Eline turns). Reachable only after Act 2 reveals the crypt-stair and the Spring."
+    }
+  ],
+  "arcs": [
+    {
+      "id": "arc-1-third-night",
+      "title": "Act 1 — The Third-Night Watch",
+      "level_range": [
+        3,
+        4
+      ],
+      "beats": [
+        {
+          "id": "a1-hook",
+          "title": "Hook — The Boy Going Grey",
+          "location_id": "loc-mile-end",
+          "summary": "On the sunken road into Hollow Mile, the reed-cutter's wife Halda Vane flags the party down over her dying son Tomas — grey at the lips, going cold with the Grey Quiet — and begs them to walk him to Doctor Mourn's surgery and stand the third-night watch if it comes to that. The party meets the masked physician Eline Mourn (their companion), the helpful kinsman Corliss, and the dread the hamlet won't name."
+        },
+        {
+          "id": "a1-challenge",
+          "title": "Challenge — Reading the Fen",
+          "location_id": "loc-reedfen-graves",
+          "summary": "While Tomas is dosed, the party works the reedfen: Sexton Brell's tampered graves and burial-ledger, the low-riding barge-tracks, a stoppered grey-water bottle that shouldn't exist, and the Grey Quiet's third-night pattern. Corliss plays helpful while warning them off the bog; Eline lets the first crack show — the draught is hers and it only buys time."
+        },
+        {
+          "id": "a1-climax",
+          "title": "Climax — What Comes Back",
+          "location_id": "loc-reedfen-graves",
+          "summary": "The third night falls and the grey-walkers come slow to the reed-line — and one of them may be someone the party has met. Eline treats them as patients, not monsters, and how the party answers (ease them, study them, or torch them wholesale) is the act's moral knife. The party holds the watch, learns the walkers turn toward the chapel like homesick things, and earns the first thread to the source."
+        }
+      ]
+    },
+    {
+      "id": "arc-2-drowned-chapel",
+      "title": "Act 2 — The Drowned Chapel",
+      "level_range": [
+        4,
+        6
+      ],
+      "beats": [
+        {
+          "id": "a2-hook",
+          "title": "Hook — The Cure Is the Curse",
+          "location_id": "loc-mile-end",
+          "summary": "Back at the surgery, the party puts the bog-bottle, the tampered graves, and the walkers-turning-home together — and Eline, or Sister Ovick, names the unbearable shape of it: the Grey Quiet is not a natural sickness, and the draught holding it at bay is a weakened form of the very thing that causes it. The trail leads down the chapel-path to the drowned crypt and the source beneath it."
+        },
+        {
+          "id": "a2-challenge",
+          "title": "Challenge — The Ward-Keeper's Line",
+          "location_id": "loc-drowned-chapel",
+          "summary": "At the half-submerged bog-chapel, Sister Ovick keeps the failing wards on the crypt-stair — wards Corliss has been sabotaging to skim the Spring. The MIDPOINT REVERSAL lands: the source is the Stillwater Spring below, the first grey-walker is a child, and Doctor Mourn once knelt there and could not act. Eline confesses (her personal-quest gate, LINKED to the cure-that-became-a-curse arc); the fork tightens as Corliss makes his pitch."
+        },
+        {
+          "id": "a2-climax",
+          "title": "Climax — The Wards Break",
+          "location_id": "loc-drowned-chapel",
+          "summary": "Corliss's hand is forced: his bog-runners and the grey-walkers drawn by the failing wards converge on the crypt as he moves to open the way to the Spring. The party holds the line with Ovick, secures the consecrating-fire method, and learns the cost ahead — to unmake the Spring is to end the child Wren. The crypt-stair to the Stillwater Spring opens; Eline's betrayal agenda arms if approval has curdled."
+        }
+      ]
+    },
+    {
+      "id": "arc-3-stillwater",
+      "title": "Act 3 — The Stillwater Spring",
+      "level_range": [
+        6,
+        7
+      ],
+      "beats": [
+        {
+          "id": "a3-hook",
+          "title": "Hook — Down to the Source",
+          "location_id": "loc-mile-end",
+          "summary": "The party prepares for the descent: Ovick's consecrating fire, the truth of the binding, and the weight of what's coming — for the only cure for the whole fen is to burn the cursed reagent at its source, and that ends Wren. Eline reaches her crisis. With Corliss racing to seize the Spring first, the party goes down the warded crypt-stair before mercy and greed both run out of time."
+        },
+        {
+          "id": "a3-challenge",
+          "title": "Challenge — The Cold Pool",
+          "location_id": "loc-stillwater-spring",
+          "summary": "Below the waterline, the Stillwater Spring waits — still, grey, luminous, the child Wren bound at its heart, the cursed reagent welling cold from the deep. The party must reach the binding, ready the consecrating fire, and choose: unmake the Spring (the cure, at Wren's cost) or SEIZE the reagent (for use, study, or Corliss's coin). Wren speaks; Eline's fork resolves on what the party does at the pool."
+        },
+        {
+          "id": "a3-climax",
+          "title": "Climax — The Unmaking",
+          "location_id": "loc-stillwater-spring",
+          "summary": "Corliss arrives to seize the Spring whole, his runners and the raised grey-walkers at his back, and the party must break his hold on the source. The true victory is UNMAKING the Spring — consecrating fire to the cursed reagent, the binding broken, Wren released — which cures the fen but ends the child and forces Eline's choice. If instead the party seizes the reagent, 'prize_seized' fires and Doctor Mourn turns, clinical and cold, to excise the contaminant the party has become."
+        }
+      ]
+    }
+  ],
+  "scenes": [
+    {
+      "id": "scene-a1-hook",
+      "name": "The Boy Going Grey",
+      "type": "social",
+      "location_id": "loc-mile-end",
+      "read_aloud": "The sunken road into Hollow Mile runs below the level of the fen, a green tunnel of head-high reed that whispers on both sides though there is no wind. Where the road meets the first cottages, a broad woman with reed-scarred hands steps into your path and does not move, because in her arms is a boy of perhaps fourteen, grey at the lips and shivering with a cold that has nothing to do with the season. 'You're outsiders,' she says, flat, like it's the only good news she's had in a month. 'You don't have the fear yet.' She shifts the boy's weight; he stirs, mumbles something about the reeds singing, goes still again. 'His name's Tomas. Mine's Halda. He's got the Grey Quiet, and the only thing that slows it is the doctor at the end of the Mile.' Her jaw works. 'Walk him down for me. And if the cold takes him before we get there — stand the third night with me. The last family that lost someone didn't. They woke up to find their dead at the door.' Down the Mile, at the very end past a sunken chapel-path, a tall lamplit cottage burns its lights against the dusk, and a figure in a long oiled coat and a beaked leather mask watches from the door.",
+      "dm_notes": "Establish the hub, the human stake, and the gothic dread — and plant the companion in plain sight. Halda Vane (npc-female-1) is the quest-giver: practical, worn past fear, asking not for a cure she can't buy but for strong arms and an outsider's nerve. Tomas (npc-male-1) is the ticking case — lucid but fading, and his 'the reeds are singing / a cold light wants me to lie down' is the first real eeriness. Play the dread quiet and physical: the windless whispering reed, the cold that isn't weather, the village's refusal to name the third-night rising. THE COMPANION: Doctor Eline Mourn (companion-default) is the masked physician at the Mile's end — she takes the boy with clean, exact hands, doses him with the Stillwater Draught, and is by every visible measure the hamlet's salvation. She NEVER removes the mask. She speaks like a clinician (terse, kind, no sentiment) and recruits to the party as the only hands here that don't already worship or fear her — frame it as her asking the capable outsiders to help her hold the line, not the party hiring her. Do NOT tip that the plague is hers; that reveal is Act 2's payoff. THE ANTAGONIST hides here too: Corliss Vane (npc-rogue) appears as the helpful kinsman — lends a cart, knows the road, and warns the party 'stay off the bog, for your own good' (the first note that sounds more like a man guarding a claim than care). Sexton Brell (npc-elder, dry/fatalistic) can be met here or at the graves and gives the first plain word about the third-night rising. The hook is moral, not monetary — a dying boy, a frightened hamlet, a watch to stand — plus Eline's quiet, magnetic strangeness.",
+      "checks": [
+        {
+          "skill": "Medicine",
+          "dc": 13,
+          "success": "You read Tomas the way the masked doctor does — and what you find is wrong in a way no plague should be. This isn't infection; it's something closer to a slow freezing of the will, the body going quiet by degrees, and faint in his cold blood is a grey shimmer you've never seen in any sickness. Doctor Mourn watches you find it, and through the beak of the mask, very quietly, says: 'You see it too. Good. Then you won't waste my time pretending it's a fever.' (Flags that the Grey Quiet is unnatural, and earns Eline's first flicker of regard — trusting_evidence_over_superstition.)",
+          "failure": "It's a wasting sickness, cold and grey and bad — beyond your skill to name. The doctor takes the boy without comment and doses him; you've helped carry him, and that's enough for now. The strangeness of the thing waits for a closer look."
+        },
+        {
+          "skill": "Insight",
+          "dc": 13,
+          "success": "Two reads under the surface. Halda is telling the plain truth and is far past hoping for a cure — she wants a WATCH stood, which means she expects the boy to die and rise. And the masked doctor, for all her clean calm, carries something heavier than a hard case: when Halda says 'the Grey Quiet,' the beaked mask turns away a fraction, the way a person turns from a thing they can't look at straight. (Flags Eline's hidden weight and the realness of the third-night dread.)",
+          "failure": "A frightened mother, a dying boy, a strange doctor in a stranger hamlet — grim, but it reads as exactly the grim job it appears to be. The doctor's calm is just a professional's calm; the unease keeps for later."
+        }
+      ],
+      "encounter": null,
+      "transitions": "When the party takes Halda's case — walking Tomas to the surgery and agreeing to the watch — they're drawn into the hamlet's slow dying. Working the fen and the graves while Tomas is dosed moves to scene-a1-fen at loc-reedfen-graves; the third-night watch is scene-a1-watch."
+    },
+    {
+      "id": "scene-a1-fen",
+      "name": "Reading the Fen",
+      "type": "exploration",
+      "location_id": "loc-reedfen-graves",
+      "read_aloud": "While the boy sleeps under the doctor's draught, you walk the drowned country around Hollow Mile, and it does not want you. Plank-paths sink underfoot into black water; the reed sings without wind; pale lights drift over the deep channels, beautiful and patient, exactly far enough off the path to drown you. On the one dry rise stands the graveyard, and old Sexton Brell leans on his spade among plots he says he's dug twice, and points with a mud-black finger at three graves whose earth has been opened — not by any animal, and not from the inside. In the reeds by the water you find a barge-pole's scrape in the mud and, half-sunk where it was dropped, a small stoppered bottle of still grey water that catches the light wrong, the way the boy's blood did.",
+      "dm_notes": "ACT 1 EXPLORATION and the start of the mystery's spine. Threads: (1) The TAMPERED GRAVES — Brell (npc-elder) shows three graves opened from OUTSIDE, the bodies robbed of nothing a normal thief would want (Investigation: the corpses were drained of the grey fluid; someone is harvesting the dead). (2) The BARGE-TRACKS — low-riding barge scrapes and night-departures lead toward the deep fen and, eventually, the chapel (Survival/Investigation to follow; they tie to Corliss). (3) The GREY-WATER BOTTLE — a stoppered sample that 'catches the light wrong' (Arcana/Medicine: it's the same grey shimmer as Tomas's blood, refined; the first hard clue that the sickness is being BOTTLED). (4) The third-night PATTERN — Brell lays it out plainly: cold, slowing, lying-down, third-night rising, and that the walkers drift toward the old chapel 'like they want to go home.' SOCIAL: Halda may confess she leaves bread out for her dead husband on the third night (the human cost); Corliss (npc-rogue) turns up 'to help,' lends a hand, and warns the party off the deep bog with a smile that doesn't reach his eyes. COMPANION: Eline (companion-default) reads the grey-water bottle with a stillness that should worry a sharp party (Insight) — she recognizes it, and covers; this is where her loyalty gate (20) can begin to open if the party has been decent and unsuperstitious. Hazards: sinking plank-paths (DC 12 Dexterity/Acrobatics), will-o'-wisp lure off the path (DC 13 Wisdom save to resist the pretty lights; treat as terrain/atmosphere, not a fight unless the party blunders deep), cold water (exhaustion risk on a long soak).",
+      "checks": [
+        {
+          "skill": "Investigation",
+          "dc": 14,
+          "success": "You work the three opened graves and the burial-ledger together and the picture is grave-robbery of the strangest kind: the bodies weren't taken or robbed of valuables — they were DRAINED, each one tapped for the grey fluid in its veins, the same grey that shimmers in the bottle and in Tomas's blood. Cross-referenced against the barge-tracks, someone is harvesting the dead of Hollow Mile and carrying the take out by water at night. (You're holding proof the Grey Quiet is being collected and shipped — by a hand that knows exactly what it's worth.)",
+          "failure": "The graves were opened from outside and the bodies disturbed, but the busy, sunken earth and Brell's old ledger won't give you the why at a glance. You DO confirm the openings are recent and deliberate, and the barge-tracks are real — enough to know someone is working the graves and the water, even if the purpose waits for the chapel."
+        },
+        {
+          "skill": "Arcana",
+          "dc": 13,
+          "success": "The stoppered grey water is no natural thing. It carries a faint, cold necromantic resonance — death held at a stillpoint, neither rot nor rest — the same signature as the chill in Tomas's blood, but concentrated and refined, as if someone distilled the sickness down to its essence and bottled it. This is not a symptom of the Grey Quiet; it is the Grey Quiet, purified — and purifying it took skill and intent. (The first hard proof the plague is MADE, not caught.)",
+          "failure": "The water is cold past reason and 'wrong' to the touch, and your senses recoil from it, but you can't pin the resonance precisely — only that it's the same wrongness as the boy's blood, and that water doesn't sit that still on its own. Eline, if asked, will name it 'the Quiet, concentrated,' and say no more."
+        },
+        {
+          "skill": "Insight",
+          "dc": 14,
+          "success": "Watching Eline handle the grey-water bottle, you catch what her mask is built to hide: she didn't discover it, she RECOGNIZED it — her gloved hands went still the way Halda's did over her dying son, and for half a breath the clinician's calm was grief wearing a coat. She covers smoothly, but you know now that the doctor holding the Grey Quiet at bay knows this poison far better than three winters of treating it could teach her. (Plants the truth of Eline's secret without spending the reveal; played gently, it deepens her loyalty gate rather than spooking her.)",
+          "failure": "Eline studies the bottle with a physician's detachment and hands it back with a clinical word about 'the concentrated agent.' Whatever she feels stays behind the beak of the mask; you learn the substance is dangerous, not that the doctor is bound to it."
+        }
+      ],
+      "encounter": null,
+      "transitions": "The grave-evidence and the barge-tracks point two ways: out to the deep fen and the chapel-path (Act 2), and forward to the third night, when the dead the party has been reading about come back. When dusk of the third night falls, move to scene-a1-watch. (A party that pushes straight for the chapel can be slowed by the bog and the failing light; the watch comes first.)"
+    },
+    {
+      "id": "scene-a1-watch",
+      "name": "What Comes Back",
+      "type": "combat",
+      "location_id": "loc-reedfen-graves",
+      "read_aloud": "The third night comes the way Brell said it would: still, and cold, and wrong. You stand the watch at the reed-line with Halda's lantern between you, and somewhere past midnight the singing of the reeds changes pitch, and they come — slow, patient figures wading up out of the black water, grey-skinned and unhurried, water streaming off them, their faces calm as sleepers. They do not lunge. They WALK, steady and homeward, toward the lamplit Mile and the chapel beyond it, as if they are only late getting home. The lantern catches the nearest one's face, and Halda makes a sound you will not forget — because you have seen this man before, in a portrait over her hearth, two winters in the ground. Beside you, Doctor Mourn does not draw a weapon. She lifts her bag. 'They are not attacking,' she says, very evenly. 'They are PATIENTS. Try to remember that, whatever happens next.'",
+      "dm_notes": "First COMBAT and the campaign's tonal thesis: the grey-walkers (Zombies, reflavored grey and homeward) are the WALKING DEAD AS VICTIMS, not gleeful monsters — they shamble toward the Mile and the chapel 'to go home,' and one of them is Halda's dead husband (a gut-punch the party must navigate). The fight: 2-3 grey-walkers (Zombie, AC 8, HP 22, CR 1/4) wading up at the reed-line; they are slow, relentless, and dangerous in numbers but not malicious — they grapple and drag toward the water more than they savage. THE MORAL KNIFE: Eline (companion-default) will NOT torch them; she treats them as patients, tries to ease/restrain rather than destroy, and how the party answers is a major approval beat — easing/containing them and respecting Halda's dead (ease_a_hopeless_case_cleanly / treat_the_grey_walkers_as_patients) wins Eline hard; torching them wholesale over her objection (torch_the_grey_walkers_wholesale / burning the sick to be safe) is the first push toward her betrayal gate (15). The walkers' turning-toward-the-chapel is the key CLUE the party carries forward (they're drawn to the Spring). If Tomas died and rose, this is where the party may face HIM — reserve that for a party that failed his case, and play it for everything. HAZARD: the deep water at the reed-line (a walker that grapples a PC drags toward drowning — DC 13 Strength to break free); the will-o'-wisps may gather. Eline's loyalty gate (20) opens here for a party that stands the watch and honors the dead. Do NOT make this a slasher beat; make it a grief beat with stakes.",
+      "checks": [
+        {
+          "skill": "Religion",
+          "dc": 13,
+          "success": "You understand what you're seeing — not undead raised to kill, but souls STILLED, held at a deathless stillpoint and called homeward by something that has them on a tether. Naming a rite of rest over Halda's husband (or any walker) lets you lay it down GENTLY — eased back into true death rather than hacked apart — and the others slow, as if the gesture matters to them. (Eline's approval surges; the surest way to hold the watch without butchery, and a clue that the walkers answer to a source, not a hunger.)",
+          "failure": "The walkers are beyond a prayer's easy reach tonight; you can still put them down, but the hard way, and Halda has to watch her husband fall a second time. The rite waits until you understand the source better (the chapel, the Spring) — for now, hold the line however you can."
+        },
+        {
+          "skill": "Insight",
+          "dc": 12,
+          "success": "You watch where they GO. Not at you — past you, every grey face turned the same way, wading toward the sunken chapel-path at the Mile's end 'like they want to go home.' Whatever is pulling them is down that path and under the water, and it is pulling hard enough to walk the dead through a hamlet full of the living without a glance. (The thread to the drowned chapel and the source — Act 2's direction, earned in the worst possible moment.)",
+          "failure": "In the dark and the grief and the cold water it's all you can do to hold the line; the walkers' purpose is lost in the chaos. You survive the watch and keep the Mile, but the WHERE of what's pulling them waits for daylight and Brell's plain word about the chapel."
+        }
+      ],
+      "encounter": {
+        "monsters": [
+          {
+            "name": "Zombie",
+            "count": 3,
+            "reflavor": "Grey-walkers — the Grey Quiet's dead, wading up grey and homeward, water streaming off them. NOT malicious: they walk toward the Mile and the chapel 'to go home,' grapple and drag toward the water more than they savage. One is Halda's dead husband (play the grief). Use bundled Zombie (CR 1/4). At least one can be laid to rest gently (Religion) rather than destroyed."
+          }
+        ],
+        "tactics": "The grey-walkers wade up slow and relentless at the reed-line, ignoring the party where they can to push HOMEWARD toward the chapel-path; they grapple and drag toward the deep water rather than maul, making drowning the real threat. They are turned/eased by a rite of rest (Religion) and put down hard by force; Eline tries to contain and ease, never torch, and pleads for the same. The deep water behind the line is a drowning hazard (a grappled PC dragged in makes DC 13 Strength saves). Keep the body count optional and the grief central — a watch that ends with the dead laid gently to rest is the BETTER outcome and the one Eline's approval rewards.",
+        "scaling": "Party of 1-2 or all-squishy: 2 grey-walkers (Zombies). Party of 3-4: 3 Zombies. Party of 4+ or running hot: 4-5 Zombies, or 3 + a stronger 'first-risen' walker (Ogre Zombie or a Ghoul for a faster, hungrier horror). If Tomas died and rose, add him as a single grey-walker the party must face as someone they tried to save — worth more than any XP line.",
+        "xp": 300,
+        "xp_note": "3x Zombie (50 each = 150), budgeted up to ~300 with the third-night stakes and the grief of Halda's husband. Award FULL value whether the walkers are destroyed, eased to rest (Religion), or contained — laying them down gently is overcoming the encounter, not avoiding it, and a story bonus for honoring Halda's dead."
+      },
+      "transitions": "With the watch held and the dead — eased or felled — laid down, the party has the thread that matters: the grey-walkers turn toward the chapel-path, drawn by something under the water. They return to loc-mile-end (level 4-ish) to regroup; Act 2's hook (the cure-is-the-curse reveal with Eline and Ovick, and the descent to the drowned chapel) opens. Eline's loyalty gate (20) likely stands open after a watch well kept."
+    },
+    {
+      "id": "scene-a2-hook",
+      "name": "The Cure Is the Curse",
+      "type": "social",
+      "location_id": "loc-mile-end",
+      "read_aloud": "Back in the clean lamplight of the surgery you lay it all on the scrubbed table: the stoppered grey water, the rubbing of a tampered grave, Brell's ledger of the lying-down and the rising, and the one fact none of you can put down — that the dead don't claw, they WALK, homeward, toward the drowned chapel at the end of the Mile. Doctor Mourn stands very still over the evidence, the lamp throwing the beak of her mask long across the wall. For a long moment she says nothing. Then she takes the stoppered bottle, holds it to the light, and you watch a woman decide whether to lie. 'The Stillwater Draught I give your boy,' she says at last, and her clinician's calm has a hairline crack in it, 'is a weakened form of exactly this. The thing in this bottle is not what causes the Grey Quiet.' She sets it down with great care. 'It is the Grey Quiet. Refined. And I have been dosing this hamlet with a gentler cup of the same cold water for three winters, because it was the only thing I had that slowed it.' She looks at you through the mask. 'You wanted to know what I'm hiding. There. Now ask me the next question, and I will tell you whether I can bear to answer it.'",
+      "dm_notes": "ACT 2 HOOK and the MIDPOINT REVERSAL stated plainly: the cure is the curse — the draught holding the Grey Quiet at bay is a weakened form of the very thing that causes it. This is the campaign's spine turning over, and it should land as horror, not gotcha. Eline (companion-default) cracks the first layer of her secret here: the draught is hers and it's the same cold water, refined. She does NOT yet name Wren or the Spring unless the party reaches her personal-quest gate (40) — keep the full confession (Wren, the first cure, the Spring beneath the chapel) for the chapel/crypt where it has a stage to live in (it's LINKED to the cqarc-eline-stillwater quest-arc, stage cqstage-eline-confession). Sister Ovick (npc-female-1) can be introduced here or at the chapel as the ward-keeper who knows the SOURCE — she's the one who can name the Stillwater Spring beneath the drowned crypt and that the first walker is a child. Corliss (npc-rogue) works the other side: he plants the LIE that the doctor's draught is what spreads the sickness (a half-truth that turns the party against Eline if they're inclined to superstition) — watch for a party that buys it and treats Eline as the villain, which is a fast push toward her betrayal gate (15). THE FORK FRAMING: this is where the party's posture toward Eline sets — do they treat her as a monster who made a plague, or a physician trying to end the thing she set loose? Trusting_evidence_over_superstition and giving her the chance to atone (rather than torching her) is the loyalty path. Cassian-equivalent here is Ovick: the moral counterweight who has spent her life HOLDING THE LINE. Name the DROWNED CHAPEL and the crypt-stair as the next destination. NOTE: if the party never opened Eline's loyalty gate, run this as a colder, warier scene — she reveals less, and a freed grave-prisoner or Ovick supplies the same reveal; don't hard-gate the descent on Eline's trust.",
+      "checks": [
+        {
+          "skill": "Insight",
+          "dc": 13,
+          "success": "You meet Eline's confession without recoiling, and you see the whole shape of her in it: not a poisoner gloating, but a woman who has been holding a wound shut with her bare hands for three winters and is exhausted past the mask. Naming it gently — 'you didn't catch this; you MADE it, and you've been trying to unmake it ever since' — reaches her completely. She doesn't deny it. She tells you there is more, and worse, and that she will show you if you'll come down to the chapel. (Opens her toward the personal-quest gate; the surest way to keep the fork on the loyalty side instead of treating her as the villain Corliss wants her to be.)",
+          "failure": "You catch that Eline is telling a partial truth and bracing for a verdict — but pressing for the rest, or recoiling from her, makes her shut the mask and go clinical and cold again. She'll still guide you toward the chapel, but the full confession, and the warmth of her trust, waits until you've shown her you won't burn her for what she's about to admit."
+        },
+        {
+          "skill": "Investigation",
+          "dc": 13,
+          "success": "Working Eline's draught against the bottled grey water, you confirm the chemistry of the horror: same agent, same cold resonance, hers merely diluted and buffered — and the dilution is FAILING, a little more each batch, which is why the draught buys less time every dose. Whatever the source is, it's growing stronger, and the trail of refinement and the barge-tracks both run to the same place: the drowned chapel and whatever the wards there are holding under the water. (Confirms the cure-is-the-curse and points hard at the crypt.)",
+          "failure": "The two samples are plainly kin and plainly dangerous, but the exact chemistry stays past your reach in a surgery this small. You know the draught is a weaker cousin of the bottled curse and that both lead toward the chapel — enough to go down, even without the full picture."
+        }
+      ],
+      "encounter": null,
+      "transitions": "Armed with the cure-is-the-curse and the chapel as the source, the party takes the chapel-path down through the reedfen to the drowned bog-chapel — move to scene-a2-chapel at loc-drowned-chapel. (A party that bought Corliss's lie and turned on Eline still ends up at the chapel — Ovick and the wards force the truth into the open below.)"
+    },
+    {
+      "id": "scene-a2-chapel",
+      "name": "The Ward-Keeper's Line",
+      "type": "exploration",
+      "location_id": "loc-drowned-chapel",
+      "read_aloud": "The chapel-path ends where the fen has eaten a shrine to the waist. The Drowned Bog-Chapel leans in the black water, its nave flooded to the altar-rail, its bell-tower a roost for pale birds that do not sing. On the one dry step a single candle burns, and behind it stands a gaunt woman in a lay-keeper's grey, a line of salt across the crypt-stair at her back and a look on her face like she has been waiting three winters for you and dreading it the whole time. 'You brought the doctor,' Sister Ovick says, and it is not quite an accusation. Below her, the crypt-stair descends into water and dark, and from somewhere far down it, faint and patient and unmistakably a child's, a voice is singing the same tune the reeds sing. The salt-line at the stair-head is broken in two places, scuffed away from the OUTSIDE, and recently. 'Someone's been breaking my wards,' Ovick says softly. 'Skimming what's below to sell. And the more he breaks them, the louder she sings, and the more of them lie down and walk.' She looks at Eline, and her voice goes very gentle and very hard at once. 'You know what's down there, doctor. You've known the whole time. Are you finally going to help me end it — or just kneel by it and weep again?'",
+      "dm_notes": "ACT 2 EXPLORATION + the SOCIAL heart that delivers the full reversal and Eline's confession. Sister Ovick (npc-female-1) is the ward-keeper and moral counterweight: she has held the Stillwater Spring sealed for years and knows it is the SOURCE — the original cursed reagent, and the first grey-walker, a CHILD, bound at its heart. She names that Eline once knelt at the Spring and could not act, which is why Ovick warded so hard (against the doctor's grief as much as the smuggler's greed). Threads: (1) The SABOTAGED WARDS — the salt-lines are broken from outside, recently (Investigation/Perception: Corliss has been breaking them to skim the Spring; the more broken, the more walkers rise). (2) The CHAPEL RECORDS — the first winter's entries place Doctor Mourn's arrival with the sickness, not against it (the timing Brell wouldn't look at). (3) The CRYPT-STAIR — descends below the waterline toward the Spring; warded, cold, and a child's voice singing up it (the binding is awake and aware). (4) ELINE'S CONFESSION + PERSONAL-QUEST GATE: if the party has earned it (approval/loyalty), Eline tells the WHOLE of it here — Wren, the ward she tried to save; the first draught that unmade the girl into the first walker; the Spring where the cursed reagent still runs and Wren still waits; and that she has never been able to do the one thing that would end it: burn the Spring, Wren and all. THIS IS HER personal_quest GATE (threshold 40), LINKED via quest_arc_id 'cqarc-eline-stillwater' (stage 'cqstage-eline-confession') — she asks the party's help to reach the Spring and unmake it. (5) THE FORK: Corliss's pressure peaks — he wants the wards down and the Spring open to seize; a party that sides with his profit, or that treats Wren/the walkers as monsters to be torched, or that eyes the cursed reagent as a PRIZE to take, pushes toward the betrayal gate (15) and ARMS the prize_seized agenda. COMPANION: give Eline the confession as her arc's emotional center; if her loyalty gate isn't open, Ovick carries the reveal and Eline confirms it coldly. Hazards: flooded nave (difficult terrain/swim), the broken wards (a Religion/Arcana check to re-salt and slow the rising), the cold of the crypt-stair.",
+      "checks": [
+        {
+          "skill": "Insight",
+          "dc": 14,
+          "success": "You read Eline at the threshold of her confession and meet it true — naming, gently, that the child's voice singing up the stair is someone she KNOWS, someone she's been keeping down there in the cold rather than ending. It breaks the last of the mask. She tells you all of it: Wren, the ward she brewed the first draught to save; how it unmade the girl into the first of the walkers and seeped into the water to make the Quiet; the Stillwater Spring below where the cursed reagent still runs and Wren still waits; and that the only cure is to burn the Spring, Wren and all, and that she has never once been able to do it. She asks your help to go down and do what she cannot. (Opens her personal-quest gate (40), LINKED to cqarc-eline-stillwater / cqstage-eline-confession — the cure-that-became-a-curse made her quest; the single best insurance against the fork.)",
+          "failure": "Eline goes white behind the mask and gives you the bones of it — that the source is below, that she is bound to it, that it cannot simply be cured — but the rest, and Wren's name, stay locked behind a grief she can't open under Ovick's eyes. Sister Ovick supplies the shape of the truth regardless: a child at the Spring's heart, a cure that has to be UNMADE not refined. You'll go down knowing what waits, if not the whole of what it costs the doctor."
+        },
+        {
+          "skill": "Investigation",
+          "dc": 13,
+          "success": "You work the broken salt-lines and the chapel records together and the smuggler's hand is plain: the wards were scuffed from the OUTSIDE, recently and repeatedly, by someone tapping the Spring below and shipping the take by barge — and the first-winter records put Doctor Mourn's arrival the same season the Quiet began. The sabotage is fresh enough that whoever's doing it means to open the way to the Spring soon, with you here or not. (Ties Corliss to the broken wards and the harvest; sets the race to the Spring.)",
+          "failure": "The wards are broken and the records are damp and half-ruined; you can tell someone's been at the stair from outside and that the chapel is older than the hamlet's memory, but the smuggler's full pattern and the timing of Eline's arrival stay murky until Ovick or Eline spells it out. You know the way down is being forced — not yet by whom."
+        },
+        {
+          "skill": "Religion",
+          "dc": 13,
+          "success": "Working with Sister Ovick, you read the wards for what they are — a binding of REST laid over a thing that refuses to rest, salt and candle and patience holding a stillpoint shut — and you can help her re-lay the broken lines, slowing the rising and buying the hamlet time. More, you learn the METHOD of unmaking: consecrated fire to the cursed reagent at its source, and the breaking of the binding at the Spring's heart — which is to say, the ending of whatever the binding holds. (Secures the Act 3 win-method and earns Ovick as a firm ally; names, without flinching, that unmaking the Spring ends the child bound there.)",
+          "failure": "The wards are beyond your hand to mend tonight, and Ovick re-lays what she can alone; you grasp that the source must be UNMADE rather than cured, but the exact rite — consecrating fire, the breaking of the binding — waits on Ovick's instruction at the Spring itself. You go down knowing the goal, not yet the method."
+        }
+      ],
+      "encounter": null,
+      "transitions": "With the reversal landed (the cure is the curse, the source is the Spring, the first walker is a child), Eline's confession told or Ovick's truth in hand, and the unmaking-method learned, the party faces the forced descent. As Corliss's hand closes on the wards, move to scene-a2-break — the fight to hold the crypt and open the stair on the party's terms, not the smuggler's."
+    },
+    {
+      "id": "scene-a2-break",
+      "name": "The Wards Break",
+      "type": "combat",
+      "location_id": "loc-drowned-chapel",
+      "read_aloud": "It happens fast, the way the bog does things. A barge-pole splashes in the dark of the flooded nave; a stoppered bottle arcs out of the reeds and shatters on the broken salt-line, and the grey water in it hisses where it lands. Sister Ovick cries out and throws salt, but the last of the ward gutters — and down the crypt-stair the child's singing swells, glad and terrible, and answered. Out of the black water of the nave the grey-walkers rise, drawn up the chapel-path to the source that calls them; and along the gallery, where the helpful kinsman Corliss Vane stands with a gutting-knife in each hand and bog-runners at his back, the folksy smile is finally, entirely gone. 'Nothing personal, doctor,' Corliss says, almost kindly, over the singing. 'But that Spring's been feeding three towns and a buyer who pays in gold, and I'm not about to let a hamlet of corpses and a weepy physician seal it up now. Hold them off my wards, lads. Once it's open, it's mine.'",
+      "dm_notes": "ACT 2 CLIMAX — the second COMBAT, Corliss's hand forced into the open, and the race for the Spring. Corliss (npc-rogue, see top-level 'antagonist') drops the helpful-kinsman mask here: he's the smuggler skimming the Spring, and he means to break the last wards and seize the source. He does NOT necessarily fight to the death here — he wants the wards DOWN and the way OPEN, and may break off toward the Spring (Act 3) once the salt-line is gone, leaving the party and Ovick to the rising walkers (he survives to the climax unless the party is exceptional; capturing him here yields the buyer and the full smuggling picture). The fight is twofold: (1) Corliss's BOG-RUNNERS (Thug/Tough, AC 12, HP 32) trying to break/keep-broken the wards, and (2) the GREY-WALKERS (Zombies) rising from the nave, drawn up toward the singing — a chaos of the hostile-living and the pitiable-dead at once. THE OBJECTIVE is to HOLD/RE-LAY the wards (a Religion/Arcana skill-objective with Ovick) and decide the way down is opened on the PARTY's terms, not Corliss's. THE FORK pressure-tests: Corliss may pitch the party directly ('there's coin in that water; the doctor wants to BURN a fortune') — taking his deal, eyeing the reagent as profit, or torching the rising walkers wholesale over Eline's plea pushes hard toward her betrayal gate (15) and arms the prize_seized agenda. COMPANION: Eline fights to PROTECT the walkers from being slaughtered even as they menace the party (treat_the_grey_walkers_as_patients) and to keep the reagent from Corliss's hands — a wrenching split; honor it and her loyalty deepens toward the climax. Ovick (Priest) fights only to defend the wards and the party, calling Sanctuary and Bless, never to kill. HAZARDS: the flooded nave (difficult terrain/swim, drowning if grappled under), the broken salt-line (a re-lay objective under fire), the cold. STAKES: lose, and the wards break uncontrolled and the Spring opens to Corliss; win, and the party descends to the Spring ready, with Corliss beaten back or captured.",
+      "checks": [
+        {
+          "skill": "Religion",
+          "dc": 14,
+          "success": "Working beside Ovick under fire, you re-lay the broken salt-lines and steady the binding — not sealing the Spring (that's the climax) but holding the rising walkers at the threshold and denying Corliss the uncontrolled break he wants. The way down opens on YOUR terms: warded, deliberate, with the singing held to a murmur. (Wins the objective; the party descends ready instead of overrun, and Ovick's consecrating fire is secured for the Spring.)",
+          "failure": "The wards won't hold under Corliss's sabotage and the walkers' pull; the salt-line breaks wide and the singing swells. You can still take the stair, but you go down with the Spring fully awake and the walkers loose behind you — a harder descent, and Corliss already racing ahead into the dark."
+        },
+        {
+          "skill": "Intimidation",
+          "dc": 14,
+          "success": "You break the bog-runners' nerve — hired muscle has no stomach for a chapel full of singing dead — and one or more throw down and flee or talk, naming Corliss's buyer upriver and the three towns already going grey from his bottles. A cornered runner (or Corliss, if trapped) confirms the endgame: he means to take the Spring whole and sell it forever. (Damning, and the lever to expose Corliss as the SPREADER, not just a skimmer.)",
+          "failure": "The runners hold, paid too well and too afraid of Corliss to break, and he covers his own break toward the Spring behind them. You win the nave the hard way and piece his plan together from Ovick and the bottles — and he's already on the stair ahead of you."
+        }
+      ],
+      "encounter": {
+        "monsters": [
+          {
+            "name": "Thug",
+            "count": 3,
+            "reflavor": "Corliss's hired bog-runners — fen-smugglers paid to break the wards and guard the harvest, surrender-prone once the singing dead start rising around them. Resolves to bundled 'Tough' (CR 1/2). Scale to 2 for a light party, 4 for a strong one."
+          },
+          {
+            "name": "Zombie",
+            "count": 3,
+            "reflavor": "Grey-walkers rising from the flooded nave, drawn UP toward the singing Spring — pitiable, relentless, a hazard to both sides. Use bundled Zombie (CR 1/4); Eline pleads to ease, not slaughter, them. They menace the living indiscriminately but turn always toward the source."
+          }
+        ],
+        "boss": {
+          "name": "Corliss Vane",
+          "npc_id": "antagonist",
+          "stats": "Bandit Captain (AC 15, HP 65, CR 2) — twin gutting-knives, a thrown net, a grey-water flask to raise a walker as cover. Scale down to a Spy (AC 12, HP 27) for a light table.",
+          "note": "Forces the wards open here and may BREAK OFF toward the Spring once the salt-line is gone rather than fight to the death — he must survive to the Act 3 climax unless the party is exceptional. Makes his profit-pitch to the party (arming the fork). Capturing him yields the buyer, the three poisoned towns, and the full plan."
+        },
+        "tactics": "Corliss opens by shattering a grey-water bottle on the wards to force the break, then plays keep-away — keeping bog-runners and rising walkers between himself and the party while he works the salt-line, and breaking toward the crypt-stair once it's open. The runners cluster on the wards and the gallery; they break under Intimidation or once the walkers rise thick around them. The grey-walkers are a two-sided hazard (they menace everyone, drift toward the Spring) and Eline fights to spare them. Ovick holds the wards (Sanctuary/Bless), never striking to kill. The flooded nave is difficult terrain and a drowning risk; the re-lay-the-wards objective (Religion) runs alongside the fight. Keep the dual objective live — HOLD the wards / deny Corliss the uncontrolled open — so the fight is about the source, not just the bodies. If the fork has curdled, Corliss's pitch lands and the party may turn toward the reagent-as-prize; note it for the agenda.",
+        "scaling": "Party of 1-2 or all-squishy: Corliss as Spy + 1 Thug + 2 Zombies. Party of 3-4: Corliss (Bandit Captain) + 2-3 Thugs + 3 Zombies. Party of 4+ or running hot: Corliss + 3 Thugs + 4 Zombies + a stronger first-risen walker (Ogre Zombie/Ghoul). Corliss breaks off toward the Spring rather than dying here regardless of party size.",
+        "xp": 1200,
+        "xp_note": "Corliss (Bandit Captain, 450, or Spy 200 on a light table) + 3x Thug/Tough (100) + 3x Zombie (50) ~= 900-1500; budget ~1200 toward the act. Award FULL value for holding the wards, beating back or capturing Corliss, and easing rather than slaughtering the walkers, however it's done — denying Corliss the Spring is the win, not the kill count."
+      },
+      "transitions": "With the wards held or broken, Corliss beaten back or fled toward the Spring, and the crypt-stair open, the party regroups (level 5-6) and prepares the descent — move to scene-a3-hook at loc-mile-end, then down the stair to the Stillwater Spring (loc-stillwater-spring). If the fork has curdled — Corliss's deal taken, the walkers torched, the reagent eyed as profit — Eline's prize_seized agenda is armed for what the party does at the pool. If honored, she goes down with the party to do, at last, the thing she could never do alone."
+    },
+    {
+      "id": "scene-a3-hook",
+      "name": "Down to the Source",
+      "type": "social",
+      "location_id": "loc-mile-end",
+      "read_aloud": "There is little night left and less to say. Sister Ovick lays out what the unmaking needs — consecrated fire, carried down to the Spring; the binding at its heart broken; and the cold courage to do both while a child's voice begs you not to. She presses a brand of chapel-flame and a vial of holy water into your hands, and will not meet Eline's eyes. By the surgery fire, Doctor Mourn cleans instruments that are already clean, and finally sets them down. 'I have gone down those stairs a hundred times in three winters,' she says, very quietly, the mask off at last and turned away so you cannot see her face, only the lamplight on a tear she does not bother to hide. 'And a hundred times I have knelt by that cold water and told Wren I would find another way. There is no other way. There was never another way.' She turns the mask over in her hands. 'When we are down there, and she asks me to save her again — and she will — I do not know if I can do what has to be done. So I am asking you.' She looks at you, bare-faced and unbearable. 'If I cannot burn it, you must. Whatever I say. Promise me you will not let me keep her cold to spare myself.'",
+      "dm_notes": "ACT 3 HOOK — the turn from investigation to the unmaking, and Eline's crisis. The stakes are named and total: the ONLY cure for the whole fen is to burn the cursed reagent at the Stillwater Spring's source, and that ends the grey-walking child Wren. Sister Ovick (npc-female-1) supplies the method and the tools (consecrating fire, holy water) and the firm, grieving clarity that it MUST be done. ELINE REACHES HER CRISIS: this is the fork's last fork before the pool. If honored (approval high, personal-quest gate 40 open), she takes the mask off — a huge intimacy beat — and BEGS the party to do what she cannot if her nerve fails: burn the Spring even if she pleads otherwise, because she knows Wren will ask to be saved again and she does not trust herself. If curdled (or the party bought Corliss's profit-pitch, torched the walkers, or is eyeing the reagent as a prize), play her grief as armored and watchful instead, and let the descent feel like a thing she's bracing to STOP if the party goes wrong at the pool. Let the party PREPARE: Ovick's fire and holy water, last rest and doses, Brell's blunt blessing, a Potion of Healing or two from the surgery. NOTE: the descent and the choice are unavoidable — Corliss is already below or racing there, so the party goes down whatever their posture. Make this scene about RESOLVE and the unbearable cost: a cure that is also a small, particular murder, and a companion asking the party to be her courage or her conscience.",
+      "checks": [
+        {
+          "skill": "Insight",
+          "dc": 14,
+          "success": "You read Eline at the edge of the thing she's avoided for three winters and meet it whole — not promising her it won't hurt, but promising her she won't have to carry it alone, and that you'll be her hands if her hands fail. It settles something in her that three winters of penance never could: she commits to going down and seeing it through, and even if Wren's voice unmakes her at the pool, she trusts the party to finish it. (Locks the loyalty path; the single best insurance against the prize_seized fork at the Spring — a party Eline trusts to do the hard mercy is a party she will not turn on.)",
+          "failure": "You miss the depth of what she's asking, or answer it with a plan instead of a presence, and Eline puts the mask back on and goes clinical and grim. She'll go down — she has to — but whether she helps you burn the Spring or throws herself between you and Wren at the last stays open, and dangerous, into the climax."
+        },
+        {
+          "skill": "Religion",
+          "dc": 13,
+          "success": "Taking Ovick's instruction to heart, you understand the unmaking as a RITE, not just arson: consecrated fire to the cursed water, holy water to the binding, and a true rest spoken over the child at its heart so that what you do is a release and not a destruction. Done right, Wren is freed, not merely burned — a mercy inside the horror. (Earns the cleanest possible Act 3 resolution and a real comfort to offer Eline: that ending it ends Wren's cold patience too, the way a cure should.)",
+          "failure": "You grasp the mechanics — fire, holy water, the breaking of the binding — but not the grace-note that would make it a release rather than a ruin. You can still unmake the Spring; it will simply be a harder, colder thing to do and to carry, and Ovick's voice will have to carry the rite alone at the pool."
+        }
+      ],
+      "encounter": null,
+      "transitions": "When the party is ready — fire in hand, the cost understood, Eline's crisis met or left open — they take the warded crypt-stair down below the waterline to the Stillwater Spring. Move to scene-a3-spring at loc-stillwater-spring."
+    },
+    {
+      "id": "scene-a3-spring",
+      "name": "The Unmaking",
+      "type": "combat",
+      "location_id": "loc-stillwater-spring",
+      "read_aloud": "The crypt-stair ends below the waterline in a low vaulted chamber where the cold is the cold of the Grey Quiet itself, and at its heart lies the Stillwater Spring — a flat grey pool, faintly luminous, that does not ripple though water drips into it from a hundred cracks. The walls are scratched with a child's careful tally-marks, three winters of them. And in the center of the still water, neither living nor dead, a small grey figure sits with her knees drawn up, singing the tune the reeds sing, and when your light falls on her she lifts her face and it is a child's face, patient and cold and glad to see you. 'You came,' Wren says, in a voice like water under ice. Her grey eyes find Eline, behind you, frozen on the last step. 'You came BACK. I knew you would. You're going to make it stop now, aren't you?' She smiles. 'You're going to save me again.' Behind you on the stair, a gutting-knife scrapes stone, and Corliss Vane's voice comes down out of the dark, delighted: 'There it is. There's the fortune. Take the water, friends — all of it — and we'll all walk out of here rich. Or burn a king's ransom for a dead girl's sake. Your choice. Mine's made.'",
+      "dm_notes": "THE CLIMAX — the final COMBAT, the unmaking, and the fork's resolution. THREE forces meet at the Spring: (1) WREN (npc-elder voice when she truly speaks — a child's cadence over something older), the grey-walking ward at the binding's heart, who asks Eline to 'save her again' — the most devastating pressure in the campaign; (2) CORLISS (npc-rogue / top-level antagonist), arrived to SEIZE the Spring and its reagent whole, pitching the party to take the water for profit; (3) ELINE (companion-default) at her absolute crisis. THE CENTRAL CHOICE, and the fork: the party can UNMAKE THE SPRING — consecrating fire to the cursed reagent, holy water and a rite of rest to break the binding and RELEASE Wren — which CURES THE WHOLE FEN (every grey-walker laid to rest, the Grey Quiet ended at its source, the draught no longer needed) at the cost of the child; OR the party can SEIZE THE REAGENT (take the grey water for use, study, or Corliss's coin) instead of destroying it. THE AGENDA — if the party SEIZES the reagent (sets the campaign flag 'prize_seized'), Eline's agenda FIRES: she does NOT rage — she DECIDES, with clinical cold, that the party has become the disease, carriers who will spread her single failure across the river, and that a physician excises a contaminant. She turns against the party as a real attack — grieving, certain, telling them she's sorry, that this is the kindest cut, trying to destroy the seized reagent and the hands that hold it. Arm this by setting 'prize_seized' (the engine trigger) when the party takes the water, and the content-flag 'let_the_ward_burn' should be set TRUE only if the party CHOSE to end Wren / burn the Spring (i.e. paid the cost) — the agenda's decision_flag reads it as the ESCAPE valve: a party that seized the prize and did NOT let the ward burn is exactly who Eline turns on. If the party UNMAKES the Spring (the intended victory), Eline — if honored — either does it herself (her arc's catharsis: the cure she could finally perform) or lets the party be her hands while she holds Wren and says goodbye; her agenda never fires. CORLISS fights to keep the Spring flowing: Bandit Captain (AC 15, HP 65, CR 2) + bog-runners (Thug/Tough) + grey-walkers (Zombies) raised from the pool; he flees a lost Spring rather than die for it (a Corliss loose with a few bottles is a fine dangling thread). RUN A SOFT CLOCK: each round the party delays the unmaking, the Spring's pull strengthens and more walkers rise up the stair behind them — race to burn the source, not just to kill Corliss. WIN CONDITION: unmaking the Spring (curing the fen) is the victory, whether or not Corliss is slain; the real boss is the SOURCE and the choice, not Corliss's HP. Give Eline and Wren the climactic exchange; let the party's choice at the pool be the campaign's last and heaviest word.",
+      "checks": [
+        {
+          "skill": "Religion",
+          "dc": 15,
+          "success": "You carry Ovick's rite to its end at the pool — consecrating fire to the cursed water, holy water to the binding, and a true rest spoken over Wren so the unmaking is a RELEASE and not a butchery. The grey light gutters; the Spring's pull collapses; up and down the fen, every grey-walker lies gently down at last; and Wren, freed, looks at Eline with a child's whole face for one clean moment before she goes. (THE VICTORY: the Grey Quiet ended at its source, the fen cured, Wren released rather than merely destroyed — the cleanest unmaking, and the catharsis of Eline's whole arc.)",
+          "failure": "The rite resists you under the singing and the cold and Corliss's blades; you can still set the consecrating fire to the reagent and break the Spring by force, but it's a harder, colder ending — Wren burned rather than gently released, the cure bought without the grace-note. Lean on Ovick's voice (if she's with you) or simply finish it; the fen is cured either way, but the manner of it is a thing the party and Eline will carry."
+        },
+        {
+          "skill": "Persuasion",
+          "dc": 15,
+          "success": "You reach Eline at the unbearable moment — when Wren asks to be saved again and the doctor's nerve fails — and give her the words she gave you: that the kindest thing she can do for the child she loves is to let her rest, that keeping Wren cold to spare herself was never mercy, that this is the cure she came three winters to perform. It steadies her. She kneels, takes Wren's grey hand, and either sets the fire herself or holds the child while you do — the release she could never reach alone. (Resolves her loyalty arc at its peak; turns the unmaking from a thing done TO her grief into a thing done THROUGH it.)",
+          "failure": "Eline cannot be talked across the last step in time — she's frozen, or pleading with Wren, or between you and the pool — and the unmaking has to happen around her grief rather than through it. If she's honored she won't stop you, only weep; if her fork has curdled and the party reaches for the reagent instead, this is where her agenda takes her, and the next thing she says is a verdict, not a plea."
+        },
+        {
+          "skill": "Intimidation",
+          "dc": 14,
+          "success": "You break Corliss off the Spring — calling across the chamber that there's no fortune in a pool you're about to burn, that his runners are dying for a dead girl's bathwater, that the buyer upriver will never see another bottle. His muscle wavers; one by one they back off the pool, and Corliss, seeing the Spring lost, snatches what bottles he can and bolts up the stair rather than die for it. (Clears the way to unmake the Spring; a fled Corliss with a few bottles is a deliberate dangling thread for a darker sequel.)",
+          "failure": "Corliss and his runners hold the pool, too greedy or too far in to break, and you'll have to win the Spring the hard way — by force, while the walkers rise and the clock runs. The unmaking happens under blades, not after them."
+        }
+      ],
+      "encounter": {
+        "monsters": [
+          {
+            "name": "Thug",
+            "count": 3,
+            "reflavor": "Corliss's bog-runners holding the pool so the harvest can be taken — the most turnable foes here (Intimidation peels them off once they grasp there's no fortune in burnt water). Resolves to bundled 'Tough' (CR 1/2)."
+          },
+          {
+            "name": "Zombie",
+            "count": 4,
+            "reflavor": "Grey-walkers rising up the crypt-stair, drawn to the awakened Spring — a soft clock made flesh (more each round the unmaking is delayed). Pitiable; all of them lie down for good the instant the Spring is unmade. Use bundled Zombie (CR 1/4)."
+          }
+        ],
+        "boss": {
+          "name": "Corliss Vane",
+          "npc_id": "antagonist",
+          "stats": "Bandit Captain (AC 15, HP 65, CR 2) — twin gutting-knives, thrown net, a grey-water flask to raise a walker as cover. Spy (AC 12, HP 27) for a light table.",
+          "note": "Here to seize the Spring whole and sell it forever; pitches the party to take the reagent for profit (arming the prize_seized fork). Fights to keep the Spring flowing but FLEES a lost Spring rather than die for it — a Corliss loose with a few bottles is a fine dangling thread. The real boss is the SOURCE and the choice, not his HP; unmaking the Spring is the win even if he escapes."
+        },
+        "support_boss": {
+          "name": "Doctor Eline Mourn (only if her agenda fires)",
+          "npc_id": "companion-eline",
+          "stats": "Cleric (Life Domain), leveled with the party (~lvl 6-7): Spirit Guardians, Hold Person, Inflict Wounds, Cure Wounds turned to harm, Channel Divinity. A controller-medic, not a brawler.",
+          "note": "ONLY if the party SEIZES the reagent (prize_seized fires and the ward was NOT let burn). She does not rage — she turns CLINICAL and cold, a physician excising a contaminant, trying to destroy the seized reagent and the hands holding it, grieving and certain ('this is the kindest cut'). If honored, she is NOT an enemy — she is the one who helps unmake the Spring. Run her turn as heartbreak, never villainy."
+        },
+        "tactics": "Wren's plea and Corliss's pitch both land BEFORE initiative — give the fork its full weight at the pool. If it comes to blades, Corliss plays keep-away (runners and raised walkers between himself and the party, grey-water flasks for fresh cover), breaking for the stair if the Spring is clearly lost. The grey-walkers are a RISING CLOCK — more each round the unmaking is delayed, drawn up from the fen — so the party races to set the consecrating fire, not to clear the room. The bog-runners break under Intimidation once they see the Spring burning. If the party UNMAKES the Spring, every walker in the chamber and the fen lies down the instant the binding breaks — the fight ends with the cure, not the kill. If the party SEIZES the reagent instead, set 'prize_seized' and run Eline's agenda turn (clinical, grieving) — the climax becomes the party vs. the doctor they failed, the worst victory in the campaign. Keep the SOURCE the boss: burning the Spring is the win.",
+        "scaling": "Party of 1-2 or all-squishy: Corliss as Spy + 1 Thug + 2 Zombies, clock ~6 rounds. Party of 3-4: Corliss (Bandit Captain) + 2-3 Thugs + 3-4 Zombies, clock ~5 rounds. Party of 4+ or running hot: Corliss + 3 Thugs + 4-5 Zombies + a first-risen horror (Ogre Zombie/Ghoul), clock ~4 rounds. If Eline's agenda fires, she replaces a chunk of the encounter's threat as the climactic adversary — scale Corliss DOWN accordingly so the party isn't crushed; her turn is the story, not a second boss-stack.",
+        "xp": 2400,
+        "xp_note": "Corliss (Bandit Captain, 450, or Spy 200 light) + 3x Thug/Tough (100) + 4x Zombie (50) ~= 950-1550; budget ~2400 for the climax with the unmaking-stakes. Award the FULL value for UNMAKING THE SPRING — curing the fen and releasing Wren — even if Corliss flees rather than falls; ending the Grey Quiet at its source, not slaying the smuggler, is the victory. If Eline's agenda fires and the party survives her, award the climax value but mark the ending as the campaign's hardest."
+      },
+      "transitions": "When the Spring is unmade — the consecrating fire set, the binding broken, Wren released, the walkers laid to rest and the fen cured — or, in the dark ending, when the reagent is seized and Eline's verdict is survived, the party climbs the crypt-stair out of the cold. Return to loc-mile-end for the conclusion. (If Corliss fled with bottles, the dangling thread climbs out with you.)"
+    }
+  ],
+  "rewards": {
+    "xp": 4000,
+    "xp_breakdown": {
+      "act1-third-night-watch": 300,
+      "act2-drowned-chapel-break": 1200,
+      "act3-stillwater-spring": 2400,
+      "social-exploration-bonuses": 1100,
+      "note": "~4000-5000 XP across three acts plus social/exploration story bonuses, tuned for a party starting around level 3 and finishing near level 7. Many DMs will prefer MILESTONE leveling: level 4 after the third-night watch (Act 1), level 5-6 across the drowned chapel (Act 2), level 7 before or during the Stillwater Spring climax (Act 3). Award full encounter XP for merciful and investigative resolutions — easing the grey-walkers to rest, re-laying the wards, and unmaking the Spring count fully as overcoming each act; a watch that ends with the dead laid down gently is a BETTER win, not a lesser one."
+    },
+    "currency": {
+      "gp": 200,
+      "note": "Hollow Mile is poor; the early reward is moral, not monetary. Halda has almost nothing but gratitude and a warm hearth. The coin that exists is grim: Corliss's grey-water cache and his upriver buyer's down-payment (~120 gp in smuggler's silver, recoverable in Act 2/3) and a small purse Sister Ovick's order presses on the party after the unmaking (~80 gp). Taking Corliss's grey-water money to SELL is a fork-flagged choice (sell_the_grey_water), not a clean reward."
+    },
+    "loot": [
+      {
+        "item": "Potion of Healing",
+        "rarity": "common",
+        "count": "2-4 across the campaign",
+        "note": "From Doctor Mourn's surgery and Sister Ovick's chapel stores before the descent. 2d4+2 HP each."
+      },
+      {
+        "item": "Consecrating Brand & Vial of Holy Water (Ovick's)",
+        "value": "the campaign's true key",
+        "note": "The chapel-flame brand and holy water Sister Ovick presses on the party to UNMAKE the Stillwater Spring — consecrated fire to the cursed reagent, holy water to break the binding. Not a saleable item; the Act 3 win-tool and the means to release Wren rather than merely destroy her."
+      },
+      {
+        "item": "Wren's tally-stone",
+        "value": "0 gp (story item)",
+        "note": "A small water-smoothed stone the grey-walking child kept her three winters of tally-marks beside, recoverable when the Spring is unmade. A keepsake of the ward released — and, for Eline, the proof that the cure she came to perform was finally, mercifully done. If the party seized the reagent instead, this stone is the thing they DIDN'T save."
+      },
+      {
+        "item": "The Stillwater Draught (Eline's recipe)",
+        "rarity": "uncommon (story)",
+        "note": "Doctor Mourn's diluted tincture — slows the Grey Quiet's progression for a few weeks per dose, useless once the Spring is unmade and the Quiet ended. A story-reward that loses its purpose with the cure; a party that hoards it is keeping a cousin of the curse alive."
+      },
+      {
+        "item": "Corliss's grey-water cache & buyer's ledger",
+        "value": "evidence / fork-flagged coin",
+        "note": "The smuggler's stoppered bottles of cursed reagent and the ledger naming his upriver buyer and the three poisoned towns. Evidence that exposes Corliss as the SPREADER (and a thread to a darker sequel) — and a temptation: selling it (sell_the_grey_water) or keeping it for use (seize_the_reagent_for_use) is exactly the choice that fires Eline's agenda."
+      }
+    ],
+    "story_rewards": [
+      "If the Stillwater Spring was UNMADE, the Grey Quiet ends at its source: every grey-walker in the fen lies down for good, the lying-down stops, and Hollow Mile — what's left of it — can bury its dead once and keep them buried. The draught is no longer needed; the third-night watch is never stood again.",
+      "If Wren was RELEASED rather than merely burned (the Religion-rite path), Eline is given the one thing three winters of penance never could: the cure she came to perform, done as a mercy. She takes off the mask for good, and may stay on as a healer-companion who finally believes a body and a soul can be saved by the same hand — or take up Sister Ovick's leashless, line-holding work in the fen.",
+      "If Eline was honored to the loyalty path and helped unmake the Spring, she walks out of Hollow Mile free of the wound she's carried — grieving, but whole, a physician who finally chose the hard mercy over the long hiding. If her prize_seized agenda fired instead, the party carries the campaign's hardest ending: a healer they failed into a verdict, who turned on them clinically and cold because they took the curse for a prize, and the knowledge that they made the cure cost more than the collar — that they became the disease she diagnosed.",
+      "If Corliss was exposed and beaten but FLED with bottles, the Grey Quiet is finished in Hollow Mile but loose upriver in a smuggler's hold — a deliberate dangling thread for a future return, and a darker mirror: a man who saw a tragedy and priced it.",
+      "Unmaking the Spring rather than harvesting it means the Grey Quiet ends as a horror but the QUESTION it asked — what it means to SAVE someone, whether a body kept cold is a person spared or a person held, and whether a kindness that perpetuates a wound is a kindness at all — lingers over Hollow Mile's slow recovery. Sister Ovick's patient, line-holding mercy inherits the fen."
+    ]
+  },
+  "conclusion": "Dawn over Hollow Mile, and for the first time in three winters the reeds are only reeds — no singing, no wind that isn't there, no grey shapes wading homeward at the water's edge. The Stillwater Spring is a scorched hollow under the drowned chapel; the grey-walkers lie where they lay down, dead the ordinary way at last, and Sexton Brell can finally dig a grave and trust it to stay closed. Halda Vane keeps her boy Tomas, warm and grey no longer, or buries him for good — and either way stops leaving bread out on the third night. How the hamlet remembers it is up to the party: as the winter strangers came down the sunken road and unmade the cold thing under the bog, or as the winter they learned that the kindest hands in Hollow Mile had made the wound they were healing, and chose, at the last, whether the cure was worth the child at the bottom of the Spring. The Grey Quiet is ended. Doctor Eline Mourn's mask hangs by the surgery door, or it does not, depending on what the party let her become — a healer who saved a soul by losing it, or a physician who decided, with terrible calm, that the people who came to help her were the contamination after all. Either way the fen is quiet now, the true quiet, the kind the dead are owed. (Hook for a future return: a smuggler loose upriver with bottles of cold grey water, three towns already going still, and a buyer who pays in gold for a kindness that ends three nights later at the door.)",
+  "dm_quickref": {
+    "definition_of_done_mapping": {
+      "exploration": "scene-a1-fen (read the reedfen — tampered graves, barge-tracks, the grey-water bottle, the third-night pattern; bog hazards), scene-a2-chapel (the drowned chapel and warded crypt-stair — sabotaged wards, chapel records, the cure-is-the-curse reversal, the descent revealed), and scene-a3-spring's approach (descend the warded crypt-stair to the Stillwater Spring, ready the consecrating fire, find the binding and the prize).",
+      "social": "scene-a1-hook (Halda + the dying boy + the masked physician companion), scene-a1-fen (Brell's plain testimony, Halda's bread-for-the-dead, Corliss the helpful kinsman), scene-a2-hook (Eline cracks the secret: the cure is the curse), scene-a2-chapel (Sister Ovick + Eline's full confession and her LINKED personal-quest gate — Wren, the first cure, the Spring), scene-a3-hook (the unmaking named, Eline's crisis and her plea), and the climax's reach-Eline Persuasion (DC 15) + turn-the-runners Intimidation.",
+      "combat_act1": "scene-a1-watch — 3x Zombie (grey-walkers, eased or felled), a grief beat with stakes, not a slasher.",
+      "combat_act2": "scene-a2-break — Corliss (Bandit Captain/Spy) + 3x Thug (Tough, bog-runners) + 3x Zombie (rising walkers), with a hold/re-lay-the-wards objective and the fork's pressure.",
+      "combat_act3": "scene-a3-spring — Corliss (Bandit Captain) + 3x Thug (Tough) + 4x Zombie, with the RISING-WALKER clock, the UNMAKE-vs-SEIZE choice, and Eline's prize_seized turn if the reagent is taken."
+    },
+    "bundled_assets_used": {
+      "monsters_act1": [
+        "Zombie (x3, scene-a1-watch grey-walkers — one is Halda's dead husband; eased to rest or felled)"
+      ],
+      "monsters_act2": [
+        "Bandit Captain OR Spy (Corliss, the smuggler — drops his cover, forces the wards)",
+        "Thug -> Tough (x3, scene-a2-break bog-runners)",
+        "Zombie (x3, grey-walkers rising from the flooded nave)",
+        "Ogre Zombie / Ghoul (optional first-risen horror for a strong party)"
+      ],
+      "monsters_act3": [
+        "Bandit Captain (Corliss, seizing the Spring — flees a lost Spring rather than dies)",
+        "Thug -> Tough (x3, bog-runners holding the pool)",
+        "Zombie (x4, the rising-walker clock — all lie down when the Spring is unmade)",
+        "Cleric/Life Domain (Doctor Eline Mourn — ONLY if her prize_seized agenda fires; the heartbreak turn, not a stacked boss)"
+      ],
+      "monsters_optional": [
+        "Commoner (Halda, Tomas, freed villagers — noncombatants)",
+        "Priest (Sister Ovick — defends the wards/party, never kills)",
+        "Guard (Sexton Brell, if cornered among the graves)"
+      ],
+      "spells_in_play": [
+        "Eline (Cleric/Life Domain): Cure Wounds, Lesser Restoration (lift the grey-chill), Spare the Dying, Bless, Detect Poison and Disease, Prayer of Healing; by Act 3, Spirit Guardians, Mass Cure Wounds — turned to harm ONLY if her agenda fires",
+        "Sister Ovick (Priest): Bless, Cure Wounds, Sanctuary, a consecrating flame at the Spring — protective only",
+        "party casters across the fen, the drowned chapel, and the crypt"
+      ],
+      "conditions_in_play": [
+        "Grappled/Restrained (grey-walkers dragging toward the deep water — a drowning hazard, Acts 1-3)",
+        "Frightened (the third-night watch, the singing crypt, the cold of the Spring)",
+        "Prone / difficult terrain (sinking plank-paths, the flooded nave, the cold pool)",
+        "Charmed / Held (Eline's Hold Person / Wren's pull, Act 3 — 'the cold that wants you to lie down')",
+        "Exhaustion (cold-water soaks and long bog-crossings)"
+      ]
+    },
+    "the_source_is_the_boss_note": "The real antagonist of the climax is the STILLWATER SPRING and the CHOICE at it — unmake the cursed reagent at its source (cure the fen, release Wren) or seize it (for use, study, or Corliss's coin). Corliss (Bandit Captain) is the human predator who'd sell the horror, but he prefers to bargain and flees a lost Spring rather than die for it — a Corliss loose upriver with bottles is a fine dangling thread. The campaign's WIN is UNMAKING the Spring: burning the cursed reagent so every grey-walker lies down and the Grey Quiet ends at its source. The LOSS/DARK state is the reagent SEIZED — the curse kept alive as a prize, which fires the companion's clinical turn. Do NOT make this a fight to a smuggler's death; make it a choice about what saving someone is worth.",
+    "the_companion_fork_note": "Doctor Eline Mourn is the campaign's deliberate FORK and its moral core — the secret MOTHER of the plague, atoning by dosing the wound she opened. Her arc has THREE gates: loyalty (20, she admits the draught is hers after the watch), personal_quest (40, LINKED via quest_arc_id to the companion-quest-arc 'cqarc-eline-stillwater' stage 'cqstage-eline-confession' — she confesses Wren, the first cure, and the Spring, and asks the party's help to unmake it), and a BETRAYAL gate (15, reachable only when approval curdles). Her CompanionAgenda uses the PRIZE_SEIZED trigger (NOT attitude_below): when the party SEIZES the cursed reagent (sets the engine flag 'prize_seized') instead of destroying it, her agenda fires DETERMINISTICALLY and she turns CLINICALLY — a physician excising a contaminant, not a betrayer in a rage. ENGINE-ACCURATE: the prize_seized trigger reads ONLY campaign.flags['prize_seized'] (companion_arc._agenda_triggered) — it does not roll and does not read the decision_flag. The decision_flag 'let_the_ward_burn' is therefore carried for CONTENT/recall, not engine gating (the engine reads decision_flag only for attitude_below agendas, to escalate the snap roll): set it TRUE via record_decision/set_flag when the party CHOOSES to burn the Spring and end Wren (the path that AVOIDS the turn), so the chronicle records the choice. To FIRE Eline's turn, set the engine flag 'prize_seized' when the party takes the reagent at scene-a3-spring; to KEEP her, have them let the ward burn (unmake the Spring) and never seize the prize. Honored, she helps unmake the Spring and walks out free; grasping, she diagnoses the party as the disease.",
+    "linked_personal_quest_note": "Eline's personal_quest gate (eline-gate-quest, threshold 40) is LINKED to a first-class companion-quest-arc via quest_arc_id='cqarc-eline-stillwater' and stage_id='cqstage-eline-confession' (authored in the top-level 'companion_quest_arcs' block). The arc 'The Cure That Became a Curse' tracks Eline's journey from confession (the gate's stage) through reaching the Spring to the unmaking. NOTE on loading: seed_campaign() folds the 'companions' (with their arc + dossier), 'npcs', 'locations', and 'scenes', but does NOT itself seed a campaign-level 'companion_quest_arcs' block (only world/ending seeds do, via content._seed_companion_quest_arcs). So at runtime the linked arc must be registered with set_companion_quest_arc (or seeded from the world/ending) for the gate's link to resolve live; until then the gate latches a one-shot link_error (F06-11) and stays locked but recoverable — the personal_quest still plays from the gate's 'note'. See schema_notes.",
+    "pacing": "Designed as a ~3-4 session gothic-horror arc (one act per ~80-min session, or a long single sitting). Act 1 ~ levels 3-4 (hook + reedfen + third-night watch). Act 2 ~ levels 4-6 (drowned chapel + the cure-is-the-curse reversal + Eline's confession + the wards break). Act 3 ~ levels 6-7 (the descent + the Stillwater Spring climax + the unmaking choice). Use the per-scene scaling notes to tune each fight to party size, and prefer milestone leveling (4 / 5-6 / 7) for clean act breaks. A tonal DEPARTURE from the engine's heroic/intrigue defaults: run it slow, cold, and grieving — dread over spectacle, mercy over monster-mash.",
+    "originality_note": "This campaign is original gothic-horror prose written for WorldOS on SRD 5.2 primitives, released as fan content under the same terms as the bundled world seeds (SRD 5.2 / CC-BY-4.0 rules). It uses only SRD 5.2 mechanics and bundled creature stat blocks (Zombie, Thug/Tough, Bandit Captain, Spy, Priest, Commoner, Guard, optional Ogre Zombie/Ghoul). No published or copyrighted adventure text is reproduced; Hollow Mile, the Grey Quiet, the Stillwater Draught and Spring, Doctor Eline Mourn, the ward Wren, the smuggler Corliss Vane, the Vane family, Sexton Brell, and Sister Ovick are original creations. NONE of the seven BG3 origin companions (Astarion, Gale, Karlach, Lae'zel, Shadowheart, Wyll, Halsin) appear as PC or companion; the companion Doctor Eline Mourn is wholly original and non-origin."
+  },
+  "companion_quest_arcs": [
+    {
+      "id": "cqarc-eline-stillwater",
+      "companion_id": "companion-eline",
+      "title": "The Cure That Became a Curse",
+      "status": "locked",
+      "note": "Doctor Eline Mourn's personal quest — the cure she invented years ago to save her ward Wren, which unmade the girl into the first grey-walker and became the Grey Quiet. Unlocked by her personal_quest arc-gate (eline-gate-quest, threshold 40) via quest_arc_id link. Tracks her path from confession, to reaching the Stillwater Spring, to the unmaking she could never perform alone — and whose failure-state (the reagent seized rather than destroyed) fires her prize_seized agenda.",
+      "stages": [
+        {
+          "id": "cqstage-eline-confession",
+          "title": "The Mask Comes Off",
+          "status": "locked",
+          "unlock_gate_id": "eline-gate-quest",
+          "location_id": "loc-drowned-chapel",
+          "note": "Eline confesses the whole of it at the drowned chapel: Wren, the first draught, the Stillwater Spring beneath the crypt where the cursed reagent still runs and the grey-walking child still waits. She asks the party's help to do what three winters of atonement never could — go down and unmake it at the source. This is the stage the personal_quest gate makes available."
+        },
+        {
+          "id": "cqstage-eline-descent",
+          "title": "Down to the Spring",
+          "status": "locked",
+          "location_id": "loc-stillwater-spring",
+          "note": "The party and Eline descend the warded crypt-stair to the Stillwater Spring, consecrating fire in hand, to reach the binding at its heart — past Corliss's grasp and the rising walkers. The point of no return before the choice."
+        },
+        {
+          "id": "cqstage-eline-unmaking",
+          "title": "The Hard Mercy",
+          "status": "locked",
+          "location_id": "loc-stillwater-spring",
+          "note": "Resolution: unmake the Spring (consecrating fire to the reagent, the binding broken, Wren released) — curing the fen at the cost of the child and giving Eline the cure she came to perform — OR fail her, by seizing the reagent as a prize, which fires her prize_seized agenda and turns the quest's healer against the party. The arc resolves on what the party does at the pool."
+        }
+      ]
+    }
+  ]
+}
