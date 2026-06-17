@@ -56,6 +56,7 @@ from models import (
     Ability,
     AbilityScores,
     ActiveEffect,
+    ApprovalEvent,
     BacklogItem,
     CampBeatCandidate,
     CampBeatRecord,
@@ -9717,6 +9718,66 @@ def get_companion_quest_arcs(campaign_id: str, companion_id: str = "", status: s
     return {"companion_quest_arcs": [_companion_quest_arc_view(c, a) for a in arcs], "count": len(arcs)}
 
 
+def _approval_ledger_view(ch: "Character", limit: int) -> dict:
+    """Project one companion's approval ledger into the legible 'why does X feel this way?'
+    shape: the most-recent moves (newest-first, capped at `limit`) plus the net positive and
+    net negative totals per cause aggregated across the WHOLE rolling log. Pure read."""
+    log = list(getattr(ch, "approval_log", None) or [])
+    recent = [
+        {
+            "day": e.day,
+            "cause": e.cause,
+            "delta": e.delta,
+            "new_value": e.new_value,
+            "diminished": e.diminished,
+        }
+        for e in reversed(log)
+    ][:max(0, int(limit))]
+    # Aggregate net signed move per cause across the rolling window.
+    net: dict[str, int] = {}
+    for e in log:
+        net[e.cause] = net.get(e.cause, 0) + e.delta
+    net_positive = sorted(
+        ((cause, total) for cause, total in net.items() if total > 0),
+        key=lambda kv: (-kv[1], kv[0]),
+    )
+    net_negative = sorted(
+        ((cause, total) for cause, total in net.items() if total < 0),
+        key=lambda kv: (kv[1], kv[0]),
+    )
+    return {
+        "id": ch.id,
+        "name": ch.name,
+        "attitude_value": getattr(ch, "attitude_value", 0),
+        "recent": recent,
+        "net_positive": [list(p) for p in net_positive],
+        "net_negative": [list(p) for p in net_negative],
+    }
+
+
+@mcp.tool()
+def companion_approval_ledger(campaign_id: str, companion_id: str = "", limit: int = 8) -> dict:
+    """Read the legible APPROVAL LEDGER — the "why does Ondine distrust me?" answer. For each
+    party companion returns its current attitude_value, the most-recent approval moves
+    (newest-first, capped at `limit`), and the net positive / net negative cause totals
+    aggregated from its rolling approval_log. LOCK-FREE read-only snapshot (no evaluate, no
+    mutation) — the engine stays sole writer; this is a pure projection of engine-mutated
+    state. `companion_id` optional => all party companions; a companion with no logged moves
+    returns empty `recent`/nets."""
+    c = _require(campaign_id)
+    if companion_id:
+        ch = _require_companion(c, companion_id)
+        return {"companions": [_approval_ledger_view(ch, limit)], "count": 1}
+    views = []
+    for cid in getattr(c, "party", []) or []:
+        ch = c.characters.get(cid)
+        if ch is None or getattr(ch, "kind", None) != "companion":
+            continue
+        views.append(_approval_ledger_view(ch, limit))
+    views.sort(key=lambda v: (v["name"] or "", v["id"]))
+    return {"companions": views, "count": len(views)}
+
+
 @mcp.tool()
 def advance_companion_quest_arc(
     campaign_id: str,
@@ -10454,6 +10515,13 @@ def advance_faction_arc(
 # an explicit per-tag delta (then the explicit value — sign and magnitude — is authoritative).
 _APPROVAL_DEFAULT_DELTA = 10
 
+# Cross-beat anti-grind decay (E4) keyed on approval_cause_counts — the n-th REALIZED fire of a
+# cause on a companion scales the weighted/default base by this factor (the last entry repeats
+# for n >= 3). Deterministic (no RNG/clock): grinding "mercy" yields 10,5,3,0 instead of 40.
+# Explicit DM-passed deltas BYPASS decay (an authored magnitude). The count read is from the
+# NEVER-truncated approval_cause_counts, so decay stays correct after the 40-row log truncation.
+_APPROVAL_DIMINISH = (1.0, 0.5, 0.25, 0.0)
+
 
 def _normalize_approval_tags(approval_tags) -> list[tuple[str, Optional[int]]]:
     """Coerce the DM's `approval_tags` into ``[(key, explicit_delta_or_None), ...]``.
@@ -10509,16 +10577,22 @@ def _normalize_approval_tags(approval_tags) -> list[tuple[str, Optional[int]]]:
     return out
 
 
-def _apply_approval_tags(c: "Campaign", approval_tags) -> list[dict]:
+def _apply_approval_tags(c: "Campaign", approval_tags, *, decision_id: str = "") -> list[dict]:
     """Move every PARTY companion's approval gauge by the decision's tagged causes (the BG
     "soul"): each tag matching a companion's ``dossier.approval_likes`` applies +10 (or the
-    tag's explicit delta), each matching ``approval_dislikes`` applies -10 (or the explicit
-    delta); the per-companion sum is clamped to [-100, 100] and written to ``attitude_value``.
+    tag's explicit/weighted delta), each matching ``approval_dislikes`` applies -10; the
+    per-companion sum is clamped to [-100, 100] and written to ``attitude_value``.
 
     This is the ENGINE owning the number while the DM owns the cause (gauge-not-fiction):
     the engine never reads prose to decide a tag — the DM supplied the tags, the deltas are
     fixed/explicit. MUTATES ``c`` in place (the caller holds campaign_lock and saves); returns
     one row per MOVED companion (``{id,name,old_value,new_value,delta,matched_keys}``) or [].
+
+    Under the SAME lock+save, appends one ``ApprovalEvent`` per matched cause to the moved
+    companion's ``approval_log`` (E5 ledger, truncated to the last 40) and bumps its
+    ``approval_cause_counts`` (the authoritative grind counter). ``decision_id`` links each
+    event back to the driving Decision; it defaults to "" so a caller that omits it is
+    byte-identical to today on the GAUGE move (the ledger append is purely additive state).
 
     Scope is ``c.party`` companions WITH a dossier — non-companions, dossier-less companions,
     and companions not in the party are skipped. Empty/None ``approval_tags`` -> [] (no move),
@@ -10536,20 +10610,55 @@ def _apply_approval_tags(c: "Campaign", approval_tags) -> list[dict]:
             continue
         likes = {str(k).strip().lower() for k in (getattr(dossier, "approval_likes", []) or [])}
         dislikes = {str(k).strip().lower() for k in (getattr(dossier, "approval_dislikes", []) or [])}
+        # E4 per-cause intensity: a POSITIVE magnitude keyed on the SAME lowercase_snake cause
+        # vocabulary; absent key => the flat _APPROVAL_DEFAULT_DELTA. The like/dislike list above
+        # decides sign. Empty weights == today's flat ±10.
+        weights = {str(k).strip().lower(): v for k, v in (getattr(dossier, "approval_weights", {}) or {}).items()}
         intended = 0
         matched: list[str] = []
+        # One row per matched cause, feeding the ledger append below (E5).
+        cause_rows: list[dict] = []
         for key, explicit in pairs:
-            if key in likes:
-                intended += explicit if explicit is not None else _APPROVAL_DEFAULT_DELTA
-                matched.append(key)
-            elif key in dislikes:
-                intended += explicit if explicit is not None else -_APPROVAL_DEFAULT_DELTA
-                matched.append(key)
+            sign = 1 if key in likes else (-1 if key in dislikes else 0)
+            if sign == 0:
+                continue
+            if explicit is not None:
+                # An explicit DM-passed delta is authoritative — sign + magnitude verbatim,
+                # bypassing the weight ladder AND decay (the DM is asserting an authored swing).
+                realized = explicit
+                diminished = False
+            else:
+                # Base-delta precedence: weighted magnitude (E4) else the flat default, then
+                # scaled by the cross-beat anti-grind decay keyed on the prior REALIZED fires of
+                # this cause on this companion (read BEFORE the count is bumped below). A fully-
+                # decayed cause (factor 0.0) still LOGS a delta-0 event ("already counted").
+                base = int(weights.get(key, _APPROVAL_DEFAULT_DELTA))
+                n = ch.approval_cause_counts.get(key, 0)
+                factor = _APPROVAL_DIMINISH[min(n, len(_APPROVAL_DIMINISH) - 1)]
+                realized = sign * int(round(base * factor))
+                diminished = factor < 1.0
+            intended += realized
+            matched.append(key)
+            cause_rows.append({"cause": key, "delta": realized, "diminished": diminished})
         if not matched:
             continue
         old = ch.attitude_value
         new = _clamp_attitude(old + intended)
         ch.attitude_value = new
+        # E5 LEDGER: append one event per matched cause + bump the authoritative grind counter,
+        # under the SAME lock+save as the gauge write (engine = sole writer, no new write path).
+        for cr in cause_rows:
+            ch.approval_log.append(ApprovalEvent(
+                day=getattr(c, "day", 1),
+                cause=cr["cause"],
+                delta=cr["delta"],
+                new_value=new,
+                diminished=cr["diminished"],
+                decision_id=decision_id,
+            ))
+            ch.approval_cause_counts[cr["cause"]] = ch.approval_cause_counts.get(cr["cause"], 0) + 1
+        # Bound the rolling window; the counts stay un-truncated so decay (A3) stays correct.
+        ch.approval_log = ch.approval_log[-40:]
         results.append({
             "id": ch.id,
             "name": ch.name,
@@ -10610,7 +10719,8 @@ def record_decision(
             c.flags[flag] = True  # content-defined; arms a matching agenda's decision_flag
         # GAUGE-NOT-FICTION: move every party companion's approval by the tagged causes, under
         # the SAME lock+save as the decision row (engine = sole writer). Empty/None tags == [].
-        approval_results = _apply_approval_tags(c, approval_tags)
+        # decision_id links each ledger event back to this Decision (E5 recall).
+        approval_results = _apply_approval_tags(c, approval_tags, decision_id=d.id)
         save_campaign(c)
         out = {"id": d.id, "summary": d.summary, "chosen": d.chosen, "day": d.day}
         if flag:
@@ -11646,6 +11756,17 @@ def _scene_durable_threads(c: Campaign) -> dict:
                     "threshold": nxt.threshold,
                     "points_away": max(0, nxt.threshold - getattr(ch, "attitude_value", 0)),
                 }
+        # E5 LEDGER fold: surface the THREE most-recent approval moves (newest-first) so the DM
+        # SEES, at every re-ground, WHY the bar is where it is ("spared the captive +10 →
+        # mercy"). Pure read of the engine-mutated approval_log. ADDITIVE: the `recent_approval`
+        # key is ABSENT when the companion has no logged moves, so a pre-ledger / un-moved beat's
+        # payload is byte-for-byte today's.
+        log = getattr(ch, "approval_log", None) or []
+        if log:
+            entry["recent_approval"] = [
+                {"day": e.day, "cause": e.cause, "delta": e.delta}
+                for e in log[-3:]
+            ][::-1]
         # F06-10 (audit 2026-06-11): surface this companion's personal QUEST ARCs — until now
         # the engine-complete CompanionQuestArc machine was invisible to the DM at re-ground
         # (durable.companions showed gates/flags only, no quest-arc mention anywhere DM-facing),
@@ -12167,7 +12288,10 @@ def persist_beat(
                 # F6-2 / GAUGE-NOT-FICTION: move party companions' approval by the decision's
                 # tagged causes, under the SAME lock+save (engine = sole writer). Empty/None
                 # tags == [] (no move), so an untagged decision leg is byte-identical to today.
-                approval_results = _apply_approval_tags(c, decision_approval_tags)
+                # decision_id links each ledger event back to the planned Decision (E5 recall).
+                approval_results = _apply_approval_tags(
+                    c, decision_approval_tags, decision_id=planned_decision.id
+                )
             # ACT-CURSOR tick (engine = sole writer): one act-local beat per persist_beat that
             # carries a write, in this same critical section. Drives the 3-act-shape cues
             # (act_midpoint_owed / act_climax_owed / act_one_stalled) and the felt-shape scorer.
