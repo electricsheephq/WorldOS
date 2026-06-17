@@ -3,7 +3,7 @@
 A swappable voice layer with two directions:
 
   - text-to-speech: speak(text, voice_id) -> a backend selected by
-    CLAWDND_TTS_BACKEND synthesizes and plays audio. Each character/NPC carries
+    WORLDOS_TTS_BACKEND synthesizes and plays audio. Each character/NPC carries
     a logical voice_id; the registry resolves it to the active backend's real
     voice, so switching Kokoro -> ElevenLabs never touches character data.
   - speech-to-text: transcribe(audio_path) -> a backend selected by

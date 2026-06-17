@@ -33,8 +33,8 @@ cd "$ROOT" || exit 3
 RUNS=3
 GATE_KIND="combat-sprint"
 # Combat-sprint is mech-focused (Angry-DM 5e fidelity). Match loop.sh's published north-star bars.
-MECH_MIN="${CLAWDND_MECH_MIN:-4.5}"
-STORY_MIN="${CLAWDND_STORY_MIN:-4.3}"
+MECH_MIN="${WORLDOS_MECH_MIN:-${CLAWDND_MECH_MIN:-4.5}}"
+STORY_MIN="${WORLDOS_STORY_MIN:-${CLAWDND_STORY_MIN:-4.3}}"
 DO_REGRESS=0
 DB_PATH="qa/scores.db"        # default ONLY used when --regress is given; tests always pass a temp --db
 BASELINE_KEY=""               # comma k=v list folded into the candidate JSON for detect_regression

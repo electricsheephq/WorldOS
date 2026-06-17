@@ -7256,7 +7256,7 @@ def _read_chat(since: int) -> tuple[list[dict], int]:
 # on. `uv run --directory servers/voice` gives us the right interpreter + deps +
 # import path (cwd-relative `import registry` / `from adapters... import` resolve
 # there, exactly as the voice server itself and playtest_voice.py do). The backend
-# is selected by CLAWDND_TTS_BACKEND, mirroring servers/voice/server.py._get_backend.
+# is selected by WORLDOS_TTS_BACKEND, mirroring servers/voice/server.py._get_backend.
 
 # Runs in the voice server's environment. Selects the backend the same way the voice
 # server does, speaks one line (play=True ⇒ afplay on macOS), and prints ONE compact

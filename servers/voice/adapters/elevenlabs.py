@@ -1,7 +1,7 @@
 """ElevenLabs TTS backend (placeholder for Epic 10).
 
 The interface matches the Kokoro backend, so switching is a config change
-(CLAWDND_TTS_BACKEND=elevenlabs) once this is implemented. Until then it fails
+(WORLDOS_TTS_BACKEND=elevenlabs) once this is implemented. Until then it fails
 gracefully so selecting it never crashes the server.
 """
 
@@ -25,5 +25,5 @@ class ElevenLabsBackend:
             backend=self.name,
             backend_voice=backend_voice,
             text=text,
-            detail="ElevenLabs backend not yet implemented (use CLAWDND_TTS_BACKEND=kokoro)",
+            detail="ElevenLabs backend not yet implemented (use WORLDOS_TTS_BACKEND=kokoro)",
         )

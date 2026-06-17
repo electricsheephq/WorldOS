@@ -55,7 +55,7 @@ def test_issue55_tts_failure_falls_back_to_text_only(monkeypatch):
         def speak(self, *a, **k):
             raise ImportError("kokoro unavailable")
 
-    monkeypatch.setenv("CLAWDND_TTS_BACKEND", "kokoro")
+    monkeypatch.setenv("WORLDOS_TTS_BACKEND", "kokoro")
     monkeypatch.setitem(server._backends, "kokoro", Boom())
     out = server.speak("hello")
     assert out["backend"] == "null" and out["audio_path"] is None and out["ok"] is True

@@ -17,7 +17,7 @@ jobs:
         run: uv run --directory servers/engine --group dev pytest -q --cov=. --cov-report=term-missing
       - name: Rules tests
         env:
-          CLAWDND_RULES_OFFLINE: "1"
+          WORLDOS_RULES_OFFLINE: "1"
         run: uv run --directory servers/rules --group dev pytest -q --cov=. --cov-report=term-missing
       - name: Voice tests (torch-free; null backend + static metadata)
         run: uv run --directory servers/voice --group dev pytest -q --cov=. --cov-report=term-missing
@@ -123,11 +123,11 @@ jobs:
         uses: astral-sh/setup-uv@v5
       - name: Sync rules venv (rapidfuzz/httpx for the offline rules worker)
         env:
-          CLAWDND_RULES_OFFLINE: "1"
+          WORLDOS_RULES_OFFLINE: "1"
         run: uv sync --directory servers/rules
       - name: Cross-service MCP contract tests
         env:
-          CLAWDND_RULES_OFFLINE: "1"
+          WORLDOS_RULES_OFFLINE: "1"
         run: uv run --directory servers/engine --group dev python -m pytest -q -p no:xdist ../../servers/integration_tests
 
   license-check:

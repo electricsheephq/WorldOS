@@ -11,14 +11,14 @@
 # behavioral gate, echoing `behavioral=GREEN|RED`); this wraps K of them and gates.
 #
 # Usage: qa/loop.sh [runs] [world] [persona] [beats] [budget-per-call]
-# Env:   CLAWDND_STORY_MIN (default 4.3)  CLAWDND_MECH_MIN (default 4.5)
+# Env:   WORLDOS_STORY_MIN (default 4.3)  WORLDOS_MECH_MIN (default 4.5)
 # Exit:  0 = all runs clear the bar; 1 = at least one below (RED); 2 = nothing ran.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$ROOT" || exit 2
 
 RUNS="${1:-2}"; WORLD="${2:-baldurs-gate}"; PERSONA="${3:-qa/play_player_duo.txt}"
 BEATS="${4:-8}"; BUDGET="${5:-1.20}"
-STORY_MIN="${CLAWDND_STORY_MIN:-4.3}"; MECH_MIN="${CLAWDND_MECH_MIN:-4.5}"
+STORY_MIN="${WORLDOS_STORY_MIN:-${WORLDOS_STORY_MIN:-4.3}}"; MECH_MIN="${WORLDOS_MECH_MIN:-${WORLDOS_MECH_MIN:-4.5}}"
 STAMP="$(date +%y%m%d-%H%M%S)"; T="qa/transcripts"
 mkdir -p "$T"
 

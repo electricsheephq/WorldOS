@@ -13,7 +13,7 @@ Covers the two ADDITIVE hardening features layered onto score.sh:
       JSON so rubric/template drift is detectable across versions. The hash is produced by
       qa/_score_prompt_hash.py, which both score.sh and this test call.
 
-The shell-behavior tests use CLAWDND_SCORE_GUARD_ONLY=1 — an additive, test-only dry-run
+The shell-behavior tests use WORLDOS_SCORE_GUARD_ONLY=1 — an additive, test-only dry-run
 hook that makes score.sh run all guards + emit the hashed artifact, then exit 0 BEFORE the
 `claude -p` loop. So nothing here ever touches a live LLM, the gateway, Eva, or global mcp
 config. The guard-failure path doesn't even reach that hook (it errors first), so the
@@ -75,7 +75,7 @@ def _run_score(inputs: dict, env_overrides: dict, guard_only: bool = True) -> su
         "HOME": os.environ.get("HOME", "/tmp"),
     }
     if guard_only:
-        env["CLAWDND_SCORE_GUARD_ONLY"] = "1"
+        env["WORLDOS_SCORE_GUARD_ONLY"] = "1"
     env.update(env_overrides)
     return subprocess.run(
         [

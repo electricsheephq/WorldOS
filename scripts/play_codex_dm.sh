@@ -178,13 +178,13 @@ servers = [
         "clawdnd-rules",
         f"{root}/servers/rules",
         "server.py",
-        {"CLAWDND_RULES_OFFLINE": "1"},
+        {"WORLDOS_RULES_OFFLINE": "1"},
     ),
     (
         "clawdnd-voice",
         f"{root}/servers/voice",
         "server.py",
-        {"CLAWDND_TTS_BACKEND": "null"},
+        {"WORLDOS_TTS_BACKEND": "null"},
     ),
 ]
 lines = []
@@ -347,8 +347,8 @@ validate_codex_service_tier
 
 export CLAWDND_STATE_DIR="$RUN_DIR"
 export WORLDOS_STATE_DIR="$RUN_DIR"
-export CLAWDND_RULES_OFFLINE=1
-export CLAWDND_TTS_BACKEND=null
+export WORLDOS_RULES_OFFLINE=1
+export WORLDOS_TTS_BACKEND=null
 
 HERO_CAMP=""
 HERO_PC_ID=""
@@ -737,12 +737,12 @@ _codex_exec_once() {
     -c "mcp_servers.clawdnd-engine.default_tools_approval_mode=\"approve\"" \
     -c "mcp_servers.clawdnd-rules.command=\"uv\"" \
     -c "mcp_servers.clawdnd-rules.args=[\"run\",\"--directory\",\"$ROOT/servers/rules\",\"python\",\"server.py\"]" \
-    -c "mcp_servers.clawdnd-rules.env_vars=[\"CLAWDND_RULES_OFFLINE\"]" \
+    -c "mcp_servers.clawdnd-rules.env_vars=[\"WORLDOS_RULES_OFFLINE\"]" \
     -c "mcp_servers.clawdnd-rules.required=true" \
     -c "mcp_servers.clawdnd-rules.default_tools_approval_mode=\"approve\"" \
     -c "mcp_servers.clawdnd-voice.command=\"uv\"" \
     -c "mcp_servers.clawdnd-voice.args=[\"run\",\"--directory\",\"$ROOT/servers/voice\",\"python\",\"server.py\"]" \
-    -c "mcp_servers.clawdnd-voice.env_vars=[\"CLAWDND_TTS_BACKEND\"]" \
+    -c "mcp_servers.clawdnd-voice.env_vars=[\"WORLDOS_TTS_BACKEND\"]" \
     -c "mcp_servers.clawdnd-voice.required=true" \
     -c "mcp_servers.clawdnd-voice.default_tools_approval_mode=\"approve\"" \
     - < "$PROMPT_FILE" \

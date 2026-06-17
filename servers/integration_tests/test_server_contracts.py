@@ -189,7 +189,7 @@ class TestVoiceContract:
             def speak(self, *a, **k):
                 raise ImportError("kokoro/torch unavailable")
 
-        monkeypatch.setenv("CLAWDND_TTS_BACKEND", "kokoro")
+        monkeypatch.setenv("WORLDOS_TTS_BACKEND", "kokoro")
         monkeypatch.setenv("WORLDOS_TTS_BACKEND", "kokoro")
         monkeypatch.setitem(voice_server._backends, "kokoro", Boom())
         out = voice_server.speak("The dragon roars.", voice_id="narrator-dm", play=False)

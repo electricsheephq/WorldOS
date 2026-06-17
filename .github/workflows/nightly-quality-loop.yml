@@ -3,7 +3,7 @@ name: Nightly Quality Loop
 # The STANDING fitness cadence the harness lacked: qa/loop.sh (the recursive-improvement
 # loop gate) is never scheduled today, so a post-release regression in story-craft /
 # mechanical quality has nothing watching for it. This workflow runs the loop on a nightly
-# cron (plus on-demand) against the north-star thresholds (CLAWDND_STORY_MIN / CLAWDND_MECH_MIN).
+# cron (plus on-demand) against the north-star thresholds (WORLDOS_STORY_MIN / WORLDOS_MECH_MIN).
 #
 # The duo path (qa/run_duo.sh) cold-opens a real `claude -p` DM+player, so it needs a live
 # model key. That key is provided as the repository secret ANTHROPIC_API_KEY:
@@ -54,8 +54,8 @@ jobs:
     continue-on-error: true
     env:
       # North-star thresholds the loop gates against (defaults mirror qa/loop.sh).
-      CLAWDND_STORY_MIN: "4.3"
-      CLAWDND_MECH_MIN: "4.5"
+      WORLDOS_STORY_MIN: "4.3"
+      WORLDOS_MECH_MIN: "4.5"
       # K small (2 duos) for a nightly cadence; overridable on manual dispatch.
       LOOP_RUNS: ${{ github.event.inputs.runs || '2' }}
       LOOP_BEATS: ${{ github.event.inputs.beats || '8' }}
@@ -94,7 +94,7 @@ jobs:
           echo "[selfcheck] loop gate + worker are present and executable"
           test -x qa/loop.sh
           test -x qa/run_duo.sh
-          echo "[selfcheck] north-star thresholds resolve: story>=${CLAWDND_STORY_MIN} mech>=${CLAWDND_MECH_MIN}"
+          echo "[selfcheck] north-star thresholds resolve: story>=${WORLDOS_STORY_MIN} mech>=${WORLDOS_MECH_MIN}"
           # jq is the loop's scorecard tool; ubuntu-latest ships it, but assert it explicitly so a
           # runner-image change can't silently neuter the loop's scoring.
           command -v jq >/dev/null || { echo "::error title=Nightly Quality Loop::jq missing on runner"; exit 1; }
