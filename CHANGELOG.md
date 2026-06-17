@@ -18,6 +18,47 @@ WorldOS is source-available commercial software; world seeds are licensed separa
 
 ---
 
+## [1.0.4-rc5] — 2026-06-17
+
+**The living relationship engine — companions, camp, and quests that actually engage, proven
+end-to-end on two golden spines.** A read-the-played-story pass found that the craft was
+BG3-caliber but the engine's companion/quest machinery *never engaged in real play* — companions
+were narrated, not gauged; quests resolved in prose but never evolved; and nothing scored that as
+failure, so it looked healthy. rc5 closes that loop and proves it live.
+
+- **The window — a readable adventure + a structural-coverage stamp (#956, #958).** An
+  authored-adventure run mode (`CLAWDND_ADVENTURE_ID` → `start_adventure`) + `qa/story_readout.py`
+  renders any playtest as the story a human reads (DM prose + rolls + companion/combat moments)
+  plus a one-line coverage stamp (recruit? camp? approval-moved? quest-resolved+evolved?). The
+  harness emitted `score.json`, never the story; now you can see it.
+- **The relationship-engine cues (#961).** `persist_beat` returns an **obligations digest every
+  beat** — a frozen companion ("regard hasn't moved — tag a values-choice or camp"), an overdue
+  camp, a resolvable/stalled quest, a quest with no echo — folding the obligation into the tool the
+  DM calls every beat (the proven "surfacing isn't using; fold it into the every-beat trigger"
+  lesson). `scene_context.durable` mirrors it; a SKILL step-6b mandates acting on it. Plus a FATAL
+  `structural_completeness` gate that caps a substantial system-skipping run.
+- **The full-circle scorecard (#963).** The persona scorecards + sweep + ledger now **track and
+  show** acts / recruit / camp / approval / quest-resolve+evolve, computed from engine ground
+  truth — so a system-skipping run can no longer look healthy to an implementation agent. Penalty
+  (the gate) + tracking, sharing one coverage helper so they can't drift.
+- **Authored relationship content (#962, #964).** Brother Toll (Embergloom) and **a whole new
+  Baldur's Gate golden spine, "The Ledger of Mercy"** (a debt-bondage almonry, a true-believer
+  antagonist, Sergeant Ondine Marsh) got full `companion_dossier` approval vocabularies and
+  multi-gate `CompanionArc`s — including a real **betrayal fork** on Ondine. The gauge the
+  machinery moves. Both spines validate clean; the engine maps it via `Character(**data)`.
+- **Harness robustness (#965).** `run_duo` survives transient API 500s (classified retry +
+  backoff; a 500 had killed an overnight run); the readout approval stamp counts the `persist_beat`
+  path; a `camp_scene_skipped` cue (the DM rested but skipped the camp conversation).
+- **PROVEN end-to-end.** Two full-depth 24-beat validations: companion approval **climbed**
+  (Toll 0→47, Ondine 0→80), **arc gates unlocked**, camp ran, the **companion's personal quest
+  and the main quest both resolved + evolved**, the acts progressed to a real climax, and the
+  `structural_completeness` gate **PASSED** — with **story-craft 4.8** on both (the bar is 4.3),
+  the highest yet. Every system that was dead (all `·`) in every prior run is alive.
+
+Additive throughout; the engine remains the sole writer. Pre-release.
+
+---
+
 ## [1.0.4-rc4] — 2026-06-17
 
 **Felt quality + measurement fidelity.** rc4 lands the min-maxer planning layer, story-craft
