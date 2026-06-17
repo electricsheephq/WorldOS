@@ -48,12 +48,12 @@ BASE_REQUIRED_TOOLS = [
 ]
 PERSONA_PROVIDERS = ("codex", "claude")
 PLAYER_AGENTS = ("codex", "claude")
-INTERESTING_ENV_PREFIXES = ("WORLDOS_", "CLAWDND_", "CODEX_", "OPENAI_", "ANTHROPIC_")
+INTERESTING_ENV_PREFIXES = ("WORLDOS_", "WORLDOS_", "CODEX_", "OPENAI_", "ANTHROPIC_")
 SAFE_PATH_ENV_NAMES = {
     "WORLDOS_ART_REPO_ROOT",
-    "CLAWDND_ART_REPO_ROOT",
+    "WORLDOS_ART_REPO_ROOT",
     "WORLDOS_REPO_ROOT",
-    "CLAWDND_REPO_ROOT",
+    "WORLDOS_REPO_ROOT",
     "CODEX_HOME",
 }
 
@@ -1003,7 +1003,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         default=f"/Volumes/LEXAR/Codex/worldos-support-vm-rri/preflight-{compact_timestamp()}",
         help="Local Lexar target or operator return path to record in the report",
     )
-    parser.add_argument("--art-root", default=os.environ.get("WORLDOS_ART_REPO_ROOT") or os.environ.get("CLAWDND_ART_REPO_ROOT") or os.getcwd())
+    parser.add_argument("--art-root", default=os.environ.get("WORLDOS_ART_REPO_ROOT") or os.environ.get("WORLDOS_ART_REPO_ROOT") or os.getcwd())
     parser.add_argument("--private-art-mode", choices=("required", "optional", "none"), default="required")
     parser.add_argument("--personas", default=",".join(CANONICAL_PERSONAS))
     parser.add_argument("--budget", default="12.00")

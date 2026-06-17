@@ -46,7 +46,7 @@ def test_recap_sanitizes_quotes_and_newlines():  # M3
 
 @pytest.fixture
 def cid(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     return server.create_campaign("Hard")["id"]
 
 

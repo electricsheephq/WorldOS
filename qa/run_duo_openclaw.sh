@@ -3,14 +3,14 @@
 # Same beat loop, runbook driver, soft clock-tick, move relay, distill, and behavioral
 # gate as run_duo.sh — ONLY the agent-invocation layer differs: instead of two
 # gateway-free `claude -p` sessions, this drives the two ISOLATED OpenClaw agents
-# `clawdnd-qa-dm` / `clawdnd-qa-player` (both openai/gpt-5.4) via `openclaw agent`.
+# `worldos-qa-dm` / `worldos-qa-player` (both openai/gpt-5.4) via `openclaw agent`.
 #
 # Why a separate script (not a flag in run_duo.sh): the two harnesses parse two
 # different envelopes. run_duo.sh's $COMBINED is Anthropic stream-json (tool_use /
 # tool_result blocks) that distill.py + assert_behavioral.py read natively. OpenClaw's
 # `--json` reply is a different shape AND its toolSummary.tools[] is DEDUPED (loses
 # per-call counts). So this script TRANSCODES each DM turn's session-transcript JSONL
-# (~/.openclaw/agents/clawdnd-qa-dm/sessions/<sid>.jsonl — which records EVERY tool
+# (~/.openclaw/agents/worldos-qa-dm/sessions/<sid>.jsonl — which records EVERY tool
 # call with repeats) into the exact Anthropic stream-json shape the gate/distill expect,
 # appending to $COMBINED. The gate + distill then run UNCHANGED.
 #
@@ -21,9 +21,9 @@
 # prompt + runbook). Likewise the wizard persona is injected into the player's first turn.
 #
 # Usage: qa/run_duo_openclaw.sh <run-id> <world-id> <player-persona> [beats] [budget-ignored]
-# Example: CLAWDND_DM_MODEL=openai/gpt-5.4 qa/run_duo_openclaw.sh ocsmoke baldurs-gate qa/play_player_wizard.txt 4
+# Example: WORLDOS_DM_MODEL=openai/gpt-5.4 qa/run_duo_openclaw.sh ocsmoke baldurs-gate qa/play_player_wizard.txt 4
 #
-# GUARDRAILS: only ever touches agents clawdnd-qa-dm / clawdnd-qa-player. Never sets MCP,
+# GUARDRAILS: only ever touches agents worldos-qa-dm / worldos-qa-player. Never sets MCP,
 # never touches main/operations/the gateway config. Run ONE duo at a time (the engine MCP
 # state dir + the player moves file are FIXED in the agents' MCP env — shared, not per-run).
 set -uo pipefail
@@ -37,15 +37,15 @@ PLAYER_PROMPT_FILE="${3:-qa/play_player_wizard.txt}"
 BEATS="${4:-6}"
 # Models are env knobs (default the proven gpt-5.4). budget arg ($5) is accepted for CLI
 # parity with run_duo.sh but unused here — OpenClaw turns don't take a --max-budget flag.
-CLAWDND_DM_MODEL="${CLAWDND_DM_MODEL:-openai/gpt-5.4}"
-CLAWDND_ACTOR_MODEL="${CLAWDND_ACTOR_MODEL:-openai/gpt-5.4}"
-TIMEOUT="${CLAWDND_OC_TIMEOUT:-600}"
-# THINKING LEVEL — the single most important knob. The clawdnd-qa agents default to
+WORLDOS_DM_MODEL="${WORLDOS_DM_MODEL:-openai/gpt-5.4}"
+WORLDOS_ACTOR_MODEL="${WORLDOS_ACTOR_MODEL:-openai/gpt-5.4}"
+TIMEOUT="${WORLDOS_OC_TIMEOUT:-600}"
+# THINKING LEVEL — the single most important knob. The worldos-qa agents default to
 # thinking=high, and at high gpt-5.4 over-deliberates on the big injected DM brief and
 # can burn the whole 600s timeout WITHOUT EVER CALLING A TOOL (observed: first DM turn
 # aborted at high; identical turn at low called start_world+start_session in 42s). So we
 # force a modest thinking level per turn. `low` is the proven default; override if needed.
-THINK="${CLAWDND_OC_THINKING:-low}"
+THINK="${WORLDOS_OC_THINKING:-low}"
 
 # The OpenClaw agents' MCP env is FIXED (set globally, do not re-set): the engine writes
 # campaign state under STATE_OC and the player facade writes moves to MOVES. Both are
@@ -61,16 +61,16 @@ rm -rf "$STATE_OC/campaigns" 2>/dev/null; : > "$MOVES"
 # writes the full per-call tool trace to <OC_HOME>/agents/A/sessions/X.jsonl (verified).
 OC_HOME="${OPENCLAW_HOME:-$HOME/.openclaw}"
 DM_SID="${RUN}-dm"; PLAYER_SID="${RUN}-player"
-DM_SESS_FILE="$OC_HOME/agents/clawdnd-qa-dm/sessions/$DM_SID.jsonl"
+DM_SESS_FILE="$OC_HOME/agents/worldos-qa-dm/sessions/$DM_SID.jsonl"
 # Start each run from a clean DM session transcript so the per-turn transcode delta (below)
 # isn't polluted by a same-id session left over from a previous run.
-rm -f "$DM_SESS_FILE" "$OC_HOME/agents/clawdnd-qa-player/sessions/$PLAYER_SID.jsonl" 2>/dev/null
+rm -f "$DM_SESS_FILE" "$OC_HOME/agents/worldos-qa-player/sessions/$PLAYER_SID.jsonl" 2>/dev/null
 
 T="qa/transcripts"; mkdir -p "$T"
 COMBINED="$T/$RUN.jsonl"; : > "$COMBINED"   # DM-side Anthropic-shaped stream-json (transcoded)
 CHAT="$T/$RUN.chat.jsonl"; : > "$CHAT"       # two-sided conversation log (player + DM)
 chatlog() { python3 -c 'import json,sys;open(sys.argv[1],"a").write(json.dumps({"role":sys.argv[2],"text":sys.argv[3]})+"\n")' "$CHAT" "$1" "$2"; }
-echo "[ocduo] run=$RUN world=$WORLD beats=$BEATS dm-agent=clawdnd-qa-dm($CLAWDND_DM_MODEL) player-agent=clawdnd-qa-player($CLAWDND_ACTOR_MODEL)"
+echo "[ocduo] run=$RUN world=$WORLD beats=$BEATS dm-agent=worldos-qa-dm($WORLDOS_DM_MODEL) player-agent=worldos-qa-player($WORLDOS_ACTOR_MODEL)"
 
 # --- skill injection payload (DM) -------------------------------------------------------
 # The DM agent has NO plugin/skill loaded and its cwd is NOT the repo, so play_dm_duo.txt's
@@ -103,8 +103,8 @@ PLAYER_BRIEF="$(cat "$PLAYER_PROMPT_FILE")"
 # The reply text is at .result.payloads[0].text in the --json envelope (proven).
 oc_turn() {
   local role="$1" sid="$2" msg="$3" agent model out
-  if [ "$role" = "dm" ]; then agent="clawdnd-qa-dm"; model="$CLAWDND_DM_MODEL";
-  else agent="clawdnd-qa-player"; model="$CLAWDND_ACTOR_MODEL"; fi
+  if [ "$role" = "dm" ]; then agent="worldos-qa-dm"; model="$WORLDOS_DM_MODEL";
+  else agent="worldos-qa-player"; model="$WORLDOS_ACTOR_MODEL"; fi
   out="$T/$RUN.$role.$(date +%s%N).json"
   openclaw agent --agent "$agent" --model "$model" --session-id "$sid" --json \
     --thinking "$THINK" --timeout "$TIMEOUT" --message "$msg" > "$out" 2>> "$T/$RUN.$role.err"

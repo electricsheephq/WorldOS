@@ -63,7 +63,7 @@ def test_scheduler_excludes_pc_and_dead_companions_from_pair_banter():
 
 
 def test_camp_scene_is_read_only_until_explicit_record_call(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Readonly Camp")["id"]
     pc = server.create_character(cid, "Hero", kind="player")["id"]
     first = server.create_character(cid, "Vesper", kind="companion")["id"]
@@ -95,7 +95,7 @@ def test_camp_scene_is_read_only_until_explicit_record_call(tmp_path, monkeypatc
 
 
 def test_record_camp_beat_rejects_explicit_replay_during_cooldown(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Replay Guard")["id"]
     server.create_character(cid, "Vesper", kind="companion")
     beat = server.camp_scene(cid)["beats"][0]
@@ -110,7 +110,7 @@ def test_record_camp_beat_rejects_explicit_replay_during_cooldown(tmp_path, monk
 
 
 def test_record_camp_beat_compacts_latest_per_key_and_caps_history(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Compact Camp")["id"]
     comp = server.create_character(cid, "Vesper", kind="companion")["id"]
     c = store.load_campaign(cid)
@@ -139,7 +139,7 @@ def test_record_camp_beat_compacts_latest_per_key_and_caps_history(tmp_path, mon
 
 
 def test_recorded_pair_key_is_stable_across_save_load(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Pair Key")["id"]
     a = server.create_character(cid, "Vesper", kind="companion")["id"]
     b = server.create_character(cid, "Ash", kind="companion")["id"]
@@ -220,7 +220,7 @@ def test_camp_scene_surfaces_pair_banter_with_multiple_companions(tmp_path, monk
     priorities (50-90) always outranked pair priorities (40+len(tags) <= 43), so the pair beats
     were ALWAYS sorted past the truncation point — pair banter was structurally unreachable. With
     two companions, a camp scene must surface at least one pair_banter beat."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Pair Reach")["id"]
     server.create_character(cid, "Hero", kind="player")
     a = server.create_character(cid, "Vesper", kind="companion")["id"]
@@ -242,7 +242,7 @@ def test_scene_durable_surfaces_camp_affordance_when_companions_present(tmp_path
     long_rest's camp_hint and the every-beat re-ground (scene_context.durable) had NO camp
     affordance. Surface a camp_available advisory when living companions are present and out of
     combat, so a re-grounding DM learns camp_scene exists."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Camp Reach")["id"]
     server.create_character(cid, "Hero", kind="player")
     server.create_character(cid, "Vesper", kind="companion")
@@ -253,7 +253,7 @@ def test_scene_durable_surfaces_camp_affordance_when_companions_present(tmp_path
 
 def test_scene_durable_omits_camp_affordance_for_solo_run(tmp_path, monkeypatch):
     """A party with NO companions has no camp affordance — today's durable shape byte-for-byte."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Solo")["id"]
     server.create_character(cid, "Hero", kind="player")
     durable = server._scene_durable_threads(store.load_campaign(cid))
@@ -265,7 +265,7 @@ def test_camp_scene_gathers_de_facto_companions_not_in_party(tmp_path, monkeypat
     while the relocate sweep (#353) + XP split (#739) include any kind=='companion'. A canon
     companion present in the roster but NOT formally added to c.party (a de-facto companion)
     walks WITH the party and must breathe at camp WITH them — present + scheduled a solo beat."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("De-facto Camp")["id"]
     server.create_character(cid, "Hero", kind="player")
     # A de-facto companion: in the roster, kind='companion', but never added to c.party.
@@ -281,7 +281,7 @@ def test_camp_scene_gathers_de_facto_companions_not_in_party(tmp_path, monkeypat
 
 
 def test_camp_scene_does_not_expose_sealed_agenda_notes(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Private Agenda")["id"]
     comp = server.create_character(cid, "Vesper", kind="companion")["id"]
     c = store.load_campaign(cid)

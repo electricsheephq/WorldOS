@@ -17,7 +17,7 @@ import server
 
 
 def _camp(tmp_path, monkeypatch, world="baldurs-gate"):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     return server.start_world(world)["campaign_id"]
 
 

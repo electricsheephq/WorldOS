@@ -55,7 +55,7 @@ def test_resource_formulas_across_classes():
 
 @pytest.fixture
 def cid(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     return server.create_campaign("Resources")["id"]
 
 

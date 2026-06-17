@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # DRY-RUN PROOF (no model call): shows that scripts/play_party.sh's DM turn now honors
-# CLAWDND_LEAN_BEATS AND the DM effort-tier — both via the SHARED helpers in
+# WORLDOS_LEAN_BEATS AND the DM effort-tier — both via the SHARED helpers in
 # qa/lib_beat_driver.sh (worldos_dm_lean_args + worldos_dm_effort_arg). This matters because the
 # BUILT dist/WorldOS.app shells scripts/play_party.sh for its DM (see
 # macos/.../ProviderAdapters.swift ClaudeProvider), so the .app's DM must run the fast
@@ -10,11 +10,11 @@
 # It sources the REAL qa/lib_beat_driver.sh and reproduces play_party.sh's turn() DM branch AND
 # companion (facade) branch argv assembly VERBATIM, with a stub `claude` that just prints the argv
 # it would have run. We assert that:
-#   (1) CLAWDND_LEAN_BEATS now DEFAULTS to 1 (lean is standard — no env set → lean fires);
+#   (1) WORLDOS_LEAN_BEATS now DEFAULTS to 1 (lean is standard — no env set → lean fires);
 #   (2) the COLD-OPEN DM argv includes --effort max (no lean: normal --session-id);
 #   (3) a ROUTINE/continuing DM argv includes --effort medium + fresh --session-id + LEAN RE-GROUND;
 #   (4) the COMPANION turn argv has NO --effort and NO lean re-ground (player/companion untouched);
-#   (5) the flag override still works: CLAWDND_LEAN_BEATS=0 forces the legacy --resume path.
+#   (5) the flag override still works: WORLDOS_LEAN_BEATS=0 forces the legacy --resume path.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$ROOT/qa/lib_beat_driver.sh"
@@ -23,10 +23,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # UP FRONT from the pre-seed (so lean re-grounds against the real campaign on continuing beats).
 DSID="DSID-fixed-0000"; CSID="CSID-fixed-0000"
 CAMPAIGN_ID="camp-abc123"
-CLAWDND_LEAN_TAIL="${CLAWDND_LEAN_TAIL:-8}"
+WORLDOS_LEAN_TAIL="${WORLDOS_LEAN_TAIL:-8}"
 DM_CFG="/tmp/dm.mcp.json"; COMP_CFG="/tmp/companion_0.mcp.json"; COMBINED="/tmp/combined.jsonl"
 DM_LOG="/tmp/dm"; STATE_DIR="/tmp/state"; BUDGET="1.50"
-CLAWDND_DM_MODEL="sonnet"; CLAWDND_ACTOR_MODEL="sonnet"
+WORLDOS_DM_MODEL="sonnet"; WORLDOS_ACTOR_MODEL="sonnet"
 
 # Stub `claude`: print the exact argv (each arg on its own line in «»), then return. We also stub
 # the I/O sinks (cat/jq/date) so the VERBATIM turn() body runs without touching real files/models.
@@ -43,38 +43,38 @@ turn_argv() {
   local kind="$1" sid="$2" first="$3" msg="$4" cfg="${5:-}" out resume=() extra=()
   [ "$first" = "0" ] && resume=(--resume "$sid") || resume=(--session-id "$sid")
   if [ "$kind" = "dm" ]; then
-    worldos_dm_lean_args "$first" "${CAMPAIGN_ID:-}" "$CLAWDND_LEAN_TAIL"
-    if [ "${#CLAWDND_DM_LEAN_SESSION[@]}" -gt 0 ]; then
-      resume=("${CLAWDND_DM_LEAN_SESSION[@]}")
-      extra=("${CLAWDND_DM_LEAN_EXTRA[@]}")
+    worldos_dm_lean_args "$first" "${CAMPAIGN_ID:-}" "$WORLDOS_LEAN_TAIL"
+    if [ "${#WORLDOS_DM_LEAN_SESSION[@]}" -gt 0 ]; then
+      resume=("${WORLDOS_DM_LEAN_SESSION[@]}")
+      extra=("${WORLDOS_DM_LEAN_EXTRA[@]}")
     fi
     worldos_dm_effort_arg "$first"
     claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
-      --model "$CLAWDND_DM_MODEL" ${CLAWDND_DM_EFFORT[@]+"${CLAWDND_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+      --model "$WORLDOS_DM_MODEL" ${WORLDOS_DM_EFFORT[@]+"${WORLDOS_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
       --output-format stream-json --verbose
   else
     claude -p "$msg" "${resume[@]}" --mcp-config "$cfg" --strict-mcp-config \
-      --model "$CLAWDND_ACTOR_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+      --model "$WORLDOS_ACTOR_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
       --output-format stream-json --verbose
   fi
 }
 
 hr() { printf '\n========== %s ==========\n' "$1"; }
 
-hr "SCENARIO 1 — DEFAULT (no CLAWDND_LEAN_BEATS set), continuing DM beat (first=0) -> lean fires + effort medium"
-out1="$(unset CLAWDND_LEAN_BEATS; turn_argv dm "$DSID" 0 'This beat, the party acts: opens the door.')"
+hr "SCENARIO 1 — DEFAULT (no WORLDOS_LEAN_BEATS set), continuing DM beat (first=0) -> lean fires + effort medium"
+out1="$(unset WORLDOS_LEAN_BEATS; turn_argv dm "$DSID" 0 'This beat, the party acts: opens the door.')"
 printf '%s\n' "$out1"
 
-hr "SCENARIO 2 — DEFAULT (no CLAWDND_LEAN_BEATS set), COLD OPEN DM beat (first=1) -> no lean + effort max"
-out2="$(unset CLAWDND_LEAN_BEATS; turn_argv dm "$DSID" 1 'You are the Dungeon Master. Begin the session.')"
+hr "SCENARIO 2 — DEFAULT (no WORLDOS_LEAN_BEATS set), COLD OPEN DM beat (first=1) -> no lean + effort max"
+out2="$(unset WORLDOS_LEAN_BEATS; turn_argv dm "$DSID" 1 'You are the Dungeon Master. Begin the session.')"
 printf '%s\n' "$out2"
 
-hr "SCENARIO 3 — OVERRIDE CLAWDND_LEAN_BEATS=0, continuing DM beat (first=0) -> legacy --resume (lean off), effort still medium"
-out3="$(CLAWDND_LEAN_BEATS=0 turn_argv dm "$DSID" 0 'This beat, the party acts: opens the door.')"
+hr "SCENARIO 3 — OVERRIDE WORLDOS_LEAN_BEATS=0, continuing DM beat (first=0) -> legacy --resume (lean off), effort still medium"
+out3="$(WORLDOS_LEAN_BEATS=0 turn_argv dm "$DSID" 0 'This beat, the party acts: opens the door.')"
 printf '%s\n' "$out3"
 
 hr "SCENARIO 4 — COMPANION turn (facade, continuing beat) -> NO --effort, NO lean re-ground"
-out4="$(unset CLAWDND_LEAN_BEATS; turn_argv actor "$CSID" 0 'Take your next action through your tools.' "$COMP_CFG")"
+out4="$(unset WORLDOS_LEAN_BEATS; turn_argv actor "$CSID" 0 'Take your next action through your tools.' "$COMP_CFG")"
 printf '%s\n' "$out4"
 
 # ---- Assertions -------------------------------------------------------------------

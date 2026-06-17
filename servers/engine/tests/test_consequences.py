@@ -33,7 +33,7 @@ def test_pending_excludes_fired_and_unscheduled():
 
 @pytest.fixture
 def cid(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     return server.create_campaign("World")["id"]
 
 

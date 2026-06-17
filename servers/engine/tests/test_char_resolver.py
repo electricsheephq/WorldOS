@@ -22,7 +22,7 @@ import server
 
 @pytest.fixture()
 def camp(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Resolver")["id"]
     mid = server.create_character(cid, "Maddala Deadeye", kind="npc")["id"]
     server.create_character(cid, "Rolan", kind="player")

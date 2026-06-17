@@ -14,7 +14,7 @@
 #   - Player agent:    the constrained facade (worldos-player), DEFAULT actor — exactly
 #                      run_duo's player.
 #   - Companion agents: the SAME facade, each parameterized to ITS OWN character via
-#                      CLAWDND_ACTOR_ID + CLAWDND_ACTOR_ROLE=companion. Each validates
+#                      WORLDOS_ACTOR_ID + WORLDOS_ACTOR_ROLE=companion. Each validates
 #                      casts/attacks/items against its OWN sheet; each writes to its OWN
 #                      moves file + cursor + session.
 #
@@ -50,17 +50,17 @@ WORLD="${2:-baldurs-gate}"
 BEATS="${3:-6}"
 BUDGET="${4:-0.80}"                                   # per-call --max-budget-usd
 COMPANION_SPEC="${5:-Seraphine:cleric:qa/play_companion.txt:Cure Wounds|Guiding Bolt|Sacred Flame,Grok:fighter:qa/play_companion_saboteur.txt}"
-PLAYER_PROMPT_FILE="${CLAWDND_PLAYER_PROMPT:-qa/play_player_duo.txt}"
-SESSION_BUDGET="${CLAWDND_PARTY_SESSION_BUDGET:-30.00}"  # aggregate ceiling for the whole scene
-MAX_TURNS="${CLAWDND_PARTY_MAX_TURNS:-60}"               # hard agent-turn cap (safety net)
+PLAYER_PROMPT_FILE="${WORLDOS_PLAYER_PROMPT:-qa/play_player_duo.txt}"
+SESSION_BUDGET="${WORLDOS_PARTY_SESSION_BUDGET:-30.00}"  # aggregate ceiling for the whole scene
+MAX_TURNS="${WORLDOS_PARTY_MAX_TURNS:-60}"               # hard agent-turn cap (safety net)
 # Model knobs (default sonnet, so behavior is unchanged): the DM model is the structural-
 # adherence lever (decision §3); the actor model drives the player/companion facade agents.
-CLAWDND_DM_MODEL="$(worldos_env DM_MODEL opus)"
-CLAWDND_ACTOR_MODEL="$(worldos_env ACTOR_MODEL sonnet)"
+WORLDOS_DM_MODEL="$(worldos_env DM_MODEL opus)"
+WORLDOS_ACTOR_MODEL="$(worldos_env ACTOR_MODEL sonnet)"
 SCORE_SCRIPT="$(worldos_env SCORE_SCRIPT qa/score.sh)"
 # Opus needs more than the Sonnet-tuned $0.80 per-call cap (the DM cold-open alone is ~$2.4); floor it
 # for an Opus DM so the cold-open lands. CAP, not spend; the Sonnet companion facade spends far less.
-case "$CLAWDND_DM_MODEL" in *opus*) if awk "BEGIN{exit !($BUDGET < 4.0)}"; then BUDGET=4.00; fi ;; esac
+case "$WORLDOS_DM_MODEL" in *opus*) if awk "BEGIN{exit !($BUDGET < 4.0)}"; then BUDGET=4.00; fi ;; esac
 T="qa/transcripts"; STATE_DIR="$ROOT/qa/state/$RUN"
 mkdir -p "$T" "$STATE_DIR"; rm -rf "$STATE_DIR/campaigns" 2>/dev/null
 
@@ -68,7 +68,7 @@ mkdir -p "$T" "$STATE_DIR"; rm -rf "$STATE_DIR/campaigns" 2>/dev/null
 DM_CFG="$STATE_DIR/dm.mcp.json"
 python3 - "$ROOT/qa/qa.mcp.example.json" "$STATE_DIR" "$DM_CFG" <<'PY'
 import json, sys
-cfg = json.load(open(sys.argv[1])); cfg["mcpServers"]["worldos-engine"]["env"]["CLAWDND_STATE_DIR"] = sys.argv[2]
+cfg = json.load(open(sys.argv[1])); cfg["mcpServers"]["worldos-engine"]["env"]["WORLDOS_STATE_DIR"] = sys.argv[2]
 json.dump(cfg, open(sys.argv[3], "w"))
 PY
 
@@ -79,10 +79,10 @@ PY
 # (the persona/agenda never does). Prints JSON: {player_id, companions:[{id,name,persona}]}.
 # Run under `uv` (the engine's venv has mcp + pydantic etc.) from the engine dir, the
 # same interpreter run_duo uses for the facade/engine — bare python3 lacks the deps.
-SEED_JSON="$(CLAWDND_STATE_DIR="$STATE_DIR" uv run --directory "$ROOT/servers/engine" python - "$ROOT" "$WORLD" "$COMPANION_SPEC" <<'PY'
+SEED_JSON="$(WORLDOS_STATE_DIR="$STATE_DIR" uv run --directory "$ROOT/servers/engine" python - "$ROOT" "$WORLD" "$COMPANION_SPEC" <<'PY'
 import json, os, sys
 root, world, spec = sys.argv[1], sys.argv[2], sys.argv[3]
-import server  # engine tools as plain functions (state dir from CLAWDND_STATE_DIR; cwd is the engine dir)
+import server  # engine tools as plain functions (state dir from WORLDOS_STATE_DIR; cwd is the engine dir)
 
 # A new campaign in this world, with an active session.
 camp = server.start_world(world)["campaign_id"]
@@ -124,9 +124,9 @@ PLAYER_ID="$(printf '%s' "$SEED_JSON" | jq -r '.player_id')"
 CAMPAIGN_ID="$(printf '%s' "$SEED_JSON" | jq -r '.campaign_id')"
 NUM_COMP="$(printf '%s' "$SEED_JSON" | jq -r '.companions | length')"
 
-# --- PLAYER facade config (DEFAULT actor — no CLAWDND_ACTOR_ID, role:"player") ------
+# --- PLAYER facade config (DEFAULT actor — no WORLDOS_ACTOR_ID, role:"player") ------
 # Identical to run_duo's player config, so the player stream is byte-for-byte unchanged,
-# PLUS CLAWDND_CAMPAIGN_ID (F12-15/SYN-07): the party harness pre-seeds the campaign, so
+# PLUS WORLDOS_CAMPAIGN_ID (F12-15/SYN-07): the party harness pre-seeds the campaign, so
 # its id is KNOWN here at config-write time. Pin it so the facade reads THIS campaign on
 # every call instead of re-resolving max(updated_at) — a parallel campaign in the same
 # state dir can no longer steal the live pointer and mute an actor (the #640 family).
@@ -137,12 +137,12 @@ import json, sys
 root, state, moves, campaign_id, out = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
 json.dump({"mcpServers": {"worldos-player": {"command": "uv",
   "args": ["run", "--directory", f"{root}/servers/engine", "python", "player_server.py"],
-  "env": {"CLAWDND_STATE_DIR": state, "CLAWDND_PLAYER_MOVES": moves,
-          "CLAWDND_CAMPAIGN_ID": campaign_id}}}}, open(out, "w"))
+  "env": {"WORLDOS_STATE_DIR": state, "WORLDOS_PLAYER_MOVES": moves,
+          "WORLDOS_CAMPAIGN_ID": campaign_id}}}}, open(out, "w"))
 PY
 
 # --- COMPANION facade configs (one per companion, each bound to its own actor id) ---
-# Each gets the SAME facade but with CLAWDND_ACTOR_ID set to ITS character + role
+# Each gets the SAME facade but with WORLDOS_ACTOR_ID set to ITS character + role
 # "companion", its OWN moves file, cursor, and session id. The persona file (incl. any
 # sealed agenda) is passed to the agent's PROMPT only — never into the config or state.
 COMP_CFGS=(); COMP_MOVES=(); COMP_CURSORS=(); COMP_SIDS=(); COMP_IDS=(); COMP_NAMES=(); COMP_PERSONAS=()
@@ -156,14 +156,14 @@ for i in $(seq 0 $((NUM_COMP - 1))); do
   python3 - "$ROOT" "$STATE_DIR" "$cmoves" "$cid" "$CAMPAIGN_ID" "$ccfg" <<'PY'
 import json, sys
 root, state, moves, actor_id, campaign_id, out = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6]
-# CLAWDND_CAMPAIGN_ID (F12-15/SYN-07): pin THIS companion's campaign so the freshest-wins
+# WORLDOS_CAMPAIGN_ID (F12-15/SYN-07): pin THIS companion's campaign so the freshest-wins
 # heuristic can never resolve the facade onto a parallel campaign that lacks this actor and
 # silently mute it. The id is known here (the party harness pre-seeded the campaign above).
 json.dump({"mcpServers": {"worldos-player": {"command": "uv",
   "args": ["run", "--directory", f"{root}/servers/engine", "python", "player_server.py"],
-  "env": {"CLAWDND_STATE_DIR": state, "CLAWDND_PLAYER_MOVES": moves,
-          "CLAWDND_ACTOR_ID": actor_id, "CLAWDND_ACTOR_ROLE": "companion",
-          "CLAWDND_CAMPAIGN_ID": campaign_id}}}}, open(out, "w"))
+  "env": {"WORLDOS_STATE_DIR": state, "WORLDOS_PLAYER_MOVES": moves,
+          "WORLDOS_ACTOR_ID": actor_id, "WORLDOS_ACTOR_ROLE": "companion",
+          "WORLDOS_CAMPAIGN_ID": campaign_id}}}}, open(out, "w"))
 PY
   COMP_CFGS+=("$ccfg"); COMP_MOVES+=("$cmoves"); COMP_CURSORS+=("$ccur")
   COMP_SIDS+=("$(python3 -c 'import uuid;print(uuid.uuid4())')")
@@ -200,7 +200,7 @@ turn() {
     worldos_dm_effort_arg "$first"
     out="$T/$RUN.dm.$(date +%s%N).jsonl"
     claude -p "$msg" "${resume[@]}" --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
-      --model "$CLAWDND_DM_MODEL" ${CLAWDND_DM_EFFORT[@]+"${CLAWDND_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+      --model "$WORLDOS_DM_MODEL" ${WORLDOS_DM_EFFORT[@]+"${WORLDOS_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
       --output-format stream-json --verbose > "$out" 2>> "$T/$RUN.dm.err"
     rc=$?
     cat "$out" >> "$COMBINED"
@@ -210,7 +210,7 @@ turn() {
   else
     out="$T/$RUN.actor.$(date +%s%N).jsonl"
     claude -p "$msg" "${resume[@]}" --mcp-config "$cfg" --strict-mcp-config \
-      --model "$CLAWDND_ACTOR_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+      --model "$WORLDOS_ACTOR_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
       --output-format stream-json --verbose > "$out" 2>> "$T/$RUN.actor.err"
     cat "$out" >> "$COMBINED"   # actor tool-call cost counts toward the session ceiling
     jq -rs 'map(select(.type=="result"))[-1].result // ""' "$out" 2>/dev/null
@@ -257,10 +257,10 @@ PY
 AGENT_TURNS=0
 over_budget() {
   local spent
-  [ "$AGENT_TURNS" -ge "$MAX_TURNS" ] && { echo "[party] turn cap ($MAX_TURNS) reached — stopping (raise CLAWDND_PARTY_MAX_TURNS)."; return 0; }
+  [ "$AGENT_TURNS" -ge "$MAX_TURNS" ] && { echo "[party] turn cap ($MAX_TURNS) reached — stopping (raise WORLDOS_PARTY_MAX_TURNS)."; return 0; }
   spent="$(jq -rs '[.[]|select(.type=="result")|.total_cost_usd//0]|add // 0' "$COMBINED" 2>/dev/null)"
   awk -v s="${spent:-0}" -v b="$SESSION_BUDGET" 'BEGIN{exit !(s+0>=b+0)}' \
-    && { echo "[party] session budget reached (~\$$spent/\$$SESSION_BUDGET) — stopping (raise CLAWDND_PARTY_SESSION_BUDGET)."; return 0; }
+    && { echo "[party] session budget reached (~\$$spent/\$$SESSION_BUDGET) — stopping (raise WORLDOS_PARTY_SESSION_BUDGET)."; return 0; }
   return 1
 }
 
@@ -323,7 +323,7 @@ $beat0_block
 
 Resolve each declared move through the engine; voice the world and any NPC; let the companions be PRESENT (the player and companions are separate people with their own agency — you narrate the RESULT of their declared moves, never invent a companion's internal choice). End by handing the open moment to the PLAYER.")"
 # #357: recover engine-logged narration if the DM turn ended on a tool call (empty reply).
-worldos_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
+worldos_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$WORLDOS_DM_REPLY"
 # SYN-01: an empty resolved reply is a FAILED beat — record the wrapper-authored VISIBLE
 # failure row (never error text, never a blank/hidden row), then abort loudly as before.
 if [ -z "$DMSG" ]; then
@@ -352,7 +352,7 @@ $PARTY_BLOCK
 Then PLAY the next beat as a full lived scene — NOT a fragment: any NPC (or companion) present SPEAKS at least one quoted line in their own voice; let them push back when it's real. Narrate the RESULT of each declared move (never invent a companion's choice). Weave the open moment back to the PLAYER inside the scene — never a bare 'Your move.'")"
   # #357: recover engine-logged narration before the silence check (tool-final-but-narrated
   # turn ≠ silence; keeps the chat non-blank on a resolved beat).
-  worldos_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
+  worldos_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$WORLDOS_DM_REPLY"
   echo "[party] beat $b DM: ${DMSG:0:120}…"
   # SYN-01: an empty resolved reply is a FAILED beat — record the visible failure row (counted
   # by assert_behavioral's dm_beat_honesty) instead of masking with error text/recycled prose.

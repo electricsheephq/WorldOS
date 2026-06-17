@@ -7,7 +7,7 @@ A swappable voice layer with two directions:
     a logical voice_id; the registry resolves it to the active backend's real
     voice, so switching Kokoro -> ElevenLabs never touches character data.
   - speech-to-text: transcribe(audio_path) -> a backend selected by
-    CLAWDND_STT_BACKEND turns a recorded audio file into text.
+    WORLDOS_STT_BACKEND turns a recorded audio file into text.
 
 TTS backends: kokoro (default, local), elevenlabs (placeholder), null (silent/CI).
 STT backends: null (default, placeholder/CI), macos / whisper (stubs). See stt.py.
@@ -50,7 +50,7 @@ def _get_backend():
 
 
 def _get_stt_backend() -> stt.SttBackend:
-    """The active STT backend, rebuilt if CLAWDND_STT_BACKEND changed.
+    """The active STT backend, rebuilt if WORLDOS_STT_BACKEND changed.
 
     Construction is cheap (heavy deps are imported lazily inside transcribe), so
     re-selecting on a name change is free and lets the env var drive selection at
@@ -120,7 +120,7 @@ def speak(text: str, voice_id: str = "narrator-dm", speed: float = 1.0, play: bo
 def transcribe(audio_path: str) -> dict:
     """Transcribe a recorded audio file to text (speech-to-text).
 
-    Uses the STT backend selected by CLAWDND_STT_BACKEND (default 'null', which
+    Uses the STT backend selected by WORLDOS_STT_BACKEND (default 'null', which
     returns a placeholder for CI/headless). Real backends (macos, whisper) decode
     on-device; if their optional deps or the audio file are missing they return a
     clear "not configured" message in `text` rather than crashing.

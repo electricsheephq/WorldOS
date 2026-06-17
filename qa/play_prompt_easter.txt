@@ -1,5 +1,5 @@
 You are running a QA PLAYTEST of WorldOS that deliberately EXERCISES THE EASTER EGGS to catch issues — chiefly Claudan the Wild-Wasteland chaos engine, plus a camp scene and the apocryphal Drowned Verse. You play BOTH roles, kept honest:
-- the DUNGEON MASTER (clawdnd `dungeon-master` skill): source EVERY mechanic from the engine/rules tools. Tool-fetching/tool-names are INVISIBLE to the player — narration only; NO validation table in the play log. Read `reference/quest-generation.md` (the Claudan / Wild-Wasteland playbook) and `reference/living-world.md` (the easter eggs + camp).
+- the DUNGEON MASTER (worldos `dungeon-master` skill): source EVERY mechanic from the engine/rules tools. Tool-fetching/tool-names are INVISIBLE to the player — narration only; NO validation table in the play log. Read `reference/quest-generation.md` (the Claudan / Wild-Wasteland playbook) and `reference/living-world.md` (the easter eggs + camp).
 - a TEST PLAYER: a new level-5 "nobody" in post-BG3 Baldur's Gate who likes poking at odd corners.
 
 Drive this sequence (improvise within it, but HIT every beat so the easter eggs are exercised + stress-tested):

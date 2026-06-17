@@ -69,11 +69,10 @@ struct ClaudeProvider: ProviderAdapter {
 
         // An authored-hero spec (from the Creation wizard) rides as an ENV var, not a positional
         // arg — adding a 5th positional would shift the optional companion-spec slot. play.sh
-        // reads CLAWDND_PLAY_HERO and pre-seeds that exact PC before the DM's first turn.
+        // reads WORLDOS_PLAY_HERO and pre-seeds that exact PC before the DM's first turn.
         var environment = budgetEnvironment(preferences)
         let trimmedHero = hero.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedHero.isEmpty {
-            environment["CLAWDND_PLAY_HERO"] = trimmedHero
             environment["WORLDOS_PLAY_HERO"] = trimmedHero
         }
 
@@ -84,10 +83,9 @@ struct ClaudeProvider: ProviderAdapter {
         // no_provider, so every action button stays locked ("live provider move sink is not
         // ready"). The Codex/OpenClaw/scripted lanes set this via providerEnvironment(); the
         // Claude lane builds its own environment, so set it directly here. We set both the
-        // canonical WORLDOS_ name and the legacy CLAWDND_ name the viewer's env_var() falls
+        // WORLDOS_ name the viewer's env_var() reads
         // back to, mirroring how the other lanes (and budgetEnvironment) carry both prefixes.
         environment["WORLDOS_PROVIDER"] = kind.rawValue
-        environment["CLAWDND_PROVIDER"] = kind.rawValue
         setProviderModelEnvironment(kind: kind, preferences: preferences, environment: &environment)
 
         return ProviderLaunchRequest(
@@ -409,20 +407,16 @@ struct ProviderRegistry {
 private func budgetEnvironment(_ preferences: ProviderPreferences) -> [String: String] {
     var env: [String: String] = [:]
     if !preferences.budget.isEmpty {
-        env["CLAWDND_PLAY_BUDGET"] = preferences.budget
         env["WORLDOS_PLAY_BUDGET"] = preferences.budget
     }
     if !preferences.sessionBudget.isEmpty {
-        env["CLAWDND_PLAY_SESSION_BUDGET"] = preferences.sessionBudget
         env["WORLDOS_PLAY_SESSION_BUDGET"] = preferences.sessionBudget
     }
     if !preferences.maxTurns.isEmpty {
-        env["CLAWDND_PLAY_MAX_TURNS"] = preferences.maxTurns
         env["WORLDOS_PLAY_MAX_TURNS"] = preferences.maxTurns
     }
     if !preferences.artRepoPath.isEmpty {
         env["WORLDOS_ART_REPO_ROOT"] = preferences.artRepoPath
-        env["CLAWDND_ART_REPO_ROOT"] = preferences.artRepoPath
     }
     return env
 }
@@ -437,19 +431,13 @@ private func providerEnvironment(
     preferences: ProviderPreferences
 ) -> [String: String] {
     var env = budgetEnvironment(preferences)
-    env["CLAWDND_PROVIDER"] = kind.rawValue
     env["WORLDOS_PROVIDER"] = kind.rawValue
-    env["CLAWDND_WORLD"] = world
     env["WORLDOS_WORLD"] = world
-    env["CLAWDND_RUN_ID"] = runId
     env["WORLDOS_RUN_ID"] = runId
-    env["CLAWDND_PLAY_PORT"] = String(port)
     env["WORLDOS_PLAY_PORT"] = String(port)
-    env["CLAWDND_PLAY_COMPANIONS"] = companions
     env["WORLDOS_PLAY_COMPANIONS"] = companions
     let trimmedHero = hero.trimmingCharacters(in: .whitespacesAndNewlines)
     if !trimmedHero.isEmpty {
-        env["CLAWDND_PLAY_HERO"] = trimmedHero
         env["WORLDOS_PLAY_HERO"] = trimmedHero
     }
     let trimmedCodexHome = preferences.codexHome.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -472,23 +460,17 @@ private func setProviderModelEnvironment(
     let playerModel = preferences.playerModel(for: kind)
     let scorerModel = preferences.scorerModel(for: kind)
     environment["WORLDOS_PROVIDER_FAMILY"] = kind.providerFamily
-    environment["CLAWDND_PROVIDER_FAMILY"] = kind.providerFamily
     environment["WORLDOS_AUTH_SURFACE"] = kind.authSurface
-    environment["CLAWDND_AUTH_SURFACE"] = kind.authSurface
     if !dmModel.isEmpty {
         environment["WORLDOS_DM_MODEL"] = dmModel
-        environment["CLAWDND_DM_MODEL"] = dmModel
         if kind == .codex {
             environment["WORLDOS_CODEX_MODEL"] = dmModel
-            environment["CLAWDND_CODEX_MODEL"] = dmModel
         }
     }
     if !playerModel.isEmpty {
         environment["WORLDOS_ACTOR_MODEL"] = playerModel
-        environment["CLAWDND_ACTOR_MODEL"] = playerModel
     }
     if !scorerModel.isEmpty {
         environment["WORLDOS_SCORER_MODEL"] = scorerModel
-        environment["CLAWDND_SCORER_MODEL"] = scorerModel
     }
 }

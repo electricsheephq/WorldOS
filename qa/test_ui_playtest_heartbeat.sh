@@ -46,8 +46,8 @@ chk "ui_playtest wires worldos_emit_progress_heartbeat (per-move resolver lane)"
   'grep -q "worldos_emit_progress_heartbeat" "$UIPT"'
 # MODEL-COOPERATIVE half: dm_turn prepends the shared live-progress rule to the DM prompt (covers
 # BOTH the cold-open and resolver turns), parity with scripts/play.sh:288.
-chk "dm_turn prepends the shared CLAWDND_LIVE_PROGRESS_RULE (covers cold-open + resolver)" \
-  'grep -q "CLAWDND_LIVE_PROGRESS_RULE" "$UIPT"'
+chk "dm_turn prepends the shared WORLDOS_LIVE_PROGRESS_RULE (covers cold-open + resolver)" \
+  'grep -q "WORLDOS_LIVE_PROGRESS_RULE" "$UIPT"'
 # The resolver loop must derive a LIVE campaign id (worldos_live_campaign_id is the engine-
 # authoritative selector play.sh uses) — a blank id no-ops the helper, so the derivation is the crux.
 chk "ui_playtest derives the live campaign id (worldos_live_campaign_id)" \
@@ -61,7 +61,7 @@ chk "resolver emits heartbeat between 'chatlog player' and the dm_turn resolve" 
 # (un-defer), env-gated default-on like scripts/play.sh + qa/run_duo.sh, so the DM does not burn a
 # ToolSearch round-trip re-discovering engine tools every move (production has it default-on).
 chk "ui_playtest's dm.mcp.json gen pins the engine tools (alwaysLoad parity, env-gated)" \
-  'grep -q "alwaysLoad" "$UIPT" && grep -q "CLAWDND_ENGINE_ALWAYSLOAD" "$UIPT"'
+  'grep -q "alwaysLoad" "$UIPT" && grep -q "WORLDOS_ENGINE_ALWAYSLOAD" "$UIPT"'
 
 # ── BEHAVIORAL: with log_engine_narration STUBBED, the heartbeat lands a wrapper row pre-turn ──
 # log_engine_narration in the real lib shells into `uv run servers/engine` (no engine in CI), so
@@ -83,13 +83,13 @@ worldos_emit_progress_heartbeat "$CID" 1 0
 chk "cold-open heartbeat wrote one /events row for the live campaign" \
   '[ "$(grep -c "^$CID	" "$EVENTS")" -eq 1 ]'
 chk "cold-open row carries the opening progress teaser" \
-  'grep -q "^$CID	$CLAWDND_OPENING_PROGRESS_TEXT$" "$EVENTS"'
+  'grep -q "^$CID	$WORLDOS_OPENING_PROGRESS_TEXT$" "$EVENTS"'
 
 # Continuing beat (first=0, idx=0) → a rotating MOVE teaser row, emitted BEFORE the model turn.
 worldos_emit_progress_heartbeat "$CID" 0 0
 chk "continuing-beat heartbeat wrote a SECOND row for the live campaign" \
   '[ "$(grep -c "^$CID	" "$EVENTS")" -eq 2 ]'
-co_text="${CLAWDND_MOVE_PROGRESS_TEXTS[0]}"
+co_text="${WORLDOS_MOVE_PROGRESS_TEXTS[0]}"
 chk "continuing row carries a rotating MOVE progress teaser (idx 0)" \
   'grep -q "^$CID	$co_text$" "$EVENTS"'
 # Every emitted row is a recognized wrapper-progress line (so app.jsx flips the spinner + returns

@@ -48,7 +48,6 @@ class MacOSAppStaticContractTests(unittest.TestCase):
         self.assertIn("Private art repo path does not contain content/worlds/_private", app_process)
         self.assertIn("let artRepoPath: String", models)
         self.assertIn('env["WORLDOS_ART_REPO_ROOT"] = preferences.artRepoPath', providers)
-        self.assertIn('env["CLAWDND_ART_REPO_ROOT"] = preferences.artRepoPath', providers)
 
     def test_built_app_playtest_can_keep_minted_backend_for_manual_gameplay(self):
         harness = self.read("qa/ui_playtest_app.sh")
@@ -97,7 +96,7 @@ class MacOSAppStaticContractTests(unittest.TestCase):
         harness = self.read("qa/ui_playtest_app.sh")
 
         self.assertIn("scripts/play_codex_dm.sh", harness)
-        self.assertIn("CLAWDND_PROVIDER=codex", harness)
+        self.assertIn("WORLDOS_PROVIDER=codex", harness)
         self.assertIn('provider_family() {', harness)
         self.assertIn('"provider_family": provider_family', harness)
         self.assertIn('"dm_model": dm_model', harness)
@@ -118,14 +117,14 @@ class MacOSAppStaticContractTests(unittest.TestCase):
 
         for script in (dm, actor):
             self.assertIn("WORLDOS_CODEX_MODEL", script)
-            self.assertIn('CODEX_MODEL="${WORLDOS_CODEX_MODEL:-${CLAWDND_CODEX_MODEL:-gpt-5.5}}"', script)
+            self.assertIn('CODEX_MODEL="${WORLDOS_CODEX_MODEL:-gpt-5.5}"', script)
             self.assertIn('"provider_family": "codex-openai"', script)
             self.assertIn('"auth_surface": "codex-cli"', script)
             self.assertIn("validate_codex_service_tier", script)
             self.assertIn("Codex CLI config drift", script)
             self.assertIn("service_tier must be unset, 'fast', or 'flex'", script)
             self.assertIn("auto|default|cli-default", script)
-            self.assertNotIn('CODEX_MODEL="${WORLDOS_CODEX_MODEL:-${CLAWDND_CODEX_MODEL:-}}"', script)
+            self.assertNotIn('CODEX_MODEL="${WORLDOS_CODEX_MODEL:-}"', script)
             self.assertIn('MODEL_ARGS=(--model "$CODEX_MODEL")', script)
             self.assertIn('--cd "$ROOT"', script)
             self.assertIn("-c \"mcp_servers.", script)
@@ -148,11 +147,8 @@ class MacOSAppStaticContractTests(unittest.TestCase):
         self.assertIn('static let defaultCodexPlayerModel = "gpt-5.5"', models)
 
         self.assertIn('environment["WORLDOS_PROVIDER"] = kind.rawValue', providers)
-        self.assertIn('environment["CLAWDND_PROVIDER"] = kind.rawValue', providers)
         self.assertIn('environment["WORLDOS_DM_MODEL"] = dmModel', providers)
-        self.assertIn('environment["CLAWDND_DM_MODEL"] = dmModel', providers)
         self.assertIn('environment["WORLDOS_CODEX_MODEL"] = dmModel', providers)
-        self.assertIn('environment["CLAWDND_CODEX_MODEL"] = dmModel', providers)
         self.assertIn('environment["WORLDOS_PROVIDER_FAMILY"] = kind.providerFamily', providers)
         self.assertIn('environment["WORLDOS_AUTH_SURFACE"] = kind.authSurface', providers)
 
@@ -323,7 +319,7 @@ class MacOSAppStaticContractTests(unittest.TestCase):
         self.assertIn("WORLDOS_PROVIDER_FAMILY=scripted", script)
         self.assertIn('"provider_family": "scripted"', script)
         self.assertIn("for cmd in python3 uv", script)
-        self.assertIn('"${CLAWDND_PLAY_HERO:-}"', script)
+        self.assertIn('"${WORLDOS_PLAY_HERO:-}"', script)
         self.assertIn('if spec.get("canon")', script)
         self.assertIn("server.create_character", script)
         self.assertIn('uv run --directory "$ROOT/servers/engine"', script)

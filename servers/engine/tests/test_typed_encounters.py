@@ -207,7 +207,7 @@ def test_typed_pick_combat_draws_from_region_creature_pool():
 def party_camp(tmp_path, monkeypatch):
     """A campaign with a start->forest graph and a level-3 PC + companion in the
     party (a real XP budget). Returns (cid, start_id, forest_id)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Typed Wander Test")["id"]
     start = server.add_location(cid, "Trailhead", region="the Greenwood")["id"]
     forest = server.add_location(cid, "Mirkwood Edge", connections=[start], region="the Greenwood")["id"]
@@ -252,7 +252,7 @@ def test_seam_combat_spawns_foes_and_folds_in_outlook(party_camp, monkeypatch):
 def test_seam_combat_outlook_must_offer_out_at_troll_dragon_boundary(tmp_path, monkeypatch):
     # The brief's canonical boundary (troll ~1.12x / dragon ~6.25x) is computed against a
     # FOUR-PC level-3 deadly budget, so build a 4-PC party here (the shared fixture is 2).
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Boundary")["id"]
     server.add_location(cid, "Trailhead", region="the Greenwood")
     for nm in ("Renn", "Cinder", "Brask", "Vell"):

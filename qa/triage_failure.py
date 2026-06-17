@@ -120,7 +120,7 @@ _TRIAGE: dict[str, dict[str, Any]] = {
         "next_diagnostic": "curl the same-port /app-status; never trust a screenshot alone (a cached tab can fool the harness)",
         "retry_env": {
             "WORLDOS_COLDOPEN_TIMEOUT": "raise if the launcher is slow to come up",
-            "CLAWDND_LAUNCH_LOCK_WAIT": "raise if a launch lock is contended",
+            "WORLDOS_LAUNCH_LOCK_WAIT": "raise if a launch lock is contended",
         },
     },
     "no_provider": {
@@ -131,10 +131,10 @@ _TRIAGE: dict[str, dict[str, Any]] = {
         ],
         "next_diagnostic": "check provider auth FIRST (claude login / Codex CLI >=0.120.0); grep the run trace for 401 / apiKeySource:none before assuming a race",
         "retry_env": {
-            "CLAWDND_PROVIDER": "the provider lane to mint (claude|codex)",
-            "CLAWDND_DM_MODEL": "DM model id for the lane under test",
+            "WORLDOS_PROVIDER": "the provider lane to mint (claude|codex)",
+            "WORLDOS_DM_MODEL": "DM model id for the lane under test",
             "ANTHROPIC_API_KEY": "set/refresh if the Claude lane is key-gated",
-            "CLAWDND_DM_RETRY_SESSION": "retry-with-fresh-session knob if the first mint 401'd",
+            "WORLDOS_DM_RETRY_SESSION": "retry-with-fresh-session knob if the first mint 401'd",
         },
     },
     "no_art": {
@@ -145,7 +145,7 @@ _TRIAGE: dict[str, dict[str, Any]] = {
         "next_diagnostic": "confirm the private art root exists and the art-repo-root env points at it; this is wiring, not (usually) missing assets",
         "retry_env": {
             "WORLDOS_ART_REPO_ROOT": "absolute path to the private art root",
-            "CLAWDND_ART_REPO_ROOT": "alias for the art-repo root the engine reads",
+            "WORLDOS_ART_REPO_ROOT": "alias for the art-repo root the engine reads",
         },
     },
     "no_actor": {
@@ -203,7 +203,7 @@ _TRIAGE: dict[str, dict[str, Any]] = {
         ],
         "next_diagnostic": "grant the macOS permission on the run lane (or move to a pre-granted lane) and re-run; this is a lane/auth gap, not a product bug",
         "retry_env": {
-            "CLAWDND_RAM_PREFLIGHT_STRICT": "lane preflight strictness (set to fail fast on an unprepared lane)",
+            "WORLDOS_RAM_PREFLIGHT_STRICT": "lane preflight strictness (set to fail fast on an unprepared lane)",
         },
     },
 }

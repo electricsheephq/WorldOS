@@ -26,7 +26,7 @@ def _license_check():
 
 # ── #40/#41 engine-state: path containment + stable character id ──
 def test_issue40_path_like_ids_cannot_escape_roots(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path / "state"))
     for bad in ("../../escape", "/tmp/abs", "..", "a/b", ""):
         with pytest.raises(ValueError):
             with store.campaign_lock(bad):
@@ -37,7 +37,7 @@ def test_issue40_path_like_ids_cannot_escape_roots(tmp_path, monkeypatch):
 
 
 def test_issue41_update_character_cannot_change_the_id(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("ids")["id"]
     old = server.create_character(cid, "Hero")["id"]
     server.update_character(cid, old, {"id": "visible_unusable", "armor_class": 15})
@@ -52,7 +52,7 @@ def _campaign():
 
 # ── #42-#45 mechanics: conditions enforce action/save/immunity + concentration ──
 def test_issue42_incapacitated_cannot_act_or_attack(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = _campaign()
     actor = server.create_character(cid, "Actor", kind="player")["id"]
     target = server.create_character(cid, "Target", kind="monster")["id"]
@@ -66,7 +66,7 @@ def test_issue42_incapacitated_cannot_act_or_attack(tmp_path, monkeypatch):
 def test_issue42_incapacitated_cannot_cast_a_spell(tmp_path, monkeypatch):
     # Extends #42 (review finding): casting is an action, so an incapacitated caster can't cast —
     # and the slot must NOT be spent on the refused cast.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = _campaign()
     w = server.create_character(cid, "Wiz", kind="player", class_name="Wizard",
                                 level=3, apply_srd_defaults=True)["id"]
@@ -78,7 +78,7 @@ def test_issue42_incapacitated_cannot_cast_a_spell(tmp_path, monkeypatch):
 
 
 def test_issue43_condition_saves_enforced(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = _campaign()
     actor = server.create_character(cid, "Actor", kind="player")["id"]
     server.add_condition(cid, actor, "unconscious")
@@ -89,7 +89,7 @@ def test_issue43_condition_saves_enforced(tmp_path, monkeypatch):
 
 
 def test_issue43_restrained_gives_dex_save_disadvantage(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = _campaign()
     actor = server.create_character(cid, "Actor", kind="player")["id"]
     server.add_condition(cid, actor, "restrained")
@@ -97,7 +97,7 @@ def test_issue43_restrained_gives_dex_save_disadvantage(tmp_path, monkeypatch):
 
 
 def test_issue44_condition_immunity_enforced(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = _campaign()
     mon = server.create_character(cid, "ImpX", kind="monster")["id"]
     server.update_character(cid, mon, {"condition_immunities": ["poisoned"]})
@@ -136,7 +136,7 @@ def test_issue53_ingested_record_without_attribution_is_caught(tmp_path):
 
 # ── #46/#48 canon-memory: ending threads projection + ledger kind filter ──
 def test_issue46_ending_response_threads_match_the_ending(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     out = server.start_world("baldurs-gate", ending="gortash-tyranny")
     joined = " ".join(out["standing_threads"])
     # the base thread says Gortash is dead + the Steel Watch gone — contradicted by the ending.
@@ -147,7 +147,7 @@ def test_issue46_ending_response_threads_match_the_ending(tmp_path, monkeypatch)
 def test_issue48_ledger_kind_filter_is_pre_limit(tmp_path, monkeypatch):
     import ledger
     from store import load_campaign, save_campaign
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("noisy")["id"]
     for i in range(50):  # flood with same-matching session events
         server.log_event(cid, "narration", f"Pale Choir noisy event {i}")
@@ -161,7 +161,7 @@ def test_issue48_ledger_kind_filter_is_pre_limit(tmp_path, monkeypatch):
 
 # ── #47/#50/#51 content + prompt contracts ──
 def test_issue47_all_baldurs_gate_regions_reachable_from_start(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     c = content.seed_world(content.load_world_data("baldurs-gate"))
     start = c.current_location_id
     seen, frontier = {start}, [start]

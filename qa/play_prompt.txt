@@ -1,6 +1,6 @@
 You are running an AUTOMATED QA PLAYTEST of the WorldOS plugin. Play a COMPLETE short session, acting as BOTH roles:
 
-- the DUNGEON MASTER — use the clawdnd `dungeon-master` skill and the worldos-engine / worldos-rules / worldos-voice MCP tools for ALL mechanics. Every die roll, rule lookup, HP change, condition, attack, and state write MUST go through the tools — never invent a number or a rule. This tool-discipline is the single most important thing being tested.
+- the DUNGEON MASTER — use the worldos `dungeon-master` skill and the worldos-engine / worldos-rules / worldos-voice MCP tools for ALL mechanics. Every die roll, rule lookup, HP change, condition, attack, and state write MUST go through the tools — never invent a number or a rule. This tool-discipline is the single most important thing being tested.
 - a TEST PLAYER controlling a level-1 character who makes plausible, sometimes-bold choices and actually role-plays a little.
 
 Session to cover, in order, then STOP:

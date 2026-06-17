@@ -23,8 +23,8 @@
 
 set -uo pipefail
 
-REPO="${WORLDOS_REPO:-${CLAWDND_REPO:-$HOME/WorldOS}}"
-PORTS_TO_CHECK="${CLAWDND_PORTS:-8765 8766 8767 8768 8769}"
+REPO="${WORLDOS_REPO:-$HOME/WorldOS}"
+PORTS_TO_CHECK="${WORLDOS_PORTS:-8765 8766 8767 8768 8769}"
 
 step() { printf "\n→ %s\n" "$1"; }
 ok()   { printf "  ✓ %s\n" "$1"; }
@@ -32,12 +32,12 @@ warn() { printf "  ! %s\n" "$1"; }
 err()  { printf "  ✗ %s\n" "$1" 1>&2; }
 
 if [ ! -d "$REPO" ]; then
-  err "repo not found at $REPO (set WORLDOS_REPO to override; CLAWDND_REPO is also supported)"; exit 2
+  err "repo not found at $REPO (set WORLDOS_REPO to override; WORLDOS_REPO is also supported)"; exit 2
 fi
 
 step "Reap any stale WorldOS / viewer processes (clean host)"
 pkill -f "dist/WorldOS.app" 2>/dev/null || true
-pkill -f "dist/ClawDnD.app" 2>/dev/null || true
+pkill -f "dist/WorldOS.app" 2>/dev/null || true
 pkill -f "viewer/server.py" 2>/dev/null || true
 sleep 1
 ok "host clean"

@@ -307,7 +307,7 @@ def test_spell_grants_advantage_registry():
 
 # --- end-to-end through the MCP tools ---
 def test_combat_flow_end_to_end(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("Combat Test")["id"]
@@ -330,7 +330,7 @@ def test_combat_flow_end_to_end(tmp_path, monkeypatch):
 
 
 def test_attack_logs_structured_combat_event_payload(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     monkeypatch.setattr(server.dice_mod, "roll", _fixed_roll)
@@ -347,7 +347,7 @@ def test_attack_logs_structured_combat_event_payload(tmp_path, monkeypatch):
     attack_entry = next(e for e in entries if e.payload and e.payload.get("event") == "attack")
 
     assert attack_entry.kind == "combat"
-    assert attack_entry.payload["schema"] == "clawdnd.combat_event.v1"
+    assert attack_entry.payload["schema"] == "worldos.combat_event.v1"
     assert attack_entry.payload["outcome"] == "hit"
     assert attack_entry.payload["actor"] == {"id": hero, "name": "Hero"}
     assert attack_entry.payload["target"]["id"] == gob
@@ -356,7 +356,7 @@ def test_attack_logs_structured_combat_event_payload(tmp_path, monkeypatch):
 
 
 def test_turn_advance_logs_structured_combat_event_payload(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("Turn Event Cards")["id"]
@@ -375,7 +375,7 @@ def test_turn_advance_logs_structured_combat_event_payload(tmp_path, monkeypatch
     turn_entry = next(e for e in entries if e.payload and e.payload.get("event") == "turn_advanced")
 
     assert turn_entry.kind == "combat"
-    assert turn_entry.payload["schema"] == "clawdnd.combat_event.v1"
+    assert turn_entry.payload["schema"] == "worldos.combat_event.v1"
     assert turn_entry.payload["previous"]["id"] == before["current"]
     assert turn_entry.payload["current"]["id"] == advanced["current"]
     assert turn_entry.payload["round"] == advanced["round"]
@@ -383,7 +383,7 @@ def test_turn_advance_logs_structured_combat_event_payload(tmp_path, monkeypatch
 
 
 def test_death_save_logs_structured_combat_event_payload(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     monkeypatch.setattr(server.dice_mod, "roll", _fixed_roll)
@@ -399,7 +399,7 @@ def test_death_save_logs_structured_combat_event_payload(tmp_path, monkeypatch):
     death_entry = next(e for e in entries if e.payload and e.payload.get("event") == "death_save")
 
     assert death_entry.kind == "combat"
-    assert death_entry.payload["schema"] == "clawdnd.combat_event.v1"
+    assert death_entry.payload["schema"] == "worldos.combat_event.v1"
     assert death_entry.payload["target"] == {"id": hero, "name": "Hero"}
     assert death_entry.payload["roll"]["natural"] == 15
     assert death_entry.payload["result"] == out["result"] == "pending"
@@ -441,7 +441,7 @@ def test_prone_ranged_vs_melee():  # M6
 
 
 def test_next_turn_skips_dead(tmp_path, monkeypatch):  # H2
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("turns")["id"]
@@ -464,7 +464,7 @@ def test_next_turn_skips_dead(tmp_path, monkeypatch):  # H2
 
 
 def test_remove_combatant(tmp_path, monkeypatch):  # H2
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("rm")["id"]
@@ -481,7 +481,7 @@ def test_remove_combatant_after_many_rounds_keeps_current_and_round_sane(tmp_pat
     # several rounds turn_index >> n, so removing an already-acted EARLIER combatant
     # wrongly decremented the pointer and SKIPPED the current combatant's turn (and
     # drifted the round counter). turn_index is now normalized to [0, n).
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("rounds")["id"]
@@ -584,7 +584,7 @@ def test_attack_by_non_current_combatant_is_rejected_after_reaction_spent(tmp_pa
     # rejected (reaction already used). This both ALLOWS the legitimate OA and stops a
     # non-current creature from taking a free action-attack (the QA defect: Kield
     # attacked on Renn's turn).
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid, cur, other, _ids = _combat_with_known_current(server)
@@ -601,7 +601,7 @@ def test_attack_by_non_current_combatant_is_rejected_after_reaction_spent(tmp_pa
 def test_explicit_opportunity_attack_off_turn_is_allowed(tmp_path, monkeypatch):
     # A reaction (opportunity attack) legitimately happens off-turn — is_reaction=True is
     # accepted for a non-current combatant and gated only by reaction_used.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid, cur, other, _ids = _combat_with_known_current(server)
@@ -616,7 +616,7 @@ def test_second_attack_same_turn_rejected_without_extra_attack(tmp_path, monkeyp
     # The current combatant attacks on its own turn: the FIRST attack consumes the Attack
     # action; a SECOND with no Extra Attack and no Action Surge is rejected (the QA defect:
     # two full attacks in one round with no mechanical basis).
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid, cur, other, _ids = _combat_with_known_current(server)
@@ -632,7 +632,7 @@ def test_second_attack_same_turn_rejected_without_extra_attack(tmp_path, monkeyp
 def test_fighter_with_extra_attacks_makes_its_attacks_under_one_action(tmp_path, monkeypatch):
     # A fighter with Extra Attack (extra_attacks=1) makes its TWO attacks under one action;
     # the third is rejected. The bonus action stays available (Extra Attack is all one action).
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid, cur, other, _ids = _combat_with_known_current(server)
@@ -650,7 +650,7 @@ def test_fighter_with_extra_attacks_makes_its_attacks_under_one_action(tmp_path,
 def test_action_surge_grants_a_second_attack_action(tmp_path, monkeypatch):
     # A fighter with no Extra Attack: one attack, then the second is blocked — UNTIL an
     # Action Surge is spent (a fresh action), which grants another attack.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid, cur, other, _ids = _combat_with_known_current(server)
@@ -669,7 +669,7 @@ def test_action_surge_grants_a_second_attack_action(tmp_path, monkeypatch):
 def test_next_turn_resets_attack_economy(tmp_path, monkeypatch):
     # The attack budget refreshes each turn: after exhausting it, advancing the turn lets
     # the new current combatant attack again.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid, cur, other, _ids = _combat_with_known_current(server)
@@ -686,7 +686,7 @@ def test_next_turn_resets_attack_economy(tmp_path, monkeypatch):
 def test_cast_spell_by_non_current_caster_is_rejected_after_reaction_spent(tmp_path, monkeypatch):
     # cast_spell mirrors attack: an off-turn cast is a reaction (resolves once), then a
     # second off-turn cast the same round is rejected (turn ownership for action-casts).
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid, cur, other, _ids = _combat_with_known_current(server)
@@ -702,7 +702,7 @@ def test_next_turn_with_all_combatants_dead_returns_no_current_without_raising(t
     # living candidate, so `cur` stays None and the `cur.name if cur else None` path (server.py
     # ~2028) yields current_name=None — and the call must NOT raise. (`current` itself is the
     # computed turn_index slot, which stays set while combat is active; the None is current_name.)
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("tpk")["id"]
@@ -720,7 +720,7 @@ def test_action_surge_by_non_current_combatant_does_not_unlock_current_turns_sec
     # Turn-ownership for Action Surge: surge_actions only rises for the CURRENT combatant
     # (server.py ~3184). A NON-current creature spending action_surge must NOT raise the current
     # combatant's attack ceiling — so the current combatant's 2nd attack is still rejected.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
     import store
 
@@ -751,7 +751,7 @@ def test_start_combat_outlook_present_for_overmatch(tmp_path, monkeypatch):
     Uses spawn_monster("Troll") — CR 5, 1800 XP — and two copies to hit the 2x+ overmatch
     threshold for a level-3 party (deadly budget ~1600 XP, adjusted_xp for 2 trolls with
     x1.5 multiplier = 5400, ratio ~3.375 > 2.0).  Must_offer_out fires for avg_level <= 5."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("Outlook Fold-in Test")["id"]
@@ -775,7 +775,7 @@ def test_start_combat_no_outlook_for_fair_fight(tmp_path, monkeypatch):
 
     Bandit = CR 1/8, 25 XP — trivially below even the easy budget for 4x L5 PCs.
     The view must be UNCHANGED (no 'outlook' key added for a non-deadly fight)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("Fair Fight Test")["id"]
@@ -803,7 +803,7 @@ def test_start_combat_flags_omitted_co_located_companion(tmp_path, monkeypatch):
     silently sidelined (the engine never told the DM). When a living, co-located companion is
     NOT in combatant_ids, surface a `companions_omitted` advisory (the same engine-tells pattern
     as extra_attack_reminder / outlook) so the DM can pull them in or narrate why they sit out."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("Omit Companion")["id"]
@@ -821,7 +821,7 @@ def test_start_combat_flags_omitted_co_located_companion(tmp_path, monkeypatch):
 def test_start_combat_no_omission_advisory_when_all_companions_included(tmp_path, monkeypatch):
     """When every living companion is in the fight there is NO advisory — the view is unchanged
     (purely additive; a complete party's start_combat is byte-for-byte today)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("All In")["id"]
@@ -836,7 +836,7 @@ def test_start_combat_no_omission_advisory_when_all_companions_included(tmp_path
 def test_start_combat_does_not_flag_a_dead_or_downed_companion(tmp_path, monkeypatch):
     """A dead/downed companion left out of the fight is NOT flagged — it can't fight, so its
     omission is correct, not an oversight (avoid false advisories)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
     import store
 
@@ -860,7 +860,7 @@ def test_start_combat_does_not_flag_a_dead_or_downed_companion(tmp_path, monkeyp
 
 def test_start_combat_surpriser_is_first_in_turn_order(tmp_path, monkeypatch):
     """Surpriser must be placed first in the turn order regardless of initiative rolls."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("Surprise Test")["id"]
@@ -884,7 +884,7 @@ def test_start_combat_surpriser_is_first_in_turn_order(tmp_path, monkeypatch):
 
 def test_start_combat_no_surpriser_ids_unchanged_behaviour(tmp_path, monkeypatch):
     """Default call (no surpriser_ids) must not add a 'surprise' key — purely additive."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("No Surprise Test")["id"]
@@ -899,7 +899,7 @@ def test_start_combat_no_surpriser_ids_unchanged_behaviour(tmp_path, monkeypatch
 
 def test_start_combat_unknown_surpriser_id_is_skipped_gracefully(tmp_path, monkeypatch):
     """An id not in combatant_ids must be silently ignored — no error, no corruption."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("Bad Surpriser Test")["id"]
@@ -927,7 +927,7 @@ def test_monster_combat_bandit_captain_multiattack(tmp_path, monkeypatch):
     Multiattack count + per-attack to-hit/damage at start_combat so the DM can't
     miss it.
     """
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("Multiattack Test")["id"]
@@ -960,7 +960,7 @@ def test_monster_combat_single_attack_monster(tmp_path, monkeypatch):
     Verifies that the Multiattack parser doesn't invent an extra attack when the
     creature has only a single attack action and no Multiattack entry.
     """
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("Single Attack Test")["id"]
@@ -986,7 +986,7 @@ def test_monster_combat_single_attack_monster(tmp_path, monkeypatch):
 
 def test_monster_combat_absent_with_no_monsters(tmp_path, monkeypatch):
     """monster_combat key must NOT appear when the fight is PC-only (additive, no regressions)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("PC Only Test")["id"]
@@ -1008,7 +1008,7 @@ def test_next_turn_brief_monster_multiattack(tmp_path, monkeypatch):
     The DM sees authoritative Multiattack data AT THE PER-TURN TRIGGER so it can't
     drift back to a single-attack habit by round 3 (the primary combat-adherence gap).
     """
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("Brief Monster Test")["id"]
@@ -1058,7 +1058,7 @@ def test_next_turn_brief_monster_has_correct_multiattack_count(tmp_path, monkeyp
     the captain always rolls max initiative; the first next_turn then belongs to the PC,
     the second to the captain — ensuring we assert the captain's brief specifically.
     """
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     # Force deterministic initiative: hero rolls 1, captain rolls 2 → captain goes first.
@@ -1114,7 +1114,7 @@ def test_next_turn_brief_monster_has_correct_multiattack_count(tmp_path, monkeyp
 
 def test_next_turn_brief_pc_attack_numbers(tmp_path, monkeypatch):
     """PC turn_brief carries melee/ranged bonuses derived from the sheet (#166 PC path)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("PC Brief Test")["id"]
@@ -1156,7 +1156,7 @@ def test_next_turn_brief_pc_attack_numbers(tmp_path, monkeypatch):
 
 def test_next_turn_brief_pc_with_action_surge(tmp_path, monkeypatch):
     """Fighter with untouched Action Surge shows it in turn_brief.resources (#166)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("Action Surge Brief Test")["id"]
@@ -1191,7 +1191,7 @@ def test_next_turn_brief_pc_with_action_surge(tmp_path, monkeypatch):
 
 def test_next_turn_brief_absent_when_combat_not_active(tmp_path, monkeypatch):
     """turn_brief must NOT appear when there is no active combat (additive guarantee)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("No Combat Test")["id"]
@@ -1284,7 +1284,7 @@ def test_monster_combat_surfaces_ghoul_multiattack_composition(tmp_path, monkeyp
     just the count, so the DM issues two Bites rather than improvising Bite+Claw (#211).
     The Claw (a separate single-action option with the paralysis rider) stays in the
     general attacks list but is NOT part of the Multiattack sequence."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("Ghoul Multiattack #211")["id"]
@@ -1316,7 +1316,7 @@ def test_monster_combat_surfaces_ghoul_multiattack_composition(tmp_path, monkeyp
 def test_turn_brief_surfaces_ghoul_multiattack_composition(tmp_path, monkeypatch):
     """The per-turn brief (the surface the DM reads each turn) carries the Ghoul's
     Multiattack composition when it is the Ghoul's turn (#211 + #166)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     # Rig initiative so the Ghoul goes first: hero rolls 1, ghoul rolls 25.
@@ -1358,7 +1358,7 @@ def test_turn_brief_surfaces_ghoul_multiattack_composition(tmp_path, monkeypatch
 def test_monster_combat_no_multiattack_key_for_single_attack_monster(tmp_path, monkeypatch):
     """A monster with NO Multiattack (Wolf) has no 'multiattack' composition key —
     additive: the count-only surfacing is unchanged for non-Multiattack monsters (#211)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("Wolf No-Multiattack #211")["id"]
@@ -1383,7 +1383,7 @@ def test_ghoul_multiattack_budget_and_rejection_survive_distill(tmp_path, monkey
     budget and reads the DM as improvising attacks. This wires the REAL engine results through
     distill._audit_fields and asserts the budget on each legal swing AND the ceiling rejection
     on the over-budget swing both surface as auditable, tool-sourced lines."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import json as _json
     import sys as _sys
     from pathlib import Path as _Path
@@ -1427,7 +1427,7 @@ def test_pc_attack_omits_multiattack_grants(tmp_path, monkeypatch):
     """Additive-default invariant: a PC swing (no stat-block Multiattack) must NOT carry the
     new ``multiattack_grants`` key — the field is monster-only, so PC attack results stay
     byte-identical to before (distill then labels any PC multi-strike as Extra Attack)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("PC no multiattack_grants")["id"]
@@ -1464,7 +1464,7 @@ def _crit_then_fixed(component_total: int = 5):
 def test_attack_multi_component_rolls_and_crit_doubles_each(tmp_path, monkeypatch):
     """attack(damage_rolls=[...]) rolls BOTH components, crit-doubles EACH component's
     dice (leaving flat mods), and surfaces a per-component breakdown (#210)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     roll, seen = _crit_then_fixed(component_total=5)
@@ -1495,7 +1495,7 @@ def test_attack_multi_component_rolls_and_crit_doubles_each(tmp_path, monkeypatc
 def test_attack_multi_component_per_type_resistance_halves_only_matching(tmp_path, monkeypatch):
     """attack(damage_rolls=[...]) against a target resistant to one component's type
     halves ONLY that component (#210). necrotic-resistant: 5 piercing + (5 necrotic ->2)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
     from dice import DiceRoll
 
@@ -1528,7 +1528,7 @@ def test_attack_multi_component_per_type_resistance_halves_only_matching(tmp_pat
 def test_attack_single_damage_dice_unchanged(tmp_path, monkeypatch):
     """A single-damage_dice attack (no damage_rolls) is byte-identical to before:
     result["damage"] keeps its scalar {total,type,expr,detail} shape, no components (#210)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
     from dice import DiceRoll
 
@@ -1557,7 +1557,7 @@ def test_attack_requires_some_damage_spec(tmp_path, monkeypatch):
     """attack() with neither damage_dice nor damage_rolls is rejected up front with a
     clear message (damage_dice became optional for the multi-component path) — no
     state change, no confusing deep dice error."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("No damage spec #210")["id"]
@@ -1636,7 +1636,7 @@ def test_multiattack_monster_makes_two_attacks_third_rejected(tmp_path, monkeypa
     feature"). After the fix, the engine reads the stat-block Multiattack count and
     allows exactly 2 attacks per turn.
     """
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("Multiattack Enforcement #180")["id"]
@@ -1684,7 +1684,7 @@ def test_pc_no_extra_attack_still_capped_at_one(tmp_path, monkeypatch):
 
     Regression guard: the multiattack change must not silently elevate PC attack budgets.
     """
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
     import pytest as _pytest
 
@@ -1702,7 +1702,7 @@ def test_pc_extra_attack_still_makes_two(tmp_path, monkeypatch):
 
     Regression guard: Extra Attack path unchanged by the Multiattack change.
     """
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
     import pytest as _pytest
 
@@ -1720,7 +1720,7 @@ def test_action_surge_still_grants_extra_action_for_pc(tmp_path, monkeypatch):
 
     Regression guard: surge path unchanged by the Multiattack change.
     """
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
     import pytest as _pytest
 
@@ -1743,7 +1743,7 @@ def test_multiattack_zero_path_unchanged(tmp_path, monkeypatch):
     Regression guard: the _attacker_multiattack_count fallback returns 0 for
     non-Multiattack monsters and the cap stays at 1.
     """
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
     import pytest as _pytest
 
@@ -1783,7 +1783,7 @@ def test_next_turn_blocks_pc_who_has_not_acted(tmp_path, monkeypatch):
     This is the core Round-1 skip defect — the DM calls next_turn immediately
     after start_combat, silently skipping the highest-initiative PC's turn.
     """
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
     import pytest as _pytest
 
@@ -1815,7 +1815,7 @@ def test_next_turn_blocks_pc_who_has_not_acted(tmp_path, monkeypatch):
 
 def test_next_turn_allows_pc_after_attack(tmp_path, monkeypatch):
     """ALLOW: next_turn succeeds when the outgoing PC attacked this turn."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("Turn Skip After Attack #160")["id"]
@@ -1845,7 +1845,7 @@ def test_next_turn_allows_pc_after_attack(tmp_path, monkeypatch):
 
 def test_next_turn_allows_pc_after_use_action(tmp_path, monkeypatch):
     """ALLOW: next_turn succeeds when the outgoing PC declared use_action(kind='action')."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("Turn Skip After use_action #160")["id"]
@@ -1874,7 +1874,7 @@ def test_next_turn_allows_pc_after_use_action(tmp_path, monkeypatch):
 
 def test_next_turn_allows_pc_after_skip(tmp_path, monkeypatch):
     """ALLOW: use_action(kind='skip') is the pass escape — next_turn succeeds after it."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("Turn Skip Pass Escape #160")["id"]
@@ -1908,7 +1908,7 @@ def test_next_turn_allows_incapacitated_pc(tmp_path, monkeypatch):
     A PC who CANNOT act must never trigger the skip-guard — they're already unable
     to take an action and forcing a pass would be wrong.
     """
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("Incapacitated PC #160")["id"]
@@ -1938,7 +1938,7 @@ def test_next_turn_allows_incapacitated_pc(tmp_path, monkeypatch):
 
 def test_next_turn_allows_downed_pc(tmp_path, monkeypatch):
     """NO BLOCK: a PC at 0 hp is advanced without error (they can't act, just death-save)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("Downed PC #160")["id"]
@@ -1969,7 +1969,7 @@ def test_next_turn_allows_downed_pc(tmp_path, monkeypatch):
 
 def test_next_turn_monster_no_action_advances_freely(tmp_path, monkeypatch):
     """NO BLOCK: a monster who took no action advances without error — guard is PC-only."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("Monster Free Advance #160")["id"]
@@ -2027,7 +2027,7 @@ def _rigged_roller(d20_total: int, fixed: dict[str, int]):
 def _bm_combat(server, monkeypatch, tmp_path, *, die_total: int, weapon_total: int, d20: int = 25):
     """Start a Hero-vs-Goblin fight with the Hero current, a 6-die superiority pool (d8),
     and a rigged roller: 1d8 -> `die_total`, 1d6+3 -> `weapon_total`, d20 -> `d20`."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Battle Master")["id"]
     hero = server.create_character(cid, "Hero", kind="player", max_hp=20, armor_class=12)["id"]
     gob = server.create_character(cid, "Goblin", kind="monster", max_hp=40, armor_class=10)["id"]
@@ -2134,7 +2134,7 @@ def test_maneuver_die_on_miss_spent_but_no_damage(tmp_path, monkeypatch):
 def test_maneuver_on_point_pool_refused_no_spend(tmp_path, monkeypatch):
     # A damage maneuver needs a DIE pool. Declaring one against a point pool (Ki, no `size`)
     # is refused with a clean signal and NO spend / no pending bonus.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
     cid = server.create_campaign("Point pool")["id"]
     monk = server.create_character(cid, "Monk", kind="player", max_hp=20)["id"]
@@ -2211,7 +2211,7 @@ def test_parry_flips_marginal_hit_and_is_spent_once_per_round(tmp_path, monkeypa
     """#218: a Bandit Captain (AC 15, Parry +2) spends its reaction to turn a MARGINAL hit
     (16, between AC 15 and AC+2=17) into a miss — but only once per round. The two attackers
     act in the SAME round (a single creature can't attack twice without Extra Attack)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
     cid = server.create_campaign("Parry")["id"]
     h1 = server.create_character(cid, "Hero One", kind="player", max_hp=30, armor_class=14)["id"]
@@ -2234,7 +2234,7 @@ def test_parry_does_not_fire_when_it_cannot_flip_or_on_a_crit_or_ranged(tmp_path
     """#218 guards: Parry never wastes the reaction on a blow that lands anyway, never stops a
     crit (a crit always hits), and ranged attacks can't be parried. Distinct attackers avoid
     the one-attack-per-turn economy limit."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     # (a) a clean hit (18 >= AC+2=17) lands + does NOT consume the reaction; a later marginal
@@ -2279,7 +2279,7 @@ def test_respawn_pristine_monster_reconciles_id_so_end_combat_is_clean(tmp_path,
 
     The reconcile: the re-spawn reuses the existing pristine record's id (reused=True) instead
     of minting a duplicate. Deterministic — no dice; the assertion is on ids + HP state."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("ReconcileSeam")["id"]
@@ -2319,7 +2319,7 @@ def test_end_combat_resolution_records_disposition_for_living_hostiles(tmp_path,
     last_combat_resolution (the gate's reliable signal — the combat chronicle is NOT in the snapshot)
     and clears the needs_resolution nudge; start_combat resets it for the next fight."""
     import server
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Flee")["id"]
     server.add_location(cid, "Alley")
     pid = server.create_character(cid, "Hero", kind="player", max_hp=30, armor_class=12)["id"]
@@ -2377,7 +2377,7 @@ def _bm_roller(*, d20: int, crit: bool, fixed: dict[str, int]):
 
 def _bm_fight(server, monkeypatch, tmp_path):
     """A Hero(with a 1d8 superiority pool)-vs-Goblin fight with the Hero current."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("BM crit")["id"]
     hero = server.create_character(cid, "Hero", kind="player", max_hp=20, armor_class=12)["id"]
     gob = server.create_character(cid, "Goblin", kind="monster", max_hp=80, armor_class=10)["id"]
@@ -2587,7 +2587,7 @@ def test_attack_param_additive_old_snapshot_round_trips(tmp_path, monkeypatch):
     no new keys), and the attack signature defaults preserve today's behavior."""
     import server
     from models import Character
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("RT")["id"]
     hero = server.create_character(cid, "Hero", kind="player", max_hp=20)["id"]
     # The persisted snapshot (the strict model) carries no maneuver state by default.

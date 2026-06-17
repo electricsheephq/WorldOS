@@ -27,7 +27,7 @@ from models import Character, Currency, Item
 
 @pytest.fixture
 def hero(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Stress")["id"]
     h = server.create_character(cid, "Croesus", kind="player")["id"]
     return cid, h

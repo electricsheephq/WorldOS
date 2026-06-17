@@ -4,9 +4,9 @@ The harness-ensemble model runs each party member (player + N companions, some
 ADVERSARIAL) as its OWN ``claude -p`` agent that acts through this SAME constrained
 facade. Two env vars retarget it per actor:
 
-  - ``CLAWDND_ACTOR_ID``   — bind to THAT character's sheet (validate its own
+  - ``WORLDOS_ACTOR_ID``   — bind to THAT character's sheet (validate its own
     spells/slots/inventory; tag emitted moves with its id).
-  - ``CLAWDND_ACTOR_ROLE`` — the role stamped on each move (default "player").
+  - ``WORLDOS_ACTOR_ROLE`` — the role stamped on each move (default "player").
 
 These tests pin the contract that keeps the streams disjoint and the security
 boundary intact:
@@ -52,9 +52,9 @@ def _make_campaign() -> Campaign:
 def live(tmp_path, monkeypatch):
     """A persisted campaign + a moves file, with the facade pointed at this state dir.
     Yields a small handle; each test sets the actor env it wants on top."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     moves = tmp_path / "moves.jsonl"
-    monkeypatch.setenv("CLAWDND_PLAYER_MOVES", str(moves))
+    monkeypatch.setenv("WORLDOS_PLAYER_MOVES", str(moves))
     store.save_campaign(_make_campaign())
 
     def rows():
@@ -70,7 +70,7 @@ def test_actor_id_binds_to_that_character(live, monkeypatch):
     # No actor env -> the player PC (default behavior).
     assert ps._pc().name == "Kield"
     # Bind the companion -> _pc() now resolves the companion's sheet.
-    monkeypatch.setenv("CLAWDND_ACTOR_ID", "char-ally")
+    monkeypatch.setenv("WORLDOS_ACTOR_ID", "char-ally")
     assert ps._pc().name == "Seraphine"
     assert ps._actor_id() == "char-ally"
 
@@ -78,7 +78,7 @@ def test_actor_id_binds_to_that_character(live, monkeypatch):
 def test_unknown_actor_id_resolves_to_no_sheet(live, monkeypatch):
     # An id that isn't in the live campaign -> no character (moves get refused, not
     # silently mis-bound to the player).
-    monkeypatch.setenv("CLAWDND_ACTOR_ID", "char-ghost")
+    monkeypatch.setenv("WORLDOS_ACTOR_ID", "char-ghost")
     assert ps._pc() is None
     assert ps.cast_spell("Cure Wounds")["ok"] is False
     assert ps.attack("the player")["ok"] is False
@@ -87,24 +87,24 @@ def test_unknown_actor_id_resolves_to_no_sheet(live, monkeypatch):
 def test_blank_actor_id_is_treated_as_unset(live, monkeypatch):
     # An empty/whitespace env var must NOT select 'no character' — it falls back to
     # the player PC (defensive: a harness that exports an empty var stays safe).
-    monkeypatch.setenv("CLAWDND_ACTOR_ID", "   ")
+    monkeypatch.setenv("WORLDOS_ACTOR_ID", "   ")
     assert ps._actor_id() == ""
     assert ps._pc().name == "Kield"
 
 
 # --- a companion validates a CAST against ITS OWN slots, not the player's ------------
 def test_companion_cast_validates_against_its_own_sheet(live, monkeypatch):
-    monkeypatch.setenv("CLAWDND_ACTOR_ID", "char-ally")
+    monkeypatch.setenv("WORLDOS_ACTOR_ID", "char-ally")
     # The companion knows Cure Wounds and has an L1 slot -> allowed.
     assert ps.cast_spell("Cure Wounds")["ok"] is True
     # The PLAYER (rogue) doesn't know it — but we're bound to the COMPANION, so the
     # companion's sheet is what gates the move. Sanity: the player would be refused.
-    monkeypatch.delenv("CLAWDND_ACTOR_ID")
+    monkeypatch.delenv("WORLDOS_ACTOR_ID")
     assert ps.cast_spell("Cure Wounds")["ok"] is False  # player doesn't know it
 
 
 def test_companion_illegal_moves_are_refused(live, monkeypatch):
-    monkeypatch.setenv("CLAWDND_ACTOR_ID", "char-ally")
+    monkeypatch.setenv("WORLDOS_ACTOR_ID", "char-ally")
     # A spell the companion doesn't know -> refused.
     res = ps.cast_spell("Fireball")
     assert res["ok"] is False and "sheet" in res["error"]
@@ -120,7 +120,7 @@ def test_companion_illegal_moves_are_refused(live, monkeypatch):
 def test_companion_out_of_slots_is_refused(live, monkeypatch):
     # Spend the companion's only L1 slot, then a leveled spell must be refused (the
     # same C1 hole the player facade closes — a tapped-out caster can't "cast").
-    monkeypatch.setenv("CLAWDND_ACTOR_ID", "char-ally")
+    monkeypatch.setenv("WORLDOS_ACTOR_ID", "char-ally")
     c = store.load_campaign("camp-actor")
     c.characters["char-ally"].spell_slots[1].used = 1
     store.save_campaign(c)
@@ -132,8 +132,8 @@ def test_companion_out_of_slots_is_refused(live, monkeypatch):
 
 # --- emitted moves carry the right ROLE + ACTOR ID ----------------------------------
 def test_moves_are_tagged_with_role_and_actor_id(live, monkeypatch):
-    monkeypatch.setenv("CLAWDND_ACTOR_ID", "char-ally")
-    monkeypatch.setenv("CLAWDND_ACTOR_ROLE", "companion")
+    monkeypatch.setenv("WORLDOS_ACTOR_ID", "char-ally")
+    monkeypatch.setenv("WORLDOS_ACTOR_ROLE", "companion")
     assert ps.say("'For the party. Of course.'")["ok"] is True
     assert ps.attack("Kield", "Mace")["ok"] is True  # the betrayal, as a LEGAL move
     rows = live.rows()
@@ -145,8 +145,8 @@ def test_moves_are_tagged_with_role_and_actor_id(live, monkeypatch):
 def test_attack_move_target_is_recorded(live, monkeypatch):
     # The saboteur's attack is a structured move the engine resolves into real combat —
     # the target rides along so the DM/engine knows WHO is being attacked.
-    monkeypatch.setenv("CLAWDND_ACTOR_ID", "char-ally")
-    monkeypatch.setenv("CLAWDND_ACTOR_ROLE", "companion")
+    monkeypatch.setenv("WORLDOS_ACTOR_ID", "char-ally")
+    monkeypatch.setenv("WORLDOS_ACTOR_ROLE", "companion")
     ps.attack("Kield", "Mace")
     row = live.rows()[-1]
     assert row["target"] == "Kield" and row["weapon"] == "Mace"
@@ -154,7 +154,7 @@ def test_attack_move_target_is_recorded(live, monkeypatch):
 
 # --- my_sheet exposes attitude_value (the betrayal trigger the agent reads) ----------
 def test_my_sheet_exposes_attitude_value_for_the_actor(live, monkeypatch):
-    monkeypatch.setenv("CLAWDND_ACTOR_ID", "char-ally")
+    monkeypatch.setenv("WORLDOS_ACTOR_ID", "char-ally")
     sheet = ps.my_sheet()
     assert sheet["name"] == "Seraphine"
     assert sheet["attitude_value"] == -55          # the companion reads its OWN standing
@@ -167,8 +167,8 @@ def test_my_sheet_exposes_attitude_value_for_the_actor(live, monkeypatch):
 def test_default_role_and_no_actor_id_when_env_unset(live, monkeypatch):
     # Critical: with neither var set, moves are role:"player" with NO actor_id key —
     # exactly what existing duo runs + the dashboard already consume.
-    monkeypatch.delenv("CLAWDND_ACTOR_ID", raising=False)
-    monkeypatch.delenv("CLAWDND_ACTOR_ROLE", raising=False)
+    monkeypatch.delenv("WORLDOS_ACTOR_ID", raising=False)
+    monkeypatch.delenv("WORLDOS_ACTOR_ROLE", raising=False)
     assert ps._actor_role() == "player"
     assert ps.say("I wait by the door.")["ok"] is True
     row = live.rows()[-1]
@@ -183,7 +183,7 @@ def test_default_role_and_no_actor_id_when_env_unset(live, monkeypatch):
 def test_default_my_sheet_unchanged_shape_plus_additive_fields(live, monkeypatch):
     # my_sheet gained additive keys (spell_slots/attitude/attitude_value) but the
     # original keys are intact, so existing readers don't break.
-    monkeypatch.delenv("CLAWDND_ACTOR_ID", raising=False)
+    monkeypatch.delenv("WORLDOS_ACTOR_ID", raising=False)
     sheet = ps.my_sheet()
     for k in ("name", "hp", "ac", "skills", "spells", "inventory"):
         assert k in sheet
@@ -201,7 +201,7 @@ def test_actor_id_pointing_at_a_monster_emits_no_moves(live, monkeypatch):
     c.characters["mon-ogre"] = Character(id="mon-ogre", name="Ogre", kind="monster",
                                          inventory=[Item(name="Greatclub")])
     store.save_campaign(c)
-    monkeypatch.setenv("CLAWDND_ACTOR_ID", "mon-ogre")
+    monkeypatch.setenv("WORLDOS_ACTOR_ID", "mon-ogre")
     assert ps._pc() is None
     assert ps.attack("Kield", "Greatclub")["ok"] is False
     assert ps.cast_spell("Sacred Flame")["ok"] is False
@@ -213,7 +213,7 @@ def test_actor_id_pointing_at_a_dead_character_emits_no_moves(live, monkeypatch)
     c = store.load_campaign("camp-actor")
     c.characters["char-ally"].dead = True
     store.save_campaign(c)
-    monkeypatch.setenv("CLAWDND_ACTOR_ID", "char-ally")
+    monkeypatch.setenv("WORLDOS_ACTOR_ID", "char-ally")
     assert ps._pc() is None
     assert ps.attack("Kield", "Mace")["ok"] is False
     assert ps.cast_spell("Cure Wounds")["ok"] is False
@@ -221,29 +221,29 @@ def test_actor_id_pointing_at_a_dead_character_emits_no_moves(live, monkeypatch)
 
 def test_actor_id_for_a_live_companion_still_acts(live, monkeypatch):
     # The guard is narrow: a LIVE player/companion is unaffected (it still emits moves).
-    monkeypatch.setenv("CLAWDND_ACTOR_ID", "char-ally")
+    monkeypatch.setenv("WORLDOS_ACTOR_ID", "char-ally")
     assert ps._pc().name == "Seraphine"
     assert ps.say("'Ready.'")["ok"] is True
 
 
-# --- A-LOW-2: CLAWDND_ACTOR_ROLE is clamped to the allowlist -------------------------
+# --- A-LOW-2: WORLDOS_ACTOR_ROLE is clamped to the allowlist -------------------------
 def test_actor_role_clamped_to_allowlist(live, monkeypatch):
     # Unknown free text -> "companion" (the safe non-narrator peer role), never trusted
     # verbatim onto the move stream the DM/dashboard read.
-    monkeypatch.setenv("CLAWDND_ACTOR_ROLE", "dungeon-master")
+    monkeypatch.setenv("WORLDOS_ACTOR_ROLE", "dungeon-master")
     assert ps._actor_role() == "companion"
-    monkeypatch.setenv("CLAWDND_ACTOR_ROLE", "")
+    monkeypatch.setenv("WORLDOS_ACTOR_ROLE", "")
     assert ps._actor_role() == "player"  # blank -> today's default
-    monkeypatch.setenv("CLAWDND_ACTOR_ROLE", "  Companion  ")
+    monkeypatch.setenv("WORLDOS_ACTOR_ROLE", "  Companion  ")
     assert ps._actor_role() == "companion"  # trimmed + case-insensitive
-    monkeypatch.setenv("CLAWDND_ACTOR_ROLE", "player")
+    monkeypatch.setenv("WORLDOS_ACTOR_ROLE", "player")
     assert ps._actor_role() == "player"
 
 
 def test_clamped_role_is_what_lands_on_the_move(live, monkeypatch):
     # The clamp is observable end-to-end: an injected role never reaches the move record.
-    monkeypatch.setenv("CLAWDND_ACTOR_ID", "char-ally")
-    monkeypatch.setenv("CLAWDND_ACTOR_ROLE", "narrator")  # bogus
+    monkeypatch.setenv("WORLDOS_ACTOR_ID", "char-ally")
+    monkeypatch.setenv("WORLDOS_ACTOR_ROLE", "narrator")  # bogus
     ps.say("'Hello.'")
     assert live.rows()[-1]["role"] == "companion"
 
@@ -253,7 +253,7 @@ def test_clamped_role_is_what_lands_on_the_move(live, monkeypatch):
 # parallel campaign B taking the lead (fresher updated_at), an ACTOR_ID bound to a
 # character that only lives in campaign A silently resolved to None — the companion went
 # mute / its moves were refused (the #640 silent-switch family). The fix: an additive
-# env pin (CLAWDND_CAMPAIGN_ID). Unset -> the heuristic, byte-identical; set -> that
+# env pin (WORLDOS_CAMPAIGN_ID). Unset -> the heuristic, byte-identical; set -> that
 # campaign, regardless of which one is freshest. This is a STATE-INTEGRITY contract:
 # a pure facade READ must never flip which campaign is "live" out from under the actor.
 def _second_campaign() -> Campaign:
@@ -268,15 +268,15 @@ def _second_campaign() -> Campaign:
 def test_campaign_id_pins_the_facade_to_that_campaign(live, monkeypatch):
     # Two campaigns: camp-actor (with the companion) and a FRESHER camp-other (without it).
     # Save camp-other LAST so it wins max(updated_at). With ACTOR_ID=char-ally pinned to
-    # camp-actor via CLAWDND_CAMPAIGN_ID, the facade resolves the companion's OWN sheet —
+    # camp-actor via WORLDOS_CAMPAIGN_ID, the facade resolves the companion's OWN sheet —
     # it does NOT follow the freshest campaign and go mute.
     store.save_campaign(_second_campaign())  # fresher -> would win the heuristic
-    monkeypatch.setenv("CLAWDND_ACTOR_ID", "char-ally")
+    monkeypatch.setenv("WORLDOS_ACTOR_ID", "char-ally")
     # Sanity: WITHOUT the pin, the heuristic picks the fresher camp-other (which lacks the
     # actor) -> the bound companion silently resolves to no sheet (the bug).
     assert ps._pc() is None
     # WITH the pin, the facade stays on camp-actor and resolves the companion.
-    monkeypatch.setenv("CLAWDND_CAMPAIGN_ID", "camp-actor")
+    monkeypatch.setenv("WORLDOS_CAMPAIGN_ID", "camp-actor")
     assert ps._campaign().id == "camp-actor"
     assert ps._pc().name == "Seraphine"
     sheet = ps.my_sheet()
@@ -286,9 +286,9 @@ def test_campaign_id_pins_the_facade_to_that_campaign(live, monkeypatch):
 def test_campaign_id_unset_is_byte_identical_heuristic(live, monkeypatch):
     # The pin is additive: unset (or blank/whitespace) -> the original max(updated_at)
     # selector, unchanged. With only camp-actor on disk the facade resolves it either way.
-    monkeypatch.delenv("CLAWDND_CAMPAIGN_ID", raising=False)
+    monkeypatch.delenv("WORLDOS_CAMPAIGN_ID", raising=False)
     assert ps._campaign().id == "camp-actor"
-    monkeypatch.setenv("CLAWDND_CAMPAIGN_ID", "   ")  # whitespace == unset
+    monkeypatch.setenv("WORLDOS_CAMPAIGN_ID", "   ")  # whitespace == unset
     assert ps._campaign().id == "camp-actor"
 
 
@@ -296,7 +296,7 @@ def test_campaign_id_unknown_falls_back_to_heuristic(live, monkeypatch):
     # A pin that names a campaign that isn't on disk degrades to the heuristic rather than
     # resolving to None (defensive: a stale/typo'd pin must not silently mute the actor —
     # it falls back to today's behavior, the most-recently-updated campaign).
-    monkeypatch.setenv("CLAWDND_CAMPAIGN_ID", "camp-does-not-exist")
+    monkeypatch.setenv("WORLDOS_CAMPAIGN_ID", "camp-does-not-exist")
     assert ps._campaign().id == "camp-actor"
 
 
@@ -306,8 +306,8 @@ def test_pure_facade_read_does_not_flip_the_live_campaign(live, monkeypatch):
     # this wave fixes). Capture both campaigns' on-disk state, exercise the read path, and
     # assert nothing on disk moved — the facade is the SOLE non-writer here.
     store.save_campaign(_second_campaign())
-    monkeypatch.setenv("CLAWDND_CAMPAIGN_ID", "camp-actor")
-    monkeypatch.setenv("CLAWDND_ACTOR_ID", "char-ally")
+    monkeypatch.setenv("WORLDOS_CAMPAIGN_ID", "camp-actor")
+    monkeypatch.setenv("WORLDOS_ACTOR_ID", "char-ally")
 
     before = {c["id"]: c.get("updated_at") for c in store.list_campaigns()}
     # the full facade read surface
@@ -356,8 +356,8 @@ def test_companion_say_with_message_alias_is_not_rejected(live, monkeypatch):
     # this raised `1 validation error for sayArguments / line / Field required` through the
     # tool manager and tripped the FATAL no_rejected_tool_calls gate. Post-fix it succeeds and
     # records the dialogue verbatim — the move record is byte-identical (kind="say", text=...).
-    monkeypatch.setenv("CLAWDND_ACTOR_ID", "char-ally")
-    monkeypatch.setenv("CLAWDND_ACTOR_ROLE", "companion")
+    monkeypatch.setenv("WORLDOS_ACTOR_ID", "char-ally")
+    monkeypatch.setenv("WORLDOS_ACTOR_ROLE", "companion")
     res = _result_dict(_call_tool("say", {"message": "Seraphine steadies her mace."}))
     assert res["ok"] is True
     row = live.rows()[-1]
@@ -368,7 +368,7 @@ def test_companion_say_with_message_alias_is_not_rejected(live, monkeypatch):
 
 def test_say_text_alias_also_accepted(live, monkeypatch):
     # The other intuitive alias an LLM reaches for: say({"text": ...}).
-    monkeypatch.setenv("CLAWDND_ACTOR_ID", "char-ally")
+    monkeypatch.setenv("WORLDOS_ACTOR_ID", "char-ally")
     res = _result_dict(_call_tool("say", {"text": "'On your left.'"}))
     assert res["ok"] is True
     assert live.rows()[-1]["text"] == "'On your left.'"
@@ -377,7 +377,7 @@ def test_say_text_alias_also_accepted(live, monkeypatch):
 def test_do_and_clarify_message_alias_not_rejected(live, monkeypatch):
     # The same additive tolerance covers the other free-text declares (do/clarify) — the
     # identical schema-rejection class. A wrong-shaped `do`/`clarify` must not RED a run either.
-    monkeypatch.setenv("CLAWDND_ACTOR_ID", "char-ally")
+    monkeypatch.setenv("WORLDOS_ACTOR_ID", "char-ally")
     do_res = _result_dict(_call_tool("do", {"message": "I move to flank the ogre."}))
     assert do_res["ok"] is True
     assert live.rows()[-1]["text"] == "I move to flank the ogre."
@@ -391,7 +391,7 @@ def test_canonical_line_still_works_and_wins_over_alias(live, monkeypatch):
     # INVARIANT: the canonical `line` is unchanged for the solo/.app + existing duo path, and
     # if both are somehow supplied, `line` wins (deterministic precedence, like server.py's
     # alias coalescing). The solo viewer /move sink is a SEPARATE path and unaffected by this.
-    monkeypatch.setenv("CLAWDND_ACTOR_ID", "char-ally")
+    monkeypatch.setenv("WORLDOS_ACTOR_ID", "char-ally")
     assert ps.say("'Canonical.'")["ok"] is True       # direct positional, today's call
     assert live.rows()[-1]["text"] == "'Canonical.'"
     res = _result_dict(_call_tool("say", {"line": "'wins'", "message": "'loses'"}))
@@ -402,7 +402,7 @@ def test_canonical_line_still_works_and_wins_over_alias(live, monkeypatch):
 def test_empty_say_call_records_blank_line_not_a_crash(live, monkeypatch):
     # All three blank (or omitted) -> coalesces to the canonical "" and records a blank say,
     # same as a positional empty string would. No KeyError / no schema rejection.
-    monkeypatch.setenv("CLAWDND_ACTOR_ID", "char-ally")
+    monkeypatch.setenv("WORLDOS_ACTOR_ID", "char-ally")
     res = _result_dict(_call_tool("say", {}))
     assert res["ok"] is True
     assert live.rows()[-1]["text"] == ""

@@ -7,7 +7,7 @@ import lorebook
 
 
 def _world(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_CONTENT_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_CONTENT_DIR", str(tmp_path))
     lore = tmp_path / "worlds" / "tw" / "lore"
     (lore / "wiki").mkdir(parents=True)
     return lore

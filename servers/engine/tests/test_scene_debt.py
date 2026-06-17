@@ -393,7 +393,7 @@ class TestCleanCampaign:
 class TestResolveSceneDebt:
     @pytest.fixture
     def cid(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+        monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
         return server.create_campaign("Test World")["id"]
 
     def test_resolve_requires_evidence(self, cid):
@@ -501,7 +501,7 @@ class TestAdditiveRoundtrip:
 class TestGetCampaignDirector:
     @pytest.fixture
     def cid(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+        monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
         return server.create_campaign("Director Test")["id"]
 
     def test_clean_campaign_no_advisory(self, cid):

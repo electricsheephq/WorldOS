@@ -562,10 +562,10 @@ def main() -> int:
     else:
         session_beats = dm_text
     # The combat-sprint lane (run_combat_sprint.sh) is a single pre-seeded FIGHT in one place — it
-    # legitimately never advances days or travels, so it sets CLAWDND_GATE_COMBAT_SPRINT=1 to skip
+    # legitimately never advances days or travels, so it sets WORLDOS_GATE_COMBAT_SPRINT=1 to skip
     # the world-progression floor (which would else false-RED a 40+-beat fight on a 1-location run).
     # Story / duo runs (no env var) keep the floor — it's the honest anti-frozen-scene gate.
-    if session_beats >= MIN_BEATS and not os.environ.get("CLAWDND_GATE_COMBAT_SPRINT"):
+    if session_beats >= MIN_BEATS and not os.environ.get("WORLDOS_GATE_COMBAT_SPRINT"):
         day = state.get("day") or 1
         tod = (state.get("time_of_day") or "").strip().lower()
         # Campaigns start at day 1, "morning"; a full session still parked there never aged.
@@ -621,7 +621,7 @@ def main() -> int:
     companions = [c for c in chars.values()
                   if isinstance(c, dict) and c.get("kind") == "companion"]
     if (session_beats >= STRUCTURAL_MIN_BEATS and companions
-            and not os.environ.get("CLAWDND_GATE_COMBAT_SPRINT")):
+            and not os.environ.get("WORLDOS_GATE_COMBAT_SPRINT")):
         # Coverage buckets from the SAME tool counts the readout stamp uses (no drift). Fall
         # back to a direct count if the shared helper failed to import (defensive — never skips
         # the gate, just recomputes the camp/quest buckets inline).
@@ -723,7 +723,7 @@ def main() -> int:
             f"invisible to A8): {[n for n, _ in soft_errors]}; "
             f"first: {soft_errors[0][1][:140]}. Reported only; recoverable.", fatal=False)
 
-    # A3 (FATAL; WARN under CLAWDND_GATE_COMBAT_SPRINT) — end_combat called but a hostile is
+    # A3 (FATAL; WARN under WORLDOS_GATE_COMBAT_SPRINT) — end_combat called but a hostile is
     # still alive (kind=monster, current_hp>0, dead=false) with NO flee/surrender/retreat event
     # logged. The clearest pure-state defect: it corrupts the save for the next session load and
     # was GREEN in the cited run (xp_not_orphaned only fires on dead==true).
@@ -739,7 +739,7 @@ def main() -> int:
         resolved = bool(declared) or any(
             re.search(r"flee|retreat|surrender|captured|driven off|routed|escap",
                       json.dumps(e), re.I) for e in state_events)
-        sprint = bool(os.environ.get("CLAWDND_GATE_COMBAT_SPRINT"))
+        sprint = bool(os.environ.get("WORLDOS_GATE_COMBAT_SPRINT"))
         if alive_hostiles:
             chk("end_combat_no_living_hostiles",
                 resolved or sprint,

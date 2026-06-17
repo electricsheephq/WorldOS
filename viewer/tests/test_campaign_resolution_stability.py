@@ -16,7 +16,7 @@ exact same tie deterministically (largest body ``updated_at``, then the
 lexicographically-smallest id). These tests pin the viewer pick to that same rule so the
 two resolvers can never diverge, and lock the resolved actor stable across beats.
 
-stdlib-only; each test seeds a throwaway ``CLAWDND_STATE_DIR`` with hand-written
+stdlib-only; each test seeds a throwaway ``WORLDOS_STATE_DIR`` with hand-written
 snapshots (no engine process), exactly like ``test_live_view_recovery``.
 """
 
@@ -87,8 +87,8 @@ class CampaignResolutionStabilityTests(unittest.TestCase):
         self.addCleanup(self._tmpdir.cleanup)
         self._tmp = Path(self._tmpdir.name)
         self._saved = {k: os.environ.get(k) for k in
-                       ("CLAWDND_STATE_DIR", "WORLDOS_STATE_DIR")}
-        os.environ["CLAWDND_STATE_DIR"] = str(self._tmp)
+                       ("WORLDOS_STATE_DIR", "WORLDOS_STATE_DIR")}
+        os.environ["WORLDOS_STATE_DIR"] = str(self._tmp)
         os.environ["WORLDOS_STATE_DIR"] = str(self._tmp)
         server._openworlds_catalog_cache = None
 
@@ -248,7 +248,7 @@ class CampaignResolutionStabilityTests(unittest.TestCase):
 
 
 def _engine_active_campaign_id(world_id: str) -> str | None:
-    """Load the engine ``store`` module against the current CLAWDND_STATE_DIR and return its
+    """Load the engine ``store`` module against the current WORLDOS_STATE_DIR and return its
     authoritative live-campaign pick (kept local so the viewer test suite has no hard import
     dependency on the engine package layout)."""
     engine_dir = Path(__file__).resolve().parents[2] / "servers" / "engine"

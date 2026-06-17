@@ -31,8 +31,8 @@ class ItemIconTests(unittest.TestCase):
 
     def setUp(self):
         self._tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        self._old_state = os.environ.get("CLAWDND_STATE_DIR")
-        os.environ["CLAWDND_STATE_DIR"] = str(self._tmp)
+        self._old_state = os.environ.get("WORLDOS_STATE_DIR")
+        os.environ["WORLDOS_STATE_DIR"] = str(self._tmp)
         _QuietHandler.campaign_id = ""
         _QuietHandler.transcript_path = ""
         _QuietHandler.chat_path = ""
@@ -47,9 +47,9 @@ class ItemIconTests(unittest.TestCase):
         self._httpd.server_close()
         self._thread.join(timeout=2)
         if self._old_state is None:
-            os.environ.pop("CLAWDND_STATE_DIR", None)
+            os.environ.pop("WORLDOS_STATE_DIR", None)
         else:
-            os.environ["CLAWDND_STATE_DIR"] = self._old_state
+            os.environ["WORLDOS_STATE_DIR"] = self._old_state
 
     def _get(self, path: str) -> tuple[int, str, bytes]:
         conn = http.client.HTTPConnection(self._host, self._port, timeout=5)
@@ -185,8 +185,8 @@ class InventoryPolishPassTests(unittest.TestCase):
 
     def setUp(self):
         self._tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        self._old_state = os.environ.get("CLAWDND_STATE_DIR")
-        os.environ["CLAWDND_STATE_DIR"] = str(self._tmp)
+        self._old_state = os.environ.get("WORLDOS_STATE_DIR")
+        os.environ["WORLDOS_STATE_DIR"] = str(self._tmp)
         _QuietHandler.campaign_id = ""
         _QuietHandler.transcript_path = ""
         _QuietHandler.chat_path = ""
@@ -201,9 +201,9 @@ class InventoryPolishPassTests(unittest.TestCase):
         self._httpd.server_close()
         self._thread.join(timeout=2)
         if self._old_state is None:
-            os.environ.pop("CLAWDND_STATE_DIR", None)
+            os.environ.pop("WORLDOS_STATE_DIR", None)
         else:
-            os.environ["CLAWDND_STATE_DIR"] = self._old_state
+            os.environ["WORLDOS_STATE_DIR"] = self._old_state
 
     def _src(self) -> str:
         conn = http.client.HTTPConnection(self._host, self._port, timeout=5)

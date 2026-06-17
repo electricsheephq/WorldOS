@@ -2,8 +2,8 @@
 # Offline tests for qa/dry_run_gate_fix.sh — the candidate-fix pre-PR gate.
 #
 # The live gate runs K combat-sprint runs (each one claude -p DM call) and needs a model key,
-# so the inner runner is a SEAM: CLAWDND_DRYRUN_RUNNER=<cmd> (called once per run, prints one
-# score JSON line) or CLAWDND_DRYRUN_STUB=1 (built-in fixed-score stub). These tests drive the
+# so the inner runner is a SEAM: WORLDOS_DRYRUN_RUNNER=<cmd> (called once per run, prints one
+# score JSON line) or WORLDOS_DRYRUN_STUB=1 (built-in fixed-score stub). These tests drive the
 # script entirely through that seam — ZERO model calls, ZERO touching of the real qa/scores.db
 # or any committed artifact. We assert:
 #   (1) median of N is computed correctly (mech + story), ODD N = middle element;
@@ -11,7 +11,7 @@
 #   (3) GREEN verdict (median >= bar) -> exit 0;
 #   (4) BELOW-bar verdict (median < bar) -> nonzero exit;
 #   (5) a behavioral RED in the majority -> RED verdict + nonzero exit even if scores clear the bar;
-#   (6) the built-in CLAWDND_DRYRUN_STUB=1 path runs offline and is GREEN by default;
+#   (6) the built-in WORLDOS_DRYRUN_STUB=1 path runs offline and is GREEN by default;
 #   (7) detect_regression is invoked when a baseline DB + --regress is supplied (temp DB only).
 # Run: bash qa/test_dry_run_gate_fix.sh
 set -uo pipefail
@@ -64,7 +64,7 @@ make_queue_runner "$R1" "$Q1" \
   '{"mech":4.0,"story":4.6,"behavioral":"GREEN"}' \
   '{"mech":4.8,"story":4.2,"behavioral":"GREEN"}' \
   '{"mech":4.4,"story":4.4,"behavioral":"GREEN"}'
-CLAWDND_DRYRUN_RUNNER="$R1" run_gate OUT1 RC1 -- --runs 3 --mech-min 4.0 --story-min 4.0
+WORLDOS_DRYRUN_RUNNER="$R1" run_gate OUT1 RC1 -- --runs 3 --mech-min 4.0 --story-min 4.0
 printf '%s\n' "$OUT1"
 chk "S1 median mech = 4.4 (middle of sorted 4.0,4.4,4.8)" 'printf "%s" "$OUT1" | grep -Eq "median[_ ]?mech[^0-9]*4\.4"'
 chk "S1 median story = 4.4 (middle of sorted 4.2,4.4,4.6)" 'printf "%s" "$OUT1" | grep -Eq "median[_ ]?story[^0-9]*4\.4"'
@@ -79,7 +79,7 @@ make_queue_runner "$R2" "$Q2" \
   '{"mech":5.0,"story":5.0,"behavioral":"GREEN"}' \
   '{"mech":4.0,"story":4.0,"behavioral":"GREEN"}' \
   '{"mech":5.0,"story":5.0,"behavioral":"GREEN"}'
-CLAWDND_DRYRUN_RUNNER="$R2" run_gate OUT2 RC2 -- --runs 4 --mech-min 4.0 --story-min 4.0
+WORLDOS_DRYRUN_RUNNER="$R2" run_gate OUT2 RC2 -- --runs 4 --mech-min 4.0 --story-min 4.0
 printf '%s\n' "$OUT2"
 chk "S2 EVEN-N median mech = 4.5 (mean of two middles)" 'printf "%s" "$OUT2" | grep -Eq "median[_ ]?mech[^0-9]*4\.5"'
 chk "S2 EVEN-N median story = 4.5 (mean of two middles)" 'printf "%s" "$OUT2" | grep -Eq "median[_ ]?story[^0-9]*4\.5"'
@@ -92,7 +92,7 @@ make_queue_runner "$R3" "$Q3" \
   '{"mech":3.0,"story":4.6,"behavioral":"GREEN"}' \
   '{"mech":3.5,"story":4.6,"behavioral":"GREEN"}' \
   '{"mech":4.9,"story":4.6,"behavioral":"GREEN"}'
-CLAWDND_DRYRUN_RUNNER="$R3" run_gate OUT3 RC3 -- --runs 3 --mech-min 4.5 --story-min 4.0
+WORLDOS_DRYRUN_RUNNER="$R3" run_gate OUT3 RC3 -- --runs 3 --mech-min 4.5 --story-min 4.0
 printf '%s\n' "$OUT3"
 chk "S3 median mech = 3.5" 'printf "%s" "$OUT3" | grep -Eq "median[_ ]?mech[^0-9]*3\.5"'
 chk "S3 verdict BELOW bar (not GREEN)" 'printf "%s" "$OUT3" | grep -Eq "BELOW|below|FAIL|RED"'
@@ -105,14 +105,14 @@ make_queue_runner "$R4" "$Q4" \
   '{"mech":4.9,"story":4.9,"behavioral":"RED"}' \
   '{"mech":4.9,"story":4.9,"behavioral":"RED"}' \
   '{"mech":4.9,"story":4.9,"behavioral":"GREEN"}'
-CLAWDND_DRYRUN_RUNNER="$R4" run_gate OUT4 RC4 -- --runs 3 --mech-min 4.0 --story-min 4.0
+WORLDOS_DRYRUN_RUNNER="$R4" run_gate OUT4 RC4 -- --runs 3 --mech-min 4.0 --story-min 4.0
 printf '%s\n' "$OUT4"
 chk "S4 verdict RED despite high scores" 'printf "%s" "$OUT4" | grep -Eq "RED"'
 chk "S4 nonzero exit (behavioral floor)" '[ "$RC4" != "0" ]'
 
-# ── (5) built-in CLAWDND_DRYRUN_STUB=1 runs offline + is GREEN by default ────
-hr "SCENARIO 5 — built-in stub (CLAWDND_DRYRUN_STUB=1) offline -> GREEN, exit 0"
-CLAWDND_DRYRUN_STUB=1 run_gate OUT5 RC5 -- --runs 3
+# ── (5) built-in WORLDOS_DRYRUN_STUB=1 runs offline + is GREEN by default ────
+hr "SCENARIO 5 — built-in stub (WORLDOS_DRYRUN_STUB=1) offline -> GREEN, exit 0"
+WORLDOS_DRYRUN_STUB=1 run_gate OUT5 RC5 -- --runs 3
 printf '%s\n' "$OUT5"
 chk "S5 built-in stub GREEN" 'printf "%s" "$OUT5" | grep -q "GREEN"'
 chk "S5 built-in stub exit 0" '[ "$RC5" = "0" ]'
@@ -120,7 +120,7 @@ chk "S5 reports N=3 runs" 'printf "%s" "$OUT5" | grep -Eq "3 run|runs[^0-9]*3|N=
 
 # ── (6) default --runs is sane (no args + stub) ──────────────────────────────
 hr "SCENARIO 6 — default run count with built-in stub -> exit 0, prints a median"
-CLAWDND_DRYRUN_STUB=1 run_gate OUT6 RC6 --
+WORLDOS_DRYRUN_STUB=1 run_gate OUT6 RC6 --
 printf '%s\n' "$OUT6"
 chk "S6 default-runs GREEN exit 0" '[ "$RC6" = "0" ]'
 chk "S6 default prints a median" 'printf "%s" "$OUT6" | grep -Eqi "median"'
@@ -142,7 +142,7 @@ make_queue_runner "$R7" "$Q7" \
   '{"mech":4.6,"story":4.6,"behavioral":"GREEN"}' \
   '{"mech":4.6,"story":4.6,"behavioral":"GREEN"}' \
   '{"mech":4.6,"story":4.6,"behavioral":"GREEN"}'
-CLAWDND_DRYRUN_RUNNER="$R7" run_gate OUT7 RC7 -- --runs 3 --mech-min 4.0 --story-min 4.0 --regress --db "$EMPTY_DB"
+WORLDOS_DRYRUN_RUNNER="$R7" run_gate OUT7 RC7 -- --runs 3 --mech-min 4.0 --story-min 4.0 --regress --db "$EMPTY_DB"
 printf '%s\n' "$OUT7"
 chk "S7 regression verdict surfaced (NO_BASELINE or a verdict word)" \
   'printf "%s" "$OUT7" | grep -Eqi "NO_BASELINE|regress|baseline"'

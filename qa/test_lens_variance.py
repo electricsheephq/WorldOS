@@ -255,13 +255,13 @@ def test_median_of_n_shrinks_jitter_below_single_run():
 # skipped in CI (gateway-free / null-backend invariant) and is here purely to document that
 # the empirical re-derivation of the floor is an explicit, opt-in, NON-CI step.
 # ---------------------------------------------------------------------------------------
-_RUN_LIVE = os.environ.get("CLAWDND_LIVE_SCORER") == "1"
+_RUN_LIVE = os.environ.get("WORLDOS_LIVE_SCORER") == "1"
 
 
 @pytest.mark.skipif(
     not _RUN_LIVE,
     reason="needs a LIVE LLM scorer (score.sh / score_openclaw.sh) — not available in CI "
-    "(QA is gateway-free / null-backend). Set CLAWDND_LIVE_SCORER=1 to re-derive the floor.",
+    "(QA is gateway-free / null-backend). Set WORLDOS_LIVE_SCORER=1 to re-derive the floor.",
 )
 def test_live_rescore_floor_rederivation_placeholder():  # pragma: no cover - never runs in CI
     raise AssertionError(

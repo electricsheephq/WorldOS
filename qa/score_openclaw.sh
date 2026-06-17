@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Score ONE distilled transcript against a rubric+schema using the OpenClaw gateway
-# (clawdnd-qa agent, model openai/gpt-5.4).  Drop-in replacement for score.sh — same
+# (worldos-qa agent, model openai/gpt-5.4).  Drop-in replacement for score.sh — same
 # arg signature, same out.json shape, same jq gate on `.scores`.
 #
 # The `claude -p` scorer is weekly-rate-limited; this script rides a separate quota via
@@ -26,22 +26,22 @@ MD="$1"; STATE="$2"; RUBRIC="$3"; SCHEMA="$4"; OUT="$5"
 # budget ($6) accepted for API parity but unused — OpenClaw manages quota
 BUDGET="${6:-1.50}"
 
-# Default agent = `main` (the canonical gateway agent; the old `clawdnd-qa` default isn't configured on
+# Default agent = `main` (the canonical gateway agent; the old `worldos-qa` default isn't configured on
 # every host). By DEFAULT pass NO --model override (use the agent's native model, e.g. main=gpt-5.5) —
 # many gateway agents REJECT a foreign model override ("Model override … is not allowed for agent").
 # Only pass one when WORLDOS_SCORER_MODEL is explicitly set AND allowed for the agent
-# (the legacy CLAWDND_* names are still read as a fallback — the rename bi-names readers).
-AGENT="${WORLDOS_SCORER_AGENT:-${CLAWDND_SCORER_AGENT:-main}}"
-MODEL="${WORLDOS_SCORER_MODEL:-${CLAWDND_SCORER_MODEL:-}}"
+# (
+AGENT="${WORLDOS_SCORER_AGENT:-main}"
+MODEL="${WORLDOS_SCORER_MODEL:-}"
 MODEL_ARGS=(); [ -n "$MODEL" ] && MODEL_ARGS=(--model "$MODEL")
 # A fresh session id per scoring run so a scorer turn never pollutes the agent's main session.
-SESSION_ID="${CLAWDND_SCORER_SESSION:-qa-score-$(basename "${OUT%.json}")}"
+SESSION_ID="${WORLDOS_SCORER_SESSION:-qa-score-$(basename "${OUT%.json}")}"
 # openclaw agent has NO stdin/file message input — the prompt is a single --message argv, bounded by
 # MAX_ARG_STRLEN (~128KB). The state.json alone can be ~140KB, so cap it (the distilled transcript
-# carries the prose; the state is supplementary ground-truth). Tune via CLAWDND_SCORER_STATE_CAP.
-STATE_CAP="${CLAWDND_SCORER_STATE_CAP:-75000}"
+# carries the prose; the state is supplementary ground-truth). Tune via WORLDOS_SCORER_STATE_CAP.
+STATE_CAP="${WORLDOS_SCORER_STATE_CAP:-75000}"
 # 600s: large rubrics (angry_dm ~32KB) + long transcripts (~100KB) need the room
-GATEWAY_TIMEOUT="${CLAWDND_SCORER_TIMEOUT:-600}"
+GATEWAY_TIMEOUT="${WORLDOS_SCORER_TIMEOUT:-600}"
 
 # Build the same prompt body score.sh uses: rubric + schema instruction + transcript + state
 # Write to a temp file so very large prompts don't hit shell variable limits

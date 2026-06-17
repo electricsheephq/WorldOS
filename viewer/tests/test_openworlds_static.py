@@ -25,25 +25,25 @@ class _QuietHandler(server._Handler):
 class OpenWorldsStaticRouteTests(unittest.TestCase):
     def setUp(self):
         self._tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        self._old_state = os.environ.get("CLAWDND_STATE_DIR")
+        self._old_state = os.environ.get("WORLDOS_STATE_DIR")
         self._old_worldos_art_repo_root = os.environ.get("WORLDOS_ART_REPO_ROOT")
-        self._old_worldos_art_repo_root = os.environ.get("CLAWDND_ART_REPO_ROOT")
+        self._old_worldos_art_repo_root = os.environ.get("WORLDOS_ART_REPO_ROOT")
         self._old_worldos_repo_root = os.environ.get("WORLDOS_REPO_ROOT")
-        self._old_worldos_repo_root = os.environ.get("CLAWDND_REPO_ROOT")
+        self._old_worldos_repo_root = os.environ.get("WORLDOS_REPO_ROOT")
         self._old_worldos_player_moves = os.environ.get("WORLDOS_PLAYER_MOVES")
-        self._old_worldos_player_moves = os.environ.get("CLAWDND_PLAYER_MOVES")
+        self._old_worldos_player_moves = os.environ.get("WORLDOS_PLAYER_MOVES")
         self._old_worldos_provider = os.environ.get("WORLDOS_PROVIDER")
-        self._old_worldos_provider = os.environ.get("CLAWDND_PROVIDER")
+        self._old_worldos_provider = os.environ.get("WORLDOS_PROVIDER")
         os.environ.pop("WORLDOS_ART_REPO_ROOT", None)
-        os.environ.pop("CLAWDND_ART_REPO_ROOT", None)
+        os.environ.pop("WORLDOS_ART_REPO_ROOT", None)
         os.environ.pop("WORLDOS_REPO_ROOT", None)
-        os.environ.pop("CLAWDND_REPO_ROOT", None)
+        os.environ.pop("WORLDOS_REPO_ROOT", None)
         os.environ.pop("WORLDOS_PLAYER_MOVES", None)
-        os.environ.pop("CLAWDND_PLAYER_MOVES", None)
+        os.environ.pop("WORLDOS_PLAYER_MOVES", None)
         os.environ.pop("WORLDOS_PROVIDER", None)
-        os.environ.pop("CLAWDND_PROVIDER", None)
+        os.environ.pop("WORLDOS_PROVIDER", None)
         self._old_here = server._HERE
-        os.environ["CLAWDND_STATE_DIR"] = str(self._tmp)
+        os.environ["WORLDOS_STATE_DIR"] = str(self._tmp)
         _QuietHandler.campaign_id = ""
         _QuietHandler.transcript_path = ""
         _QuietHandler.chat_path = ""
@@ -58,41 +58,41 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self._httpd.server_close()
         self._thread.join(timeout=2)
         if self._old_state is None:
-            os.environ.pop("CLAWDND_STATE_DIR", None)
+            os.environ.pop("WORLDOS_STATE_DIR", None)
         else:
-            os.environ["CLAWDND_STATE_DIR"] = self._old_state
+            os.environ["WORLDOS_STATE_DIR"] = self._old_state
         if self._old_worldos_art_repo_root is None:
             os.environ.pop("WORLDOS_ART_REPO_ROOT", None)
         else:
             os.environ["WORLDOS_ART_REPO_ROOT"] = self._old_worldos_art_repo_root
         if self._old_worldos_art_repo_root is None:
-            os.environ.pop("CLAWDND_ART_REPO_ROOT", None)
+            os.environ.pop("WORLDOS_ART_REPO_ROOT", None)
         else:
-            os.environ["CLAWDND_ART_REPO_ROOT"] = self._old_worldos_art_repo_root
+            os.environ["WORLDOS_ART_REPO_ROOT"] = self._old_worldos_art_repo_root
         if self._old_worldos_repo_root is None:
             os.environ.pop("WORLDOS_REPO_ROOT", None)
         else:
             os.environ["WORLDOS_REPO_ROOT"] = self._old_worldos_repo_root
         if self._old_worldos_repo_root is None:
-            os.environ.pop("CLAWDND_REPO_ROOT", None)
+            os.environ.pop("WORLDOS_REPO_ROOT", None)
         else:
-            os.environ["CLAWDND_REPO_ROOT"] = self._old_worldos_repo_root
+            os.environ["WORLDOS_REPO_ROOT"] = self._old_worldos_repo_root
         if self._old_worldos_player_moves is None:
             os.environ.pop("WORLDOS_PLAYER_MOVES", None)
         else:
             os.environ["WORLDOS_PLAYER_MOVES"] = self._old_worldos_player_moves
         if self._old_worldos_player_moves is None:
-            os.environ.pop("CLAWDND_PLAYER_MOVES", None)
+            os.environ.pop("WORLDOS_PLAYER_MOVES", None)
         else:
-            os.environ["CLAWDND_PLAYER_MOVES"] = self._old_worldos_player_moves
+            os.environ["WORLDOS_PLAYER_MOVES"] = self._old_worldos_player_moves
         if self._old_worldos_provider is None:
             os.environ.pop("WORLDOS_PROVIDER", None)
         else:
             os.environ["WORLDOS_PROVIDER"] = self._old_worldos_provider
         if self._old_worldos_provider is None:
-            os.environ.pop("CLAWDND_PROVIDER", None)
+            os.environ.pop("WORLDOS_PROVIDER", None)
         else:
-            os.environ["CLAWDND_PROVIDER"] = self._old_worldos_provider
+            os.environ["WORLDOS_PROVIDER"] = self._old_worldos_provider
         server._HERE = self._old_here
 
     def _get(self, path: str) -> tuple[int, str, bytes]:
@@ -153,9 +153,9 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
     def test_setup_clears_host_repo_and_art_root_env_overrides(self):
         for key in (
             "WORLDOS_ART_REPO_ROOT",
-            "CLAWDND_ART_REPO_ROOT",
+            "WORLDOS_ART_REPO_ROOT",
             "WORLDOS_REPO_ROOT",
-            "CLAWDND_REPO_ROOT",
+            "WORLDOS_REPO_ROOT",
         ):
             self.assertNotIn(key, os.environ)
 
@@ -314,7 +314,7 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         moves.write_text("", encoding="utf-8")
         chat = self._tmp / "play-123" / "chat.jsonl"
         chat.write_text('{"role":"dm","text":"Opening."}\n', encoding="utf-8")
-        os.environ["CLAWDND_PLAYER_MOVES"] = str(moves)
+        os.environ["WORLDOS_PLAYER_MOVES"] = str(moves)
         _QuietHandler.campaign_id = "camp_live"
         _QuietHandler.chat_path = str(chat)
 
@@ -395,7 +395,7 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
             + json.dumps({"role": "player", "text": "[do] Act."}) + "\n",
             encoding="utf-8",
         )
-        os.environ["CLAWDND_PLAYER_MOVES"] = str(moves)
+        os.environ["WORLDOS_PLAYER_MOVES"] = str(moves)
         os.environ["WORLDOS_ART_REPO_ROOT"] = str(art_root)
         os.environ["WORLDOS_PROVIDER"] = "codex"
         _QuietHandler.campaign_id = "camp_live"
@@ -475,7 +475,7 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
             }),
             encoding="utf-8",
         )
-        os.environ["CLAWDND_PLAYER_MOVES"] = str(moves)
+        os.environ["WORLDOS_PLAYER_MOVES"] = str(moves)
         os.environ["WORLDOS_ART_REPO_ROOT"] = str(art_root)
         os.environ["WORLDOS_PROVIDER"] = "codex"
         _QuietHandler.campaign_id = "camp_live"
@@ -1365,7 +1365,7 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         stale = 1_700_000_000
         os.utime(campaign_dir / "snapshot.json", (stale, stale))
         moves = self._tmp / "player_moves.jsonl"
-        os.environ["CLAWDND_PLAYER_MOVES"] = str(moves)
+        os.environ["WORLDOS_PLAYER_MOVES"] = str(moves)
         _QuietHandler.campaign_id = "camp_live"
         server._HERE = self._tmp / "viewer"
         server._openworlds_catalog_cache = None

@@ -34,7 +34,7 @@ def _write(p: Path, rows: list[dict]) -> None:
 
 
 def _dm_event(tool_names=(), text="") -> dict:
-    content = [{"type": "tool_use", "name": f"mcp__clawdnd-engine__{t}", "input": {}} for t in tool_names]
+    content = [{"type": "tool_use", "name": f"mcp__worldos-engine__{t}", "input": {}} for t in tool_names]
     if text:
         content.append({"type": "text", "text": text})
     return {"type": "assistant", "message": {"content": content}}

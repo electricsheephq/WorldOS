@@ -27,11 +27,11 @@ from models import Ability, Item
 
 @pytest.fixture(autouse=True)
 def isolated_state(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     # The facade must use its DEFAULT path (first kind=="player" in party) — clear any
     # bound-actor env a prior test may have set so _pc() resolves by kind, not id.
-    monkeypatch.delenv("CLAWDND_ACTOR_ID", raising=False)
-    monkeypatch.delenv("CLAWDND_ACTOR_ROLE", raising=False)
+    monkeypatch.delenv("WORLDOS_ACTOR_ID", raising=False)
+    monkeypatch.delenv("WORLDOS_ACTOR_ROLE", raising=False)
     yield
 
 

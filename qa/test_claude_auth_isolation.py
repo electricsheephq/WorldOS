@@ -71,9 +71,9 @@ def test_env_token_preset_isolates_config_and_survives(tmp_path):
     env = _run(
         {
             "CLAUDE_CODE_OAUTH_TOKEN": "fake-oauth-token-from-env",
-            "CLAWDND_CLAUDE_CONFIG_DIR": str(cfg),
+            "WORLDOS_CLAUDE_CONFIG_DIR": str(cfg),
             # Force the file path under tmp so the real ~/.worldos can never be touched.
-            "CLAWDND_CLAUDE_TOKEN_FILE": str(tmp_path / "nonexistent-token"),
+            "WORLDOS_CLAUDE_TOKEN_FILE": str(tmp_path / "nonexistent-token"),
         },
         home,
     )
@@ -93,7 +93,7 @@ def test_env_token_preset_isolates_config_and_survives(tmp_path):
 
 
 def test_file_oauth_token_is_exported_and_config_isolated(tmp_path):
-    """(ii) No env credential, but a secret file (pointed at by CLAWDND_CLAUDE_TOKEN_FILE) holding a
+    """(ii) No env credential, but a secret file (pointed at by WORLDOS_CLAUDE_TOKEN_FILE) holding a
     fake oauth token → CLAUDE_CODE_OAUTH_TOKEN gets exported AND CLAUDE_CONFIG_DIR is isolated."""
     home = tmp_path / "home"
     home.mkdir()
@@ -104,8 +104,8 @@ def test_file_oauth_token_is_exported_and_config_isolated(tmp_path):
 
     env = _run(
         {
-            "CLAWDND_CLAUDE_TOKEN_FILE": str(token_file),
-            "CLAWDND_CLAUDE_CONFIG_DIR": str(cfg),
+            "WORLDOS_CLAUDE_TOKEN_FILE": str(token_file),
+            "WORLDOS_CLAUDE_CONFIG_DIR": str(cfg),
         },
         home,
     )
@@ -131,8 +131,8 @@ def test_file_sk_ant_key_is_classified_as_anthropic_api_key(tmp_path):
 
     env = _run(
         {
-            "CLAWDND_CLAUDE_TOKEN_FILE": str(token_file),
-            "CLAWDND_CLAUDE_CONFIG_DIR": str(cfg),
+            "WORLDOS_CLAUDE_TOKEN_FILE": str(token_file),
+            "WORLDOS_CLAUDE_CONFIG_DIR": str(cfg),
         },
         home,
     )
@@ -151,8 +151,8 @@ def test_no_credential_is_a_true_noop(tmp_path):
     # (if the owner has one) can never leak into this test.
     env = _run(
         {
-            "CLAWDND_CLAUDE_TOKEN_FILE": str(tmp_path / "nonexistent-token"),
-            "CLAWDND_CLAUDE_CONFIG_DIR": str(tmp_path / "should-not-be-created"),
+            "WORLDOS_CLAUDE_TOKEN_FILE": str(tmp_path / "nonexistent-token"),
+            "WORLDOS_CLAUDE_CONFIG_DIR": str(tmp_path / "should-not-be-created"),
         },
         home,
     )
@@ -184,8 +184,8 @@ def test_idempotent_when_called_twice(tmp_path):
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
             "HOME": str(home),
             "CLAUDE_CODE_OAUTH_TOKEN": "fake-oauth-token-from-env",
-            "CLAWDND_CLAUDE_CONFIG_DIR": str(cfg),
-            "CLAWDND_CLAUDE_TOKEN_FILE": str(tmp_path / "nonexistent-token"),
+            "WORLDOS_CLAUDE_CONFIG_DIR": str(cfg),
+            "WORLDOS_CLAUDE_TOKEN_FILE": str(tmp_path / "nonexistent-token"),
         },
         text=True,
         capture_output=True,

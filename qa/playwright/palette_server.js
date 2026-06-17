@@ -25,11 +25,11 @@
  *
  * The harness (qa/ui_playtest.sh) launches the Player `claude -p` with --strict-mcp-config
  * pointed at a generated .mcp.json that runs THIS server with these env vars:
- *   CLAWDND_UIPT_URL     — the live viewer URL to open (e.g. http://127.0.0.1:8993/openworlds/)
- *   CLAWDND_UIPT_RUNDIR  — the run dir; we write screenshots/, a11y/, console.ndjson,
+ *   WORLDOS_UIPT_URL     — the live viewer URL to open (e.g. http://127.0.0.1:8993/openworlds/)
+ *   WORLDOS_UIPT_RUNDIR  — the run dir; we write screenshots/, a11y/, console.ndjson,
  *                          network.ndjson, actions.ndjson, bugs.ndjson under it
- *   CLAWDND_UIPT_CHANNEL — "" (bundled chromium) or "chrome" (reuse system Chrome)
- *   CLAWDND_UIPT_PERSONA — persona slug stamped on each bug
+ *   WORLDOS_UIPT_CHANNEL — "" (bundled chromium) or "chrome" (reuse system Chrome)
+ *   WORLDOS_UIPT_PERSONA — persona slug stamped on each bug
  *
  * Console errors and failed network requests are captured passively for EVERY page and
  * auto-emitted as bugs (category "console"/"network") in addition to whatever the Player
@@ -47,14 +47,14 @@ const { McpServer } = require("@modelcontextprotocol/sdk/server/mcp.js");
 const { StdioServerTransport } = require("@modelcontextprotocol/sdk/server/stdio.js");
 const { z } = require("zod");
 
-const TARGET_URL = process.env.CLAWDND_UIPT_URL || "http://127.0.0.1:8799/openworlds/";
-// CLAWDND_UIPT_RUNDIR is the RUN ROOT. bugs.ndjson + status.json land here (top-level
+const TARGET_URL = process.env.WORLDOS_UIPT_URL || "http://127.0.0.1:8799/openworlds/";
+// WORLDOS_UIPT_RUNDIR is the RUN ROOT. bugs.ndjson + status.json land here (top-level
 // deliverables); the player-side artifacts (screenshots, a11y, action/console/network
 // logs) go under player/ — matching qa/ui_playtest_score.py's reader.
-const RUNDIR = process.env.CLAWDND_UIPT_RUNDIR || path.join(process.cwd(), "uipt-run");
+const RUNDIR = process.env.WORLDOS_UIPT_RUNDIR || path.join(process.cwd(), "uipt-run");
 const PLAYERDIR = path.join(RUNDIR, "player");
-const CHANNEL = (process.env.CLAWDND_UIPT_CHANNEL || "").trim();
-const PERSONA = (process.env.CLAWDND_UIPT_PERSONA || "newbie").trim();
+const CHANNEL = (process.env.WORLDOS_UIPT_CHANNEL || "").trim();
+const PERSONA = (process.env.WORLDOS_UIPT_PERSONA || "newbie").trim();
 const MAX_WAIT_MS = 8000; // hard cap on a single wait, so the player can't stall the run
 
 const SHOTS = path.join(PLAYERDIR, "screenshots");

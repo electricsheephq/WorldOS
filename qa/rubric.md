@@ -13,7 +13,7 @@ Weight your judgment accordingly: hallucinated mechanics are the worst defect.
 Score each criterion 1–5 (5 = excellent, 1 = broken). Be skeptical; reserve 5s.
 
 1. **tool_sourced** — Were ALL dice rolls, rule/spell/monster lookups, HP/condition
-   changes, attacks, XP, and state writes performed via clawdnd tools? Any number
+   changes, attacks, XP, and state writes performed via worldos tools? Any number
    the narrative states that did NOT come from a visible tool result is a
    hallucination. Cross-check the transcript's tool calls against the narrated
    numbers. Penalize hard for invented rolls/DCs/HP.

@@ -62,9 +62,9 @@ class LiveViewRecoveryTests(unittest.TestCase):
         self.addCleanup(self._tmpdir.cleanup)
         self._tmp = Path(self._tmpdir.name)
         self._saved = {k: os.environ.get(k) for k in
-                       ("CLAWDND_STATE_DIR", "WORLDOS_STATE_DIR",
-                        "CLAWDND_PLAYER_MOVES", "WORLDOS_PLAYER_MOVES")}
-        os.environ["CLAWDND_STATE_DIR"] = str(self._tmp)
+                       ("WORLDOS_STATE_DIR", "WORLDOS_STATE_DIR",
+                        "WORLDOS_PLAYER_MOVES", "WORLDOS_PLAYER_MOVES")}
+        os.environ["WORLDOS_STATE_DIR"] = str(self._tmp)
         os.environ["WORLDOS_STATE_DIR"] = str(self._tmp)
         # Reset the catalog cache so each test sees its own freshly-written campaigns.
         server._openworlds_catalog_cache = None
@@ -101,7 +101,7 @@ class LiveViewRecoveryTests(unittest.TestCase):
         moves = self._tmp / "player_moves.jsonl"
         moves.touch()
         os.environ["WORLDOS_PLAYER_MOVES"] = str(moves)
-        os.environ["CLAWDND_PLAYER_MOVES"] = str(moves)
+        os.environ["WORLDOS_PLAYER_MOVES"] = str(moves)
         self.assertTrue(server._live_play(), "move sink should read as live")
 
     def _get(self, path: str) -> tuple[int, dict]:
@@ -201,7 +201,7 @@ class LiveViewRecoveryTests(unittest.TestCase):
         """No live move sink at all → genuinely read-only; recovery must not fabricate can_act."""
         # No _enable_move_sink(): the sink env is unset → _live_play() is False.
         os.environ.pop("WORLDOS_PLAYER_MOVES", None)
-        os.environ.pop("CLAWDND_PLAYER_MOVES", None)
+        os.environ.pop("WORLDOS_PLAYER_MOVES", None)
         self.assertFalse(server._live_play())
         self._write("some_run", _snap("Read Only"))
 
@@ -319,7 +319,7 @@ class LiveViewRecoveryTests(unittest.TestCase):
         stale, it MUST stay read-only — the slow-beat heal must not fabricate can_act for a dead
         provider. Complements test_no_move_sink_stays_read_only with the stale-snapshot case."""
         os.environ.pop("WORLDOS_PLAYER_MOVES", None)
-        os.environ.pop("CLAWDND_PLAYER_MOVES", None)
+        os.environ.pop("WORLDOS_PLAYER_MOVES", None)
         self.assertFalse(server._live_play())
         self._write("dead_run", _snap("Disconnected"), age_seconds=300)
 
@@ -357,7 +357,7 @@ class LiveViewRecoveryTests(unittest.TestCase):
         """The honest-dead-provider path: with no sink, /move refuses — so the client must NOT
         promise a working retry; it surfaces 'Resume from Chronicles' instead of a silent freeze."""
         os.environ.pop("WORLDOS_PLAYER_MOVES", None)
-        os.environ.pop("CLAWDND_PLAYER_MOVES", None)
+        os.environ.pop("WORLDOS_PLAYER_MOVES", None)
         self.assertFalse(server._live_play())
         server._Handler.campaign_id = "live_run"
 

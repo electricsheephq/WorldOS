@@ -87,7 +87,7 @@ window.OpenWorldsBuilding = window.OpenWorldsBuilding || {
       kind: (meta && meta.kind) || "play",
     };
     try { window.sessionStorage.setItem(OW_BUILDING_KEY, JSON.stringify(record)); } catch (_e) {}
-    try { window.dispatchEvent(new CustomEvent("clawdnd:building-begin", { detail: record })); } catch (_e) {}
+    try { window.dispatchEvent(new CustomEvent("worldos:building-begin", { detail: record })); } catch (_e) {}
     return record;
   },
   read() {
@@ -200,8 +200,8 @@ function useBuildingUniverse(liveSession, sessionError) {
       setEscapable(false);
       setRecord((e && e.detail) || window.OpenWorldsBuilding.read());
     };
-    window.addEventListener("clawdnd:building-begin", onBegin);
-    return () => window.removeEventListener("clawdnd:building-begin", onBegin);
+    window.addEventListener("worldos:building-begin", onBegin);
+    return () => window.removeEventListener("worldos:building-begin", onBegin);
   }, []);
 
   // #405 (1) HARD ERROR → dismiss. A cold-open / session error means no narration will ever arrive;

@@ -84,11 +84,11 @@ def _isolate_env(monkeypatch, tmp_path):
     Always provide a token (so the client doesn't no-op on auth) and point the
     media dir at a tmp dir, and clear provider selection by default.
     """
-    monkeypatch.setenv("CLAWDND_OPENCLAW_GATEWAY_TOKEN", "test-token")
-    monkeypatch.setenv("CLAWDND_OPENCLAW_MEDIA_DIR", str(tmp_path / "media"))
-    monkeypatch.delenv("CLAWDND_IMAGE_PROVIDER", raising=False)
+    monkeypatch.setenv("WORLDOS_OPENCLAW_GATEWAY_TOKEN", "test-token")
+    monkeypatch.setenv("WORLDOS_OPENCLAW_MEDIA_DIR", str(tmp_path / "media"))
+    monkeypatch.delenv("WORLDOS_IMAGE_PROVIDER", raising=False)
     # Tight poll budget so the no-image timeout test is fast.
-    monkeypatch.setenv("CLAWDND_OPENCLAW_POLL_TIMEOUT", "0.5")
+    monkeypatch.setenv("WORLDOS_OPENCLAW_POLL_TIMEOUT", "0.5")
     # F11-4: the claimed-path registry is module-level; reset it so cross-attribution
     # tests start clean and don't leak claims into each other.
     openclaw_image._reset_claimed_paths()
@@ -127,7 +127,7 @@ def test_invoke_url_and_auth_header():
 
 
 def test_no_token_omits_auth_header(monkeypatch):
-    monkeypatch.delenv("CLAWDND_OPENCLAW_GATEWAY_TOKEN", raising=False)
+    monkeypatch.delenv("WORLDOS_OPENCLAW_GATEWAY_TOKEN", raising=False)
     monkeypatch.delenv("OPENCLAW_GATEWAY_TOKEN", raising=False)
     monkeypatch.delenv("OPENCLAW_GATEWAY_PASSWORD", raising=False)
     client = OpenClawImageClient(gateway_url="http://127.0.0.1:18789")
@@ -137,7 +137,7 @@ def test_no_token_omits_auth_header(monkeypatch):
 
 
 def test_token_falls_back_to_openclaw_env(monkeypatch):
-    monkeypatch.delenv("CLAWDND_OPENCLAW_GATEWAY_TOKEN", raising=False)
+    monkeypatch.delenv("WORLDOS_OPENCLAW_GATEWAY_TOKEN", raising=False)
     monkeypatch.setenv("OPENCLAW_GATEWAY_TOKEN", "from-openclaw-env")
     assert OpenClawImageClient().token == "from-openclaw-env"
 
@@ -326,19 +326,19 @@ def test_empty_prompt_raises_before_network(monkeypatch):
 # --------------------------------------------------------------------------- #
 
 def test_media_dir_override(monkeypatch):
-    monkeypatch.setenv("CLAWDND_OPENCLAW_MEDIA_DIR", "/custom/media")
+    monkeypatch.setenv("WORLDOS_OPENCLAW_MEDIA_DIR", "/custom/media")
     assert str(OpenClawImageClient(token="t").media_dir) == "/custom/media"
 
 
 def test_media_dir_from_openclaw_home(monkeypatch):
-    monkeypatch.delenv("CLAWDND_OPENCLAW_MEDIA_DIR", raising=False)
+    monkeypatch.delenv("WORLDOS_OPENCLAW_MEDIA_DIR", raising=False)
     monkeypatch.setenv("OPENCLAW_HOME", "/opt/oc-home")
     d = OpenClawImageClient(token="t").media_dir
     assert str(d) == "/opt/oc-home/media/tool-image-generation"
 
 
 def test_media_dir_default_is_dot_openclaw(monkeypatch, tmp_path):
-    monkeypatch.delenv("CLAWDND_OPENCLAW_MEDIA_DIR", raising=False)
+    monkeypatch.delenv("WORLDOS_OPENCLAW_MEDIA_DIR", raising=False)
     monkeypatch.delenv("OPENCLAW_HOME", raising=False)
     monkeypatch.setenv("HOME", str(tmp_path))
     d = OpenClawImageClient(token="t").media_dir
@@ -350,15 +350,15 @@ def test_media_dir_default_is_dot_openclaw(monkeypatch, tmp_path):
 # --------------------------------------------------------------------------- #
 
 def test_provider_selected_when_token_present(monkeypatch):
-    monkeypatch.setenv("CLAWDND_IMAGE_PROVIDER", "openclaw")
+    monkeypatch.setenv("WORLDOS_IMAGE_PROVIDER", "openclaw")
     p = imagegen.get_provider()
     assert isinstance(p, imagegen.OpenClawImageProvider)
     assert p.name == "openclaw"
 
 
 def test_provider_degrades_to_null_without_token(monkeypatch):
-    monkeypatch.setenv("CLAWDND_IMAGE_PROVIDER", "openclaw")
-    monkeypatch.delenv("CLAWDND_OPENCLAW_GATEWAY_TOKEN", raising=False)
+    monkeypatch.setenv("WORLDOS_IMAGE_PROVIDER", "openclaw")
+    monkeypatch.delenv("WORLDOS_OPENCLAW_GATEWAY_TOKEN", raising=False)
     monkeypatch.delenv("OPENCLAW_GATEWAY_TOKEN", raising=False)
     monkeypatch.delenv("OPENCLAW_GATEWAY_PASSWORD", raising=False)
     # No token -> not configured -> selector falls back to null (never crashes).
@@ -387,13 +387,13 @@ def test_provider_descriptor_shape(monkeypatch):
 
 @pytest.fixture
 def state(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     return tmp_path
 
 
 def test_2_cache_hit_invokes_provider_once(monkeypatch, state):
     """Second generate() for the same request is served from cache; client fires once."""
-    monkeypatch.setenv("CLAWDND_IMAGE_PROVIDER", "openclaw")
+    monkeypatch.setenv("WORLDOS_IMAGE_PROVIDER", "openclaw")
     calls = {"n": 0}
 
     def fake_generate_image(self, prompt, **kw):  # noqa: ANN001
@@ -419,7 +419,7 @@ def test_3_unreachable_degrades_to_null_not_raise(monkeypatch, state):
     (review #1): it degrades to the null placeholder, marks it degraded, and caches
     NOTHING, so a later gateway-up retry can still succeed. (The provider itself still
     raises — the seam catches it.)"""
-    monkeypatch.setenv("CLAWDND_IMAGE_PROVIDER", "openclaw")
+    monkeypatch.setenv("WORLDOS_IMAGE_PROVIDER", "openclaw")
 
     def fake_generate_image(self, prompt, **kw):  # noqa: ANN001
         raise OpenClawGatewayUnreachable("OpenClaw gateway unreachable at .../tools/invoke")

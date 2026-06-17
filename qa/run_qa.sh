@@ -27,7 +27,7 @@ BUDGET="${2:-3.00}"
 PROMPT_FILE="${3:-qa/play_prompt.txt}"
 RUBRIC_FILE="${4:-qa/rubric.md}"
 # DM model knob (default sonnet → unchanged); a one-flag flip for Opus structural-adherence tests.
-CLAWDND_DM_MODEL="$(worldos_env DM_MODEL opus)"
+WORLDOS_DM_MODEL="$(worldos_env DM_MODEL opus)"
 T="qa/transcripts"
 STATE_DIR="$ROOT/qa/state/$RUN"          # per-run isolation -> parallel-safe
 MCP_CONFIG="$STATE_DIR/qa.mcp.json"
@@ -42,15 +42,15 @@ python3 - "$ROOT/qa/qa.mcp.example.json" "$STATE_DIR" "$MCP_CONFIG" <<'PY'
 import json, sys
 src, state_dir, out = sys.argv[1], sys.argv[2], sys.argv[3]
 cfg = json.load(open(src))
-cfg["mcpServers"]["worldos-engine"]["env"]["CLAWDND_STATE_DIR"] = state_dir
+cfg["mcpServers"]["worldos-engine"]["env"]["WORLDOS_STATE_DIR"] = state_dir
 json.dump(cfg, open(out, "w"))
 PY
 
-echo "[qa] playing (claude --plugin-dir, $CLAWDND_DM_MODEL) prompt=$PROMPT_FILE…"
+echo "[qa] playing (claude --plugin-dir, $WORLDOS_DM_MODEL) prompt=$PROMPT_FILE…"
 claude -p "$(cat "$PROMPT_FILE")" \
   --plugin-dir "$ROOT" \
   --mcp-config "$MCP_CONFIG" --strict-mcp-config \
-  --model "$CLAWDND_DM_MODEL" --permission-mode bypassPermissions \
+  --model "$WORLDOS_DM_MODEL" --permission-mode bypassPermissions \
   --max-budget-usd "$BUDGET" \
   --output-format stream-json --verbose \
   > "$T/$RUN.jsonl" 2> "$T/$RUN.err"

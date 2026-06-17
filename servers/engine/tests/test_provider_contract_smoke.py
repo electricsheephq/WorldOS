@@ -41,12 +41,12 @@ def test_provider_contract_smoke_requires_env():
 def test_provider_contract_smoke_rejects_unknown_provider(tmp_path):
     result = _run(
         {
-            "CLAWDND_PROVIDER": "mystery",
-            "CLAWDND_WORLD": "baldurs-gate",
-            "CLAWDND_RUN_ID": "smoke",
-            "CLAWDND_PLAY_PORT": "8765",
-            "CLAWDND_PLAY_COMPANIONS": "",
-            "CLAWDND_PLAYER_MOVES": str(tmp_path / "moves.jsonl"),
+            "WORLDOS_PROVIDER": "mystery",
+            "WORLDOS_WORLD": "baldurs-gate",
+            "WORLDOS_RUN_ID": "smoke",
+            "WORLDOS_PLAY_PORT": "8765",
+            "WORLDOS_PLAY_COMPANIONS": "",
+            "WORLDOS_PLAYER_MOVES": str(tmp_path / "moves.jsonl"),
         }
     )
 
@@ -57,26 +57,26 @@ def test_provider_contract_smoke_rejects_unknown_provider(tmp_path):
 def test_provider_contract_smoke_requires_companions_key_even_when_empty(tmp_path):
     missing = _run(
         {
-            "CLAWDND_PROVIDER": "codex",
-            "CLAWDND_WORLD": "baldurs-gate",
-            "CLAWDND_RUN_ID": "smoke",
-            "CLAWDND_PLAY_PORT": "8765",
-            "CLAWDND_PLAYER_MOVES": str(tmp_path / "moves.jsonl"),
+            "WORLDOS_PROVIDER": "codex",
+            "WORLDOS_WORLD": "baldurs-gate",
+            "WORLDOS_RUN_ID": "smoke",
+            "WORLDOS_PLAY_PORT": "8765",
+            "WORLDOS_PLAYER_MOVES": str(tmp_path / "moves.jsonl"),
         }
     )
     present_empty = _run(
         {
-            "CLAWDND_PROVIDER": "codex",
-            "CLAWDND_WORLD": "baldurs-gate",
-            "CLAWDND_RUN_ID": "smoke",
-            "CLAWDND_PLAY_PORT": "8765",
-            "CLAWDND_PLAY_COMPANIONS": "",
-            "CLAWDND_PLAYER_MOVES": str(tmp_path / "moves.jsonl"),
+            "WORLDOS_PROVIDER": "codex",
+            "WORLDOS_WORLD": "baldurs-gate",
+            "WORLDOS_RUN_ID": "smoke",
+            "WORLDOS_PLAY_PORT": "8765",
+            "WORLDOS_PLAY_COMPANIONS": "",
+            "WORLDOS_PLAYER_MOVES": str(tmp_path / "moves.jsonl"),
         }
     )
 
     assert missing.returncode != 0
-    assert "CLAWDND_PLAY_COMPANIONS" in missing.stderr
+    assert "WORLDOS_PLAY_COMPANIONS" in missing.stderr
     assert present_empty.returncode == 0, present_empty.stdout + present_empty.stderr
 
 
@@ -84,12 +84,12 @@ def test_provider_contract_smoke_appends_one_legal_move_and_summary(tmp_path):
     moves = tmp_path / "moves.jsonl"
     result = _run(
         {
-            "CLAWDND_PROVIDER": "codex",
-            "CLAWDND_WORLD": "baldurs-gate",
-            "CLAWDND_RUN_ID": "smoke",
-            "CLAWDND_PLAY_PORT": "8765",
-            "CLAWDND_PLAY_COMPANIONS": "Astarion:rogue,Minsc:ranger",
-            "CLAWDND_PLAYER_MOVES": str(moves),
+            "WORLDOS_PROVIDER": "codex",
+            "WORLDOS_WORLD": "baldurs-gate",
+            "WORLDOS_RUN_ID": "smoke",
+            "WORLDOS_PLAY_PORT": "8765",
+            "WORLDOS_PLAY_COMPANIONS": "Astarion:rogue,Minsc:ranger",
+            "WORLDOS_PLAYER_MOVES": str(moves),
             "OPENAI_API_KEY": "must-not-print",
         }
     )
@@ -117,12 +117,12 @@ def test_provider_contract_smoke_rejects_non_temp_move_path_without_override(tmp
     moves.unlink(missing_ok=True)
     result = _run(
         {
-            "CLAWDND_PROVIDER": "openclaw",
-            "CLAWDND_WORLD": "baldurs-gate",
-            "CLAWDND_RUN_ID": "smoke",
-            "CLAWDND_PLAY_PORT": "8765",
-            "CLAWDND_PLAY_COMPANIONS": "",
-            "CLAWDND_PLAYER_MOVES": str(moves),
+            "WORLDOS_PROVIDER": "openclaw",
+            "WORLDOS_WORLD": "baldurs-gate",
+            "WORLDOS_RUN_ID": "smoke",
+            "WORLDOS_PLAY_PORT": "8765",
+            "WORLDOS_PLAY_COMPANIONS": "",
+            "WORLDOS_PLAYER_MOVES": str(moves),
         }
     )
 

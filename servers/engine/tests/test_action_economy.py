@@ -7,7 +7,7 @@ import server
 
 @pytest.fixture
 def combat(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_adventure("cellar-rats")["campaign_id"]
     ids = [
         server.create_character(cid, n, kind=k, max_hp=10, armor_class=12)["id"]

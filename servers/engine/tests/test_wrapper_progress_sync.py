@@ -10,8 +10,8 @@ strings or the repair silently regresses:
     ``qa/dm_narration_fallback.py`` (a stdlib-only standalone script).
   - ``viewer/openworlds/screen-table.jsx``  — ``_WRAPPER_PROGRESS_LINES`` (sanitize drops
     these from rendering; app.jsx flips the live-progress state on them at /events ingest).
-  - ``qa/lib_beat_driver.sh``               — ``CLAWDND_OPENING_PROGRESS_TEXT`` +
-    ``CLAWDND_MOVE_PROGRESS_TEXTS`` (the claude-DM wrappers' emit rotation).
+  - ``qa/lib_beat_driver.sh``               — ``WORLDOS_OPENING_PROGRESS_TEXT`` +
+    ``WORLDOS_MOVE_PROGRESS_TEXTS`` (the claude-DM wrappers' emit rotation).
   - ``scripts/play_codex_dm.sh``            — ``OPENING_PROGRESS_TEXT`` +
     ``MOVE_PROGRESS_TEXTS`` (the codex-DM wrapper's emit rotation).
 
@@ -103,11 +103,11 @@ def test_jsx_exports_shared_window_constant():
 
 def test_lib_beat_driver_rotation_matches_python():
     opening, moves = _sh_rotation(
-        LIB_BEAT_DRIVER, "CLAWDND_OPENING_PROGRESS_TEXT", "CLAWDND_MOVE_PROGRESS_TEXTS"
+        LIB_BEAT_DRIVER, "WORLDOS_OPENING_PROGRESS_TEXT", "WORLDOS_MOVE_PROGRESS_TEXTS"
     )
     assert opening == wrapper_progress.WRAPPER_OPENING_PROGRESS_LINE
     assert moves == list(wrapper_progress.WRAPPER_MOVE_PROGRESS_LINES), (
-        "qa/lib_beat_driver.sh CLAWDND_MOVE_PROGRESS_TEXTS drifted from wrapper_progress.py "
+        "qa/lib_beat_driver.sh WORLDOS_MOVE_PROGRESS_TEXTS drifted from wrapper_progress.py "
         "(order matters: the emit rotation indexes by beat)"
     )
 

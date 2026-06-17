@@ -32,7 +32,7 @@ WORLD = "baldurs-gate"
 
 
 def _seed(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     c = content.seed_world(content.load_world_data(WORLD))
     server.save_campaign(c)
     return c

@@ -2,7 +2,7 @@
 # WorldOS AI PLAYTESTER — the BUILT .app surface (§8.2, P0). Issue: WorldOS-OPERATING-GOAL.md.
 #
 # WHY THIS EXISTS (the failure §0 of the operating goal): qa/ui_playtest.sh boots its OWN
-# viewer/server.py with CLAWDND_PLAYER_MOVES set → can_act:true → a PLAYABLE surface the
+# viewer/server.py with WORLDOS_PLAYER_MOVES set → can_act:true → a PLAYABLE surface the
 # harness wires up for itself. The shipped dist/WorldOS.app launches the viewer WITHOUT that
 # env → read-only "director's view" → a surface the user can NEVER reach by launching the app.
 # Every "all green" run there tested the wrong thing. THIS harness tests the BUILT .app surface
@@ -28,7 +28,7 @@
 #   (B) PERSONA LOOP — the playable surface the .app reaches once #356 mints the session.
 #       Launch scripts/play_party.sh <world> <run> <port> (the EXACT command the native
 #       startProviderSession bridge shells; solo → execs scripts/play.sh, which boots a LIVE
-#       viewer with CLAWDND_PLAYER_MOVES set + its own DM cold-open + DM resolver loop). Then
+#       viewer with WORLDOS_PLAYER_MOVES set + its own DM cold-open + DM resolver loop). Then
 #       drive that viewer with the real Playwright palette as <persona> for <beats> moves. This
 #       is byte-identical backend to the .app — the honest play surface, NOT a harness-only port.
 #
@@ -50,7 +50,7 @@
 #                               an operator can continue a short built-app gameplay playtest.
 #                               Also waits for first-turn readiness: seated actor, enabled actions,
 #                               and visible narration/chat, not merely can_act:true.
-#   WORLDOS_DM_MODEL           DM model (default opus — DECIDED 2026-06-06, see docs/MODEL-TIERING-STRATEGY.md). CLAWDND_PLAY_BUDGET caps each DM turn.
+#   WORLDOS_DM_MODEL           DM model (default opus — DECIDED 2026-06-06, see docs/MODEL-TIERING-STRATEGY.md). WORLDOS_PLAY_BUDGET caps each DM turn.
 #
 # Produces under qa/ui_playtest_runs/<run>/:
 #   native/  before.png after.png transition.json transition.log       (part A)
@@ -81,7 +81,7 @@ CODEX_HOME_FOR_APP="${WOS_APP_CODEX_HOME:-${CODEX_HOME:-}}"
 # on. lib_beat_driver.sh is already sourced (line 62), so worldos_dm_timeout is in scope. The
 # WORLDOS_COLDOPEN_TIMEOUT env flows through worldos_dm_timeout; the explicit
 # WOS_APP_PART_A_DEADLINE override still wins (fast inner loops).
-_part_a_coldopen_tier="$(CLAWDND_DM_MODEL="$(worldos_env DM_MODEL opus)" worldos_dm_timeout 1)"
+_part_a_coldopen_tier="$(WORLDOS_DM_MODEL="$(worldos_env DM_MODEL opus)" worldos_dm_timeout 1)"
 case "$_part_a_coldopen_tier" in ''|*[!0-9]*) _part_a_coldopen_tier=500 ;; esac
 PART_A_DEADLINE="${WOS_APP_PART_A_DEADLINE:-$(( _part_a_coldopen_tier + 90 ))}"
 # Launcher-viewer readiness window (seconds). The .app's built-in viewer must answer
@@ -364,7 +364,7 @@ PART_A_RESULT="skipped"; PART_A_MINTED_PORT=""; PART_A_RUNDIR=""; PART_A_KEPT_BA
 seed_native_launcher_state() {
   rm -rf "$NATIVE_LAUNCHER_STATE_DIR"
   mkdir -p "$NATIVE_LAUNCHER_STATE_DIR"
-  CLAWDND_STATE_DIR="$NATIVE_LAUNCHER_STATE_DIR" WORLDOS_STATE_DIR="$NATIVE_LAUNCHER_STATE_DIR" \
+  WORLDOS_STATE_DIR="$NATIVE_LAUNCHER_STATE_DIR" \
     uv run --directory "$ROOT/servers/engine" python - "$WORLD" > "$NATIVE_DIR/launcher-state-seed.json" <<'PY'
 import json
 import sys
@@ -848,11 +848,11 @@ run_part_b() {
   local b_url="http://127.0.0.1:$b_port/openworlds/"
   log "[B] launching faithful backend: provider=$PART_B_PROVIDER run=$b_run port=$b_port DM=$DM_MODEL"
 
-  # Cap the backend so it can never overshoot the run budget. CLAWDND_PLAY_SESSION_BUDGET is the
-  # aggregate DM ceiling; CLAWDND_PLAY_MAX_TURNS bounds turns; per-turn cap keeps each beat small.
+  # Cap the backend so it can never overshoot the run budget. WORLDOS_PLAY_SESSION_BUDGET is the
+  # aggregate DM ceiling; WORLDOS_PLAY_MAX_TURNS bounds turns; per-turn cap keeps each beat small.
   local sess_cap; sess_cap="$(awk -v r="$player_budget" 'BEGIN{c=r-0.20; if(c<0.50)c=0.50; printf "%.2f", c}')"
   local codex_default_model
-  codex_default_model="${CLAWDND_CODEX_MODEL:-}"
+  codex_default_model="${WORLDOS_CODEX_MODEL:-}"
   local part_b_provider_family part_b_auth_surface part_b_dm_model part_b_player_model part_b_scorer_provider part_b_scorer_model
   part_b_provider_family="$(provider_family "$PART_B_PROVIDER")"
   part_b_auth_surface="$(provider_auth_surface "$PART_B_PROVIDER")"
@@ -876,30 +876,30 @@ run_part_b() {
     claude)
       (
         export PATH="$PATH_NOOPEN"
-        export WORLDOS_DM_MODEL="$DM_MODEL" CLAWDND_DM_MODEL="$DM_MODEL"
-        export CLAWDND_PLAY_PORT="$b_port"
+        export WORLDOS_DM_MODEL="$DM_MODEL"
+        export WORLDOS_PLAY_PORT="$b_port"
         # Per-turn cap scales to the DM model: the Opus max-effort cold-open world-build needs ~$12;
         # the Sonnet-tuned $1.50 cap trips error_max_budget_usd on the Opus cold-open → no PC seated.
         # CAP, not spend — routine beats spend far less; sess_cap still bounds total DM spend.
-        case "$DM_MODEL" in *opus*) : "${CLAWDND_PLAY_BUDGET:=12.00}" ;; *) : "${CLAWDND_PLAY_BUDGET:=1.50}" ;; esac
-        export CLAWDND_PLAY_BUDGET
-        export CLAWDND_PLAY_SESSION_BUDGET="$sess_cap"
-        export CLAWDND_PLAY_MAX_TURNS="${CLAWDND_PLAY_MAX_TURNS:-$((BEATS + 4))}"
-        export CLAWDND_PLAY_MAX_IDLE="${CLAWDND_PLAY_MAX_IDLE:-600}"
+        case "$DM_MODEL" in *opus*) : "${WORLDOS_PLAY_BUDGET:=12.00}" ;; *) : "${WORLDOS_PLAY_BUDGET:=1.50}" ;; esac
+        export WORLDOS_PLAY_BUDGET
+        export WORLDOS_PLAY_SESSION_BUDGET="$sess_cap"
+        export WORLDOS_PLAY_MAX_TURNS="${WORLDOS_PLAY_MAX_TURNS:-$((BEATS + 4))}"
+        export WORLDOS_PLAY_MAX_IDLE="${WORLDOS_PLAY_MAX_IDLE:-600}"
         exec "$ROOT/scripts/play_party.sh" "$WORLD" "$b_run" "$b_port" >> "$RUNDIR/backend.log" 2>&1
       ) &
       ;;
     codex)
       (
         export PATH="$PATH_NOOPEN"
-        export CLAWDND_PROVIDER=codex
-        export CLAWDND_WORLD="$WORLD"
-        export CLAWDND_RUN_ID="$b_run"
-        export CLAWDND_PLAY_PORT="$b_port"
-        export CLAWDND_PLAY_BUDGET="${CLAWDND_PLAY_BUDGET:-1.50}"
-        export CLAWDND_PLAY_SESSION_BUDGET="$sess_cap"
-        export CLAWDND_PLAY_MAX_TURNS="${CLAWDND_PLAY_MAX_TURNS:-$((BEATS + 4))}"
-        export CLAWDND_CODEX_MODEL="$part_b_dm_model"
+        export WORLDOS_PROVIDER=codex
+        export WORLDOS_WORLD="$WORLD"
+        export WORLDOS_RUN_ID="$b_run"
+        export WORLDOS_PLAY_PORT="$b_port"
+        export WORLDOS_PLAY_BUDGET="${WORLDOS_PLAY_BUDGET:-1.50}"
+        export WORLDOS_PLAY_SESSION_BUDGET="$sess_cap"
+        export WORLDOS_PLAY_MAX_TURNS="${WORLDOS_PLAY_MAX_TURNS:-$((BEATS + 4))}"
+        export WORLDOS_CODEX_MODEL="$part_b_dm_model"
         export WORLDOS_CODEX_MODEL="$part_b_dm_model"
         exec "$ROOT/scripts/play_codex_dm.sh" >> "$RUNDIR/backend.log" 2>&1
       ) &
@@ -981,8 +981,8 @@ import json, sys
 pw_dir, url, rundir, channel, persona, out = sys.argv[1:7]
 json.dump({"mcpServers": {"worldos-uiplayer": {
     "command": "node", "args": [f"{pw_dir}/palette_server.js"],
-    "env": {"CLAWDND_UIPT_URL": url, "CLAWDND_UIPT_RUNDIR": rundir,
-            "CLAWDND_UIPT_CHANNEL": channel, "CLAWDND_UIPT_PERSONA": persona},
+    "env": {"WORLDOS_UIPT_URL": url, "WORLDOS_UIPT_RUNDIR": rundir,
+            "WORLDOS_UIPT_CHANNEL": channel, "WORLDOS_UIPT_PERSONA": persona},
 }}}, open(out, "w"))
 PY
 
@@ -1006,12 +1006,12 @@ EOF
       ;;
     codex)
       : > "$player_last"
-      export CLAWDND_UIPT_URL="$b_url"
-      export CLAWDND_UIPT_RUNDIR="$RUNDIR"
+      export WORLDOS_UIPT_URL="$b_url"
+      export WORLDOS_UIPT_RUNDIR="$RUNDIR"
       local uipt_channel
       uipt_channel="$(worldos_env UIPT_CHANNEL "")"
-      export CLAWDND_UIPT_CHANNEL="$uipt_channel"
-      export CLAWDND_UIPT_PERSONA="$PERSONA"
+      export WORLDOS_UIPT_CHANNEL="$uipt_channel"
+      export WORLDOS_UIPT_PERSONA="$PERSONA"
       local codex_player_model
       codex_player_model="$part_b_player_model"
       local codex_player_model_args=()
@@ -1036,7 +1036,7 @@ EOF
         --output-last-message "$player_last" \
         -c "mcp_servers.worldos-uiplayer.command=\"node\"" \
         -c "mcp_servers.worldos-uiplayer.args=[\"$PW_DIR/palette_server.js\"]" \
-        -c "mcp_servers.worldos-uiplayer.env_vars=[\"CLAWDND_UIPT_URL\",\"CLAWDND_UIPT_RUNDIR\",\"CLAWDND_UIPT_CHANNEL\",\"CLAWDND_UIPT_PERSONA\"]" \
+        -c "mcp_servers.worldos-uiplayer.env_vars=[\"WORLDOS_UIPT_URL\",\"WORLDOS_UIPT_RUNDIR\",\"WORLDOS_UIPT_CHANNEL\",\"WORLDOS_UIPT_PERSONA\"]" \
         -c "mcp_servers.worldos-uiplayer.required=true" \
         -c "mcp_servers.worldos-uiplayer.default_tools_approval_mode=\"approve\"" \
         -c "mcp_servers.worldos-uiplayer.enabled_tools=[\"screenshot\",\"a11y_tree\",\"click\",\"type\",\"key\",\"wait\",\"report_bug\",\"give_up\",\"finish\"]" \
@@ -1238,7 +1238,7 @@ TOP_AUTH_SURFACE="$(provider_auth_surface "$PART_B_PROVIDER")"
 TOP_DM_MODEL="$DM_MODEL"
 TOP_PLAYER_MODEL="$PLAYER_MODEL"
 if [ "$PART_B_PROVIDER" = "codex" ]; then
-  _codex_default="${CLAWDND_CODEX_MODEL:-}"
+  _codex_default="${WORLDOS_CODEX_MODEL:-}"
   TOP_DM_MODEL="${WOS_APP_CODEX_DM_MODEL:-${_codex_default:-gpt-5.5}}"
   TOP_PLAYER_MODEL="${WOS_APP_CODEX_PLAYER_MODEL:-${_codex_default:-gpt-5.5}}"
 fi

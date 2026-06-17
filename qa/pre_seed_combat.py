@@ -31,7 +31,7 @@ next batch of real engine/adherence gaps. The Angry-DM rubric's section 8 docks 
     ~3-5 rounds (the XP-award path validates) while staying non-trivial.
 
 Usage (from repo root):
-    CLAWDND_STATE_DIR=<dir> uv run --directory servers/engine python qa/pre_seed_combat.py <state_dir>
+    WORLDOS_STATE_DIR=<dir> uv run --directory servers/engine python qa/pre_seed_combat.py <state_dir>
 """
 from __future__ import annotations
 
@@ -47,7 +47,7 @@ def main() -> None:
         sys.exit(1)
 
     state_dir = sys.argv[1]
-    os.environ["CLAWDND_STATE_DIR"] = state_dir
+    os.environ["WORLDOS_STATE_DIR"] = state_dir
 
     # Add the engine root to sys.path so `import server` works when this script
     # is invoked via `uv run --directory servers/engine python <abs-path>/qa/pre_seed_combat.py`.

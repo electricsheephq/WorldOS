@@ -262,7 +262,7 @@ def test_a3_downgraded_to_warn_in_combat_sprint(tmp_path):
         "characters": {"m1": {"name": "Captain", "kind": "monster", "current_hp": 34, "dead": False}},
         "events": [],
     }
-    env = dict(os.environ, CLAWDND_GATE_COMBAT_SPRINT="1")
+    env = dict(os.environ, WORLDOS_GATE_COMBAT_SPRINT="1")
     rc, out = _run_gate(tmp_path, events, state, env=env)
     assert rc == 0, out  # sprint lane → WARN, not RED
 
@@ -653,11 +653,11 @@ def test_structural_completeness_silent_on_short_session(tmp_path):
 
 def test_structural_completeness_silent_in_combat_sprint(tmp_path):
     import os
-    # The combat-sprint lane sets CLAWDND_GATE_COMBAT_SPRINT — a 1-location pre-seeded fight
+    # The combat-sprint lane sets WORLDOS_GATE_COMBAT_SPRINT — a 1-location pre-seeded fight
     # legitimately never moves approval/quests, so the structural floor must skip.
     events = _dm_text_turns(12)
     state = _frozen_run_state(approval_moved=False, active_quest=True)
-    env = dict(os.environ, CLAWDND_GATE_COMBAT_SPRINT="1")
+    env = dict(os.environ, WORLDOS_GATE_COMBAT_SPRINT="1")
     rc, out = _run_gate(tmp_path, events, state, env=env)
     assert rc == 0, out
     assert "structural_completeness" not in out

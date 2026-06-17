@@ -22,7 +22,7 @@ fail=0
 chk() { if eval "$2"; then echo "PASS: $1"; else echo "FAIL: $1"; fail=1; fi; }
 
 # (1) First acquire on a free checkout succeeds and records OUR pid.
-CLAWDND_LAUNCH_LOCK_WAIT=0 worldos_acquire_launch_lock "$TMP"; rc=$?
+WORLDOS_LAUNCH_LOCK_WAIT=0 worldos_acquire_launch_lock "$TMP"; rc=$?
 chk "first acquire succeeds (rc=0)"            '[ "$rc" = 0 ]'
 chk "lock dir + pid file created"              '[ -f "$LOCK/pid" ]'
 chk "pid file records our pid"                 '[ "$(cat "$LOCK/pid")" = "$$" ]'
@@ -31,7 +31,7 @@ chk "pid file records our pid"                 '[ "$(cat "$LOCK/pid")" = "$$" ]'
 sleep 60 & holder=$!
 printf '%s\n' "$holder" > "$LOCK/pid"          # pretend a different live cold-open (pid=$holder) owns it
 start=$SECONDS
-CLAWDND_LAUNCH_LOCK_WAIT=1 worldos_acquire_launch_lock "$TMP" 2>"$TMP/err"; rc=$?
+WORLDOS_LAUNCH_LOCK_WAIT=1 worldos_acquire_launch_lock "$TMP" 2>"$TMP/err"; rc=$?
 elapsed=$((SECONDS - start))
 chk "live holder → second acquire rejected (rc!=0)"  '[ "$rc" != 0 ]'
 chk "rejection message names the running cold-open"  'grep -q "already running" "$TMP/err"'
@@ -43,7 +43,7 @@ chk "live holder lock NOT stolen (pid unchanged)"    '[ "$(cat "$LOCK/pid")" = "
 kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null   # holder now definitively dead
 chk "precondition: dead holder pid is gone"          '! kill -0 "$holder" 2>/dev/null'
 chk "stale lock left behind (holder never released)" '[ "$(cat "$LOCK/pid" 2>/dev/null)" = "$holder" ]'
-CLAWDND_LAUNCH_LOCK_WAIT=1 worldos_acquire_launch_lock "$TMP" 2>"$TMP/err2"; rc=$?
+WORLDOS_LAUNCH_LOCK_WAIT=1 worldos_acquire_launch_lock "$TMP" 2>"$TMP/err2"; rc=$?
 chk "stale (dead-holder) lock reclaimed → acquire ok" '[ "$rc" = 0 ]'
 chk "reclaimed lock now records our pid"              '[ "$(cat "$LOCK/pid")" = "$$" ]'
 
@@ -54,13 +54,13 @@ mkdir -p "$LOCK"; printf '%s\n' "424242" > "$LOCK/pid"   # a lock owned by someo
 worldos_release_launch_lock "$TMP"
 chk "non-owner release is a no-op (lock survives)"   '[ "$(cat "$LOCK/pid" 2>/dev/null)" = "424242" ]'
 rm -rf "$LOCK"
-CLAWDND_LAUNCH_LOCK_WAIT=0 worldos_acquire_launch_lock "$TMP"; rc=$?
+WORLDOS_LAUNCH_LOCK_WAIT=0 worldos_acquire_launch_lock "$TMP"; rc=$?
 chk "acquire succeeds again after a clean release"   '[ "$rc" = 0 ]'
 
 # (5) Non-contention mkdir failures fail FAST — must never spin forever (CodeRabbit on #564).
 #  (a) play-state cannot be created (ROOT is a regular file) → up-front guard rejects, no hang.
 notdir="$TMP/iam-a-file"; : > "$notdir"
-CLAWDND_LAUNCH_LOCK_WAIT=0 worldos_acquire_launch_lock "$notdir" 2>"$TMP/err5a"; rc=$?
+WORLDOS_LAUNCH_LOCK_WAIT=0 worldos_acquire_launch_lock "$notdir" 2>"$TMP/err5a"; rc=$?
 chk "uncreatable play-state → acquire fails (rc!=0)"  '[ "$rc" != 0 ]'
 chk "...with a clear 'could not create' message"      'grep -q "could not create" "$TMP/err5a"'
 #  (b) play-state exists but the lock dir is uncreatable (read-only) → in-loop guard rejects fast
@@ -68,7 +68,7 @@ chk "...with a clear 'could not create' message"      'grep -q "could not create
 #      Needs non-root (root bypasses directory permissions), so skip there.
 if [ "$(id -u)" != 0 ]; then
   ro="$TMP/ro"; mkdir -p "$ro/play-state"; chmod 555 "$ro/play-state"
-  ( CLAWDND_LAUNCH_LOCK_WAIT=0 worldos_acquire_launch_lock "$ro" >/dev/null 2>>"$TMP/err5b"; echo "$?" > "$TMP/rc5b" ) &
+  ( WORLDOS_LAUNCH_LOCK_WAIT=0 worldos_acquire_launch_lock "$ro" >/dev/null 2>>"$TMP/err5b"; echo "$?" > "$TMP/rc5b" ) &
   bpid=$!
   for _ in $(seq 1 50); do kill -0 "$bpid" 2>/dev/null || break; sleep 0.1; done
   if kill -0 "$bpid" 2>/dev/null; then
@@ -93,7 +93,7 @@ chk "play.sh acquire precedes the viewer supervisor"  '[ "$(grep -n "worldos_acq
 
 # (7) F12-13: play.sh has an IDLE CEILING (was spinning `sleep 2` forever with no player). Static +
 #     a hermetic runtime check of the idle-break logic extracted VERBATIM from play.sh's loop tail.
-chk "play.sh defines MAX_IDLE from CLAWDND_PLAY_MAX_IDLE" 'grep -q "MAX_IDLE=.*CLAWDND_PLAY_MAX_IDLE" "$PLAY"'
+chk "play.sh defines MAX_IDLE from WORLDOS_PLAY_MAX_IDLE" 'grep -q "MAX_IDLE=.*WORLDOS_PLAY_MAX_IDLE" "$PLAY"'
 chk "play.sh idle-break echoes the stop reason"       'grep -q "idle .* with no player move — stopping" "$PLAY"'
 # Hermetic idle-break: mirror the loop's else-branch (no claude/viewer). With MAX_IDLE=1 and no move,
 # the loop must BREAK within a few seconds, not spin forever. A watchdog turns a regression into a

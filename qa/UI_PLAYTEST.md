@@ -192,8 +192,8 @@ npx playwright install chromium  # ONLY if chromium isn't already cached (it oft
 - The bugs this finds are **the point** — record them; do **not** fix WorldOS UI bugs from a
   playtest run. File them as issues.
 - Constraints honored: the engine (`servers/engine/`) is the **sole writer**; the harness only
-  reads viewer surfaces + drives the UI / `/move`. No wire-contract changes (`CLAWDND_*` env,
-  `clawdnd-*` MCP ids, bundle id). No assets / `_private/` committed.
+  reads viewer surfaces + drives the UI / `/move`. No wire-contract changes (`WORLDOS_*` env,
+  `worldos-*` MCP ids, bundle id). No assets / `_private/` committed.
 - v2 adds the other four personas (BG3 veteran, adversarial QA, storyteller, min-maxer) + the
   cross-persona scoring aggregator (`qa/ui_playtest_aggregate.py`). The sweep runs **serially**
   on this 16 GB host (concurrent heavy DM runs OOM it); a true parallel panel needs a bigger

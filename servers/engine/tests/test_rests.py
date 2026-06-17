@@ -134,7 +134,7 @@ def test_long_rest_hit_dice_cap_and_exhaustion_floor():
 
 # --- tools persist ---
 def test_rest_tools_persist(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("R")["id"]
     w = server.create_character(cid, "Gale", kind="player", class_name="Wizard",
                                 apply_srd_defaults=True,
@@ -147,7 +147,7 @@ def test_rest_tools_persist(tmp_path, monkeypatch):
 # --- long rest advances the in-world clock (a confirmed cause of campaigns
 # frozen at day=1: the tool restored resources but never rolled the calendar) ---
 def test_long_rest_from_evening_rolls_into_next_morning(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Clock")["id"]
     c = server._require(cid)
     c.day, c.time_of_day = 1, "evening"  # bed down at dusk on day 1
@@ -169,7 +169,7 @@ def test_long_rest_from_evening_rolls_into_next_morning(tmp_path, monkeypatch):
 def test_long_rest_at_morning_is_a_clock_no_op(tmp_path, monkeypatch):
     # A long rest taken when it is already morning leaves the clock at this morning —
     # so the "call long_rest for each party member" pattern doesn't burn a day per PC.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Clock2")["id"]
     c = server._require(cid)
     assert (c.day, c.time_of_day) == (1, "morning")  # fresh-campaign baseline
@@ -183,7 +183,7 @@ def test_long_rest_whole_party_converges_on_one_morning(tmp_path, monkeypatch):
     # The documented usage: the DM calls long_rest for EACH party member after an
     # overnight. The first call rolls evening -> next morning; subsequent members
     # resting that same morning must NOT each advance another day.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Clock3")["id"]
     c = server._require(cid)
     c.day, c.time_of_day = 3, "evening"

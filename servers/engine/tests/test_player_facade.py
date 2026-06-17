@@ -89,7 +89,7 @@ def test_validate_item_is_scoped_to_inventory():
 
 def test_say_and_do_append_structured_moves(tmp_path, monkeypatch):
     moves = tmp_path / "moves.jsonl"
-    monkeypatch.setenv("CLAWDND_PLAYER_MOVES", str(moves))
+    monkeypatch.setenv("WORLDOS_PLAYER_MOVES", str(moves))
     assert ps.say("'the name, and forty gold'")["ok"] is True
     assert ps.do("I put my back to the wall and palm a dagger")["ok"] is True
     rows = [json.loads(x) for x in moves.read_text(encoding="utf-8").splitlines()]
@@ -98,8 +98,8 @@ def test_say_and_do_append_structured_moves(tmp_path, monkeypatch):
 
 
 def test_cast_and_use_refused_without_a_character(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))  # empty state -> no campaign
-    monkeypatch.setenv("CLAWDND_PLAYER_MOVES", str(tmp_path / "m.jsonl"))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))  # empty state -> no campaign
+    monkeypatch.setenv("WORLDOS_PLAYER_MOVES", str(tmp_path / "m.jsonl"))
     assert ps.cast_spell("Fireball")["ok"] is False
     assert ps.use_item("Rope")["ok"] is False
     # but a pure-narrative move still records (no sheet needed)
@@ -110,7 +110,7 @@ def test_clarify_emits_a_question_move_and_caps_per_turn(tmp_path, monkeypatch):
     # clarify lets the player ASK the DM before acting — a question move, not an action, and
     # bounded so it can't become a forever ping-pong. No sheet needed (it's just a question).
     moves = tmp_path / "moves.jsonl"
-    monkeypatch.setenv("CLAWDND_PLAYER_MOVES", str(moves))
+    monkeypatch.setenv("WORLDOS_PLAYER_MOVES", str(moves))
     assert ps.clarify("Is the guard armed?")["ok"] is True
     assert ps.clarify("How far is the door?")["ok"] is True
     assert ps.clarify("Do I recognize this sigil?")["ok"] is True

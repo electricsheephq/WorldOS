@@ -32,7 +32,7 @@ def _pc(cid, name="Hero", **kw):
 # F04-3 — one long rest per 24h (calendar day) guard
 # =========================================================================
 def test_f04_3_second_long_rest_same_day_is_refused(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Guard")["id"]
     c = server._require(cid)
     c.day, c.time_of_day = 3, "evening"
@@ -53,7 +53,7 @@ def test_f04_3_second_long_rest_same_day_is_refused(tmp_path, monkeypatch):
 def test_f04_3_blocked_rest_does_not_clear_exhaustion(tmp_path, monkeypatch):
     # The exploit: at morning a rest costs 0 clock time, so 6 rests would clear exhaustion
     # 6->0 instantly. The guard stops the chain after the first.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Exhaust")["id"]
     pc = _pc(cid, "Worn")
     ch = server._require(cid)
@@ -68,7 +68,7 @@ def test_f04_3_blocked_rest_does_not_clear_exhaustion(tmp_path, monkeypatch):
 
 
 def test_f04_3_next_day_rest_is_allowed(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("NextDay")["id"]
     c = server._require(cid)
     c.day, c.time_of_day = 1, "evening"
@@ -85,7 +85,7 @@ def test_f04_3_party_still_converges_on_one_morning(tmp_path, monkeypatch):
     # Per-character stamps must NOT break the documented convergence: each member rests once
     # the same overnight and they all land on a single dawn (the guard only blocks a REPEAT
     # by the same member, never a different member resting that night).
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Converge")["id"]
     c = server._require(cid)
     c.day, c.time_of_day = 5, "night"
@@ -103,7 +103,7 @@ def test_f04_3_party_still_converges_on_one_morning(tmp_path, monkeypatch):
 # F04-4 — long rest clears temp HP and ends degraded-path concentration
 # =========================================================================
 def test_f04_4_long_rest_clears_temp_hp(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("TempHP")["id"]
     pc = _pc(cid, "Warded")
     c = server._require(cid)
@@ -121,7 +121,7 @@ def test_f04_4_long_rest_ends_degraded_path_concentration(tmp_path, monkeypatch)
     # concentration (only _commit_expiry of an effect does, and there is none) — so before this
     # fix it survived the night. Rest at MORNING (steps == 0) so the clock sweep can't even run a
     # phase advance — isolating the new rest-seam clear as the only thing that ends it.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Conc")["id"]
     pc = _pc(cid, "Focused")
     c = server._require(cid)
@@ -138,7 +138,7 @@ def test_f04_4_long_rest_ends_degraded_path_concentration(tmp_path, monkeypatch)
 def test_f04_4_long_rest_ends_twinned_concentration_and_names_it(tmp_path, monkeypatch):
     # The twinned path is already handled by the clock sweep, but the rest seam must surface the
     # released effect name in expired_effects regardless of which path cleared it.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Conc2")["id"]
     pc = _pc(cid, "Bound")
     c = server._require(cid)
@@ -165,7 +165,7 @@ def test_f04_4_rests_helper_clears_temp_hp_unit():
 # F04-5 — downtime(0)/negative is a no-op, not a clock rewind
 # =========================================================================
 def test_f04_5_downtime_zero_does_not_rewind_clock(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("DT0")["id"]
     c = server._require(cid)
     c.day, c.time_of_day = 3, "night"  # the bug: this would become day-3 MORNING (backward)
@@ -177,7 +177,7 @@ def test_f04_5_downtime_zero_does_not_rewind_clock(tmp_path, monkeypatch):
 
 
 def test_f04_5_downtime_negative_does_not_rewind_clock(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("DTneg")["id"]
     c = server._require(cid)
     c.day, c.time_of_day = 4, "evening"
@@ -190,7 +190,7 @@ def test_f04_5_downtime_negative_does_not_rewind_clock(tmp_path, monkeypatch):
 def test_f04_5_downtime_zero_does_not_fire_a_due_thread(tmp_path, monkeypatch):
     # worldsim.tick fires a thread-beat whenever trigger_day <= day regardless of elapsed, so a
     # 0-day downtime must NOT consume (and re-arm) a standing thread beat.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("DTthread")["id"]
     c = server._require(cid)
     c.day = 5
@@ -204,7 +204,7 @@ def test_f04_5_downtime_zero_does_not_fire_a_due_thread(tmp_path, monkeypatch):
 
 
 def test_f04_5_downtime_positive_still_advances(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("DT2")["id"]
     c = server._require(cid)
     c.day, c.time_of_day = 2, "evening"
@@ -220,7 +220,7 @@ def test_f04_5_downtime_positive_still_advances(tmp_path, monkeypatch):
 def test_f04_6_add_location_advance_expires_stale_effects(tmp_path, monkeypatch):
     # A minutes-scale effect on the party member should die when add_location advances the
     # clock (previously it survived because the seam skipped the expiry sweep).
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("AL")["id"]
     pc = _pc(cid, "Caster")
     server.add_location(cid, "Start", make_current=True)
@@ -237,7 +237,7 @@ def test_f04_6_add_location_advance_expires_stale_effects(tmp_path, monkeypatch)
 
 def test_f04_6_add_location_no_advance_is_byte_identical(tmp_path, monkeypatch):
     # The non-advancing path must NOT grow the new sibling keys (additive-only on advance).
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("AL2")["id"]
     server.add_location(cid, "Hub", make_current=True)
     out = server.add_location(cid, "Side Room", make_current=True, advance_time=False,
@@ -249,7 +249,7 @@ def test_f04_6_add_location_no_advance_is_byte_identical(tmp_path, monkeypatch):
 def test_f04_6_add_location_advance_can_stage_wander(tmp_path, monkeypatch):
     # With a forced encounter roll, the advance path stages a destination wandering encounter
     # (mirroring travel_to) — previously this seam never rolled one.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     monkeypatch.setattr(wander, "roll_encounter", lambda *a, **k: True)
     cid = server.create_campaign("ALwander")["id"]
     _pc(cid, "Scout", abilities={"constitution": 14})
@@ -264,7 +264,7 @@ def test_f04_6_add_location_advance_can_stage_wander(tmp_path, monkeypatch):
 # F04-7 — long_rest ticks the world once per overnight
 # =========================================================================
 def test_f04_7_long_rest_ticks_the_world(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Tick")["id"]
     c = server._require(cid)
     c.day, c.time_of_day = 4, "evening"
@@ -284,7 +284,7 @@ def test_f04_7_long_rest_ticks_the_world(tmp_path, monkeypatch):
 
 def test_f04_7_morning_rest_does_not_tick(tmp_path, monkeypatch):
     # A second member's already-morning rest (steps == 0) must NOT re-tick the world.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Tick2")["id"]
     c = server._require(cid)
     c.day, c.time_of_day = 1, "morning"

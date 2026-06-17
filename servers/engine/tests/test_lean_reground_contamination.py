@@ -1,6 +1,6 @@
 """Regression: lean re-ground cross-chronicle contamination (issue #640).
 
-THE BUG (A/B-proven, 100% reproducible with CLAWDND_LEAN_BEATS=1): a continuing
+THE BUG (A/B-proven, 100% reproducible with WORLDOS_LEAN_BEATS=1): a continuing
 lean beat starts a FRESH transcript-free session and re-grounds from the engine's
 ``scene_context(campaign_id=…)``. The play/QA harnesses resolved that
 ``campaign_id`` by the LARGEST snapshot on disk
@@ -36,7 +36,7 @@ import store
 @pytest.fixture
 def state(tmp_path, monkeypatch):
     """A clean state dir, like the harness's freshly-wiped campaigns/ tree."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     return tmp_path
 
 

@@ -26,7 +26,7 @@ GREEN-lit:
    state. Seed the optimizer from it and it reads +6 and passes — while a real **seat-path**
    regression ships. The "optimizer catches skill-case" justification is **inverted**.
 2. **Combat reachability** (the actual G1 fail). `run_combat_sprint.sh` seeds a fight already standing
-   in the room and sets `CLAWDND_GATE_COMBAT_SPRINT=1`, which *turns off* the travel/rest progression
+   in the room and sets `WORLDOS_GATE_COMBAT_SPRINT=1`, which *turns off* the travel/rest progression
    floor (`assert_behavioral.py`). It proves the engine *resolves* a fight; it says nothing about
    whether a free-play persona ever *reaches* one — which was the real 0-combat failure.
 3. **Cross-persona variance** (the actual G3 fail). Real sweeps fail on the **veteran (sat=5)** or the

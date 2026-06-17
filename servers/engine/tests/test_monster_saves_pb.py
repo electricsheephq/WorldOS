@@ -56,7 +56,7 @@ def test_stat_block_pb_is_cr_derived():
 def test_spawned_dragon_keeps_printed_saves(tmp_path, monkeypatch):
     """Red-first marquee case: a spawned Adult Gold Dragon (CR 17) must make a DEX
     save at the PRINTED +8 (mod +2 + PB 6) — on main it rolled at the bare +2."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
     from models import Ability
 
@@ -159,7 +159,7 @@ def test_wander_spawn_parity_with_spawn_monster(tmp_path, monkeypatch):
     """Both spawn paths construct through the SAME factory: the wandering-encounter
     path must carry the identical PB / save flags / overrides / Parry as spawn_monster
     (the hand-rolled wander ctor had drifted — it silently lost Parry, audit F01-11)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
 
     cid = server.create_campaign("Wander Parity F01-2")["id"]

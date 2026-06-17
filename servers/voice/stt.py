@@ -1,7 +1,7 @@
 """Swappable speech-to-text (STT) layer for WorldOS — Epic 10.
 
 Mirrors the TTS design (see interface.py / adapters/): the server calls one tool,
-transcribe(audio_path), and a backend selected by CLAWDND_STT_BACKEND turns a
+transcribe(audio_path), and a backend selected by WORLDOS_STT_BACKEND turns a
 recorded audio file into text. Backends are interchangeable — a local engine
 (macOS dictation / whisper.cpp / faster-whisper) or a silent null backend for
 tests/CI — so swapping one out never touches game state.
@@ -12,7 +12,7 @@ imported lazily *inside* transcribe and stay OUT of the base install; selecting 
 real backend without its deps/inputs returns a clear "not configured" message
 rather than crashing the server.
 
-Selector: `select_backend()` reads CLAWDND_STT_BACKEND (default "null").
+Selector: `select_backend()` reads WORLDOS_STT_BACKEND (default "null").
 """
 
 from __future__ import annotations
@@ -92,7 +92,7 @@ class WhisperSttBackend:
     and would live in an `stt-whisper` dependency group, imported lazily below so
     this module (and backend selection) load without them.
 
-    Model size is read from CLAWDND_WHISPER_MODEL (default "base"). Until wired
+    Model size is read from WORLDOS_WHISPER_MODEL (default "base"). Until wired
     (or when deps/inputs are absent) it fails gracefully with a clear message.
     """
 
@@ -123,7 +123,7 @@ def backend_name() -> str:
 
 
 def select_backend() -> SttBackend:
-    """Construct the STT backend selected by CLAWDND_STT_BACKEND.
+    """Construct the STT backend selected by WORLDOS_STT_BACKEND.
 
     Unknown values fall back to the null backend so a misconfiguration never
     crashes the server. Backends are cheap to build (no heavy imports at

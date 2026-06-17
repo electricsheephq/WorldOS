@@ -779,7 +779,7 @@ def run_native_provider_gate(
     })
     if args.art_root:
         env["WORLDOS_ART_REPO_ROOT"] = args.art_root
-        env["CLAWDND_ART_REPO_ROOT"] = args.art_root
+        env["WORLDOS_ART_REPO_ROOT"] = args.art_root
     if provider == "scripted":
         env["WORLDOS_ENABLE_SCRIPTED_PROVIDER"] = "1"
     cmd = ["bash", str(ROOT / "qa" / "ui_playtest_app.sh"), native_run, args.world, "newbie", "1", budget]
@@ -903,7 +903,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--codex-timeout", type=float, default=180.0)
     parser.add_argument("--codex-budget", default="3.00")
     parser.add_argument("--scripted-budget", default="1.00")
-    parser.add_argument("--art-root", default=os.environ.get("WORLDOS_ART_REPO_ROOT") or os.environ.get("CLAWDND_ART_REPO_ROOT") or (str(DEFAULT_ART_ROOT) if DEFAULT_ART_ROOT.exists() else ""))
+    parser.add_argument("--art-root", default=os.environ.get("WORLDOS_ART_REPO_ROOT") or os.environ.get("WORLDOS_ART_REPO_ROOT") or (str(DEFAULT_ART_ROOT) if DEFAULT_ART_ROOT.exists() else ""))
     parser.add_argument("--skip-web", action="store_true")
     parser.add_argument("--skip-built-scripted", action="store_true")
     parser.add_argument("--skip-codex", action="store_true")

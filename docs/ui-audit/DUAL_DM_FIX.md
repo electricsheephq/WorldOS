@@ -31,10 +31,10 @@ exactly one sink.
 
 | Role | Lines | Notes |
 |------|-------|-------|
-| Viewer (engine + `/move` + `/chat`) | `qa/ui_playtest.sh:114-130` | `python3 viewer/server.py "" "$PORT"` wired with `CLAWDND_VIEWER_CHAT=$CHAT` + `CLAWDND_PLAYER_MOVES=$MOVES`. Port picked from 8990–8999. |
+| Viewer (engine + `/move` + `/chat`) | `qa/ui_playtest.sh:114-130` | `python3 viewer/server.py "" "$PORT"` wired with `WORLDOS_VIEWER_CHAT=$CHAT` + `WORLDOS_PLAYER_MOVES=$MOVES`. Port picked from 8990–8999. |
 | **DM agent (`claude -p`, full plugin)** | `qa/ui_playtest.sh:71-90, 132-145, 152-157` | Builds `$DM_CFG` rooted at `$ROOT/servers/*` + engine state dir = `$STATE_DIR`. `dm_turn()` runs `claude -p ... --plugin-dir "$ROOT" --mcp-config "$DM_CFG"`. The "opening" turn at L153 seats a PC + companion. |
 | **DM-resolver background loop** | `qa/ui_playtest.sh:159-183` | A `( ... ) &` subshell tailing `$MOVES`. Each new line → `dm_turn 0 "The player does: ..."` → `chatlog dm ...` → writes back to `$CHAT`. PID held in `$DMLOOP`. |
-| Playwright Player (`claude -p` with palette MCP only) | `qa/ui_playtest.sh:92-109, 185-201` | The `$PLAYER_CFG` MCP server (`palette_server.js`) is the agent's *only* tool surface. URL handed in via env (`CLAWDND_UIPT_URL`). |
+| Playwright Player (`claude -p` with palette MCP only) | `qa/ui_playtest.sh:92-109, 185-201` | The `$PLAYER_CFG` MCP server (`palette_server.js`) is the agent's *only* tool surface. URL handed in via env (`WORLDOS_UIPT_URL`). |
 
 The two **DM**-shaped artifacts to remove from `ui_playtest.sh` are:
 
@@ -51,10 +51,10 @@ env knob at `L39` all go with them.)
 | Role | Lines | Notes |
 |------|-------|-------|
 | Solo fallback (delegates to `scripts/play.sh`) | `scripts/play_party.sh:69-85` | When no companion-spec is given, `exec scripts/play.sh "${ARGS[@]}"`. **The solo path IS just `play.sh`** — same DM, same viewer, same move sink. |
-| Viewer supervisor | `scripts/play_party.sh:291-311` (party) and `scripts/play.sh:208-229` (solo) | Long-running supervised viewer at port 8765 (or `$CLAWDND_PLAY_PORT`, or `worldos_choose_port`). Same `CLAWDND_PLAYER_MOVES=$MOVES` + `CLAWDND_VIEWER_CHAT=$CHAT` wiring. PID file: `$STATE_DIR/.viewer.pid`. |
-| DM agent (full plugin) | `scripts/play_party.sh:113-128` (config), `215-233` (turn), `331-340` (opening) — and `scripts/play.sh:70-85, 183-192, 251-273` for solo. | Same `--plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config --model "$CLAWDND_DM_MODEL"` invocation. The opening turn seats a PC + companion live. |
+| Viewer supervisor | `scripts/play_party.sh:291-311` (party) and `scripts/play.sh:208-229` (solo) | Long-running supervised viewer at port 8765 (or `$WORLDOS_PLAY_PORT`, or `worldos_choose_port`). Same `WORLDOS_PLAYER_MOVES=$MOVES` + `WORLDOS_VIEWER_CHAT=$CHAT` wiring. PID file: `$STATE_DIR/.viewer.pid`. |
+| DM agent (full plugin) | `scripts/play_party.sh:113-128` (config), `215-233` (turn), `331-340` (opening) — and `scripts/play.sh:70-85, 183-192, 251-273` for solo. | Same `--plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config --model "$WORLDOS_DM_MODEL"` invocation. The opening turn seats a PC + companion live. |
 | Human-paced beat loop | `scripts/play_party.sh:393-450` (party), `scripts/play.sh:286-326` (solo) | Tails `$MOVES`. New line → companion turns (party only) → `turn dm ... "The player does: ..."` → narrates back to `$CHAT`. |
-| Idle ceiling | `scripts/play_party.sh:399-403, 444-447` (party only — solo `play.sh` has none, see L286-326) | Party loop stops after `CLAWDND_PLAY_MAX_IDLE` (default 1800s) with no human move; solo loop spins on `sleep 2` forever until Ctrl-C. |
+| Idle ceiling | `scripts/play_party.sh:399-403, 444-447` (party only — solo `play.sh` has none, see L286-326) | Party loop stops after `WORLDOS_PLAY_MAX_IDLE` (default 1800s) with no human move; solo loop spins on `sleep 2` forever until Ctrl-C. |
 
 ### The collision
 
@@ -107,7 +107,7 @@ qa/ui_playtest.sh
 ```
 
 The Player agent uses the **same** palette MCP server, but its
-`CLAWDND_UIPT_URL` env var is sourced from the handshake JSON written by
+`WORLDOS_UIPT_URL` env var is sourced from the handshake JSON written by
 `play_party.sh` (or `play.sh`) — not from a port `ui_playtest.sh` picked
 itself.
 
@@ -151,7 +151,7 @@ write_handshake() {
 import json, sys
 out, port, state, moves, chat, dsid = sys.argv[1:7]
 json.dump({
-    "schema": "clawdnd.play.handshake.v1",
+    "schema": "worldos.play.handshake.v1",
     "port": int(port),
     "url": f"http://127.0.0.1:{port}/openworlds/",
     "state_dir": state,
@@ -268,7 +268,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RUN="${1:-play-$(date +%H%M%S)}"
 PARENT="$ROOT/play-state/$RUN"
 mkdir -p "$PARENT"
-CLAWDND_PLAY_MAX_TURNS=40 CLAWDND_PLAY_MAX_IDLE=300 \
+WORLDOS_PLAY_MAX_TURNS=40 WORLDOS_PLAY_MAX_IDLE=300 \
   "$ROOT/scripts/play_party.sh" "${2:-baldurs-gate}" "$RUN" &
 PARENT_PID=$!
 trap 'kill $PARENT_PID 2>/dev/null' EXIT
@@ -368,7 +368,7 @@ Backwards-compatible rollout in three steps:
 ### Migration safety
 
 - The handshake file is JSON with a `schema` field
-  (`clawdnd.play.handshake.v1`). Future versions bump the schema; the
+  (`worldos.play.handshake.v1`). Future versions bump the schema; the
   attach-mode Player refuses to attach to an unknown schema.
 - The Player's wait-for-handshake loop has a 60s ceiling — if the parent
   never wrote one (old `play.sh` from before phase 1), the Player exits
@@ -418,7 +418,7 @@ Backwards-compatible rollout in three steps:
    `ui_playtest_score.py`. (Today the score doesn't read the chat, so this
    may be a no-op.)
 3. **Does the Eva / wizard authored-hero flow at `play.sh:100-180` interact
-   with attach-mode?** I assumed yes: if `CLAWDND_PLAY_HERO` is set, the
+   with attach-mode?** I assumed yes: if `WORLDOS_PLAY_HERO` is set, the
    parent pre-seeds an authored PC, and the Player discovers + plays it.
    No code change needed — but worth a one-line note in the handshake JSON
    (`"hero_authored": true`) so the Player's persona brief can adapt

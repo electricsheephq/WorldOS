@@ -16,23 +16,23 @@ cd "$ROOT" || exit 1
 . "$ROOT/qa/lib_beat_driver.sh"
 
 RUN="${1:-cs-$(date +%H%M%S)}"
-CLAWDND_DM_MODEL="$(worldos_env DM_MODEL opus)"
+WORLDOS_DM_MODEL="$(worldos_env DM_MODEL opus)"
 SCORE_SCRIPT="$(worldos_env SCORE_SCRIPT qa/score.sh)"
 # Combat runs the whole multi-round fight on ONE budget (pre-seeded, no cold-open). An Opus combat
 # costs ~5x a Sonnet one, so the Sonnet-tuned $1.50 cap cut it off mid-fight (observed 2026-06-06:
 # error_max_budget_usd at num_turns=26 / mid-Round 2 -> low coverage, mech 3.1). Scale to the model.
-case "$CLAWDND_DM_MODEL" in *opus*) CS_BUDGET="${CLAWDND_PLAY_BUDGET:-5.00}" ;; *) CS_BUDGET="${CLAWDND_PLAY_BUDGET:-1.50}" ;; esac
+case "$WORLDOS_DM_MODEL" in *opus*) CS_BUDGET="${WORLDOS_PLAY_BUDGET:-5.00}" ;; *) CS_BUDGET="${WORLDOS_PLAY_BUDGET:-1.50}" ;; esac
 T="$ROOT/qa/transcripts"
 STATE_DIR="$ROOT/qa/state/$RUN"
 mkdir -p "$T" "$STATE_DIR"
 rm -rf "$STATE_DIR/campaigns" 2>/dev/null
 
-echo "[cs] run=$RUN state=$STATE_DIR model=$CLAWDND_DM_MODEL"
+echo "[cs] run=$RUN state=$STATE_DIR model=$WORLDOS_DM_MODEL"
 
 # ── 1. Pre-seed (zero LLM) ───────────────────────────────────────────────────
 echo "[cs] pre-seeding campaign (zero LLM)…"
 SEED_JSON="$(
-  CLAWDND_STATE_DIR="$STATE_DIR" \
+  WORLDOS_STATE_DIR="$STATE_DIR" \
   uv run --directory "$ROOT/servers/engine" python "$ROOT/qa/pre_seed_combat.py" "$STATE_DIR" 2>"$T/$RUN.seed.err"
 )"
 if [ -z "$SEED_JSON" ]; then
@@ -51,7 +51,7 @@ import json, sys
 src, state_dir, root, out = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 cfg = json.load(open(src))
 eng = cfg["mcpServers"]["worldos-engine"]
-eng["env"]["CLAWDND_STATE_DIR"] = state_dir
+eng["env"]["WORLDOS_STATE_DIR"] = state_dir
 # Override --directory arg to use THIS worktree's engine (not the template default)
 args = eng.get("args", [])
 try:
@@ -73,11 +73,11 @@ PROMPT_TEMPLATE="$ROOT/qa/play_prompt_combat_sprint.txt"
 PROMPT="$(sed "s|{{SEED_JSON}}|${SEED_JSON}|g" "$PROMPT_TEMPLATE")"
 
 # ── 4. ONE claude -p DM call ─────────────────────────────────────────────────
-echo "[cs] running DM (claude -p, $CLAWDND_DM_MODEL)…"
+echo "[cs] running DM (claude -p, $WORLDOS_DM_MODEL)…"
 claude -p "$PROMPT" \
   --plugin-dir "$ROOT" \
   --mcp-config "$DM_CFG" --strict-mcp-config \
-  --model "$CLAWDND_DM_MODEL" \
+  --model "$WORLDOS_DM_MODEL" \
   --permission-mode bypassPermissions \
   --max-budget-usd "$CS_BUDGET" \
   --output-format stream-json --verbose \
@@ -105,7 +105,7 @@ fi
 echo "[cs] behavioral gate…"
 # Combat-sprint scope: skip the world-progression floor (a single pre-seeded fight in one place
 # legitimately never advances days/travels — see assert_behavioral.py). Combat checks still apply.
-CLAWDND_GATE_COMBAT_SPRINT=1 python3 qa/assert_behavioral.py "$T/$RUN.jsonl" "$T/$RUN.state.json" | tee "$T/$RUN.gate.txt"
+WORLDOS_GATE_COMBAT_SPRINT=1 python3 qa/assert_behavioral.py "$T/$RUN.jsonl" "$T/$RUN.state.json" | tee "$T/$RUN.gate.txt"
 GATE=${PIPESTATUS[0]}
 
 # ── 8. Angry-DM score ────────────────────────────────────────────────────────

@@ -93,7 +93,7 @@ def _argv_for(case_path: Path) -> list[str]:
 def _run_gate(case_path: Path) -> tuple[int, str]:
     """Invoke the gate as a subprocess over the case's artifacts. Returns (rc, combined_output).
 
-    The corpus may set environment toggles per case (e.g. CLAWDND_GATE_COMBAT_SPRINT) via an
+    The corpus may set environment toggles per case (e.g. WORLDOS_GATE_COMBAT_SPRINT) via an
     optional `env` mapping in the manifest entry — applied by the caller, not here."""
     argv = _argv_for(case_path)
     proc = subprocess.run(argv, capture_output=True, text=True)

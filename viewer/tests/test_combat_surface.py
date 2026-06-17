@@ -80,7 +80,7 @@ class CombatSurfaceTests(unittest.TestCase):
                 "kind": "combat",
                 "text": "Tav strikes the sapper.",
                 "payload": {
-                    "schema": "clawdnd.combat_event.v1",
+                    "schema": "worldos.combat_event.v1",
                     "event": "attack",
                     "actor": {"id": "hero", "name": "Tav", "notes": "private actor note"},
                     "target": {"id": "gob", "name": "Goblin Sapper", "ac": 13, "notes": "private target note"},
@@ -203,7 +203,7 @@ class CombatSurfaceTests(unittest.TestCase):
                 "kind": "combat",
                 "text": "Renn presses the attack.",
                 "payload": {
-                    "schema": "clawdnd.combat_event.v1",
+                    "schema": "worldos.combat_event.v1",
                     "event": "attack",
                     "actor": {"id": "hero", "name": "Renn", "notes": "private actor note"},
                     "target": {"id": "gob", "name": "Goblin Sapper", "notes": "private target note"},

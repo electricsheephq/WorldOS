@@ -162,7 +162,7 @@ def test_old_snapshot_without_companion_quest_arcs_round_trips():
 # --- the DM-facing surfaces (F06-10 core: no quest-arc mention anywhere DM-facing) -------
 
 def test_scene_context_durable_surfaces_companion_quest_arcs(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Durable QArc")["id"]
     server.create_character(cid, "Hero", kind="player")
     comp = server.create_character(cid, "Vesper", kind="companion")["id"]
@@ -183,7 +183,7 @@ def test_scene_context_durable_surfaces_companion_quest_arcs(tmp_path, monkeypat
 
 
 def test_camp_scene_solo_beat_surfaces_companion_quest_arcs(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Camp QArc")["id"]
     comp = server.create_character(cid, "Vesper", kind="companion")["id"]
     server.set_companion_quest_arc(cid, comp, {
@@ -201,7 +201,7 @@ def test_camp_scene_solo_beat_surfaces_companion_quest_arcs(tmp_path, monkeypatc
 
 def test_scene_context_durable_omits_quest_arcs_key_when_none(tmp_path, monkeypatch):
     """Back-compat: a companion with NO quest arcs has no `quest_arcs` key (today's shape)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("No QArc")["id"]
     comp = server.create_character(cid, "Vesper", kind="companion")["id"]
     durable = server._scene_durable_threads(store.load_campaign(cid))

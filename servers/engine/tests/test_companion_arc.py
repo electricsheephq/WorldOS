@@ -330,7 +330,7 @@ def test_gate_and_agenda_evaluate_together():
 @pytest.fixture
 def camp(tmp_path, monkeypatch):
     """A persisted campaign with one companion in the party."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("S4 Arc Tools")["id"]
     comp = server.create_character(cid, "Seraphine", kind="companion", max_hp=18)["id"]
     return cid, comp

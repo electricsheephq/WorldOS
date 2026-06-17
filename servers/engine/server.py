@@ -188,7 +188,7 @@ def _char(c: Campaign, character_id: str) -> Character:
     raise ValueError(msg)
 
 
-_COMBAT_EVENT_SCHEMA = "clawdnd.combat_event.v1"
+_COMBAT_EVENT_SCHEMA = "worldos.combat_event.v1"
 
 
 def _combatant_ref(ch: Character) -> dict:
@@ -2239,7 +2239,7 @@ def generate_image(kind: str, prompt: str, seed: Optional[int] = None,
                    scope: Optional[str] = None, force: bool = False) -> dict:
     """Kick off (fire-and-forget) an image for the campaign and return IMMEDIATELY.
     `kind` is 'map' (region/dungeon), 'portrait' (NPC/PC), or 'scene' (illustration);
-    `prompt` is the visual brief. The active provider is chosen by CLAWDND_IMAGE_PROVIDER
+    `prompt` is the visual brief. The active provider is chosen by WORLDOS_IMAGE_PROVIDER
     (default 'null' → a deterministic placeholder, no network)."""
     return imagegen.async_generate(kind, prompt, seed=seed, scope=scope, force=force)
 
@@ -11483,7 +11483,7 @@ def _recent_narration_max_chars() -> int:
     """SYN-08 / F14-17: optional per-beat soft cap (chars) for recent_narration's
     prose tail. DEFAULT-OFF (0): bounding the WINDOW (last-N) is lossless and always
     on, but byte-capping the CONTENT drops story, so it only engages when a wrapper
-    sets ``WORLDOS_RECENT_NARRATION_MAX_CHARS`` (legacy ``CLAWDND_*`` honored). Story
+    sets ``WORLDOS_RECENT_NARRATION_MAX_CHARS`` (legacy ``WORLDOS_*`` honored). Story
     is the north star — ride a long-campaign duo A/B before any default change.
     Source: docs/audits/ENGINE-AUDIT-2026-06-11.md (F14-17, SYN-08)."""
     raw = _env.env_var("RECENT_NARRATION_MAX_CHARS", "0")

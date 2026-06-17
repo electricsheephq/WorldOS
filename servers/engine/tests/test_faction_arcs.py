@@ -314,7 +314,7 @@ def test_scene_debt_detector_silent_when_no_arc():
 @pytest.fixture
 def fa_campaign(tmp_path, monkeypatch):
     """A persisted campaign with a PC and a seeded faction (un-joined, rep 0). Returns cid."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Faction Arc Test")["id"]
     server.create_character(cid, "Vanya", kind="player", class_name="fighter", level=3)
     c = store.load_campaign(cid)

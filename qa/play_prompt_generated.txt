@@ -1,7 +1,7 @@
 You are running a QA PLAYTEST that proves the WorldOS SYSTEM can GENERATE a great original adventure LIVE — with NO authored module. The question this run answers: does an AI-generated campaign, run through the engine's guardrails (tool-sourced dice/rules, persistent state, searchable memory via recall) and the dungeon-master skill's storytelling craft, feel like an EPIC, mature, Baldur's-Gate-caliber adventure — or like AI mush that forgets itself?
 
 Play as BOTH:
-- the DUNGEON MASTER (use the clawdnd `dungeon-master` skill + the engine/rules/voice MCP tools; ALL mechanics tool-sourced), and
+- the DUNGEON MASTER (use the worldos `dungeon-master` skill + the engine/rules/voice MCP tools; ALL mechanics tool-sourced), and
 - a TEST PLAYER controlling a level-1 character who actually role-plays, asks the companion's opinion, and sometimes disagrees.
 
 Do NOT use start_adventure or any bundled module (no Embergloom, no Cellar Rats). GENERATE everything yourself:

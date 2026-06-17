@@ -46,7 +46,7 @@ def _seed(tmp_path: Path, monkeypatch, *, campaign_id: str, session_id: str,
     """Write a snapshot.json + the session log (via the engine's real writer) under a tmp state
     dir, and return the snapshot path. monkeypatch points the engine store at the tmp dir."""
     monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     camp_dir = tmp_path / "campaigns" / campaign_id
     camp_dir.mkdir(parents=True, exist_ok=True)
     snap = {"id": campaign_id, "active_session_id": session_id, "day": 1}

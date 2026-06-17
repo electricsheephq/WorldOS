@@ -103,7 +103,7 @@ animation falls back to a generic beat — it must never block on a hint it does
 
 ### `verb` — the closed, engine-decided vocabulary
 
-`verb` mirrors the engine's **resolved** event classes (the `clawdnd.combat_event.v1` payload
+`verb` mirrors the engine's **resolved** event classes (the `worldos.combat_event.v1` payload
 already on combat events: `event`, `actor`, `target`, `roll`, `damage` — see
 `viewer/server.py:_combat_battle_log`). It is the **outcome class**, not the player's intent —
 the resolved counterpart to the move-intent `kind`:
@@ -231,4 +231,4 @@ a beat the envelope can't express without inventing state — at which point the
   ordering/replay semantics").
 - **Engine substrate (informative, not normative):** `viewer/server.py:_read_events` (`seq`
   stamping, L5880), `_session_recent_events` (`${sid}:${seq}` key, L5842), `_combat_battle_log`
-  (`clawdnd.combat_event.v1` payload the envelope projects, L2012).
+  (`worldos.combat_event.v1` payload the envelope projects, L2012).

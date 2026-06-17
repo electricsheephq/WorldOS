@@ -261,7 +261,7 @@ def test_seed_rejects_non_list_connections():
 
 @pytest.fixture
 def started(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     return server.start_adventure("cellar-rats")["campaign_id"]
 
 
@@ -348,7 +348,7 @@ def test_ingested_area_hex_roundtrips_through_seed_world():
 def party_world(tmp_path, monkeypatch):
     """A campaign with two connected locations, a PC + a companion in the party, and a
     standalone NPC anchored at the start. Returns (cid, pc, companion, npc, dest_id)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Party Travel")["id"]
     # Start location, then a connected destination.
     start = server.add_location(cid, "Undercroft")["id"]  # becomes current (first location)

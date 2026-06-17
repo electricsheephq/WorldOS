@@ -173,7 +173,7 @@ Targets: **story ≥ 4.3, mechanical ≥ 4.5, gate GREEN, 0 critical/high.**
 - `qa/run_combat_sprint.sh <run>` — **the fast BUG-FINDER** (~2 min, pre-seeded fight, one DM
   call, Angry-DM-scored). Use to *find* engine defects.
 - `qa/run_party.sh` — player + companion peer agents + DM (the betrayal path / Quest-Arc L2).
-- `qa/run_duo_openclaw.sh` — gpt-5.4 path (scoped `clawdnd-qa*` agents, `--thinking low`).
+- `qa/run_duo_openclaw.sh` — gpt-5.4 path (scoped `worldos-qa*` agents, `--thinking low`).
 
 Scoring (story/mech runs): **behavioral gate** (`qa/assert_behavioral.py`, deterministic; RED ⇒
 all lenses capped ≤2.5) + **3 LLM lenses** — Mechanical (`rubric.md`), Story-craft/Tolkien
@@ -282,7 +282,7 @@ an unattended loop.
   every turn (e.g. `turn_brief` on `next_turn`; Director at beat start), or ENFORCE in the
   engine (Multiattack #181, turn-skip #183).
 - **QA must EXERCISE the flag before you trust an A/B** — `qa/run_duo.sh` once `--resume`d the full
-  transcript and IGNORED `CLAWDND_LEAN_BEATS`, so every prior "lean" A/B was a non-lean artifact (a
+  transcript and IGNORED `WORLDOS_LEAN_BEATS`, so every prior "lean" A/B was a non-lean artifact (a
   short run just has a smaller transcript that reads as "context dropped"). Before trusting a flag A/B
   (lean / effort / `alwaysLoad`), READ the runner you invoked and confirm its DM turn actually consumes
   the flag. A flag BUILT but never exercised by QA is DEAD CODE — expect latent bugs the moment it runs

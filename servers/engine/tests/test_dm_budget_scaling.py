@@ -28,11 +28,11 @@ class DmBudgetScalingTests(unittest.TestCase):
                 f"{rel} must set an Opus per-turn default >= $10",
             )
             self.assertIn(
-                "CLAWDND_PLAY_BUDGET:-$_PT_DEF", src,
+                "WORLDOS_PLAY_BUDGET:-$_PT_DEF", src,
                 f"{rel} must consume the model-aware per-turn default",
             )
             self.assertIn(
-                "CLAWDND_PLAY_SESSION_BUDGET:-$_SESS_DEF", src,
+                "WORLDOS_PLAY_SESSION_BUDGET:-$_SESS_DEF", src,
                 f"{rel} must consume the model-aware session default",
             )
 
@@ -43,7 +43,7 @@ class DmBudgetScalingTests(unittest.TestCase):
             "ui_playtest_app.sh (claude lane) must scale the per-turn DM budget to the model",
         )
         self.assertRegex(
-            src, r"CLAWDND_PLAY_BUDGET:=1[0-9]\.00",
+            src, r"WORLDOS_PLAY_BUDGET:=1[0-9]\.00",
             "ui_playtest_app.sh must set an Opus per-turn cap >= $10",
         )
 
@@ -61,7 +61,7 @@ class DmBudgetScalingTests(unittest.TestCase):
         window = src[claude_idx:claude_idx + 700]
         self.assertIn("*opus*)", window, "claude lane must contain the model-aware budget branch")
         branch = window.find("*opus*)")
-        export = window.find("export CLAWDND_PLAY_BUDGET")
+        export = window.find("export WORLDOS_PLAY_BUDGET")
         self.assertTrue(0 <= branch < export, "the opus branch must set the cap before it is exported")
 
     def test_run_duo_floors_opus_per_turn_budget(self):
@@ -80,7 +80,7 @@ class DmBudgetScalingTests(unittest.TestCase):
         """
         src = self._read("qa/run_combat_sprint.sh")
         self.assertIn("*opus*)", src, "run_combat_sprint must branch the combat budget on an opus model")
-        self.assertRegex(src, r"CS_BUDGET=\"\$\{CLAWDND_PLAY_BUDGET:-5\.00\}\"", "Opus combat budget must be >= $5")
+        self.assertRegex(src, r"CS_BUDGET=\"\$\{WORLDOS_PLAY_BUDGET:-5\.00\}\"", "Opus combat budget must be >= $5")
         self.assertIn('--max-budget-usd "$CS_BUDGET"', src, "must consume the model-aware combat budget")
 
     def test_auxiliary_harnesses_scale_budget_to_model(self):

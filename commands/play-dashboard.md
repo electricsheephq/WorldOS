@@ -15,7 +15,7 @@ Tell the player how to launch it, then let them play in the browser:
    ```
    It opens `http://127.0.0.1:8765/dashboard`, flips the viewer into interactive (live) mode, and starts the DM, who opens the world live and hands the player a character + an open moment.
 2. **Play in the browser** — the player acts through the action palette: **Say** (speak in-scene), **Do** (attempt something), **Continue**, the dice / skill / save / combat buttons, and click-to-travel. Each action is sent to the DM, who resolves it through the engine, voices the NPCs and companion, and renders the next beat in the chat — turn by turn, live.
-3. **It self-stops** — the DM loop is capped (per-turn and whole-session USD budgets, and a hard turn cap), so a runaway loop ends on its own. Raise the caps with `CLAWDND_PLAY_BUDGET`, `CLAWDND_PLAY_SESSION_BUDGET`, `CLAWDND_PLAY_MAX_TURNS`. **Ctrl-C (or close the window) to stop.**
+3. **It self-stops** — the DM loop is capped (per-turn and whole-session USD budgets, and a hard turn cap), so a runaway loop ends on its own. Raise the caps with `WORLDOS_PLAY_BUDGET`, `WORLDOS_PLAY_SESSION_BUDGET`, `WORLDOS_PLAY_MAX_TURNS`. **Ctrl-C (or close the window) to stop.**
 
 **Want AI companions in the party? (opt-in)** By default you play solo (just you + the DM). You can instead bring a party of **AI companions** who adventure alongside you — each is its OWN agent acting through the same constrained move palette you do (it can disagree, take the lead in its lane, even betray you), NOT the DM voicing it. The dashboard then shows you + your companions + the DM, beat by beat. Companions multiply the live AI cost (each is a separate `claude -p`), so they're **off unless you ask for them**:
 ```bash

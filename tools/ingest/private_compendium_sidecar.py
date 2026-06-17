@@ -18,11 +18,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 # WorldOS rename (issue #295, W0-E/4.2): prefer the new worldos scratch root +
-# WORLDOS_* env var; keep the legacy clawdnd ones as warn-only fallbacks for v1.x.
+# WORLDOS_* env var; keep the legacy worldos ones as warn-only fallbacks for v1.x.
 WORLDOS_DEFAULT_SIDECAR_ROOT = Path("~/.worldos/private-compendium").expanduser()
-DEFAULT_SIDECAR_ROOT = Path("~/.clawdnd/private-compendium").expanduser()
+DEFAULT_SIDECAR_ROOT = Path("~/.worldos/private-compendium").expanduser()
 ENV_SIDECAR_ROOT_WORLDOS = "WORLDOS_PRIVATE_COMPENDIUM_ROOT"
-ENV_SIDECAR_ROOT = "CLAWDND_PRIVATE_COMPENDIUM_ROOT"
+ENV_SIDECAR_ROOT = "WORLDOS_PRIVATE_COMPENDIUM_ROOT"
 MANIFEST_NAME = "private-compendium-manifest.json"
 SUPPORTED_FORMATS = {"markdown", "json", "text"}
 SUPPORTED_CONTENT_TYPES = {"lore"}
@@ -170,7 +170,7 @@ def load_plan(manifest_path: Path, repo_root: Path = _REPO) -> SidecarPlan:
 
 def _sidecar_root() -> Path:
     """The sidecar root, preferring the WORLDOS_* name/path with a warn-only
-    fallback to the legacy CLAWDND_* name and the legacy on-disk root (#295)."""
+    read WORLDOS_* env + the on-disk root."""
     env = os.environ.get(ENV_SIDECAR_ROOT_WORLDOS)
     if env:
         return Path(env).expanduser()

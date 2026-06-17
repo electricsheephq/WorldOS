@@ -4,13 +4,13 @@ set -euo pipefail
 MODE="${1:-run}"
 APP_NAME="WorldOSApp"
 DISPLAY_NAME="WorldOS"
-# Bundle ID dev.worldos.app (renamed from dev.clawdnd.app in the WorldOS cutover; a one-time
+# Bundle ID dev.worldos.app (renamed from dev.worldos.app in the WorldOS cutover; a one-time
 # installs (no upgrade path). Revisit at v2.0 with a migration. See issue #295 (W0-B).
 BUNDLE_ID="dev.worldos.app"
 MIN_SYSTEM_VERSION="13.0"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ART_ROOT="${WORLDOS_ART_REPO_ROOT:-${CLAWDND_ART_REPO_ROOT:-$ROOT_DIR}}"
+ART_ROOT="${WORLDOS_ART_REPO_ROOT:-$ROOT_DIR}"
 PREFER_LAUNCH_ROOTS="${WORLDOS_PREFER_LAUNCH_ROOTS:-1}"
 ENABLE_SCRIPTED_PROVIDER="${WORLDOS_ENABLE_SCRIPTED_PROVIDER:-0}"
 plist_escape() {
@@ -173,12 +173,12 @@ PLIST
 }
 
 open_app() {
-  # Set BOTH names so the native app's RepositoryLocator resolves the repo root
-  # whether it reads the new WORLDOS_* name or the legacy CLAWDND_* one (#295, W0-E).
+  # Set the WORLDOS_* env names so the native app's RepositoryLocator resolves the repo root
+  # via env_var().
   # Keep private art separately overridable: a Lexar worktree can launch app code from
   # $ROOT_DIR while reading gitignored _private art from the canonical checkout.
-  WORLDOS_REPO_ROOT="$ROOT_DIR" CLAWDND_REPO_ROOT="$ROOT_DIR" \
-  WORLDOS_ART_REPO_ROOT="$ART_ROOT" CLAWDND_ART_REPO_ROOT="$ART_ROOT" \
+  WORLDOS_REPO_ROOT="$ROOT_DIR" \
+  WORLDOS_ART_REPO_ROOT="$ART_ROOT" \
   WORLDOS_PREFER_LAUNCH_ROOTS="$PREFER_LAUNCH_ROOTS" \
     /usr/bin/open -n "$APP_BUNDLE"
 }

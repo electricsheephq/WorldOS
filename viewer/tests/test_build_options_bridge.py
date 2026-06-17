@@ -16,14 +16,14 @@ _SPEC.loader.exec_module(server)
 class BuildOptionsBridgeTests(unittest.TestCase):
     def setUp(self):
         self._tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        self._old_state = os.environ.get("CLAWDND_STATE_DIR")
-        os.environ["CLAWDND_STATE_DIR"] = str(self._tmp)
+        self._old_state = os.environ.get("WORLDOS_STATE_DIR")
+        os.environ["WORLDOS_STATE_DIR"] = str(self._tmp)
 
     def tearDown(self):
         if self._old_state is None:
-            os.environ.pop("CLAWDND_STATE_DIR", None)
+            os.environ.pop("WORLDOS_STATE_DIR", None)
         else:
-            os.environ["CLAWDND_STATE_DIR"] = self._old_state
+            os.environ["WORLDOS_STATE_DIR"] = self._old_state
 
     def test_build_options_response_uses_engine_planner_without_mutating_snapshot(self):
         engine = server._engine_server()

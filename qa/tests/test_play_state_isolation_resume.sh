@@ -11,8 +11,7 @@
 # are the structural halves of the fix (the DM turn itself is GUI-verified). Asserts:
 #   1. unset env  → STATE_ROOT == "$ROOT/play-state" (BYTE-IDENTICAL to the old behavior);
 #   2. WORLDOS_STATE_DIR=<userdir> → STATE_ROOT == <userdir> (the .app's per-user dir wins);
-#   3. CLAWDND_STATE_DIR fallback also wins when WORLDOS_STATE_DIR is unset;
-#   4. the engine MCP config pins BOTH WORLDOS_/CLAWDND_STATE_DIR to the per-$RUN dir;
+#   4. the engine MCP config pins WORLDOS_STATE_DIR to the per-$RUN dir;
 #   5. RESUME gate: a requested campaign WITH an on-disk snapshot under the run dir → RESUME=1
 #      (move sink preserved, not truncated); a requested campaign with NO snapshot → RESUME=0
 #      (fresh cold open, never a dead table); no request → RESUME=0.
@@ -29,35 +28,30 @@ PLAY="$ROOT/scripts/play.sh"
 [ -f "$PLAY" ] || { fail "scripts/play.sh missing"; echo "── STATE/RESUME PROOF: FAIL ──"; exit 1; }
 
 # --- (1-3) STATE_ROOT resolution — the EXACT expression play.sh uses. --------------------------
-# play.sh: STATE_ROOT="${WORLDOS_STATE_DIR:-${CLAWDND_STATE_DIR:-$ROOT/play-state}}"
-resolve_state_root() {  # $1=WORLDOS_STATE_DIR $2=CLAWDND_STATE_DIR (empty = unset)
-  WORLDOS_STATE_DIR="$1" CLAWDND_STATE_DIR="$2" bash -c \
-    'ROOT="'"$ROOT"'"; echo "${WORLDOS_STATE_DIR:-${CLAWDND_STATE_DIR:-$ROOT/play-state}}"'
+# play.sh: STATE_ROOT="${WORLDOS_STATE_DIR:-$ROOT/play-state}"
+resolve_state_root() {  # $1=WORLDOS_STATE_DIR (empty = unset)
+  WORLDOS_STATE_DIR="$1" bash -c \
+    'ROOT="'"$ROOT"'"; echo "${WORLDOS_STATE_DIR:-$ROOT/play-state}"'
 }
 # First, prove play.sh actually CONTAINS the override expression (guards a silent revert).
-if grep -q 'STATE_ROOT="${WORLDOS_STATE_DIR:-${CLAWDND_STATE_DIR:-$ROOT/play-state}}"' "$PLAY"; then
-  pass "play.sh uses the WORLDOS_/CLAWDND_ STATE_DIR override expression"
+if grep -q 'STATE_ROOT="${WORLDOS_STATE_DIR:-$ROOT/play-state}"' "$PLAY"; then
+  pass "play.sh uses the WORLDOS_STATE_DIR override expression"
 else
   fail "play.sh no longer carries the STATE_DIR override expression"
 fi
 
-GOT="$(resolve_state_root "" "")"
+GOT="$(resolve_state_root "")"
 [ "$GOT" = "$ROOT/play-state" ] && pass "unset env → \$ROOT/play-state (byte-identical)" \
   || fail "unset env resolved to '$GOT' (expected '$ROOT/play-state')"
 
 USERDIR="$(mktemp -d "${TMPDIR:-/tmp}/wos_userstate_XXXXXX")"
 trap 'rm -rf "$USERDIR"' EXIT
-GOT="$(resolve_state_root "$USERDIR" "")"
-[ "$GOT" = "$USERDIR" ] && pass "WORLDOS_STATE_DIR wins → $USERDIR" \
+GOT="$(resolve_state_root "$USERDIR")"
+[ "$GOT" = "$USERDIR" ] && pass "WORLDOS_STATE_DIR override wins → $USERDIR" \
   || fail "WORLDOS_STATE_DIR override resolved to '$GOT' (expected '$USERDIR')"
 
-GOT="$(resolve_state_root "" "$USERDIR")"
-[ "$GOT" = "$USERDIR" ] && pass "CLAWDND_STATE_DIR fallback wins when WORLDOS_ unset" \
-  || fail "CLAWDND_STATE_DIR fallback resolved to '$GOT' (expected '$USERDIR')"
-
-# --- (4) the engine MCP config pins BOTH names to the per-$RUN dir. ----------------------------
-# Generate the dm.mcp.json exactly as play.sh does and assert worldos-engine carries BOTH
-# WORLDOS_STATE_DIR and CLAWDND_STATE_DIR set to the per-run state dir (so an inherited bare
+# --- (4) the engine MCP config pins WORLDOS_STATE_DIR to the per-$RUN dir. ----------------------------
+# Generate the dm.mcp.json exactly as play.sh does and assert worldos-engine carries the WORLDOS_STATE_DIR name so an inherited bare
 # WORLDOS_STATE_DIR=<user-root> can't repoint the engine away from this game's dir).
 RUNDIR="$USERDIR/play-fixture-run"
 mkdir -p "$RUNDIR"
@@ -67,22 +61,22 @@ import json, sys
 root, state_dir, out = sys.argv[1], sys.argv[2], sys.argv[3]
 cfg = {"mcpServers": {"worldos-engine": {"type": "stdio", "command": "uv", "alwaysLoad": True,
     "args": ["run", "--directory", f"{root}/servers/engine", "server.py"],
-    "env": {"WORLDOS_STATE_DIR": state_dir, "CLAWDND_STATE_DIR": state_dir}}}}
+    "env": {"WORLDOS_STATE_DIR": state_dir}}}}
 json.dump(cfg, open(out, "w"))
 PY
 ENGINE_BOTH="$(python3 - "$DMCFG" "$RUNDIR" <<'PY'
 import json, sys
 cfg = json.load(open(sys.argv[1])); want = sys.argv[2]
 env = cfg["mcpServers"]["worldos-engine"]["env"]
-print("1" if env.get("WORLDOS_STATE_DIR") == want and env.get("CLAWDND_STATE_DIR") == want else "0")
+print("1" if env.get("WORLDOS_STATE_DIR") == want else "0")
 PY
 )"
-[ "$ENGINE_BOTH" = "1" ] && pass "engine MCP config pins BOTH WORLDOS_/CLAWDND_STATE_DIR to the per-run dir" \
+[ "$ENGINE_BOTH" = "1" ] && pass "engine MCP config pins WORLDOS_STATE_DIR to the per-run dir" \
   || fail "engine MCP config does not pin both state-dir names to the per-run dir"
-# And prove play.sh's generator carries both names (guards a revert to CLAWDND-only).
-grep -q '"env": {"WORLDOS_STATE_DIR": state_dir, "CLAWDND_STATE_DIR": state_dir}}' "$PLAY" \
-  && pass "play.sh engine config sets both state-dir names" \
-  || fail "play.sh engine config no longer sets both state-dir names"
+# And prove play.sh's generator emits the WORLDOS_STATE_DIR name.
+grep -q '"env": {"WORLDOS_STATE_DIR": state_dir}}' "$PLAY" \
+  && pass "play.sh engine config sets the state-dir name" \
+  || fail "play.sh engine config no longer sets the state-dir name"
 
 # --- (5) RESUME gate + CATALOG visibility — the REAL LAYERED structure. ------------------------
 # DE-CONFLATED (#933 follow-up): the shipped .app exports the BARE user state home as
@@ -107,7 +101,7 @@ resume_gate() {  # $1=STATE_DIR $2=RESUME_CAMPAIGN_REQ ; echoes RESUME (1/0)
 }
 # Seed a REAL campaign via the engine, pinned to the PER-RUN dir exactly as play.sh pins it, so the
 # save lands at <home>/<run>/campaigns/<id>/snapshot.json — the layered path the catalog must scan.
-CID="$(WORLDOS_STATE_DIR="$PER_RUN_DIR" CLAWDND_STATE_DIR="$PER_RUN_DIR" \
+CID="$(WORLDOS_STATE_DIR="$PER_RUN_DIR" \
   uv run --directory "$ROOT/servers/engine" python - <<'PY' 2>/dev/null
 import server
 camp = server.start_world("baldurs-gate")["campaign_id"]
@@ -132,7 +126,7 @@ else
   # CATALOG: point the viewer at the BARE home (what the .app exports) and assert it surfaces the
   # LAYERED save with run_id=$RUN_ID and canResume — the assertion the old fixture lacked. A catalog
   # that only scans <home>/campaigns (the bug) or projects run_id='state' (the recency fallback) FAILS.
-  CATALOG_OK="$(WORLDOS_STATE_DIR="$USER_HOME" CLAWDND_STATE_DIR="$USER_HOME" \
+  CATALOG_OK="$(WORLDOS_STATE_DIR="$USER_HOME" \
     python3 - "$ROOT" "$CID" "$RUN_ID" <<'PY' 2>/dev/null
 import importlib.util, sys
 root, cid, run_id = sys.argv[1], sys.argv[2], sys.argv[3]

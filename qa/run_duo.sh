@@ -25,10 +25,10 @@ RUN="${1:-duo-$(date +%H%M%S)}"
 WORLD="${2:-baldurs-gate}"
 PLAYER_PROMPT_FILE="${3:-qa/play_player_duo.txt}"
 BEATS="${4:-6}"
-# Golden-spine mode: when CLAWDND_ADVENTURE_ID is set, the DM cold-opens an AUTHORED adventure
+# Golden-spine mode: when WORLDOS_ADVENTURE_ID is set, the DM cold-opens an AUTHORED adventure
 # (start_adventure — pre-seeded world/arc/companion/quests) instead of generating a world live.
 # This is the path that actually runs the 3-act spine end-to-end (see continue-lets-update plan).
-ADVENTURE_ID="${CLAWDND_ADVENTURE_ID:-}"
+ADVENTURE_ID="${WORLDOS_ADVENTURE_ID:-}"
 [ -n "$ADVENTURE_ID" ] && echo "[duo] AUTHORED-ADVENTURE mode: start_adventure(\"$ADVENTURE_ID\") at BEATS=$BEATS"
 BUDGET="${5:-0.80}"
 
@@ -46,22 +46,22 @@ fi
 
 # The DM model is an env var so A/B-testing Opus vs sonnet for structural adherence is a
 # one-flag flip (decision-dm-driver.md §3 "model choice as an orthogonal lever"). Default opus (DECIDED 2026-06-06).
-CLAWDND_DM_MODEL="$(worldos_env DM_MODEL opus)"
+WORLDOS_DM_MODEL="$(worldos_env DM_MODEL opus)"
 # The player facade is a near-free no-tool agent; its model is a separate knob (default sonnet,
 # so behavior is unchanged) kept consistent with the party harness's WORLDOS_ACTOR_MODEL.
-CLAWDND_ACTOR_MODEL="$(worldos_env ACTOR_MODEL sonnet)"
+WORLDOS_ACTOR_MODEL="$(worldos_env ACTOR_MODEL sonnet)"
 SCORE_SCRIPT="$(worldos_env SCORE_SCRIPT qa/score.sh)"
 # Opus's high-effort cold-open world-build costs ~$2.4 on its first turn (measured 2026-06-06); a low
 # caller per-turn budget (sweep $2.00, fast_probe $0.80) would trip error_max_budget_usd on the duo
 # cold-open the same way the .app backend did. Floor the per-turn cap for an Opus DM so the cold-open
 # always lands. A CAP, not a spend — routine duo turns spend far less.
-case "$CLAWDND_DM_MODEL" in
+case "$WORLDOS_DM_MODEL" in
   *opus*) if awk "BEGIN{exit !($BUDGET < 4.0)}"; then echo "[duo] opus: flooring per-turn budget \$$BUDGET -> \$4.00 (cold-open headroom)"; BUDGET=4.00; fi ;;
 esac
 
 # --- Lean-per-beat context (PERF, default OFF → byte-identical to today). --------------
 # MIRRORS scripts/play.sh exactly (and shares its ONE implementation via the
-# worldos_dm_lean_args helper in qa/lib_beat_driver.sh). With CLAWDND_LEAN_BEATS=1, the DM's
+# worldos_dm_lean_args helper in qa/lib_beat_driver.sh). With WORLDOS_LEAN_BEATS=1, the DM's
 # CONTINUING beats (beats 1..N below — NOT the cold open D1) start a FRESH claude session (a
 # new --session-id, NO transcript replay) seeded with a re-ground directive: the DM re-grounds
 # from the engine's persisted truth via scene_context (state/director/events/companion_arcs +
@@ -69,11 +69,11 @@ esac
 # whole point of the flag — and the duo QA harness USED to ignore it (its DM turn always
 # `--resume`d the full transcript), so the lean path could never be validated through the duo
 # runner that qa/release_gate.sh uses. DEFAULT 1 (lean is now STANDARD — validated: ~10–27×
-# context drop, story quality held at 4.4); set CLAWDND_LEAN_BEATS=0 to force the legacy
+# context drop, story quality held at 4.4); set WORLDOS_LEAN_BEATS=0 to force the legacy
 # --resume path (byte-identical to pre-lean). The recent-narration tail depth mirrors
-# play.sh's CLAWDND_LEAN_TAIL (default 8).
-CLAWDND_LEAN_BEATS="${CLAWDND_LEAN_BEATS:-1}"
-CLAWDND_LEAN_TAIL="${CLAWDND_LEAN_TAIL:-8}"
+# play.sh's WORLDOS_LEAN_TAIL (default 8).
+WORLDOS_LEAN_BEATS="${WORLDOS_LEAN_BEATS:-1}"
+WORLDOS_LEAN_TAIL="${WORLDOS_LEAN_TAIL:-8}"
 T="qa/transcripts"; STATE_DIR="$ROOT/qa/state/$RUN"
 mkdir -p "$T" "$STATE_DIR"; rm -rf "$STATE_DIR/campaigns" 2>/dev/null
 # #892 follow-up: keep the cold-open `claude -p` (the DM) off the macOS keychain + off any /Volumes
@@ -111,11 +111,11 @@ for name, srv in cfg.get("mcpServers", {}).items():
             pkg = raw
         args[i + 1] = f"{root}/servers/{pkg}"
     if name == "worldos-engine":
-        srv.setdefault("env", {})["CLAWDND_STATE_DIR"] = state
+        srv.setdefault("env", {})["WORLDOS_STATE_DIR"] = state
         # Parity with scripts/play.sh: pin the engine tools (un-defer) so the DM stops burning
-        # ~2 ToolSearch round-trips/beat re-discovering them. Set CLAWDND_ENGINE_ALWAYSLOAD=0 for
+        # ~2 ToolSearch round-trips/beat re-discovering them. Set WORLDOS_ENGINE_ALWAYSLOAD=0 for
         # the deferred baseline (the latency A/B arm).
-        if os.environ.get("CLAWDND_ENGINE_ALWAYSLOAD", "1") == "1":
+        if os.environ.get("WORLDOS_ENGINE_ALWAYSLOAD", "1") == "1":
             srv["alwaysLoad"] = True
 json.dump(cfg, open(out, "w"))
 PY
@@ -126,7 +126,7 @@ import json, sys
 root, state, moves, out = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 json.dump({"mcpServers": {"worldos-player": {"command": "uv",
   "args": ["run", "--directory", f"{root}/servers/engine", "python", "player_server.py"],
-  "env": {"CLAWDND_STATE_DIR": state, "CLAWDND_PLAYER_MOVES": moves}}}}, open(out, "w"))
+  "env": {"WORLDOS_STATE_DIR": state, "WORLDOS_PLAYER_MOVES": moves}}}}, open(out, "w"))
 PY
 
 DSID="$(python3 -c 'import uuid;print(uuid.uuid4())')"
@@ -153,7 +153,7 @@ turn() {
   local role="$1" sid="$2" first="$3" msg="$4" out resume=() extra=() rc=0
   [ "$first" = "0" ] && resume=(--resume "$sid") || resume=(--session-id "$sid")
   if [ "$role" = "dm" ]; then
-    # LEAN beats (CLAWDND_LEAN_BEATS=1): a continuing DM beat starts a FRESH session + a
+    # LEAN beats (WORLDOS_LEAN_BEATS=1): a continuing DM beat starts a FRESH session + a
     # re-ground directive instead of --resume-ing the full transcript — the SAME implementation
     # scripts/play.sh uses, via the shared worldos_dm_lean_args helper (qa/lib_beat_driver.sh),
     # so the two harnesses can't drift. CAMPAIGN_ID is resolved after the opening beat (it's
@@ -161,10 +161,10 @@ turn() {
     # on a continuing beat (first=0) and no-ops on the cold open (first!=0). When lean doesn't
     # fire (flag off / cold open / unknown id) the helper leaves both arrays empty and we keep
     # the --resume/--session-id behavior set above unchanged.
-    worldos_dm_lean_args "$first" "${CAMPAIGN_ID:-}" "$CLAWDND_LEAN_TAIL"
-    if [ "${#CLAWDND_DM_LEAN_SESSION[@]}" -gt 0 ]; then
-      resume=("${CLAWDND_DM_LEAN_SESSION[@]}")
-      extra=("${CLAWDND_DM_LEAN_EXTRA[@]}")
+    worldos_dm_lean_args "$first" "${CAMPAIGN_ID:-}" "$WORLDOS_LEAN_TAIL"
+    if [ "${#WORLDOS_DM_LEAN_SESSION[@]}" -gt 0 ]; then
+      resume=("${WORLDOS_DM_LEAN_SESSION[@]}")
+      extra=("${WORLDOS_DM_LEAN_EXTRA[@]}")
     fi
     # EFFORT TIER (shared helper, qa/lib_beat_driver.sh) — SAME implementation play.sh uses, so the
     # two harnesses can't drift: --effort max on the cold open (one-time world-build), --effort
@@ -182,7 +182,7 @@ turn() {
     local beat_timeout; beat_timeout="$(worldos_dm_timeout "$first")"
     worldos_timeout "$beat_timeout" \
       claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
-        --model "$CLAWDND_DM_MODEL" ${CLAWDND_DM_EFFORT[@]+"${CLAWDND_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+        --model "$WORLDOS_DM_MODEL" ${WORLDOS_DM_EFFORT[@]+"${WORLDOS_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
         --output-format stream-json --verbose > "$out" 2>> "$T/$RUN.dm.err"
     rc=$?
     cat "$out" >> "$COMBINED"
@@ -203,7 +203,7 @@ turn() {
     worldos_dm_final_text "$out" "$STATE_DIR" "$rc"
   else
     claude -p "$msg" "${resume[@]}" --mcp-config "$PLAYER_CFG" --strict-mcp-config \
-      --model "$CLAWDND_ACTOR_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+      --model "$WORLDOS_ACTOR_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
       --output-format json 2>> "$T/$RUN.player.err" \
       | jq -r '.result // ""' 2>/dev/null
   fi
@@ -212,7 +212,7 @@ turn() {
 # A turn, with TRANSIENT-AWARE retry on empty output. A blip shouldn't silently truncate a run —
 # but the RIGHT number of retries depends on WHY the turn came back empty:
 #   • TRANSIENT (server-side HTTP 500/502/503/529, an "overloaded"/429 rate-limit, an rc=124
-#     timeout, an empty-result blip) — retry up to CLAWDND_DM_MAX_ATTEMPTS (default 4) total, with
+#     timeout, an empty-result blip) — retry up to WORLDOS_DM_MAX_ATTEMPTS (default 4) total, with
 #     a short 3s/8s/20s backoff between, so a 500 CLUSTER no longer aborts a 2-3h overnight run
 #     (the gs-ember-18b beat-4 death: a 500 + a single retry that also 500'd killed the whole run).
 #   • REAL / fail-fast (a 401/403 auth error, a deterministic bad turn) — do NOT hammer it 4×: take
@@ -224,7 +224,7 @@ turn() {
 # forever. Echoes the reply text (possibly empty after the last attempt).
 turn_retry() {
   local r last_out last_rc transient attempt max
-  max="${CLAWDND_DM_MAX_ATTEMPTS:-4}"
+  max="${WORLDOS_DM_MAX_ATTEMPTS:-4}"
   # SYN-01: pre-beat log-tail mark — ONCE per beat, BEFORE attempt 1 (the retries must not
   # re-mark: attempt 1's logged prose still counts as this beat's), so the resolve path can
   # tell a GENUINE #357 recovery from RECYCLED pre-beat prose. File-based (subshell-safe).
@@ -257,7 +257,7 @@ turn_retry() {
     # via the SHARED worldos_dm_remint_session_on_retry (qa/lib_beat_driver.sh) — the SAME re-mint
     # implementation scripts/play.sh + play_party.sh use, so the three harnesses can't drift. The
     # helper inspects the prior turn's resume MODE (which `turn` built from $3): on a cold open the
-    # mode is `--session-id $2`, so it populates CLAWDND_DM_RETRY_SESSION with a FRESH `--session-id
+    # mode is `--session-id $2`, so it populates WORLDOS_DM_RETRY_SESSION with a FRESH `--session-id
     # <uuid>` we hand back to turn as the new sid. Continuing beats ($3=0) use --resume (safe to
     # repeat) — the helper leaves the array empty and we retry verbatim; lean continuing beats already
     # mint their own fresh id inside turn(). The empty-output trigger also fires on a timeout, which
@@ -265,7 +265,7 @@ turn_retry() {
     if [ "${3:-}" = "1" ]; then
       worldos_dm_remint_session_on_retry --session-id "$2"
       local _fresh="$2"
-      [ "${#CLAWDND_DM_RETRY_SESSION[@]}" -ge 2 ] && _fresh="${CLAWDND_DM_RETRY_SESSION[1]}"
+      [ "${#WORLDOS_DM_RETRY_SESSION[@]}" -ge 2 ] && _fresh="${WORLDOS_DM_RETRY_SESSION[1]}"
       r="$(turn "$1" "$_fresh" "$3" "${@:4}")"
     else
       r="$(turn "$@")"
@@ -334,7 +334,7 @@ $PMSG
 $SETUP_DIRECTIVE OUTPUT DISCIPLINE — your final reply IS the opening scene: write it as 2nd-person in-fiction PROSE + quoted dialogue ONLY. NEVER narrate your own setup/process — no \"State is grounded\", no \"the cold open is on the dashboard\", no \"Closing my turn on the scene\", no 3rd-person status line. The very first words the player reads must be INSIDE the fiction.")"
 # #357: recover the engine's logged narration if the DM turn ended on a tool call / status
 # line (empty final reply) — so a tool-final-but-narrated turn isn't mistaken for silence.
-worldos_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
+worldos_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$WORLDOS_DM_REPLY"
 echo "[duo] DM opened: ${DMSG:0:120}…"
 # SYN-01: an empty resolved reply is a FAILED beat (error-class result, recycled-only prose, or
 # nothing recovered). Record the wrapper-authored VISIBLE failure row — never the error text,
@@ -347,7 +347,7 @@ fi
 worldos_chatlog_dm "$DMSG"
 
 # Resolve the campaign id the cold open just minted (for the lean re-ground; harmless when
-# CLAWDND_LEAN_BEATS=0). D1's start_world wrote the snapshot to
+# WORLDOS_LEAN_BEATS=0). D1's start_world wrote the snapshot to
 # $STATE_DIR/campaigns/<id>/snapshot.json. The run wipes $STATE_DIR/campaigns at setup, so one
 # campaign is EXPECTED — but a cold-open start_world RETRY (or the DM mistakenly re-calling
 # start_world) can mint a SECOND, PARALLEL campaign in the same state dir. The old largest-
@@ -366,7 +366,7 @@ if [ -z "$CAMPAIGN_ID" ]; then
     CAMPAIGN_ID="$(find "$STATE_DIR/campaigns" -mindepth 1 -maxdepth 1 -type d -exec basename {} \; 2>/dev/null | head -n1)"
   fi
 fi
-if [ "$CLAWDND_LEAN_BEATS" = "1" ]; then
+if [ "$WORLDOS_LEAN_BEATS" = "1" ]; then
   if [ -n "$CAMPAIGN_ID" ]; then
     echo "[duo] lean-beats ON — beats 2+ re-ground via scene_context (campaign=$CAMPAIGN_ID), no transcript replay"
   else
@@ -421,7 +421,7 @@ $DIRECTOR
 $EVENT_ADV")"
   # #357: recover engine-logged narration before the silence check, so a turn that ended on a
   # tool call but logged real prose isn't mis-flagged as a silent DM (and isn't blank in chat).
-  worldos_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$CLAWDND_DM_REPLY"
+  worldos_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$WORLDOS_DM_REPLY"
   echo "[duo] beat $b DM: ${DMSG:0:100}…"
   # SYN-01: an empty resolved reply is a FAILED beat — record the visible failure row (counted
   # by assert_behavioral's dm_beat_honesty) instead of masking with error text/recycled prose.

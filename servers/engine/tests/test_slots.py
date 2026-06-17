@@ -18,7 +18,7 @@ from models import Campaign
 
 @pytest.fixture
 def cid(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     return server.create_campaign("Slot Saga")["id"]
 
 
@@ -100,7 +100,7 @@ def test_list_slots_newest_first(tmp_path, monkeypatch, cid):
 
 
 def test_save_slot_without_live_snapshot_raises(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     with pytest.raises(ValueError, match="no live snapshot"):
         store.save_slot("camp_does_not_exist", "quicksave")
 
@@ -136,7 +136,7 @@ def test_tool_load_slot_roundtrips_through_tools(cid):
 
 
 def test_tool_save_slot_unknown_campaign_raises(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     with pytest.raises(ValueError, match="no campaign"):
         server.save_slot("camp_nope", "quicksave")
 

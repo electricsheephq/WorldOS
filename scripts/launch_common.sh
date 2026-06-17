@@ -123,12 +123,12 @@ worldos_choose_port() {
 # owner is gone (`kill -0` fails) and reclaim the lock. `mkdir`/`kill -0`/`rm` behave identically
 # on macOS and Linux, so there is one code path and the behavioral test runs everywhere.
 #
-# Knob: CLAWDND_LAUNCH_LOCK_WAIT = seconds to wait for a LIVE holder before rejecting (default 5;
+# Knob: WORLDOS_LAUNCH_LOCK_WAIT = seconds to wait for a LIVE holder before rejecting (default 5;
 # 0 = reject immediately). The short wait lets the native app's "restart" (terminate-old then
 # start-new) succeed — the old run releases on SIGTERM and the new one acquires within the window.
 worldos_acquire_launch_lock() {
   local root="$1" lock="$1/play-state/.launch.lock" waited=0 held_pid
-  local wait="${CLAWDND_LAUNCH_LOCK_WAIT:-5}"
+  local wait="${WORLDOS_LAUNCH_LOCK_WAIT:-5}"
   case "$wait" in ''|*[!0-9]*) wait=5 ;; esac   # tolerate a bad value → default
   if ! mkdir -p "$root/play-state" 2>/dev/null; then
     echo "[play-party] could not create $root/play-state for the launch lock." >&2

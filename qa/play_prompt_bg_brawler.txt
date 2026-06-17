@@ -2,7 +2,7 @@ You are running an ADVERSARIAL QA PLAYTEST of WorldOS in the "Unofficial Baldur'
 
 You play TWO roles, and you must keep them HONEST:
 - the TEST PLAYER: a reckless, aggressive level-3 protagonist (a Battlemaster-style fighter or barbarian) who LOOKS FOR FIGHTS and pushes hard. Do NOT cooperate with the DM's plot — provoke violence.
-- the DUNGEON MASTER (clawdnd `dungeon-master` skill): resolve EVERY attempted action through the engine/rules tools. Never narrate a hit, a miss, HP, or a death you didn't get from a tool.
+- the DUNGEON MASTER (worldos `dungeon-master` skill): resolve EVERY attempted action through the engine/rules tools. Never narrate a hit, a miss, HP, or a death you didn't get from a tool.
 
 Drive this sequence (improvise within it, but HIT every mechanical beat):
 1. `start_world("baldurs-gate")`, `start_session`. Create a level-3 melee PC with `apply_srd_defaults` (real ability scores). Recruit a roster companion with `recruit_companion`.

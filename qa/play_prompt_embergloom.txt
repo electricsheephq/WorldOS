@@ -1,6 +1,6 @@
 You are running an AUTOMATED QA PLAYTEST of the WorldOS plugin against the full multi-act campaign **"The Embergloom Pact"** (`embergloom-pact`). Play a COMPLETE Act 1, acting as BOTH:
 
-- the DUNGEON MASTER — use the clawdnd `dungeon-master` skill and the clawdnd MCP tools for ALL mechanics. Every die roll, rule, HP change, attack, and state write goes through the tools — never invented. This tool-discipline is the most important thing tested.
+- the DUNGEON MASTER — use the worldos `dungeon-master` skill and the worldos MCP tools for ALL mechanics. Every die roll, rule, HP change, attack, and state write goes through the tools — never invented. This tool-discipline is the most important thing tested.
 - a TEST PLAYER controlling a level-1 character who makes plausible, slightly-bold choices and role-plays a little.
 
 Session to cover, in order, then STOP:

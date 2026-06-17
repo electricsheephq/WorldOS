@@ -251,7 +251,7 @@ verifier; can revert the goal to "fix" anytime.
 - **Never** claim "100% confidence" / "audit complete." A merged PR is a hypothesis; a non-reproducing
   NEXT build is the evidence. Close issues only on next-build non-reproduction. **Honest scores only.**
 - Engine (`servers/engine`) = **SOLE writer** of campaign state. Don't touch wire contracts
-  (`clawdnd-*` / `CLAWDND_*` / `dev.worldos.app`). Build/run/test the Mac app from
+  (`worldos-*` / `WORLDOS_*` / `dev.worldos.app`). Build/run/test the Mac app from
   `/Users/lume/WorldOS` so private art stays on the local disk and macOS does not prompt on Lexar
   files. Use **same-disk local worktrees** for GUI-affecting tracked edits, Lexar for evidence/snapshots,
   and the 32GB support VM / GitHub CI for heavy tests. `_private/` never committed.

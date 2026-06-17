@@ -28,7 +28,7 @@ class ReleaseGateStaticContractTests(unittest.TestCase):
         self.assertIn('set -e\n\necho ""', source)
         self.assertIn('exit "$RRI_RC"', source)
         self.assertIn("WORLDOS_ART_REPO_ROOT", source)
-        self.assertIn("CLAWDND_ART_REPO_ROOT", source)
+        self.assertIn("WORLDOS_ART_REPO_ROOT", source)
         self.assertIn('preflight-only will not kill it', source)
         self.assertIn("missing required command(s)", source)
         self.assertIn("qa/playwright/node_modules/playwright/package.json", source)
@@ -90,7 +90,7 @@ class ReleaseGateStaticContractTests(unittest.TestCase):
 
         self.assertIn("WORLDOS_REPO_ROOT=\"$ROOT_DIR\"", source)
         self.assertIn("WORLDOS_ART_REPO_ROOT=\"$ART_ROOT\"", source)
-        self.assertIn('ART_ROOT="${WORLDOS_ART_REPO_ROOT:-${CLAWDND_ART_REPO_ROOT:-$ROOT_DIR}}"', source)
+        self.assertIn('ART_ROOT="${WORLDOS_ART_REPO_ROOT:-$ROOT_DIR}"', source)
         self.assertIn('ART_ROOT_PLIST="$(plist_escape "$ART_ROOT")"', source)
         self.assertIn("WORLDOS_NO_STOP_EXISTING", source)
         self.assertIn("<key>WorldOSRepoRoot</key>", source)
@@ -163,7 +163,7 @@ class ReleaseGateStaticContractTests(unittest.TestCase):
         # minimal campaign first, guarded so an already-seeded state is untouched.
         source = (ROOT / "qa" / "ui_audit_health.sh").read_text(encoding="utf-8")
 
-        self.assertIn('AUDIT_STATE_DIR="${WORLDOS_STATE_DIR:-${CLAWDND_STATE_DIR:-}}"', source)
+        self.assertIn('AUDIT_STATE_DIR="${WORLDOS_STATE_DIR:-}"', source)
         self.assertIn('campaigns/*/snapshot.json', source)
         self.assertIn('server.start_world(', source)
         self.assertIn("uv run --directory servers/engine python", source)

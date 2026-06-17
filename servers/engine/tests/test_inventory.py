@@ -144,7 +144,7 @@ def test_attune_requires_flag():
 
 # --- tools ---
 def test_buy_and_sell_tools(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Shop")["id"]
     h = server.create_character(cid, "Buyer", kind="player")["id"]
     server.adjust_currency(cid, h, gp=50)
@@ -157,7 +157,7 @@ def test_buy_and_sell_tools(tmp_path, monkeypatch):
 
 
 def test_buy_insufficient_raises(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Shop")["id"]
     h = server.create_character(cid, "Broke", kind="player")["id"]
     with pytest.raises(Exception):
@@ -221,7 +221,7 @@ def test_item_negative_quantity_rejected():  # H4
 
 
 def test_sell_negative_price_raises(tmp_path, monkeypatch):  # H1 via tool
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Shop")["id"]
     h = server.create_character(cid, "Seller", kind="player")["id"]
     server.add_item(cid, h, "Trinket")
@@ -234,7 +234,7 @@ def test_sell_negative_price_raises(tmp_path, monkeypatch):  # H1 via tool
 
 @pytest.fixture
 def shop(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("Shop")["id"]
     h = server.create_character(cid, "Seller", kind="player")["id"]
     return cid, h

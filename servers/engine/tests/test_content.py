@@ -105,7 +105,7 @@ def test_scenes_persisted_on_seed():
 def test_get_scene_surfaces_authored_guidance(tmp_path, monkeypatch):
     # The DM was playing blind: scenes (read_aloud/dm_notes) were dropped at seed.
     # get_scene now surfaces them — incl. the previously-buried Maerith heartbreak cue.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_adventure("embergloom-pact")["campaign_id"]
     out = server.get_scene(cid)  # defaults to the current (hub) location
     assert out["count"] >= 1
@@ -118,7 +118,7 @@ def test_start_world_seeds_living_world_and_lore_is_recallable(tmp_path, monkeyp
     # The generative pivot: a persistent WORLD bible seeds a navigable map + factions +
     # pullable NPCs + lore, and the lore is recallable so a generated story stays
     # consistent with canon (the anti-mush guardrail at world scale).
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     out = server.start_world("sundered-reach")
     cid = out["campaign_id"]
     assert out["world"] == "The Sundered Reach"
@@ -453,7 +453,7 @@ def test_seed_world_rejects_unknown_start(tmp_path, monkeypatch):
 
 def test_start_world_resume_continues_instead_of_orphaning(tmp_path, monkeypatch):
     # adversarial review #4: re-running start_world must not silently orphan a live world.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     first = server.start_world("sundered-reach")
     cid = first["campaign_id"]
     server.add_location(cid, "A Generated Hamlet", connections=[first["starting_at"]["id"]])
@@ -483,7 +483,7 @@ def test_list_worlds_enumerates_seeds():
 def test_lookup_lore_returns_world_canon(tmp_path, monkeypatch):
     # the DM's on-demand "wiki": lookup_lore pulls ranked canon from the world's
     # lore corpus + reports the chronology (era), and is empty/safe off-world.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_world("sundered-reach")["campaign_id"]
     out = server.lookup_lore(cid, "Brassmoor capital of the Concord")
     assert out["corpus_pages"] >= 1 and out["era"]  # chronology surfaced
@@ -527,7 +527,7 @@ def test_seed_world_roster_role_does_not_land_in_attitude(tmp_path, monkeypatch)
     # OVERWRITE with a track word on first influence (so the role was silently destroyed) and
     # the dashboard bar reads as a disposition. The role must NOT corrupt attitude: it lands
     # in `notes` (free text), attitude is left for the social track.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     world = {
         "id": "role-test", "name": "Role Test", "premise": "p", "era": "now",
         "regions": [{"id": "loc-a", "name": "A", "description": "d", "connections": []}],
@@ -600,7 +600,7 @@ def test_seed_world_ending_random_resolves_to_a_concrete_overlay():
 
 
 def test_start_world_echoes_chosen_ending(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     out = server.start_world("baldurs-gate", ending="illithid-ascension")
     assert out["ending"] == "illithid-ascension"
     assert out["ending_name"] and out["ending_state"]  # DM has a one-line state to announce
@@ -611,7 +611,7 @@ def test_start_world_echoes_chosen_ending(tmp_path, monkeypatch):
 
 
 def test_list_canon_characters_playable_filter(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_world("baldurs-gate")["campaign_id"]
     # SYN-03: the surface is BOUNDED — the unfiltered call no longer dumps all ~2,076
     # records; it returns a `limit`-capped page with a `{total, returned, truncated}`
@@ -641,7 +641,7 @@ def test_list_canon_characters_playable_filter(tmp_path, monkeypatch):
 def test_list_canon_characters_envelope_and_query(tmp_path, monkeypatch):
     # SYN-03: the bounded envelope on the flagship roster — {total, returned, truncated},
     # a working `q` substring filter, and a `limit` that pages without losing the total.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_world("baldurs-gate")["campaign_id"]
     capped = server.list_canon_characters(cid, limit=10)
     assert capped["returned"] == len(capped["available"]) == 10
@@ -765,7 +765,7 @@ def test_easy_starter_flag_absent_safe_off_recommended_path():
 
 
 def test_start_character_origins(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_world("baldurs-gate")["campaign_id"]
     # nobody_l1 (default) — a fresh level-1 PC, added to the party
     n = server.start_character(cid, name="Nobody")
@@ -794,7 +794,7 @@ def test_start_character_origins(tmp_path, monkeypatch):
 
 
 def test_start_character_pickup_rejects_hero_accepts_minor(tmp_path, monkeypatch):
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_world("baldurs-gate")["campaign_id"]
     # pickup a MINOR canon figure as the PLAYER — allowed, carries their real identity
     pm = server.start_character(cid, origin="pickup:Minsc")
@@ -817,7 +817,7 @@ def test_start_character_pickup_rejects_hero_accepts_minor(tmp_path, monkeypatch
 def test_start_character_pickup_promotes_existing_roster_npc(tmp_path, monkeypatch):
     # B-MED-1: start_world seeds Minsc as a roster NPC (npc-minsc "Minsc and Boo").
     # pickup:Minsc must PROMOTE that record to the player, NOT mint a second Minsc.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_world("baldurs-gate")["campaign_id"]
     from store import load_campaign
 
@@ -1026,7 +1026,7 @@ def test_recall_and_lookup_lore_agree_under_nondefault_ending(tmp_path, monkeypa
     # c.lore; lookup_lore reads the SEPARATE .md corpus — which previously still asserted
     # "Gortash is dead / brain destroyed". Now the corpus is de-conflicted on the same
     # basis (+ both led by the canon header), so no contradicting assertion reaches the DM.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_world("baldurs-gate", ending="gortash-tyranny")["campaign_id"]
 
     rec = server.recall(cid, "Gortash")["hits"]
@@ -1105,7 +1105,7 @@ def test_grim_ending_recall_and_lookup_lore_agree_on_all_flipped_facts(ending, t
     # facts that ending flips (Gortash / Steel-Watch / the-Absolute / the-city / the-Emperor)
     # — both surfaces lead with the corrected canon header, and NO stale pre-flip assertion
     # survives on EITHER surface that would contradict the (corrected) world_state header.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     spec = _CROSS_SURFACE[ending]
     cid = server.start_world("baldurs-gate", ending=ending)["campaign_id"]
     for q in spec["queries"]:
@@ -1200,7 +1200,7 @@ def test_rendered_premise_is_internally_consistent(ending, dead_clauses, alive_m
 def test_overlay_premise_and_story_seeds_replace_are_additive(tmp_path, monkeypatch):
     # S6 engine addition: `premise` (full premise replace) and `story_seeds_replace`/
     # `story_seeds` (replace base seeds) are ADDITIVE — absent => today's append behavior.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     w = content.load_world_data("baldurs-gate")
     base_premise = w.get("premise", "")
     base_seeds = list(w.get("story_seeds", []) or [])
@@ -1241,8 +1241,8 @@ def test_overlay_premise_and_story_seeds_replace_degrade_not_abort(tmp_path, mon
         "premise": ["not", "a", "string"],          # malformed -> coerced/ignored
         "story_seeds_replace": "not a list",          # malformed -> ignored, base seeds stand
     }), encoding="utf-8")
-    monkeypatch.setenv("CLAWDND_CONTENT_DIR", str(tmp_path))
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_CONTENT_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     w = content.load_world_data("baldurs-gate")
     base_seeds = list(w.get("story_seeds", []) or [])
     c = content.seed_world(w, ending="bad-replace")  # must NOT raise
@@ -1259,7 +1259,7 @@ def test_world_state_default_path_is_byte_identical(tmp_path, monkeypatch):
     # ADDITIVE: with no ending (or an ending without a world_state block) there is no
     # world_state -> recall/lookup_lore emit NO header and NO de-confliction, byte-for-byte
     # as before. Compare a base campaign's surfaces with and against the header path.
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     # base world (no ending): world_state is None, lore_supersedes empty
     base_cid = server.start_world("baldurs-gate")["campaign_id"]
     from store import load_campaign
@@ -1287,7 +1287,7 @@ def test_recall_kinds_filter_excludes_world_state_header(tmp_path, monkeypatch):
     # absent when kinds is a subset that doesn't list "world_state"; present when unfiltered
     # or when the caller explicitly asks for "world_state".
     import ledger as ledger_mod
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_world("baldurs-gate", ending="gortash-tyranny")["campaign_id"]
     # log a decision so a kinds=["decision"] filter has a legitimate row to return
     server.record_decision(cid, "Side with the resistance against the Archduke", ["comply", "resist"])
@@ -1332,7 +1332,7 @@ def test_world_state_malformed_block_degrades_not_aborts(tmp_path, monkeypatch):
         # a valid sibling field still applies, proving only the bad block degraded
         "history_append": ["A new line of history."],
     }), encoding="utf-8")
-    monkeypatch.setenv("CLAWDND_CONTENT_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_CONTENT_DIR", str(tmp_path))
 
     w = content.load_world_data("baldurs-gate")
     c = content.seed_world(w, ending="bad-ws")  # must NOT raise
@@ -1364,7 +1364,7 @@ def test_world_state_degrade_also_skips_lore_supersedes_coupling(tmp_path, monke
         # ...and a supersedes that WOULD redact the .md corpus if it were (wrongly) recorded
         "supersedes": ["seat of power is contested", "is dead, his **steel watch** wrecked"],
     }), encoding="utf-8")
-    monkeypatch.setenv("CLAWDND_CONTENT_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_CONTENT_DIR", str(tmp_path))
 
     w = content.load_world_data("baldurs-gate")
     c = content.seed_world(w, ending="bad-ws-sup")  # must NOT raise
@@ -1489,7 +1489,7 @@ def test_start_world_ending_preloads_companion_arc_end_to_end(tmp_path, monkeypa
     # surfaces in play once that figure is brought into the party as a companion (the
     # check_companion_arc evaluator gates on kind=="companion"), exactly mirroring real
     # play (recruit_companion / load_canon_character(kind="companion")).
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_world("baldurs-gate", ending="illithid-ascension")["campaign_id"]
     from store import load_campaign, save_campaign
     c = load_campaign(cid)
@@ -1585,7 +1585,7 @@ def test_seed_world_without_areas_is_unchanged(tmp_path, monkeypatch):
             shutil.copytree(item, dst_world / item.name)
         else:
             shutil.copy2(item, dst_world / item.name)
-    monkeypatch.setenv("CLAWDND_CONTENT_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_CONTENT_DIR", str(tmp_path))
     w = content.load_world_data("baldurs-gate")
     c = content.seed_world(w)
     assert content.load_world_areas("baldurs-gate") == []
@@ -1667,7 +1667,7 @@ def test_seed_world_areas_intra_area_id_collision_guarded(tmp_path, monkeypatch)
         "id": "loc-dup-area", "name": "Second Area", "description": "the second",
         "region": "Baldur's Gate", "connections": ["Baldur's Gate — Lower City"],
     }), encoding="utf-8")
-    monkeypatch.setenv("CLAWDND_CONTENT_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_CONTENT_DIR", str(tmp_path))
 
     w = content.load_world_data("baldurs-gate")
     c = content.seed_world(w)  # must not raise; second area is skipped, not clobbering
@@ -1706,7 +1706,7 @@ def test_seed_world_ending_malformed_companion_seed_does_not_abort(tmp_path, mon
             "npc-karlach": {"arc": {"arc_gates": [{"kind": "romance", "threshold": 30}]}},
         },
     }), encoding="utf-8")
-    monkeypatch.setenv("CLAWDND_CONTENT_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_CONTENT_DIR", str(tmp_path))
 
     w = content.load_world_data("baldurs-gate")
     # FAILS BEFORE THE FIX: the unguarded CompanionArc.model_validate raises ValidationError
@@ -1811,7 +1811,7 @@ def test_new_characters_appear_in_list_canon_characters(tmp_path, monkeypatch):
     """Rolan, Lia, and Isobel are discoverable as playable canon characters.
     (SYN-03: the roster is now bounded, so look them up by `q` rather than scanning
     the capped head of the ~2,000-record list.)"""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_world("baldurs-gate")["campaign_id"]
     for who in ("Rolan", "Lia", "Isobel"):
         chars = server.list_canon_characters(cid, q=who)["available"]
@@ -1825,7 +1825,7 @@ def test_new_characters_appear_in_list_canon_characters(tmp_path, monkeypatch):
 def test_start_character_rolan_evoker_template_yields_spells(tmp_path, monkeypatch):
     """start_character with origin='template:rolan-evoker' produces a PC with non-empty
     spell_slots AND non-empty spells_known (casts > 0 is now POSSIBLE)."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_world("baldurs-gate")["campaign_id"]
     result = server.start_character(cid, origin="template:rolan-evoker")
     assert "error" not in result, f"start_character errored: {result}"
@@ -1843,7 +1843,7 @@ def test_start_character_rolan_evoker_template_yields_spells(tmp_path, monkeypat
 def test_start_character_isobel_cleric_template_yields_spells(tmp_path, monkeypatch):
     """start_character with origin='template:isobel-cleric' produces a Cleric with
     non-empty spell_slots AND non-empty spells_prepared."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_world("baldurs-gate")["campaign_id"]
     result = server.start_character(cid, origin="template:isobel-cleric")
     assert "error" not in result, f"start_character errored: {result}"
@@ -1858,7 +1858,7 @@ def test_start_character_isobel_cleric_template_yields_spells(tmp_path, monkeypa
 
 def test_start_character_lia_battlemaster_template_no_spells(tmp_path, monkeypatch):
     """start_character with origin='template:lia-battlemaster' produces a Fighter with no spells."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.start_world("baldurs-gate")["campaign_id"]
     result = server.start_character(cid, origin="template:lia-battlemaster")
     assert "error" not in result, f"start_character errored: {result}"
@@ -2091,7 +2091,7 @@ def _campaign_on_synth_world(tmp_path, monkeypatch):
     The campaign is created against the REAL bundled content (cellar-rats adventure), then
     CONTENT_DIR is redirected to the synthetic roster so the canon-character reads resolve
     there. Ordering matters: redirecting first would hide the cellar-rats adventure data."""
-    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path / "state"))
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path / "state"))
     cid = server.start_adventure("cellar-rats")["campaign_id"]
     monkeypatch.setenv("WORLDOS_CONTENT_DIR", str(tmp_path / "content"))
     wid = _synth_roster_world(tmp_path / "content")
