@@ -172,9 +172,9 @@
     },
     "structural_completeness": {
       "category": "ENGINE_INVARIANT",
-      "likely_code_locations": ["servers/engine/companion.py", "servers/engine/server.py", "servers/engine/questgen.py"],
+      "likely_code_locations": ["servers/engine/server.py", "servers/engine/models.py", "servers/engine/companion.py"],
       "retest": "bash qa/run_duo.sh duo-retest",
-      "hint": "A >=10-beat session with a companion never engaged a core relationship/quest system: either no companion's attitude_value moved off 0 AND no camp/long_rest happened, or an active quest was left open across a >=2-location arc with no quest-resolution call. Either the DM never invoked the relationship/quest tools (record_decision approval_tags / adjust_attitude / camp_scene / complete_quest evolves_to — DM adherence) or those engine writes never landed (engine). Check the approval/attitude write in companion.py, the record_decision/camp_scene/complete_quest handlers in server.py, and the quest-resolution/evolution path in questgen.py. FATAL (skipped in the combat-sprint lane); validate at >=24 beats so an authored campaign quest has room to resolve."
+      "hint": "A >=10-beat session with a companion never engaged a core relationship/quest system: either no companion's attitude_value moved off 0 AND no camp/long_rest happened, or an active quest was left open across a >=2-location arc with no quest-resolution call. Either the DM never invoked the relationship/quest tools (record_decision / adjust_attitude / camp_scene / complete_quest evolves_to — DM adherence) or those engine writes never landed (engine). All those tool handlers + the attitude_value/quest-status writes live in server.py (adjust_attitude, record_decision, camp_scene, complete_quest, and the rule-of-three evolution _maybe_schedule_quest_evolution / evolves_to); the field definitions are in models.py; companion.py only surfaces approval CAUSES (approval_tags) for the DM to apply — it never writes state itself. The gate trips at >=10 beats (STRUCTURAL_MIN_BEATS); when validating authored campaigns run >=24 beats so the main quest has room to resolve, else the unresolved-arc sub-check false-REDs. FATAL; skipped in the combat-sprint lane."
     },
     "world_peopled": {
       "category": "DM_ADHERENCE",
