@@ -2827,8 +2827,21 @@ def load_canon_character(campaign_id: str, name: str = "", kind: str = "npc", ad
                 "origin_banned": True,
                 "name": canonical,
             }
+        # DEDUP (B-MED-1): match by exact canonical name across ALL kinds first (a player/monster
+        # already bearing this name still blocks a duplicate — today's behavior), THEN fall back
+        # to the roster matcher so a canon figure seeded under a FULLER display name is promoted
+        # in place instead of fresh-loaded as a duplicate: canon "Wyll" -> rostered "Wyll
+        # Ravengard" (npc-wyll), canon "Minsc" -> "Minsc and Boo" (npc-minsc).
+        # _find_existing_roster_match (the same matcher the start_character `pickup:` path trusts)
+        # only considers npc/companion roster records (never a player/monster) and keys on the
+        # resolved canonical name, so this is STRICTLY ADDITIVE — it can only ADD matches the
+        # exact-name check missed, never remove one. Empirically the only new matches across the
+        # baldurs-gate corpus (2076 canon files) are Wyll and Minsc, both correct same-figure
+        # dedups; the rostered record then flows through the documented load -> recruit_companion
+        # seating (and already carries its authored roster companion_dossier).
         dup = next((ch for ch in c.characters.values()
-                    if ch.name.strip().lower() == canonical.strip().lower()), None)
+                    if ch.name.strip().lower() == canonical.strip().lower()), None) \
+            or _find_existing_roster_match(c, canonical)
         if dup is not None:
             # Already present (commonly: the cold-open PRELUDE seeds the companion NPC, then the
             # DM tries to load them) — return a SUCCESS-shaped response, not a hard error, so the
