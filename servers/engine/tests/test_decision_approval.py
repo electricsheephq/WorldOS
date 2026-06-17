@@ -38,16 +38,19 @@ def _new_campaign(monkeypatch, tmp_path, title="Approval"):
     return server.create_campaign(title)["id"]
 
 
-def _add_companion(cid, name, *, likes=None, dislikes=None, attitude=0):
+def _add_companion(cid, name, *, likes=None, dislikes=None, attitude=0, weights=None):
     """Create a party companion with a dossier whose approval causes are the given keys."""
     res = server.create_character(cid, name, kind="companion", class_name="Fighter")
     comp_id = res["id"]
+    dossier = {
+        "approval_likes": list(likes or []),
+        "approval_dislikes": list(dislikes or []),
+    }
+    if weights is not None:
+        dossier["approval_weights"] = dict(weights)
     server.update_character(cid, comp_id, {
         "attitude_value": attitude,
-        "companion_dossier": {
-            "approval_likes": list(likes or []),
-            "approval_dislikes": list(dislikes or []),
-        },
+        "companion_dossier": dossier,
     })
     return comp_id
 
@@ -444,3 +447,298 @@ def test_loading_canon_minsc_promotes_roster_record_without_duplicate(tmp_path, 
     assert res.get("already_present") is True and res["id"] == "npc-minsc"
     minscs = [ch for ch in store.load_campaign(bg).characters.values() if "minsc" in ch.name.strip().lower()]
     assert len(minscs) == 1, f"expected one Minsc record, got {[m.name for m in minscs]}"
+
+
+# --- INC-A1: weighted PRIMARY delta (E4 per-cause intensity) -----------------
+
+def test_high_weight_cause_moves_more_than_default(tmp_path, monkeypatch):
+    """A 25-weight like moves +25; an unweighted like on the same companion still moves +10."""
+    cid = _new_campaign(monkeypatch, tmp_path)
+    comp = _add_companion(
+        cid, "Astarion", likes=["power", "mercy"], dislikes=["weakness"],
+        weights={"power": 25},
+    )
+    out = server.record_decision(cid, summary="seized the throne", approval_tags=["power"])
+    assert _attitude(cid, comp) == 25
+    row = next(r for r in out["approval_results"] if r["id"] == comp)
+    assert row["delta"] == 25
+
+
+def test_unweighted_cause_still_moves_ten(tmp_path, monkeypatch):
+    """A like with no weight entry moves the flat +10 (back-compat); a weighted dislike scales."""
+    cid = _new_campaign(monkeypatch, tmp_path)
+    comp = _add_companion(
+        cid, "Karlach", likes=["kindness"], dislikes=["cruelty"],
+        weights={"cruelty": 30},
+    )
+    # unweighted like => +10
+    server.record_decision(cid, summary="a small kindness", approval_tags=["kindness"])
+    assert _attitude(cid, comp) == 10
+    # weighted dislike => -30 (the list decides sign, the weight is the magnitude)
+    out = server.record_decision(cid, summary="a needless cruelty", approval_tags=["cruelty"])
+    assert _attitude(cid, comp) == 10 - 30
+    row = next(r for r in out["approval_results"] if r["id"] == comp)
+    assert row["delta"] == -30
+
+
+def test_explicit_delta_still_wins_over_weight(tmp_path, monkeypatch):
+    """An explicit per-tag delta bypasses the weight ladder (authoritative, verbatim)."""
+    cid = _new_campaign(monkeypatch, tmp_path)
+    comp = _add_companion(
+        cid, "Astarion", likes=["power"], dislikes=["weakness"],
+        weights={"power": 25},
+    )
+    out = server.record_decision(
+        cid, summary="an authored swing", approval_tags=[{"key": "power", "delta": 40}],
+    )
+    assert _attitude(cid, comp) == 40  # explicit 40, NOT the 25 weight
+    row = next(r for r in out["approval_results"] if r["id"] == comp)
+    assert row["delta"] == 40
+
+
+def test_zero_weight_rejected_fail_loud(tmp_path, monkeypatch):
+    """approval_weights with a <=0 value fails loud at author/validate time."""
+    from models import CompanionDossier
+    with pytest.raises(ValueError):
+        CompanionDossier(approval_likes=["mercy"], approval_weights={"mercy": 0})
+    with pytest.raises(ValueError):
+        CompanionDossier(approval_likes=["mercy"], approval_weights={"mercy": -5})
+    with pytest.raises(ValueError):
+        CompanionDossier(approval_likes=["mercy"], approval_weights={"mercy": 51})
+
+
+def test_dossier_without_weights_round_trips():
+    """A pre-A1 dossier (no approval_weights) loads with an empty default — additive."""
+    from models import CompanionDossier
+    d = CompanionDossier(approval_likes=["mercy"])
+    raw = d.model_dump(mode="json")
+    old = {k: v for k, v in raw.items() if k != "approval_weights"}
+    assert "approval_weights" not in old
+    reloaded = CompanionDossier.model_validate(old)
+    assert reloaded.approval_weights == {}
+
+
+# --- INC-A2: approval ledger model + recording (E5) --------------------------
+
+def test_decision_records_an_approval_event(tmp_path, monkeypatch):
+    """A tagged decision appends one ApprovalEvent (cause/delta/new_value/decision_id) and
+    bumps approval_cause_counts on the moved companion."""
+    cid = _new_campaign(monkeypatch, tmp_path)
+    comp = _add_companion(cid, "Shadowheart", likes=["mercy"], dislikes=["cruelty"])
+    out = server.record_decision(cid, summary="spared the foe", approval_tags=["mercy"])
+    ch = store.load_campaign(cid).characters[comp]
+    assert len(ch.approval_log) == 1
+    ev = ch.approval_log[0]
+    assert ev.cause == "mercy"
+    assert ev.delta == 10
+    assert ev.new_value == 10
+    assert ev.decision_id == out["id"]  # links back to the driving Decision
+    assert ev.day == 1
+    assert ch.approval_cause_counts == {"mercy": 1}
+
+
+def test_weighted_cause_logs_realized_delta(tmp_path, monkeypatch):
+    """The logged delta is the REALIZED (weighted) move, not the flat default."""
+    cid = _new_campaign(monkeypatch, tmp_path)
+    comp = _add_companion(cid, "Astarion", likes=["power"], weights={"power": 25})
+    server.record_decision(cid, summary="seized the throne", approval_tags=["power"])
+    ch = store.load_campaign(cid).characters[comp]
+    assert ch.approval_log[-1].delta == 25
+
+
+def test_multiple_causes_log_one_event_each(tmp_path, monkeypatch):
+    cid = _new_campaign(monkeypatch, tmp_path)
+    comp = _add_companion(cid, "Wyll", likes=["heroism", "mercy"], dislikes=["cruelty"])
+    server.record_decision(
+        cid, summary="saved the village, left the bandit",
+        approval_tags=["heroism", "mercy", "cruelty"],
+    )
+    ch = store.load_campaign(cid).characters[comp]
+    causes = [e.cause for e in ch.approval_log]
+    assert causes == ["heroism", "mercy", "cruelty"]
+    assert ch.approval_cause_counts == {"heroism": 1, "mercy": 1, "cruelty": 1}
+
+
+def test_persist_beat_decision_leg_records_event_with_decision_id(tmp_path, monkeypatch):
+    """The batched persist_beat decision leg also records an ApprovalEvent + threads its id."""
+    cid = _new_campaign(monkeypatch, tmp_path)
+    comp = _add_companion(cid, "Shadowheart", likes=["mercy"])
+    out = server.persist_beat(
+        cid,
+        decision={"summary": "spared the foe", "approval_tags": ["mercy"]},
+    )
+    ch = store.load_campaign(cid).characters[comp]
+    assert len(ch.approval_log) == 1
+    ev = ch.approval_log[0]
+    assert ev.cause == "mercy" and ev.delta == 10
+    # decision_id resolves to the planned decision's id
+    assert ev.decision_id == out["decision"]["id"]
+
+
+def test_old_snapshot_without_approval_log_round_trips(tmp_path, monkeypatch):
+    """A pre-ledger Character/Campaign snapshot loads with empty ledger fields (additive)."""
+    from models import Character, Campaign
+    ch = Character(name="Vesper", kind="companion")
+    raw = ch.model_dump(mode="json")
+    old = {k: v for k, v in raw.items() if k not in ("approval_log", "approval_cause_counts")}
+    assert "approval_log" not in old and "approval_cause_counts" not in old
+    reloaded = Character.model_validate(old)
+    assert reloaded.approval_log == []
+    assert reloaded.approval_cause_counts == {}
+
+
+def test_untagged_decision_records_no_event(tmp_path, monkeypatch):
+    """An untagged decision logs nothing (byte-identical to today's ledger-empty state)."""
+    cid = _new_campaign(monkeypatch, tmp_path)
+    comp = _add_companion(cid, "Gale", likes=["knowledge"])
+    server.record_decision(cid, summary="a quiet choice")
+    ch = store.load_campaign(cid).characters[comp]
+    assert ch.approval_log == []
+    assert ch.approval_cause_counts == {}
+
+
+# --- INC-A3: diminishing returns / anti-grind (E4 decay) ---------------------
+
+def test_same_cause_across_four_beats_decays(tmp_path, monkeypatch):
+    """Grinding the SAME default-weight cause decays the realized move per beat. With base 10
+    and factors (1.0,0.5,0.25,0.0) under int(round(...)) (banker's rounding of 2.5->2) the
+    deterministic sequence is 10,5,2,0 — NOT a flat 40 across four beats."""
+    cid = _new_campaign(monkeypatch, tmp_path)
+    comp = _add_companion(cid, "Shadowheart", likes=["mercy"])
+    moves = []
+    for i in range(4):
+        out = server.record_decision(cid, summary=f"mercy beat {i}", approval_tags=["mercy"])
+        row = next(r for r in out["approval_results"] if r["id"] == comp) if "approval_results" in out else None
+        moves.append(row["delta"] if row else 0)
+    assert moves == [10, 5, 2, 0]
+    # cumulative gauge = 17 (10+5+2+0), NOT 40
+    assert _attitude(cid, comp) == 17
+
+
+def test_diminished_flag_set_on_decayed_event(tmp_path, monkeypatch):
+    cid = _new_campaign(monkeypatch, tmp_path)
+    comp = _add_companion(cid, "Shadowheart", likes=["mercy"])
+    server.record_decision(cid, summary="first", approval_tags=["mercy"])
+    server.record_decision(cid, summary="second", approval_tags=["mercy"])
+    ch = store.load_campaign(cid).characters[comp]
+    assert ch.approval_log[0].diminished is False  # first fire, factor 1.0
+    assert ch.approval_log[1].diminished is True    # second fire, factor 0.5
+
+
+def test_different_cause_is_unaffected_by_decay(tmp_path, monkeypatch):
+    """Grinding 'mercy' does not decay a fresh, never-fired 'heroism' cause."""
+    cid = _new_campaign(monkeypatch, tmp_path)
+    comp = _add_companion(cid, "Wyll", likes=["mercy", "heroism"])
+    for i in range(3):
+        server.record_decision(cid, summary=f"mercy {i}", approval_tags=["mercy"])
+    out = server.record_decision(cid, summary="a heroic deed", approval_tags=["heroism"])
+    row = next(r for r in out["approval_results"] if r["id"] == comp)
+    assert row["delta"] == 10  # heroism is fresh => full +10
+
+
+def test_explicit_delta_bypasses_decay(tmp_path, monkeypatch):
+    """An explicit per-tag delta ignores decay no matter how ground the cause is."""
+    cid = _new_campaign(monkeypatch, tmp_path)
+    comp = _add_companion(cid, "Astarion", likes=["power"])
+    for i in range(3):
+        server.record_decision(cid, summary=f"power {i}", approval_tags=["power"])
+    out = server.record_decision(
+        cid, summary="an authored swing", approval_tags=[{"key": "power", "delta": 30}],
+    )
+    row = next(r for r in out["approval_results"] if r["id"] == comp)
+    assert row["delta"] == 30  # explicit, undecayed
+
+
+def test_fully_decayed_cause_logs_zero_event(tmp_path, monkeypatch):
+    """The 4th+ fire of a cause moves the gauge 0 but STILL logs a delta-0 event."""
+    cid = _new_campaign(monkeypatch, tmp_path)
+    comp = _add_companion(cid, "Shadowheart", likes=["mercy"])
+    for i in range(4):
+        server.record_decision(cid, summary=f"mercy {i}", approval_tags=["mercy"])
+    ch = store.load_campaign(cid).characters[comp]
+    assert ch.approval_log[-1].delta == 0
+    assert ch.approval_log[-1].cause == "mercy"
+    assert ch.approval_cause_counts["mercy"] == 4
+
+
+def test_decay_survives_log_truncation(tmp_path, monkeypatch):
+    """approval_cause_counts is never truncated, so after the 40-row log cap the decay stays
+    correct — a heavily-ground cause does NOT reset to full strength."""
+    cid = _new_campaign(monkeypatch, tmp_path)
+    comp = _add_companion(cid, "Shadowheart", likes=["mercy"])
+    # Drive >40 mercy decisions so the rolling log truncates; counts keep climbing.
+    for i in range(45):
+        server.record_decision(cid, summary=f"mercy {i}", approval_tags=["mercy"])
+    ch = store.load_campaign(cid).characters[comp]
+    assert len(ch.approval_log) == 40  # log capped
+    assert ch.approval_cause_counts["mercy"] == 45  # count un-truncated
+    # one more fire still decays to 0 (n>=3), NOT back to +10
+    out = server.record_decision(cid, summary="mercy again", approval_tags=["mercy"])
+    row = next(r for r in out["approval_results"] if r["id"] == comp)
+    assert row["delta"] == 0
+
+
+# --- INC-A4: read surfaces (E5 ledger tool + durable fold) -------------------
+
+def test_companion_approval_ledger_returns_recorded_events(tmp_path, monkeypatch):
+    """The ledger tool answers 'why does X distrust me' with the recorded moves + the net
+    negative causes."""
+    cid = _new_campaign(monkeypatch, tmp_path)
+    comp = _add_companion(cid, "Ondine", likes=["mercy"], dislikes=["betrayal"])
+    server.record_decision(cid, summary="spared the foe", approval_tags=["mercy"])
+    server.record_decision(cid, summary="betrayed the pact", approval_tags=["betrayal"])
+    out = server.companion_approval_ledger(cid, companion_id=comp)
+    assert out["count"] == 1
+    led = out["companions"][0]
+    assert led["id"] == comp
+    assert led["attitude_value"] == 0  # +10 then -10
+    # newest-first
+    assert [e["cause"] for e in led["recent"]] == ["betrayal", "mercy"]
+    assert led["net_positive"] == [["mercy", 10]]
+    assert led["net_negative"] == [["betrayal", -10]]
+
+
+def test_companion_approval_ledger_all_party_companions(tmp_path, monkeypatch):
+    cid = _new_campaign(monkeypatch, tmp_path)
+    a = _add_companion(cid, "Astarion", likes=["power"])
+    b = _add_companion(cid, "Wyll", likes=["heroism"])
+    server.record_decision(cid, summary="a heroic deed", approval_tags=["heroism"])
+    out = server.companion_approval_ledger(cid)  # no companion_id => all
+    ids = {v["id"] for v in out["companions"]}
+    assert ids == {a, b}
+    wyll = next(v for v in out["companions"] if v["id"] == b)
+    astarion = next(v for v in out["companions"] if v["id"] == a)
+    assert wyll["net_positive"] == [["heroism", 10]]
+    assert astarion["recent"] == []  # never moved
+
+
+def test_companion_approval_ledger_limit(tmp_path, monkeypatch):
+    cid = _new_campaign(monkeypatch, tmp_path)
+    comp = _add_companion(cid, "Shadowheart", likes=["mercy"])
+    for i in range(5):
+        server.record_decision(cid, summary=f"mercy {i}", approval_tags=["mercy"])
+    out = server.companion_approval_ledger(cid, companion_id=comp, limit=2)
+    assert len(out["companions"][0]["recent"]) == 2
+
+
+def test_durable_companions_fold_recent_approval(tmp_path, monkeypatch):
+    """scene_context.durable.companions gains recent_approval (last 3, newest-first) once a
+    companion has moved."""
+    cid = _new_campaign(monkeypatch, tmp_path)
+    _add_companion(cid, "Shadowheart", likes=["mercy", "duty"])
+    server.record_decision(cid, summary="a duty kept", approval_tags=["duty"])
+    server.record_decision(cid, summary="a mercy shown", approval_tags=["mercy"])
+    sc = server.scene_context(cid)
+    sh = next(e for e in sc["durable"]["companions"] if e["name"] == "Shadowheart")
+    assert "recent_approval" in sh
+    assert [e["cause"] for e in sh["recent_approval"]] == ["mercy", "duty"]  # newest-first
+
+
+def test_durable_companions_recent_approval_absent_when_empty(tmp_path, monkeypatch):
+    """The recent_approval key is ABSENT (not empty) when the companion has no logged moves —
+    today's durable shape byte-for-byte."""
+    cid = _new_campaign(monkeypatch, tmp_path)
+    _add_companion(cid, "Gale", likes=["knowledge"])
+    sc = server.scene_context(cid)
+    gale = next(e for e in sc["durable"]["companions"] if e["name"] == "Gale")
+    assert "recent_approval" not in gale

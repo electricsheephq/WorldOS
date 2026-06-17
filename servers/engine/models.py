@@ -481,6 +481,29 @@ class CompanionDossier(_StrictModel):
     # Standing ties to other figures: id-or-name -> a short relationship tag ("old ally",
     # "estranged sister"). Keys live in CONTENT (the seed files), never engine code.
     relationships: dict[str, str] = Field(default_factory=dict)
+    # Per-cause approval INTENSITY (E4 weighted delta). Keys are the SAME lowercase_snake
+    # cause-keys in approval_likes/approval_dislikes; the value is a POSITIVE magnitude (the
+    # LIST the key sits on decides sign) used as the base approval swing for that cause. An
+    # absent key falls back to the flat ±_APPROVAL_DEFAULT_DELTA (10), so a dossier with no
+    # weights moves ±10 exactly as today (additive default {} == today's behavior). The
+    # validator clamps each value to 1..50 and rejects <=0 (fail-loud at author time, mirroring
+    # the betrayal_threshold author guard) so a negative/typo can't arm a one-hit swing or
+    # sign-flip. Keys live in CONTENT (the dossier), never engine code.
+    approval_weights: dict[str, int] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _sane_approval_weights(self):
+        # A weight is a POSITIVE magnitude (1..50); the like/dislike list decides the sign. A
+        # value <= 0 (or above 50) is an author footgun — reject it loud instead of arming a
+        # sign-flip or a one-hit swing. Empty == today's behavior, so this never fires on an
+        # un-weighted dossier.
+        for key, weight in (self.approval_weights or {}).items():
+            if not isinstance(weight, int) or isinstance(weight, bool) or not (1 <= weight <= 50):
+                raise ValueError(
+                    f"approval_weights[{key!r}] must be a positive magnitude in 1..50 "
+                    f"(the LIST decides sign), got {weight!r}"
+                )
+        return self
 
 
 class RepeatSave(_StrictModel):
@@ -822,6 +845,15 @@ class Character(_StrictModel):
     # snapshot with no `companion_dossier` deserializes unchanged. Seeded from npc_roster /
     # canon JSON / ending companion_seeds; a minimal one is synthesized at recruit_companion.
     companion_dossier: Optional["CompanionDossier"] = None
+    # Approval LEDGER (E5) — the legible "why does X distrust me?" record. HOME is Character
+    # (not arc/dossier) so the gauge logs history even when arc=None (a dossier-only companion).
+    # `approval_log` is a human-readable rolling window truncated to the last 40 events by the
+    # mover; `approval_cause_counts` is the AUTHORITATIVE, NEVER-truncated grind counter the
+    # diminishing-returns decay reads (decoupled from the truncated log so decay stays correct
+    # after old rows fall off). Both DEFAULT empty, so a pre-ledger snapshot round-trips
+    # byte-for-byte (empty == today). Engine = sole writer (appended in _apply_approval_tags).
+    approval_log: list["ApprovalEvent"] = Field(default_factory=list)
+    approval_cause_counts: dict[str, int] = Field(default_factory=dict)
 
     # --- structured NPC tagging (the DM's "pull exactly the right canon character" surface) ----
     # ADDITIVE: every field defaults to empty/False == today's behavior, so an existing snapshot
@@ -1202,6 +1234,23 @@ class Consequence(_StrictModel):
     note: str = ""  # why / source (e.g. "the player let the cultist escape")
     fired: bool = False
     thread_id: str = ""  # non-empty => a recurring background "world beat" from a standing thread (world-sim); reschedules itself on tick
+
+
+class ApprovalEvent(_StrictModel):
+    """One REALIZED approval gauge move on a companion — the legible "why the bar is here"
+    (E5 ledger). Appended by the approval mover under the SAME lock+save as the gauge write
+    (engine = sole writer, no new write path); one event per matched cause. `delta` is the
+    REALIZED signed move AFTER weighting + decay (may be 0 — a fully-decayed cause still logs
+    so the surface shows "already counted"). ADDITIVE: lives in a defaulted list on Character,
+    so a pre-ledger snapshot round-trips byte-for-byte (empty == today)."""
+
+    day: int  # the in-world day this move landed (Campaign.day)
+    cause: str  # the lowercase_snake cause-key that moved the gauge
+    delta: int  # REALIZED signed move after weight + decay (may be 0)
+    new_value: int  # attitude_value AFTER this event
+    diminished: bool = False  # decay shaved the base (a repeat of this cause)
+    decision_id: str = ""  # links to the driving Decision for recall
+    note: str = ""  # freeform (e.g. the secondary inter-companion cause)
 
 
 class Decision(_StrictModel):
