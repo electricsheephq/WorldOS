@@ -5,7 +5,7 @@
 # budget stop or a crash the viewer fell back to status "unknown" (NOT in the {stopped,failed,
 # exhausted} set it buckets as `no_provider`) → a live-looking-but-dead dashboard.
 #
-# It sources the REAL qa/lib_beat_driver.sh and drives clawdnd_write_provider_status + the lanes'
+# It sources the REAL qa/lib_beat_driver.sh and drives worldos_write_provider_status + the lanes'
 # clean-stop / crash-trap LOGIC (extracted verbatim) against a throwaway $STATE_DIR. We assert:
 #   (1) "running" at start is a valid worldos.provider-status.v1 row;
 #   (2) a clean TURN-CAP stop writes status=stopped reason=turn_cap (the no_provider bucket) and sets
@@ -31,10 +31,10 @@ field() { python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get(sy
 
 # Mirror the lanes' thin wrapper + clean-stop flag + crash trap.
 DM_TURNS=3; PROVIDER_STOPPED_CLEANLY=0
-provider_status_set() { clawdnd_write_provider_status "$PROVIDER_STATUS" "$1" "$2" "$3" "$DM_TURNS" "scripts/play.sh"; }
+provider_status_set() { worldos_write_provider_status "$PROVIDER_STATUS" "$1" "$2" "$3" "$DM_TURNS" "scripts/play.sh"; }
 crash_trap() {
   if [ "${PROVIDER_STOPPED_CLEANLY:-0}" != "1" ] && [ -n "${PROVIDER_STATUS:-}" ]; then
-    clawdnd_write_provider_status "$PROVIDER_STATUS" failed crashed "DM exited unexpectedly." "${DM_TURNS:-0}" "scripts/play.sh"
+    worldos_write_provider_status "$PROVIDER_STATUS" failed crashed "DM exited unexpectedly." "${DM_TURNS:-0}" "scripts/play.sh"
   fi
 }
 
@@ -73,7 +73,7 @@ chk "row carries wrapper"                       'printf "%s" "$(field wrapper)" 
 for lane in scripts/play.sh scripts/play_party.sh; do
   chk "$lane writes a 'running' provider-status"  'grep -q "provider_status_set running" "$ROOT/'"$lane"'"'
   chk "$lane writes 'stopped' on a clean stop"    'grep -q "provider_status_set stopped" "$ROOT/'"$lane"'"'
-  chk "$lane writes 'failed' in its cleanup trap" 'grep -q "clawdnd_write_provider_status .* failed" "$ROOT/'"$lane"'"'
+  chk "$lane writes 'failed' in its cleanup trap" 'grep -q "worldos_write_provider_status .* failed" "$ROOT/'"$lane"'"'
 done
 # The codex wrapper already wrote it (the lane this finding brings the claude lanes up to).
 chk "play_codex_dm still writes provider_status"  'grep -q "provider_status" "$ROOT/scripts/play_codex_dm.sh"'

@@ -268,7 +268,7 @@ def test_gate_green_skill_check_counts_as_dice_used(tmp_path):
 
 # --- viewer /move sanitizer (H5) -------------------------------------------------
 def _viewer():
-    spec = importlib.util.spec_from_file_location("clawdnd_viewer_under_test", ROOT / "viewer" / "server.py")
+    spec = importlib.util.spec_from_file_location("worldos_viewer_under_test", ROOT / "viewer" / "server.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)  # main() is __name__-guarded, so no server starts
     return mod

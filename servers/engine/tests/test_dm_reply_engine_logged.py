@@ -160,7 +160,7 @@ def test_log_engine_narration_rejects_blank_inputs(tmp_path):
 
 def test_shared_helpers_live_in_lib_beat_driver():
     """The 3 ported helpers live ONCE in the shared lib (DRY, mirroring
-    clawdnd_dm_remint_session_on_retry) and stamp the flag only on the success branch."""
+    worldos_dm_remint_session_on_retry) and stamp the flag only on the success branch."""
     lib = _src("qa/lib_beat_driver.sh")
     assert "log_engine_narration()" in lib
     assert "record_dm_reply()" in lib

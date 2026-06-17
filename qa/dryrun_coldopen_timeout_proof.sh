@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # DRY-RUN PROOF (no model call): shows that the DM-turn `timeout` deadline is now TIERED off the
-# cold-open `first` signal via the SHARED helper clawdnd_dm_timeout (qa/lib_beat_driver.sh), the
-# sibling of clawdnd_dm_effort_arg. The cold open's --effort max world-build runs ~280–400s, so the
+# cold-open `first` signal via the SHARED helper worldos_dm_timeout (qa/lib_beat_driver.sh), the
+# sibling of worldos_dm_effort_arg. The cold open's --effort max world-build runs ~280–400s, so the
 # routine 200s deadline was KILLING it; the cold open now gets WORLDOS_COLDOPEN_TIMEOUT (default
 # 400s) while continuing/routine beats keep CLAWDND_BEAT_TIMEOUT (default 200s, unchanged).
 #
@@ -40,12 +40,12 @@ timeout() { printf 'TIMEOUT-WRAP «%s»\n' "$1"; shift; "$@"; }
 # `timeout "$beat_timeout" claude -p …` wrapper. Sinks (> "$out", retry, jq) dropped. $1=first $2=msg
 play_dm_turn_argv() {
   local first="$1" msg="$2" campaign_id="${CAMPAIGN_ID:-}" resume=() extra=() beat_timeout
-  clawdnd_dm_lean_args "$first" "$campaign_id" "$CLAWDND_LEAN_TAIL"
+  worldos_dm_lean_args "$first" "$campaign_id" "$CLAWDND_LEAN_TAIL"
   if [ "${#CLAWDND_DM_LEAN_SESSION[@]}" -gt 0 ]; then
     resume=("${CLAWDND_DM_LEAN_SESSION[@]}"); extra=("${CLAWDND_DM_LEAN_EXTRA[@]}")
   elif [ "$first" = "0" ]; then resume=(--resume "$DSID"); else resume=(--session-id "$DSID"); fi
-  clawdnd_dm_effort_arg "$first"
-  beat_timeout="$(clawdnd_dm_timeout "$first")"
+  worldos_dm_effort_arg "$first"
+  beat_timeout="$(worldos_dm_timeout "$first")"
   timeout "$beat_timeout" \
     claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
       --model "$CLAWDND_DM_MODEL" ${CLAWDND_DM_EFFORT[@]+"${CLAWDND_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
@@ -60,12 +60,12 @@ party_turn_argv() {
   local kind="$1" first="$2" msg="$3" sid="$4" cfg="${5:-}" resume=() extra=() beat_timeout
   [ "$first" = "0" ] && resume=(--resume "$sid") || resume=(--session-id "$sid")
   if [ "$kind" = "dm" ]; then
-    clawdnd_dm_lean_args "$first" "${CAMPAIGN_ID:-}" "$CLAWDND_LEAN_TAIL"
+    worldos_dm_lean_args "$first" "${CAMPAIGN_ID:-}" "$CLAWDND_LEAN_TAIL"
     if [ "${#CLAWDND_DM_LEAN_SESSION[@]}" -gt 0 ]; then
       resume=("${CLAWDND_DM_LEAN_SESSION[@]}"); extra=("${CLAWDND_DM_LEAN_EXTRA[@]}")
     fi
-    clawdnd_dm_effort_arg "$first"
-    beat_timeout="$(clawdnd_dm_timeout "$first")"
+    worldos_dm_effort_arg "$first"
+    beat_timeout="$(worldos_dm_timeout "$first")"
     timeout "$beat_timeout" \
       claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
         --model "$CLAWDND_DM_MODEL" ${CLAWDND_DM_EFFORT[@]+"${CLAWDND_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \

@@ -22,7 +22,7 @@ fail=0
 chk() { if eval "$2"; then echo "PASS: $1"; else echo "FAIL: $1"; fail=1; fi; }
 
 # (1) First acquire on a free checkout succeeds and records OUR pid.
-CLAWDND_LAUNCH_LOCK_WAIT=0 clawdnd_acquire_launch_lock "$TMP"; rc=$?
+CLAWDND_LAUNCH_LOCK_WAIT=0 worldos_acquire_launch_lock "$TMP"; rc=$?
 chk "first acquire succeeds (rc=0)"            '[ "$rc" = 0 ]'
 chk "lock dir + pid file created"              '[ -f "$LOCK/pid" ]'
 chk "pid file records our pid"                 '[ "$(cat "$LOCK/pid")" = "$$" ]'
@@ -31,7 +31,7 @@ chk "pid file records our pid"                 '[ "$(cat "$LOCK/pid")" = "$$" ]'
 sleep 60 & holder=$!
 printf '%s\n' "$holder" > "$LOCK/pid"          # pretend a different live cold-open (pid=$holder) owns it
 start=$SECONDS
-CLAWDND_LAUNCH_LOCK_WAIT=1 clawdnd_acquire_launch_lock "$TMP" 2>"$TMP/err"; rc=$?
+CLAWDND_LAUNCH_LOCK_WAIT=1 worldos_acquire_launch_lock "$TMP" 2>"$TMP/err"; rc=$?
 elapsed=$((SECONDS - start))
 chk "live holder → second acquire rejected (rc!=0)"  '[ "$rc" != 0 ]'
 chk "rejection message names the running cold-open"  'grep -q "already running" "$TMP/err"'
@@ -43,24 +43,24 @@ chk "live holder lock NOT stolen (pid unchanged)"    '[ "$(cat "$LOCK/pid")" = "
 kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null   # holder now definitively dead
 chk "precondition: dead holder pid is gone"          '! kill -0 "$holder" 2>/dev/null'
 chk "stale lock left behind (holder never released)" '[ "$(cat "$LOCK/pid" 2>/dev/null)" = "$holder" ]'
-CLAWDND_LAUNCH_LOCK_WAIT=1 clawdnd_acquire_launch_lock "$TMP" 2>"$TMP/err2"; rc=$?
+CLAWDND_LAUNCH_LOCK_WAIT=1 worldos_acquire_launch_lock "$TMP" 2>"$TMP/err2"; rc=$?
 chk "stale (dead-holder) lock reclaimed → acquire ok" '[ "$rc" = 0 ]'
 chk "reclaimed lock now records our pid"              '[ "$(cat "$LOCK/pid")" = "$$" ]'
 
 # (4) Release frees the lock for the OWNER, is a NO-OP for a non-owner, and re-acquire then works.
-clawdnd_release_launch_lock "$TMP"
+worldos_release_launch_lock "$TMP"
 chk "owner release removes the lock"                 '[ ! -e "$LOCK" ]'
 mkdir -p "$LOCK"; printf '%s\n' "424242" > "$LOCK/pid"   # a lock owned by someone else
-clawdnd_release_launch_lock "$TMP"
+worldos_release_launch_lock "$TMP"
 chk "non-owner release is a no-op (lock survives)"   '[ "$(cat "$LOCK/pid" 2>/dev/null)" = "424242" ]'
 rm -rf "$LOCK"
-CLAWDND_LAUNCH_LOCK_WAIT=0 clawdnd_acquire_launch_lock "$TMP"; rc=$?
+CLAWDND_LAUNCH_LOCK_WAIT=0 worldos_acquire_launch_lock "$TMP"; rc=$?
 chk "acquire succeeds again after a clean release"   '[ "$rc" = 0 ]'
 
 # (5) Non-contention mkdir failures fail FAST — must never spin forever (CodeRabbit on #564).
 #  (a) play-state cannot be created (ROOT is a regular file) → up-front guard rejects, no hang.
 notdir="$TMP/iam-a-file"; : > "$notdir"
-CLAWDND_LAUNCH_LOCK_WAIT=0 clawdnd_acquire_launch_lock "$notdir" 2>"$TMP/err5a"; rc=$?
+CLAWDND_LAUNCH_LOCK_WAIT=0 worldos_acquire_launch_lock "$notdir" 2>"$TMP/err5a"; rc=$?
 chk "uncreatable play-state → acquire fails (rc!=0)"  '[ "$rc" != 0 ]'
 chk "...with a clear 'could not create' message"      'grep -q "could not create" "$TMP/err5a"'
 #  (b) play-state exists but the lock dir is uncreatable (read-only) → in-loop guard rejects fast
@@ -68,7 +68,7 @@ chk "...with a clear 'could not create' message"      'grep -q "could not create
 #      Needs non-root (root bypasses directory permissions), so skip there.
 if [ "$(id -u)" != 0 ]; then
   ro="$TMP/ro"; mkdir -p "$ro/play-state"; chmod 555 "$ro/play-state"
-  ( CLAWDND_LAUNCH_LOCK_WAIT=0 clawdnd_acquire_launch_lock "$ro" >/dev/null 2>>"$TMP/err5b"; echo "$?" > "$TMP/rc5b" ) &
+  ( CLAWDND_LAUNCH_LOCK_WAIT=0 worldos_acquire_launch_lock "$ro" >/dev/null 2>>"$TMP/err5b"; echo "$?" > "$TMP/rc5b" ) &
   bpid=$!
   for _ in $(seq 1 50); do kill -0 "$bpid" 2>/dev/null || break; sleep 0.1; done
   if kill -0 "$bpid" 2>/dev/null; then
@@ -86,10 +86,10 @@ fi
 #     so a solo launch had NO lock and two solo launches stacked two viewers + two DM sessions. These
 #     are static-wiring assertions on the real script (a runtime launch needs claude + a viewer).
 PLAY="$ROOT/scripts/play.sh"
-chk "play.sh acquires the single-flight launch lock"  'grep -q "clawdnd_acquire_launch_lock" "$PLAY"'
-chk "play.sh releases the lock in cleanup"            'grep -q "clawdnd_release_launch_lock" "$PLAY"'
-chk "play.sh acquire is guarded (declare -F) like play_party" 'grep -q "declare -F clawdnd_acquire_launch_lock" "$PLAY"'
-chk "play.sh acquire precedes the viewer supervisor"  '[ "$(grep -n "clawdnd_acquire_launch_lock" "$PLAY" | head -1 | cut -d: -f1)" -lt "$(grep -n "viewer_supervisor &" "$PLAY" | head -1 | cut -d: -f1)" ]'
+chk "play.sh acquires the single-flight launch lock"  'grep -q "worldos_acquire_launch_lock" "$PLAY"'
+chk "play.sh releases the lock in cleanup"            'grep -q "worldos_release_launch_lock" "$PLAY"'
+chk "play.sh acquire is guarded (declare -F) like play_party" 'grep -q "declare -F worldos_acquire_launch_lock" "$PLAY"'
+chk "play.sh acquire precedes the viewer supervisor"  '[ "$(grep -n "worldos_acquire_launch_lock" "$PLAY" | head -1 | cut -d: -f1)" -lt "$(grep -n "viewer_supervisor &" "$PLAY" | head -1 | cut -d: -f1)" ]'
 
 # (7) F12-13: play.sh has an IDLE CEILING (was spinning `sleep 2` forever with no player). Static +
 #     a hermetic runtime check of the idle-break logic extracted VERBATIM from play.sh's loop tail.

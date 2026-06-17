@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # DRY-RUN PROOF (no model call): shows that qa/run_duo.sh's DM turn now honors
 # CLAWDND_LEAN_BEATS AND the DM effort-tier — both via the SHARED helpers in
-# qa/lib_beat_driver.sh (clawdnd_dm_lean_args + clawdnd_dm_effort_arg). It sources the REAL
+# qa/lib_beat_driver.sh (worldos_dm_lean_args + worldos_dm_effort_arg). It sources the REAL
 # qa/lib_beat_driver.sh and reproduces run_duo.sh's DM-branch AND player-branch argv assembly
 # VERBATIM, with a stub `claude` that just prints the argv it would have run. We assert that:
 #   (1) CLAWDND_LEAN_BEATS now DEFAULTS to 1 (lean is standard — no env set → lean fires);
@@ -33,12 +33,12 @@ claude() {
 dm_turn_argv() {
   local first="$1" msg="$2" sid="$DSID" resume=() extra=()
   [ "$first" = "0" ] && resume=(--resume "$sid") || resume=(--session-id "$sid")
-  clawdnd_dm_lean_args "$first" "${CAMPAIGN_ID:-}" "$CLAWDND_LEAN_TAIL"
+  worldos_dm_lean_args "$first" "${CAMPAIGN_ID:-}" "$CLAWDND_LEAN_TAIL"
   if [ "${#CLAWDND_DM_LEAN_SESSION[@]}" -gt 0 ]; then
     resume=("${CLAWDND_DM_LEAN_SESSION[@]}")
     extra=("${CLAWDND_DM_LEAN_EXTRA[@]}")
   fi
-  clawdnd_dm_effort_arg "$first"
+  worldos_dm_effort_arg "$first"
   claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
     --model "$CLAWDND_DM_MODEL" ${CLAWDND_DM_EFFORT[@]+"${CLAWDND_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
     --output-format stream-json --verbose

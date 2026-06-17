@@ -6,7 +6,7 @@
 # Source: docs/audits/ENGINE-AUDIT-2026-06-11.md (F04-2, issue #823).
 #
 # Deterministic, $0, no LLM. Drives the REAL engine (advance_time) + the REAL shell helpers
-# (clawdnd_soft_tick / clawdnd_runbook_for_beat / clawdnd_take_carryforward). Asserts:
+# (worldos_soft_tick / worldos_runbook_for_beat / worldos_take_carryforward). Asserts:
 #   1. a due thread-beat fired by the soft-tick lands in the carry-forward file as a
 #      "While time passed:" block (BEFORE: discarded);
 #   2. the next beat's runbook PREPENDS that block (the DM is told);
@@ -33,18 +33,18 @@ if [ -z "$CID" ] || printf '%s' "$CID" | grep -qi "error\|traceback"; then
 fi
 note "seeded campaign $CID (state=$STATE_DIR)"
 
-SNAP="$(clawdnd_snapshot_path "$STATE_DIR")"
+SNAP="$(worldos_snapshot_path "$STATE_DIR")"
 [ -n "$SNAP" ] && pass "snapshot present for the harness" || fail "no snapshot found"
 
-CARRY="$(clawdnd_carryforward_path "$STATE_DIR")"
+CARRY="$(worldos_carryforward_path "$STATE_DIR")"
 [ -f "$CARRY" ] && fail "carry file exists BEFORE any tick (should be absent)" || pass "no carry file pre-tick"
 
 # --- (1) Run the soft-tick. The clock is FROZEN (prev == cur), so it advances one phase, fires
 #         the due thread-beat, and must persist it to the carry file. ---------------------------
-PROG="$(clawdnd_read_progress "$STATE_DIR")"
+PROG="$(worldos_read_progress "$STATE_DIR")"
 PREV_DAY="$(printf '%s' "$PROG" | cut -f1)"
 PREV_TOD="$(printf '%s' "$PROG" | cut -f2)"
-clawdnd_soft_tick "$ROOT" "$STATE_DIR" "$PREV_DAY" "$PREV_TOD" 2>/dev/null
+worldos_soft_tick "$ROOT" "$STATE_DIR" "$PREV_DAY" "$PREV_TOD" 2>/dev/null
 
 if [ -f "$CARRY" ]; then
   pass "soft-tick WROTE the carry-forward file"
@@ -77,7 +77,7 @@ else
 fi
 
 # --- (2) The next beat's runbook must PREPEND the carry block (the DM is told). --------------
-RB="$(clawdnd_runbook_for_beat 3 8 "loc-nowhere" "$STATE_DIR")"
+RB="$(worldos_runbook_for_beat 3 8 "loc-nowhere" "$STATE_DIR")"
 if printf '%s' "$RB" | grep -q "While time passed"; then
   pass "next runbook surfaces the carry block to the DM"
 else
@@ -91,7 +91,7 @@ fi
 
 # --- (3) Read-and-CLEAR: the carry surfaces exactly once. ------------------------------------
 [ -f "$CARRY" ] && fail "carry file NOT cleared after the runbook read it" || pass "carry file cleared (surfaced once)"
-RB2="$(clawdnd_runbook_for_beat 4 8 "loc-nowhere" "$STATE_DIR")"
+RB2="$(worldos_runbook_for_beat 4 8 "loc-nowhere" "$STATE_DIR")"
 if printf '%s' "$RB2" | grep -q "While time passed"; then
   fail "the SECOND runbook re-fed the already-surfaced carry block"
 else
@@ -105,9 +105,9 @@ fi
 
 # --- (4) A QUIET tick (clock already moved by a 'DM' beat) writes NO carry. ------------------
 # Bump the clock so the soft-tick sees prev != cur and no-ops (no advance, nothing fired).
-QPROG="$(clawdnd_read_progress "$STATE_DIR")"
+QPROG="$(worldos_read_progress "$STATE_DIR")"
 QDAY="$(printf '%s' "$QPROG" | cut -f1)"; QTOD="$(printf '%s' "$QPROG" | cut -f2)"
-clawdnd_soft_tick "$ROOT" "$STATE_DIR" "$((QDAY - 1))" "yesteryear" 2>/dev/null  # prev != cur -> no-op
+worldos_soft_tick "$ROOT" "$STATE_DIR" "$((QDAY - 1))" "yesteryear" 2>/dev/null  # prev != cur -> no-op
 [ -f "$CARRY" ] && fail "a no-op soft-tick wrote a carry file (should be silent)" || pass "no-op tick wrote no carry (no token cost on a still world)"
 
 echo "── F04-2 PROOF: $([ "$FAILS" -eq 0 ] && echo PASS || echo "FAIL ($FAILS)") ──"

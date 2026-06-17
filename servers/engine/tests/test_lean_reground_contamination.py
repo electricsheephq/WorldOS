@@ -4,7 +4,7 @@ THE BUG (A/B-proven, 100% reproducible with CLAWDND_LEAN_BEATS=1): a continuing
 lean beat starts a FRESH transcript-free session and re-grounds from the engine's
 ``scene_context(campaign_id=…)``. The play/QA harnesses resolved that
 ``campaign_id`` by the LARGEST snapshot on disk
-(``qa/lib_beat_driver.sh:clawdnd_snapshot_path`` -> ``ls -S | head -1``). When TWO
+(``qa/lib_beat_driver.sh:worldos_snapshot_path`` -> ``ls -S | head -1``). When TWO
 campaigns coexist in ONE state dir — a cold-open ``start_world`` retry minting a
 parallel campaign, or a stale prior save — the largest snapshot can be the WRONG
 (parallel) campaign. ``scene_context`` is strictly campaign-pure, so it then
@@ -116,7 +116,7 @@ def test_scene_context_state_is_campaign_pure(state):
 
 
 def _largest_snapshot_campaign_id(state_dir) -> str:
-    """Reproduce the harness's clawdnd_snapshot_path selection: the parent of the
+    """Reproduce the harness's worldos_snapshot_path selection: the parent of the
     LARGEST non-empty snapshot.json under campaigns/ (ls -S | head -1)."""
     snaps = list((state_dir / "campaigns").glob("*/snapshot.json"))
     biggest = max(snaps, key=lambda p: p.stat().st_size)

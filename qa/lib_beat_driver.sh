@@ -7,11 +7,11 @@
 # structurally, in two pieces — both routing through the ENGINE so it stays the SOLE WRITER
 # of snapshot.json (we never hand-edit state):
 #
-#   C — soft clock-tick backstop (clawdnd_soft_tick): after a DM beat, if the in-world clock
+#   C — soft clock-tick backstop (worldos_soft_tick): after a DM beat, if the in-world clock
 #       did NOT advance this beat, advance ONE time-of-day phase via the engine's advance_time.
 #       Defers to the DM's own pacing when it advances time in-fiction; only fires when frozen.
 #
-#   A — beat-aware runbook injection (clawdnd_runbook_for_beat): instead of the SAME constant
+#   A — beat-aware runbook injection (worldos_runbook_for_beat): instead of the SAME constant
 #       "keep the world moving" paragraph every beat (noise the model learns to skim), emit ONE
 #       moment-specific runbook chosen from the beat index + the live snapshot (location/time/
 #       visited/peopling): scene-intro on a new place, travel/peopling when stuck, the midpoint
@@ -75,8 +75,8 @@ worldos_env() {
 # coexist in one state dir (a cold-open start_world retry, or a stale leftover), the largest may
 # be the STALE/PARALLEL one, and pointing a transcript-free lean beat at it folds a DIFFERENT
 # save's opening scene into the re-ground (cross-chronicle contamination). For the LEAN id, use
-# clawdnd_live_campaign_id below (the engine's authoritative most-recently-played save), NOT this.
-clawdnd_snapshot_path() {
+# worldos_live_campaign_id below (the engine's authoritative most-recently-played save), NOT this.
+worldos_snapshot_path() {
   local state_dir="$1"
   find "$state_dir/campaigns" -mindepth 2 -maxdepth 2 -name snapshot.json -size +1c \
     -exec ls -S {} + 2>/dev/null | head -1
@@ -89,13 +89,13 @@ clawdnd_snapshot_path() {
 # The engine is the sole source of truth for which campaign is live; it returns the
 # MOST-RECENTLY-UPDATED campaign (the one the harness is actively writing each beat), optionally
 # scoped to the launched world so a stale save from another world can't shadow it. This REPLACES
-# the old per-harness guesses (clawdnd_snapshot_path = largest, or `find … | head -1` = first dir)
+# the old per-harness guesses (worldos_snapshot_path = largest, or `find … | head -1` = first dir)
 # that the #640 A/B proved could select the wrong campaign. Read-only (active_campaign never
 # mutates). Echoes the campaign id, or NOTHING when no campaign exists / the engine errors — in
-# which case the caller's lean branch no-ops (clawdnd_dm_lean_args returns 0 on an empty id) and
+# which case the caller's lean branch no-ops (worldos_dm_lean_args returns 0 on an empty id) and
 # the normal --resume path is used (no regression). $1 = ROOT (repo root)  $2 = STATE_DIR
 # $3 = world_id (optional; scopes the resolution to the launched world)
-clawdnd_live_campaign_id() {
+worldos_live_campaign_id() {
   local root="$1" state_dir="$2" world="${3:-}"
   [ -d "$state_dir/campaigns" ] || return 0
   WORLDOS_STATE_DIR="$state_dir" CLAWDND_STATE_DIR="$state_dir" \
@@ -122,14 +122,14 @@ PY
 # regression — today's behavior). Mirrors the viewer's session-log resolution
 # (viewer/server.py:_session_event_tail_from_dir): active_session_id, else the last session id.
 # $1 = the DM turn's reply text (may be empty)  $2 = STATE_DIR ; echoes the text to chatlog.
-clawdnd_dm_narration_or_fallback() {
+worldos_dm_narration_or_fallback() {
   local reply="$1" state_dir="$2" snap
   # Non-empty (after trimming whitespace) → the DM ended on prose; use it verbatim.
   if [ -n "${reply//[[:space:]]/}" ]; then
     printf '%s' "$reply"
     return 0
   fi
-  snap="$(clawdnd_snapshot_path "$state_dir")"
+  snap="$(worldos_snapshot_path "$state_dir")"
   [ -n "$snap" ] || { printf '%s' "$reply"; return 0; }
   # Read the tail of the active session log and stitch the most recent contiguous run of
   # player-facing entries (narration | dialogue) into the prose for this missing beat (see
@@ -145,8 +145,8 @@ clawdnd_dm_narration_or_fallback() {
   fi
 }
 
-# clawdnd_resolve_dm_reply REPLY STATE_DIR — the DIRECT-call front door over
-# clawdnd_dm_narration_or_fallback (#749c fallback honesty + SYN-01 #757/#745 dead-beat
+# worldos_resolve_dm_reply REPLY STATE_DIR — the DIRECT-call front door over
+# worldos_dm_narration_or_fallback (#749c fallback honesty + SYN-01 #757/#745 dead-beat
 # classification). Sets:
 #   CLAWDND_DM_REPLY            — the resolved reply text (the DM's own, the recovered prose,
 #                                 or "" when the beat FAILED)
@@ -158,16 +158,16 @@ clawdnd_dm_narration_or_fallback() {
 #                                 error string, e.g. "Failed to authenticate…", NEVER a reply),
 #                                 or the only recoverable prose PREDATES the pre-beat mark
 #                                 (recycling the previous beat's prose would mask a dead beat).
-# SYN-01 ORDER OF OPERATIONS: the FINAL result event (noted by clawdnd_dm_final_text in
+# SYN-01 ORDER OF OPERATIONS: the FINAL result event (noted by worldos_dm_final_text in
 # $STATE_DIR/.dm_last_result) is classified FIRST — before any fallback — so an error-class
 # result can never be chatted as DM prose NOR "recovered" into recycled prose. Every failed
 # beat resolves to an EMPTY reply; callers branch on that and record the failure VISIBLY
-# (clawdnd_chatlog_dm_failed, or record_dm_reply's blank guard).
+# (worldos_chatlog_dm_failed, or record_dm_reply's blank guard).
 # Call it DIRECTLY (never in a command substitution — a subshell would drop the globals), then
 # read CLAWDND_DM_REPLY. The flag is consumed (and reset) by the next record_dm_reply /
-# clawdnd_chatlog_dm, which stamps {"fallback_recovered":true} on the dm chat row so behavioral
+# worldos_chatlog_dm, which stamps {"fallback_recovered":true} on the dm chat row so behavioral
 # tallies can later discount a masked-dead beat that was "resolved" with recovered prose.
-clawdnd_resolve_dm_reply() {
+worldos_resolve_dm_reply() {
   local original="$1" state_dir="$2" last=""
   CLAWDND_DM_BEAT_FAILED=0
   CLAWDND_FALLBACK_RECOVERED=0
@@ -175,20 +175,20 @@ clawdnd_resolve_dm_reply() {
   # result text, which used to bypass the empty-only retry AND this fallback and land in chat
   # AS DM PROSE. Classify it -> the beat FAILED; never chat the error text.
   last="$(cat "$state_dir/.dm_last_result" 2>/dev/null)"
-  if [ -n "$last" ] && [ -f "$last" ] && clawdnd_dm_result_is_error "$last"; then
+  if [ -n "$last" ] && [ -f "$last" ] && worldos_dm_result_is_error "$last"; then
     echo "[worldos] DM beat FAILED: error-class result event (see the [dm-attempt] line above) — the error text will NOT be chatted as narration" >&2
     CLAWDND_DM_BEAT_FAILED=1
     CLAWDND_DM_REPLY=""
     return 0
   fi
-  CLAWDND_DM_REPLY="$(clawdnd_dm_narration_or_fallback "$original" "$state_dir")"
+  CLAWDND_DM_REPLY="$(worldos_dm_narration_or_fallback "$original" "$state_dir")"
   if [ -z "${original//[[:space:]]/}" ] && [ -n "${CLAWDND_DM_REPLY//[[:space:]]/}" ]; then
     # The #357 fallback recovered prose. GENUINE recovery = the DM logged NEW prose THIS beat
     # (then died before its final reply). If everything recoverable PREDATES the pre-beat mark
     # the beat was fully dead and the "recovery" is the PREVIOUS beat's prose — recycling it
     # would mask the dead beat (F12-14), so the beat FAILS instead. No mark file (an older /
     # external caller) keeps the legacy assume-genuine behavior.
-    if clawdnd_dm_logged_new_prose "$state_dir"; then
+    if worldos_dm_logged_new_prose "$state_dir"; then
       CLAWDND_FALLBACK_RECOVERED=1
     else
       echo "[worldos] DM beat FAILED: only recyclable (pre-beat) prose available — refusing to mask a dead beat with the previous beat's narration" >&2
@@ -214,7 +214,7 @@ clawdnd_resolve_dm_reply() {
 # Ported verbatim-in-intent from scripts/play_codex_dm.sh (the codex DM path already solved this
 # with the same three pieces); factored here ONCE so the two CLAUDE-DM viewer-backed wrappers
 # (scripts/play.sh + scripts/play_party.sh) share it and can't drift — mirroring how
-# clawdnd_dm_remint_session_on_retry is shared. These read the caller's ambient globals (exactly
+# worldos_dm_remint_session_on_retry is shared. These read the caller's ambient globals (exactly
 # as the codex versions read $CHAT/$RUN_DIR/$ROOT): $CHAT (the chat.jsonl path), $STATE_DIR (the
 # play state dir), and $ROOT (the repo root). Both wrappers define all three before sourcing.
 #
@@ -322,7 +322,7 @@ PY
 # de-dup the /chat blob against /events). On failure → an UNFLAGGED row (byte-identical to the
 # pre-#720 behavior; the client's eventsStreamedThisTurnRef backstop still applies). NEVER stamp
 # the flag unconditionally — that would suppress a legitimately /chat-only beat to zero rows.
-# #749(c): when the preceding clawdnd_resolve_dm_reply recovered this prose from the engine log
+# #749(c): when the preceding worldos_resolve_dm_reply recovered this prose from the engine log
 # (CLAWDND_FALLBACK_RECOVERED=1), BOTH branches additionally stamp fallback_recovered:true so
 # behavioral tallies can discount masked-dead beats. Consume-once: the flag resets here.
 record_dm_reply() {
@@ -332,7 +332,7 @@ record_dm_reply() {
   # the tallies. Record the wrapper-authored VISIBLE failure beat instead, and warn.
   if [ -z "${text//[[:space:]]/}" ]; then
     echo "[worldos] warning: ${phase} produced NO narration (dead beat) — recording a visible failure beat instead of a blank row" >&2
-    clawdnd_chatlog_dm_failed
+    worldos_chatlog_dm_failed
     return 0
   fi
   if [ "${CLAWDND_FALLBACK_RECOVERED:-0}" = "1" ]; then
@@ -348,11 +348,11 @@ record_dm_reply() {
   CLAWDND_FALLBACK_RECOVERED=0
 }
 
-# clawdnd_chatlog_dm TEXT — `chatlog dm TEXT` for the runners that write the dm row directly
+# worldos_chatlog_dm TEXT — `chatlog dm TEXT` for the runners that write the dm row directly
 # (run_duo / run_party / ui_playtest), stamping {"fallback_recovered":true} when the preceding
-# clawdnd_resolve_dm_reply recovered the prose (#749c). Consume-once, mirroring record_dm_reply.
+# worldos_resolve_dm_reply recovered the prose (#749c). Consume-once, mirroring record_dm_reply.
 # With the flag unset the row is byte-identical to the plain `chatlog dm` it replaces.
-clawdnd_chatlog_dm() {
+worldos_chatlog_dm() {
   if [ "${CLAWDND_FALLBACK_RECOVERED:-0}" = "1" ]; then
     chatlog dm "$1" '{"fallback_recovered":true}'
   else
@@ -373,10 +373,10 @@ clawdnd_chatlog_dm() {
 #       overrides shadowed the lib) and had no consumer.
 # These helpers close (a)+(b); (c) is closed by deleting the runner overrides + the
 # qa/assert_behavioral.py dm_beat_honesty counter. Flow per beat:
-#   clawdnd_dm_prebeat_mark  (once, BEFORE attempt 1)
-#   clawdnd_dm_final_text    (per attempt — notes the result file + classifies error-class)
-#   clawdnd_resolve_dm_reply (classification first; failed beats resolve to an EMPTY reply)
-#   clawdnd_chatlog_dm_failed / record_dm_reply's blank guard (the VISIBLE failure row)
+#   worldos_dm_prebeat_mark  (once, BEFORE attempt 1)
+#   worldos_dm_final_text    (per attempt — notes the result file + classifies error-class)
+#   worldos_resolve_dm_reply (classification first; failed beats resolve to an EMPTY reply)
+#   worldos_chatlog_dm_failed / record_dm_reply's blank guard (the VISIBLE failure row)
 
 # The wrapper-authored, PLAYER-VISIBLE failure beat. Chat-only BY DESIGN — deliberately NOT
 # routed through log_engine_narration: (1) the #727 substring dedup would swallow the constant
@@ -387,12 +387,12 @@ clawdnd_chatlog_dm() {
 # unconditionally in every consumer — visible, exactly once per failure.
 CLAWDND_DM_FAILED_BEAT_TEXT="(The tale falters — the Dungeon Master could not resolve this beat. Your last action still stands; give it a moment and try again.)"
 
-# clawdnd_dm_result_is_error OUT — is the FINAL result event of a DM attempt's stream-json an
+# worldos_dm_result_is_error OUT — is the FINAL result event of a DM attempt's stream-json an
 # ERROR-class result? The 401 shape (verified verbatim) is subtype:"success", is_error:true,
 # api_error_status:401 with the API's error string in .result — so the test is is_error OR an
 # api_error_status, NEVER the subtype or the text. A missing/empty file or a stream with no
 # result event is NOT error-class (the empty-reply path owns those modes). 0 = error-class.
-clawdnd_dm_result_is_error() {
+worldos_dm_result_is_error() {
   local out="$1" flag
   [ -n "$out" ] && [ -s "$out" ] || return 1
   flag="$(jq -rs 'map(select(.type=="result"))[-1] | if . == null then "none" else (((.is_error == true) or ((.api_error_status // null) != null)) | tostring) end' "$out" 2>/dev/null)"
@@ -401,41 +401,41 @@ clawdnd_dm_result_is_error() {
     false | none) return 1 ;;
   esac
   # jq unavailable/unparseable -> the same conservative grep-fallback discipline as
-  # clawdnd_report_attempt_failure: only the explicit error markers flip it.
+  # worldos_report_attempt_failure: only the explicit error markers flip it.
   grep -q '"is_error"[[:space:]]*:[[:space:]]*true' "$out" 2>/dev/null && return 0
   grep -qE '"api_error_status"[[:space:]]*:[[:space:]]*[0-9]+' "$out" 2>/dev/null && return 0
   return 1
 }
 
-# clawdnd_dm_final_text OUT STATE_DIR [RC] — the ONE extraction front door for a DM attempt's
+# worldos_dm_final_text OUT STATE_DIR [RC] — the ONE extraction front door for a DM attempt's
 # reply text (replaces the bare `jq -rs '… .result // ""'` in every DM wrapper). Notes OUT in
 # $STATE_DIR/.dm_last_result (a FILE, because the turn helpers run inside $(...) subshells
-# where a global cannot escape) so the caller's clawdnd_resolve_dm_reply can classify the SAME
+# where a global cannot escape) so the caller's worldos_resolve_dm_reply can classify the SAME
 # final result event — then echoes the final result text, UNLESS the event is ERROR-class:
 # then it echoes NOTHING (the "result" text is the API's error string, never a reply) and
-# surfaces the real failure + the 401/403 re-auth hint via clawdnd_report_attempt_failure.
+# surfaces the real failure + the 401/403 re-auth hint via worldos_report_attempt_failure.
 # The empty echo also makes the callers' existing empty-only retries fire on error results.
-clawdnd_dm_final_text() {
+worldos_dm_final_text() {
   local out="$1" state_dir="$2" rc="${3:-0}"
   printf '%s\n' "$out" > "$state_dir/.dm_last_result" 2>/dev/null || true
   # Persist the attempt's exit code too (the turn helpers run inside $(...) subshells, so the
   # caller's transient-vs-real retry classifier can't see a local rc) — paired with .dm_last_result
-  # so clawdnd_dm_failure_is_transient gets the SAME (out, rc) this attempt produced.
+  # so worldos_dm_failure_is_transient gets the SAME (out, rc) this attempt produced.
   printf '%s\n' "$rc" > "$state_dir/.dm_last_rc" 2>/dev/null || true
-  if clawdnd_dm_result_is_error "$out"; then
-    clawdnd_report_attempt_failure "$out" "$rc"
+  if worldos_dm_result_is_error "$out"; then
+    worldos_report_attempt_failure "$out" "$rc"
     return 0
   fi
   jq -rs 'map(select(.type=="result"))[-1].result // ""' "$out" 2>/dev/null
 }
 
-# clawdnd_dm_prebeat_mark STATE_DIR — snapshot the active session log's position BEFORE a DM
-# beat launches (file: $STATE_DIR/.dm_prebeat_mark), so clawdnd_dm_logged_new_prose can tell a
+# worldos_dm_prebeat_mark STATE_DIR — snapshot the active session log's position BEFORE a DM
+# beat launches (file: $STATE_DIR/.dm_prebeat_mark), so worldos_dm_logged_new_prose can tell a
 # GENUINE #357 recovery (NEW prose logged THIS beat, then the turn died) from RECYCLED prose
 # (everything recoverable predates the beat — a masked dead beat). Call it ONCE per beat,
 # BEFORE attempt 1: a retry must NOT re-mark, or attempt 1's prose would stop counting as this
 # beat's. Best-effort (never fails a beat); standalone python — no heredoc-in-$() (bash 3.2).
-clawdnd_dm_prebeat_mark() {
+worldos_dm_prebeat_mark() {
   local state_dir="$1"
   # FIX 2(a) (#623): pass the beat's first/cold-open signal ("1"=cold open, "0"=continuing) so
   # dm_beat_mark.py can force-fail a CONTINUING beat whose mark came back empty (a mark-write bug
@@ -449,12 +449,12 @@ clawdnd_dm_prebeat_mark() {
   return 0
 }
 
-# clawdnd_dm_logged_new_prose STATE_DIR — did the DM log NEW player-facing prose (narration |
+# worldos_dm_logged_new_prose STATE_DIR — did the DM log NEW player-facing prose (narration |
 # dialogue; wrapper heartbeats + setup-brief notation excluded, exactly as the #357 fallback
 # filters) since the pre-beat mark? 0 = yes (a recovery is GENUINE); 1 = no (anything the
 # fallback recovered is RECYCLED pre-beat prose). NO mark file -> 0: an older/external caller
 # keeps the legacy assume-genuine behavior; dm_beat_mark.py also fails OPEN internally.
-clawdnd_dm_logged_new_prose() {
+worldos_dm_logged_new_prose() {
   local state_dir="$1"
   local mark="$state_dir/.dm_prebeat_mark"
   [ -f "$mark" ] || return 0
@@ -462,13 +462,13 @@ clawdnd_dm_logged_new_prose() {
   python3 "$mark_py" check "$state_dir" "$mark" 2>/dev/null
 }
 
-# clawdnd_chatlog_dm_failed — record the wrapper-authored VISIBLE failure beat for a FAILED DM
+# worldos_chatlog_dm_failed — record the wrapper-authored VISIBLE failure beat for a FAILED DM
 # beat: ONE /chat dm row carrying {"beat_failed":true} (counted + reported by
 # qa/assert_behavioral.py's dm_beat_honesty; the discount/gate policy stays #757's call). The
 # row text is CLAWDND_DM_FAILED_BEAT_TEXT — never an error string, never recycled prose, never
 # blank, never hidden (no engine_logged stamp — see the constant's comment). Consume-once on
-# the resolve flags, mirroring clawdnd_chatlog_dm. Reads ambient $CHAT exactly as chatlog does.
-clawdnd_chatlog_dm_failed() {
+# the resolve flags, mirroring worldos_chatlog_dm. Reads ambient $CHAT exactly as chatlog does.
+worldos_chatlog_dm_failed() {
   CLAWDND_DM_BEATS_FAILED=$((${CLAWDND_DM_BEATS_FAILED:-0} + 1))
   echo "[worldos] beat FAILED — visible failure beat recorded (beats_failed=$CLAWDND_DM_BEATS_FAILED this run)" >&2
   chatlog dm "$CLAWDND_DM_FAILED_BEAT_TEXT" '{"beat_failed":true}'
@@ -486,7 +486,7 @@ clawdnd_chatlog_dm_failed() {
 # the gap (BOTH perceived-latency — neither touches wall-clock; the bounded timeout+retry+#357 fallback
 # are unchanged):
 #
-#   1. WRAPPER HEARTBEAT (model-INDEPENDENT, the guarantee): clawdnd_emit_progress_heartbeat writes a
+#   1. WRAPPER HEARTBEAT (model-INDEPENDENT, the guarantee): worldos_emit_progress_heartbeat writes a
 #      short wrapper-authored `narration` row to the engine session log via log_engine_narration BEFORE
 #      the DM `claude -p` even starts. That row lands in /events within ~1s, so the viewer flips its
 #      spinner to "the scene is arriving above" no matter how long the model thinks — and crucially, even
@@ -516,10 +516,10 @@ CLAWDND_MOVE_PROGRESS_TEXTS=(
   "Momentum carries through the scene; consequences are beginning to surface."
 )
 
-# clawdnd_progress_beat_text FIRST BEAT_INDEX — echo the heartbeat teaser for this beat. $1=first?(1/0)
+# worldos_progress_beat_text FIRST BEAT_INDEX — echo the heartbeat teaser for this beat. $1=first?(1/0)
 # (the same cold-open signal as the effort/timeout tiers); $2=a 0-based beat index used to ROTATE the
 # continuing-beat bank. Cold open → the opening teaser; continuing beat → MOVE_PROGRESS_TEXTS[idx % N].
-clawdnd_progress_beat_text() {
+worldos_progress_beat_text() {
   local first="$1" idx="${2:-0}"
   if [ "$first" != "0" ]; then
     printf '%s' "$CLAWDND_OPENING_PROGRESS_TEXT"
@@ -530,7 +530,7 @@ clawdnd_progress_beat_text() {
   printf '%s' "${CLAWDND_MOVE_PROGRESS_TEXTS[$((idx % count))]}"
 }
 
-# clawdnd_emit_progress_heartbeat CAMPAIGN_ID FIRST BEAT_INDEX — write the wrapper-authored progress beat
+# worldos_emit_progress_heartbeat CAMPAIGN_ID FIRST BEAT_INDEX — write the wrapper-authored progress beat
 # to the engine session log (via log_engine_narration) so /events has a row for the viewer to flip its
 # live-progress state on BEFORE the model's long think (the row itself never renders — app.jsx returns
 # null on the exact wrapper lines). Best-effort: a blank campaign id no-ops. #749(d): heartbeats are
@@ -540,10 +540,10 @@ clawdnd_progress_beat_text() {
 # tail/fallback). ALWAYS returns 0 — a heartbeat failure must never fail a beat. Reads ambient
 # $STATE_DIR / $ROOT exactly as log_engine_narration / record_dm_reply do. $1=campaign_id $2=first?(1/0)
 # $3=beat index.
-clawdnd_emit_progress_heartbeat() {
+worldos_emit_progress_heartbeat() {
   local campaign_id="$1" first="${2:-0}" idx="${3:-0}" text
   [ -n "${campaign_id//[[:space:]]/}" ] || return 0
-  text="$(clawdnd_progress_beat_text "$first" "$idx")"
+  text="$(worldos_progress_beat_text "$first" "$idx")"
   log_engine_narration "$campaign_id" "$text" \
     || printf '%s\n' "[worldos] note: could not record progress heartbeat (non-fatal)" >&2
   return 0
@@ -582,7 +582,7 @@ clawdnd_emit_progress_heartbeat() {
 # helper restores the documented intent: lean on beats 2+, full cold open. See PR notes.)
 # $CLAWDND_LEAN_TAIL ($3, default 8) is the recent-narration depth the re-ground asks for.
 # $1 = first?(1/0)  $2 = campaign_id (may be empty)  $3 = lean_tail (optional; default 8)
-clawdnd_dm_lean_args() {
+worldos_dm_lean_args() {
   local first="$1" campaign_id="${2:-}" lean_tail="${3:-8}"
   CLAWDND_DM_LEAN_SESSION=()
   CLAWDND_DM_LEAN_EXTRA=()
@@ -614,7 +614,7 @@ Do NOT contradict any of it, re-introduce an already-met NPC, reset the clock, o
 #   • CONTINUING / routine beats (first = 0) are the BULK of a session and mostly resolve one
 #     move against already-established canon — so a medium thinking budget keeps quality while
 #     cutting the thinking-latency that dominates each turn: --effort medium.
-# This is keyed off the SAME `first` signal the lean branch uses (clawdnd_dm_lean_args), so the
+# This is keyed off the SAME `first` signal the lean branch uses (worldos_dm_lean_args), so the
 # cold open is always full+max and the long tail is lean+medium — the two levers stay in lock-step.
 #
 # Levels are env-overridable (e.g. bump the routine tier back to high for a quality A/B, or drop
@@ -628,7 +628,7 @@ Do NOT contradict any of it, re-introduce an already-met NPC, reset the clock, o
 # caller splices into its claude -p invocation (never empty — every DM turn gets an explicit tier):
 #   CLAWDND_DM_EFFORT — (--effort max) on the cold open, (--effort medium) on continuing beats.
 # $1 = first?(1/0)
-clawdnd_dm_effort_arg() {
+worldos_dm_effort_arg() {
   local first="$1" level
   if [ "$first" != "0" ]; then
     # Cold-open effort is model-aware. Opus's max-effort world-build is generation-bound and overruns
@@ -648,12 +648,12 @@ clawdnd_dm_effort_arg() {
 #
 # Both play loops wrap the DM's `claude -p` in `timeout <secs>` + ONE retry, so a wedged turn
 # recovers instead of hanging the session. But the two kinds of beat need very different deadlines,
-# for the SAME reason the effort tier splits them (clawdnd_dm_effort_arg, keyed off `first`):
+# for the SAME reason the effort tier splits them (worldos_dm_effort_arg, keyed off `first`):
 #   • the COLD OPEN (first != 0) is the one-time, --effort max, full world-build — generate the
 #     world, scene, PC, opening NPCs + portraits. That MAX-EFFORT cold open routinely runs ~280–400s;
 #     the routine deadline KILLS it mid-build (the masked "cold-open reproducibly broken" mode),
 #     so the cold open gets a generous, model-aware deadline: WORLDOS_COLDOPEN_TIMEOUT
-#     (default 500s opus / 550s non-opus — see the F12-2 note in clawdnd_dm_timeout below).
+#     (default 500s opus / 550s non-opus — see the F12-2 note in worldos_dm_timeout below).
 #   • CONTINUING / routine beats (first = 0) are --effort medium and resolve one move against
 #     established canon — faster — so they get the per-beat deadline CLAWDND_BEAT_TIMEOUT
 #     (default 360s — see the F12-1 note below).
@@ -676,7 +676,7 @@ clawdnd_dm_effort_arg() {
 #
 # Unlike the effort/lean helpers (which populate an array spliced into argv), this just ECHOES the
 # resolved seconds — the caller uses it as the scalar `timeout <secs>` argument. $1 = first?(1/0)
-clawdnd_dm_timeout() {
+worldos_dm_timeout() {
   local first="$1"
   if [ "$first" != "0" ]; then
     # Cold-open deadline is model-aware. Opus-high cold-open measured ~300s here; give it margin (500s)
@@ -699,16 +699,16 @@ clawdnd_dm_timeout() {
 # RETRY DEADLINE (F12-1's second half): both dm_turn paths captured `beat_timeout` ONCE and the
 # ONE retry re-invoked with the SAME deadline verbatim — so a healthy-but-long beat that tripped
 # the routine deadline was killed AGAIN at the same mark (two kills, zero narration). Attempt 2
-# ESCALATES to the model-aware COLD-OPEN tier (clawdnd_dm_timeout 1 — opus 500 / default 400,
+# ESCALATES to the model-aware COLD-OPEN tier (worldos_dm_timeout 1 — opus 500 / default 400,
 # env-overridable via WORLDOS_COLDOPEN_TIMEOUT like everything else), and never DE-escalates: if
 # the caller's attempt-1 deadline was already larger (an explicit CLAWDND_BEAT_TIMEOUT override,
 # or a cold-open retry whose tier == the escalation tier), the larger value is kept. A
 # non-numeric base (an env typo) is treated as 0 → the escalation tier (3.2-clean: no arrays,
 # pure case/test). ECHOES the resolved seconds. $1 = attempt 1's deadline in seconds.
-clawdnd_dm_retry_timeout() {
+worldos_dm_retry_timeout() {
   local base="${1:-0}" esc
   case "$base" in ''|*[!0-9]*) base=0 ;; esac
-  esc="$(clawdnd_dm_timeout 1)"
+  esc="$(worldos_dm_timeout 1)"
   if [ "$base" -gt "$esc" ]; then
     printf '%s' "$base"
   else
@@ -771,7 +771,7 @@ except KeyboardInterrupt:
 # row. Best-effort: a write failure never fails a beat (returns 0). Bash 3.2-clean: standalone python
 # (no heredoc-in-$()), no arrays. $1=PROVIDER_STATUS path  $2=status  $3=reason  $4=detail  $5=turns
 # $6=wrapper-name (optional; defaults to the calling script's basename — display-only field).
-clawdnd_write_provider_status() {
+worldos_write_provider_status() {
   local path="$1" status="$2" reason="$3" detail="$4" turns="${5:-0}" wrapper="${6:-${BASH_SOURCE[1]:-}}"
   local provider model max_turns sha actor_model scorer_model
   provider="$(worldos_env PROVIDER claude)"
@@ -833,7 +833,7 @@ PY
 # "Session ID <uuid> is already in use." → 0-byte output → empty narration → the cold open never
 # completes (the masked failure mode behind the 2026-06-02 "reproducibly broken cold-open" reports:
 # attempt 1 actually 401'd, but the retry's session collision is all that reached dm.err). The LEAN
-# path already side-steps this (clawdnd_dm_lean_args mints a fresh uuid every call); the COLD-OPEN /
+# path already side-steps this (worldos_dm_lean_args mints a fresh uuid every call); the COLD-OPEN /
 # legacy --resume path passes a STABLE $DSID and so MUST be re-minted before its retry. Given the
 # resume-mode the prior attempt used (the caller's `resume` array, passed as "$@"), populate the
 # well-known global CLAWDND_DM_RETRY_SESSION:
@@ -842,8 +842,8 @@ PY
 #                                               leave the caller's --resume untouched.
 # Caller contract: call this ONLY when the lean helper did NOT fire (lean re-mints itself), so each
 # path mints exactly once. Bash 3.2: no namerefs — inspect args by value + populate a global (mirrors
-# clawdnd_dm_lean_args / clawdnd_dm_effort_arg). $@ = the caller's current `resume` array tokens.
-clawdnd_dm_remint_session_on_retry() {
+# worldos_dm_lean_args / worldos_dm_effort_arg). $@ = the caller's current `resume` array tokens.
+worldos_dm_remint_session_on_retry() {
   CLAWDND_DM_RETRY_SESSION=()
   if [ "${1:-}" = "--session-id" ]; then
     CLAWDND_DM_RETRY_SESSION=(--session-id "$(uuidgen 2>/dev/null || python3 -c 'import uuid;print(uuid.uuid4())')")
@@ -859,7 +859,7 @@ clawdnd_dm_remint_session_on_retry() {
 # NON-retryable with an operator hint. Read-only on engine state; jq-optional (a grep fallback still
 # names an HTTP status); a missing/0-byte $out → a generic rc line (no regression).
 # $1 = the failed attempt's stream-json path  $2 = its exit code (rc)
-clawdnd_report_attempt_failure() {
+worldos_report_attempt_failure() {
   local out="$1" rc="$2" reason status
   reason="$(jq -rs 'map(select(.type=="result"))[-1] | if . == null then "" else "is_error=\(.is_error) subtype=\(.subtype // "?") result=\((.result // "")[0:180])" end' "$out" 2>/dev/null)"
   status="$(grep -oE '"(api_error_status|status)":[[:space:]]*[0-9]{3}' "$out" 2>/dev/null | grep -oE '[0-9]{3}' | head -n1)"
@@ -885,18 +885,18 @@ clawdnd_report_attempt_failure() {
 # failure (an auth 401/403, a bad request — retrying is pointless and just burns time + budget).
 # This shared classifier is the front door both harnesses' retry loops consult.
 #
-# clawdnd_dm_failure_is_transient OUT RC — is THIS failed DM attempt a TRANSIENT/server-side blip
+# worldos_dm_failure_is_transient OUT RC — is THIS failed DM attempt a TRANSIENT/server-side blip
 # that a backed-off retry could recover from? Reads the SAME per-attempt stream-json ($out) +
 # exit code the report/extract helpers use; never touches engine state.
 #   return 0 (TRANSIENT — retry): rc=124 timeout; HTTP 408/409/425/429/500/502/503/504/520-529;
 #            or error text naming overload / rate-limit / internal-server / unavailable / gateway /
 #            connection-reset / timeout. These are server-side or load-shed and clear on retry.
 #   return 1 (REAL / fail-fast):  HTTP 400/401/403/404/422 (auth/permission/bad-request — the
-#            #357 + clawdnd_report_attempt_failure re-auth path owns 401/403); error text naming
+#            #357 + worldos_report_attempt_failure re-auth path owns 401/403); error text naming
 #            authenticate / permission / invalid-request / budget; OR no recognizable transient
 #            signal at all (a deterministic bad turn — do NOT retry 4× and mask it).
 # Auth ALWAYS wins over a co-occurring 5xx token (a 401 body must never be read as transient).
-clawdnd_dm_failure_is_transient() {
+worldos_dm_failure_is_transient() {
   local out="$1" rc="${2:-0}" status body
   # An rc=124 timeout writes no result event — it is a server/network slowness signal: TRANSIENT.
   [ "$rc" = "124" ] && return 0
@@ -918,13 +918,13 @@ clawdnd_dm_failure_is_transient() {
   return 1
 }
 
-# clawdnd_dm_retry_backoff ATTEMPT — sleep before retry #ATTEMPT (1-indexed: the wait BEFORE the
+# worldos_dm_retry_backoff ATTEMPT — sleep before retry #ATTEMPT (1-indexed: the wait BEFORE the
 # 2nd, 3rd, 4th try) on a TRANSIENT failure, giving a server-side 500/overload cluster time to
 # clear instead of hammering it. Schedule: 3s, 8s, 20s (capped). Bounded + finite by design — the
 # caller also caps the attempt count, so a transient cluster can never loop forever. Override the
 # whole sleep via CLAWDND_RETRY_SLEEP_CMD (a test seam — a bash test substitutes a no-op that just
 # records the requested seconds, so the suite doesn't actually wait ~30s).
-clawdnd_dm_retry_backoff() {
+worldos_dm_retry_backoff() {
   local attempt="${1:-1}" secs
   case "$attempt" in
     1) secs=3 ;;
@@ -951,7 +951,7 @@ clawdnd_dm_retry_backoff() {
 #   - live_cid empty — attempt-1 minted nothing, so the normal cold-open MUST run.
 # Byte-identical on every path except the one bug. Read-only; 3.2-safe (printf, no heredoc-in-$()).
 # $1=first  $2=hero_camp  $3=live_campaign_id  $4=world  $5=base_msg ; echoes the message to use.
-clawdnd_coldopen_retry_msg() {
+worldos_coldopen_retry_msg() {
   local first="$1" hero_camp="$2" live_cid="$3" world="$4" base_msg="$5"
   if [ "$first" != "1" ] || [ -n "$hero_camp" ] || [ -z "$live_cid" ]; then
     printf '%s' "$base_msg"
@@ -977,8 +977,8 @@ Their actions will arrive as tagged moves — [say] (their dialogue), [do] (an a
 # (combat_active is field 7, appended additively — fields 1-6 are unchanged for callers that
 # cut -f1..6). Echoes nothing when there's no snapshot yet (pre-first-beat). Read-only.
 # $1 = STATE_DIR
-clawdnd_read_progress() {
-  local snap; snap="$(clawdnd_snapshot_path "$1")"
+worldos_read_progress() {
+  local snap; snap="$(worldos_snapshot_path "$1")"
   [ -n "$snap" ] || return 0
   python3 - "$snap" <<'PY' 2>/dev/null
 import json, sys
@@ -1015,7 +1015,7 @@ PY
 # kind="player". SNAPSHOT-READ-ONLY (never writes; engine stays the sole writer). A missing
 # snapshot or a blank campaign id (the dead-cold-open mode: CAMPAIGN_ID="") is NOT seated.
 # $1 = STATE_DIR  $2 = campaign_id ; returns 0 = seated, 1 = not seated.
-clawdnd_pc_seated() {
+worldos_pc_seated() {
   local state_dir="$1" campaign_id="${2:-}"
   [ -n "${campaign_id//[[:space:]]/}" ] || return 1
   local snap="$state_dir/campaigns/$campaign_id/snapshot.json"
@@ -1044,8 +1044,8 @@ PY
 # fired "while the party slept" was lost before the DM ever saw it (invariant-4 breach, on
 # the CALLER side — the engine already returns it). We persist those lines HERE, then the
 # NEXT beat's runbook prepends them as a "While time passed:" block so the DM weaves them in.
-# One file per run state-dir; read-and-cleared each beat (see clawdnd_take_carryforward).
-clawdnd_carryforward_path() {
+# One file per run state-dir; read-and-cleared each beat (see worldos_take_carryforward).
+worldos_carryforward_path() {
   printf '%s/.worldos_softtick_carry.txt' "$1"
 }
 
@@ -1053,8 +1053,8 @@ clawdnd_carryforward_path() {
 # "While time passed:" block (possibly multi-line) and removes the file so each surfaced
 # beat is woven EXACTLY once — never re-fed on a later beat. Empty (and a clean no-op) when
 # nothing was carried. $1 = STATE_DIR.
-clawdnd_take_carryforward() {
-  local f; f="$(clawdnd_carryforward_path "$1")"
+worldos_take_carryforward() {
+  local f; f="$(worldos_carryforward_path "$1")"
   [ -f "$f" ] || return 0
   cat "$f" 2>/dev/null
   rm -f "$f" 2>/dev/null
@@ -1067,12 +1067,12 @@ clawdnd_take_carryforward() {
 # persists the engine's returned world beats / developments / effect-expiries to the carry-
 # forward file so the NEXT beat's runbook surfaces them to the DM (they were being discarded).
 # $1 = ROOT (repo root)  $2 = STATE_DIR  $3 = prev_day  $4 = prev_tod
-clawdnd_soft_tick() {
+worldos_soft_tick() {
   local root="$1" state_dir="$2" prev_day="$3" prev_tod="$4"
   local snap cur cur_day cur_tod cur_combat
-  snap="$(clawdnd_snapshot_path "$state_dir")"
+  snap="$(worldos_snapshot_path "$state_dir")"
   [ -n "$snap" ] || return 0
-  cur="$(clawdnd_read_progress "$state_dir")"
+  cur="$(worldos_read_progress "$state_dir")"
   cur_day="$(printf '%s' "$cur" | cut -f1)"
   cur_tod="$(printf '%s' "$cur" | cut -f2)"
   cur_combat="$(printf '%s' "$cur" | cut -f7)"
@@ -1095,7 +1095,7 @@ clawdnd_soft_tick() {
   # transient cache error; that's non-fatal here (the NEXT beat re-reads the clock and re-ticks),
   # so we never let the tick's exit status fail the loop (the function always returns 0).
   local camp out carry; camp="$(basename "$(dirname "$snap")")"
-  carry="$(clawdnd_carryforward_path "$state_dir")"
+  carry="$(worldos_carryforward_path "$state_dir")"
   out="$(WORLDOS_STATE_DIR="$state_dir" CLAWDND_STATE_DIR="$state_dir" uv run --directory "$root/servers/engine" python - "$camp" "$carry" 2>&1 <<'PY'
 import sys
 import server
@@ -1173,10 +1173,10 @@ PY
 # cleared, so it surfaces exactly once. A quiet tick carries nothing -> byte-identical to
 # the old single-paragraph runbook.
 # $1 = beat (1-based)  $2 = total beats  $3 = prev_location_id (loc at beat start)  $4 = STATE_DIR
-clawdnd_runbook_for_beat() {
+worldos_runbook_for_beat() {
   local state_dir="$4" carry body
-  carry="$(clawdnd_take_carryforward "$state_dir")"
-  body="$(_clawdnd_runbook_body "$@")"
+  carry="$(worldos_take_carryforward "$state_dir")"
+  body="$(_worldos_runbook_body "$@")"
   if [ -n "$carry" ]; then
     # The world-moved block leads (it's the freshest fact the DM must honor), then the
     # moment-specific runbook. Two newlines so the DM reads them as distinct directives.
@@ -1187,12 +1187,12 @@ clawdnd_runbook_for_beat() {
 }
 
 # The runbook BODY — the moment-specific story directive (the original selector). Kept as an
-# inner helper so clawdnd_runbook_for_beat can prepend the F04-2 carry-forward block in ONE
+# inner helper so worldos_runbook_for_beat can prepend the F04-2 carry-forward block in ONE
 # place that BOTH opener paths (play.sh / play_party.sh) already route through.
-_clawdnd_runbook_body() {
+_worldos_runbook_body() {
   local beat="$1" beats="$2" prev_loc="$3" state_dir="$4"
   local prog day tod visited npcs_met cur_loc cur_visited
-  prog="$(clawdnd_read_progress "$state_dir")"
+  prog="$(worldos_read_progress "$state_dir")"
   day="$(printf '%s' "$prog" | cut -f1)";        day="${day:-1}"
   tod="$(printf '%s' "$prog" | cut -f2)";        tod="${tod:-morning}"
   visited="$(printf '%s' "$prog" | cut -f3)";    visited="${visited:-0}"
@@ -1251,7 +1251,7 @@ _clawdnd_runbook_body() {
 # off-domain noise. The optional $3 picks lens-appropriate wording (default = generic).
 # $1 = scorecard JSON path  $2 = a short reason string (e.g. the failed checks)
 # $3 = optional domain hint: "story" (world-progression wording) | "" / anything else (generic)
-clawdnd_cap_score_red() {
+worldos_cap_score_red() {
   local path="$1" reason="${2:-behavioral gate RED}" domain="${3:-}"
   [ -f "$path" ] || return 0
   python3 - "$path" "$reason" "$domain" <<'PY' 2>/dev/null || true
@@ -1319,9 +1319,9 @@ PY
 # exposed). Read-only (get_campaign_director never mutates). Echoes a short DIRECTOR block for the
 # DM beat prompt, or NOTHING when the campaign owes nothing / no snapshot yet. Non-fatal: a
 # transient uv error -> empty (the next beat re-reads).
-clawdnd_director_advisory() {
+worldos_director_advisory() {
   local root="$1" state_dir="$2" snap camp out
-  snap="$(clawdnd_snapshot_path "$state_dir")"
+  snap="$(worldos_snapshot_path "$state_dir")"
   [ -n "$snap" ] || return 0
   camp="$(basename "$(dirname "$snap")")"
   out="$(WORLDOS_STATE_DIR="$state_dir" CLAWDND_STATE_DIR="$state_dir" uv run --directory "$root/servers/engine" python - "$camp" 2>/dev/null <<'PY'
@@ -1345,12 +1345,12 @@ PY
 # stumble-into EVENTS whose contract-safe trigger holds NOW (a set flag, a faction's reputation
 # reaching a level, a reached day — never fiction), so the DM is REMINDED to STAGE the available
 # decisional instead of relying on reach-for (the same dark-surface gap the Director closed for
-# add_quest before #154). MIRRORS clawdnd_director_advisory exactly: read-only (present_events
+# add_quest before #154). MIRRORS worldos_director_advisory exactly: read-only (present_events
 # never mutates), echoes a short EVENT block for the DM beat prompt, or NOTHING when no Event is
 # available / no snapshot yet. Non-fatal: a transient uv error -> empty (the next beat re-reads).
-clawdnd_event_advisory() {
+worldos_event_advisory() {
   local root="$1" state_dir="$2" snap camp out
-  snap="$(clawdnd_snapshot_path "$state_dir")"
+  snap="$(worldos_snapshot_path "$state_dir")"
   [ -n "$snap" ] || return 0
   camp="$(basename "$(dirname "$snap")")"
   out="$(WORLDOS_STATE_DIR="$state_dir" CLAWDND_STATE_DIR="$state_dir" uv run --directory "$root/servers/engine" python - "$camp" 2>/dev/null <<'PY'
@@ -1405,7 +1405,7 @@ PY
 # .claude.json written iff absent; exported as CLAUDE_CONFIG_DIR).
 # Reads ambient $STATE_DIR (the run's state dir, when the caller has set it) for the default
 # scratch config location. No args.
-clawdnd_isolate_claude_auth() {
+worldos_isolate_claude_auth() {
   local cred="" tok_file cfg_dir
 
   # (a) env credential already present → respect it as-is (no reclassification, no file read).

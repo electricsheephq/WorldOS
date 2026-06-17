@@ -27,13 +27,13 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self._tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self._old_state = os.environ.get("CLAWDND_STATE_DIR")
         self._old_worldos_art_repo_root = os.environ.get("WORLDOS_ART_REPO_ROOT")
-        self._old_clawdnd_art_repo_root = os.environ.get("CLAWDND_ART_REPO_ROOT")
+        self._old_worldos_art_repo_root = os.environ.get("CLAWDND_ART_REPO_ROOT")
         self._old_worldos_repo_root = os.environ.get("WORLDOS_REPO_ROOT")
-        self._old_clawdnd_repo_root = os.environ.get("CLAWDND_REPO_ROOT")
+        self._old_worldos_repo_root = os.environ.get("CLAWDND_REPO_ROOT")
         self._old_worldos_player_moves = os.environ.get("WORLDOS_PLAYER_MOVES")
-        self._old_clawdnd_player_moves = os.environ.get("CLAWDND_PLAYER_MOVES")
+        self._old_worldos_player_moves = os.environ.get("CLAWDND_PLAYER_MOVES")
         self._old_worldos_provider = os.environ.get("WORLDOS_PROVIDER")
-        self._old_clawdnd_provider = os.environ.get("CLAWDND_PROVIDER")
+        self._old_worldos_provider = os.environ.get("CLAWDND_PROVIDER")
         os.environ.pop("WORLDOS_ART_REPO_ROOT", None)
         os.environ.pop("CLAWDND_ART_REPO_ROOT", None)
         os.environ.pop("WORLDOS_REPO_ROOT", None)
@@ -65,34 +65,34 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
             os.environ.pop("WORLDOS_ART_REPO_ROOT", None)
         else:
             os.environ["WORLDOS_ART_REPO_ROOT"] = self._old_worldos_art_repo_root
-        if self._old_clawdnd_art_repo_root is None:
+        if self._old_worldos_art_repo_root is None:
             os.environ.pop("CLAWDND_ART_REPO_ROOT", None)
         else:
-            os.environ["CLAWDND_ART_REPO_ROOT"] = self._old_clawdnd_art_repo_root
+            os.environ["CLAWDND_ART_REPO_ROOT"] = self._old_worldos_art_repo_root
         if self._old_worldos_repo_root is None:
             os.environ.pop("WORLDOS_REPO_ROOT", None)
         else:
             os.environ["WORLDOS_REPO_ROOT"] = self._old_worldos_repo_root
-        if self._old_clawdnd_repo_root is None:
+        if self._old_worldos_repo_root is None:
             os.environ.pop("CLAWDND_REPO_ROOT", None)
         else:
-            os.environ["CLAWDND_REPO_ROOT"] = self._old_clawdnd_repo_root
+            os.environ["CLAWDND_REPO_ROOT"] = self._old_worldos_repo_root
         if self._old_worldos_player_moves is None:
             os.environ.pop("WORLDOS_PLAYER_MOVES", None)
         else:
             os.environ["WORLDOS_PLAYER_MOVES"] = self._old_worldos_player_moves
-        if self._old_clawdnd_player_moves is None:
+        if self._old_worldos_player_moves is None:
             os.environ.pop("CLAWDND_PLAYER_MOVES", None)
         else:
-            os.environ["CLAWDND_PLAYER_MOVES"] = self._old_clawdnd_player_moves
+            os.environ["CLAWDND_PLAYER_MOVES"] = self._old_worldos_player_moves
         if self._old_worldos_provider is None:
             os.environ.pop("WORLDOS_PROVIDER", None)
         else:
             os.environ["WORLDOS_PROVIDER"] = self._old_worldos_provider
-        if self._old_clawdnd_provider is None:
+        if self._old_worldos_provider is None:
             os.environ.pop("CLAWDND_PROVIDER", None)
         else:
-            os.environ["CLAWDND_PROVIDER"] = self._old_clawdnd_provider
+            os.environ["CLAWDND_PROVIDER"] = self._old_worldos_provider
         server._HERE = self._old_here
 
     def _get(self, path: str) -> tuple[int, str, bytes]:

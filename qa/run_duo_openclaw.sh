@@ -184,7 +184,7 @@ chatlog dm "$DMSG"
 # the START, pick the ONE moment-specific runbook, then after the DM beat run the soft
 # clock-tick backstop. Identical control flow to run_duo.sh.
 for b in $(seq 1 "$BEATS"); do
-  PROG_PRE="$(clawdnd_read_progress "$STATE_OC")"
+  PROG_PRE="$(worldos_read_progress "$STATE_OC")"
   PREV_DAY="$(printf '%s' "$PROG_PRE" | cut -f1)"; PREV_DAY="${PREV_DAY:-1}"
   PREV_TOD="$(printf '%s' "$PROG_PRE" | cut -f2)"; PREV_TOD="${PREV_TOD:-morning}"
   PREV_LOC="$(printf '%s' "$PROG_PRE" | cut -f5)"
@@ -198,7 +198,7 @@ Take your next action(s) for this beat using your tools — say / do / request_c
   [ -z "$PMSG" ] && { echo "[ocduo] player went silent at beat $b; stopping early"; break; }
   chatlog player "$PMSG"
 
-  RUNBOOK="$(clawdnd_runbook_for_beat "$b" "$BEATS" "$PREV_LOC" "$STATE_OC")"
+  RUNBOOK="$(worldos_runbook_for_beat "$b" "$BEATS" "$PREV_LOC" "$STATE_OC")"
   echo "[ocduo] beat $b runbook: ${RUNBOOK%% (*}…"
   DMSG="$(oc_turn_retry dm "$DM_SID" "The player does:
 
@@ -213,7 +213,7 @@ $RUNBOOK")"
   chatlog dm "$DMSG"
 
   # C — soft clock-tick backstop (skips during combat; defers to DM if it advanced time).
-  clawdnd_soft_tick "$ROOT" "$STATE_OC" "$PREV_DAY" "$PREV_TOD"
+  worldos_soft_tick "$ROOT" "$STATE_OC" "$PREV_DAY" "$PREV_TOD"
 done
 
 # Wrap: bring the scene to a clean stop + end_session.
@@ -235,9 +235,9 @@ python3 qa/assert_behavioral.py "$COMBINED" "$T/$RUN.state.json" "$T/$RUN.chat.j
 if [ "${GATE:-0}" != "0" ]; then
   GATE_REASON="$(grep -E '^\s*\[(FAIL)\]' "$T/$RUN.gate.txt" 2>/dev/null | sed 's/^[[:space:]]*//' | paste -sd'; ' - 2>/dev/null)"
   GATE_REASON="${GATE_REASON:-behavioral gate RED}"
-  clawdnd_cap_score_red "$T/$RUN.tolkien.json" "$GATE_REASON" story
-  clawdnd_cap_score_red "$T/$RUN.score.json" "$GATE_REASON" story
-  clawdnd_cap_score_red "$T/$RUN.angrydm.json" "$GATE_REASON"
+  worldos_cap_score_red "$T/$RUN.tolkien.json" "$GATE_REASON" story
+  worldos_cap_score_red "$T/$RUN.score.json" "$GATE_REASON" story
+  worldos_cap_score_red "$T/$RUN.angrydm.json" "$GATE_REASON"
 fi
 echo "[ocduo] done. behavioral=$([ "$GATE" = 0 ] && echo GREEN || echo RED)  snapshot=$T/$RUN.state.json  combined=$COMBINED"
 exit $GATE

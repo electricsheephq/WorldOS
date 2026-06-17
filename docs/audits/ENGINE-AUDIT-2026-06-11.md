@@ -42,9 +42,9 @@ Fallback-masking reconciliation vs #757 (explicit task): nothing re-files the ma
 #### SYN-01 [P1|high|M] Dead-beat masking & failure classification (F12-7 + F12-14 + F13-5)
 - gates: no_give_up + cross_persona_sat + behavioral-gate honesty. ~10.5% of DM invocations (28 no-result + 3x401 of 294 Mac files; VM 18+5) produce no usable beat; each is a 100-300s player-visible wait for nothing or for an auth error rendered as narration.
 - what_is_broken: (a) a 401-class failure's error text appears in chat AS DM PROSE; (b) on play.sh a dead beat now (post-#763) yields an unflagged EMPTY dm row; on play_party (no heartbeat — F12-4) the fallback still recycles the PREVIOUS beat's prose into a row the client hides (engine_logged dedup -> app.jsx drops it); (c) the fallback_recovered honesty stamp never lands in any QA runner, so #757's planned gate discount is unimplementable.
-- why_broken: 401 results carry NON-empty result text (subtype:"success", is_error:true, api_error_status:401 — verified verbatim) so they bypass BOTH the empty-only retry (qa/run_duo.sh:176-190) and the empty-only fallback (qa/lib_beat_driver.sh:138); record_dm_reply accepts blank text (scripts/play.sh:437/:501); run_duo.sh:135, qa/ui_playtest.sh:138, qa/run_party.sh:169 redefine a 3-arg chatlog AFTER sourcing the lib, discarding clawdnd_chatlog_dm's extra_json (lib:295); zero consumers of the flag in qa/assert_behavioral.py.
+- why_broken: 401 results carry NON-empty result text (subtype:"success", is_error:true, api_error_status:401 — verified verbatim) so they bypass BOTH the empty-only retry (qa/run_duo.sh:176-190) and the empty-only fallback (qa/lib_beat_driver.sh:138); record_dm_reply accepts blank text (scripts/play.sh:437/:501); run_duo.sh:135, qa/ui_playtest.sh:138, qa/run_party.sh:169 redefine a 3-arg chatlog AFTER sourcing the lib, discarding worldos_chatlog_dm's extra_json (lib:295); zero consumers of the flag in qa/assert_behavioral.py.
 - how_to_fix: (1) in the shared resolve path, parse the final result event FIRST — is_error/api_error_status => beat FAILED: never chat the error text, never fallback-recycle, surface "DM needs re-auth", count into F13-4 beats_failed; budget pre-check before launch. (2) guard record_dm_reply against blank text; when FALLBACK_RECOVERED=1 AND prose dedups as already-logged, emit a wrapper-authored VISIBLE failure beat + {"beat_failed":true} (UX with #757/#745); preserve the genuine #357 win via pre-beat log-tail snapshot. (3) delete the 3 chatlog overrides (lib chatlog verified drop-in superset) + add an assert_behavioral counter/report (gate policy stays #757's).
-- test_strategy: 401 fixture -> beat recorded failed, chat row contains neither the error string nor recycled prose; pre-beat log has P1 + both attempts die -> visible failure row (not P1, not empty, not hidden); CLAWDND_FALLBACK_RECOVERED=1 + clawdnd_chatlog_dm in each runner's function set -> row carries the flag (all 3 FAIL today).
+- test_strategy: 401 fixture -> beat recorded failed, chat row contains neither the error string nor recycled prose; pre-beat log has P1 + both attempts die -> visible failure row (not P1, not empty, not hidden); CLAWDND_FALLBACK_RECOVERED=1 + worldos_chatlog_dm in each runner's function set -> row carries the flag (all 3 FAIL today).
 - effort: M (three S legs) ; confidence: high ; depends_on: F12-4 (party lane converges to empty-row mode after it) ; dup: enriches #757 + #745.
 
 #### SYN-02 [P1|high(mass)/med(seconds)|M] alwaysLoad pins ~40-44K tokens of tool schemas into every DM request (F13-1 + F14-6)
@@ -932,7 +932,7 @@ Method: every cited file:line re-opened on main; measurement claims re-run (wand
 - **dup:** new — #601 (danger on map pins) and #381 (route_kind metadata) are presentation-side; both verified open, neither touches the resolver. Not owned by #748–#758.
 
 ## F04-2 [P1|high|M] Production soft-tick consumes one-shot world beats / backlog developments / effect expiries SILENTLY — CONFIRMED
-- **Verification:** `clawdnd_soft_tick` (qa/lib_beat_driver.sh:631–672) calls `server.advance_time(camp, phases=1)` and prints ONLY `day`/`time_of_day` — `world_beats`/`world_developments`/`expired_effects` in the return are discarded to run-log stderr. **scripts/play.sh:504 (production loop) calls the same function each beat** — verified. Thread beats re-arm +4 days on fire (worldsim.py:57–63) → moment consumed; deterministic backlog items flip `resolved` (worldsim.py:183–184) un-narrated; `needs_llm` items flip `status="fired"` (worldsim.py:181) — grep across servers/engine: **zero readers of status "fired"** (`pending_backlog` filters `status == "pending"`, worldsim.py:205; `world_tick` returns only fired-this-call, server.py:7330–7358; get_state and scene_context expose no backlog surface — verified by grep; the "later DM digest" does not exist). Next-beat runbook reads numeric progress only (no world_beat/backlog refs in lib_beat_driver.sh/play.sh — verified by grep).
+- **Verification:** `worldos_soft_tick` (qa/lib_beat_driver.sh:631–672) calls `server.advance_time(camp, phases=1)` and prints ONLY `day`/`time_of_day` — `world_beats`/`world_developments`/`expired_effects` in the return are discarded to run-log stderr. **scripts/play.sh:504 (production loop) calls the same function each beat** — verified. Thread beats re-arm +4 days on fire (worldsim.py:57–63) → moment consumed; deterministic backlog items flip `resolved` (worldsim.py:183–184) un-narrated; `needs_llm` items flip `status="fired"` (worldsim.py:181) — grep across servers/engine: **zero readers of status "fired"** (`pending_backlog` filters `status == "pending"`, worldsim.py:205; `world_tick` returns only fired-this-call, server.py:7330–7358; get_state and scene_context expose no backlog surface — verified by grep; the "later DM digest" does not exist). Next-beat runbook reads numeric progress only (no world_beat/backlog refs in lib_beat_driver.sh/play.sh — verified by grep).
 - **Fix (spec verified against invariants):** (1) harness-side: soft_tick appends the returned beat/development/expiry lines into the NEXT beat's runbook block ("While time passed: …") — zero engine change, closes the production leak. (2) Engine: additive `BacklogItem.woven: bool = False` (defaulted — old snapshots round-trip) + an optional `scene_context` field listing fired-but-unwoven items + a `mark_woven` write tool (record_camp_beat pattern, sole-writer preserved).
 - **Test:** engine — needs_llm item due tomorrow, advance_time(4): new surface lists it (today nothing does); harness — soft_tick over a state dir with a due beat: next runbook text contains the line.
 - **dup:** new — #749 (verified merged at HEAD) fixed heartbeat *contamination* (wrapper-progress lines leaking into recap/FTS); this is content *loss* at the same layer. Distinct.
@@ -2154,7 +2154,7 @@ counterfactual for the product lanes' 200s kill, same DM model/effort defaults (
 ---
 
 ## F12-1 — CONFIRMED [P1|high|S] Routine-beat 200s timeout kills ~1 in 5 healthy beats; retry reuses the SAME deadline
-- Verified: qa/lib_beat_driver.sh:495-506 (`clawdnd_dm_timeout` → flat `worldos_env BEAT_TIMEOUT 200` for first=0).
+- Verified: qa/lib_beat_driver.sh:495-506 (`worldos_dm_timeout` → flat `worldos_env BEAT_TIMEOUT 200` for first=0).
   scripts/play.sh:278 captures `beat_timeout` ONCE before attempt 1; retry at :313-314 re-invokes `_dm_invoke`
   with the same `$beat_timeout`. play_party.sh:323/349 identical pattern. Measurement reproduced (above).
 - Disproof attempts: no escalation path exists anywhere; no env recompute on retry; #748/#761 (merged) is the
@@ -2179,7 +2179,7 @@ counterfactual for the product lanes' 200s kill, same DM model/effort defaults (
 - dup: new.
 
 ## F12-3 — CONFIRMED [P1|high|M] play.sh cold open has NO failure abort and NO seating guard
-- Verified: play.sh:413-437 — `clawdnd_resolve_dm_reply` then `record_dm_reply "$CAMPAIGN_ID" "$DMSG" opening`
+- Verified: play.sh:413-437 — `worldos_resolve_dm_reply` then `record_dm_reply "$CAMPAIGN_ID" "$DMSG" opening`
   UNCONDITIONALLY (blank DMSG → log_engine_narration returns 1 → unflagged EMPTY chat row), then enters the move
   loop. play_party.sh:475 has the empty-DMSG abort; :495-532 has pc_seated() + one reseat retry + loud abort —
   play.sh has neither. Double-failed cold open (401 class proven 2026-06-02): CAMPAIGN_ID="" → heartbeat no-ops,
@@ -2193,7 +2193,7 @@ counterfactual for the product lanes' 200s kill, same DM model/effort defaults (
 - dup: new (#721 is the bridge-ABSENT path; #745/#748 are viewer-side).
 
 ## F12-4 — CONFIRMED [P1|high|S] play_party.sh missing the model-independent progress heartbeat (#623 never reached the lane it was factored for)
-- Verified: grep — `clawdnd_emit_progress_heartbeat` callers = play.sh:385,:488 ONLY (codex has its own inline
+- Verified: grep — `worldos_emit_progress_heartbeat` callers = play.sh:385,:488 ONLY (codex has its own inline
   bank, play_codex_dm.sh choose_move_progress_text + log_engine_narration pre-turn). play_party.sh: zero calls;
   it carries only the model-COOPERATIVE rule (l.153/297). lib:312-319 documents the helper as "factored here so
   every harness shares it" + "even when the model SKIPS the cooperative early log_event (Eva measured exactly that)".
@@ -2205,7 +2205,7 @@ counterfactual for the product lanes' 200s kill, same DM model/effort defaults (
 - dup: new — completes #623; #749 (now MERGED at a245a2c) fixed contamination + ingest-flip, not absence.
 
 ## F12-5 — CONFIRMED [P1|high|S] play_party.sh has no soft clock-tick backstop
-- Verified: grep — `clawdnd_soft_tick` callers = play.sh:504, run_duo.sh:334, run_duo_openclaw.sh:216 (evidence
+- Verified: grep — `worldos_soft_tick` callers = play.sh:504, run_duo.sh:334, run_duo_openclaw.sh:216 (evidence
   enriched: openclaw duo has it too — play_party is the ONLY beat loop without it). play_party beat loop
   (601-663) never captures PREV_DAY/PREV_TOD and ends at the PREV_LOC capture (:655).
 - Fix spec OK (mirror play.sh:475-478/504; helper verified at lib:631-672 — combat guard, defers to DM-advanced
@@ -2214,7 +2214,7 @@ counterfactual for the product lanes' 200s kill, same DM model/effort defaults (
 - dup: new.
 
 ## F12-6 — CONFIRMED [P1|high|M] Director + Event advisories run ONLY in the scored QA lane
-- Verified: grep — `clawdnd_director_advisory`/`clawdnd_event_advisory` callers = run_duo.sh:306/312 only, folded
+- Verified: grep — `worldos_director_advisory`/`worldos_event_advisory` callers = run_duo.sh:306/312 only, folded
   into the beat prompt at :314-324. play.sh:489-495 and play_party.sh:639-648 inject $RUNBOOK only. Helpers
   verified read-only/non-fatal (lib:816-870; get_campaign_director + present_events never mutate).
 - Scoring-provenance claim holds: RRI story/mech numbers come from the duo lane; product players never get the
@@ -2227,12 +2227,12 @@ counterfactual for the product lanes' 200s kill, same DM model/effort defaults (
 ## F12-7 — CONFIRMED [P1|high|S] fallback_recovered stamp dead in ALL QA runners — local 3-arg `chatlog` shadows the lib and drops the flag
 - Verified at HEAD (post-#763 — the overrides survived the #749 merge): run_duo.sh:135, ui_playtest.sh:138,
   run_party.sh:169 each redefine `chatlog` as `python3 -c '…' "$CHAT" "$1" "$2"` AFTER sourcing the lib
-  (l.22/28/46) — clawdnd_chatlog_dm's 3rd arg `'{"fallback_recovered":true}'` (lib:295) silently discarded.
+  (l.22/28/46) — worldos_chatlog_dm's 3rd arg `'{"fallback_recovered":true}'` (lib:295) silently discarded.
   ui_playtest.sh:181 comment claims the stamp lands — false in that runner.
 - Consumer check confirmed: repo grep — fallback_recovered appears ONLY in lib, tests, and comments; zero refs in
   assert_behavioral.py / any qa/*.py → write-only even where it works (play/play_party via record_dm_reply).
 - Test-gap mechanism confirmed (A14): test_heartbeat_repair.py:208-271 exercises the LIB chatlog;
-  test_dm_session_remint.py:393-401 only source-greps `"clawdnd_chatlog_dm" in src` — cannot catch the override.
+  test_dm_session_remint.py:393-401 only source-greps `"worldos_chatlog_dm" in src` — cannot catch the override.
 - Fix spec OK: lib chatlog verified drop-in superset (reads ambient $CHAT at call time, byte-identical row with no
   3rd arg) → delete the 3 overrides; add the assert_behavioral consumer (count + report; gate policy stays #757's);
   per-runner red-first wrapper-shape test.
@@ -2241,7 +2241,7 @@ counterfactual for the product lanes' 200s kill, same DM model/effort defaults (
 
 ## F12-8 — CONFIRMED [P1|high|S] `timeout(1)` is an undeclared coreutils dependency; preflight doesn't check it
 - Verified on this Darwin 25 host: `/usr/bin/timeout` ABSENT; only /opt/homebrew/bin/timeout (coreutils).
-  play.sh:281 + play_party.sh:329 invoke `timeout "$beat_timeout" claude …`. clawdnd_missing_commands
+  play.sh:281 + play_party.sh:329 invoke `timeout "$beat_timeout" claude …`. worldos_missing_commands
   (launch_common.sh:26-38) checks `python3 claude uv jq curl` — callers play.sh:33, play_party.sh:63 — no
   `timeout`. ui_playtest.sh:150 names the dep in a comment; repo-wide grep: zero coreutils provisioning.
   Without it: `_dm_invoke` → "command not found" rc=127 in <1s, retry rc=127, empty narration → with F12-3 an
@@ -2276,10 +2276,10 @@ counterfactual for the product lanes' 200s kill, same DM model/effort defaults (
 ## F12-11 — CONFIRMED [P2|high|S] run_duo has no per-beat deadline and swallows the real failure cause
 - Verified: run_duo.sh turn() dm branch :161-164 unbounded (no `timeout`); turn_retry :177-193 retries only on
   EMPTY output (a hang never returns; an rc≠0-with-output never retries), never calls
-  clawdnd_report_attempt_failure (the structured error stays in $out on disk but is never surfaced — the masking
+  worldos_report_attempt_failure (the structured error stays in $out on disk but is never surfaced — the masking
   class lib:540-557 was built for), and re-implements the cold-open remint inline (:185-187) instead of
-  clawdnd_dm_remint_session_on_retry.
-- Fix spec OK: wrap in `worldos_timeout "$(clawdnd_dm_timeout "$first")"`; report on rc!=0; shared remint; keep
+  worldos_dm_remint_session_on_retry.
+- Fix spec OK: wrap in `worldos_timeout "$(worldos_dm_timeout "$first")"`; report on rc!=0; shared remint; keep
   empty-output retry as second trigger.
 - Test: sleep-forever stub → deadline + early-stop; 401 result-event stub → "[dm-attempt] HTTP 401 … NOT retryable"
   on stderr (red-first: absent).
@@ -2379,7 +2379,7 @@ counterfactual for the product lanes' 200s kill, same DM model/effort defaults (
   codex:~700-712) with F12-16's env drift; (e) over_budget re-slurps the ever-growing $COMBINED via `jq -rs` on
   EVERY loop pass — including each 2s idle tick (play.sh:459-460→448-453, play_party:601-602→576-581); (f) play.sh
   dm_turn ≈ play_party turn() dm branch ~90% identical — F12-1/2/4 would otherwise be patched twice.
-- Fix/test as filed (clawdnd_viewer_supervisor + clawdnd_dm_invoke + incremental session-spent cursor; shape guard
+- Fix/test as filed (worldos_viewer_supervisor + worldos_dm_invoke + incremental session-spent cursor; shape guard
   on single rule definition). Sequence with F12-1/2/4/11.
 - dup: new.
 
@@ -2433,7 +2433,7 @@ Auditor's full report: /tmp/engine-audit/unit-13-audit.md. Verdict: **6 confirme
 - Checked qa/scores_db.py:80-110 (COLUMNS — zero latency fields) + _ensure_schema ALTER-add path ✓; qa/distill.py parses duration_ms/num_turns/cost from result events ✓ (minor: it does NOT parse duration_api_ms — the rollup must parse raw events, which the spec already does).
 - Checked the in-flight surface: #757 body explicitly says "Fix in flight (heartbeat-repair PR) … follow-up: discount flagged rows in behavioral tallies" — #763 IS that in-flight PR (landed at HEAD), and the follow-up classification work is exactly what F13-5 enriches. #753 body confirmed = budget definition (F13-1/F13-4 enrich it). All dup_statuses re-checked against /tmp/engine-audit/open-issues.txt.
 - Invariant check on every fix spec: F13-1 split keeps all writes in the same process/module under campaign_lock (sole-writer ✓), existing `clawdnd-*` ids/env untouched + a NEW additive id (wire ✓); F13-2 `limit:int=0` default = today's dump (additive ✓); F13-3/F13-7 are return-payload-only (no snapshot impact ✓); F13-6 is pure derivation, no state writes, snapshots untouched ✓ — but its default-cap IS a DM-visible behavior change (noted below). No engine-rolls surface touched anywhere.
-- Clean-verified list: spot-checked #3 (clawdnd_dm_effort_arg present in all 3 runners ✓) and #4 (run_duo.sh:70 `CLAWDND_LEAN_BEATS:-1`, sweep_v2.sh `export CLAWDND_LEAN_BEATS=1` with "#683/#685-fixed" header ✓ — the repo supersedes the stale 2026-06-05 lean-OFF guidance that still lives in the worldos-latency-forensics SKILL.md; flagged as doc-drift, separate task).
+- Clean-verified list: spot-checked #3 (worldos_dm_effort_arg present in all 3 runners ✓) and #4 (run_duo.sh:70 `CLAWDND_LEAN_BEATS:-1`, sweep_v2.sh `export CLAWDND_LEAN_BEATS=1` with "#683/#685-fixed" header ✓ — the repo supersedes the stale 2026-06-05 lean-OFF guidance that still lives in the worldos-latency-forensics SKILL.md; flagged as doc-drift, separate task).
 
 ---
 
@@ -2463,7 +2463,7 @@ Auditor's full report: /tmp/engine-audit/unit-13-audit.md. Verdict: **6 confirme
 ## F13-5 — CORRECTED [P2 | high | S]
 **~10% of DM invocations produce no usable beat — and the 401 path is WORSE than the audit stated: the raw auth-error string flows to chat as DM prose.**
 - Census re-run at HEAD: Mac archives grew to 294 files → **28 no-result + 3×401 ≈ 10.5%** (audit said 16+3 of 269 — archives gained runs since; claim holds). 401 sample verified verbatim (subtype:"success", is_error:true, 1164ms).
-- ROOT-CAUSE CORRECTION (mechanism sharpened): the 401's `result` field is **non-empty** error text. `turn_retry` (run_duo.sh:176-190) retries only on EMPTY; `clawdnd_resolve_dm_reply` (lib_beat_driver.sh:138) falls back only on EMPTY. So the 401 error string **bypasses both the retry AND the fallback** and is chatlogged as the DM's reply ("Failed to authenticate…" as narration). The "fallback dresses it as resolved" mechanism applies only to the no-result/empty path. Post-#763 (HEAD) the fallback honestly stamps `fallback_recovered:true` and recovers nothing from heartbeat-only dead beats — but no path classifies the beat FAILED, surfaces re-auth, or counts it.
+- ROOT-CAUSE CORRECTION (mechanism sharpened): the 401's `result` field is **non-empty** error text. `turn_retry` (run_duo.sh:176-190) retries only on EMPTY; `worldos_resolve_dm_reply` (lib_beat_driver.sh:138) falls back only on EMPTY. So the 401 error string **bypasses both the retry AND the fallback** and is chatlogged as the DM's reply ("Failed to authenticate…" as narration). The "fallback dresses it as resolved" mechanism applies only to the no-result/empty path. Post-#763 (HEAD) the fallback honestly stamps `fallback_recovered:true` and recovers nothing from heartbeat-only dead beats — but no path classifies the beat FAILED, surfaces re-auth, or counts it.
 - Fix spec corrected accordingly: in the shared resolve path, parse the final result event FIRST — `is_error`/`api_error_status` (401 et al.) ⇒ beat FAILED (never chat the error text, never fallback-recycle), surface "DM needs re-auth", count into F13-4 `beats_failed`; budget pre-check before launch. Test: 401 fixture → beat recorded failed, chat row contains neither the error string nor recycled prose.
 - dup: **enriches #757** (open; its body names exactly this follow-up: "discount flagged rows in behavioral tallies" — the masking itself is NOT re-filed). depends_on: #757.
 
@@ -2483,7 +2483,7 @@ Auditor's full report: /tmp/engine-audit/unit-13-audit.md. Verdict: **6 confirme
 ## F13-8 — CONFIRMED [P3 | medium | S-M]
 **Cold-open Reads two skill reference files (~27KB) as separate turns every session.**
 - Root verified: SKILL.md:85 "**Read this at the START of every session**" (storycraft.md, 17.3KB) + :89 "**Read this whenever you `start_world`**" (quest-generation.md, 9.5KB); SKILL.md:83 instructs the repo-root Read path. Spot-grep: storycraft.md appears in 60 / quest-generation.md in 56 of 294 Mac transcripts — consistent with the per-cold-open claim (the grep is an upper bound; the auditor's tool_use-path count of 40/39 over 41 cold-opens is the precise figure).
-- Fix feasibility verified: the `first`-keyed branch exists (clawdnd_dm_effort_arg, lib_beat_driver.sh:454) and the `--append-system-prompt` machinery exists for lean continuing beats (:421) — but the COLD-OPEN currently has NO --append-system-prompt, so the card is a new (small) arg path in the shared helper, applied to all 3 runners. Effort S-M and medium confidence (distillation quality risk on north-star story rules) are honest — keep.
+- Fix feasibility verified: the `first`-keyed branch exists (worldos_dm_effort_arg, lib_beat_driver.sh:454) and the `--append-system-prompt` machinery exists for lean continuing beats (:421) — but the COLD-OPEN currently has NO --append-system-prompt, so the card is a new (small) arg path in the shared helper, applied to all 3 runners. Effort S-M and medium confidence (distillation quality risk on north-star story rules) are honest — keep.
 - dup: **new**.
 
 ---
@@ -2491,7 +2491,7 @@ Auditor's full report: /tmp/engine-audit/unit-13-audit.md. Verdict: **6 confirme
 ## CLEAN-VERIFIED (skeptic re-checked)
 1. Engine hot path innocent — bench reproduced at HEAD (worst call 161ms-class; list_canon 180KB/161ms is a SIZE problem, not a time problem); "engine ≈1-4%/beat" stands.
 2. alwaysLoad (#574) works — wiring verified in all 3 runners (env-gated, default on).
-3. Effort tiering (#551) — clawdnd_dm_effort_arg present in play.sh / run_duo.sh / play_party.sh ✓ (#561 covers the OTHER runners — no conflict).
+3. Effort tiering (#551) — worldos_dm_effort_arg present in play.sh / run_duo.sh / play_party.sh ✓ (#561 covers the OTHER runners — no conflict).
 4. Lean-ON production+QA default — verified in-repo (run_duo.sh:70 default 1; sweep_v2.sh `export CLAWDND_LEAN_BEATS=1` "#683/#685-fixed"). The stale "lean is BROKEN/OFF" text in the worldos-latency-forensics SKILL.md is repo doc-drift (flagged separately) — the AUDITOR was right, the skill is behind.
 5. Combat returns lean ✓ (bench).
 6. Wall-clock trend right direction (lever bundle, not controlled A/B — caveat retained).

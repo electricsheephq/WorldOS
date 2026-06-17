@@ -17,7 +17,7 @@ from pathlib import Path
 
 from adapters.kokoro import KokoroBackend
 
-OUT = Path("/tmp/clawdnd_smoke")
+OUT = Path("/tmp/worldos_smoke")
 OUT.mkdir(parents=True, exist_ok=True)
 
 LINES = [

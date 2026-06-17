@@ -16,7 +16,7 @@ from pathlib import Path
 import registry
 from adapters.kokoro import KokoroBackend
 
-OUT = Path("/tmp/clawdnd_playtest")
+OUT = Path("/tmp/worldos_playtest")
 OUT.mkdir(parents=True, exist_ok=True)
 
 # Verbatim / representative lines from content/campaigns/cellar-rats/adventure.json

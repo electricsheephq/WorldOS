@@ -108,8 +108,8 @@ def test_scorer_override_without_optin_errors(tmp_path):
     )
     combined = (proc.stdout + proc.stderr).lower()
     # The message must name the override env + the opt-in flag so the operator knows the fix.
-    assert "clawdnd_scorer_model" in combined
-    assert "clawdnd_allow_scorer_override" in combined
+    assert "worldos_scorer_model" in combined
+    assert "worldos_allow_scorer_override" in combined
     # The guard must fire BEFORE producing an artifact (no score JSON written).
     assert not inputs["out"].exists(), "guard-failed run must not write a score artifact"
 

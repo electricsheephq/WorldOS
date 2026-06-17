@@ -28,7 +28,7 @@ from models import ActiveEffect, Consequence  # noqa: E402
 
 def main() -> int:
     cid = server.create_campaign("F04-2 soft-tick carry-forward proof")["id"]
-    # Seat a player PC so the snapshot looks like a real run (clawdnd_snapshot_path finds it).
+    # Seat a player PC so the snapshot looks like a real run (worldos_snapshot_path finds it).
     server.create_character(cid, "Renn", kind="player")
 
     c = store.load_campaign(cid)
