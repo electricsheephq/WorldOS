@@ -20,6 +20,7 @@ from models import (
     Campaign,
     CampBeatRecord,
     Character,
+    CompanionAgenda,
     CompanionArc,
     CompanionDossier,
     Consequence,
@@ -335,3 +336,124 @@ def test_scene_context_durable_mirrors_obligations(cid):
 def test_scene_context_durable_omits_obligations_on_healthy_fixture(cid):
     sc = server.scene_context(cid)
     assert "obligations" not in sc["durable"]
+
+
+# --- companion_betrayal_approaching (the BETRAYAL-side analog of #961's loyalty cues) ----
+#
+# The cooperative cues (frozen / camp / gate-near) fire when a THRIVING bond sits inert. The
+# betrayal cue is their mirror: a live, unfired attitude_below agenda whose bond has curdled
+# past its breaking point (and clearly soured) wants the DM to FORESHADOW the turn every beat.
+# The telegraph companion_arc.evaluate() computes only reached the DM via an explicit
+# check_companion_arc call, so an approaching betrayal stayed invisible in play — the precise
+# gap that left "betrayals never engage" even though the engine machinery (issue #142) works.
+
+
+def _betrayer(attitude, threshold=18, fired=False, decision_flag="") -> Character:
+    """A companion carrying an attitude_below betrayal agenda (Sergeant Ondine Marsh's shape)."""
+    return Character(
+        name="Sergeant Ondine Marsh",
+        kind="companion",
+        attitude_value=attitude,
+        arc=CompanionArc(
+            agenda=CompanionAgenda(
+                trigger="attitude_below", value=threshold, fired=fired, decision_flag=decision_flag
+            )
+        ),
+    )
+
+
+def test_betrayal_approaching_fires_when_bond_curdles_past_breaking_point():
+    """A live attitude_below agenda + a bond soured into the warning band (regard -30,
+    threshold 18) -> the DM is cued to foreshadow the fracture this beat."""
+    comp = _betrayer(attitude=-30, threshold=18)
+    c = _campaign_with(comp, day=4)
+    appr = [o for o in server._compute_beat_obligations(c)
+            if o["kind"] == "companion_betrayal_approaching"]
+    assert appr, "a curdled betrayal agenda must surface a cue"
+    o = appr[0]
+    assert o["name"] == "Sergeant Ondine Marsh"
+    assert o["attitude_value"] == -30 and o["threshold"] == 18
+    assert o["deep_red"] is False  # -30 has not yet passed the deep-red marker (-40)
+    assert "REAL attack" in o["detail"]
+
+
+def test_betrayal_approaching_silent_when_bond_only_mildly_soured():
+    """The agenda is LIVE (regard 10 < threshold 18) but the bond is still above the upper
+    warning edge (-20) -> don't telegraph a barely-cooled bond."""
+    comp = _betrayer(attitude=10, threshold=18)
+    c = _campaign_with(comp, day=4)
+    assert "companion_betrayal_approaching" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_betrayal_approaching_silent_for_warm_companion():
+    """The gs-ledger-betray case: even a 'cruel' player ran a liberatory arc, regard rose to
+    50 -> the agenda never went live and the cue does NOT false-fire."""
+    comp = _betrayer(attitude=50, threshold=18)
+    c = _campaign_with(comp, day=6)
+    assert "companion_betrayal_approaching" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_betrayal_approaching_silent_without_agenda():
+    """A loyalty-only companion (no betrayal agenda) is never flagged, however soured."""
+    comp = _companion(name="Sergeant Ondine Marsh", attitude=-30, last_long_rest_day=4)
+    c = _campaign_with(comp, day=4)
+    assert "companion_betrayal_approaching" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_betrayal_approaching_silent_when_agenda_already_fired():
+    """A FIRED agenda is the event itself, not a warning -> never re-cued as approaching."""
+    comp = _betrayer(attitude=-50, threshold=18, fired=True)
+    c = _campaign_with(comp, day=4)
+    assert "companion_betrayal_approaching" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_betrayal_approaching_marks_deep_red_and_decision_flag():
+    """Deep red (regard past -40) + a recorded decision_flag spike both surface — severity
+    rises to high and the cue tells the DM to foreshadow harder."""
+    comp = _betrayer(attitude=-45, threshold=18, decision_flag="took_ferreths_coin")
+    c = _campaign_with(comp, day=6)
+    c.flags["took_ferreths_coin"] = True
+    appr = [o for o in server._compute_beat_obligations(c)
+            if o["kind"] == "companion_betrayal_approaching"]
+    assert appr
+    o = appr[0]
+    assert o["deep_red"] is True
+    assert o["decision_flag_active"] is True
+    assert o["severity"] == "high"
+    assert "deep red" in o["detail"].lower()
+
+
+def _make_betrayer_run(cid: str) -> None:
+    """Mutate the live campaign: a party companion whose attitude_below agenda has curdled
+    past its breaking point into the warning band (regard -30, threshold 18)."""
+    c = store.load_campaign(cid)
+    comp = Character(
+        name="Sergeant Ondine Marsh",
+        kind="companion",
+        attitude_value=-30,
+        arc=CompanionArc(agenda=CompanionAgenda(trigger="attitude_below", value=18)),
+    )
+    c.characters[comp.id] = comp
+    c.party.append(comp.id)
+    c.day = 4
+    store.save_campaign(c)
+
+
+def test_persist_beat_surfaces_approaching_betrayal(cid):
+    """End-to-end: the cue rides the EVERY-BEAT persist_beat path (the whole point — the
+    telegraph that needed an explicit check_companion_arc now reaches the DM every beat)."""
+    _make_betrayer_run(cid)
+    out = server.persist_beat(
+        cid, events=[{"kind": "narration", "text": "She won't meet your eyes."}]
+    )
+    assert "obligations" in out
+    assert "companion_betrayal_approaching" in _kinds(out["obligations"])
+
+
+def test_scene_context_durable_surfaces_approaching_betrayal(cid):
+    """The cue must also ride the lean-on re-ground twin (scene_context.durable), matching the
+    dual-surface coverage every prior obligation kind has."""
+    _make_betrayer_run(cid)
+    sc = server.scene_context(cid)
+    assert "obligations" in sc["durable"]
+    assert "companion_betrayal_approaching" in _kinds(sc["durable"]["obligations"])

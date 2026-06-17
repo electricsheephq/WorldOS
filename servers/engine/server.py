@@ -11214,6 +11214,46 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
                     ),
                 })
 
+    # 6. companion_betrayal_approaching — the BETRAYAL-side analog of the loyalty cues above.
+    #    A party companion carrying a LIVE (unfired) attitude_below agenda whose bond has
+    #    curdled past its breaking point (and clearly soured, per the warning band) is one bad
+    #    beat from turning — but the telegraph companion_arc.evaluate() computes only reached the
+    #    DM when it CHOSE to call check_companion_arc, so an approaching betrayal stayed invisible
+    #    in play (the symmetric gap to #961's loyalty cues). Fold it into the every-beat digest so
+    #    the fracture gets foreshadowed reliably. Reuses the engine's READ-ONLY betrayal_telegraph
+    #    (NEVER evaluate(), which MUTATES — fires agendas / unlocks gates — illegal in this pure
+    #    read-only path). ABSENT when no companion is curdling, so a healthy/loyal/solo beat's
+    #    return is byte-for-byte today's.
+    for comp in party_companions:
+        try:
+            warn = companion_arc.betrayal_telegraph(comp, c)
+        except Exception:
+            warn = None  # degrade to "no cue" on a partial/older-schema arc, never raise
+        if not warn:
+            continue
+        name = getattr(comp, "name", None) or "the companion"
+        deep = bool(warn.get("deep_red"))
+        flagged = bool(warn.get("decision_flag_active"))
+        detail = (
+            f"{name}'s bond has crossed its breaking point (regard {warn.get('attitude_value')}, "
+            f"betrayal threshold {warn.get('threshold')}) — FORESHADOW the fracture NOW (a cold "
+            f"look, a withheld word, a loyalty openly questioned) before the agenda fires; when it "
+            f"does, the engine stages it as a REAL attack, never narration."
+            + (" The turn is NEAR (deep red)." if deep else "")
+            + (" A recorded choice has already spiked the odds — foreshadow harder." if flagged else "")
+        )
+        obligations.append({
+            "kind": "companion_betrayal_approaching",
+            "character_id": getattr(comp, "id", None),
+            "name": name,
+            "attitude_value": warn.get("attitude_value"),
+            "threshold": warn.get("threshold"),
+            "deep_red": deep,
+            "decision_flag_active": flagged,
+            "severity": "high" if deep else "med",
+            "detail": detail,
+        })
+
     return obligations
 
 
