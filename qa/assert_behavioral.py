@@ -30,9 +30,10 @@ from pathlib import Path
 # file in qa/; make the import robust to being run from any cwd.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 try:
-    from story_readout import coverage_from_tool_counts
+    from story_readout import coverage_from_tool_counts, felt_shape_from_state
 except Exception:  # pragma: no cover - defensive: never let an import break the gate
     coverage_from_tool_counts = None
+    felt_shape_from_state = None
 
 
 def _load_jsonl(p: str) -> list[dict]:
@@ -618,6 +619,10 @@ def main() -> int:
     # coverage buckets (ground truth for whether a system was ever engaged), so it agrees with
     # the story_readout COVERAGE stamp by construction.
     STRUCTURAL_MIN_BEATS = 10
+    # FELT-SHAPE floor — a run only OWES a felt 3-act shape once it's long enough to have one
+    # (a memory note: structural runs need >=24 beats; strictly above STRUCTURAL_MIN_BEATS so
+    # every currently-passing <24-beat run is unaffected). See the flat_arc clause below.
+    FELT_SHAPE_MIN_BEATS = 24
     companions = [c for c in chars.values()
                   if isinstance(c, dict) and c.get("kind") == "companion"]
     if (session_beats >= STRUCTURAL_MIN_BEATS and companions
@@ -673,6 +678,26 @@ def main() -> int:
             + "; ".join(bad_bits)
             + " — the engine relationship/quest tools (record_decision approval_tags / "
               "adjust_attitude / camp_scene / complete_quest evolves_to) were narrated, not used")
+
+        # (c) FLAT ARC (WARN-FIRST). A LONG run (>= FELT_SHAPE_MIN_BEATS) that CLAIMS three acts
+        # (the engine narrative_arc cursor OR contiguous act-tags) but whose arc never TURNED — no
+        # real midpoint reversal AND no climax — is a flat fetch-quest shape, not a felt
+        # setup→reversal→climax. It ONLY fires when the run claims >=3 acts (a legit short/2-act
+        # session is never penalized for not climaxing) and reads ENGINE-REGISTERED events
+        # (narrative_arc landed flags / banded decisions / completed quests), so a DM that genuinely
+        # ran a 3-act arc through the tools passes by construction. Shipped WARN-first (fatal=False)
+        # for one CI sweep, then graduates to fatal — the same discipline as caster_has_spellbook.
+        if session_beats >= FELT_SHAPE_MIN_BEATS and felt_shape_from_state is not None:
+            fs = felt_shape_from_state(state, tools)
+            acts_claimed = max(int(fs.get("acts_engine_reached") or 0),
+                               int(fs.get("acts_tag_reached") or 0))
+            flat_arc = acts_claimed >= 3 and not (fs.get("reversal") and fs.get("climax"))
+            chk("flat_arc", not flat_arc,
+                f"a {session_beats}-beat run covered {acts_claimed} acts but the arc never turned "
+                f"(reversal={bool(fs.get('reversal'))} climax={bool(fs.get('climax'))}) — a flat "
+                f"fetch-quest shape, not a felt setup→reversal→climax (land a real midpoint "
+                f"reversal + a late climax: record_decision the turn, complete_quest the spine late)",
+                fatal=False)
 
     # ── SECTION A: RESULT-SIDE + per-record state gates (audit-tests.md §A) ───────────────
     # These read artifacts the existing gates ignore: the tool_RESULT payloads (A1/A2/A8) and
