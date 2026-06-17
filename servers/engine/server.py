@@ -202,6 +202,12 @@ def _combatant_ref(ch: Character) -> dict:
 # the model field stays a bare str so OLD logs with legacy kinds still round-trip (additive).
 _LOG_EVENT_KINDS = frozenset({"narration", "dialogue", "roll", "system", "combat"})
 
+# The 3-act-shape act_one_stalled cue thresholds (read in _compute_beat_obligations). Grounded
+# in storycraft.md:38/40 — the scope must WIDEN, never stall in setup; 8 act-local beats ≈ a
+# third of a ~24-beat session. Tunable from a duo A/B without touching the cue logic.
+_ACT1_STALL_DAYS = 4
+_ACT1_STALL_BEATS = 8
+
 
 def _validate_log_kind(kind: str) -> str:
     """Normalize + validate a DM-supplied beat kind against the whitelist (F07-6). Returns
@@ -11424,6 +11430,94 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
             "detail": detail,
         })
 
+    # 7. ACT-TRANSITION cues — fold the 3-act-shape mandate (setup -> midpoint reversal ->
+    #    climax) into the every-beat digest by reading the engine-owned NarrativeArc cursor
+    #    (act / day_act_entered / beats_in_act / landed flags). At most ONE fires per beat (the
+    #    cursor is a single integer act, so A/B/C are mutually exclusive). Every field read is a
+    #    defensive getattr, so an arc-less / older / partial NarrativeArc DEGRADES a cue to
+    #    silent rather than raising. ADDITIVE: a fresh/old/default arc sits at act=1,
+    #    day_in_act=0, beats_in_act=0 → Cue C's predicate is False and Cues A/B require act 2/3,
+    #    so ALL three are absent and this block adds NOTHING (byte-identical empty digest).
+    arc = getattr(c, "narrative_arc", None)
+    act = getattr(arc, "act", 1) if arc is not None else None
+    if act in (1, 2, 3):
+        beats_in_act = getattr(arc, "beats_in_act", 0) or 0
+        # ENGINE-ENGAGEMENT GATE (the additive contract): the day-band only counts once the
+        # engine has actually DRIVEN the arc — it bumps beats_in_act every persist_beat and
+        # stamps day_act_entered (a real day) only via advance_act. A pristine/aged-but-never-
+        # advanced Act-1 arc (the default day_act_entered=1 on a campaign whose day clock moved
+        # on its own) is NOT a stalled act — it is "empty == today". So measure elapsed days
+        # only when the arc is engaged (beats bumped, or the engine advanced past Act 1); an
+        # un-engaged arc reads day_in_act=0, exactly as the additive proof requires. This keeps
+        # test_healthy_campaign_yields_no_obligations (day-5 default arc, beats=0) empty.
+        engaged = beats_in_act > 0 or (act is not None and act > 1)
+        if engaged:
+            day_in_act = day - (getattr(arc, "day_act_entered", day) or day)
+        else:
+            day_in_act = 0
+
+        # CUE A — act_midpoint_owed (Act 2: the MIDPOINT REVERSAL is still owed).
+        if (
+            act == 2
+            and not getattr(arc, "midpoint_reversal_landed", False)
+            and (day_in_act >= 2 or beats_in_act >= 4)
+        ):
+            obligations.append({
+                "kind": "act_midpoint_owed",
+                "act": 2,
+                "beats_in_act": beats_in_act,
+                "day_in_act": day_in_act,
+                "severity": "med",
+                "detail": (
+                    "The story is in its rising middle but the MIDPOINT REVERSAL is still owed — "
+                    "the turn the player must absorb (the ally is the informant, the rescue is a "
+                    "trap, the prize is already gone) and a price that lands on them PERSONALLY. "
+                    "Land it now, then record_decision(...) the choice it forces (and call "
+                    "mark_reversal) so the reversal is gauged, not just narrated. A clean "
+                    "escalation with the hero untouched caps the story score at 'very good'."
+                ),
+            })
+
+        # CUE B — act_climax_owed (Act 3: the CLIMAX is still owed). HIGH severity — the climax
+        #    is the load-bearing payoff (the lone other `high` is companion_betrayal deep-red).
+        elif (
+            act == 3
+            and not getattr(arc, "climax_landed", False)
+            and (day_in_act >= 2 or beats_in_act >= 4)
+        ):
+            obligations.append({
+                "kind": "act_climax_owed",
+                "act": 3,
+                "beats_in_act": beats_in_act,
+                "day_in_act": day_in_act,
+                "severity": "high",
+                "detail": (
+                    "This is the final act and the CLIMAX is still owed — converge the threads "
+                    "into a decisive, co-authored confrontation that PAYS OFF what Act 1 set up "
+                    "and what the midpoint cost. Hand the player the discovery and let THEM react "
+                    "(interruptible exchange, never a villain monologue). Resolve the spine quest "
+                    "(complete_quest) and call mark_climax; signal every live named thread in the "
+                    "denouement and open no new sub-plots now."
+                ),
+            })
+
+        # CUE C — act_one_stalled (stuck in Act 1 too long — the beat-cap / slow-burn artifact).
+        elif act == 1 and (day_in_act >= _ACT1_STALL_DAYS or beats_in_act >= _ACT1_STALL_BEATS):
+            obligations.append({
+                "kind": "act_one_stalled",
+                "act": 1,
+                "beats_in_act": beats_in_act,
+                "day_in_act": day_in_act,
+                "severity": "med",
+                "detail": (
+                    f"The setup has run long ({beats_in_act} beats / {day_in_act} days in Act 1) "
+                    "— the inciting hook should have pulled the party into rising action by now. "
+                    "Escalate: turn the local trouble toward the larger thread, raise the stakes a "
+                    "notch, and push past the threshold (advance_act(to_act=2)). A session that "
+                    "lingers in setup reads as a tour, not an adventure."
+                ),
+            })
+
     return obligations
 
 
@@ -12074,6 +12168,12 @@ def persist_beat(
                 # tagged causes, under the SAME lock+save (engine = sole writer). Empty/None
                 # tags == [] (no move), so an untagged decision leg is byte-identical to today.
                 approval_results = _apply_approval_tags(c, decision_approval_tags)
+            # ACT-CURSOR tick (engine = sole writer): one act-local beat per persist_beat that
+            # carries a write, in this same critical section. Drives the 3-act-shape cues
+            # (act_midpoint_owed / act_climax_owed / act_one_stalled) and the felt-shape scorer.
+            # Defensive: a partial/older snapshot lacking the arc is left untouched (additive).
+            if getattr(c, "narrative_arc", None) is not None:
+                c.narrative_arc.beats_in_act += 1
             save_campaign(c)  # ONE atomic write for all of the above
 
     # advance_time as its own locked call (sequential, not nested → no deadlock).
@@ -12115,6 +12215,72 @@ def persist_beat(
         except Exception:
             pass
     return out
+
+
+@mcp.tool()
+def advance_act(campaign_id: str, to_act: int, note: str = "") -> dict:
+    """Advance the engine-owned 3-act cursor when the FICTION crosses an act threshold — the
+    DM-driven boundary verb the act-shape cues lean on (act_one_stalled cues the 1→2 push,
+    act_climax_owed the converge). Sets the act, stamps day_act_entered = the current in-world
+    day, and resets the act-local beat tally. CONTIGUOUS ONLY: the cursor advances by exactly +1
+    (1→2→3); a non-contiguous jump (e.g. 1→3) or a rewind is REJECTED (the cursor never skips an
+    act or runs backward). Engine = sole writer (campaign_lock + save_campaign)."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        arc = c.narrative_arc
+        target = int(to_act)
+        # Only the immediate next act (monotonic +1, capped at 3) is legal. Reject a skip/rewind
+        # with a ValueError naming the legal next act — like persist_beat's degrade-to-advisory,
+        # this surfaces a clear correction rather than silently corrupting the cursor.
+        if target < 1 or target > 3:
+            raise ValueError(f"to_act must be 1, 2, or 3 (got {to_act!r})")
+        legal_next = arc.act + 1
+        if target != legal_next:
+            raise ValueError(
+                f"non-contiguous act advance: cursor is at act {arc.act}; the only legal next act "
+                f"is {legal_next} (acts advance by +1, no skips or rewinds)"
+            )
+        arc.act = target
+        arc.day_act_entered = c.day
+        arc.beats_in_act = 0
+        save_campaign(c)
+        return {"act": arc.act, "day_act_entered": arc.day_act_entered}
+
+
+@mcp.tool()
+def mark_reversal(campaign_id: str) -> dict:
+    """Record that the Act-2 MIDPOINT REVERSAL actually LANDED — the turn the player absorbed.
+    Sets midpoint_reversal_landed=True and stamps reversal_day = the current in-world day. This
+    clears the act_midpoint_owed cue and feeds the felt-shape scorer's day-banding from an
+    engine-stamped day. IDEMPOTENT: a re-call is a no-op that returns the original landed day.
+    Engine = sole writer (campaign_lock + save_campaign)."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        arc = c.narrative_arc
+        if arc.midpoint_reversal_landed:
+            return {"midpoint_reversal_landed": True, "reversal_day": arc.reversal_day}
+        arc.midpoint_reversal_landed = True
+        arc.reversal_day = c.day
+        save_campaign(c)
+        return {"midpoint_reversal_landed": True, "reversal_day": arc.reversal_day}
+
+
+@mcp.tool()
+def mark_climax(campaign_id: str) -> dict:
+    """Record that the Act-3 CLIMAX actually LANDED — the load-bearing payoff. Sets
+    climax_landed=True and stamps climax_day = the current in-world day. This clears the
+    act_climax_owed cue and feeds the felt-shape scorer's day-banding from an engine-stamped day.
+    IDEMPOTENT: a re-call is a no-op that returns the original landed day. Engine = sole writer
+    (campaign_lock + save_campaign)."""
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        arc = c.narrative_arc
+        if arc.climax_landed:
+            return {"climax_landed": True, "climax_day": arc.climax_day}
+        arc.climax_landed = True
+        arc.climax_day = c.day
+        save_campaign(c)
+        return {"climax_landed": True, "climax_day": arc.climax_day}
 
 
 if __name__ == "__main__":
