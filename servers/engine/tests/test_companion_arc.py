@@ -992,22 +992,23 @@ def test_decision_flag_ignored_by_non_attitude_triggers():
 def test_betrayal_warning_surfaces_in_danger_band():
     """A live attitude_below agenda whose companion sits in [-40, -20] surfaces an
     advisory betrayal_warning."""
-    agenda = CompanionAgenda(trigger="attitude_below", value=0, note="turns on the party")
+    agenda = CompanionAgenda(trigger="attitude_below", value=-20, note="turns on the party")
     ch = _companion(attitude=-30, agenda=agenda)  # in the band, below the threshold
     res = companion_arc.evaluate(ch, _campaign_with(ch), rng=random.Random(0))
     warn = res.get("betrayal_warning")
     assert warn is not None
     assert warn["companion_id"] == ch.id
     assert warn["attitude_value"] == -30
-    assert warn["band"] == [companion_arc.ATTITUDE_WARN_LOW, companion_arc.ATTITUDE_WARN_HIGH]
+    # band is anchored to the agenda's OWN threshold now (low → the threshold itself)
+    assert warn["band"] == [companion_arc.ATTITUDE_WARN_LOW, -20]
     assert warn["decision_flag_active"] is False
 
 
 def test_betrayal_warning_absent_above_the_band():
-    """Above the danger band (attitude > -20) there is no warning — the bond hasn't
-    soured far enough to telegraph."""
-    agenda = CompanionAgenda(trigger="attitude_below", value=0)
-    ch = _companion(attitude=-10, agenda=agenda)  # above the band
+    """Above the agenda's OWN threshold there is no warning — the bond hasn't crossed its
+    breaking point yet (regard -10 is still above the -20 threshold)."""
+    agenda = CompanionAgenda(trigger="attitude_below", value=-20)
+    ch = _companion(attitude=-10, agenda=agenda)  # above the threshold -> not live
     res = companion_arc.evaluate(ch, _campaign_with(ch), rng=random.Random(0))
     assert "betrayal_warning" not in res
 

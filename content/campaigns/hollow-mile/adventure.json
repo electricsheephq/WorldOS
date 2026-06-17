@@ -129,16 +129,16 @@
           "the body over the soul"
         ],
         "approval_likes": [
-          "ending suffering quickly",
-          "trusting evidence over superstition",
+          "ending_suffering_quickly",
+          "trusting_evidence_over_superstition",
           "treat_the_grey_walkers_as_patients",
           "ease_a_hopeless_case_cleanly",
           "destroy_the_cursed_reagent",
           "tell_a_hard_truth_plainly"
         ],
         "approval_dislikes": [
-          "letting someone suffer for a principle",
-          "burning the sick to be safe",
+          "letting_someone_suffer_for_a_principle",
+          "burning_the_sick_to_be_safe",
           "torch_the_grey_walkers_wholesale",
           "seize_the_reagent_for_use",
           "sell_the_grey_water",
@@ -176,12 +176,6 @@
             "quest_arc_id": "cqarc-eline-stillwater",
             "stage_id": "cqstage-eline-confession",
             "note": "Eline's own quest opens — the cure that became a curse. She confesses the whole of it: Wren, the first draught, the Spring beneath the bog where the original cursed reagent still runs and the grey-walking child still waits. She asks the party's help to reach the Stillwater Spring and do what she has never been able to do — unmake it at the source — knowing it means destroying the last of Wren. LINKED via quest_arc_id to the companion-quest-arc 'cqarc-eline-stillwater' (stage 'cqstage-eline-confession'); the personal_quest is the cure-that-became-a-curse made a first-class arc."
-          },
-          {
-            "id": "eline-gate-betrayal",
-            "kind": "betrayal",
-            "threshold": 15,
-            "note": "THE FORK. If the party has treated the grey-walkers as vermin to be torched, let the sick burn to be safe over Eline's objection, sided with Corliss's profit, or moved to SEIZE the cursed reagent rather than destroy it, Eline's clinical certainty curdles toward a verdict: that the party is a vector, not an ally — a thing spreading her wound. This gate is reachable only when approval has curdled; honored, it stays locked forever. It is not rage; it is a diagnosis."
           }
         ],
         "agenda": {

@@ -390,12 +390,21 @@ def test_betrayal_approaching_fires_when_bond_curdles_past_breaking_point():
     assert "REAL attack" in o["detail"]
 
 
-def test_betrayal_approaching_silent_when_bond_only_mildly_soured():
-    """The agenda is LIVE (regard 10 < threshold 18) but the bond is still above the upper
-    warning edge (-20) -> don't telegraph a barely-cooled bond."""
-    comp = _betrayer(attitude=10, threshold=18)
+def test_betrayal_approaching_silent_above_the_breaking_point():
+    """The telegraph anchors to the agenda's OWN threshold: a bond that has soured (regard -10)
+    but NOT yet crossed its breaking point (-20) is above the threshold -> not live -> no cue.
+    (A NEGATIVE threshold is the correct shape — betrayal needs the bond to actually go bad.)"""
+    comp = _betrayer(attitude=-10, threshold=-20)
     c = _campaign_with(comp, day=4)
     assert "companion_betrayal_approaching" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_betrayal_approaching_fires_for_a_warm_threshold_agenda_once_live():
+    """Regression for the silent-snap window: a content agenda with a warm (positive) threshold
+    that is LIVE (regard below it) NOW telegraphs instead of firing from nowhere — the anchor fix."""
+    comp = _betrayer(attitude=10, threshold=18)  # live (10 < 18)
+    c = _campaign_with(comp, day=4)
+    assert "companion_betrayal_approaching" in _kinds(server._compute_beat_obligations(c))
 
 
 def test_betrayal_approaching_silent_for_warm_companion():

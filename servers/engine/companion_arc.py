@@ -265,20 +265,21 @@ def _betrayal_warning(character: Character, campaign: Campaign) -> dict | None:
     # (A saboteur whose threshold sits even lower isn't live yet; don't telegraph it.)
     if av >= agenda.value:
         return None
-    # Only warn once the bond has soured past the upper edge — don't telegraph a still-warm
-    # companion whose threshold happens to be a tiny negative. There is NO lower clip: a live,
-    # soured agenda telegraphs all the way to the floor (F06-4 — the deepest red is the most
-    # dangerous and most needs foreshadowing).
-    if av > ATTITUDE_WARN_HIGH:
-        return None
+    # The agenda being LIVE (av below its OWN threshold, checked above) IS the telegraph edge —
+    # foreshadow the moment the bond crosses its breaking point, whatever that threshold is. The
+    # OLD fixed `-20` upper edge wrongly SILENCED a warm-threshold agenda (e.g. a content agenda at
+    # value=20): the agenda was live + rolling a betrayal from av≈19 down, yet the telegraph stayed
+    # quiet until av≤-20, so the turn fired with no foreshadow. Anchoring to the agenda's own
+    # threshold closes that silent window. (F06-4: no lower clip — the deepest red is the most
+    # dangerous and most needs foreshadowing.)
     deep_red = av < ATTITUDE_WARN_LOW
     return {
         "companion_id": character.id,
         "attitude_value": av,
         "threshold": agenda.value,
-        # The telegraph window for THIS agenda: from its breaking point down through the
-        # souring zone, capped above at the upper edge (back-compat: still a 2-int list).
-        "band": [min(agenda.value, ATTITUDE_WARN_LOW), ATTITUDE_WARN_HIGH],
+        # The telegraph window for THIS agenda: from its OWN breaking point down through the
+        # souring zone (back-compat: still a 2-int list, low→high).
+        "band": [min(agenda.value, ATTITUDE_WARN_LOW), agenda.value],
         "deep_red": deep_red,
         "decision_flag_active": _decision_flag_active(agenda, campaign),
         "note": (
