@@ -6904,7 +6904,13 @@ def cast_spell(
         # combat.apply_damage pipeline as everything else (resistances, temp HP, downing, the
         # concentration-check DC). One lock, one write. Surfaced as a per-target result table.
         aoe_result = None
-        if aoe_targets:
+        # A curated buff/debuff (Bless / Bane / Shield of Faith / Shield) is resolved by its
+        # numeric rider — already applied to every beneficiary above and surfaced via
+        # `effect_riders` below — NOT by engine area damage. Bane in particular carries a stray
+        # srd524 `damage_roll` (and a full-word save ability) that would otherwise be rolled here
+        # as bogus area damage; so a rider spell skips the save-for-damage path entirely. (The
+        # multi-target rider work that began encouraging the target_ids path surfaced this.)
+        if aoe_targets and not rider_fields:
             spec = _aoe_damage_spec(
                 curated, srd,
                 slot_used if isinstance(slot_used, int) else spell_level,
@@ -6925,7 +6931,11 @@ def cast_spell(
                     "targets": [{"character_id": t.id, "name": t.name} for t in aoe_targets],
                 }
             else:
-                save_ab = Ability(spec["save_ability"])
+                # _parse_ability accepts BOTH the 3-letter enum code and the FULL WORD — every
+                # srd524 record spells `saving_throw_ability` as the full word ('constitution',
+                # 'dexterity', …), so all ~68 SRD-only save-for-damage spells (Cone of Cold,
+                # Cloudkill, Chain Lightning, …) used to crash here on Ability('constitution').
+                save_ab = _parse_ability(spec["save_ability"])
                 dmg = dice_mod.roll(spec["damage"])  # ONE roll shared across the whole area
                 rows: list[dict] = []
                 for t in aoe_targets:
