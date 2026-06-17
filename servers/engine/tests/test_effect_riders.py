@@ -328,3 +328,57 @@ def test_shield_of_faith_via_target_ids_buffs_each_ally(tmp_path, monkeypatch):
     for who in (a, b):
         effs = [e for e in server.get_character(cid, who)["active_effects"] if e["name"] == "Shield of Faith"]
         assert effs and effs[0]["ac_bonus"] == 2 and effs[0]["linked_to_concentration"] is True
+
+
+# --- Bane via target_ids: a DEBUFF must apply its rider, NOT deal damage, and not crash ---
+
+def test_bane_via_target_ids_applies_rider_to_each_foe_and_deals_no_damage(tmp_path, monkeypatch):
+    # Bane is an SRD-only DEBUFF: its tracked effect is the -1d4 save/attack rider, NOT damage.
+    # But its srd524 record carries a stray damage_roll='1d4' AND a full-word
+    # saving_throw_ability='charisma'. A target_ids cast used to enter the AoE save-for-damage
+    # path and hard-crash on Ability('charisma') (the enum code is 'cha') — AFTER the slot was
+    # already spent. Bane must instead apply its -1d4 save rider to EACH foe and deal NO damage.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("BaneAoE")["id"]
+    caster = server.create_character(cid, "Hex", kind="player", max_hp=10)["id"]
+    server.update_character(cid, caster, patch={
+        "spell_slots": {"1": {"maximum": 2, "used": 0}}})
+    a = server.create_character(cid, "ThugA", kind="monster", max_hp=20)["id"]
+    b = server.create_character(cid, "ThugB", kind="monster", max_hp=20)["id"]
+    r = server.cast_spell(cid, caster, "Bane", target_ids=[a, b])  # must NOT raise
+    for foe in (a, b):
+        sheet = server.get_character(cid, foe)
+        assert sheet["current_hp"] == 20, f"{foe} wrongly took Bane 'damage'"
+        effs = [e for e in sheet["active_effects"] if e["name"] == "Bane"]
+        assert effs, f"{foe} got no Bane rider"
+        assert effs[0]["save_bonus_dice"] == "-1d4"
+        assert effs[0]["linked_to_concentration"] is True
+    # the engine rolled NO area damage for a pure debuff
+    assert "aoe" not in r or r["aoe"].get("shared_damage") is None
+    # ...and the -1d4 actually bites on a foe's save (engine-rolled, like the single-target case)
+    _rig(monkeypatch, d20_natural=10, d4=3)
+    out = server.saving_throw(cid, a, "wis", dc=10)
+    assert out["roll"] == 7 and out["success"] is False
+    assert out["bonus_dice"][0]["source"] == "Bane" and out["bonus_dice"][0]["rolled"] == -3
+
+
+def test_srd_only_area_damage_spell_with_full_word_save_ability_resolves(tmp_path, monkeypatch):
+    # The crash class Bane surfaced is general: ALL ~68 SRD-only save-for-damage spells spell
+    # their save ability as the FULL WORD ('constitution', 'dexterity', …), but the AoE resolver
+    # fed it straight to Ability(...) (which only knows the 3-letter codes). A real SRD-only area
+    # damage spell (Cone of Cold: 8d8 cold, CON save) cast via target_ids must resolve the engine
+    # save-for-half table — not crash AFTER the slot spend.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("ConeAoE")["id"]
+    caster = server.create_character(cid, "Evoker", kind="player", max_hp=20)["id"]
+    server.update_character(cid, caster, patch={
+        "spell_slots": {"5": {"maximum": 1, "used": 0}}})
+    a = server.create_character(cid, "FoeA", kind="monster", max_hp=100)["id"]
+    b = server.create_character(cid, "FoeB", kind="monster", max_hp=100)["id"]
+    r = server.cast_spell(cid, caster, "Cone of Cold", target_ids=[a, b])  # must NOT raise
+    aoe = r["aoe"]
+    assert aoe["save_ability"] == "con"  # the full word 'constitution' resolved to the enum code
+    assert aoe["shared_damage"]["type"] == "cold"
+    assert len(aoe["targets"]) == 2
+    for foe in (a, b):  # each foe took the engine-resolved damage (full on fail / half on save)
+        assert server.get_character(cid, foe)["current_hp"] < 100
