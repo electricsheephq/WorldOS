@@ -263,7 +263,7 @@ an unattended loop.
   inspect its worktree: if the staged diff is complete, commit it + CI-validate + open the PR
   yourself (recovered #305 → #329 this way; nothing lost). Don't re-do work a corpse already finished.
 - **NEVER `git checkout` / branch-op the SHARED canonical checkout while a parallel session holds a
-  branch.** `/Users/lume/ClawDnD-val` may be on another session's branch (e.g. loop-8). Branch-flips
+  branch.** `/Users/lume/WorldOS` may be on another session's branch (e.g. loop-8). Branch-flips
   there corrupt the sibling session. Do EVERY repo change via a **worktree agent off `origin/main`**
   (`git worktree add -b <branch> <path> origin/main`). If you must touch the shared checkout's main,
   do it as ONE atomic Bash (`git checkout main && test branch==main && add && commit && push`) — never

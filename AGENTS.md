@@ -2,10 +2,10 @@
 
 ## Codex Desktop Local-Resource Policy
 
-- Treat `/Users/lume/ClawDnD-val` as the canonical local Mac app/private-art checkout for WorldOS GUI and native-app testing.
+- Treat `/Users/lume/WorldOS` as the canonical local Mac app/private-art checkout for WorldOS GUI and native-app testing.
 - Use `/Volumes/LEXAR/Codex` for Codex artifacts, scratch files, screenshots, reports, and downloaded CI/VM artifacts.
 - Use same-disk local worktrees for GUI/native-app edits that must launch against private art. Lexar worktrees are fine for docs, backend-only, and non-GUI slices that do not launch the app against private art.
-- Before running install, build, or test commands, verify `pwd`. If a GUI/native app run is not in `/Users/lume/ClawDnD-val` or a same-disk worktree with `WORLDOS_ART_REPO_ROOT=/Users/lume/ClawDnD-val`, explain why.
+- Before running install, build, or test commands, verify `pwd`. If a GUI/native app run is not in `/Users/lume/WorldOS` or a same-disk worktree with `WORLDOS_ART_REPO_ROOT=/Users/lume/WorldOS`, explain why.
 - Prefer GitHub Actions or the 32GB support VM for heavyweight validation, full suites, matrix tests, long integration tests, and persona sweeps.
 - Run local tests only for fast feedback, local-only reproduction, validating unpushed edits, or Mac-only `.app` proof. Use the narrowest focused command first.
 - Do not launch multiple heavyweight local suites or persona sweeps in parallel on this Mac.

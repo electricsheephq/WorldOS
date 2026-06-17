@@ -150,7 +150,7 @@ preflight() {
 
   # 1. CANONICAL repo, not the deprecated LEXAR copy or a random worktree.
   case "$ROOT" in
-    */ClawDnD-val) ok "repo root looks canonical: $ROOT";;
+    */ClawDnD-val|*/WorldOS) ok "repo root looks canonical: $ROOT";;
     *) warn "repo root is $ROOT — confirm this is the canonical checkout (NOT /Volumes/LEXAR deprecated copy)";;
   esac
 

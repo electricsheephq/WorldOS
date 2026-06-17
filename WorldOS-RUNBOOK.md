@@ -9,7 +9,7 @@
 > `WorldOS-OPERATING-GOAL.md` first, then `WorldOS-GUI-RUNBOOK.md`, `qa/QA_TOOLS.md`, and
 > `qa/SCORECARD.md`. The work queue later in this file is historical unless it agrees with those
 > sources.
-> **Local/VM routing, 2026-06-01:** `/Users/lume/ClawDnD-val` is the synced local app/private-art
+> **Local/VM routing, 2026-06-01:** `/Users/lume/WorldOS` is the synced local app/private-art
 > checkout and should be used for GUI/native-app testing. Use `/Volumes/LEXAR/Codex` for evidence,
 > snapshots, and logs; do not make Lexar the default GUI runtime tree because external-drive
 > permissions can break local AI/browser tests. Heavy backend/persona sweeps belong on GitHub CI or
@@ -260,8 +260,8 @@ fresh scored evidence explicitly changes that decision.
 Preflight, from the Mac where Codex CLI is logged in:
 
 ```bash
-cd /Users/lume/ClawDnD-val
-scripts/codex_qa_home.sh ~/.codex-worldos-qa /Users/lume/ClawDnD-val
+cd /Users/lume/WorldOS
+scripts/codex_qa_home.sh ~/.codex-worldos-qa /Users/lume/WorldOS
 CODEX_HOME=~/.codex-worldos-qa codex login status
 CODEX_HOME=~/.codex-worldos-qa codex --version
 ```

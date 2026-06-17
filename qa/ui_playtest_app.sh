@@ -1153,7 +1153,7 @@ repo_viewer_ports() {
     # Match EITHER an absolute argv path under repo root (the LAUNCHER, whose CWD is the .app's
     # temp dir, not the repo) OR CWD == repo root (the MINTED provider viewer, launched by
     # play*.sh with a RELATIVE `viewer/server.py`). Either way it is THIS checkout's viewer; this
-    # excludes other checkouts (e.g. /Users/lume/ClawDnD-val) and unrelated services.
+    # excludes other checkouts (e.g. /Users/lume/WorldOS) and unrelated services.
     if printf '%s' "$cmd" | grep -qF "$rootp/viewer/server.py" \
        || printf '%s' "$cmd" | grep -qF "$root/viewer/server.py" \
        || [ "$cwd" = "$rootp" ] || [ "$cwd" = "$root" ]; then

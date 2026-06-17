@@ -8,7 +8,7 @@
 > `docs/AGENT_GRADE_APP_TESTABILITY.md` (app-status/evidence contract), `qa/GUI_WORKBOOK.md`
 > (historical punch-list), `qa/release_readiness.py` (the RRI scorer), `qa/SCORECARD.md` (the ledger).
 >
-> Takeover routing, 2026-06-01: `/Users/lume/ClawDnD-val` is the synced local app/private-art checkout
+> Takeover routing, 2026-06-01: `/Users/lume/WorldOS` is the synced local app/private-art checkout
 > and the default place to build/run/test the GUI and native app. The latest same-SHA app proof is
 > `da05101` from the 2026-06-07 current-main handoff rerun; later commits may sit above that proof
 > without becoming new product proof. Verify `origin/main` before acting, and rerun the handoff gate
@@ -24,12 +24,12 @@ the current commit. It catches stale tabs, dead launchers, missing private art, 
 failed `/move`, no narration, console/network errors, provider trace failures, and evidence gaps.
 
 ```bash
-cd /Users/lume/ClawDnD-val
+cd /Users/lume/WorldOS
 python3 qa/app_handoff_gate.py \
   --web-beats 5 \
   --built-beats 5 \
   --codex-moves 1 \
-  --art-root /Users/lume/ClawDnD-val \
+  --art-root /Users/lume/WorldOS \
   --scripted-budget 1.00 \
   --codex-budget 3.00 \
   --timeout 90 \
@@ -52,7 +52,7 @@ release-ready evidence by itself.
 
 | Port / route | Meaning | Guardrail |
 |---|---|---|
-| `8799 /openworlds/` | Canonical fast iteration surface from `/Users/lume/ClawDnD-val` | Use for LOOK, then rebuild/prove the app |
+| `8799 /openworlds/` | Canonical fast iteration surface from `/Users/lume/WorldOS` | Use for LOOK, then rebuild/prove the app |
 | `8899 /openworlds/` | Scripted/dev harness default | Valid only when same-port `/app-status` is live |
 | `8765` or dynamic app ports | Native app spawned viewer | Read `run.json` or `/app-status.viewer.port`; do not guess |
 | `8990-8999` | Browser persona harness range | Diagnostic browser evidence unless paired with app proof |
@@ -63,13 +63,13 @@ Release RRI's palette-live gate is stricter: it still requires at least six enab
 
 ## The two surfaces (never confuse them again)
 - **ITERATE — visible, playable, fast:** the OpenWorlds viewer served **from the local canonical repo**
-  `/Users/lume/ClawDnD-val` (which HAS the 2.9 GB `content/worlds/_private` art) as a LIVE PLAYABLE
+  `/Users/lume/WorldOS` (which HAS the 2.9 GB `content/worlds/_private` art) as a LIVE PLAYABLE
   session on **fixed port 8799**. This is where you fix one thing at a time and LOOK.
 - **GATE — truth:** the built `dist/WorldOS.app` via `qa/ui_playtest_app.sh` (part A native #356 +
   part B persona loop). Release is judged here. Same viewer code; adds the native shell.
 - **Why both:** identical viewer. 8799-from-local skips the build + guarantees art is present, so
   it's the honest fast loop. The `.app` is the shipped artifact. A non-local worktree may serve private art
-  only when `WORLDOS_ART_REPO_ROOT=/Users/lume/ClawDnD-val` points at the local private-art checkout, but
+  only when `WORLDOS_ART_REPO_ROOT=/Users/lume/WorldOS` points at the local private-art checkout, but
   use that as a fallback rather than the default because external-drive file prompts have broken local AI tests.
   The native app has a separate Private art repo path setting, and `script/build_and_run.sh` also writes
   the art root into `Info.plist` as `WorldOSArtRepoRoot` so LaunchServices env loss cannot hide missing art.
@@ -166,7 +166,7 @@ Release RRI's palette-live gate is stricter: it still requires at least six enab
 
 ## Stand up the iteration surface (8799, playable, from canonical)
 ```bash
-cd /Users/lume/ClawDnD-val
+cd /Users/lume/WorldOS
 # This is the intended local app checkout. Verify it is synced before testing:
 git rev-parse --short HEAD && git rev-parse --short origin/main
 pkill -f 'viewer/server.py'; pkill -f 'scripts/play.sh'; pkill -f 'play_party.sh'   # NOT node:18789 (Eva gateway)
@@ -205,7 +205,7 @@ streams mid-turn (`/events` count climbs during the turn) · a SOLO session has 
 1. Confirm the symptom on 8799 with ≥2 clean reads. If it doesn't reproduce, it's a stale/corrupt
    read — do NOT fix it (log to GUI_WORKBOOK "evaporated").
 2. Builder agent in a **same-disk local worktree off origin/main** when GUI/app tests need art:
-   `git -C /Users/lume/ClawDnD-val worktree add -B codex/<slug> /Users/lume/WorldOS-worktrees/wos-<slug> origin/main`
+   `git -C /Users/lume/WorldOS worktree add -B codex/<slug> /Users/lume/WorldOS-worktrees/wos-<slug> origin/main`
    Lexar worktrees remain fine for docs/backend/non-GUI slices that do not launch the viewer/app.
 3. PR → CI green (incl. `viewer-tests`) → admin-squash-merge → delete branch → prune worktree.
    **Builder PRs sometimes fail to push silently** (happened twice this session) — always
@@ -215,7 +215,7 @@ streams mid-turn (`/events` count climbs during the turn) · a SOLO session has 
 
 ## The gate sweep (Phase 3 — judged on the built .app)
 ```bash
-WORLDOS_ART_REPO_ROOT=/Users/lume/ClawDnD-val \
+WORLDOS_ART_REPO_ROOT=/Users/lume/WorldOS \
 qa/release_gate.sh --personas newbie,veteran,adversarial,narrative,optimizer --budget 12 --port 8785
 ```
 RRI 10/10 = all 11 gates hold on ONE build across the canonical five personas
@@ -264,7 +264,7 @@ release-blocking product bug.
 Non-disruptive Mac smoke during takeover:
 ```bash
 WORLDOS_NO_STOP_EXISTING=1 \
-WORLDOS_ART_REPO_ROOT=/Users/lume/ClawDnD-val \
+WORLDOS_ART_REPO_ROOT=/Users/lume/WorldOS \
 WORLDOS_PREFER_LAUNCH_ROOTS=1 \
 script/build_and_run.sh --verify
 ```
@@ -349,7 +349,7 @@ reverts the goal to "fix" and outranks new work.
 - Engine (`servers/engine`) = SOLE writer of campaign state. Don't touch wire contracts
   (`clawdnd-*`/`CLAWDND_*` MCP ids, `dev.worldos.app`); you MAY read `WORLDOS_ART_REPO_ROOT`.
 - `_private/` (the 2.9 GB art) is **never committed**. Building/serving from the local checkout is how the
-  art is present; worktrees can read it via `WORLDOS_ART_REPO_ROOT=/Users/lume/ClawDnD-val` when needed.
+  art is present; worktrees can read it via `WORLDOS_ART_REPO_ROOT=/Users/lume/WorldOS` when needed.
 - 16 GB Mac: tests on **GitHub CI / 32GB support VM** for heavyweight sweeps, never heavy local suites. Parallel read-only agents are
   fine; do not launch multiple heavyweight persona sweeps locally.
 - **Verify, don't trust:** ≥2 clean reads for any claim; the RRI scorer reads disk, not the live

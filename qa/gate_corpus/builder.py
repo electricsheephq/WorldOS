@@ -35,7 +35,7 @@ _MANIFEST = _HERE / "manifest.json"
 _GATE = _HERE.parent / "assert_behavioral.py"
 
 # Real recorded REDs whose failure MODE each synthetic fixture is modeled on. Sourced from
-# /Users/lume/ClawDnD-val/qa/transcripts/*.gate.txt at corpus-build time. A blank value means
+# /Users/lume/WorldOS/qa/transcripts/*.gate.txt at corpus-build time. A blank value means
 # the check has no recorded real RED and the fixture is purely synthetic (still faithful to the
 # gate's documented trip condition).
 REAL_RED_PROVENANCE = {
