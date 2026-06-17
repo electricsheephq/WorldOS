@@ -32,6 +32,12 @@
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "Zero quoted dialogue across the whole run with a companion present — a log, not a scene. The DM narrated only atmosphere. Strengthen the DM prompt's dialogue mandate; it is FATAL only when a companion is in the party."
     },
+    "narration_no_ooc_leak": {
+      "category": "DM_ADHERENCE",
+      "likely_code_locations": ["skills/dungeon-master/SKILL.md", "qa/play_dm_duo.txt", "qa/assert_behavioral.py"],
+      "retest": "bash qa/run_duo.sh duo-retest",
+      "hint": "Player-facing DM prose leaked OUT-OF-CHARACTER craft-scaffolding / first-person authoring preambles / raw system vocab (e.g. 'Now let me seat <X> as the player character', 'Continuity check — let me correct that') — a felt-quality defect the LLM story scorer blends away. Fix at the source: the DM's FICTION-ONLY voice mandate in skills/dungeon-master/SKILL.md (and the duo DM prompt qa/play_dm_duo.txt). Proportionate severity: 0 leaks pass, 1-2 incidental leaks WARN, >=3 in a substantial run (dm_text>=MIN_BEATS) is a pervasively-broken player surface => RED. If a clean in-fiction beat is mis-flagged, tighten the _NARRATION_LEAK_RE patterns in qa/assert_behavioral.py."
+    },
     "dm_beat_honesty": {
       "category": "HARNESS_WIRING",
       "likely_code_locations": ["qa/lib_beat_driver.sh", "qa/run_duo.sh", "qa/dm_narration_fallback.py"],
@@ -163,6 +169,12 @@
       "likely_code_locations": ["servers/engine/travel.py", "servers/engine/server.py", "servers/engine/models.py"],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "The party visited <2 locations after a substantial session — it never left the opening scene. Either the DM never called travel_to/add_location(make_current=True) (DM adherence) or the location.visited flag never set (engine). Check travel.py's visited-marking write."
+    },
+    "structural_completeness": {
+      "category": "ENGINE_INVARIANT",
+      "likely_code_locations": ["servers/engine/server.py", "servers/engine/models.py", "servers/engine/companion.py"],
+      "retest": "bash qa/run_duo.sh duo-retest",
+      "hint": "A >=10-beat session with a companion never engaged a core relationship/quest system: either no companion's attitude_value moved off 0 AND no camp/long_rest happened, or an active quest was left open across a >=2-location arc with no quest-resolution call. Either the DM never invoked the relationship/quest tools (record_decision / adjust_attitude / camp_scene / complete_quest evolves_to — DM adherence) or those engine writes never landed (engine). All those tool handlers + the attitude_value/quest-status writes live in server.py (adjust_attitude, record_decision, camp_scene, complete_quest, and the rule-of-three evolution _maybe_schedule_quest_evolution / evolves_to); the field definitions are in models.py; companion.py only surfaces approval CAUSES (approval_tags) for the DM to apply — it never writes state itself. The gate trips at >=10 beats (STRUCTURAL_MIN_BEATS); when validating authored campaigns run >=24 beats so the main quest has room to resolve, else the unresolved-arc sub-check false-REDs. FATAL; skipped in the combat-sprint lane."
     },
     "world_peopled": {
       "category": "DM_ADHERENCE",

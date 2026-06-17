@@ -178,6 +178,12 @@
         "state.json"
       ],
       "real_red_provenance": ""
+    },
+    {
+      "case_dir": "TODO__narration_no_ooc_leak",
+      "expected_red_check": "narration_no_ooc_leak",
+      "todo": true,
+      "reason": "no faithful minimal fixture constructed yet (auto-flagged by builder)"
     }
   ]
 }
