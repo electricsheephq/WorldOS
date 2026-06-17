@@ -389,10 +389,10 @@ def test_shared_vocabulary_lets_one_tag_move_several_companions(tmp_path, monkey
     Gale, Wyll, AND Halsin in one record_decision — many arcs nudged by one tag. This is the
     cross-cutting authored vocabulary working on real canon content.
 
-    (Uses the three mercy-liking companions that take load_canon_character's FRESH-load path so
-    their authored dossier is applied; the rostered originals — Shadowheart/Astarion/Karlach —
-    are promoted in place WITHOUT the canon JSON dossier, an unrelated pre-existing canon/roster
-    merge gap flagged separately, not part of this feature.)"""
+    Gale/Halsin take load_canon_character's fresh-load path; Wyll is a rostered origin ("Wyll
+    Ravengard") promoted in place — all three carry the canon `mercy` like (Wyll's via the
+    load-merge). Each is RECRUITED after load (the documented load -> recruit_companion seating
+    that brings a companion into the party); recruit is idempotent for the fresh-loaded two."""
     monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
     bg = server.start_world("baldurs-gate")["campaign_id"]
     ids = {}
@@ -401,6 +401,7 @@ def test_shared_vocabulary_lets_one_tag_move_several_companions(tmp_path, monkey
         ids[name] = res["id"]
         # confirm the authored dossier actually lists `mercy` as a like (content sanity)
         assert "mercy" in server.get_character(bg, res["id"])["companion_dossier"]["approval_likes"]
+        server.recruit_companion(bg, res["id"])  # seat them in the party (idempotent if already a companion)
     out = server.record_decision(bg, summary="spared the surrendering cultists",
                                  approval_tags=["mercy"])
     moved = {r["id"] for r in out["approval_results"]}
@@ -478,3 +479,37 @@ def test_rostered_origin_without_authored_roster_dossier_loads_canon_and_moves(n
     out = server.record_decision(bg, summary=f"a choice {name} approves of", approval_tags=[tag])
     assert roster_id in {r["id"] for r in out["approval_results"]}, f"the {tag!r} tag should move {name}"
     assert server.get_character(bg, roster_id)["attitude_value"] > before
+
+
+def test_loading_canon_wyll_promotes_roster_record_without_duplicate(tmp_path, monkeypatch):
+    """Wyll's roster display name is "Wyll Ravengard" but his canon name is "Wyll", so the
+    exact-name dedup MISSED the rostered record and load_canon_character fresh-loaded a SECOND
+    "Wyll" (a duplicate beside npc-wyll). Dedup must catch the fuller-display-name roster record
+    (via _find_existing_roster_match) and promote it in place: already_present, the canon dossier
+    is merged, NO duplicate, and after recruit a tagged moral choice moves him."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    bg = server.start_world("baldurs-gate")["campaign_id"]
+    res = server.load_canon_character(bg, "Wyll", kind="companion", add_to_party=True)
+    assert res.get("already_present") is True and res["id"] == "npc-wyll"
+    # exactly ONE Wyll-ish record in the campaign — no fresh-loaded duplicate
+    wylls = [ch for ch in store.load_campaign(bg).characters.values() if "wyll" in ch.name.strip().lower()]
+    assert len(wylls) == 1, f"expected one Wyll record, got {[w.name for w in wylls]}"
+    likes = server.get_character(bg, "npc-wyll")["companion_dossier"]["approval_likes"]
+    assert "mercy" in [k.lower() for k in likes]
+    server.recruit_companion(bg, "npc-wyll")
+    before = server.get_character(bg, "npc-wyll")["attitude_value"]
+    out = server.record_decision(bg, summary="spared the captive", approval_tags=["mercy"])
+    assert "npc-wyll" in {r["id"] for r in out["approval_results"]}
+    assert server.get_character(bg, "npc-wyll")["attitude_value"] > before
+
+
+def test_loading_canon_minsc_promotes_roster_record_without_duplicate(tmp_path, monkeypatch):
+    """Same fuller-display-name class as Wyll: canon "Minsc" vs rostered "Minsc and Boo"
+    (id npc-minsc). Dedup must promote the rostered record in place — already_present, no
+    second Minsc minted."""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    bg = server.start_world("baldurs-gate")["campaign_id"]
+    res = server.load_canon_character(bg, "Minsc", kind="companion", add_to_party=True)
+    assert res.get("already_present") is True and res["id"] == "npc-minsc"
+    minscs = [ch for ch in store.load_campaign(bg).characters.values() if "minsc" in ch.name.strip().lower()]
+    assert len(minscs) == 1, f"expected one Minsc record, got {[m.name for m in minscs]}"
