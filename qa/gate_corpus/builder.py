@@ -44,6 +44,7 @@ REAL_RED_PROVENANCE = {
     "dice_used": "openworlds-c2-234542 (roll=attack=save=social=skill_check=0)",
     "player_in_party": "ow-duoF-112226, ow-rv1-134258, ow-swA-123842 (party=1 players=0)",
     "dm_voices_characters": "ow-rv1-134258 (0/9 DM turns with quoted dialogue, companion present)",
+    "narration_no_ooc_leak": "2026-06-17 craft audit (#972): 5+ first-person OOC authoring preambles in a 4.6-prose run, un-gated, inflated the LLM story score to 4.8",
 }
 
 
@@ -133,6 +134,36 @@ def case_dm_produced_output():
     # also necessarily trips dice_used + player_in_party; the corpus asserts the EXPECTED check
     # APPEARS among the fails, which is the faithful semantic for a dead run.)
     return [], {"party": [], "characters": {}}, None, None
+
+
+def case_narration_no_ooc_leak():
+    # chk 1b: player-facing DM prose leaks OUT-OF-CHARACTER craft-scaffolding. FATAL when
+    # n_leak >= 3 AND dm_text >= MIN_BEATS(6) — a pervasively-broken player surface. Models the
+    # 2026-06-17 craft audit (#972): first-person authoring preambles in a 4.6-prose run, entirely
+    # un-gated, inflated the LLM story score to 4.8. A clean `roll` keeps dice_used passing; NO
+    # companion so dm_voices_characters stays inert; the baseline state (day=2, 2 visited, xp>0)
+    # keeps the world/xp floors passing at session_beats==dm_text; no chat/moves -> the facade lane
+    # is inert; 6 (< STRUCTURAL_MIN_BEATS=10) beats + no companion -> structural_completeness inert.
+    # 6 DM text beats (== MIN_BEATS), 4 of them leaking the exact OOC patterns _NARRATION_LEAK_RE
+    # bans, so narration_no_ooc_leak is the SOLE fatal fail.
+    texts = [
+        # leak: "as the player character"
+        "Now let me seat Dal Lightspark as the player character and open on the tavern.",
+        # clean in-fiction prose (scores 0 leaks)
+        "Rain hammers the shutters of the Elfsong Tavern as you shoulder inside, the common room "
+        "thick with pipe-smoke and low talk.",
+        # leak: "continuity check"
+        "Continuity check — let me correct that: the barkeep already named the missing caravan a moment ago.",
+        # clean in-fiction prose (quoted dialogue; no companion present, so dm_voices stays inert)
+        "The barkeep leans close, her voice dropping. \"You're asking after the caravan? Bad "
+        "business, that — three nights gone now.\"",
+        # leak: "inciting incident"
+        "This is the inciting incident of the arc, so I'll raise the stakes before the scene turns.",
+        # leak: "here's how round <n> actually went"
+        "Here's how round one actually went: the cutpurse moved first and the lantern guttered out.",
+    ]
+    events = _roll() + [_assistant_text(t) for t in texts]
+    return events, _clean_player_state(), None, None
 
 
 def case_both_sides_acted():
@@ -349,6 +380,7 @@ def case_xp_awarded_on_progression():
 _CASES_SPEC: list[tuple] = [
     ("dm_produced_output", case_dm_produced_output, "dm_produced_output",
      "a truly dead/blank run necessarily also trips dice_used + player_in_party"),
+    ("narration_no_ooc_leak", case_narration_no_ooc_leak, "narration_no_ooc_leak"),
     ("both_sides_acted", case_both_sides_acted, "both_sides_acted"),
     ("player_turns_structured", case_player_turns_structured, "player_turns_structured"),
     ("dm_voices_characters", case_dm_voices_characters, "dm_voices_characters"),
