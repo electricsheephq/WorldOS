@@ -259,7 +259,7 @@ class SupportVMPreflightTests(unittest.TestCase):
                 "OPENAI_API_KEY": "sk-proj-supersecret123456",
                 "ANTHROPIC_API_KEY": "anthropic-supersecret",
                 "CODEX_TOKEN": "codex-token-secret",
-                "WORLDOS_ART_REPO_ROOT": "/Users/lume/ClawDnD-val",
+                "WORLDOS_ART_REPO_ROOT": "/Users/lume/WorldOS",
                 "UNRELATED_SECRET": "not-inspected",
             }
         )
@@ -268,7 +268,7 @@ class SupportVMPreflightTests(unittest.TestCase):
         self.assertNotIn("anthropic-supersecret", blob)
         self.assertNotIn("codex-token-secret", blob)
         self.assertNotIn("not-inspected", blob)
-        self.assertEqual(snapshot["WORLDOS_ART_REPO_ROOT"]["value"], "/Users/lume/ClawDnD-val")
+        self.assertEqual(snapshot["WORLDOS_ART_REPO_ROOT"]["value"], "/Users/lume/WorldOS")
 
     def test_teardown_commands_are_record_only(self):
         with tempfile.TemporaryDirectory() as td:

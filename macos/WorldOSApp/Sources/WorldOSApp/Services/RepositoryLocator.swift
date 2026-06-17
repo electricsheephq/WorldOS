@@ -83,7 +83,7 @@ enum RepositoryLocator {
             environment["CLAWDND_ART_REPO_ROOT"],
             Bundle.main.object(forInfoDictionaryKey: "WorldOSArtRepoRoot") as? String,
             defaultRepoPath(),
-            home.appendingPathComponent("ClawDnD-val").path,
+            home.appendingPathComponent("WorldOS").path,
             home.appendingPathComponent("repos/WorldOS").path,
         ]
         for raw in candidates {

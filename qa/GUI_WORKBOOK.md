@@ -6,7 +6,7 @@
 > current release state. "Verified" means observed on the live playable surface or read from canonical
 > source at the time recorded, not a proxy guess.
 >
-> Current routing: iteration surface `http://127.0.0.1:8799/openworlds/` from `/Users/lume/ClawDnD-val`;
+> Current routing: iteration surface `http://127.0.0.1:8799/openworlds/` from `/Users/lume/WorldOS`;
 > gate surface built `dist/WorldOS.app`; fast handoff command `qa/app_handoff_gate.py`; release verdict
 > `qa/release_readiness.py`.
 
@@ -28,7 +28,7 @@ persona evidence. Issue #466 must either produce that clean RRI or fail with act
 - ✅ `launch.json` repointed off the deprecated LEXAR copy → canonical/8799/`/openworlds/`/live state.
 - ✅ 8799 playable from canonical: `can_act:true`, PC Rolan + Minsc, images + map render.
 - ✅ Lexar worktree `.app` smoke can launch without killing the canonical app and still read canonical
-  private art via `WORLDOS_ART_REPO_ROOT=/Users/lume/ClawDnD-val`.
+  private art via `WORLDOS_ART_REPO_ROOT=/Users/lume/WorldOS`.
 
 ## REAL bugs (verified; the actual punch-list)
 
@@ -38,7 +38,7 @@ persona evidence. Issue #466 must either produce that clean RRI or fail with act
 | G4 | Chronicle renders as ONE block despite well-formed prose | `LogEntry` rendered `{text}` with default `white-space`, collapsing `\n\n` paragraph breaks | Keep sanitization, render narration with `whiteSpace: "pre-line"` | Merged in #465; needs built-app live look + full gate | Static proof: `viewer/tests/test_openworlds_static.py::test_openworlds_table_chronicle_preserves_paragraph_breaks` |
 | G6 | Companion (Minsc/Alfira, kind='companion') silently in solo party at cold-open, no narrated meeting | solo play.sh could prompt the DM into seating/recruiting a companion at cold-open | Solo prompt now says the player begins alone; `play_party.sh` with empty companion spec execs solo `play.sh` unchanged | Merged in #465; needs live gate proof | Static proof: `qa/test_release_gate_static.py::test_solo_play_contract_does_not_silently_recruit_companion` |
 | G5 | "No streaming visible" — VERIFY (may be infra: owner watched a stale/wrong surface) | /events+useLiveSession+log_event exist; DM emits paragraph-rich prose; PR #394 merged streaming-lite for #393 | Confirm mid-turn log_event on live 8799; fix only if current built-app play still batches blank waits | #394 merged; #393 remains open until built-app Part A+B proves no latency give-ups | DM prose well-formed; streaming path exists; proof still owed on built app |
-| G7 | Worktree/.app builds 404 images (no _private) | `_ingested_images_root()` (server.py:203) hardcoded to server.py's repo → worktree has no _private | Split code repo from art repo: viewer honors `WORLDOS_ART_REPO_ROOT`; native app has a Private art repo path and launch-root override for gate builds | Merged in #465; needs #466 full gate proof | 2026-05-31 smoke: worktree `dist/WorldOS.app` pid 69755 launched without killing canonical app; spawned worktree `viewer/server.py` on 8765; `/image?scope=location:loc-lower-city` returned `200 904100`; Info.plist root=`/Volumes/LEXAR/repos/worldos-takeover-stabilization`, art=`/Users/lume/ClawDnD-val` |
+| G7 | Worktree/.app builds 404 images (no _private) | `_ingested_images_root()` (server.py:203) hardcoded to server.py's repo → worktree has no _private | Split code repo from art repo: viewer honors `WORLDOS_ART_REPO_ROOT`; native app has a Private art repo path and launch-root override for gate builds | Merged in #465; needs #466 full gate proof | 2026-05-31 smoke: worktree `dist/WorldOS.app` pid 69755 launched without killing canonical app; spawned worktree `viewer/server.py` on 8765; `/image?scope=location:loc-lower-city` returned `200 904100`; Info.plist root=`/Volumes/LEXAR/repos/worldos-takeover-stabilization`, art=`/Users/lume/WorldOS` |
 
 ## EVAPORATED on clean re-verification (were CORRUPTED READS — do NOT chase)
 - **G1 "palette all-disabled / PC kind=pc / no active character"** — FALSE. Live PC Rolan is `kind='player'`; palette enabled. (A corrupted snapshot read invented `kind='pc'`/`npc-alfira`. Builder A killed — pushed no PR.)

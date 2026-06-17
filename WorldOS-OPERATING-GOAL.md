@@ -18,7 +18,7 @@
                    re-measure could move several gates at once. RELEASE MODEL = RRI-FIRST: v1.0.x tags =
                    semver feature-labels; RRI 10/10 = release-authority; tag-after-proof ("Player-Ready
                    Beta" = first RRI 10/10; "1.0 GA" = +notarized +feature-parity). Milestone v1.0.4 (#27).
-     CANONICAL:    /Users/lume/ClawDnD-val is now the synced local app/private-art checkout and
+     CANONICAL:    /Users/lume/WorldOS is now the synced local app/private-art checkout and
                    the default place to build/run/test the Mac app. Keep GUI/runtime tests on this
                    local disk so macOS does not prompt on Lexar-hosted assets.
      WORKTREES:    For tracked edits, prefer same-disk local worktrees when GUI/app tests need assets.
@@ -252,7 +252,7 @@ verifier; can revert the goal to "fix" anytime.
   NEXT build is the evidence. Close issues only on next-build non-reproduction. **Honest scores only.**
 - Engine (`servers/engine`) = **SOLE writer** of campaign state. Don't touch wire contracts
   (`clawdnd-*` / `CLAWDND_*` / `dev.worldos.app`). Build/run/test the Mac app from
-  `/Users/lume/ClawDnD-val` so private art stays on the local disk and macOS does not prompt on Lexar
+  `/Users/lume/WorldOS` so private art stays on the local disk and macOS does not prompt on Lexar
   files. Use **same-disk local worktrees** for GUI-affecting tracked edits, Lexar for evidence/snapshots,
   and the 32GB support VM / GitHub CI for heavy tests. `_private/` never committed.
 
@@ -272,9 +272,9 @@ verifier; can revert the goal to "fix" anytime.
   added the hybrid 100/100 app handoff gate. PR #505 then hardened the RRI bridge so Mac handoff
   evidence can be supplied with `--handoff-json` while support-VM persona artifacts supply the heavy
   sweep. PR #506 then synced these docs to the `fd9dba5` proof without changing product code. PR #508 added the
-  support-VM preflight artifact gate. The local app/private-art checkout `/Users/lume/ClawDnD-val` was
+  support-VM preflight artifact gate. The local app/private-art checkout `/Users/lume/WorldOS` was
   later verified against current `origin/main` at `da05101`, and the Mac app handoff was rerun on that
-  exact SHA from a clean same-disk worktree with `WORLDOS_ART_REPO_ROOT=/Users/lume/ClawDnD-val`.
+  exact SHA from a clean same-disk worktree with `WORLDOS_ART_REPO_ROOT=/Users/lume/WorldOS`.
 - The stale local pre-sync artifacts were preserved before the fast-forward at
   `/Volumes/LEXAR/Codex/worldos-local-checkout-snapshot-20260531T223923` and in `stash@{0}`
   (`pre-sync local takeover docs 2026-05-31`). Treat those as evidence, not current release truth.
@@ -352,7 +352,7 @@ verifier; can revert the goal to "fix" anytime.
   campaign, provider, private-art presence, move sink, actor, enabled actions, readiness, and failure buckets
   without mutating state; the scripted provider can prove wiring behind a dev/test gate; and stable a11y/DOM
   hooks make the UI more driveable. A current-session `:8899` probe briefly showed `080497e`, scripted
-  provider, private art root at `/Users/lume/ClawDnD-val`, `can_act:true`, five enabled actions,
+  provider, private art root at `/Users/lume/WorldOS`, `can_act:true`, five enabled actions,
   `ready_for_smoke:true`, and no reported console/network failures; a later read found the port already
   down. Browser-based checks should use the live port discovered from `run.json` or `/app-status`, and if
   a browser session cannot reach local URLs, fall back to `/app-status`, `/session-surface`, app screenshots,

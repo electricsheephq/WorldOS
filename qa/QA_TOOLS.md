@@ -5,7 +5,7 @@ This is the command map for agents. It does not replace the release truth in
 
 Default local paths:
 
-- App/private-art checkout: `/Users/lume/ClawDnD-val`.
+- App/private-art checkout: `/Users/lume/WorldOS`.
 - Evidence root: `/Volumes/LEXAR/Codex`.
 - Heavy persona/backend sweeps: GitHub CI or the owner-provided support VM after explicit preflight.
 
@@ -23,12 +23,12 @@ Default local paths:
 Copy-paste fast handoff command:
 
 ```bash
-cd /Users/lume/ClawDnD-val
+cd /Users/lume/WorldOS
 python3 qa/app_handoff_gate.py \
   --web-beats 5 \
   --built-beats 5 \
   --codex-moves 1 \
-  --art-root /Users/lume/ClawDnD-val \
+  --art-root /Users/lume/WorldOS \
   --scripted-budget 1.00 \
   --codex-budget 3.00 \
   --timeout 90 \
