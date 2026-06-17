@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run Codex as a constrained ClawDnD player actor.
+# Run Codex as a constrained WorldOS player actor.
 #
 # The native app launches this through the provider environment contract. This
 # wrapper never writes campaign snapshots or QA/canon content; it only creates
@@ -194,7 +194,7 @@ out_path.write_text(
 PY
 
 cat > "$PROMPT_FILE" <<EOF
-You are the Codex player actor for ClawDnD run "$CLAWDND_RUN_ID" in world "$CLAWDND_WORLD".
+You are the Codex player actor for WorldOS run "$CLAWDND_RUN_ID" in world "$CLAWDND_WORLD".
 
 Hard boundary:
 - You are a player character, not the DM, narrator, QA harness, campaign author, or engine writer.

@@ -859,7 +859,7 @@ fi
 
 if [ -n "$HERO_CAMP" ]; then
   OPENING_PROMPT="$(cat <<EOF
-You are the Dungeon Master for a solo WorldOS / ClawDnD adventure in world "$CLAWDND_WORLD".
+You are the Dungeon Master for a solo WorldOS adventure in world "$CLAWDND_WORLD".
 
 $DM_CONTRACT_RULE
 $DM_VOICE_RULE
@@ -891,7 +891,7 @@ EOF
 )"
 else
   OPENING_PROMPT="$(cat <<EOF
-You are the Dungeon Master for a solo WorldOS / ClawDnD adventure in world "$CLAWDND_WORLD".
+You are the Dungeon Master for a solo WorldOS adventure in world "$CLAWDND_WORLD".
 
 $DM_CONTRACT_RULE
 $DM_VOICE_RULE

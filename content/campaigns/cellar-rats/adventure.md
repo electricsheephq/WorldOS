@@ -1,12 +1,12 @@
 # Cellar Rats
 
-> *A ClawDnD starter adventure. Levels 1–2 · one ~1-hour session · 3–4 players + companion.*
+> *A WorldOS starter adventure. Levels 1–2 · one ~1-hour session · 3–4 players + companion.*
 
 **The Sodden Crown is the only inn for a day's walk, and something has moved into its flooded cellar. The owner blames rats. The scratching in the walls is far too big for rats.**
 
 This is a grounded, low-level dungeon crawl with a soft heart: a band of goblins has tunneled up into a tavern cellar — but they aren't raiders. They're refugees, fleeing something far worse still down in the drowned dark below. The "infestation" the party is hired to exterminate is a frightened family. The real monster is the one nobody ever quite sees.
 
-It runs in about an hour and hits every beat a ClawDnD session should: a social hook, an exploration crawl with a trap and a choice, a memorable turncoat NPC whose attitude can flip, and two combats built from the bundled Goblin and Wolf stat blocks.
+It runs in about an hour and hits every beat a WorldOS session should: a social hook, an exploration crawl with a trap and a choice, a memorable turncoat NPC whose attitude can flip, and two combats built from the bundled Goblin and Wolf stat blocks.
 
 ---
 
@@ -259,4 +259,4 @@ The companion (`companion-default`) is a *character*, not a rules engine — giv
 
 ---
 
-*This adventure is 100% original prose written for ClawDnD, shippable under CC-BY 4.0. It uses only SRD 5.2 mechanics and the bundled Goblin / Wolf / Bandit stat blocks (System Reference Document 5.2 © Wizards of the Coast, CC-BY-4.0; see `data/srd/ATTRIBUTION.md`). No published or copyrighted adventure text is reproduced.*
+*This adventure is 100% original prose written for WorldOS, shippable under CC-BY 4.0. It uses only SRD 5.2 mechanics and the bundled Goblin / Wolf / Bandit stat blocks (System Reference Document 5.2 © Wizards of the Coast, CC-BY-4.0; see `data/srd/ATTRIBUTION.md`). No published or copyrighted adventure text is reproduced.*

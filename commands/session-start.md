@@ -2,7 +2,7 @@
 description: Begin or resume play — loads your campaign, recaps "Previously on…", and hands the table to the DM.
 argument-hint: "[campaign id] (optional; defaults to your most recent campaign)"
 ---
-The player wants to start or resume a ClawDnD session.
+The player wants to start or resume a WorldOS session.
 
 Target campaign (optional id): $ARGUMENTS
 

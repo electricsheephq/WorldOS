@@ -37,6 +37,6 @@ https://www.dndbeyond.com/srd, licensed under the **Creative Commons Attribution
 ## Flavor / Names / Descriptions
 
 All creature names and flavor material (names, world context, thematic framing)
-are original works by the ClawDnD project authors, written from scratch to evoke
+are original works by the WorldOS project authors, written from scratch to evoke
 the Baldur's Gate region. They do not reproduce any copyrighted game text,
 product-identity text, or wiki content.

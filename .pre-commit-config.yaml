@@ -1,4 +1,4 @@
-# WorldOS / ClawDnD — minimal, OPT-IN pre-commit config (inner-loop friction-cutter).
+# WorldOS — minimal, OPT-IN pre-commit config (inner-loop friction-cutter).
 #
 # This is intentionally TINY and ADDITIVE: it does NOT run the test suite on every commit
 # (the 16GB host OOMs on parallel test workers — full/heavy runs always go to GitHub CI). It

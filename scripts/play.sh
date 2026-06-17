@@ -475,7 +475,7 @@ viewer_supervisor &  SUP=$!
 _play_cleanup() {
   if [ "${PROVIDER_STOPPED_CLEANLY:-0}" != "1" ] && [ -n "${PROVIDER_STATUS:-}" ] \
      && declare -F clawdnd_write_provider_status >/dev/null 2>&1; then
-    clawdnd_write_provider_status "$PROVIDER_STATUS" failed crashed "ClawDnD DM provider exited unexpectedly. Restart the session to continue." "${DM_TURNS:-0}" "scripts/play.sh"
+    clawdnd_write_provider_status "$PROVIDER_STATUS" failed crashed "WorldOS DM provider exited unexpectedly. Restart the session to continue." "${DM_TURNS:-0}" "scripts/play.sh"
   fi
   declare -F clawdnd_release_launch_lock >/dev/null 2>&1 && clawdnd_release_launch_lock "$ROOT"
   kill "$SUP" 2>/dev/null
@@ -492,7 +492,7 @@ trap '_play_cleanup; exit 130' INT TERM
   (command -v open >/dev/null 2>&1 && open "http://127.0.0.1:$PORT/openworlds/") \
     || (command -v xdg-open >/dev/null 2>&1 && xdg-open "http://127.0.0.1:$PORT/openworlds/") || true ) &
 
-echo "ClawDnD — playing in OpenWorlds → http://127.0.0.1:$PORT/openworlds/"
+echo "WorldOS — playing in OpenWorlds → http://127.0.0.1:$PORT/openworlds/"
 echo "  Opening the world… OpenWorlds fills in as the DM narrates the first scene."
 echo "  Act via the palette (Say / Do / Continue, dice & combat, click-to-travel). Ctrl-C to stop."
 echo "  Save dir: $STATE_DIR"
@@ -510,7 +510,7 @@ if [ "$RESUME" = "1" ]; then
   # where the chronicle stood. The heartbeat targets the saved campaign so /events shows progress
   # within ~1s while the re-ground turn runs.
   clawdnd_emit_progress_heartbeat "$RESUME_CAMPAIGN" 1 0
-  DMSG="$(dm_turn 1 "You are the Dungeon Master for a solo ClawDnD adventure. Activate and follow your \`dungeon-master\` skill — run its \"Generating a world live\" mode and hold its craft bar (mechanics sourced from the engine, NPCs speak, the world pushes back, scenes played not logged).
+  DMSG="$(dm_turn 1 "You are the Dungeon Master for a solo WorldOS adventure. Activate and follow your \`dungeon-master\` skill — run its \"Generating a world live\" mode and hold its craft bar (mechanics sourced from the engine, NPCs speak, the world pushes back, scenes played not logged).
 
 RESUME an EXISTING chronicle that is being re-opened — the world, the player's character, and the party ALREADY EXIST. You are NOT starting a new game:
 - This session's campaign ALREADY EXISTS: use campaign_id=$RESUME_CAMPAIGN for EVERY engine call. DO NOT call start_world — it would mint a NEW campaign id and ORPHAN this save.
@@ -530,7 +530,7 @@ elif [ -n "$HERO_CAMP" ]; then
   # below mints its campaign INSIDE the turn, so it has no pre-turn campaign to target — it relies on
   # the #718 cold-open spinner + the live-progress rule the DM turn carries.) first=1 → opening teaser.
   clawdnd_emit_progress_heartbeat "$HERO_CAMP" 1 0
-  DMSG="$(dm_turn 1 "You are the Dungeon Master for a solo ClawDnD adventure. Activate and follow your \`dungeon-master\` skill — run its \"Generating a world live\" mode and hold its craft bar (mechanics sourced from the engine, NPCs speak, the world pushes back, scenes played not logged).
+  DMSG="$(dm_turn 1 "You are the Dungeon Master for a solo WorldOS adventure. Activate and follow your \`dungeon-master\` skill — run its \"Generating a world live\" mode and hold its craft bar (mechanics sourced from the engine, NPCs speak, the world pushes back, scenes played not logged).
 
 Begin a SOLO session in a living world for a single human player who will act through the dashboard. The player AUTHORED their own character in the Creation wizard, so the world AND the player's character ALREADY EXIST — they were pre-seeded for you:
 - This session's campaign ALREADY EXISTS: use campaign_id=$HERO_CAMP for EVERY engine call. DO NOT call start_world — it would mint a NEW campaign id and ORPHAN the pre-seeded PC.
@@ -544,7 +544,7 @@ CRITICAL — your FINAL output THIS turn MUST BE the opening SCENE itself, writt
 
 Their actions will arrive as tagged moves — [say] (their dialogue), [do] (an attempt), [check] (roll that skill), [cast]/[use]/[attack] (resolve via the engine) — one per turn from the dashboard.")"
 else
-  DMSG="$(dm_turn 1 "You are the Dungeon Master for a solo ClawDnD adventure. Activate and follow your \`dungeon-master\` skill — run its \"Generating a world live\" mode and hold its craft bar (mechanics sourced from the engine, NPCs speak, the world pushes back, scenes played not logged).
+  DMSG="$(dm_turn 1 "You are the Dungeon Master for a solo WorldOS adventure. Activate and follow your \`dungeon-master\` skill — run its \"Generating a world live\" mode and hold its craft bar (mechanics sourced from the engine, NPCs speak, the world pushes back, scenes played not logged).
 
 Begin a SOLO session in a living world for a single human player who will act through the dashboard:
 - start_world(\"$WORLD\") and read the returned bible (premise, era/chronology, tone, standing threads, seeded regions/factions/roster). If it returns existing_campaigns, start fresh.
@@ -645,7 +645,7 @@ fi
 # (PROVIDER_STATUS + PROVIDER_STOPPED_CLEANLY were defined near STATE_DIR so an early-abort EXIT trap
 # can write "failed").
 provider_status_set() { clawdnd_write_provider_status "$PROVIDER_STATUS" "$1" "$2" "$3" "$DM_TURNS" "scripts/play.sh"; }
-provider_status_set running active "ClawDnD DM provider is running."
+provider_status_set running active "WorldOS DM provider is running."
 
 # Stop the (otherwise human-paced, unbounded) loop once the session hits its cost or turn
 # ceiling. total_cost_usd is reported on each turn's result event (accumulated in $COMBINED).
@@ -656,14 +656,14 @@ over_budget() {
   local spent; spent="$(jq -rs '[.[]|select(.type=="result")|.total_cost_usd//0]|add // 0' "$COMBINED" 2>/dev/null)"
   if [ "$DM_TURNS" -ge "$MAX_TURNS" ]; then
     echo "[play] turn cap ($MAX_TURNS) reached — stopping (raise CLAWDND_PLAY_MAX_TURNS)."
-    provider_status_set stopped turn_cap "ClawDnD DM stopped after reaching the configured max turns. Increase Max turns or start a new session to continue."
+    provider_status_set stopped turn_cap "WorldOS DM stopped after reaching the configured max turns. Increase Max turns or start a new session to continue."
     PROVIDER_STOPPED_CLEANLY=1
     sleep "${WORLDOS_PROVIDER_STOP_GRACE_SECONDS:-${CLAWDND_PROVIDER_STOP_GRACE_SECONDS:-20}}"
     return 0
   fi
   if awk -v s="${spent:-0}" -v b="$SESSION_BUDGET" 'BEGIN{exit !(s+0>=b+0)}'; then
     echo "[play] session budget reached (~\$$spent/\$$SESSION_BUDGET) — stopping (raise CLAWDND_PLAY_SESSION_BUDGET)."
-    provider_status_set stopped budget "ClawDnD DM stopped after reaching the session budget (~\$$spent/\$$SESSION_BUDGET). Raise CLAWDND_PLAY_SESSION_BUDGET or start a new session."
+    provider_status_set stopped budget "WorldOS DM stopped after reaching the session budget (~\$$spent/\$$SESSION_BUDGET). Raise CLAWDND_PLAY_SESSION_BUDGET or start a new session."
     PROVIDER_STOPPED_CLEANLY=1
     sleep "${WORLDOS_PROVIDER_STOP_GRACE_SECONDS:-${CLAWDND_PROVIDER_STOP_GRACE_SECONDS:-20}}"
     return 0
@@ -734,7 +734,7 @@ $RUNBOOK" "$CAMPAIGN_ID")"
       echo "[play] idle ${MAX_IDLE}s with no player move — stopping (relaunch when ready; raise CLAWDND_PLAY_MAX_IDLE to wait longer)."
       # F12-10: an idle stop is a CLEAN stop (not a crash) — write "stopped"/idle, set the flag so the
       # EXIT trap does not relabel it "failed".
-      provider_status_set stopped idle "ClawDnD DM stopped after ${MAX_IDLE}s with no player move. Relaunch to continue (raise CLAWDND_PLAY_MAX_IDLE to wait longer)."
+      provider_status_set stopped idle "WorldOS DM stopped after ${MAX_IDLE}s with no player move. Relaunch to continue (raise CLAWDND_PLAY_MAX_IDLE to wait longer)."
       PROVIDER_STOPPED_CLEANLY=1
       break
     fi

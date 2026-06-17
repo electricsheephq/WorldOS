@@ -1,7 +1,7 @@
 # Living-world playbook — generating & running an open world
 
 When there's no bundled module — the player says "just make me an adventure," or you're running an
-open world they wander through — **you are the author, live.** This is ClawDnD at its best (a
+open world they wander through — **you are the author, live.** This is WorldOS at its best (a
 live-generated session out-scores a pre-scripted one), and the engine is your guardrail against mush.
 Run it like this:
 

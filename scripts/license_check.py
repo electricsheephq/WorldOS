@@ -46,7 +46,7 @@ def _check_ingested_attribution(tracked: list[str]) -> list[str]:
     """Every committed INGESTED record must carry its per-source attribution (it's wiki-derived
     CC-BY-SA, not the WorldOS license) — the docs promise it, so the gate enforces it instead of trusting memory.
     JSON records (characters/areas) need non-empty `license` + `attribution` (a wiki-derived one
-    also carries `source_url`, but original ClawDnD exemplars legitimately have none); wiki lore
+    also carries `source_url`, but original WorldOS exemplars legitimately have none); wiki lore
     .md needs a Source/license footer. Authored lore under lore/*.md is exempt — it's our prose."""
     errors: list[str] = []
     for f in tracked:

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ClawDnD QA/play REAPER — kill any harness process (a QA run or a play session) older than
+# WorldOS QA/play REAPER — kill any harness process (a QA run or a play session) older than
 # MAX_MIN minutes. A safety net against WEDGED runs that spin for hours: e.g. a dry-run
 # play_party with no human input that loops a sleep forever, or a `claude -p` that never returns.
 # (play_party/run_* now self-cap, but this catches anything that slips through or predates the fix.)
