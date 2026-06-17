@@ -29,9 +29,10 @@ BUDGET="${6:-1.50}"
 # Default agent = `main` (the canonical gateway agent; the old `clawdnd-qa` default isn't configured on
 # every host). By DEFAULT pass NO --model override (use the agent's native model, e.g. main=gpt-5.5) —
 # many gateway agents REJECT a foreign model override ("Model override … is not allowed for agent").
-# Only pass one when CLAWDND_SCORER_MODEL is explicitly set AND allowed for the agent.
-AGENT="${CLAWDND_SCORER_AGENT:-main}"
-MODEL="${CLAWDND_SCORER_MODEL:-}"
+# Only pass one when WORLDOS_SCORER_MODEL is explicitly set AND allowed for the agent
+# (the legacy CLAWDND_* names are still read as a fallback — the rename bi-names readers).
+AGENT="${WORLDOS_SCORER_AGENT:-${CLAWDND_SCORER_AGENT:-main}}"
+MODEL="${WORLDOS_SCORER_MODEL:-${CLAWDND_SCORER_MODEL:-}}"
 MODEL_ARGS=(); [ -n "$MODEL" ] && MODEL_ARGS=(--model "$MODEL")
 # A fresh session id per scoring run so a scorer turn never pollutes the agent's main session.
 SESSION_ID="${CLAWDND_SCORER_SESSION:-qa-score-$(basename "${OUT%.json}")}"

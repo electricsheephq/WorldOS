@@ -15,20 +15,23 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # --- (a) Scorer-model pinning (DETERMINISM GUARD; additive — unset env == today) --------
 # The scorer model is PINNED at a single canonical model (sonnet — the documented gate
-# baseline; never flip it casually). Setting CLAWDND_SCORER_MODEL swaps the scorer, which
+# baseline; never flip it casually). Setting WORLDOS_SCORER_MODEL swaps the scorer, which
 # silently skews every score on the gate. So an override is only honored with an EXPLICIT
-# opt-in (CLAWDND_ALLOW_SCORER_OVERRIDE=1) for a deliberate scorer-calibration probe /
+# opt-in (WORLDOS_ALLOW_SCORER_OVERRIDE=1) for a deliberate scorer-calibration probe /
 # re-baseline (e.g. "does a stronger scorer read Opus craft higher than sonnet does?") —
-# see docs/MODEL-TIERING. CLAWDND_SCORER_MODEL set WITHOUT the opt-in is an ERROR, so a
-# stray env var can't quietly move the baseline.
+# see docs/MODEL-TIERING. WORLDOS_SCORER_MODEL set WITHOUT the opt-in is an ERROR, so a
+# stray env var can't quietly move the baseline. The legacy CLAWDND_* names are still read
+# as a fallback (the clawdnd->worldos rename bi-names direct readers) so old call sites work.
 CANONICAL_SCORER_MODEL="sonnet"
-if [ -n "${CLAWDND_SCORER_MODEL:-}" ] && [ "${CLAWDND_ALLOW_SCORER_OVERRIDE:-}" != "1" ]; then
-  echo "[score] REFUSING scorer-model override: CLAWDND_SCORER_MODEL='${CLAWDND_SCORER_MODEL}' is set but CLAWDND_ALLOW_SCORER_OVERRIDE=1 is NOT." >&2
+SCORER_MODEL_OVERRIDE="${WORLDOS_SCORER_MODEL:-${CLAWDND_SCORER_MODEL:-}}"
+ALLOW_SCORER_OVERRIDE="${WORLDOS_ALLOW_SCORER_OVERRIDE:-${CLAWDND_ALLOW_SCORER_OVERRIDE:-}}"
+if [ -n "$SCORER_MODEL_OVERRIDE" ] && [ "$ALLOW_SCORER_OVERRIDE" != "1" ]; then
+  echo "[score] REFUSING scorer-model override: WORLDOS_SCORER_MODEL='${SCORER_MODEL_OVERRIDE}' is set but WORLDOS_ALLOW_SCORER_OVERRIDE=1 is NOT." >&2
   echo "[score]   The scorer is pinned to '${CANONICAL_SCORER_MODEL}' (the gate baseline); a silent model swap skews every score." >&2
-  echo "[score]   To deliberately re-baseline with a different scorer, also export CLAWDND_ALLOW_SCORER_OVERRIDE=1." >&2
+  echo "[score]   To deliberately re-baseline with a different scorer, also export WORLDOS_ALLOW_SCORER_OVERRIDE=1." >&2
   exit 3
 fi
-SCORER_MODEL="${CLAWDND_SCORER_MODEL:-$CANONICAL_SCORER_MODEL}"
+SCORER_MODEL="${SCORER_MODEL_OVERRIDE:-$CANONICAL_SCORER_MODEL}"
 
 # --- (b) prompt_construction_hash: rubric+schema+template fingerprint (NOT the transcript)
 # Computed by the shared helper so score.sh and the test agree by construction. Used to
