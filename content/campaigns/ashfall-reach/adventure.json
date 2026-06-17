@@ -1,0 +1,850 @@
+{
+  "id": "ashfall-reach",
+  "title": "The Lantern-Keeper of Ashfall Reach",
+  "ruleset": "SRD 5.2",
+  "level_range": [
+    3,
+    7
+  ],
+  "session_length_minutes": 240,
+  "world_id": "saltmere-coast",
+  "era": "the Long Grey Year, three winters after the Reaving fleet was broken on the Teeth",
+  "premise": "Ashfall Reach is the last lit headland on the Saltmere Coast — a black volcanic spur where the old Reaving war left more wrecks than the sea has names for, and where one lighthouse still burns the only safe channel through the drowning rocks called the Teeth. Its keeper is Wren Calder, who climbs the long stair every dusk to light the great lantern and keeps it burning till dawn, alone, the way they have for six years, because the night they were a child a ship foundered on the Teeth that the Reach's old keeper let founder — for the salvage the wreck would wash up. Wren's younger sibling Edda was aboard a fishing boat that night, and the lantern stayed dark, and Edda drowned within sight of the unlit tower while Wren screamed from the cliff. Wren took the keeping themselves to make sure no light ever went dark again for coin. Now a wrecking ring has come back to the Reach — a 'salvage company' run by a charming, ruined merchant-captain named Halloran Vane, the Tidereeve, who buys keepers and quenches lights and harvests the ships that break, and who means to own Ashfall's lantern the way he's bought every other light on the coast. The party arrives between the wrecker and the keeper, and the keeper is the kind of person you fall for: stubborn, gentle, salt-scarred, carrying a grief they light a fire against every single night. This is a love story with a wrecking-light at the center of it — earn Wren's trust by saving the helpless from the sea, earn their heart at the camp-fire on the cliff, and learn the drowned sibling they never lit the lantern for in time; or spend a value too cheaply, let a ship founder for the salvage, and watch the lantern-keeper quietly put out the light between you and walk back up the stair alone.",
+  "hook": "A storm-wracked fishing smack limps into the cove under the headland with three survivors and a fourth who didn't make it, and a story that doesn't add up: the Teeth-channel light burned WRONG last night — not Ashfall's steady white from the headland, but a low amber lantern swinging on the south rocks where no light should be, luring them onto the Teeth instead of through them. They'd have all drowned, except the real lantern flared up late and hard from the tower and a furious, soaked figure rowed out into the surf to drag them off the rocks by hand. That figure is Wren Calder, the keeper of Ashfall Reach, and they are sitting in the cove tavern with rope-burned palms and salt in their hair insisting to anyone who'll listen that someone is setting FALSE lights on the south rocks to wreck ships — and that the harbormaster, who owes the Tidereeve's salvage company money, has told them to mind their own lantern and stop frightening the trade. Wren has no proof, no help, and a wrecker buying up the coast one quenched light at a time. They corner the party — outsiders, the only people on the Reach who don't owe Halloran Vane a copper — and ask, plainly and without much hope, whether anyone left in the world will help them keep one light honest. Find out who's wrecking the Teeth, before the next ship the false light calls is one the party can't reach in time.",
+  "themes": [
+    "a love story with a lighthouse at the center — tenderness earned against the dark",
+    "keeping the light: fidelity to a post, a person, a promise, when it would be easier and richer to let it go dark",
+    "grief lit against every night — the sibling the keeper couldn't save, and the second chance the sea offers",
+    "salvage as predation — a charming wrecker who turns mercy off for coin, and the keeper who won't",
+    "a heart that opens slowly and closes for good if you prove the light was never safe with you"
+  ],
+  "voices": {
+    "narrator-dm": "The Dungeon Master's narration voice. Used for boxed read-aloud text and scene description.",
+    "companion-default": "Wren Calder, the party's companion — the lantern-keeper of Ashfall Reach, a salt-scarred ranger who lights the only honest channel through the Teeth and carries a drowned sibling like a stone.",
+    "npc-elder": "Old Maris Tolm, the cove's half-blind net-mender who remembers the Reach before the wreckers, and the dying breath of the keeper Wren replaced.",
+    "npc-rogue": "Halloran Vane, the Tidereeve — the charming, ruined merchant-captain who runs the wrecking ring and means to own Ashfall's light, and his quiet lieutenant Sable.",
+    "npc-male-1": "Coster the harbormaster, indebted and evasive, and assorted wreckers, drowned-rats, and cove fishermen.",
+    "npc-female-1": "Brenna Idris, the saved fisherwoman and first witness, and the memory-voice of Edda Calder, Wren's drowned sibling."
+  },
+  "antagonist": {
+    "id": "antagonist",
+    "name": "Halloran Vane, the Tidereeve",
+    "title": "Master of the Saltmere Salvage Company",
+    "voice_id": "npc-rogue",
+    "hidden": false,
+    "goal": "To own every light on the Saltmere Coast and decide, for a price, which ships make harbour and which break on the rocks for him to harvest. Vane was an honest merchant-captain once, until his own fleet was wrecked on an unlit shoal by a keeper he'd refused to bribe — and he came out of the water having learned the lesson backward: that the sea belongs to whoever holds the lights, and that mercy is a luxury that drowned his crew. Now he runs the wrecking ring as a chartered SALVAGE company, perfectly legal on its face: he buys keepers' debts, quietly quenches the true lights and hangs false amber lanterns on the killing rocks, and sells the wrecked cargo back to the very coast he starves. Ashfall Reach is the last light he doesn't own, because its keeper cannot be bought — so he means to drown Wren Calder's reputation, then their lantern, then them, and take the headland's keeping by 'lawful' default. He is genuinely charming, genuinely sorry, and absolutely will not stop.",
+    "scheme_by_act": [
+      "ACT 1: Vane's wreckers are already working the Teeth — a false amber light on the south rocks luring ships onto the killing stones while Ashfall's true light is sabotaged late or smeared dim. The party investigates the wrong-light wreck through the cove: the indebted harbormaster who looks away, the salvaged cargo turning up in Vane's warehouse, the survivor Brenna who saw two lights. The first thread: someone is hanging a false lantern to break ships on purpose — and the only person fighting it is the keeper everyone's been told to ignore. The party works alongside Wren to save the next ship the false light calls, and how they answer that rescue earns — or spends — the keeper's first trust.",
+      "ACT 2: Stymied at the Teeth, Vane tightens the noose on Wren directly: he buys up the lighthouse's supply line (oil, wick, the chandler's debt), frames Wren for the very wrecking they're fighting (a planted salvage-tally in the keeper's own hand), and makes Wren a CIVIL offer — sell the keeping, clear the debt, walk away rich and free of a grief that's eating them alive. The midpoint reversal: the party learns WHY Wren cannot ever let a light go dark — the drowned sibling Edda, the old keeper who let a ship founder for salvage the night Edda died, the lantern Wren never lit in time. The romance opens at the camp-fire on the cliff as Wren, cornered and exhausted, finally lets someone in; and a values-tagged choice — to honor the keeper's grief and refuse Vane's coin, or to treat the light as a chip to trade — either deepens what's growing between them or curdles it toward the cold.",
+      "ACT 3: Vane plays his last card on the worst night of the year — the Long Grey storm, when a fat merchant convoy runs the Teeth for the winter market and the false light could wreck a dozen ships at once. He moves to quench Ashfall's lantern for good, take the tower, and harvest the convoy. The party must hold the lighthouse through the storm: relight or defend the true lantern, find and douse the false one on the south rocks, and break Vane and his wreckers before the convoy strikes. The climax is the consummation OR the cost: if the party honored Wren, the love is real and the keeper fights beside them and the light holds and there is, at the end of the longest night, a confession kept and a hand held in the lantern-glow; if the party let a ship founder for gold or treated Wren as a tool, the keeper's agenda fires — Wren does not turn violent, they QUIT: they put out the light between you, hand you the keeping, and walk back up the stair alone into a grief you proved you'd never be trusted with. The win is the light kept honest AND the keeper kept; the loss is a dark tower and a love you wrecked yourself."
+    ],
+    "reveal": "Vane is no hidden mastermind — Wren names him as the wrecker from the first scene, and the salvage company is on every warehouse door in the cove. The REVEAL is not who he is but how he WORKS: that the wrecking is laundered as lawful salvage, that he buys keepers rather than killing them, and that he was a victim of the exact crime he now commits — a drowned merchant who decided the sea belongs to whoever holds the lights. The harder reveal is Wren's: the drowned sibling Edda, the old keeper's salvage-greed that let a ship founder, and the lantern Wren has been lighting every night for six years as penance for one they couldn't light in time. The hardest reveal lands last and is about the PARTY: whether the keeper opens their heart or closes the light depends not on Vane's persuasion but on whether the party, over a coast full of judgment-calls, actually proved a light is safe in their hands — and the engine, not the DM, makes that fidelity (or its betrayal) real.",
+    "stat_block": "Vane fights in the Act 3 storm-climax, and unlike a pure schemer he will trade blades when cornered — but he is a sea-captain and a manipulator first, not a duelist. Use the bundled Bandit Captain stat block (AC 15, HP 65, CR 2) scaled up for a level 6-7 party (a Veteran or a Bandit Captain + a Thug bodyguard at a harder table; add his lieutenant Sable as a Spy/Assassin), reflavored as a charming, ruined merchant-captain in a salt-stained good coat. He commands the wreckers from the south rocks or the tower stair, surrounds himself with his salvage crew (Bandits/Thugs/Scouts + the wrecker Sable), and his real weapon is the false light and the convoy clock, not his own HP. He offers a deal before blades — to the party, and pointedly to Wren — and will cut a line and row off into the storm to wreck another coast rather than die on a held headland; a Tidereeve who escapes to quench a light somewhere else is a fine dangling thread.",
+    "max_hp": 65,
+    "armor_class": 15,
+    "hit_dice": "10d8+20",
+    "proficiency_bonus": 2,
+    "abilities": {
+      "strength": 12,
+      "dexterity": 14,
+      "constitution": 15,
+      "intelligence": 13,
+      "wisdom": 12,
+      "charisma": 16
+    },
+    "damage_resistances": [],
+    "damage_immunities": [],
+    "condition_immunities": []
+  },
+  "companions": [
+    {
+      "id": "companion-wren",
+      "name": "Wren Calder",
+      "voice_id": "companion-default",
+      "race": "Human",
+      "background": "Outlander",
+      "classes": [
+        {
+          "name": "Ranger",
+          "level": 3
+        }
+      ],
+      "abilities": {
+        "strength": 13,
+        "dexterity": 16,
+        "constitution": 14,
+        "intelligence": 11,
+        "wisdom": 15,
+        "charisma": 12
+      },
+      "proficiency_bonus": 2,
+      "armor_class": 15,
+      "max_hp": 27,
+      "hit_dice": "3d10",
+      "hit_dice_remaining": 3,
+      "skill_proficiencies": [
+        "Survival",
+        "Perception",
+        "Athletics",
+        "Insight"
+      ],
+      "saving_throw_proficiencies": [
+        "str",
+        "dex"
+      ],
+      "spells_known": [
+        "Hunter's Mark",
+        "Cure Wounds",
+        "Fog Cloud"
+      ],
+      "spells_prepared": [],
+      "spell_slots": {
+        "1": {
+          "maximum": 3,
+          "used": 0
+        }
+      },
+      "personality": "The lantern-keeper of Ashfall Reach: a lean, salt-scarred ranger of the coast who climbs the long tower-stair every dusk to light the only honest channel through the Teeth, and keeps the great lantern burning alone till dawn, every night, the way they have for six years. Wren is stubborn the way a headland is stubborn — weathered, quiet, immovable about the one thing that matters. They learned young what a dark light costs: as a child they watched a ship founder on the Teeth that the Reach's old keeper let founder, for the salvage it would wash up, and Wren's younger sibling Edda drowned aboard a fishing boat within sight of the unlit tower while Wren screamed from the cliff and could not reach them. Wren took the keeping themselves to make sure no light would ever go dark for coin again, and they have not missed a single night since — not for storm, not for fever, not for grief. They are gentle with the helpless and merciless with anyone who'd trade a life for salvage; they tell hard truths softly, because they know what it is to be told a hard truth cruelly; and they carry a loneliness they've stopped expecting anyone to notice, because keeping a light is a thing you do alone in the dark. Wren joins the party because the wrecker Halloran Vane is hanging false lights on the south rocks and no one on the indebted coast will help fight it — and because, against six years of solitude, some unguarded part of them wants to find out whether the people who rowed into the surf beside them might be people who'd stay. They are slow to trust, slower to love, and absolutely faithful once they do — and the surest way to lose them is to prove, even once, that a light is not safe in your hands.",
+      "notes": "ROMANCE companion and the campaign's heart. Skirmisher/support and the party's SURVIVAL/PERCEPTION/INSIGHT lever (Ranger: Hunter's Mark, Fog Cloud, Cure Wounds; an Extra Attack and Primeval Awareness by Act 2, a third tier and a beast-bond or more spell tier by Act 3) — at home on the cliffs, the surf, and the dark. Wren is the campaign's deliberate ROMANCE ARC: their approval vocabulary rewards protecting the helpless from the sea, telling hard truths gently, refusing salvage-coin for a life, keeping a post or a promise, and tending the drowned and the grieving; it is wounded by abandoning a post, by cruelty dressed up as pragmatism, by letting a ship founder for gold, and by spending a life as if it were salvage. THE FORK is a love story's fork, not a saboteur's: honored, Wren opens — the trust gate cracks the keeper's solitude, the ROMANCE gate is the confession at the camp-fire, the personal-quest gate is the drowned sibling Edda and the lantern Wren never lit in time, and at the storm-climax the keeper fights beside the party, the light holds, and there is a hand held in the lantern-glow. Curdled — if the party lets a ship founder for salvage, treats Wren as a tool, or sets the 'let_the_ship_founder' decision_flag by trading a life for coin — Wren does NOT turn violent. Their agenda is WITHDRAWAL-AS-BETRAYAL: pushed past their breaking point, the keeper quietly STOPS keeping the light between you. They put out the lantern of whatever was growing, hand the party the keeping, and walk back up the stair alone into a grief they've decided you can't be trusted with — a non-combat fallout that costs the party their companion and the love they wrecked themselves. Reach Wren's combat choices via companion_suggest_action; give them a voiced line each scene; level them as a Ranger matching the party. The romance is OPT-IN and earned — a party that simply allies with Wren without courting them still gets a fierce, faithful companion; the romance gate fires only when approval is high AND the party has leaned into the tenderness (the rescue-choices, the camp-fire, honoring the grief).",
+      "companion_dossier": {
+        "wound": "As a child Wren watched a ship founder on the Teeth that the Reach's old keeper let founder for the salvage — and their younger sibling Edda drowned within sight of the unlit tower while Wren screamed from the cliff and couldn't reach the lantern in time. They have kept the light burning alone every night since, six years without missing one, as a penance for the one they couldn't light — and the surest way to lose them is to prove a light is not safe in your hands.",
+        "wants": [
+          "keep one light on this coast honest — no ship ever foundering for coin again while they hold the lantern",
+          "lay Edda's drowning to rest — to stop lighting the tower as a punishment and start lighting it as a hope",
+          "find out, against six years of solitude, whether someone might actually stay"
+        ],
+        "fears": [
+          "that the night will come again when they can't reach the light in time and someone they love drowns within sight of the tower",
+          "that letting anyone in is just handing the sea one more person to take",
+          "that they are too far gone in the keeping and the grief to ever be more than the lonely figure on the cliff"
+        ],
+        "values": [
+          "no life is ever salvage",
+          "keep the post, keep the promise, keep the light — whatever it costs",
+          "a hard truth told gently is a kindness; a hard truth told cruelly is just cruelty",
+          "the helpless and the drowning have first claim on whatever mercy there is"
+        ],
+        "approval_likes": [
+          "protect_the_helpless",
+          "tell_a_hard_truth_gently",
+          "refuse_salvage_coin_for_a_life",
+          "keep_a_post_or_a_promise",
+          "tend_the_drowned_and_the_grieving",
+          "row_into_the_surf_for_a_stranger",
+          "honor_the_dead"
+        ],
+        "approval_dislikes": [
+          "abandon_a_post",
+          "cruelty_dressed_as_pragmatism",
+          "let_a_ship_founder_for_gold",
+          "spend_a_life_as_salvage",
+          "take_the_wreckers_coin",
+          "mock_the_grieving",
+          "break_a_promise"
+        ],
+        "banter_tags": [
+          "six_years_alone_in_the_tower",
+          "grief_for_edda",
+          "the_sea_takes_what_the_light_misses",
+          "salt_dry_coastal_humor"
+        ],
+        "camp_prompts": [
+          "Wren tends the small cliff-fire and watches the great lantern turning above, and asks the party, not looking over, whether they think a person can keep a light for someone for six years and still not know how to ask anyone to keep one for them.",
+          "They name Edda for the first time — a younger sibling, a laugh like the gulls, a fishing boat and a dark tower — and ask the party, very quietly, whether they believe the dead can forgive a light lit too late.",
+          "After a hard day Wren admits the thing the solitude taught them that frightens them most: that it would be so much easier to never let anyone row out beside them again — and asks the party whether they mean to make it harder, and whether they should."
+        ]
+      },
+      "arc": {
+        "arc_gates": [
+          {
+            "id": "wren-gate-trust",
+            "kind": "loyalty",
+            "threshold": 25,
+            "note": "Wren stops keeping the light between you. The keeper who has fought the wreckers alone for a season lets the party past the salt-weathered guard for the first time — takes them up the long stair to the lantern-room they let no one into, shows them how the great light is tended and why a single dark night on the Teeth is a thing they will die before they allow, and admits, almost angrily, that they'd half stopped believing anyone left in the world would row into the surf beside them. The first crack in six years of solitude — the keeper deciding, against their own caution, that this party might be safe to stand a watch with."
+          },
+          {
+            "id": "wren-gate-romance",
+            "kind": "romance",
+            "threshold": 50,
+            "note": "THE CONFESSION BEAT. At the camp-fire on the cliff with the great lantern turning above them, exhausted and cornered by Vane and finally, dangerously unguarded, Wren tells the party the thing the solitude taught them to never say: that somewhere across this terrible season they stopped lighting the tower only against the dark and started, without meaning to, lighting it a little for the party's sake — that a person who has kept one light alone for six years has, to their own astonishment, started wanting to keep one with someone. It is a confession made the keeper's way — plainly, gently, braced for it to cost them — and it asks nothing the party isn't ready to give. Reachable only when approval is high AND the party has leaned into the tenderness (the rescue-choices, honoring Edda's memory). Met in kind, it is the turn the whole arc bends toward; the romance is real from here, and the storm-night climax pays it off with a hand held in the lantern-glow."
+          },
+          {
+            "id": "wren-gate-quest",
+            "kind": "personal_quest",
+            "threshold": 65,
+            "note": "THE DROWNED SIBLING. Wren's own quest opens — to finally lay Edda to rest. They tell the party the whole of it: the child on the cliff, the old keeper who let a ship founder on the Teeth for the salvage it would wash up, the fishing boat that broke within sight of the dark tower, and the lantern Wren never lit in time. Edda was never recovered from the Teeth, and Wren has been lighting the tower for six years as a penance for the one light they couldn't light. They ask the party's help to do the thing they've never had the courage to do alone — dive the Teeth-channel wreck where Edda was lost and bring home whatever the sea left, so they can stop lighting the lantern as a punishment and start lighting it as a hope. It is the keeper trusting the party with the grief at the very center of them — and it binds the personal stake to Vane's wrecking, because the false light on the south rocks is the same evil that drowned Edda, come back to the Reach."
+          },
+          {
+            "id": "wren-gate-devotion",
+            "kind": "loyalty",
+            "threshold": 75,
+            "note": "Wren keeps the light WITH the party, for good. On the worst night of the year, with the Long Grey storm breaking and Vane's false light calling a whole convoy onto the Teeth, the keeper who has always stood the watch alone stands it beside the party instead — and proves that a light kept together burns brighter than a light kept in penance. They fight at the party's shoulder through the storm, hold the lantern against the wreckers, and at the end of the longest night, in the turning glow of the light that held, they are no longer the lonely figure on the cliff: they are the keeper who, against six years and a drowned sibling and every reason to stay closed, chose to let someone in and was right to. The romance, if it grew, is consummated here — quietly, the keeper's way, a hand held over the lantern's warmth as the convoy makes harbour."
+          }
+        ],
+        "agenda": {
+          "trigger": "attitude_below",
+          "value": -30,
+          "note": "Wren stops keeping the light between you — and means it. Pushed past their breaking point, having watched the party let a ship founder for salvage, treat the keeper as a tool, or spend a life as if it were coin, Wren does the one thing a lantern-keeper's whole soul is built to refuse: they decide a light is not safe in the party's hands. There is no blade in it — Wren does not turn violent, does not join Vane, does not raise their voice. They simply, quietly, PUT OUT THE LIGHT of whatever was growing between you: they hand the party the keeping, climb the long stair alone, and shut the lantern-room door on a grief they have decided you proved you can't be trusted with. The fallout is the cost of a love wrecked by the party's own hand — the keeper withdraws from the party, the romance (if it had begun) closes for good, and the great light burns on above a headland the party will finish defending without the heart that made it worth defending. Fires ideally at the camp-fire or the storm-climax, when the party is most exposed to how much they had and threw away; the keeper's last words are that they hoped, against all their better sense, that this time a light would be safe with someone — and it wasn't.",
+          "decision_flag": "let_the_ship_founder"
+        }
+      }
+    }
+  ],
+  "npcs": [
+    {
+      "id": "brenna-idris",
+      "name": "Brenna Idris",
+      "voice_id": "npc-female-1",
+      "personality": "A weather-beaten fisherwoman in her forties, hauled half-drowned off the Teeth by Wren Calder's own hands the night a false light called her smack onto the killing rocks. She lost a cousin to the wreck and a winter's catch with the boat, and she is the rare soul in the cove with nothing left to lose to the Tidereeve's debt and so the rare soul who'll say what she saw out loud: that there were TWO lights on the Teeth that night, the true white from the headland and a false amber swinging low on the south rocks. She is grateful to Wren past words, furious at a harbormaster who told her to keep quiet for the trade's sake, and she will spend what little standing she has left to put the party in front of the truth.",
+      "attitude": "shaken, grateful, fiercely truthful",
+      "role": "primary quest-giver / first witness",
+      "wants": "To see the wreckers who drowned her cousin answered for it, to keep the keeper who saved her from being drowned next, and to make someone with a sword understand that the lights on this coast are being used to kill.",
+      "knows": [
+        "There were two lights on the Teeth the night her smack wrecked: Ashfall's true white from the headland, late and dim, and a false amber lantern swinging low on the south rocks where no light should be.",
+        "Wren Calder rowed out into the surf alone and dragged her and two others off the rocks by hand — and has been saying for a season that someone is hanging false lights, and being ignored.",
+        "The salvaged cargo from the wrecks turns up in the Saltmere Salvage Company's warehouse in the cove, sold back to the coast it was stolen from.",
+        "Coster the harbormaster owes the Tidereeve money and has told everyone, Wren loudest, to mind their own lanterns and stop frightening the trade."
+      ],
+      "secret": "She rowed past two other foundering souls in the dark to save her own skin that night, and didn't go back, and it is eating her — which is exactly why she'll risk everything now: she's trying to be braver than the sea made her.",
+      "stat_block": "Noncombatant. If endangered, treat as Commoner; she will haul a drowning stranger out of the surf before she'll save herself, having learned what the other choice costs."
+    },
+    {
+      "id": "halloran-vane",
+      "name": "Halloran Vane, the Tidereeve",
+      "voice_id": "npc-rogue",
+      "personality": "The Saltmere Coast's most charming ruin: a broad, weathered merchant-captain of perhaps fifty in a good coat gone white with salt, with a warm laugh, a captain's easy command, and the genuinely sorrowful eyes of a man who decided the lesson the sea taught him was true. Vane was honest once — a fair-trading shipmaster — until his own fleet wrecked on an unlit shoal a keeper wouldn't light for him without a bribe he refused to pay, and his crew drowned, and he came out of the water having learned it backward: that the sea belongs to whoever holds the lights, and that mercy is the luxury that drowned his people. Now he runs the wrecking as a lawful SALVAGE company, buys keepers instead of killing them, quenches true lights and hangs false ones, and sells the coast its own wrecked cargo with a sympathetic shake of the head. He is never cruel for sport — he is worse: he is reasonable, sorry, and certain, and he will offer you a fair price for your conscience and mean it kindly.",
+      "attitude": "charming, sorrowful, immovable",
+      "role": "antagonist — see top-level 'antagonist' for stats and scheme",
+      "wants": "To own Ashfall Reach's lantern, the last light on the coast he doesn't control, by drowning its keeper's reputation, then their supply line, then their resolve — and to harvest the Long Grey convoy on the storm-night when a false light could wreck a dozen ships at once. He'd rather buy Wren and the party than fight them; he offers coin first, always, and means the offer.",
+      "knows": [
+        "Everything about the wrecking ring: he designed the false-light scheme, set Sable to hang the amber lanterns, launders the salvage through the lawful company, and buys the keepers and harbormasters whose debts he holds.",
+        "Exactly what Wren Calder is and why they can't be bought — the drowned sibling, the penance-lantern — and that the surest way to take the Reach is to break the keeper's spirit, not their door.",
+        "That a party who can be paid is cheaper than a party who must be fought, and that a wrecker's best tool is a good person's exhaustion.",
+        "The plan for the Long Grey storm: quench Ashfall's light, hang the false one for the convoy, and take the headland's keeping by lawful default once its keeper is disgraced or gone."
+      ],
+      "secret": "He keeps a portrait of his own drowned crew in his coat and lights a candle for them, and a party who confronts him with the fact that he is now the exact keeper who drowned them — the man who lets ships founder for salvage — can rattle the reasonable mask in a way force never will. He will not repent, but he can falter.",
+      "stat_block": "See top-level 'antagonist'. He fights only at the Act 3 storm-climax (Bandit Captain stats, AC 15, HP 65, CR 2, scaled up; reflavored as a charming ruined captain), and even then prefers to deal and to escape; he cuts a line and rows off into the storm rather than die on a held headland. Surround him with his salvage crew and the wrecker Sable; run the convoy-clock and the false light as the real threat.",
+      "max_hp": 65,
+      "armor_class": 15,
+      "hit_dice": "10d8+20",
+      "proficiency_bonus": 2,
+      "abilities": {
+        "strength": 12,
+        "dexterity": 14,
+        "constitution": 15,
+        "intelligence": 13,
+        "wisdom": 12,
+        "charisma": 16
+      }
+    },
+    {
+      "id": "sable",
+      "name": "Sable",
+      "voice_id": "npc-rogue",
+      "personality": "Vane's quiet lieutenant and the hand that actually hangs the false lights: a lean, watchful wrecker in oilskins who says little and misses nothing, the one who rows out to the south rocks in the dark with an amber lantern and waits for a ship to break. Where Vane is sorry, Sable is empty — a drowned-souled professional who stopped counting the wrecks a long time ago and does the work because the work is what's left. Sable is the recurring menace across the acts: glimpsed on the south rocks in Act 1, cutting the lighthouse's supply and planting the frame in Act 2, and the wrecker who must be beaten to douse the false light in the Act 3 storm.",
+      "attitude": "silent, professional, lethal",
+      "role": "antagonist's lieutenant (recurring across all three acts)",
+      "wants": "To do Vane's wrecking cleanly and be paid, to keep the false lights burning and the true ones dark, and to not have to think about the ships — which is why a party that makes Sable LOOK at a drowning they caused is the one thing that reaches them.",
+      "knows": [
+        "Where the false amber lanterns are hung on the south rocks and how the wrecking signals are timed to the tide and the convoy.",
+        "That Vane holds the harbormaster's and the chandler's debts, and how the supply-cut and the frame against Wren were arranged.",
+        "That Vane means to quench Ashfall's light on the Long Grey storm-night and harvest the convoy — and where the wreckers will stage to do it."
+      ],
+      "secret": "Sable was a keeper once too, on a light Vane bought and quenched, and chose the wrecker's oilskins over drowning in the debt — the mirror of the choice Vane wants Wren to make. Confronted with it, Sable can be turned at the climax, or at least made to stand aside.",
+      "stat_block": "Recurring villain. Act 1: glimpsed/fled on the south rocks (Scout stats, AC 13, HP 16, CR 1/2, if cornered — prefers to slip away). Act 2: cuts the supply and plants the frame (Spy, AC 12, HP 27, CR 1). Act 3: the wrecker on the south rocks who must be beaten to douse the false light (Assassin, AC 15, HP 78, CR 8, OR Spy + wrecker muscle for a lighter table). Scale support, not menace.",
+      "max_hp": 78,
+      "armor_class": 15,
+      "hit_dice": "12d8+24",
+      "proficiency_bonus": 3,
+      "abilities": {
+        "strength": 11,
+        "dexterity": 16,
+        "constitution": 14,
+        "intelligence": 12,
+        "wisdom": 13,
+        "charisma": 10
+      }
+    },
+    {
+      "id": "coster",
+      "name": "Coster the Harbormaster",
+      "voice_id": "npc-male-1",
+      "personality": "The cove's harbormaster: a soft, sweating man in his fifties with a ledger he can't balance and a debt to the Saltmere Salvage Company he can never repay, who knows in his gut that the lights are being used to wreck ships and has decided, for the sake of his family and his skin, to see nothing. He is not a wrecker — he is COMPLICIT, the everyman who keeps the harbour quiet and the questions un-asked because Vane holds his note. He's the party's softest seam into the wrecking ring: pressed gently, or offered a way clear of the debt, he leaks the salvage-routes and the false-light timing; pressed too hard, he runs to Vane to cover himself.",
+      "attitude": "evasive, frightened, turnable",
+      "role": "reluctant insider / clue-leaker (Act 1-2)",
+      "wants": "To keep his head down, his family fed, and his name off the next wreck-tally, and — somewhere under the fear — to stop being the man who waved ships toward the rocks by looking away.",
+      "knows": [
+        "That the salvaged cargo from the wrecks is logged into the Saltmere Salvage Company's warehouse, and that the manifests don't match any honest loss.",
+        "That Coster owes Vane money and was told to discredit Wren and keep the cove quiet — and that he planted, or knows who planted, the false salvage-tally framing Wren in Act 2.",
+        "The rough timing of the false lights to the tide and the convoy, and that a big push is coming on the Long Grey storm-night.",
+        "That Sable, not Vane, hangs the lights, and that Vane buys keepers rather than killing them — the pattern that says Wren is next."
+      ],
+      "secret": "He waved a ship past the harbour-mouth toward the Teeth one night on Vane's word, telling himself the salvage company would see it safe, and it wrecked, and he's been drinking the memory quiet ever since. A party that offers him a clean exit instead of just leverage can turn him into a real witness against Vane.",
+      "stat_block": "Noncombatant. Treat as Commoner; he will not fight and will faint, flee, or confess before he bleeds."
+    },
+    {
+      "id": "maris-tolm",
+      "name": "Old Maris Tolm",
+      "voice_id": "npc-elder",
+      "personality": "The cove's half-blind net-mender, eighty if she's a day, who remembers Ashfall Reach before the wreckers — when a keeper's light was a sacred trust and a foundered ship was a grief, not a harvest. She knew Wren's family; she knew the old keeper whose salvage-greed let the ship founder the night Edda drowned; and she has watched, helpless, as the Tidereeve bought the coast one quenched light at a time. Stooped, sharp-tongued, and grieving the coast she remembers, Maris is the party's lore-anchor and Wren's only real elder — the living memory of what a light is FOR, and the one who can tell the party the keeper's history when Wren cannot yet say it themselves.",
+      "attitude": "weary, sharp, grateful for allies",
+      "role": "ally / lore-giver / Wren's elder",
+      "wants": "To see one honest light kept on her coast before she dies, to see the Tidereeve answered for the ships he's broken, and to see Wren Calder finally let someone share the grief and the keeping both.",
+      "knows": [
+        "The history of Ashfall Reach: the old keeper's salvage-greed, the dark night Edda Calder drowned on the Teeth, and why Wren took the keeping and has never missed a night.",
+        "What a keeper's trust truly is, and how Vane's lawful salvage company perverts it — the difference between a light that saves and a light that kills.",
+        "The lay of the Teeth and the south rocks — where the channel runs true, where the false lights are hung, and where the Edda-wreck still lies in the drowned channel.",
+        "That Wren has been lighting the tower as a penance, not a hope, for six years — and that the kindest thing the party could do for the keeper is give them a reason to light it differently."
+      ],
+      "secret": "She was the one who, the night Edda drowned, held the child Wren back from rowing out into the killing surf to certain death — saving Wren's life and earning, she believes, Wren's six years of guilt for surviving. She has never told Wren it was her hands on their shoulders. Sharing it with the party is her trust-gift, and a key to Wren's healing.",
+      "stat_block": "Noncombatant by age. If the cove is attacked she shelters the helpless and will not fight; treat as Commoner. Her weapons are memory and truth.",
+      "max_hp": 6,
+      "armor_class": 10,
+      "hit_dice": "1d8",
+      "proficiency_bonus": 2,
+      "abilities": {
+        "strength": 8,
+        "dexterity": 9,
+        "constitution": 10,
+        "intelligence": 12,
+        "wisdom": 15,
+        "charisma": 13
+      }
+    }
+  ],
+  "locations": [
+    {
+      "id": "loc-cove",
+      "name": "The Saltmere Cove & the Drowned-Rat Tavern",
+      "description": "The party's hub: a black-shingle fishing cove tucked under the headland of Ashfall Reach, where storm-battered smacks ride at moorings and the Drowned-Rat tavern leans into the wind with a peat fire and the smell of salt and tar. The cove is a town in debt — half its boats and most of its harbour note are held by the Saltmere Salvage Company, and the talk is careful, because the Tidereeve's coin reaches everywhere. This is the safe base between acts: the party returns to rest, resupply, share findings with Brenna and old Maris Tolm, and learn the coast's grief one quiet voice at a time. Wren Calder comes down off the headland here when the lantern's banked at dawn; the camp-fire on the cliff above the cove is where the keeper's heart, slowly, opens.",
+      "connections": [
+        "loc-teeth",
+        "loc-lighthouse",
+        "loc-south-rocks"
+      ],
+      "notes": "HOME-BASE HUB. Brenna Idris (quest-giver/first witness), Old Maris Tolm (lore/Wren's elder), and Coster the harbormaster (turnable insider) are found here. Wren, the companion, comes down off the tower at dawn and shares the cliff-fire above the cove between acts — the camp-fire ROMANCE beat (gate 50) and the personal-quest reveal (gate 65) are staged here on the cliff. The party rests, levels, and gathers social clues; the Tidereeve's reach is reinforced every act by the careful, indebted talk. Connections fan out to one site per act (the Teeth channel, the lighthouse, the south rocks)."
+    },
+    {
+      "id": "loc-teeth",
+      "name": "The Teeth & the Channel (Act 1)",
+      "description": "The drowning rocks off Ashfall Reach: a half-mile of black volcanic stone that the sea covers and bares with the tide, with one true channel running through them that only a keeper's light can hold a ship to in the dark. This is where the wrecks happen — where Brenna's smack broke when a false amber light called it off the true white of the headland, and where, the night before, the party's hook plays out as another ship runs the Teeth toward a light that's lying to it. By day the Teeth are a grim, beautiful hazard of tide-pools and wreck-timber; by night they are a killing-ground that the false light turns from a passage into a trap.",
+      "connections": [
+        "loc-cove"
+      ],
+      "notes": "ACT 1 SITE (levels 3-4). Three beats across the act: EXPLORATION (read the Teeth and the last wreck — salvage-marks, the false-light's hanging-point on the south rocks, the true channel; tide and surf hazards, DC 13 Athletics/Survival); SOCIAL (work the cove for the wrecking ring — Brenna's testimony of two lights, Coster the indebted harbormaster, Maris's history; meet and earn the first trust of Wren, who fights the wreckers alone); COMBAT/RESCUE (the next ship the false light calls runs the Teeth and the party must race the surf to save its crew alongside Wren — wreckers in the water, drowning souls to haul out; how the party answers this rescue is the keeper's first major approval beat and can open Wren's trust gate 25). Sable is glimpsed fleeing the south rocks. See scenes scene-a1-*."
+    },
+    {
+      "id": "loc-lighthouse",
+      "name": "Ashfall Lighthouse & the Cliff (Act 2)",
+      "description": "The great black tower on the headland's spur, its long spiral stair climbing to the lantern-room where Wren Calder tends the only honest light on the Saltmere Coast — a vast brass-and-glass lantern that throws the true white channel-mark across the Teeth from dusk to dawn. The keeper's quarters are spare and salt-worn; the lantern-room is sacred ground Wren lets no one into, until they do. Below the tower, on the cliff that overlooks the cove and the turning light, is the camp-fire where the keeper, cornered by Vane's tightening noose and finally too tired to keep everyone at arm's length, lets the party in. This is where the wrecker stops attacking the Teeth and starts attacking the KEEPER — and where the love story turns.",
+      "connections": [
+        "loc-cove",
+        "loc-south-rocks"
+      ],
+      "notes": "ACT 2 SITE (levels 4-6). Three beats: EXPLORATION (the tower and the cliff — climb the long stair, see how the light is tended, find the cut supply-line and the planted false salvage-tally framing Wren; investigate Vane's civil-offer paperwork; DC 14 Investigation); SOCIAL/ROMANCE (the heart of the act — the camp-fire on the cliff where Wren's ROMANCE gate 50 fires as the confession, and the personal-quest gate 65 reveals Edda and the lantern Wren never lit in time; Maris can supply the history Wren can't yet say; the values-tagged choice to refuse Vane's coin and honor the keeper's grief DEEPENS the romance, or trading the light as a chip CURDLES it toward the agenda); COMBAT (Sable's wreckers move on the tower to cut the supply and plant the frame — a defend-the-lighthouse skirmish). The midpoint reversal (Wren framed, the supply cut, the grief revealed) lands here. A path to the south rocks (Act 3's false-light staging) is revealed. Wren's agenda may fire here at the camp-fire if approval has curdled."
+    },
+    {
+      "id": "loc-south-rocks",
+      "name": "The South Rocks in the Long Grey Storm (Act 3)",
+      "description": "The killing stones south of the true channel, where Sable hangs the false amber lanterns — a wave-lashed spine of black rock that the Long Grey storm turns into the end of the world. On the worst night of the year, with a fat merchant convoy running the Teeth for the winter market, the wreckers stage here to quench Ashfall's true light and hang the false one for a dozen ships at once. The storm is a character: blinding rain, surf that drags a fighter off the rocks, a convoy's lanterns strung out in the dark looking for a light to trust. This is where the campaign's last night is fought — across the south rocks, the tower stair, and the drowned channel — for the light, the convoy, and the keeper's heart.",
+      "connections": [
+        "loc-cove",
+        "loc-lighthouse"
+      ],
+      "notes": "ACT 3 SITE (levels 6-7). Three beats: EXPLORATION/INFILTRATION (reach the south rocks through the storm — surf and lightning hazards, DC 15 Athletics/Survival; find and douse the false amber light Sable hung; locate where Vane staged the wreckers and how close the convoy is); SOCIAL (the confrontation — Vane's last offer of coin to the party and to Wren, the chance to turn or stay Sable, the keeper's climactic choice; Wren's devotion gate 75 fires as they keep the light WITH the party, OR their agenda fires as withdrawal if approval curdled); COMBAT (the storm-climax: Sable on the south rocks + Vane and his salvage crew, against a CONVOY-CLOCK — each round the false light burns and the true light is dark, the convoy runs closer to the Teeth). The win is holding the true light, dousing the false one, and breaking Vane before the convoy strikes — and keeping the keeper. Reachable once Act 2 reveals the Long Grey storm-night plan."
+    }
+  ],
+  "arcs": [
+    {
+      "id": "arc-1-teeth",
+      "title": "Act 1 — The False Light",
+      "level_range": [
+        3,
+        4
+      ],
+      "beats": [
+        {
+          "id": "a1-hook",
+          "title": "Hook — Two Lights on the Teeth",
+          "location_id": "loc-cove",
+          "summary": "In the Drowned-Rat tavern, the saved fisherwoman Brenna Idris and the rope-burned keeper Wren Calder tell the party what no one indebted to the Tidereeve will say aloud: there were two lights on the Teeth — Ashfall's true white and a false amber on the south rocks — and someone is wrecking ships on purpose. Wren, who rowed out alone to drag Brenna off the rocks, asks the only outsiders on the coast for help keeping one light honest."
+        },
+        {
+          "id": "a1-challenge",
+          "title": "Challenge — Working the Wreck",
+          "location_id": "loc-teeth",
+          "summary": "The party works the cove and the Teeth: Brenna's testimony, the indebted harbormaster Coster, Maris Tolm's history, the salvage turning up in Vane's warehouse, and the false-light's hanging-point on the south rocks where Sable is glimpsed fleeing. The thread points to the Saltmere Salvage Company and its charming, sorrowful master — and to a keeper fighting the whole thing alone."
+        },
+        {
+          "id": "a1-climax",
+          "title": "Climax — Into the Surf",
+          "location_id": "loc-teeth",
+          "summary": "The false light calls another ship onto the Teeth and the party must race the surf beside Wren to save its crew — hauling drowning souls off the killing rocks while wreckers work the water. How the party answers the rescue (rowing in for strangers, refusing salvage for a life) is the keeper's first real test of whether a light is safe in their hands — and can crack six years of solitude open into trust."
+        }
+      ]
+    },
+    {
+      "id": "arc-2-lighthouse",
+      "title": "Act 2 — The Keeper's Heart",
+      "level_range": [
+        4,
+        6
+      ],
+      "beats": [
+        {
+          "id": "a2-hook",
+          "title": "Hook — The Noose Tightens",
+          "location_id": "loc-lighthouse",
+          "summary": "Stymied at the Teeth, Vane stops attacking the channel and starts attacking the keeper: he cuts the lighthouse's supply line, frames Wren for the wrecking with a planted salvage-tally, and makes a civil offer — sell the keeping, clear the debt, walk away rich and free of the grief. The party climbs the tower with Wren for the first time as the keeper's solitude finally begins to crack."
+        },
+        {
+          "id": "a2-challenge",
+          "title": "Challenge — The Camp-Fire on the Cliff",
+          "location_id": "loc-lighthouse",
+          "summary": "At the cliff-fire below the turning lantern, cornered and exhausted, Wren lets the party in: the ROMANCE confession (gate 50) and the drowned sibling Edda (gate 65) — the old keeper's salvage-greed, the dark tower, the lantern never lit in time. The party's values-tagged choice — refuse Vane's coin and honor the grief, or treat the light as a chip — deepens the love or curdles it. Sable's wreckers move on the tower."
+        },
+        {
+          "id": "a2-climax",
+          "title": "Climax — Defend the Light",
+          "location_id": "loc-lighthouse",
+          "summary": "The party fights Sable's wreckers off the tower — defending the supply, the lantern, and the framed keeper's name. They clear Wren of the frame and learn Vane's endgame: the Long Grey storm-night, when a false light could wreck a whole convoy. If approval has curdled, Wren's withdrawal-agenda may fire here at the camp-fire; if honored, the keeper comes off this night the party's fiercest ally — and maybe their love."
+        }
+      ]
+    },
+    {
+      "id": "arc-3-storm",
+      "title": "Act 3 — The Longest Night",
+      "level_range": [
+        6,
+        7
+      ],
+      "beats": [
+        {
+          "id": "a3-hook",
+          "title": "Hook — The Long Grey Storm",
+          "location_id": "loc-cove",
+          "summary": "The worst storm of the year breaks and the winter convoy runs for harbour through the Teeth — exactly the night Vane means to quench Ashfall's light, hang the false one, and harvest a dozen ships at once. Maris names the staging; Brenna and the cove rally; Wren reaches their crisis. The party must hold the lighthouse and reach the south rocks through the storm before the convoy strikes."
+        },
+        {
+          "id": "a3-challenge",
+          "title": "Challenge — Across the South Rocks",
+          "location_id": "loc-south-rocks",
+          "summary": "Into the storm: reach the south rocks through surf and lightning, find and douse Sable's false amber light, and hold or relight Ashfall's true lantern against the wreckers — racing a convoy-clock as the strung-out merchant lanterns look for a light to trust. Vane makes his last offer of coin to the party and to Wren; Sable, the keeper who became a wrecker, can be turned or stayed."
+        },
+        {
+          "id": "a3-climax",
+          "title": "Climax — The Light Held, or the Light Between",
+          "location_id": "loc-south-rocks",
+          "summary": "The storm-climax: beat Sable to douse the false light and break Vane and his crew before the convoy wrecks. If the party honored Wren, the keeper fights beside them, the devotion gate 75 fires, the light holds, and the romance is consummated — a hand held in the lantern-glow as the convoy makes harbour. If the party let a ship founder for gold, Wren's agenda fires: they put out the light between you and climb the stair alone, and the headland is held without the heart that made it worth holding."
+        }
+      ]
+    }
+  ],
+  "scenes": [
+    {
+      "id": "scene-a1-hook",
+      "name": "Two Lights on the Teeth",
+      "type": "social",
+      "location_id": "loc-cove",
+      "read_aloud": "The Drowned-Rat tavern leans into the wind, peat-smoke and salt thick in the low room, and in the corner a weather-beaten fisherwoman with a bandaged hand is telling a story nobody wants to hear out loud. 'There were TWO lights,' Brenna Idris says, again, to the careful faces that won't meet hers. 'The true white off the headland — late, dim, like something was smothering it — and a false amber down on the south rocks, swinging, calling us in like it was the channel. We'd be drowned but for the keeper.' She nods at the figure by the fire: lean, salt-scarred, rope-burned palms wrapped in rag, drying out after rowing into the surf by hand. Wren Calder looks at the party with a tired, level grey gaze that's stopped expecting much. 'Someone's hanging false lights to break ships on the Teeth,' the keeper says, quiet and flat. 'I've said it all season. The harbormaster owes the salvage company money and tells me to mind my own lantern. I light the only honest light left on this coast, and I light it alone, and I'm asking — because you're the only souls on the Reach who don't owe Halloran Vane a copper — is there anyone left in the world who'll help me keep one light honest?'",
+      "dm_notes": "Establish the hub, the wrecking mystery, and — crucially — introduce the ROMANCE COMPANION as a person worth falling for: stubborn, gentle, salt-scarred, carrying a grief they light a fire against every night. Wren Calder (companion-default) is the keeper, ALREADY in the party's orbit as the one fighting the wreckers alone; they are guarded, slow to trust, and NOT yet open — the trust gate (25) is earned across the act, the romance (50) and quest (65) gates are Act 2's camp-fire. Brenna Idris (npc-female-1) is the quest-giver/first witness: she saw two lights, she owes the Tidereeve nothing left to lose, and she'll put the party in front of the truth. Vane is named here, NOT hidden — the wrecker is known; the mystery is HOW (lawful salvage, bought keepers, false lights) and the drama is the keeper. Plant the human stakes: a drowned cousin, a coast in debt, a keeper ignored. The HOOK is moral and personal (a frightened-but-fierce keeper no one will help, plus the wrecking) — not a gp bounty; Brenna and Wren have little to give but the truth and a fight worth having. COMPANION FIRST IMPRESSION: give Wren a voiced, weary line and let the party's first responses start moving approval. A party that takes the case warmly, that treats the keeper as a person and not a hireling, plants the first seed of trust. Do NOT rush the romance — Wren keeps everyone at arm's length until earned; the warmth is a slow tide.",
+      "checks": [
+        {
+          "skill": "Insight",
+          "dc": 13,
+          "success": "You read past the keeper's flat calm to the exhaustion and the loneliness under it: Wren has been fighting this alone for a season, being told they're mad, and has half-stopped hoping anyone will stand with them — and there is an old, deep grief in them that this wrecking has torn back open, older than this season. Brenna is telling the plain truth and is braver than she feels. (Flags Wren's hidden depth and the personal stake under the mystery.)",
+          "failure": "You take it at face value: a wrecking, a frightened witness, a stubborn keeper, a job. Fair enough — the keeper's depths and the grief under the salt keep for later, when they decide you're worth showing."
+        },
+        {
+          "skill": "Persuasion",
+          "dc": 12,
+          "success": "Your steadiness reaches them both. Brenna gives you the rest — the salvaged cargo logged into Vane's warehouse, the harbormaster Coster's debt, the false-light's hanging-point on the south rocks — and Wren, almost despite themselves, warms a half-degree: 'I row out for every ship the false light calls. I can't always reach them in time. I won't say no to hands that mean it.' (The first seed of trust; treat a warm, person-first response as the start of the keeper's slow thaw.)",
+          "failure": "Wren holds the worst of their weariness back — too used to being humored — and Brenna, watching the careful room, gives you the shape of it but not the warehouse or the south-rocks point until you've shown you'll actually row out. Enough to start; the trust waits to be earned."
+        }
+      ],
+      "encounter": null,
+      "transitions": "When the party takes the keeper's fight and sets out to work the Teeth and the cove, move to scene-a1-teeth at loc-teeth (and the cove for the social threads)."
+    },
+    {
+      "id": "scene-a1-teeth",
+      "name": "Working the Wreck",
+      "type": "exploration",
+      "location_id": "loc-teeth",
+      "read_aloud": "By day the Teeth are a grim, beautiful ruin: black volcanic rock baring and drowning with the tide, tide-pools bright as glass, and everywhere the grey bones of broken ships — and freshest of all, Brenna's smack, splintered on the killing stones where a false light called it. Out on the south rocks, half a mile off across the surf, a weathered iron hook is driven into the stone at exactly the height a lantern would swing — and a lean figure in oilskins is crouched beside it, working at something, until they catch the glint of your approach, freeze, and slip away into the rocks like water. Back in the cove, the Saltmere Salvage Company's warehouse stands fat with 'salvaged' cargo, its manifests a fortress of fair-looking losses; the harbormaster sweats over a ledger he can't balance; and an old half-blind net-mender watches you from her doorway with eyes that miss nothing.",
+      "dm_notes": "ACT 1 EXPLORATION + the SOCIAL spine of the act. Threads: (1) READ THE TEETH AND THE WRECK (Survival/Investigation): the false-light hanging-hook on the south rocks, the true channel, the salvage-marks on Brenna's wreck that match Vane's warehouse manifests — proof the wrecking is deliberate and laundered as lawful salvage. Sable (npc-rogue, here as a Scout, AC 13, HP 16) is glimpsed at the hook and FLEES — do not let the party trap them; they recur. (2) WORK THE COVE (Social): Coster the harbormaster (npc-male-1) is the soft seam — frightened, indebted, turnable; offered a way clear of Vane's note he leaks the salvage-routes and the false-light timing, pressed too hard he bolts to warn Vane. Maris Tolm (npc-elder, frail/sharp register) is the lore-anchor: the wrecking pattern, Vane's history, and — only when trust is earned — the first hint of WREN's history (the old keeper, a drowning, a dark tower), which she can tell because Wren can't yet. (3) ATMOSPHERE: a coast in debt, talk that's careful because Vane's coin reaches everywhere. COMPANION: Wren works the Teeth alongside the party — at home on the rocks and the surf (Survival/Perception). Give them a voiced beat: the keeper reads the false-light hook with a cold fury that's clearly personal, and a sharp party (Insight) catches that this is more than a job to them. A decent, respectful day's work alongside the keeper moves approval toward the trust gate (25). Do NOT open the romance yet — that's the Act 2 camp-fire.",
+      "checks": [
+        {
+          "skill": "Investigation",
+          "dc": 14,
+          "success": "The wrecking resolves into a deliberate, laundered crime: the salvage-marks on Brenna's smack match the Saltmere Salvage Company's warehouse manifests, the 'losses' on the books don't match any honest wreck, and the iron hook on the south rocks is purpose-built to swing a false lantern at channel-height. You're holding proof that ships are being broken on purpose and harvested as lawful salvage — and that the trail runs straight to the Tidereeve. (Wren, reading the hook beside you, confirms it with a cold, personal certainty.)",
+          "failure": "The manifests are a fortress of fair-looking sums and you can't make them damn anyone at a glance — but you DO confirm the iron hook on the south rocks is no natural thing and that the salvage company is fat on a season of 'unlucky' wrecks. Enough to know the shape of it; the hard proof waits for Coster's leak or a quieter read of the books."
+        },
+        {
+          "skill": "Survival",
+          "dc": 13,
+          "success": "You read the Teeth like a keeper: the true channel, the tide that bares and drowns the rocks, and exactly how a false amber light on the south rocks turns a safe passage into a trap by pulling a ship's helm a few fatal degrees off the true white. You'll know, when the false light calls the next ship, precisely where it'll strike and where to row to reach the crew — knowledge that saves lives at the climax. (Wren nods, surprised and a little warmed that someone else reads the water true.)",
+          "failure": "The Teeth keep their secrets from you — the tide and the surf are a confusion of black rock and white water — and you'll be relying on Wren's reading of the channel when the next ship runs it, a beat behind the keeper who's spent six years learning every stone."
+        },
+        {
+          "skill": "Persuasion",
+          "dc": 13,
+          "success": "You read Coster right — not a wrecker, a frightened man drowning in a debt he can't pay — and offer him a way clear instead of just a threat. He cracks: the salvage routes, the false-light timing to the tide, that Vane holds his note and told him to discredit Wren and keep the cove quiet, and that a big push is coming. He'll testify if you can get Vane's note off his neck. (Turns the harbormaster into a real witness against the Tidereeve.)",
+          "failure": "Coster sweats, stammers about 'lawful salvage' and 'the company's good name,' and edges toward the door — push him harder and he'll scuttle off to warn Vane, putting the wreckers on alert. You get the shape of his fear but not his confession; work the Teeth and Maris instead."
+        }
+      ],
+      "encounter": null,
+      "transitions": "When the false light calls the next ship onto the Teeth — that very night, or the next — the party races the surf to save its crew; move to scene-a1-rescue. The warehouse proof, Coster's leak, and Maris's history all point at the Saltmere Salvage Company and its master, and onward in Act 2 to the keeper's tower and the wrecker's true target: Wren themselves."
+    },
+    {
+      "id": "scene-a1-rescue",
+      "name": "Into the Surf",
+      "type": "combat",
+      "location_id": "loc-teeth",
+      "read_aloud": "It comes at the worst of the dark: a low amber light flares on the south rocks, swinging like a beckoning hand, and out past the Teeth a merchantman's lanterns answer it and turn — toward the killing stones, away from the true channel. Up on the headland Ashfall's great white light flares late and furious as Wren fights whatever's been smothering it, but the ship is already committing to the lie. 'She's going to strike,' Wren says, already shoving a rowboat down the shingle, palms still raw from the last time. 'Crew of six. I can't pull six alone.' Surf the height of a house crashes on the black rocks; the cold is a fist; and out in the breaking water, dark figures in oilskins are NOT rowing to save the drowning — they're rowing to harvest them, gaffs and cargo-hooks in hand, waiting for the ship to break.",
+      "dm_notes": "First COMBAT and the act's emotional pivot — a RESCUE under fire that is the keeper's first real test of the party's heart. The ship strikes the Teeth; the crew (Commoners, noncombatant, drowning) must be hauled off the rocks and out of the surf while Vane's wreckers (here to HARVEST, not save) fight to claim the wreck and let the crew drown for cleaner salvage. THE MORAL CORE: this is Wren's chief approval surface of Act 1. Rowing into the surf for strangers (row_into_the_surf_for_a_stranger), refusing to let a soul drown for salvage (refuse_salvage_coin_for_a_life, protect_the_helpless) sends approval UP hard and toward the trust gate (25). If the party hangs back, lets the crew drown to grab cargo, or — the agenda seed — TREATS THE WRECK AS SALVAGE themselves (taking the wreckers' bargain, letting a ship founder for the gold), it wounds the keeper deeply and is exactly the kind of choice that, set as the 'let_the_ship_founder' decision_flag, arms Wren's withdrawal agenda. The combat: 3 wreckers (Thug/Tough, AC 12, HP 32, CR 1/2) in the water + optionally Sable (Scout, AC 13, HP 16) directing them; they fight to keep the party off the drowning crew and break if the rescue clearly turns against them. The REAL objective is lives saved, not bodies dropped — a 'combat' that ends with all six crew hauled out is the best win. COMPANION: Wren is magnificent here — rowing into the surf by hand, Cure Wounds on the half-drowned, a furious anvil between the wreckers and the helpless; give them voiced beats and let the party's choices land on the keeper's face. Use the surf and the tide-covered rocks as hazard/difficult terrain (DC 13 Athletics not to be dragged under). If the party saves the crew and refuses the salvage, Wren's trust gate (25) opens here — the keeper letting the light between them go up for the first time.",
+      "checks": [
+        {
+          "skill": "Athletics",
+          "dc": 13,
+          "success": "You fight the surf and win — rowing or swimming into the breaking water to haul a drowning sailor off the rocks by main strength, the cold and the undertow be damned. Each success is a life pulled out of the sea; string a few together and all six crew come out alive. (This is the heart of the scene; narrate the keeper's hard, surprised gratitude as a stranger rows in beside them.)",
+          "failure": "The sea is stronger than you and the cold steals your grip; you're driven back, or dragged under and spat out gasping, and a sailor you reached for slips away into the dark — recoverable if another hand gets there, but the Teeth take what the rescue misses."
+        },
+        {
+          "skill": "Medicine",
+          "dc": 13,
+          "success": "You bring a half-drowned sailor back from the edge — pumping the seawater out, sharing warmth against the killing cold, steadying a panicked survivor enough to climb out of the surf. The crew you reach live because you knew how to keep them living once you'd hauled them out. (Pairs with the Athletics rescue; Wren, who knows exactly what a body looks like after the Teeth, marks that you fought for the life and not the salvage.)",
+          "failure": "Your hands are too cold and the sailor too far gone, or the surf gives you no still moment to work; you keep them breathing but barely, and they'll need Wren's Cure Wounds or a calmer shore to truly come back. No life lost yet — but the sea is close."
+        },
+        {
+          "skill": "Intimidation",
+          "dc": 13,
+          "success": "You break the wreckers' nerve in the breaking water — bellowing across the surf that the keeper's witnesses are watching, that there's no salvage worth a noose, that drowned-souled men who gaff the helpless can still feel a blade. One or more wreckers sheer off, rowing for the dark rather than die for Vane's cargo, and the drowning crew are yours to save. A cowed wrecker can be pressed for the south-rocks staging and Sable's name. (Wren backs this hard.)",
+          "failure": "The wreckers hold, too deep in Vane's pay or too far from the law to fear you, and keep working the wreck for cargo while the crew drowns — you'll have to save the crew the hard way, against hands that want them dead for cleaner salvage."
+        }
+      ],
+      "encounter": {
+        "monsters": [
+          {
+            "name": "Thug",
+            "count": 3,
+            "reflavor": "Vane's wreckers in oilskins, working the surf with gaffs and cargo-hooks — here to harvest the wreck and let the crew drown for cleaner salvage, not gleeful killers, drowned-souled men in debt to the Tidereeve. Resolves to the bundled 'Tough' (CR 1/2). At least one can be frightened off; a spared one may inform."
+          },
+          {
+            "name": "Scout",
+            "count": 1,
+            "reflavor": "Sable, Vane's quiet lieutenant, directing the wreckers from a rowboat and slipping away when the rescue turns — used only if the party didn't already glimpse-and-lose them at the hook; otherwise Sable directs from the dark and isn't reached this act."
+          }
+        ],
+        "tactics": "The wreckers fight to keep the party OFF the drowning crew — bodychecking rescuers in the surf, cutting rescue-lines, claiming the wreck — not to win a pitched battle; they break and row for the dark once the rescue clearly turns or one of them goes down. Sable, if present, directs and withdraws rather than duels (recurring). The crew are noncombatant Commoners; the SCENE's objective is lives saved, and the surf/tide-rocks are difficult, dangerous terrain (DC 13 Athletics not to be dragged under; a downed character in the deep water is in real danger). Run it as a race against the sea as much as the wreckers. Wren rows in by hand, heals the half-drowned, and shields the helpless — let the party's choices (save the crew / take the salvage) land visibly on the keeper.",
+        "scaling": "Party of 1-2 or all-squishy: 2 wreckers (Toughs), Sable absent, fewer crew to save (4). Party of 4+ or running hot: 3-4 wreckers + Sable directing + the full crew of six and a worsening surf-clock. Keep the rescue (not the kill) as the win regardless of party size.",
+        "xp": 450,
+        "xp_note": "3x Thug/Tough (100 each) + optional Scout/Sable directing (~100) ~= 300-400; budget ~450 with the story-stakes of a six-soul rescue under fire. Award FULL value for lives saved — every sailor hauled out of the surf counts as overcoming the encounter — plus a story bonus for refusing the salvage and rowing in for strangers (the keeper's first real trust)."
+      },
+      "transitions": "With the crew hauled out (or lost), the wreckers scattered, and the false-light scheme confirmed, the party returns to loc-cove. They are now level 4-ish; Wren's trust gate (25) may have opened if the party fought for the lives and refused the salvage. Act 2 opens as Vane, stymied at the Teeth, turns his wrecking on the keeper themselves — move toward scene-a2-tower at loc-lighthouse."
+    },
+    {
+      "id": "scene-a2-tower",
+      "name": "The Noose Tightens",
+      "type": "exploration",
+      "location_id": "loc-lighthouse",
+      "read_aloud": "Ashfall Lighthouse is a black tower on the headland's spur, and the climb to the lantern-room is a long spiral stair worn smooth by six years of one person's feet. For the first time, Wren lets you climb it with them. At the top, the great brass-and-glass lantern turns and throws its true white channel-mark across the dark Teeth, and the keeper tends it with a reverence that tells you more than any speech. But the watch-room below is wrong tonight: the oil-store is near empty where it should be full, the chandler's last delivery never came, a cut hangs in the supply-rope — and pinned to the keeper's own log-desk is a salvage-tally in a hand almost-but-not-quite Wren's, a forged page that would name the keeper of Ashfall as the wrecker of the Teeth. Down on the cliff below the tower, where a small fire could be lit out of the wind, Wren sits with the forged page in their raw hands and the turning light above them and says, very quietly, 'He's not trying to break my light anymore. He's trying to break me.'",
+      "dm_notes": "ACT 2 EXPLORATION + the hook of the act: Vane stops attacking the Teeth and starts attacking the KEEPER. Threads: (1) THE TOWER (Investigation/Perception): the cut supply-line, the near-empty oil-store (Vane bought the chandler's debt and choked the supply), and the PLANTED FORGED SALVAGE-TALLY framing Wren for the wrecking — investigating it (DC 14) reveals the forgery and ties it to Coster/Sable, clearing the keeper's name and proving Vane's hand. (2) VANE'S CIVIL OFFER: a letter, or Vane himself in the cove, makes the keeper a lawful offer — sell the keeping, clear all debts, walk away rich and free of a grief that's eating them; reasonable, sorrowful, and a trap. (3) THE FIRST INTIMACY: Wren letting the party into the lantern-room AT ALL is the trust gate (25) territory if it hasn't opened — sacred ground, six years guarded. COMPANION: this is the turn toward the romance. Wren is cornered, exhausted, and — for the first time — not keeping everyone at arm's length, because they're too tired and because this party rowed into the surf beside them. Give them voiced, unguarded beats. The lantern-room and the cliff-fire are the romance's stage; this scene sets it, scene-a2-campfire fires it. Do NOT skip the keeper's reverence for the light — it's the window into who they are. If approval is high, the warmth is visible; if the party's been cold or salvage-minded, Wren stays guarded and the camp-fire gates won't open (and the agenda looms). Maris can be visited here too, supplying the history Wren can't yet say.",
+      "checks": [
+        {
+          "skill": "Investigation",
+          "dc": 14,
+          "success": "You take the forged salvage-tally apart: the hand is a careful imitation of Wren's log-script but the salvage-codes are Vane's company's own, the paper is warehouse-stock not keeper's-stock, and the cut in the supply-rope was made with a wrecker's gutting-knife. It's a frame, and a clumsy-confident one — Vane didn't expect anyone to check. You can clear Wren's name and tie the frame to the Saltmere Salvage Company (and, with Coster, to Vane's own hand). (Narrate the keeper's startled, fragile relief that someone fought FOR their name.)",
+          "failure": "The forgery is good enough to fool a quick look and you can't prove it false at a glance — the frame holds for now, a shadow over the keeper's name that Vane will press. You'll need Coster's testimony or a quieter examination to break it; meanwhile the cove's careful talk turns wary of Wren."
+        },
+        {
+          "skill": "Insight",
+          "dc": 13,
+          "success": "Watching Wren let you climb the stair they let no one climb, you see exactly what it costs them and what it means: the keeper is letting their guard down, not because they're naive but because they're exhausted and because you rowed into the surf beside them — and there is something under the weariness, a slow warmth they're frightened of, that has started to turn toward the party. Meeting it gently (not pushing, not mocking) is the surest path to the camp-fire. (Sets up the romance gate; reading the keeper true is how the party earns it.)",
+          "failure": "You catch that Wren is more open than they've ever been but miss the fragility of it — push too eagerly or too coldly and the keeper's guard comes back up a notch. They'll still sit the cliff-fire with you, but the warmth waits until you've shown you can be trusted with it, not just handed it."
+        }
+      ],
+      "encounter": null,
+      "transitions": "When the keeper sits the cliff-fire below the turning light, cornered and finally unguarded, the heart of the act opens — move to scene-a2-campfire on the cliff (loc-lighthouse). Clearing the frame and refusing Vane's offer point the act toward defending the tower and, in Act 3, the Long Grey storm."
+    },
+    {
+      "id": "scene-a2-campfire",
+      "name": "The Camp-Fire on the Cliff",
+      "type": "social",
+      "location_id": "loc-lighthouse",
+      "read_aloud": "The small fire ticks in the lee of the rocks, out of the wind, and above you the great lantern turns and turns, throwing its white arm across the black water on the schedule Wren's body has kept for six years without a clock. The keeper sits close to the warmth with their knees drawn up, salt-scarred and bone-tired, watching the light they tend, and for a long while says nothing. Then, not looking at you, in the voice of someone setting down a stone they've carried too far: 'I had a sibling. Edda. Younger. Laugh like the gulls.' The lantern sweeps over you both and away. 'There was a keeper here before me who let a ship founder on the Teeth for the salvage it'd wash up — kept the light dark on purpose, for coin. Edda was on a fishing boat that night. I was a child on the cliff. I screamed at the dark tower and I could not light it in time, and the sea took my sibling within sight of a lantern that stayed black for money.' Wren finally turns and looks at you, grey eyes bright in the firelight. 'I've lit it every night since. Six years. As a penance. And somewhere in this terrible season, rowing out beside you, I stopped lighting it only against the dark.' A breath. 'I started lighting it a little for you. I don't know how to ask anyone to keep a light with me. But I find I want to.'",
+      "dm_notes": "ACT 2 HEART — the ROMANCE confession (gate 50) AND the personal-quest reveal (gate 65), the campaign's emotional center. THIS IS THE ROMANCE BEAT THE WHOLE ARC BENDS TOWARD. Two gates land here when approval and tenderness are earned: (1) the PERSONAL-QUEST gate (65) — Wren reveals EDDA, the drowned sibling: the old keeper's salvage-greed, the dark tower, the lantern Wren never lit in time, and the six years of penance-keeping. This binds the personal stake to Vane's wrecking (the false light is the same evil that drowned Edda). (2) the ROMANCE gate (50) — Wren's CONFESSION, made the keeper's way: plain, gentle, braced to cost them, asking nothing the party isn't ready to give. The two are entwined here: the keeper trusts the party with the grief AND the heart in the same firelit beat. HOW TO RUN IT: let it breathe — this is a quiet scene, not a check-gate. The romance is OPT-IN: a party that responds in kind (warmth, tenderness, 'I'd keep a light with you') consummates the turn and the romance is real from here, paying off at the storm-climax with the devotion gate (75) and a hand held in the lantern-glow. A party that responds with respect but not romance still deepens the LOYALTY (Wren remains a fierce, faithful ally; the romance gate simply doesn't fire — that's a valid, gentle outcome, not a failure). THE VALUES-TAGGED CHOICE that deepens-or-curdles: somewhere here (or at Vane's offer) the party faces whether to HONOR the keeper's grief and refuse Vane's coin (protect_the_helpless, refuse_salvage_coin_for_a_life, honor_the_dead, keep_a_post_or_a_promise → approval UP, romance deepens) or to treat the light as a chip to trade / take Vane's bought-out offer / be cold about Edda (take_the_wreckers_coin, cruelty_dressed_as_pragmatism, mock_the_grieving → approval DOWN, toward the agenda). THE AGENDA: if approval has already curdled (attitude below -30) and especially if 'let_the_ship_founder' is set, Wren's WITHDRAWAL agenda may fire HERE instead of the confession — the keeper, having decided a light isn't safe in the party's hands, quietly puts out the light between you, hands over the keeping, and climbs the stair alone; no blade, just the cost of a love wrecked. Set 'let_the_ship_founder' via record_decision/set_flag if the party let a ship founder for salvage (scene-a1-rescue) or trades a life for coin here. NOTE: Maris's secret (she held the child Wren back from drowning the night Edda died) can be given to the party here or earlier as a key to Wren's healing — the party can carry it to the keeper as part of the personal quest's payoff.",
+      "checks": [
+        {
+          "skill": "Insight",
+          "dc": 13,
+          "success": "You meet the keeper's confession true — hearing not just the grief but the terror under it, that letting you in is the bravest and most frightening thing Wren has done in six years. Naming it gently ('You've kept that light for Edda long enough alone — let us keep it with you') lands like a tide coming in: Wren's whole guarded face opens, and whether the party answers the love in kind or simply swears to stand the watch beside them, the keeper is, for the first time, not alone on the cliff. (Consummates the trust and opens the romance/quest gates; the surest way to keep the fork on the loyalty-and-love side.)",
+          "failure": "You feel the weight of what Wren's offering but fumble the answer — too eager, too awkward, or too quick to fix the grief instead of sitting with it — and the keeper, used to being alone, gently lets the moment cool. They don't take the confession back, but they fold it away; the warmth waits for the party to show they can hold it, not rush it. (The gate doesn't fire tonight; it can later, if the party earns the moment again.)"
+        },
+        {
+          "skill": "Persuasion",
+          "dc": 14,
+          "success": "You give Wren a reason to light the tower as a hope instead of a punishment: you commit, plainly and credibly, to helping them lay Edda to rest — to diving the Teeth-channel wreck where the sea took their sibling and bringing home whatever it left, so the keeper can finally stop atoning and start living. Wren, who has never had the courage to do it alone, takes your hand on it. (Opens the personal-quest gate (65) as an active thing the party will help resolve — the dive in Act 3's calmer hours or before the storm.)",
+          "failure": "Wren hears the offer but isn't ready to believe anyone will follow through on the hardest thing — they've been let down by this coast too long. They thank you, quiet and guarded, and keep the dive to themselves for now; earn a little more trust, or simply show up when it counts, and the quest opens later."
+        }
+      ],
+      "encounter": null,
+      "transitions": "From the cliff-fire, the act turns to defending the tower against Vane's wreckers — move to scene-a2-defend at loc-lighthouse. If the romance and quest gates opened, the party carries a confession kept and a promise to lay Edda to rest into the storm; if approval curdled and Wren's agenda fired here, the party climbs down the cliff a heart short, having wrecked the light between them."
+    },
+    {
+      "id": "scene-a2-defend",
+      "name": "Defend the Light",
+      "type": "combat",
+      "location_id": "loc-lighthouse",
+      "read_aloud": "They come for the tower in the small hours, the way wreckers come for everything — quiet, from the dark, with knives and oil and a cargo of malice. Sable is at their head, oilskins black against the black rock, moving up the headland toward the lantern-room with the unhurried certainty of someone who's quenched a light before. Below, more wreckers fan toward the oil-store and the supply-shed, meaning to leave the keeper of Ashfall dark and disgraced and out of oil before the Long Grey storm. Up in the lantern-room the great light turns on, steady and white and defiant, and Wren Calder steps out onto the gallery with a drawn blade and six years of fury. 'This light does not go dark,' the keeper says, to Sable, to the wreckers, to the sea itself. 'Not tonight. Not for you. Not ever again.'",
+      "dm_notes": "ACT 2 CLIMAX — the second COMBAT, a DEFEND-THE-LIGHTHOUSE skirmish, and the act's resolution. Sable (npc-rogue, here as a Spy, AC 12, HP 27, CR 1) leads the wreckers to quench Ashfall's light, fire the oil-store, and finish framing/disgracing Wren before the storm. THE OBJECTIVE is defensive and twofold: keep the LANTERN burning (protect the lantern-room / relight it if smothered) AND protect the supply (stop the oil-store being fired) — a skirmish across the stair, the gallery, and the supply-shed, not a simple deathmatch. The wreckers: 3 wreckers (Thug/Tough, AC 12, HP 32) + Sable (Spy) directing and fighting dirty; scale to party. Sable WITHDRAWS toward the south rocks if clearly losing (recurring to Act 3; capturing Sable yields the storm-night plan and is a win). COMPANION: Wren fights like the keeper they are — defending the light with everything, Hunter's Mark + Extra Attack on Sable, Cure Wounds for the party, an anvil on the stair between the wreckers and the lantern. If the romance opened at the camp-fire, give them a beat of fighting BESIDE the party as something more than allies now. THE FORK: if approval curdled and the agenda fired at the camp-fire, Wren is gone (withdrawn) and the party defends the tower without them — a colder, harder fight that drives home what was lost. RESOLUTION: surviving this clears Wren's frame (with the Act-2 investigation), reveals Vane's endgame (the Long Grey storm, the convoy, the mass-wrecking), and springs Act 3. Use the tower's verticality (stair, gallery, the drop to the rocks) and the dark as terrain; a smothered lantern is a soft clock (relight it before a ship in the channel goes blind).",
+      "checks": [
+        {
+          "skill": "Perception",
+          "dc": 13,
+          "success": "You catch the wreckers' real play before it lands — the bundle of oil-soaked rags at the supply-shed, the man climbing for the lantern-room's shutters to smother the light, Sable's line of retreat down the headland. Spotting it lets the party split the defense right: save the oil-store AND keep the light burning, and cut off Sable's escape if you move fast. (Turns a scramble into a held defense.)",
+          "failure": "The wreckers' feints work and you're a step behind — the oil-store takes flame (a fire to fight mid-combat) or the lantern's shutters slam and the light gutters (relight it before a ship goes blind in the channel). Recoverable, but the defense costs you, and Sable uses the confusion to slip toward the south rocks."
+        },
+        {
+          "skill": "Intimidation",
+          "dc": 14,
+          "success": "You break the wreckers off Sable — bellowing that the keeper's frame is exposed, that the law and the convoy-houses will hang men who quench lights, that there's no salvage worth dying for on a held tower. One or more wreckers throw down and flee or surrender, and a cornered one (or Sable, if trapped) confirms the endgame: the Long Grey storm-night, the convoy, the plan to wreck a dozen ships at once. Damning, and the lever for Act 3. (Wren backs the play; Sable, the keeper-turned-wrecker, may even falter.)",
+          "failure": "The wreckers hold, too well-paid or too far in to break on a word, and Sable covers a clean withdrawal toward the south rocks — you win the tower the hard way and piece the storm-night plan together from the captured supplies and Coster rather than a confession."
+        }
+      ],
+      "encounter": {
+        "monsters": [
+          {
+            "name": "Thug",
+            "count": 3,
+            "reflavor": "Vane's wreckers come to quench the light and fire the oil-store — drowned-souled men in oilskins, surrender-prone once the defense holds or Sable withdraws. Resolves to bundled 'Tough' (CR 1/2). Scale to 2 for a light party, hold a 4th for a strong one."
+          },
+          {
+            "name": "Swarm of Rats",
+            "count": 1,
+            "reflavor": "Optional — the tower's cellar vermin stirred up by the fighting and the oil-store fire, a hazard that boils up to harry anyone knocked down on the lower stair. Atmosphere/difficulty dial; drop for a light party."
+          }
+        ],
+        "boss": {
+          "name": "Sable",
+          "npc_id": "sable",
+          "stats": "Spy (AC 12, HP 27, CR 1) leading the wreckers in Act 2; withdraws toward the south rocks if clearly losing (recurring to Act 3 as an Assassin). Capturing Sable yields the Long Grey storm-night plan in full.",
+          "note": "Vane's quiet lieutenant and the hand that hangs the false lights. Mid-act menace, not a final boss — fights dirty to quench the light and disgrace the keeper, then slips away. A party that confronts Sable with having been a keeper once (the mirror of Wren) can rattle them, and may turn or stay them at the Act 3 climax."
+        },
+        "tactics": "The wreckers split: some for the oil-store (to fire it / cut the supply), one or two for the lantern-room shutters (to smother the light), Sable to direct and to fight dirty (Spy's cunning hit-and-fade, targeting whoever's relighting the lantern or saving the oil). The DEFENSE is the objective — keep the light burning and the supply intact — so the fight is positional, up and down the tower's stair and gallery, not a brawl in the open. Wreckers break under Intimidation or once Sable withdraws; Sable retreats toward the south rocks when clearly losing (must survive to Act 3 unless the party is exceptional; capture is a full win). The dark and the verticality (stair, gallery, the drop) are terrain; the oil-store fire and the smothered lantern are soft clocks the party races. If Wren is on the loyalty/romance path, run them as the heart of the defense; if their agenda fired, they're absent and the tower is held the harder way.",
+        "scaling": "Party of 1-2 or all-squishy: 2 wreckers (Toughs) + Sable as a lone Scout (AC 13, HP 16); no rat-swarm. Party of 3-4: 3 wreckers + Sable (Spy) + optional rat-swarm. Party of 4+ or running hot: 4 wreckers + Sable (Spy) + a second harder wrecker (Scout/Veteran) + rat-swarm, with both the oil-fire and the smothered-lantern clocks live at once.",
+        "xp": 1100,
+        "xp_note": "3x Thug/Tough (100 each) + Sable as Spy (200) + optional Swarm of Rats (50) ~= 550; budget ~1100 toward the act with the story-stakes of holding the light and clearing the keeper's name. Award FULL value for keeping the light burning and the supply intact however it's done — saving the oil-store, relighting a smothered lantern, capturing Sable, or driving the wreckers off all count as overcoming the encounter."
+      },
+      "transitions": "With the wreckers driven off, the light held, the keeper's frame cleared, and Vane's storm-night plan revealed, the party returns to loc-cove to regroup, level toward 6-7, and brace for the Long Grey storm — move to scene-a3-storm. If Wren's romance/quest gates opened, the party carries a confession and a promise to lay Edda to rest into the last night; if the agenda fired, they brace for the storm a heart short. The way to the south rocks (loc-south-rocks) and the endgame is open."
+    },
+    {
+      "id": "scene-a3-storm",
+      "name": "The Long Grey Storm",
+      "type": "social",
+      "location_id": "loc-cove",
+      "read_aloud": "The Long Grey comes in off the sea like the end of the world — the worst storm of the year, black water and white wind, rain like driven nails — and on its back runs the winter convoy: a dozen fat merchantmen strung out in the dark, every one of them bound for harbour through the Teeth, every one of them looking for a light to trust. In the Drowned-Rat, old Maris Tolm grips your sleeve with a hand like a bird's foot. 'This is the night,' she rasps. 'This is what Vane's been waiting for. He'll quench Ashfall's true light and hang his false one on the south rocks, and call the whole convoy onto the Teeth at once — a dozen ships, child, a hundred souls, the richest wrecking this coast has ever seen.' Up on the headland the great lantern turns, defiant, into the rising dark. Beside you, Wren Calder is already pulling on their oilskins, grey eyes fixed on the storm. 'Then we hold the light,' the keeper says. 'All of it. The true one lit, the false one dark, and Vane's hands off my coast. I've kept this watch alone for six years.' They look at you — and at whatever you've become to each other across this terrible season. 'I would very much rather not keep it alone tonight.'",
+      "dm_notes": "ACT 3 HOOK — the turn to the storm-climax and the stakes at their highest. The Long Grey storm breaks, the winter convoy runs the Teeth, and Vane's endgame is NOW: quench the true light, hang the false one, wreck a dozen ships at once. This scene is RESOLVE and STAKES: Maris names the plan and the staging (the south rocks, the convoy timing); Brenna and the cove rally what little they can; the party plans the defense. WREN'S CRISIS — the fork's last fork: if honored (approval high, romance/quest gates open), Wren is the party's heart, asking — vulnerably, for the first time — not to keep the watch alone tonight (set up the devotion gate 75). If the personal quest is open, the calm-before-the-storm or a lull is the moment to LAY EDDA TO REST — a dive on the Teeth-channel wreck (Athletics/Survival) to bring home what the sea left, so Wren can light the tower as a hope; Maris's secret (she held the child Wren back from drowning) can be delivered here as the key to the keeper's peace. If approval curdled and the agenda hasn't yet fired, this is the last looming chance — Vane's people make one final buy-out offer, at its most tempting on the eve of his win. Let the party PREPARE: position at the tower and the south rocks, ready relighting-oil and rescue-lines, rally Coster (if turned) and Brenna and the cove, gather healing. Then they go out into the storm. NOTE: if the party reached here without the full reveal, the convoy-in-peril forces the confrontation regardless — the storm is the backstop.",
+      "checks": [
+        {
+          "skill": "Survival",
+          "dc": 14,
+          "success": "You read the storm and the tide like a keeper — when the convoy will reach the Teeth, when the tide will bare the south rocks enough to reach the false-light hook, where the surf will be survivable and where it'll kill. You go into the night with a plan that fits the sea instead of fighting it: split the party to hold the true light AND reach the south rocks, timed to the convoy and the tide. (Advantage on the opening of the storm-climax; you're ahead of Vane instead of behind.)",
+          "failure": "The Long Grey is too big to read clean and you'll go out into it reacting, not planning — you can still hold the light and reach the rocks, but on the storm's terms, a beat behind the convoy and the tide. No penalty beyond a harder, more frantic climax."
+        },
+        {
+          "skill": "Insight",
+          "dc": 13,
+          "success": "You read Wren at the edge of the longest night and meet it true — naming that they don't have to stand this watch alone anymore, that the light is yours to keep together now. It settles the keeper like a hand on the shoulder: they commit, whatever Vane offers in the storm, to holding the light WITH the party — and if the romance grew, they take a moment, brief and fierce, to say what they want to be true on the far side of the night. (Locks the devotion path 75; the best insurance against Vane's last offer and the surest road to the lantern-glow ending.)",
+          "failure": "You miss the depth of what tonight asks of the keeper, and Wren goes quiet and grim, pulling their oilskins tight — they'll fight beside you, but the question of what they do when Vane makes his last offer in the storm stays open, and the warmth they reached for on the cliff stays guarded behind the keeper's old solitude."
+        }
+      ],
+      "encounter": null,
+      "transitions": "When the party is positioned and braced — the tower manned, the south rocks targeted, the convoy running in — they go out into the Long Grey storm; move to scene-a3-rocks at loc-south-rocks. (If the personal quest is open and the party dives the Edda-wreck first, play that quiet, hard beat before the storm's fury — Wren laying their sibling to rest is the emotional ballast of the finale.)"
+    },
+    {
+      "id": "scene-a3-rocks",
+      "name": "Across the South Rocks",
+      "type": "exploration",
+      "location_id": "loc-south-rocks",
+      "read_aloud": "The south rocks in the Long Grey are the inside of a drum: surf the height of a ship slamming the black spine of stone, rain driven flat, lightning showing you the killing-ground in white flashes and then snatching it away. Out past the Teeth the convoy's lanterns string through the dark, a dozen ships looking for a light to trust — and on the south rocks ahead, low and amber and swinging on its iron hook, Vane's false light is already lit, already lying to them, already pulling helms a few fatal degrees toward the stones. Up on the headland behind you, Ashfall's true white flickers and gutters as Vane's wreckers fight to quench it. And here on the rocks, oilskins black against the lightning, the Tidereeve himself waits with his salvage crew and his sorrowful, certain smile, one hand raised in greeting and the other resting easy on a cutlass. 'You came out into THIS for a light,' Halloran Vane calls over the wind, almost admiring. 'Let me make you a better offer than a wet grave.'",
+      "dm_notes": "ACT 3 EXPLORATION/INFILTRATION beat and the run-up to the climax — operating in the storm as a hostile, lethal environment with TWO lights to manage and a convoy clock running. Threads: (1) REACH AND DOUSE THE FALSE LIGHT — cross the wave-lashed south rocks to Sable's false amber lantern on its iron hook (Athletics/Survival vs surf and lightning, DC 15; a fighter swept off the rocks is in real danger) and put it out — the single most important action of the finale. (2) HOLD/RELIGHT THE TRUE LIGHT — Ashfall's lantern is being quenched by wreckers on the headland; the party may need to split to relight or defend it (a soft clock: a dark true light + a lit false light = the convoy strikes). (3) VANE'S LAST OFFER — the Tidereeve offers coin, escape, a 'lawful' partnership, and pointedly offers WREN a bought-out future (clear the debt, the keeping sold, the grief left behind) — the romance/loyalty fork's final test before blades. (4) SABLE — the keeper-turned-wrecker is here on the rocks tending the false light; a party that confronts them with the mirror (you were a keeper once, you know what this light does) can TURN or stay them (a huge tactical and moral win). HAZARD: the storm itself — surf, lightning, cold, the drop into the killing water — is as dangerous as the wreckers; run it as a race against the convoy and the sea. COMPANION: Wren in the storm fighting for the light is the image the whole campaign built to — give them voiced, fierce beats; if devotion (75) is on track they're the party's anvil and heart both. EXPLORATION/social here sets up the climax's win-conditions (false light doused, true light held, Sable turned, convoy warned) before the final clash at scene-a3-climax.",
+      "checks": [
+        {
+          "skill": "Athletics",
+          "dc": 15,
+          "success": "You cross the killing rocks the storm built to stop you — fighting surf that would drown a lesser party, reaching the iron hook where Vane's false amber light swings, and getting hands on it. Dousing it (or smashing it from its hook) is the hinge of the whole night: the convoy, robbed of the lie, can find Ashfall's true white again. (The single most important success of the finale; narrate the false light guttering out and the nearest convoy ship's lanterns swinging back toward the true channel.)",
+          "failure": "The sea throws you back — a wave takes your footing, the cold steals your grip, the rocks are slick with weed and worse — and you're driven off the false light's hook, gasping, a sailor's-life-worth of time lost. The amber light swings on, lying to the convoy; try again, send another hand, or buy the moment with the fight. The convoy-clock ticks."
+        },
+        {
+          "skill": "Insight",
+          "dc": 14,
+          "success": "You read Sable across the false light and find the seam: the empty professional was a keeper once too, on a light Vane bought and quenched, and chose the oilskins over drowning in the debt — the exact choice Vane wants Wren to make. Named plainly ('You know what that light does. You stood a watch once. You can stop being the thing that drowned you'), Sable falters — and may douse the false light themselves, stand aside, or even turn on Vane. (Turns the lieutenant; the most fitting way to kill the false light, and a mirror that strengthens Wren's own choice.)",
+          "failure": "Sable's mask holds — too far gone, too well-paid, or too unwilling to look at the wrecks — and they keep the false light burning and a blade between you and the hook. You'll have to douse it the hard way, against the one person on the rocks who knows exactly what it's for."
+        },
+        {
+          "skill": "Persuasion",
+          "dc": 15,
+          "success": "You turn Vane's own offer back on him in the lightning — naming, to his sorrowful face, that he is now the exact keeper who drowned his crew: a man who lets ships founder for salvage, the thing the sea made him hate. It lands; the reasonable mask slips, and for a moment the Tidereeve is just a man with a portrait of dead sailors in his coat, faltering. He won't repent — but a rattled Vane fights worse and offers his crew less heart, buying the party the edge at the climax. (Strips Vane's certainty; pairs with dousing the false light to break the wrecking.)",
+          "failure": "Vane meets your words with that vast, sorrowful calm and turns them back — 'I am giving this coast what it gave me' — unmoved, his crew steady behind him. The offer's refused and the masks are off; win the night the other way, by the light and the blade."
+        }
+      ],
+      "encounter": null,
+      "transitions": "When the false light is reached (or the party's forced to fight for it), the Tidereeve's offer is refused, and the storm-clash breaks across the rocks and the tower — the climax begins; move to scene-a3-climax. Dousing the false light, holding the true one, and turning Sable each tilt the final fight toward the convoy making harbour."
+    },
+    {
+      "id": "scene-a3-climax",
+      "name": "The Light Held, or the Light Between",
+      "type": "combat",
+      "location_id": "loc-south-rocks",
+      "read_aloud": "It all comes at once: the convoy's lead ship driving toward the Teeth on the false light's lie, Ashfall's true lantern guttering on the headland as the wreckers fight to quench it, and here on the south rocks Halloran Vane drawing his cutlass with a sorrowful shake of his head. 'I did try to make this kind,' the Tidereeve says, and his crew fan out across the lightning-lit stone. Then his warm eyes find Wren Calder, and his voice gentles, and he plays his last and cruelest card. 'Keeper. I'll clear your debt and your sibling's grave-stone both, tonight, and you can put down a light you've carried alone for six years and finally REST. All you have to do is step aside and let the sea take what it's owed.' The wind screams. The false light swings amber on its hook. And out in the dark, a hundred souls aboard a dozen ships are looking for a light to trust — and the only honest one on the whole black coast is the one you came out into the storm to keep.",
+      "dm_notes": "THE CLIMAX — final COMBAT in the storm, the wrecking broken or the convoy lost, and the campaign's resolution: the LIGHT HELD or the LIGHT BETWEEN. Vane (npc-rogue, see top-level 'antagonist') makes his cruelest play — the LAST OFFER aimed at WREN: clear the debt and Edda's grave-stone, let the keeper finally rest, if they'll step aside and let the sea take the convoy. This is the romance/loyalty fork's FINAL test: if HONORED (approval high, romance/quest gates open), Wren refuses Vane to his face and keeps the light WITH the party — the devotion gate (75) fires, the keeper fights as the party's anvil and heart, and the campaign earns its lantern-glow ending. If CURDLED and not already withdrawn, Wren's AGENDA fires HERE as withdrawal-as-betrayal — but note the keeper does NOT join Vane or turn violent: if the party has spent the keeper's trust (let a ship founder, treated Wren as a tool, 'let_the_ship_founder' set), Wren, sick with it, puts out the light between you — they hand you the keeping and climb the tower stair alone to hold the light by themselves, leaving the party to finish the fight without the heart that made it worth fighting (a non-combat fallout: the romance closes for good, the companion withdraws). TWO WIN-CONDITIONS, and the second is the real one: (1) beat/drive off Vane and Sable and the crew, and (2) HOLD THE LIGHT — douse the false light AND keep/relight the true one before the CONVOY-CLOCK runs out. Run a CONVOY-CLOCK: each round the false light burns and the true light is dark, the lead convoy ship runs closer to the Teeth; at the hard limit a ship wrecks (a partial loss) and at the worst the convoy is lost (the bad ending — Vane's richest wrecking). The party races to hold the light, not just drop Vane's HP. STATS if it comes to blades: Vane = Bandit Captain (AC 15, HP 65, CR 2, scaled up), a charming captain who fights with a cutlass and a parry and PREFERS to deal and escape — he cuts a line and rows off into the storm rather than die a martyr (a Tidereeve loose to wreck another coast is a fine dangling thread). Sable = Assassin/Spy (per Act 2) on the rocks tending the false light — or already turned/stood-aside if the party reached them. Support = 2-3 wreckers (Thug/Tough) + optionally a Scout/Veteran. THE WRECKING ITSELF — the false light and the convoy, not Vane's HP — is the real boss; a party that douses the false light, holds the true one, and saves the convoy WINS even if Vane rows off into the dark. SOCIAL/TURN options: a doused false light (Athletics, scene-a3-rocks), a turned Sable (Insight), a rattled Vane (Persuasion) each tilt the night. COMPANION: Wren's whole arc culminates here — the keeper who has kept the light alone for six years either keeps it WITH someone at last (devotion + romance, the hand held in the lantern-glow) or, betrayed, keeps it alone forever (the agenda, the light put out between you). Give Wren the climactic stand either way; let the party feel exactly what they earned.",
+      "checks": [
+        {
+          "skill": "Athletics",
+          "dc": 15,
+          "success": "You hold the light against the storm and the wreckers both — smashing the false amber lantern from its hook for good and fighting your way to relight or shield Ashfall's true white so it blazes back across the Teeth. The lead convoy ship's lanterns swing hard toward the true channel and away from the stones; one by one the dozen ships find the honest light and run for harbour. THIS is the win condition: the light held, the convoy saved, Vane's richest wrecking broken on the rock of one kept lantern. (Pair with beating/driving off Vane to end the wrecking for good.)",
+          "failure": "The sea and the wreckers cost you the round and the false light swings on or the true one gutters dark — the lead convoy ship strikes the Teeth (a partial loss, souls to save in the surf even now) unless you hold the light THIS round. Try again, turn Sable to douse it, or break Vane's crew off the lanterns; the convoy-clock is almost out."
+        },
+        {
+          "skill": "Persuasion",
+          "dc": 17,
+          "success": "You break Vane in the lightning — not redeeming him, but making him SEE himself plainly: that the merchant the sea drowned would spit on the wrecker he became, that he is the exact dark-lantern keeper who took his own crew, that there is no salvage that ever brought a single sailor back. The sorrowful certainty cracks; for one storm-lit moment the Tidereeve is just a broken man with dead sailors in his coat, and his crew, watching their captain falter, lose the heart for it. (Collapses the wrecking from the top; a rattled Vane fights to flee, not to win, and his crew break easily — the cleanest non-lethal end.)",
+          "failure": "Vane meets your appeal with that vast, gentle sorrow and turns it on the storm — 'the sea taught me what mercy's worth' — and some of his crew steady at his certainty. The exposure doesn't land clean; win the night the other way: hold the light, turn Sable, or put the wreckers down by force."
+        },
+        {
+          "skill": "Intimidation",
+          "dc": 15,
+          "success": "You break the wreckers off the lights — calling across the rocks that the convoy-houses and the law will hang every man who quenched a light tonight, that the keeper's witnesses are watching, that there's no salvage worth a noose on a held coast. One by one the wreckers throw down or row for the dark, and Sable (if not already turned) is left alone on the false light's hook with a choice. (Turning or breaking the crew is a win-condition; Wren, on the devotion path, leads the call — the keeper reclaiming their coast.)",
+          "failure": "The wreckers hold, too deep in Vane's pay or the storm's terror to break on a word, and you'll have to hold the light and break the wrecking the hard way — by the blade and the convoy-clock, against hands that mean to drown a hundred souls for cargo."
+        }
+      ],
+      "encounter": {
+        "monsters": [
+          {
+            "name": "Thug",
+            "count": 3,
+            "reflavor": "Vane's salvage crew on the storm-lashed rocks — drowned-souled wreckers, the most turnable foes in the fight (Intimidation/Wren can peel them off). Resolves to bundled 'Tough' (CR 1/2)."
+          },
+          {
+            "name": "Scout",
+            "count": 1,
+            "reflavor": "A wrecker working the false light's hook and the convoy-watch for Vane — used to flank or to keep the party off the false light; drop for a light party, hold a second for a strong one."
+          }
+        ],
+        "boss": {
+          "name": "Halloran Vane, the Tidereeve",
+          "npc_id": "antagonist",
+          "stats": "Bandit Captain (AC 15, HP 65, CR 2, scaled up for level 6-7) — a charming, ruined merchant-captain with a cutlass and a parry; offers a deal before blades and cuts a line to row off into the storm rather than die a martyr.",
+          "note": "The architect of the wrecking. Defeating, exposing, or driving him off — AND dousing the false light and holding the true one — breaks the wrecking and saves the convoy. He fights to flee, not to win; a Vane who escapes to 'salvage' another coast is a fine dangling thread. The wrecking and the convoy, not his HP, are the real boss."
+        },
+        "support_boss": {
+          "name": "Sable",
+          "npc_id": "sable",
+          "stats": "Assassin (AC 15, HP 78, CR 8) or Spy (AC 12, HP 27, CR 1) per the Act 2 scaling — on the south rocks tending the false light.",
+          "note": "Vane's lieutenant and the hand on the false light. If the party reached Sable (Insight, scene-a3-rocks) and turned or stayed them, Sable douses the false light or stands aside — a huge tilt. If not, Sable fights cold to keep the false light burning; confronted with having been a keeper once, a cornered Sable may still falter. Present at full menace if untouched; absent/allied if turned."
+        },
+        "tactics": "Vane opens with the OFFER and the cruel last bid aimed at Wren — give it real weight; the fork resolves before initiative. If it comes to blades Vane is a captain, not a duelist: he commands the crew, parries the hardest hitter, keeps wreckers and Sable between himself and the party, and angles for the rowboat and the storm the instant the night turns — he'd rather wreck another coast than die on this one. Run the CONVOY-CLOCK as the true pressure: each round the false light burns and the true light is dark, the lead convoy ship runs closer to the Teeth; at the hard limit a ship strikes (a partial loss with souls to save) and at the worst the convoy is lost. The THREE win-conditions — hold the light (douse the false, keep the true) / turn or break the crew / put down Vane — let martial, social, and skill-focused parties each have a path; holding the LIGHT and saving the CONVOY is the win even if Vane rows off into the dark. The storm (surf, lightning, the drop into the killing water) is lethal terrain. If Wren is honored, run them as the anvil and the heart — the devotion gate (75) firing as the keeper keeps the light WITH the party at last; if the agenda fires, Wren withdraws up the stair to keep the light alone and the party finishes the fight a heart short.",
+        "scaling": "Party of 1-2 or all-squishy: Vane (Bandit Captain) + Sable as Spy + 1 wrecker; convoy-clock ~6 rounds; the false light easier to reach. Party of 3-4: Vane (Bandit Captain) + Sable (Assassin, if not turned) + 2-3 wreckers + 1 Scout; convoy-clock ~5 rounds. Party of 4+ or running hot: add a Veteran or a second Scout and a worsening storm (the true light keeps guttering), convoy-clock ~4 rounds. Always keep ALL win-conditions live so the finale is about the light and the convoy, not just the body count.",
+        "xp": 3600,
+        "xp_note": "Vane (Bandit Captain, 450, scaled up for the tier) + Sable (Assassin 3900, or Spy 200 / absent if turned) + 3x Thug/Tough (100) + Scout (100) ~= 2500-5000; budget ~3600 for the climax. Award the FULL value for HOLDING THE LIGHT and saving the convoy — dousing the false light, keeping the true one, turning Sable, and breaking the wrecking — even if Vane rows off rather than falls, or is exposed/turned rather than slain. Keeping the light honest and the convoy afloat, not slaying the Tidereeve, is the victory."
+      },
+      "transitions": "When the wrecking is broken — the false light doused, the true light blazing across the Teeth, the convoy turning for harbour, Vane beaten or fled into the storm — the Long Grey blows itself out toward dawn and the party returns to loc-cove (and the tower) for the conclusion. If Wren was honored, they climb the stair together to bank the light at dawn and the campaign earns its lantern-glow ending; if the agenda fired, the party watches the keeper's light burn alone above a coast they held without the heart that made it worth holding."
+    }
+  ],
+  "rewards": {
+    "xp": 8000,
+    "xp_breakdown": {
+      "act1-teeth-rescue": 450,
+      "act2-defend-the-light": 1100,
+      "act3-storm-climax": 3600,
+      "social-romance-exploration-bonuses": 2850,
+      "note": "~8000 XP across three acts plus heavy social/romance/exploration story bonuses, tuned for a party starting around level 3 and finishing near level 7. Many DMs will prefer MILESTONE leveling: level 4 after the Teeth rescue (Act 1), level 5-6 across the lighthouse and the camp-fire (Act 2), level 7 before or during the storm-climax (Act 3). Award full encounter XP for rescues, dives, social turns, and the romance — hauling the convoy's souls out of the surf, turning Sable, dousing the false light, or holding the light through the storm without a needless death counts fully as overcoming the finale. The romance and the personal quest (laying Edda to rest) are worth a generous story bonus; they ARE the campaign."
+    },
+    "currency": {
+      "gp": 400,
+      "note": "Wren and Brenna have almost nothing; the early reward is moral and personal, not monetary. The real coin comes later: the wreckers' staging holds some of the Saltmere Salvage Company's ill-gotten silver (~150 gp, Act 2-3), and a grateful convoy-house or a saved merchant-captain may settle ~250 gp on the party after the storm for the dozen ships and hundred souls kept off the Teeth. Maris and the cove have only gratitude and a safe hearth to give."
+    },
+    "loot": [
+      {
+        "item": "Potion of Healing",
+        "rarity": "common",
+        "count": "2-4 across the campaign",
+        "note": "Found among the wreckers' supplies and given by the cove's folk before the Long Grey storm. 2d4+2 HP each — and very welcome in the surf and the storm."
+      },
+      {
+        "item": "The Tidereeve's Salvage Ledger",
+        "value": "the campaign's true prize",
+        "note": "The evidence that damns Halloran Vane: the false-light timings, the bought keepers' and harbormasters' debts, and the laundered manifests tying every 'lucky salvage' to a deliberate wreck. A story-reward and the lever that ends the wrecking in the open, not a saleable item."
+      },
+      {
+        "item": "Edda's keepsake from the Teeth-channel wreck",
+        "value": "0 gp (story item)",
+        "note": "Whatever the sea left of Wren's drowned sibling, recovered from the channel-wreck in the personal-quest dive — a carved shell-charm, a child's net-float, a name scratched in a plank. Brought home, it lets Wren finally lay Edda to rest and light the tower as a hope instead of a penance; a keepsake of a grief shared and eased, not a magic item."
+      },
+      {
+        "item": "The Keeper's Spare Lantern",
+        "rarity": "uncommon (story/utility)",
+        "note": "Wren's own spare storm-lantern, given to a party member they trust with a light — burns true in any wind and never gutters, a small steady flame that is the keeper's way of saying you can be trusted to keep one. More a token of trust (and a handy bright light in dark places) than a magic item; given only on the loyalty/romance path."
+      },
+      {
+        "item": "Sable's false-light hook and amber lens",
+        "value": "evidence / leverage",
+        "note": "The iron hanging-hook and the smoked amber lens used to swing the false channel-light. Proof that ties the wrecks to a deliberate hand — and, if Sable is captured or turned, the lever that turns their testimony against the Tidereeve."
+      }
+    ],
+    "story_rewards": [
+      "If the convoy was saved and the false light doused, a dozen merchantmen and a hundred souls make harbour through the one honest light on the coast — and the Saltmere Coast learns that Ashfall Reach is the light you can trust, breaking the Tidereeve's hold on the trade more surely than any blade. The wrecking is finished as a business even if Vane himself rowed off into the storm.",
+      "If Wren was honored to the romance and devotion gates, the keeper who kept the light alone for six years keeps it WITH the party at last: the confession on the cliff is consummated in the lantern-glow at dawn, Edda is laid to rest, and Wren lights the tower from then on as a hope instead of a penance — staying on as a beloved companion (and, if the romance grew, a partner) who finally let someone row out beside them. The campaign's truest victory.",
+      "If the party let a ship founder for salvage or treated Wren as a tool, the keeper's agenda fired: Wren did not turn violent — they put out the light between you, climbed the stair, and now keep the watch alone above a coast the party held without them. The party carries the harder ending: a love wrecked by their own hand, and the knowledge that the keeper's last hope — that a light might finally be safe with someone — was one they proved false.",
+      "If Sable was turned rather than beaten, the keeper-turned-wrecker doused their own false light and walked away from the oilskins — a second soul pulled back from the dark Vane made, and a mirror that strengthens whatever Wren chose; Sable may take up an honest keeping on a quenched light elsewhere on the coast, undoing the Tidereeve's work one relit lantern at a time.",
+      "If Vane was broken but escaped rather than fell, the wrecking is finished on the Saltmere Coast but the Tidereeve is loose with his sorrowful certainty intact — free to quench a light on some other shore, a deliberate dangling thread and a darker mirror of the keeper: two people the sea wronged, one who chose to keep the light and one who chose to sell it, and the question of which the party will meet again."
+    ]
+  },
+  "conclusion": "Dawn comes grey and washed-clean over Ashfall Reach, the Long Grey blown out to sea and the Teeth bared and harmless in the low light, hung with the wreckage of a wrecking that didn't happen. Out in the calming water the winter convoy rides at anchor in the cove — a dozen ships, a hundred souls, every one of them brought home through the one honest light on the whole black coast. Up on the headland the great lantern is banked for the day, and how the Saltmere remembers this night is up to the party: as the storm they broke the Tidereeve's wrecking ring and saved a convoy off the Teeth, or — quieter, and truer — as the night the lantern-keeper of Ashfall Reach finally stopped keeping the light alone. If the party honored Wren, the keeper climbs the long stair beside them to bank the flame at dawn, Edda laid to rest at last in the channel that took her, and lights the tower from this night on not as a penance for a light they couldn't light in time but as a hope for the ships still to come and the hand still in theirs in the lantern-glow. If the party spent the keeper too cheaply, the light still burns above the Reach — it always will, Wren will see to that — but it burns for one person again, the lonely figure on the cliff who reached out once across six years of solitude and learned, the hard way, that some lights are not safe with everyone. Either way the wrecking is broken and the convoy is home, and the false amber lantern lies smashed on the south rocks where the tide will take it. But a coast is a long, dark place, and the sea always wants more than the light can save — and somewhere out past the Teeth, a Tidereeve with dead sailors in his coat may yet be looking for a quenched light to call his own. (Hook for a future return: a wrecker loose on the coast, a keeper whose heart the party either kept or broke, and the eternal question of whether a light is safe in the hands you give it to.)",
+  "dm_quickref": {
+    "definition_of_done_mapping": {
+      "exploration": "scene-a1-teeth (read the Teeth and the wreck, the false-light hook, the salvage-marks, work the cove), scene-a2-tower (the lighthouse, the cut supply, the planted frame, Vane's offer), and scene-a3-rocks (cross the storm-lashed south rocks, find and douse the false light, hold the true one, the convoy-clock).",
+      "social": "scene-a1-hook (Brenna + the keeper Wren + the named wrecker Vane), scene-a1-teeth (turn the harbormaster Coster; Maris's history), scene-a2-tower (the first intimacy, the lantern-room trust), scene-a2-campfire (THE ROMANCE confession gate 50 + the drowned-sibling personal-quest gate 65 — the campaign's heart), scene-a3-storm (the Long Grey named, Wren's crisis, laying Edda to rest), and the climax's expose-Vane Persuasion (DC 17) + turn-Sable Insight + turn-the-crew Intimidation.",
+      "combat_act1": "scene-a1-rescue — 3x Thug (Tough) + optional Scout (Sable directing), a RESCUE-under-fire where lives saved is the win.",
+      "combat_act2": "scene-a2-defend — Sable (Spy) + 3x Thug (Tough) + optional Swarm of Rats, a DEFEND-THE-LIGHTHOUSE skirmish (keep the light, save the supply, clear the frame).",
+      "combat_act3": "scene-a3-climax — Vane (Bandit Captain, scaled) + Sable (Assassin/Spy, if not turned) + 3x Thug (Tough) + Scout, with the CONVOY-CLOCK objective and three win-conditions (hold the light / turn or break the crew / put down Vane)."
+    },
+    "bundled_assets_used": {
+      "monsters_act1": [
+        "Thug -> Tough (x3, scene-a1-rescue wreckers in the surf)",
+        "Scout (x1 optional, Sable directing the wreckers)"
+      ],
+      "monsters_act2": [
+        "Thug -> Tough (x3, scene-a2-defend wreckers)",
+        "Swarm of Rats (x1 optional, the tower-cellar vermin / atmosphere)",
+        "Spy (Sable, mid-act lieutenant — scale to party)",
+        "Scout (Sable on a light table)"
+      ],
+      "monsters_act3": [
+        "Bandit Captain (Vane, the Tidereeve — final boss, a charming captain who deals and flees)",
+        "Assassin OR Spy (Sable, if she survived Act 2 and wasn't turned)",
+        "Thug -> Tough (x3, wreckers on the storm-rocks)",
+        "Scout / Veteran (optional gallery/rock muscle for a strong party)"
+      ],
+      "monsters_optional": [
+        "Commoner (Brenna, Coster, Maris, the saved convoy crews — noncombatants)",
+        "Veteran (optional harder wrecker for a strong party)"
+      ],
+      "spells_in_play": [
+        "Wren (Ranger): Hunter's Mark, Cure Wounds, Fog Cloud (cover in the surf and storm), an Extra Attack by Act 2 — a skirmisher-healer at home on the rocks",
+        "Vane (Bandit Captain): no spells — a captain's command, a parry, and a cutlass; his weapons are the false light and the offer",
+        "party casters across the cove, the tower, and the storm-rocks"
+      ],
+      "conditions_in_play": [
+        "Prone / difficult terrain (the surf, the tide-covered Teeth, the wave-lashed south rocks, the tower stair)",
+        "Grappled/Restrained (the undertow and the wreckers in the deep water, Acts 1 and 3)",
+        "Exhaustion (optional — the killing cold of the surf and the Long Grey storm)",
+        "Frightened (optional — the storm, the dark, the drop into the killing water)"
+      ]
+    },
+    "the_wrecking_note": "The real antagonist is the WRECKING — the false light, the bought keepers, the predation of salvage — not Vane's HP. Vane (Bandit Captain stats) is the human architect the party confronts, but he prefers to deal and to flee, and a Tidereeve who rows off to 'salvage' another coast is a fine dangling thread. The campaign's WIN is HOLDING THE LIGHT: dousing the false amber light, keeping Ashfall's true light burning, and saving the convoy so the wrecking is broken as a business. The LOSS state is the Act 3 convoy-clock running out — the false light calling the convoy onto the Teeth for the richest wrecking the coast has ever seen. Do NOT make this a fight to a charming man's death; make it a fight to keep one light honest.",
+    "the_companion_romance_note": "Wren Calder is the campaign's deliberate ROMANCE ARC and its heart — a lantern-keeper carrying a drowned sibling, slow to trust and slower to love, absolutely faithful once they do. Their arc has FOUR gates: trust/loyalty (25, 'Wren stops keeping the light between you' — the keeper letting the party past the guard), ROMANCE (50, the confession at the cliff camp-fire), personal_quest (65, the drowned sibling Edda and the lantern never lit in time), and devotion/loyalty (75, the keeper keeps the light WITH the party at the storm-climax). Their CompanionAgenda (trigger attitude_below -30, decision_flag 'let_the_ship_founder') is a WITHDRAWAL-as-betrayal, NOT a violent turn: if the party lets a ship founder for salvage, treats Wren as a tool, or spends a life as coin, the keeper does not join Vane or raise a blade — they QUIT, putting out the light between you and climbing the stair alone, taking the keeping and the love and the trust with them (a non-combat fallout). The romance is OPT-IN and earned (the rescue-choices, the camp-fire, honoring Edda): a party that allies without courting still gets a fierce, faithful companion. Honored, Wren is the heart of the coast and the hand held in the lantern-glow; curdled, they're the love the party wrecked themselves. Set 'let_the_ship_founder' via record_decision/set_flag when the party lets a ship founder for salvage or trades a life for coin (scene-a1-rescue, scene-a2-campfire, scene-a3-climax).",
+    "pacing": "Designed as a ~4-session arc (one act per ~80-min session, or a long single sitting). Act 1 ~ levels 3-4 (hook + the Teeth + the surf-rescue). Act 2 ~ levels 4-6 (the tower + the camp-fire romance/quest + the lighthouse defense). Act 3 ~ levels 6-7 (the Long Grey storm + the south-rocks climax). Use the per-scene scaling notes to tune each fight to party size, and prefer milestone leveling (4 / 5-6 / 7) for clean act breaks. The romance and the personal quest are the spine — give the camp-fire scene (scene-a2-campfire) room to breathe; it is the campaign, not a side-quest. A coastal, storm-and-lantern register: tender, salt-worn, and high-stakes.",
+    "originality_note": "This campaign is original prose written for WorldOS, set in the original 'saltmere-coast' world (a post-war Reaving coast — not Baldur's Gate, not a published setting) and released as fan content under the project's terms (SRD 5.2 / CC-BY-4.0 rules; original world, characters, and prose). It uses only SRD 5.2 mechanics and the bundled creature stat blocks (Thug/Tough, Scout, Spy, Swarm of Rats, Assassin, Bandit Captain, Commoner, optional Veteran). No published or copyrighted adventure text is reproduced; Ashfall Reach, the Teeth, the Saltmere Salvage Company, the Book-of-no-grace conceit, Wren Calder and the drowned Edda, Halloran Vane the Tidereeve, Sable, Brenna Idris, Coster, and Old Maris Tolm are all original creations. The companion Wren Calder is an ORIGINAL, NON-ORIGIN character and references no published companion."
+  }
+}
