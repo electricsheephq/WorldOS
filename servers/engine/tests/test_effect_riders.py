@@ -197,6 +197,26 @@ def test_drop_concentration_frees_linked_children(tmp_path, monkeypatch):
     assert server.get_character(cid, ally)["active_effects"] == []
 
 
+def test_drop_concentration_frees_all_aoe_linked_children(tmp_path, monkeypatch):
+    # Multi-target Bless via target_ids: dropping concentration must release the linked child on
+    # EVERY blessed ally, not just one — the sweep is keyed on the caster's concentration, so all
+    # children fall together.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("DropConcAoE")["id"]
+    cleric = server.create_character(cid, "Pious", kind="player", class_name="Cleric",
+                                     level=1, apply_srd_defaults=True)["id"]
+    a = server.create_character(cid, "AllyA", kind="player", max_hp=30)["id"]
+    b = server.create_character(cid, "AllyB", kind="player", max_hp=30)["id"]
+    server.cast_spell(cid, cleric, "Bless", target_ids=[a, b])
+    assert server.get_character(cid, a)["active_effects"] and server.get_character(cid, b)["active_effects"]
+    out = server.drop_concentration(cid, cleric)
+    assert out["ended"] is True
+    freed = {(f["character_id"], f["name"]) for f in out["freed_targets"]}
+    assert (a, "Bless") in freed and (b, "Bless") in freed
+    assert server.get_character(cid, a)["active_effects"] == []
+    assert server.get_character(cid, b)["active_effects"] == []
+
+
 def test_failed_concentration_save_frees_linked_children_immediately(tmp_path, monkeypatch):
     # F3-6: a failed concentration save now releases the blessed ally's linked child in the
     # SAME call (surfaced in freed_targets), not deferred to the next next_turn sweep. The
@@ -230,3 +250,81 @@ def test_cast_result_advertises_engine_applied_riders(tmp_path, monkeypatch):
     assert riders["holder_id"] == ally
     assert riders["attack_bonus_dice"] == "1d4"
     assert riders["save_bonus_dice"] == "1d4"
+
+
+# --- Bless / Bane via target_ids (multi-target / AoE) — the rider must reach EVERY beneficiary ---
+
+def test_bless_via_target_ids_blesses_each_ally_not_the_caster(tmp_path, monkeypatch):
+    # Bless cast on an explicit target_ids list (the multi-target path) must give the +1d4 rider to
+    # EVERY named ally — not just one, and NOT the caster (who blessed others). The bug: the rider
+    # logic only handled the singular target_id, so a target_ids cast landed the rider on the
+    # caster-twin and left the named allies with nothing.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("BlessAoE")["id"]
+    cleric = server.create_character(cid, "Pious", kind="player", class_name="Cleric",
+                                     level=1, apply_srd_defaults=True)["id"]
+    a = server.create_character(cid, "AllyA", kind="player", max_hp=30)["id"]
+    b = server.create_character(cid, "AllyB", kind="player", max_hp=30)["id"]
+    server.cast_spell(cid, cleric, "Bless", target_ids=[a, b])
+    for ally_id in (a, b):
+        effs = [e for e in server.get_character(cid, ally_id)["active_effects"] if e["name"] == "Bless"]
+        assert effs, f"{ally_id} got no Bless rider"
+        assert effs[0]["attack_bonus_dice"] == "1d4"
+        assert effs[0]["save_bonus_dice"] == "1d4"
+        assert effs[0]["linked_to_concentration"] is True
+    # the caster holds the concentration twin but carries NO rider numbers (it blessed others, not itself)
+    caster_bless = [e for e in server.get_character(cid, cleric)["active_effects"] if e["name"] == "Bless"]
+    assert caster_bless, "caster should still hold the concentration twin"
+    assert all(e["attack_bonus_dice"] == "" and e["save_bonus_dice"] == "" for e in caster_bless), \
+        "caster wrongly received the Bless rider when it blessed only others"
+    # and the engine actually rolls the d4 on each ally's attack (not just one of them)
+    _rig(monkeypatch, d20_natural=10, d4=3)
+    foe = server.create_character(cid, "Thug", kind="monster", max_hp=30, armor_class=12)["id"]
+    r = server.attack(cid, attacker_id=a, target_id=foe, attack_bonus=0, damage_dice="1d6")
+    assert r["attack_roll"]["total"] == 13 and r["hit"] is True
+    assert r["attack_roll"]["bonus_dice"][0]["source"] == "Bless"
+
+
+def test_bless_via_target_ids_including_caster_blesses_both(tmp_path, monkeypatch):
+    # The exact gs-ember-deep cast: Bless target_ids=[ally, caster]. BOTH must carry the rider — the
+    # ally via a concentration-linked child, the caster via its own twin (it IS a beneficiary here).
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("BlessSelfAlly")["id"]
+    cleric = server.create_character(cid, "Toll", kind="player", class_name="Cleric",
+                                     level=1, apply_srd_defaults=True)["id"]
+    ally = server.create_character(cid, "Kield", kind="player", max_hp=30)["id"]
+    server.cast_spell(cid, cleric, "Bless", target_ids=[ally, cleric])
+    for who in (ally, cleric):
+        effs = [e for e in server.get_character(cid, who)["active_effects"] if e["name"] == "Bless"]
+        assert effs and effs[0]["attack_bonus_dice"] == "1d4", f"{who} missing Bless rider"
+    ally_bless = [e for e in server.get_character(cid, ally)["active_effects"] if e["name"] == "Bless"][0]
+    assert ally_bless["linked_to_concentration"] is True  # the ally holds the linked child
+
+
+def test_cast_result_advertises_all_rider_holders_for_multi_target(tmp_path, monkeypatch):
+    # The cast result surfaces EVERY rider holder so the DM (and the GUI) can see who got blessed.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("AdvertAoE")["id"]
+    cleric = server.create_character(cid, "Pious", kind="player", class_name="Cleric",
+                                     level=1, apply_srd_defaults=True)["id"]
+    a = server.create_character(cid, "AllyA", kind="player", max_hp=30)["id"]
+    b = server.create_character(cid, "AllyB", kind="player", max_hp=30)["id"]
+    r = server.cast_spell(cid, cleric, "Bless", target_ids=[a, b])
+    riders = r["effect_riders"]
+    assert set(riders["holder_ids"]) == {a, b}
+    assert riders["attack_bonus_dice"] == "1d4"
+
+
+def test_shield_of_faith_via_target_ids_buffs_each_ally(tmp_path, monkeypatch):
+    # The multi-target rider path is rider-AGNOSTIC (not Bless-specific): Shield of Faith
+    # (ac_bonus, concentration) cast on a target_ids list gives EACH ally the +2 AC linked child.
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("SoFAoE")["id"]
+    cleric = server.create_character(cid, "Pious", kind="player", class_name="Cleric",
+                                     level=1, apply_srd_defaults=True)["id"]
+    a = server.create_character(cid, "AllyA", kind="player", max_hp=30, armor_class=14)["id"]
+    b = server.create_character(cid, "AllyB", kind="player", max_hp=30, armor_class=12)["id"]
+    server.cast_spell(cid, cleric, "Shield of Faith", target_ids=[a, b])
+    for who in (a, b):
+        effs = [e for e in server.get_character(cid, who)["active_effects"] if e["name"] == "Shield of Faith"]
+        assert effs and effs[0]["ac_bonus"] == 2 and effs[0]["linked_to_concentration"] is True
