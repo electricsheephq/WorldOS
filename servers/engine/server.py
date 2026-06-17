@@ -6768,6 +6768,9 @@ def cast_spell(
         # sweep paths when concentration ends). None for every other spell == byte-identical.
         rider_fields = combat.spell_effect_riders(canonical)
         rider_child_target = None
+        rider_aoe_targets: list = []   # non-caster beneficiaries from a target_ids (AoE) rider cast
+        caster_in_aoe = False          # the caster is itself in target_ids (a self+ally Bless)
+        caster_gets_rider = False
         if duration is not None:
             if not concentrates and target_id and target_id != character_id:
                 tgt = c.characters.get(target_id)
@@ -6775,6 +6778,24 @@ def cast_spell(
                     effect_holder = tgt
             if rider_fields and concentrates and target_id and target_id != character_id:
                 rider_child_target = c.characters.get(target_id)
+            # MULTI-TARGET (AoE) riders (#bless-aoe): a concentration rider spell (Bless/Bane) cast
+            # on an explicit target_ids list writes a linked child to EVERY non-caster beneficiary,
+            # and lets the caster-twin carry the rider ONLY when the caster is itself in the list.
+            # Without this a target_ids cast left rider_child_target=None, so the rider landed on the
+            # caster-twin (below) and the named allies got no engine d4 — the gs-ember-deep
+            # Bless-on-[ally, self] bug, where the PC ally was blessed in fiction but not in engine.
+            if rider_fields and concentrates and aoe_targets:
+                for _t in aoe_targets:
+                    if _t.id == character_id:
+                        caster_in_aoe = True
+                    elif _t.id != getattr(rider_child_target, "id", None) \
+                            and all(_t.id != x.id for x in rider_aoe_targets):
+                        rider_aoe_targets.append(_t)
+            # the caster-twin carries the rider on a self-cast (no separate/AoE target) OR when the
+            # caster is an explicit beneficiary in target_ids — never when it blesses only others.
+            caster_gets_rider = bool(rider_fields) and (
+                caster_in_aoe or (rider_child_target is None and not aoe_targets)
+            )
             # ON-HIT RIDER DEFER (#186). An ATTACK-ROLL spell whose timed effect lands on a
             # SEPARATE target is a 5e on-hit rider (Guiding Bolt: "on a hit, the next attack
             # against it has Advantage"). The cast and the spell attack are two calls, so the
@@ -6827,11 +6848,12 @@ def cast_spell(
                     eff.expires_day, eff.expires_phase_index = _effect_clock_deadline(
                         c, duration["hours"], duration["days"]
                     )
-                # SYN-06: when THIS effect is the beneficiary record (self-cast / Shield /
-                # a non-concentration targeted buff), copy the curated rider numbers onto
-                # it. With a separate child target the caster-side twin stays a pure
-                # concentration tracker (blessing an ally must not also bless the caster).
-                if rider_fields and rider_child_target is None:
+                # SYN-06: when THIS effect is a beneficiary record (self-cast / Shield / a
+                # non-concentration targeted buff, OR the caster is itself in a target_ids list),
+                # copy the curated rider numbers onto it. With separate child targets the caster-side
+                # twin stays a pure concentration tracker (blessing only allies must not bless the
+                # caster). caster_gets_rider encodes exactly that (see #bless-aoe above).
+                if caster_gets_rider:
                     eff.ac_bonus = int(rider_fields.get("ac_bonus", 0))
                     eff.attack_bonus_dice = rider_fields.get("attack_bonus_dice", "")
                     eff.save_bonus_dice = rider_fields.get("save_bonus_dice", "")
@@ -6844,7 +6866,8 @@ def cast_spell(
                 # clock as the twin, carries the mechanical rider, flagged so BOTH sweep
                 # paths (next_turn's inverse sweep + drop_concentration) release it the
                 # moment the caster's concentration ends. Refresh-not-stack, like the twin.
-                if rider_child_target is not None:
+                for _rt in (([rider_child_target] if rider_child_target is not None else [])
+                            + rider_aoe_targets):
                     child = ActiveEffect(
                         name=canonical,
                         source_id=character_id,
@@ -6859,10 +6882,8 @@ def cast_spell(
                         attack_bonus_dice=rider_fields.get("attack_bonus_dice", ""),
                         save_bonus_dice=rider_fields.get("save_bonus_dice", ""),
                     )
-                    rider_child_target.active_effects = [
-                        e for e in rider_child_target.active_effects if e.name != canonical
-                    ]
-                    rider_child_target.active_effects.append(child)
+                    _rt.active_effects = [e for e in _rt.active_effects if e.name != canonical]
+                    _rt.active_effects.append(child)
         mod = _casting_mod(ch)
         prof = ch.proficiency_bonus
         c.characters[character_id] = Character.model_validate(ch.model_dump(mode="json"))
@@ -6870,10 +6891,10 @@ def cast_spell(
             c.characters[effect_holder.id] = Character.model_validate(
                 effect_holder.model_dump(mode="json")
             )
-        if rider_child_target is not None and rider_child_target is not effect_holder:
-            c.characters[rider_child_target.id] = Character.model_validate(
-                rider_child_target.model_dump(mode="json")
-            )
+        for _rt in (([rider_child_target] if rider_child_target is not None else [])
+                    + rider_aoe_targets):
+            if _rt is not effect_holder and _rt.id != character_id:
+                c.characters[_rt.id] = Character.model_validate(_rt.model_dump(mode="json"))
         # AoE / MULTI-TARGET RESOLUTION (F03-4). Targets were validated up front (before the
         # slot spend). Now the area save-for-damage spell is resolved by the ENGINE: ONE shared
         # damage roll for the whole area, then a per-target saving throw vs the caster's DC,
@@ -7025,11 +7046,17 @@ def cast_spell(
             # SYN-06 (#780): tell the DM the buff has ENGINE-APPLIED teeth — which numbers,
             # on whom — so it isn't narrated as flavor and then double-applied by hand.
             if rider_fields:
+                _rider_holders = [t.id for t in rider_aoe_targets]
+                if rider_child_target is not None:
+                    _rider_holders.insert(0, rider_child_target.id)
+                if caster_gets_rider:
+                    _rider_holders.append(effect_holder.id)
                 result["effect_riders"] = {
                     "holder_id": (
                         rider_child_target.id if rider_child_target is not None
-                        else effect_holder.id
+                        else (rider_aoe_targets[0].id if rider_aoe_targets else effect_holder.id)
                     ),
+                    "holder_ids": _rider_holders or [effect_holder.id],
                     **rider_fields,
                     "note": (
                         "Engine-applied: ac_bonus is folded into the holder's effective AC; "
