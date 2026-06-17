@@ -441,15 +441,40 @@ def test_rostered_origin_companion_dossier_merged_on_load_and_moves_on_decision(
     assert server.get_character(bg, sh_id)["attitude_value"] > before
 
 
-def test_load_canon_does_not_clobber_an_explicitly_seeded_roster_dossier(tmp_path, monkeypatch):
-    """No-clobber guard: Astarion's roster entry SHIPS its own companion_dossier, so promoting
-    him in place must leave that authored dossier byte-for-byte intact — the canon-merge only
-    fills a MISSING dossier, it never overrides one the world deliberately seeded."""
+def test_load_canon_does_not_clobber_an_existing_dossier(tmp_path, monkeypatch):
+    """No-clobber guard: if the rostered record ALREADY carries a dossier (seeded by the world,
+    or set by the DM) the in-place promotion must leave it byte-for-byte intact — the canon-merge
+    only fills a MISSING dossier, it never overrides one already present. Uses a deliberately
+    non-canon sentinel so the guard is independent of which roster entries ship a dossier."""
     monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
     bg = server.start_world("baldurs-gate")["campaign_id"]
-    seeded = server.get_character(bg, "npc-astarion")["companion_dossier"]
-    assert seeded is not None, "Astarion's roster entry ships its own dossier (the no-clobber case)"
-    res = server.load_canon_character(bg, "Astarion", kind="companion", add_to_party=True)
+    sentinel = {"approval_likes": ["a_deliberate_sentinel_cause"], "approval_dislikes": []}
+    server.update_character(bg, "npc-shadowheart", {"companion_dossier": sentinel})
+    before = server.get_character(bg, "npc-shadowheart")["companion_dossier"]
+    res = server.load_canon_character(bg, "Shadowheart", kind="companion", add_to_party=True)
     assert res.get("already_present") is True
-    after = server.get_character(bg, "npc-astarion")["companion_dossier"]
-    assert after == seeded, "an explicitly-seeded roster dossier must NEVER be clobbered by the canon merge"
+    after = server.get_character(bg, "npc-shadowheart")["companion_dossier"]
+    assert after == before, "an existing dossier must NEVER be clobbered by the canon merge"
+    assert after["approval_likes"] == ["a_deliberate_sentinel_cause"]
+
+
+@pytest.mark.parametrize("name,roster_id", [("Astarion", "npc-astarion"), ("Karlach", "npc-karlach")])
+def test_rostered_origin_without_authored_roster_dossier_loads_canon_and_moves(name, roster_id, tmp_path, monkeypatch):
+    """Astarion/Karlach previously shipped a STALE prose-vocab dossier in the world roster, which
+    the no-clobber merge left in place — so their NEW lowercase_snake canon approval vocabulary
+    was never live. With the redundant roster dossier removed, they take the same
+    already_present -> canon-merge path as Shadowheart: the authored canon vocabulary goes live
+    and a tagged moral choice moves them. (The tag is read from the merged dossier, not
+    hard-coded, so this stays correct as the canon causes are re-authored.)"""
+    monkeypatch.setenv("CLAWDND_STATE_DIR", str(tmp_path))
+    bg = server.start_world("baldurs-gate")["campaign_id"]
+    res = server.load_canon_character(bg, name, kind="companion", add_to_party=True)
+    assert res.get("already_present") is True and res["id"] == roster_id
+    likes = server.get_character(bg, roster_id)["companion_dossier"]["approval_likes"]
+    assert likes, f"{name} must carry canon approval_likes after the merge (roster dossier removed)"
+    tag = likes[0]
+    server.recruit_companion(bg, roster_id)
+    before = server.get_character(bg, roster_id)["attitude_value"]
+    out = server.record_decision(bg, summary=f"a choice {name} approves of", approval_tags=[tag])
+    assert roster_id in {r["id"] for r in out["approval_results"]}, f"the {tag!r} tag should move {name}"
+    assert server.get_character(bg, roster_id)["attitude_value"] > before
