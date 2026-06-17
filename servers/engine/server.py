@@ -9608,6 +9608,15 @@ def author_companion_gauges(
     companion_id = companion_id or companion or character_id
     if not companion_id:
         raise ValueError("author_companion_gauges needs a companion id (`companion_id` or an alias)")
+    # A betrayal agenda fires when attitude_value falls BELOW its threshold, so the threshold must be
+    # NEGATIVE — a brand-new companion sits at 0, and a non-negative threshold would put them already
+    # below it and roll a betrayal every beat from the moment they join (the engine's snap curve).
+    if betrayal_threshold is not None and betrayal_threshold >= 0:
+        raise ValueError(
+            f"betrayal_threshold must be NEGATIVE — the attitude_value the bond must fall BELOW to "
+            f"break (e.g. -30). {betrayal_threshold} would arm an agenda that betrays a neutral "
+            f"companion immediately. Omit it for a companion who can deepen but never turn."
+        )
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _require_companion(c, companion_id)
@@ -9624,15 +9633,26 @@ def author_companion_gauges(
         # the arc's existing gates are preserved.
         agenda_armed = False
         if betrayal_threshold is not None:
+            existing = ch.arc.agenda if ch.arc is not None else None
+            # Don't silently clobber a content-authored agenda of a DIFFERENT shape (e.g. a
+            # prize_seized / day_reached turn) — that's the author's design; redirect to set_companion_arc.
+            if existing is not None and existing.trigger != "attitude_below":
+                raise ValueError(
+                    f"{ch.name} already has a {existing.trigger!r} agenda authored in content; "
+                    f"author_companion_gauges won't overwrite it. Use set_companion_arc to change it."
+                )
             if ch.arc is None:
                 ch.arc = CompanionArc.model_validate({"arc_gates": [
                     {"kind": "loyalty", "threshold": 25,
                      "note": f"a deepening trust with {ch.name}, earned fighting beside them"}]})
-            ch.arc.agenda = CompanionAgenda.model_validate({
-                "trigger": "attitude_below",
-                "value": int(betrayal_threshold),
-                "decision_flag": (betrayal_decision_flag or "").strip(),
-            })
+            # MERGE onto an existing attitude_below agenda so a re-author that only re-tunes the
+            # threshold PRESERVES its decision_flag + note; re-arming resets the fired latch.
+            base = existing.model_dump() if existing is not None else {}
+            base.update({"trigger": "attitude_below", "value": int(betrayal_threshold), "fired": False})
+            flag = (betrayal_decision_flag or "").strip()
+            if flag:
+                base["decision_flag"] = flag
+            ch.arc.agenda = CompanionAgenda.model_validate(base)
             agenda_armed = True
         save_campaign(c)
         return {
