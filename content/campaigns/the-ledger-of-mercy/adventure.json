@@ -160,12 +160,6 @@
             "note": "Ondine's own quest opens — to recover the original page of the Book of Grace that holds her name and her dead's grave-debt, the leverage Ferreth keeps over her. She asks the party's help to buy back her name with deeds instead of coin, knowing it makes her a target."
           },
           {
-            "id": "ondine-gate-betrayal",
-            "kind": "betrayal",
-            "threshold": 18,
-            "note": "THE FORK. If the party has treated Ondine as a thug, endangered the bonded for expedience, taken Ferreth's coin, or let her dead's debt be used against her — and especially if they let Ferreth BUY HER BACK (debt cleared, kin made safe) — her bond reasserts itself. She turns: not from greed but from the cold arithmetic of a woman protecting the last people she has, fighting the party as a real attack at the moment they're most exposed. Reachable only when approval has curdled; honored, this gate stays locked forever."
-          },
-          {
             "id": "ondine-gate-loyalty",
             "kind": "loyalty",
             "threshold": 75,
@@ -174,7 +168,7 @@
         ],
         "agenda": {
           "trigger": "attitude_below",
-          "value": 18,
+          "value": -20,
           "note": "Ondine's bond wins. Pushed past her breaking point — treated as Ferreth's creature, her people endangered, her dead's debt turned against her — she does the cold soldier's math and chooses the leash that keeps her kin safe over a party that gave her nothing better. The turn fires as a real attack, ideally at the Almsmoot or the vault when the party is most exposed: she stands at Veil's shoulder, sick with it, and tells the party they should have made her a better offer than freedom she can't afford.",
           "decision_flag": "took_ferreths_coin"
         }
