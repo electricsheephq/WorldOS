@@ -37,7 +37,7 @@ from rapidfuzz import fuzz, process
 
 from _env import env_var
 
-mcp = FastMCP("clawdnd-rules")
+mcp = FastMCP("worldos-rules")
 
 _DATA_DIR = Path(
     env_var("SRD_DIR") or Path(__file__).resolve().parents[2] / "data" / "srd"
@@ -442,7 +442,7 @@ def _wrap(result: Optional[dict], query: str) -> dict:
 def ping() -> str:
     """Health check. Returns ok and the bundled SRD dataset sizes."""
     return (
-        f"clawdnd-rules: ok (v0.0.1) — bundled SRD 5.2.1: {len(_CONDITIONS)} conditions, "
+        f"worldos-rules: ok (v0.0.1) — bundled SRD 5.2.1: {len(_CONDITIONS)} conditions, "
         f"{len(_SPELLS)} spells, {len(_MONSTERS)} monsters, {len(_RULES)} rules, "
         f"{len(_ITEMS)} items, {len(_FEATS)} feats, {len(_BACKGROUNDS)} backgrounds, "
         f"{len(_SPECIES)} species, {len(_CLASSES)} classes"

@@ -2,7 +2,7 @@
 /state/
 
 # Dashboard-play runtime — saves, chat log, move sink, and DM transcripts for games
-# launched via scripts/play.sh / clawdnd-play.command. One dir per game; regenerable.
+# launched via scripts/play.sh / worldos-play.command. One dir per game; regenerable.
 /play-state/
 
 # QA harness runtime artifacts — sandboxed playtest state, transcripts, logs.

@@ -111,7 +111,7 @@ def test_codex_wrapper_smoke_generates_player_facade_config_only(tmp_path):
     assert summary["provider"] == "codex"
 
     config = Path(summary["config"]).read_text(encoding="utf-8")
-    assert "[mcp_servers.clawdnd-player]" in config
+    assert "[mcp_servers.worldos-player]" in config
     assert "player_server.py" in config
     assert "CLAWDND_PLAYER_MOVES" in config
     assert 'default_tools_approval_mode = "approve"' in config
@@ -153,9 +153,9 @@ def test_codex_dm_wrapper_dry_run_generates_dm_contract(tmp_path):
     assert summary["chat"].endswith("/dm-layout/chat.jsonl")
 
     config = Path(summary["config"]).read_text(encoding="utf-8")
-    assert "[mcp_servers.clawdnd-engine]" in config
-    assert "[mcp_servers.clawdnd-rules]" in config
-    assert "[mcp_servers.clawdnd-voice]" in config
+    assert "[mcp_servers.worldos-engine]" in config
+    assert "[mcp_servers.worldos-rules]" in config
+    assert "[mcp_servers.worldos-voice]" in config
     assert "/servers/engine" in config
     assert "/servers/rules" in config
     assert "/servers/voice" in config
@@ -323,7 +323,7 @@ def test_codex_dm_wrapper_prompts_are_self_contained_for_live_app_turns():
     assert "~/.codex skills" in source
     assert "warm, fair, generous storyteller voice" in source
     assert "never invent dice, rules outcomes, or campaign state" in source
-    assert "Use clawdnd-engine as the sole writer of campaign state" in source
+    assert "Use worldos-engine as the sole writer of campaign state" in source
     assert "Final output must be 2nd-person player-facing narration" in source
     assert "skills/dungeon-master/SKILL.md" not in source
     assert "/Users/lume/.codex/skills/dungeon-master" not in source

@@ -9,8 +9,8 @@ for one turn), writes the equivalent Anthropic stream-json lines on STDOUT.
 OpenClaw session line (type=="message"):
     {"type":"message","message":{"role":"assistant","content":[ <block> ]}}
   blocks seen:
-    {"type":"toolCall","name":"clawdnd-engine.advance_time","input":{…},"arguments":…,"id":…}
-    {"type":"toolResult","name":"clawdnd-engine.advance_time","text":"<result json>",…}
+    {"type":"toolCall","name":"worldos-engine.advance_time","input":{…},"arguments":…,"id":…}
+    {"type":"toolResult","name":"worldos-engine.advance_time","text":"<result json>",…}
     {"type":"text","text":"…"}
   (the role may be "assistant" | "toolResult"; the content may also be a bare string.)
 
@@ -20,8 +20,8 @@ Anthropic stream-json this emits (what distill.py + the gate's _tally read):
     tool result      -> {"type":"user","message":{"content":[{"type":"tool_result","content":"<text>"}]}}
 
 CRITICAL: the gate tallies tool names via `name.split("__")[-1]`. OpenClaw names them
-`server.tool` (dot), so we rewrite the FIRST dot to "__" (e.g. clawdnd-engine.attack ->
-clawdnd-engine__attack) so `.split("__")[-1]` == "attack". Tools with no dot pass through.
+`server.tool` (dot), so we rewrite the FIRST dot to "__" (e.g. worldos-engine.attack ->
+worldos-engine__attack) so `.split("__")[-1]` == "attack". Tools with no dot pass through.
 """
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ import sys
 
 
 def _to_anthropic_name(name: str) -> str:
-    """clawdnd-engine.attack -> clawdnd-engine__attack ; bare 'attack' -> 'attack'."""
+    """worldos-engine.attack -> worldos-engine__attack ; bare 'attack' -> 'attack'."""
     if not name:
         return name
     # OpenClaw uses one "server.tool" dot; convert it to the Anthropic "__" join so the

@@ -422,7 +422,7 @@ class SubagentCompanion:
     and its own scratch space — so it can hold campaign memory and make decisions
     without polluting the player's session. The forked session is seeded with the
     ``companion`` skill / ``companion-agent`` persona and pointed at the same
-    ``clawdnd-engine`` MCP, so it rolls and mutates state through the engine exactly
+    ``worldos-engine`` MCP, so it rolls and mutates state through the engine exactly
     like the in-process companion does.
 
     * ``take_turn`` would forward ``situation`` into the sub-session (as a prompt /

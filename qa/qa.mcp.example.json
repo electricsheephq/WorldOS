@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "clawdnd-engine": {
+    "worldos-engine": {
       "type": "stdio",
       "command": "uv",
       "args": [
@@ -13,7 +13,7 @@
         "CLAWDND_STATE_DIR": "qa/state"
       }
     },
-    "clawdnd-rules": {
+    "worldos-rules": {
       "type": "stdio",
       "command": "uv",
       "args": [
@@ -26,7 +26,7 @@
         "WORLDOS_RULES_OFFLINE": "1"
       }
     },
-    "clawdnd-voice": {
+    "worldos-voice": {
       "type": "stdio",
       "command": "uv",
       "args": [

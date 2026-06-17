@@ -28,4 +28,4 @@ CLAWDND_PLAY_COMPANIONS="Brogan:fighter:qa/play_companion.txt" ./clawdnd-play.co
 ```
 `scripts/play_party.sh` (and the `.command`, which routes through it) is **identical to solo play when you give no companion spec** — so nothing changes for solo. With companions named, each is pre-seeded into the party with a real sheet, the DM creates *your* character live and opens the scene around the existing party, and every beat your move plus each living companion's moves are resolved together. The same budget / turn caps apply (companions count toward the session ceiling).
 
-Prefer to type your turns in chat instead? Use `/world-play [id]` — same world, same DM, played here in Claude Code. The read-only `clawdnd-dashboard.command` (the "director's view") just watches a game without an action palette; this command is the one that lets you *play* in the dashboard.
+Prefer to type your turns in chat instead? Use `/world-play [id]` — same world, same DM, played here in Claude Code. The read-only `worldos-dashboard.command` (the "director's view") just watches a game without an action palette; this command is the one that lets you *play* in the dashboard.

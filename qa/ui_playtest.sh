@@ -87,7 +87,7 @@ for name, srv in cfg.get("mcpServers", {}).items():
         elif raw.startswith("servers/"): pkg = raw[len("servers/"):]
         else: pkg = raw
         args[i + 1] = f"{root}/servers/{pkg}"
-    if name == "clawdnd-engine":
+    if name == "worldos-engine":
         srv.setdefault("env", {})["CLAWDND_STATE_DIR"] = state
         # Dogfood FIDELITY (parity with scripts/play.sh:142 + qa/run_duo.sh): PIN the engine tools
         # (un-defer) so the DM stops burning a ~9s ToolSearch round-trip re-discovering the engine MCP
@@ -107,7 +107,7 @@ PY
 python3 - "$PW_DIR" "$URL" "$RUNDIR" "$PW_CHANNEL" "$PERSONA" "$PLAYER_CFG" <<'PY'
 import json, sys
 pw_dir, url, rundir, channel, persona, out = sys.argv[1:7]
-json.dump({"mcpServers": {"clawdnd-uiplayer": {
+json.dump({"mcpServers": {"worldos-uiplayer": {
     "command": "node",
     "args": [f"{pw_dir}/palette_server.js"],
     "env": {

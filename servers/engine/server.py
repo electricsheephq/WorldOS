@@ -107,7 +107,7 @@ from store import load_campaign, save_campaign
 from store import load_slot as _load_slot_store
 from store import save_slot as _save_slot_store
 
-mcp = FastMCP("clawdnd-engine")
+mcp = FastMCP("worldos-engine")
 
 
 def _parse_ability(value: str) -> Ability:
@@ -505,7 +505,7 @@ def _casting_mod(ch: Character) -> int:
 @mcp.tool()
 def ping() -> str:
     """Health check. Returns ok if the WorldOS engine server is reachable."""
-    return "clawdnd-engine: ok (v0.0.1)"
+    return "worldos-engine: ok (v0.0.1)"
 
 
 @mcp.tool()

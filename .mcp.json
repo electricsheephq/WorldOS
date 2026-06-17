@@ -1,17 +1,17 @@
 {
   "mcpServers": {
-    "clawdnd-engine": {
+    "worldos-engine": {
       "type": "stdio",
       "command": "uv",
       "alwaysLoad": true,
       "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}/servers/engine", "server.py"]
     },
-    "clawdnd-rules": {
+    "worldos-rules": {
       "type": "stdio",
       "command": "uv",
       "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}/servers/rules", "server.py"]
     },
-    "clawdnd-voice": {
+    "worldos-voice": {
       "type": "stdio",
       "command": "uv",
       "args": ["run", "--directory", "${CLAUDE_PLUGIN_ROOT}/servers/voice", "--group", "kokoro", "server.py"],

@@ -68,7 +68,7 @@ If both scripts run against the same campaign:
    `$MOVES` past its `MCURSOR` wins; the loser silently double-resolves the
    same move with stale narration.
 3. **Two Claude sessions on one campaign** — each DM has its own `$DSID`
-   (`uuidgen`). They write engine state via the same `clawdnd-engine` MCP but
+   (`uuidgen`). They write engine state via the same `worldos-engine` MCP but
    never see each other's `--resume` tape, so the engine gets contradictory
    `apply_check` / `apply_attack` / scene-narration calls.
 4. **Twice the cost** — both DMs bill against budgets the user thought was

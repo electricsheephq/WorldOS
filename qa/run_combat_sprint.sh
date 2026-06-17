@@ -50,7 +50,7 @@ python3 - "$ROOT/qa/qa.mcp.example.json" "$STATE_DIR" "$ROOT" "$DM_CFG" <<'PY'
 import json, sys
 src, state_dir, root, out = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 cfg = json.load(open(src))
-eng = cfg["mcpServers"]["clawdnd-engine"]
+eng = cfg["mcpServers"]["worldos-engine"]
 eng["env"]["CLAWDND_STATE_DIR"] = state_dir
 # Override --directory arg to use THIS worktree's engine (not the template default)
 args = eng.get("args", [])

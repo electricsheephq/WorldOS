@@ -123,7 +123,7 @@ if [ "$MODE" = "run" ]; then
 fi
 
 if [ "$MODE" = "smoke" ]; then
-  STATE_ROOT="${CLAWDND_STATE_ROOT:-$(mktemp -d "${TMPDIR:-/tmp}/clawdnd-codex-smoke.XXXXXX")}"
+  STATE_ROOT="${CLAWDND_STATE_ROOT:-$(mktemp -d "${TMPDIR:-/tmp}/worldos-codex-smoke.XXXXXX")}"
 else
   STATE_ROOT="${CLAWDND_STATE_ROOT:-$ROOT/play-state}"
 fi
@@ -162,7 +162,7 @@ out_path = Path(out)
 out_path.write_text(
     "\n".join(
         [
-            "[mcp_servers.clawdnd-player]",
+            "[mcp_servers.worldos-player]",
             'command = "uv"',
             "args = " + json.dumps(
                 ["run", "--directory", f"{root}/servers/engine", "python", "player_server.py"]
@@ -199,7 +199,7 @@ You are the Codex player actor for WorldOS run "$CLAWDND_RUN_ID" in world "$CLAW
 Hard boundary:
 - You are a player character, not the DM, narrator, QA harness, campaign author, or engine writer.
 - Do not edit files, campaign snapshots, engine store files, QA state, content, skills, prompts, rubrics, or world canon.
-- Use only the clawdnd-player tools exposed to you.
+- Use only the worldos-player tools exposed to you.
 - Emit legal player moves only: say, do, clarify, request_check, cast_spell, use_item, attack.
 - Read-only tools like look and my_sheet are allowed for grounding.
 - If no character or scene is available, ask one concise clarify question through the facade and stop.
@@ -268,12 +268,12 @@ codex exec \
   ${MODEL_ARGS[@]+"${MODEL_ARGS[@]}"} \
   --cd "$ROOT" \
   --output-last-message "$LAST_MESSAGE" \
-  -c "mcp_servers.clawdnd-player.command=\"uv\"" \
-  -c "mcp_servers.clawdnd-player.args=[\"run\",\"--directory\",\"$ROOT/servers/engine\",\"python\",\"player_server.py\"]" \
-  -c "mcp_servers.clawdnd-player.env_vars=[\"CLAWDND_STATE_DIR\",\"CLAWDND_PLAYER_MOVES\",\"CLAWDND_ACTOR_ID\",\"CLAWDND_ACTOR_ROLE\"]" \
-  -c "mcp_servers.clawdnd-player.required=true" \
-  -c "mcp_servers.clawdnd-player.default_tools_approval_mode=\"approve\"" \
-  -c "mcp_servers.clawdnd-player.enabled_tools=[\"say\",\"do\",\"clarify\",\"request_check\",\"cast_spell\",\"use_item\",\"attack\",\"look\",\"my_sheet\"]" \
+  -c "mcp_servers.worldos-player.command=\"uv\"" \
+  -c "mcp_servers.worldos-player.args=[\"run\",\"--directory\",\"$ROOT/servers/engine\",\"python\",\"player_server.py\"]" \
+  -c "mcp_servers.worldos-player.env_vars=[\"CLAWDND_STATE_DIR\",\"CLAWDND_PLAYER_MOVES\",\"CLAWDND_ACTOR_ID\",\"CLAWDND_ACTOR_ROLE\"]" \
+  -c "mcp_servers.worldos-player.required=true" \
+  -c "mcp_servers.worldos-player.default_tools_approval_mode=\"approve\"" \
+  -c "mcp_servers.worldos-player.enabled_tools=[\"say\",\"do\",\"clarify\",\"request_check\",\"cast_spell\",\"use_item\",\"attack\",\"look\",\"my_sheet\"]" \
   - < "$PROMPT_FILE" \
   > >(tee -a "$STDOUT_LOG") \
   2> >(tee -a "$STDERR_LOG" >&2)

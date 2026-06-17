@@ -9,7 +9,7 @@ The player wants to play in a living world (the generative / sandbox mode — th
 Target world (optional id): $ARGUMENTS
 
 Do this:
-1. If no world id was given, call `clawdnd-engine` `list_worlds` and let the player pick one.
+1. If no world id was given, call `worldos-engine` `list_worlds` and let the player pick one.
 2. Call `start_world(world_id)`. If it returns `existing_campaigns`, ask whether to **continue** one — `start_world(world_id, resume=<campaign_id>)` — or start fresh, so you never orphan a living world.
 3. Read the returned bible: premise, **era** (respect the chronology — no raising the long-dead), tone, standing threads, story seeds, dm_guidance, and the seeded regions / factions / NPC roster.
 4. Quick **character creation** (`generate_ability_scores` + `create_character`), and bring in a **companion** — a roster legend or an original — with a real wound and a distinct voice.

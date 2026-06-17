@@ -107,7 +107,7 @@ class MacOSAppStaticContractTests(unittest.TestCase):
         self.assertIn("codex exec", harness)
         self.assertIn("codex_supports_mcp_override_config", harness)
         self.assertIn("Codex CLI >= 0.120.0", harness)
-        self.assertIn("mcp_servers.clawdnd-uiplayer.command", harness)
+        self.assertIn("mcp_servers.worldos-uiplayer.command", harness)
         self.assertIn("palette_server.js", harness)
         self.assertIn("player_agent", harness)
         self.assertIn("provider", harness)

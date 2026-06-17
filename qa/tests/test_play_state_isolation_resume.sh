@@ -56,7 +56,7 @@ GOT="$(resolve_state_root "" "$USERDIR")"
   || fail "CLAWDND_STATE_DIR fallback resolved to '$GOT' (expected '$USERDIR')"
 
 # --- (4) the engine MCP config pins BOTH names to the per-$RUN dir. ----------------------------
-# Generate the dm.mcp.json exactly as play.sh does and assert clawdnd-engine carries BOTH
+# Generate the dm.mcp.json exactly as play.sh does and assert worldos-engine carries BOTH
 # WORLDOS_STATE_DIR and CLAWDND_STATE_DIR set to the per-run state dir (so an inherited bare
 # WORLDOS_STATE_DIR=<user-root> can't repoint the engine away from this game's dir).
 RUNDIR="$USERDIR/play-fixture-run"
@@ -65,7 +65,7 @@ DMCFG="$RUNDIR/dm.mcp.json"
 python3 - "$ROOT" "$RUNDIR" "$DMCFG" <<'PY'
 import json, sys
 root, state_dir, out = sys.argv[1], sys.argv[2], sys.argv[3]
-cfg = {"mcpServers": {"clawdnd-engine": {"type": "stdio", "command": "uv", "alwaysLoad": True,
+cfg = {"mcpServers": {"worldos-engine": {"type": "stdio", "command": "uv", "alwaysLoad": True,
     "args": ["run", "--directory", f"{root}/servers/engine", "server.py"],
     "env": {"WORLDOS_STATE_DIR": state_dir, "CLAWDND_STATE_DIR": state_dir}}}}
 json.dump(cfg, open(out, "w"))
@@ -73,7 +73,7 @@ PY
 ENGINE_BOTH="$(python3 - "$DMCFG" "$RUNDIR" <<'PY'
 import json, sys
 cfg = json.load(open(sys.argv[1])); want = sys.argv[2]
-env = cfg["mcpServers"]["clawdnd-engine"]["env"]
+env = cfg["mcpServers"]["worldos-engine"]["env"]
 print("1" if env.get("WORLDOS_STATE_DIR") == want and env.get("CLAWDND_STATE_DIR") == want else "0")
 PY
 )"

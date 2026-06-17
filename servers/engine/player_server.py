@@ -46,7 +46,7 @@ import store
 from _env import env_var
 from models import SKILL_ABILITIES, Character
 
-mcp = FastMCP("clawdnd-player")
+mcp = FastMCP("worldos-player")
 
 
 # --- read-only campaign access (the MOST-RECENT campaign in this state dir) -------
