@@ -13,6 +13,15 @@
       "multi_fatal_reason": "a truly dead/blank run necessarily also trips dice_used + player_in_party"
     },
     {
+      "case_dir": "narration_no_ooc_leak",
+      "expected_red_check": "narration_no_ooc_leak",
+      "artifacts": [
+        "run.jsonl",
+        "state.json"
+      ],
+      "real_red_provenance": "2026-06-17 craft audit (#972): 5+ first-person OOC authoring preambles in a 4.6-prose run, un-gated, inflated the LLM story score to 4.8"
+    },
+    {
       "case_dir": "both_sides_acted",
       "expected_red_check": "both_sides_acted",
       "artifacts": [
@@ -178,12 +187,6 @@
         "state.json"
       ],
       "real_red_provenance": ""
-    },
-    {
-      "case_dir": "TODO__narration_no_ooc_leak",
-      "expected_red_check": "narration_no_ooc_leak",
-      "todo": true,
-      "reason": "no faithful minimal fixture constructed yet (auto-flagged by builder)"
     }
   ]
 }

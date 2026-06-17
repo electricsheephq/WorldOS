@@ -1,0 +1,8 @@
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t_roll", "name": "mcp__engine__roll", "input": {"sides": 20}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t_roll", "content": [{"type": "text", "text": "{\"total\": 14}"}], "is_error": false}]}}
+{"type": "assistant", "message": {"content": [{"type": "text", "text": "Now let me seat Dal Lightspark as the player character and open on the tavern."}]}}
+{"type": "assistant", "message": {"content": [{"type": "text", "text": "Rain hammers the shutters of the Elfsong Tavern as you shoulder inside, the common room thick with pipe-smoke and low talk."}]}}
+{"type": "assistant", "message": {"content": [{"type": "text", "text": "Continuity check \u2014 let me correct that: the barkeep already named the missing caravan a moment ago."}]}}
+{"type": "assistant", "message": {"content": [{"type": "text", "text": "The barkeep leans close, her voice dropping. \"You're asking after the caravan? Bad business, that \u2014 three nights gone now.\""}]}}
+{"type": "assistant", "message": {"content": [{"type": "text", "text": "This is the inciting incident of the arc, so I'll raise the stakes before the scene turns."}]}}
+{"type": "assistant", "message": {"content": [{"type": "text", "text": "Here's how round one actually went: the cutpurse moved first and the lantern guttered out."}]}}
