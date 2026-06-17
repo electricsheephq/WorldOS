@@ -75,6 +75,37 @@ def test_author_is_additive_preserves_camp_prompts(tmp_path, monkeypatch):
     assert d.approval_dislikes == []          # not passed -> unchanged (empty)
 
 
+def test_betrayal_threshold_must_be_negative(tmp_path, monkeypatch):
+    """A non-negative betrayal_threshold would arm an agenda that betrays a neutral (attitude 0)
+    companion immediately — reject it at the seam."""
+    import pytest
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    bg = server.start_world("baldurs-gate")["campaign_id"]
+    comp_id = _vocabless_companion(bg)
+    for bad in (0, 20, 100):
+        with pytest.raises(ValueError, match="NEGATIVE"):
+            server.author_companion_gauges(bg, companion_id=comp_id, approval_likes=["mercy"],
+                                           betrayal_threshold=bad)
+    # the dossier was still written for the first (pre-agenda) call? no — the raise is BEFORE the
+    # lock, so nothing was written; a clean negative threshold works:
+    res = server.author_companion_gauges(bg, companion_id=comp_id, approval_likes=["mercy"],
+                                         betrayal_threshold=-25)
+    assert res["betrayal_agenda_armed"] is True
+
+
+def test_reauthor_preserves_agenda_decision_flag(tmp_path, monkeypatch):
+    """Re-arming to re-tune the threshold preserves the existing agenda's decision_flag (additive)."""
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    bg = server.start_world("baldurs-gate")["campaign_id"]
+    comp_id = _vocabless_companion(bg)
+    server.author_companion_gauges(bg, companion_id=comp_id, approval_likes=["mercy"],
+                                   betrayal_threshold=-30, betrayal_decision_flag="took_the_coin")
+    # re-author with a new threshold but NO flag — the flag must survive
+    server.author_companion_gauges(bg, companion_id=comp_id, betrayal_threshold=-20)
+    ag = store.load_campaign(bg).characters[comp_id].arc.agenda
+    assert ag.value == -20 and ag.decision_flag == "took_the_coin"
+
+
 def test_author_without_threshold_leaves_agenda_unarmed(tmp_path, monkeypatch):
     """Omitting betrayal_threshold deepens-but-never-turns: no agenda is armed (the default seeded
     loyalty arc stays agenda-less)."""
