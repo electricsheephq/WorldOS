@@ -327,6 +327,14 @@ _LOG_EVENT_KINDS = frozenset({"narration", "dialogue", "roll", "system", "combat
 _ACT1_STALL_DAYS = 4
 _ACT1_STALL_BEATS = 8
 
+# camp_overdue beats-reach (WS-D). The DM rarely advances the in-world clock — 0 long_rest/downtime
+# across the QA corpus — so the original `day >= 3` camp gate was structurally UNREACHABLE and the
+# camp/companion-regard pillar (0/203 camp beats) never fired. Also cue camp once the party has
+# played ~8 beats with companions and no rest, mirroring act_one_stalled's beats_in_act reach, so the
+# pillar engages on a normal-length run instead of waiting for a day-advance that never comes. Tunable
+# from a duo A/B without touching the cue logic.
+_CAMP_OVERDUE_BEATS = 8
+
 
 def _validate_log_kind(kind: str) -> str:
     """Normalize + validate a DM-supplied beat kind against the whitelist (F07-6). Returns
@@ -11648,8 +11656,13 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
 
     # 2. camp_overdue — the party has companions but nobody has rested (no camp beats land
     #    without a long_rest), or the last rest was 3+ in-world days ago. Camp is the pillar
-    #    where companion regard + arcs move; an overdue camp starves all of that.
-    if party_companions and day >= 3:
+    #    where companion regard + arcs move; an overdue camp starves all of that. Reachable by
+    #    in-world DAYS (the original signal, for runs that advance the clock) OR by BEATS played
+    #    (WS-D — the DM rarely advances time, so day>=3 alone never fired; cue camp after a long
+    #    stretch of play with companions and no rest).
+    _arc = getattr(c, "narrative_arc", None)
+    _beats_in_act = (getattr(_arc, "beats_in_act", 0) or 0) if _arc is not None else 0
+    if party_companions and (day >= 3 or _beats_in_act >= _CAMP_OVERDUE_BEATS):
         # NB: a value of 0 is a VALID rest day (rested on day 0), so coalesce only None, not
         # falsy-0 — `or -1` would wrongly read a day-0 rest as "never rested".
         def _rest_day(comp):
