@@ -113,6 +113,17 @@ COLUMNS: tuple[str, ...] = (
     "s_per_beat",         # mean GENERATION seconds per CONTINUING (routine) beat (cold open excluded)
     "coldopen_s",         # cold-open (first/world-build beat) GENERATION seconds
     "turns_per_beat",     # mean claude -p `num_turns` per CONTINUING beat (ToolSearch / round-trip proxy)
+    # --- Wave-1 1B: per-kind + per-tool timing attribution (qa/latency_rollup.py). Per-kind
+    # means split the routine s_per_beat by what the beat DID (a combat beat costs more than a
+    # social one); the tool-exec split (from the optional 1A {ts,tool,wall_ms,ok,campaign_id}
+    # sidecar) attributes how much of a beat is engine tool-exec vs model generation. All NULL
+    # on rows recorded before this stamping (additive, migration-free). ---
+    "combat_s_per_beat",  # mean GENERATION seconds over COMBAT beats (None when no combat beat)
+    "social_s_per_beat",  # mean GENERATION seconds over SOCIAL beats (None when no social beat)
+    "mean_tool_call_ms",  # mean per-tool-call wall_ms across the 1A sidecar (None w/o sidecar)
+    "slowest_tool",       # tool with the largest TOTAL summed wall_ms (None w/o sidecar)
+    "tool_exec_pct",      # sum(tool wall_s) / sum(beat duration_ms) — engine-exec fraction of a beat
+    "duration_wall_s",    # total WHOLE-BEAT wall seconds for the run (sum of duration_ms), if measured
     # --- structural coverage (the owner's "full circle"; pairs with the #961 structural_completeness
     # gate). Tracks whether a run actually EXERCISED whole systems (not just scored prose+dice): how
     # far the arc got + a one-line human roll-up. Derived from the engine snapshot + DM tool counts by
@@ -136,6 +147,9 @@ _REAL_COLS = {
     "rri", "image_render_rate",
     # F13-4 latency ledger (all wall-clock seconds / turn counts → REAL)
     "s_per_beat", "coldopen_s", "turns_per_beat",
+    # Wave-1 1B per-kind + per-tool timing (seconds / ms / ratio → REAL; slowest_tool is TEXT)
+    "combat_s_per_beat", "social_s_per_beat", "mean_tool_call_ms", "tool_exec_pct",
+    "duration_wall_s",
 }
 _INT_COLS = {"critical_bugs", "pass", "is_canonical_baseline", "acts_reached"}
 
@@ -390,6 +404,11 @@ _MD_COLS = [
     ("s_per_beat", "s/beat"),
     ("coldopen_s", "cold-open s"),
     ("turns_per_beat", "turns/beat"),
+    ("combat_s_per_beat", "combat s/beat"),
+    ("social_s_per_beat", "social s/beat"),
+    ("tool_exec_pct", "tool%"),
+    ("mean_tool_call_ms", "tool ms"),
+    ("slowest_tool", "slowest tool"),
     ("acts_reached", "Acts"),
     ("structural_coverage", "Structural coverage"),
     ("pass", "Pass"),
@@ -443,6 +462,8 @@ def render_markdown(db_path: Path | str = DB_PATH, md_path: Path | str = MD_PATH
         for key, _ in _MD_COLS:
             v = r.get(key)
             if key == "image_render_rate" and v is not None:
+                v = f"{float(v) * 100:.0f}%"
+            elif key == "tool_exec_pct" and v is not None:
                 v = f"{float(v) * 100:.0f}%"
             elif key == "pass" and v is not None:
                 v = "PASS" if int(v) else "FAIL"

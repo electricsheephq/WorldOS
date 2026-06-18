@@ -277,3 +277,210 @@ def test_cli_compare_exit_codes(tmp_path):
     tiered_bad.write_text(json.dumps(_arm(236.0, 98.0, co_cc=150000.0, ro_cc=15000.0, ro_input=26000.0)))
     assert latency_rollup._main(["--compare", str(base), str(tiered_ok)]) == 0
     assert latency_rollup._main(["--compare", str(base), str(tiered_bad)]) == 1
+# ══════════════════════════════════════════════════════════════════════════════════════
+# Wave-1 1B: per-kind attribution (from transcripts) + tool-exec split (from the 1A sidecar)
+# ══════════════════════════════════════════════════════════════════════════════════════
+
+def _write_beat_with_tools(d: Path, run: str, nanos: int, *, api_ms, tools,
+                           num_turns=1, duration_ms=None):
+    """A beat transcript carrying ``tools`` (list of MCP-prefixed tool_use names) so the
+    per-kind classifier has something to read, plus a terminal result with duration_api_ms
+    (and optionally duration_ms for the tool_exec_pct denominator)."""
+    res = {"type": "result", "subtype": "success", "is_error": False,
+           "api_error_status": None, "num_turns": num_turns, "result": "prose"}
+    if api_ms is not None:
+        res["duration_api_ms"] = api_ms
+    if duration_ms is not None:
+        res["duration_ms"] = duration_ms
+    lines = [json.dumps({"type": "system", "subtype": "init"})]
+    for name in tools:
+        lines.append(json.dumps({
+            "type": "assistant",
+            "message": {"role": "assistant",
+                        "content": [{"type": "tool_use", "name": name, "input": {}}]},
+        }))
+    lines.append(json.dumps({"type": "assistant", "message": {"content": "…"}}))
+    lines.append(json.dumps(res))
+    path = d / f"{run}.dm.{nanos}.jsonl"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def test_per_kind_combat_and_social_means(tmp_path):
+    # cold open (beat0), then a combat beat (140s) and a social beat (70s). The per-kind means
+    # are derived from the tool_use names alone — no sidecar.
+    run = "duo-kind"
+    _write_beat_with_tools(tmp_path, run, 1000, api_ms=240000,
+                           tools=["mcp__engine__start_adventure"])           # cold open
+    _write_beat_with_tools(tmp_path, run, 2000, api_ms=140000,
+                           tools=["mcp__engine__start_combat", "mcp__engine__attack"])  # combat
+    _write_beat_with_tools(tmp_path, run, 3000, api_ms=70000,
+                           tools=["mcp__engine__social_check"])              # social (no combat/camp tool)
+    r = latency_rollup.rollup_run(tmp_path, run)
+    assert r["coldopen_s"] == 240.0
+    assert r["combat_s_per_beat"] == 140.0
+    assert r["social_s_per_beat"] == 70.0
+    assert r["camp_s_per_beat"] is None                # no camp beat
+
+
+def test_per_kind_camp_and_combat_precedence(tmp_path):
+    # camp means come from camp tools; a beat that BOTH fights and rests is attributed to combat
+    # (the heavier kind wins). Two combat beats average; the camp beat is its own mean.
+    run = "duo-camp"
+    _write_beat_with_tools(tmp_path, run, 1000, api_ms=200000, tools=[])     # cold open (no tools)
+    _write_beat_with_tools(tmp_path, run, 2000, api_ms=100000,
+                           tools=["mcp__engine__attack"])                    # combat
+    _write_beat_with_tools(tmp_path, run, 3000, api_ms=120000,
+                           tools=["mcp__engine__cast_spell", "mcp__engine__long_rest"])  # combat (precedence)
+    _write_beat_with_tools(tmp_path, run, 4000, api_ms=90000,
+                           tools=["mcp__engine__camp_scene", "mcp__engine__record_camp_beat"])  # camp
+    r = latency_rollup.rollup_run(tmp_path, run)
+    assert r["combat_s_per_beat"] == 110.0             # mean(100, 120) — the long_rest beat is combat
+    assert r["camp_s_per_beat"] == 90.0
+    assert r["social_s_per_beat"] is None
+
+
+def test_per_kind_none_when_no_such_beat(tmp_path):
+    # A run with only cold-open + social beats has None for combat/camp (no fabricated 0).
+    run = "duo-soc"
+    _write_beat_with_tools(tmp_path, run, 1000, api_ms=200000, tools=[])     # cold open
+    _write_beat_with_tools(tmp_path, run, 2000, api_ms=80000, tools=[])      # social (no tools)
+    r = latency_rollup.rollup_run(tmp_path, run)
+    assert r["social_s_per_beat"] == 80.0
+    assert r["combat_s_per_beat"] is None
+    assert r["camp_s_per_beat"] is None
+
+
+def test_per_kind_present_without_sidecar(tmp_path):
+    # Per-kind keys exist (None or value) even when NO --tooltiming is passed; the tool-exec
+    # split keys are None (graceful degrade).
+    run = "duo-nosc"
+    _write_beat_with_tools(tmp_path, run, 1000, api_ms=200000, tools=[])
+    _write_beat_with_tools(tmp_path, run, 2000, api_ms=90000,
+                           tools=["mcp__engine__attack"])
+    r = latency_rollup.rollup_run(tmp_path, run)               # NO tooltiming
+    for k in ("combat_s_per_beat", "social_s_per_beat", "camp_s_per_beat",
+              "mean_tool_call_ms", "slowest_tool", "tool_exec_pct"):
+        assert k in r
+    assert r["combat_s_per_beat"] == 90.0
+    assert r["mean_tool_call_ms"] is None and r["slowest_tool"] is None
+    assert r["tool_exec_pct"] is None
+
+
+def _write_tooltiming(path: Path, rows) -> None:
+    """Write a 1A tool-timing JSONL sidecar (the contract:
+    {ts, tool, wall_ms, ok, campaign_id} per line)."""
+    with path.open("w", encoding="utf-8") as fh:
+        for r in rows:
+            if isinstance(r, str):
+                fh.write(r + "\n")                 # raw line (for the malformed-line test)
+            else:
+                fh.write(json.dumps(r) + "\n")
+
+
+def test_tooltiming_sidecar_slowest_and_mean(tmp_path):
+    # mean_tool_call_ms is the mean wall_ms; slowest_tool is the largest TOTAL summed wall_ms.
+    # scene_context: 200+220 = 420ms total; attack: 50ms; roll: 30ms → slowest = scene_context.
+    run = "duo-tt"
+    _write_beat_with_tools(tmp_path, run, 1000, api_ms=200000, tools=[], duration_ms=205000)
+    _write_beat_with_tools(tmp_path, run, 2000, api_ms=100000,
+                           tools=["mcp__engine__attack"], duration_ms=103000)
+    sc = tmp_path / "tools.jsonl"
+    _write_tooltiming(sc, [
+        {"ts": 1.0, "tool": "scene_context", "wall_ms": 200.0, "ok": True, "campaign_id": "c1"},
+        {"ts": 2.0, "tool": "scene_context", "wall_ms": 220.0, "ok": True, "campaign_id": "c1"},
+        {"ts": 3.0, "tool": "attack", "wall_ms": 50.0, "ok": True, "campaign_id": "c1"},
+        {"ts": 4.0, "tool": "roll", "wall_ms": 30.0, "ok": True, "campaign_id": "c1"},
+    ])
+    r = latency_rollup.rollup_run(tmp_path, run, tooltiming=sc)
+    assert r["slowest_tool"] == "scene_context"
+    assert r["mean_tool_call_ms"] == 125.0           # mean(200,220,50,30)
+
+
+def test_tooltiming_exec_pct_uses_duration_ms_denominator(tmp_path):
+    # tool_exec_pct = sum(tool wall_s) / sum(beat duration_ms s). 500ms tools / 10s wall = 5%.
+    run = "duo-pct"
+    _write_beat_with_tools(tmp_path, run, 1000, api_ms=200000, tools=[], duration_ms=4000)
+    _write_beat_with_tools(tmp_path, run, 2000, api_ms=100000, tools=[], duration_ms=6000)
+    sc = tmp_path / "tools.jsonl"
+    _write_tooltiming(sc, [
+        {"ts": 1.0, "tool": "a", "wall_ms": 300.0, "ok": True, "campaign_id": None},
+        {"ts": 2.0, "tool": "b", "wall_ms": 200.0, "ok": True, "campaign_id": None},
+    ])
+    r = latency_rollup.rollup_run(tmp_path, run, tooltiming=sc)
+    # 0.5s tools / 10.0s wall = 0.05; basis is the whole-beat wall (duration_ms).
+    assert r["tool_exec_pct"] == 0.05
+    assert r["tool_exec_pct_basis"] == "duration_ms"
+
+
+def test_tooltiming_exec_pct_falls_back_to_api_when_no_duration_ms(tmp_path):
+    # When NO beat carries duration_ms, the denominator falls back to total generation
+    # (duration_api_ms) and the basis is stamped so the reader knows it over-states.
+    run = "duo-fb"
+    _write_beat_with_tools(tmp_path, run, 1000, api_ms=200000, tools=[])   # no duration_ms
+    _write_beat_with_tools(tmp_path, run, 2000, api_ms=300000, tools=[])   # no duration_ms
+    sc = tmp_path / "tools.jsonl"
+    _write_tooltiming(sc, [
+        {"ts": 1.0, "tool": "a", "wall_ms": 5000.0, "ok": True, "campaign_id": None},
+    ])
+    r = latency_rollup.rollup_run(tmp_path, run, tooltiming=sc)
+    # 5s tools / 500s generation = 0.01; basis stamped as the generation fallback.
+    assert r["tool_exec_pct"] == 0.01
+    assert r["tool_exec_pct_basis"] == "duration_api_ms"
+
+
+def test_tooltiming_absent_degrades_to_none(tmp_path):
+    # No --tooltiming at all → the three tool-exec keys are None, rest of rollup unchanged.
+    run = "duo-none"
+    _write_beat_with_tools(tmp_path, run, 1000, api_ms=200000, tools=[])
+    _write_beat_with_tools(tmp_path, run, 2000, api_ms=90000, tools=[])
+    r = latency_rollup.rollup_run(tmp_path, run)
+    assert r["mean_tool_call_ms"] is None
+    assert r["slowest_tool"] is None
+    assert r["tool_exec_pct"] is None
+    assert r["s_per_beat"] == 90.0                   # base rollup intact
+
+
+def test_tooltiming_missing_file_degrades_gracefully(tmp_path):
+    # A --tooltiming PATH that does not exist → empty sidecar → None tool-exec keys (no crash).
+    run = "duo-miss"
+    _write_beat_with_tools(tmp_path, run, 1000, api_ms=200000, tools=[])
+    _write_beat_with_tools(tmp_path, run, 2000, api_ms=90000, tools=[])
+    r = latency_rollup.rollup_run(tmp_path, run, tooltiming=tmp_path / "nope.jsonl")
+    assert r["mean_tool_call_ms"] is None and r["tool_exec_pct"] is None
+
+
+def test_tooltiming_empty_and_garbled_rows_skipped(tmp_path):
+    # Blank lines, malformed JSON, non-objects, and rows missing tool/wall_ms are skipped;
+    # only the valid row survives (tolerant, never raises).
+    run = "duo-garble"
+    _write_beat_with_tools(tmp_path, run, 1000, api_ms=200000, tools=[], duration_ms=4000)
+    sc = tmp_path / "tools.jsonl"
+    _write_tooltiming(sc, [
+        "",                                                    # blank
+        "{not valid json",                                     # malformed
+        "[1,2,3]",                                             # not an object
+        {"ts": 1.0, "ok": True},                               # no tool / wall_ms
+        {"tool": "x"},                                         # no wall_ms
+        {"tool": "good", "wall_ms": 42.0, "ok": True, "campaign_id": None},  # the one valid row
+    ])
+    r = latency_rollup.rollup_run(tmp_path, run, tooltiming=sc)
+    assert r["mean_tool_call_ms"] == 42.0
+    assert r["slowest_tool"] == "good"
+
+
+def test_cli_tooltiming_flag(tmp_path):
+    # The CLI threads --tooltiming through to the rollup.
+    run = "duo-clitt"
+    _write_beat_with_tools(tmp_path, run, 1000, api_ms=200000, tools=[], duration_ms=4000)
+    sc = tmp_path / "tools.jsonl"
+    _write_tooltiming(sc, [
+        {"ts": 1.0, "tool": "scene_context", "wall_ms": 100.0, "ok": True, "campaign_id": None},
+    ])
+    out = tmp_path / "lat.json"
+    rc = latency_rollup._main(["--dir", str(tmp_path), "--run", run,
+                               "--tooltiming", str(sc), "--out", str(out)])
+    assert rc == 0
+    data = json.loads(out.read_text())
+    assert data["slowest_tool"] == "scene_context"
+    assert data["mean_tool_call_ms"] == 100.0

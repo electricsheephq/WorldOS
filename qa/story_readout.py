@@ -21,6 +21,15 @@ Input: a claude -p stream-json transcript (qa/transcripts/*.jsonl, *.dm.*.jsonl)
 """
 from __future__ import annotations
 import json, re, sys, glob, os
+from pathlib import Path
+
+# Reuse the latency rollup for the TIMING stamp — DON'T re-parse transcripts here. Defensive
+# import (story_readout is run as a script from varied cwds, like the tests do).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    import latency_rollup  # noqa: E402
+except Exception:  # pragma: no cover - latency_rollup is a sibling; absence only kills the stamp
+    latency_rollup = None  # type: ignore[assignment]
 
 # Tool calls that are STORY (kept in the render); everything else (Read, ToolSearch, speak,
 # scene_context, persist_beat logging, get_state, list_canon, ...) is harness noise, dropped.
@@ -641,6 +650,74 @@ def stamp(cov: dict) -> str:
     )
 
 
+# A beat transcript is "<run>.dm.<nanos>.jsonl"; split it into (transcript_dir, run_id) so the
+# latency rollup can discover the run's SIBLING beat files (a multi-beat run is many files).
+_DM_RUN_RE = re.compile(r"^(.*)\.dm\.\d+\.jsonl$")
+
+
+def _dir_and_run(path: str):
+    """Derive (transcript_dir, run_id) from a beat-transcript path, or (None, None) when the
+    path is not a "<run>.dm.<nanos>.jsonl" beat file (so the TIMING stamp is simply skipped)."""
+    d = os.path.dirname(path) or "."
+    m = _DM_RUN_RE.match(os.path.basename(path))
+    return (d, m.group(1)) if m else (None, None)
+
+
+def timing_stamp(transcript_dir, run_id, tooltiming=None) -> str:
+    """One-line ``TIMING | ...`` stamp, computed by REUSING qa/latency_rollup (no re-parsing).
+
+    Shape (clauses present only when there's data for them — degrade gracefully)::
+
+        TIMING | beat~86s gen~96s cold~240s | combat~140s social~70s camp~95s | tool=3% slowest=scene_context
+
+    * ``beat~`` = ``s_per_beat`` (routine-beat generation), ``cold~`` = ``coldopen_s``.
+    * the per-kind clause shows whichever of combat/social/camp the run actually had.
+    * the tool clause (``tool=…% slowest=…``) appears ONLY when a 1A ``tooltiming`` sidecar
+      was supplied AND parsed — otherwise it is omitted entirely (no sidecar → no claim).
+
+    Returns ``"TIMING | (no beat data)"`` when the rollup has no successful beats, and
+    ``"TIMING | (unavailable)"`` if the latency_rollup import failed."""
+    if latency_rollup is None:
+        return "TIMING | (unavailable)"
+    if not run_id:
+        return "TIMING | (no beat data)"
+    r = latency_rollup.rollup_run(transcript_dir, run_id, tooltiming=tooltiming)
+    if not r.get("beats"):
+        return "TIMING | (no beat data)"
+
+    def s(v):
+        return None if v is None else (f"{v:.0f}s" if float(v) >= 10 else f"{float(v):.1f}s")
+
+    head = []
+    if r.get("s_per_beat") is not None:
+        head.append(f"beat~{s(r['s_per_beat'])}")
+    if r.get("coldopen_s") is not None:
+        head.append(f"cold~{s(r['coldopen_s'])}")
+
+    kinds = []
+    for label, col in (("combat", "combat_s_per_beat"), ("social", "social_s_per_beat"),
+                       ("camp", "camp_s_per_beat")):
+        if r.get(col) is not None:
+            kinds.append(f"{label}~{s(r[col])}")
+
+    parts = ["TIMING"]
+    parts.append(" ".join(head) if head else "(cold-open only)")
+    if kinds:
+        parts.append(" ".join(kinds))
+    # Tool clause: only when the sidecar produced numbers (graceful degrade otherwise).
+    if r.get("tool_exec_pct") is not None or r.get("slowest_tool") is not None:
+        bits = []
+        if r.get("tool_exec_pct") is not None:
+            bits.append(f"tool={float(r['tool_exec_pct']) * 100:.0f}%")
+        if r.get("mean_tool_call_ms") is not None:
+            bits.append(f"call~{float(r['mean_tool_call_ms']):.0f}ms")
+        if r.get("slowest_tool"):
+            bits.append(f"slowest={r['slowest_tool']}")
+        if bits:
+            parts.append(" ".join(bits))
+    return " | ".join(parts)
+
+
 def main(argv):
     if not argv or argv[0] in ("-h", "--help"):
         print(__doc__)
@@ -650,6 +727,9 @@ def main(argv):
     out = None
     if "--out" in argv:
         out = argv[argv.index("--out") + 1]
+    tooltiming = None
+    if "--tooltiming" in argv:
+        tooltiming = argv[argv.index("--tooltiming") + 1]
     if os.path.isdir(path):
         cands = sorted(glob.glob(os.path.join(path, "**", "*.jsonl"), recursive=True),
                        key=lambda p: os.path.getsize(p), reverse=True)
@@ -660,14 +740,20 @@ def main(argv):
         path = cands[0]
     render, cov = analyze(path)
     line = stamp(cov)
+    # TIMING stamp — derive the run's transcript dir + id from the (possibly chosen) beat file
+    # so the rollup can see all of the run's sibling beats; reuse latency_rollup (no re-parse).
+    tdir, run_id = _dir_and_run(path)
+    tline = timing_stamp(tdir, run_id, tooltiming=tooltiming)
     if coverage_only:
         print(line)
+        print(tline)
         print(json.dumps({k: v for k, v in cov.items() if k != "calls"}))
         return 0
-    body = f"# Story readout — {os.path.basename(path)}\n\n{line}\n" + "\n".join(render) + f"\n\n{line}\n"
+    body = (f"# Story readout — {os.path.basename(path)}\n\n{line}\n{tline}\n"
+            + "\n".join(render) + f"\n\n{line}\n{tline}\n")
     if out:
         open(out, "w", encoding="utf-8").write(body)
-        print(f"wrote {out}\n{line}")
+        print(f"wrote {out}\n{line}\n{tline}")
     else:
         print(body)
     return 0
