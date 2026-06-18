@@ -445,6 +445,23 @@ class Event(_StrictModel):
     first_presented_day: Optional[int] = None
 
 
+class CompanionStance(_StrictModel):
+    """How a companion stands toward OTHER companions — turns a roster into an ENSEMBLE
+    (E2 inter-companion approval). Keys are OTHER companion IDS (content-owned, never
+    engine-coded). The ally/rival lists drive a SECONDARY, smaller approval delta when a
+    decision sides with/against a NAMED companion: hurting an ally hurts me, siding against
+    a rival pleases me (the inverse-of-an-ally signal).
+
+    ADDITIVE: attached to a CompanionDossier via `stance` (default None), so a stance-less
+    dossier behaves exactly as today (empty == today) and every existing snapshot round-trips
+    byte-for-byte under extra='forbid'."""
+
+    # Companions this one DEFENDS — hurting them hurts me (secondary -delta), helping them helps me.
+    allies: list[str] = Field(default_factory=list)
+    # Companions this one RESENTS — siding against them pleases me (secondary +delta), helping them stings.
+    rivals: list[str] = Field(default_factory=list)
+
+
 class CompanionDossier(_StrictModel):
     """A companion's structured identity — the OPERATIONAL state the engine's living-world
     systems act on (camp scheduling, banter selection, approval causes, companion quest
@@ -481,6 +498,12 @@ class CompanionDossier(_StrictModel):
     # Standing ties to other figures: id-or-name -> a short relationship tag ("old ally",
     # "estranged sister"). Keys live in CONTENT (the seed files), never engine code.
     relationships: dict[str, str] = Field(default_factory=dict)
+    # How this companion stands toward OTHER companions (E2 ENSEMBLE). allies/rivals are lists
+    # of OTHER companion ids that drive a SECONDARY ±_APPROVAL_SECONDARY_DELTA when a decision
+    # sides with/against a named companion (hurt my ally -> I sour; side against my rival -> I
+    # warm). ADDITIVE default None: a stance-less dossier behaves exactly as today (no secondary
+    # moves), so every existing snapshot round-trips unchanged. Keys live in CONTENT, never code.
+    stance: Optional[CompanionStance] = None
     # Per-cause approval INTENSITY (E4 weighted delta). Keys are the SAME lowercase_snake
     # cause-keys in approval_likes/approval_dislikes; the value is a POSITIVE magnitude (the
     # LIST the key sits on decides sign) used as the base approval swing for that cause. An
@@ -1274,6 +1297,12 @@ class Decision(_StrictModel):
     # gauge move happened once, at record time, on the DM-supplied tags). The KEY vocabulary
     # lives in CONTENT (the companion dossiers), never in engine code.
     approval_tags: list[str] = Field(default_factory=list)
+    # The companion this decision SIDES WITH / AGAINST (E2 ENSEMBLE) — an explicit companion id
+    # the DM names so the inter-companion SECONDARY approval delta can ripple onto that
+    # companion's allies/rivals. Stored for RECALL. ADDITIVE default "": an old snapshot with no
+    # `targets_companion` round-trips unchanged, and omitting it leaves the gauge move
+    # byte-identical to today (no secondary pass).
+    targets_companion: str = ""
 
 
 CampBeatKind = Literal["solo", "pair_banter", "arc", "decision_callback"]

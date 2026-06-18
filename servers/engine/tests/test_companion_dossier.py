@@ -303,3 +303,68 @@ def test_recruit_synthesized_dossier_is_terse(tmp_path, monkeypatch):
     assert all(len(p) <= 200 for p in d["camp_prompts"])  # each clause truncated
     # the dossier does NOT duplicate the long backstory wholesale
     assert long_clause not in d["camp_prompts"]
+
+
+# --- INC-B1: CompanionStance (E2 inter-companion stance), additive ----------
+
+def test_dossier_stance_defaults_none():
+    """A dossier carries no stance by default — empty == today (no inter-companion signal)."""
+    assert CompanionDossier().stance is None
+
+
+def test_companion_stance_empty_lists_default():
+    from models import CompanionStance
+    s = CompanionStance()
+    assert s.allies == [] and s.rivals == []
+
+
+def test_companion_stance_round_trips_a_payload():
+    from models import CompanionStance
+    s = CompanionStance(allies=["comp-a", "comp-b"], rivals=["comp-c"])
+    reloaded = CompanionStance.model_validate(s.model_dump(mode="json"))
+    assert reloaded.allies == ["comp-a", "comp-b"]
+    assert reloaded.rivals == ["comp-c"]
+
+
+def test_dossier_with_stance_round_trips():
+    payload = {
+        "approval_likes": ["mercy"],
+        "stance": {"allies": ["comp-ally"], "rivals": ["comp-rival"]},
+    }
+    d = CompanionDossier.model_validate(payload)
+    assert d.stance is not None
+    assert d.stance.allies == ["comp-ally"] and d.stance.rivals == ["comp-rival"]
+    # full json round-trip is stable
+    reloaded = CompanionDossier.model_validate(d.model_dump(mode="json"))
+    assert reloaded.stance.allies == ["comp-ally"]
+
+
+def test_old_dossier_snapshot_without_stance_loads_none():
+    """A pre-stance dossier snapshot deserializes with stance=None (additive default)."""
+    d = CompanionDossier(approval_likes=["duty"])
+    raw = d.model_dump(mode="json")
+    old = {k: v for k, v in raw.items() if k != "stance"}
+    assert "stance" not in old
+    reloaded = CompanionDossier.model_validate(old)
+    assert reloaded.stance is None
+
+
+def test_old_campaign_snapshot_without_stance_loads():
+    """A whole Campaign snapshot whose dossiers predate `stance` deserializes unchanged."""
+    c = Campaign(title="Pre-stance")
+    ch = Character(name="Ally", kind="companion",
+                   companion_dossier=CompanionDossier(approval_likes=["mercy"]))
+    c.characters[ch.id] = ch
+    c.party.append(ch.id)
+    raw = c.model_dump(mode="json")
+    for cd in raw["characters"].values():
+        if cd.get("companion_dossier") is not None:
+            cd["companion_dossier"].pop("stance", None)
+    reloaded = Campaign.model_validate(raw)
+    assert reloaded.characters[ch.id].companion_dossier.stance is None
+
+
+def test_companion_stance_rejects_unknown_field():
+    from models import CompanionStance
+    with pytest.raises(ValidationError):
+        CompanionStance(enemies=["oops"])  # type: ignore[call-arg]
