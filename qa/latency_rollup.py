@@ -61,6 +61,27 @@ SIDECAR_COLUMNS = ("s_per_beat", "coldopen_s", "turns_per_beat")
 # A beat transcript is "<run>.dm.<nanoseconds>.jsonl"; capture the nanos for beat ordering.
 _DM_RE = re.compile(r"\.dm\.(\d+)\.jsonl$")
 
+# ---------------------------------------------------------------------------
+# Per-beat KIND attribution (Wave-1 1B). A beat's "kind" is read straight from the
+# tool_use names IN that beat's transcript — no sidecar needed. The earliest beat is the
+# COLD-OPEN (the one-time world-build); after that, a beat that fired a COMBAT tool is
+# `combat`, one that fired a CAMP/REST tool is `camp`, else `social`. Combat is checked
+# BEFORE camp so a beat that both fights and then rests reads as combat (the heavier kind).
+# Names match the engine's MCP tool names (server.py); transcripts carry them MCP-prefixed
+# (mcp__engine__attack) — we strip the prefix the same way story_readout does.
+_COMBAT_TOOLS = frozenset({
+    "start_combat", "attack", "make_attack", "cast_spell", "use_action", "use_resource",
+    "resolve_death_save", "death_save", "end_combat",
+})
+_CAMP_TOOLS = frozenset({"camp_scene", "long_rest", "record_camp_beat"})
+_BEAT_KINDS = ("cold-open", "combat", "camp", "social")
+
+
+def _short_tool(name: str) -> str:
+    """Bare engine tool name from a possibly MCP-prefixed tool_use name.
+    ``mcp__engine__attack`` -> ``attack`` (matches story_readout's ``.split("__")[-1]``)."""
+    return str(name or "").split("__")[-1]
+
 
 def _final_result(path: str | Path) -> Optional[dict]:
     """Return the LAST ``type=="result"`` event in a stream-json transcript, or None.
@@ -148,6 +169,55 @@ def _token_aggregates(rows: list[dict]) -> Optional[dict]:
         }
 
     return {"coldopen": block(rows[:1]), "routine": block(rows[1:])}
+def _wall_ms_from_result(res: dict) -> Optional[float]:
+    """Wall-clock ``duration_ms`` for a beat (generation + tool/orchestration time). None
+    when absent. Used only as the tool_exec_pct denominator (the WHOLE beat wall cost)."""
+    ms = res.get("duration_ms")
+    if not isinstance(ms, (int, float)):
+        return None
+    return max(0.0, float(ms))
+
+
+def _beat_tool_names(path: str | Path) -> set[str]:
+    """The set of (short) engine tool names used in one beat transcript.
+
+    Scans for ``tool_use`` events and collects their (de-prefixed) names. Tolerant of the
+    system/hook noise the harness prepends and of partial/garbage lines (a crashed beat may
+    leave a half-written file). Cheap, line-keyed pre-filter so we only json.loads lines that
+    could carry a tool_use."""
+    names: set[str] = set()
+    try:
+        with open(path, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                if '"tool_use"' not in line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                msg = obj.get("message") if isinstance(obj, dict) else None
+                content = msg.get("content") if isinstance(msg, dict) else None
+                if not isinstance(content, list):
+                    continue
+                for c in content:
+                    if isinstance(c, dict) and c.get("type") == "tool_use":
+                        names.add(_short_tool(c.get("name", "")))
+    except OSError:
+        return names
+    return names
+
+
+def _classify_kind(tool_names: set[str], *, is_cold_open: bool) -> str:
+    """Classify a beat from the tool names it fired. cold-open wins (it is positional, not
+    tool-derived); else combat > camp > social. Combat outranks camp so a beat that fights
+    then rests is attributed to the heavier kind."""
+    if is_cold_open:
+        return "cold-open"
+    if tool_names & _COMBAT_TOOLS:
+        return "combat"
+    if tool_names & _CAMP_TOOLS:
+        return "camp"
+    return "social"
 
 
 def beat_files(transcript_dir: str | Path, run_id: str) -> list[str]:
@@ -158,18 +228,120 @@ def beat_files(transcript_dir: str | Path, run_id: str) -> list[str]:
     return files
 
 
-def rollup_files(files: list[str]) -> dict[str, Any]:
+# ---------------------------------------------------------------------------
+# Tool-exec split (Wave-1 1B) — read the OPTIONAL 1A tool-timing sidecar.
+# ---------------------------------------------------------------------------
+# THE CONTRACT (produced by the engine, one JSON object per line):
+#   {"ts": <float unix epoch s>, "tool": "<name>", "wall_ms": <float>,
+#    "ok": <bool>, "campaign_id": <str|null>}
+# This is the AUTHORITATIVE per-tool wall-clock — the rollup's per-beat `duration_api_ms`
+# can't see in-tool time, so engine tool-exec cost only becomes visible via this sidecar.
+# Best-effort + tolerant: a missing/empty/garbled file yields no rows (the three derived
+# keys then degrade to None), and a row missing `wall_ms`/`tool` is skipped, never raised.
+
+
+def read_tool_timing(path: str | Path) -> list[dict[str, Any]]:
+    """Parse the 1A tool-timing JSONL sidecar into a list of ``{tool, wall_ms, ok, ...}`` rows.
+
+    Tolerant: a missing file -> ``[]``; blank lines and unparseable lines are skipped; a row
+    that is not an object, or lacks a string ``tool`` or a numeric ``wall_ms``, is skipped
+    (a partial/garbled sidecar degrades to fewer rows, never an exception)."""
+    rows: list[dict[str, Any]] = []
+    p = Path(path)
+    if not p.exists():
+        return rows
+    try:
+        with p.open("r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(obj, dict):
+                    continue
+                tool = obj.get("tool")
+                wall = obj.get("wall_ms")
+                if not isinstance(tool, str) or not tool:
+                    continue
+                if not isinstance(wall, (int, float)):
+                    continue
+                rows.append(obj)
+    except OSError:
+        return rows
+    return rows
+
+
+def _tool_exec_split(rows: list[dict[str, Any]], total_wall_s: Optional[float],
+                     total_api_s: Optional[float]) -> dict[str, Any]:
+    """Compute ``mean_tool_call_ms`` / ``slowest_tool`` / ``tool_exec_pct`` from sidecar rows.
+
+    * ``mean_tool_call_ms``: mean of every row's ``wall_ms``.
+    * ``slowest_tool``: the tool with the largest TOTAL ``wall_ms`` summed across its calls
+      (the biggest cumulative cost, not a single slow outlier).
+    * ``tool_exec_pct``: total tool wall-seconds / the beat-time denominator. We prefer the
+      WHOLE-BEAT wall total (sum of each beat's ``duration_ms`` — generation + tool +
+      orchestration), since tool-exec is a fraction OF the whole beat; that is the honest
+      denominator. When no beat carried ``duration_ms`` we fall back to the total GENERATION
+      seconds (sum of ``duration_api_ms``) and the pct is then "tool wall vs generation",
+      which over-states slightly because generation excludes the tool/orchestration the tools
+      themselves consumed — flagged in the rollup via ``tool_exec_pct_basis``.
+
+    All three are None when there are no usable rows. tool_exec_pct is additionally None when
+    neither denominator is available/positive."""
+    out: dict[str, Any] = {
+        "mean_tool_call_ms": None,
+        "slowest_tool": None,
+        "tool_exec_pct": None,
+        "tool_exec_pct_basis": None,
+    }
+    if not rows:
+        return out
+
+    walls = [float(r["wall_ms"]) for r in rows]
+    out["mean_tool_call_ms"] = round(sum(walls) / len(walls), 1)
+
+    by_tool: dict[str, float] = {}
+    for r in rows:
+        by_tool[r["tool"]] = by_tool.get(r["tool"], 0.0) + float(r["wall_ms"])
+    # largest TOTAL wall_ms; ties broken by name for determinism.
+    out["slowest_tool"] = max(sorted(by_tool), key=lambda t: by_tool[t]) if by_tool else None
+
+    tool_s = sum(walls) / 1000.0
+    if total_wall_s is not None and total_wall_s > 0:
+        out["tool_exec_pct"] = round(tool_s / total_wall_s, 4)
+        out["tool_exec_pct_basis"] = "duration_ms"        # whole-beat wall (the honest denominator)
+    elif total_api_s is not None and total_api_s > 0:
+        out["tool_exec_pct"] = round(tool_s / total_api_s, 4)
+        out["tool_exec_pct_basis"] = "duration_api_ms"    # generation-only fallback (over-states)
+    return out
+
+
+def rollup_files(files: list[str], tooltiming: str | Path | None = None) -> dict[str, Any]:
     """Roll a beat-ordered list of DM transcript paths up into the latency ledger.
 
     Returns ``{s_per_beat, coldopen_s, turns_per_beat, beats, cold_open_turns,
-    failed_beats}``. The latency columns are None when there is no data to derive them
-    from (no successful beats / no continuing beat), so an empty run records NULL rather
-    than a misleading 0."""
+    failed_beats}`` plus the Wave-1 1B additions:
+      * per-kind GENERATION means derived from the transcripts alone (no sidecar):
+        ``combat_s_per_beat`` / ``social_s_per_beat`` / ``camp_s_per_beat`` — mean
+        ``duration_api_ms`` seconds over the SUCCESSFUL beats of that kind (the cold-open
+        beat is its OWN kind and excluded from all three; None when no beat of that kind).
+      * a tool-exec split from the OPTIONAL 1A ``tooltiming`` sidecar:
+        ``mean_tool_call_ms`` / ``slowest_tool`` / ``tool_exec_pct`` (+ ``tool_exec_pct_basis``).
+        DEGRADES GRACEFULLY — when ``tooltiming`` is None/missing/empty these are None and
+        the rest of the rollup is byte-for-byte unchanged.
+
+    The base latency columns are None when there is no data to derive them from (no successful
+    beats / no continuing beat), so an empty run records NULL rather than a misleading 0."""
     api_s: list[float] = []          # successful-beat generation seconds, in beat order
     turns: list[float] = []          # successful-beat num_turns, in beat order
     usage_rows: list[dict] = []      # successful-beat token usage + ttft, in beat order
+    wall_s: list[float] = []         # successful-beat WHOLE-BEAT wall seconds (duration_ms), beat order
+    kinds: list[str] = []            # successful-beat kind, in beat order (parallel to api_s)
     failed = 0
-    for path in files:
+    for i, path in enumerate(files):
         res = _final_result(path)
         if res is None:
             continue
@@ -183,6 +355,10 @@ def rollup_files(files: list[str]) -> dict[str, Any]:
         api_s.append(secs)
         turns.append(float(n) if isinstance(n, (int, float)) else 0.0)
         usage_rows.append(_usage(res))
+        w = _wall_ms_from_result(res)
+        wall_s.append(w / 1000.0 if w is not None else 0.0)
+        # Kind: the EARLIEST beat (i == 0 in the cold-open-first ordering) is the cold open.
+        kinds.append(_classify_kind(_beat_tool_names(path), is_cold_open=(i == 0)))
 
     out: dict[str, Any] = {
         "s_per_beat": None,
@@ -194,6 +370,15 @@ def rollup_files(files: list[str]) -> dict[str, Any]:
         # Additive (slab decision, Phase 3): per-beat token/cache ledger for the tiering A/B.
         # cold-open vs routine means of cache_creation / cache_read / input / output / ttft_ms.
         "tokens": _token_aggregates(usage_rows),
+        # Wave-1 1B per-kind generation means (None until proven by a beat of that kind).
+        "combat_s_per_beat": None,
+        "social_s_per_beat": None,
+        "camp_s_per_beat": None,
+        # Wave-1 1B tool-exec split (None unless a usable sidecar is supplied).
+        "mean_tool_call_ms": None,
+        "slowest_tool": None,
+        "tool_exec_pct": None,
+        "tool_exec_pct_basis": None,
     }
     if not api_s:
         return out
@@ -206,12 +391,33 @@ def rollup_files(files: list[str]) -> dict[str, Any]:
     if routine_s:
         out["s_per_beat"] = round(sum(routine_s) / len(routine_s), 1)
         out["turns_per_beat"] = round(sum(routine_t) / len(routine_t), 1)
+
+    # Per-kind generation means over the successful beats (cold-open kind excluded by
+    # construction — it is its own kind label, never combat/camp/social).
+    for kind, col in (("combat", "combat_s_per_beat"),
+                      ("social", "social_s_per_beat"),
+                      ("camp", "camp_s_per_beat")):
+        vals = [api_s[i] for i, k in enumerate(kinds) if k == kind]
+        if vals:
+            out[col] = round(sum(vals) / len(vals), 1)
+
+    # Tool-exec split from the optional 1A sidecar. The denominator prefers the whole-beat
+    # wall total (sum of duration_ms); falls back to total generation seconds when no beat
+    # carried duration_ms (basis stamped so the reader knows which was used).
+    if tooltiming is not None:
+        rows = read_tool_timing(tooltiming)
+        total_wall = sum(wall_s) if any(w > 0 for w in wall_s) else None
+        total_api = sum(api_s) if api_s else None
+        out.update(_tool_exec_split(rows, total_wall, total_api))
+
     return out
 
 
-def rollup_run(transcript_dir: str | Path, run_id: str) -> dict[str, Any]:
-    """Convenience: discover a run's beat transcripts under ``transcript_dir`` and roll up."""
-    return rollup_files(beat_files(transcript_dir, run_id))
+def rollup_run(transcript_dir: str | Path, run_id: str,
+               tooltiming: str | Path | None = None) -> dict[str, Any]:
+    """Convenience: discover a run's beat transcripts under ``transcript_dir`` and roll up.
+    Pass ``tooltiming`` to fold in the optional 1A tool-timing sidecar (see ``rollup_files``)."""
+    return rollup_files(beat_files(transcript_dir, run_id), tooltiming=tooltiming)
 
 
 def stamp_sidecars(rollup: dict[str, Any], run_dirs: Iterable[str | Path]) -> list[str]:
@@ -322,6 +528,9 @@ def _main(argv: Optional[list[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Derive the F13-4 latency ledger from DM beat transcripts.")
     ap.add_argument("--dir", help="transcript directory ($T) — used with --run")
     ap.add_argument("--run", help="run id ($RUN) — used with --dir")
+    ap.add_argument("--tooltiming", default=None, help="optional 1A tool-timing JSONL sidecar "
+                    "({ts,tool,wall_ms,ok,campaign_id} per line) — adds mean_tool_call_ms / "
+                    "slowest_tool / tool_exec_pct; absent/missing/empty degrades these to null")
     ap.add_argument("--out", help="write the rollup JSON here (also printed to stdout)")
     ap.add_argument("--stamp-into", default="", help="comma-separated PERSONA run dirs to stamp the "
                     "rollup into as <dir>/latency.json (the shape release_readiness.read_latency reads) "
@@ -342,9 +551,9 @@ def _main(argv: Optional[list[str]] = None) -> int:
 
     if args.files:
         files = sorted(args.files, key=lambda p: int(m.group(1)) if (m := _DM_RE.search(p)) else 0)
-        result = rollup_files(files)
+        result = rollup_files(files, tooltiming=args.tooltiming)
     elif args.dir and args.run:
-        result = rollup_run(args.dir, args.run)
+        result = rollup_run(args.dir, args.run, tooltiming=args.tooltiming)
     else:
         ap.error("pass either explicit transcript files, or --dir and --run")
         return 2

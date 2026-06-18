@@ -607,3 +607,70 @@ def test_render_includes_structural_columns(tmp_path):
     assert "| Acts |" in md
     assert "Structural coverage" in md
     assert "acts 2/3 · recruit ✓ · camp ✓" in md
+
+
+# --- Wave-1 1B: per-kind + per-tool timing columns ---
+
+def test_timing_1b_columns_registered_with_right_types():
+    """The six 1B columns exist; five are REAL, slowest_tool is TEXT."""
+    for col in ("mean_tool_call_ms", "combat_s_per_beat", "social_s_per_beat",
+                "duration_wall_s", "tool_exec_pct"):
+        assert col in scores_db.COLUMNS, f"{col} missing from COLUMNS"
+        assert scores_db._coltype(col) == "REAL", f"{col} should be REAL"
+    assert "slowest_tool" in scores_db.COLUMNS
+    assert scores_db._coltype("slowest_tool") == "TEXT"
+
+
+def test_timing_1b_columns_roundtrip(tmp_path):
+    db = tmp_path / "t.db"
+    scores_db.add_run(
+        "duo-1b", db_path=db, surface="engine-duo",
+        mean_tool_call_ms=42.0, slowest_tool="scene_context",
+        combat_s_per_beat=140.0, social_s_per_beat=70.0,
+        duration_wall_s=620.0, tool_exec_pct=0.03,
+    )
+    row = scores_db.fetch_rows(db)[0]
+    assert row["mean_tool_call_ms"] == 42.0
+    assert row["slowest_tool"] == "scene_context"
+    assert row["combat_s_per_beat"] == 140.0
+    assert row["social_s_per_beat"] == 70.0
+    assert row["duration_wall_s"] == 620.0
+    assert row["tool_exec_pct"] == 0.03
+
+
+def test_timing_1b_columns_read_null_on_old_rows(tmp_path):
+    """ADDITIVITY: a row recorded without the 1B fields reads back NULL for all six."""
+    db = tmp_path / "t.db"
+    scores_db.add_run("duo-old", db_path=db, surface="engine-duo", story_overall=4.1)
+    row = scores_db.fetch_rows(db)[0]
+    for col in ("mean_tool_call_ms", "slowest_tool", "combat_s_per_beat",
+                "social_s_per_beat", "duration_wall_s", "tool_exec_pct"):
+        assert row[col] is None, f"{col} should read NULL on an old-style row"
+
+
+def test_timing_1b_columns_alter_into_an_old_db(tmp_path):
+    """A db created before 1B gets the six columns ALTER-added on connect (migration-free)."""
+    db = tmp_path / "old.db"
+    conn = sqlite3.connect(db)
+    conn.execute('CREATE TABLE runs ("run_id" TEXT PRIMARY KEY, "surface" TEXT, "s_per_beat" REAL)')
+    conn.commit()
+    conn.close()
+    conn = scores_db.connect(db)
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(runs)")}
+    conn.close()
+    assert {"mean_tool_call_ms", "slowest_tool", "combat_s_per_beat",
+            "social_s_per_beat", "duration_wall_s", "tool_exec_pct"} <= cols
+
+
+def test_render_includes_1b_timing_columns(tmp_path):
+    db = tmp_path / "t.db"
+    md_path = tmp_path / "ledger.md"
+    scores_db.add_run("sc3", db_path=db, surface="engine-duo",
+                      combat_s_per_beat=140.0, social_s_per_beat=70.0,
+                      tool_exec_pct=0.03, slowest_tool="scene_context")
+    md = scores_db.render_markdown(db, md_path)
+    assert "combat s/beat" in md
+    assert "social s/beat" in md
+    assert "slowest tool" in md
+    assert "scene_context" in md
+    assert "3%" in md                      # tool_exec_pct rendered as a percentage
