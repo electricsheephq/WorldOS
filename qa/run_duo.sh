@@ -59,6 +59,17 @@ case "$WORLDOS_DM_MODEL" in
   *opus*) if awk "BEGIN{exit !($BUDGET < 4.0)}"; then echo "[duo] opus: flooring per-turn budget \$$BUDGET -> \$4.00 (cold-open headroom)"; BUDGET=4.00; fi ;;
 esac
 
+# GLM-only settings profile (Wave-1 1C). Sourced AFTER the model vars resolve and
+# BEFORE any timeout/budget/retry knob is consumed below, mirroring how
+# lib_beat_driver.sh is sourced above. For a Claude run (the default) this is a
+# TOTAL no-op — worldos_apply_glm_profile returns immediately when neither role is
+# GLM, so the shipped Claude path stays byte-for-byte unchanged. For a GLM run it
+# sources ~/.openclaw/secrets/glm.env and raises the cold-open/beat timeouts +
+# DM/player retry ceilings (GLM is slower than Opus/Sonnet). See qa/glm_profile.sh.
+# shellcheck source=glm_profile.sh
+. "$ROOT/qa/glm_profile.sh"
+worldos_apply_glm_profile
+
 # --- Lean-per-beat context (PERF, default OFF → byte-identical to today). --------------
 # MIRRORS scripts/play.sh exactly (and shares its ONE implementation via the
 # worldos_dm_lean_args helper in qa/lib_beat_driver.sh). With WORLDOS_LEAN_BEATS=1, the DM's
@@ -310,11 +321,28 @@ player_move() {
 # exactly that — it ALSO mis-diagnosed the real beat-0 blocker, which is `IS_SANDBOX=1`: on a root QA
 # host claude refuses `--dangerously-skip-permissions` → empty turn → "player produced no intro". The
 # root guard above enforces that, so the say()-based intro lands cleanly and stays a tagged move.
-PMSG="$(player_move 1 "$PLAYER_BRIEF
+# BOUNDED player-intro retry (Wave-1 1C). player_move already nudges ONCE inside a
+# single turn if the facade produced no move-tool call; but a slower model (GLM) can
+# still return an empty intro at beat 0 even with no timeout. Rather than hard-abort
+# on the first empty intro, retry the whole say()-tagged intro up to
+# WORLDOS_PLAYER_MAX_ATTEMPTS (default 3, raised to 5 by the GLM profile) times, and
+# only abort if STILL empty after the last attempt. The intro stays a say()-tagged
+# move through player_move (NOT raw prose) so the behavioral gate
+# `player_turns_structured` still sees a structured first turn (a raw-text intro caps
+# all G5 lenses ≤2.5 — see the say()-vs-prose note below).
+PLAYER_INTRO_PROMPT="$PLAYER_BRIEF
 
-This is the very start — the world isn't built and the scene isn't set yet. Introduce your character with a SINGLE say(\"…\"): who they are and what they want. Do NOT do()/attack/cast yet — wait for the DM to open the scene. One say(), nothing else.")"
+This is the very start — the world isn't built and the scene isn't set yet. Introduce your character with a SINGLE say(\"…\"): who they are and what they want. Do NOT do()/attack/cast yet — wait for the DM to open the scene. One say(), nothing else."
+WORLDOS_PLAYER_MAX_ATTEMPTS="${WORLDOS_PLAYER_MAX_ATTEMPTS:-3}"
+PMSG=""
+_pintro_attempt=1
+while [ -z "$PMSG" ] && [ "$_pintro_attempt" -le "$WORLDOS_PLAYER_MAX_ATTEMPTS" ]; do
+  [ "$_pintro_attempt" -gt 1 ] && echo "[duo] player produced no intro — retry $_pintro_attempt/$WORLDOS_PLAYER_MAX_ATTEMPTS…" >&2
+  PMSG="$(player_move 1 "$PLAYER_INTRO_PROMPT")"
+  _pintro_attempt=$((_pintro_attempt + 1))
+done
 echo "[duo] player intro: ${PMSG:0:120}…"
-[ -z "$PMSG" ] && { echo "[duo] player produced no intro — aborting" >&2; exit 1; }
+[ -z "$PMSG" ] && { echo "[duo] player produced no intro after $WORLDOS_PLAYER_MAX_ATTEMPTS attempts — aborting" >&2; exit 1; }
 chatlog player "$PMSG"
 
 # D1: DM spins up the world and opens the scene around the player's concept. Golden-spine mode
