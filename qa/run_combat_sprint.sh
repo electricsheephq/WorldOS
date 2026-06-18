@@ -26,6 +26,10 @@ T="$ROOT/qa/transcripts"
 STATE_DIR="$ROOT/qa/state/$RUN"
 mkdir -p "$T" "$STATE_DIR"
 rm -rf "$STATE_DIR/campaigns" 2>/dev/null
+# Wave-1 per-tool timing sidecar: the engine appends one {ts,tool,wall_ms,ok,campaign_id} line per
+# tool call here — only because we set WORLDOS_TOOLTIMING_PATH in the engine MCP env below (no-op
+# when unset). Lets us attribute a COMBAT beat's tool-exec vs generation. Truncate at run start.
+TOOLTIMING_PATH="$T/$RUN.tooltiming.jsonl"; : > "$TOOLTIMING_PATH"
 
 echo "[cs] run=$RUN state=$STATE_DIR model=$WORLDOS_DM_MODEL"
 
@@ -46,12 +50,13 @@ echo "[cs] seed JSON: $SEED_JSON"
 # Mirror run_duo.sh lines ~39-46: patch qa.mcp.example.json with the run-local state dir
 # AND override the engine --directory to this worktree so we use local code.
 DM_CFG="$STATE_DIR/dm.mcp.json"
-python3 - "$ROOT/qa/qa.mcp.example.json" "$STATE_DIR" "$ROOT" "$DM_CFG" <<'PY'
+python3 - "$ROOT/qa/qa.mcp.example.json" "$STATE_DIR" "$ROOT" "$DM_CFG" "$TOOLTIMING_PATH" <<'PY'
 import json, sys
-src, state_dir, root, out = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+src, state_dir, root, out, tooltiming = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
 cfg = json.load(open(src))
 eng = cfg["mcpServers"]["worldos-engine"]
 eng["env"]["WORLDOS_STATE_DIR"] = state_dir
+eng["env"]["WORLDOS_TOOLTIMING_PATH"] = tooltiming
 # Override --directory arg to use THIS worktree's engine (not the template default)
 args = eng.get("args", [])
 try:
