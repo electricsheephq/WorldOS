@@ -120,7 +120,8 @@ def test_audit_fields_surfaces_multiattack_budget():
 def test_audit_fields_labels_pc_extra_attack_budget_not_multiattack():
     # A PC's multi-strike turn comes from Extra Attack / Action Surge, NOT Multiattack —
     # the engine omits multiattack_grants, so distill must label it "(Extra Attack)" and
-    # never miscredit a PC with a monster Multiattack.
+    # never miscredit a PC with a monster Multiattack. The engine surfaces extra_attacks
+    # so the source is tool-sourced (a genuine Extra-Attack fighter: extra_attacks=1).
     res = json.dumps(
         {
             "attacker": "Fighter",
@@ -128,11 +129,54 @@ def test_audit_fields_labels_pc_extra_attack_budget_not_multiattack():
             "hit": True,
             "attacks_made_this_turn": 1,
             "attacks_allowed_this_turn": 2,
+            "extra_attacks": 1,
+            "surge_actions": 0,
         }
     )
     lines = distill._audit_fields(res)
     assert len(lines) == 1
     assert "attack-budget: Fighter 1/2 attacks this turn (Extra Attack)" in lines[0]
+
+
+def test_audit_fields_labels_action_surge_budget_not_extra_attack():
+    # cs-timing F-2: Aldric (Fighter L4, extra_attacks=0) spent Action Surge for a 2nd swing.
+    # The budget came from Action Surge, NOT the Extra Attack feature (which is L5). distill
+    # must read "(Action Surge)" — and a character with extra_attacks:0 must NEVER get an
+    # "Extra Attack" annotation (the finding's CI assert).
+    res = json.dumps(
+        {
+            "attacker": "Aldric",
+            "target": "Ghoul",
+            "hit": True,
+            "attacks_made_this_turn": 2,
+            "attacks_allowed_this_turn": 2,
+            "extra_attacks": 0,
+            "surge_actions": 1,
+        }
+    )
+    lines = distill._audit_fields(res)
+    assert len(lines) == 1
+    assert "attack-budget: Aldric 2/2 attacks this turn (Action Surge)" in lines[0]
+    assert "Extra Attack" not in lines[0]  # extra_attacks:0 => never mislabeled the feature
+
+
+def test_audit_fields_labels_extra_attack_plus_action_surge():
+    # A high-level fighter with BOTH Extra Attack (extra_attacks=1) AND a spent Action Surge
+    # reads both sources, in order.
+    res = json.dumps(
+        {
+            "attacker": "Bron",
+            "target": "Ogre",
+            "hit": True,
+            "attacks_made_this_turn": 1,
+            "attacks_allowed_this_turn": 4,
+            "extra_attacks": 1,
+            "surge_actions": 1,
+        }
+    )
+    lines = distill._audit_fields(res)
+    assert len(lines) == 1
+    assert "attack-budget: Bron 1/4 attacks this turn (Extra Attack + Action Surge)" in lines[0]
 
 
 def test_audit_fields_suppresses_single_attack_budget():

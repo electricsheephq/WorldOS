@@ -97,11 +97,23 @@ def _audit_fields(res) -> list[str]:
     allowed = data.get("attacks_allowed_this_turn")
     made = data.get("attacks_made_this_turn")
     if isinstance(allowed, int) and allowed > 1 and isinstance(made, int):
-        # The engine surfaces ``multiattack_grants`` (the stat-block Multiattack count) only
-        # when the budget IS a monster Multiattack; its absence means the budget came from
-        # Extra Attack / Action Surge (a PC). Label accordingly — never guess "Multiattack"
-        # for a PC's Extra Attack.
-        kind = "Multiattack" if isinstance(data.get("multiattack_grants"), int) else "Extra Attack"
+        # Label the budget SOURCE from engine-surfaced fields — never guess (cs-timing F-2).
+        #   * ``multiattack_grants`` (int) → a monster's stat-block Multiattack.
+        #   * else a PC: the engine surfaces ``extra_attacks`` / ``surge_actions`` so distill
+        #     distinguishes the Extra Attack FEATURE from an Action-Surge second action. A
+        #     Fighter L4 (Extra Attack is L5: extra_attacks=0) who spent Action Surge MUST read
+        #     "(Action Surge)", never "(Extra Attack)" — the feature it does not yet have.
+        if isinstance(data.get("multiattack_grants"), int):
+            kind = "Multiattack"
+        else:
+            parts = []
+            if isinstance(data.get("extra_attacks"), int) and data["extra_attacks"] > 0:
+                parts.append("Extra Attack")
+            if isinstance(data.get("surge_actions"), int) and data["surge_actions"] > 0:
+                parts.append("Action Surge")
+            # Fallback only when the engine surfaced no source (legacy/synthetic data); a
+            # KNOWN extra_attacks=0 never falls here, so it can never be mislabeled "Extra Attack".
+            kind = " + ".join(parts) if parts else "Extra Attack"
         actor = data.get("attacker", "the attacker")  # always present on an attack() return
         out.append(
             f"    `↳ attack-budget: {actor} {made}/{allowed} attacks this turn ({kind})`"

@@ -1771,6 +1771,121 @@ def test_multiattack_zero_path_unchanged(tmp_path, monkeypatch):
 
 
 # =========================================================================
+# cs-timing F-3: per-named-action Multiattack budget (Ghoul Claw vs two-Bite)
+# =========================================================================
+# The Ghoul's Multiattack is "two Bite attacks"; Claw is a SEPARATE action, NOT
+# part of the Multiattack. The engine must scope the Multiattack budget to the
+# named attack: a Bite gets the count (2), a Claw is a single Attack action (1).
+
+
+def test_attacker_multiattack_count_scoped_to_named_action(tmp_path, monkeypatch):
+    """Unit: _attacker_multiattack_count grants the Ghoul's count (2) ONLY to attacks that
+    compose its Multiattack. 'Bite' is in the 'two Bite attacks' composition → 2; 'Claw' is a
+    separate action not in it → 0 (the caller then caps it at the single-Attack-action ceiling).
+    No name (today's callers) keeps the count for any attack: byte-identical."""
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    import server
+    import store
+
+    cid = server.create_campaign("ghoul named budget")["id"]
+    gid = server.spawn_monster(cid, "Ghoul")["spawned"][0]["id"]
+    c = store.load_campaign(cid)
+    gch = c.characters[gid]
+    assert server._attacker_multiattack_count(gch, c, "") == 2       # back-compat: any attack
+    assert server._attacker_multiattack_count(gch, c, "Bite") == 2   # composes the Multiattack
+    assert server._attacker_multiattack_count(gch, c, "claw") == 0   # NOT in Multiattack (case-insensitive)
+    # The Ghoul's Claw budget is never > 1 (the finding's CI assert).
+    claw_budget = combat.attacks_allowed(
+        extra_attacks=0, surge_actions=0,
+        multiattack=server._attacker_multiattack_count(gch, c, "Claw"),
+    )
+    assert claw_budget == 1
+
+
+def test_ghoul_claw_is_single_attack_action_not_multiattack(tmp_path, monkeypatch):
+    """End-to-end (cs-timing F-3): a Ghoul attacking with its Claw (attack_name='Claw') is a
+    single Attack action — budget 1, NO multiattack_grants, and a 2nd Claw is rejected. A Bite
+    (attack_name='Bite') still gets the two-Bite Multiattack budget. Fixes the distilled
+    annotation that read 'Ghoul 1/2 attacks this turn (Multiattack)' for a non-Multiattack Claw."""
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    import server
+    import pytest as _pytest
+
+    cid = server.create_campaign("ghoul claw F-3")["id"]
+    pc = server.create_character(cid, "Hero", kind="player", max_hp=60)["id"]
+    gid = server.spawn_monster(cid, "Ghoul")["spawned"][0]["id"]
+    server.start_combat(cid, [pc, gid])
+    if server.get_state(cid)["current_turn"] == pc:
+        server.use_action(cid, pc, "skip")
+        server.next_turn(cid)
+    assert server.get_state(cid)["current_turn"] == gid
+
+    # Claw: NOT part of the 'two Bite' Multiattack -> single Attack action.
+    rc = server.attack(cid, gid, pc, attack_bonus=4, damage_dice="1d4+2", attack_name="Claw")
+    assert rc["attacks_allowed_this_turn"] == 1
+    assert "multiattack_grants" not in rc  # never mislabel a Claw as a Multiattack swing
+    with _pytest.raises(ValueError, match="already attacked this turn"):
+        server.attack(cid, gid, pc, attack_bonus=4, damage_dice="1d4+2", attack_name="Claw")
+
+
+def test_ghoul_bite_still_gets_two_bite_multiattack_budget(tmp_path, monkeypatch):
+    """Regression guard for F-3: a named Bite — which DOES compose the Ghoul's Multiattack —
+    keeps the count-2 budget and surfaces multiattack_grants, unchanged from before."""
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    import server
+    import pytest as _pytest
+
+    cid = server.create_campaign("ghoul bite F-3")["id"]
+    pc = server.create_character(cid, "Hero", kind="player", max_hp=60)["id"]
+    gid = server.spawn_monster(cid, "Ghoul")["spawned"][0]["id"]
+    server.start_combat(cid, [pc, gid])
+    if server.get_state(cid)["current_turn"] == pc:
+        server.use_action(cid, pc, "skip")
+        server.next_turn(cid)
+    r1 = server.attack(cid, gid, pc, attack_bonus=4, damage_dice="1d6", attack_name="Bite")
+    r2 = server.attack(cid, gid, pc, attack_bonus=4, damage_dice="1d6", attack_name="Bite")
+    assert r1["attacks_allowed_this_turn"] == 2 and r1["multiattack_grants"] == 2
+    assert r2["attacks_made_this_turn"] == 2
+    with _pytest.raises(ValueError, match="Multiattack grants 2 attack"):
+        server.attack(cid, gid, pc, attack_bonus=4, damage_dice="1d6", attack_name="Bite")
+
+
+# =========================================================================
+# cs-timing F-2: PC attack-budget SOURCE (Action Surge vs Extra Attack feature)
+# =========================================================================
+# A Fighter L4 has NO Extra Attack (it is L5); a second swing comes from Action
+# Surge. The engine surfaces extra_attacks / surge_actions so distill labels the
+# budget source correctly instead of mis-crediting the Extra Attack feature.
+
+
+def test_action_surge_second_attack_surfaces_surge_source_not_extra_attack(tmp_path, monkeypatch):
+    """cs-timing F-2: Aldric (Fighter L4, extra_attacks=0) spends Action Surge for a 2nd
+    attack. The result must surface surge_actions>0 with extra_attacks=0 (NOT multiattack_grants)
+    so a downstream label reads the budget as Action Surge, never the Extra Attack feature he
+    does not yet have. A genuine Extra-Attack fighter (extra_attacks=1) surfaces extra_attacks."""
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    import server
+    import pytest as _pytest
+
+    cid, cur, other, _ids = _combat_with_known_current(server)
+    server.set_class_resource(cid, cur, "action_surge", max=1, recharge="short")
+    server.attack(cid, cur, other, attack_bonus=5, damage_dice="1d6")  # 1st
+    server.use_resource(cid, cur, "action_surge")
+    a2 = server.attack(cid, cur, other, attack_bonus=5, damage_dice="1d6")  # 2nd via surge
+    assert a2["attacks_allowed_this_turn"] == 2
+    assert a2.get("extra_attacks") == 0          # he has no Extra Attack feature (L5)
+    assert a2.get("surge_actions") == 1          # the budget came from Action Surge
+    assert "multiattack_grants" not in a2        # PCs never carry a monster Multiattack grant
+
+    # Contrast: a real Extra-Attack fighter surfaces extra_attacks>0, surge=0.
+    cid2, cur2, other2, _ = _combat_with_known_current(server)
+    server.update_character(cid2, cur2, {"extra_attacks": 1})
+    server.attack(cid2, cur2, other2, attack_bonus=5, damage_dice="1d6")
+    b2 = server.attack(cid2, cur2, other2, attack_bonus=5, damage_dice="1d6")
+    assert b2.get("extra_attacks") == 1 and b2.get("surge_actions") == 0
+
+
+# =========================================================================
 # Issue #160/#166: Round-1 turn-skip enforcement in next_turn
 # =========================================================================
 # next_turn must BLOCK advancing past a PC/companion who can act but has not
