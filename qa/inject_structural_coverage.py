@@ -136,8 +136,14 @@ def main(argv: list[str]) -> int:
         # Honest no-op: nothing to merge (no snapshot). Print nothing → the sweep note omits it.
         return 0
     # WS0 engagement block (additive, beside structural_coverage). Computed from the SAME
-    # snapshot/transcript; None only if the engagement scorer is unavailable.
-    engagement = compute_engagement(argv[1], argv[2] if len(argv) > 2 else None)
+    # snapshot/transcript; None only if the engagement scorer is unavailable. Guarded so an
+    # unforeseen scorer error can NEVER flip this inject step's exit code (mirrors the defensive
+    # callsite in assert_behavioral.py) — the structural-coverage injection must stay as reliable
+    # as it was before WS0.
+    try:
+        engagement = compute_engagement(argv[1], argv[2] if len(argv) > 2 else None)
+    except Exception:
+        engagement = None
     # Merge additively into score.json (leave every existing field untouched).
     if score_path.exists():
         try:

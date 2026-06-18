@@ -67,8 +67,10 @@ silently drift out of coverage (the exact failure WS0 exists to prevent).
 owed if **any** persona owed it, engaged if **any** persona engaged it; **inert for the sweep**
 iff owed-by-≥1 **and** engaged-by-none. The gate **FAILS only on a FATAL inert system**. When
 **no** persona block carries `engagement_coverage` (a legacy corpus), it is an **evidence-gap
-SKIP** — excluded from `passed`/`total`, so RRI math stays **byte-identical** (mirrors the
-latency-gate skip). The `ENGAGEMENT` report section names every inert system + a fix hint.
+SKIP** — excluded from `passed`/`total`, so the **RRI math** (`rri` / `gates_total` / `release_ready`)
+stays **byte-identical** (mirrors the latency-gate skip). The serialized `rri.json` still gains the
+additive `gate_detail.story_engagement` / `signals.engagement_*` keys (no value/verdict change). The
+`ENGAGEMENT` report section names every inert system + a fix hint.
 
 **Two N/A invariants (load-bearing — they keep the loop from ever false-RED-ing):**
 - `session_beats` lives in the **transcript, not the snapshot**, so the signature accepts it

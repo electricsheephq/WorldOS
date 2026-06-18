@@ -303,6 +303,21 @@ def test_consequence_due_and_fired_is_engaged():
     assert "consequences_fired" in _ids(block, "engaged")
 
 
+def test_threadtagged_past_due_consequence_is_na_not_inert():
+    """A re-armed worldsim standing-thread consequence (thread_id set) sits past-due with fired=False
+    FOREVER by design — worldsim.tick rolls its trigger_day forward IN PLACE — so the engine's own
+    due/overdue contract excludes threads (consequences.due `not c.thread_id`; scene_debt thread skip).
+    It must be N/A, never inert, else a perfectly healthy living world false-INERTs consequences_fired."""
+    state = _inert_state()
+    state["day"] = 10
+    state["consequences"] = [
+        {"trigger_day": 5, "fired": False, "thread_id": "thr_cult", "text": "the cult regroups"},
+    ]
+    block = fe.engagement_coverage(state, tool_counts={}, session_beats=12)
+    assert "consequences_fired" in _ids(block, "na")
+    assert "consequences_fired" not in _ids(block, "inert")
+
+
 # ── narrative_arc absent / None null-guard ────────────────────────────────────────────────────
 
 def test_narrative_arc_absent_does_not_crash_acts_advance():

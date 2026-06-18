@@ -251,6 +251,13 @@ def _owed_consequences(ctx: Ctx) -> list:
         td = c.get("trigger_day")
         if td is None:
             continue
+        # Re-armed standing-thread (worldsim) consequences are NEVER "owed a fired flag": worldsim.tick
+        # rolls their trigger_day forward IN PLACE keeping fired=False forever, so a past-due unfired
+        # thread is the engine's EXPECTED state, not a dead system. The engine's own due/overdue
+        # contract excludes them in the same way (consequences.due reads `not c.thread_id`; scene_debt
+        # skips `if con.thread_id`). Match it, else a healthy living world false-INERTs consequences_fired.
+        if str(c.get("thread_id") or ""):
+            continue
         if _int(td, default=final) < final:
             out.append(c)
     return out
@@ -382,9 +389,26 @@ SYSTEMS: tuple[SystemSpec, ...] = (
     SystemSpec("decisions_recorded", _pc_decisions_recorded, _dt_decisions_recorded, "warn"),
 )
 
-# The REVIEWED manifest — the forcing meta-test asserts {s.id for s in SYSTEMS} == this set, so
-# adding/removing a system is a deliberate, visible diff (mirrors test_tool_schema_budget.py).
-REVIEWED_SYSTEM_IDS = frozenset(s.id for s in SYSTEMS)
+# The REVIEWED manifest — an INDEPENDENT hardcoded literal of the system ids a human has signed off
+# on. The forcing meta-test asserts {s.id for s in SYSTEMS} == this set, so adding/removing a system
+# in SYSTEMS is a deliberate, visible diff that ALSO must be reflected here (this literal is NOT
+# derived from SYSTEMS — a derived set would be a tautology that can never fail). NOTE: this guards
+# manifest DRIFT (an edit to SYSTEMS without updating the reviewed set); it does not yet auto-detect
+# a brand-new player-facing engine system that was never added to the manifest at all — that
+# stronger forcing (enumerate the live tool set and map each story-bearing tool to a system) is a
+# documented follow-up, since it needs a tool->system classification.
+REVIEWED_SYSTEM_IDS = frozenset({
+    "companion_approval",
+    "camp_downtime",
+    "quests_objectives",
+    "acts_advance",
+    "consequences_fired",
+    "factions_membership",
+    "faction_arc",
+    "companion_quest_arc",
+    "companion_agenda",
+    "decisions_recorded",
+})
 
 # Systems that BLOCK on a known snapshot-only ambiguity (seeded-but-locked vs never-seeded) and
 # must NEVER graduate past WARN until the spike is resolved. Documented so graduation can't miss
