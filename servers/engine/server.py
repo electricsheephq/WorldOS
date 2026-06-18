@@ -1704,6 +1704,19 @@ def _seat_flat10_warnings(ch, class_label: str, where: str) -> list[str]:
     return [warn]
 
 
+# A near-universal DEFAULT approval vocabulary so a freshly-recruited companion is GAUGE-ABLE the
+# moment they join (WS-A). QA found companion approval moved in only ~1/200 runs because
+# recruited/generated companions shipped EMPTY likes/dislikes — so every approval tag the DM passes
+# (record_decision / persist_beat decision=approval_tags) matched nothing and the regard gauge stayed
+# frozen at 0. These keys are kept SMALL and personality-INVARIANT — the dimensions almost any party
+# member reacts to (reliability, loyalty to allies, courage) — deliberately EXCLUDING the contested
+# alignment axes (mercy/cruelty, law/survival) that are character-specific, so a default never
+# mis-seeds a ruthless or lawless companion. The DM enriches/overrides with the orthogonal,
+# character-specific causes via author_companion_gauges as the bond develops.
+_DEFAULT_APPROVAL_LIKES = ("kept_your_word", "protected_an_ally", "showed_courage")
+_DEFAULT_APPROVAL_DISLIKES = ("broke_your_word", "abandoned_an_ally", "showed_cowardice")
+
+
 def _seed_companion_operational_state(ch) -> None:
     """Seed a companion's ARC and DOSSIER if absent — the shared finisher every
     companion-creation path runs so the relationship system (camp_scene /
@@ -1751,6 +1764,17 @@ def _seed_companion_operational_state(ch) -> None:
         # the NPC's seeded hook / remembered facts make good, character-specific camp talk
         camp_prompts.extend(m.strip() for m in ch.memory if m.strip())
         ch.companion_dossier = CompanionDossier(camp_prompts=camp_prompts[:4])
+    # A companion also needs a GAUGE-ABLE approval vocabulary (WS-A): without it every approval tag
+    # the DM passes matches nothing and the regard gauge is frozen at 0 (the #1 reason companion
+    # approval moved in only ~1/200 runs). Seed the near-universal DEFAULT vocabulary ONLY when BOTH
+    # lists are empty — never overwrite an ending/canon/DM-authored vocabulary — so a freshly-
+    # recruited companion is move-able from the first beat. Applies whether the dossier was just
+    # synthesized above or was pre-seeded without causes (the canon/roster case). Additive: an
+    # already-authored vocabulary round-trips unchanged.
+    dossier = ch.companion_dossier
+    if dossier is not None and not (dossier.approval_likes or dossier.approval_dislikes):
+        dossier.approval_likes = list(_DEFAULT_APPROVAL_LIKES)
+        dossier.approval_dislikes = list(_DEFAULT_APPROVAL_DISLIKES)
 
 
 @mcp.tool()
