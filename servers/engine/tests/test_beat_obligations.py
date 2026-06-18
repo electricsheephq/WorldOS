@@ -113,6 +113,37 @@ def test_camp_overdue_when_last_rest_is_three_days_old():
     assert "camp_overdue" in _kinds(server._compute_beat_obligations(c))
 
 
+# --- WS-D: camp_overdue reachable by BEATS when the in-world clock never advances ---------------
+
+def test_camp_overdue_reachable_by_beats_when_clock_stuck_at_day_one():
+    """The DM rarely advances the in-world clock (0 long_rest/downtime across the QA corpus), so the
+    old day>=3 gate never fired and camp — the companion-regard pillar — stayed dead (0/203 camp
+    beats). A never-rested party with companions that has played >=_CAMP_OVERDUE_BEATS beats now
+    surfaces camp_overdue even at day 1."""
+    comp = _companion(likes=["mercy"], last_long_rest_day=-1)
+    c = _campaign_with(comp, day=1)            # clock stuck at day 1
+    c.narrative_arc.beats_in_act = server._CAMP_OVERDUE_BEATS
+    assert "camp_overdue" in _kinds(server._compute_beat_obligations(c))
+
+
+def test_camp_overdue_not_yet_owed_below_beats_threshold():
+    """Below the beats threshold (and below day 3) camp is not yet overdue — no false-early cue."""
+    comp = _companion(likes=["mercy"], last_long_rest_day=-1)
+    c = _campaign_with(comp, day=1)
+    c.narrative_arc.beats_in_act = server._CAMP_OVERDUE_BEATS - 1
+    assert "camp_overdue" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_camp_overdue_beats_path_silent_for_a_party_that_has_rested():
+    """The beats reach only surfaces a NEVER-rested (or stale-rested) party; a party that rested
+    recently is not overdue even with many beats and a stuck clock — the inner rest check still
+    holds (never_rested False, day-latest_rest == 0 < 3)."""
+    comp = _companion(likes=["mercy"], attitude=10, last_long_rest_day=1)
+    c = _campaign_with(comp, day=1)            # rested on day 1, clock stuck at day 1
+    c.narrative_arc.beats_in_act = server._CAMP_OVERDUE_BEATS + 4
+    assert "camp_overdue" not in _kinds(server._compute_beat_obligations(c))
+
+
 # --- camp_scene_skipped: rested TODAY but no camp scene landed --------------
 
 
