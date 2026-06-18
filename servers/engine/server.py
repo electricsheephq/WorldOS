@@ -11544,6 +11544,42 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
             ),
         })
 
+    # 0b. companion_quest_unauthored — a party companion who IS gauged (has an approval
+    #     vocabulary, so #0 does NOT fire for them) but owns NO CompanionQuestArc. The arc
+    #     family is engine-complete (set_companion_quest_arc / advance_companion_quest_arc /
+    #     get_companion_quest_arcs + the durable.companions[].quest_arcs surface) yet NOTHING
+    #     ever creates one, so the personal-quest thread is narrated-not-engined for every
+    #     companion. Mirror the #0 pattern: cue authoring the missing arc. Gauged-ness is the
+    #     precedence gate (vocabulary first via #0, then the deeper personal-quest layer) so #0
+    #     and #0b never stack on the same beat. Pure read; no day-gate (day-gating would tie the
+    #     cue to the day-stagnation bug and it could never fire — max persisted day is 5).
+    arcs_by_companion = {
+        getattr(a, "companion_id", None)
+        for a in (getattr(c, "companion_quest_arcs", None) or {}).values()
+    }
+    for comp in party_companions:
+        dossier = getattr(comp, "companion_dossier", None)
+        likes = list(getattr(dossier, "approval_likes", []) or []) if dossier is not None else []
+        dislikes = list(getattr(dossier, "approval_dislikes", []) or []) if dossier is not None else []
+        if not (likes or dislikes):
+            continue  # un-gauged -> #0 (companion_gauge_unauthored) owns this case
+        if getattr(comp, "id", None) in arcs_by_companion:
+            continue  # already has a personal quest arc -> engaged
+        name = getattr(comp, "name", None) or "the companion"
+        obligations.append({
+            "kind": "companion_quest_unauthored",
+            "character_id": getattr(comp, "id", None),
+            "name": name,
+            "severity": "low",
+            "detail": (
+                f"{name} is gauged but has no personal quest arc, so their own story stays "
+                f"narrated, never engined. set_companion_quest_arc(companion_id, arc={{'title': "
+                f"'…', 'stages': [{{'title': '…'}}]}}) to author a personal thread the engine can "
+                f"track and advance (advance_companion_quest_arc); link it to a personal_quest "
+                f"arc gate so a deepening bond opens it."
+            ),
+        })
+
     # 1. companion_approval_frozen — a present companion WITH an authored vocabulary whose regard
     #    still hasn't moved off 0 a few days in. (A vocab-LESS companion is covered by #0 above —
     #    there the fix is to AUTHOR the vocabulary, not nudge a number.) Cue: tag the next

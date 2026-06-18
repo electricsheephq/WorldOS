@@ -305,6 +305,9 @@ def test_persist_beat_decision_moves_approval(tmp_path, monkeypatch):
 def test_persist_beat_decision_without_tags_is_byte_identical(tmp_path, monkeypatch):
     cid = _new_campaign(monkeypatch, tmp_path)
     comp = _add_companion(cid, "Wyll", likes=["heroism"])
+    # The gauged companion also owns a personal quest arc so the beat is fully-engaged
+    # (no companion_quest_unauthored obligation) and the return stays byte-identical.
+    server.set_companion_quest_arc(cid, comp, {"title": "Wyll's personal thread"})
     out = server.persist_beat(cid, decision={"summary": "a quiet word"})
     assert _attitude(cid, comp) == 0
     assert "approval_results" not in out

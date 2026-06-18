@@ -25,6 +25,19 @@ def _a_char(cid: str) -> str:
     return next(iter(c.characters.values())).id
 
 
+def _engage_party_companions(cid: str) -> None:
+    """Author a personal quest arc for every party companion so the starter fixture is
+    FULLY engaged. WS-A auto-seeds an approval vocabulary on every recruited companion, so
+    an otherwise-quiet starter campaign now carries gauged companions with no quest arc ->
+    a companion_quest_unauthored obligation surfaces in the durable block. Authoring the arc
+    makes the fixture genuinely healthy (NOT a weakened assertion) and restores the
+    obligation-free durable shape these round-trip tests assert."""
+    c = store.load_campaign(cid)
+    comp_ids = [ch.id for ch in c.characters.values() if ch.kind == "companion"]
+    for comp_id in comp_ids:
+        server.set_companion_quest_arc(cid, comp_id, {"title": "A personal thread"})
+
+
 # ── scene_context: the start-of-beat read cluster in one call ────────────────
 
 
@@ -315,6 +328,7 @@ def test_scene_context_durable_threads_present(cid):
     """The durable pin carries the continuity-critical standing threads with stable
     shapes (open_quests + objectives, met-NPC relationships, companion bonds,
     faction gauges, set flags) so a transcript-free re-ground loses nothing."""
+    _engage_party_companions(cid)  # author quest arcs so the digest is obligation-free
     dur = server.scene_context(cid)["durable"]
     # The always-present durable keys. `camp_available` (F06-5) is ADDITIVE — present only when
     # living companions are with the party and out of combat (an advisory the DM can act on).
@@ -398,6 +412,7 @@ def test_scene_durable_threads_never_throws_on_missing_attrs(cid):
     raised ``AttributeError: 'Character' object has no attribute 'relationships'``;
     post-fix it returns normally and simply contributes nothing for that object.
     """
+    _engage_party_companions(cid)  # author quest arcs so the digest is obligation-free
     c = store.load_campaign(cid)
     baseline = server._scene_durable_threads(c)
 
@@ -562,6 +577,7 @@ def test_persist_beat_remember_dedupes_like_remember(cid):
 def test_persist_beat_empty_is_a_noop(cid):
     """An empty call writes nothing, returns empty sections, and never touches the
     lock-needing path (so it can't hang)."""
+    _engage_party_companions(cid)  # author quest arcs so the digest is obligation-free
     before = store.load_campaign(cid)
     out = server.persist_beat(cid)
     assert out == {"logged": [], "remembered": [], "decision": None, "time": None}
