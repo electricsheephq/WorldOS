@@ -17,6 +17,11 @@ cd "$ROOT" || exit 1
 
 RUN="${1:-cs-$(date +%H%M%S)}"
 WORLDOS_DM_MODEL="$(worldos_env DM_MODEL opus)"
+# GLM-only settings profile (no-op for Claude). Sourced after model vars resolve, before any
+# timeout/budget/retry knob is consumed. See qa/glm_profile.sh.
+# shellcheck source=glm_profile.sh
+. "$ROOT/qa/glm_profile.sh"
+worldos_apply_glm_profile
 SCORE_SCRIPT="$(worldos_env SCORE_SCRIPT qa/score.sh)"
 # Combat runs the whole multi-round fight on ONE budget (pre-seeded, no cold-open). An Opus combat
 # costs ~5x a Sonnet one, so the Sonnet-tuned $1.50 cap cut it off mid-fight (observed 2026-06-06:
