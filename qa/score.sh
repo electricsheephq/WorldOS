@@ -84,7 +84,15 @@ while [ "$attempt" -lt 3 ]; do
   #
   # --json-schema was found to suppress the result text in this CLI; we rely on the
   # JSON-only instruction in the prompt and strip any stray code fences.
-  printf '%s' "$INPUT" | claude -p \
+  # GLM ISOLATION: the scorer is canonical Claude infrastructure (pinned sonnet, the gate
+  # baseline) and MUST run on clean Claude regardless of which model PLAYED the game. When the
+  # run is GLM, qa/glm_profile.sh exports ANTHROPIC_BASE_URL=z.ai + the GLM key + a fresh
+  # CLAUDE_CONFIG_DIR globally — which would route THIS scorer call to z.ai with a Claude model
+  # name (→ "Unknown Model") and skew/abort every score. Neutralize those vars for the scorer
+  # so it uses the default ~/.claude (Claude OAuth) + api.anthropic.com. On a normal Claude run
+  # these vars are unset, so `env -u …` is a NO-OP → byte-identical to today.
+  printf '%s' "$INPUT" | env -u ANTHROPIC_BASE_URL -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN \
+    -u API_TIMEOUT_MS -u CLAUDE_CONFIG_DIR claude -p \
     --model "$SCORER_MODEL" --permission-mode bypassPermissions \
     --max-budget-usd "$BUDGET" \
     --output-format json > "$RAW" 2> "$ERR"
