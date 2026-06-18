@@ -2723,7 +2723,13 @@ class ReleaseReadinessContractTests(unittest.TestCase):
             self.assertTrue(payload["release_ready"])
             self.assertEqual(payload["evidence_gaps"], [])
             self.assertEqual(payload["gates_total"], 11)
-            self.assertEqual(sorted(payload["skipped_gates"]), ["latency_coldopen", "latency_s_per_beat"])
+            # WS0: with no engagement_coverage in any persona score.json the story_engagement gate
+            # is ALSO an evidence-gap skip (additive, like the latency gates) — gates_total stays
+            # 11 (byte-identical RRI math), it is skipped, never failed, never counted.
+            self.assertEqual(
+                sorted(payload["skipped_gates"]),
+                ["latency_coldopen", "latency_s_per_beat", "story_engagement"],
+            )
             self.assertIsNone(payload["signals"]["latency_s_per_beat"])
             self.assertIsNone(payload["signals"]["latency_coldopen_s"])
 
@@ -2784,8 +2790,10 @@ class ReleaseReadinessContractTests(unittest.TestCase):
         self.assertIn("latency_coldopen", payload["failed_gates"])
         self.assertEqual(payload["signals"]["latency_s_per_beat"], 300.0)
         self.assertEqual(payload["signals"]["latency_coldopen_s"], 500.0)
-        # the gate is now ACTIVE, not a dormant evidence-gap skip
-        self.assertEqual(payload["skipped_gates"], [])
+        # the LATENCY gates are now ACTIVE, not a dormant evidence-gap skip. (WS0: with no
+        # engagement_coverage in these fixtures, story_engagement remains an evidence-gap skip —
+        # so gates_total stays the pre-WS0 count of 13, byte-identical RRI math.)
+        self.assertEqual(payload["skipped_gates"], ["story_engagement"])
         self.assertEqual(payload["gates_total"], 13)
 
         # UNDER budget: cold open 150s (< 240), routine 80s/beat (< 120) -> PASS.

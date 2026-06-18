@@ -32,6 +32,14 @@ try:
     from story_readout import structural_coverage_from_state
 except Exception:  # pragma: no cover - defensive
     structural_coverage_from_state = None  # type: ignore[assignment]
+# WS0 — the feature-engagement coverage scorer. No beats count is available at this callsite
+# (beats live in the transcript, not the snapshot), so it is passed session_beats=None → every
+# beats-keyed system reads N/A here (safe under-detect). Defensive import: a missing module just
+# omits the engagement block.
+try:
+    from feature_engagement import engagement_coverage
+except Exception:  # pragma: no cover - defensive
+    engagement_coverage = None  # type: ignore[assignment]
 
 
 def _largest_snapshot(store: Path) -> Path | None:
@@ -95,6 +103,28 @@ def compute(store_dir: str, transcript_path: str | None = None) -> dict | None:
     return structural_coverage_from_state(state, dict(counts) if counts else None)
 
 
+def compute_engagement(store_dir: str, transcript_path: str | None = None) -> dict | None:
+    """WS0 — the engagement-coverage block for a persona's play-state store, or None when the
+    snapshot is missing/unreadable. session_beats is None here (beats live in the transcript,
+    not the snapshot) → every beats-keyed system reads N/A (safe under-detect, never a
+    false-RED). Reuses the SAME snapshot + tool-counts resolution as compute()."""
+    if engagement_coverage is None:
+        return None
+    store = Path(store_dir)
+    snap = _largest_snapshot(store)
+    if snap is None:
+        return None
+    try:
+        state = json.loads(snap.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    if not isinstance(state, dict) or not state:
+        return None
+    transcript = Path(transcript_path) if transcript_path else (store / "dm.combined.jsonl")
+    counts = _tool_counts(transcript)
+    return engagement_coverage(state, dict(counts) if counts else None, session_beats=None)
+
+
 def main(argv: list[str]) -> int:
     if len(argv) < 2:
         print("usage: inject_structural_coverage.py <score.json> <state-store-dir> "
@@ -105,6 +135,15 @@ def main(argv: list[str]) -> int:
     if block is None:
         # Honest no-op: nothing to merge (no snapshot). Print nothing → the sweep note omits it.
         return 0
+    # WS0 engagement block (additive, beside structural_coverage). Computed from the SAME
+    # snapshot/transcript; None only if the engagement scorer is unavailable. Guarded so an
+    # unforeseen scorer error can NEVER flip this inject step's exit code (mirrors the defensive
+    # callsite in assert_behavioral.py) — the structural-coverage injection must stay as reliable
+    # as it was before WS0.
+    try:
+        engagement = compute_engagement(argv[1], argv[2] if len(argv) > 2 else None)
+    except Exception:
+        engagement = None
     # Merge additively into score.json (leave every existing field untouched).
     if score_path.exists():
         try:
@@ -114,6 +153,8 @@ def main(argv: list[str]) -> int:
         if not isinstance(score, dict):
             score = {}
         score["structural_coverage"] = block
+        if engagement is not None:
+            score["engagement_coverage"] = engagement
         score_path.write_text(json.dumps(score, indent=2), encoding="utf-8")
     # One-line summary to stdout for the sweep's per-persona note.
     print(block.get("summary", ""))

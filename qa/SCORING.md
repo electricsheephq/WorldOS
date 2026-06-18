@@ -29,6 +29,69 @@ If the gate is RED, all three LLM scorecards are **capped to ≤ 2.5 / INVALID**
 annotated with the failed checks (`worldos_cap_score_red`). A dead/non-progressing scene
 can never display as 4.1 again. On a GREEN run, scores pass through untouched.
 
+## 1b. Feature-engagement coverage — the dead-system tracker (WS0)
+`qa/feature_engagement.py`
+
+**The gap this closes.** The behavioral gate + the three lenses grade *prose, dice, and a few
+structural floors*, but an entire authored subsystem (companion approval, camp downtime, faction
+questlines, the companion agenda, decisions) could be **100% inert** across a whole sweep and the
+RRI still scored 10/10 — *nothing was engagement-coverage*. A frozen-relationship run that
+narrated the companion but never moved a gauge passed; a run that seeded factions and never joined
+one passed.
+
+**The manifest.** `feature_engagement.SYSTEMS` is the reviewed list of the 10 authored story
+systems, each a `SystemSpec(id, precondition, detector, severity)`. A run is, per system:
+- **ENGAGED** — the detector is true (the engine state / DM tool counts prove the system fired).
+- **N/A** — the precondition is false (the run had no occasion: solo party, no factions seeded,
+  too short) **or unknown** (a beats-keyed precondition with no transcript beats count).
+- **INERT** — the precondition is **true** and the detector is **false**: the system was *owed*
+  and never fired. **This is the signal.**
+
+`engagement_coverage(state, tool_counts=None, session_beats=None)` returns
+`{coverage, engaged[], na[], inert[{id,why,severity}]}`. It is **PURE-READ over engine-mutated
+snapshot state** (`attitude_value`, `last_long_rest_day`, `faction.joined/standing`,
+`narrative_arc.act`, `consequence.fired/trigger_day`, the arc/agenda `fired` flags,
+`campaign.decisions/quests/factions/*_arcs`) **or DM tool-counts — never fiction/prose** (engine
+invariant #3). It REUSES `story_readout.structural_coverage_from_state` /
+`felt_shape_from_state` so the shared buckets never drift, and old snapshots round-trip (every
+predicate null-guards a missing collection / a `None` `narrative_arc`).
+
+**The forcing meta-test.** `servers/engine/tests/test_feature_engagement_manifest.py` mirrors
+`test_tool_schema_budget.py`: it asserts `{s.id for s in SYSTEMS} == REVIEWED_SYSTEM_IDS`, so
+adding/removing a tracked system is a **deliberate, visible diff** — the manifest can never
+silently drift out of coverage (the exact failure WS0 exists to prevent).
+
+**The deterministic RRI gate.** `qa/release_readiness.py` adds **one gate, `story_engagement`**
+(in `DETERMINISTIC_GATES` — no live LLM). It rolls each persona's `engagement_coverage`
+(merged into `score.json` by `qa/inject_structural_coverage.py`) up across the sweep: a system is
+owed if **any** persona owed it, engaged if **any** persona engaged it; **inert for the sweep**
+iff owed-by-≥1 **and** engaged-by-none. The gate **FAILS only on a FATAL inert system**. When
+**no** persona block carries `engagement_coverage` (a legacy corpus), it is an **evidence-gap
+SKIP** — excluded from `passed`/`total`, so the **RRI math** (`rri` / `gates_total` / `release_ready`)
+stays **byte-identical** (mirrors the latency-gate skip). The serialized `rri.json` still gains the
+additive `gate_detail.story_engagement` / `signals.engagement_*` keys (no value/verdict change). The
+`ENGAGEMENT` report section names every inert system + a fix hint.
+
+**Two N/A invariants (load-bearing — they keep the loop from ever false-RED-ing):**
+- `session_beats` lives in the **transcript, not the snapshot**, so the signature accepts it
+  explicitly and **every beats-keyed precondition defaults to N/A when it is `None`** (the inject
+  callsite passes `None` → those systems are N/A there — safe under-detect).
+- Under `WORLDOS_GATE_COMBAT_SPRINT`, all **FATAL** systems are **skipped** (mirrors
+  `assert_behavioral.py`) — a single pre-seeded fight exercises no story system.
+
+**WARN-first → FATAL graduation discipline.** Every system ships **`severity='warn'` this PR**, so
+the axis is **strictly additive**: it adds *zero* fatals to `assert_behavioral.py` and *cannot*
+flip a currently-green run RED. **Graduation to FATAL is a FUTURE, post-sweep PR** — after one
+real 5-persona sweep proves the inert/owed classification is calibrated (the same discipline as
+`flat_arc` / `caster_has_spellbook`). **Two systems are BLOCKED and stay WARN regardless** —
+`faction_arc` + `companion_quest_arc`: a snapshot-only precondition can't tell *seeded-but-locked*
+from *never-seeded* (a known open spike), so they must never graduate until that is resolved.
+
+**Where it surfaces.** `assert_behavioral.py` emits one `engagement_<id>` WARN per inert system
+(additive, after `structural_completeness`); `inject_structural_coverage.py` merges the block into
+each persona `score.json`; `scores_db.py` records `engagement_pct` + `engagement_inert`;
+`release_readiness.py` gates + reports it.
+
 ## 2. The three LLM lenses (1–5 each; run concurrently)
 Scored by `qa/score.sh` (claude -p) or `qa/score_openclaw.sh` (gpt-5.4, off the claude quota).
 

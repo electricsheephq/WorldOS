@@ -110,7 +110,8 @@ jobs:
             ../../qa/test_orchestrate_split_rri.py \
             ../../qa/test_visual_regression_check.py \
             ../../qa/test_structural_coverage.py \
-            ../../qa/test_story_readout_approval.py
+            ../../qa/test_story_readout_approval.py \
+            ../../qa/test_feature_engagement.py
 
   server-contracts:
     # Phase-1 (DETERMINISTIC-2): deterministic cross-service MCP contract tests
