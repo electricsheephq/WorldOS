@@ -10515,6 +10515,14 @@ def advance_faction_arc(
 # an explicit per-tag delta (then the explicit value — sign and magnitude — is authoritative).
 _APPROVAL_DEFAULT_DELTA = 10
 
+# Inter-companion SECONDARY swing (E2 ENSEMBLE) — HALF the primary ±10, because "how you treat
+# ANOTHER companion" is a softer signal than how you treat THIS one. When a decision moves a
+# named target companion's gauge, every OTHER party companion whose stance lists the target as
+# an ally/rival feels a smaller ripple: hurt my ally -> -5, side against my rival -> +5 (and the
+# inverses when the decision HELPED the target). The engine owns the magnitude; CONTENT owns the
+# relationship keys (the dossier's stance lists). Empty stance == today (no secondary move).
+_APPROVAL_SECONDARY_DELTA = 5
+
 # Cross-beat anti-grind decay (E4) keyed on approval_cause_counts — the n-th REALIZED fire of a
 # cause on a companion scales the weighted/default base by this factor (the last entry repeats
 # for n >= 3). Deterministic (no RNG/clock): grinding "mercy" yields 10,5,3,0 instead of 40.
@@ -10577,7 +10585,14 @@ def _normalize_approval_tags(approval_tags) -> list[tuple[str, Optional[int]]]:
     return out
 
 
-def _apply_approval_tags(c: "Campaign", approval_tags, *, decision_id: str = "") -> list[dict]:
+def _apply_approval_tags(
+    c: "Campaign",
+    approval_tags,
+    *,
+    targets_companion: str = "",
+    actor_ids=None,
+    decision_id: str = "",
+) -> list[dict]:
     """Move every PARTY companion's approval gauge by the decision's tagged causes (the BG
     "soul"): each tag matching a companion's ``dossier.approval_likes`` applies +10 (or the
     tag's explicit/weighted delta), each matching ``approval_dislikes`` applies -10; the
@@ -10594,6 +10609,24 @@ def _apply_approval_tags(c: "Campaign", approval_tags, *, decision_id: str = "")
     event back to the driving Decision; it defaults to "" so a caller that omits it is
     byte-identical to today on the GAUGE move (the ledger append is purely additive state).
 
+    The mover composes three layers in a FIXED order so the secondary pass can read the
+    primary realized deltas:
+      LAYER 1 (PRIMARY) — the weighted/decayed like/dislike pass above, building a
+        ``primary_by_id`` map of each moved companion's REALIZED signed delta this call.
+      LAYER 2 (RESOLVE TARGET) — pick the companion this decision sided with/against from
+        ``targets_companion`` (the explicit id the DM named).
+      LAYER 3 (SECONDARY / E2 ENSEMBLE) — for each OTHER party companion whose dossier.stance
+        lists the target as ally/rival, apply a smaller ``±_APPROVAL_SECONDARY_DELTA`` keyed
+        on whether the target's primary delta this call was negative (hurt) or positive
+        (helped): {ally,hurt}->-5, {ally,help}->+5, {rival,hurt}->+5, {rival,help}->-5. Each
+        secondary move is clamped once and logged as its own ApprovalEvent (note carries the
+        cause). The secondary NEVER fires on the target itself, on a no-stance companion, or
+        when the target is not a MOVED party companion this call (degrade to no-op — never
+        guess from fiction).
+
+    ``targets_companion``/``actor_ids`` default to ""/None so a caller that omits them is
+    BYTE-IDENTICAL to today (LAYER 3 is a no-op: no target -> no secondary pass).
+
     Scope is ``c.party`` companions WITH a dossier — non-companions, dossier-less companions,
     and companions not in the party are skipped. Empty/None ``approval_tags`` -> [] (no move),
     so the caller's return shape stays byte-identical to today."""
@@ -10601,6 +10634,9 @@ def _apply_approval_tags(c: "Campaign", approval_tags, *, decision_id: str = "")
     if not pairs:
         return []
     results: list[dict] = []
+    # E2: the REALIZED signed primary delta per moved companion this call — LAYER 3 reads it to
+    # decide whether the targeted companion was hurt (<0) or helped (>0).
+    primary_by_id: dict[str, int] = {}
     for cid in getattr(c, "party", []) or []:
         ch = c.characters.get(cid)
         if ch is None or getattr(ch, "kind", None) != "companion":
@@ -10668,6 +10704,71 @@ def _apply_approval_tags(c: "Campaign", approval_tags, *, decision_id: str = "")
             "delta": new - old,
             "matched_keys": matched,
         })
+        # E2 LAYER 3 input: the REALIZED signed delta for the secondary pass to read.
+        primary_by_id[ch.id] = new - old
+
+    # ----- LAYER 2: resolve the TARGETED companion (E2 ENSEMBLE) -----
+    # The 'target' is the companion this decision sided WITH / AGAINST (an explicit id the DM
+    # named via targets_companion). Default "" => no target => the secondary pass below is a
+    # no-op, so a caller that omits targets_companion is byte-identical to today. actor_ids is
+    # accepted for signature-compat / future fallback but the cleanest contract-safe signal is
+    # the explicit target id (never guess the target from who-acted).
+    target_id = (targets_companion or "").strip()
+
+    # ----- LAYER 3: SECONDARY inter-companion pass (E2 ENSEMBLE) -----
+    # Runs ONLY when a target is named AND that target is a party companion that ACTUALLY MOVED
+    # this call (target_id in primary_by_id) with a NON-ZERO realized delta — otherwise there is
+    # no "hurt vs helped" signal to ripple, so skip (degrade to no-op; never guess from fiction).
+    if target_id and target_id in primary_by_id:
+        target_delta = primary_by_id[target_id]
+        if target_delta != 0:
+            helped = target_delta > 0
+            for cid in getattr(c, "party", []) or []:
+                if cid == target_id:
+                    continue  # the secondary NEVER fires on the target itself
+                comp = c.characters.get(cid)
+                if comp is None or getattr(comp, "kind", None) != "companion":
+                    continue
+                dossier = getattr(comp, "companion_dossier", None)
+                stance = getattr(dossier, "stance", None) if dossier is not None else None
+                if stance is None:
+                    continue  # a stance-less companion has no inter-companion signal
+                allies = getattr(stance, "allies", []) or []
+                rivals = getattr(stance, "rivals", []) or []
+                if target_id in allies:
+                    # Hurt my ally -> I sour (-5); help my ally -> I warm (+5).
+                    sec = _APPROVAL_SECONDARY_DELTA if helped else -_APPROVAL_SECONDARY_DELTA
+                    secondary_cause = f"ally_of:{target_id}"
+                elif target_id in rivals:
+                    # Side against my rival -> I warm (+5); help my rival -> I sour (-5).
+                    sec = -_APPROVAL_SECONDARY_DELTA if helped else _APPROVAL_SECONDARY_DELTA
+                    secondary_cause = f"rival_of:{target_id}"
+                else:
+                    continue  # this companion holds no stance toward the target
+                old2 = comp.attitude_value
+                new2 = _clamp_attitude(old2 + sec)  # one clamp per secondary move
+                comp.attitude_value = new2
+                # E5 LEDGER: log the secondary too, so the ledger explains WHY a gauge moved on
+                # a companion the decision never directly tagged. cause is the stance-derived
+                # marker ('sided_against_ally' / 'sided_against_rival' valence is in the note).
+                comp.approval_log.append(ApprovalEvent(
+                    day=getattr(c, "day", 1),
+                    cause=secondary_cause,
+                    delta=new2 - old2,
+                    new_value=new2,
+                    decision_id=decision_id,
+                    note=secondary_cause,
+                ))
+                comp.approval_log = comp.approval_log[-40:]
+                results.append({
+                    "id": comp.id,
+                    "name": comp.name,
+                    "old_value": old2,
+                    "new_value": new2,
+                    "delta": new2 - old2,
+                    "secondary_cause": secondary_cause,
+                })
+
     return results
 
 
@@ -10683,6 +10784,7 @@ def record_decision(
     decision: str = "",
     *,
     approval_tags: Optional[list] = None,
+    targets_companion: str = "",
 ) -> dict:
     """Record a party decision so the DM and companions can call back to it later
     ('last time we trusted Grett...'). Capture the choice after a deliberation:
@@ -10696,7 +10798,14 @@ def record_decision(
     dossier lists a matching `approval_likes` (+10 default) / `approval_dislikes` (-10), the
     ENGINE moves `attitude_value` (clamped to ±100) and reports it under `approval_results`.
     This is how a player's choices turn a companion's arc (the BG "soul") — the DM TAGS the
-    cause, the engine OWNS the number. Omit it (the default) for a choice no companion weighs."""
+    cause, the engine OWNS the number. Omit it (the default) for a choice no companion weighs.
+
+    `targets_companion` (optional) names the companion this decision SIDED WITH / AGAINST
+    (E2 ENSEMBLE). When the named companion's gauge MOVES this call, every OTHER party
+    companion whose dossier.stance lists the target as an ally/rival feels a smaller secondary
+    ripple (hurt my ally -> -5; side against my rival -> +5; the inverses when the target was
+    helped). Omit it (the default) for a choice that doesn't turn on one companion — the
+    gauge move is then byte-identical to today (no secondary pass)."""
     summary = summary if summary else decision  # `decision` is an accepted alias for `summary`
     if not summary:
         raise ValueError("record_decision needs a summary (pass `summary` or its alias `decision`)")
@@ -10712,6 +10821,8 @@ def record_decision(
             # store the DM-supplied causes for RECALL (normalized keys); the gauge move below
             # is applied ONCE here, never re-derived on load.
             approval_tags=[k for k, _ in _normalize_approval_tags(approval_tags)],
+            # the companion this choice sided with/against (E2), stored for recall.
+            targets_companion=(targets_companion or "").strip(),
         )
         c.decisions.append(d)
         flag = sets_flag.strip()
@@ -10719,8 +10830,14 @@ def record_decision(
             c.flags[flag] = True  # content-defined; arms a matching agenda's decision_flag
         # GAUGE-NOT-FICTION: move every party companion's approval by the tagged causes, under
         # the SAME lock+save as the decision row (engine = sole writer). Empty/None tags == [].
-        # decision_id links each ledger event back to this Decision (E5 recall).
-        approval_results = _apply_approval_tags(c, approval_tags, decision_id=d.id)
+        # decision_id links each ledger event back to this Decision (E5 recall). targets_companion
+        # (default "") drives the E2 secondary inter-companion ripple — omitted == today.
+        approval_results = _apply_approval_tags(
+            c, approval_tags,
+            targets_companion=d.targets_companion,
+            actor_ids=d.actor_ids,
+            decision_id=d.id,
+        )
         save_campaign(c)
         out = {"id": d.id, "summary": d.summary, "chosen": d.chosen, "day": d.day}
         if flag:

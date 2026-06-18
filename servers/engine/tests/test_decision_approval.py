@@ -88,6 +88,23 @@ def test_old_campaign_snapshot_with_tagless_decisions_loads():
     assert reloaded.decisions[0].approval_tags == []
 
 
+# --- INC-B1: Decision.targets_companion (E2 ENSEMBLE), additive --------------
+
+def test_decision_targets_companion_defaults_empty():
+    assert Decision(summary="sided with the rogue").targets_companion == ""
+
+
+def test_old_decision_snapshot_without_targets_companion_round_trips():
+    """A stored Decision predating targets_companion loads unchanged (additive default)."""
+    d = Decision(summary="defended the cleric", chosen="yes")
+    raw = d.model_dump(mode="json")
+    old = {k: v for k, v in raw.items() if k != "targets_companion"}
+    assert "targets_companion" not in old
+    reloaded = Decision.model_validate(old)
+    assert reloaded.targets_companion == ""
+    assert reloaded.summary == "defended the cleric"
+
+
 # --- record_decision: the core mechanic -------------------------------------
 
 def test_like_applies_plus_ten(tmp_path, monkeypatch):
