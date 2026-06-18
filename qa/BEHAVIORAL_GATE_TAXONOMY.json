@@ -176,6 +176,12 @@
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "A >=10-beat session with a companion never engaged a core relationship/quest system: either no companion's attitude_value moved off 0 AND no camp/long_rest happened, or an active quest was left open across a >=2-location arc with no quest-resolution call. Either the DM never invoked the relationship/quest tools (record_decision / adjust_attitude / camp_scene / complete_quest evolves_to — DM adherence) or those engine writes never landed (engine). All those tool handlers + the attitude_value/quest-status writes live in server.py (adjust_attitude, record_decision, camp_scene, complete_quest, and the rule-of-three evolution _maybe_schedule_quest_evolution / evolves_to); the field definitions are in models.py; companion.py only surfaces approval CAUSES (approval_tags) for the DM to apply — it never writes state itself. The gate trips at >=10 beats (STRUCTURAL_MIN_BEATS); when validating authored campaigns run >=24 beats so the main quest has room to resolve, else the unresolved-arc sub-check false-REDs. FATAL; skipped in the combat-sprint lane."
     },
+    "flat_arc": {
+      "category": "DM_ADHERENCE",
+      "likely_code_locations": ["qa/play_dm_duo.txt", "servers/engine/server.py", "qa/story_readout.py"],
+      "retest": "bash qa/run_duo.sh duo-retest",
+      "hint": "A >=24-beat run (FELT_SHAPE_MIN_BEATS, strictly above the >=10 structural floor) covered 3+ acts but the arc never TURNED — no midpoint reversal AND/OR no late climax landed (a flat fetch-quest shape, not a felt setup->reversal->climax). DM adherence: drive a real midpoint reversal + a late climax (record_decision the turning beat, advance_act / mark_reversal / mark_climax, complete_quest the spine late). The felt_shape fields (reversal/climax/acts_engine_reached/acts_tag_reached) are produced by the acts-engine in server.py (NarrativeArc + advance_act/mark_reversal/mark_climax) and surfaced via qa/story_readout.py's felt_shape_from_state. WARN only (fatal=False); only armed at >=24 beats so shorter runs are unaffected."
+    },
     "world_peopled": {
       "category": "DM_ADHERENCE",
       "likely_code_locations": ["qa/play_dm_duo.txt", "servers/engine/npc.py", "servers/engine/server.py"],
