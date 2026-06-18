@@ -1,0 +1,46 @@
+name: CodeQL Swift
+
+# The EXPENSIVE half of CodeQL: Swift requires autobuilding the macOS app (minutes on a
+# macos-latest runner). Scoped so it runs ONLY when the Swift app actually changes (macos/**)
+# or on a weekly schedule — so the app still gets periodic security scanning even without
+# macos/ churn — but NOT on every pure-Python/QA PR. The non-Swift languages live in codeql.yml.
+#
+# REQUIRED: GitHub default CodeQL setup must be DISABLED (see codeql.yml header) for this to run.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'macos/**'
+      - '.github/workflows/codeql-swift.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'macos/**'
+      - '.github/workflows/codeql-swift.yml'
+  schedule:
+    - cron: '41 3 * * 1'  # weekly, Monday 03:41 UTC
+
+jobs:
+  analyze-swift:
+    name: Analyze (swift)
+    runs-on: macos-latest
+    timeout-minutes: 30
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: swift
+          build-mode: autobuild
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:swift"

@@ -1,0 +1,53 @@
+name: CodeQL
+
+# Advanced CodeQL setup (replaces GitHub "default setup"). The non-Swift languages are
+# interpreted / build-free, so they scan cheaply on every PR + push + weekly. Swift — which
+# requires autobuilding the macOS app and is the slow/expensive job — is split out into
+# codeql-swift.yml, scoped to macos/** changes + a weekly schedule, so a pure-Python/QA PR no
+# longer pays the Swift-autobuild tax on every run.
+#
+# REQUIRED ONE-TIME TOGGLE (repo owner): GitHub default CodeQL setup must be DISABLED for these
+# committed workflows to run — Settings -> Code security and analysis -> Code scanning ->
+# "CodeQL analysis" -> switch from "Default" to "Advanced". Until that toggle is flipped,
+# github/codeql-action/init fails by design (default + advanced cannot both run).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '27 3 * * 1'  # weekly, Monday 03:27 UTC
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: python
+            build-mode: none
+          - language: javascript-typescript
+            build-mode: none
+          - language: actions
+            build-mode: none
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
