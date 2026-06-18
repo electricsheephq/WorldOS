@@ -100,6 +100,56 @@ def _api_seconds(res: dict) -> Optional[float]:
     return max(0.0, float(ms) / 1000.0)
 
 
+# Token/cache fields read off a beat's terminal ``result`` event for the tool-schema-slab A/B
+# (slab decision, Phase 3). The slab is a per-request PREFILL tax, so its effect shows up in the
+# token ledger, not in duration_api_ms (which is generation-bound). The load-bearing A/B signals:
+#   * cache_creation_input_tokens — tokens WRITTEN to the prompt cache. On a healthy CACHED run the
+#     continuing beats sit on a stable prefix, so routine cache_creation ≈ 0; a tiering change that
+#     DENTS the cache (re-creates the changed tool block) shows up as elevated routine cache_creation.
+#   * cache_read_input_tokens — tokens served from cache (cheap). * input_tokens — uncached prefill.
+#   * ttft_ms — time-to-first-token; a smaller pinned tool block should lower it (prior art).
+_USAGE_TOKEN_FIELDS = (
+    "input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens",
+)
+
+
+def _usage(res: dict) -> dict[str, Optional[float]]:
+    """Per-beat token usage + time-to-first-token from a ``result`` event's ``usage`` block.
+    Absent fields are None (tolerant of older transcripts that predate the field)."""
+    u = res.get("usage") if isinstance(res.get("usage"), dict) else {}
+    out: dict[str, Optional[float]] = {}
+    for k in _USAGE_TOKEN_FIELDS:
+        v = u.get(k)
+        out[k] = float(v) if isinstance(v, (int, float)) else None
+    ttft = res.get("ttft_ms")
+    out["ttft_ms"] = float(ttft) if isinstance(ttft, (int, float)) else None
+    return out
+
+
+def _mean(xs: Iterable[Any]) -> Optional[float]:
+    vals = [float(x) for x in xs if isinstance(x, (int, float))]
+    return round(sum(vals) / len(vals), 1) if vals else None
+
+
+def _token_aggregates(rows: list[dict]) -> Optional[dict]:
+    """Split per-beat usage rows (beat order, cold-open first) into cold-open vs routine means."""
+    if not rows:
+        return None
+
+    def block(rs: list[dict]) -> Optional[dict]:
+        if not rs:
+            return None
+        return {
+            "cache_creation": _mean(r.get("cache_creation_input_tokens") for r in rs),
+            "cache_read": _mean(r.get("cache_read_input_tokens") for r in rs),
+            "input": _mean(r.get("input_tokens") for r in rs),
+            "output": _mean(r.get("output_tokens") for r in rs),
+            "ttft_ms": _mean(r.get("ttft_ms") for r in rs),
+        }
+
+    return {"coldopen": block(rows[:1]), "routine": block(rows[1:])}
+
+
 def beat_files(transcript_dir: str | Path, run_id: str) -> list[str]:
     """The run's per-beat DM transcripts, ordered cold-open-FIRST (ascending nanos)."""
     pat = os.path.join(str(transcript_dir), f"{run_id}.dm.*.jsonl")
@@ -117,6 +167,7 @@ def rollup_files(files: list[str]) -> dict[str, Any]:
     than a misleading 0."""
     api_s: list[float] = []          # successful-beat generation seconds, in beat order
     turns: list[float] = []          # successful-beat num_turns, in beat order
+    usage_rows: list[dict] = []      # successful-beat token usage + ttft, in beat order
     failed = 0
     for path in files:
         res = _final_result(path)
@@ -131,6 +182,7 @@ def rollup_files(files: list[str]) -> dict[str, Any]:
             continue
         api_s.append(secs)
         turns.append(float(n) if isinstance(n, (int, float)) else 0.0)
+        usage_rows.append(_usage(res))
 
     out: dict[str, Any] = {
         "s_per_beat": None,
@@ -139,6 +191,9 @@ def rollup_files(files: list[str]) -> dict[str, Any]:
         "beats": len(api_s),          # successful beats counted
         "cold_open_turns": None,
         "failed_beats": failed,
+        # Additive (slab decision, Phase 3): per-beat token/cache ledger for the tiering A/B.
+        # cold-open vs routine means of cache_creation / cache_read / input / output / ttft_ms.
+        "tokens": _token_aggregates(usage_rows),
     }
     if not api_s:
         return out
@@ -187,6 +242,82 @@ def stamp_sidecars(rollup: dict[str, Any], run_dirs: Iterable[str | Path]) -> li
     return written
 
 
+# --- Tool-schema-slab tiering A/B (slab decision, Phase 3) -----------------------------------
+# Compare two SAME-SHA / SAME-SEED duo rollups — arm A = baseline (WORLDOS_ENGINE_ALWAYSLOAD=1,
+# whole-server pin) vs arm B = tiered (=0, per-tool PINNED_ALLOWLIST). The merge gate for the
+# tiering PR (per the FPAD decision) is: cold-open NOT worse, routine NOT worse, and the prompt
+# cache NOT dented — PLUS a chance-corrected tool-SELECTION check that lives outside this module
+# (selection is about which tool the DM picks, not latency). Thresholds are deliberately explicit
+# and tunable; this encodes the gate so a sweep yields a PASS/FAIL, not a wall of numbers.
+AB_LATENCY_TOLERANCE = 0.05          # a 5% regression on a wall-clock metric counts as "worse"
+AB_CACHE_CREATION_ABS_TOL = 2_000    # routine cache re-creation tokens tolerated as cache noise
+
+
+def _delta(a: Any, b: Any) -> dict:
+    """A->B delta cell. None-safe (missing metric => null delta, never a crash)."""
+    if not isinstance(a, (int, float)) or not isinstance(b, (int, float)):
+        return {"a": a, "b": b, "delta": None, "pct": None}
+    d = b - a
+    return {"a": a, "b": b, "delta": round(d, 1), "pct": (round(100.0 * d / a, 1) if a else None)}
+
+
+def compare_arms(arm_a: dict, arm_b: dict) -> dict:
+    """Compare a baseline rollup (arm_a) against a tiered rollup (arm_b) on the slab-A/B gate.
+
+    Returns ``{verdict, checks, metrics, note}``. ``verdict`` is PASS / FAIL / INSUFFICIENT_DATA
+    (the last when a required metric is missing on either arm). ``checks`` are the hard gates;
+    ``metrics`` carries every A/B delta (incl. the expected token-mass WIN) for the reviewer."""
+    ca = (arm_a.get("tokens") or {}).get("coldopen") or {}
+    cb = (arm_b.get("tokens") or {}).get("coldopen") or {}
+    ra = (arm_a.get("tokens") or {}).get("routine") or {}
+    rb = (arm_b.get("tokens") or {}).get("routine") or {}
+
+    metrics = {
+        "coldopen_s": _delta(arm_a.get("coldopen_s"), arm_b.get("coldopen_s")),
+        "coldopen_cache_creation": _delta(ca.get("cache_creation"), cb.get("cache_creation")),
+        "coldopen_ttft_ms": _delta(ca.get("ttft_ms"), cb.get("ttft_ms")),
+        "s_per_beat": _delta(arm_a.get("s_per_beat"), arm_b.get("s_per_beat")),
+        "routine_cache_creation": _delta(ra.get("cache_creation"), rb.get("cache_creation")),
+        "routine_input": _delta(ra.get("input"), rb.get("input")),         # the expected WIN (down)
+        "routine_ttft_ms": _delta(ra.get("ttft_ms"), rb.get("ttft_ms")),
+    }
+
+    checks: dict[str, bool] = {}
+    a_co, b_co = arm_a.get("coldopen_s"), arm_b.get("coldopen_s")
+    if isinstance(a_co, (int, float)) and isinstance(b_co, (int, float)):
+        checks["cold_open_not_worse"] = b_co <= a_co * (1 + AB_LATENCY_TOLERANCE)
+    a_sb, b_sb = arm_a.get("s_per_beat"), arm_b.get("s_per_beat")
+    if isinstance(a_sb, (int, float)) and isinstance(b_sb, (int, float)):
+        checks["routine_not_worse"] = b_sb <= a_sb * (1 + AB_LATENCY_TOLERANCE)
+    a_cc, b_cc = ra.get("cache_creation"), rb.get("cache_creation")
+    if isinstance(a_cc, (int, float)) and isinstance(b_cc, (int, float)):
+        checks["cache_not_dented"] = b_cc <= a_cc + AB_CACHE_CREATION_ABS_TOL
+    # Informational (not a safety gate): the tiered arm SHOULD inject less uncached prefill.
+    a_in, b_in = ra.get("input"), rb.get("input")
+    if isinstance(a_in, (int, float)) and isinstance(b_in, (int, float)):
+        checks["input_mass_down"] = b_in < a_in
+
+    required = ("cold_open_not_worse", "routine_not_worse", "cache_not_dented")
+    if any(k not in checks for k in required):
+        verdict = "INSUFFICIENT_DATA"
+    elif all(checks[k] for k in required):
+        verdict = "PASS"
+    else:
+        verdict = "FAIL"
+
+    return {
+        "verdict": verdict,
+        "checks": checks,
+        "metrics": metrics,
+        "note": (
+            "tiering A/B: arm_a=baseline (WORLDOS_ENGINE_ALWAYSLOAD=1), arm_b=tiered (=0). "
+            "Hard gate = cold_open_not_worse AND routine_not_worse AND cache_not_dented. "
+            "input_mass_down is the expected WIN (informational). The chance-corrected tool-"
+            "SELECTION check is gated separately. Run paired same-SHA/same-seed duos for signal."
+        ),
+    }
+
+
 def _main(argv: Optional[list[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Derive the F13-4 latency ledger from DM beat transcripts.")
     ap.add_argument("--dir", help="transcript directory ($T) — used with --run")
@@ -195,8 +326,19 @@ def _main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--stamp-into", default="", help="comma-separated PERSONA run dirs to stamp the "
                     "rollup into as <dir>/latency.json (the shape release_readiness.read_latency reads) "
                     "— this is what ACTIVATES the additive RRI latency gate on a real sweep")
+    ap.add_argument("--compare", nargs=2, metavar=("BASELINE_JSON", "TIERED_JSON"),
+                    help="slab-A/B (Phase 3): compare two rollup JSON files (arm A=baseline "
+                         "WORLDOS_ENGINE_ALWAYSLOAD=1, arm B=tiered =0) on the cold-open / routine / "
+                         "cache-dent gate; prints {verdict, checks, metrics}, exits non-zero on FAIL")
     ap.add_argument("files", nargs="*", help="explicit beat transcript paths (overrides --dir/--run)")
     args = ap.parse_args(argv)
+
+    if args.compare:
+        arm_a = json.loads(Path(args.compare[0]).read_text())
+        arm_b = json.loads(Path(args.compare[1]).read_text())
+        cmp = compare_arms(arm_a, arm_b)
+        print(json.dumps(cmp, indent=2))
+        return 0 if cmp["verdict"] == "PASS" else 1
 
     if args.files:
         files = sorted(args.files, key=lambda p: int(m.group(1)) if (m := _DM_RE.search(p)) else 0)
