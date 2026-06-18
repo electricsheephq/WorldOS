@@ -96,9 +96,15 @@ worldos_isolate_claude_auth
 # DM gets the engine (state dir patched in); the player gets an EMPTY strict config.
 DM_CFG="$STATE_DIR/dm.mcp.json"; PLAYER_CFG="$STATE_DIR/player.mcp.json"
 MOVES="$STATE_DIR/player_moves.jsonl"; : > "$MOVES"  # the player's structured moves (It.1)
-python3 - "$ROOT/qa/qa.mcp.example.json" "$STATE_DIR" "$DM_CFG" "$ROOT" <<'PY'
+# Wave-1 per-tool timing sidecar (Round-2 wiring): the engine appends one {ts,tool,wall_ms,ok,
+# campaign_id} line per tool call to this ABSOLUTE path — but only because we set
+# WORLDOS_TOOLTIMING_PATH in the engine MCP env below (it is a no-op when that var is unset, so
+# production play pays nothing). latency_rollup.py reads it via --tooltiming to split tool-exec vs
+# generation. Truncate at run start so a re-run never appends to a stale sidecar.
+TOOLTIMING_PATH="$ROOT/$T/$RUN.tooltiming.jsonl"; : > "$TOOLTIMING_PATH"
+python3 - "$ROOT/qa/qa.mcp.example.json" "$STATE_DIR" "$DM_CFG" "$ROOT" "$TOOLTIMING_PATH" <<'PY'
 import json, sys, os
-cfg_path, state, out, root = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+cfg_path, state, out, root, tooltiming = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
 cfg = json.load(open(cfg_path))
 # RE-ROOT every MCP server's `--directory` at THIS repo ($ROOT) so the DM engine,
 # rules, and voice run the SAME code as the rest of the harness + the snapshot writer
@@ -123,6 +129,8 @@ for name, srv in cfg.get("mcpServers", {}).items():
         args[i + 1] = f"{root}/servers/{pkg}"
     if name == "worldos-engine":
         srv.setdefault("env", {})["WORLDOS_STATE_DIR"] = state
+        # Wave-1 per-tool timing: tell the engine where to write its tool-timing sidecar.
+        srv["env"]["WORLDOS_TOOLTIMING_PATH"] = tooltiming
         # Parity with scripts/play.sh: pin the engine tools (un-defer) so the DM stops burning
         # ~2 ToolSearch round-trips/beat re-discovering them. Set WORLDOS_ENGINE_ALWAYSLOAD=0 for
         # the deferred baseline (the latency A/B arm).
@@ -504,8 +512,10 @@ fi
 # Non-fatal: a derivation hiccup must never fail an otherwise-good run. The JSON is the handoff
 # for scores_db.add_run(**{s_per_beat,coldopen_s,turns_per_beat}); the figures also print here.
 LATENCY_JSON="$T/$RUN.latency.json"
-if python3 qa/latency_rollup.py --dir "$T" --run "$RUN" --out "$LATENCY_JSON" >/dev/null 2>&1; then
-  LAT_SUMMARY="$(jq -r '"s/beat="+(.s_per_beat|tostring)+" cold-open="+(.coldopen_s|tostring)+"s turns/beat="+(.turns_per_beat|tostring)' "$LATENCY_JSON" 2>/dev/null)"
+# --tooltiming folds in the Wave-1 per-tool sidecar (per-kind beat means + tool-exec-vs-generation
+# split); harmless when the sidecar is absent/empty (the rollup degrades those fields to null).
+if python3 qa/latency_rollup.py --dir "$T" --run "$RUN" --tooltiming "$TOOLTIMING_PATH" --out "$LATENCY_JSON" >/dev/null 2>&1; then
+  LAT_SUMMARY="$(jq -r '"s/beat="+(.s_per_beat|tostring)+" cold-open="+(.coldopen_s|tostring)+"s turns/beat="+(.turns_per_beat|tostring)+(if .combat_s_per_beat then " combat="+(.combat_s_per_beat|tostring)+"s" else "" end)+(if .social_s_per_beat then " social="+(.social_s_per_beat|tostring)+"s" else "" end)+(if .tool_exec_pct then " tool="+((.tool_exec_pct*100)|floor|tostring)+"%" else "" end)+(if .slowest_tool then " slowest="+.slowest_tool else "" end)' "$LATENCY_JSON" 2>/dev/null)"
 else
   LAT_SUMMARY="latency=unavailable"
 fi
