@@ -580,6 +580,20 @@ def main() -> int:
         chk("world_advanced_time", day > 1 or (tod not in ("", "morning")),
             f"day={day} time_of_day={tod or '?'} after {session_beats} beats — the clock never moved "
             f"(advance_time / travel_to(advance_time=True) / long_rest)")
+        # dm_advanced_time (WS-E) — WARN-only. world_advanced_time above passes on ANY clock movement,
+        # INCLUDING the qa worldos_soft_tick backstop that auto-advances the clock every idle beat —
+        # which MASKS a DM that never rests or advances time itself (0 long_rest/downtime across the
+        # corpus, yet the soft-tick made day>1 so the floor stayed GREEN). This surfaces that mask
+        # without failing the run: a DM-ISSUED advance_time / long_rest / short_rest / downtime in the
+        # tool stream. The DM moving time itself is what feeds companion regard + camp + every
+        # day-gated system. (travel_to(advance_time=True) also advances time but isn't separately
+        # tallied here, so a rare travel-only run may WARN — it's advisory, never fatal.)
+        dm_time_tools = (tools["advance_time"] + tools["long_rest"]
+                         + tools["short_rest"] + tools["downtime"])
+        chk("dm_advanced_time", dm_time_tools > 0,
+            f"the DM never issued a time-advance tool in {session_beats} beats — only the harness "
+            f"soft-tick moved the clock, so companion regard / camp / day-gated systems stay starved; "
+            f"call long_rest / advance_time / downtime", fatal=False)
         locs = state.get("locations", {}) or {}
         visited = sum(1 for l in locs.values() if isinstance(l, dict) and l.get("visited"))
         # IN-PLACE PROGRESSION EXCEPTION (#623 false-cap): a multi-beat arc that genuinely

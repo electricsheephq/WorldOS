@@ -810,6 +810,34 @@ def test_party_traveled_still_red_on_frozen_run(tmp_path):
     assert rc == 1, out
 
 
+# ── WS-E: dm_advanced_time — unmask a frozen DM whose clock the harness soft-tick moved ────────
+
+def test_dm_advanced_time_warns_when_clock_moved_but_no_dm_time_tool(tmp_path):
+    """The state day advanced (day=3) — but the DM issued NO time-advance tool, so only the harness
+    worldos_soft_tick moved the clock. world_advanced_time PASSES (it sees day>1), yet the DM never
+    rested/advanced time itself, starving companion regard / camp / day-gated systems. WS-E surfaces
+    this as a WARN (the run stays GREEN — advisory, not fatal)."""
+    events = _dm_text_turns(9)                       # session_beats=9 (>= MIN_BEATS), no time tool
+    state = _single_scene_state(day=3, quest_completed=True, visited_count=2)
+    rc, out = _run_gate(tmp_path, events, state)
+    assert "[WARN] dm_advanced_time" in out, out
+    assert "[FAIL] dm_advanced_time" not in out, out  # WARN-only, never fatal
+    assert rc == 0, out                               # the run is still GREEN
+
+
+def test_dm_advanced_time_passes_when_dm_issues_long_rest(tmp_path):
+    """A DM that actually issues a time-advance tool (long_rest) is not flagged."""
+    events = _dm_text_turns(9) + [
+        _assistant_tool_use("lr1", "mcp__worldos-engine__long_rest", {"campaign_id": "c"}),
+        _user_tool_result("lr1", json.dumps({"ok": True})),
+    ]
+    state = _single_scene_state(day=3, quest_completed=True, visited_count=2)
+    rc, out = _run_gate(tmp_path, events, state)
+    assert "[PASS] dm_advanced_time" in out, out
+    assert "[WARN] dm_advanced_time" not in out, out
+    assert rc == 0, out
+
+
 def test_party_traveled_still_red_when_clock_advanced_but_arc_unresolved(tmp_path):
     # Guard against broadening to clock-only: day advanced but NO completed quest → the AND
     # still fails (arc_resolved False) → party_traveled stays RED.
