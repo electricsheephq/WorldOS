@@ -10,6 +10,7 @@ serves the player, the companion, and all NPCs.
 from __future__ import annotations
 
 import time
+import warnings
 from enum import Enum
 from typing import Any, Literal, Optional
 from uuid import uuid4
@@ -284,6 +285,27 @@ class CompanionAgenda(_StrictModel):
         # IMMEDIATELY (M2). Fail loud at author time instead of silently arming.
         if self.trigger in ("attitude_below", "day_reached") and self.value is None:
             raise ValueError(f"agenda trigger {self.trigger!r} requires an explicit `value`")
+        # A second footgun on the SAME field: a POSITIVE `attitude_below` value. The agenda
+        # fires while `attitude_value < value`, and a freshly-recruited companion seeds at the
+        # neutral default `attitude_value=0` — so a positive breaking point means the bond is
+        # ALREADY past it at recruit and the engine rolls a betrayal from beat 1 with NO player
+        # wrongdoing (the #996 inversion: +20 thresholds armed a betrayal in ~93% of fresh
+        # parties within 5 beats). A betrayal breaking point must be NEGATIVE — the bond has to
+        # actually sour first (real spines use -20/-30). This is the UNCONDITIONAL net beneath
+        # generator.validate_adventure's author-time check: that content-lint is opt-in (it is
+        # NOT run on the seed_campaign path, the snapshot-load path, or the ending-overlay
+        # companion_seeds construction), whereas this validator runs on EVERY construction.
+        # WARN, never raise: a model validator also runs on snapshot LOAD, and the
+        # additive/round-trip invariant forbids failing to load an already-persisted snapshot
+        # (a positive value was always a latent bug, but it must not turn a saved game un-loadable).
+        if self.trigger == "attitude_below" and self.value is not None and self.value > 0:
+            warnings.warn(
+                f"CompanionAgenda attitude_below value={self.value} is POSITIVE: a companion at "
+                f"the neutral seed default (attitude_value=0) is already past this breaking point "
+                f"and will roll a betrayal from recruit with no player wrongdoing. A betrayal "
+                f"threshold must be negative (real spines use -20/-30 — the bond must sour first).",
+                stacklevel=2,
+            )
         return self
 
 

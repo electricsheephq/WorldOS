@@ -362,7 +362,7 @@ def test_scene_context_durable_omits_obligations_on_healthy_fixture(cid):
 # gap that left "betrayals never engage" even though the engine machinery (issue #142) works.
 
 
-def _betrayer(attitude, threshold=18, fired=False, decision_flag="") -> Character:
+def _betrayer(attitude, threshold=-20, fired=False, decision_flag="") -> Character:
     """A companion carrying an attitude_below betrayal agenda (Sergeant Ondine Marsh's shape)."""
     return Character(
         name="Sergeant Ondine Marsh",
@@ -378,15 +378,15 @@ def _betrayer(attitude, threshold=18, fired=False, decision_flag="") -> Characte
 
 def test_betrayal_approaching_fires_when_bond_curdles_past_breaking_point():
     """A live attitude_below agenda + a bond soured into the warning band (regard -30,
-    threshold 18) -> the DM is cued to foreshadow the fracture this beat."""
-    comp = _betrayer(attitude=-30, threshold=18)
+    threshold -20) -> the DM is cued to foreshadow the fracture this beat."""
+    comp = _betrayer(attitude=-30, threshold=-20)
     c = _campaign_with(comp, day=4)
     appr = [o for o in server._compute_beat_obligations(c)
             if o["kind"] == "companion_betrayal_approaching"]
     assert appr, "a curdled betrayal agenda must surface a cue"
     o = appr[0]
     assert o["name"] == "Sergeant Ondine Marsh"
-    assert o["attitude_value"] == -30 and o["threshold"] == 18
+    assert o["attitude_value"] == -30 and o["threshold"] == -20
     assert o["deep_red"] is False  # -30 has not yet passed the deep-red marker (-40)
     assert "REAL attack" in o["detail"]
 
@@ -400,6 +400,10 @@ def test_betrayal_approaching_silent_above_the_breaking_point():
     assert "companion_betrayal_approaching" not in _kinds(server._compute_beat_obligations(c))
 
 
+# The warm (positive) threshold is the DELIBERATE point of this one test — the model validator
+# rightly warns that a positive threshold is an authoring footgun, but here we exercise the
+# engine's defensive robustness (telegraph even a warm-threshold agenda once live), so suppress it.
+@pytest.mark.filterwarnings("ignore::UserWarning")
 def test_betrayal_approaching_fires_for_a_warm_threshold_agenda_once_live():
     """Regression for the silent-snap window: a content agenda with a warm (positive) threshold
     that is LIVE (regard below it) NOW telegraphs instead of firing from nowhere — the anchor fix."""
@@ -411,7 +415,7 @@ def test_betrayal_approaching_fires_for_a_warm_threshold_agenda_once_live():
 def test_betrayal_approaching_silent_for_warm_companion():
     """The gs-ledger-betray case: even a 'cruel' player ran a liberatory arc, regard rose to
     50 -> the agenda never went live and the cue does NOT false-fire."""
-    comp = _betrayer(attitude=50, threshold=18)
+    comp = _betrayer(attitude=50, threshold=-20)
     c = _campaign_with(comp, day=6)
     assert "companion_betrayal_approaching" not in _kinds(server._compute_beat_obligations(c))
 
@@ -425,7 +429,7 @@ def test_betrayal_approaching_silent_without_agenda():
 
 def test_betrayal_approaching_silent_when_agenda_already_fired():
     """A FIRED agenda is the event itself, not a warning -> never re-cued as approaching."""
-    comp = _betrayer(attitude=-50, threshold=18, fired=True)
+    comp = _betrayer(attitude=-50, threshold=-20, fired=True)
     c = _campaign_with(comp, day=4)
     assert "companion_betrayal_approaching" not in _kinds(server._compute_beat_obligations(c))
 
@@ -433,7 +437,7 @@ def test_betrayal_approaching_silent_when_agenda_already_fired():
 def test_betrayal_approaching_marks_deep_red_and_decision_flag():
     """Deep red (regard past -40) + a recorded decision_flag spike both surface — severity
     rises to high and the cue tells the DM to foreshadow harder."""
-    comp = _betrayer(attitude=-45, threshold=18, decision_flag="took_ferreths_coin")
+    comp = _betrayer(attitude=-45, threshold=-20, decision_flag="took_ferreths_coin")
     c = _campaign_with(comp, day=6)
     c.flags["took_ferreths_coin"] = True
     appr = [o for o in server._compute_beat_obligations(c)
@@ -448,13 +452,13 @@ def test_betrayal_approaching_marks_deep_red_and_decision_flag():
 
 def _make_betrayer_run(cid: str) -> None:
     """Mutate the live campaign: a party companion whose attitude_below agenda has curdled
-    past its breaking point into the warning band (regard -30, threshold 18)."""
+    past its breaking point into the warning band (regard -30, threshold -20)."""
     c = store.load_campaign(cid)
     comp = Character(
         name="Sergeant Ondine Marsh",
         kind="companion",
         attitude_value=-30,
-        arc=CompanionArc(agenda=CompanionAgenda(trigger="attitude_below", value=18)),
+        arc=CompanionArc(agenda=CompanionAgenda(trigger="attitude_below", value=-20)),
     )
     c.characters[comp.id] = comp
     c.party.append(comp.id)
