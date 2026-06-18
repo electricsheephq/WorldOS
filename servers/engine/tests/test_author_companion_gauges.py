@@ -17,14 +17,22 @@ import store
 
 
 def _vocabless_companion(bg: str) -> str:
-    """Create a companion the LIVE way — it gets the minimal seeded dossier (empty approval vocab)
-    + the default loyalty arc, exactly like a freely-recruited one."""
+    """Create a companion the LIVE way, then EXPLICITLY strip its approval vocabulary so the test
+    can exercise the UN-GAUGED path. (A freely-recruited companion is now auto-seeded with a small
+    DEFAULT vocab by WS-A — _seed_companion_operational_state — so the empty-vocab state these tests
+    act on must be reconstructed by clearing it; the auto-seed itself is covered by its own tests.)"""
     out = server.create_character(
         bg, name="Garran the Free", kind="companion", race="Human",
         class_name="Fighter", level=2, max_hp=18,
         biography="A hired blade with a careful, transactional way about him.",
     )
-    return out["id"]
+    cid = out["id"]
+    c = store.load_campaign(bg)
+    d = c.characters[cid].companion_dossier
+    d.approval_likes = []
+    d.approval_dislikes = []
+    store.save_campaign(c)
+    return cid
 
 
 def test_vocabless_companion_then_gauged_after_authoring(tmp_path, monkeypatch):

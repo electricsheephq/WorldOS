@@ -22,6 +22,7 @@ from pydantic import ValidationError
 
 import content
 import server
+import store
 from models import Campaign, Character, CompanionDossier
 
 
@@ -30,6 +31,60 @@ from models import Campaign, Character, CompanionDossier
 def test_character_dossier_defaults_none():
     ch = Character(name="Hero")
     assert ch.companion_dossier is None
+
+
+# --- WS-A: a freshly-seeded companion is GAUGE-ABLE (default approval vocabulary) -----------
+
+def test_seed_gives_default_approval_vocabulary():
+    """WS-A: the live seed gives a companion a small DEFAULT approval vocabulary, so the regard
+    gauge is move-able from the first beat (approval moved in only ~1/200 runs because recruited
+    companions shipped EMPTY likes/dislikes, so every tag matched nothing)."""
+    ch = Character(name="Garran", kind="companion")
+    server._seed_companion_operational_state(ch)
+    assert ch.companion_dossier is not None
+    assert ch.companion_dossier.approval_likes == list(server._DEFAULT_APPROVAL_LIKES)
+    assert ch.companion_dossier.approval_dislikes == list(server._DEFAULT_APPROVAL_DISLIKES)
+    assert ch.companion_dossier.approval_likes  # non-empty == gauge-able
+
+
+def test_seed_does_not_overwrite_authored_vocabulary():
+    """An ending/canon/DM-authored vocabulary is NEVER overwritten by the default seed (additive)."""
+    ch = Character(
+        name="Vael", kind="companion",
+        companion_dossier=CompanionDossier(approval_likes=["due_process"],
+                                           approval_dislikes=["summary_execution"]),
+    )
+    server._seed_companion_operational_state(ch)
+    assert ch.companion_dossier.approval_likes == ["due_process"]
+    assert ch.companion_dossier.approval_dislikes == ["summary_execution"]
+
+
+def test_seed_backfills_default_vocab_on_empty_preexisting_dossier():
+    """A pre-seeded dossier with camp_prompts but EMPTY vocab (the canon/roster case) gets the
+    default vocab backfilled — its camp_prompts preserved — so it too becomes gauge-able."""
+    ch = Character(name="Korrin", kind="companion",
+                   companion_dossier=CompanionDossier(camp_prompts=["a careful, transactional smile"]))
+    server._seed_companion_operational_state(ch)
+    assert ch.companion_dossier.camp_prompts == ["a careful, transactional smile"]  # preserved
+    assert ch.companion_dossier.approval_likes == list(server._DEFAULT_APPROVAL_LIKES)
+
+
+def test_seeded_companion_approval_moves_end_to_end(tmp_path, monkeypatch):
+    """The WHOLE point of WS-A: with a default vocab seeded, a matching approval tag on a recorded
+    decision MOVES the companion's attitude_value (it could not before — empty vocab matched nothing,
+    so the regard gauge stayed frozen at 0 in real play)."""
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    bg = server.start_world("baldurs-gate")["campaign_id"]
+    cid = server.create_character(
+        bg, name="Garran the Free", kind="companion", race="Human",
+        class_name="Fighter", level=2, max_hp=18, biography="A hired blade.",
+    )["id"]
+    before = store.load_campaign(bg).characters[cid].attitude_value
+    # tag a choice with one of the seeded default likes — the DM's normal approval path
+    server.record_decision(bg, summary="kept the bargain to the letter",
+                           approval_tags=[server._DEFAULT_APPROVAL_LIKES[0]])
+    after = store.load_campaign(bg).characters[cid].attitude_value
+    assert after > before, "a default-vocab companion's regard must move on a matching tag"
 
 
 def test_old_snapshot_without_dossier_field_deserializes_unchanged():
