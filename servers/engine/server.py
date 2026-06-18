@@ -13591,5 +13591,92 @@ def mark_climax(campaign_id: str) -> dict:
         return {"climax_landed": True, "climax_day": arc.climax_day}
 
 
+# --- Tool-schema tiering (slab decision, Phases 1-2) -----------------------------------------
+# The engine tool-schema slab is injected into EVERY DM beat. Pinning all 153 tools (whole-server
+# `alwaysLoad`) taxes every request AND dilutes tool-selection accuracy (a 285-transcript census
+# found 92/153 tools never called in real play). We PIN a census-backed core — the hot beat loop,
+# the full active-combat verb set (die-triggered, no payload hint, so a mid-fight ToolSearch hop is
+# the worst failure), the cold-open path (no payload names them; inside the 22-turn give-up band),
+# and the reach-for surface — and let the harness DEFER the cold authoring/catalog/campaign/arc/
+# economy tail behind ToolSearch. New tools default DEFERRED (absent from the allowlist) so the slab
+# can't silently re-bloat; promoting one to the core is a reviewed edit here + a ratchet-test bump.
+#
+# Per-tool pinning rides `_meta["anthropic/alwaysLoad"]`, which claude resolves PER-TOOL and FastMCP
+# propagates from a tool's `.meta` (verified on the installed mcp 1.27.1 / claude 2.1.160). Cold
+# tools stay FINDABLE: the engine names them in the obligations/director payloads the DM already
+# holds, or they are explicit-intent-gated, so the DM ToolSearches them on demand (Step-1.7 reach-
+# for validation found no selection regression from deferring them).
+#
+# A/B control = the EXISTING whole-server `WORLDOS_ENGINE_ALWAYSLOAD` flag (qa launchers / .mcp.json).
+# When '1' (default = today's baseline) the harness ORs the server-level pin over EVERY tool, so the
+# per-tool meta is inert — we skip applying it to keep the baseline slab byte-identical. When '0'
+# (the tiered A/B arm) we annotate the core and the harness defers the rest. Flipping the production
+# default to tiered is the post-A/B cutover, gated on the duo A/B (cache + cold-open + selection).
+PINNED_ALLOWLIST: frozenset[str] = frozenset({
+    # beat loop / narration / state / recall
+    "log_event", "persist_beat", "scene_context", "present_events", "remember",
+    "record_decision", "recall", "recall_npc",
+    # perception / movement / world reads
+    "look_around", "travel_to", "get_scene", "get_state", "find_npcs", "active_campaign",
+    # checks / rolls
+    "skill_check", "social_check", "saving_throw", "roll", "spell_save_dc",
+    # combat — the full active-verb set (die-triggered, no payload hint; pin generously)
+    "start_combat", "end_combat", "attack", "cast_spell", "next_turn", "use_action", "use_resource",
+    "apply_damage", "apply_healing", "add_condition", "remove_condition",
+    "concentration_save", "drop_concentration", "roll_death_save", "stabilize",
+    "set_hp", "set_temp_hp", "grapple", "shove", "escape_grapple",
+    "add_combatant", "remove_combatant", "place_combatant", "combatants_in_zone", "move_to_zone",
+    "spawn_monster",
+    # combat — grid twins of the zone verbs (rebased over #1246/#1248/#1250; same hot verb set)
+    "set_grid", "place_combatant_at_coords", "move_to_coords",
+    # companions (hot interaction + combat suggestion)
+    "companion_advise", "companion_suggest_action", "recruit_companion",
+    # cold-open path / session / character setup (no payload names them; the give-up band)
+    "start_world", "start_session", "start_adventure", "get_prelude", "get_quest_hooks",
+    "create_character", "load_canon_character", "list_canon_characters", "start_character",
+    "generate_image", "list_worlds",
+    # rest / time
+    "long_rest", "short_rest", "advance_time",
+    # quest / progression hot
+    "add_quest", "complete_objective", "level_up", "award_xp",
+    # frequent edits
+    "update_character", "add_location", "set_attitude",
+})
+
+_ALWAYS_LOAD_META_KEY = "anthropic/alwaysLoad"
+
+
+def _apply_tool_tiering(server: "FastMCP" = mcp, *, force: bool = False) -> dict:
+    """Pin only the PINNED_ALLOWLIST tools so the harness keeps the core in-context every beat and
+    DEFERS the rest behind ToolSearch. Runs at import (after every @mcp.tool is registered).
+
+    Inert under the whole-server baseline (`WORLDOS_ENGINE_ALWAYSLOAD` == '1', default): the harness
+    ORs the server pin over every tool, so we skip the per-tool meta to keep the baseline byte-clean.
+    Applies it for the tiered arm (`WORLDOS_ENGINE_ALWAYSLOAD` == '0') or when `force=True` (tests).
+    Returns a small summary. Always validates the allowlist names exist (catches a typo/rename loud).
+    """
+    tiered = force or os.environ.get("WORLDOS_ENGINE_ALWAYSLOAD", "1") != "1"
+    tools = server._tool_manager._tools  # FastMCP private registry (pinned to mcp 1.27.1)
+    unknown = PINNED_ALLOWLIST - set(tools)
+    if unknown:
+        raise RuntimeError(
+            f"PINNED_ALLOWLIST names tools that don't exist (typo/rename?): {sorted(unknown)}"
+        )
+    if not tiered:
+        return {"tiered": False, "pinned": len(tools), "deferred": 0, "total": len(tools)}
+    for name, tool in tools.items():
+        meta = dict(tool.meta or {})
+        if name in PINNED_ALLOWLIST:
+            meta[_ALWAYS_LOAD_META_KEY] = True
+        else:
+            meta.pop(_ALWAYS_LOAD_META_KEY, None)
+        tool.meta = meta or None
+    return {"tiered": True, "pinned": len(PINNED_ALLOWLIST),
+            "deferred": len(tools) - len(PINNED_ALLOWLIST), "total": len(tools)}
+
+
+_apply_tool_tiering()
+
+
 if __name__ == "__main__":
     mcp.run()
