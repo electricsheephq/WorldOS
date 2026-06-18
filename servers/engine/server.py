@@ -4785,16 +4785,11 @@ def attack(
     is_ranged=True so a prone target gives disadvantage rather than advantage) and
     combined with the explicit flags (they cancel if both apply).
 
-    Battle Master DAMAGE maneuvers (#213/B): pass ``maneuver`` (e.g. 'Trip Attack')
-    to declare a maneuver ATOMICALLY on this strike — the engine rolls + spends ONE
-    superiority die ONLY when the attack HITS (SRD: the die is spent "when you hit"),
-    folds it into the damage, and DOUBLES it on a crit (SRD Critical Hits: the
-    superiority die is "other damage dice"). A MISS spends nothing. ``maneuver_resource``
-    is the die pool to spend from (default 'superiority_dice'); ``maneuver_damage_type``
-    overrides the bonus's type (default: the weapon's). Empty ``maneuver`` == today's
-    behavior. (The older two-step path — use_resource(superiority_dice, maneuver=…) then
-    attack — still works and now also crit-doubles; declaring via attack() is preferred
-    because a miss no longer burns the die.)"""
+    Battle Master DAMAGE maneuvers (#213/B): pass ``maneuver`` (e.g. 'Trip Attack') to
+    declare one atomically — the engine spends ONE ``maneuver_resource`` die (default
+    'superiority_dice') ONLY on a hit, folds it into the damage, and crit-doubles it; a miss
+    spends nothing. ``maneuver_damage_type`` overrides the bonus's type. Empty ``maneuver``
+    == today's behavior."""
     # Coalesce intuitive arg-name aliases to the canonical ids. The ATTACKER is the acting
     # character (alias `character_id`); the TARGET is the thing struck (aliases `npc_id`/`id`).
     # Canonical names win. (target_id ⇄ character_id is intentionally NOT done — `character_id`
@@ -6435,22 +6430,13 @@ def build_options(campaign_id: str, character_id: str) -> dict:
 def level_roadmap(campaign_id: str, character_id: str, through_level: int = 20) -> dict:
     """A READ-ONLY projection of what a character GAINS at each level from its current
     level + 1 through ``through_level`` (≤20) — the "see your path to 20" planning view
-    (the build-optimizer persona's last gap: "no upcoming-features view / nothing to
-    theorycraft against"; build_options only shows the SINGLE next level).
-
-    Projects the PC's PRIMARY class (the one with the most levels — the engine cannot know
-    a player's FUTURE multiclass picks) forward along the real SRD tables: class features
-    gained (srd_tables.features_at), subclass features newly owed if a subclass is chosen
-    (subclass_features_through delta), whether the level grants an ASI/feat
-    (is_asi_level), the proficiency bonus (proficiency_bonus of the TOTAL level), notable
-    class-resource changes (class_resources_through delta), and — for casters — a
-    spell-slot change note. Returns ``{character_id, character_name, primary_class,
-    subclass, from:{total_level, class_level}, through_level, multiclass, roadmap:[…]}``.
-
-    Pure projection — NEVER writes campaign state, NEVER fabricates (an entry exists only
-    when an SRD table carries it). GUARDED: an empty ``roadmap`` when the PC is already at
-    ``through_level``, has no class (a stat-block NPC/monster), or the primary class is
-    unknown to the tables. Mirrors the read-only feats()/feature_catalog pattern."""
+    (build_options only shows the single next level). Projects the PC's PRIMARY class (most
+    levels) along the SRD tables: features gained, subclass-feature deltas, ASI/feat levels,
+    the proficiency bonus, class-resource changes, and a caster's spell-slot note. Returns
+    ``{character_id, character_name, primary_class, subclass, from, through_level,
+    multiclass, roadmap:[…]}``. Pure projection — never writes state, never fabricates; an
+    empty ``roadmap`` when the PC is already at ``through_level``, has no class (a stat-block
+    NPC/monster), or the primary class is unknown to the tables."""
     c = _require(campaign_id)
     ch = _char(c, character_id)
     base = {
@@ -10788,24 +10774,18 @@ def record_decision(
 ) -> dict:
     """Record a party decision so the DM and companions can call back to it later
     ('last time we trusted Grett...'). Capture the choice after a deliberation:
-    `summary` (the decision; pass it as `summary` (canonical) or `decision` (alias) —
-    equivalent, `summary` wins if both given), `options` (what was on the table),
-    `chosen`, why (`rationale`), and who weighed in (`actor_ids`). Returns the decision id.
+    `summary` (the decision; pass as `summary` (canonical) or `decision` (alias) —
+    `summary` wins if both given), `options` (what was on the table), `chosen`, why
+    (`rationale`), and who weighed in (`actor_ids`). Returns the decision id.
 
     `approval_tags` (optional) MOVES companion approval on a moral choice — pass the
-    lowercase_snake cause-keys the choice aligns with (e.g. `["mercy", "cruelty"]`, or
-    `[{"key": "power", "delta": 25}]` for an explicit swing). For each PARTY companion whose
-    dossier lists a matching `approval_likes` (+10 default) / `approval_dislikes` (-10), the
-    ENGINE moves `attitude_value` (clamped to ±100) and reports it under `approval_results`.
-    This is how a player's choices turn a companion's arc (the BG "soul") — the DM TAGS the
-    cause, the engine OWNS the number. Omit it (the default) for a choice no companion weighs.
-
-    `targets_companion` (optional) names the companion this decision SIDED WITH / AGAINST
-    (E2 ENSEMBLE). When the named companion's gauge MOVES this call, every OTHER party
-    companion whose dossier.stance lists the target as an ally/rival feels a smaller secondary
-    ripple (hurt my ally -> -5; side against my rival -> +5; the inverses when the target was
-    helped). Omit it (the default) for a choice that doesn't turn on one companion — the
-    gauge move is then byte-identical to today (no secondary pass)."""
+    lowercase_snake cause-keys it aligns with (e.g. `["mercy", "cruelty"]`, or
+    `[{"key": "power", "delta": 25}]` for an explicit swing). For each party companion whose
+    dossier `approval_likes`/`approval_dislikes` match, the engine moves `attitude_value`
+    (±10 default, clamped ±100) and reports `approval_results` — the DM tags the cause, the
+    engine owns the number. `targets_companion` (optional) names the companion sided
+    with/against, so other companions whose dossier.stance lists them as ally/rival feel a
+    smaller secondary ripple (±5). Omit either (default) for a choice no companion weighs."""
     summary = summary if summary else decision  # `decision` is an accepted alias for `summary`
     if not summary:
         raise ValueError("record_decision needs a summary (pass `summary` or its alias `decision`)")
