@@ -34,6 +34,13 @@ try:
 except Exception:  # pragma: no cover - defensive: never let an import break the gate
     coverage_from_tool_counts = None
     felt_shape_from_state = None
+# WS0 — the feature-engagement coverage scorer (manifest of authored story systems). Defensive
+# import on the SAME pattern: a missing module degrades the engagement block to a no-op, never
+# breaks the gate. All systems ship WARN, so this adds ZERO fatals (strictly additive).
+try:
+    from feature_engagement import engagement_coverage
+except Exception:  # pragma: no cover - defensive
+    engagement_coverage = None
 
 
 def _load_jsonl(p: str) -> list[dict]:
@@ -698,6 +705,24 @@ def main() -> int:
                 f"fetch-quest shape, not a felt setup→reversal→climax (land a real midpoint "
                 f"reversal + a late climax: record_decision the turn, complete_quest the spine late)",
                 fatal=False)
+
+    # ── WS0: FEATURE-ENGAGEMENT COVERAGE (the dead-system tracker; ALL-WARN this PR) ──────
+    # Today an entire authored subsystem (companion approval, camp downtime, faction questlines,
+    # …) can be 100% INERT across a whole run and every gate/lens still scores it 10/10 — no gate
+    # is engagement-coverage. This block reads the engine snapshot + the DM tool counts (the SAME
+    # ground-truth surfaces the structural_completeness floor uses — never fiction) and, for each
+    # system the run was OWED but never engaged, emits a chk. Severity rides the manifest: every
+    # system ships 'warn' this PR, so this adds ZERO fatals (every currently-green run stays
+    # green). FATAL graduation is a FUTURE, post-sweep PR. The combat-sprint env skip is honored
+    # inside engagement_coverage (mirrors the world-progression / structural floors above).
+    if engagement_coverage is not None:
+        try:
+            eng = engagement_coverage(state, dict(tools), session_beats)
+        except Exception:  # pragma: no cover - the engagement scorer must never break the gate
+            eng = {"inert": []}
+        for item in eng.get("inert", []):
+            chk(f"engagement_{item.get('id', '?')}", False, item.get("why", ""),
+                fatal=(item.get("severity") == "fatal"))
 
     # ── SECTION A: RESULT-SIDE + per-record state gates (audit-tests.md §A) ───────────────
     # These read artifacts the existing gates ignore: the tool_RESULT payloads (A1/A2/A8) and

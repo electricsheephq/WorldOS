@@ -131,6 +131,13 @@ COLUMNS: tuple[str, ...] = (
     # (additive, migration-free). ---
     "acts_reached",       # max distinct authored act reached (1/2/3), NULL if not measured
     "structural_coverage",# one-line human roll-up, e.g. "acts 1/3 · recruit ✓ · camp · · quest-resolved ·"
+    # --- WS0 feature-engagement coverage (the dead-system tracker; manifest of authored story
+    # systems). engagement_pct = engaged/(engaged+inert) over the manifest (N/A systems excluded);
+    # engagement_inert = the comma-joined ids of systems that were OWED but never engaged. Derived
+    # from the engine snapshot + DM tool counts by qa/feature_engagement.engagement_coverage. NULL
+    # on rows recorded before this stamping (additive, migration-free). ---
+    "engagement_pct",     # engaged/(engaged+inert) fraction (0.0-1.0), NULL if not measured
+    "engagement_inert",   # comma-joined inert system ids, e.g. "companion_approval,camp_downtime"
     "pass",               # 1 (pass) / 0 (fail) / NULL (no pass/fail verdict)
     "source_path",        # where the evidence lives (file/dir, LEXAR or repo-relative)
     "notes",              # free-text context: what was under test, caveats, confidence flags
@@ -150,6 +157,8 @@ _REAL_COLS = {
     # Wave-1 1B per-kind + per-tool timing (seconds / ms / ratio → REAL; slowest_tool is TEXT)
     "combat_s_per_beat", "social_s_per_beat", "mean_tool_call_ms", "tool_exec_pct",
     "duration_wall_s",
+    # WS0 engagement coverage fraction (0.0-1.0 → REAL; engagement_inert is TEXT)
+    "engagement_pct",
 }
 _INT_COLS = {"critical_bugs", "pass", "is_canonical_baseline", "acts_reached"}
 
@@ -411,6 +420,8 @@ _MD_COLS = [
     ("slowest_tool", "slowest tool"),
     ("acts_reached", "Acts"),
     ("structural_coverage", "Structural coverage"),
+    ("engagement_pct", "Engagement"),
+    ("engagement_inert", "Inert systems"),
     ("pass", "Pass"),
     ("source_path", "Source"),
     ("notes", "Notes"),

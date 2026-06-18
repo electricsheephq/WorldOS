@@ -99,8 +99,27 @@ DETERMINISTIC_GATES = (
     "ui_audit",
     "image_render",
     "palette_live",
+    # WS0: story_engagement is a DETERMINISTIC, snapshot-derived measurement (no live LLM) —
+    # it joins this set ONLY when engagement evidence is present (else an evidence-gap skip,
+    # never a deterministic fail), exactly like the latency gates.
+    "story_engagement",
 )
 LATENCY_GATES = ("latency_s_per_beat", "latency_coldopen")
+
+# WS0 — short fix hints printed beside each inert authored system in the ENGAGEMENT section
+# (which engine tool the DM should reach for to make the dead system fire in a real beat).
+_ENGAGEMENT_FIX_HINTS = {
+    "companion_approval": "move a companion's regard (record_decision approval_tags / adjust_attitude)",
+    "camp_downtime": "run a camp beat / long_rest in the multi-day arc (camp_scene / long_rest)",
+    "quests_objectives": "complete an objective or quest (complete_objective / complete_quest)",
+    "acts_advance": "advance the narrative arc past act 1 (drive the engine narrative_arc cursor)",
+    "consequences_fired": "let the due consequence fire (advance_time past its trigger_day)",
+    "factions_membership": "join the seeded faction (join_faction)",
+    "faction_arc": "advance the joined faction's arc (advance_faction_arc) [BLOCKED spike — stays WARN]",
+    "companion_quest_arc": "advance the companion quest arc (advance_companion_quest_arc) [BLOCKED spike — stays WARN]",
+    "companion_agenda": "evaluate/fire the companion agenda (check_companion_arc)",
+    "decisions_recorded": "record a callback-worthy choice (record_decision)",
+}
 
 # Default per-beat latency budget — overridden by qa/latency_baseline.json when present.
 # Healthy ledger figures (qa/scores_ledger.md) are ~78 s/beat and ~157 cold-open; these
@@ -829,6 +848,12 @@ def main() -> int:
             "part_a_failure_detail": (rj.get("part_a") or {}).get("failure_detail") or "",
             "part_b_failure_bucket": (rj.get("part_b") or {}).get("failure_bucket") or "",
             "part_b_failure_detail": (rj.get("part_b") or {}).get("failure_detail") or "",
+            # WS0 — the feature-engagement coverage block (inject_structural_coverage merges it
+            # into score.json). None when absent (a legacy corpus) → the story_engagement gate is
+            # an evidence-gap SKIP, never a fail (mirrors the latency-gate skip). Carried raw so
+            # the per-system owed/engaged roll-up below reads it.
+            "engagement_coverage": sc.get("engagement_coverage")
+            if isinstance(sc.get("engagement_coverage"), dict) else None,
         })
 
     if not expected_personas:
@@ -1115,6 +1140,45 @@ def main() -> int:
         f"budget={coldopen_s_budget}"
     )
 
+    # ---- WS0 ADDITIVE story_engagement gate (the dead-system tracker) ----
+    # Roll the per-persona feature-engagement blocks (qa/feature_engagement.engagement_coverage,
+    # merged into score.json by inject_structural_coverage) up across the sweep. A system is
+    # "owed" if ANY persona owed it (engaged OR inert), "engaged" if ANY persona engaged it;
+    # a system is INERT for the sweep iff it was owed by at least one persona AND no persona ever
+    # engaged it — the authored subsystem was dead across the WHOLE sweep. The gate FAILS only on
+    # a FATAL inert system; with WS0 all-WARN, a WARN-only inert set never fails the gate (it is
+    # reported, not gated) — strictly additive. EVIDENCE-GAP SKIP: if NO persona block carries
+    # engagement_coverage (a legacy corpus / a run before this stamping), the gate is SKIPPED, not
+    # failed, so RRI math stays byte-identical (mirrors the latency-gate skip).
+    engagement_blocks = [p["engagement_coverage"] for p in persona_scores
+                         if isinstance(p.get("engagement_coverage"), dict)]
+    engagement_evidence_present = bool(engagement_blocks)
+    sweep_engaged: set[str] = set()
+    sweep_owed: dict[str, str] = {}  # system id -> worst-seen severity ('fatal' beats 'warn')
+    for blk in engagement_blocks:
+        for sid in blk.get("engaged", []) or []:
+            sweep_engaged.add(str(sid))
+            sweep_owed.setdefault(str(sid), "warn")
+        for item in blk.get("inert", []) or []:
+            sid = str(item.get("id", ""))
+            if not sid:
+                continue
+            sev = "fatal" if item.get("severity") == "fatal" else "warn"
+            if sweep_owed.get(sid) != "fatal":
+                sweep_owed[sid] = sev
+    sweep_inert = sorted(sid for sid in sweep_owed if sid not in sweep_engaged)
+    sweep_inert_fatal = sorted(sid for sid in sweep_inert if sweep_owed.get(sid) == "fatal")
+    sweep_inert_warn = sorted(sid for sid in sweep_inert if sweep_owed.get(sid) != "fatal")
+    # PASS unless a FATAL system is inert across the whole sweep. (All-WARN ⇒ always passes when
+    # evidence is present; a WARN-only inert set is surfaced, not gated.)
+    story_engagement_ok = not sweep_inert_fatal
+    story_engagement_detail = (
+        f"inert_fatal={sweep_inert_fatal or 'none'}; inert_warn={sweep_inert_warn or 'none'}; "
+        f"engaged={sorted(sweep_engaged) or 'none'}"
+        if engagement_evidence_present
+        else "n/a (no engagement_coverage in any persona score.json — evidence gap)"
+    )
+
     # ---- the gate set (each evaluated gate contributes to RRI; all must hold for 10/10) ----
     gates = {
         "native_gate":        (native == "PASS" and not (evidence_gap_gates & native_evidence_gap_gates),
@@ -1140,6 +1204,7 @@ def main() -> int:
                                f"palette_live={args.palette_live or 'n/a'}"),
         "latency_s_per_beat": (latency_s_per_beat_ok, latency_s_per_beat_detail),
         "latency_coldopen":   (latency_coldopen_ok, latency_coldopen_detail),
+        "story_engagement":   (story_engagement_ok, story_engagement_detail),
     }
 
     # SKIPPED gates are excluded from passed / total_gates (never counted as pass OR fail):
@@ -1150,6 +1215,10 @@ def main() -> int:
         skipped_gates.append("latency_s_per_beat")
     if agg_coldopen_s is None:
         skipped_gates.append("latency_coldopen")
+    # WS0: no engagement evidence anywhere → the story_engagement gate is an evidence-gap skip
+    # (excluded from passed/total), so a legacy corpus's RRI is byte-identical (mirrors latency).
+    if not engagement_evidence_present:
+        skipped_gates.append("story_engagement")
     if args.deterministic_only:
         skipped_gates.extend(g for g in LLM_PERSONA_GATES if g not in skipped_gates)
     skipped_set = set(skipped_gates)
@@ -1302,6 +1371,13 @@ def main() -> int:
                 str(p["latency_source"]) for p in persona_scores
                 if p.get("latency_source") and p.get("latency_source") != "none"
             }),
+            # WS0 engagement signals. None/empty when no persona carried an engagement block
+            # (the story_engagement gate is then an evidence-gap skip, never a fabricated pass).
+            "engagement_evidence_present": engagement_evidence_present,
+            "engagement_engaged": sorted(sweep_engaged),
+            "engagement_inert": sweep_inert,
+            "engagement_inert_fatal": sweep_inert_fatal,
+            "engagement_inert_warn": sweep_inert_warn,
         },
         "gate_detail": {name: detail for name, (ok, detail) in gates.items()},
         "personas": persona_scores,
@@ -1335,6 +1411,21 @@ def main() -> int:
         print("  FAILED: " + ", ".join(details))
     if evidence_gaps:
         print("  EVIDENCE GAPS: " + "; ".join(f"{g['gate']} missing {g['missing']}" for g in evidence_gaps))
+
+    # WS0 ENGAGEMENT section — name each dead authored system across the sweep + a fix hint, so an
+    # all-inert subsystem (the failure WS0 exists to surface) is visible even while it is WARN-only.
+    if engagement_evidence_present:
+        if sweep_inert:
+            print("  ENGAGEMENT — INERT systems across the sweep (authored but never engaged):")
+            for sid in sweep_inert:
+                sev = sweep_owed.get(sid, "warn").upper()
+                hint = _ENGAGEMENT_FIX_HINTS.get(sid, "engage the system's engine tool in a real beat")
+                print(f"    [{sev}] {sid} — {hint}")
+            if not sweep_inert_fatal:
+                print("    (all WARN — reported, not gated; the story_engagement gate still PASSES)")
+        else:
+            print("  ENGAGEMENT — every owed authored system was engaged "
+                  f"({sorted(sweep_engaged)})")
 
     if args.scorecard_row:
         sha = (args.build_sha or "?")[:7]

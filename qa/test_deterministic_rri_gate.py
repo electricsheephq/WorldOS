@@ -216,9 +216,15 @@ class DeterministicAndLatencyTests(unittest.TestCase):
             self.assertFalse(payload["deterministic_only"])
             self.assertTrue(payload["release_ready"])
             # ADDITIVE invariant: with no latency evidence the two latency gates are an
-            # evidence-gap skip, so gates_total stays the pre-Phase-3 count of 11 (byte-
-            # identical RRI math) — they are skipped, never failed, never counted.
-            self.assertEqual(set(payload["skipped_gates"]), set(LATENCY_GATES))
+            # evidence-gap skip, AND (WS0) with no engagement_coverage in any persona score.json
+            # the story_engagement gate is likewise an evidence-gap skip — so gates_total stays
+            # the pre-Phase-3 count of 11 (byte-identical RRI math). The evidence-gap-skipped gates
+            # are exactly {latency_s_per_beat, latency_coldopen, story_engagement}; none are
+            # failed or counted.
+            self.assertEqual(
+                set(payload["skipped_gates"]),
+                set(LATENCY_GATES) | {"story_engagement"},
+            )
             self.assertEqual(payload["gates_total"], 11)
             self.assertEqual(payload["rri"], 10.0)
 
@@ -353,6 +359,101 @@ class DeterministicAndLatencyTests(unittest.TestCase):
             # still no LLM gate failed
             for gate in LLM_PERSONA_GATES:
                 self.assertNotIn(gate, payload["failed_gates"])
+
+    # ---- (3) WS0 story_engagement gate ----
+
+    def _write_engagement_into_scores(self, runs: list[Path], block: dict) -> None:
+        """Merge an engagement_coverage block into every persona score.json (what
+        inject_structural_coverage does on a real sweep)."""
+        for run in runs:
+            sc = json.loads((run / "score.json").read_text(encoding="utf-8"))
+            sc["engagement_coverage"] = block
+            (run / "score.json").write_text(json.dumps(sc), encoding="utf-8")
+
+    def test_engagement_absent_is_evidence_gap_skip_not_a_fail(self):
+        # No engagement_coverage anywhere → story_engagement is an evidence-gap SKIP, never a
+        # fail; gates_total stays 11 (byte-identical), RRI 10.0, release_ready True.
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            runs = self._five_runs(tmp)
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+            rc, _t, payload = self.run_rri(
+                tmp, *self._common_args(runs, story, mech, behavioral, audit, palette))
+            self.assertEqual(rc, 0)
+            self.assertIn("story_engagement", payload["skipped_gates"])
+            self.assertNotIn("story_engagement", payload["failed_gates"])
+            self.assertEqual(payload["gates_total"], 11)
+            self.assertTrue(payload["release_ready"])
+            self.assertFalse(payload["signals"]["engagement_evidence_present"])
+
+    def test_engagement_present_all_warn_inert_passes_gate_but_reports(self):
+        # WS0 all-WARN: an inert system (warn severity) across the sweep is REPORTED but the gate
+        # still PASSES (no FATAL inert). gates_total becomes 12 (the gate is now evaluated), and
+        # the single passing gate keeps RRI at 10.0.
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            runs = self._five_runs(tmp)
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+            self._write_engagement_into_scores(runs, {
+                "coverage": "1/2",
+                "engaged": ["decisions_recorded"],
+                "na": ["factions_membership"],
+                "inert": [{"id": "companion_approval", "why": "regard never moved",
+                           "severity": "warn"}],
+            })
+            rc, text, payload = self.run_rri(
+                tmp, *self._common_args(runs, story, mech, behavioral, audit, palette))
+            self.assertEqual(rc, 0)
+            self.assertTrue(payload["release_ready"])
+            self.assertNotIn("story_engagement", payload["skipped_gates"])
+            self.assertNotIn("story_engagement", payload["failed_gates"])
+            self.assertEqual(payload["gates_total"], 12)  # gate now evaluated (evidence present)
+            self.assertEqual(payload["rri"], 10.0)        # all-WARN inert still PASSES
+            self.assertEqual(payload["signals"]["engagement_inert"], ["companion_approval"])
+            self.assertEqual(payload["signals"]["engagement_inert_fatal"], [])
+            self.assertIn("companion_approval", text)  # named in the ENGAGEMENT section
+
+    def test_engagement_owed_by_one_engaged_by_another_is_not_inert(self):
+        # Cross-persona roll-up: a system INERT for one persona but ENGAGED by another is engaged
+        # for the SWEEP (not inert) — the authored system fired SOMEWHERE.
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            runs = self._five_runs(tmp)
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+            for i, run in enumerate(runs):
+                sc = json.loads((run / "score.json").read_text(encoding="utf-8"))
+                if i == 0:
+                    sc["engagement_coverage"] = {
+                        "coverage": "0/1", "engaged": [], "na": [],
+                        "inert": [{"id": "camp_downtime", "why": "no camp", "severity": "warn"}]}
+                else:
+                    sc["engagement_coverage"] = {
+                        "coverage": "1/1", "engaged": ["camp_downtime"], "na": [], "inert": []}
+                (run / "score.json").write_text(json.dumps(sc), encoding="utf-8")
+            rc, _t, payload = self.run_rri(
+                tmp, *self._common_args(runs, story, mech, behavioral, audit, palette))
+            self.assertEqual(rc, 0)
+            self.assertIn("camp_downtime", payload["signals"]["engagement_engaged"])
+            self.assertNotIn("camp_downtime", payload["signals"]["engagement_inert"])
+
+    def test_engagement_fatal_inert_fails_gate(self):
+        # FORWARD-COMPAT (post-graduation): a FATAL inert system across the sweep FAILS the
+        # story_engagement gate. WS0 ships all-WARN, but the gate logic must already enforce this
+        # so graduation is a one-line manifest change, not a gate rewrite.
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            runs = self._five_runs(tmp)
+            story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+            self._write_engagement_into_scores(runs, {
+                "coverage": "0/1", "engaged": [], "na": [],
+                "inert": [{"id": "quests_objectives", "why": "no quest resolved",
+                           "severity": "fatal"}]})
+            rc, _t, payload = self.run_rri(
+                tmp, *self._common_args(runs, story, mech, behavioral, audit, palette))
+            self.assertEqual(rc, 1)
+            self.assertIn("story_engagement", payload["failed_gates"])
+            self.assertEqual(payload["signals"]["engagement_inert_fatal"], ["quests_objectives"])
+            self.assertFalse(payload["release_ready"])
 
 
 if __name__ == "__main__":
