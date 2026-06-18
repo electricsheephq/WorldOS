@@ -460,8 +460,23 @@ turn() {
 # lines past the file-based cursor) — NEVER the raw reply text. One nudge if it didn't act.
 # (Lifted from run_party.sh's actor_move.) $1=session $2=cfg $3=moves $4=cursor $5=first
 # $6=prompt ; echoes the relayed moves (banner-tagged text), or empty.
+# $7=skip_decode (OPTIONAL, default empty): WORLDOS_COMPANION_PREFETCH reuse path ONLY. When "1",
+#   DO NOT issue a fresh `claude -p` decode — a speculative prefetch already landed this companion's
+#   moves in $moves past $curf during the human's think-gap. We simply HARVEST those already-present
+#   lines (past the cursor) and advance the cursor, exactly as a normal turn would after its decode.
+#   The ~35s companion decode was overlapped with the human's free think-time → that latency is gone.
+#   Default empty (every 6-arg caller) → the guard below is false → byte-identical to today's decode.
 actor_move() {
-  local sid="$1" cfg="$2" moves="$3" curf="$4" first="$5" prompt="$6" cur total new
+  local sid="$1" cfg="$2" moves="$3" curf="$4" first="$5" prompt="$6" skip_decode="${7:-}" cur total new
+  if [ "$skip_decode" = "1" ]; then
+    # WORLDOS_COMPANION_PREFETCH reuse: the decode already happened speculatively; harvest only.
+    cur=$(cat "$curf" 2>/dev/null || echo 0); cur=${cur:-0}
+    total=$(wc -l < "$moves" 2>/dev/null | tr -d ' '); total=${total:-0}
+    new="$(tail -n +"$((cur + 1))" "$moves" 2>/dev/null)"
+    echo "$total" > "$curf"
+    [ -n "$new" ] && printf '%s' "$new" | jq -rs 'map("[\(.kind)] \(.text)") | join("  ")' 2>/dev/null
+    return 0
+  fi
   turn actor "$sid" "$first" "$prompt" "$cfg" >/dev/null
   cur=$(cat "$curf" 2>/dev/null || echo 0); cur=${cur:-0}
   total=$(wc -l < "$moves" 2>/dev/null | tr -d ' '); total=${total:-0}
@@ -496,19 +511,162 @@ PY
 # roster order, given the DM's last narration as their prompt. Echoes the combined block
 # (or empty). The human's move is prepended by the caller (it comes from the dashboard).
 companion_moves() {
-  local dm_says="$1" block="" cm i
+  local dm_says="$1" block="" cm i skip
   for i in $(seq 0 $((NUM_COMP - 1))); do
     if ! companion_alive "${COMP_IDS[$i]}"; then
       echo "[play-party] beat: ${COMP_NAMES[$i]} is down — skipping its turn" >&2; continue
     fi
-    cm="$(actor_move "${COMP_SIDS[$i]}" "${COMP_CFGS[$i]}" "${COMP_MOVES[$i]}" "${COMP_CURSORS[$i]}" 0 "$dm_says")"
-    AGENT_TURNS=$((AGENT_TURNS + 1))
+    skip=""
+    # WORLDOS_COMPANION_PREFETCH reuse: if a VALID speculative decode for THIS companion already
+    # landed in its moves file during the human's think-gap, $PREFETCH_REUSE names its roster index
+    # ($i) — pass skip_decode=1 so actor_move harvests the prefetched lines instead of re-decoding.
+    # Default (flag off / no valid prefetch): PREFETCH_REUSE is unset/empty → skip stays "" → the
+    # call is the SAME 6-arg form as today (the optional 7th arg defaults empty in actor_move).
+    if [ "${WORLDOS_COMPANION_PREFETCH:-0}" = "1" ] && [ "${PREFETCH_REUSE:-}" = "$i" ]; then
+      skip="1"
+      echo "[play-party] beat: ${COMP_NAMES[$i]} reusing idle-gap prefetch (decode overlapped with your think-time)" >&2
+    fi
+    if [ -n "$skip" ]; then
+      cm="$(actor_move "${COMP_SIDS[$i]}" "${COMP_CFGS[$i]}" "${COMP_MOVES[$i]}" "${COMP_CURSORS[$i]}" 0 "$dm_says" "$skip")"
+      # The prefetched turn's cost + turn count were ALREADY accounted when it was kicked; do NOT
+      # double-count AGENT_TURNS here. A normal (fresh) companion decode counts below.
+    else
+      cm="$(actor_move "${COMP_SIDS[$i]}" "${COMP_CFGS[$i]}" "${COMP_MOVES[$i]}" "${COMP_CURSORS[$i]}" 0 "$dm_says")"
+      AGENT_TURNS=$((AGENT_TURNS + 1))
+    fi
     [ -n "$cm" ] && { block+="${block:+
 
 }${COMP_NAMES[$i]} (companion):
 $cm"; chatlog "companion:${COMP_NAMES[$i]}" "$cm"; }
   done
   printf '%s' "$block"
+}
+
+# ===========================================================================================
+# WORLDOS_COMPANION_PREFETCH (DEFAULT OFF) — idle-gap companion prefetch.
+# ===========================================================================================
+# Per-beat latency here is OUTPUT-DECODE-bound: a single Sonnet companion turn is ~35s of decode,
+# and today that decode only STARTS after the human posts their move (companion_moves runs after the
+# move lands). But between the DM narrating beat-K and the human posting their move, the wrapper is
+# just WAITING (the idle `sleep 2` loop) — the human is reading + deciding. That free think-gap is
+# dead decode time we can reclaim: the instant beat-K's narration is recorded, SPECULATIVELY kick the
+# single companion's beat-(K+1) reaction (reacting to beat-K's NARRATION — it cannot see the human's
+# not-yet-posted move) into its OWN moves file via the same facade path. When the human's move lands,
+# if the prefetch is still VALID we REUSE it (skip the fresh ~35s decode → it was overlapped with the
+# human's think-time). If the situation MATERIALLY changed, we DISCARD it and decode normally (==today).
+#
+# CONSERVATIVE by construction (correctness > speed; worst case == today's latency):
+#   - NON-COMBAT ONLY. Combat is initiative-sequential — a companion can't pre-decide its combat turn
+#     before the human's — so we never prefetch during (or into) combat.
+#   - SINGLE companion (N==1) only — play_party's realistic party here is one companion; we do NOT add
+#     multi-companion prefetch (no speculation about cross-companion ordering).
+#   - INVALIDATE (re-decode, discarding the prefetch) if, between the kick and the human's move, the
+#     situation materially changed: combat started, the current location changed, OR the human's move
+#     directly targets/addresses the companion (it reacted to narration, not to that). When unsure → re-decode.
+#
+# COST/TURN ACCOUNTING: the speculative turn runs through the SAME `turn actor` path (its stream lands
+# in $COMBINED) and counts AGENT_TURNS exactly once at kick time — whether it's later reused OR
+# discarded (its decode cost was spent honestly either way). The reuse path in companion_moves does
+# NOT re-count it. One writer at a time: the prefetch is a lone `claude -p` issued in the think-gap
+# when NOTHING else runs (no DM turn, the human is a person) — never `&`-backgrounded, no concurrency.
+PREFETCH_PENDING=0      # 1 once a speculative companion decode has landed and is awaiting the human's move
+PREFETCH_LOC=""         # current_location_id captured at kick time (location-change invalidation)
+PREFETCH_CURSOR=""      # companion 0's moves-cursor BEFORE the speculative decode (discard = truncate back to this)
+PREFETCH_REUSE=""       # set to companion index "0" right before companion_moves when the prefetch is reused
+PREFETCH_KICKED_BEAT="" # the DMSG-narration this prefetch reacted to (de-dups repeat kicks in one think-gap)
+
+# Read combat_active (field 7) + current_location_id (field 5) from the live snapshot via the SAME
+# shared worldos_read_progress the beat loop already uses. Echoes "<combat_active>\t<location_id>".
+_prefetch_situation() {
+  local prog; prog="$(worldos_read_progress "$STATE_DIR")"
+  printf '%s\t%s' "$(printf '%s' "$prog" | cut -f7)" "$(printf '%s' "$prog" | cut -f5)"
+}
+
+# Kick a speculative beat-(K+1) companion decode reacting to the CURRENT DM narration ($1), to overlap
+# with the human's think-time. GUARDED, NON-COMBAT + N==1 ONLY, idempotent within one think-gap.
+# Records the prefetch's situation (location) + saves the cursor so a later DISCARD can truncate the
+# speculative lines back out. Routes cost into $COMBINED and counts AGENT_TURNS once (honest spend).
+_maybe_prefetch_companion() {
+  [ "${WORLDOS_COMPANION_PREFETCH:-0}" = "1" ] || return 0
+  local dm_says="$1" combat loc
+  [ "$NUM_COMP" -eq 1 ] || return 0                       # single-companion scope only
+  [ "$PREFETCH_PENDING" -eq 1 ] && return 0               # already have a pending prefetch
+  [ "$PREFETCH_KICKED_BEAT" = "$dm_says" ] && return 0    # already kicked for THIS narration
+  companion_alive "${COMP_IDS[0]}" || return 0            # a downed companion takes no turn
+  IFS=$'\t' read -r combat loc <<<"$(_prefetch_situation)"
+  [ "${combat:-0}" = "1" ] && return 0                    # NON-COMBAT only (combat is initiative-sequential)
+  # Save the cursor BEFORE the decode so a discard can truncate the speculative moves back out.
+  PREFETCH_CURSOR="$(cat "${COMP_CURSORS[0]}" 2>/dev/null || echo 0)"; PREFETCH_CURSOR="${PREFETCH_CURSOR:-0}"
+  PREFETCH_LOC="$loc"
+  PREFETCH_KICKED_BEAT="$dm_says"
+  echo "[play-party] prefetch: speculatively decoding ${COMP_NAMES[0]}'s next move during your think-time…" >&2
+  # The speculative turn reacts to the DM's NARRATION ONLY (the human's move does not exist yet). Same
+  # facade path as a normal companion turn (turn actor → moves land in the file past PREFETCH_CURSOR;
+  # stream → $COMBINED). first=0 (a continuing-beat companion turn).
+  turn actor "${COMP_SIDS[0]}" 0 "The DM says:
+
+$dm_says
+
+This is a SPECULATIVE pre-move: the human player has not acted yet. React to the scene as it stands — take your next action(s) using your tools (say / do / request_check / cast_spell / use_item / attack; look or my_sheet first if useful). Tools only, no narration." "${COMP_CFGS[0]}" >/dev/null
+  AGENT_TURNS=$((AGENT_TURNS + 1))   # the speculative decode was spent — count it once, here.
+  PREFETCH_PENDING=1
+}
+
+# Is the pending prefetch still usable for the human's actual move ($1 = the human's $PMSG)? CONSERVATIVE:
+# re-decode (return 1) if combat is now active, the location changed since the kick, OR the human's move
+# directly targets/addresses the single companion by name. Otherwise (return 0) reuse. No pending prefetch
+# (or flag off) → not valid. NOTE: the snapshot read reflects state AT the human's move (companion_moves
+# hasn't run yet), so a combat that started during the think-gap is caught here.
+_prefetch_valid() {
+  [ "${WORLDOS_COMPANION_PREFETCH:-0}" = "1" ] || return 1
+  [ "$PREFETCH_PENDING" -eq 1 ] || return 1
+  local pmsg="$1" combat loc landed keep
+  # The prefetch must actually have PRODUCED moves (lines past the saved cursor). A speculative turn
+  # that emitted nothing → re-decode so the normal actor_move nudge can prompt it to act this beat.
+  keep="${PREFETCH_CURSOR:-0}"
+  landed="$(wc -l < "${COMP_MOVES[0]}" 2>/dev/null | tr -d ' ')"; landed="${landed:-0}"
+  if [ "$landed" -le "$keep" ]; then
+    echo "[play-party] prefetch: INVALID — the speculative turn produced no moves; re-decoding." >&2
+    return 1
+  fi
+  IFS=$'\t' read -r combat loc <<<"$(_prefetch_situation)"
+  if [ "${combat:-0}" = "1" ]; then
+    echo "[play-party] prefetch: INVALID — combat is now active (companion turn is initiative-sequential); re-decoding." >&2
+    return 1
+  fi
+  if [ -n "$PREFETCH_LOC" ] && [ "$loc" != "$PREFETCH_LOC" ]; then
+    echo "[play-party] prefetch: INVALID — location changed ($PREFETCH_LOC → $loc) since the prefetch; re-decoding." >&2
+    return 1
+  fi
+  # The human's move directly addresses/targets THIS companion → the speculative reaction (to narration,
+  # not to the human) is likely stale. Case-insensitive whole-name substring match on the companion's name.
+  if printf '%s' "$pmsg" | grep -qi -- "${COMP_NAMES[0]}"; then
+    echo "[play-party] prefetch: INVALID — your move addresses ${COMP_NAMES[0]} directly; re-decoding so it reacts to you." >&2
+    return 1
+  fi
+  return 0
+}
+
+# Discard a pending (invalidated) prefetch: truncate the companion's moves file back to the saved
+# pre-decode cursor so the now-stale speculative lines are NEVER relayed, then clear the pending state
+# so companion_moves decodes fresh. The discarded decode's COST already counted at kick time (spent
+# honestly). GUARDED. $1 is informational only (the reason was already logged by _prefetch_valid).
+_discard_prefetch() {
+  [ "${WORLDOS_COMPANION_PREFETCH:-0}" = "1" ] || return 0
+  [ "$PREFETCH_PENDING" -eq 1 ] || { PREFETCH_PENDING=0; return 0; }
+  local moves="${COMP_MOVES[0]}" keep="${PREFETCH_CURSOR:-0}" tmp
+  if [ -f "$moves" ]; then
+    tmp="$(mktemp "${moves}.XXXXXX" 2>/dev/null)" || tmp=""
+    if [ -n "$tmp" ]; then
+      if head -n "$keep" "$moves" > "$tmp" 2>/dev/null; then
+        mv "$tmp" "$moves" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+      else
+        rm -f "$tmp" 2>/dev/null
+      fi
+    fi
+  fi
+  # Cursor file already holds the pre-decode value (actor_move never ran on the prefetch); leave it.
+  PREFETCH_PENDING=0; PREFETCH_KICKED_BEAT=""
 }
 
 # --- viewer supervisor: IDENTICAL to play.sh (binds immediately, serves the empty state,
@@ -723,6 +881,10 @@ last_activity=$SECONDS
 # Without it the .app DM was purely reactive, so free-play personas finished at the intro and the
 # full 8-beat arc (parley → engine combat → travel → rest → travel) never fired (G1 fail, 2026-06-03).
 BEAT_NO=0; PREV_LOC=""
+# WORLDOS_COMPANION_PREFETCH: the human's FIRST move reacts to the cold-open (or after-intros)
+# narration now in $DMSG — its think-gap has already begun. Kick the opening speculative companion
+# decode here so it overlaps that first think-gap too (non-combat + N==1 only; no-op when flag off).
+_maybe_prefetch_companion "$DMSG"
 while true; do
   over_budget && break
   total="$(wc -l < "$MOVES" 2>/dev/null | tr -d ' ')"; total="${total:-0}"
@@ -752,6 +914,23 @@ while true; do
     # helper play.sh calls; best-effort + non-fatal; engine stays the sole writer (it routes
     # through log_engine_narration). 0-based index so the teaser rotation matches play.sh's.
     worldos_emit_progress_heartbeat "$CAMPAIGN_ID" 0 "$((BEAT_NO - 1))"
+
+    # WORLDOS_COMPANION_PREFETCH: a speculative companion decode may have landed during the human's
+    # think-gap (kicked from the idle branch below, reacting to $DMSG). Decide REUSE vs DISCARD now —
+    # BEFORE companion_moves — against the human's actual move. Valid → mark PREFETCH_REUSE so
+    # companion_moves harvests the prefetched lines (skips the ~35s decode); invalid → discard
+    # (truncate the stale speculative lines) so companion_moves decodes fresh (== today's latency).
+    # Flag off (or no pending prefetch): both helpers no-op, PREFETCH_REUSE stays "" → today's path.
+    PREFETCH_REUSE=""
+    if [ "${WORLDOS_COMPANION_PREFETCH:-0}" = "1" ]; then
+      if _prefetch_valid "$PMSG"; then
+        PREFETCH_REUSE=0          # reuse companion 0's prefetched moves in companion_moves
+        PREFETCH_PENDING=0        # consumed this beat
+        PREFETCH_KICKED_BEAT=""
+      else
+        _discard_prefetch "invalidated"   # clears PREFETCH_PENDING; companion_moves decodes fresh
+      fi
+    fi
 
     # Each living companion reacts to the LAST DM narration + (implicitly) the unfolding
     # beat, taking its own move via its facade. Relay ONLY structured moves to the DM.
@@ -787,6 +966,7 @@ Then PLAY the next beat as a full lived scene — NOT a fragment: any NPC (or co
     worldos_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$WORLDOS_DM_REPLY"
     # #720: route the per-beat DM reply through record_dm_reply (engine_logged stamp on success).
     record_dm_reply "$CAMPAIGN_ID" "$DMSG" beat; AGENT_TURNS=$((AGENT_TURNS + 1))
+    PREFETCH_REUSE=""   # WORLDOS_COMPANION_PREFETCH: clear the per-beat reuse flag (no-op when flag off)
     # F12-5 (#791) — C soft clock-tick backstop (the SAME shared helper play.sh:504 + both duo
     # loops call; play_party was the ONLY beat loop without it, so party sessions could freeze at
     # day-1 morning forever): advance ONE phase via the engine ONLY if the DM left the clock
@@ -796,6 +976,12 @@ Then PLAY the next beat as a full lived scene — NOT a fragment: any NPC (or co
     worldos_soft_tick "$ROOT" "$STATE_DIR" "$PREV_DAY" "$PREV_TOD"
     # Remember this beat's location so the next beat's runbook can detect a stuck party (travel cue).
     PREV_LOC="$(printf '%s' "$(worldos_read_progress "$STATE_DIR")" | cut -f5)"
+    # WORLDOS_COMPANION_PREFETCH: beat-K's narration is now recorded AND the world clock has settled
+    # (soft_tick ran) — the instant the human's think-gap begins. Speculatively kick the single
+    # companion's beat-(K+1) reaction to THIS narration so its ~35s decode overlaps the human reading
+    # + deciding. NON-COMBAT + N==1 only; idempotent; no-op when the flag is off. (Placed AFTER
+    # soft_tick so the prefetch reacts to the post-tick location, matching what the next beat sees.)
+    _maybe_prefetch_companion "$DMSG"
   else
     if [ $((SECONDS - last_activity)) -ge "$MAX_IDLE" ]; then
       echo "[play-party] idle ${MAX_IDLE}s with no player move — stopping (relaunch when ready; raise WORLDOS_PLAY_MAX_IDLE to wait longer)."
