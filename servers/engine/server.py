@@ -3747,11 +3747,21 @@ def _monster_combat_entry(ch: "Character", c: "Campaign") -> dict | None:
     return entry
 
 
-def _attacker_multiattack_count(ch: "Character", c: "Campaign") -> int:
+def _attacker_multiattack_count(ch: "Character", c: "Campaign", attack_name: str = "") -> int:
     """Return the number of attacks a combatant may make via Multiattack (0 for PCs
     and monsters without a Multiattack stat-block entry). Reuses _monster_combat_entry
     so the lookup path is identical to what the DM sees in the combat view. Returns 0
-    on any lookup failure so the caller degrades to normal Extra-Attack behaviour."""
+    on any lookup failure so the caller degrades to normal Extra-Attack behaviour.
+
+    ``attack_name`` (default "") scopes the budget to a NAMED attack (cs-timing F-3): a
+    Multiattack grants its count ONLY to the attacks that COMPOSE it. A named attack the
+    creature has that is NOT part of its Multiattack — the Ghoul's Claw vs its 'two Bite
+    attacks' Multiattack — is a single Attack action and does NOT inherit the Multiattack
+    ceiling, so this returns 0 for it (the caller then caps it at extra_attacks+1 = 1).
+    Empty attack_name (today's callers) keeps the count for ANY attack: byte-identical.
+    Only restricts when the resolved composition is KNOWN (entry['multiattack']); an
+    unparsed composition degrades to the count (conservative — never tightens a budget we
+    cannot justify from the stat block)."""
     try:
         entry = _monster_combat_entry(ch, c)
         if entry is None:
@@ -3759,7 +3769,20 @@ def _attacker_multiattack_count(ch: "Character", c: "Campaign") -> int:
         apt = entry.get("attacks_per_turn", 1)
         # attacks_per_turn=1 is also the fallback for monsters WITHOUT Multiattack;
         # only counts > 1 represent a real Multiattack action in the stat block.
-        return int(apt) if int(apt) > 1 else 0
+        if int(apt) <= 1:
+            return 0
+        name = attack_name.strip().lower()
+        if name:
+            ma_info = entry.get("multiattack")
+            if isinstance(ma_info, dict):
+                names = {
+                    str(s.get("name", "")).strip().lower()
+                    for s in ma_info.get("sequence", [])
+                    if isinstance(s, dict)
+                }
+                if names and name not in names:
+                    return 0
+        return int(apt)
     except Exception:
         return 0
 
@@ -4912,6 +4935,7 @@ def attack(
     disadvantage: bool = False,
     is_ranged: bool = False,
     is_reaction: bool = False,
+    attack_name: str = "",
     damage_rolls: list[dict] | None = None,
     maneuver: str = "",
     maneuver_resource: str = "superiority_dice",
@@ -4931,7 +4955,11 @@ def attack(
     declare one atomically — the engine spends ONE ``maneuver_resource`` die (default
     'superiority_dice') ONLY on a hit, folds it into the damage, and crit-doubles it; a miss
     spends nothing. ``maneuver_damage_type`` overrides the bonus's type. Empty ``maneuver``
-    == today's behavior."""
+    == today's behavior.
+
+    ``attack_name`` (e.g. 'Claw'): for a Multiattack creature, scopes the per-turn budget to
+    that named attack — one NOT in the Multiattack (the Ghoul's Claw vs its 'two Bite'
+    Multiattack) is a single Attack action, not granted the Multiattack count. Empty == today."""
     # Coalesce intuitive arg-name aliases to the canonical ids. The ATTACKER is the acting
     # character (alias `character_id`); the TARGET is the thing struck (aliases `npc_id`/`id`).
     # Canonical names win. (target_id ⇄ character_id is intentionally NOT done — `character_id`
@@ -4993,8 +5021,10 @@ def attack(
             else:
                 # An attack as the current combatant's ACTION: enforce one Attack
                 # action's worth of strikes (Extra Attack / Action Surge aware,
-                # and Multiattack-aware for monsters with a stat-block entry).
-                ma = _attacker_multiattack_count(attacker, c)
+                # and Multiattack-aware for monsters with a stat-block entry). The
+                # named attack scopes the Multiattack budget to its composition
+                # (a Ghoul Claw is NOT part of its 'two Bite' Multiattack — cs F-3).
+                ma = _attacker_multiattack_count(attacker, c, attack_name)
                 ok, reason = combat.check_action_attack(
                     is_current=True,
                     attacks_made=c.combat.action_attacks_made,
@@ -5120,19 +5150,28 @@ def attack(
                 c.combat.action_used = True  # an Attack action consumes the turn's action
                 c.combat.action_attacks_made += 1
                 result["attacks_made_this_turn"] = c.combat.action_attacks_made
-                result["attacks_allowed_this_turn"] = combat.attacks_allowed(
+                allowed_now = combat.attacks_allowed(
                     getattr(attacker, "extra_attacks", 0),
                     c.combat.surge_actions,
                     ma,
                 )
+                result["attacks_allowed_this_turn"] = allowed_now
                 # When the budget comes from a stat-block Multiattack (ma>0), surface the
                 # grant explicitly so the distilled transcript reads the ceiling tool-sourced
                 # (F01-1 / csmed-4: a monster narrated "a Multiattack that doesn't exist" was
                 # the DM running past a ceiling the engine HAD enforced — invisible because the
-                # attack result truncates in qa/distill.py). Absent for PCs (ma=0), so Extra
-                # Attack / Action Surge budgets stay labelled as themselves; purely additive.
+                # attack result truncates in qa/distill.py).
                 if ma > 0:
                     result["multiattack_grants"] = ma
+                elif allowed_now > 1:
+                    # PC multi-strike (cs-timing F-2): surface WHY the budget exceeds one swing
+                    # so distill never mis-credits the Extra Attack FEATURE when the second
+                    # action came from Action Surge — Aldric (Fighter L4, Extra Attack is L5)
+                    # spent Action Surge: extra_attacks=0, surge=1 → 2 strikes, but NOT the
+                    # feature. Additive: only on a genuine multi-attack turn; single swings
+                    # stay byte-identical (these keys absent).
+                    result["extra_attacks"] = int(getattr(attacker, "extra_attacks", 0))
+                    result["surge_actions"] = int(c.combat.surge_actions)
         # Zone-aware range (S2.7): a MELEE attack needs attacker & target in the same
         # or an adjacent zone; ranged reaches any zone. Advisory only — surface a
         # warning, never hard-block. Inert when no zones are declared. Position lives
