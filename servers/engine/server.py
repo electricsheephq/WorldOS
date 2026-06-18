@@ -2053,16 +2053,14 @@ def recruit_companion(
     id: str = "",
 ) -> dict:
     """Promote an EXISTING roster NPC into the party's companion — the clean way to
-    bring a world-seed candidate (e.g. "Minsc is ready", "Bram is ready") into the
-    party. Use this INSTEAD of create_character for someone who already exists in the
-    world: it flips the record npc->companion, adds it to the party (once), and fills
-    a real sheet so you never invent modifiers. Pass `class_name`+`level`+`abilities`
-    for the companion's build; `apply_srd_defaults` sets saves/HP/AC/features (HP is
-    auto-set only at level 1 — pass `max_hp` for a higher-level companion). Idempotent
-    if already a companion. This prevents the duplicate-stub bug (a roster NPC plus a
-    second hand-built companion of the same name).
+    bring a world-seed candidate into the party. Use this INSTEAD of create_character for
+    someone who already exists: it flips the record npc->companion, adds it to the party
+    (once), and fills a real sheet so you never invent modifiers. Pass
+    `class_name`+`level`+`abilities` for the build; `apply_srd_defaults` sets
+    saves/HP/AC/features (HP auto-set only at level 1 — pass `max_hp` for a higher level).
+    Idempotent if already a companion.
 
-    Identify the roster figure via ``npc_id`` (canonical) or the aliases ``character_id`` /
+    Identify the roster figure via ``npc_id`` (canonical) or aliases ``character_id`` /
     ``companion_id`` / ``id`` — ``npc_id`` wins if more than one is given."""
     npc_id = npc_id or character_id or companion_id or id  # accept the id the DM reaches for
     if not npc_id:
@@ -4785,16 +4783,11 @@ def attack(
     is_ranged=True so a prone target gives disadvantage rather than advantage) and
     combined with the explicit flags (they cancel if both apply).
 
-    Battle Master DAMAGE maneuvers (#213/B): pass ``maneuver`` (e.g. 'Trip Attack')
-    to declare a maneuver ATOMICALLY on this strike — the engine rolls + spends ONE
-    superiority die ONLY when the attack HITS (SRD: the die is spent "when you hit"),
-    folds it into the damage, and DOUBLES it on a crit (SRD Critical Hits: the
-    superiority die is "other damage dice"). A MISS spends nothing. ``maneuver_resource``
-    is the die pool to spend from (default 'superiority_dice'); ``maneuver_damage_type``
-    overrides the bonus's type (default: the weapon's). Empty ``maneuver`` == today's
-    behavior. (The older two-step path — use_resource(superiority_dice, maneuver=…) then
-    attack — still works and now also crit-doubles; declaring via attack() is preferred
-    because a miss no longer burns the die.)"""
+    Battle Master maneuvers: pass ``maneuver`` (e.g. 'Trip Attack') to declare one
+    atomically — the engine spends ONE die from ``maneuver_resource`` (default
+    'superiority_dice') ONLY on a HIT, folds it into damage and crit-doubles it; a miss
+    spends nothing. ``maneuver_damage_type`` overrides the bonus's type (default: the
+    weapon's). Empty ``maneuver`` == today's behavior."""
     # Coalesce intuitive arg-name aliases to the canonical ids. The ATTACKER is the acting
     # character (alias `character_id`); the TARGET is the thing struck (aliases `npc_id`/`id`).
     # Canonical names win. (target_id ⇄ character_id is intentionally NOT done — `character_id`
@@ -6435,22 +6428,17 @@ def build_options(campaign_id: str, character_id: str) -> dict:
 def level_roadmap(campaign_id: str, character_id: str, through_level: int = 20) -> dict:
     """A READ-ONLY projection of what a character GAINS at each level from its current
     level + 1 through ``through_level`` (≤20) — the "see your path to 20" planning view
-    (the build-optimizer persona's last gap: "no upcoming-features view / nothing to
-    theorycraft against"; build_options only shows the SINGLE next level).
+    (build_options shows only the single next level).
 
     Projects the PC's PRIMARY class (the one with the most levels — the engine cannot know
-    a player's FUTURE multiclass picks) forward along the real SRD tables: class features
-    gained (srd_tables.features_at), subclass features newly owed if a subclass is chosen
-    (subclass_features_through delta), whether the level grants an ASI/feat
-    (is_asi_level), the proficiency bonus (proficiency_bonus of the TOTAL level), notable
-    class-resource changes (class_resources_through delta), and — for casters — a
-    spell-slot change note. Returns ``{character_id, character_name, primary_class,
-    subclass, from:{total_level, class_level}, through_level, multiclass, roadmap:[…]}``.
+    FUTURE multiclass picks) forward along the real SRD tables: class + subclass features
+    gained, ASI/feat levels, proficiency bonus, class-resource changes, and a caster spell-slot
+    note. Returns ``{character_id, character_name, primary_class, subclass, from:{total_level,
+    class_level}, through_level, multiclass, roadmap:[…]}``.
 
-    Pure projection — NEVER writes campaign state, NEVER fabricates (an entry exists only
-    when an SRD table carries it). GUARDED: an empty ``roadmap`` when the PC is already at
-    ``through_level``, has no class (a stat-block NPC/monster), or the primary class is
-    unknown to the tables. Mirrors the read-only feats()/feature_catalog pattern."""
+    Pure projection — NEVER writes state, NEVER fabricates (an entry exists only when an SRD
+    table carries it). GUARDED: an empty ``roadmap`` when the PC is already at ``through_level``,
+    has no class (a stat-block NPC/monster), or the primary class is unknown to the tables."""
     c = _require(campaign_id)
     ch = _char(c, character_id)
     base = {
@@ -8445,10 +8433,9 @@ def social_check(campaign_id: str, actor_id: str, npc_id: str = "", skill: str =
     move the target's attitude one step (up on success, down on failure); READ skills
     (insight/perception/investigation) only PERCEIVE and never change attitude. For a
     scene-local extra you won't track, pass ``npc_id=""`` + ``target_name="the guard"``
-    (rolls without creating/mutating any roster NPC) — reusing a standing NPC's id as a
-    throwaway target silently corrupts their attitude. Identify the target via
-    ``npc_id`` (canonical) or aliases ``target_id`` / ``character_id`` / ``id``; name the
-    skill via ``skill`` (canonical) or ``ability`` / ``skill_name`` / ``check``."""
+    (rolls without creating/mutating any roster NPC). Identify the target via ``npc_id``
+    (canonical) or aliases ``target_id`` / ``character_id`` / ``id``; name the skill via
+    ``skill`` (canonical) or ``ability`` / ``skill_name`` / ``check``."""
     # Coalesce intuitive arg-name aliases to the canonical params BEFORE any branching.
     # `npc_id` (canonical) wins; the id MUST resolve before the ephemeral/target_name path
     # below, or an alias-only call would wrongly take the scene-extra branch (npc_id="").
@@ -8668,15 +8655,14 @@ def generate_parley_options(
     id: str = "",
 ) -> dict:
     """Call this BEFORE narrating a social encounter or any choice point: it lays out the
-    PLAYER'S available options with sheet-correct DCs so you author a real Parley menu
-    instead of railroading to one narrated path. This is NOT `companion_advise` (the
-    companion's in-character take) or `get_scene` (the authored scene beats) — it returns
-    the lead PC's own alignment + the actual skill modifiers off their sheet + a suggested
-    DC per skill, so you write 2-4 tagged choices WITHOUT hand-computing anything.
-    Bind to a TRACKED NPC via ``npc_id`` (aliases ``target_id`` / ``character_id`` / ``id``)
-    so the surface carries an ``npc`` block and the default ``difficulty`` is derived from the
-    target's attitude (hostile=HARD, friendly=EASY, indifferent=MEDIUM); an explicit
-    ``difficulty`` always wins, an unknown npc_id degrades to a freeform parley."""
+    PLAYER'S available options with sheet-correct DCs so you author a real Parley menu instead
+    of railroading to one narrated path. Returns the lead PC's alignment + the actual skill
+    modifiers off their sheet + a suggested DC per skill, so you write 2-4 tagged choices
+    WITHOUT hand-computing anything. Bind to a TRACKED NPC via ``npc_id`` (aliases ``target_id``
+    / ``character_id`` / ``id``) so the surface carries an ``npc`` block and the default
+    ``difficulty`` is derived from the target's attitude (hostile=HARD, friendly=EASY,
+    indifferent=MEDIUM); an explicit ``difficulty`` wins, an unknown npc_id degrades to a
+    freeform parley. (Not ``companion_advise`` — a companion's own take — nor ``get_scene``.)"""
     c = _require(campaign_id)
     aid = actor_id or _lead_pc_id(c)
     if not aid:
@@ -9603,25 +9589,17 @@ def author_companion_gauges(
     character_id: str = "",
 ) -> dict:
     """Author a companion's APPROVAL VOCABULARY (and, optionally, a betrayal agenda) so their
-    relationship gauge can MOVE on the player's choices.
+    relationship gauge can MOVE on the player's choices. Call this once when a recruited/generated
+    companion joins (they seed with an EMPTY vocabulary, so record_decision matches nothing and the
+    engine skips them — regard stays narrated-not-gauged).
 
-    A freely-recruited or live-generated companion is seeded with an operational dossier but an
-    EMPTY approval vocabulary (approval_likes/dislikes) — so ``record_decision(approval_tags=…)``
-    has nothing to match and the engine SKIPS them (their regard stays narrated-not-gauged, the
-    arc never turns). The hand-authored campaign companions (Brother Toll, Sergeant Ondine) only
-    work because content authored these lists for them. Call this once when a companion joins to
-    give a recruited/generated companion the same SOUL the engine can gauge.
-
-    ``approval_likes``/``approval_dislikes`` are the lowercase cause-keys you'll tag choices with
-    (e.g. ``"free_the_bonded"``, ``"refuse_a_bribe"``) — pick a few that fit WHO THIS COMPANION
-    IS; ``values``/``wants``/``fears`` are the short moral-spine tags behind them. Pass
-    ``betrayal_threshold`` (an attitude_value such as ``-30``) to ALSO arm an ``attitude_below``
-    agenda so the bond can BREAK if the player drives their regard below it — optionally gated on
-    a recorded ``betrayal_decision_flag``; omit it and the companion can deepen but never turn.
-
-    ADDITIVE + engine-sole-writer: only the fields you pass are written; the dossier's
-    ``camp_prompts`` and any existing arc gates are preserved. Identify the companion via
-    ``companion_id`` (canonical) or the aliases ``companion``/``character_id``."""
+    ``approval_likes``/``approval_dislikes`` are the lowercase cause-keys you tag choices with;
+    ``values``/``wants``/``fears`` are the moral-spine tags behind them. Pass ``betrayal_threshold``
+    (a NEGATIVE attitude_value such as ``-30``) to arm an ``attitude_below`` agenda so the bond can
+    BREAK below it — optionally gated on ``betrayal_decision_flag``; omit it and the companion can
+    deepen but never turn. ADDITIVE + engine-sole-writer: only fields you pass are written;
+    ``camp_prompts`` and existing arc gates are preserved. Identify via ``companion_id`` (canonical)
+    or aliases ``companion``/``character_id``."""
     companion_id = companion_id or companion or character_id
     if not companion_id:
         raise ValueError("author_companion_gauges needs a companion id (`companion_id` or an alias)")
@@ -10788,24 +10766,21 @@ def record_decision(
 ) -> dict:
     """Record a party decision so the DM and companions can call back to it later
     ('last time we trusted Grett...'). Capture the choice after a deliberation:
-    `summary` (the decision; pass it as `summary` (canonical) or `decision` (alias) —
-    equivalent, `summary` wins if both given), `options` (what was on the table),
-    `chosen`, why (`rationale`), and who weighed in (`actor_ids`). Returns the decision id.
+    `summary` (the decision; canonical, or alias `decision` — `summary` wins),
+    `options` (what was on the table), `chosen`, why (`rationale`), and who weighed in
+    (`actor_ids`). Returns the decision id.
 
     `approval_tags` (optional) MOVES companion approval on a moral choice — pass the
     lowercase_snake cause-keys the choice aligns with (e.g. `["mercy", "cruelty"]`, or
     `[{"key": "power", "delta": 25}]` for an explicit swing). For each PARTY companion whose
-    dossier lists a matching `approval_likes` (+10 default) / `approval_dislikes` (-10), the
-    ENGINE moves `attitude_value` (clamped to ±100) and reports it under `approval_results`.
-    This is how a player's choices turn a companion's arc (the BG "soul") — the DM TAGS the
-    cause, the engine OWNS the number. Omit it (the default) for a choice no companion weighs.
+    dossier matches `approval_likes` (+10 default) / `approval_dislikes` (-10), the ENGINE moves
+    `attitude_value` (±100) and reports it under `approval_results`. Omit for a choice no
+    companion weighs.
 
-    `targets_companion` (optional) names the companion this decision SIDED WITH / AGAINST
-    (E2 ENSEMBLE). When the named companion's gauge MOVES this call, every OTHER party
-    companion whose dossier.stance lists the target as an ally/rival feels a smaller secondary
-    ripple (hurt my ally -> -5; side against my rival -> +5; the inverses when the target was
-    helped). Omit it (the default) for a choice that doesn't turn on one companion — the
-    gauge move is then byte-identical to today (no secondary pass)."""
+    `targets_companion` (optional) names the companion this decision SIDED WITH / AGAINST. When
+    that companion's gauge moves, every other party companion whose dossier.stance lists the
+    target as an ally/rival feels a smaller secondary ripple (hurt my ally -> -5; against my
+    rival -> +5; inverses when helped). Omit for a choice that doesn't turn on one companion."""
     summary = summary if summary else decision  # `decision` is an accepted alias for `summary`
     if not summary:
         raise ValueError("record_decision needs a summary (pass `summary` or its alias `decision`)")
