@@ -23,6 +23,7 @@ from models import (
     CompanionAgenda,
     CompanionArc,
     CompanionDossier,
+    CompanionQuestArc,
     Consequence,
     NarrativeArc,
     Quest,
@@ -241,18 +242,26 @@ def test_companion_arc_gate_not_near_is_silent():
 
 
 def test_healthy_campaign_yields_no_obligations():
-    """Approval moved, recently rested, no ripe/stalled quest -> empty digest."""
+    """Approval moved, recently rested, no ripe/stalled quest, AND the gauged companion
+    owns a personal quest arc (WS-A auto-seeds a vocabulary on every companion, so a
+    fully-healthy fixture must also have authored the arc) -> empty digest."""
     comp = _companion(name="Wyll", attitude=20, likes=["mercy"], last_long_rest_day=4)
     c = _campaign_with(comp, day=5)
     q = Quest(title="An ongoing thread", objectives=["keep going"], last_progress_day=5)
     c.quests[q.id] = q
+    arc = CompanionQuestArc(companion_id=comp.id, title="Wyll's personal thread")
+    c.companion_quest_arcs[arc.id] = arc
     assert server._compute_beat_obligations(c) == []
 
 
 def test_early_days_do_not_trip_frozen_or_camp():
-    """Before day 3 a frozen companion / un-rested party is normal, not an obligation."""
+    """Before day 3 a frozen companion / un-rested party is normal, not an obligation.
+    The companion is gauged AND owns a personal quest arc so the (day-less) quest cue is
+    silent too — isolating the assertion to the day-gated frozen/camp cues under test."""
     comp = _companion(likes=["mercy"], attitude=0, last_long_rest_day=-1)
     c = _campaign_with(comp, day=2)
+    arc = CompanionQuestArc(companion_id=comp.id, title="An early personal thread")
+    c.companion_quest_arcs[arc.id] = arc
     assert server._compute_beat_obligations(c) == []
 
 
@@ -288,6 +297,60 @@ def test_gauge_unauthored_absent_when_vocabulary_authored():
     kinds = _kinds(server._compute_beat_obligations(c))
     assert "companion_gauge_unauthored" not in kinds
     assert "companion_approval_frozen" in kinds  # vocab exists but regard still frozen
+
+
+# --- companion_quest_unauthored (the dead companion-quest-arc loop, WS-C) ----
+#
+# set_companion_quest_arc was the ONLY writer of c.companion_quest_arcs, but nothing ever
+# cued the DM to call it -> 0/448 campaigns owned a CompanionQuestArc and the whole
+# personal-quest subsystem was narrated-not-engined. This cue mirrors #0
+# (companion_gauge_unauthored): a GAUGED companion with no arc gets a per-beat nudge to
+# author one. Gauged-ness is the precedence gate, so #0 (un-gauged) and #0b (gauged-but-
+# arc-less) never stack on the same companion.
+
+
+def test_companion_quest_unauthored_fires_for_gauged_companion_without_arc():
+    """A gauged party companion (authored approval vocabulary) who owns no CompanionQuestArc
+    trips companion_quest_unauthored -> cue authoring the personal thread."""
+    comp = _companion(likes=["mercy", "protecting the weak"], attitude=20, last_long_rest_day=4)
+    c = _campaign_with(comp, day=5)
+    obligations = server._compute_beat_obligations(c)
+    kinds = _kinds(obligations)
+    assert "companion_quest_unauthored" in kinds
+    assert "companion_gauge_unauthored" not in kinds  # gauged -> #0 stays silent
+    cue = next(o for o in obligations if o["kind"] == "companion_quest_unauthored")
+    assert cue["name"] == "Brother Toll"
+    assert cue["character_id"] == comp.id
+    assert "set_companion_quest_arc" in cue["detail"]
+
+
+def test_companion_quest_unauthored_absent_when_arc_exists():
+    """The same gauged companion, once they own a CompanionQuestArc, no longer trips the cue
+    (their personal story is engined)."""
+    comp = _companion(likes=["mercy", "protecting the weak"], attitude=20, last_long_rest_day=4)
+    c = _campaign_with(comp, day=5)
+    arc = CompanionQuestArc(companion_id=comp.id, title="Brother Toll's reckoning")
+    c.companion_quest_arcs[arc.id] = arc
+    kinds = _kinds(server._compute_beat_obligations(c))
+    assert "companion_quest_unauthored" not in kinds
+
+
+def test_companion_quest_unauthored_absent_for_ungauged_companion():
+    """An UN-gauged companion (empty approval vocabulary) is #0's case (author the vocabulary
+    first), NOT #0b's: companion_quest_unauthored stays silent and companion_gauge_unauthored
+    fires instead. Precedence: vocabulary before the deeper personal-quest layer."""
+    comp = _companion(likes=None, attitude=0, last_long_rest_day=4)  # no dossier / no vocab
+    c = _campaign_with(comp, day=5)
+    kinds = _kinds(server._compute_beat_obligations(c))
+    assert "companion_quest_unauthored" not in kinds
+    assert "companion_gauge_unauthored" in kinds
+
+
+def test_companion_quest_unauthored_silent_for_companionless_campaign():
+    """ADDITIVE/EMPTY contract: a campaign with no companions never trips the cue."""
+    pc = Character(name="Hero", kind="player")
+    c = _campaign_with(pc, day=8)
+    assert "companion_quest_unauthored" not in _kinds(server._compute_beat_obligations(c))
 
 
 # --- persist_beat / scene_context surfaces ----------------------------------
@@ -330,9 +393,26 @@ def test_persist_beat_returns_obligations_when_actionable(cid):
     assert "quest_resolvable" in _kinds(out["obligations"])
 
 
+def _author_quest_arcs_for_party_companions(cid: str) -> None:
+    """Make the live starter fixture FULLY healthy: WS-A auto-seeds an approval vocabulary
+    on every recruited companion, so an otherwise-quiet starter campaign now has gauged
+    companions with no personal quest arc -> companion_quest_unauthored. Author one arc per
+    party companion so the digest is genuinely empty (NOT a weakened assertion — a truly
+    engaged fixture)."""
+    c = store.load_campaign(cid)
+    for char_id in c.party:
+        comp = c.characters.get(char_id)
+        if comp is None or getattr(comp, "kind", None) != "companion":
+            continue
+        arc = CompanionQuestArc(companion_id=comp.id, title=f"{comp.name}'s personal thread")
+        c.companion_quest_arcs[arc.id] = arc
+    store.save_campaign(c)
+
+
 def test_persist_beat_omits_obligations_key_on_healthy_fixture(cid):
-    """The unmodified starter fixture is healthy/early -> no obligations key (the four-
-    key additive shape is preserved)."""
+    """The starter fixture, once its gauged companions are given personal quest arcs, is
+    healthy/early -> no obligations key (the four-key additive shape is preserved)."""
+    _author_quest_arcs_for_party_companions(cid)
     out = server.persist_beat(cid, events=[{"kind": "narration", "text": "A quiet beat."}])
     assert "obligations" not in out
     # The old four-key shape (plus optional approval_results) is intact.
@@ -348,6 +428,7 @@ def test_scene_context_durable_mirrors_obligations(cid):
 
 
 def test_scene_context_durable_omits_obligations_on_healthy_fixture(cid):
+    _author_quest_arcs_for_party_companions(cid)
     sc = server.scene_context(cid)
     assert "obligations" not in sc["durable"]
 
