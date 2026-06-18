@@ -15,6 +15,7 @@ Issue #142 — attitude_below is now a RISING PROBABILITY ROLL:
 """
 
 import random
+import warnings
 
 import pytest
 
@@ -304,7 +305,7 @@ def test_agenda_fire_is_idempotent():
 
 def test_gate_and_agenda_evaluate_together():
     gate = ArcGate(kind="betrayal", threshold=10, note="cracks show")
-    agenda = CompanionAgenda(trigger="attitude_below", value=5)
+    agenda = CompanionAgenda(trigger="attitude_below", value=-5)  # negative breaking point
     ch = _companion(attitude=15, gates=[gate], agenda=agenda)
     c = _campaign_with(ch)
 
@@ -313,7 +314,7 @@ def test_gate_and_agenda_evaluate_together():
     res = companion_arc.evaluate(ch, c, rng=rng)
     assert len(res["newly_unlocked"]) == 1 and res["agenda_fired"] is False
 
-    # approval collapses deep below 5: agenda eventually fires, gate stays unlocked
+    # approval collapses deep below -5: agenda eventually fires, gate stays unlocked
     ch.attitude_value = -90  # near the floor → near-cap P so it fires in few beats
     fired = False
     for _ in range(200):
@@ -425,6 +426,26 @@ def test_threshold_agenda_requires_explicit_value():
     comp = _companion(agenda=CompanionAgenda(trigger="day_reached", value=5))
     assert companion_arc._agenda_triggered(comp, _campaign_with(comp, day=1)) is False
     assert companion_arc._agenda_triggered(comp, _campaign_with(comp, day=5)) is True
+
+
+def test_attitude_below_positive_value_warns():
+    # #996 footgun on the SAME validator: a POSITIVE attitude_below value arms the betrayal
+    # from recruit — a fresh companion seeds at attitude_value=0, already < a positive
+    # threshold, so the engine rolls a turn from beat 1 with NO player wrongdoing (simulated:
+    # +20 -> ~93% of fresh parties betrayed within 5 beats; the negated -20 -> 0%). The model
+    # validator WARNS rather than raises: it runs on snapshot LOAD too, and the round-trip
+    # invariant forbids failing to load an already-saved game. generator.validate_adventure is
+    # the LOUD author-time gate; this is the unconditional net at every construction.
+    with pytest.warns(UserWarning, match="POSITIVE"):
+        CompanionAgenda(trigger="attitude_below", value=20)
+
+    # The correct negative convention, the value==0 boundary (a fresh av=0 is NOT below it),
+    # and a positive day_reached value (a different trigger) must NOT warn.
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")  # any warning in this block becomes a test failure
+        CompanionAgenda(trigger="attitude_below", value=-20)
+        CompanionAgenda(trigger="attitude_below", value=0)
+        CompanionAgenda(trigger="day_reached", value=20)
 
 
 # --- companion quest arcs (#70) ---------------------------------------------
