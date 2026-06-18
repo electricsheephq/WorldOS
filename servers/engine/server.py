@@ -12,9 +12,14 @@ in later epics; this server already owns dice, characters, and persistence.
 from __future__ import annotations
 
 import difflib
+import fcntl
+import functools
+import json
+import os
 import random
 import re
 import sys
+import time
 from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
@@ -110,6 +115,119 @@ from store import load_slot as _load_slot_store
 from store import save_slot as _save_slot_store
 
 mcp = FastMCP("worldos-engine")
+
+
+# ---------------------------------------------------------------------------
+# Per-tool-call timing instrumentation (Wave-1 1A) — pure observability.
+#
+# Default-OFF: the writer is a NO-OP unless WORLDOS_TOOLTIMING_PATH is set, so
+# production pays nothing. When set, every MCP tool call appends ONE JSONL line
+# to that path recording its wall time. This is an EXTERNAL sidecar — it does
+# NOT touch campaign state (no save_campaign / campaign_lock) and never changes
+# a tool's return value, side effects, or JSON schema.
+#
+# Schema neutrality is load-bearing: the wrapper uses functools.wraps(fn) so
+# inspect.signature() and FastMCP's schema generation see the ORIGINAL function
+# (__name__/__doc__/__wrapped__/__annotations__ are preserved). The emitted
+# list_tools() wire shape must stay byte-identical to the un-wrapped baseline.
+#
+# Sidecar line schema (THE CONTRACT — a sibling tool reads this; do not drift):
+#   {"ts": <float unix epoch s>, "tool": "<name>", "wall_ms": <float>,
+#    "ok": <bool>, "campaign_id": <str or null>}
+# ---------------------------------------------------------------------------
+
+
+def _timing_campaign_id(args: tuple, kwargs: dict):
+    """Best-effort, cheap, never-raising extraction of a campaign_id for the
+    sidecar: a ``campaign_id`` kwarg wins, else the first positional arg if it
+    is a str, else None. (Most state-mutating engine tools take campaign_id as
+    their first parameter.)"""
+    try:
+        cid = kwargs.get("campaign_id")
+        if isinstance(cid, str):
+            return cid
+        if args and isinstance(args[0], str):
+            return args[0]
+    except Exception:
+        pass
+    return None
+
+
+def _record_tool_timing(tool_name: str, wall_ms: float, ok: bool, campaign_id, ts: float) -> None:
+    """Append one timing line to WORLDOS_TOOLTIMING_PATH. NO-OP when the env var
+    is unset/empty (this is what keeps production impact zero). Best-effort: the
+    entire writer is guarded so a sidecar-write failure can NEVER propagate into
+    the tool call or change its result. flock-append mirrors player_server.py so
+    concurrent engine writers can't interleave a half-written JSONL line."""
+    path = os.environ.get("WORLDOS_TOOLTIMING_PATH")
+    if not path:
+        return
+    try:
+        line = json.dumps(
+            {
+                "ts": ts,
+                "tool": tool_name,
+                "wall_ms": wall_ms,
+                "ok": ok,
+                "campaign_id": campaign_id if isinstance(campaign_id, str) else None,
+            },
+            separators=(",", ":"),
+        )
+        with open(path, "a", encoding="utf-8") as f:
+            try:
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            except OSError:
+                pass
+            f.write(line + "\n")
+            f.flush()
+            try:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+            except OSError:
+                pass
+    except Exception:
+        # Observability must never break a tool call. Swallow everything.
+        pass
+
+
+_orig_tool = mcp.tool
+
+
+def _timed_tool(*dargs, **dkwargs):
+    """Drop-in replacement for ``mcp.tool`` that times every subsequently-
+    registered tool. Returns a decorator which wraps the target fn (preserving
+    its identity via functools.wraps so the emitted schema is byte-identical),
+    then registers the wrapped fn through the ORIGINAL ``mcp.tool`` decorator."""
+
+    def decorator(fn):
+        @functools.wraps(fn)
+        def wrapped(*args, **kwargs):
+            ts = time.time()
+            start = time.perf_counter()
+            ok = True
+            try:
+                return fn(*args, **kwargs)
+            except BaseException:
+                ok = False
+                raise
+            finally:
+                wall_ms = (time.perf_counter() - start) * 1000.0
+                _record_tool_timing(
+                    getattr(fn, "__name__", "<unknown>"),
+                    wall_ms,
+                    ok,
+                    _timing_campaign_id(args, kwargs),
+                    ts,
+                )
+
+        return _orig_tool(*dargs, **dkwargs)(wrapped)
+
+    return decorator
+
+
+# Reassign the instance attribute so every later ``@mcp.tool()`` is wrapped.
+# FastMCP.tool is a plain method (not a slot/property), so an instance-level
+# attribute cleanly shadows it for all subsequent registrations.
+mcp.tool = _timed_tool
 
 
 def _parse_ability(value: str) -> Ability:
