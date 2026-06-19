@@ -157,6 +157,58 @@ def test_corpus_case_trips_expected_red_check(case: dict):
         )
 
 
+def _warned_checks(output: str) -> set[str]:
+    """The set of CHECK names the gate printed as a [WARN] (a non-fatal advisory)."""
+    out: set[str] = set()
+    for line in output.splitlines():
+        line = line.strip()
+        if line.startswith("[WARN]"):
+            rest = line[len("[WARN]"):].strip()
+            name = rest.split(" — ", 1)[0].split()[0] if rest else ""
+            if name:
+                out.add(name)
+    return out
+
+
+_GREEN_CASES = [
+    c for c in (json.loads(_MANIFEST.read_text(encoding="utf-8")).get("green_cases") or [])
+] if _MANIFEST.exists() else []
+_GREEN_IDS = [c["case_dir"] for c in _GREEN_CASES]
+
+
+@pytest.mark.parametrize("case", _GREEN_CASES, ids=_GREEN_IDS or ["__none__"])
+def test_green_case_warns_but_stays_green(case):
+    """Inverse of the RED corpus (#1036). Each GREEN case locks a deliberate FATAL->WARN scope
+    guard: the gate must (1) exit GREEN (rc 0 — the run is NOT RED-capped) and (2) still surface
+    its warn_check as a [WARN] line (visibility preserved), and (3) NOT name it as a [FAIL]. A
+    future edit that re-promotes the softened sub-check to FATAL (re-introducing the false-cap)
+    flips this case RED and fails here."""
+    if not _GREEN_CASES:
+        pytest.skip("no green_cases in manifest")
+    case_dir = case["case_dir"]
+    warn_check = case["warn_check"]
+    case_path = _CASES_DIR / case_dir
+    assert case_path.is_dir(), f"green corpus case dir missing: {case_path}"
+
+    rc, output = _run_gate(case_path)
+
+    assert rc == 0, (
+        f"green case {case_dir!r} expected GREEN (exit 0) — its {warn_check!r} sub-check must be "
+        f"a WARN, not a FATAL cap. The gate returned exit {rc}; a gate edit may have RE-PROMOTED "
+        f"{warn_check!r} to FATAL (re-introducing the #1036 false-cap).\n--- gate output ---\n{output}"
+    )
+    failed = _failed_checks(output)
+    assert warn_check not in failed, (
+        f"green case {case_dir!r} returned its {warn_check!r} as a [FAIL] — it must be a [WARN].\n"
+        f"--- gate output ---\n{output}"
+    )
+    warned = _warned_checks(output)
+    assert warn_check in warned, (
+        f"green case {case_dir!r}: {warn_check!r} must appear as a [WARN] (visibility preserved), "
+        f"but it was neither warned nor failed. Warned={sorted(warned)}.\n--- gate output ---\n{output}"
+    )
+
+
 def test_manifest_covers_every_fatal_check():
     """Coverage audit: every FATAL check declared by the gate is either exercised by a corpus
     case or explicitly marked TODO with a reason. A NEW fatal check added to the gate with no

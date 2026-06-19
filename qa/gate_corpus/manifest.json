@@ -1,5 +1,5 @@
 {
-  "_doc": "Behavioral-gate regression corpus. Each case is a minimal known-RED bundle that must trip its expected_red_check. Regenerate with qa/gate_corpus/builder.py.",
+  "_doc": "Behavioral-gate regression corpus. `cases` are minimal known-RED bundles that must trip their expected_red_check; `green_cases` are known-GREEN bundles that must NOT (they lock a FATAL->WARN scope guard). Regenerate with qa/gate_corpus/builder.py.",
   "cases": [
     {
       "case_dir": "dm_produced_output",
@@ -187,6 +187,17 @@
         "state.json"
       ],
       "real_red_provenance": ""
+    }
+  ],
+  "green_cases": [
+    {
+      "case_dir": "structural_completeness_authored_warn",
+      "warn_check": "structural_completeness",
+      "artifacts": [
+        "run.jsonl",
+        "state.json"
+      ],
+      "note": "must exit GREEN (rc 0) with warn_check as a [WARN] \u2014 locks a deliberate FATAL->WARN scope guard so a re-promotion to FATAL is caught (#1036)."
     }
   ]
 }
