@@ -14,6 +14,40 @@
 The fitness function = **1 hard behavioral gate** (deterministic pass/fail) + **3 LLM
 lenses** (each 1–5). The gate is the honest floor; the lenses grade quality above it.
 
+## 0. The scoring ruler is VERSIONED — scores are NOT comparable across rulers
+
+Every scored run is stamped with the **content hash of the ruler that graded it**:
+`scoring_config_version` (`sc_…`, the FULL ruler — rubrics + schemas + all gates incl. RRI) and
+`lens_config_version` (`lc_…`, the 8 files that produce the lens numbers). Computed by
+`qa/scoring_config_version.py`, written on every `add_run(...)`. **This is load-bearing: a lens number
+means nothing without its ruler.** A 4.1 under a stricter ruler can be *better play* than a 4.8 under a
+looser one. NEVER compare two numbers across different `sc_`/`lc_` hashes — compare within a ruler, or
+re-score the old transcript under the current ruler.
+
+**The ruler is a deliberately-tightening FEEDBACK LOOP, not a fixed yardstick.** As we add
+engine-enforced systems (companions, acts, quests, betrayal, travel, combat coverage), the ruler is
+tightened to DEMAND those are actually *engaged* (gauge-backed), not merely narrated — so the same felt
+session scores *lower* under a newer ruler than an older one. **That drop is the ruler working, not a
+quality regression.** Expect current numbers to read below historic numbers; that is by design — the
+scorer exists to drive autonomous build-and-improve.
+
+### Ruler history
+- **`sc_d4b93982763a` / `lc_d7fcfddd5bf7` — current (2026-06 cycle → `v1.0.5-rc1`).** Materially
+  STRICTER than the v1.0.4 rulers. Adds: the **feature-engagement coverage scorer + forcing gate**
+  (#1018 — every *owed* authored system narrated-but-not-gauged is now a coverage miss); the
+  **acts-engine felt-shape scorer + flat-arc gate** (#1001/#1002 — a flat, act-less arc is penalized);
+  **betrayal un-inversion** (#999) and the **romance gate** (#997); the **`dm_advanced_time` unmask**
+  (#1024 — a frozen-clock DM no longer hides); and the **gate-severity accuracy repair** (#1030 —
+  removes false FATAL-caps so the floor is TRUE, not loose). A social/short slice that exercises few of
+  these reads markedly lower here than under v1.0.4.
+- **Older `sc_…` rulers (≤ `v1.0.4-rc5`).** Looser: no feature-engagement coverage demand, no acts
+  felt-shape, pre-betrayal-fix. Historic numbers — e.g. the `gs-ledger-deep` story **4.8** full-depth
+  proof — were graded by an OLDER ruler; **do not read them as directly comparable to current numbers.**
+
+To compare a historic run to today honestly, **re-score its transcript under the current ruler**
+(`qa/score.sh <transcript.md> <state.json> <rubric> <schema> <out> [budget]`), then compare `sc_`-equal
+rows only.
+
 ## 1. Behavioral gate — HARD pass/fail (`qa/assert_behavioral.py`)
 LLM scorers grade prose and can't be trusted to flip RED on a structurally broken run,
 so this deterministic gate does. Exit 0 = GREEN (warnings allowed), 1 = RED. FATAL checks:
