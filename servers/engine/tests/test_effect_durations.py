@@ -463,6 +463,50 @@ def test_guiding_bolt_marker_expires_at_end_of_casters_next_turn_if_unused(monke
     assert _effects(cid, foe) == []  # gone, did not leak into round 3
 
 
+def test_guiding_bolt_marker_swept_when_caster_dies_midcombat(monkeypatch):
+    """ORPHAN-GUARD regression: a Guiding Bolt marker is anchored to the CASTER's next turn. If
+    the caster DIES mid-combat, its turn never comes again (a dead combatant is skipped by the
+    advance loop, so the anchor==prev_id tick can't fire) — and death does NOT pop the combatant
+    from c.combat.order, so mere order-membership does not detect it. Without the living-combatant
+    orphan guard the marker LEAKS for the rest of the fight and grants unearned advantage to a
+    later attack on the marked foe. Realistic case: an enemy spellcaster casts a GB-style rider,
+    is killed before its next turn, and the party then attacks that foe."""
+    cid = server.create_campaign("S")["id"]
+    # Monster GB-caster: dies OUTRIGHT at 0 HP (dead=True) and stays in c.combat.order.
+    caster = server.create_character(
+        cid, "Enemy Acolyte", kind="monster", max_hp=8, armor_class=10)["id"]
+    server.learn_spells(cid, caster, ["Guiding Bolt"])
+    server.prepare_spells(cid, caster, ["Guiding Bolt"])
+    fighter = _fighter(cid)
+    foe = server.create_character(cid, "Goblin", kind="monster", max_hp=80, armor_class=10)["id"]
+    # Monster casts innately (no Vancian slot — its stat block carries none).
+    server.cast_spell(cid, caster, "Guiding Bolt", target_id=foe, innate=True)
+    monkeypatch.setattr(server.dice_mod, "roll", _d20_roll(15))
+    server.start_combat(cid, [fighter, caster, foe])
+    _advance_to(cid, caster)
+    server.attack(cid, caster, foe, attack_bonus=5, damage_dice="4d6",
+                  damage_type="radiant", is_ranged=True)
+    assert [e["name"] for e in _effects(cid, foe)] == ["Guiding Bolt"]
+    # Kill the caster (monster -> dead at 0 HP); it remains in the initiative order.
+    server.set_hp(cid, caster, 0)
+    assert server.get_character(cid, caster)["dead"] is True
+    # Advance turns: the marker must be SWEPT by the orphan guard (it can never expire on the
+    # caster's turn-end, because that turn never comes), and it must NOT leak.
+    swept = False
+    for _ in range(12):
+        v = _advance_turn(cid)
+        if any(e["name"] == "Guiding Bolt" for e in v.get("expired_effects", [])):
+            swept = True
+            break
+    assert swept, "Guiding Bolt marker leaked after the caster died (orphan guard failed)"
+    assert _effects(cid, foe) == []
+    # And a later attack on the foe must get NO unearned advantage.
+    res = server.attack(cid, fighter, foe, attack_bonus=5, damage_dice="1d8",
+                        damage_type="slashing")
+    assert res.get("advantage") is not True
+    assert res.get("advantage_source") in (None, "")
+
+
 def test_guiding_bolt_marker_not_consumed_for_attack_on_other_target(monkeypatch):
     """The marker is the FOE's; an attack against a DIFFERENT (unmarked) target neither gets
     advantage from it nor consumes it — the marker stays live for the marked foe."""

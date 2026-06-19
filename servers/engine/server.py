@@ -4562,13 +4562,20 @@ def next_turn(campaign_id: str) -> dict:
         # attack path in attack() still removes the marker on the first qualifying attack; this
         # tick only matters when NO one attacked the marked target during the window.
         #
-        # ORPHAN GUARD: if the caster died / was removed from combat (no longer an active
-        # combatant in the initiative order), the marker would otherwise never meet its caster's
-        # turn again and could leak forever — so we also expire any marker whose caster id is no
-        # longer among the current combatants. (A live caster is always in `order`; a dead/
-        # removed caster is skipped by the advance loop, so this guard covers that case.)
+        # ORPHAN GUARD: if the caster died OR was removed from combat, its next turn will never
+        # come (a dead combatant is skipped by the advance loop, so it never becomes `previous`
+        # and the anchor==prev_id tick can't fire) — the marker would leak for the rest of the
+        # fight and grant UNEARNED advantage to later attacks on the marked foe. So we expire any
+        # marker whose caster is no longer a LIVING active combatant.
+        # NOTE: death (_die) sets dead=True but does NOT pop c.combat.order (only remove_combatant
+        # pops it), so `active_ids` MUST be built from LIVING combatants, not mere order membership
+        # — otherwise a dead-but-unremoved caster (the common 0-HP monster case) defeats the guard.
         prev_id = previous.id if previous is not None else None
-        active_ids = {cb.character_id for cb in order}
+        active_ids = {
+            cb.character_id
+            for cb in order
+            if (h := c.characters.get(cb.character_id)) is not None and not h.dead
+        }
         for cb in order:
             holder = c.characters.get(cb.character_id)
             if holder is None:
