@@ -862,11 +862,29 @@ def test_party_traveled_red_despite_status_blind_quest_tool_count(tmp_path):
     assert rc == 1, out
 
 
-def test_party_traveled_still_red_when_arc_resolved_but_too_few_beats(tmp_path):
-    # Guard against broadening to beats-only / arc-only: clock advanced + quest completed but
-    # only 7 beats (< SINGLE_SCENE_MIN_BEATS 8) → exception not met → party_traveled RED.
+def test_party_traveled_warns_not_red_on_short_single_scene_vignette(tmp_path):
+    # SEVERITY IS BEAT-SCOPED (2026-06-19 false-cap fix): a SHORT single-scene run
+    # (< SINGLE_SCENE_MIN_BEATS 8) that stayed in one location is a legitimate vignette — the
+    # standard 6-8 beat emergent social/combat duo — NOT a frozen stall. Below 8 beats
+    # party_traveled is a WARN, never a lens-capping RED (it was over-capping legitimate short
+    # play on BOTH Claude and GLM). Here: visited=1, day advanced + quest completed but only 7
+    # beats (< 8) → the in-place exception's beat-floor isn't met (so it doesn't PASS via the
+    # exception) AND the FATAL beat-floor isn't met (so it's a WARN, not RED). The run stays GREEN.
     events = _dm_text_turns(7)
     state = _single_scene_state(day=2, quest_completed=True, visited_count=1)
+    rc, out = _run_gate(tmp_path, events, state)
+    assert "[WARN] party_traveled" in out, out
+    assert "[FAIL] party_traveled" not in out, out
+    assert rc == 0, out  # a short single-scene vignette is not a fatal frozen stall
+
+
+def test_party_traveled_still_red_on_substantial_frozen_run_too_few_visited(tmp_path):
+    # The PRESERVED FATAL path: at/above SINGLE_SCENE_MIN_BEATS(8) a run that stayed in ONE
+    # location AND did not progress in place (no completed quest → arc_resolved False) is a real
+    # stuck-DM frozen stall → RED. (Guards against the beat-scoping weakening the substantial-run
+    # FATAL: 8 beats, visited=1, clock advanced but arc unresolved → the in-place AND fails → RED.)
+    events = _dm_text_turns(8)
+    state = _single_scene_state(day=2, quest_completed=False, visited_count=1)
     rc, out = _run_gate(tmp_path, events, state)
     assert "[FAIL] party_traveled" in out, out
     assert rc == 1, out

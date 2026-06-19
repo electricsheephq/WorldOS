@@ -224,30 +224,56 @@ def case_combat_resolved():
 
 
 def case_combat_not_left_active():
-    # chk: facade, mv>=MIN_BEATS, state.combat.active=True at end-of-run. World floors must pass
-    # (mv>=6 activates them) -> the baseline state already has day=2 + 2 visited locations.
+    # chk: a GENUINE ABANDON (the preserved FATAL path after the truncation-vs-abandon split).
+    # combat_not_left_active is FATAL only when ALL of:
+    #   • facade mv >= COMBAT_ABANDON_MIN_BEATS(10) — a SUBSTANTIAL run (room to resolve), AND
+    #   • start_combat fired EARLY in the tool stream (NOT in the final ~20%) — the fight had time
+    #     to be wrapped, so it wasn't truncated, AND
+    #   • end_combat was never called, AND
+    #   • state.combat.active is still True at the snapshot.
+    # A SHORT run (< 10 beats) OR a LATE start_combat is treated as a harness-length truncation ⇒
+    # WARN (the qa/transcripts/claude-1v1-2 opus duo: start_combat@36/42 calls + only 7 beats), so
+    # this fixture must model the real-defect shape, not the truncation shape.
     state = _clean_player_state()
     state["combat"] = {"active": True, "round": 3}
-    moves = [_move("say") for _ in range(6)]
-    # 6 player beats (>=MIN_BEATS) interleaved with DM replies carrying quoted dialogue so
-    # both_sides_acted + dm_voices_characters both pass and combat_not_left_active is the SOLE fail.
+    moves = [_move("say") for _ in range(12)]  # >= COMBAT_ABANDON_MIN_BEATS(10): substantial run
+    # 12 player beats (>= COMBAT_ABANDON_MIN_BEATS) interleaved with DM replies carrying quoted
+    # dialogue so both_sides_acted + dm_voices_characters both pass. No companion in state ->
+    # structural_completeness stays inert even at >=10 beats, so combat_not_left_active is the SOLE
+    # fatal fail.
     chat = []
-    for i in range(6):
+    for i in range(12):
         chat.append(_player_chat_row(f"[say] beat {i}"))
         chat.append(_dm_chat_row('"The fight rages on," she calls.'))
-    return _roll(), state, chat, moves
+    # start_combat fires EARLY (first of the tool calls) and an attack resolves it (so combat_resolved
+    # passes), but end_combat is NEVER called and combat stays active -> a fight ABANDONED with room
+    # to resolve. The clean trailing `_roll()` keeps start_combat well inside the first 80% of the
+    # stream (last_sc index 0 of >=5 calls), so `started_late` is False -> the abandon path, FATAL.
+    events = [
+        _assistant_tool_use("t_sc", "mcp__engine__start_combat", {}),
+        _user_tool_result("t_sc", json.dumps({"ok": True})),
+        _assistant_tool_use("t_atk", "mcp__engine__attack", {"target": "g1"}),
+        _user_tool_result("t_atk", json.dumps({"hit": True, "damage": 6})),
+    ] + _roll()
+    return events, state, chat, moves
 
 
 def case_party_traveled():
-    # chk: session_beats>=MIN_BEATS, day>1 (world_advanced_time passes) but visited < 2 (only the
-    # opening scene). Isolates party_traveled. Uses chat beats (player rows) for session_beats.
+    # chk: session_beats >= SINGLE_SCENE_MIN_BEATS(8), day>1 (world_advanced_time passes) but
+    # visited < 2 (only the opening scene). Isolates party_traveled. Uses chat beats (player rows)
+    # for session_beats.
+    # SEVERITY IS BEAT-SCOPED (the 2026-06-19 false-cap fix): party_traveled is FATAL only at
+    # >= SINGLE_SCENE_MIN_BEATS(8) — below that a single-scene vignette is a legitimate WARN, not a
+    # frozen stall. So the fixture must carry 8 player beats to land on the PRESERVED FATAL path
+    # (at 6 it would now correctly WARN and this case would no longer flip RED). Keep the builder in
+    # lock-step with the committed 8-beat fixture so a regenerate doesn't silently revert the fix.
     state = _clean_player_state()
     state["day"] = 2  # world_advanced_time passes
     state["locations"] = {"loc_start": {"name": "Tavern", "visited": True}}  # visited == 1
     state["current_location_id"] = "loc_start"
     state["characters"]["pc1"]["location_id"] = "loc_start"
     # dm rows must carry dialogue so dm_voices passes (>=3 dm rows present).
-    chat = ([_player_chat_row(f"[say] beat {i}") for i in range(6)] +
+    chat = ([_player_chat_row(f"[say] beat {i}") for i in range(8)] +
             [_dm_chat_row('"We press on," she says.') for _ in range(3)])
     return _roll(), state, chat, None
 

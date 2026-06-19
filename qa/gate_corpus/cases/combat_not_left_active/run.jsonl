@@ -1,2 +1,6 @@
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t_sc", "name": "mcp__engine__start_combat", "input": {}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t_sc", "content": [{"type": "text", "text": "{\"ok\": true}"}], "is_error": false}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t_atk", "name": "mcp__engine__attack", "input": {"target": "g1"}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t_atk", "content": [{"type": "text", "text": "{\"hit\": true, \"damage\": 6}"}], "is_error": false}]}}
 {"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t_roll", "name": "mcp__engine__roll", "input": {"sides": 20}}]}}
 {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t_roll", "content": [{"type": "text", "text": "{\"total\": 14}"}], "is_error": false}]}}
