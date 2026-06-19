@@ -15,6 +15,27 @@ WorldOS is source-available commercial software; world seeds are licensed separa
 
 ---
 
+## [1.0.5-rc2] — 2026-06-19
+
+**Combat-fidelity + checkpoint hygiene on top of rc1 — still NOT a GA.** The mech lens remains below
+the 4.5 bar even with this fix (the felt session is BG-caliber and cross-persona satisfaction is green
+— 7.8/10, 0 critical, 0 give-ups — see the honest PARTIAL RRI; story is at/above bar at full depth).
+
+- **Combat fidelity (#1033).** Turn-anchor the Guiding Bolt advantage marker to the *caster's next
+  turn* (SRD 5.2: "before the end of your next turn") — it was stored as a fixed round-counter and
+  `next_turn`'s round-start tick expired it a round-boundary early, so the qualifying attack lost the
+  advantage. New additive `ActiveEffect.expires_end_of_turn_of` (exempt from the round-tick, ticked at
+  the caster's turn-end, mirrors the `repeat_save` exemption), with an orphan guard for a caster who
+  dies/leaves combat. Plus a Battle Master maneuver `_turn_brief` cue + a `use_resource` footgun
+  warning (no mechanics change). **Found by RUNNING the combat-sprint** (mech 3.3 — not the code-read's
+  claimed ≥4.5); proven RED→GREEN; adversarial review caught + fixed an additional dead-caster leak.
+- **Scoring-ruler annotation (#1034).** `SCORING.md` §0 ruler-version history + a CHANGELOG note:
+  scores are fenced by `scoring_config_version`/`lens_config_version`; the current ruler
+  (`sc_d4b93982763a`) is stricter, so numbers read lower than historic **by design** — never compare
+  across rulers. Stable-checkpoint hygiene.
+
+---
+
 ## [1.0.5-rc1] — 2026-06-19
 
 **System-hardening RC — NOT a GA.** The RRI gameplay gates (story ≥4.3, mechanical ≥4.5,
