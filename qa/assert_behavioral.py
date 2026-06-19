@@ -367,11 +367,15 @@ def main() -> int:
                 _last_sc = max((i for i, c in enumerate(_ordered_short) if c == "start_combat"),
                                default=-1)
                 # "Started late" = the last start_combat landed in the final ~20% of the tool stream
-                # (and at least one start_combat actually fired). With no stream we can't prove an
-                # early start, so we conservatively DON'T treat absence as an abandon.
+                # (truncation: the fight only just began before the run ended), OR there is NO
+                # start_combat in the stream at all — a resume-into-combat session whose fight carried
+                # over from a prior session, which we CANNOT prove started early this run, so it is a
+                # truncation/resume, never an abandon (this matches the rationale comment above; the
+                # earlier form FATAL'd a resumed-into-combat run, contradicting it).
                 started_late = (
-                    _last_sc >= 0 and _total_calls > 0
-                    and _last_sc >= int(_total_calls * 0.8)
+                    _last_sc < 0
+                    or (_last_sc >= 0 and _total_calls > 0
+                        and _last_sc >= int(_total_calls * 0.8))
                 )
                 # A genuine ABANDON: a SUBSTANTIAL run, combat started EARLY (room to resolve), the DM
                 # never end_combat'd, yet the fight is still active. Everything else (short run, OR a
