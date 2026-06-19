@@ -182,6 +182,12 @@
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "A >=24-beat run (FELT_SHAPE_MIN_BEATS, strictly above the >=10 structural floor) covered 3+ acts but the arc never TURNED — no midpoint reversal AND/OR no late climax landed (a flat fetch-quest shape, not a felt setup->reversal->climax). DM adherence: drive a real midpoint reversal + a late climax (record_decision the turning beat, advance_act / mark_reversal / mark_climax, complete_quest the spine late). The felt_shape fields (reversal/climax/acts_engine_reached/acts_tag_reached) are produced by the acts-engine in server.py (NarrativeArc + advance_act/mark_reversal/mark_climax) and surfaced via qa/story_readout.py's felt_shape_from_state. WARN only (fatal=False); only armed at >=24 beats so shorter runs are unaffected."
     },
+    "dm_advanced_time": {
+      "category": "DM_ADHERENCE",
+      "likely_code_locations": ["qa/play_dm_duo.txt", "servers/engine/server.py"],
+      "retest": "bash qa/run_duo.sh duo-retest",
+      "hint": "The DM never issued a time-advance tool across the session — only the harness soft-tick moved the clock, so companion regard / camp / day-gated systems stay starved (#1024 unmasks the frozen-DM the soft-tick hid). DM adherence: call long_rest / advance_time / downtime when a beat should pass time. The time-advance tools live in server.py. WARN only (fatal=False)."
+    },
     "world_peopled": {
       "category": "DM_ADHERENCE",
       "likely_code_locations": ["qa/play_dm_duo.txt", "servers/engine/npc.py", "servers/engine/server.py"],
