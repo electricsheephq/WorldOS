@@ -15,6 +15,36 @@ WorldOS is source-available commercial software; world seeds are licensed separa
 
 ---
 
+## [1.0.5-rc3] — 2026-06-20
+
+**Measurement-unblock + mech-fidelity + scorer-robustness on rc2 — still NOT a GA.** Test-proven code
+landed; the gameplay re-measure under the current ruler is deferred (the Angry-DM scorer hangs on
+combat-sprint transcripts, #1040 — the deterministic engine tests are the proof for now).
+
+- **#1036 — authored-campaign measurement unblocked (#1037).** `structural_completeness` no longer
+  FATAL-caps authored golden-spine runs to 2.5: the campaign-arc quest (seeded from the adventure
+  `hook`) is multi-session by design and authored adventures author no closable sub-quests. Option-A
+  scope guard — `unresolved_arc` demotes FATAL→WARN for authored runs (detected via
+  `start_adventure`/`scenes`), preserving FATAL for non-authored runs AND authored runs with
+  DM-**added** (`add_quest`) dropped threads. Dual corpus proof (authored→WARN, non-authored→FATAL) +
+  4 unit tests; mirrors #1030's WARN-vs-FATAL discipline. (Follow-up: graduate the engagement
+  coverage gates to FATAL for authored runs so a once-then-flatline shape is caught again.)
+- **Mech fidelity (#1038).** Champion expanded crit-range (`crit_min` threaded through `dice.py`/
+  `attack()`; crit on 19 / 18 for Improved / Superior Critical — the previously-dead
+  `expanded_crit_range` branch now lights up) + War Caster concentration-save advantage (both
+  damage-triggered save sites). Additive (defaults preserve today; old snapshots round-trip); full
+  engine suite 3042 green.
+- **Scorer robustness (#1039).** `qa/score.sh` wraps `claude -p` in
+  `timeout ${WORLDOS_SCORE_TIMEOUT:-300}` so an intermittent hang no longer blocks a run forever (the
+  retry loop catches it). The deeper combat-sprint-transcript hang is tracked in #1040.
+
+Deferred to budget/scorer availability: the GLM re-measure under the current ruler (the combat-sprint
+mech number, the golden-spine at depth — now that #1036 unblocks it — and the 5-persona RRI). Story is
+above bar at full depth on the OLD ruler; mech remains the real gap; satisfaction is green (7.8/10, 0
+critical). Numbers are ruler-fenced (see SCORING.md §0) — current not comparable to historic.
+
+---
+
 ## [1.0.5-rc2] — 2026-06-19
 
 **Combat-fidelity + checkpoint hygiene on top of rc1 — still NOT a GA.** The mech lens remains below
