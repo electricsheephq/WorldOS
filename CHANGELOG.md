@@ -51,8 +51,24 @@ architecture* so the gameplay work that follows is built on honest, un-gamed sig
 - Story-engagement feedback loop (auto-seeded approval vocabulary, feature-engagement coverage
   scorer, companion-quest orphan cue) (#1017–#1024); acts-engine runtime + felt-shape scorer
   (#1001/#1002); weighted approval + diminishing returns + inter-companion stance (#1003–#1005).
-- Docs current: MODEL-TIERING (the GLM lane + the honest 1-v-1 numbers), SCORING (gate severity as
-  honest measurement, *not* score-gaming; the coercion contract; timing columns), the runbooks (#1031).
+
+### ⚠ Scoring ruler tightened — current scores are NOT comparable to historic numbers
+The felt-world machinery above also **tightened the scoring ruler** to `sc_d4b93982763a` /
+`lc_d7fcfddd5bf7`. The feature-engagement coverage scorer + forcing gate (#1018), the acts felt-shape
++ flat-arc gate (#1001/#1002), betrayal un-inversion (#999), the romance gate (#997), the
+`dm_advanced_time` unmask (#1024), and the gate-severity *accuracy* repair (#1030) now DEMAND that
+companions / quests / acts / betrayal / combat are actually **engaged (gauge-backed), not narrated**.
+**A run therefore scores LOWER under this ruler than under the v1.0.4 rulers — by design: the scorer
+is a deliberately-tightening feedback loop, not a fixed yardstick.** Numbers are fenced by the
+`scoring_config_version` / `lens_config_version` stamped on every `scores_db` row — **never compare a
+current number to a historic one across different `sc_`/`lc_` hashes** (e.g. the historic
+`gs-ledger-deep` story **4.8** was an OLDER, looser ruler, not directly comparable to a current 4.1).
+See `qa/SCORING.md` §0 for the ruler-version history + how to re-score a historic transcript for an
+apples-to-apples comparison.
+
+- Docs current: MODEL-TIERING (the GLM lane + the honest 1-v-1 numbers), SCORING (the **§0
+  ruler-version history**; gate severity as honest measurement, *not* score-gaming; the coercion
+  contract; timing columns), the runbooks (#1031).
 
 - Licensing: WorldOS Source-Available Commercial EULA v1.0 + `ROYALTY-ADDENDUM.md`,
   `COMMERCIAL-LICENSE.md`, `CLA.md`, `CONTRIBUTING.md`, a PR CLA template. Prior MIT grants for
