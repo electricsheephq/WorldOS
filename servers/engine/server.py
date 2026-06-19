@@ -1476,6 +1476,17 @@ def _apply_srd_class_defaults(ch, class_name: str, level: int, set_base_ac: bool
                 ch.extra_attacks = max(ch.extra_attacks, int(f["extra_attacks"]))
             if f.get("sneak_attack_dice"):
                 ch.sneak_attack_dice = f["sneak_attack_dice"]
+        # EXPANDED CRIT RANGE — the Champion fighter's Improved Critical (L3, natural 19–20)
+        # and Superior Critical (L15, natural 18–20). Derived from the granted features so it
+        # tracks level: Superior implies Improved, so it takes the lower (better) floor. The
+        # attack d20 roll threads ch.crit_min so a Champion's nat-19 actually crits and the
+        # crit_source() "expanded_crit_range" branch is reachable (it was dead — crit could only
+        # ever be a nat-20). ADDITIVE: a non-Champion keeps crit_min 20 (today's behavior).
+        feat_names_lower = {f.lower() for f in ch.features}
+        if "superior critical" in feat_names_lower:
+            ch.crit_min = min(ch.crit_min, 18)
+        elif "improved critical" in feat_names_lower:
+            ch.crit_min = min(ch.crit_min, 19)
         # Grant the class's default skill proficiencies if none were chosen, so skill
         # checks (incl. social_check) include the proficiency bonus instead of the DM
         # inventing a modifier on an empty sheet. The caller can pass an explicit
@@ -4896,6 +4907,17 @@ def _roll_effect_bonus_dice(ch: Character, field: str) -> tuple[int, list[dict]]
     return total, rolls
 
 
+def _has_war_caster(ch: Character) -> bool:
+    """True if ``ch`` has the War Caster feat — which grants ADVANTAGE on a CON saving
+    throw to maintain concentration when the character takes damage (SRD 5.2). Read off
+    the feats list at call time (the engine's sole source for chosen feats); case-
+    insensitive so "war caster" / "War Caster" both match. ADDITIVE: no War Caster == a
+    flat 1d20 save (today's behavior). The advantage applies ONLY to concentration saves
+    here (War Caster's other riders — opportunity-attack spells, somatic-while-handed — are
+    not yet modeled), so a non-concentration save is untouched."""
+    return any((f or "").strip().lower() == "war caster" for f in (ch.feats or []))
+
+
 def _auto_concentration_save(ch: Character, dc: int) -> dict | None:
     """F01-9 (audit 2026-06-11): when a concentrating creature TAKES damage, 5e checks
     concentration the instant the damage lands. The engine already computes the DC
@@ -4909,7 +4931,10 @@ def _auto_concentration_save(ch: Character, dc: int) -> dict | None:
     None). combat.py stays dice-free; all dice are rolled here. Caller persists (sole-writer)."""
     if not dc or not getattr(ch, "concentration", None):
         return None
-    r = dice_mod.roll(f"1d20+{ch.saving_throw_bonus(Ability.CON)}")
+    # War Caster: advantage on the CON save to maintain concentration on taking damage.
+    r = dice_mod.roll(
+        f"1d20+{ch.saving_throw_bonus(Ability.CON)}", advantage=_has_war_caster(ch)
+    )
     rider_bonus, rider_rolls = _roll_effect_bonus_dice(ch, "save_bonus_dice")
     total = r.total + rider_bonus
     maintained = total >= dc
@@ -5143,7 +5168,13 @@ def attack(
         cadv, cdis = combat.attack_modifiers(attacker, target, is_ranged=is_ranged)
         adv = advantage or cadv
         dis = disadvantage or cdis
-        atk = dice_mod.roll(f"1d20+{attack_bonus}", advantage=adv, disadvantage=dis)
+        # crit_min threads the attacker's expanded crit range (Champion Improved/Superior
+        # Critical → 19/18; everyone else 20 = today's behavior) so a Champion's nat-19
+        # actually flags atk.crit and crit_source() resolves "expanded_crit_range".
+        atk = dice_mod.roll(
+            f"1d20+{attack_bonus}", advantage=adv, disadvantage=dis,
+            crit_min=getattr(attacker, "crit_min", 20),
+        )
         # NUMERIC RIDERS (SYN-06 / #780): fold the attacker's engine-tracked bonus dice
         # (Bless +1d4 / Bane -1d4) into the attack total — the engine ROLLS the rider it
         # advertises instead of tracking it as theater. Nat-20 auto-hit / nat-1 auto-miss
@@ -5803,7 +5834,10 @@ def concentration_save(campaign_id: str, character_id: str, dc: int) -> dict:
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
-        r = dice_mod.roll(f"1d20+{ch.saving_throw_bonus(Ability.CON)}")
+        # War Caster: advantage on the CON save to maintain concentration (SRD 5.2).
+        r = dice_mod.roll(
+            f"1d20+{ch.saving_throw_bonus(Ability.CON)}", advantage=_has_war_caster(ch)
+        )
         # NUMERIC RIDERS (SYN-06 / #780): a concentration save is a saving throw — fold
         # the engine-tracked save bonus dice (Bless +1d4 / Bane -1d4) like saving_throw.
         rider_bonus, rider_rolls = _roll_effect_bonus_dice(ch, "save_bonus_dice")

@@ -160,7 +160,7 @@ def _d20_roll(natural: int):
     """A dice.roll stub that forces the d20 NATURAL face (so a spell attack is a
     deterministic hit/miss) while honoring the expression's flat modifier; non-d20
     expressions (damage) roll a fixed mid value. Used via monkeypatch on the attack."""
-    def _roll(expression: str, advantage: bool = False, disadvantage: bool = False, seed=None) -> DiceRoll:
+    def _roll(expression: str, advantage: bool = False, disadvantage: bool = False, seed=None, crit_min: int = 20) -> DiceRoll:
         if expression.startswith("1d20"):
             mod = 0
             if "+" in expression:

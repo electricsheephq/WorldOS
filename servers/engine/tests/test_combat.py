@@ -22,7 +22,7 @@ def _ds(total: int, natural: int) -> DiceRoll:
     )
 
 
-def _fixed_roll(expression: str, advantage: bool = False, disadvantage: bool = False, seed: int | None = None) -> DiceRoll:
+def _fixed_roll(expression: str, advantage: bool = False, disadvantage: bool = False, seed: int | None = None, crit_min: int = 20) -> DiceRoll:
     if expression.startswith("1d20"):
         return DiceRoll(
             expression=expression,
@@ -1452,7 +1452,7 @@ def _crit_then_fixed(component_total: int = 5):
 
     seen: list[str] = []
 
-    def _roll(expression, advantage=False, disadvantage=False, seed=None):
+    def _roll(expression, advantage=False, disadvantage=False, seed=None, crit_min=20):
         if expression.startswith("1d20"):
             return DiceRoll(expression=expression, total=30, rolls=[20], is_d20=True, natural=20, crit=True)
         seen.append(expression)
@@ -1499,7 +1499,7 @@ def test_attack_multi_component_per_type_resistance_halves_only_matching(tmp_pat
     import server
     from dice import DiceRoll
 
-    def roll(expression, advantage=False, disadvantage=False, seed=None):
+    def roll(expression, advantage=False, disadvantage=False, seed=None, crit_min=20):
         if expression.startswith("1d20"):
             return DiceRoll(expression=expression, total=19, rolls=[15], is_d20=True, natural=15, crit=False)
         return DiceRoll(expression=expression, total=5, rolls=[5], detail="x")
@@ -1532,7 +1532,7 @@ def test_attack_single_damage_dice_unchanged(tmp_path, monkeypatch):
     import server
     from dice import DiceRoll
 
-    def roll(expression, advantage=False, disadvantage=False, seed=None):
+    def roll(expression, advantage=False, disadvantage=False, seed=None, crit_min=20):
         if expression.startswith("1d20"):
             return DiceRoll(expression=expression, total=19, rolls=[15], is_d20=True, natural=15, crit=False)
         return DiceRoll(expression=expression, total=7, rolls=[7], detail="1d6+2=7")
@@ -2125,7 +2125,7 @@ def _rigged_roller(d20_total: int, fixed: dict[str, int]):
     text, defaulting to 0 so an unexpected expr is loud rather than silently '6'."""
     from dice import DiceRoll
 
-    def _roll(expr, advantage=False, disadvantage=False, seed=None):
+    def _roll(expr, advantage=False, disadvantage=False, seed=None, crit_min=20):
         e = expr.replace(" ", "").lower()
         if e.startswith("1d20"):
             return DiceRoll(
@@ -2295,6 +2295,78 @@ def test_crit_source_attributes_the_right_reason():
     assert combat.crit_source(True, 20, True, paralyzed) == "nat_20"
 
 
+def _nat19_honoring_crit_min(natural: int = 19):
+    """A deterministic dice stub for server.attack: every 1d20 rolls `natural`, and — like
+    the real roller — flags crit iff natural >= the crit_min the caller threads in. Proves
+    server.attack passes the attacker's expanded crit range through to the roll."""
+    def _roll(expression, advantage=False, disadvantage=False, seed=None, crit_min=20):
+        if expression.startswith("1d20"):
+            total = natural + 5
+            return DiceRoll(
+                expression=expression, total=total, rolls=[natural], modifier=5,
+                detail=f"{expression}[{natural}] = {total}", is_d20=True, natural=natural,
+                crit=(natural >= crit_min), fumble=(natural == 1),
+            )
+        return DiceRoll(expression=expression, total=6, rolls=[3],
+                        detail=f"{expression}[3] = 6")
+    return _roll
+
+
+def _attack_nat19_in_fresh_combat(server, label, *, subclass=None):
+    """Seat a level-3 fighter (optionally a Champion) alone vs a soft dummy and resolve ONE
+    attack on a forced natural 19. Order-independent: a single attack right after
+    start_combat resolves whether or not it's the attacker's turn (off-turn it's a
+    reaction), and no next_turn is called — so initiative randomness can't perturb it."""
+    cid = server.create_campaign(label)["id"]
+    fighter = server.create_character(
+        cid, "Fighter", kind="player", class_name="fighter", subclass=subclass,
+        level=3, max_hp=28, armor_class=16, apply_srd_defaults=True,
+    )["id"]
+    dummy = server.create_character(cid, "Dummy", kind="monster", max_hp=200, armor_class=10)["id"]
+    server.start_combat(cid, [fighter, dummy])
+    server.dice_mod.roll = _nat19_honoring_crit_min(19)
+    return cid, fighter, server.attack(cid, fighter, dummy, attack_bonus=5,
+                                       damage_dice="1d8+3", damage_type="slashing")
+
+
+def test_champion_crits_on_natural_19_expanded_crit_range(tmp_path, monkeypatch):
+    """Fix (a): a Champion fighter with Improved Critical (crit_min lowered to 19) scores a
+    CRIT on a natural 19, and crit_source() attributes it to the expanded crit range — the
+    previously-dead branch. A plain fighter's natural 19 is an ordinary hit, not a crit."""
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    import server
+    _orig_roll = server.dice_mod.roll
+    try:
+        cid_c, champ, champ_res = _attack_nat19_in_fresh_combat(
+            server, "Champion Crit", subclass="Champion")
+        assert server.get_character(cid_c, champ)["crit_min"] == 19  # SRD derivation
+        assert champ_res["crit"] is True
+        assert champ_res["crit_source"] == "expanded_crit_range"
+
+        cid_p, plain, plain_res = _attack_nat19_in_fresh_combat(server, "Plain Fighter")
+        assert server.get_character(cid_p, plain)["crit_min"] == 20  # no expanded range
+        assert plain_res["hit"] is True  # 19+5=24 vs AC 10 — a hit
+        assert plain_res["crit"] is False
+        assert plain_res["crit_source"] == ""
+    finally:
+        server.dice_mod.roll = _orig_roll
+
+
+def test_superior_critical_lowers_crit_min_to_18(tmp_path, monkeypatch):
+    """Fix (a): a Champion at L15 has Superior Critical → crit_min 18 (crits on 18–20)."""
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("Superior Crit")["id"]
+    champ = server.create_character(
+        cid, "Veteran", kind="player", class_name="fighter", subclass="Champion",
+        level=15, max_hp=120, armor_class=18, apply_srd_defaults=True,
+    )
+    sheet = server.get_character(cid, champ["id"])
+    assert "Superior Critical" in sheet["features"]
+    assert sheet["crit_min"] == 18
+
+
 # --- #218: monster defensive reactions (Parry) ---
 def test_bestiary_parry_bonus_parses_the_ac_reaction():
     import bestiary
@@ -2315,7 +2387,7 @@ def test_bestiary_parry_bonus_parses_the_ac_reaction():
 def _attack_roll_stub(d20_total: int, d20_natural: int = 14):
     """A dice_mod.roll stub: the 1d20 attack returns a controlled (total, natural); any other
     roll (damage) is small + deterministic so the attack resolves."""
-    def _roll(expression, advantage=False, disadvantage=False, seed=None):
+    def _roll(expression, advantage=False, disadvantage=False, seed=None, crit_min=20):
         if expression.startswith("1d20"):
             return _ds(d20_total, d20_natural)
         return DiceRoll(expression=expression, total=4, rolls=[3], modifier=1, detail=f"{expression}[3] = 4")
@@ -2475,7 +2547,7 @@ def _bm_roller(*, d20: int, crit: bool, fixed: dict[str, int]):
 
     seen: list[str] = []
 
-    def _roll(expr, advantage=False, disadvantage=False, seed=None):
+    def _roll(expr, advantage=False, disadvantage=False, seed=None, crit_min=20):
         e = expr.replace(" ", "").lower()
         if e.startswith("1d20"):
             nat = 20 if crit else max(1, min(19, d20 - 5))

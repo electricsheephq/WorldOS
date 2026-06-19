@@ -181,6 +181,71 @@ def test_blessed_concentration_save_includes_d4(tmp_path, monkeypatch):
     assert out["bonus_dice"][0]["source"] == "Bless"
 
 
+# --- War Caster: advantage on the concentration CON save ----------------------
+
+def _spy_advantage(monkeypatch):
+    """Record the `advantage` kwarg passed to each 1d20 roll, then delegate to the real
+    roller. Returns the list the spy appends (expression, advantage) onto."""
+    import store
+    _orig = server.dice_mod.roll
+    seen: list = []
+
+    def _spy(expression, advantage=False, disadvantage=False, seed=None, crit_min=20):
+        if expression.startswith("1d20"):
+            seen.append((expression, advantage))
+        return _orig(expression, advantage=advantage, disadvantage=disadvantage,
+                     seed=seed, crit_min=crit_min)
+
+    monkeypatch.setattr(server.dice_mod, "roll", _spy)
+    return seen, store
+
+
+def test_war_caster_rolls_concentration_save_with_advantage(tmp_path, monkeypatch):
+    """Fix (b): a War Caster taking damage rolls the concentration CON save WITH advantage
+    (the manual concentration_save tool path). A non-War-Caster rolls a flat d20."""
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("WarCaster")["id"]
+    wiz = server.create_character(cid, "Caster", kind="player", class_name="Wizard",
+                                  level=5, max_hp=30, apply_srd_defaults=True)["id"]
+    plain = server.create_character(cid, "Plain", kind="player", class_name="Wizard",
+                                    level=5, max_hp=30, apply_srd_defaults=True)["id"]
+
+    seen, store = _spy_advantage(monkeypatch)
+    c = store.load_campaign(cid)
+    c.characters[wiz].feats = ["War Caster"]
+    c.characters[wiz].concentration = "Bless"
+    c.characters[plain].concentration = "Bless"
+    store.save_campaign(c)
+
+    seen.clear()
+    server.concentration_save(cid, wiz, dc=10)
+    assert seen and all(adv is True for _, adv in seen), seen  # War Caster -> advantage
+
+    seen.clear()
+    server.concentration_save(cid, plain, dc=10)
+    assert seen and all(adv is False for _, adv in seen), seen  # no feat -> flat d20
+
+
+def test_auto_concentration_save_grants_war_caster_advantage(tmp_path, monkeypatch):
+    """Fix (b): the on-damage auto concentration save (_auto_concentration_save, the path
+    apply_damage drives) also rolls with advantage for a War Caster."""
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("WarCasterAuto")["id"]
+    wiz = server.create_character(cid, "Caster", kind="player", class_name="Wizard",
+                                  level=5, max_hp=40, apply_srd_defaults=True)["id"]
+
+    seen, store = _spy_advantage(monkeypatch)
+    c = store.load_campaign(cid)
+    c.characters[wiz].feats = ["War Caster"]
+    c.characters[wiz].concentration = "Bless"
+    store.save_campaign(c)
+
+    seen.clear()
+    out = server._auto_concentration_save(c.characters[wiz], dc=12)
+    assert out is not None and out["rolled"] is True
+    assert seen and all(adv is True for _, adv in seen), seen
+
+
 # --- concentration break releases the linked children (BOTH paths) ------------
 
 def test_drop_concentration_frees_linked_children(tmp_path, monkeypatch):
