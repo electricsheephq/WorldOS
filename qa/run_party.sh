@@ -61,6 +61,11 @@ SCORE_SCRIPT="$(worldos_env SCORE_SCRIPT qa/score.sh)"
 # Opus needs more than the Sonnet-tuned $0.80 per-call cap (the DM cold-open alone is ~$2.4); floor it
 # for an Opus DM so the cold-open lands. CAP, not spend; the Sonnet companion facade spends far less.
 case "$WORLDOS_DM_MODEL" in *opus*) if awk "BEGIN{exit !($BUDGET < 4.0)}"; then BUDGET=4.00; fi ;; esac
+# GLM-only settings profile (no-op for Claude). Sourced after model vars resolve, before any
+# timeout/budget/retry knob is consumed. See qa/glm_profile.sh.
+# shellcheck source=glm_profile.sh
+. "$ROOT/qa/glm_profile.sh"
+worldos_apply_glm_profile
 T="qa/transcripts"; STATE_DIR="$ROOT/qa/state/$RUN"
 mkdir -p "$T" "$STATE_DIR"; rm -rf "$STATE_DIR/campaigns" 2>/dev/null
 

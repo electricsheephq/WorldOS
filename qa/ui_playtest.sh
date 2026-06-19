@@ -40,6 +40,17 @@ PLAYER_MODEL="$(worldos_env UIPT_PLAYER_MODEL sonnet)"
 # $1.50 cap trips error_max_budget_usd on the Opus cold-open (the PC never seats). Sonnet unchanged.
 case "$DM_MODEL" in *opus*) _uipt_dm_def=12.00 ;; *) _uipt_dm_def=1.50 ;; esac
 DM_BUDGET="$(worldos_env UIPT_DM_BUDGET "$_uipt_dm_def")"        # per DM turn (model-aware)
+# GLM-only settings profile (no-op for Claude). Sourced after model vars resolve, before any
+# timeout/budget/retry knob is consumed. This harness spawns the DM/player itself (it does NOT
+# delegate to run_duo.sh), so it must apply the profile directly. The profile keys off
+# WORLDOS_DM_MODEL/WORLDOS_ACTOR_MODEL, so export the role models under those names first (the
+# late WORLDOS_DM_MODEL="$DM_MODEL" near dm_turn re-asserts the same value, idempotently).
+# See qa/glm_profile.sh.
+WORLDOS_DM_MODEL="$DM_MODEL"
+WORLDOS_ACTOR_MODEL="$PLAYER_MODEL"
+# shellcheck source=glm_profile.sh
+. "$ROOT/qa/glm_profile.sh"
+worldos_apply_glm_profile
 PERSONA_FILE="$ROOT/qa/play_player_browser_${PERSONA}.txt"
 
 [ -f "$PERSONA_FILE" ] || { echo "[uipt] no persona brief at $PERSONA_FILE" >&2; exit 2; }
