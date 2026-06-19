@@ -1,9 +1,15 @@
 # WorldOS QA Scoring System — standardized reference
 
-> Source of truth for HOW we measure a playtest. Current as of 2026-05-26.
+> Source of truth for HOW we measure a playtest. Current as of 2026-06-19 (post-24h reorient).
 > The running results ledger is `qa/scores_db.py` (SQLite) → `qa/scores_ledger.md` (`add_run()` / `--render`); `qa/SCORECARD.md` is LEGACY narrative.
 > For the current app/native handoff tools and RRI routing, start with `qa/QA_TOOLS.md` and
 > `WorldOS-GUI-RUNBOOK.md`; this file describes the story/mechanical scoring model.
+
+> **Everything here is MEASUREMENT, never the target.** The north star (`VISION.md`) is the
+> *felt player session* — a no-prior-knowledge player plays a complete 8-beat Baldur's-Gate-caliber
+> arc and never once feels "this is broken." Scores, RRI, and rubric numbers exist only to *measure*
+> that; **no score-gaming.** The gate-severity work in §1a is the sharp edge of this: making the
+> measurement HONEST (it was punishing legitimate good story-craft) is the opposite of gaming a number.
 
 The fitness function = **1 hard behavioral gate** (deterministic pass/fail) + **3 LLM
 lenses** (each 1–5). The gate is the honest floor; the lenses grade quality above it.
@@ -28,6 +34,69 @@ so this deterministic gate does. Exit 0 = GREEN (warnings allowed), 1 = RED. FAT
 If the gate is RED, all three LLM scorecards are **capped to ≤ 2.5 / INVALID** and
 annotated with the failed checks (`worldos_cap_score_red`). A dead/non-progressing scene
 can never display as 4.1 again. On a GREEN run, scores pass through untouched.
+
+## 1a. Gate severity — a FATAL must mean a true integrity failure (honest-measurement repair)
+Because a RED caps **all three lenses ≤ 2.5**, the line between **FATAL** (caps the run) and
+**WARN** (advisory, doesn't cap) IS the measurement. The contract (the post-24h reorient,
+PR #1030 — paired with the #1027 coercion fix below):
+
+> A FATAL behavioral gate fires **only on a true integrity / correctness failure** — no PC
+> seated, a rejected/validation-walled tool call, dice never used, a save corrupted by a real
+> engine bug, a fight genuinely abandoned. It must **NOT** fire on a quality/completeness signal
+> that a *legitimate short emergent duo* trips. Those are WARNs.
+
+A Phase-2 GLM-vs-Claude 1-v-1 found **Claude opus runs RED-capping too** (2/2), so two FATAL gates
+were demoting good story-craft (VISION pillar 1) on **both** models — a **model-agnostic false-cap**,
+not a model quirk. The two beat-scoped fixes (`qa/assert_behavioral.py`):
+
+- **`party_traveled`** (`assert_behavioral.py:676–696`). The bare `visited >= 2` rule read a deep
+  6–7-beat **single-scene social duo** as "never left the opening scene" → FATAL. **Now beat-scoped:**
+  `SINGLE_SCENE_MIN_BEATS = 8` — below 8 beats this is a **WARN** (a single-scene vignette is not a
+  stuck DM); **at/above 8** it stays **FATAL**. The strict anti-gaming in-place-progression exception
+  (the run must have **advanced the clock AND resolved an actual completed quest** — `clock_advanced
+  AND arc_resolved`, deliberately *not* clock-only or beats-only, adversarially verified against a
+  cheap-`set_quest_status("active")` game) is **unchanged**; a substantial run that never moves *and*
+  never progresses is still a FATAL stuck DM.
+- **`combat_not_left_active`** (`assert_behavioral.py:326–397`). A 6-beat duo that **enters combat
+  near its beat budget and truncates mid-fight** legitimately never reaches `end_combat` → the old bare
+  FATAL capped a run that did nothing wrong (proven: `qa/transcripts/claude-1v1-2`, an opus duo whose
+  final DM line is cut off mid-sentence). **Now severity rides a `started_late` discriminator** (where
+  the last `start_combat` lands in the ordered tool stream): a fight that started in the **final ~20%**
+  of calls — or a **resume-into-combat** session with **no `start_combat` this run** — is a
+  **truncation → WARN**. Only a **genuine abandon** (a substantial run `≥ COMBAT_ABANDON_MIN_BEATS = 10`
+  where combat started **early** with room to resolve, `end_combat` never fired, and the fight is **still
+  active** at the snapshot) stays **FATAL** — that corrupts the next load (and the engine's `start_combat`
+  next-load guard is the deeper backstop).
+
+**This is honest-measurement repair, NOT score-gaming.** A gate-severity audit classified *every*
+FATAL gate KEEP-FATAL vs over-aggressive and changed **only** the two quality/completeness ones; an
+adversarial verifier confirmed **no true integrity gate was weakened** — `player_in_party`,
+`no_rejected_tool_calls`, `dice_used`, `dm_produced_output`, SRD-correctness, and the XP gates are all
+**untouched** — and the behavioral-gate **corpus still REDs genuine failures** (`party_traveled` padded
+to 8 beats, `combat_not_left_active` reshaped to a real-abandon profile — both still trip the preserved
+FATAL path). The opus runs that wrongly RED-capped (`claude-1v1-1`/`claude-1v1-2`) are now GREEN; the
+corpus + taxonomy suite (39) and `fast_gate` (226) stay green. This makes the floor measure *broken*,
+so the lenses can grade good short story-craft instead of being capped to ≤ 2.5.
+
+### 1a.1 List-arg coercion — the tool-arg contract (#1027)
+The **#1 source** of the model-agnostic RED-cap was *upstream* of the gate: FastMCP validates a tool
+call's args against the Pydantic type hints **before** the function body runs, so a model passing a
+bare string (`approval_tags="honest_dealing"`) or a comma-string (`actor_ids="id1,id2"`) where a
+**list** is expected was rejected ("Input should be a valid list") → the FATAL `no_rejected_tool_calls`
+gate → all three lenses capped. This deflated **~30%** of runs and hit the **Claude** baseline
+transcripts (`baseline-rc1`, `cue-thaw`) exactly as hard as GLM — *not* a GLM-only problem.
+
+**The contract** (`servers/engine/models.py:21–63`): list-typed tool args coerce at the validation
+layer via a reusable `_coerce_list` **`BeforeValidator`** (the `ListArg` / `StrListArg` / `OptStrListArg`
+aliases), applied to the high-traffic DM-called args — `record_decision` (options / actor_ids /
+approval_tags), `author_companion_gauges`, `start_combat` (combatant_ids / surpriser_ids), `cast_spell`
+(target_ids), and the nested `persist_beat` decision path (`server.py:12582–12594`). Behavior:
+`None → None`; a real `list → unchanged`; `"" → []`; `"foo" → ["foo"]`; `"a,b , c" → ["a","b","c"]`;
+**anything genuinely wrong (int / dict) is returned as-is so Pydantic STILL rejects it loudly** — the
+coercion is purely additive and never swallows a real type bug. Critically, a `BeforeValidator` is
+**invisible to `json_schema()`**, so the emitted wire schema stays a plain `array` and the pinned
+schema byte-budget (`test_tool_schema_budget`) does not regress. The model gets coerced, not walled —
+so a stringified list no longer manufactures a false `no_rejected_tool_calls` RED.
 
 ## 1b. Feature-engagement coverage — the dead-system tracker (WS0)
 `qa/feature_engagement.py`
@@ -172,3 +241,23 @@ toward the new measured max.
   gate. `qa/test_lens_variance.py` is the deterministic, CI-safe guard that keeps this
   floor honest (it reads only on-disk artifacts; live re-derivation is an explicit,
   opt-in, non-CI step gated behind `WORLDOS_LIVE_SCORER=1`).
+
+## 7. Timing columns — where a beat's seconds go (Wave-1)
+Additive observability, not a gate. A finished run now reports **where time goes**, flowing
+**per-tool-call sidecar → `qa/latency_rollup.py` → `qa/scores.db` columns → the `story_readout` TIMING
+stamp**. The engine wraps each `@mcp.tool()` once and, **only when `WORLDOS_TOOLTIMING_PATH` is set**
+(default-OFF — production pays nothing), appends `{ts, tool, wall_ms, ok, campaign_id}` per call to a
+JSONL sidecar (PR #1006). `latency_rollup.py` (PR #1007) then derives two dimensions: **per-kind
+generation** means — `combat_s_per_beat` / `social_s_per_beat` / `camp_s_per_beat`, each the mean beat
+`duration_api_ms` over beats classified by their tool calls (cold-open / combat / camp / social; combat
+outranks camp) **straight from the transcripts, no sidecar needed**; and a **tool-exec split** from the
+optional sidecar — `mean_tool_call_ms`, `slowest_tool` (largest *total* summed `wall_ms`), and
+`tool_exec_pct` (= Σ tool wall-s ÷ Σ whole-beat `duration_ms`, with a `tool_exec_pct_basis` stamp).
+These land as additive `scores.db` columns (`combat_s_per_beat`, `social_s_per_beat`, `mean_tool_call_ms`,
+`slowest_tool`, `tool_exec_pct`, `duration_wall_s`; old rows read NULL via `ALTER TABLE`) and as a
+one-line `TIMING |` readout next to `COVERAGE`, e.g.
+`TIMING | beat~86s gen~96s cold~240s | combat~140s social~70s camp~95s | tool=3% slowest=scene_context`
+(the tool clause is omitted when no sidecar). **The headline finding: engine tool-exec is only ~1–4% of
+a beat** — routine beats are ~90–100% **generation/decode-bound** (Opus more so, extended thinking), so
+when a combat turn feels slow it's the *model thinking*, not the tools. Everything degrades to `None`
+without a sidecar, leaving the rest of the rollup byte-identical.
