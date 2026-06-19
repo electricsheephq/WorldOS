@@ -326,13 +326,71 @@ def main() -> int:
         # (state.get("combat") truthy) — a non-combat session has no block and these skip.
         combat = state.get("combat") or {}
         if combat:
-            # FATAL: combat left active at end-of-run is a state-integrity failure — a clean run
-            # ends_combat. Only for a substantial session (a short smoke test cut off mid-fight
-            # is not a real defect).
-            if len(mv) >= MIN_BEATS:
-                chk("combat_not_left_active", not combat.get("active"),
-                    f"combat.active={combat.get('active')!r} at end-of-run — combat left active "
-                    f"(state-integrity fail: a finished session should end_combat)")
+            # combat left active at end-of-run. Naively this is a state-integrity failure (a clean
+            # run end_combats), BUT the dominant cause in QA is a HARNESS-LENGTH ARTIFACT, not a DM
+            # bug: a short emergent duo that ENTERS combat near its beat budget and TRUNCATES
+            # mid-fight legitimately never reaches end_combat — the fight was cut off, not abandoned.
+            # (Proven: qa/transcripts/claude-1v1-2 — an opus duo where start_combat fired in the last
+            # handful of tool calls and the final DM line is literally cut off mid-sentence; the old
+            # bare FATAL RED-capped all three lenses on a run that did nothing wrong.) So make the
+            # SEVERITY beat-scoped, exactly like party_traveled:
+            #
+            #   • A SHORT facade run (< COMBAT_ABANDON_MIN_BEATS) with combat still active is treated
+            #     as a TRUNCATED mid-combat scene → WARN. The standard 6-8 beat emergent combat duo
+            #     lives here: it can't both run a full fight AND wrap it inside its budget.
+            #   • A LONG run (>= COMBAT_ABANDON_MIN_BEATS) that ALSO truncated mid-fight (start_combat
+            #     fired in the last beat or two of the tool stream) is STILL a truncation, not an
+            #     abandon → WARN. The length alone doesn't make a cut-off fight a defect.
+            #   • Only a LONG run where combat started EARLY (room to resolve), end_combat never fired,
+            #     and the fight is STILL active at the snapshot is a genuine ABANDON — a real
+            #     state-integrity bug that corrupts the next load → FATAL.
+            #
+            # This is the same conservative, beat-scoped pattern as the party_traveled fix: it keeps
+            # the FATAL path for the real defect (a long run that left a fight hanging with room to
+            # resolve) and stops the model-agnostic false-cap on short/truncated emergent runs.
+            if len(mv) >= MIN_BEATS and combat.get("active"):
+                # Strictly above MIN_BEATS(6): a real multi-encounter arc, not a short single-fight
+                # vignette. A run shorter than this that's still mid-fight is presumed truncated.
+                COMBAT_ABANDON_MIN_BEATS = 10
+                # WHERE did the (last) start_combat fire in the ordered tool stream? If it's in the
+                # final stretch of calls the fight only just began before the run ended ⇒ truncation,
+                # never an abandon. Build the ordered short-name list once (mirrors the round1 scan's
+                # extraction below); cheap and self-contained.
+                _ordered_short: list[str] = []
+                for _ev in events:
+                    if _ev.get("type") != "assistant":
+                        continue
+                    for _b in (_ev.get("message", {}) or {}).get("content") or []:
+                        if isinstance(_b, dict) and _b.get("type") == "tool_use":
+                            _ordered_short.append((_b.get("name") or "").split("__")[-1])
+                _total_calls = len(_ordered_short)
+                _last_sc = max((i for i, c in enumerate(_ordered_short) if c == "start_combat"),
+                               default=-1)
+                # "Started late" = the last start_combat landed in the final ~20% of the tool stream
+                # (and at least one start_combat actually fired). With no stream we can't prove an
+                # early start, so we conservatively DON'T treat absence as an abandon.
+                started_late = (
+                    _last_sc >= 0 and _total_calls > 0
+                    and _last_sc >= int(_total_calls * 0.8)
+                )
+                # A genuine ABANDON: a SUBSTANTIAL run, combat started EARLY (room to resolve), the DM
+                # never end_combat'd, yet the fight is still active. Everything else (short run, OR a
+                # late/truncated start, OR no start_combat in the stream) is a truncation ⇒ WARN.
+                _abandoned = (
+                    len(mv) >= COMBAT_ABANDON_MIN_BEATS
+                    and not started_late
+                    and tools.get("end_combat", 0) == 0
+                )
+                chk("combat_not_left_active", False,
+                    f"combat.active=True at end-of-run — combat left active "
+                    f"(beats={len(mv)}, start_combat@{_last_sc}/{_total_calls} calls, "
+                    f"end_combat={tools.get('end_combat', 0)}) — "
+                    + ("FATAL: substantial run, fight started early with room to resolve and was "
+                       "never end_combat'd (state-integrity fail: a finished session should end_combat)"
+                       if _abandoned else
+                       "WARN: run plausibly TRUNCATED mid-combat (short run or combat started near "
+                       "the beat budget) — a harness-length artifact, not an abandoned fight"),
+                    fatal=_abandoned)
             # WARN: if a fight started, the action economy should have engaged at some point —
             # an action was consumed / an attack was made. The final snapshot does not reliably
             # expose mid-fight action use (it may have been reset on end_combat), so probe the
