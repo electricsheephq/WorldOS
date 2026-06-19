@@ -10,11 +10,53 @@ WorldOS is source-available commercial software; world seeds are licensed separa
 
 ## [Unreleased]
 
-- Licensing update: WorldOS now uses the WorldOS Source-Available Commercial
-  EULA v1.0 with a separate `ROYALTY-ADDENDUM.md`, adds
-  `COMMERCIAL-LICENSE.md`, `CLA.md`, `CONTRIBUTING.md`, and a pull request CLA
-  acknowledgement template. Prior MIT grants for older copies remain preserved
-  in `LICENSE`.
+- Gameplay toward the RRI bar (story ≥4.3, mechanical ≥4.5) — the GA work, now built on the
+  honest, un-gamed measurement that 1.0.5-rc1 established.
+
+---
+
+## [1.0.5-rc1] — 2026-06-19
+
+**System-hardening RC — NOT a GA.** The RRI gameplay gates (story ≥4.3, mechanical ≥4.5,
+5-persona satisfaction, …) are not yet met; this RC hardens the *measurement* and the *model
+architecture* so the gameplay work that follows is built on honest, un-gamed signal.
+
+### Honest measurement — the behavioral gate stops false-capping good play
+- Every-beat tools (`record_decision` etc.) coerce string/comma-string list args at the Pydantic
+  layer, so a model passing `approval_tags="x"` is coerced, not rejected — killing the
+  model-agnostic `no_rejected_tool_calls` RED-cap (#1027).
+- `party_traveled` is now WARN below 8 beats (a deep single-scene vignette is not a stuck DM),
+  FATAL only for substantial runs; `combat_not_left_active` distinguishes a truncated/resumed
+  fight (WARN) from a genuine abandon (FATAL) (#1030). Adversarially verified — no integrity gate
+  weakened. The ~30% "GLM cap rate" was these self-inflicted false-caps (they capped Claude too);
+  a same-SHA 1-v-1 on the fixed engine now shows **0/5 RED**.
+
+### GLM as a cheap batch-QA engine — clean model-switching
+- One model choice flows coherently: GLM is a no-op for Claude; Claude-mode defensively unsets
+  any stray GLM env (switch-back is always clean, no leak); a mixed-model guard; product play
+  forced clean-Claude; the scorer always isolated-Claude (#1026/#1028). Measured: GLM 5.2 is
+  **comparable quality** (within ~0.2 of Claude — higher on mechanical/angry, ~0.2 lower on
+  story); its true cost is **latency** (3–4× cold-opens) → cheap overnight/VM sweeps, never the
+  release gate (Claude stays the quality bar).
+
+### Timing instrumentation + iteration tooling
+- Per-tool-call + per-kind (combat/social/cold-open) timing → sidecar → `latency_rollup` →
+  `scores.db` columns + the `story_readout` TIMING stamp (#1006/#1007/#1016/#1020). Beats are
+  decode-bound; tool-exec is ~1–4%.
+- `qa/run_arc_smoke.sh` — companion-arc iteration smoke (asserts approval moved / the arc engaged)
+  (#1029).
+- CodeQL advanced setup: the Swift autobuild scoped to `macos/**` + weekly (#1015).
+
+### Felt-world machinery (story / relationship / acts — live-tested)
+- Story-engagement feedback loop (auto-seeded approval vocabulary, feature-engagement coverage
+  scorer, companion-quest orphan cue) (#1017–#1024); acts-engine runtime + felt-shape scorer
+  (#1001/#1002); weighted approval + diminishing returns + inter-companion stance (#1003–#1005).
+- Docs current: MODEL-TIERING (the GLM lane + the honest 1-v-1 numbers), SCORING (gate severity as
+  honest measurement, *not* score-gaming; the coercion contract; timing columns), the runbooks (#1031).
+
+- Licensing: WorldOS Source-Available Commercial EULA v1.0 + `ROYALTY-ADDENDUM.md`,
+  `COMMERCIAL-LICENSE.md`, `CLA.md`, `CONTRIBUTING.md`, a PR CLA template. Prior MIT grants for
+  older copies remain preserved in `LICENSE`.
 
 ---
 
