@@ -675,6 +675,16 @@ class ActiveEffect(_StrictModel):
     # attack resolves (one-shot). Defaults False, so every existing effect (Bless, Hex, Mage
     # Armor) and every old snapshot is untouched — only an advantage-granting rider sets it.
     grants_advantage: bool = False
+    # TURN-ANCHORED expiry for "until the end of your next turn" riders (Guiding Bolt). Holds
+    # the CASTER's character_id. Guiding Bolt's advantage lasts "before the end of your next
+    # turn", which is anchored to the CASTER's turn — NOT a fixed round count. A plain
+    # rounds_remaining=1 marker cast in round 1 would be ticked out at the START of round 2 by
+    # next_turn's round-boundary tick, BEFORE the next attacker acts — losing the advantage SRD
+    # 5.2 owes it. So such a marker carries this caster id instead: it is EXEMPT from the
+    # round-counter tick (tick_round_effects) and is instead expired by next_turn when the
+    # caster's turn ends. None == NOT turn-anchored — every existing effect and old snapshot is
+    # unchanged (a plain duration marker still ticks by rounds_remaining exactly as before).
+    expires_end_of_turn_of: Optional[str] = None
     # END-OF-TURN repeat save (#209): a "save-ends" spell (Hold Person, Hypnotic Pattern,
     # a monster's hold) carries this so `next_turn` rolls the holder's recurring save and
     # frees them on a success instead of locking them indefinitely. None == no repeat save

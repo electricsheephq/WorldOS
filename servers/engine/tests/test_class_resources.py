@@ -7,6 +7,7 @@ import pytest
 import rests
 import server
 import srd_tables
+import store
 from dice import DiceRoll
 from models import Character
 
@@ -264,3 +265,51 @@ def test_use_resource_preserved_across_level_up(cid):
     # max grew (5*4=20) but the 10 already spent is preserved.
     assert sheet["class_resources"]["lay_on_hands"]["max"] == 20
     assert sheet["class_resources"]["lay_on_hands"]["used"] == 10
+
+
+# --- Battle Master maneuver CUE (#213 follow-up): _turn_brief steers the DM to declare the
+# maneuver ON the attack so the superiority die isn't burned as a plain point ------------------
+def test_turn_brief_superiority_dice_suggests_maneuver_on_attack(cid):
+    """A Battle Master's superiority_dice surface in _turn_brief with a `suggested_when` cue
+    that steers the DM to the attack(maneuver=) path. Before this, only second_wind /
+    action_surge / channel_divinity got a cue, so the DM was never told the die belongs on the
+    attack — and it got burned as a plain point via a bare use_resource."""
+    fid = server.create_character(
+        cid, "Aldric", kind="player", class_name="Fighter", level=3, apply_srd_defaults=True,
+        abilities={"strength": 16, "constitution": 14},
+    )["id"]
+    server.set_class_resource(cid, fid, "superiority_dice", max=4, recharge="short", size="d8")
+    server.start_combat(cid, [fid])  # the BM is the current combatant
+    c = store.load_campaign(cid)
+    ch = c.characters[fid]
+    brief = server._turn_brief(ch, c)
+    sd = brief["resources"]["superiority_dice"]
+    assert "suggested_when" in sd
+    assert "attack(maneuver=" in sd["suggested_when"]
+    assert sd["label"].endswith("d8")  # the die is surfaced
+
+
+def test_use_resource_bare_superiority_die_in_combat_warns(cid):
+    """FOOTGUN ADVISORY: a die-pool spend (superiority_dice) in active combat with NO maneuver=
+    surfaces an advisory `warning` steering the DM to attack(maneuver=). Advisory only — the
+    spend still succeeds (it does not block)."""
+    fid = server.create_character(
+        cid, "Aldric", kind="player", class_name="Fighter", level=3, apply_srd_defaults=True,
+        abilities={"strength": 16, "constitution": 14},
+    )["id"]
+    server.set_class_resource(cid, fid, "superiority_dice", max=4, recharge="short", size="d8")
+    server.start_combat(cid, [fid])
+    out = server.use_resource(cid, fid, "superiority_dice")  # bare spend, in combat
+    assert out["ok"] is True and out["remaining"] == 3  # the spend SUCCEEDS (advisory, not block)
+    assert "warning" in out and "attack(maneuver=" in out["warning"]
+
+
+def test_use_resource_bare_superiority_die_out_of_combat_no_warning(cid):
+    """REGRESSION: the footgun advisory is inert OUT of combat — a bare die-pool spend with no
+    active combat is byte-identical to before (no `warning` key)."""
+    fid = server.create_character(
+        cid, "Aldric", kind="player", class_name="Fighter", level=3, apply_srd_defaults=True,
+    )["id"]
+    server.set_class_resource(cid, fid, "superiority_dice", max=4, recharge="short", size="d8")
+    out = server.use_resource(cid, fid, "superiority_dice")  # no combat active
+    assert out["ok"] is True and "warning" not in out
