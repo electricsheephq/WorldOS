@@ -12,10 +12,55 @@ from __future__ import annotations
 import time
 import warnings
 from enum import Enum
-from typing import Any, Literal, Optional
+from typing import Annotated, Any, Literal, Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
+
+
+def _coerce_list(v):
+    """Pydantic BEFORE-validator: coerce a string (or comma-string) into a list, so a
+    list-typed tool arg / model field accepts the value the DM model reaches for.
+
+    FastMCP validates tool args against the function type hints with Pydantic BEFORE the
+    function body runs. A model (Claude OR GLM, proven on both) routinely passes a bare
+    string (``"honest_dealing"``) or a comma-string (``"id1,id2"``) where a list is
+    expected; the list-type check then rejects it ("Input should be a valid list"), which
+    trips the FATAL ``no_rejected_tool_calls`` behavioral gate and caps every lens — a
+    model-AGNOSTIC false-cap on ~30% of runs. Running this coercion as a BEFORE-validator
+    fixes it at the validation layer (the function body never sees the reject) WITHOUT
+    changing the emitted JSON wire schema — the param stays a plain ``array`` (a
+    BeforeValidator is invisible to ``json_schema()``), so the pinned-schema byte budget
+    (test_tool_schema_budget) does not regress. Mirrors the spirit of the existing
+    ``AbilityScores._accept_5e_shorthand`` defensive-shorthand coercion.
+
+    Behavior (ADDITIVE — correct callers are untouched):
+      * ``None`` -> ``None``           (passes through; the default / "omitted" case)
+      * a real ``list`` -> unchanged   (the correct caller's path; element validation still runs)
+      * ``""`` (empty/whitespace) -> ``[]``
+      * ``"foo"`` -> ``["foo"]``
+      * ``"a,b , c"`` -> ``["a", "b", "c"]``  (split on comma, each token stripped, blanks dropped)
+      * anything else (int, float, dict, ...) -> returned AS-IS so Pydantic STILL rejects it
+        loudly with the genuine ``list_type`` error (we never silently swallow a real type bug)."""
+    if v is None or isinstance(v, list):
+        return v
+    if isinstance(v, str):
+        s = v.strip()
+        if s == "":
+            return []
+        return [t.strip() for t in s.split(",") if t.strip()] if "," in s else [s]
+    return v
+
+
+# Reusable coercing type aliases — one ``_coerce_list`` helper, applied per element-type so
+# each param/field keeps its EXACT wire schema (untyped ``array`` vs ``array of string``).
+# Use these in place of the bare list hints on high-traffic DM-called tool args + nested
+# model fields. A BeforeValidator does not alter ``json_schema()``, so swapping these in is
+# byte-budget-neutral (verified against test_tool_schema_budget).
+ListArg = Annotated[Optional[list], BeforeValidator(_coerce_list)]          # Optional[list]      (untyped items)
+ReqListArg = Annotated[list, BeforeValidator(_coerce_list)]                 # list                (required, untyped items)
+StrListArg = Annotated[list[str], BeforeValidator(_coerce_list)]           # list[str]           (required)
+OptStrListArg = Annotated[Optional[list[str]], BeforeValidator(_coerce_list)]  # list[str] | None
 
 
 def _new_id(prefix: str) -> str:
@@ -347,7 +392,9 @@ class CompanionQuestArc(_StrictModel):
     title: str
     status: CompanionQuestStatus = "locked"
     stages: list[CompanionQuestStage] = Field(default_factory=list)
-    quest_ids: list[str] = Field(default_factory=list)
+    # quest_ids accepts a bare id-string / comma-string (the DM passes `"q1,q2"` or `"q1"`)
+    # since set_companion_quest_arc builds this model from a raw `arc` dict. Wire-neutral.
+    quest_ids: Annotated[list[str], BeforeValidator(_coerce_list)] = Field(default_factory=list)
     note: str = ""
 
     @model_validator(mode="after")
@@ -506,13 +553,16 @@ class CompanionDossier(_StrictModel):
     # The defining hurt that shapes the companion — kept to a clause, not a chapter.
     wound: str = ""
     # What the companion is pulling toward / pushing away from — short goal/aversion tags.
-    wants: list[str] = Field(default_factory=list)
-    fears: list[str] = Field(default_factory=list)
+    # The string-list vocabulary fields carry the BEFORE-validator so a dossier built via
+    # model_validate from a raw dict (author_companion_gauges' merge path) tolerates a bare
+    # string / comma-string per field. Wire-neutral; default [] untouched.
+    wants: Annotated[list[str], BeforeValidator(_coerce_list)] = Field(default_factory=list)
+    fears: Annotated[list[str], BeforeValidator(_coerce_list)] = Field(default_factory=list)
     # The moral spine the approval system rewards against ("mercy", "duty", "freedom").
-    values: list[str] = Field(default_factory=list)
+    values: Annotated[list[str], BeforeValidator(_coerce_list)] = Field(default_factory=list)
     # Concrete causes that move the approval gauge — what wins/loses this companion's regard.
-    approval_likes: list[str] = Field(default_factory=list)
-    approval_dislikes: list[str] = Field(default_factory=list)
+    approval_likes: Annotated[list[str], BeforeValidator(_coerce_list)] = Field(default_factory=list)
+    approval_dislikes: Annotated[list[str], BeforeValidator(_coerce_list)] = Field(default_factory=list)
     # Themes the (future) deterministic banter scheduler draws on, so camp talk isn't generic.
     banter_tags: list[str] = Field(default_factory=list)
     # Seed prompts the DM can voice at camp — terse situational hooks, not authored prose.
@@ -1307,10 +1357,14 @@ class Decision(_StrictModel):
     t: float = Field(default_factory=_now)
     day: int = 1
     summary: str  # the decision in one line
-    options: list[str] = Field(default_factory=list)  # what was on the table
+    # `options` / `actor_ids` / `approval_tags` carry a BEFORE-validator so a nested decision
+    # dict (persist_beat's `decision=`, or a future direct Decision build) accepts a bare
+    # string / comma-string the same way the standalone record_decision args do — the model
+    # path coerces too. Wire schema (array of string) is unchanged; default [] is untouched.
+    options: Annotated[list[str], BeforeValidator(_coerce_list)] = Field(default_factory=list)  # what was on the table
     chosen: str = ""  # what the party went with
     rationale: str = ""  # why
-    actor_ids: list[str] = Field(default_factory=list)  # who weighed in / decided
+    actor_ids: Annotated[list[str], BeforeValidator(_coerce_list)] = Field(default_factory=list)  # who weighed in / decided
     # The companion-approval causes this choice carried (lowercase_snake keys the DM tagged,
     # matched against each party companion's dossier approval_likes/dislikes when the decision
     # was recorded). Stored for RECALL — so the chronicle remembers WHY a companion's regard
@@ -1318,7 +1372,7 @@ class Decision(_StrictModel):
     # no `approval_tags` round-trips unchanged (the engine never infers a tag from prose; the
     # gauge move happened once, at record time, on the DM-supplied tags). The KEY vocabulary
     # lives in CONTENT (the companion dossiers), never in engine code.
-    approval_tags: list[str] = Field(default_factory=list)
+    approval_tags: Annotated[list[str], BeforeValidator(_coerce_list)] = Field(default_factory=list)
     # The companion this decision SIDES WITH / AGAINST (E2 ENSEMBLE) — an explicit companion id
     # the DM names so the inter-companion SECONDARY approval delta can ripple onto that
     # companion's allies/rivals. Stored for RECALL. ADDITIVE default "": an old snapshot with no

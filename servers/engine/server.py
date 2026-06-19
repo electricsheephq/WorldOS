@@ -57,6 +57,11 @@ import wrapper_progress as _wrapper_progress_mod
 import _env
 from pydantic import ValidationError
 from models import (
+    ListArg,
+    OptStrListArg,
+    ReqListArg,
+    StrListArg,
+    _coerce_list,
     SKILL_ABILITIES,
     Ability,
     AbilityScores,
@@ -1800,7 +1805,7 @@ def create_character(
     background: str = "",
     subclass: Optional[str] = None,
     apply_srd_defaults: bool = False,
-    skills: Optional[list] = None,
+    skills: ListArg = None,
     location_id: str = "",
     add_to_party: bool = True,
     met: bool = False,
@@ -1920,7 +1925,7 @@ def start_character(
     abilities: Optional[dict] = None,
     background: str = "",
     subclass: Optional[str] = None,
-    skills: Optional[list] = None,
+    skills: ListArg = None,
     voice_id: str = "narrator-dm",
 ) -> dict:
     """Build the PLAYER character via a chosen ORIGIN, and add them to the party."""
@@ -2197,7 +2202,7 @@ def recruit_companion(
     max_hp: int = 0,
     armor_class: int = 0,
     apply_srd_defaults: bool = True,
-    skills: Optional[list] = None,
+    skills: ListArg = None,
     character_id: str = "",
     companion_id: str = "",
     id: str = "",
@@ -2314,7 +2319,7 @@ def reroll_character(
     abilities: Optional[dict] = None,
     background: str = "",
     subclass: Optional[str] = None,
-    skills: Optional[list] = None,
+    skills: ListArg = None,
     voice_id: str = "narrator-dm",
     level: Optional[int] = None,
 ) -> dict:
@@ -3867,8 +3872,8 @@ def _gate_combat_verb(c: "Campaign", actor: "Character", *, verb: str, consumes:
 @mcp.tool()
 def start_combat(
     campaign_id: str,
-    combatant_ids: list[str],
-    surpriser_ids: list[str] | None = None,
+    combatant_ids: StrListArg,
+    surpriser_ids: OptStrListArg = None,
 ) -> dict:
     """Begin combat: roll initiative (1d20 + initiative_bonus) for each combatant
     and build the turn order (desc, ties broken by DEX modifier then input order).
@@ -6751,7 +6756,7 @@ def cast_spell(
     id: str = "",
     as_ritual: bool = False,
     innate: bool = False,
-    target_ids: Optional[list] = None,
+    target_ids: ListArg = None,
 ) -> dict:
     """Cast a spell — works for ANY of the ~339 SRD spells. Consumes a spell slot
     (cantrips use none); upcasts when slot_level exceeds the spell's level; sets
@@ -8435,7 +8440,7 @@ def _canonicalize_spell_list(spells_list: list, existing: list, mode: str) -> li
 
 
 @mcp.tool()
-def learn_spells(campaign_id: str, character_id: str, spells_list: list,
+def learn_spells(campaign_id: str, character_id: str, spells_list: ReqListArg,
                  mode: str = "replace") -> dict:
     """Set a character's KNOWN spells. Each name is VALIDATED + CANONICALIZED (F03-7): an
     unknown spell (typo, non-SRD) is rejected listing the offenders, and any casing you pass
@@ -8453,7 +8458,7 @@ def learn_spells(campaign_id: str, character_id: str, spells_list: list,
 
 
 @mcp.tool()
-def prepare_spells(campaign_id: str, character_id: str, spells_list: list,
+def prepare_spells(campaign_id: str, character_id: str, spells_list: ReqListArg,
                    mode: str = "replace") -> dict:
     """Set a character's PREPARED spells. Each name is VALIDATED + CANONICALIZED (F03-7) like
     learn_spells. With a non-empty prepared list, cast_spell now enforces preparation for
@@ -8834,7 +8839,7 @@ def generate_parley_options(
     actor_id: str = "",
     situation: str = "",
     difficulty: str = "",
-    skills: Optional[list[str]] = None,
+    skills: OptStrListArg = None,
     include_alignment: bool = True,
     event_id: str = "",
     npc_id: str = "",
@@ -8967,7 +8972,7 @@ def _resolve_monster_xps(
 def encounter_outlook(
     campaign_id: str,
     monster_xps: Optional[list[int]] = None,
-    monster_ids: Optional[list[str]] = None,
+    monster_ids: OptStrListArg = None,
 ) -> dict:
     """Call this BEFORE staging a fight to see how over-matched it is against the LIVING
     party: it makes the SRD over-match math legible so the balancing doctrine is followable.
@@ -9220,9 +9225,9 @@ def _compact_camp_beat_records(c: Campaign) -> None:
 def record_camp_beat(
     campaign_id: str,
     beat_id: str,
-    companion_ids: Optional[list] = None,
+    companion_ids: ListArg = None,
     kind: str = "",
-    tags: Optional[list] = None,
+    tags: ListArg = None,
     note: str = "",
     resolved: bool = False,
 ) -> dict:
@@ -9479,7 +9484,7 @@ def session_recap(campaign_id: str) -> dict:
 
 
 @mcp.tool()
-def recall(campaign_id: str, query: str, kinds: Optional[list] = None, limit: int = 8) -> dict:
+def recall(campaign_id: str, query: str, kinds: ListArg = None, limit: int = 8) -> dict:
     """Search the WHOLE campaign's history (the memory ledger) — events, dialogue,
     decisions, NPC facts, quest milestones, consequences — ranked by relevance.
     The DM and companions use this to stay consistent and call back to the past
@@ -9767,11 +9772,11 @@ def set_companion_arc(campaign_id: str, companion_id: str = "", arc: dict = None
 def author_companion_gauges(
     campaign_id: str,
     companion_id: str = "",
-    approval_likes: Optional[list] = None,
-    approval_dislikes: Optional[list] = None,
-    values: Optional[list] = None,
-    wants: Optional[list] = None,
-    fears: Optional[list] = None,
+    approval_likes: ListArg = None,
+    approval_dislikes: ListArg = None,
+    values: ListArg = None,
+    wants: ListArg = None,
+    fears: ListArg = None,
     betrayal_threshold: Optional[int] = None,
     betrayal_decision_flag: str = "",
     companion: str = "",
@@ -10079,7 +10084,7 @@ def add_quest(
     description: str = "",
     giver_id: str = "",
     location_id: str = "",
-    objectives: Optional[list] = None,
+    objectives: ListArg = None,
 ) -> dict:
     """Add a quest, optionally linked to the NPC who gave it (giver_id) and the
     location it's anchored to (location_id), so the dashboard and DM can trace
@@ -10951,14 +10956,14 @@ def _apply_approval_tags(
 def record_decision(
     campaign_id: str,
     summary: str = "",
-    options: Optional[list] = None,
+    options: ListArg = None,
     chosen: str = "",
     rationale: str = "",
-    actor_ids: Optional[list] = None,
+    actor_ids: ListArg = None,
     sets_flag: str = "",
     decision: str = "",
     *,
-    approval_tags: Optional[list] = None,
+    approval_tags: ListArg = None,
     targets_companion: str = "",
 ) -> dict:
     """Record a party decision so the DM and companions can call back to it later
@@ -12574,14 +12579,19 @@ def persist_beat(
                 # `approval_tags` the standalone record_decision accepts (flat keys OR
                 # {key,delta}). Absent key == today's behavior (no move). Normalized keys are
                 # stored on the Decision for recall; the gauge move is applied in PHASE 2.
-                decision_approval_tags = decision.get("approval_tags")
+                # _coerce_list: a NESTED decision dict can carry a bare string / comma-string
+                # ("free,sell") on a list field, exactly like the standalone record_decision
+                # args do. Coerce here (BEFORE list()/_normalize_approval_tags, which would
+                # otherwise iterate the string char-by-char into ['f','r','e','e',...]); a real
+                # list / None is untouched, mirroring the Decision-model field validators.
+                decision_approval_tags = _coerce_list(decision.get("approval_tags"))
                 planned_decision = Decision(
                     day=c.day,
                     summary=decision.get("summary") or "",
-                    options=list(decision.get("options") or []),
+                    options=list(_coerce_list(decision.get("options")) or []),
                     chosen=decision.get("chosen") or "",
                     rationale=decision.get("rationale") or "",
-                    actor_ids=list(decision.get("actor_ids") or []),
+                    actor_ids=list(_coerce_list(decision.get("actor_ids")) or []),
                     approval_tags=[k for k, _ in _normalize_approval_tags(decision_approval_tags)],
                 )
                 decision_flag = str(decision.get("sets_flag") or "").strip()
