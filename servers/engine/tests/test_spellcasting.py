@@ -574,7 +574,7 @@ def _fixed_roll(d20_natural: int, dmg_total: int):
     """A dice stub: every 1d20 save rolls the given natural (+ the expression's flat mod);
     every other expression (the shared AoE damage) returns dmg_total. Deterministic per-target
     save outcomes + a single known damage figure."""
-    def _roll(expression, advantage=False, disadvantage=False, seed=None):
+    def _roll(expression, advantage=False, disadvantage=False, seed=None, crit_min=20):
         if expression.startswith("1d20"):
             mod = 0
             if "+" in expression:

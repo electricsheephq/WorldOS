@@ -908,6 +908,12 @@ class Character(_StrictModel):
     # identical, non-martial classes are untouched, and the viewer ignores an absent key.
     fighting_style: str = ""
     extra_attacks: int = 0  # extra attacks per Attack action (Extra Attack feature)
+    # Lowest natural d20 face that scores a CRITICAL HIT on this character's attack rolls.
+    # 20 == standard 5e (today's behavior). LOWERED by the Champion fighter's Improved
+    # Critical (19) and Superior Critical (18) features; set in _apply_srd_class_defaults
+    # from the features list and threaded into the attack d20 roll. ADDITIVE: 20 == today's
+    # behavior; old snapshots round-trip byte-identical.
+    crit_min: int = 20
     sneak_attack_dice: str = ""  # e.g. "3d6" (rogue Sneak Attack), "" if none
     # A defensive REACTION that adds this many points to AC against ONE melee attack that
     # would otherwise hit (the Parry reaction — Bandit Captain +2, fallen consular +4, etc.,

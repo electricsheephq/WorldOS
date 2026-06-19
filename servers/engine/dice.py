@@ -42,9 +42,14 @@ def roll(
     advantage: bool = False,
     disadvantage: bool = False,
     seed: int | None = None,
+    crit_min: int = 20,
 ) -> DiceRoll:
     """Roll a dice expression. Advantage/disadvantage apply to a single d20 term
-    and cancel each other out (5e rule) if both are set."""
+    and cancel each other out (5e rule) if both are set.
+
+    crit_min is the lowest natural d20 face that counts as a critical hit
+    (default 20 = standard 5e). Champion fighters lower it via Improved/Superior
+    Critical (19/18); callers thread the attacker's crit_min through here."""
     if advantage and disadvantage:
         advantage = disadvantage = False
 
@@ -113,7 +118,7 @@ def roll(
             modifier += sign * val
             parts.append(term)
 
-    crit = bool(is_d20 and natural == 20)
+    crit = bool(is_d20 and natural is not None and natural >= crit_min)
     fumble = bool(is_d20 and natural == 1)
     detail = " ".join(parts) + f" = {total}"
     if is_d20 and advantage:

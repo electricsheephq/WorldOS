@@ -64,6 +64,27 @@ def test_crit_and_fumble_flags():
     assert saw_crit and saw_fumble
 
 
+def test_crit_min_defaults_to_20():
+    # ADDITIVE: omitting crit_min preserves today's behavior — only a natural 20 crits.
+    assert dice.roll("1d20", seed=5).natural == 20 and dice.roll("1d20", seed=5).crit
+    assert dice.roll("1d20", seed=6).natural == 19 and not dice.roll("1d20", seed=6).crit
+
+
+def test_crit_min_expands_the_crit_range():
+    # Champion Improved Critical (crit_min=19): a natural 19 crits, an 18 does not.
+    r19 = dice.roll("1d20+5", seed=6, crit_min=19)
+    assert r19.natural == 19 and r19.crit
+    r18 = dice.roll("1d20+5", seed=29, crit_min=19)
+    assert r18.natural == 18 and not r18.crit
+    # Superior Critical (crit_min=18): an 18 now crits too.
+    r18b = dice.roll("1d20+5", seed=29, crit_min=18)
+    assert r18b.natural == 18 and r18b.crit
+    r17 = dice.roll("1d20+5", seed=17, crit_min=18)
+    assert r17.natural == 17 and not r17.crit
+    # A natural 20 always crits regardless of crit_min.
+    assert dice.roll("1d20", seed=5, crit_min=18).crit
+
+
 def test_multi_dice_sum():
     r = dice.roll("2d6+1d4+2", seed=10)
     assert 5 <= r.total <= 18
