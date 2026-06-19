@@ -380,6 +380,43 @@ def case_structural_completeness():
     return events, state, None, None
 
 
+def case_structural_completeness_authored_warn():
+    # GREEN fixture (#1036) — the Option A scope guard. SAME frozen-companion / active-quest /
+    # 2-location / no-resolution profile as case_structural_completeness ABOVE, EXCEPT the run is
+    # an AUTHORED campaign: it emits a `start_adventure` cold-open call (and a non-empty `scenes`
+    # in state). Under the #1036 guard the unresolved-arc sub-check (b) is demoted FATAL->WARN for
+    # an authored run whose only open quest is the hook-seeded arc (no add_quest), so the gate must
+    # exit GREEN with structural_completeness appearing as a [WARN] line — NOT a RED cap. This is
+    # the anti-score-gaming proof that an authored golden-spine run is no longer false-capped to 2.5.
+    # NOTE: clause (a) approval-frozen is NOT tripped here (a camp/long_rest engaged the relationship
+    # system) so (b) is the SOLE softened bit — isolating the #1036 change. Lives OUTSIDE the RED
+    # manifest (corpus is RED-only); a dedicated GREEN test in test_behavioral_gate_corpus.py asserts
+    # exit 0 + [WARN] structural_completeness.
+    state = _clean_player_state()
+    state["characters"]["cmp1"] = {"name": "Brother Toll", "kind": "companion",
+                                   "attitude_value": 0, "location_id": "loc_camp", "xp": 300}
+    state["party"].append("cmp1")
+    # Authored snapshot marker: a non-empty scenes list (only authored adventures carry this).
+    state["scenes"] = [{"id": "s1", "name": "The Embergloom Gate", "location_id": "loc_start"}]
+    state["quests"] = {
+        # The hook-seeded campaign arc — left active by design (multi-session). NO add_quest call,
+        # so it is the only-hook-seeded case the #1036 guard softens to WARN.
+        "q1": {"id": "q1", "title": "The Embergloom Pact", "status": "active",
+               "objectives": ["free the prisoners"], "completed_objectives": []},
+    }
+    # start_adventure cold-open (authored signal in the tool stream) + a camp beat (engages the
+    # relationship system so clause (a) approval-frozen stays clean) + 12 DM text beats.
+    events = (
+        _roll()
+        + [_assistant_tool_use("t_adv", "mcp__engine__start_adventure",
+                               {"adventure_id": "embergloom-pact"})]
+        + [_assistant_tool_use("t_camp", "mcp__engine__camp_scene", {})]
+        + [_user_tool_result("t_camp", json.dumps({"ok": True}))]
+        + [_assistant_text(f"The scene unfolds, beat {i}.") for i in range(12)]
+    )
+    return events, state, None, None
+
+
 def case_xp_awarded_on_progression():
     # chk A5: xp mode, session advanced (day>1 AND visited>=2 so the world floors pass), a
     # reward-worthy seam (a COMPLETED quest — NOT a dead monster, so xp_not_orphaned stays inert),
@@ -425,6 +462,16 @@ _CASES_SPEC: list[tuple] = [
     ("xp_not_orphaned", case_xp_not_orphaned, "xp_not_orphaned"),
     ("xp_awarded_on_progression", case_xp_awarded_on_progression, "xp_awarded_on_progression"),
     ("structural_completeness", case_structural_completeness, "structural_completeness"),
+]
+
+# GREEN cases — the inverse guard. These fixtures must NOT trip their named check (the gate must
+# exit 0 and surface the check as a [WARN], not a [FAIL]). They lock a SCOPE-GUARD that intentionally
+# demotes a former FATAL to WARN, so a future edit that RE-promotes it to FATAL (re-introducing the
+# false-cap) is caught. Asserted by test_behavioral_gate_corpus.py::test_green_case_*. Tuple shape:
+# (case_dir, builder_fn, warn_check). Kept SEPARATE from _CASES_SPEC (which is RED-only by contract).
+_GREEN_CASES_SPEC: list[tuple] = [
+    ("structural_completeness_authored_warn", case_structural_completeness_authored_warn,
+     "structural_completeness"),
 ]
 
 
@@ -489,10 +536,33 @@ def build() -> dict:
             "reason": "no faithful minimal fixture constructed yet (auto-flagged by builder)",
         })
 
+    # GREEN cases — known-GREEN bundles that lock a deliberate FATAL->WARN scope guard (the inverse
+    # of the RED corpus). Written to disk like the RED cases but recorded under a SEPARATE manifest
+    # key so the RED-only corpus test never mistakes them for known-REDs.
+    green_cases: list[dict] = []
+    for case_dir, fn, warn_check in _GREEN_CASES_SPEC:
+        run_events, state, chat, moves = fn()
+        _write_case(case_dir, run_events, state, chat, moves)
+        artifacts = ["run.jsonl", "state.json"]
+        if chat is not None:
+            artifacts.append("chat.jsonl")
+        if moves is not None:
+            artifacts.append("moves.jsonl")
+        green_cases.append({
+            "case_dir": case_dir,
+            "warn_check": warn_check,
+            "artifacts": artifacts,
+            "note": ("must exit GREEN (rc 0) with warn_check as a [WARN] — locks a deliberate "
+                     "FATAL->WARN scope guard so a re-promotion to FATAL is caught (#1036)."),
+        })
+
     manifest = {
-        "_doc": ("Behavioral-gate regression corpus. Each case is a minimal known-RED bundle "
-                 "that must trip its expected_red_check. Regenerate with qa/gate_corpus/builder.py."),
+        "_doc": ("Behavioral-gate regression corpus. `cases` are minimal known-RED bundles that "
+                 "must trip their expected_red_check; `green_cases` are known-GREEN bundles that "
+                 "must NOT (they lock a FATAL->WARN scope guard). Regenerate with "
+                 "qa/gate_corpus/builder.py."),
         "cases": manifest_cases,
+        "green_cases": green_cases,
     }
     _MANIFEST.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return manifest
@@ -502,7 +572,10 @@ if __name__ == "__main__":
     m = build()
     n_real = sum(1 for c in m["cases"] if not c.get("todo"))
     n_todo = sum(1 for c in m["cases"] if c.get("todo"))
-    print(f"wrote {n_real} corpus case(s) + {n_todo} TODO entr(y/ies) -> {_MANIFEST}")
+    n_green = len(m.get("green_cases", []))
+    print(f"wrote {n_real} RED case(s) + {n_todo} TODO + {n_green} GREEN case(s) -> {_MANIFEST}")
     for c in m["cases"]:
         flag = " [TODO]" if c.get("todo") else ""
-        print(f"  {c['case_dir']:32s} -> {c['expected_red_check']}{flag}")
+        print(f"  RED   {c['case_dir']:36s} -> {c['expected_red_check']}{flag}")
+    for c in m.get("green_cases", []):
+        print(f"  GREEN {c['case_dir']:36s} -> {c['warn_check']} [WARN]")

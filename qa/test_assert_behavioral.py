@@ -663,6 +663,66 @@ def test_structural_completeness_silent_in_combat_sprint(tmp_path):
     assert "structural_completeness" not in out
 
 
+# ── #1036: authored-campaign scope guard for sub-check (b) unresolved_arc ──────────
+# The campaign-arc quest is seeded from the authored adventure `hook` and is multi-session by
+# design; authored adventures author NO closable sub-quests, so complete_quest is never called and
+# (b) unresolved_arc FATAL-capped a clean authored run to 2.5. Option A (mirrors #1030): an AUTHORED
+# run (start_adventure in the tool stream OR a non-empty state["scenes"]) whose only open quest is
+# the hook-seeded arc demotes (b) FATAL->WARN. Clause (a) approval-frozen stays FATAL always; an
+# authored run that called add_quest and left it open stays FATAL (a real dropped thread).
+
+def test_structural_completeness_warns_not_fatal_for_authored_campaign(tmp_path):
+    # AUTHORED run: a start_adventure cold-open + a camp beat (so clause (a) stays clean) + 12 DM
+    # beats, a companion frozen at 0, the hook-seeded quest still active across a 2-location arc,
+    # NO complete_quest, NO add_quest. Under #1036 this must be GREEN (rc 0) with the unresolved-arc
+    # sub-check surfaced as a [WARN], NOT a [FAIL] cap. Same profile that previously RED-capped to 2.5.
+    events = (_dm_text_turns(12)
+              + _toolcall("start_adventure")  # authored cold-open signal in the tool stream
+              + _toolcall("camp_scene"))      # engage relationship system -> clause (a) clean
+    state = _frozen_run_state(approval_moved=False, active_quest=True)
+    rc, out = _run_gate(tmp_path, events, state)
+    assert rc == 0, out
+    assert "[WARN] structural_completeness" in out, out
+    assert "[FAIL] structural_completeness" not in out, out
+
+
+def test_structural_completeness_still_fatal_for_non_authored_run(tmp_path):
+    # NON-authored run (no start_adventure, no scenes): the ORIGINAL failure class. Same frozen
+    # profile must STILL RED — the #1036 guard must not weaken the non-authored path. Camp engaged
+    # so clause (a) is clean and (b) unresolved_arc is the SOLE fatal -> still FATAL when non-authored.
+    events = _dm_text_turns(12) + _toolcall("camp_scene")
+    state = _frozen_run_state(approval_moved=False, active_quest=True)
+    rc, out = _run_gate(tmp_path, events, state)
+    assert rc == 1, out
+    assert "[FAIL] structural_completeness" in out, out
+
+
+def test_structural_completeness_authored_but_add_quest_stays_fatal(tmp_path):
+    # AUTHORED run that ALSO called add_quest (the DM opened its OWN sub-quest) and left a quest
+    # unresolved — a genuine dropped thread, NOT just the hook-seeded arc. The #1036 guard keeps
+    # this FATAL even in authored mode (the dm_added_quest carve-out). Camp engaged -> (a) clean,
+    # so (b) is the sole fatal and it must still RED.
+    events = (_dm_text_turns(12)
+              + _toolcall("start_adventure")
+              + _toolcall("camp_scene")
+              + _toolcall("add_quest"))
+    state = _frozen_run_state(approval_moved=False, active_quest=True)
+    rc, out = _run_gate(tmp_path, events, state)
+    assert rc == 1, out
+    assert "[FAIL] structural_completeness" in out, out
+
+
+def test_structural_completeness_authored_via_scenes_state_warns(tmp_path):
+    # The secondary authored signal: a non-empty state["scenes"] (no start_adventure tool-call in
+    # this run's stream — e.g. a RESUMED authored session). Must also soften (b) to WARN/GREEN.
+    events = _dm_text_turns(12) + _toolcall("camp_scene")
+    state = _frozen_run_state(approval_moved=False, active_quest=True)
+    state["scenes"] = [{"id": "s1", "name": "The Embergloom Gate", "location_id": "loc_a"}]
+    rc, out = _run_gate(tmp_path, events, state)
+    assert rc == 0, out
+    assert "[WARN] structural_completeness" in out, out
+
+
 # ── flat_arc (WARN-first) — a >=24-beat 3-act run whose arc never turned ───────────
 # A run that CLAIMS 3 acts (engine cursor or contiguous tags) but has felt_three_act False (no
 # real reversal+climax) is a flat fetch-quest shape, not a felt setup→reversal→climax. Shipped

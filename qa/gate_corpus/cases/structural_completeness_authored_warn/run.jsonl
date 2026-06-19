@@ -1,0 +1,17 @@
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t_roll", "name": "mcp__engine__roll", "input": {"sides": 20}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t_roll", "content": [{"type": "text", "text": "{\"total\": 14}"}], "is_error": false}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t_adv", "name": "mcp__engine__start_adventure", "input": {"adventure_id": "embergloom-pact"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t_camp", "name": "mcp__engine__camp_scene", "input": {}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t_camp", "content": [{"type": "text", "text": "{\"ok\": true}"}], "is_error": false}]}}
+{"type": "assistant", "message": {"content": [{"type": "text", "text": "The scene unfolds, beat 0."}]}}
+{"type": "assistant", "message": {"content": [{"type": "text", "text": "The scene unfolds, beat 1."}]}}
+{"type": "assistant", "message": {"content": [{"type": "text", "text": "The scene unfolds, beat 2."}]}}
+{"type": "assistant", "message": {"content": [{"type": "text", "text": "The scene unfolds, beat 3."}]}}
+{"type": "assistant", "message": {"content": [{"type": "text", "text": "The scene unfolds, beat 4."}]}}
+{"type": "assistant", "message": {"content": [{"type": "text", "text": "The scene unfolds, beat 5."}]}}
+{"type": "assistant", "message": {"content": [{"type": "text", "text": "The scene unfolds, beat 6."}]}}
+{"type": "assistant", "message": {"content": [{"type": "text", "text": "The scene unfolds, beat 7."}]}}
+{"type": "assistant", "message": {"content": [{"type": "text", "text": "The scene unfolds, beat 8."}]}}
+{"type": "assistant", "message": {"content": [{"type": "text", "text": "The scene unfolds, beat 9."}]}}
+{"type": "assistant", "message": {"content": [{"type": "text", "text": "The scene unfolds, beat 10."}]}}
+{"type": "assistant", "message": {"content": [{"type": "text", "text": "The scene unfolds, beat 11."}]}}

@@ -758,6 +758,28 @@ def main() -> int:
         unresolved_arc = bool(active_quests and multi_location_arc
                               and not quest_resolution_engaged)
 
+        # AUTHORED-CAMPAIGN SCOPE GUARD for sub-check (b) — #1036 (Option A; mirrors #1030's
+        # WARN-vs-FATAL discipline for party_traveled / combat_not_left_active). The campaign-arc
+        # quest is SEEDED from the authored adventure `hook` and is multi-session by design; the
+        # authored adventures (e.g. embergloom-pact) author NO closable sub-quests, so the DM never
+        # calls complete_quest / set_quest_status and (b) `unresolved_arc` FATAL-capped a clean
+        # 25-beat authored run to 2.5 — a self-inflicted false-cap (the main quest can't legitimately
+        # resolve inside one session). An AUTHORED run is identifiable at the gate from signals
+        # already in scope: `start_adventure` is the cold-open call for authored runs (in the tool
+        # stream `_tally` always sees), and `state["scenes"]` is non-empty only for authored
+        # adventures (the seeded-campaign snapshot). When authored, (b) is demoted FATAL->WARN —
+        # the gate still APPENDS the WARN message (visibility preserved), but the run is not
+        # RED-capped on (b) alone.
+        #
+        # PRESERVE FATAL for the original failure class:
+        #   - any NON-authored run (the proven 18-beat narrated-not-engaged failure), AND
+        #   - an authored run where the DM ADDED a sub-quest (add_quest) and left it unresolved —
+        #     a genuine dropped thread the DM itself opened, distinct from the hook-seeded campaign
+        #     arc (add_quest is the engine quest-creation tool, server.py:add_quest; it is
+        #     distinguishable from the hook-seeded quest at gate time, so we keep that case FATAL).
+        is_authored_campaign = bool(tools.get("start_adventure") or state.get("scenes"))
+        dm_added_quest = bool(tools.get("add_quest"))
+
         bad_bits = []
         if approval_frozen_run:
             bad_bits.append(
@@ -767,12 +789,20 @@ def main() -> int:
             bad_bits.append(
                 f"{len(active_quests)} quest(s) still active at session end across a "
                 f"{visited}-location arc with no quest-resolution call "
-                f"({[q.get('title') or q.get('id') or '?' for q in active_quests]})")
+                f"({[q.get('title') or q.get('id') or '?' for q in active_quests]})"
+                + (" [authored campaign + only the hook-seeded arc ⇒ WARN, not RED (#1036)]"
+                   if (is_authored_campaign and not dm_added_quest) else ""))
+
+        # Severity: clause (a) approval-frozen stays FATAL ALWAYS. Clause (b) unresolved_arc is
+        # FATAL unless it's an authored campaign whose ONLY open quest is the hook-seeded arc.
+        _unresolved_fatal = unresolved_arc and (not is_authored_campaign or dm_added_quest)
+        _structural_fatal = approval_frozen_run or _unresolved_fatal
         chk("structural_completeness", not bad_bits,
             f"a {session_beats}-beat session with a companion never engaged a core system: "
             + "; ".join(bad_bits)
             + " — the engine relationship/quest tools (record_decision approval_tags / "
-              "adjust_attitude / camp_scene / complete_quest evolves_to) were narrated, not used")
+              "adjust_attitude / camp_scene / complete_quest evolves_to) were narrated, not used",
+            fatal=_structural_fatal)
 
         # (c) FLAT ARC (WARN-FIRST). A LONG run (>= FELT_SHAPE_MIN_BEATS) that CLAIMS three acts
         # (the engine narrative_arc cursor OR contiguous act-tags) but whose arc never TURNED — no
