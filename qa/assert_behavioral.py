@@ -614,12 +614,24 @@ def main() -> int:
         SINGLE_SCENE_MIN_BEATS = 8  # strictly above MIN_BEATS(6): a real arc, not a smoke test
         in_place_progression = (visited >= 1 and clock_advanced and arc_resolved
                                 and session_beats >= SINGLE_SCENE_MIN_BEATS)
+        # SEVERITY IS BEAT-SCOPED (false-cap fix): "the DM never left the opening scene" is only a
+        # STUCK-DM failure on a SUBSTANTIAL run. A SHORT run (< SINGLE_SCENE_MIN_BEATS) in one
+        # location is a legitimate single-scene vignette — the standard 6-beat social duo lives here
+        # — NOT a frozen stall, so below that length this is a WARN, never a lens-capping RED. It was
+        # FATAL-capping legitimate short single-scene play on BOTH models (Claude opus AND GLM — a
+        # model-agnostic false-cap that deflated the duo scores). At/above SINGLE_SCENE_MIN_BEATS the
+        # strict exception is UNCHANGED (travel >=2, OR a clock-advancing arc-resolving in-place
+        # drama) — a substantial run that never moves AND never progresses is still a FATAL stuck DM,
+        # and the anti-gaming AND-logic (clock-only/beats-only deliberately excluded) is preserved.
+        _pt_fatal = session_beats >= SINGLE_SCENE_MIN_BEATS
         chk("party_traveled", visited >= 2 or in_place_progression,
             f"visited {visited}/{len(locs)} location(s) after {session_beats} beats — the party never "
             f"left the opening scene (travel_to / add_location make_current=True); "
             f"in-place-progression exception NOT met "
             f"(clock_advanced={clock_advanced} arc_resolved={arc_resolved} "
-            f"beats>={SINGLE_SCENE_MIN_BEATS}? {session_beats >= SINGLE_SCENE_MIN_BEATS})")
+            f"beats>={SINGLE_SCENE_MIN_BEATS}? {session_beats >= SINGLE_SCENE_MIN_BEATS}) — "
+            f"{'FATAL (substantial run, stuck)' if _pt_fatal else 'WARN (short single-scene vignette)'}",
+            fatal=_pt_fatal)
         # WARN (the metric is softer): did the world gain/engage faces, or just sit in the seed?
         npcs_met = sum(1 for c in chars.values()
                        if isinstance(c, dict) and c.get("kind") == "npc" and c.get("met"))

@@ -7,3 +7,7 @@
 {"role": "dm", "text": "\"We press on,\" she says."}
 {"role": "dm", "text": "\"We press on,\" she says."}
 {"role": "dm", "text": "\"We press on,\" she says."}
+{"role": "player", "text": "[say] beat 6"}
+{"role": "dm", "text": "\"We press on,\" she says."}
+{"role": "player", "text": "[say] beat 7"}
+{"role": "dm", "text": "\"We press on,\" she says."}
