@@ -622,6 +622,14 @@ def tick_round_effects(ch: Character) -> list[str]:
         if eff.repeat_save is not None:
             surviving.append(eff)
             continue
+        # A TURN-ANCHORED advantage marker (#194 follow-up: Guiding Bolt's "before the end of
+        # your next turn") is exempt from the round-counter tick — its lifetime is anchored to
+        # the CASTER's next turn (expired by next_turn when that turn ends), NOT a round count.
+        # Without this exemption the round-boundary tick in next_turn would expire the marker at
+        # the very START of the new round, BEFORE the next attacker acts, losing the advantage.
+        if getattr(eff, "expires_end_of_turn_of", None) is not None:
+            surviving.append(eff)
+            continue
         if eff.scale in ("rounds", "minutes"):
             eff.rounds_remaining -= 1
             if eff.rounds_remaining <= 0:

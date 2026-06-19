@@ -4331,6 +4331,13 @@ def _turn_brief(ch: "Character", c: "Campaign") -> dict:
                 entry_r["suggested_when"] = (
                     "Channel Divinity is available (e.g. War Domain Guided Strike: +10 to one "
                     "attack roll) — spend it to turn a key miss into a hit.")
+            elif rid_l == "superiority_dice":
+                entry_r["suggested_when"] = (
+                    "Battle Master maneuvers: to add this 1d8 to a strike, declare it ON the "
+                    "attack — attack(maneuver='Trip Attack', maneuver_resource='superiority_dice'). "
+                    "The engine spends the die only on a hit, folds +1d8 into damage, and "
+                    "crit-doubles it. Do NOT spend it via a bare use_resource — that burns the "
+                    "die for no bonus.")
             resources[rid] = entry_r
     brief["resources"] = resources
     # --- reactions (#A2): surface a monster's stat-block reaction (Parry) so the DM knows
@@ -4542,6 +4549,55 @@ def next_turn(campaign_id: str) -> dict:
                 if caster is not None and not caster_concentrating:
                     combat.end_repeat_save_effect(holder, eff)
                     expired.append({"character_id": holder.id, "name": eff.name})
+        # --- TURN-ANCHORED advantage markers (Guiding Bolt's "before the end of your next
+        # turn") -----------------------------------------------------------------------------
+        # Such a marker (eff.expires_end_of_turn_of == the CASTER's id) is EXEMPT from the
+        # round-counter tick (combat.tick_round_effects), so the round-boundary tick above never
+        # expires it — that's what lets it survive into the caster's NEXT turn. It is instead
+        # ticked HERE, only when the CASTER's turn ends. `previous` is the combatant whose turn
+        # just ended (captured BEFORE turn_index advanced). The marker's rounds_remaining was
+        # bumped +1 at materialization so the CAST turn's own end (the cast happens DURING the
+        # caster's turn) decrements it to 1 without expiring; the caster's NEXT turn-end then
+        # decrements it to 0 and expires it — i.e. "the end of your next turn". The consume-on-
+        # attack path in attack() still removes the marker on the first qualifying attack; this
+        # tick only matters when NO one attacked the marked target during the window.
+        #
+        # ORPHAN GUARD: if the caster died OR was removed from combat, its next turn will never
+        # come (a dead combatant is skipped by the advance loop, so it never becomes `previous`
+        # and the anchor==prev_id tick can't fire) — the marker would leak for the rest of the
+        # fight and grant UNEARNED advantage to later attacks on the marked foe. So we expire any
+        # marker whose caster is no longer a LIVING active combatant.
+        # NOTE: death (_die) sets dead=True but does NOT pop c.combat.order (only remove_combatant
+        # pops it), so `active_ids` MUST be built from LIVING combatants, not mere order membership
+        # — otherwise a dead-but-unremoved caster (the common 0-HP monster case) defeats the guard.
+        prev_id = previous.id if previous is not None else None
+        active_ids = {
+            cb.character_id
+            for cb in order
+            if (h := c.characters.get(cb.character_id)) is not None and not h.dead
+        }
+        for cb in order:
+            holder = c.characters.get(cb.character_id)
+            if holder is None:
+                continue
+            for eff in list(holder.active_effects):
+                anchor = getattr(eff, "expires_end_of_turn_of", None)
+                if anchor is None:
+                    continue
+                caster_gone = anchor not in active_ids
+                if caster_gone:
+                    holder.active_effects = [
+                        e for e in holder.active_effects if e is not eff
+                    ]
+                    expired.append({"character_id": holder.id, "name": eff.name})
+                    continue
+                if anchor == prev_id:  # the caster's turn just ended -> tick this marker
+                    eff.rounds_remaining -= 1
+                    if eff.rounds_remaining <= 0:
+                        holder.active_effects = [
+                            e for e in holder.active_effects if e is not eff
+                        ]
+                        expired.append({"character_id": holder.id, "name": eff.name})
         # --- AUTO-ROLL the dying PC's death save at the START of its turn (F01-10, audit
         # 2026-06-11) ----------------------------------------------------------------------
         # A downed PC/companion (0 HP, not dead, not stable) rolls a death save at the start
@@ -5379,19 +5435,35 @@ def attack(
             if hit:
                 applied = []
                 for r in riders:
+                    _grants_adv = combat.spell_grants_advantage(r.name)
+                    # TURN-ANCHOR the advantage marker to the CASTER's next turn (SRD 5.2:
+                    # Guiding Bolt's advantage lasts "before the end of your next turn"). A plain
+                    # rounds_remaining=1 marker is ticked out at the START of the next round —
+                    # BEFORE the next attacker acts — losing the advantage SRD 5.2 owes it.
+                    # Instead the marker is EXEMPT from the round-start counter tick (combat.
+                    # tick_round_effects) and is decremented only at the CASTER's turn END inside
+                    # next_turn. `r.source_id` is the spellcaster (set on the PendingOnHitRider
+                    # at cast_spell time: source_id == the casting character_id, matched against
+                    # attack()'s attacker == caster). We bump rounds_remaining by +1 so the
+                    # marker survives the CAST turn's own end (the cast happens DURING the
+                    # caster's turn, so the very next caster-turn-end is the cast turn — which
+                    # must NOT expire it) and expires at the end of the caster's NEXT turn. Only
+                    # advantage-granting riders are turn-anchored; every other rider is unchanged.
+                    _rounds = r.rounds_remaining + 1 if _grants_adv else r.rounds_remaining
                     eff = ActiveEffect(
                         name=r.name,
                         source_id=r.source_id,
                         concentration=False,
                         scale=r.scale,
-                        rounds_remaining=r.rounds_remaining,
+                        rounds_remaining=_rounds,
                         expires_day=r.expires_day,
                         expires_phase_index=r.expires_phase_index,
                         until_long_rest=r.until_long_rest,
                         # Flag the rider as advantage-granting (Guiding Bolt) so the NEXT
                         # attack against this target auto-gets advantage via
                         # combat.attack_modifiers and is consumed there (#194).
-                        grants_advantage=combat.spell_grants_advantage(r.name),
+                        grants_advantage=_grants_adv,
+                        expires_end_of_turn_of=(r.source_id if _grants_adv else None),
                     )
                     # Refresh, don't stack (mirrors cast_spell's write).
                     target.active_effects = [
@@ -8348,6 +8420,18 @@ def use_resource(
         }
         if man_damage is not None:
             out["maneuver_damage"] = man_damage
+        # FOOTGUN ADVISORY (#213 follow-up): a die-pool resource (Superiority Dice) spent in
+        # active combat WITHOUT maneuver= burns the die for no damage bonus — the common Battle
+        # Master mistake. ADVISORY ONLY: the spend already happened and is correct (you may
+        # legitimately spend a die for a non-damage maneuver the engine doesn't model), so we
+        # do NOT block — we only surface a steer toward the attack(maneuver=) path. Inert unless
+        # the pool has a die AND no maneuver was declared AND combat is live.
+        if res.size.strip() and not man and c.combat.active:
+            out["warning"] = (
+                f"{resource!r} is a die pool but no maneuver= was declared — this die added no "
+                "damage bonus. To fold +1d8 into a strike, declare it ON the attack instead: "
+                "attack(maneuver='Trip Attack', maneuver_resource='superiority_dice')."
+            )
         return out
 
 
