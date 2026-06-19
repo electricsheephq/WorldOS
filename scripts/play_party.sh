@@ -46,6 +46,24 @@
 #   WORLDOS_PLAY_MAX_TURNS        hard cap on agent turns (DM + companions)(default 40)
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$ROOT" || exit 1
+# PRODUCT PLAY IS CLAUDE-QUALITY — force-neutralize any ambient GLM env before any `claude -p`.
+# The .app DM (and the companion actors) must run Claude quality; they must NEVER inherit the GLM
+# (z.ai) endpoint just because a user exported GLM vars in their interactive shell (e.g. after a
+# QA run). QA uses GLM ONLY via qa/glm_profile.sh; the product play path never does and never opts
+# in. The solo branch below execs play.sh (which re-applies this same scrub); doing it HERE too
+# covers the ensemble path (which does not exec play.sh). We neutralize CONDITIONALLY so we strip
+# GLM but never a legitimate Claude value: a GLM env is recognized by the z.ai base URL — when
+# present we drop the WHOLE GLM set (endpoint + API key + auth token + timeout, exported together by
+# glm.env — dropping ANTHROPIC_API_KEY too is REQUIRED: a leftover GLM key against api.anthropic.com
+# is a dead auth cold-open); the GLM CLAUDE_CONFIG_DIR is dropped by its own path match. A non-z.ai
+# ANTHROPIC_BASE_URL and an unrelated CLAUDE_CONFIG_DIR are left UNTOUCHED — so a normal/legit-
+# Anthropic launch is byte-identical to today.
+case "${ANTHROPIC_BASE_URL:-}" in
+  *api.z.ai*) unset ANTHROPIC_BASE_URL ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN API_TIMEOUT_MS ;;
+esac
+case "${CLAUDE_CONFIG_DIR:-}" in
+  */glm-claude-config|*/glm-claude-config/) unset CLAUDE_CONFIG_DIR ;;
+esac
 COMMON="$ROOT/scripts/launch_common.sh"
 if [ -f "$COMMON" ]; then
   # shellcheck source=launch_common.sh
