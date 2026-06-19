@@ -91,8 +91,14 @@ while [ "$attempt" -lt 3 ]; do
   # name (→ "Unknown Model") and skew/abort every score. Neutralize those vars for the scorer
   # so it uses the default ~/.claude (Claude OAuth) + api.anthropic.com. On a normal Claude run
   # these vars are unset, so `env -u …` is a NO-OP → byte-identical to today.
+  # TIMEOUT GUARD: `claude -p` occasionally HANGS (a stuck stream / a slow response that never
+  # returns) — without a wall-clock bound that blocks the ENTIRE run forever (seen repeatedly on
+  # combat-sprint + north-star scoring; the run fights+gates fine, then scoring hangs). `timeout`
+  # kills a hung call so the retry loop below catches it (empty $RAW → the EMPTY branch → retry).
+  # Default 300s; override via WORLDOS_SCORE_TIMEOUT. A healthy score is ~60–150s, so this never
+  # fires on a good call — it only rescues a genuine hang.
   printf '%s' "$INPUT" | env -u ANTHROPIC_BASE_URL -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN \
-    -u API_TIMEOUT_MS -u CLAUDE_CONFIG_DIR claude -p \
+    -u API_TIMEOUT_MS -u CLAUDE_CONFIG_DIR timeout "${WORLDOS_SCORE_TIMEOUT:-300}" claude -p \
     --model "$SCORER_MODEL" --permission-mode bypassPermissions \
     --max-budget-usd "$BUDGET" \
     --output-format json > "$RAW" 2> "$ERR"
@@ -112,7 +118,7 @@ while [ "$attempt" -lt 3 ]; do
   api_err="$(jq -r 'select(.is_error == true) | .api_error_status // .subtype // "error"' "$RAW" 2>/dev/null)"
   if [ ! -s "$RAW" ]; then
     # No envelope at all → claude itself never produced output (E2BIG, killed, exec fail).
-    echo "[score] attempt $attempt: EMPTY output for $(basename "$OUT") — claude wrote NOTHING to stdout. This is NOT a rate blip (likely E2BIG / killed process). stderr tail:" >&2
+    echo "[score] attempt $attempt: EMPTY output for $(basename "$OUT") — claude wrote NOTHING to stdout (E2BIG / killed / TIMED OUT at ${WORLDOS_SCORE_TIMEOUT:-300}s). Retrying. stderr tail:" >&2
     tail -n 20 "$ERR" >&2 2>/dev/null || echo "[score]   (no stderr captured at $ERR)" >&2
   elif [ -n "$api_err" ]; then
     # A real API-error envelope (e.g. 401 auth, 400, overload). Surface it — don't bury it.
