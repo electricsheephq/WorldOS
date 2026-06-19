@@ -49,9 +49,15 @@ PERSONA="${WORLDOS_SMOKE_PERSONA:-qa/play_player_arc.txt}"
 # WORLD arg is unused by the authored cold-open, but run_duo still takes it positionally —
 # pass the adventure id (harmless; the authored branch ignores it).
 WORLD="$ADVENTURE_ID"
-# A per-turn budget cap (NOT a spend): low for the smoke. run_duo floors this to $4.00 for an
-# Opus DM cold-open (it needs the headroom), so the per-turn cap is really only a guard on the
-# player/continuing turns; total smoke spend is bounded by the LOW beat count, not this.
+# Model: default to a FAST/CHEAP model (sonnet) for the smoke. The smoke's signal is the
+# DETERMINISTIC approval-moved assertion, NOT story-craft, so it does not need the Opus DM — and
+# an Opus cold-open is ~250s + run_duo floors the budget to $4, blowing the <5min/<$0.50 smoke
+# target (proven: a live opus run timed out at 600s mid-beat-4). Overridable via WORLDOS_SMOKE_MODEL
+# (e.g. opus for a quality-grade arc check, or glm-5.2 for the cheap lane).
+SMOKE_MODEL="${WORLDOS_SMOKE_MODEL:-sonnet}"
+# A per-turn budget cap (NOT a spend): low for the smoke. With a sonnet DM there is no Opus
+# cold-open $4 floor, so this cap genuinely bounds per-turn spend; total smoke spend is bounded by
+# the LOW beat count.
 BUDGET="${WORLDOS_SMOKE_BUDGET:-0.80}"
 
 T="qa/transcripts"
@@ -110,6 +116,7 @@ DUO_RC=0
 # WORD, which bash then tries to RUN as a command (not an assignment), so it must be a real
 # export before the call. The no-op stub var is only exported in no-lens mode (SCORE_STUB set).
 export WORLDOS_ADVENTURE_ID="$ADVENTURE_ID"
+export WORLDOS_DM_MODEL="$SMOKE_MODEL" WORLDOS_ACTOR_MODEL="$SMOKE_MODEL"  # fast/cheap smoke (no Opus floor)
 [ -n "$SCORE_STUB" ] && export WORLDOS_SCORE_SCRIPT="$SCORE_STUB"
 bash "$ROOT/qa/run_duo.sh" "$RUN" "$WORLD" "$PERSONA" "$BEATS" "$BUDGET" || DUO_RC=$?
 # run_duo's exit code IS the behavioral gate (0 GREEN / 1 RED). We surface it but the
