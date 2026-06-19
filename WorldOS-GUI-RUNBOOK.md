@@ -338,6 +338,14 @@ release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI s
   Mac handoff bundle only if all required handoff gates and manifests are same-SHA, clean,
   private-art-present, and gap-free. If the VM runs a newer SHA, rerun `qa/app_handoff_gate.py` on that
   newer SHA first.
+- **GLM QA lane (cheap batch sweeps, token saver — NOT the release gate).** Any heavy persona/duo sweep on
+  this VM can run on **GLM 5.2** instead of Claude to save Anthropic tokens: set
+  `WORLDOS_DM_MODEL=glm-5.2 WORLDOS_ACTOR_MODEL=glm-5.2`. `qa/glm_profile.sh` (sourced by `run_duo` /
+  `run_party` / `run_combat_sprint` / `ui_playtest`) auto-wires the z.ai endpoint + raised
+  timeouts/retries; it is a no-op for Claude and scrubs stray GLM env on switch-back. **The scorer stays
+  Claude** (`qa/score.sh`, pinned-Sonnet, isolated `~/.claude`). Use GLM for bug-finding/smoke; **Claude
+  stays the quality bar** for the release RRI. Full strategy + the cap-rate finding:
+  `docs/MODEL-TIERING-STRATEGY.md`.
 
 ## Release (when RRI = 10/10 on a fresh .app build)
 Bump `.claude-plugin/plugin.json` → 1.0.4, tag `v1.0.4`, GitHub release + CHANGELOG. Then MAINTAIN:

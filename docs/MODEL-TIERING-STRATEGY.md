@@ -49,6 +49,69 @@ Opus sweep confirming story ≥4.3 AND no latency give-up.
   generation-bound, so a prefetch helper touches ≤5% of the wall-clock. Refuted by the latency forensics.
 - **A headless `--fast` mode** — doesn't exist for `claude -p`; use `--effort`.
 
+## GLM as a cheap batch-QA engine (QA-only; Claude stays the quality bar)
+GLM (z.ai's **GLM 5.2**, served over an Anthropic-compatible endpoint) is a **cost lever for QA sweeps**,
+NOT a model the player ever touches. The point is to run cheap batch QA — many duos to find bugs / smoke a
+build — without spending Anthropic tokens, while **Claude remains the quality bar** for the release gate.
+
+**The clean model-profile system** (`qa/glm_profile.sh`; PRs #1026 + #1028). A **single model choice flows
+coherently** through the harness via `WORLDOS_DM_MODEL` (+ `WORLDOS_ACTOR_MODEL`). The profile is keyed off
+that one choice:
+- **No-op for Claude.** If neither role names a GLM model, `worldos_apply_glm_profile` does NOT apply the
+  profile and never alters a Claude default — a clean Claude run is byte-for-byte unchanged.
+- **Switch-back is always clean (no leak).** On the Claude path the profile *defensively scrubs* any stray
+  GLM-injected env left in the shell after a QA run (`ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN` /
+  `ANTHROPIC_API_KEY` / `API_TIMEOUT_MS` / a `/tmp/glm-claude-config` `CLAUDE_CONFIG_DIR`). Each unset is
+  **GLM-conditional** (matched by the z.ai host or a byte-match to `glm.env`), so a legitimate `sk-ant-` key,
+  `api.anthropic.com`, a corporate proxy, or a user's own config dir is **never touched**. "Switch back to
+  Opus is always clean" even if a GLM export leaked.
+- **Mixed-model guard.** If exactly one role is GLM (a half-GLM/half-Claude config — almost always a
+  mistake, since `ANTHROPIC_BASE_URL` is process-global and the "Claude" half would silently inherit z.ai),
+  it warns and **normalizes both roles to GLM** so a run can never silently route the two roles to different
+  providers.
+- **Product is forced clean-Claude.** `scripts/play.sh` + `scripts/play_party.sh` conditionally neutralize
+  ambient GLM env before any `claude -p`, so the `.app` always runs Claude (Opus) quality and never opts into
+  GLM. **QA uses GLM via `qa/glm_profile.sh`; the product play path never does.**
+- **The scorer is ALWAYS isolated-Claude.** `qa/score.sh` runs the pinned-`sonnet` scorer under
+  `env -u ANTHROPIC_BASE_URL -u ANTHROPIC_API_KEY …` so it uses clean `~/.claude` (Anthropic OAuth)
+  **regardless of which model PLAYED the game** — the measurement is on a constant scorer, never on GLM.
+
+**When to use GLM:** cheap batch QA sweeps to save Anthropic tokens (bug-finding, build smoke, parallel
+duos). **NOT the final release gate** — Claude stays the quality bar; GLM is a viable cheap batch-sweep
+engine, not a replacement for Claude on the release scorecard. Run it via
+`WORLDOS_DM_MODEL=glm-5.2 WORLDOS_ACTOR_MODEL=glm-5.2`; the profile auto-wires the z.ai endpoint + raised
+timeouts/retry ceilings (GLM is ~2–3× slower than Opus). See the **GLM QA lane** notes in `WorldOS-RUNBOOK.md`
+and `WorldOS-GUI-RUNBOOK.md`.
+
+### The cap-rate finding (honest-measurement repair, NOT a GLM weakness)
+The ~30% GLM "cap rate" that early overnight sweeps showed was **NOT a GLM quality weakness** — it was
+**self-inflicted, model-agnostic over-aggressive FATAL gates** capping **both** models. The Phase-2 reorient
+ran a GLM-vs-Claude 1-v-1 and immediately found that **Claude opus runs RED-capped too** (2/2). A RED
+behavioral gate caps all three lenses to ≤2.5, and several FATAL gates were nuking *legitimate* short
+emergent sessions on both models. Two root causes, both fixed:
+- **`no_rejected_tool_calls`** — a model passing a string/comma-string where a list arg was expected was
+  rejected by Pydantic → FATAL. Fixed at the validation layer (#1027: a `BeforeValidator` coerces
+  `str → [s]` / comma-`str → split`, schema unchanged, genuinely-wrong types still rejected).
+- **`party_traveled` / `combat_not_left_active`** — a deep single-scene social duo read as "never left the
+  opening scene," and a 6-beat duo that truncated mid-fight read as "combat abandoned" → FATAL. Fixed by
+  making severity **beat-scoped / discriminator-aware** (#1030: WARN below the single-scene/late-start
+  threshold, FATAL only for a genuine stuck-DM or real abandon). **Adversarially verified: no true
+  integrity gate was weakened** — the corpus fixtures still RED genuine failures (player-seated,
+  rejected-tools, dice, dm-output, SRD-correctness, xp all untouched).
+
+This is the spirit of the north star: **scores are measurement, never the target.** The gate had been
+FALSE-CAPPING good story-craft (short single-scene / truncated-combat sessions are legitimate, and pillar 1
+is story-craft first) — fixing it makes the measurement *honest*. This is the OPPOSITE of score-gaming.
+
+**Honest GLM-vs-Claude quality — being re-measured on the fixed engine.** A 1-v-1 re-run is in flight. The
+prior pre-fix read (story ~3.6 / mech ~3.6 vs Claude 4.1/3.8) was **gate-capped on the over-aggressive
+gates and is SUPERSEDED** — do NOT cite it as the GLM quality verdict.
+
+> **PLACEHOLDER — final GLM-vs-Claude numbers TBD.** The honest same-SHA re-measure on the fixed engine
+> (#1027 + #1030 merged) is in flight; the head-to-head story/mech deltas will be filled in here once it
+> lands. Until then, treat GLM as a *reliable cheap QA runner of as-yet-unquantified relative quality* — the
+> pre-fix ~3.6/~3.6 read is superseded, not the answer.
+
 ## Validation ladder (cheap → expensive; before any model/effort spend)
 digest-correctness (1 engine call, no LLM) → cache-stability (1 two-beat run) → effort/flag-wiring probe
 (confirm the runner consumes the flag — see worldos-dev "QA must exercise the flag") → short duo A/B on the

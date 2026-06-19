@@ -236,6 +236,17 @@ is LEGACY narrative; don't hand-edit it.)
   or `qa/score_openclaw.sh` (gateway gpt-5.4, grades **~1.5 pts HARSHER** — a strict
   cross-check, NOT the headline).
 
+**GLM QA lane (cheap batch sweeps — token saver, NOT the release gate).** To run a QA harness on
+**GLM 5.2** instead of Claude, set both role models to GLM:
+`WORLDOS_DM_MODEL=glm-5.2 WORLDOS_ACTOR_MODEL=glm-5.2 qa/run_duo.sh …`. `qa/glm_profile.sh` (sourced by
+every harness — `run_duo` / `run_party` / `run_combat_sprint` / `ui_playtest`) auto-wires the z.ai endpoint
++ credentials (from `~/.openclaw/secrets/glm.env`) and raises the cold-open/per-beat timeouts + retry
+ceilings (GLM is ~2–3× slower than Opus). It is a **no-op for Claude** and defensively scrubs any stray GLM
+env on switch-back, so a clean Claude run is byte-identical. **The scorer stays Claude** (`qa/score.sh` runs
+the pinned-Sonnet scorer under isolated `~/.claude`, whichever model played). Use GLM to save Anthropic
+tokens on bug-finding/build-smoke sweeps; **Claude remains the quality bar** for the release scorecard. Full
+strategy + the cap-rate finding: `docs/MODEL-TIERING-STRATEGY.md`.
+
 **Targets (the loop's exit bar):** **story ≥ 4.3, mechanical ≥ 4.5, gate GREEN, 0
 critical/high** adversarial defects.
 
