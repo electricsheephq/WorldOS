@@ -103,14 +103,25 @@ This is the spirit of the north star: **scores are measurement, never the target
 FALSE-CAPPING good story-craft (short single-scene / truncated-combat sessions are legitimate, and pillar 1
 is story-craft first) — fixing it makes the measurement *honest*. This is the OPPOSITE of score-gaming.
 
-**Honest GLM-vs-Claude quality — being re-measured on the fixed engine.** A 1-v-1 re-run is in flight. The
-prior pre-fix read (story ~3.6 / mech ~3.6 vs Claude 4.1/3.8) was **gate-capped on the over-aggressive
-gates and is SUPERSEDED** — do NOT cite it as the GLM quality verdict.
+**Honest GLM-vs-Claude quality (measured on the fixed engine, 2026-06-19).** Same-SHA 1-v-1
+(`43a5ecc`: #1027 coercion + #1028 clean-profile + #1030 gate-severity), same world/persona/6-beats,
+both scored by the isolated Claude sonnet scorer. 5 runs (3 Claude opus/sonnet + 2 GLM-5.2), **all
+behavioral GREEN — 0 RED-caps** (vs the pre-fix ~30%, which was the self-inflicted gate false-cap, NOT
+a GLM weakness):
 
-> **PLACEHOLDER — final GLM-vs-Claude numbers TBD.** The honest same-SHA re-measure on the fixed engine
-> (#1027 + #1030 merged) is in flight; the head-to-head story/mech deltas will be filled in here once it
-> lands. Until then, treat GLM as a *reliable cheap QA runner of as-yet-unquantified relative quality* — the
-> pre-fix ~3.6/~3.6 read is superseded, not the answer.
+| model | story | mech | angry | cold-open |
+|---|---|---|---|---|
+| Claude (opus DM / sonnet actor) | **4.13** | 3.67 | 3.33 | ~205–249s |
+| GLM-5.2 (both roles) | 3.9 | **3.8** | **3.4** | **604–872s** |
+
+**Verdict:** GLM is **comparable quality** — within ~0.2 on every lens; *higher* on mechanical (3.8 vs
+3.67) and angry-DM (3.4 vs 3.33), ~0.2 lower on story-craft (3.9 vs 4.13). A real QA runner, not
+degraded. **Its true cost is LATENCY** — GLM cold-opens run 604–872s (3–4× Claude's ~205–249s) and
+routine beats ~120–166s (vs ~80–96s), so a 3-run GLM batch is ~2.5–3.5h. ⇒ **Use GLM for cheap
+overnight / VM batch sweeps where latency is hidden; never interactive, and never the final release
+gate (Claude stays the quality bar).** Both models sit BELOW the RRI release bar (story ≥4.3, mech
+≥4.5) — story ~4.0–4.1 is close; the mech ~3.7–3.8 gap is largely the emergent-social-duo coverage
+artifact (little combat to score), not an engine defect (Engine-Excellent is met).
 
 ## Validation ladder (cheap → expensive; before any model/effort spend)
 digest-correctness (1 engine call, no LLM) → cache-stability (1 two-beat run) → effort/flag-wiring probe
