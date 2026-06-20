@@ -21,9 +21,9 @@
 .mono/
 data_*/
 
-# export_presets.cfg is intentionally NOT committed in #1052 — exports are a
-# later issue, and the file embeds machine-local export-template paths.
-export_presets.cfg
+# export_presets.cfg IS committed (#1056) — path-free Web + Linux presets the godot.yml CI
+# lane uses for export validation. #1058 adds the macOS preset. (Godot only writes machine-
+# local paths here when you set a CUSTOM template; the default-template presets are path-free.)
 
 # OS noise
 .DS_Store
