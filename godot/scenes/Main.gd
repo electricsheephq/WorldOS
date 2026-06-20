@@ -93,6 +93,9 @@ func _on_snapshot(atlas: Dictionary, _combat: Dictionary, character: Dictionary)
 		if _has_arg("--smoke-intent"):
 			call_deferred("_run_smoke_intent")
 			return
+		if _has_arg("--served-finals-smoke"):
+			call_deferred("_run_served_finals_smoke")
+			return
 		if _has_arg("--demo-occlusion"):
 			call_deferred("_run_demo_occlusion")
 			return
@@ -153,6 +156,54 @@ func _run_smoke_intent() -> void:
 	var is_move_to_zone := String(intent.get("kind", "")) == "move_to_zone"
 	var all_ok: bool = ok_kind and blocked.is_empty() and is_move_to_zone
 	print("[SmokeIntent] RESULT frozen-vocab-only=%s move_to_zone-emitted=%s" % [str(all_ok), str(is_move_to_zone)])
+
+	call_deferred("_quit_clean")
+
+
+# ---------------------------------------------------------------------------
+# #1063 part 2 SERVED-FINALS-SMOKE: prove a SERVED sprite atlas (fetched from a live
+# /image?scope=sprite-aubree-iso8 stub) is resolved by the ImageResolver AND swapped
+# onto the spawned token (re-sliced from the render-profile layout → 32 anims). The
+# token spawn already kicked an async resolve(); we await texture_ready (bounded), then
+# assert (a) the resolver cached the served atlas and (b) the token carries 32 anims
+# built from it. If NO atlas is served (the stub absent / 404), this is a clean MISS —
+# the committed placeholder still yields 32 anims, but cached==null flags the no-serve
+# case so the smoke FAILS LOUDLY rather than passing on the fallback.
+# ---------------------------------------------------------------------------
+func _run_served_finals_smoke() -> void:
+	var scope := "sprite-aubree-iso8"
+	print("[Main] --served-finals-smoke: awaiting SERVED atlas scope=%s" % scope)
+
+	# Bounded wait for the async fetch the token spawn already started. We poll the
+	# resolver cache each frame (the resolve coroutine emits texture_ready on success;
+	# the swap happens in WorldView._on_texture_ready). ~6s ceiling is generous for a
+	# localhost stub; a real 404 short-circuits to MISS immediately.
+	var cached: Texture2D = null
+	var waited := 0.0
+	var step := 0.1
+	while waited < 6.0:
+		cached = ImageResolver.get_cached(scope)
+		if cached != null or ImageResolver.is_missing(scope):
+			break
+		await get_tree().create_timer(step).timeout
+		waited += step
+
+	var resolver_ok := cached != null
+	print("[ServedFinals] resolver_cached=%s waited=%.1fs missing=%s" % [
+		str(resolver_ok), waited, str(ImageResolver.is_missing(scope))])
+
+	# Inspect the token: with the served atlas applied it must still carry the full
+	# 32 anims (4 anim-types x 8 facings), sliced from the served PNG via the profile.
+	var tok: CharacterToken = _world.token_for("char-aubree")
+	var token_present := tok != null and is_instance_valid(tok)
+	var anims := tok.animation_count() if token_present else 0
+	var anims_ok := anims == 32
+	print("[ServedFinals] token_present=%s anims=%d anims_ok=%s" % [
+		str(token_present), anims, str(anims_ok)])
+
+	var all_ok := resolver_ok and token_present and anims_ok
+	print("[ServedFinals] RESULT served-atlas-applied=%s resolver_cached=%s anims=%d" % [
+		str(all_ok), str(resolver_ok), anims])
 
 	call_deferred("_quit_clean")
 

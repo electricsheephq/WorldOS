@@ -90,6 +90,58 @@ jobs:
           grep -q "move_to_zone-emitted=true" /tmp/smoke.log
           grep -q "illegal-kind blocked=true" /tmp/smoke.log
 
+      - name: Conformance — SERVED sprite final renders via /image (#1063 part 2)
+        run: |
+          set -euxo pipefail
+          # Serve the committed REAL placeholder PNG as the SERVED Meshy/Blender "final"
+          # atlas for scope sprite-aubree-iso8 (the PNG is a real decodable 24x8 sheet, so
+          # a MISS can't pass). We use a tiny /image-ONLY stub (not the full viewer): it
+          # serves the PNG for /image?scope=... but 404s the SurfaceClient surface
+          # endpoints, so the client stays in FIXTURE snapshot mode (party[0]=char-aubree
+          # spawns the token) while ImageResolver fetches the SERVED atlas from the same
+          # base_url. Pointing at a gameLESS live viewer would empty the party (no token).
+          cp godot/assets/characters/aubree/sheet.png /tmp/served_atlas.png
+          cat > /tmp/image_stub.py <<'PY'
+          import sys, http.server
+          PNG = open("/tmp/served_atlas.png", "rb").read()
+          class H(http.server.BaseHTTPRequestHandler):
+              def log_message(self, *a): pass
+              def do_GET(self):
+                  if self.path.startswith("/image"):
+                      self.send_response(200)
+                      self.send_header("Content-Type", "image/png")
+                      self.send_header("Content-Length", str(len(PNG)))
+                      self.end_headers()
+                      self.wfile.write(PNG)
+                  else:
+                      # 404 the surface/events endpoints -> SurfaceClient falls to FIXTURE.
+                      self.send_response(404); self.end_headers()
+          http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
+          PY
+          PORT=8799
+          python3 /tmp/image_stub.py "$PORT" > /tmp/stub.log 2>&1 &
+          STUB_PID=$!
+          trap 'kill $STUB_PID 2>/dev/null || true' EXIT
+          # Wait until /image actually serves the PNG (200).
+          for i in $(seq 1 50); do
+            code=$(curl -s -o /tmp/served.png -w '%{http_code}' "http://127.0.0.1:${PORT}/image?scope=sprite-aubree-iso8" || true)
+            if [ "$code" = "200" ]; then echo "[smoke] /image served 200 after ${i} tries"; break; fi
+            sleep 0.2
+          done
+          test "$code" = "200"   # the stub MUST serve a real PNG or the smoke is meaningless
+          # The served PNG must decode (PNG magic) so the client doesn't silently MISS.
+          head -c4 /tmp/served.png | od -An -tx1 | grep -qi "89 50 4e 47"
+          # The surface endpoints MUST 404 so the snapshot comes from the fixture.
+          test "$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${PORT}/atlas-surface" || true)" = "404"
+          # Drive the Godot client: FIXTURE snapshot (party[0]=char-aubree) spawns the
+          # token; ImageResolver fetches the SERVED atlas from base_url and re-slices it.
+          godot --headless --path godot --quit-after 300 -- --served-finals-smoke --base "http://127.0.0.1:${PORT}" 2>&1 | tee /tmp/served.log
+          grep -q "resolver_cached=true" /tmp/served.log
+          grep -q "served-atlas-applied=true" /tmp/served.log
+          # Belt-and-suspenders: the served token still carries the full 32 anims.
+          grep -qE "\[ServedFinals\] RESULT served-atlas-applied=true resolver_cached=true anims=32" /tmp/served.log
+          kill $STUB_PID 2>/dev/null || true
+
       - name: Export validation — Web (single-threaded) + Linux
         working-directory: godot
         run: |
