@@ -1,0 +1,29 @@
+# Godot 4 editor cache + generated artifacts.
+# https://docs.godotengine.org/en/stable/tutorials/best_practices/version_control.html
+
+# Editor + import cache (regenerated on open / --import). Never commit.
+.godot/
+
+# Per-asset import metadata (regenerated from source + the importer settings).
+*.import
+
+# Export build outputs (binaries / web bundles / packs).
+/export/
+/build/
+*.pck
+*.zip
+*.dmg
+*.app
+*.exe
+*.wasm
+
+# Mono/.NET build dirs (unused here, but harmless to guard).
+.mono/
+data_*/
+
+# export_presets.cfg is intentionally NOT committed in #1052 — exports are a
+# later issue, and the file embeds machine-local export-template paths.
+export_presets.cfg
+
+# OS noise
+.DS_Store
