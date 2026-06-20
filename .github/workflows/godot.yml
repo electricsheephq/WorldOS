@@ -1,0 +1,120 @@
+name: Godot GT2
+
+# Deterministic, model-key-free CI lane for the GT2 Godot renderer (#1056). Proves the project
+# parses/compiles, renders the slice from the bundled fixtures (core + the godot render-profile
+# block), only emits the FROZEN /move vocabulary, and exports cleanly to Web (single-threaded)
+# + Linux. Best-effort screenshot artifact via xvfb. NEVER touches a live engine/provider —
+# fixtures only, no ANTHROPIC_API_KEY. Mirrors .github/workflows/macos-swift.yml conventions.
+
+on:
+  push:
+    branches:
+      - "gt2/**"
+    paths:
+      - "godot/**"
+      - "viewer/server.py"
+      - ".github/workflows/godot.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "godot/**"
+      - "viewer/server.py"
+      - ".github/workflows/godot.yml"
+  workflow_dispatch:
+
+env:
+  GODOT_VERSION: "4.6.3"
+
+jobs:
+  godot-gt2:
+    name: Godot GT2 renderer (import + conformance + export)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Godot binary + export templates
+        id: cache-godot
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/godot-bin
+            ~/.local/share/godot/export_templates
+          key: godot-${{ env.GODOT_VERSION }}-stable-v1
+
+      - name: Install Godot ${{ env.GODOT_VERSION }} (headless) + export templates
+        if: steps.cache-godot.outputs.cache-hit != 'true'
+        run: |
+          set -euxo pipefail
+          V="${GODOT_VERSION}-stable"
+          base="https://github.com/godotengine/godot/releases/download/${V}"
+          mkdir -p ~/godot-bin
+          curl -fL -o /tmp/godot.zip "${base}/Godot_v${V}_linux.x86_64.zip"
+          unzip -o /tmp/godot.zip -d ~/godot-bin
+          mv ~/godot-bin/Godot_v${V}_linux.x86_64 ~/godot-bin/godot
+          chmod +x ~/godot-bin/godot
+          curl -fL -o /tmp/templates.tpz "${base}/Godot_v${V}_export_templates.tpz"
+          rm -rf /tmp/templates && mkdir -p /tmp/templates
+          unzip -o /tmp/templates.tpz -d /tmp/templates
+          mkdir -p "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          mv /tmp/templates/templates/* "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable/"
+
+      - name: Add Godot to PATH
+        run: echo "$HOME/godot-bin" >> "$GITHUB_PATH"
+
+      - name: Godot version
+        run: godot --version
+
+      - name: Lint any shell launchers under godot/
+        run: find godot -type f -name "*.sh" -print0 | xargs -0 -r -n1 bash -n
+
+      - name: Import — parse/compile gate
+        run: |
+          set -euxo pipefail
+          godot --headless --path godot --import 2>&1 | tee /tmp/import.log
+          if grep -qiE "SCRIPT ERROR|Parse Error|Failed to (load|parse|instantiate)"; then exit 1; fi < /tmp/import.log
+
+      - name: Conformance — slice renders from fixtures (core + godot block)
+        run: |
+          set -euxo pipefail
+          godot --headless --path godot --quit-after 180 2>&1 | tee /tmp/boot.log
+          grep -q "\[WorldView\] location=" /tmp/boot.log
+          grep -q "anims=32" /tmp/boot.log
+
+      - name: Conformance — only the FROZEN /move vocabulary is emitted
+        run: |
+          set -euxo pipefail
+          godot --headless --path godot --quit-after 180 -- --smoke-intent 2>&1 | tee /tmp/smoke.log
+          grep -q "frozen-vocab-only=true" /tmp/smoke.log
+          grep -q "move_to_zone-emitted=true" /tmp/smoke.log
+          grep -q "illegal-kind blocked=true" /tmp/smoke.log
+
+      - name: Export validation — Web (single-threaded) + Linux
+        working-directory: godot
+        run: |
+          set -euxo pipefail
+          mkdir -p build/web build/linux
+          godot --headless --path . --export-release "Web" build/web/index.html 2>&1 | tee /tmp/exp_web.log
+          test -f build/web/index.html && test -f build/web/index.wasm
+          godot --headless --path . --export-release "Linux/X11" build/linux/worldos_gt2.x86_64 2>&1 | tee /tmp/exp_linux.log
+          test -f build/linux/worldos_gt2.x86_64
+
+      - name: Screenshot artifact — Y-sort occlusion (best-effort, software GL via xvfb)
+        continue-on-error: true
+        run: |
+          set -uxo pipefail
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgl1-mesa-dri libglu1-mesa
+          xvfb-run -a -s "-screen 0 1280x720x24" godot --path godot --demo-occlusion --quit-after 300 2>&1 | tee /tmp/demo.log || true
+          mkdir -p ci-artifacts
+          cp /tmp/wos_godot_occlusion_*.png ci-artifacts/ 2>/dev/null || true
+          grep -E "\[DEMO\] occlusion" /tmp/demo.log || echo "demo: no occlusion line (software-GL may be unavailable on the runner)"
+
+      - name: Upload occlusion screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gt2-occlusion-screenshots
+          path: ci-artifacts/*.png
+          if-no-files-found: ignore
