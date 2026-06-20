@@ -378,6 +378,12 @@ class CompanionQuestStage(_StrictModel):
     location_id: str = ""
     quest_id: str = ""
     note: str = ""
+    # The DM authors a per-stage narrative description when it builds the arc via
+    # set_companion_quest_arc(arc={"stages":[{"title":..,"description":..}]}). The model is
+    # extra="forbid", so without this field that whole tool call was REJECTED (extra_forbidden
+    # ⇒ no_rejected_tool_calls FATAL ⇒ RED-cap — the cap-rate failure class). Additive + default
+    # empty: old snapshots round-trip; stages that omit it are unchanged.
+    description: str = ""
 
 
 class CompanionQuestArc(_StrictModel):
