@@ -1285,6 +1285,30 @@ class Combatant(_StrictModel):
     # reaction_used). Set via use_action(kind="disengage"); read by move_to_zone to suppress
     # provokers. Additive: existing combats deserialize with False (today's behaviour).
     disengaged: bool = False
+    # #461 grid (PR-1): cell coordinates when the fight runs on a coordinate grid
+    # (Combat.grid_enabled). None == not on the grid (zone/theater fallback unchanged).
+    # Both x and y are set together (a half-set pair is a bug — warned, never raised).
+    x: Optional[int] = None
+    y: Optional[int] = None
+    # #461 grid (PR-1): cells moved this turn (budget = floor(speed/cell) cells; doubled
+    # by Dash). Reset to 0 at the start of the combatant's turn (with reaction_used).
+    moved_cells_this_turn: int = 0
+    # #461 grid (PR-1): took the Dash action this turn (doubles the movement budget).
+    # Per-turn; reset with moved_cells_this_turn. Set via use_action(kind="dash").
+    dashed: bool = False
+
+    @model_validator(mode="after")
+    def _grid_coords_paired(self) -> "Combatant":
+        # ADVISORY (never raise): exactly one of x/y set is almost always a bug, but a
+        # half-set pair must round-trip a tolerant load rather than crash a snapshot.
+        if (self.x is None) != (self.y is None):
+            import warnings as _w
+            _w.warn(
+                f"Combatant {self.character_id!r}: exactly one of x/y is set "
+                f"(x={self.x}, y={self.y}) — grid coords should be set as a pair.",
+                stacklevel=2,
+            )
+        return self
 
 
 class Zone(_StrictModel):
@@ -1318,6 +1342,17 @@ class Combat(_StrictModel):
     # Tactical regions for THIS fight (S2.7). Empty = theater-of-the-mind: range/
     # movement gating is inert and nothing changes. Additive default.
     zones: list[Zone] = Field(default_factory=list)
+    # #461 grid (PR-1): coordinate-authority mode. False (default) == zone/theater
+    # combat is BYTE-FOR-BYTE unchanged — nothing on the grid path runs. Flipped True
+    # ONLY by set_grid, which also sets the extents. Cells are grid_cell_size feet each
+    # (5e default 5). diagonal_mode picks the distance metric (PR-1 ships chebyshev;
+    # five_ten_five is reserved for PR-8). The grid is a SECOND positional model that
+    # coexists with zones — neither replaces the other.
+    grid_enabled: bool = False
+    grid_width: int = 0
+    grid_height: int = 0
+    grid_cell_size: int = 5
+    diagonal_mode: Literal["chebyshev", "five_ten_five"] = "chebyshev"
 
     @property
     def current_combatant_id(self) -> Optional[str]:

@@ -26,6 +26,7 @@ from mcp.server.fastmcp import FastMCP
 
 import bestiary
 import combat
+import combat_grid
 import companion
 import companion_banter
 import companion_arc
@@ -406,6 +407,10 @@ def _combat_view(c: Campaign) -> dict:
         }
         if cb.zone:  # only surface position when zones are in play (S2.7)
             entry["zone"] = cb.zone
+        # #461 grid: surface cell coords only when the combatant is placed on the grid.
+        if c.combat.grid_enabled and cb.x is not None and cb.y is not None:
+            entry["x"] = cb.x
+            entry["y"] = cb.y
         order.append(entry)
     view = {
         "active": c.combat.active,
@@ -416,6 +421,13 @@ def _combat_view(c: Campaign) -> dict:
     }
     if c.combat.zones:  # theater-of-the-mind fights omit this entirely
         view["zones"] = [z.model_dump() for z in c.combat.zones]
+    if c.combat.grid_enabled:  # zero key delta when the grid is off
+        view["grid"] = {
+            "width": c.combat.grid_width,
+            "height": c.combat.grid_height,
+            "cell_size": c.combat.grid_cell_size,
+            "diagonal_mode": c.combat.diagonal_mode,
+        }
     return view
 
 
@@ -4237,6 +4249,221 @@ def combatants_in_zone(campaign_id: str, zone: str) -> dict:
     return {"zone": zone, "count": len(occupants), "combatants": occupants}
 
 
+def _can_see(viewer: "Character") -> bool:
+    """#461 grid (PR-1): can `viewer` see (a precondition for taking an opportunity
+    attack)? PR-1 = NOT Blinded and NOT Unconscious. Later PRs add LoS/obscurement."""
+    conds = set(viewer.conditions)
+    return Condition.BLINDED not in conds and Condition.UNCONSCIOUS not in conds
+
+
+def _cell(cb: "Combatant") -> tuple[int, int] | None:
+    """The (x, y) cell of a combatant, or None if it isn't placed on the grid."""
+    if cb.x is None or cb.y is None:
+        return None
+    return (cb.x, cb.y)
+
+
+@mcp.tool()
+def set_grid(campaign_id: str, width: int, height: int, cell_size: int = 5,
+             diagonal_mode: str = "chebyshev") -> dict:
+    """#461: switch this fight to a coordinate grid (the only tool that sets grid mode).
+    Optional; without it combat stays zone/theater. Sets extents (cells; cell_size ft);
+    idempotent; needs width/height>0."""
+    if width <= 0 or height <= 0:
+        raise ValueError("set_grid needs width > 0 and height > 0")
+    if diagonal_mode not in ("chebyshev", "five_ten_five"):
+        raise ValueError("diagonal_mode must be 'chebyshev' or 'five_ten_five'")
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        c.combat.grid_enabled = True
+        c.combat.grid_width = width
+        c.combat.grid_height = height
+        c.combat.grid_cell_size = cell_size
+        c.combat.diagonal_mode = diagonal_mode  # type: ignore[assignment]
+        save_campaign(c)
+        return _combat_view(c)
+
+
+@mcp.tool()
+def place_combatant_at_coords(campaign_id: str, combatant_id: str, x: int, y: int) -> dict:
+    """#461: set a combatant's (x,y) cell — setup, NO opportunity-attack check (use
+    move_to_coords in combat). Needs set_grid first. Warns (never blocks) if out of
+    bounds/occupied."""
+    if not combatant_id:
+        raise ValueError("place_combatant_at_coords needs a combatant_id")
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        if not c.combat.active:
+            raise ValueError("no active combat")
+        if not c.combat.grid_enabled:
+            raise ValueError("this fight is not on a grid — call set_grid first (or use place_combatant for zones)")
+        cb = _combatant(c, combatant_id)
+        ch = c.characters.get(combatant_id)
+        warnings: list[str] = []
+        if not (0 <= x < c.combat.grid_width and 0 <= y < c.combat.grid_height):
+            warnings.append(
+                f"({x}, {y}) is out of the {c.combat.grid_width}x{c.combat.grid_height} grid — placed anyway."
+            )
+        occupant = next(
+            (o for o in c.combat.order if o.character_id != combatant_id and (o.x, o.y) == (x, y)),
+            None,
+        )
+        if occupant is not None:
+            other = c.characters.get(occupant.character_id)
+            warnings.append(f"({x}, {y}) is already occupied by {other.name if other else occupant.character_id} — placed anyway.")
+        cb.x = x
+        cb.y = y
+        save_campaign(c)
+        view = _combat_view(c)
+    view["placed"] = {"id": combatant_id, "name": ch.name if ch else "?", "x": x, "y": y}
+    view["warnings"] = warnings
+    return view
+
+
+@mcp.tool()
+def move_to_coords(campaign_id: str, combatant_id: str, x: int, y: int,
+                   path: ListArg = None, dash: bool = False) -> dict:
+    """#461: move a combatant to cell (x,y) in combat (grid twin of move_to_zone). Charges
+    measured cost (Chebyshev, or sum `path`); budget floor(speed/cell), x2 Dash. Returns
+    opportunity_attack + provokers (foes whose 5ft reach was left, minus reaction-spent/can't-
+    see/disengaged/grappler). Over-budget/Speed-0 -> advisory movement_illegal (never blocks)."""
+    if not combatant_id:
+        raise ValueError("move_to_coords needs a combatant_id")
+    path_cells = None
+    if path:
+        path_cells = []
+        for step in _coerce_list(path):
+            pr = list(step) if isinstance(step, (list, tuple)) else step
+            path_cells.append((int(pr[0]), int(pr[1])))
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        if not c.combat.active:
+            raise ValueError("no active combat")
+        if not c.combat.grid_enabled:
+            raise ValueError("this fight is not on a grid — call set_grid first (or use move_to_zone for zones)")
+        cb = _combatant(c, combatant_id)
+        mover = c.characters.get(combatant_id)
+        from_cell = _cell(cb)
+        cell_size = c.combat.grid_cell_size
+        warnings: list[str] = []
+        if not (0 <= x < c.combat.grid_width and 0 <= y < c.combat.grid_height):
+            warnings.append(
+                f"({x}, {y}) is out of the {c.combat.grid_width}x{c.combat.grid_height} grid — moved anyway."
+            )
+
+        to_cell = (x, y)
+        # Measured movement cost (PR-1: open floor — straight Chebyshev, or the summed
+        # explicit path). Accumulates across a broken-up move this turn.
+        if from_cell is None:
+            cost = 0  # an unplaced combatant: this is effectively a placement, no cost
+        else:
+            cost = combat_grid.path_cost_cells(from_cell, to_cell, path_cells)
+        prior_used = cb.moved_cells_this_turn
+        dashed = bool(dash) or bool(cb.dashed)
+        budget = combat_grid.movement_budget_cells(mover.speed, cell_size, dashed) if mover else 0
+
+        # Opportunity attacks: REUSE move_to_zone's side classification + disengage/grapple
+        # suppression, PLUS the Chebyshev reach-leave test and the two SRD gates the zone
+        # loop omits (one reaction/round, and can't-see). Only when actually changing cells.
+        provokers: list[dict] = []
+        disengaged = bool(getattr(cb, "disengaged", False))
+        grappler_id = getattr(mover, "grappled_by", None) if mover is not None else None
+        if from_cell is not None and to_cell != from_cell and mover is not None and not disengaged:
+            ally_kinds = {"player", "companion"}
+            mover_ally = mover.kind in ally_kinds
+            for other_cb in c.combat.order:
+                if other_cb.character_id == combatant_id:
+                    continue
+                if other_cb.character_id == grappler_id:
+                    continue  # the grappler can't OA the creature it holds
+                other = c.characters.get(other_cb.character_id)
+                if other is None or other.dead:
+                    continue
+                if (other.kind in ally_kinds) == mover_ally:
+                    continue  # same side -> no OA
+                threat_cell = _cell(other_cb)
+                if threat_cell is None:
+                    continue  # an unplaced foe threatens no cell
+                if not combat_grid.provokes_on_leave(from_cell, to_cell, threat_cell):
+                    continue  # didn't leave this foe's reach
+                # SRD gates the zone loop lacks:
+                if other_cb.reaction_used:
+                    continue  # one Reaction per round, already spent
+                if not _can_see(other):
+                    continue  # can't see the mover -> no OA (PR-1: Blinded/Unconscious)
+                provokers.append({"id": other.id, "name": other.name})
+
+        # Advisory movement-illegal note: Speed-0 (Grappled/Restrained) OR over budget.
+        # Never hard-blocks — mirror move_to_zone's posture; the move still lands.
+        movement_illegal: dict | None = None
+        if mover is not None and from_cell is not None and to_cell != from_cell:
+            speed_zero = [
+                cn.value for cn in (Condition.GRAPPLED, Condition.RESTRAINED)
+                if cn in mover.conditions
+            ]
+            if speed_zero:
+                movement_illegal = {
+                    "mover": mover.name,
+                    "conditions": speed_zero,
+                    "reason": (
+                        f"{mover.name} is {', '.join(speed_zero)} (Speed 0) and cannot normally "
+                        "move — escape the grapple / end the restraint first. Moved anyway (advisory)."
+                    ),
+                }
+            elif prior_used + cost > budget:
+                movement_illegal = {
+                    "mover": mover.name,
+                    "cost_cells": cost,
+                    "used_cells": prior_used,
+                    "budget_cells": budget,
+                    "reason": (
+                        f"{mover.name} would move {prior_used + cost} cells this turn "
+                        f"({range_helper(prior_used + cost, cell_size)} ft) but the budget is "
+                        f"{budget} cells ({range_helper(budget, cell_size)} ft){' (with Dash)' if dashed else ''}. "
+                        "Moved anyway (advisory) — Dash or rule otherwise."
+                    ),
+                }
+
+        cb.x = x
+        cb.y = y
+        cb.moved_cells_this_turn = prior_used + cost
+        _log_combat_event(
+            c,
+            f"{mover.name if mover else combatant_id} moves to ({x}, {y}).",
+            {
+                "event": "grid_movement",
+                "actor": _combatant_ref(mover) if mover else {"id": combatant_id, "name": "?"},
+                "from": list(from_cell) if from_cell else None,
+                "to": [x, y],
+                "cost_cells": cost,
+                "opportunity_attack": bool(provokers),
+                "provokers": provokers,
+                "disengaged": disengaged,
+                "movement_illegal": movement_illegal,
+                "warnings": list(warnings),
+            },
+            speaker=mover.name if mover else "",
+        )
+        save_campaign(c)
+        view = _combat_view(c)
+    view["from"] = list(from_cell) if from_cell else None
+    view["to"] = [x, y]
+    view["cost_cells"] = cost
+    view["opportunity_attack"] = bool(provokers)
+    view["provokers"] = provokers
+    view["warnings"] = warnings
+    if disengaged:
+        view["disengaged"] = True
+    if movement_illegal is not None:
+        view["movement_illegal"] = movement_illegal
+    return view
+
+
+def range_helper(cells: int, cell_size: int) -> int:
+    """Cells -> feet (origin cell not counted). Thin wrapper over combat_grid.range_ft."""
+    return combat_grid.range_ft(cells, cell_size)
+
+
 def _turn_brief(ch: "Character", c: "Campaign") -> dict:
     """Build the per-turn brief for the combatant whose turn it just became.
 
@@ -4521,6 +4748,8 @@ def next_turn(campaign_id: str) -> dict:
                 if cb.character_id == cur.id:
                     cb.reaction_used = False
                     cb.disengaged = False  # F01-8: Disengage is per-turn — clear at turn start
+                    cb.moved_cells_this_turn = 0  # #461: fresh movement budget for the new turn
+                    cb.dashed = False  # #461: Dash is per-turn — clear at turn start
                     break
         # Tick round/minute-scale timed effects ONCE per new round (a "10 rounds"
         # effect lasts 10 rounds, not 10 turns) and auto-expire those that hit 0.
@@ -4704,17 +4933,16 @@ def next_turn(campaign_id: str) -> dict:
 @mcp.tool()
 def use_action(campaign_id: str, character_id: str, kind: str = "action") -> dict:
     """Track a combatant's action economy. kind: action | bonus | reaction | free | skip
-    | disengage. `action`/`bonus` are legal only on the creature's OWN turn and once each
-    per turn; `reaction` is once per round (refreshes at the start of its turn); `free`/
-    movement isn't rate-limited. `skip` (a.k.a. pass) declares a do-nothing turn (Dodge/
-    Dash/Ready/pass) — sets action_used so next_turn's PC-skip guard is satisfied.
-    `disengage` (F01-8) spends the action AND sets a per-turn `disengaged` flag so a
-    following move_to_zone provokes NO opportunity attacks. Returns {ok, reason,
-    action_available, bonus_available, reaction_available, disengaged}. NOTE: multiattack
-    is ONE action — declare a single `action`, then make several attack() calls under it."""
+    | disengage | dash. `action`/`bonus`: own turn, once each; `reaction`: once per round
+    (refreshes at turn start); `free`/movement: unlimited. `skip` (pass) declares a do-nothing
+    turn (sets action_used so next_turn's PC-skip guard passes). `disengage` (F01-8) spends the
+    action and sets a per-turn `disengaged` flag so a following move provokes NO opportunity
+    attacks. `dash` (#461) spends the action and DOUBLES the grid move budget (inert off-grid).
+    Returns {ok, reason, action_available, bonus_available, reaction_available, disengaged}.
+    NOTE: multiattack is ONE action — declare a single `action`, then several attack() calls."""
     kind = kind.lower()
-    if kind not in ("action", "bonus", "reaction", "free", "movement", "skip", "disengage"):
-        raise ValueError("kind must be action | bonus | reaction | free | skip | disengage")
+    if kind not in ("action", "bonus", "reaction", "free", "movement", "skip", "disengage", "dash"):
+        raise ValueError("kind must be action | bonus | reaction | free | skip | disengage | dash")
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         if not c.combat.active:
@@ -4729,7 +4957,7 @@ def use_action(campaign_id: str, character_id: str, kind: str = "action") -> dic
         ok, reason = True, ""
         # SRD: an incapacitated creature (incl. stunned/paralyzed/petrified/unconscious) can take
         # NO actions, bonus actions, or reactions. Block before consuming the budget.
-        if combat.is_incapacitated(ch) and kind in ("action", "bonus", "reaction", "disengage"):
+        if combat.is_incapacitated(ch) and kind in ("action", "bonus", "reaction", "disengage", "dash"):
             ok, reason = False, (
                 f"{ch.name} is incapacitated ("
                 f"{', '.join(c.value for c in ch.conditions if c in combat.INCAPACITATING)}) "
@@ -4745,6 +4973,17 @@ def use_action(campaign_id: str, character_id: str, kind: str = "action") -> dic
             else:
                 c.combat.action_used = True
                 combatant.disengaged = True
+        elif kind == "dash":
+            # #461: the Dash ACTION — spend the action (own turn, once) and set the per-turn
+            # dashed flag so a subsequent move_to_coords gets the doubled grid budget. Inert
+            # in zone/theater (move_to_zone ignores it); a grid move reads cb.dashed.
+            if not is_current:
+                ok, reason = False, f"it is not {ch.name}'s turn — dash must be declared on your own turn"
+            elif c.combat.action_used:
+                ok, reason = False, "action already used this turn (dash is an action)"
+            else:
+                c.combat.action_used = True
+                combatant.dashed = True
         elif kind == "skip":
             # Declare an intentional pass: satisfies the PC-skip guard in next_turn so
             # the DM can advance the turn without the combatant attacking or casting.
@@ -5045,15 +5284,11 @@ def attack(
     is_ranged=True so a prone target gives disadvantage rather than advantage) and
     combined with the explicit flags (they cancel if both apply).
 
-    Battle Master DAMAGE maneuvers (#213/B): pass ``maneuver`` (e.g. 'Trip Attack') to
-    declare one atomically — the engine spends ONE ``maneuver_resource`` die (default
-    'superiority_dice') ONLY on a hit, folds it into the damage, and crit-doubles it; a miss
-    spends nothing. ``maneuver_damage_type`` overrides the bonus's type. Empty ``maneuver``
-    == today's behavior.
-
-    ``attack_name`` (e.g. 'Claw'): for a Multiattack creature, scopes the per-turn budget to
-    that named attack — one NOT in the Multiattack (the Ghoul's Claw vs its 'two Bite'
-    Multiattack) is a single Attack action, not granted the Multiattack count. Empty == today."""
+    Battle Master DAMAGE maneuvers (#213/B): pass ``maneuver`` (e.g. 'Trip Attack') to declare
+    one atomically — the engine spends ONE ``maneuver_resource`` die (default 'superiority_dice')
+    only on a hit, folds it into the damage, and crit-doubles it; a miss spends nothing.
+    ``maneuver_damage_type`` overrides its type. ``attack_name`` (e.g. 'Claw') scopes a
+    Multiattack creature's per-turn budget to that named attack. Empty values == today."""
     # Coalesce intuitive arg-name aliases to the canonical ids. The ATTACKER is the acting
     # character (alias `character_id`); the TARGET is the thing struck (aliases `npc_id`/`id`).
     # Canonical names win. (target_id ⇄ character_id is intentionally NOT done — `character_id`
@@ -5282,6 +5517,22 @@ def attack(
             warn = combat.melee_range_warning(c.combat.zones, attacker, target, az, tz)
             if warn:
                 result["range_warning"] = warn
+        # #461 grid: measured-MELEE advisory. When on a grid AND both ends are placed AND
+        # the attack is non-ranged, a Chebyshev distance > 5ft is out of melee reach.
+        # Advisory only (mirror the zone warning); NO ranged-range gating in PR-1.
+        if not is_ranged and c.combat.grid_enabled:
+            acb = next((cb for cb in c.combat.order if cb.character_id == attacker_id), None)
+            tcb = next((cb for cb in c.combat.order if cb.character_id == target_id), None)
+            ac = _cell(acb) if acb else None
+            tc = _cell(tcb) if tcb else None
+            if ac is not None and tc is not None:
+                feet = combat_grid.distance_ft(ac, tc, c.combat.grid_cell_size)
+                if feet > 5:
+                    result["range_warning"] = (
+                        f"{attacker.name} at {ac} is {feet} ft from {target.name} at {tc} — "
+                        f"a melee attack normally needs 5 ft (close the distance first). "
+                        f"Advisory; the attack was still resolved."
+                    )
         # F3-6: capture the target's concentration BEFORE damage may down it (combat.apply_damage*
         # clears it but is Character-pure and can't free the victim) — see the release after.
         was_conc_target = target.concentration
@@ -9901,25 +10152,15 @@ def author_companion_gauges(
     character_id: str = "",
 ) -> dict:
     """Author a companion's APPROVAL VOCABULARY (and, optionally, a betrayal agenda) so their
-    relationship gauge can MOVE on the player's choices.
+    relationship gauge can MOVE on the player's choices. A recruited/generated companion seeds
+    with an EMPTY vocabulary, so record_decision(approval_tags=…) can't match it and the engine
+    skips them (regard stays narrated-not-gauged); call this once when they join.
 
-    A freely-recruited or live-generated companion is seeded with an operational dossier but an
-    EMPTY approval vocabulary (approval_likes/dislikes) — so ``record_decision(approval_tags=…)``
-    has nothing to match and the engine SKIPS them (their regard stays narrated-not-gauged, the
-    arc never turns). The hand-authored campaign companions (Brother Toll, Sergeant Ondine) only
-    work because content authored these lists for them. Call this once when a companion joins to
-    give a recruited/generated companion the same SOUL the engine can gauge.
-
-    ``approval_likes``/``approval_dislikes`` are the lowercase cause-keys you'll tag choices with
-    (e.g. ``"free_the_bonded"``, ``"refuse_a_bribe"``) — pick a few that fit WHO THIS COMPANION
-    IS; ``values``/``wants``/``fears`` are the short moral-spine tags behind them. Pass
-    ``betrayal_threshold`` (an attitude_value such as ``-30``) to ALSO arm an ``attitude_below``
-    agenda so the bond can BREAK if the player drives their regard below it — optionally gated on
-    a recorded ``betrayal_decision_flag``; omit it and the companion can deepen but never turn.
-
-    ADDITIVE + engine-sole-writer: only the fields you pass are written; the dossier's
-    ``camp_prompts`` and any existing arc gates are preserved. Identify the companion via
-    ``companion_id`` (canonical) or the aliases ``companion``/``character_id``."""
+    approval_likes/approval_dislikes are lowercase cause-keys you tag choices with (e.g.
+    "free_the_bonded"); values/wants/fears are the moral-spine tags behind them. betrayal_threshold
+    (a NEGATIVE attitude_value, e.g. -30) arms an attitude_below agenda so the bond can BREAK,
+    optionally gated on betrayal_decision_flag. ADDITIVE + sole-writer: only passed fields are
+    written. Identify via companion_id (canonical) or the aliases companion/character_id."""
     companion_id = companion_id or companion or character_id
     if not companion_id:
         raise ValueError("author_companion_gauges needs a companion id (`companion_id` or an alias)")
@@ -11084,20 +11325,15 @@ def record_decision(
     approval_tags: ListArg = None,
     targets_companion: str = "",
 ) -> dict:
-    """Record a party decision so the DM and companions can call back to it later
-    ('last time we trusted Grett...'). Capture the choice after a deliberation:
-    `summary` (the decision; pass as `summary` (canonical) or `decision` (alias) —
-    `summary` wins if both given), `options` (what was on the table), `chosen`, why
-    (`rationale`), and who weighed in (`actor_ids`). Returns the decision id.
+    """Record a party decision so the DM and companions can call back to it later. Capture
+    after a deliberation: `summary` (canonical; `decision` is an alias), `options`, `chosen`,
+    `rationale`, `actor_ids`. Returns the decision id.
 
-    `approval_tags` (optional) MOVES companion approval on a moral choice — pass the
-    lowercase_snake cause-keys it aligns with (e.g. `["mercy", "cruelty"]`, or
-    `[{"key": "power", "delta": 25}]` for an explicit swing). For each party companion whose
-    dossier `approval_likes`/`approval_dislikes` match, the engine moves `attitude_value`
-    (±10 default, clamped ±100) and reports `approval_results` — the DM tags the cause, the
-    engine owns the number. `targets_companion` (optional) names the companion sided
-    with/against, so other companions whose dossier.stance lists them as ally/rival feel a
-    smaller secondary ripple (±5). Omit either (default) for a choice no companion weighs."""
+    `approval_tags` (optional) MOVES companion approval — lowercase_snake cause-keys (e.g.
+    ["mercy"], or [{"key":"power","delta":25}] for an explicit swing). For each party companion
+    whose dossier approval_likes/dislikes match, the engine moves attitude_value (±10 default,
+    clamp ±100) and reports approval_results. `targets_companion` (optional) names who the choice
+    sided with/against, rippling ±5 onto their dossier-listed allies/rivals."""
     summary = summary if summary else decision  # `decision` is an accepted alias for `summary`
     if not summary:
         raise ValueError("record_decision needs a summary (pass `summary` or its alias `decision`)")
