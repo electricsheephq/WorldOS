@@ -38,6 +38,18 @@ jobs:
         # backoff (the gs-ember-18b overnight-run killer) but FAILS FAST on a 401/403 auth error,
         # with the claude turn fully stubbed (no model key).
         run: bash qa/test_run_duo_retry_robustness.sh
+      - name: Companion-actor timeout test (play_party.sh per-beat deadline; stubbed claude; pure bash)
+        run: bash qa/test_play_party_actor_timeout.sh
+      - name: Provider-status sidecar test (claude lanes write provider_status on stop/crash; pure bash)
+        run: bash qa/test_provider_status_claude_lanes.sh
+      - name: run_duo DM-timeout test (bounded DM beat + failure surfacing + retry remint; pure bash)
+        run: bash qa/test_run_duo_dm_timeout.sh
+      - name: Stream-tailer lifecycle test (start/stop/reap pidfile; default-dark; pure bash)
+        run: bash qa/test_stream_tailer_lifecycle.sh
+      - name: ui_playtest heartbeat test (model-independent progress heartbeat on both DM lanes; pure bash)
+        run: bash qa/test_ui_playtest_heartbeat.sh
+      - name: Combat-seed smoke (zero-LLM; pre_seed_combat subclass/resource/save enrichment assertions)
+        run: uv run --directory servers/engine --group dev python ../../qa/smoke_pre_seed_combat.py
 
   viewer-tests:
     # The viewer is where most recent regressions landed, but its suite was not in
