@@ -33,6 +33,15 @@ server = importlib.util.module_from_spec(_SPEC)
 assert _SPEC.loader is not None
 _SPEC.loader.exec_module(server)
 
+# The GT2 sprite packer — imported for its descriptor/guard helpers (PIL-free at module level).
+# This pins the #1063 serve contract: the wiki_ingest.json pack_sheet emits for a baked atlas is
+# actually servable by THIS server's /image bridge (so a real Meshy/Blender atlas renders).
+_PACK_PATH = Path(__file__).resolve().parents[2] / "godot" / "tools" / "pack_sheet.py"
+_PACK_SPEC = importlib.util.spec_from_file_location("pack_sheet", _PACK_PATH)
+assert _PACK_SPEC is not None and _PACK_SPEC.loader is not None
+pack_sheet = importlib.util.module_from_spec(_PACK_SPEC)
+_PACK_SPEC.loader.exec_module(pack_sheet)
+
 
 class _QuietHandler(server._Handler):
     def log_message(self, fmt: str, *args: object) -> None:  # noqa: D401 - silence test HTTP logs
@@ -247,6 +256,112 @@ class ImageProbeTests(unittest.TestCase):
                 status, outcome = self._image_status_and_outcome(scope)
                 self.assertEqual(status, want_status)
                 self.assertEqual(outcome, want_outcome)
+
+
+class SpriteAtlasServeTests(unittest.TestCase):
+    """#1063 serve-side contract: a baked sprite atlas under content/worlds/_private/<world>/images/
+    <scope>/ with the wiki_ingest.json pack_sheet emits is served by /image?scope=<scope> (the
+    render-profile bridge "served via the existing /image bridge unchanged"). Reuses the real-HTTP
+    harness so the assertion is end-to-end, not a hand-copied descriptor shape."""
+
+    SCOPE = "sprite-aubree-iso8"
+    WORLD = "baldurs-gate"
+
+    def setUp(self):
+        self._tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self._saved_env = {}
+        for var in ("WORLDOS_STATE_DIR", "WORLDOS_ART_REPO_ROOT", "WORLDOS_REPO_ROOT"):
+            self._saved_env[var] = os.environ.pop(var, None)
+        os.environ["WORLDOS_STATE_DIR"] = str(self._tmp)
+        self._art_root = self._tmp / "art-root"
+        self._art_root.mkdir()
+        os.environ["WORLDOS_ART_REPO_ROOT"] = str(self._art_root)
+        _QuietHandler.campaign_id = ""
+        self._httpd = server.ThreadingHTTPServer(("127.0.0.1", 0), _QuietHandler)
+        self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
+        self._thread.start()
+        self._host, self._port = self._httpd.server_address
+
+    def tearDown(self):
+        self._httpd.shutdown()
+        self._httpd.server_close()
+        self._thread.join(timeout=2)
+        for var, value in self._saved_env.items():
+            if value is None:
+                os.environ.pop(var, None)
+            else:
+                os.environ[var] = value
+
+    def _get(self, path: str) -> tuple[int, http.client.HTTPMessage, bytes]:
+        conn = http.client.HTTPConnection(self._host, self._port, timeout=5)
+        try:
+            conn.request("GET", path)
+            response = conn.getresponse()
+            return response.status, response.headers, response.read()
+        finally:
+            conn.close()
+
+    def _bake_atlas_finals_dir(self) -> Path:
+        """The served finals dir for the sprite scope (what pack_sheet --out targets).
+        _ingested_images_root() == <art_root>/content/worlds/_private, so the served path is
+        .../content/worlds/_private/<world>/images/<scope>/."""
+        d = (self._art_root / "content" / "worlds" / "_private" / self.WORLD / "images"
+             / server._safe_scope(self.SCOPE))
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    def test_packsheet_descriptor_makes_baked_atlas_servable_via_image_bridge(self):
+        d = self._bake_atlas_finals_dir()
+        sheet_png = d / "sheet.png"
+        sheet_png.write_bytes(PNG_BYTES)
+        # Before the descriptor exists: /image?scope= is no-art (the orphaned-atlas bug #1063 fixes).
+        status, _h, _b = self._get(f"/image?scope={self.SCOPE}")
+        self.assertEqual(status, 404)
+
+        # Emit the descriptor exactly as pack_sheet does (its REAL helper, not a hand copy).
+        manifest = {"scope_key": self.SCOPE, "license": "proprietary-owner-generated (Meshy AI)",
+                    "attribution": "WorldOS final render"}
+        desc = pack_sheet._descriptor(self.SCOPE, str(sheet_png), manifest)
+        (d / pack_sheet.DESCRIPTOR_FILENAME).write_text(json.dumps(desc), encoding="utf-8")
+
+        # Now the atlas is served via the unchanged /image bridge.
+        status, headers, body = self._get(f"/image?scope={self.SCOPE}")
+        self.assertEqual(status, 200, f"expected served, got {status}")
+        self.assertEqual(headers.get("X-Image-Outcome"), "served")
+        self.assertEqual(headers.get("Content-Type"), "image/png")
+        self.assertEqual(body, PNG_BYTES)
+
+    def test_descriptor_shape_matches_viewer_contract(self):
+        desc = pack_sheet._descriptor("sprite-x", "/abs/sheet.png", {"license": "L", "attribution": "A"})
+        # The exact keys _serve_image / _latest_descriptor read (cf. tools/ingest/wiki_images.py).
+        self.assertEqual(desc["scope"], "sprite-x")
+        self.assertEqual(desc["path"], os.path.abspath("/abs/sheet.png"))
+        self.assertEqual(desc["mime_type"], "image/png")
+        self.assertEqual(desc["license"], "L")
+        self.assertIn("ingested_at", desc)
+
+    def test_descriptor_only_lands_in_private_finals_dirs(self):
+        # The committed res:// placeholder dir must NEVER get a descriptor (it embeds an abs local
+        # path that is wrong on every other machine + would be committed).
+        self.assertTrue(pack_sheet._is_private_finals_dir(
+            "/x/content/worlds/_private/baldurs-gate/images/sprite-aubree-iso8"))
+        self.assertFalse(pack_sheet._is_private_finals_dir("godot/assets/characters/aubree"))
+
+    def test_write_outputs_emits_descriptor_for_private_skips_committed(self):
+        # _write_outputs glue (PIL-free via a fake sheet): the descriptor lands ONLY in the _private
+        # finals dir; a committed dir gets sheet.png + sheet.json but NO wiki_ingest.json.
+        class _FakeSheet:
+            def save(self, p):
+                Path(p).write_bytes(PNG_BYTES)
+
+        manifest = {"scope_key": "sprite-x", "license": "L", "attribution": "A"}
+        priv = self._art_root / "content" / "worlds" / "_private" / "w" / "images" / "sprite-x"
+        committed = self._tmp / "godot" / "assets" / "characters" / "x"
+        pack_sheet._write_outputs(_FakeSheet(), manifest, [str(priv), str(committed)])
+        self.assertTrue((priv / pack_sheet.DESCRIPTOR_FILENAME).exists())
+        self.assertTrue((priv / "sheet.png").exists() and (priv / "sheet.json").exists())
+        self.assertFalse((committed / pack_sheet.DESCRIPTOR_FILENAME).exists())
+        self.assertTrue((committed / "sheet.png").exists())  # sheet still written, just no descriptor
 
 
 if __name__ == "__main__":

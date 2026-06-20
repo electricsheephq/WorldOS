@@ -30,8 +30,19 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import time
 
-from PIL import Image
+# NOTE: Pillow (PIL) is imported lazily inside _build_sheet so the descriptor/manifest helpers
+# (_descriptor / _manifest / _is_private_finals_dir) are importable + unit-testable WITHOUT the
+# Pillow dependency (it is not in the engine/viewer test venvs). Only the pixel-tiling path needs it.
+
+# The viewer descriptor the /image bridge resolves. To serve the baked atlas via
+# /image?scope=<scope_key> (the render-profile contract: "served via the existing /image bridge
+# unchanged"), the viewer's _serve_image looks for content/worlds/_private/<world>/images/<scope>/
+# wiki_ingest.json and serves the PNG it points at. Without this descriptor a baked sheet.png is
+# orphaned (/image?scope=... 404s, no-art). Mirrors tools/ingest/wiki_images.py write_descriptor
+# (the canonical descriptor writer the viewer reads); this is #1063's serve-side enablement.
+DESCRIPTOR_FILENAME = "wiki_ingest.json"
 
 # Locked layout (mirrors gen_placeholder_sheet.py / CharacterToken.gd).
 CELL = 128
@@ -53,6 +64,8 @@ def _load_anchor(frames_dir: str) -> dict:
 
 
 def _build_sheet(frames_dir: str, cell: int) -> tuple:
+    from PIL import Image  # lazy: only the pixel-tiling path needs Pillow (see top-of-file note)
+
     width = TOTAL_COLS * cell
     height = len(FACING_ORDER) * cell
     sheet = Image.new("RGBA", (width, height), (0, 0, 0, 0))
@@ -104,14 +117,49 @@ def _manifest(scope: str, anchor: dict, prompt: str, cell: int) -> dict:
     }
 
 
-def _write_outputs(sheet: Image.Image, manifest: dict, out_dirs: list) -> None:
+def _descriptor(scope: str, sheet_path: str, manifest: dict) -> dict:
+    """The viewer descriptor (wiki_ingest.json) that makes the baked atlas servable via
+    /image?scope=<scope>. Shape matches tools/ingest/wiki_images.py write_descriptor (what
+    _serve_image / _latest_descriptor read). `path` is absolute (the viewer anchors it to the
+    descriptor's sibling dir by basename); pixels are served from `path` (no external source_url)."""
+    return {
+        "scope": scope,
+        "path": os.path.abspath(sheet_path),
+        "mime_type": "image/png",
+        "source_url": "",  # baked locally — _serve_image serves `path`, not a remote URL.
+        "license": manifest.get("license", ""),
+        "attribution": manifest.get("attribution", ""),
+        "ingested_at": time.time(),
+    }
+
+
+def _is_private_finals_dir(d: str) -> bool:
+    """True only for the served finals tree (content/worlds/_private/...), where wiki_ingest.json is
+    gitignored. We NEVER drop a descriptor (which embeds an absolute local path) into a committed
+    dir such as the res:// CC0 placeholder — that path would be wrong on every other machine."""
+    return (os.sep + "_private" + os.sep) in (os.path.abspath(d) + os.sep)
+
+
+def _write_outputs(sheet: Image.Image, manifest: dict, out_dirs: list,
+                   emit_descriptor: bool = True) -> None:
     for d in out_dirs:
         os.makedirs(d, exist_ok=True)
-        sheet.save(os.path.join(d, "sheet.png"))
+        sheet_path = os.path.join(d, "sheet.png")
+        sheet.save(sheet_path)
         with open(os.path.join(d, "sheet.json"), "w") as f:
             json.dump(manifest, f, indent=2, ensure_ascii=False)
             f.write("\n")
-        print("[pack_sheet] wrote sheet.png + sheet.json -> %s" % d)
+        wrote_desc = ""
+        if emit_descriptor and _is_private_finals_dir(d):
+            with open(os.path.join(d, DESCRIPTOR_FILENAME), "w") as f:
+                json.dump(_descriptor(manifest["scope_key"], sheet_path, manifest),
+                          f, indent=2, ensure_ascii=False)
+                f.write("\n")
+            wrote_desc = " + %s" % DESCRIPTOR_FILENAME
+        elif emit_descriptor:
+            print("[pack_sheet] (no %s: %s is not under _private — committed dir, descriptor skipped)"
+                  % (DESCRIPTOR_FILENAME, d))
+        print("[pack_sheet] wrote sheet.png + sheet.json%s -> %s" % (wrote_desc, d))
 
 
 def main() -> None:
@@ -123,6 +171,11 @@ def main() -> None:
     ap.add_argument("--prompt", default="(prompt unrecorded)",
                     help="the Meshy prompt, for attribution provenance")
     ap.add_argument("--cell", type=int, default=CELL, help="cell size (default %d)" % CELL)
+    ap.add_argument("--emit-descriptor", dest="emit_descriptor", action="store_true", default=True,
+                    help="emit the viewer wiki_ingest.json descriptor into _private finals dirs so "
+                         "the atlas is served via /image?scope=<scope> (default on; #1063)")
+    ap.add_argument("--no-emit-descriptor", dest="emit_descriptor", action="store_false",
+                    help="skip the viewer descriptor (committed/non-_private dirs skip it anyway)")
     args = ap.parse_args()
 
     frames_dir = os.path.abspath(args.frames)
@@ -148,7 +201,7 @@ def main() -> None:
     anchor = _load_anchor(frames_dir)
     sheet, missing = _build_sheet(frames_dir, args.cell)
     manifest = _manifest(args.scope, anchor, prompt, args.cell)
-    _write_outputs(sheet, manifest, args.out)
+    _write_outputs(sheet, manifest, args.out, emit_descriptor=args.emit_descriptor)
 
     print("[pack_sheet] sheet dims=%s anchor=(%d,%d) missing_frames=%d" % (
         str(sheet.size), anchor["x"], anchor["y"], missing))
