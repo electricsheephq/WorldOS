@@ -1,0 +1,26 @@
+{
+  "reference": "sample_session.reference.md",
+  "note": "Fact inventory for the committed synthetic fixture (qa/test_fact_fidelity.py). Three tiers: OPENING (survives any truncation), MID (lost when only the opening is kept), CLIMAX+RESOLUTION (lost when the back half is cut). Climax-mechanic facts match CALL RESULTS, never the tool names in the tally. Severity: critical = antagonist reveal / central MacGuffin / end-session mechanic.",
+  "facts": [
+    {"id": "hero_identity", "desc": "Hero is Sera Vey, a Half-Elf Ranger, level 4", "patterns": ["Sera Vey", "Half-Elf Ranger"], "severity": "high"},
+    {"id": "companion_tomas", "desc": "Companion: Brother Tomas, a cleric", "patterns": ["Brother Tomas"], "severity": "high"},
+    {"id": "archivist_hessa", "desc": "Old Hessa, the harbor archivist", "patterns": ["Old Hessa"], "severity": "normal"},
+    {"id": "courier_coren", "desc": "The dead courier Coren", "patterns": ["\\bCoren\\b"], "severity": "high"},
+    {"id": "setting_greyharbor", "desc": "Setting: Greyharbor docks", "patterns": ["Greyharbor"], "severity": "normal"},
+    {"id": "wardens_token", "desc": "An old copper Wardens token", "patterns": ["Wardens token", "copper token"], "severity": "normal"},
+
+    {"id": "cipher_ashryn", "desc": "MID: the name Lady Ashryn left in plaintext in the cipher", "patterns": ["Lady Ashryn"], "severity": "high"},
+    {"id": "silverwatch_seal", "desc": "MID: a Silverwatch officer's seal recovered", "patterns": ["Silverwatch"], "severity": "high"},
+    {"id": "fixer_dob_combine", "desc": "MID: the fixer Dob, who runs errands for the Combine", "patterns": ["\\bDob\\b", "the Combine"], "severity": "normal"},
+    {"id": "the_frame", "desc": "MID reveal: the packet's seal is the hero's own — she is the frame", "patterns": ["HER seal", "She is the frame"], "severity": "high"},
+
+    {"id": "antagonist_veyl", "desc": "CLIMAX: the architect Veyl Marrow is revealed", "patterns": ["Veyl Marrow"], "severity": "critical"},
+    {"id": "macguffin_thirty_one", "desc": "CLIMAX: the MacGuffin — the Ledger of Thirty-One names", "patterns": ["Thirty-One"], "severity": "critical"},
+    {"id": "resolution_spindle", "desc": "RESOLUTION: the list goes to the Spindle", "patterns": ["the Spindle"], "severity": "high"},
+    {"id": "xp_award_sera", "desc": "END-SESSION: Sera awarded 400 XP", "patterns": ["\"xp\": 400"], "severity": "critical"},
+    {"id": "xp_award_tomas", "desc": "END-SESSION: Tomas awarded 300 XP", "patterns": ["\"xp\": 300"], "severity": "high"},
+    {"id": "reputation_plus7", "desc": "END-SESSION: +7 Wardens reputation", "patterns": ["\"reputation\": 7"], "severity": "high"},
+    {"id": "quest_thirty_one", "desc": "END-SESSION: quest 'The Thirty-One Names' opened", "patterns": ["\"title\": \"The Thirty-One Names\""], "severity": "normal"},
+    {"id": "session_closed", "desc": "END-SESSION: the session is formally closed", "patterns": ["\"ended\": \"session-greyharbor-1\"", "Session 1 — closed"], "severity": "critical"}
+  ]
+}
