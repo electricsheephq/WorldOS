@@ -493,6 +493,34 @@ def test_set_companion_quest_arc_accepts_per_stage_description(camp):
     assert got["stages"][0]["description"] == "Toll speaks aloud what shame made a habit."
 
 
+def test_set_companion_quest_arc_accepts_arc_summary(camp):
+    # Regression (the extra_forbidden RED-cap found on a live OPUS embergloom-pact golden-spine,
+    # gs-ember-opus): the DM authors a top-level `summary` (the arc's emotional spine) via
+    # set_companion_quest_arc(arc={"summary": ...}). CompanionQuestArc is extra="forbid", so before
+    # this fix that whole tool call was REJECTED (extra_forbidden → no_rejected_tool_calls FATAL →
+    # lenses RED-capped). The field is now accepted + persisted (additive). Sibling of the #1048
+    # per-stage `description` fix above.
+    cid, comp = camp
+    out = server.set_companion_quest_arc(cid, comp, {
+        "title": "Toll's Shame",
+        "status": "available",
+        "summary": "Toll names the thing the cloth could never absolve.",
+        "stages": [{"title": "Confess the habit"}],
+    })
+    assert out["companion_quest_arc"]["summary"] == "Toll names the thing the cloth could never absolve."
+    # persists + round-trips through get
+    got = server.get_companion_quest_arcs(cid, companion_id=comp)["companion_quest_arcs"][0]
+    assert got["summary"] == "Toll names the thing the cloth could never absolve."
+
+
+def test_companion_quest_arc_summary_defaults_empty_and_old_snapshots_round_trip(camp):
+    # Additive invariant: an arc authored WITHOUT a summary keeps today's behavior (empty string),
+    # so pre-fix snapshots deserialize unchanged.
+    cid, comp = camp
+    out = server.set_companion_quest_arc(cid, comp, {"title": "No Summary Arc", "status": "locked"})
+    assert out["companion_quest_arc"]["summary"] == ""
+
+
 def test_personal_quest_gate_makes_linked_companion_quest_arc_available_once(camp):
     cid, comp = camp
     server.set_companion_quest_arc(cid, comp, {

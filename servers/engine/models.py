@@ -402,6 +402,12 @@ class CompanionQuestArc(_StrictModel):
     # since set_companion_quest_arc builds this model from a raw `arc` dict. Wire-neutral.
     quest_ids: Annotated[list[str], BeforeValidator(_coerce_list)] = Field(default_factory=list)
     note: str = ""
+    # The DM authors a one-line `summary` (the arc's emotional spine) when it builds the arc via
+    # set_companion_quest_arc(arc={"summary": "...", ...}). The model is extra="forbid", so without
+    # this field that whole tool call was REJECTED (extra_forbidden ⇒ no_rejected_tool_calls FATAL
+    # ⇒ lenses RED-capped — the cap-rate failure class; found on a live opus golden-spine). Additive
+    # + default empty: old snapshots round-trip; arcs that omit it are unchanged. (Mirrors #1048.)
+    summary: str = ""
 
     @model_validator(mode="after")
     def _collect_stage_quest_ids(self) -> "CompanionQuestArc":
