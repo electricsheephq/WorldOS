@@ -384,14 +384,26 @@ dm_turn() {
   # WORLDOS_BEAT_TIMEOUT (default 360s). Keyed off the SAME `first` signal as the effort tier above.
   beat_timeout="$(worldos_dm_timeout "$first")"
   out="$DM_LOG.$(date +%s%N).jsonl"
+  # #835 Increment 1 — Live Composition flag (default OFF behind WORLDOS_STREAM_BEATS). The shared
+  # helpers (qa/lib_beat_driver.sh) build WORLDOS_STREAM_FLAG = (--include-partial-messages) ONLY
+  # when streaming is on; when off the array is empty and the splice below expands to nothing, so the
+  # invocation is byte-identical to today. _dm_invoke launches the per-attempt stream tailer against
+  # $out before the call and kills it after (no-op when off) — the tailer is a sidecar (a crash never
+  # affects the beat). Both attempt 1 and the retry (which re-mint $out) get their own tailer.
+  worldos_stream_flag_arg
   # F12-8: worldos_timeout (qa/lib_beat_driver.sh) — timeout(1) when present, else a python3
   # fallback with the same rc=124 semantics. A bare `timeout` died rc=127 on stock (non-coreutils)
   # Macs, killing every beat in <1s with the failure masked.
   _dm_invoke() {
+    worldos_stream_tailer_start "$out" "$STATE_DIR"
     worldos_timeout "$beat_timeout" \
       claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
         --model "$WORLDOS_DM_MODEL" ${WORLDOS_DM_EFFORT[@]+"${WORLDOS_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+        ${WORLDOS_STREAM_FLAG[@]+"${WORLDOS_STREAM_FLAG[@]}"} \
         --output-format stream-json --verbose > "$out" 2>> "$DM_LOG.err"
+    local _rc=$?
+    worldos_stream_tailer_stop
+    return $_rc
   }
   _dm_invoke; rc=$?
   if [ "$rc" -ne 0 ]; then
