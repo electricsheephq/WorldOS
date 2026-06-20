@@ -35,6 +35,7 @@ render-profile
 │   └── ai_disclosure         { generated_by, model, date }
 └── renderer_profiles         ← OPTIONAL; a renderer reads core + its OWN block
     ├── phaser                { tileset/tile_size/ui_skin | backdrop_layout/walkmask/… }
+    ├── godot                 { projection | backdrop_layout(zone_anchors) | actor_sheets | default_facing }
     └── rpgmaker              (reserved / spec-only; deferred)
 ```
 
@@ -44,6 +45,31 @@ coordinate-, walkmask-, or sprite-sheet-layout-shaped lives in an optional per-r
 block. The **core-only conformance test (#428)** enforces this: a renderer using `core` +
 its own block must render every M0 scene. (The repo's existing SVG/React viewer is a free
 third "renderer" to validate that `core` stays renderer-agnostic.)
+
+### Godot renderer block (GT2 painterly-isometric)
+
+The `godot` block (added 2026-06-21; sibling of `phaser`/`rpgmaker`) carries the GT2 Godot
+client's presentation — and **only** presentation:
+
+- `projection` — the LOCKED dimetric 2:1 (~26.57°) isometric (see `godot/ISO-PROJECTION.md`,
+  the single source of truth both the renderer and the Blender bake cite). Irreversible once
+  finals bake.
+- `backdrop_layout[scope]` — renderer-owned `walk_polygon_ref` + `depth_baseline_y` +
+  `zone_anchors{<zone>:[x,y]}` (data-driven zone→screen placement + the Y-sort baseline) +
+  optional `normal_map_ref` (Branch B). Absent ⇒ procedural trapezoid fallback.
+- `actor_sheets[engine_actor_id]` — the directional sprite-sheet **layout** the renderer
+  slices (`facings`, `facing_order`, grid, foot `anchor`, `sheet_scope_key`). The atlas PNG
+  is served by the existing `/image` bridge unchanged; CC0 → AI-paintover → Blender-render
+  art is interchangeable behind one layout.
+- `default_facing` — the 8-facing fallback for a static/teleported token.
+
+**Facing is 100% renderer-DERIVED.** There is **no engine facing field, and one must never be
+added** — the engine is the sole writer of game *state*; facing is pure presentation (cf. the
+`positionAuthority:'derived'` rule below and the v1 `grid` exclusion). Out of combat the
+renderer snaps facing from the zone→zone screen-vector on a `move_to_zone` (reset to
+`default_facing` on a `travel`); in combat from actor-zone→target-zone (the Action-Replay
+envelope `target_fk`). Example instance:
+`viewer/openworlds/render/render-profile.godot.example.json`.
 
 ## Zones, not x,y (#427)
 

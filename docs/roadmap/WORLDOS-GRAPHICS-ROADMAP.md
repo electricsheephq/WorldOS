@@ -46,7 +46,7 @@ lane. No renderer, no AI loop, no UGC tool ever becomes a second source of truth
 |----|-----------|--------|---------------|-------|
 | **GT0** | **Narrative dashboard** (the current OpenWorlds web UI) | **SHIPS TODAY** | React/JSX in WKWebView | The living-world DM + companion RPG; text/portrait-first. The proof that engine-as-authority + thin-client works. |
 | **GT1** | **SNES-style pixel turn-based** (JRPG / RPG-Maker-like feel) | Planned (MVP tier 1) | Phaser 3 (MIT), in the existing shell | Tilemap + sprite actors + 16-bit UI; zone-mode turn combat. |
-| **GT2** | **Pillars / BG1-2 isometric party cRPG** | Planned (MVP tier 2) | Phaser 3 (MVP look) → Godot 4 (premium native, optional) | Painted backdrop + token actors. **Branch A = the LOOK; Branch B = measured tactics (evidence-gated).** |
+| **GT2** | **Pillars / BG1-2 isometric party cRPG** | In progress (M5, pulled fwd) | **Godot 4 (web + native)** — Phaser GT2 **retired** 2026-06-21 | Painted backdrop + token actors. **Owner direction 2026-06-21:** Godot is the GT2 renderer for both web and native; the Phaser M2 backdrop renderer is retired (didn't deliver the experience). **Branch A = the LOOK; Branch B = measured tactics (evidence-gated).** See epic #1050. |
 | GT3+ | (future families — e.g. tactical-grid SRPG, top-down action) | Not scoped | TBD | Added only when a capability set + audience justify it. |
 
 **Rejected engines (recorded so they're not re-litigated):**
@@ -108,10 +108,14 @@ autonomy, ship/sell UGC)* layered on as the long-term plan proves out.
 2. **Phaser 3 (MIT) + PixiJS v8 (MIT) for the MVP, BOTH tiers**, in the existing React/WKWebView
    shell. One renderer, two render profiles (tilemap / backdrop). Godot 4 reserved for an
    optional *premium native desktop/Steam* GT2 client later (separate binary; MIT). Unity rejected.
+   **AMENDMENT 2026-06-21 (owner):** for **GT2 specifically** this is superseded — **Godot 4 is now
+   the GT2 renderer for both web and native**, and the **Phaser GT2 backdrop path is retired** (it
+   didn't deliver the experience). M5 is pulled forward (epic #1050). GT0 (React dashboard) and GT1
+   (Phaser pixel) are unchanged. The thin-client invariant + layered render-profile contract are unchanged.
 3. **Contract is LAYERED: core + per-renderer profiles.** Core (renderer-agnostic, all fields
    defaultable for the AI generator): `schema_version`, `scene_kind`, `positioning`, named
    `zones` (NOT x,y), engine FK ids, scope-key art, AI-disclosure. Optional blocks: `phaser{}`,
-   `rpgmaker{}` (reserved). Core-only conformance test gates it.
+   `godot{}` (GT2 painterly-iso; added 2026-06-21), `rpgmaker{}` (reserved). Core-only conformance test gates it.
 4. **Positions are presentation derived from engine zones** — already the shipped pattern
    (`viewer/server.py:_combat_row_positions`). Token x,y is an ephemeral render-hint, never state.
 5. **M0 freezes THREE contracts together:** render-profile · graphical move-intent vocabulary
@@ -144,12 +148,13 @@ autonomy, ship/sell UGC)* layered on as the long-term plan proves out.
 
 ### M2 — GT2: Pillars/BG1-2 backdrop-isometric MVP (Branch A = the LOOK)  *(C2=backdrop, C3=zone-band, C4=walkmask, C7=flat)*
 - **R2.1 Backdrop render profile + occlusion** (walkmask renderer-owned; destinations resolve to engine zones/locations) · **R2.2 T2 combat + polish** (pure replay; normal-map lighting deferred) · **R2.3 T2 QA gates**
+- **⚠ RETIRED 2026-06-21 (the Phaser implementation):** the GT2 *renderer* moved to Godot (M5, pulled forward — epic #1050); the Phaser backdrop renderer (`viewer/openworlds/render/backdrop.html`) is reference-only. The render-profile contract work (R2.1) stays valid — Godot consumes the same `core` + a `godot{}` block.
 
 ### M3 — Gated AI build-loop + UGC  *(C9=gated autonomy, C10=author→ship, C5 disclosure)*
 - **R3.1 Gated AI build-loop** (generate render-profile core from lore; resolve art; emit Phaser glue; gate each iter; human-gate queue for taste/story/contract) · **R3.2 UGC platform + licensing/compliance** (per-user ownership; AI-disclosure end-to-end [EU 2026-08-02, Steam survey]; MIT redistribution story) · **R3.3 Transport upgrade** (C8: websocket/SSE; swap behind SurfaceClient interface)
 
-### M5 — *(optional, post-M2)* GT2 premium: Godot desktop/Steam client (Branch B look: C7 normal-map lighting)
-- Godot thin client over the surfaces (HTTPRequest/WebSocketPeer; Light2D; NavigationRegion2D); consumes the `core` contract; GDScript headless-codegen harness (compile-error feedback + `.tscn` gen + `godot-mcp`).
+### M5 — GT2 Godot painterly-isometric renderer (web + native) — **PULLED FORWARD, IN PROGRESS** (epic #1050)
+- The GT2 renderer (Branch A = the LOOK now; Branch B = C7 normal-map lighting later). Godot 4 thin client over the surfaces (HTTPRequest/WebSocketPeer; Light2D; NavigationRegion2D); consumes the `core` contract + a `godot{}` renderer block; GDScript headless-codegen harness (`.tscn` gen + `godot-mcp`). **Owner direction 2026-06-21:** a SINGLE Godot client serves both web (HTML5 export, single-threaded) and native (standalone `.app`); Phaser GT2 retired. Sprint 1 = the vertical slice (#1051–#1056); ISO projection locked in `godot/ISO-PROJECTION.md`.
 
 ### M6 — *(optional, post-M1)* GT1 BYOL RPG Maker exploration export
 - Asset-clean (no RTP), exploration/dialogue only (battle-system mismatch is fatal), contract-taker; RTP legal guardrails + counsel review.

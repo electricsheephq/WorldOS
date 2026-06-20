@@ -109,6 +109,26 @@
             "free_positions": { "type": ["object", "null"] }
           }
         },
+        "godot": {
+          "type": "object",
+          "description": "Godot 4 client (GT2 painterly isometric; web + native). scene_kind=backdrop only. ALL presentation: the locked projection, per-scope backdrop_layout (renderer-owned walkmask + zone anchors + depth baseline + optional normal-map), per-actor directional sprite-sheet LAYOUT, and the renderer-DERIVED default facing. INVARIANTS: facing is 100% renderer-derived — NO engine facing field exists or may be added (the engine is the sole writer of game STATE; facing is pure presentation; cf. positionAuthority:'derived' and the v1 grid exclusion). walkmask is RENDERER-OWNED (the engine knows zone adjacency, not walkable pixels); pathfinding destinations still resolve to engine zones/locations.",
+          "additionalProperties": true,
+          "properties": {
+            "projection": {
+              "type": "object",
+              "description": "LOCKED isometric projection — advisory presentation metadata the renderer asserts its camera matches and every sprite manifest is baked to. Irreversible once finals bake. Owner lock 2026-06-21: dimetric 2:1 (~26.57deg). See godot/ISO-PROJECTION.md (single source of truth).",
+              "additionalProperties": false,
+              "properties": {
+                "kind": { "type": "string", "enum": ["dimetric", "isometric"], "description": "dimetric = 2:1 (~26.57deg, Diablo II / Infinity-Engine lineage); isometric = true 30deg." },
+                "tile_ratio": { "type": "string", "description": "e.g. '2:1'." },
+                "angle_deg": { "type": "number" }
+              }
+            },
+            "default_facing": { "type": "string", "description": "8-facing fallback when a token is static or on a teleport-travel (location change). Renderer-derived; NEVER read from the engine." },
+            "backdrop_layout": { "type": ["object", "null"], "description": "Keyed by a location art scope_key. Per-scene RENDERER-OWNED presentation: walk_polygon_ref ('procedural' or a scope/sibling ref), depth_baseline_y, zone_anchors {<zone>:[x,y]} (so zone->screen placement and the Y-sort baseline are data-driven, not hardcoded), optional normal_map_ref (Branch B lighting). Absent => procedural trapezoid fallback, like the Phaser block." },
+            "actor_sheets": { "type": ["object", "null"], "description": "Keyed by engine_actor_id. The directional sprite-sheet LAYOUT the renderer slices: {sheet_scope_key, facings, facing_order, frames_per_facing, cols, rows, cell_w, cell_h, anchor}. The atlas PNG is served via the existing /image bridge unchanged; this only declares how to slice it, so CC0 / AI-paintover / Blender-render source art is interchangeable behind one layout." }
+          }
+        },
         "rpgmaker": {
           "type": "object",
           "description": "RESERVED / spec-only. BYOL exploration-export tier, deferred post-M2 (#458-460). tilemap-only; never populated for scene_kind=backdrop. A contract-TAKER that consumes this frozen contract, never shapes it.",
