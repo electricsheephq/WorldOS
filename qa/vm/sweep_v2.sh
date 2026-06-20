@@ -64,8 +64,12 @@ write_aborted_rri(){
   python3 - "$1" "$SHA" "$2" <<'PY' 2>/dev/null
 import json, sys
 out, sha, detail = sys.argv[1], sys.argv[2], sys.argv[3]
-json.dump({"status": "ABORTED", "abort_reason": "quota_session_limit",
-           "detail": detail, "build_sha": sha, "release_ready": False,
+# NOTE: the keys MUST match what qa/evidence_audit.py + qa/release_readiness.py consume —
+# `aborted: True` (the boolean evidence_audit keys on) and `abort_detail` (NOT `detail`).
+# Without `aborted:true`/`abort_detail`, evidence_audit reads the file as RELEASE_READY — the
+# exact quota-masking #842 exists to prevent (caught in review). Mirror release_readiness.py:1288.
+json.dump({"status": "ABORTED", "aborted": True, "abort_reason": "quota_session_limit",
+           "abort_detail": detail, "build_sha": sha, "release_ready": False,
            "note": "claude account session limit (HTTP 429) tripped mid-sweep; "
                    "this is an INFRA abort, NOT a product RRI. Re-run after the quota resets."},
           open(out, "w"), indent=2)

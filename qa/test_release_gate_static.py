@@ -201,10 +201,38 @@ class QuotaCircuitBreakerStaticContractTests(unittest.TestCase):
         self.assertIn("write_aborted_rri()", source)
         self.assertIn('"status": "ABORTED"', source)
         self.assertIn('"abort_reason": "quota_session_limit"', source)
+        # #842 review (load-bearing): evidence_audit.py keys on `aborted:true` + `abort_detail`
+        # (NOT `detail`). Without them the ABORTED RRI reads as RELEASE_READY — the exact masking
+        # #842 prevents. Lock the contract statically + functionally (below).
+        self.assertIn('"aborted": True', source)
+        self.assertIn('"abort_detail"', source)
+        self.assertNotIn('"detail": detail', source)  # the old wrong key must be gone
         # the canary-abort branch (QUOTA ABORT at the canary) must call the writer before exiting.
         canary_idx = source.index("QUOTA ABORT at the canary")
         # the next write_aborted_rri call after the canary-abort message proves the path stamps it.
         self.assertIn("write_aborted_rri", source[canary_idx:canary_idx + 600])
+
+    def test_aborted_rri_shape_reads_as_aborted_in_evidence_audit(self):
+        # #842 review (the end-to-end contract the static greps back): the ABORTED RRI the sweep
+        # writes MUST be classified as aborted (NOT release-ready) by qa/evidence_audit.py.
+        # Reproduce the helper's exact shape and assert evidence_audit does not call it ready.
+        import json, subprocess, tempfile, os
+        rri = {"status": "ABORTED", "aborted": True, "abort_reason": "quota_session_limit",
+               "abort_detail": "newbie — quota resets ~3h", "build_sha": "deadbeef",
+               "release_ready": False, "note": "infra abort, not a product RRI"}
+        fd, path = tempfile.mkstemp(suffix=".json")
+        try:
+            with os.fdopen(fd, "w") as f:
+                json.dump(rri, f)
+            out = subprocess.run(
+                ["python3", str(ROOT / "qa" / "evidence_audit.py"), "--rri", path],
+                capture_output=True, text=True, timeout=30)
+            combined = (out.stdout + out.stderr).upper()
+            self.assertNotIn("RELEASE_READY", combined,
+                             f"ABORTED RRI mis-classified as release-ready: {combined}")
+            self.assertIn("ABORT", combined, f"evidence_audit did not flag the abort: {combined}")
+        finally:
+            os.unlink(path)
 
     def test_sweep_wipes_stale_duo_artifacts_before_duo_call(self):
         # Fix C: the duo-artifact rm must PRECEDE the run_duo.sh call so the `[ -f ] && cp` below
