@@ -10,9 +10,12 @@ extends Node2D
 ## and the renderer the sole owner of HOW that maps to pixels (the walkmask + the
 ## projection — see ISO-PROJECTION.md and #444 walkmask-is-renderer-owned).
 ##
-## SCOPE (#1053): backdrop + walkmask floor polygon + deterministic zone markers
-## ONLY. CharacterToken / sprite art is #1054 (it will populate the empty
-## YSortLayer created here); click-to-move / facing / Y-sort occlusion is #1055.
+## SCOPE (#1053): backdrop + walkmask floor polygon + deterministic zone markers.
+## SCOPE (#1054, this layer): also spawn ONE directional CharacterToken for
+## character.party[0] + ONE static PropActor (pillar) into the YSortLayer, both
+## foot-anchored so Y-sort occlusion just works in #1055. Click-to-move / the
+## FacingResolver derivation / the occlusion *test* is #1055 — the token already
+## supports set_facing()/set_zone_target() so that issue only wires input.
 ##
 ## NODE TREE (built in _ready):
 ##   WorldView (Node2D)
@@ -23,7 +26,8 @@ extends Node2D
 ##   │   │                             clickable walkable region in #1055).
 ##   │   └─ ZoneMarkers (Node2D)      — one Marker2D + faint Label per named zone,
 ##   │                                  laid out DETERMINISTICALLY.
-##   └─ YSortLayer (Node2D, y_sort_enabled) — EMPTY now; CharacterToken lands here (#1054).
+##   └─ YSortLayer (Node2D, y_sort_enabled) — CharacterToken(s) + PropActor(s) (#1054),
+##                                            depth-sorted by foot-y.
 
 ## Backdrop trapezoid geometry — mirrors renderer-backdrop.js floorPolygon():
 ## the floor is inset at the horizon (narrow/far) and near-full-width at the bottom
@@ -46,6 +50,17 @@ const FLOOR_OUTLINE := Color(0.56, 0.71, 0.85, 0.20)
 const ZONE_RING := Color(0.62, 0.71, 0.80, 0.30)
 const ZONE_LABEL := Color(0.68, 0.75, 0.81, 0.85)
 
+## #1054 actor/prop scenes. CharacterToken builds its SpriteFrames from a manifest;
+## PropActor is a static foot-anchored occluder.
+const CharacterTokenScene := preload("res://scenes/CharacterToken.tscn")
+const PropActorScript := preload("res://scenes/PropActor.gd")
+
+## Committed CC0 placeholder asset roots (res://). The slice loads sheet.png +
+## sheet.json directly from here when no live engine /image serves the sprite scope —
+## so the standalone fixture run shows a real directional token, not just markers.
+const CHAR_ASSET_ROOT := "res://assets/characters/"
+const PILLAR_PROP_DIR := "res://assets/props/pillar/"
+
 @onready var _backdrop: Sprite2D = $BackdropPlane
 @onready var _floor_poly: Polygon2D = $WalkmaskLayer/FloorPolygon
 @onready var _zone_markers: Node2D = $WalkmaskLayer/ZoneMarkers
@@ -67,6 +82,13 @@ var _pending_backdrop_scope: String = ""
 ## True when the BackdropPlane currently shows a real resolved /image texture;
 ## false when it shows the procedural gradient fallback. (For the diagnostic.)
 var _backdrop_is_resolved: bool = false
+
+## #1054 — spawned tokens reconciled by engine_actor_id across ticks (no leaks).
+## actor_id -> CharacterToken. Today we only spawn party[0], but the dictionary
+## keeps the reconcile contract right for when the party grows.
+var _tokens: Dictionary = {}
+## The single static pillar prop (spawned once, repositioned per tick).
+var _pillar: PropActor = null
 
 
 func _ready() -> void:
@@ -104,6 +126,11 @@ func apply_snapshot(atlas: Dictionary, combat: Dictionary, character: Dictionary
 	_rebuild_zone_markers(zones, scope, vp, baseline)
 	_zone_count = zones.size()
 
+	# --- #1054: spawn/reconcile the lead party token + the static pillar prop into
+	# the Y-sorted layer (foot-anchored, so #1055's occlusion sorts by foot-y) ---
+	_reconcile_actors(character)
+	_place_pillar()
+
 	# DIAGNOSTIC (validation proof): location, zone-marker count, backdrop status.
 	# Reports the RESOLVED art scope only when a real /image texture is in use;
 	# otherwise "fallback" (the procedural gradient — also the standalone case
@@ -113,6 +140,24 @@ func apply_snapshot(atlas: Dictionary, combat: Dictionary, character: Dictionary
 		backdrop_status = scope
 	print("[WorldView] location=%s zones=%d markers placed; backdrop=%s" % [
 		_location_name, _zone_count, backdrop_status])
+
+	# DIAGNOSTIC (#1054 validation proof): per spawned token, its SpriteFrames anim
+	# count (expect 32 for the 4-anim x 8-facing placeholder), active anim+facing, a
+	# sliced-frame sanity (walk_S → 8 frames), and that it is a child of YSortLayer.
+	for actor_id in _tokens.keys():
+		var tok: CharacterToken = _tokens[actor_id]
+		if not is_instance_valid(tok):
+			continue
+		var in_ysort := tok.get_parent() == _ysort
+		print("[CharacterToken] actor=%s anims=%d facing=%s anim=%s walk_S_frames=%d (%s)" % [
+			tok.engine_actor_id, tok.animation_count(), tok.facing(), tok.anim(),
+			tok.clip_frame_count("walk_S"),
+			"in YSortLayer" if in_ysort else "NOT in YSortLayer"])
+	if _pillar != null and is_instance_valid(_pillar):
+		var pillar_in_ysort := _pillar.get_parent() == _ysort
+		print("[PropActor] prop=%s y=%.1f (%s)" % [
+			_pillar.prop_id, _pillar.position.y,
+			"in YSortLayer" if pillar_in_ysort else "NOT in YSortLayer"])
 
 
 # ---------------------------------------------------------------------------
@@ -141,6 +186,196 @@ func zone_marker_count() -> int:
 ## tokens here; #1055 snaps a floor click to the nearest of these.
 func zone_screen_pos(zone_name: String) -> Vector2:
 	return _zone_screen.get(zone_name, Vector2.ZERO)
+
+
+## The spawned CharacterToken for an engine actor id (null if none). #1055 uses this
+## to drive set_zone_target / set_facing on click. Exposed for validation too.
+func token_for(engine_actor_id: String) -> CharacterToken:
+	return _tokens.get(engine_actor_id, null)
+
+
+## The static pillar prop (null until spawned). Exposed for #1055's occlusion test.
+func pillar_prop() -> PropActor:
+	return _pillar
+
+
+# ---------------------------------------------------------------------------
+# #1054 — actor tokens + the static pillar prop, in the Y-sorted layer.
+# ---------------------------------------------------------------------------
+
+## Spawn/reconcile ONE CharacterToken for character.party[0] (the lead actor),
+## keyed by engine_actor_id so it is built ONCE and only repositioned thereafter.
+## Tokens for actors no longer present are freed (reconcile = no leaks across ticks).
+## Placed at a FOREGROUND zone (the front-most marker) so it reads near the camera.
+func _reconcile_actors(character: Dictionary) -> void:
+	var lead := _lead_actor(character)
+	var wanted: Dictionary = {}  # actor_id -> true (actors that should exist this tick)
+
+	if not lead.is_empty():
+		var actor_id := String(lead.get("id", ""))
+		if actor_id != "":
+			wanted[actor_id] = true
+			var tok: CharacterToken = _tokens.get(actor_id, null)
+			if tok == null:
+				tok = _spawn_token(actor_id)
+				if tok != null:
+					_tokens[actor_id] = tok
+			if tok != null:
+				tok.place_at(_foreground_pos())
+
+	# Free tokens whose actor left the party (no leaks).
+	for existing_id in _tokens.keys():
+		if not wanted.has(existing_id):
+			var stale: CharacterToken = _tokens[existing_id]
+			if is_instance_valid(stale):
+				stale.queue_free()
+			_tokens.erase(existing_id)
+
+
+## Build a CharacterToken for an actor: resolve its committed sheet (sheet.png +
+## sheet.json), build it, add it to YSortLayer. Returns null if no sheet resolves.
+func _spawn_token(actor_id: String) -> CharacterToken:
+	var resolved := _resolve_character_sheet(actor_id)
+	if resolved.is_empty():
+		push_warning("[WorldView] no committed sprite sheet for actor=%s" % actor_id)
+		return null
+	var tok: CharacterToken = CharacterTokenScene.instantiate()
+	tok.engine_actor_id = actor_id
+	tok.name = "Token_" + actor_id
+	_ysort.add_child(tok)
+	tok.set_manifest(resolved["manifest"], resolved["texture"])
+	return tok
+
+
+## Spawn (once) + position the static pillar prop at a MID-depth zone marker so
+## #1055 can prove occlusion both ways (token in front of / behind the pillar).
+func _place_pillar() -> void:
+	if _pillar == null:
+		var resolved := _load_sheet_dir(PILLAR_PROP_DIR)
+		if resolved.is_empty():
+			return
+		_pillar = PropActorScript.new()
+		_pillar.prop_id = "pillar"
+		_pillar.name = "Prop_pillar"
+		_ysort.add_child(_pillar)
+		_pillar.set_manifest(resolved["manifest"], resolved["texture"])
+	_pillar.place_at(_mid_depth_pos())
+
+
+## The foreground (near-camera) screen position: the largest-Y zone anchor (front
+## marker), else a sensible bottom-center point. Tokens placed here read up-front.
+func _foreground_pos() -> Vector2:
+	var best := Vector2.ZERO
+	var found := false
+	for zn in _zone_screen.keys():
+		var p: Vector2 = _zone_screen[zn]
+		if not found or p.y > best.y:
+			best = p
+			found = true
+	if found:
+		return best
+	var vp := _viewport_size()
+	return Vector2(vp.x * 0.5, vp.y * 0.82)
+
+
+## A MID-depth screen position for the pillar: the median-Y zone anchor (so a token
+## at the foreground sits in FRONT of it and one further back sits BEHIND it). Falls
+## back to viewport mid if no anchors exist.
+func _mid_depth_pos() -> Vector2:
+	var ys: Array = []
+	var pts: Array = []
+	for zn in _zone_screen.keys():
+		var p: Vector2 = _zone_screen[zn]
+		pts.append(p)
+		ys.append(p.y)
+	if pts.size() >= 1:
+		# Pick the anchor whose Y is the median (stable mid-depth choice).
+		pts.sort_custom(func(a, b): return a.y < b.y)
+		var mid_idx := pts.size() / 2
+		# Nudge it left a touch so it doesn't perfectly overlap the foreground token.
+		var p: Vector2 = pts[mid_idx]
+		return p + Vector2(-70.0, 0.0)
+	var vp := _viewport_size()
+	return Vector2(vp.x * 0.42, vp.y * 0.65)
+
+
+## character.party[0] as a Dictionary, or {} if the party is empty/malformed.
+func _lead_actor(character: Dictionary) -> Dictionary:
+	var party: Variant = character.get("party", [])
+	if typeof(party) != TYPE_ARRAY or (party as Array).is_empty():
+		return {}
+	var first: Variant = (party as Array)[0]
+	return first if typeof(first) == TYPE_DICTIONARY else {}
+
+
+# ---------------------------------------------------------------------------
+# Committed sprite-sheet resolution. PREFER the committed CC0 placeholder under
+# res://assets/characters/<slug>/ (load sheet.png + sheet.json directly) so the
+# standalone fixture run renders a real directional token. The live engine /image
+# path (keyed by the RenderProfile actor_sheets sheet_scope_key) layers in later
+# without changing this API.
+# ---------------------------------------------------------------------------
+
+## Resolve a character actor's committed sheet to {manifest, texture}, or {} if none.
+## Candidate dirs (first hit wins): the actor's RenderProfile sheet_scope_key (e.g.
+## "sprite-aubree-iso8" → "aubree"), then the actor id with a "char-" prefix
+## stripped (e.g. "char-aubree" → "aubree"), under res://assets/characters/.
+func _resolve_character_sheet(actor_id: String) -> Dictionary:
+	for slug in _character_slug_candidates(actor_id):
+		var dir: String = CHAR_ASSET_ROOT + String(slug) + "/"
+		var resolved := _load_sheet_dir(dir)
+		if not resolved.is_empty():
+			return resolved
+	return {}
+
+
+## Ordered, de-duplicated slug candidates for an actor's committed asset dir.
+func _character_slug_candidates(actor_id: String) -> Array:
+	var out: Array = []
+	var meta := RenderProfile.godot_actor_sheet(actor_id)
+	var scope := String(meta.get("sheet_scope_key", ""))
+	if scope != "":
+		# "sprite-aubree-iso8" → "aubree" (strip a leading "sprite-" and a trailing
+		# "-iso8"/"-isoN" projection suffix; keep the middle as the slug).
+		var s := scope
+		if s.begins_with("sprite-"):
+			s = s.substr("sprite-".length())
+		var dash := s.rfind("-")
+		if dash > 0 and s.substr(dash + 1).begins_with("iso"):
+			s = s.substr(0, dash)
+		if s != "":
+			out.append(s)
+	# Actor-id derived slug: "char-aubree" → "aubree".
+	var aid := actor_id
+	if aid.begins_with("char-"):
+		aid = aid.substr("char-".length())
+	if aid != "" and not out.has(aid):
+		out.append(aid)
+	return out
+
+
+## Load {manifest, texture} from a committed asset dir holding sheet.json + the PNG
+## it names (default sheet.png). Returns {} if either is missing/unparseable.
+func _load_sheet_dir(dir: String) -> Dictionary:
+	var json_path := dir + "sheet.json"
+	if not FileAccess.file_exists(json_path):
+		return {}
+	var text := FileAccess.get_file_as_string(json_path)
+	var parsed: Variant = JSON.parse_string(text)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		push_warning("[WorldView] unparseable sheet manifest: " + json_path)
+		return {}
+	var manifest: Dictionary = parsed
+	var image_name := String(manifest.get("image", "sheet.png"))
+	var png_path := dir + image_name
+	if not ResourceLoader.exists(png_path) and not FileAccess.file_exists(png_path):
+		push_warning("[WorldView] sheet image missing: " + png_path)
+		return {}
+	var tex: Texture2D = load(png_path)
+	if tex == null:
+		push_warning("[WorldView] sheet image failed to load: " + png_path)
+		return {}
+	return {"manifest": manifest, "texture": tex}
 
 
 # ---------------------------------------------------------------------------
