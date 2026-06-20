@@ -470,6 +470,29 @@ def test_set_and_get_companion_quest_arc_by_companion_and_status(camp):
     assert server.get_companion_quest_arcs(cid, status="resolved")["count"] == 0
 
 
+def test_set_companion_quest_arc_accepts_per_stage_description(camp):
+    # Regression (the extra_forbidden RED-cap found on a live embergloom-pact golden-spine):
+    # the DM authors a per-stage `description` via set_companion_quest_arc(arc={"stages":[
+    # {"title":..,"description":..}]}). CompanionQuestStage is extra="forbid", so before this fix
+    # the whole tool call was REJECTED (3 validation errors → no_rejected_tool_calls FATAL →
+    # lenses RED-capped). The field is now accepted + persisted (additive).
+    cid, comp = camp
+    out = server.set_companion_quest_arc(cid, comp, {
+        "title": "Toll's Shame",
+        "status": "available",
+        "stages": [
+            {"title": "Confess the habit", "description": "Toll speaks aloud what shame made a habit."},
+            {"title": "Break the ward", "description": "Toll uses whatever wards remain to him."},
+        ],
+    })
+    stages = out["companion_quest_arc"]["stages"]
+    assert stages[0]["description"] == "Toll speaks aloud what shame made a habit."
+    assert stages[1]["description"] == "Toll uses whatever wards remain to him."
+    # persists + round-trips through get
+    got = server.get_companion_quest_arcs(cid, companion_id=comp)["companion_quest_arcs"][0]
+    assert got["stages"][0]["description"] == "Toll speaks aloud what shame made a habit."
+
+
 def test_personal_quest_gate_makes_linked_companion_quest_arc_available_once(camp):
     cid, comp = camp
     server.set_companion_quest_arc(cid, comp, {
