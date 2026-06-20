@@ -229,7 +229,7 @@ esac
 
 # Agent-readable failure buckets for built-app smoke. Keep these crisp and stable; the
 # detailed shell/native result still travels separately as original_result.
-APP_FAILURE_BUCKETS_JSON='["no_app","no_launcher","no_provider","no_art","no_actor","no_actions","move_rejected","no_narration","console_error","permission_prompt"]'
+APP_FAILURE_BUCKETS_JSON='["no_app","no_launcher","no_provider","no_art","no_actor","no_actions","move_rejected","no_narration","console_error","permission_prompt","quota_exhausted"]'  # #842 Fix D: quota_exhausted — a backend DM cold-open that 429s on the account session limit is an INFRA abort, NEVER a no_actor/no_provider product miss
 
 bucket_pair() { printf '%s|%s\n' "$1" "$2"; }
 
@@ -966,9 +966,26 @@ run_part_b() {
       fi
     fi
     kill -0 "$B_BACKEND" 2>/dev/null || { log "[B] backend exited early — see $RUNDIR/backend.log"; break; }
+    # #842 Fix D (quota circuit-breaker): a DM cold-open that 429s on the account session limit writes
+    # "session limit" / "HTTP 429" into backend.log. WITHOUT this the poll just runs out its ~10-min cap
+    # and mis-buckets the corpse as no_actor/no_provider (the rc3 misattribution). Detect it INSIDE the
+    # loop, drop a QUOTA_EXHAUSTED sentinel, and break early so we abort honestly instead of waiting +
+    # mis-bucketing. This is an INFRA abort, NOT a product-readiness miss.
+    if grep -qiE "session limit|HTTP 429|hit your (session|usage) limit" "$RUNDIR/backend.log" 2>/dev/null; then
+      log "[B] QUOTA EXHAUSTED — backend DM cold-open hit the account session limit (HTTP 429); see $RUNDIR/backend.log. Aborting the ready-wait (INFRA abort, not a product miss)."
+      touch "$RUNDIR/QUOTA_EXHAUSTED"
+      break
+    fi
     sleep 3
   done
   if [ "$ready" != "1" ]; then
+    # #842 Fix D: a quota 429 short-circuit takes precedence over the generic backend_not_ready
+    # classification — bucket it as quota_exhausted so the rollup attributes an INFRA abort, never a
+    # no_actor/no_provider product failure (the rc3 mis-bucketing the quota circuit-breaker exists to kill).
+    if [ -f "$RUNDIR/QUOTA_EXHAUSTED" ]; then
+      log "[B] backend never became player-ready — QUOTA_EXHAUSTED (account session limit) — see $RUNDIR/backend.log"
+      PART_B_RESULT="quota_exhausted"; set_bucket_pair B "$(bucket_pair quota_exhausted 'DM cold-open hit the account session limit (HTTP 429) — INFRA abort, not a product readiness miss')"; return 1
+    fi
     log "[B] backend never became player-ready (can_act=$saw_canact seatedPC=$saw_pc) — see $RUNDIR/backend.log"
     PART_B_RESULT="backend_not_ready"; set_bucket_pair B "$(classify_part_b_readiness_failure "$saw_canact" "$saw_pc" "${chat_lines:-0}")"; return 1
   fi

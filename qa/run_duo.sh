@@ -372,6 +372,16 @@ $SETUP_DIRECTIVE OUTPUT DISCIPLINE — your final reply IS the opening scene: wr
 # line (empty final reply) — so a tool-final-but-narrated turn isn't mistaken for silence.
 worldos_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$WORLDOS_DM_REPLY"
 echo "[duo] DM opened: ${DMSG:0:120}…"
+# #842 Fix E (quota circuit-breaker): if the DM cold-open hit the account session limit (HTTP 429),
+# the per-attempt stream-json ($COMBINED) and/or the DM stderr ($T/$RUN.dm.err) carry the
+# "session limit" / "HTTP 429" marker. An empty/recovered reply on top of a 429 is NOT a product
+# failure — it is an INFRA abort. Detect it BEFORE scoring so we never burn the 3-lens scorer on a
+# quota corpse (or, worse, cap-RED a quota'd run as a 2.5 product score). Log a marker the VM sweep
+# greps for and exit rc=2 (distinct from the rc=1 genuine-no-opening abort below).
+if grep -qiE "session limit|HTTP 429|hit your (session|usage) limit" "$COMBINED" "$T/$RUN.dm.err" 2>/dev/null; then
+  echo "[duo] QUOTA ABORT — DM cold-open hit the account session limit (HTTP 429). Skipping scoring; this is an INFRA abort, NOT a product measurement." >&2
+  exit 2
+fi
 # SYN-01: an empty resolved reply is a FAILED beat (error-class result, recycled-only prose, or
 # nothing recovered). Record the wrapper-authored VISIBLE failure row — never the error text,
 # never a blank/hidden row — then abort loudly as before.
@@ -495,6 +505,17 @@ if [ -n "$SNAP" ]; then cp "$SNAP" "$T/$RUN.state.json"; else echo '{"warning":"
 [ -s "$PLAY" ] && "$SCORE_SCRIPT" "$PLAY" "$T/$RUN.state.json" qa/rubric_tolkien.md qa/score_schema_tolkien.json "$T/$RUN.tolkien.json" 1.50 &
 [ -f "$T/$RUN.md" ] && "$SCORE_SCRIPT" "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric_angry_dm.md qa/score_schema_angry_dm.json "$T/$RUN.angrydm.json" 1.50 &
 wait
+# #842 Fix F (caller half): score.sh now FAILS FAST on a 429, writing a {"quota_exhausted":true,…}
+# sentinel into its OUT and exiting rc=2 — so the scorer can quota-trip even when the DM cold-open
+# itself didn't (e.g. the account hits the limit AFTER the play, during scoring). Any lens carrying
+# that sentinel is NOT a valid scorecard — short-circuit to the same QUOTA ABORT path Fix E uses
+# (log the marker the VM sweep greps + exit rc=2) instead of scoring/gating on a quota corpse.
+for _scf in "$T/$RUN.tolkien.json" "$T/$RUN.score.json" "$T/$RUN.angrydm.json"; do
+  if [ -f "$_scf" ] && jq -e '.quota_exhausted == true' "$_scf" >/dev/null 2>&1; then
+    echo "[duo] QUOTA ABORT — the scorer hit the account session limit (HTTP 429) on $(basename "$_scf"). Skipping the gate + scorecards; INFRA abort, NOT a product measurement." >&2
+    exit 2
+  fi
+done
 # Behavioral gate — flip RED on a structurally broken run (treat it like software).
 python3 qa/assert_behavioral.py "$COMBINED" "$T/$RUN.state.json" "$T/$RUN.chat.jsonl" "$MOVES" | tee "$T/$RUN.gate.txt"; GATE=${PIPESTATUS[0]}
 # Honest scoring: a gate-RED (non-progressing/structurally broken) run must NOT display as 4.1.

@@ -182,5 +182,89 @@ class ReleaseGateStaticContractTests(unittest.TestCase):
         self.assertIn('exec "$ROOT/scripts/play.sh" "${ARGS[@]}"', party)
 
 
+class QuotaCircuitBreakerStaticContractTests(unittest.TestCase):
+    """#842: a 429 (account session limit) must yield a QUOTA abort, never a junk RRI/score,
+    and a quota-aborted sweep must never republish stale evidence. Grep-the-shell-source contracts
+    (mirrors the release-gate static style — no live runs)."""
+
+    def test_sweep_cleanup_wipes_stale_rri_json(self):
+        # Fix A: the sweep-start cleanup rm must include RRI.json so a quota abort before a fresh
+        # rollup can never leave the PREVIOUS run's RRI.json in place (the rc3 stale-RRI bug).
+        source = (ROOT / "qa" / "vm" / "sweep_v2.sh").read_text(encoding="utf-8")
+        self.assertIn('rm -f "$RES/DONE" "$RES/CANARY_FAIL" "$RES/QUOTA_ABORT" "$RES/RRI.json"', source)
+
+    def test_sweep_canary_abort_writes_aborted_rri(self):
+        # Fix B: the canary-abort path must ALSO write the {"status":"ABORTED",…} RRI.json (it
+        # previously touched DONE + exited leaving any stale RRI.json behind). The shared
+        # write_aborted_rri helper carries the ABORTED status; the canary-abort path must call it.
+        source = (ROOT / "qa" / "vm" / "sweep_v2.sh").read_text(encoding="utf-8")
+        self.assertIn("write_aborted_rri()", source)
+        self.assertIn('"status": "ABORTED"', source)
+        self.assertIn('"abort_reason": "quota_session_limit"', source)
+        # the canary-abort branch (QUOTA ABORT at the canary) must call the writer before exiting.
+        canary_idx = source.index("QUOTA ABORT at the canary")
+        # the next write_aborted_rri call after the canary-abort message proves the path stamps it.
+        self.assertIn("write_aborted_rri", source[canary_idx:canary_idx + 600])
+
+    def test_sweep_wipes_stale_duo_artifacts_before_duo_call(self):
+        # Fix C: the duo-artifact rm must PRECEDE the run_duo.sh call so the `[ -f ] && cp` below
+        # can only copy CURRENT-run output (rc3 republished rc2's byte-identical lens scores).
+        source = (ROOT / "qa" / "vm" / "sweep_v2.sh").read_text(encoding="utf-8")
+        self.assertIn('rm -f "$RES/duo-tolkien.json" "$RES/duo-angrydm.json" "$RES/duo-latency.json"', source)
+        self.assertIn('"qa/transcripts/vm2-duo.tolkien.json" "qa/transcripts/vm2-duo.angrydm.json"', source)
+        # the wipe must come before the run_duo invocation.
+        self.assertLess(
+            source.index('rm -f "$RES/duo-tolkien.json"'),
+            source.index("bash qa/run_duo.sh vm2-duo baldurs-gate veteran"),
+        )
+
+    def test_ui_playtest_app_has_quota_exhausted_bucket(self):
+        # Fix D: quota_exhausted must be a known failure bucket AND the poll loop must detect a
+        # 429 in backend.log, drop the QUOTA_EXHAUSTED sentinel, and bucket it as quota_exhausted
+        # (not the generic backend_not_ready / no_actor mis-bucketing).
+        source = (ROOT / "qa" / "ui_playtest_app.sh").read_text(encoding="utf-8")
+        self.assertIn('"quota_exhausted"', source)
+        self.assertIn('APP_FAILURE_BUCKETS_JSON=', source)
+        # the buckets JSON literal carries quota_exhausted.
+        buckets_line = next(
+            l for l in source.splitlines() if l.startswith("APP_FAILURE_BUCKETS_JSON=")
+        )
+        self.assertIn("quota_exhausted", buckets_line)
+        # the poll loop drops the sentinel and the readiness-failure path buckets it.
+        self.assertIn('touch "$RUNDIR/QUOTA_EXHAUSTED"', source)
+        self.assertIn('[ -f "$RUNDIR/QUOTA_EXHAUSTED" ]', source)
+        self.assertIn('PART_B_RESULT="quota_exhausted"', source)
+
+    def test_score_sh_has_429_fast_fail_arm(self):
+        # Fix F: score.sh must have a 429 fast-fail arm (NO 3 retries) that writes the quota
+        # sentinel and exits rc=2.
+        source = (ROOT / "qa" / "score.sh").read_text(encoding="utf-8")
+        self.assertIn('[ "$api_err" = "429" ]', source)
+        self.assertIn('printf \'{"quota_exhausted":true,"api_error_status":429}\\n\' > "$OUT"', source)
+        self.assertIn("exit 2", source)
+        # the fast-fail arm must sit BEFORE the generic retry-loop tail (the empty/api_err branches)
+        # so a 429 short-circuits instead of burning the 3 attempts.
+        self.assertLess(source.index('[ "$api_err" = "429" ]'), source.index('if [ ! -s "$RAW" ]; then'))
+
+    def test_run_duo_checks_for_quota_abort_before_scoring(self):
+        # Fix E + Fix F (caller half): run_duo.sh must (1) detect a DM cold-open 429 and emit the
+        # "[duo] QUOTA ABORT" marker + exit rc=2 BEFORE the empty-reply abort, and (2) treat the
+        # score.sh quota sentinel as a quota abort (not a valid scorecard) before the behavioral gate.
+        source = (ROOT / "qa" / "run_duo.sh").read_text(encoding="utf-8")
+        self.assertIn("[duo] QUOTA ABORT", source)
+        self.assertIn("session limit|HTTP 429|hit your (session|usage) limit", source)
+        self.assertIn(".quota_exhausted == true", source)
+        # the cold-open quota check must precede the empty-reply abort (DM produced no opening).
+        self.assertLess(
+            source.index("[duo] QUOTA ABORT"),
+            source.index("DM produced no opening"),
+        )
+        # the scorer-sentinel quota check must precede the behavioral gate (no gating a quota corpse).
+        self.assertLess(
+            source.index(".quota_exhausted == true"),
+            source.index("python3 qa/assert_behavioral.py"),
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

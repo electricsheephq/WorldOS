@@ -42,7 +42,7 @@ cd /root/worldos-qa/WorldOS || { echo "NO REPO"; exit 1; }
 RES=/root/worldos-qa/results; mkdir -p "$RES"
 SHA="$(git rev-parse --short HEAD)"; LOG="$RES/sweep2.log"; : > "$LOG"
 note(){ echo "[$(date +%H:%M:%S)] $*" | tee -a "$LOG"; }
-rm -f "$RES/DONE" "$RES/CANARY_FAIL" "$RES/QUOTA_ABORT" 2>/dev/null
+rm -f "$RES/DONE" "$RES/CANARY_FAIL" "$RES/QUOTA_ABORT" "$RES/RRI.json" 2>/dev/null  # #842 Fix A: wipe the stale RRI.json too — a sweep that quota-aborts before it writes a fresh one must NEVER leave the PREVIOUS run's RRI in place to masquerade as this run's measurement.
 
 # QUOTA-ABORT detection (the rc3 lesson). A `claude -p` DM beat that 429s on the account
 # session limit writes "session limit" / "HTTP 429" into the persona backend.log. A sweep
@@ -54,6 +54,22 @@ quota_tripped(){  # $1 = a run dir or a log path; rc 0 if a session-limit/429 is
 }
 quota_reset_hint(){  # echoes e.g. "resets 3:50pm UTC" from the log(s), if present
   grep -hroiE "resets [0-9: ]*[ap]m \(?(UTC|[A-Za-z/_]+)\)?" "$@" 2>/dev/null | head -1
+}
+# #842 Fix B: write the explicit {"status":"ABORTED",…} RRI.json for a quota abort. EVERY quota
+# exit (canary-abort AND post-batch) must stamp this so a stale RRI.json from a prior run can never
+# persist and read as THIS run's product score (the rc3 bug). $1 = RRI.json path, $2 = the abort
+# detail string (persona + reset hint). Reused by both the canary-abort path and the post-batch
+# QUOTA_ABORT short-circuit so the ABORTED JSON shape stays identical at every exit.
+write_aborted_rri(){
+  python3 - "$1" "$SHA" "$2" <<'PY' 2>/dev/null
+import json, sys
+out, sha, detail = sys.argv[1], sys.argv[2], sys.argv[3]
+json.dump({"status": "ABORTED", "abort_reason": "quota_session_limit",
+           "detail": detail, "build_sha": sha, "release_ready": False,
+           "note": "claude account session limit (HTTP 429) tripped mid-sweep; "
+                   "this is an INFRA abort, NOT a product RRI. Re-run after the quota resets."},
+          open(out, "w"), indent=2)
+PY
 }
 
 # 0) kill the stuck v1 orchestrator + any stray vm- play procs; free ports
@@ -165,6 +181,7 @@ if [ ! -f "$RES/score-newbie.json" ]; then
   if quota_tripped "$CANARY_BL"; then
     note "QUOTA ABORT at the canary — claude account session limit ($(quota_reset_hint "$CANARY_BL")). The batch would 429 too; not spending it. INFRA abort, NOT a product measurement."
     echo "newbie $(quota_reset_hint "$CANARY_BL")" > "$RES/QUOTA_ABORT"
+    write_aborted_rri "$RES/RRI.json" "$(cat "$RES/QUOTA_ABORT")"  # #842 Fix B: stamp the ABORTED RRI so no stale RRI.json persists past a canary-abort
     touch "$RES/DONE"; exit 0
   fi
   note "CANARY FAILED - no score-newbie.json. Aborting batch; see vm2-newbie.log for the cause."
@@ -175,6 +192,7 @@ fi
 if quota_tripped "$CANARY_BL"; then
   note "QUOTA ABORT — the canary scored but its backend 429'd ($(quota_reset_hint "$CANARY_BL")); the account is at its session limit. Not spending the batch."
   echo "newbie $(quota_reset_hint "$CANARY_BL")" > "$RES/QUOTA_ABORT"
+  write_aborted_rri "$RES/RRI.json" "$(cat "$RES/QUOTA_ABORT")"  # #842 Fix B: stamp the ABORTED RRI so no stale RRI.json persists past a canary-abort
   touch "$RES/DONE"; exit 0
 fi
 note "CANARY OK - scoring works. Running the other 4 personas SEQUENTIALLY (quota-safe)."
@@ -202,21 +220,29 @@ note "persona batch done."
 # way). Emit an explicit ABORTED status the ledger/scorecard can never read as a product score.
 if [ -f "$RES/QUOTA_ABORT" ]; then
   note "=== RRI SKIPPED — QUOTA_ABORT ($(cat "$RES/QUOTA_ABORT")) — not a product measurement ==="
-  python3 - "$RES/RRI.json" "$SHA" "$(cat "$RES/QUOTA_ABORT")" <<'PY' 2>/dev/null
-import json, sys
-out, sha, detail = sys.argv[1], sys.argv[2], sys.argv[3]
-json.dump({"status": "ABORTED", "abort_reason": "quota_session_limit",
-           "detail": detail, "build_sha": sha, "release_ready": False,
-           "note": "claude account session limit (HTTP 429) tripped mid-sweep; "
-                   "this is an INFRA abort, NOT a product RRI. Re-run after the quota resets."},
-          open(out, "w"), indent=2)
-PY
+  write_aborted_rri "$RES/RRI.json" "$(cat "$RES/QUOTA_ABORT")"  # #842 Fix B: shared ABORTED-RRI writer (same shape the canary-abort path uses)
   note "=== SWEEP COMPLETE (QUOTA-ABORTED) -> $RES ==="; touch "$RES/DONE"; exit 0
 fi
 
 # 3) duo (story/mech) + behavioral + audit - run after personas (sequential, cheap-ish)
 note "3-lens duo..."
+# #842 Fix C (the rc3 stale-score bug): WIPE this run's prior duo artifacts BEFORE the duo runs.
+# An aborted/quota'd duo writes NO fresh tolkien/angrydm/latency JSON, so the `[ -f ] && cp` below
+# would copy the PREVIOUS run's byte-identical lens scores into THIS sweep's results (rc3 published
+# rc2's "story 4.0/mech 3.0" verbatim). Removing both the results copies and run_duo's transcript
+# outputs guarantees the cp only fires on CURRENT-run output (a missing file => no stale carry-over).
+rm -f "$RES/duo-tolkien.json" "$RES/duo-angrydm.json" "$RES/duo-latency.json" \
+      "qa/transcripts/vm2-duo.tolkien.json" "qa/transcripts/vm2-duo.angrydm.json" 2>/dev/null
 timeout 3600 bash qa/run_duo.sh vm2-duo baldurs-gate veteran 8 5.00 > "$RES/duo.log" 2>&1
+# #842 Fix E (duo half): a session-limit 429 in the DM cold-open makes run_duo log "[duo] QUOTA ABORT"
+# and exit rc=2 (no valid scorecard). Treat that exactly like the persona-batch quota abort — write
+# QUOTA_ABORT + the ABORTED RRI and STOP, so a quota'd duo can never roll up a junk story/mech score.
+if grep -q '\[duo\] QUOTA ABORT' "$RES/duo.log" 2>/dev/null; then
+  note "QUOTA ABORT in the duo — claude account session limit ($(quota_reset_hint "$RES/duo.log")). Skipping the duo scores + RRI. INFRA abort, NOT a product result."
+  echo "duo $(quota_reset_hint "$RES/duo.log")" > "$RES/QUOTA_ABORT"
+  write_aborted_rri "$RES/RRI.json" "$(cat "$RES/QUOTA_ABORT")"
+  note "=== SWEEP COMPLETE (QUOTA-ABORTED at duo) -> $RES ==="; touch "$RES/DONE"; exit 0
+fi
 for f in tolkien angrydm; do s="qa/transcripts/vm2-duo.$f.json"; [ -f "$s" ] && cp "$s" "$RES/duo-$f.json" && note "  $f overall=$(python3 -c "import json;print(json.load(open('$s')).get('overall'))" 2>/dev/null)"; done
 # F13-4 (#753): carry the duo's derived latency ledger into the sweep results so scores_db
 # can stamp s_per_beat/coldopen_s/turns_per_beat (the #753 budget ledger). run_duo wrote it.
