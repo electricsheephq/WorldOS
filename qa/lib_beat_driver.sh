@@ -725,6 +725,15 @@ worldos_stream_flag_arg() {
 # killer. Best-effort: a launch failure (missing python3 / missing script) never fails the beat —
 # the live stream simply doesn't appear and the canonical paths resolve normally.
 #   $1 = the DM $out stream-json path   $2 = $STATE_DIR
+#
+# #835 Increment 2 FIX B: the DM turn (dm_turn) runs inside a $(...) command-substitution SUBSHELL,
+# so WORLDOS_STREAM_TAILER_PID set here CANNOT escape to the parent shell where the EXIT/INT/TERM
+# cleanup trap runs (same subshell-isolation that forced .dm_last_result to be a FILE). On a clean
+# beat end worldos_stream_tailer_stop (called in the same subshell) kills it fine; but a SIGINT/
+# SIGTERM mid-beat skips that stop and would orphan the tailer with no PID visible to the parent.
+# So we ALSO persist the PID to $STATE_DIR/stream/tailer.pid, which the wrapper's signal trap reads
+# (worldos_stream_tailer_kill_pidfile) — a file survives the subshell boundary. The tailer's own
+# self-bounding caps (WORLDOS_STREAM_TAILER_MAX_S / idle) are the final backstop if even that is missed.
 worldos_stream_tailer_start() {
   WORLDOS_STREAM_TAILER_PID=""
   [ "$(worldos_env STREAM_BEATS 0)" = "1" ] || return 0
@@ -735,16 +744,40 @@ worldos_stream_tailer_start() {
   command -v python3 >/dev/null 2>&1 || return 0
   python3 "$script" "$out" "$state_dir/stream" >/dev/null 2>&1 &
   WORLDOS_STREAM_TAILER_PID="$!"
+  # Persist the PID across the subshell boundary for the signal-trap reaper (FIX B). Best-effort.
+  mkdir -p "$state_dir/stream" 2>/dev/null || true
+  printf '%s\n' "$WORLDOS_STREAM_TAILER_PID" > "$state_dir/stream/tailer.pid" 2>/dev/null || true
   return 0
 }
 
 # Kill the tailer launched by worldos_stream_tailer_start (no-op when none ran). Idempotent and
-# best-effort — a tailer that already exited is a benign no-op. Clears the PID after.
+# best-effort — a tailer that already exited is a benign no-op. Clears the PID (and the pidfile, so
+# a later signal-trap reaper doesn't kill a recycled PID) after.
 worldos_stream_tailer_stop() {
   local pid="${WORLDOS_STREAM_TAILER_PID:-}"
-  [ -n "$pid" ] || return 0
-  kill "$pid" >/dev/null 2>&1 || true
+  if [ -n "$pid" ]; then
+    kill "$pid" >/dev/null 2>&1 || true
+  fi
   WORLDOS_STREAM_TAILER_PID=""
+  # Clear the pidfile too (best-effort; $STATE_DIR is ambient in the harnesses but guard anyway).
+  [ -n "${STATE_DIR:-}" ] && rm -f "$STATE_DIR/stream/tailer.pid" 2>/dev/null || true
+  return 0
+}
+
+# Signal-trap reaper for the orphan-on-signal case (FIX B): kill whatever tailer PID was persisted
+# to $STATE_DIR/stream/tailer.pid by a (possibly subshell-isolated) worldos_stream_tailer_start,
+# then remove the pidfile. Called from the wrappers' EXIT/INT/TERM cleanup traps (which run in the
+# PARENT shell, where WORLDOS_STREAM_TAILER_PID is empty because dm_turn ran in a $(...) subshell).
+# No-op when streaming was OFF (no pidfile) or the tailer already exited. $1 = $STATE_DIR.
+worldos_stream_tailer_kill_pidfile() {
+  local state_dir="${1:-${STATE_DIR:-}}"
+  [ -n "$state_dir" ] || return 0
+  local pidfile="$state_dir/stream/tailer.pid" pid=""
+  [ -f "$pidfile" ] || return 0
+  pid="$(cat "$pidfile" 2>/dev/null)"
+  case "$pid" in ''|*[!0-9]*) pid="" ;; esac   # only a clean numeric PID is killable
+  [ -n "$pid" ] && kill "$pid" >/dev/null 2>&1 || true
+  rm -f "$pidfile" 2>/dev/null || true
   return 0
 }
 

@@ -46,6 +46,13 @@ PROSE_TOOL_SUFFIXES = ("log_event", "persist_beat")
 # Only these `kind` values are player-safe prose. A log_event with any other kind (system, roll,
 # combat, ...) is NEVER streamed (its text is internal bookkeeping, not scene prose).
 PROSE_KINDS = frozenset({"narration", "dialogue"})
+# The engine's log_event accepts `text` (canonical) OR any of the aliases message/content/note as
+# the prose value, normalizing them as `text = text or message or content or note` (server.py)
+# — so a beat where the DM reaches for an alias still carries player-facing scene prose. The
+# scanner therefore treats all of these as text-equivalent. PRECEDENCE mirrors the engine: a
+# literal `text` value WINS over any alias when more than one appears in the same call (in
+# practice the DM uses exactly one). Ordered most-preferred-first.
+PROSE_TEXT_KEYS = ("text", "message", "content", "note")
 
 
 def _short_tool(name: object) -> str:
@@ -82,21 +89,22 @@ class _PartialJsonScanner:
         between two deltas decodes correctly;
       * emits only fully-decoded characters of the `text` value (never a half-formed escape).
 
-    It captures the decoded value of `kind` (small, completes fast) and the running decoded
-    prefix of `text`. The driver decides, using `kind`, whether to surface `text`.
-
     Robustness: the scanner only ever READS the buffer forward; it never needs the object to be
-    well-formed past the `text` value, and a malformed tail simply stops producing new decoded
+    well-formed past the prose value, and a malformed tail simply stops producing new decoded
     text (the beat still resolves via the canonical paths). Only top-level keys are tracked
     (depth-aware), so a nested object's `text` (e.g. inside persist_beat's events list) does not
-    masquerade as the flat narration text.
+    masquerade as the flat narration text — and likewise a nested `message`/`content`/`note`.
     """
 
     def __init__(self) -> None:
         # Decoded values captured so far.
         self.kind: Optional[str] = None       # decoded `kind` value once its string closes
-        self.text: str = ""                    # running decoded prefix of the `text` value
-        self._text_closed = False              # the `text` string has fully closed
+        self.text: str = ""                    # running decoded prefix of the prose value
+        # Which prose key (PROSE_TEXT_KEYS) currently OWNS self.text. None until the first prose
+        # value starts decoding. A later HIGHER-precedence key (e.g. a literal `text` after a
+        # `note`) takes over and resets self.text; a later lower/equal-precedence key is ignored.
+        self._text_key: Optional[str] = None
+        self._text_closed = False              # the OWNING prose string has fully closed
 
         # Lexer state.
         self._in_string = False
@@ -129,12 +137,46 @@ class _PartialJsonScanner:
             self._cur_key = (self._cur_key or "") + decoded
             return
         # A VALUE character.
-        if self._cur_val_key == "text" and not self._text_closed:
+        if self._cur_val_key in PROSE_TEXT_KEYS and self._prose_key_owns(self._cur_val_key):
             self.text += decoded
         # `kind` is captured on string close (it's short); no need to stream it char-by-char.
         elif self._cur_val_key == "kind":
             # Buffer kind chars in self.text? No — keep them separate.
             self._kind_acc = getattr(self, "_kind_acc", "") + decoded
+
+    def _prose_key_owns(self, key: str) -> bool:
+        """Does prose-key `key` own self.text right now (so its decoded chars append)? The owner
+        is the HIGHEST-precedence prose key seen so far (PROSE_TEXT_KEYS index 0 = highest). A
+        same-or-higher precedence key (incl. the current owner) appends; a strictly higher one
+        that just STARTED takes over (handled in _consume_structural on value-start, which resets
+        self.text); a lower-precedence key never displaces the owner. Once the owning string has
+        closed, no further appends (a stray later key can't extend a finished value)."""
+        if self._text_closed:
+            return False
+        owner = self._text_key
+        if owner is None:
+            return True
+        return PROSE_TEXT_KEYS.index(key) <= PROSE_TEXT_KEYS.index(owner)
+
+    def _on_prose_value_start(self, key: Optional[str]) -> None:
+        """A depth-1 value just STARTED for `key`. If it's a prose key (text or an alias) and
+        strictly higher-precedence than the current owner, it takes over: reset the accumulated
+        text and claim ownership — EVEN if the prior (lower-precedence) owner had already closed
+        (e.g. a literal `text` appearing after a complete `note` discards the note's value,
+        mirroring the engine's `text`-wins normalization). The common case — the FIRST prose key,
+        or the SAME owner re-entered — just claims/keeps ownership. Non-prose keys (kind, speaker,
+        …) are ignored here."""
+        if key not in PROSE_TEXT_KEYS:
+            return
+        owner = self._text_key
+        if owner is None:
+            self._text_key = key
+            return
+        if PROSE_TEXT_KEYS.index(key) < PROSE_TEXT_KEYS.index(owner):
+            # A higher-precedence prose key supersedes a previously-seen alias (closed or not).
+            self._text_key = key
+            self.text = ""
+            self._text_closed = False
 
     def _consume(self, ch: str) -> None:
         if self._in_string:
@@ -175,7 +217,8 @@ class _PartialJsonScanner:
                 if self._cur_val_key == "kind":
                     self.kind = getattr(self, "_kind_acc", "")
                     self._kind_acc = ""
-                elif self._cur_val_key == "text":
+                elif self._cur_val_key in PROSE_TEXT_KEYS and self._cur_val_key == self._text_key:
+                    # The OWNING prose value (text or the winning alias) closed → no more appends.
                     self._text_closed = True
                 self._cur_val_key = None
             self._is_key = False
@@ -194,6 +237,7 @@ class _PartialJsonScanner:
                 self._is_key = False
                 if self._expect_value and self._depth == 1:
                     self._cur_val_key = self._pending_key
+                    self._on_prose_value_start(self._cur_val_key)
                 self._expect_value = False
             return
         if ch == ":":
@@ -338,6 +382,13 @@ class StreamDecoder:
             return
         full = scanner.text
         already = st["emitted"]
+        if already > len(full):
+            # The scanner's prose ACCUMULATOR shrank — a higher-precedence prose key (text after
+            # an alias) reset it (engine `text`-wins normalization). We can't retract chunks
+            # already flushed downstream, but realign so the new owner's prose still streams from
+            # here (a non-issue in practice: the DM uses one prose key per call).
+            already = 0
+            st["emitted"] = 0
         if len(full) > already:
             delta = full[already:]
             st["emitted"] = len(full)
@@ -390,19 +441,35 @@ def _open_sink(stream_path: str):
     return open(stream_path, "w", encoding="utf-8")
 
 
+# SELF-BOUNDING DEFAULTS (#835 Increment 2, FIX B). The wrapper kills the tailer on a clean beat
+# end (worldos_stream_tailer_stop) AND on a signal-trap exit (the _cleanup/_party_cleanup traps),
+# but a stop signal can still be MISSED (a hard kill of the parent, a crashed wrapper, an orphan
+# left by a deadline-killed runner). So the tailer ALSO self-terminates: an absolute wall-clock
+# lifetime cap, and an idle cap (the target $out stopped growing for this long → the beat is over).
+# Either bound makes the sidecar incapable of running forever even if its stop signal never comes.
+DEFAULT_MAX_LIFETIME_S = 1800.0   # hard ceiling from tailer start (a DM beat is bounded well under this)
+DEFAULT_MAX_IDLE_S = 180.0        # no new $out growth for this long → the beat has ended; exit
+
+
 def tail_stream(
     out_path: str,
     stream_path: str,
     *,
     poll_interval: float = 0.25,
     stop: Optional[Callable[[], bool]] = None,
-    max_idle_s: Optional[float] = None,
+    max_idle_s: Optional[float] = DEFAULT_MAX_IDLE_S,
+    max_lifetime_s: Optional[float] = DEFAULT_MAX_LIFETIME_S,
 ) -> int:
     """Tail `out_path` (the DM stream-json file) and write decoded prose chunks to
     `stream_path` ($STATE_DIR/stream/current.jsonl), one JSON line per chunk. Returns the
     number of chunks written. Runs until `stop()` returns True (when provided) or the process
-    is killed by the wrapper at beat end. `max_idle_s` is a safety valve for tests/standalone
-    runs (stop after that long with no new file growth)."""
+    is killed by the wrapper at beat end — OR until a SELF-BOUNDING cap trips (FIX B), so a
+    missed stop signal can never leave the sidecar running forever:
+      * `max_idle_s` — stop after this long with no new $out growth (the beat is over). Default
+        DEFAULT_MAX_IDLE_S; pass None to disable.
+      * `max_lifetime_s` — a hard wall-clock ceiling from start. Default DEFAULT_MAX_LIFETIME_S;
+        pass None to disable.
+    Both are belt-and-suspenders to the wrapper's explicit kill, not a replacement for it."""
     state: dict = {"offset": 0, "tail": ""}
     seq = 0
     sink = _open_sink(stream_path)
@@ -415,10 +482,15 @@ def tail_stream(
         seq += 1
 
     decoder = StreamDecoder(emit)
-    last_progress = time.time()
+    started = time.time()
+    last_progress = started
     try:
         while True:
             if stop is not None and stop():
+                break
+            # Hard lifetime cap: trips regardless of activity (a stuck-but-growing $out can't pin
+            # the sidecar open past this). Checked first so it always wins.
+            if max_lifetime_s is not None and (time.time() - started) > max_lifetime_s:
                 break
             progressed = False
             for line in _iter_new_lines(out_path, state):
@@ -457,11 +529,34 @@ def main(argv: Optional[list] = None) -> int:
     else:
         stream_path = target
     poll = float(os.environ.get("WORLDOS_STREAM_POLL_S", "0.25"))
+    # FIX B self-bounding: env-overridable hard lifetime + idle caps so a tailer whose stop signal
+    # is missed (orphaned by a hard parent kill / deadline) still self-terminates. 0/negative or a
+    # non-numeric value DISABLES the respective cap (None). Defaults match tail_stream's.
+    max_lifetime = _env_bound("WORLDOS_STREAM_TAILER_MAX_S", DEFAULT_MAX_LIFETIME_S)
+    max_idle = _env_bound("WORLDOS_STREAM_TAILER_IDLE_S", DEFAULT_MAX_IDLE_S)
     try:
-        tail_stream(out_path, stream_path, poll_interval=poll)
+        tail_stream(
+            out_path, stream_path,
+            poll_interval=poll,
+            max_idle_s=max_idle,
+            max_lifetime_s=max_lifetime,
+        )
     except KeyboardInterrupt:
         pass
     return 0
+
+
+def _env_bound(name: str, default: float) -> Optional[float]:
+    """Resolve a seconds bound from env: a positive float overrides `default`; a 0/negative or
+    unparseable value DISABLES the bound (returns None); unset → `default`."""
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        val = float(raw)
+    except ValueError:
+        return None
+    return val if val > 0 else None
 
 
 if __name__ == "__main__":

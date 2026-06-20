@@ -141,8 +141,29 @@ function makeReact() {
 const responses = { '/events': [], '/chat': [] };
 function enqueue(path, payload) { responses[path].push(payload); }
 function pathOf(url) { return String(url).split('?')[0]; }
+function sinceOf(url) {
+  const m = String(url).split('?')[1] || '';
+  const params = new URLSearchParams(m);
+  const v = parseInt(params.get('since') || '0', 10);
+  return Number.isFinite(v) ? v : 0;
+}
+let __beatStreamFetches = 0;   // #835 Inc-2 FIX A: count /beat-stream requests for the off-path assertion
+// #835 Inc-2: the /beat-stream sidecar is a single per-beat line buffer the client reads with a
+// `since` line cursor (the tailer TRUNCATES + rewrites it per beat). We model it `since`-aware so
+// FIX C (cursor reset on a new turn) is GENUINELY exercised: a stale cursor would slice past the
+// freshly-truncated buffer and drop the new beat's opening chunks. `seedBeatStream` resets it
+// (mirrors the per-beat truncation); the client's truncation-reset (since>len → 0) is honored too.
+let __beatStreamLines = [];
+function seedBeatStream(lines) { __beatStreamLines = (lines || []).slice(); }
 function fetchStub(url) {
   const p = pathOf(url);
+  if (p === '/beat-stream') {
+    __beatStreamFetches += 1;
+    let since = sinceOf(url);
+    if (since > __beatStreamLines.length) since = 0;   // truncation-reset guard (mirrors the server)
+    const chunks = __beatStreamLines.slice(since);
+    return Promise.resolve({ ok: true, json: () => Promise.resolve({ chunks, next: __beatStreamLines.length, complete: false }) });
+  }
   const q = responses[p];
   const payload = (q && q.length) ? q.shift() : {};   // empty when nothing scripted
   return Promise.resolve({ ok: true, json: () => Promise.resolve(payload) });
@@ -176,6 +197,8 @@ const sandbox = {
   // `new URLSearchParams()` threw, the poll's try/catch swallowed it, and no fetch ever fired.
   URLSearchParams, Promise, JSON, Set, Array, Object, String, Boolean, Number,
   console,
+  get __beatStreamFetches() { return __beatStreamFetches; },   // #835 Inc-2 FIX A: exposed to h.beatStreamFetchCount
+  seedBeatStream,                                              // #835 Inc-2: exposed to h.seedBeatStream
 };
 sandbox.window = sandbox;
 sandbox.Date = { now: () => NOW };
@@ -200,7 +223,10 @@ if (typeof useLiveSession !== 'function') throw new Error('useLiveSession not ex
 
 // Mount over a LIVE campaign so the polls run. The `state` ref is mutable so a test can switch
 // the bound run (campaignId change) to assert the dedup reset.
-const state = { activeCampaign: 'camp1', campaigns: [{ id: 'camp1', campaign_id: 'camp1' }] };
+// #835 Increment 2 FIX A: the /beat-stream poll is now gated on state.streamBeats (the server's
+// WORLDOS_STREAM_BEATS mirror). These tests exercise the streaming path, so the harness mounts with
+// the feature ON. (The OFF default — no poll fires — is asserted separately below.)
+const state = { activeCampaign: 'camp1', campaigns: [{ id: 'camp1', campaign_id: 'camp1' }], streamBeats: true };
 reactHost.mount(() => useLiveSession(state));
 
 // A microtask drain: the pollers are async (await fetch().json()); after firing them we must let
@@ -214,7 +240,14 @@ const h = {
   tick: async () => { await tickAll(); reactHost.commit(); },
   // switch the bound run: a fresh mount re-renders the (same-cell) hook so the campaignId-change
   // effect fires (resetting the cursor + dedup set), exactly like navigating into a new live run.
-  setCampaign: (id) => { state.activeCampaign = id; state.campaigns = [{ id, campaign_id: id }]; reactHost.mount(() => useLiveSession(state)); },
+  setCampaign: (id) => { state.activeCampaign = id; state.campaigns = [{ id, campaign_id: id }]; state.streamBeats = true; reactHost.mount(() => useLiveSession(state)); },
+  // #835 Increment 2 FIX A: flip the server's stream-beats lever (re-mount so the gated effect re-evaluates).
+  setStreamBeats: (on) => { state.streamBeats = !!on; reactHost.mount(() => useLiveSession(state)); },
+  // Count how many /beat-stream fetches have fired so far (the off-path inertness assertion).
+  beatStreamFetchCount: () => sandbox.__beatStreamFetches,
+  // #835 Inc-2: (re)seed the /beat-stream sidecar buffer (mirrors the tailer truncating + rewriting
+  // current.jsonl per beat). Each entry is one decoded chunk row {seq,text}.
+  seedBeatStream: (lines) => sandbox.seedBeatStream(lines),
   beats: () => (reactHost.api().chatBeats || []).map((b) => ({ kind: b.kind, text: b.text })),
   narrationTexts: () => (reactHost.api().chatBeats || []).filter((b) => b.kind === 'narration').map((b) => b.text),
   // #405: the FULLY-ASSEMBLED chronicle (recentEvents history band + live tail + echoes), ordered +
@@ -417,6 +450,70 @@ class LiveNarrationStreamTests(unittest.TestCase):
         self.assertTrue(out["first_streaming"], "the first turn streamed → it was marked streaming")
         self.assertFalse(out["second_streaming"],
                          "a newly-armed turn must reset `streaming` to falsy (no prose has streamed for it yet)")
+
+    # --- #835 Increment 2 FIX A: the /beat-stream live-composition tail (ON path) ----------------
+    # With streamBeats ON (the harness default), a pending turn polls /beat-stream and renders the
+    # decoded chunks as ONE transient composing row — the scene unfolds word-by-word.
+    def test_beat_stream_composing_row_renders_when_on(self):
+        out = self._run(
+            "h.arm('I push open the door');"
+            "h.seedBeatStream([{ seq: 0, text: 'The hinges ' }, { seq: 1, text: 'shriek.' }]);"
+            "await h.tick();"
+            "var beats = h.beats();"
+            "return ({ fetches: h.beatStreamFetchCount(), composing: beats.filter(function(b){return b.text && b.text.indexOf('hinges') !== -1;}).map(function(b){return b.text;}), pending: !!h.pending() });"
+        )
+        self.assertGreaterEqual(out["fetches"], 1, "the /beat-stream poll must fire while ON + pending")
+        self.assertEqual(out["composing"], ["The hinges shriek."],
+                         "the decoded chunks must accumulate into the live composing preview")
+        self.assertTrue(out["pending"], "the composing preview keeps the turn gated until /chat resolves it")
+
+    # --- #835 Increment 2 FIX A: OFF-path inertness — ZERO /beat-stream fetches when the feature is
+    # off. This is the keystone of FIX A: the viewer must not poll /beat-stream at all when the
+    # server has WORLDOS_STREAM_BEATS unset/0 (the sidecar never exists). Even with a pending turn
+    # (which is what previously triggered the ~500ms poll), no /beat-stream request may fire.
+    def test_beat_stream_inert_when_off(self):
+        out = self._run(
+            "h.setStreamBeats(false);"          # the dark default — server reports streamBeats:false
+            "h.arm('I push open the door');"    # a turn IS in flight (the old trigger condition)
+            "h.seedBeatStream([{ seq: 0, text: 'should never be read' }]);"
+            "await h.tick();"
+            "await h.tick();"
+            "return ({ fetches: h.beatStreamFetchCount(), texts: h.narrationTexts() });"
+        )
+        self.assertEqual(out["fetches"], 0,
+                         "with WORLDOS_STREAM_BEATS off, the viewer must fire ZERO /beat-stream requests")
+        self.assertEqual(out["texts"], [],
+                         "no composing row may appear when the feature is off (the poll never ran)")
+
+    # --- #835 Increment 2 FIX C: the beat-stream cursor resets PER TURN (not just per run) --------
+    # The tailer truncates+rewrites current.jsonl per beat, so each new turn's preview starts at
+    # line 0. armPending re-zeros beatStreamCursor, so a SECOND turn reads its first chunk (line 0)
+    # instead of inheriting the prior turn's high cursor (which would skip the new beat's opening).
+    def test_beat_stream_cursor_resets_on_new_turn(self):
+        out = self._run(
+            "h.arm('first move');"
+            # First beat: the sidecar holds two lines; the client reads them and advances its cursor to 2.
+            "h.seedBeatStream([{ seq: 0, text: 'First ' }, { seq: 1, text: 'beat.' }]);"
+            "await h.tick();"
+            "var firstTexts = h.beats().filter(function(b){return b.text && b.text.indexOf('First') !== -1;}).map(function(b){return b.text;});"
+            # Resolve the first turn, then arm a SECOND.
+            "h.enqueue('/chat', { items: [{ role: 'dm', text: 'First beat.' }], next: 1 });"
+            "await h.tick();"
+            "h.arm('second move');"
+            # The tailer TRUNCATES the sidecar for the new beat and rewrites it with THIS beat's
+            # chunks at line 0. Seed THREE lines so an INHERITED cursor (since=2 from the first beat)
+            # would read only the LAST line (chunks[2]) — silently dropping the opening 'Second beat '
+            # 'opens. ' — whereas the FIX-C reset (since=0) reads all three. This makes the test
+            # discriminating: it FAILS if armPending does not re-zero beatStreamCursor.
+            "h.seedBeatStream([{ seq: 0, text: 'Second beat ' }, { seq: 1, text: 'opens. ' }, { seq: 2, text: 'A door yawns.' }]);"
+            "await h.tick();"
+            "var secondTexts = h.beats().filter(function(b){return b.text && b.text.indexOf('Second') !== -1;}).map(function(b){return b.text;});"
+            "return ({ first: firstTexts, second: secondTexts });"
+        )
+        self.assertEqual(out["first"], ["First beat."], "the first beat streams its full prose")
+        self.assertEqual(out["second"], ["Second beat opens. A door yawns."],
+                         "FIX C: the second turn reads from line 0 (cursor reset on arm) — its opening "
+                         "chunks are NOT dropped by an inherited cross-beat cursor")
 
     # --- #393: the turn-END /chat line RESOLVES a turn whose prose already streamed --------------
     def test_chat_resolves_a_streamed_turn(self):

@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
 
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
@@ -235,6 +236,82 @@ def test_persist_beat_recognized_but_not_streamed_increment1():
 
 
 # ---------------------------------------------------------------------------------------------
+# FIX D — text aliases: the engine's log_event accepts message/content/note as aliases for `text`
+# (normalized `text = text or message or content or note`), so a beat where the DM reaches for an
+# alias must stream just like the canonical `text`. A non-alias key (e.g. meta) is NOT prose.
+# ---------------------------------------------------------------------------------------------
+
+def test_alias_message_streams_like_text():
+    scene = "Rain hammers the slate roofs as you duck into the alley."
+    arg = json.dumps({"kind": "narration", "message": scene})
+    rows = [block_start(1, "log_event")] + [block_delta(1, c) for c in _chunks_of(arg, 7)] + [block_stop(1)]
+    assert _decode(rows) == scene
+
+
+def test_alias_content_streams_like_text():
+    scene = "The chandelier sways; dust sifts down through a shaft of grey light."
+    arg = json.dumps({"kind": "dialogue", "content": scene})
+    rows = [block_start(1, "log_event")] + [block_delta(1, c) for c in _chunks_of(arg, 9)] + [block_stop(1)]
+    assert _decode(rows) == scene
+
+
+def test_alias_note_streams_like_text():
+    scene = "A low bell tolls somewhere beyond the fog-bound wharf."
+    arg = json.dumps({"kind": "narration", "note": scene})
+    rows = [block_start(1, "log_event")] + [block_delta(1, c) for c in _chunks_of(arg, 5)] + [block_stop(1)]
+    assert _decode(rows) == scene
+
+
+def test_alias_value_before_kind_buffers_until_known():
+    """An alias appearing BEFORE kind must buffer-until-kind exactly like `text` does."""
+    scene = "Lanternlight gutters across the wet cobbles."
+    arg = json.dumps({"message": scene, "kind": "narration"})  # alias first, then kind
+    rows = [block_start(1, "log_event")] + [block_delta(1, c) for c in _chunks_of(arg, 4)] + [block_stop(1)]
+    assert _decode(rows) == scene
+
+
+def test_alias_with_nonprose_kind_never_streams():
+    """An alias carrying a non-prose kind (e.g. system) is never streamed — same gate as text."""
+    arg = json.dumps({"kind": "system", "note": "state grounded; closing turn."})
+    rows = [block_start(1, "log_event")] + [block_delta(1, c) for c in _chunks_of(arg, 6)] + [block_stop(1)]
+    assert _decode(rows) == ""
+
+
+def test_text_wins_over_alias_when_both_present():
+    """When both a literal `text` and an alias appear, `text` WINS (mirrors the engine's
+    `text or message or content or note` normalization). The SCANNER resolves its final captured
+    prose to the canonical `text` regardless of an earlier alias — asserted at the scanner level
+    because the streaming decoder can't retract chunks it already flushed for the lower-precedence
+    alias (a non-issue in practice: the DM uses exactly one prose key per call)."""
+    canonical = "The canonical scene the player should see."
+    arg = json.dumps({"kind": "narration", "note": "ignore me", "text": canonical})
+    sc = stream_tailer._PartialJsonScanner()
+    for c in _chunks_of(arg, 5):
+        sc.feed(c)
+    assert sc.text == canonical
+    assert sc.kind == "narration"
+    # And the alias-before-text precedence holds whole-fed too (no chunk artifacts).
+    sc2 = stream_tailer._PartialJsonScanner()
+    sc2.feed(arg)
+    assert sc2.text == canonical
+
+
+def test_non_alias_key_meta_is_not_captured():
+    """A non-alias top-level key (meta) must NEVER be captured as prose, even with a prose kind."""
+    arg = json.dumps({"kind": "narration", "meta": "internal bookkeeping value"})
+    rows = [block_start(1, "log_event")] + [block_delta(1, c) for c in _chunks_of(arg, 6)] + [block_stop(1)]
+    assert _decode(rows) == ""
+
+
+def test_nested_alias_does_not_masquerade_as_flat_prose():
+    """A nested message/content/note (depth>1, e.g. inside persist_beat's events) must not leak
+    as flat narration text — depth-1-only capture, same as the nested-`text` guard."""
+    arg = json.dumps({"events": [{"kind": "narration", "message": "nested scene"}]})
+    rows = [block_start(1, "persist_beat")] + [block_delta(1, c) for c in _chunks_of(arg, 5)] + [block_stop(1)]
+    assert _decode(rows) == ""
+
+
+# ---------------------------------------------------------------------------------------------
 # Row-shape tolerance: flat (non-nested) stream-json rows.
 # ---------------------------------------------------------------------------------------------
 
@@ -285,6 +362,71 @@ def test_tail_stream_driver_decodes_growing_file(tmp_path):
         if ln.strip()
     )
     assert decoded == scene
+
+
+def test_tail_stream_self_bounds_on_idle(tmp_path):
+    """FIX B self-bounding: with no new $out growth, the idle cap terminates the tailer even
+    when no stop() is provided — so a missed stop signal can't pin the sidecar open forever."""
+    out_path = tmp_path / "dm.jsonl"
+    out_path.write_text("", encoding="utf-8")  # exists, never grows
+    stream_path = tmp_path / "stream" / "current.jsonl"
+    t0 = time.time()
+    # Tiny idle cap + no lifetime cap: must return promptly via the idle path (no stop() at all).
+    written = stream_tailer.tail_stream(
+        str(out_path), str(stream_path),
+        poll_interval=0.001, max_idle_s=0.05, max_lifetime_s=None,
+    )
+    assert written == 0
+    assert time.time() - t0 < 5.0  # it self-terminated, did not hang
+
+
+def test_tail_stream_self_bounds_on_lifetime(tmp_path):
+    """FIX B self-bounding: the hard lifetime cap terminates the tailer even while $out keeps
+    GROWING (so a stuck-but-active stream can't pin it open past the ceiling)."""
+    out_path = tmp_path / "dm.jsonl"
+    # A line that does NOT decode to any prose (a non-target tool) but keeps the file growing so
+    # the idle cap never fires — only the lifetime cap can stop it.
+    out_path.write_text(json.dumps(block_start(0, "roll_dice")) + "\n", encoding="utf-8")
+    stream_path = tmp_path / "stream" / "current.jsonl"
+
+    appended = {"n": 0}
+
+    def stop():
+        # Side-effect: grow the file every pass so `progressed` stays True (idle cap can't fire).
+        appended["n"] += 1
+        with open(out_path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(block_delta(0, "x")) + "\n")
+        return False  # never ask to stop via stop() — the lifetime cap must do it
+
+    t0 = time.time()
+    stream_tailer.tail_stream(
+        str(out_path), str(stream_path),
+        poll_interval=0.001, stop=stop, max_idle_s=None, max_lifetime_s=0.05,
+    )
+    assert time.time() - t0 < 5.0  # the lifetime cap stopped a still-growing stream
+
+
+def test_env_bound_parsing():
+    """FIX B: a positive override wins; 0/negative/garbage DISABLES (None); unset → default."""
+    import os as _os
+    name = "WORLDOS_STREAM_TAILER_MAX_S"
+    saved = _os.environ.get(name)
+    try:
+        _os.environ.pop(name, None)
+        assert stream_tailer._env_bound(name, 1800.0) == 1800.0   # unset → default
+        _os.environ[name] = "42"
+        assert stream_tailer._env_bound(name, 1800.0) == 42.0     # positive override
+        _os.environ[name] = "0"
+        assert stream_tailer._env_bound(name, 1800.0) is None     # 0 disables
+        _os.environ[name] = "-5"
+        assert stream_tailer._env_bound(name, 1800.0) is None     # negative disables
+        _os.environ[name] = "nonsense"
+        assert stream_tailer._env_bound(name, 1800.0) is None     # garbage disables
+    finally:
+        if saved is None:
+            _os.environ.pop(name, None)
+        else:
+            _os.environ[name] = saved
 
 
 def test_tail_stream_truncates_sink_on_start(tmp_path):
