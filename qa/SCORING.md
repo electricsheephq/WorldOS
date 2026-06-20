@@ -336,3 +336,17 @@ live under the gitignored `/qa/transcripts/`, so the committed regression test
 (`qa/fact_inventories/sample_session.*`); an opt-in test reproduces the finding on the real
 `ow-combat-031717.md` when it is present locally. The committed `ow-combat-031717.facts.json` inventory
 re-derives the differential whenever that transcript is regenerated.
+
+**Wired consumer — the recap content-fidelity guard** (`qa/test_recap_fidelity.py`). The instrument is
+not "available but uncalled" (the VISION *written-but-never-read* pathology) — it guards a REAL lossy,
+player-facing surface: `recap.format_recap` (the DM's `previously_on`, read every resume) keeps only the
+most-recent `max_entries` story beats, soft-truncates each to `max_entry_chars`, and drops oldest-first
+under a `max_chars` budget — tunable knobs under active latency pressure (it's the latency-collapse path,
+`server.py`), with no other content-loss guard. The test asserts the recap of a reference session
+preserves its *critical* facts at the shipped defaults, and has TEETH: a leaned budget drops a critical
+fact and `critical_loss` catches it (adversarially verified — regressing the recap default to 40 chars
+turns the guard RED). **Use this pattern when leaning any lossy context knob** (`recap.py` budgets, the
+`scene_context` throttle constants in `server.py`): pin a reference + critical-fact inventory and assert
+the leaner derivation still clears `critical_loss=False` — the regression the 1–5 lens cannot see.
+**NOT** a per-run scored dimension: each fresh emergent run has no reference to diff against, so
+fact-fidelity is an opt-in regression guard (compression/lean A/Bs, recap continuity), never a lens.
