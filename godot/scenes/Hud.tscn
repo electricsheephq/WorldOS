@@ -1,0 +1,21 @@
+[gd_scene load_steps=2 format=3 uid="uid://b1worldosgt2hud"]
+
+[ext_resource type="Script" path="res://scenes/Hud.gd" id="1_hud"]
+
+[node name="Hud" type="CanvasLayer"]
+script = ExtResource("1_hud")
+
+[node name="Panel" type="VBoxContainer" parent="."]
+offset_left = 16.0
+offset_top = 16.0
+offset_right = 616.0
+offset_bottom = 96.0
+
+[node name="Mode" type="Label" parent="Panel"]
+text = "transport: ?"
+
+[node name="Location" type="Label" parent="Panel"]
+text = "location: —"
+
+[node name="Party" type="Label" parent="Panel"]
+text = "party: —"

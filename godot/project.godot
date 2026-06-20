@@ -20,9 +20,12 @@ config/features=PackedStringArray("4.6", "GL Compatibility")
 [autoload]
 
 ; Boot order matters: Config first (resolves base_url/campaign), then the
-; HTTP/transport singletons that read from it. All registered with a leading
-; "*" so they load as autoloaded singletons.
+; HTTP/transport singletons that read from it. RenderProfile loads the bundled
+; render-profile fixture (after Config so it can later read Config for a live
+; profile fetch). All registered with a leading "*" so they load as autoloaded
+; singletons.
 Config="*res://autoload/Config.gd"
+RenderProfile="*res://autoload/RenderProfile.gd"
 SurfaceClient="*res://autoload/SurfaceClient.gd"
 ImageResolver="*res://autoload/ImageResolver.gd"
 FacingResolver="*res://autoload/FacingResolver.gd"
