@@ -87,3 +87,65 @@ def test_full_jsonschema_validation_when_available():
     schema = _load(_SCHEMA)
     ex = _load(_EXAMPLE)
     jsonschema.validate(ex, schema)
+
+
+# --- GT2 Godot renderer block (#1051) -------------------------------------------------------
+_GODOT_EXAMPLE = _REPO / "viewer" / "openworlds" / "render" / "render-profile.godot.example.json"
+_FACING_KEYS = {"facing", "direction", "orientation", "heading"}
+
+
+def test_schema_exposes_optional_godot_renderer_block():
+    """The Godot client (GT2) is a 4th renderer of the SAME contract. Adding it is a deliberate
+    edit to the closed renderer_profiles object (additionalProperties:false) — assert the block
+    exists as a sibling of phaser/rpgmaker and is OPTIONAL (renderer_profiles requires no block),
+    so Phaser-only profiles stay valid."""
+    schema = _load(_SCHEMA)
+    rp = schema["properties"]["renderer_profiles"]
+    assert {"phaser", "godot", "rpgmaker"} <= set(rp["properties"])
+    assert "required" not in rp, "renderer_profiles must not require any renderer block"
+    # the existing phaser-only example carries no godot block and must stay valid
+    assert "godot" not in _load(_EXAMPLE).get("renderer_profiles", {})
+
+
+def test_core_has_no_engine_facing_field():
+    """Facing is 100% renderer-DERIVED — the engine is the sole writer of game STATE and must
+    NEVER gain a facing field. Lock it at the contract: no facing/direction/orientation/heading
+    key may appear in core actor or location items (it lives only in the godot renderer block as
+    presentation layout)."""
+    core = _load(_SCHEMA)["properties"]["core"]["properties"]
+    act_props = set(core["actors"]["items"]["properties"])
+    loc_props = set(core["locations"]["items"]["properties"])
+    assert _FACING_KEYS.isdisjoint(act_props), f"engine facing leaked into core.actors: {act_props & _FACING_KEYS}"
+    assert _FACING_KEYS.isdisjoint(loc_props), f"engine facing leaked into core.locations: {loc_props & _FACING_KEYS}"
+
+
+def test_godot_example_is_strict_and_valid():
+    """The godot example profile (core + a godot renderer block) satisfies the same strict core
+    rules as every instance AND carries a well-formed godot block with the LOCKED projection +
+    a directional sprite-sheet layout keyed by engine_actor_id (the FK join)."""
+    ex = _load(_GODOT_EXAMPLE)
+    assert ex.get("schema_version") == 1
+    core = ex["core"]
+    assert core["scene_kind"] == "backdrop"
+    assert core["positioning"] in ("theater", "zone")
+    forbidden = {"x", "y", "col", "row", "grid_x", "grid_y", "coords", "position"}
+    for loc in core["locations"]:
+        assert "engine_location_id" in loc
+        assert forbidden.isdisjoint(loc)
+        for z in loc.get("zones", []):
+            assert isinstance(z, str) and z.strip()
+    for act in core["actors"]:
+        assert "engine_actor_id" in act
+        assert _FACING_KEYS.isdisjoint(act), "no facing on an actor instance (renderer-derived)"
+
+    godot = ex["renderer_profiles"]["godot"]
+    assert godot["projection"]["kind"] in ("dimetric", "isometric")
+    known_ids = {a["engine_actor_id"] for a in core["actors"]}
+    for actor_id, sheet in (godot.get("actor_sheets") or {}).items():
+        assert actor_id in known_ids, f"actor_sheets key {actor_id} is not a core engine_actor_id"
+        assert sheet["facings"] == len(sheet["facing_order"]), "facings count must match facing_order length"
+
+
+def test_godot_example_full_jsonschema_validation_when_available():
+    jsonschema = pytest.importorskip("jsonschema")
+    jsonschema.validate(_load(_GODOT_EXAMPLE), _load(_SCHEMA))
