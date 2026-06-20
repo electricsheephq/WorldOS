@@ -1,44 +1,53 @@
 extends Node2D
-## Main — the #1052 boot smoke.
+## Main — the renderer root that wires the transport to the scene (#1053).
 ##
-## This is NOT the real scene graph (WorldView / CharacterToken / Y-sort /
-## click-to-move are #1053–#1055). Its only job is to prove the transport end to
-## end: connect to SurfaceClient, and on the FIRST snapshot print the current
-## location name, the party member names, and the transport mode. With no server
-## running, SurfaceClient falls back to bundled fixtures, so this smoke prints from
-## res://fixtures/* and exits cleanly.
+## ROLE: the composition root. It instances WorldView (the snapshot→scene
+## projection) + Hud (read-only chrome) and connects them to the SINGLE transport
+## boundary, SurfaceClient:
+##   - snapshot_updated  → WorldView.apply_snapshot + Hud.apply_snapshot
+##   - transport_mode_changed → Hud.set_mode
+##   - events_appended   → WorldView.enqueue_replay (a #1055/combat stub today)
+##
+## It owns NO game state and contains NO rules — it only routes signals. The
+## headless boot smoke (location + party + mode prints, then a clean quit) is
+## preserved here so CI / --headless validation stays observable end-to-end:
+## with no server running, SurfaceClient falls back to res://fixtures/* (FIXTURE
+## mode) and the scene projects those.
 
-@onready var _label: Label = $UI/SmokeLabel
+@onready var _world: Node2D = $WorldView
+@onready var _hud: CanvasLayer = $Hud
 
 var _got_first_snapshot: bool = false
 var _last_mode: String = "?"
 
 
 func _ready() -> void:
+	# Wire the transport → scene. WorldView projects the snapshot into the world;
+	# Hud mirrors the read-only display facts; replay is a stub for now.
 	SurfaceClient.transport_mode_changed.connect(_on_mode_changed)
 	SurfaceClient.snapshot_updated.connect(_on_snapshot)
+	SurfaceClient.snapshot_updated.connect(_world.apply_snapshot)
+	SurfaceClient.snapshot_updated.connect(_hud.apply_snapshot)
 	SurfaceClient.events_appended.connect(_on_events)
-	_set_label("WorldOS GT2 (Godot) — connecting…")
+	SurfaceClient.events_appended.connect(_world.enqueue_replay)
 
 
 func _on_mode_changed(mode: String) -> void:
 	_last_mode = mode
+	_hud.set_mode(mode)
 
 
 func _on_snapshot(atlas: Dictionary, _combat: Dictionary, character: Dictionary) -> void:
-	# Extract the smoke facts from the read-only surfaces (no client-side rules).
+	# Headless smoke: keep printing the transport facts (location + party + mode) so
+	# validation stays observable. The WorldView prints the projection facts itself
+	# (location, zone-marker count, backdrop status) in its own apply_snapshot.
 	var location_name := _location_name(atlas)
 	var party_names := _party_names(character)
 	var mode := SurfaceClient.mode()
 	if mode == "":
 		mode = _last_mode
-
 	var party_joined := ", ".join(party_names) if not party_names.is_empty() else "<empty>"
-	var line := "[%s] location=%s | party=%s" % [mode, location_name, party_joined]
-
-	# TRANSPORT SMOKE PROOF.
-	print("[Main] SMOKE ", line)
-	_set_label("WorldOS GT2 (Godot)\n%s\nlocation: %s\nparty: %s" % [mode, location_name, party_joined])
+	print("[Main] SMOKE [%s] location=%s | party=%s" % [mode, location_name, party_joined])
 
 	if not _got_first_snapshot:
 		_got_first_snapshot = true
@@ -54,8 +63,8 @@ func _on_events(records: Array) -> void:
 # ---------------------------------------------------------------------------
 func _location_name(atlas: Dictionary) -> String:
 	var cur: Variant = atlas.get("current_location", null)
-	if typeof(cur) == TYPE_DICTIONARY and cur.has("name"):
-		return String(cur["name"])
+	if typeof(cur) == TYPE_DICTIONARY and (cur as Dictionary).has("name"):
+		return String((cur as Dictionary)["name"])
 	if atlas.has("current_location_id"):
 		return String(atlas["current_location_id"])
 	return "<unknown>"
@@ -67,8 +76,8 @@ func _party_names(character: Dictionary) -> PackedStringArray:
 	if typeof(party) != TYPE_ARRAY:
 		return out
 	for member in party:
-		if typeof(member) == TYPE_DICTIONARY and member.has("name"):
-			out.append(String(member["name"]))
+		if typeof(member) == TYPE_DICTIONARY and (member as Dictionary).has("name"):
+			out.append(String((member as Dictionary)["name"]))
 	return out
 
 
@@ -80,15 +89,10 @@ func _maybe_quit() -> void:
 	var smoke_flag := OS.get_cmdline_user_args().has("--smoke")
 	var headless := DisplayServer.get_name() == "headless"
 	if smoke_flag or headless:
-		# Defer the quit one frame so the print/label flush before teardown.
+		# Defer the quit one frame so the prints flush before teardown.
 		call_deferred("_quit_clean")
 
 
 func _quit_clean() -> void:
 	print("[Main] smoke complete — quitting cleanly")
 	get_tree().quit()
-
-
-func _set_label(text: String) -> void:
-	if is_instance_valid(_label):
-		_label.text = text
