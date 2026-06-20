@@ -7127,6 +7127,51 @@ def _read_events(campaign_id: str, since: int) -> tuple[list[dict], int]:
     return out, consumed
 
 
+def _read_beat_stream(since: int) -> tuple[list[dict], int, bool]:
+    """#835 Live Composition Increment 1 — return (new prose chunks after line `since`, new
+    line count, complete?) from the wrapper-owned live-stream sidecar
+    ``$STATE_DIR/stream/current.jsonl``.
+
+    The sidecar is written by scripts/stream_tailer.py (a wrapper-launched tailer that decodes
+    the DM's player-facing scene out of its streaming log_event tool-arg) — it is NOT campaign
+    state, so reading it here keeps the engine's sole-writer invariant untouched (mirrors the
+    read-only /events tail). Each row is ``{"seq":N,"text":"...","ts":...}``. The tailer truncates
+    the file at the start of each beat/attempt; the client resets its cursor when ``since`` runs
+    past the current line count (the same session-rotation guard /events uses).
+
+    Defensive like _read_events: a half-written trailing line is dropped (NOT advanced past) so a
+    torn append re-reads cleanly next poll. ``complete`` is advisory only (Increment 1 has no
+    per-beat terminal marker yet — it always reports False; the canonical /events row resolving the
+    beat is what collapses the composing block, via the existing claimNarration dedup)."""
+    path = _state_dir() / "stream" / "current.jsonl"
+    if not path.exists():
+        return [], since, False
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return [], since, False
+    # Truncation reset: the tailer rewrites current.jsonl per beat/attempt, so a stale high cursor
+    # would strand the feed (lines[since:] empty forever). Re-read from the top when the cursor is
+    # past the end of the current file.
+    if since > len(lines):
+        since = 0
+    out: list[dict] = []
+    consumed = since
+    for raw in lines[since:]:
+        stripped = raw.strip()
+        if not stripped:
+            consumed += 1
+            continue
+        try:
+            row = json.loads(stripped)
+        except json.JSONDecodeError:
+            break  # half-written trailing chunk — don't advance; re-read next poll
+        if isinstance(row, dict):
+            out.append(row)
+        consumed += 1
+    return out, consumed, False
+
+
 # Roll-result detection (#35): the dice tool's *result* (total / nat-d20 / crit)
 # lives in the tool_RESULT, not the tool_use input — so to headline a real number
 # with crit/miss coloring we mine results too. A roll result is a JSON dict that
@@ -8418,6 +8463,17 @@ class _Handler(BaseHTTPRequestHandler):
             # session rotation (cold-open + DM-turn-retry re-mint), suppressing the new session's
             # post-move narration (seq 0,1,2 already claimed by the prior session's cold-open).
             self._json({"entries": entries, "next": nxt, "sid": _active_session_id(view_cid)})
+        elif route == "/beat-stream":
+            # #835 Live Composition Increment 1 — poll the wrapper-owned live-stream sidecar
+            # ($STATE_DIR/stream/current.jsonl) with a line cursor. Read-only (the tailer is the
+            # sole writer of this sidecar; the engine's sole-writership of campaign state is
+            # untouched). Returns {"chunks":[{seq,text,ts}...], "next":N, "complete":bool}. The
+            # `campaign` query arg is accepted for symmetry with /events but the stream is a single
+            # per-run sidecar (one in-flight DM beat at a time), so it isn't campaign-scoped here.
+            qs = parse_qs(parsed.query)
+            since = int((qs.get("since") or ["0"])[0])
+            chunks, nxt, complete = _read_beat_stream(since)
+            self._json({"chunks": chunks, "next": nxt, "complete": complete})
         elif route == "/activity":
             qs = parse_qs(parsed.query)
             since = int((qs.get("since") or ["0"])[0])

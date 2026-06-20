@@ -199,11 +199,20 @@ turn() {
     # → no result event → worldos_dm_final_text echoes empty → turn_retry's empty-output retry fires.
     # Player turn stays unbounded (it is a fast facade turn and was never the hang source).
     local beat_timeout; beat_timeout="$(worldos_dm_timeout "$first")"
+    # #835 Increment 1 — Live Composition flag (default OFF behind WORLDOS_STREAM_BEATS). Shared
+    # helpers (qa/lib_beat_driver.sh) build WORLDOS_STREAM_FLAG = (--include-partial-messages) ONLY
+    # when streaming is on; off → empty array → the splice expands to nothing → byte-identical to
+    # today. The stream tailer is launched against $out before the call and killed after (no-op when
+    # off); it is a sidecar (a crash never affects the beat).
+    worldos_stream_flag_arg
+    worldos_stream_tailer_start "$out" "$STATE_DIR"
     worldos_timeout "$beat_timeout" \
       claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
         --model "$WORLDOS_DM_MODEL" ${WORLDOS_DM_EFFORT[@]+"${WORLDOS_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+        ${WORLDOS_STREAM_FLAG[@]+"${WORLDOS_STREAM_FLAG[@]}"} \
         --output-format stream-json --verbose > "$out" 2>> "$T/$RUN.dm.err"
     rc=$?
+    worldos_stream_tailer_stop
     cat "$out" >> "$COMBINED"
     # F12-11: surface the REAL failure cause on a nonzero rc with NO error-class result (a timeout
     # rc=124 writes no result event; a CLI crash; a rate-limit exit) — these were MASKED because

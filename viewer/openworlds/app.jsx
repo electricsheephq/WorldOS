@@ -327,6 +327,16 @@ function useLiveSession(state) {
   // object without it, so each new turn re-derives `streaming` from its own /events arrivals.
   const chatCursor = React.useRef(0);
   const eventsCursor = React.useRef(0);                // #393: per-file cursor for the live /events tail
+  // #835 Increment 1 — the /beat-stream live-composition tail. `beatStreamCursor` is the per-file
+  // line cursor into the wrapper's $STATE_DIR/stream/current.jsonl sidecar; `composingText` is the
+  // running concatenation of the decoded prose chunks for the IN-FLIGHT beat. The chronicle renders
+  // ONE transient "composing" narration row (composing:true) carrying composingText while a turn is
+  // pending; it is dropped the moment the canonical /events seq-keyed narration row for the same beat
+  // lands (eventsStreamedThisTurnRef) or the turn resolves on /chat — so the live preview is replaced
+  // by the canonical row with ZERO duplication (it never goes through the seq/text dedup sets, so it
+  // cannot poison them). composingText resets per beat (the tailer truncates current.jsonl per beat).
+  const beatStreamCursor = React.useRef(0);
+  const composingText = React.useRef("");
   const dmBeatCountRef = React.useRef(0);
   // #406: the count of turns that have RESOLVED on /chat (the turn-END signal), bumped ONLY in the
   // /chat poll — NOT by streamed /events paragraphs. `firstBeat` (the generous cold-open recovery
@@ -444,7 +454,22 @@ function useLiveSession(state) {
     }
     clearTimers();
     setPendingState(null);
+    // #835 Increment 1: the turn is over → drop the transient composing preview (the canonical
+    // /events narration row already carries the finished beat). Inlined (not via clearComposing) to
+    // keep clearPending's dependency set unchanged — composing rows are flagged, never dedup-keyed.
+    composingText.current = "";
+    setChatBeats((prev) => (prev.some((b) => b && b.composing) ? prev.filter((b) => !(b && b.composing)) : prev));
   }, [clearTimers, setPendingState]);
+
+  // #835 Increment 1 — drop the transient live-composition "composing" row + reset its accumulator.
+  // Called when a turn resolves (clearPending) or a new run starts: by then the canonical, seq-keyed
+  // /events narration row carries the finished prose, so the partial composing preview must vanish to
+  // avoid duplication. Filtering by the `composing` flag (not by text) keeps this independent of the
+  // dedup sets — the composing row was never claimed in seenSeq/seenText, so removing it is clean.
+  const clearComposing = React.useCallback(() => {
+    composingText.current = "";
+    setChatBeats((prev) => (prev.some((b) => b && b.composing) ? prev.filter((b) => !(b && b.composing)) : prev));
+  }, []);
 
   // #826: authoritatively ROLL BACK the optimistic in-flight arm when the /move POST itself is
   // REJECTED by the server (the move never started, so there is no DM turn to wait for). postMove now
@@ -573,6 +598,8 @@ function useLiveSession(state) {
   React.useEffect(() => {
     chatCursor.current = 0;
     eventsCursor.current = 0;          // #393: reset the live /events tail per run
+    beatStreamCursor.current = 0;      // #835: reset the live-composition /beat-stream tail per run
+    composingText.current = "";        // #835: …and its per-beat prose accumulator
     dmBeatCountRef.current = 0;
     resolvedTurnsRef.current = 0;       // #406: a fresh run has resolved no turns yet (cold-open window)
     seenSeq.current = new Set();        // #405: a fresh run shares no seq dedup keys with the last
@@ -746,7 +773,12 @@ function useLiveSession(state) {
             })
             .filter(Boolean);
           if (beats.length) {
-            setChatBeats((prev) => boundTail([...prev, ...beats], MAX_LIVE_BEATS));  // #402: cap the live tail
+            // #835 Increment 1: the canonical, seq-keyed /events narration for this beat just landed
+            // → strip any transient live-composition "composing" preview row in the SAME update, so
+            // the canonical row REPLACES the partial preview with zero duplication (the composing row
+            // is flagged, never dedup-keyed, so this is a clean swap). composingText resets too.
+            composingText.current = "";
+            setChatBeats((prev) => boundTail([...prev.filter((b) => !(b && b.composing)), ...beats], MAX_LIVE_BEATS));  // #402: cap the live tail
             // The scene is visibly building → the turn is plainly alive. Count the streamed prose as
             // real DM beats (so the NEXT turn isn't mis-treated as a cold-open 'firstBeat') and reset
             // the stall clock so a long-but-healthy streaming turn is never falsely declared 'stuck'.
@@ -772,6 +804,72 @@ function useLiveSession(state) {
     onVisibility();
     return () => { cancelled = true; stop(); document.removeEventListener("visibilitychange", onVisibility); };
   }, [campaignId, source, runId, notePendingProgress, claimNarration]);
+
+  // #835 Increment 1 — the LIVE COMPOSITION tail. While a turn is pending, poll /beat-stream (the
+  // wrapper's stream_tailer sidecar) ~every 500ms, accumulate the decoded prose chunks, and render
+  // them as ONE transient "composing" narration row so the scene UNFOLDS word-by-word as the DM
+  // writes it (instead of a static spinner). This is strictly ADDITIVE to the #393 /events tail:
+  //   • When the feature is OFF (WORLDOS_STREAM_BEATS=0) the wrapper never launches the tailer, so
+  //     current.jsonl is absent → /beat-stream returns empty → this loop is an inert no-op. Today's
+  //     behavior is byte-identical.
+  //   • The composing row is transient + flagged (composing:true), never claimed in the seq/text
+  //     dedup sets, so it cannot poison dedup. The canonical seq-keyed /events narration row for the
+  //     same beat REPLACES it (the /events poll strips composing rows when it lands), and clearPending
+  //     drops it on turn resolution — zero duplication either way. notePendingProgress() flips the
+  //     pending turn to `streaming` so the narrating affordance + latestStreamed preview light up.
+  // Gated on `pendingRef`: it only does work mid-turn, so it never churns the chronicle at rest.
+  React.useEffect(() => {
+    if (!campaignId) return undefined;
+    let cancelled = false;
+    let timer = null;
+    const pollOnce = async () => {
+      if (cancelled) return;
+      // Only stream while a turn is actually in flight — at rest there is no composing beat.
+      if (!pendingRef.current) return;
+      try {
+        const params = new URLSearchParams();
+        params.set("campaign", campaignId);
+        params.set("since", String(beatStreamCursor.current));
+        const resp = await fetch(`/beat-stream?${params.toString()}`, { cache: "no-store" });
+        if (!resp.ok) return;
+        const payload = await resp.json();
+        const chunks = Array.isArray(payload.chunks) ? payload.chunks : [];
+        if (!cancelled && chunks.length) {
+          // Concatenate the decoded chunks in order onto the in-flight beat's running prose. The
+          // tailer already gated these to narration/dialogue text (player-safe by construction), but
+          // run them through the shared sanitizer too (#740 parity with /events) before display.
+          let added = "";
+          for (const c of chunks) { if (c && typeof c.text === "string") added += c.text; }
+          if (added) {
+            composingText.current += added;
+            const preview = sanitize(composingText.current);
+            if (preview) {
+              // Render/replace the single composing row (keyed by the composing flag). nextLogSeq()
+              // keeps it after the latest chronicle entry so latestStreamed (which scans back-to-front
+              // for narration) surfaces it inline at the spinner.
+              const row = { kind: "narration", text: preview, at: nextLogSeq(), composing: true };
+              setChatBeats((prev) => {
+                const base = prev.filter((b) => !(b && b.composing));
+                return boundTail([...base, row], MAX_LIVE_BEATS);
+              });
+              notePendingProgress();  // the scene is arriving → flip `streaming`, keep the turn alive
+            }
+          }
+        }
+        if (!cancelled && typeof payload.next === "number") beatStreamCursor.current = payload.next;
+      } catch (_e) { /* the live-composition tail is non-critical; /events + /chat are the backstop */ }
+    };
+    const stop = () => { if (timer !== null) { window.clearInterval(timer); timer = null; } };
+    // ~500ms cadence: responsive typewriter feel without hammering the stdlib server (the tailer
+    // flushes per decoded chunk, so the sidecar grows faster than this; we coalesce on each poll).
+    const start = () => { if (timer === null) timer = window.setInterval(pollOnce, 500); };
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") { pollOnce(); start(); } else { stop(); }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    onVisibility();
+    return () => { cancelled = true; stop(); document.removeEventListener("visibilitychange", onVisibility); };
+  }, [campaignId, source, runId, notePendingProgress]);
 
   // #745: expose notePendingProgress so the live-progress signal is part of the hook's public surface
   // (consistent with armPending/clearPending; the /events poll calls the same ref). Purely additive —

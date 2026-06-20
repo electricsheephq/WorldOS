@@ -378,14 +378,25 @@ turn() {
     # DM turn with ONE retry (parity with scripts/play.sh dm_turn — play_party is the native app's
     # entry point and previously had NO DM retry, so a transient cold-open failure was permanent).
     local rc
+    # #835 Increment 1 — Live Composition flag (default OFF behind WORLDOS_STREAM_BEATS). Shared
+    # helpers (qa/lib_beat_driver.sh) build WORLDOS_STREAM_FLAG = (--include-partial-messages) ONLY
+    # when streaming is on; off → empty array → the splice expands to nothing → byte-identical to
+    # today. _dm_invoke launches the per-attempt stream tailer against $out before the call and kills
+    # it after (no-op when off); the tailer is a sidecar (a crash never affects the beat).
+    worldos_stream_flag_arg
     # F12-8: worldos_timeout (qa/lib_beat_driver.sh) — timeout(1) when present, else a python3
     # fallback with the same rc=124 semantics. A bare `timeout` died rc=127 on stock
     # (non-coreutils) Macs, killing every beat in <1s with the failure masked.
     _dm_invoke() {
+      worldos_stream_tailer_start "$out" "$STATE_DIR"
       worldos_timeout "$beat_timeout" \
         claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
           --model "$WORLDOS_DM_MODEL" ${WORLDOS_DM_EFFORT[@]+"${WORLDOS_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
+          ${WORLDOS_STREAM_FLAG[@]+"${WORLDOS_STREAM_FLAG[@]}"} \
           --output-format stream-json --verbose > "$out" 2>> "$DM_LOG.err"
+      local _rc=$?
+      worldos_stream_tailer_stop
+      return $_rc
     }
     _dm_invoke; rc=$?
     if [ "$rc" -ne 0 ]; then

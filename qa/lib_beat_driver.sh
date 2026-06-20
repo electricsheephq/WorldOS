@@ -696,6 +696,58 @@ worldos_dm_timeout() {
   fi
 }
 
+# LIVE COMPOSITION (#835 Increment 1) — the ONE shared implementation of the stream-beats lever,
+# so the three DM wrappers (scripts/play.sh, scripts/play_party.sh, qa/run_duo.sh) can't drift.
+#
+# GATE: everything here is behind WORLDOS_STREAM_BEATS (worldos_env, default 0 = OFF). When OFF,
+# the flag-arg array stays EMPTY and the launcher/killer are no-ops, so the live DM `claude -p`
+# invocation is BYTE-IDENTICAL to today (the `${WORLDOS_STREAM_FLAG[@]+...}` splice expands to
+# nothing). The owner flips WORLDOS_STREAM_BEATS=1 after validating this dark PR.
+#
+# When ON: the wrapper adds `--include-partial-messages` to the DM stream-json call (so the
+# per-attempt $out jsonl carries the raw API stream events as the model generates), and launches
+# scripts/stream_tailer.py against that $out BEFORE the call — the tailer decodes the player-facing
+# scene out of the DM's streaming log_event tool-arg and writes chunks to $STATE_DIR/stream/
+# current.jsonl, which the viewer polls (/beat-stream). The tailer is a SIDECAR: if it crashes the
+# beat is unaffected (the canonical /events + /chat paths still resolve it); the wrapper kills it on
+# beat end. The flag is read once into the array so every call site uses the SAME splice form.
+
+# Build WORLDOS_STREAM_FLAG: (--include-partial-messages) when streaming is ON, else empty. Spliced
+# into the DM argv via ${WORLDOS_STREAM_FLAG[@]+"${WORLDOS_STREAM_FLAG[@]}"} (set -u safe; empty
+# array expands to nothing → today's exact argv when OFF).
+worldos_stream_flag_arg() {
+  WORLDOS_STREAM_FLAG=()
+  [ "$(worldos_env STREAM_BEATS 0)" = "1" ] && WORLDOS_STREAM_FLAG=(--include-partial-messages)
+}
+
+# Launch the per-attempt stream tailer against the DM $out file (no-op when streaming is OFF). The
+# tailer is started in the BACKGROUND; its PID is captured in WORLDOS_STREAM_TAILER_PID for the
+# killer. Best-effort: a launch failure (missing python3 / missing script) never fails the beat —
+# the live stream simply doesn't appear and the canonical paths resolve normally.
+#   $1 = the DM $out stream-json path   $2 = $STATE_DIR
+worldos_stream_tailer_start() {
+  WORLDOS_STREAM_TAILER_PID=""
+  [ "$(worldos_env STREAM_BEATS 0)" = "1" ] || return 0
+  local out="$1" state_dir="$2"
+  [ -n "$out" ] && [ -n "$state_dir" ] || return 0
+  local script="${WORLDOS_STREAM_TAILER:-$ROOT/scripts/stream_tailer.py}"
+  [ -f "$script" ] || return 0
+  command -v python3 >/dev/null 2>&1 || return 0
+  python3 "$script" "$out" "$state_dir/stream" >/dev/null 2>&1 &
+  WORLDOS_STREAM_TAILER_PID="$!"
+  return 0
+}
+
+# Kill the tailer launched by worldos_stream_tailer_start (no-op when none ran). Idempotent and
+# best-effort — a tailer that already exited is a benign no-op. Clears the PID after.
+worldos_stream_tailer_stop() {
+  local pid="${WORLDOS_STREAM_TAILER_PID:-}"
+  [ -n "$pid" ] || return 0
+  kill "$pid" >/dev/null 2>&1 || true
+  WORLDOS_STREAM_TAILER_PID=""
+  return 0
+}
+
 # RETRY DEADLINE (F12-1's second half): both dm_turn paths captured `beat_timeout` ONCE and the
 # ONE retry re-invoked with the SAME deadline verbatim — so a healthy-but-long beat that tripped
 # the routine deadline was killed AGAIN at the same mark (two kills, zero narration). Attempt 2
