@@ -116,6 +116,18 @@ while [ "$attempt" -lt 3 ]; do
   # GUARD: distinguish a genuine API error / E2BIG / dead process from a transient blip,
   # and FAIL LOUDLY in the non-transient cases instead of silently calling it "auth/rate".
   api_err="$(jq -r 'select(.is_error == true) | .api_error_status // .subtype // "error"' "$RAW" 2>/dev/null)"
+  # #842 Fix F (quota circuit-breaker): a 429 account-session-limit must FAIL FAST — do NOT burn the
+  # 3 retries (re-hitting a quota'd account just wastes the window AND, on the LAST retry, would fall
+  # through to the generic "FAILED after N attempts" path that callers can't tell from a real product
+  # failure). Detect a 429 (api_error_status==429, or a "session limit"/"429" body) and short-circuit:
+  # write an explicit quota sentinel to $OUT (the caller checks .quota_exhausted) and exit rc=2 so a
+  # quota corpse can never be mistaken for a valid scorecard.
+  if [ "$api_err" = "429" ] || jq -e 'select(.is_error == true) | (.result // "") | test("session limit|HTTP 429|hit your (session|usage) limit"; "i")' "$RAW" >/dev/null 2>&1; then
+    echo "[score] QUOTA EXHAUSTED (HTTP 429 account session limit) for $(basename "$OUT") — failing fast (no retries). Writing a quota sentinel + exiting rc=2." >&2
+    printf '{"quota_exhausted":true,"api_error_status":429}\n' > "$OUT"
+    rm -f "$RAW"
+    exit 2
+  fi
   if [ ! -s "$RAW" ]; then
     # No envelope at all → claude itself never produced output (E2BIG, killed, exec fail).
     echo "[score] attempt $attempt: EMPTY output for $(basename "$OUT") — claude wrote NOTHING to stdout (E2BIG / killed / TIMED OUT at ${WORLDOS_SCORE_TIMEOUT:-300}s). Retrying. stderr tail:" >&2
