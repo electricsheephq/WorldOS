@@ -1,11 +1,16 @@
 import json
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-import qa.support_vm_preflight as preflight
+QA_DIR = Path(__file__).resolve().parent
+if str(QA_DIR) not in sys.path:
+    sys.path.insert(0, str(QA_DIR))
+
+import support_vm_preflight as preflight
 
 
 class FakeRunner:

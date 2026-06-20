@@ -113,7 +113,23 @@ jobs:
             ../../qa/test_story_readout_approval.py \
             ../../qa/test_feature_engagement.py \
             ../../qa/test_fact_fidelity.py \
-            ../../qa/test_recap_fidelity.py
+            ../../qa/test_recap_fidelity.py \
+            ../../qa/test_assert_behavioral.py \
+            ../../qa/test_distill.py \
+            ../../qa/test_story_readout_coverage.py \
+            ../../qa/test_story_readout_outcome.py \
+            ../../qa/test_story_readout_timing.py \
+            ../../qa/test_latency_rollup.py \
+            ../../qa/test_stream_tailer.py \
+            ../../qa/test_collect_findings.py \
+            ../../qa/test_dm_beat_mark.py \
+            ../../qa/test_export_app_evidence.py \
+            ../../qa/test_macos_app_static.py \
+            ../../qa/test_ui_playtest_app_buckets.py \
+            ../../qa/test_app_failure_buckets.py \
+            ../../qa/test_app_handoff_gate.py \
+            ../../qa/test_app_smoke_scripted.py \
+            ../../qa/test_support_vm_preflight.py
 
   server-contracts:
     # Phase-1 (DETERMINISTIC-2): deterministic cross-service MCP contract tests

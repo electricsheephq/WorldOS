@@ -1,8 +1,13 @@
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-from qa.app_failure_buckets import (
+QA_DIR = Path(__file__).resolve().parent
+if str(QA_DIR) not in sys.path:
+    sys.path.insert(0, str(QA_DIR))
+
+from app_failure_buckets import (
     APP_FAILURE_BUCKETS,
     classify_browser_probe,
     classify_native_failure,
