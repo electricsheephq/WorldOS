@@ -90,6 +90,24 @@ var _tokens: Dictionary = {}
 ## The single static pillar prop (spawned once, repositioned per tick).
 var _pillar: PropActor = null
 
+## #1055 — the FACING-derivation locked order (ISO-PROJECTION.md). Passed to
+## FacingResolver.octant() when a token's zone changes between snapshots / on a
+## zone_move beat. Facing is 100% renderer-derived (the engine has no facing field).
+## Typed PackedStringArray so it slots straight into octant(order: PackedStringArray).
+const FACING_ORDER: PackedStringArray = ["S", "SE", "E", "NE", "N", "NW", "W", "SW"]
+
+## #1055 — last KNOWN screen position per token (actor_id -> Vector2), captured on
+## each placement, so the NEXT placement can derive the move vector for facing.
+## Distinct from the live node `position` (which the tween animates mid-move).
+var _token_prev_pos: Dictionary = {}
+## #1055 — last engine location id we projected, to distinguish a `travel` (location
+## change → reset facing to default) from an in-scene `move_to_zone` (derive facing).
+var _prev_location_id: String = ""
+## #1055 — the raw atlas dict from the latest snapshot, so InputController can read
+## travel_options / the live-writable guard (can_act / is_live_view) WITHOUT the
+## renderer caching any game state of its own.
+var _atlas_cache: Dictionary = {}
+
 
 func _ready() -> void:
 	# Art arrives asynchronously through the /image bridge; swap the backdrop the
@@ -108,7 +126,12 @@ func _ready() -> void:
 func apply_snapshot(atlas: Dictionary, combat: Dictionary, character: Dictionary) -> void:
 	var in_combat := bool(combat.get("active", false))
 
+	# Cache the raw atlas so InputController can read travel_options + the
+	# live-writable guard without the renderer holding any game state of its own.
+	_atlas_cache = atlas
+
 	# --- current location (id + display name) from the read-only atlas ---
+	_prev_location_id = _location_id
 	_location_id = _resolve_location_id(atlas)
 	_location_name = _resolve_location_name(atlas)
 
@@ -166,9 +189,19 @@ func apply_snapshot(atlas: Dictionary, combat: Dictionary, character: Dictionary
 # later issue — for now we accept and ignore so the signal interface is wired.
 # ---------------------------------------------------------------------------
 func enqueue_replay(records: Array) -> void:
-	# Intentionally a no-op for #1053. Kept so events_appended has a destination and
-	# the wiring is verifiable now (the count print stays in Main).
-	pass
+	# #1055: honor `zone_move` beats for facing derivation (renderer-derived). Full
+	# Action-Replay (combat token motion + facing from target_fk) is still a later
+	# issue; everything else is accepted-and-ignored so the wiring stays verifiable.
+	for rec in records:
+		if typeof(rec) != TYPE_DICTIONARY:
+			continue
+		var r: Dictionary = rec
+		if String(r.get("kind", "")) != "zone_move":
+			continue
+		var actor_id := String(r.get("actor", r.get("actor_id", "")))
+		var zone_name := String(r.get("zone", r.get("target", "")))
+		if actor_id != "" and zone_name != "":
+			apply_zone_move(actor_id, zone_name)
 
 
 # ---------------------------------------------------------------------------
@@ -200,6 +233,122 @@ func pillar_prop() -> PropActor:
 
 
 # ---------------------------------------------------------------------------
+# #1055 — input-facing query surface (consumed by InputController). All of these
+# are PURE reads of the already-projected scene; none mutate or assert state.
+# ---------------------------------------------------------------------------
+
+## True if `world_pos` (WorldView-local px) is inside the walkmask floor polygon.
+## InputController NEVER asserts a coordinate outside this region.
+func is_walkable(world_pos: Vector2) -> bool:
+	if _floor_poly == null:
+		return false
+	var poly := _floor_poly.polygon
+	if poly.size() < 3:
+		return false
+	# FloorPolygon is positioned at the WalkmaskLayer origin (untransformed in the
+	# scene), so its `polygon` points are already in WorldView-local space.
+	return Geometry2D.is_point_in_polygon(world_pos, poly)
+
+
+## The NEAREST named zone to `world_pos` by squared distance to its anchor, or ""
+## if there are no zones this tick. The #1055 click→zone snap.
+func nearest_zone(world_pos: Vector2) -> String:
+	var best := ""
+	var best_d := INF
+	for zn in _zone_screen.keys():
+		var p: Vector2 = _zone_screen[zn]
+		var d := world_pos.distance_squared_to(p)
+		if d < best_d:
+			best_d = d
+			best = zn
+	return best
+
+
+## The atlas `travel_options` array from the latest snapshot (or [] if absent).
+## Each option is a Dictionary; it MAY carry a verbatim `move` intent the renderer
+## must emit unchanged, else {to/target} the renderer wraps into a `travel` intent.
+func travel_options() -> Array:
+	var t: Variant = _atlas_cache.get("travel_options", [])
+	return t if typeof(t) == TYPE_ARRAY else []
+
+
+## True when the current view is LIVE-WRITABLE per the atlas (`can_act` /
+## `is_live_view`). If neither field is present, treat absent as writable (the
+## FIXTURE/standalone case so the demo works) — InputController separately knows it
+## did not reach a real engine (SurfaceClient is in FIXTURE mode).
+func is_live_writable() -> bool:
+	if _atlas_cache.has("can_act"):
+		return bool(_atlas_cache["can_act"])
+	if _atlas_cache.has("is_live_view"):
+		return bool(_atlas_cache["is_live_view"])
+	return true
+
+
+## The id of the actor/prop whose pick body contains `world_pos`, or "" if none.
+## Front-most (largest foot-y) wins so a click on overlapping bodies selects the
+## one nearest the camera. Used for the #1055 inspect-click.
+func pick_actor_at(world_pos: Vector2) -> String:
+	var hit_id := ""
+	var hit_y := -INF
+	for actor_id in _tokens.keys():
+		var tok: CharacterToken = _tokens[actor_id]
+		if not is_instance_valid(tok):
+			continue
+		if _token_contains(tok, world_pos) and tok.position.y > hit_y:
+			hit_id = actor_id
+			hit_y = tok.position.y
+	if _pillar != null and is_instance_valid(_pillar):
+		if _prop_contains(_pillar, world_pos) and _pillar.position.y > hit_y:
+			hit_id = _pillar.prop_id
+			hit_y = _pillar.position.y
+	return hit_id
+
+
+## #1055 — apply a `zone_move` events beat for ONE actor (facing-derive + walk to the
+## named zone's anchor). Renderer-derived facing; no engine facing. Called from the
+## events-replay path; a no-op if the actor/zone is unknown this tick.
+func apply_zone_move(actor_id: String, zone_name: String) -> void:
+	var tok: CharacterToken = _tokens.get(actor_id, null)
+	if tok == null or not is_instance_valid(tok):
+		return
+	var dest: Vector2 = _zone_screen.get(zone_name, Vector2.ZERO)
+	if dest == Vector2.ZERO and not _zone_screen.has(zone_name):
+		return
+	var from_pos: Vector2 = _token_prev_pos.get(actor_id, tok.position)
+	_walk_token_to(tok, actor_id, from_pos, dest)
+
+
+## Hit-test a CharacterToken's Area2D pick body against a WorldView-local point.
+func _token_contains(tok: CharacterToken, world_pos: Vector2) -> bool:
+	var picker := tok.get_node_or_null("Picker") as Area2D
+	if picker == null:
+		return false
+	var shape_node := picker.get_node_or_null("PickerShape") as CollisionShape2D
+	if shape_node == null or shape_node.shape == null:
+		return false
+	var rect := shape_node.shape as RectangleShape2D
+	if rect == null:
+		return false
+	# Convert the world point into the shape's local frame (token pos + shape pos).
+	var local := world_pos - tok.position - shape_node.position
+	var half := rect.size * 0.5
+	return absf(local.x) <= half.x and absf(local.y) <= half.y
+
+
+## Hit-test the pillar prop's body cell against a WorldView-local point. The prop
+## origin is its foot; the body cell spans -anchor..(-anchor+frame) from origin.
+func _prop_contains(prop: PropActor, world_pos: Vector2) -> bool:
+	var sprite := prop.get_node_or_null("Sprite") as Sprite2D
+	if sprite == null or sprite.texture == null:
+		return false
+	var sz := sprite.texture.get_size()
+	# sprite.offset == -anchor, so the cell top-left (relative to origin) is offset.
+	var top_left := prop.position + sprite.offset
+	return world_pos.x >= top_left.x and world_pos.x <= top_left.x + sz.x \
+		and world_pos.y >= top_left.y and world_pos.y <= top_left.y + sz.y
+
+
+# ---------------------------------------------------------------------------
 # #1054 — actor tokens + the static pillar prop, in the Y-sorted layer.
 # ---------------------------------------------------------------------------
 
@@ -210,18 +359,23 @@ func pillar_prop() -> PropActor:
 func _reconcile_actors(character: Dictionary) -> void:
 	var lead := _lead_actor(character)
 	var wanted: Dictionary = {}  # actor_id -> true (actors that should exist this tick)
+	# A location change since the last snapshot is a `travel` — reset facing to the
+	# rest/default facing rather than deriving a walk direction (ISO-PROJECTION.md).
+	var traveled := _prev_location_id != "" and _prev_location_id != _location_id
 
 	if not lead.is_empty():
 		var actor_id := String(lead.get("id", ""))
 		if actor_id != "":
 			wanted[actor_id] = true
 			var tok: CharacterToken = _tokens.get(actor_id, null)
-			if tok == null:
+			var is_new := tok == null
+			if is_new:
 				tok = _spawn_token(actor_id)
 				if tok != null:
 					_tokens[actor_id] = tok
 			if tok != null:
-				tok.place_at(_foreground_pos())
+				var target_pos := _foreground_pos()
+				_reconcile_token_motion(tok, actor_id, target_pos, is_new, traveled)
 
 	# Free tokens whose actor left the party (no leaks).
 	for existing_id in _tokens.keys():
@@ -230,6 +384,58 @@ func _reconcile_actors(character: Dictionary) -> void:
 			if is_instance_valid(stale):
 				stale.queue_free()
 			_tokens.erase(existing_id)
+			_token_prev_pos.erase(existing_id)
+
+
+## #1055 — drive ONE token to its new screen position with renderer-derived facing.
+## Decision table (facing is 100% renderer-derived; the engine has no facing field):
+##   - new token        → place instantly at default facing, idle (no walk-in).
+##   - traveled (loc Δ) → place instantly, reset to default_facing, idle.
+##   - same position    → hold last facing, stay idle (static).
+##   - zone moved       → derive facing = octant(prev→new) via FacingResolver, play
+##                        `walk` during the set_zone_target tween, return to `idle`
+##                        on arrival. Y updates progressively so Y-sort re-orders.
+func _reconcile_token_motion(tok: CharacterToken, actor_id: String, target_pos: Vector2, is_new: bool, traveled: bool) -> void:
+	var prev_pos: Vector2 = _token_prev_pos.get(actor_id, target_pos)
+
+	if is_new:
+		tok.place_at(target_pos)
+		tok.set_facing(FacingResolver.default_facing)
+		tok.set_anim("idle")
+		_token_prev_pos[actor_id] = target_pos
+		return
+
+	if traveled:
+		# Location change → snap into the new scene at the rest facing.
+		tok.place_at(target_pos)
+		tok.set_facing(FacingResolver.default_facing)
+		tok.set_anim("idle")
+		_token_prev_pos[actor_id] = target_pos
+		return
+
+	if prev_pos.distance_squared_to(target_pos) < 0.5:
+		# No zone change — hold the last facing, stay idle (static).
+		_token_prev_pos[actor_id] = target_pos
+		return
+
+	# Zone changed within the scene → derive an 8-way facing and walk there.
+	_walk_token_to(tok, actor_id, prev_pos, target_pos)
+
+
+## Derive facing from prev→new, play `walk` for the tween, return to `idle` on
+## arrival. Shared by the snapshot reconcile and the `zone_move` events beat.
+func _walk_token_to(tok: CharacterToken, actor_id: String, from_pos: Vector2, to_pos: Vector2) -> void:
+	var facing := FacingResolver.octant(from_pos, to_pos, FACING_ORDER)
+	tok.set_facing(facing)
+	tok.set_anim("walk")
+	tok.set_zone_target(to_pos)
+	# Return to idle when the move-tween finishes (tween length == MOVE_TWEEN_SEC).
+	var idle_timer := get_tree().create_timer(CharacterToken.MOVE_TWEEN_SEC)
+	idle_timer.timeout.connect(func():
+		if is_instance_valid(tok):
+			tok.set_anim("idle"))
+	_token_prev_pos[actor_id] = to_pos
+	print("[Facing] move %s => %s" % [actor_id, facing])
 
 
 ## Build a CharacterToken for an actor: resolve its committed sheet (sheet.png +
