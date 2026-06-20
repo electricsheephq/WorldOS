@@ -1317,6 +1317,10 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         catalog = json.loads(body.decode("utf-8"))
         self.assertEqual(catalog["state_authority"], "engine")
         self.assertEqual(catalog["write_lane"], "/move")
+        # #835 Increment 2 FIX A: the live-composition lever is DARK by default — the client gates
+        # its /beat-stream poll on this, so it must report False unless WORLDOS_STREAM_BEATS=1.
+        self.assertIn("streamBeats", catalog)
+        self.assertFalse(catalog["streamBeats"])
         self.assertEqual(catalog["total"], 1)
         campaign = catalog["campaigns"][0]
         self.assertEqual(campaign["id"], "play:state:camp_live")
@@ -1343,6 +1347,27 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertNotIn("hidden agenda", encoded)
         self.assertNotIn("private canon", encoded)
         self.assert_no_private_keys(json.loads(encoded))
+
+    def test_openworlds_campaigns_streambeats_reflects_env_flag(self):
+        """#835 Increment 2 FIX A: streamBeats mirrors WORLDOS_STREAM_BEATS — True only for '1'."""
+        import os
+        campaign_dir = self._tmp / "campaigns" / "camp_sb"
+        self._write_snapshot(campaign_dir, {"id": "camp_sb", "title": "T", "world_id": "w"})
+        _QuietHandler.campaign_id = "camp_sb"
+        server._HERE = self._tmp / "viewer"
+        saved = os.environ.get("WORLDOS_STREAM_BEATS")
+        try:
+            os.environ["WORLDOS_STREAM_BEATS"] = "1"
+            catalog = json.loads(self._get("/openworlds/campaigns.json")[2].decode("utf-8"))
+            self.assertTrue(catalog["streamBeats"])  # ON when the lever is set
+            os.environ["WORLDOS_STREAM_BEATS"] = "0"
+            catalog = json.loads(self._get("/openworlds/campaigns.json")[2].decode("utf-8"))
+            self.assertFalse(catalog["streamBeats"])  # OFF for '0'
+        finally:
+            if saved is None:
+                os.environ.pop("WORLDOS_STREAM_BEATS", None)
+            else:
+                os.environ["WORLDOS_STREAM_BEATS"] = saved
 
     def test_openworlds_campaigns_keeps_current_move_sink_run_live_after_recency_window(self):
         campaign_dir = self._tmp / "campaigns" / "camp_live"

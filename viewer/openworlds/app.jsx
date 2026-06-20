@@ -309,6 +309,11 @@ let __logSeq = 0;
 function nextLogSeq() { __logSeq += 1; return __logSeq; }
 
 function useLiveSession(state) {
+  // #835 Increment 2 FIX A: the server-visible mirror of WORLDOS_STREAM_BEATS (from
+  // /openworlds/campaigns.json). When the feature is OFF (the dark default) this is false and the
+  // /beat-stream poll below never arms — so the viewer fires ZERO /beat-stream requests. Only when
+  // the owner sets WORLDOS_STREAM_BEATS=1 server-side does the live-composition tail come alive.
+  const streamBeats = state?.streamBeats === true;
   const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
   const activeCampaign =
     campaigns.find((c) => openWorldsCampaignMatches(c, state?.activeCampaign)) ||
@@ -502,6 +507,15 @@ function useLiveSession(state) {
   // real narration beat regardless of this flag).
   const armPending = React.useCallback((text) => {
     clearTimers();
+    // #835 Increment 2 FIX C: reset the /beat-stream cursor (and the per-beat prose accumulator)
+    // when a NEW turn arms. The tailer truncates+rewrites current.jsonl PER BEAT, but the cursor
+    // previously reset only on RUN change — so a continuing beat inherited the prior beat's high
+    // line cursor and the new beat's first chunks (lines 0..cursor-1 of the freshly-truncated file)
+    // were skipped, dropping the opening of the live preview. Re-zeroing here means every armed turn
+    // reads its beat from line 0. (The server's truncation-reset guard catches the same on its side;
+    // this makes the client robust regardless of poll interleaving.)
+    beatStreamCursor.current = 0;
+    composingText.current = "";
     // #406: "first beat?" = no turn has RESOLVED on /chat yet (resolvedTurnsRef), NOT "no paragraph
     // has streamed" (dmBeatCountRef). So a retried cold-open — one paragraph streamed, then "Try
     // again" before the turn resolved — still gets the generous PENDING_RECOVERY_FIRST_MS window.
@@ -818,8 +832,12 @@ function useLiveSession(state) {
   //     drops it on turn resolution — zero duplication either way. notePendingProgress() flips the
   //     pending turn to `streaming` so the narrating affordance + latestStreamed preview light up.
   // Gated on `pendingRef`: it only does work mid-turn, so it never churns the chronicle at rest.
+  // #835 Increment 2 FIX A: ALSO gated on `streamBeats` (the server-visible WORLDOS_STREAM_BEATS
+  // mirror). When OFF (the default) the effect returns immediately — no interval, no fetch, no
+  // visibilitychange listener — so the viewer fires ZERO /beat-stream requests with the feature
+  // dark, instead of polling every ~500ms during every pending turn for a sidecar that never exists.
   React.useEffect(() => {
-    if (!campaignId) return undefined;
+    if (!campaignId || !streamBeats) return undefined;
     let cancelled = false;
     let timer = null;
     const pollOnce = async () => {
@@ -869,7 +887,7 @@ function useLiveSession(state) {
     document.addEventListener("visibilitychange", onVisibility);
     onVisibility();
     return () => { cancelled = true; stop(); document.removeEventListener("visibilitychange", onVisibility); };
-  }, [campaignId, source, runId, notePendingProgress]);
+  }, [campaignId, source, runId, notePendingProgress, streamBeats]);
 
   // #745: expose notePendingProgress so the live-progress signal is part of the hook's public surface
   // (consistent with armPending/clearPending; the /events poll calls the same ref). Purely additive —
@@ -976,6 +994,10 @@ function App() {
             ...s,
             campaigns: nextCampaigns,
             activeCampaign: requestedActiveId || (activeStillExists ? s.activeCampaign : preferred),
+            // #835 Increment 2 FIX A: mirror the server's WORLDOS_STREAM_BEATS lever so the
+            // /beat-stream poll in useLiveSession can stay fully inert when the feature is OFF
+            // (the default). Strict-equality to true so an absent/old field reads as OFF.
+            streamBeats: payload?.streamBeats === true,
             campaignCatalog: {
               loaded: true,
               total: payload?.total ?? nextCampaigns.length,

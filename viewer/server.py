@@ -5974,7 +5974,20 @@ def _openworlds_campaigns(attached_campaign: str = "", *, move_sink_live: bool =
         "now": now,
         "state_authority": "engine",
         "write_lane": "/move",
+        # #835 Increment 2 FIX A: a server-visible mirror of WORLDOS_STREAM_BEATS so the OpenWorlds
+        # client can gate its /beat-stream poll. The viewer has no other knowledge of the wrapper's
+        # streaming lever; without this the client polled /beat-stream every ~500ms during ANY
+        # pending DM turn even when the feature is OFF server-side (the sidecar never exists →
+        # wasted requests). Defaults FALSE (env unset/0); the app polls /beat-stream ONLY when true.
+        "streamBeats": _stream_beats_enabled(),
     }
+
+
+def _stream_beats_enabled() -> bool:
+    """True IFF WORLDOS_STREAM_BEATS=1 (the #835 live-composition lever). Mirrors the wrapper's
+    worldos_env STREAM_BEATS gate so the viewer reports the SAME on/off the tailer launch keys off.
+    Anything other than the literal "1" (unset, "0", garbage) is OFF — the dark default."""
+    return (env_var("STREAM_BEATS", "0") or "0").strip() == "1"
 
 
 def _monitor_roots() -> list[tuple[str, Path]]:

@@ -510,6 +510,13 @@ _play_cleanup() {
   declare -F worldos_release_launch_lock >/dev/null 2>&1 && worldos_release_launch_lock "$ROOT"
   kill "$SUP" 2>/dev/null
   [ -f "$VPID_FILE" ] && kill "$(cat "$VPID_FILE" 2>/dev/null)" 2>/dev/null
+  # #835 Increment 2 FIX B: a SIGINT/SIGTERM mid-beat (Ctrl-C, or a deadline killing the runner)
+  # bypasses the per-beat worldos_stream_tailer_stop, orphaning the live-composition tailer. The
+  # tailer was launched inside dm_turn's $(...) subshell, so WORLDOS_STREAM_TAILER_PID is empty in
+  # THIS parent shell — reap it from the pidfile the start helper persisted. No-op when streaming is
+  # OFF (no pidfile) or the tailer already exited (its own self-bounding caps cover a missed signal).
+  declare -F worldos_stream_tailer_kill_pidfile >/dev/null 2>&1 \
+    && worldos_stream_tailer_kill_pidfile "$STATE_DIR"
 }
 trap _play_cleanup EXIT
 trap '_play_cleanup; exit 130' INT TERM
