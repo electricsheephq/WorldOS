@@ -87,6 +87,11 @@ var _backdrop_is_resolved: bool = false
 ## actor_id -> CharacterToken. Today we only spawn party[0], but the dictionary
 ## keeps the reconcile contract right for when the party grows.
 var _tokens: Dictionary = {}
+## #1063 part 2 — sprite-atlas scope_key -> actor_id, so when ImageResolver emits
+## texture_ready for a SERVED sprite atlas (/image?scope=sprite-<name>) we know which
+## token to re-set_manifest. Distinct namespace from the backdrop scope (scene-*), so
+## the shared texture_ready handler dispatches by which map the scope is in.
+var _sheet_scope_actor: Dictionary = {}
 ## The single static pillar prop (spawned once, repositioned per tick).
 var _pillar: PropActor = null
 
@@ -385,6 +390,10 @@ func _reconcile_actors(character: Dictionary) -> void:
 				stale.queue_free()
 			_tokens.erase(existing_id)
 			_token_prev_pos.erase(existing_id)
+			# Drop any served-atlas scope mapping pointing at the freed token (#1063).
+			for sc in _sheet_scope_actor.keys():
+				if String(_sheet_scope_actor[sc]) == String(existing_id):
+					_sheet_scope_actor.erase(sc)
 
 
 ## #1055 — drive ONE token to its new screen position with renderer-derived facing.
@@ -440,6 +449,14 @@ func _walk_token_to(tok: CharacterToken, actor_id: String, from_pos: Vector2, to
 
 ## Build a CharacterToken for an actor: resolve its committed sheet (sheet.png +
 ## sheet.json), build it, add it to YSortLayer. Returns null if no sheet resolves.
+##
+## #1063 part 2 — ADDITIVE + FALLBACK-SAFE served-atlas layer: the token is ALWAYS
+## built from the committed res:// placeholder first (so a missing served atlas is
+## EXACTLY today's behavior). We THEN try the live engine's SERVED final atlas via
+## /image?scope=<sheet_scope_key>: if it is already cached, swap it in now; if it has
+## not been tried (and is not known-404), kick an async resolve() — _on_texture_ready
+## swaps it in later. The slicing layout for the served PNG comes from the
+## render-profile actor_sheet (there is NO served sheet.json), mirroring _swap_backdrop.
 func _spawn_token(actor_id: String) -> CharacterToken:
 	var resolved := _resolve_character_sheet(actor_id)
 	if resolved.is_empty():
@@ -450,7 +467,38 @@ func _spawn_token(actor_id: String) -> CharacterToken:
 	tok.name = "Token_" + actor_id
 	_ysort.add_child(tok)
 	tok.set_manifest(resolved["manifest"], resolved["texture"])
+	# Try to upgrade to the SERVED final atlas (no-op when none is served).
+	_try_serve_sprite_atlas(tok, actor_id)
 	return tok
+
+
+## #1063 part 2 — attempt to swap a token's committed placeholder for the SERVED final
+## atlas. Mirrors _swap_backdrop's cached/missing/resolve structure. The committed
+## token is already built; this only UPGRADES it when a served atlas exists. No-op when
+## the actor is unmapped, the profile lacks a slicing layout, or the scope is absent.
+func _try_serve_sprite_atlas(tok: CharacterToken, actor_id: String) -> void:
+	var meta := RenderProfile.godot_actor_sheet(actor_id)
+	var scope := String(meta.get("sheet_scope_key", ""))
+	if scope == "":
+		return
+	# The served PNG has no sheet.json — build the slicing manifest from the profile.
+	var served_manifest := RenderProfile.godot_served_manifest(actor_id)
+	if served_manifest.is_empty():
+		# Incomplete profile (no animations table) — keep the committed placeholder.
+		return
+	# Remember scope -> actor so _on_texture_ready can find the token to re-slice.
+	_sheet_scope_actor[scope] = actor_id
+
+	var cached := ImageResolver.get_cached(scope)
+	if cached != null:
+		# Already fetched — swap the served atlas in now (re-call set_manifest).
+		tok.set_manifest(served_manifest, cached)
+		return
+	if ImageResolver.is_missing(scope):
+		# Definitively absent (404) — keep the committed placeholder (today's behavior).
+		return
+	# Untried/loading: keep the placeholder now; _on_texture_ready upgrades it later.
+	ImageResolver.resolve(scope)
 
 
 ## Spawn (once) + position the static pillar prop at a MID-depth zone marker so
@@ -609,9 +657,42 @@ func _swap_backdrop(scope: String) -> void:
 
 
 func _on_texture_ready(scope: String, texture: Texture2D) -> void:
+	if texture == null:
+		return
+	# #1063 part 2 — a SERVED sprite atlas resolved: re-slice the token that asked for
+	# it from the render-profile layout (distinct scope namespace from the backdrop, so
+	# this branch and the backdrop branch never both fire for one scope).
+	if _sheet_scope_actor.has(scope):
+		_apply_served_sprite(scope, texture)
+		return
 	# Only swap if this is still the location we want (the snapshot may have moved on).
-	if scope == _pending_backdrop_scope and texture != null:
+	if scope == _pending_backdrop_scope:
 		_apply_texture_backdrop(texture)
+
+
+## #1063 part 2 — apply a resolved served sprite atlas to its token by re-building the
+## SpriteFrames from the render-profile slicing layout (set_manifest is re-callable: it
+## rebuilds _frames from scratch). No-op if the token was freed (actor left the party)
+## or the profile lost its layout — the committed placeholder simply stays.
+func _apply_served_sprite(scope: String, texture: Texture2D) -> void:
+	var actor_id := String(_sheet_scope_actor.get(scope, ""))
+	if actor_id == "":
+		return
+	var tok: CharacterToken = _tokens.get(actor_id, null)
+	if tok == null or not is_instance_valid(tok):
+		return
+	var served_manifest := RenderProfile.godot_served_manifest(actor_id)
+	if served_manifest.is_empty():
+		return
+	# Capture the current render state so the atlas swap is seamless (set_manifest
+	# resets to idle@default_facing otherwise).
+	var keep_facing := tok.facing()
+	var keep_anim := tok.anim()
+	tok.set_manifest(served_manifest, texture)
+	tok.set_facing(keep_facing)
+	tok.set_anim(keep_anim)
+	print("[CharacterToken] actor=%s SERVED atlas applied scope=%s anims=%d" % [
+		actor_id, scope, tok.animation_count()])
 
 
 ## Put a real texture on the BackdropPlane and scale/center it to fill the viewport.

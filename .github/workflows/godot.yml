@@ -90,6 +90,49 @@ jobs:
           grep -q "move_to_zone-emitted=true" /tmp/smoke.log
           grep -q "illegal-kind blocked=true" /tmp/smoke.log
 
+      - name: Conformance — SERVED sprite final renders via /image (#1063 part 2)
+        run: |
+          set -euxo pipefail
+          # Serve the committed REAL placeholder PNG as the "Meshy/Blender final" atlas
+          # for scope sprite-aubree-iso8 by writing the same wiki_ingest.json descriptor
+          # pack_sheet.py emits (#1078 serve-side), then start the real viewer /image
+          # bridge. The PNG MUST be a real decodable 24x8 sheet (it is — the committed
+          # placeholder), else /image serves nothing → the client MISSes → the smoke
+          # fails loudly (proving the served path actually drives the render).
+          WORLD="gt2-served-smoke"
+          SDIR="content/worlds/_private/${WORLD}/images/sprite-aubree-iso8"
+          mkdir -p "$SDIR"
+          cp godot/assets/characters/aubree/sheet.png "$SDIR/sheet.png"
+          ABS_PNG="$(cd "$SDIR" && pwd)/sheet.png"
+          DESC="$SDIR/wiki_ingest.json"
+          # Write the SAME descriptor shape pack_sheet.py --emit-descriptor emits (#1078).
+          python3 -c 'import json,sys,time; json.dump({"scope":"sprite-aubree-iso8","path":sys.argv[2],"mime_type":"image/png","source_url":"","license":"CC0-1.0","attribution":"GT2 served-finals CI smoke","ingested_at":time.time()}, open(sys.argv[1],"w"), indent=2)' "$DESC" "$ABS_PNG"
+          echo "[smoke] wrote descriptor -> $DESC"
+          # Start the real viewer /image bridge (bare python3 — no engine/LLM deps).
+          PORT=8799
+          python3 viewer/server.py "" "$PORT" > /tmp/viewer.log 2>&1 &
+          VIEWER_PID=$!
+          trap 'kill $VIEWER_PID 2>/dev/null || true' EXIT
+          # Wait until /image?scope=sprite-aubree-iso8 actually serves the PNG (200).
+          for i in $(seq 1 50); do
+            code=$(curl -s -o /tmp/served.png -w '%{http_code}' "http://127.0.0.1:${PORT}/image?scope=sprite-aubree-iso8" || true)
+            if [ "$code" = "200" ]; then echo "[smoke] /image served 200 after ${i} tries"; break; fi
+            sleep 0.2
+          done
+          test "$code" = "200"   # the stub MUST serve a real PNG or the smoke is meaningless
+          # The served PNG must decode (PNG magic) so the client doesn't silently MISS.
+          head -c4 /tmp/served.png | od -An -tx1 | grep -qi "89 50 4e 47"
+          # Drive the Godot client against the live /image bridge. The snapshot still
+          # comes from the bundled fixture (party[0]=char-aubree), but ImageResolver
+          # fetches the SERVED atlas from this base_url and re-slices the token.
+          godot --headless --path godot --quit-after 300 -- --served-finals-smoke --base "http://127.0.0.1:${PORT}" 2>&1 | tee /tmp/served.log
+          grep -q "resolver_cached=true" /tmp/served.log
+          grep -q "served-atlas-applied=true" /tmp/served.log
+          # Belt-and-suspenders: the served token still carries the full 32 anims.
+          grep -qE "\[ServedFinals\] RESULT served-atlas-applied=true resolver_cached=true anims=32" /tmp/served.log
+          kill $VIEWER_PID 2>/dev/null || true
+          rm -rf "content/worlds/_private/${WORLD}"
+
       - name: Export validation — Web (single-threaded) + Linux
         working-directory: godot
         run: |

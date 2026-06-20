@@ -22,6 +22,9 @@ extends Node
 
 ## Fallback default facing when the profile omits `renderer_profiles.godot.default_facing`.
 const DEFAULT_FACING := "S"
+## The locked dimetric facing order (ISO-PROJECTION.md) — the row layout a served
+## atlas is sliced by when the actor_sheet omits its own `facing_order`.
+const DEFAULT_FACING_ORDER := ["S", "SE", "E", "NE", "N", "NW", "W", "SW"]
 ## Default dimetric projection (matches the ISO-PROJECTION.md lock) when the
 ## profile omits `renderer_profiles.godot.projection`.
 const DEFAULT_PROJECTION := {"kind": "dimetric", "tile_ratio": "2:1", "angle_deg": 26.57}
@@ -106,6 +109,53 @@ func godot_actor_sheet(engine_actor_id: String) -> Dictionary:
 		return {}
 	var entry: Variant = (sheets as Dictionary).get(engine_actor_id, {})
 	return entry if typeof(entry) == TYPE_DICTIONARY else {}
+
+
+## Build the FULL slicing manifest for an engine actor's SERVED atlas, in the EXACT
+## shape CharacterToken.set_manifest() consumes (frame:{w,h}, facing_order, anchor:{x,y},
+## fps, animations:{<name>:{start,count,loop}}, kind, projection). The SERVED atlas is
+## ONLY a PNG (fetched via /image?scope=<sheet_scope_key>) — there is NO served sheet.json,
+## so the slicing layout MUST come from the render-profile actor_sheet here (#1063 part 2).
+## Returns {} when the actor is unmapped OR the actor_sheet carries no `animations` table
+## (an incomplete profile) — WorldView then keeps the committed res:// placeholder.
+func godot_served_manifest(engine_actor_id: String) -> Dictionary:
+	var meta := godot_actor_sheet(engine_actor_id)
+	if meta.is_empty():
+		return {}
+	var anims_v: Variant = meta.get("animations", {})
+	if typeof(anims_v) != TYPE_DICTIONARY or (anims_v as Dictionary).is_empty():
+		# Without an animations table we cannot slice — fall back to the committed sheet.
+		return {}
+
+	var cw := int(meta.get("cell_w", 128))
+	var ch := int(meta.get("cell_h", 128))
+
+	# facing_order: pass through if the profile declares it; else the locked default.
+	var fo_v: Variant = meta.get("facing_order", DEFAULT_FACING_ORDER)
+	var facing_order: Array = (fo_v as Array).duplicate() if typeof(fo_v) == TYPE_ARRAY and not (fo_v as Array).is_empty() else DEFAULT_FACING_ORDER.duplicate()
+
+	# anchor: profile carries [x, y]; CharacterToken wants {x, y}.
+	var ax := cw / 2.0
+	var ay := float(ch)
+	var anch_v: Variant = meta.get("anchor", null)
+	if typeof(anch_v) == TYPE_ARRAY and (anch_v as Array).size() >= 2:
+		var a: Array = anch_v
+		ax = float(a[0])
+		ay = float(a[1])
+
+	# animations: pass the table through verbatim (already {name:{start,count,loop}}).
+	var animations: Dictionary = anims_v
+
+	return {
+		"kind": String(meta.get("kind", "character")),
+		"projection": String(meta.get("projection", "dimetric-2to1")),
+		"image": "sheet.png",
+		"frame": {"w": cw, "h": ch},
+		"facing_order": facing_order,
+		"anchor": {"x": ax, "y": ay},
+		"fps": float(meta.get("fps", 10)),
+		"animations": animations,
+	}
 
 
 ## The dimetric projection block (kind/tile_ratio/angle_deg). Falls back to the
