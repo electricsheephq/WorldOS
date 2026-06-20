@@ -295,3 +295,44 @@ one-line `TIMING |` readout next to `COVERAGE`, e.g.
 a beat** — routine beats are ~90–100% **generation/decode-bound** (Opus more so, extended thinking), so
 when a combat turn feels slow it's the *model thinking*, not the tools. Everything degrades to `None`
 without a sidecar, leaving the rest of the rollup byte-identical.
+
+## 8. Differential fact-fidelity — the content-loss measure the 1–5 lens is BLIND to
+`qa/fact_fidelity.py` · inventories under `qa/fact_inventories/`
+
+**The gap this closes (the 2026-06-21 lens-blindness finding).** The three 1–5 LLM lenses grade
+*prose / plot-gist*, not *arc-completeness*. Proven on the combat transcript `ow-combat-031717.md`,
+uncapped scorer: deleting the **entire** climax+resolution (antagonist reveal, the "43 names"
+MacGuffin, all end-session XP/reputation mechanics) moved story `4.0 → 4.0` (identical) and mech
+`3.6 → 4.1` — *higher*, **non-monotonic** (fewer beats ⇒ fewer SRD errors to find). Cutting to the
+first 25% only dropped story to `3.7` (inside the 0.40 noise floor). **The lens scores a whole story,
+a gutted one, and a mangled digest ~alike.** This is partly by design — the lens grades quality *above*
+the deterministic floor (§1); structural brokenness is the floor's job — but nothing read the
+*transcript itself* for content fidelity, so a compressed / truncated / narration-incomplete candidate
+was uncertifiable.
+
+**The instrument.** A **fact inventory** is a committed list of discrete, grep-able facts extracted
+from a reference transcript — each `{id, desc, patterns[], severity}` (`patterns` are case-insensitive
+regexes, ANY-of; `severity` ∈ `critical|high|normal`). `score_fidelity(facts, candidate_text)` reports
+the fraction preserved (flat + severity-weighted), the dropped-fact ids, and `critical_loss` (any
+dropped `critical` fact — an antagonist reveal, the central MacGuffin, an end-session mechanic). The
+CHECK is **fully deterministic — no LLM** (so it never inherits the lens blindness it measures), which
+is exactly why it is the **sensitive** measure for regression detection (compression A/B,
+candidate-vs-baseline), NOT a prose-quality grader.
+
+**Authoring gotcha (load-bearing).** A transcript's tool-call **tally** lists tool *names*
+(`end_session`, `award_xp`, `adjust_reputation`…), so a fact keyed on a tool name survives truncation
+via the tally. End-session-mechanic facts therefore match the **call RESULT** (`"xp": 350`,
+`"reputation": 6`, `"ended": "session-…"`), never the tool name.
+
+**Sensitivity (reproduced, same `ow-combat-031717.md`, 27-fact inventory):** baseline **100%** →
+climax-deleted **59%** (`critical_loss=True`) → first-25% **33%** (`critical_loss=True`) — monotonic,
+tracking the owner's grep-verified 45-fact differential (100% / 53% / 27%). The measure separates
+gutted from whole where the lens could not.
+
+**Usage.** `python qa/fact_fidelity.py <inventory.json> <candidate.md> [--min-fidelity F] [--json]`
+→ exit 0 if the candidate clears the floor with **no critical loss**, else 1. Raw playtest transcripts
+live under the gitignored `/qa/transcripts/`, so the committed regression test
+(`qa/test_fact_fidelity.py`) runs on a small synthetic fixture
+(`qa/fact_inventories/sample_session.*`); an opt-in test reproduces the finding on the real
+`ow-combat-031717.md` when it is present locally. The committed `ow-combat-031717.facts.json` inventory
+re-derives the differential whenever that transcript is regenerated.

@@ -1,0 +1,35 @@
+{
+  "reference": "ow-combat-031717.md",
+  "note": "Fact inventory for the canonical evidence transcript (the 2026-06-21 lens-blindness finding). The raw transcript is gitignored (/qa/transcripts/); this inventory is committed so the differential reproduces when the transcript is regenerated locally. Three tiers: OPENING (survives any truncation), MID (lost when only the first quarter is kept), CLIMAX+RESOLUTION (lost when the back half is cut). Climax-mechanic facts match CALL RESULTS, never the tool names in the tally. Severity: critical = antagonist reveal / central MacGuffin / end-session mechanic.",
+  "facts": [
+    {"id": "dal_identity", "desc": "PC is Dal Lightspark, a Dwarf Wizard, level 5", "patterns": ["Dal Lightspark", "Dwarf"], "severity": "high"},
+    {"id": "dal_harper_agent", "desc": "Dal's background: Harper Agent", "patterns": ["Harper Agent"], "severity": "normal"},
+    {"id": "companion_minsc", "desc": "Companion: Minsc and Boo", "patterns": ["Minsc and Boo"], "severity": "high"},
+    {"id": "npc_withers", "desc": "NPC Withers, the ledger-keeper", "patterns": ["Withers"], "severity": "normal"},
+    {"id": "courier_perrin", "desc": "The dead courier Perrin", "patterns": ["Perrin"], "severity": "high"},
+    {"id": "copper_pin", "desc": "The old-design copper Harper pin (moon harp)", "patterns": ["copper", "moon harp"], "severity": "normal"},
+    {"id": "setting_candle_lane", "desc": "Setting: Candle Lane, Lower City", "patterns": ["Candle Lane"], "severity": "normal"},
+    {"id": "setting_elfsong", "desc": "The Elfsong tavern / back-room drop", "patterns": ["Elfsong"], "severity": "normal"},
+    {"id": "netherbrain_scar", "desc": "The Netherbrain scar in the city", "patterns": ["Netherbrain"], "severity": "normal"},
+
+    {"id": "name_jaheira", "desc": "MID: the name Jaheira in plaintext in the cipher", "patterns": ["Jaheira"], "severity": "high"},
+    {"id": "steel_watch_pin", "desc": "MID: a Steel Watch insignia pin in the bundle", "patterns": ["Steel Watch insignia"], "severity": "high"},
+    {"id": "voss_guild", "desc": "MID: Voss, Nine-Fingers' Guild fixer", "patterns": ["Nine-Fingers", "\\bVoss\\b"], "severity": "normal"},
+    {"id": "trooper_eitha", "desc": "MID: Eitha, the honest Flaming Fist trooper", "patterns": ["Eitha"], "severity": "normal"},
+    {"id": "intimidation_nat1", "desc": "MID: the natural-1 intimidation roll at the bridge", "patterns": ["\"natural\": 1,"], "severity": "high"},
+    {"id": "dock_landing", "desc": "MID: the East Bank Miller's Landing dock", "patterns": ["East Bank Miller's Landing"], "severity": "normal"},
+    {"id": "frame_seal", "desc": "MID reveal: the packet is sealed with Dal's own mark — Dal is the frame", "patterns": ["your stamp", "seal is yours", "your authorization mark"], "severity": "high"},
+
+    {"id": "antagonist_liora", "desc": "CLIMAX: the architect Liora is revealed", "patterns": ["Liora"], "severity": "critical"},
+    {"id": "macguffin_43_names", "desc": "CLIMAX: the MacGuffin — the 43 names", "patterns": ["[Ff]orty-three", "43 Names"], "severity": "critical"},
+    {"id": "grove_survivors", "desc": "CLIMAX: the 43 are Emerald Grove survivors", "patterns": ["Grove survivors"], "severity": "high"},
+    {"id": "rolph_auvin", "desc": "CLIMAX: Rolph Auvin, the Steel Watch records clerk", "patterns": ["Rolph Auvin"], "severity": "high"},
+    {"id": "resolution_candlekeep", "desc": "RESOLUTION: the path to Jaheira runs through Candlekeep", "patterns": ["Candlekeep"], "severity": "high"},
+    {"id": "xp_award_dal", "desc": "END-SESSION: Dal awarded 350 XP", "patterns": ["\"xp\": 350"], "severity": "critical"},
+    {"id": "xp_award_minsc", "desc": "END-SESSION: Minsc awarded 250 XP", "patterns": ["\"xp\": 250"], "severity": "high"},
+    {"id": "guild_reputation_6", "desc": "END-SESSION: +6 Guild reputation", "patterns": ["\"reputation\": 6"], "severity": "high"},
+    {"id": "quest_43_names", "desc": "END-SESSION: quest 'The 43 Names' opened", "patterns": ["\"title\": \"The 43 Names\""], "severity": "normal"},
+    {"id": "consequence_clock", "desc": "END-SESSION: Liora's one-week deadline scheduled", "patterns": ["Liora's deadline", "\"trigger_day\": 10"], "severity": "normal"},
+    {"id": "session_closed", "desc": "END-SESSION: the session is formally closed", "patterns": ["\"ended\": \"session-39310c7c\"", "Session 1 — closed"], "severity": "critical"}
+  ]
+}
