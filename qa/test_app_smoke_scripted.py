@@ -1,9 +1,14 @@
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-from qa import app_smoke_scripted as smoke
+QA_DIR = Path(__file__).resolve().parent
+if str(QA_DIR) not in sys.path:
+    sys.path.insert(0, str(QA_DIR))
+
+import app_smoke_scripted as smoke
 
 
 class AppSmokeScriptedTests(unittest.TestCase):

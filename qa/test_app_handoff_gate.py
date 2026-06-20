@@ -8,7 +8,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from qa import app_handoff_gate as gate
+QA_DIR = Path(__file__).resolve().parent
+if str(QA_DIR) not in sys.path:
+    sys.path.insert(0, str(QA_DIR))
+
+import app_handoff_gate as gate
 
 
 class AppHandoffGateTests(unittest.TestCase):
