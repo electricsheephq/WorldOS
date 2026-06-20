@@ -1,0 +1,42 @@
+; Engine configuration file.
+; WorldOS GT2 (Godot) renderer — scaffold for issue #1052.
+;
+; This is a hand-authored project.godot (config_version=5, Godot 4.6). It is
+; intentionally minimal: a bootable thin-client whose SurfaceClient proves the
+; transport by driving a smoke Main. The real scene graph (WorldView /
+; CharacterToken / Y-sort / click-to-move) is #1053–#1055.
+;
+; Format docs: https://docs.godotengine.org/en/stable/classes/class_projectsettings.html
+
+config_version=5
+
+[application]
+
+config/name="WorldOS GT2 (Godot)"
+config/description="Thin-client Godot 4 renderer for the WorldOS D&D engine. Polls read-only HTTP surfaces and POSTs player intents; owns ZERO game state."
+run/main_scene="res://scenes/Main.tscn"
+config/features=PackedStringArray("4.6", "GL Compatibility")
+
+[autoload]
+
+; Boot order matters: Config first (resolves base_url/campaign), then the
+; HTTP/transport singletons that read from it. All registered with a leading
+; "*" so they load as autoloaded singletons.
+Config="*res://autoload/Config.gd"
+SurfaceClient="*res://autoload/SurfaceClient.gd"
+ImageResolver="*res://autoload/ImageResolver.gd"
+FacingResolver="*res://autoload/FacingResolver.gd"
+
+[display]
+
+; "canvas_items" stretch keeps 2D content crisp across resolutions; "keep"
+; aspect preserves the dimetric backdrop's proportions (no zone→screen desync).
+window/stretch/mode="canvas_items"
+window/stretch/aspect="keep"
+
+[rendering]
+
+; gl_compatibility = widest reach (web export + older native GPUs). The GT2
+; renderer is 2D/painterly-isometric, so the Forward+ pipeline buys nothing here.
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"

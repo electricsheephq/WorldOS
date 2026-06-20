@@ -1,0 +1,9 @@
+{
+  "_comment": "Fixture mirroring the REAL /combat-surface (viewer/server.py build_combat_surface). active:false = out-of-combat exploration, the #1052 default. When active, `zone` is truth and the renderer re-derives x,y itself (renderer owns layout).",
+  "active": false,
+  "round": 0,
+  "turn_index": 0,
+  "current_id": null,
+  "zones": [],
+  "initiative": []
+}

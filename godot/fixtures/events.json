@@ -1,0 +1,14 @@
+{
+  "_comment": "Fixture mirroring the REAL /events response (viewer/server.py /events route): {entries, next, sid}. Each entry is a {kind, text, label?, seq?, sid?} record. One harmless narration row so listeners get a shaped payload standalone.",
+  "entries": [
+    {
+      "kind": "narration",
+      "label": "DM",
+      "text": "The Lower City breathes around you — gulls wheel over the harbor, and the gate guards wave the party through.",
+      "seq": 0,
+      "sid": "fixture-session"
+    }
+  ],
+  "next": 1,
+  "sid": "fixture-session"
+}
