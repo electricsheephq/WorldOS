@@ -1,7 +1,7 @@
 # WorldOS QA Scoring System — standardized reference
 
 > Source of truth for HOW we measure a playtest. Current as of 2026-06-19 (post-24h reorient).
-> The running results ledger is `qa/scores_db.py` (SQLite) → `qa/scores_ledger.md` (`add_run()` / `--render`); `qa/SCORECARD.md` is LEGACY narrative.
+> The running results ledger is `qa/scores_db.py` (SQLite) → `qa/scores_ledger.md` (`add_run()` / `--render`); `qa/SCORECARD.md` is LEGACY narrative. Emit the standardized closeout block for a scored run with `python3 qa/closeout.py <run-id>` (ruler-fenced Δ-vs-last-comparable, flags non-opus DM).
 > For the current app/native handoff tools and RRI routing, start with `qa/QA_TOOLS.md` and
 > `WorldOS-GUI-RUNBOOK.md`; this file describes the story/mechanical scoring model.
 

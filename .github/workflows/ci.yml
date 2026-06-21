@@ -107,6 +107,7 @@ jobs:
             ../../qa/test_release_readiness_scope.py \
             ../../qa/test_scores_db_comparability.py \
             ../../qa/test_scores_db.py \
+            ../../qa/test_closeout.py \
             ../../qa/test_release_gate_static.py \
             ../../qa/test_ui_playtest_score_image_outcomes.py \
             ../../qa/test_claude_auth_isolation.py \
