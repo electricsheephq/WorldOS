@@ -8,11 +8,45 @@ reproducible for tests and replay.
 
 from __future__ import annotations
 
+import os
 import random
 import re
 from dataclasses import dataclass, field
 
 _TERM = re.compile(r"(\d*)d(\d+)(kh\d+|kl\d+)?$")
+
+# ── Process-level RNG (Track 2b — deterministic combat seed) ─────────────────────────
+# A SINGLE module-level random.Random the engine draws from whenever roll() is called
+# WITHOUT an explicit per-call `seed`. This is the correct way to make a *sequence* of
+# rolls reproducible: a per-call seed would re-seed before every roll and collapse every
+# draw to the same constant (a degenerate fight). One shared stream, seeded once, means
+# "same seed -> same fight" while each individual roll is still a fresh draw.
+#
+# ADDITIVE / default-off: when WORLDOS_COMBAT_SEED is unset, the stream is seeded from
+# random.Random(None) — i.e. OS entropy, byte-identical to today's non-deterministic
+# random.Random(seed=None) behaviour. The env seed is a TEST affordance only (the TEST
+# combat loop sets it); it does NOT need the sandbox guard because a deterministic seed in
+# a live game is harmless — it only fixes WHICH dice come up, it never bends an outcome.
+def _initial_seed() -> int | None:
+    raw = os.environ.get("WORLDOS_COMBAT_SEED")
+    if raw is None or raw == "":
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        # A non-integer seed is hashed to a stable int so any string still seeds reproducibly.
+        return abs(hash(raw)) % (2**31)
+
+
+_PROCESS_RNG = random.Random(_initial_seed())
+
+
+def reseed_process_rng(seed: int | None) -> None:
+    """Reseed the shared process-level dice stream (TEST affordance). Passing an int makes
+    the subsequent sequence of un-seeded rolls reproducible; passing None reseeds from OS
+    entropy. Used by the engine-only combat smoke / TEST loop to fix a whole fight. No effect
+    on any roll that passes an explicit per-call `seed`."""
+    _PROCESS_RNG.seed(seed)
 
 # Bounds on a single dice term. Real D&D never needs more (a high-level fireball is
 # ~20d6; d100 is the largest standard die), so these never affect legitimate rolls —
@@ -53,7 +87,11 @@ def roll(
     if advantage and disadvantage:
         advantage = disadvantage = False
 
-    rng = random.Random(seed)
+    # An explicit per-call seed keeps its old meaning (a self-contained reproducible single
+    # roll — used by unit tests). With NO per-call seed, draw from the shared process-level
+    # stream so a *sequence* of rolls is reproducible under WORLDOS_COMBAT_SEED without every
+    # roll collapsing to a constant. Unset env -> _PROCESS_RNG is OS-entropy seeded == today.
+    rng = random.Random(seed) if seed is not None else _PROCESS_RNG
     expr = expression.replace(" ", "").lower().replace("d%", "d100")
     if not expr:
         raise ValueError("empty dice expression")
@@ -138,3 +176,52 @@ def roll(
         crit=crit,
         fumble=fumble,
     )
+
+
+def average_total(expression: str) -> int:
+    """The deterministic EXPECTED average total of a dice expression, rounded to nearest int.
+
+    Each NdM term contributes N*(M+1)/2 (the mean of N dM dice); flat modifiers add as-is.
+    keep-highest/lowest (khN/klN) terms fall back to the per-die mean over the kept count
+    (an approximation — the engine never crit-doubles a keep term, so this is only ever hit by
+    a plain damage expression). Pure / I/O-free. Used by the TEST-only fast_resolve path so a
+    sandbox fight resolves in a predictable number of rounds; never on a live game (guarded).
+
+    Mirrors roll()'s term grammar exactly so the two stay in lockstep; raises the same
+    ValueErrors on a malformed/oversized expression so fast_resolve can't smuggle a bad expr."""
+    expr = expression.replace(" ", "").lower().replace("d%", "d100")
+    if not expr:
+        raise ValueError("empty dice expression")
+    if len(expr) > _MAX_EXPRESSION_CHARS:
+        raise ValueError(f"dice expression must be <= {_MAX_EXPRESSION_CHARS} characters")
+    terms = re.findall(r"[+-]?[^+-]+", expr)
+    total = 0.0
+    for term in terms:
+        sign = -1 if term.startswith("-") else 1
+        body = term.lstrip("+-")
+        m = _TERM.fullmatch(body)
+        if m:
+            n = int(m.group(1) or 1)
+            sides = int(m.group(2))
+            keep = m.group(3)
+            if n == 0:
+                raise ValueError(f"die count must be >= 1: {term!r}")
+            if n > _MAX_DICE:
+                raise ValueError(f"die count must be <= {_MAX_DICE}: {term!r}")
+            if sides < 1 or sides > _MAX_SIDES:
+                raise ValueError(f"die sides must be 1..{_MAX_SIDES}: {term!r}")
+            per_die = (sides + 1) / 2.0
+            count = n
+            if keep:
+                k = int(keep[2:])
+                if k > n:
+                    raise ValueError(f"cannot keep {k} of {n} dice: {term!r}")
+                count = k  # approximate: mean per die over the kept count
+            total += sign * per_die * count
+        else:
+            try:
+                val = int(body)
+            except ValueError as exc:
+                raise ValueError(f"bad dice term: {term!r}") from exc
+            total += sign * val
+    return int(round(total))

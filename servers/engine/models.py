@@ -1545,6 +1545,20 @@ class HouseRules(_StrictModel):
     # with enforce_sell_cap, rejected). SRD has no buy-back economy, so this is a sanity
     # rail, not a rule: 1.0× = list price. Default 2.0 catches gross fat-finger overprices.
     sell_cap_multiple: float = 2.0
+    # ── TEST-ONLY combat toggles (Track 2b — engine-run combat core) ─────────────────
+    # Both are GUARDED in attack(): they fire ONLY when the process is in combat-test mode
+    # (env WORLDOS_COMBAT_TEST=1 AND Campaign.is_sandbox). Outside that double guard they are
+    # DEAD CODE — byte-identical to today — so they can NEVER affect a live (non-sandbox) game.
+    # See docs/roadmap/engine-combat-loop-design.md §4. Additive: an old snapshot loads both False.
+    #
+    # force_hit forces the HIT BOOLEAN only (the natural die is still rolled + read, so crit/
+    # fumble/crit-doubling stay honest — it is NOT a synthesized nat-20). This makes a TEST fight
+    # resolve to a terminal state without depending on the dice landing hits.
+    force_hit: bool = False  # TEST-ONLY (sandbox-guarded): the attack roll auto-hits
+    # fast_resolve averages the (post-crit-doubled) damage dice instead of rolling them, so a TEST
+    # fight resolves in a predictable number of rounds. Only changes damage MAGNITUDE, never
+    # whether a hit lands or whether a crit happened.
+    fast_resolve: bool = False  # TEST-ONLY (sandbox-guarded): damage = average instead of rolled
 
 
 class SeedParams(_StrictModel):
@@ -1963,6 +1977,14 @@ class Campaign(_StrictModel):
     # "what engine version was this campaign last written by". Pairs with the #165 tolerant load.
     schema_version: int = 1
     engine_sha: str = ""
+
+    # ── TEST-ONLY sandbox flag (Track 2b — engine-run combat core) ───────────────────
+    # The structural half of the combat-test DOUBLE GUARD (env WORLDOS_COMBAT_TEST=1 AND this
+    # flag). Set ONLY by the engine-only combat-smoke pre-seed (a sandbox campaign), NEVER by any
+    # live-play tool — so the force_hit/fast_resolve TEST toggles are structurally unreachable in a
+    # real game even if the env happened to be set. Additive default False == today; an old
+    # snapshot round-trips to False. See docs/roadmap/engine-combat-loop-design.md §4a.
+    is_sandbox: bool = False
 
     current_location_id: Optional[str] = None
     day: int = 1  # in-world day counter
