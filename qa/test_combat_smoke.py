@@ -146,3 +146,25 @@ def test_part3_ai_itself_heals_a_downed_ally():
     assert p3["intent_target_is_downed_ally"], "AI healed the wrong target"
     assert p3["ally_hp_after"] > p3["ally_hp_before"], "the downed ally's HP did not rise"
     assert p3["healed"] and p3["revived"], f"ally not revived: {p3['turn_log']}"
+
+
+def test_part4_ai_itself_casts_the_best_offensive_spell():
+    """The v2.0b COMPETENCE gauge: the REAL combat AI casts an OFFENSIVE spell on its own (not a
+    scripted assist) — a wizard with a feeble weapon chooses Fire Bolt / Magic Missile over its
+    dagger and the target's HP drops; a SAVE spell resolves through the AI; and the AI does NOT
+    blow a leveled slot on a trivial target."""
+    server, store_mod = _server_store()
+    p4 = smoke.run_part4(server, store_mod, _SEED)
+    # A) the view discovered offensive spells, the AI cast one, and the foe took damage.
+    assert p4["A_view_offensive_spells"], "the AI's view discovered NO offensive spells"
+    assert p4["A_cast_offensive_and_damaged"], (
+        f"the AI did not cast an offensive spell that damaged the tough foe: "
+        f"intent={p4['A_intent']} hp={p4['A_ogre_hp']}")
+    # B) a SAVE spell resolved through the AI (the real DC was used; foe HP dropped).
+    assert p4["B_save_dc"] >= 1, "no spell save DC surfaced for the save-spell scenario"
+    assert p4["B_save_spell_resolved"], (
+        f"the AI's save spell did not resolve: intent={p4['B_intent']} hp={p4['B_foe_hp']}")
+    # C) slot economy: a trivial low-HP target did NOT get a leveled slot (cantrip/weapon only).
+    assert p4["C_did_not_waste_leveled_slot"], (
+        f"the AI wasted a leveled slot (L{p4['C_chosen_slot_level']}) on a "
+        f"{p4['C_target_hp']}-HP target: intent={p4['C_intent']}")

@@ -19,22 +19,37 @@ Two parts (both zero-LLM):
         a saving throw resolved + a condition applied · a concentration check and/or drop ·
         a class resource spent (rage / maneuver die / ki / channel divinity / slot) ·
         XP awarded on a kill · death saving throws when a combatant is downed.
-    The greedy-v1 AI only swings weapons (no spells / maneuvers yet — a known v1 scope), so
-    the AUTO loop natively fires attacks/crits/miss/XP/death-saves; the save/condition/
-    concentration/resource classes are driven by a DETERMINISTIC scripted assist through the
-    SAME real engine verbs (saving_throw / add_condition / cast_spell / use_resource). A
-    mechanic NOT observed in one seed is retried across a few seeds; FAIL only if a class
-    never fires across ALL seeds (a real coverage hole or engine bug).
+    The greedy-v2 AI swings weapons AND casts heals/offensive spells (v2.0a/b — PART 3/4 gauge the
+    AI's OWN choices), but this PART-1 random party may have no caster in a given seed, so the AUTO
+    loop natively fires attacks/crits/miss/XP/death-saves; the save/condition/concentration/resource
+    classes are driven by a DETERMINISTIC scripted assist through the SAME real engine verbs
+    (saving_throw / add_condition / cast_spell / use_resource) to guarantee coverage every seed. A
+    mechanic NOT observed in one seed is retried across a few seeds; FAIL only if a class never fires
+    across ALL seeds (a real coverage hole or engine bug).
 
   PART 2 — the spell-resolution sweep ("check that all the spells work").
-    The AI loop doesn't cast, so this is a SCRIPTED pass: it enumerates the engine's castable
-    spells (the curated full-automation registry data/srd/spells.json + a representative srd524-
-    only control spell) and casts ONE from EVERY category (attack-roll cantrip, auto-hit, save-
-    for-half, heal, buff/concentration, condition/control, AoE) in a valid seeded combat context,
-    asserting it RESOLVES correctly — no exception, the expected gauge moved (target HP down /
-    heal up / slot spent / concentration set / condition applied), SRD-consistent. Produces a
-    per-spell PASS / THREW / WRONG-EFFECT table. Spells NOT swept (the ~330 srd524-only records)
-    are listed EXPLICITLY — no silent truncation; exhaustive coverage is a logged follow-up.
+    A SCRIPTED pass over EVERY spell CATEGORY (the AI's own offensive/heal choices are PART 3/4):
+    it enumerates the engine's castable spells (the curated full-automation registry
+    data/srd/spells.json + a representative srd524-only control spell) and casts ONE from EVERY
+    category (attack-roll cantrip, auto-hit, save-for-half, heal, buff/concentration, condition/
+    control, AoE) in a valid seeded combat context, asserting it RESOLVES correctly — no exception,
+    the expected gauge moved (target HP down / heal up / slot spent / concentration set / condition
+    applied), SRD-consistent. Produces a per-spell PASS / THREW / WRONG-EFFECT table. Spells NOT
+    swept (the ~330 srd524-only records) are listed EXPLICITLY — no silent truncation; exhaustive
+    coverage is a logged follow-up.
+
+  PART 3 — engine-AI competence v2.0a: the AI ITSELF heals a downed ally (#1106).
+    The COMPETENCE gauge for healing: the REAL combat AI (combat_ai.pick_action over the loop's
+    _build_view — the exact path the loop runs) chooses to CAST a heal on a DOWNED ally on its own
+    (NOT a scripted assist), and the ally's HP rises through the sole-writer cast path. PASS = the
+    view sees the heal spells + the downed ally, the AI casts at the downed ally, and HP rises.
+
+  PART 4 — engine-AI competence v2.0b: the AI ITSELF casts the best offensive spell (#1106).
+    The COMPETENCE gauge for offence: a wizard with a feeble weapon CASTS its best-EV offensive
+    spell (Fire Bolt / Magic Missile) over its dagger and the target's HP DROPS (applied through the
+    sole-writer cast_spell + apply_damage); a SAVE spell (Burning Hands) resolves through the AI
+    using the REAL spell_save_dc; and the AI does NOT blow a leveled slot on a TRIVIAL target. PASS =
+    all three sub-scenarios hold.
 
 Run (from repo root) — use the engine venv (it carries pydantic / mcp); the script bootstraps
 sys.path itself (mirroring qa/pre_seed_combat.py), so no PYTHONPATH juggling is needed:
@@ -46,8 +61,9 @@ sys.path itself (mirroring qa/pre_seed_combat.py), so no PYTHONPATH juggling is 
   --fast   : use the sandbox force_hit / fast_resolve TEST toggles (double-guarded by
              WORLDOS_COMBAT_TEST=1 + is_sandbox) for a quick, deterministic-damage run.
 
-Exit code 0 = every mechanic class fired AND every swept spell resolved correctly; 1 = a
-coverage hole or a mis-applied/throwing spell (a real signal worth a separate engine issue).
+Exit code 0 = every mechanic class fired AND every swept spell resolved correctly AND the AI itself
+healed (PART 3) + cast the best offensive spell (PART 4); 1 = a coverage hole, a mis-applied/throwing
+spell, or an AI-competence regression (a real signal worth a separate engine issue).
 """
 from __future__ import annotations
 
@@ -635,6 +651,141 @@ def _print_part3(p3: dict) -> bool:
     return ok
 
 
+# ── PART 4: the AI ITSELF casts the best offensive spell (engine-AI competence v2.0b, #1106) ──
+#
+# PART 2 proved the offensive VERBS resolve via a SCRIPTED cast. PART 4 is the v2.0b COMPETENCE gauge:
+# it proves the AI *chooses* the offensive spell on its own — a wizard with a feeble weapon casts the
+# best-EV spell (Fire Bolt / Magic Missile) over its dagger and the target's HP DROPS; a save spell
+# (Burning Hands) resolves through the AI; and the AI does NOT blow a leveled slot on a TRIVIAL target.
+
+def _seed_wizard_fight(server, store_mod, seed_off, *, monster="Goblin", count=1, hp=None):
+    """A level-5 wizard (feeble STR 8 dagger) who knows Fire Bolt + Magic Missile + Burning Hands,
+    vs `count` `monster`s. Returns (cid, wizard, mon_ids). Pins the wizard as the current actor with
+    a fresh action economy so a cast is legal. Optional `hp` overrides each monster's current HP."""
+    import dice as dice_mod
+    sdir = tempfile.mkdtemp(prefix=f"combat_smoke_p4_{seed_off}_")
+    os.environ["WORLDOS_STATE_DIR"] = sdir
+    dice_mod.reseed_process_rng(80000 + seed_off)
+    cid = server.create_campaign(title="Wizard Competence")["id"]
+    server.add_location(campaign_id=cid, name="Tower", description="x", make_current=True)
+    server.start_session(cid, title="Wizard Competence")
+    c = server._require(cid); c.is_sandbox = True; store_mod.save_campaign(c)
+    wiz = server.create_character(
+        cid, "Tarn", kind="player", race="human", class_name="wizard", level=5,
+        abilities=dict(strength=8, dexterity=14, constitution=12, intelligence=18, wisdom=10, charisma=10),
+        apply_srd_defaults=True,
+    )["id"]
+    server.learn_spells(cid, wiz, ["Fire Bolt", "Magic Missile", "Burning Hands"])
+    server.prepare_spells(cid, wiz, ["Fire Bolt", "Magic Missile", "Burning Hands"])
+    mons = [m["id"] for m in server.spawn_monster(cid, monster, count=count)["spawned"]]
+    server.start_combat(cid, [wiz] + mons)
+    if hp is not None:
+        for mid in mons:
+            server.set_hp(cid, target_id=mid, current_hp=hp)
+    c = server._require(cid)
+    idx = next(i for i, cb in enumerate(c.combat.order) if cb.character_id == wiz)
+    c.combat.turn_index = idx
+    c.combat.action_used = False
+    store_mod.save_campaign(c)
+    return cid, wiz, mons
+
+
+def _ai_turn(server, store_mod, cid, wiz):
+    """Build the view, ask the REAL combat AI, apply via the sole-writer _apply_intent. Returns
+    (intent, view, target_before_hp, target_after_hp, entry)."""
+    import combat_ai
+    import combat_loop
+    c = server._require(cid)
+    view = combat_loop._build_view(server, c, c.characters[wiz])
+    intent = combat_ai.pick_action(c.characters[wiz], view)
+    tgt = intent.target_id
+    before = c.characters[tgt].current_hp if tgt in c.characters else None
+    entry = {}
+    if intent.kind in ("attack", "cast"):
+        entry = combat_loop._apply_intent(server, cid, wiz, intent)
+    after = server._require(cid).characters[tgt].current_hp if tgt in c.characters else None
+    return intent, view, before, after, entry
+
+
+def run_part4(server, store_mod, base_seed: int) -> dict:
+    """Prove the engine-AI v2.0b casts the best OFFENSIVE spell ITSELF. Three sub-scenarios:
+      A) vs a tough Ogre (a feeble wizard dagger is far worse than a cantrip): the AI CASTS an
+         offensive spell (NOT a weapon swing) and the Ogre's HP drops.
+      B) a SAVE spell resolves through the AI: a wizard with ONLY Burning Hands vs a foe casts it
+         and the foe takes (save-for-half) damage.
+      C) slot economy: vs a single TRIVIAL 4-HP goblin, the AI does NOT spend a leveled slot
+         (Magic Missile L1) — it prefers a cantrip / weapon (slot_level 0)."""
+    # A) tough foe -> the AI casts an offensive spell instead of the dagger, HP drops.
+    cidA, wizA, monA = _seed_wizard_fight(server, store_mod, base_seed + 1, monster="Ogre", count=1)
+    intentA, viewA, beforeA, afterA, entryA = _ai_turn(server, store_mod, cidA, wizA)
+    offensive_names = [s.name for s in viewA.spells if not s.is_heal and s.kind in ("attack", "auto", "save")]
+    castA = (intentA.kind == "cast" and intentA.spell_name in offensive_names
+             and afterA is not None and beforeA is not None and afterA < beforeA)
+
+    # B) a save spell resolves through the AI (wizard with ONLY Burning Hands).
+    cidB, wizB, monB = _seed_wizard_fight(server, store_mod, base_seed + 2, monster="Ogre", count=1)
+    # Narrow the prepared list to Burning Hands so the AI MUST choose the save spell.
+    server.prepare_spells(cidB, wizB, ["Burning Hands"])
+    c = server._require(cidB)
+    idx = next(i for i, cb in enumerate(c.combat.order) if cb.character_id == wizB)
+    c.combat.turn_index = idx; c.combat.action_used = False; store_mod.save_campaign(c)
+    intentB, viewB, beforeB, afterB, entryB = _ai_turn(server, store_mod, cidB, wizB)
+    save_dmg = entryB.get("result", {}).get("damage", {}) if entryB else {}
+    saveB = (intentB.kind == "cast" and intentB.spell_name == "Burning Hands"
+             and afterB is not None and beforeB is not None and afterB < beforeB)
+
+    # C) slot economy: a single 4-HP goblin -> NO leveled slot spent (cantrip/weapon only).
+    cidC, wizC, monC = _seed_wizard_fight(server, store_mod, base_seed + 3, monster="Goblin", count=1, hp=4)
+    intentC, viewC, beforeC, afterC, entryC = _ai_turn(server, store_mod, cidC, wizC)
+    chosenC = next((s for s in viewC.spells if s.name == intentC.spell_name), None)
+    spent_leveled_slot_C = bool(intentC.kind == "cast" and chosenC is not None and chosenC.slot_level > 0)
+
+    return {
+        "A_view_offensive_spells": offensive_names,
+        "A_view_spell_attack_bonus": viewA.spell_attack_bonus,
+        "A_intent": f"{intentA.kind} {intentA.spell_name or intentA.attack_name}",
+        "A_note": intentA.note,
+        "A_ogre_hp": f"{beforeA} -> {afterA}",
+        "A_cast_offensive_and_damaged": bool(castA),
+        "B_save_dc": viewB.spell_save_dc,
+        "B_intent": f"{intentB.kind} {intentB.spell_name or intentB.attack_name}",
+        "B_save_made": save_dmg.get("save_made"),
+        "B_foe_hp": f"{beforeB} -> {afterB}",
+        "B_save_spell_resolved": bool(saveB),
+        "C_target_hp": beforeC,
+        "C_intent": f"{intentC.kind} {intentC.spell_name or intentC.attack_name}",
+        "C_chosen_slot_level": (chosenC.slot_level if chosenC is not None else None),
+        "C_did_not_waste_leveled_slot": not spent_leveled_slot_C,
+    }
+
+
+def _print_part4(p4: dict) -> bool:
+    print("\n" + "=" * 78)
+    print("PART 4 — engine-AI competence v2.0b: the AI ITSELF casts the best offensive spell (#1106)")
+    print("=" * 78)
+    print("  A) tough foe -> AI casts an offensive spell (not the dagger):")
+    print(f"     view offensive spells : {p4['A_view_offensive_spells']}  (spell atk +{p4['A_view_spell_attack_bonus']})")
+    print(f"     AI Intent             : {p4['A_intent']}")
+    print(f"     note                  : {p4['A_note']}")
+    print(f"     Ogre HP               : {p4['A_ogre_hp']}")
+    print(f"     >>> cast offensive + damaged: {p4['A_cast_offensive_and_damaged']}")
+    print(f"  B) save spell resolves through the AI (DC {p4['B_save_dc']}):")
+    print(f"     AI Intent             : {p4['B_intent']}  (target save made: {p4['B_save_made']})")
+    print(f"     foe HP                : {p4['B_foe_hp']}")
+    print(f"     >>> save spell resolved: {p4['B_save_spell_resolved']}")
+    print(f"  C) slot economy — a trivial {p4['C_target_hp']}-HP target:")
+    print(f"     AI Intent             : {p4['C_intent']}  (chosen slot level: {p4['C_chosen_slot_level']})")
+    print(f"     >>> did NOT waste a leveled slot: {p4['C_did_not_waste_leveled_slot']}")
+    ok = bool(
+        p4["A_cast_offensive_and_damaged"]
+        and p4["B_save_spell_resolved"]
+        and p4["C_did_not_waste_leveled_slot"]
+    )
+    print("-" * 78)
+    print(f"  PART 4 (AI casts the best offensive spell): {'PASS' if ok else 'FAIL'}")
+    return ok
+
+
 # ── reporting ──────────────────────────────────────────────────────────────────────────
 
 def _print_part1(checks, summaries, *, fast: bool):
@@ -720,22 +871,27 @@ def main() -> int:
     p3 = run_part3(server, store_mod, args.seed)
     part3_ok = _print_part3(p3)
 
+    p4 = run_part4(server, store_mod, args.seed)
+    part4_ok = _print_part4(p4)
+
     print("\n" + "=" * 78)
-    overall = part1_ok and part2_ok and part3_ok
-    print(f"PART 1 (mechanics fired):       {'PASS' if part1_ok else 'FAIL'}")
-    print(f"PART 2 (spells resolve):        {'PASS' if part2_ok else 'FAIL'}")
-    print(f"PART 3 (AI heals dying ally):   {'PASS' if part3_ok else 'FAIL'}")
+    overall = part1_ok and part2_ok and part3_ok and part4_ok
+    print(f"PART 1 (mechanics fired):          {'PASS' if part1_ok else 'FAIL'}")
+    print(f"PART 2 (spells resolve):           {'PASS' if part2_ok else 'FAIL'}")
+    print(f"PART 3 (AI heals dying ally):      {'PASS' if part3_ok else 'FAIL'}")
+    print(f"PART 4 (AI casts offensive spell): {'PASS' if part4_ok else 'FAIL'}")
     print(f"OVERALL: {'PASS' if overall else 'FAIL'}")
     print("=" * 78)
 
     if args.json:
         print("JSON " + json.dumps({
             "seed": args.seed, "fast": args.fast,
-            "part1_ok": part1_ok, "part2_ok": part2_ok, "part3_ok": part3_ok, "overall": overall,
+            "part1_ok": part1_ok, "part2_ok": part2_ok, "part3_ok": part3_ok,
+            "part4_ok": part4_ok, "overall": overall,
             "mechanics": {k: ck.fired for k, ck in checks.items()},
             "spells": [{"name": r.name, "category": r.category, "status": r.status} for r in results],
             "not_swept_count": not_swept_count, "total_castable": total_castable,
-            "part3": p3,
+            "part3": p3, "part4": p4,
         }))
 
     return 0 if overall else 1
