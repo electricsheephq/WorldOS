@@ -269,6 +269,22 @@ API agents (Agent tool, gpt-5.4) don't strain the host — fan out freely; **hea
 runs (duo / combat-sprint / `ui_playtest.sh`) are host-heavy** — see the OVERNIGHT-LOOP cap below.
 Reap orphaned `player_server`/`server.py`/headless-chromium procs after every run.
 
+**Builder-spec contract (paste-ready).** Every delegated build gets: `isolation: worktree` off
+`origin/main`; **additive / default-off** (empty == today; old snapshots round-trip); **sole-writer**
+(state only via the existing locked verbs); **flag-don't-force-fix** (stop + report if a guard fights
+the change — don't weaken it); focused single-process pytest (`-p no:xdist`); **restore `qa/scores.db`**
+if a test mutated it; mind the **120 KB tool-schema budget** (no new MCP tool/params; docstrings count —
+a verbose docstring once failed CI by 10 bytes, so put detail in the runtime error, not the schema).
+And it must **REPORT BACK**: PR # + URL, a **before/after demo**, a per-file summary, the additivity +
+sole-writer proof, the pytest result, a **confidence %**, and the open risks.
+
+**Verify before merge — don't trust green.** A builder's own suite (even 3,000+ tests) proves the
+happy path, not the *invariant*. For any load-bearing additive PR, run the **`adversarial-invariant-verify`**
+skill (fan out skeptics at the named invariants — additive/byte-identical, sole-writer, guard-can't-leak,
+math-correct — in a review worktree) before merging. This caught a non-byte-identical dice path + a
+TEST-toggle leak that a 3,092-test green suite missed. (Liveness + salvage of a dead builder: see
+OVERNIGHT-LOOP below.)
+
 ## OVERNIGHT-LOOP DISCIPLINE (the autonomous-session lessons — these cost real time)
 Encoded from the 2026-05-29/30 overnight burndown. They are the failure modes that silently kill
 an unattended loop.
