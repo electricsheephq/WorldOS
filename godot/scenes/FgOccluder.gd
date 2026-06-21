@@ -96,15 +96,15 @@ func setup_polygon(poly_points: PackedVector2Array, color: Color, foot_y_screen:
 	if _sprite != null:
 		_sprite.visible = false
 
-	# The polygon points are in WorldView-local space; since the node origin is at
-	# (vp/2, foot_y_screen), we keep the polygon in local-to-node coords by
-	# shifting each point by -position.
-	# Actually: place the node at (0, foot_y_screen) and give the polygon points
-	# relative to that origin. The caller passes absolute screen coords, so we
-	# subtract the node's x origin (vp/2) — but for a polygon it's simpler to just
-	# place the node at (0, 0) and let the polygon hold screen coords directly, then
-	# set position.y to foot_y_screen for the Y-sort key.
-	_polygon.polygon = poly_points
+	# The caller passes poly_points in absolute WorldView-local screen coords.
+	# place_at() sets position = (0, foot_y_screen), so Polygon2D (which renders
+	# relative to its parent node) would double-add foot_y_screen to every point's Y.
+	# Convert to node-local coords by subtracting foot_y_screen from each Y.
+	var local_pts := PackedVector2Array()
+	local_pts.resize(poly_points.size())
+	for i in poly_points.size():
+		local_pts[i] = Vector2(poly_points[i].x, poly_points[i].y - foot_y_screen)
+	_polygon.polygon = local_pts
 	_polygon.color = color
 
 	place_at(Vector2(0.0, foot_y_screen))

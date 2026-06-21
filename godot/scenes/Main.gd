@@ -1266,7 +1266,7 @@ func _run_cam_demo() -> void:
 		img2.save_png("/tmp/cam_zoom.png")
 		print("[CamDemo] screenshot 2 (zoomed): /tmp/cam_zoom.png (%dx%d)" % [img2.get_width(), img2.get_height()])
 
-	print("[CamDemo] RESULT ok=%s cam_zoom=%.2f" % [str(img1 != null), cam.zoom.x if cam != null else 0.0])
+	print("[CamDemo] RESULT ok=%s cam_zoom=%.2f" % [str(img1 != null and img2 != null), cam.zoom.x if cam != null else 0.0])
 	call_deferred("_quit_clean")
 
 
@@ -1295,11 +1295,25 @@ func _run_table_occlusion() -> void:
 	else:
 		print("[TableOcclusion] backdrop not found at %s — using procedural fallback" % bp_local)
 
-	# Viewport size for coordinate calculations.
-	var vp := Vector2(
-		float(ProjectSettings.get_setting("display/window/size/viewport_width", 1152)),
-		float(ProjectSettings.get_setting("display/window/size/viewport_height", 648))
-	)
+	# Viewport size for coordinate calculations — use the runtime viewport rect so
+	# img_to_screen matches WorldView._apply_texture_backdrop's transform exactly.
+	# Fall back to ProjectSettings defaults if the live size is unavailable (headless).
+	var vp := Vector2(1152.0, 648.0)
+	var _live_vp := get_viewport()
+	if _live_vp != null:
+		var _live_rect := _live_vp.get_visible_rect().size
+		if _live_rect.x > 0.0 and _live_rect.y > 0.0:
+			vp = _live_rect
+		else:
+			vp = Vector2(
+				float(ProjectSettings.get_setting("display/window/size/viewport_width", 1152)),
+				float(ProjectSettings.get_setting("display/window/size/viewport_height", 648))
+			)
+	else:
+		vp = Vector2(
+			float(ProjectSettings.get_setting("display/window/size/viewport_width", 1152)),
+			float(ProjectSettings.get_setting("display/window/size/viewport_height", 648))
+		)
 	# The backdrop is 1344×768; when cover-scaled to 1152×648 the scale factor is:
 	# max(1152/1344, 648/768) = max(0.857, 0.844) = 0.857.
 	# So the rendered image is 1344*0.857 ≈ 1152 wide, 768*0.857 ≈ 658 tall.
