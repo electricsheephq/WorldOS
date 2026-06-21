@@ -1100,6 +1100,29 @@ func _apply_served_sprite(scope: String, texture: Texture2D) -> void:
 		actor_id, scope, tok.animation_count()])
 
 
+## Load a backdrop directly from a local filesystem path (e.g. /tmp/art/tavern.png)
+## and apply it as the BackdropPlane texture. This lets the --preview-scene harness
+## point at a freshly-generated PNG in /tmp with zero HTTP/serving overhead.
+## Returns true on success, false on load failure (logs a warning and leaves the
+## current backdrop unchanged so the procedural fallback stays visible).
+func apply_local_backdrop(path: String) -> bool:
+	if path == "":
+		push_warning("[WorldView] apply_local_backdrop: empty path")
+		return false
+	var img := Image.new()
+	var err := img.load(path)
+	if err != OK:
+		push_warning("[WorldView] apply_local_backdrop: Image.load failed for path=%s err=%d" % [path, err])
+		return false
+	var tex := ImageTexture.create_from_image(img)
+	if tex == null:
+		push_warning("[WorldView] apply_local_backdrop: ImageTexture.create_from_image returned null for path=%s" % path)
+		return false
+	_apply_texture_backdrop(tex)
+	print("[WorldView] apply_local_backdrop: ok path=%s size=%dx%d" % [path, img.get_width(), img.get_height()])
+	return true
+
+
 ## Put a real texture on the BackdropPlane and scale/center it to fill the viewport.
 func _apply_texture_backdrop(texture: Texture2D) -> void:
 	_backdrop_is_resolved = true

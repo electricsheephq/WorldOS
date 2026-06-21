@@ -197,6 +197,18 @@ func _core_array(key: String) -> Array:
 	return arr if typeof(arr) == TYPE_ARRAY else []
 
 
+## Inject an inline profile dict (e.g. from a --preview-scene spec) instead of the
+## bundled fixture. Additive: the normal _ready() fixture load is UNCHANGED; this
+## method replaces _profile for callers that supply their own profile dictionary so a
+## preview can inject a profile without the bundled fixture. No-op if called with an
+## empty dict (falls back to the already-loaded fixture).
+func load_inline(profile: Dictionary) -> void:
+	if profile.is_empty():
+		return
+	_profile = profile
+	print("[RenderProfile] load_inline: profile injected (top-level keys=%d)" % _profile.size())
+
+
 ## Load + parse the bundled fixture. Returns {} on any missing/parse failure so a
 ## profile-less run still renders.
 func _load_fixture() -> Dictionary:
