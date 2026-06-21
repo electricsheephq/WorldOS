@@ -31,8 +31,18 @@ rows=$(gh pr list --repo "$REPO" --state open --limit 100 \
     | "- [#\(.number)](\(.url)) — \(.title) · `\(.mergeStateStatus)` · failing-checks: \($fail) · updated \(.updatedAt[0:10]) · @\(.author.login)"
   ')
 
+# Find the living report issue (prefer open; fall back to a closed one to reopen).
+open_num=$(gh issue list --repo "$REPO" --state open --label "$LABEL" --limit 1 --json number --jq '.[0].number // empty')
+
 if [ -z "$rows" ]; then
-  echo "No stuck PRs as of $ts UTC. Nothing to report."
+  echo "No stuck PRs as of $ts UTC."
+  # Clear the stale report so agents don't adopt already-resolved PRs: an OPEN report issue
+  # must mean "something is stuck right now". Edit to all-clear and close it.
+  if [ -n "$open_num" ]; then
+    gh issue edit "$open_num" --repo "$REPO" --body "✅ No stuck PRs as of ${ts} UTC. _(auto-maintained by \`.github/workflows/stuck-pr-report.yml\`)_" >/dev/null
+    gh issue close "$open_num" --repo "$REPO" --comment "✅ All previously-flagged PRs are resolved as of ${ts} UTC. Closing — reopens automatically when a PR gets stuck again." >/dev/null
+    echo "Cleared + closed stale report issue #${open_num}."
+  fi
   exit 0
 fi
 count=$(printf '%s\n' "$rows" | grep -c '^- ' || true)
@@ -41,12 +51,17 @@ count=$(printf '%s\n' "$rows" | grep -c '^- ' || true)
 body=$(printf '🔧 **%s stuck PR(s)** as of %s UTC — each is failing a check, conflicting, or blocked & stale (>%sh). This report is **surface-only** (no auto-fix): pick one up, or label it `blocked` to snooze it out of this report.\n\n%s\n\n---\n_cc @%s · auto-maintained by `.github/workflows/stuck-pr-report.yml`. Agents: this issue is the shared queue of orphaned PRs — claim one and shepherd it through the worldos-dev merge gate._\n' \
   "$count" "$ts" "$STALE_HOURS" "$rows" "$OWNER_HANDLE")
 
-# Upsert: keep ONE living issue (found by label), edit its body + add a dated comment to notify.
-existing=$(gh issue list --repo "$REPO" --state open --label "$LABEL" --limit 1 --json number --jq '.[0].number // empty')
-if [ -n "$existing" ]; then
-  gh issue edit "$existing" --repo "$REPO" --body "$body" >/dev/null
-  gh issue comment "$existing" --repo "$REPO" --body "↻ ${count} stuck PR(s) as of ${ts} UTC. cc @${OWNER_HANDLE}" >/dev/null
-  num="$existing"
+# Upsert ONE living issue: reuse the open one, else reopen the most recent closed one, else
+# create. Keeps a single canonical issue that toggles open⟺closed with the backlog.
+target="$open_num"
+if [ -z "$target" ]; then
+  target=$(gh issue list --repo "$REPO" --state closed --label "$LABEL" --limit 1 --json number --jq '.[0].number // empty')
+fi
+if [ -n "$target" ]; then
+  gh issue edit "$target" --repo "$REPO" --body "$body" >/dev/null
+  gh issue reopen "$target" --repo "$REPO" >/dev/null 2>&1 || true
+  gh issue comment "$target" --repo "$REPO" --body "↻ ${count} stuck PR(s) as of ${ts} UTC. cc @${OWNER_HANDLE}" >/dev/null
+  num="$target"
 else
   url=$(gh issue create --repo "$REPO" --title "🔧 Stuck PRs — daily report" --label "$LABEL" --body "$body")
   num=$(printf '%s' "$url" | grep -oE '[0-9]+$')
