@@ -10,27 +10,56 @@ WorldOS is source-available commercial software; world seeds are licensed separa
 
 ## [Unreleased]
 
-- **Scoring hardening — one-decimal lens precision + ruler-versioning discipline.** The three lens
-  schemas (`qa/score_schema.json` / `score_schema_tolkien.json` / `score_schema_angry_dm.json`, plus the
-  Tolkien per-act `score`) now type each per-dimension score `number` in `[1,5]` (was `integer 1–5`), and
-  the four rubrics (`rubric.md` / `rubric_tolkien.md` / `rubric_angry_dm.src.md` → regenerated
-  `rubric_angry_dm.md`) instruct "score each dimension 1.0–5.0 to one decimal." (`multipleOf: 0.1` was
-  deliberately NOT used — it's an IEEE-754 footgun that rejects legitimate values like 4.3; the rubric
-  text carries the one-decimal expectation, the schema just permits non-integers.) **No range, threshold,
-  cap, or weighting changed** (story ≥4.3, mech ≥4.5 unchanged) — a *precision* re-version, not a
-  stringency one. This re-versions the ruler: **`sc_cf47d34e219e` → `sc_f283fdce1d24`**,
-  **`lc_e06a888f7c08` → `lc_e52028b6acd3`**. Documented in `qa/SCORING.md` (Ruler history + the new
-  mechanical re-versioning discipline: after any rubric/schema/gate edit, run
-  `python3 qa/scoring_config_version.py --label` / `--lens`, confirm the hash moved, re-stamp the history +
-  this CHANGELOG). Operationalized the differential fact-fidelity guard (`qa/fact_fidelity.py`, #1065/#1068)
-  with an explicit ≥90% critical-fact assertion against the committed `ow-combat-031717` inventory
-  (`qa/test_fact_fidelity.py` — drop a critical fact → RED, intact → GREEN). Feature-engagement coverage
-  stays WARN (FATAL graduation remains VM-sweep-gated).
-- Gameplay toward the RRI bar (story ≥4.3, mechanical ≥4.5) — the GA work, now built on the
-  honest, un-gamed measurement that 1.0.5-rc1 established.
-- Engine-run VTile combat (auto-combat loop + monster AI + test toggles + engine-only smoke),
-  versioned-milestone roadmap, and scoring hardening (one-decimal lenses + the deterministic
-  feature-engagement/fact-fidelity layer) — the post-rc4 plan.
+- Gameplay toward the RRI bar (story ≥4.3, mechanical ≥4.5) — the GA work, on the honest,
+  un-gamed measurement that 1.0.5-rc1 established.
+- The post-rc5 plan: engine-AI competence **v2.1** (off-turn reactions — Shield / Counterspell /
+  opportunity attacks; AoE cluster targeting; difficulty tiers dumb/normal/smart; multi-turn memory),
+  the combat-control **QA-driver integration**, and the **iso combat tiles** (#1061) — see
+  `docs/roadmap/combat-control-policy.md`.
+
+---
+
+## [1.0.5-rc5] — 2026-06-21
+
+**Engine-run combat + a competent engine "AI" + versioning Phase-1 + one-decimal scoring — still NOT a
+GA** (the RRI gameplay gates are not re-measured under the current ruler `sc_f283fdce1d24`). 16 commits
+since rc4. The engine now drives combat deterministically (zero LLM tokens) *and* plays it competently
+and 5e-faithfully.
+
+**Engine-run combat (epic #1100; ADR `docs/roadmap/engine-combat-loop-design.md`):** the monster-AI
+`pick_action` + the auto-sequencing loop `run_combat_round`/`run_combat_autonomous` (LIVE = hostiles
+only, stop at PC/companion; TEST = everyone) + double-guarded TEST toggles (`force_hit`/`fast_resolve`
+behind `WORLDOS_COMBAT_TEST` + `Campaign.is_sandbox`) + a process dice-seed (#1101); the engine-only
+combat smoke `qa/combat_smoke.py` — random-vs-random all-mechanics-fire + a spell-resolution sweep, a
+trustworthy mech signal independent of the LLM scorer (#1104). Combat-control policy (driver-by-purpose:
+QA-fast / release / live / story-auto) — `docs/roadmap/combat-control-policy.md` (#1105), tracked in #1106.
+
+**Engine-AI competence ladder (#1106) — heal / cast / class abilities, all on existing verbs:** v2.0a
+heals + revives a dying ally (#1108); v2.0b offensive spell EV (attack/auto/save) + slot economy +
+concentration awareness (#1109); v2.0c Action Surge / Second Wind / Battle Master maneuvers / Sneak
+Attack / Channel-Divinity Guided Strike + bonus-action economy (#1110); the bonus-action spell rule — no
+double Healing Word/turn (#1115). **Each adversarially verified before merge** — the refute→verify pass
+caught real 5e bugs the builders' green suites missed: non-byte-identical unseeded dice + a TEST-toggle
+leak via `set_house_rules` (#1101), Sneak Attack not once-per-turn / 6d6→3d6 (#1110), and the double
+bonus-action heal (#1115, caught by running the capstone). Capstone (deterministic, 0 LLM): the cleric
+heals + revives, the rogue sneak-attacks, the fighter Action-Surges, the party wins — once-per-turn
+rules hold.
+
+**Versioning Phase-1 (#1098):** repo-root `VERSION` + `servers/engine/__version__.py` (source of truth)
++ `qa/generate_release_notes.py` (gate-aware DEVELOPMENT-vs-RELEASE flag) + a
+`release_readiness_verdict.json` emitter; `scores_db.fetch_rows_readonly()` (mode=ro) ends the
+scores.db-rewrites-on-read churn. The auto-tag-on-milestone-close workflow is drafted — dry-run-locked +
+RELEASE-gated, awaiting owner sign-off (#1102).
+
+**Scoring hardening (#1099) — one-decimal lens precision + ruler-versioning discipline.** The three lens
+schemas + the four rubrics now permit each per-dimension score as a `number` in `[1,5]` to one decimal
+(was `integer 1–5`); `multipleOf: 0.1` was deliberately NOT used (an IEEE-754 footgun rejecting 4.3 — the
+rubric text carries the expectation, the schema just permits non-integers). **No range/threshold/cap/
+weighting changed** (story ≥4.3, mech ≥4.5) — a *precision* re-version: **`sc_cf47d34e219e` →
+`sc_f283fdce1d24`**, **`lc_e06a888f7c08` → `lc_e52028b6acd3`** (`qa/SCORING.md` Ruler history + the new
+post-edit discipline). Operationalized the differential fact-fidelity guard (`qa/fact_fidelity.py`) with a
+≥90% critical-fact assertion vs the committed `ow-combat-031717` inventory; feature-engagement coverage
+stays WARN (FATAL graduation remains VM-sweep-gated).
 
 ---
 
