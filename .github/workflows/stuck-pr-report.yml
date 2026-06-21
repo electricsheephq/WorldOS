@@ -1,0 +1,35 @@
+name: Stuck PR report
+
+# Daily safety-net for the "agents shepherd their own PRs" rule: catches PRs whose driving
+# agent died/abandoned them. SURFACE-ONLY — see .github/scripts/stuck_pr_report.sh.
+# Runs on a schedule + on demand; it is NOT a pull_request check (adds no merge gate).
+on:
+  schedule:
+    - cron: "23 15 * * *"   # ~15:23 UTC daily (~08:23 PT), off the hour to dodge the cron herd
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: stuck-pr-report
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect and report stuck PRs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Override the @mention target with a repo variable if you like; defaults to the owner.
+          OWNER_HANDLE: ${{ vars.STUCK_PR_NOTIFY_HANDLE || '100yenadmin' }}
+          STALE_HOURS: "24"
+          # Optional real-email upgrade — set these (RESEND_API_KEY as a secret) to also email.
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_TO: ${{ vars.STUCK_PR_EMAIL_TO }}
+          RESEND_FROM: ${{ vars.STUCK_PR_EMAIL_FROM }}
+        run: bash .github/scripts/stuck_pr_report.sh
