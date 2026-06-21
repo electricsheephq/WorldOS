@@ -746,8 +746,22 @@ func _run_preview_scene() -> void:
 
 	var nav_overlay := preload("res://scenes/NavOverlay.gd").new()
 	nav_overlay.name = "NavOverlay"
+	# Draw grid/path BELOW the Y-sorted actor tokens so sprites stand ON the grid.
+	# z=-5 sits between WalkmaskLayer (z=-50) and YSortLayer (z=0 default).
+	nav_overlay.z_index = -5
 	nav_overlay.setup(nav_block, actors_arr, path_probe, zone_anchors, overlay_mode)
 	_world.add_child(nav_overlay)
+
+	# 2b. Spawn real character sprites for each actor in the spec (full mode only).
+	#
+	# In "full" overlay mode we replace the foot-dot debug markers with REAL baked
+	# fighter sprites standing on their cells, team-tinted (party=cool/blue,
+	# foe=warm/red), each with a blob shadow so they read as seated on the floor.
+	# In "grid" mode the debug foot-dots from NavOverlay remain (no sprites).
+	# We load the committed fighter sheet directly (scope sprite-fighter-iso8) —
+	# it is the only baked 8-facing sheet in the tree; all preview actors share it.
+	if overlay_mode == "full" and not actors_arr.is_empty():
+		_spawn_preview_sprites(nav_block, actors_arr, spec)
 
 	# 3. Settle a few frames so the rendering pipeline flushes, then capture.
 	await _settle_frames(3)
@@ -781,6 +795,116 @@ func _run_preview_scene() -> void:
 		str(img != null), overlay_mode, str(nav_result.get("path_found", false)), shot_path])
 
 	call_deferred("_quit_clean")
+
+
+# ---------------------------------------------------------------------------
+# --preview-scene sprite helpers (additive; only called from _run_preview_scene).
+# ---------------------------------------------------------------------------
+
+## Convert a grid cell (c, r) to screen position using the same ISO-PROJECTION.md
+## dimetric 2:1 transform as NavOverlay._cell_to_screen():
+##   x = origin_px.x + (c - r) * cell_w / 2
+##   y = origin_px.y + (c + r) * cell_w / 4
+func _preview_cell_to_screen(c: int, r: int, origin: Vector2, cell_w: float) -> Vector2:
+	return Vector2(
+		origin.x + float(c - r) * cell_w * 0.5,
+		origin.y + float(c + r) * cell_w * 0.25
+	)
+
+
+## Spawn one CharacterToken per actor in the spec using the committed baked fighter
+## sheet (sprite-fighter-iso8). Each token is:
+##   - placed at the dimetric cell centre for its spec `cell:[c,r]`
+##   - set to the spec `facing` (one of the 8 locked directions)
+##   - team-tinted: actors with id starting "foe" or "enemy" get the warm red wash;
+##     all others (party) get a cool blue-ish tint
+##   - given a blob shadow so it reads as seated on the floor
+##
+## All tokens live in WorldView's YSortLayer so real Y-sort occlusion applies.
+## Foot-dots from NavOverlay remain drawn at a lower z-level — the sprite body
+## naturally covers them at its cell centre.
+func _spawn_preview_sprites(nav: Dictionary, actors: Array, _spec: Dictionary) -> void:
+	# Resolve the nav grid parameters (same as NavOverlay.setup parses them).
+	var cell_w := float(nav.get("cell_w_px", 64))
+	var orig := Vector2.ZERO
+	var orig_v: Variant = nav.get("origin_px", [0, 0])
+	if typeof(orig_v) == TYPE_ARRAY and (orig_v as Array).size() >= 2:
+		orig = Vector2(float((orig_v as Array)[0]), float((orig_v as Array)[1]))
+
+	# Load the committed baked fighter sheet once — all preview actors reuse it.
+	const FIGHTER_DIR := "res://assets/characters/fighter/"
+	var json_path := FIGHTER_DIR + "sheet.json"
+	if not FileAccess.file_exists(json_path):
+		push_warning("[PreviewScene] fighter sheet.json not found — no sprites spawned")
+		return
+	var manifest_text := FileAccess.get_file_as_string(json_path)
+	var manifest_v: Variant = JSON.parse_string(manifest_text)
+	if typeof(manifest_v) != TYPE_DICTIONARY:
+		push_warning("[PreviewScene] fighter sheet.json parse failed — no sprites spawned")
+		return
+	var manifest: Dictionary = manifest_v
+	var tex_path := FIGHTER_DIR + String(manifest.get("image", "sheet.png"))
+	var sheet_tex: Texture2D = load(tex_path)
+	if sheet_tex == null:
+		push_warning("[PreviewScene] fighter sheet.png not found — no sprites spawned")
+		return
+
+	# Resolve the YSortLayer in WorldView so tokens depth-sort with the scene.
+	var ysort := _world.get_node_or_null("YSortLayer") as Node2D
+	if ysort == null:
+		push_warning("[PreviewScene] YSortLayer not found in WorldView — no sprites spawned")
+		return
+
+	# Clear any tokens WorldView already spawned from the fixture snapshot (char-aubree
+	# + the static pillar) so they don't appear alongside the preview-spec actors.
+	# This is safe: we are in a one-shot preview harness — the YSortLayer is not being
+	# used for live gameplay here.
+	for child in ysort.get_children():
+		child.queue_free()
+
+	const CharacterTokenScene := preload("res://scenes/CharacterToken.tscn")
+
+	# Team tint palette for the preview (party = cool steel-blue, foe = warm red).
+	const TINT_PARTY := Color(0.72, 0.85, 1.00, 1.0)   ## cool blue-ish wash
+	const TINT_FOE   := Color(1.00, 0.55, 0.45, 1.0)   ## warm hostile red (matches WorldView.TEAM_TINT_FOE)
+
+	var spawned := 0
+	for actor_v in actors:
+		if typeof(actor_v) != TYPE_DICTIONARY:
+			continue
+		var actor: Dictionary = actor_v
+		var actor_id := String(actor.get("id", "actor_%d" % spawned))
+		var facing := String(actor.get("facing", "S"))
+
+		# Resolve cell position.
+		var cell_v: Variant = actor.get("cell", [0, 0])
+		if typeof(cell_v) != TYPE_ARRAY or (cell_v as Array).size() < 2:
+			continue
+		var c := int((cell_v as Array)[0])
+		var r := int((cell_v as Array)[1])
+		var foot_pos := _preview_cell_to_screen(c, r, orig, cell_w)
+
+		# Pick team tint: ids beginning with "foe" or "enemy" are hostile.
+		var id_lower := actor_id.to_lower()
+		var tint := TINT_FOE if (id_lower.begins_with("foe") or id_lower.begins_with("enemy")) else TINT_PARTY
+
+		# Spawn the token.
+		var tok: CharacterToken = CharacterTokenScene.instantiate()
+		tok.engine_actor_id = actor_id
+		tok.name = "PreviewToken_" + actor_id
+		ysort.add_child(tok)
+		tok.set_manifest(manifest, sheet_tex)
+		tok.set_facing(facing)
+		tok.set_anim("idle")
+		tok.set_team_tint(tint)
+		tok.show_blob_shadow(true)
+		tok.place_at(foot_pos)
+
+		print("[PreviewScene] token actor=%s cell=(%d,%d) foot=(%.0f,%.0f) facing=%s tint=(%.2f,%.2f,%.2f)" % [
+			actor_id, c, r, foot_pos.x, foot_pos.y, facing, tint.r, tint.g, tint.b])
+		spawned += 1
+
+	print("[PreviewScene] spawned %d preview sprite(s)" % spawned)
 
 
 func _quit_clean() -> void:

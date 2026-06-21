@@ -398,6 +398,55 @@ func _resize_picker() -> void:
 
 
 # ---------------------------------------------------------------------------
+# Blob shadow — a soft, semi-transparent dark ellipse drawn at the foot anchor so
+# the token appears seated on the floor rather than floating. Rendered as a child
+# with z_index = -1 so it lies under the sprite body. Geometry follows the dimetric
+# 2:1 projection: the ellipse is ~2/3 the cell-width wide and half as tall (2:1 ratio),
+# centred at the foot origin (node origin == feet, per ISO-PROJECTION.md). Activated
+# per-token via CharacterToken.show_blob_shadow(true); off by default so existing
+# combat/exploration paths are unchanged.
+# ---------------------------------------------------------------------------
+class _BlobShadow extends Node2D:
+	var radius_x: float = 22.0   ## half-width of the shadow ellipse (px)
+	var radius_y: float = 11.0   ## half-height (dimetric 2:1 squash)
+	var alpha: float = 0.55      ## shadow opacity
+	const STEPS := 32            ## polygon smoothness
+
+	func _draw() -> void:
+		# Draw a filled ellipse polygon approximated by STEPS points.
+		var pts := PackedVector2Array()
+		for i in range(STEPS):
+			var angle := float(i) / float(STEPS) * TAU
+			pts.append(Vector2(cos(angle) * radius_x, sin(angle) * radius_y))
+		var col := Color(0.0, 0.0, 0.0, alpha)
+		draw_polygon(pts, PackedColorArray([col]))
+
+
+## Show or hide the blob shadow (a soft ellipse at the feet). Off by default so the
+## normal gameplay render is unchanged. Call with `true` to activate for preview/debug
+## visualizations that want the "seated on the floor" look.
+func show_blob_shadow(enabled: bool) -> void:
+	# Remove any existing shadow child first (idempotent: re-call is safe).
+	var existing := get_node_or_null("BlobShadow")
+	if existing != null:
+		existing.queue_free()
+	if not enabled:
+		return
+	var shadow := _BlobShadow.new()
+	shadow.name = "BlobShadow"
+	# Sit behind the sprite body: z_index -1 relative to the parent token's own z_index.
+	shadow.z_index = -1
+	# Foot origin is at (0,0) in the token's local space; shadow centred there.
+	shadow.position = Vector2.ZERO
+	# Scale radius to ~2/3 of the token frame width. anchor.x is the half-frame-width
+	# (128px frame -> anchor.x=64). Clamp to a readable dimetric range.
+	var half_w := clampf(_anchor.x * 0.70, 16.0, 44.0)
+	shadow.radius_x = half_w
+	shadow.radius_y = half_w * 0.5  ## dimetric 2:1 squash
+	add_child(shadow)
+
+
+# ---------------------------------------------------------------------------
 # #1060 — the slim renderer-owned HP bar (a _draw()-based child centered above the
 # head). It reads the parent token's _hp_frac (engine-decided hp/hpMax); it computes
 # nothing. Drawn centered on the token's screen-x so it tracks the body.
