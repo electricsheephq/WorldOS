@@ -114,6 +114,12 @@ func _on_snapshot(atlas: Dictionary, _combat: Dictionary, character: Dictionary)
 		if _has_arg("--walk-demo"):
 			call_deferred("_run_walk_demo")
 			return
+		if _has_arg("--cam-demo"):
+			call_deferred("_run_cam_demo")
+			return
+		if _has_arg("--table-occlusion"):
+			call_deferred("_run_table_occlusion")
+			return
 		_maybe_quit()
 
 
@@ -1120,6 +1126,346 @@ func _run_walk_demo() -> void:
 		var still_idle := not bool(_world._walking)
 		print("[WalkDemo] blocked-cell click is_noop=%s (expected true)" % str(still_idle))
 
+	call_deferred("_quit_clean")
+
+
+# ---------------------------------------------------------------------------
+# --cam-demo: camera milestone visual proof. Run WITHOUT --headless (real window).
+# Loads the tavern spec (or inline fallback), spawns sprites, then:
+#   1. Captures a DEFAULT framing screenshot (/tmp/cam_default.png)
+#   2. Programmatically zooms to 1.6x centered on the active token + captures
+#      (/tmp/cam_zoom.png)
+#   3. Prints camera behaviour summary.
+# The committed backdrop res://assets/backdrops/scene-lower-city.png is used
+# via apply_local_backdrop if available at the res:// path.
+# ---------------------------------------------------------------------------
+func _run_cam_demo() -> void:
+	print("[Main] --cam-demo: camera milestone visual proof")
+
+	# Detach the live feed (same pattern as walk-demo).
+	_detach_live_feed()
+
+	# Load the tavern spec.
+	var spec: Dictionary = {}
+	for sp in ["/tmp/tavern_milestone.json", "/tmp/scene.json"]:
+		if FileAccess.file_exists(sp):
+			var txt := FileAccess.get_file_as_string(sp)
+			var parsed: Variant = JSON.parse_string(txt)
+			if typeof(parsed) == TYPE_DICTIONARY:
+				spec = parsed
+				print("[CamDemo] loaded spec from %s" % sp)
+				break
+	if spec.is_empty():
+		spec = {
+			"backdrop": "res://assets/backdrops/scene-lower-city.png",
+			"nav": {
+				"cols": 10, "rows": 7, "cell_w_px": 56,
+				"origin_px": [548, 405],
+				"blocked": [[4,3],[5,3],[4,4]]
+			},
+			"actors": [
+				{"id": "pc1", "cell": [2,4], "facing": "SE"},
+				{"id": "foe1", "cell": [8,2], "facing": "W"}
+			],
+			"path_probe": {"from": [2,4], "to": [7,2]}
+		}
+		print("[CamDemo] using inline fallback spec")
+
+	# Apply backdrop — accept both "res://" paths and absolute /tmp paths.
+	var bp: String = String(spec.get("backdrop", ""))
+	if bp != "":
+		# If it's a res:// path, translate to filesystem for apply_local_backdrop.
+		var local_bp := bp
+		if bp.begins_with("res://"):
+			local_bp = ProjectSettings.globalize_path(bp)
+		var ok: bool = _world.apply_local_backdrop(local_bp)
+		if not ok:
+			print("[CamDemo] backdrop load failed path=%s — using procedural fallback" % bp)
+	else:
+		# Try the committed tavern backdrop by default.
+		var default_bp := ProjectSettings.globalize_path("res://assets/backdrops/scene-lower-city.png")
+		if FileAccess.file_exists(default_bp):
+			var _ok: bool = _world.apply_local_backdrop(default_bp)
+
+	var nav_block: Dictionary = {}
+	var nav_v: Variant = spec.get("nav", {})
+	if typeof(nav_v) == TYPE_DICTIONARY:
+		nav_block = nav_v
+
+	var actors_arr: Array = []
+	var actors_v: Variant = spec.get("actors", [])
+	if typeof(actors_v) == TYPE_ARRAY:
+		actors_arr = actors_v
+
+	var path_probe: Dictionary = {}
+	var probe_v: Variant = spec.get("path_probe", {})
+	if typeof(probe_v) == TYPE_DICTIONARY:
+		path_probe = probe_v
+
+	# NavOverlay.
+	var nav_overlay := preload("res://scenes/NavOverlay.gd").new()
+	nav_overlay.name = "NavOverlay"
+	nav_overlay.z_index = -5
+	nav_overlay.setup(nav_block, actors_arr, path_probe, [], "full")
+	_world.add_child(nav_overlay)
+
+	# Spawn sprites.
+	if not actors_arr.is_empty():
+		_spawn_preview_sprites(nav_block, actors_arr, spec)
+
+	# Wire nav.
+	if not nav_block.is_empty():
+		_world.setup_nav(nav_block)
+		var first_actor := _first_party_actor(actors_arr)
+		if not first_actor.is_empty():
+			var a_id := String(first_actor.get("id", ""))
+			var a_cell_v: Variant = first_actor.get("cell", [0, 0])
+			var a_cell := Vector2i(0, 0)
+			if typeof(a_cell_v) == TYPE_ARRAY and (a_cell_v as Array).size() >= 2:
+				a_cell = Vector2i(int((a_cell_v as Array)[0]), int((a_cell_v as Array)[1]))
+			_world.set_active_preview_actor(a_id, a_cell)
+
+	# Settle with default framing.
+	await _settle_frames(4)
+	await get_tree().create_timer(0.1).timeout
+	await _settle_frames(2)
+
+	# SCREENSHOT 1 — DEFAULT framing.
+	var img1 := _capture_viewport()
+	if img1 != null:
+		img1.save_png("/tmp/cam_default.png")
+		print("[CamDemo] screenshot 1 (default): /tmp/cam_default.png (%dx%d)" % [img1.get_width(), img1.get_height()])
+	else:
+		print("[CamDemo] no image captured (headless?) — run WITHOUT --headless")
+
+	# SCREENSHOT 2 — ZOOMED framing: programmatically zoom to 1.6x and pan toward
+	# the active token to prove camera zoom works.
+	var cam: Camera2D = _world.scene_camera()
+	if cam != null:
+		# Zoom to 1.6x.
+		cam.zoom = Vector2(1.6, 1.6)
+		# Pan to the first actor's screen position (if we can get it).
+		var cell_w := float(nav_block.get("cell_w_px", 56))
+		var orig_v: Variant = nav_block.get("origin_px", [548, 405])
+		var orig := Vector2(548, 405)
+		if typeof(orig_v) == TYPE_ARRAY and (orig_v as Array).size() >= 2:
+			orig = Vector2(float((orig_v as Array)[0]), float((orig_v as Array)[1]))
+		# Center on a point of interest — the midpoint between pc1 and foe1.
+		var cell_w_half := cell_w * 0.5
+		var pc_pos := Vector2(orig.x + (2 - 4) * cell_w_half, orig.y + (2 + 4) * cell_w * 0.25)
+		var foe_pos := Vector2(orig.x + (8 - 2) * cell_w_half, orig.y + (8 + 2) * cell_w * 0.25)
+		cam.position = (pc_pos + foe_pos) * 0.5
+		print("[CamDemo] camera zoom=%.2f position=(%.0f,%.0f)" % [cam.zoom.x, cam.position.x, cam.position.y])
+
+	await _settle_frames(4)
+	await get_tree().create_timer(0.1).timeout
+	await _settle_frames(2)
+
+	var img2 := _capture_viewport()
+	if img2 != null:
+		img2.save_png("/tmp/cam_zoom.png")
+		print("[CamDemo] screenshot 2 (zoomed): /tmp/cam_zoom.png (%dx%d)" % [img2.get_width(), img2.get_height()])
+
+	print("[CamDemo] RESULT ok=%s cam_zoom=%.2f" % [str(img1 != null and img2 != null), cam.zoom.x if cam != null else 0.0])
+	call_deferred("_quit_clean")
+
+
+# ---------------------------------------------------------------------------
+# --table-occlusion: Y-sort foreground table occluder proof.
+# Run WITHOUT --headless (real window). Loads the tavern backdrop, spawns two
+# tokens — one BEHIND the table (foot-y above table baseline) and one IN FRONT
+# (foot-y below) — then adds the FgOccluder polygon over the table region.
+# Screenshots /tmp/cam_default.png (default) and /tmp/occlusion_proof.png (proof).
+# The polygon is authored from visual inspection of scene-lower-city.png (1344×768),
+# matching the large wooden table in the mid-lower region of the tavern.
+#
+# If a SAM cut-out PNG is present at /tmp/table_cut.png, uses that as a sprite
+# occluder instead (higher fidelity). Otherwise falls back to the polygon.
+# ---------------------------------------------------------------------------
+func _run_table_occlusion() -> void:
+	print("[Main] --table-occlusion: foreground table occluder proof")
+	_detach_live_feed()
+
+	# Apply the committed tavern backdrop.
+	var bp_local := ProjectSettings.globalize_path("res://assets/backdrops/scene-lower-city.png")
+	if FileAccess.file_exists(bp_local):
+		var _ok: bool = _world.apply_local_backdrop(bp_local)
+		if not _ok:
+			print("[TableOcclusion] backdrop load failed — using procedural fallback")
+	else:
+		print("[TableOcclusion] backdrop not found at %s — using procedural fallback" % bp_local)
+
+	# Viewport size for coordinate calculations — use the runtime viewport rect so
+	# img_to_screen matches WorldView._apply_texture_backdrop's transform exactly.
+	# Fall back to ProjectSettings defaults if the live size is unavailable (headless).
+	var vp := Vector2(1152.0, 648.0)
+	var _live_vp := get_viewport()
+	if _live_vp != null:
+		var _live_rect := _live_vp.get_visible_rect().size
+		if _live_rect.x > 0.0 and _live_rect.y > 0.0:
+			vp = _live_rect
+		else:
+			vp = Vector2(
+				float(ProjectSettings.get_setting("display/window/size/viewport_width", 1152)),
+				float(ProjectSettings.get_setting("display/window/size/viewport_height", 648))
+			)
+	else:
+		vp = Vector2(
+			float(ProjectSettings.get_setting("display/window/size/viewport_width", 1152)),
+			float(ProjectSettings.get_setting("display/window/size/viewport_height", 648))
+		)
+	# The backdrop is 1344×768; when cover-scaled to 1152×648 the scale factor is:
+	# max(1152/1344, 648/768) = max(0.857, 0.844) = 0.857.
+	# So the rendered image is 1344*0.857 ≈ 1152 wide, 768*0.857 ≈ 658 tall.
+	# Centered at (576, 324). Effective y extent: 324 - 329 to 324 + 329 = -5..653.
+	# Pixels from the raw image map to screen as: screen_y = 324 + (img_y - 384)*0.857
+	const BP_W := 1344.0
+	const BP_H := 768.0
+	var scale_s := maxf(vp.x / BP_W, vp.y / BP_H)  # cover scale
+
+	# Convert a raw-image pixel coordinate to WorldView-local screen coordinate.
+	var img_to_screen := func(ix: float, iy: float) -> Vector2:
+		return Vector2(
+			vp.x * 0.5 + (ix - BP_W * 0.5) * scale_s,
+			vp.y * 0.5 + (iy - BP_H * 0.5) * scale_s
+		)
+
+	# The tavern table in scene-lower-city.png — measured from SAM bounding box analysis:
+	#   non-transparent bbox: x=205..512  y=443..625 (center x=358)
+	#   foot (floor contact baseline): img_y = 625
+	#   table center_x: img_x = 358
+	# Polygon fallback traces the approximate table outline in image pixels.
+	const T_TOP    := 443.0   ## table top (far edge of surface)
+	const T_BOT    := 625.0   ## table bottom / floor contact baseline
+	const T_LEFT   := 205.0   ## table left edge
+	const T_RIGHT  := 512.0   ## table right edge
+	const T_MID_X  := 358.0   ## center x (from SAM bbox)
+	var poly_pts := PackedVector2Array([
+		img_to_screen.call(T_LEFT  + 40.0, T_TOP + 10.0) as Vector2,
+		img_to_screen.call(T_RIGHT - 40.0, T_TOP + 10.0) as Vector2,
+		img_to_screen.call(T_RIGHT,        T_BOT - 10.0) as Vector2,
+		img_to_screen.call(T_LEFT,         T_BOT - 10.0) as Vector2,
+	])
+	var foot_y_screen: float = (img_to_screen.call(T_MID_X, T_BOT) as Vector2).y
+
+	# The ysort layer lives inside WorldView.
+	var ysort := _world.get_node_or_null("YSortLayer") as Node2D
+	if ysort == null:
+		print("[TableOcclusion] YSortLayer not found — aborting")
+		call_deferred("_quit_clean")
+		return
+
+	# Clear whatever was in the YSortLayer (no live fixture here).
+	for child in ysort.get_children():
+		child.queue_free()
+
+	# ── Spawn the FgOccluder ──────────────────────────────────────────────
+	const FgOccluderScript := preload("res://scenes/FgOccluder.gd")
+	var occluder: FgOccluder = FgOccluderScript.new()
+	occluder.occluder_id = "tavern_table"
+	occluder.name = "FgOccluder_table"
+	ysort.add_child(occluder)
+
+	# Prefer the committed SAM cut-out (res://assets/backdrops/scene-lower-city.occluder-table.png).
+	# Fall back to /tmp/table_cut.png, then to the polygon.
+	var sam_cut_candidates := [
+		ProjectSettings.globalize_path("res://assets/backdrops/scene-lower-city.occluder-table.png"),
+		"/tmp/table_cut.png"
+	]
+	var used_sam := false
+	for sam_candidate in sam_cut_candidates:
+		var sam_cut_path: String = String(sam_candidate)
+		if not FileAccess.file_exists(sam_cut_path):
+			continue
+		var img := Image.new()
+		var err := img.load(sam_cut_path)
+		if err != OK:
+			continue
+		var sam_tex := ImageTexture.create_from_image(img)
+		if sam_tex == null:
+			continue
+		var backdrop_size := Vector2(BP_W, BP_H)
+		occluder.setup_sprite(sam_tex, backdrop_size, vp, foot_y_screen)
+		used_sam = true
+		print("[TableOcclusion] using SAM cut-out sprite occluder from %s" % sam_cut_path)
+		break
+	if not used_sam:
+		# Polygon fallback: warm brown matching the tavern table wood tone.
+		var table_color := Color(0.42, 0.29, 0.16, 1.0)  # warm oak brown
+		occluder.setup_polygon(poly_pts, table_color, foot_y_screen)
+		print("[TableOcclusion] using polygon occluder (no SAM cut found in candidate list)")
+
+	# ── Spawn two tokens: one BEHIND, one IN FRONT of the table ──────────
+	# Load the committed fighter sheet.
+	const FIGHTER_DIR := "res://assets/characters/fighter/"
+	var json_text := FileAccess.get_file_as_string(FIGHTER_DIR + "sheet.json")
+	var manifest_v: Variant = JSON.parse_string(json_text)
+	if typeof(manifest_v) != TYPE_DICTIONARY:
+		print("[TableOcclusion] fighter sheet not found — aborting")
+		call_deferred("_quit_clean")
+		return
+	var manifest: Dictionary = manifest_v
+	var sheet_tex: Texture2D = load(FIGHTER_DIR + String(manifest.get("image", "sheet.png")))
+	if sheet_tex == null:
+		print("[TableOcclusion] fighter sheet.png not found — aborting")
+		call_deferred("_quit_clean")
+		return
+
+	const CharacterTokenScene := preload("res://scenes/CharacterToken.tscn")
+	# BEHIND token: foot-y ABOVE the table baseline (smaller y = further back).
+	# We place it at the table's mid-x, but ~70px above the baseline.
+	var behind_foot := Vector2(
+		(img_to_screen.call(T_MID_X, T_BOT) as Vector2).x,
+		foot_y_screen - 70.0
+	)
+	var tok_behind: CharacterToken = CharacterTokenScene.instantiate()
+	tok_behind.engine_actor_id = "behind_token"
+	tok_behind.name = "Token_behind"
+	ysort.add_child(tok_behind)
+	tok_behind.set_manifest(manifest, sheet_tex)
+	tok_behind.set_facing("S")
+	tok_behind.set_anim("idle")
+	tok_behind.set_team_tint(Color(0.72, 0.85, 1.00, 1.0))  # cool blue (party)
+	tok_behind.show_blob_shadow(true)
+	tok_behind.place_at(behind_foot)
+
+	# FRONT token: foot-y BELOW the table baseline (larger y = nearer camera).
+	var front_foot := Vector2(
+		(img_to_screen.call(T_MID_X, T_BOT) as Vector2).x,
+		foot_y_screen + 70.0
+	)
+	var tok_front: CharacterToken = CharacterTokenScene.instantiate()
+	tok_front.engine_actor_id = "front_token"
+	tok_front.name = "Token_front"
+	ysort.add_child(tok_front)
+	tok_front.set_manifest(manifest, sheet_tex)
+	tok_front.set_facing("S")
+	tok_front.set_anim("idle")
+	tok_front.set_team_tint(Color(1.00, 0.55, 0.45, 1.0))  # warm red (foe)
+	tok_front.show_blob_shadow(true)
+	tok_front.place_at(front_foot)
+
+	print("[TableOcclusion] behind_token foot_y=%.0f  table_baseline=%.0f  front_token foot_y=%.0f" % [
+		behind_foot.y, foot_y_screen, front_foot.y])
+
+	# Settle + screenshot.
+	await _settle_frames(4)
+	await get_tree().create_timer(0.1).timeout
+	await _settle_frames(3)
+
+	var img_proof := _capture_viewport()
+	if img_proof != null:
+		img_proof.save_png("/tmp/occlusion_proof.png")
+		print("[TableOcclusion] screenshot: /tmp/occlusion_proof.png (%dx%d)" % [
+			img_proof.get_width(), img_proof.get_height()])
+		# Also save a copy to the standard cam_default slot for consistency.
+		img_proof.save_png("/tmp/cam_default.png")
+	else:
+		print("[TableOcclusion] no image (headless?) — run WITHOUT --headless")
+
+	var method := "SAM-sprite" if used_sam else "polygon"
+	print("[TableOcclusion] RESULT ok=%s method=%s behind_y=%.0f baseline=%.0f front_y=%.0f" % [
+		str(img_proof != null), method, behind_foot.y, foot_y_screen, front_foot.y])
 	call_deferred("_quit_clean")
 
 
