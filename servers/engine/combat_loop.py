@@ -595,6 +595,27 @@ def _apply_intent(server, campaign_id: str, actor_id: str, intent: Intent) -> di
 _view_cache: dict = {}
 
 
+def _bonus_was_leveled_spell(bonus_intent: Optional[Intent], view: CombatView) -> bool:
+    """Did this turn's BONUS action cast a LEVELED spell (a slot-spender — Healing Word, Spiritual
+    Weapon, …)? 5e RAW (#1106): casting a leveled bonus-action spell forbids a SECOND leveled spell as
+    the same turn's ACTION (only a cantrip may follow). This is the per-turn detector run_combat_round
+    uses to set `view.bonus_spell_used` on the MAIN-action view.
+
+    True ONLY for a `cast` Intent whose spell resolves (by name, in the view the bonus was decided over)
+    to a LEVELED slot (slot_level > 0). A cantrip cast (slot_level 0), a Second Wind / Rage `use_resource`
+    spend, a None bonus (non-caster), or an unrecognized spell -> False (no constraint; today's behavior).
+    Pure: reads only the Intent + the view's already-discovered SpellOptions; no state, no I/O."""
+    if bonus_intent is None or bonus_intent.kind != "cast":
+        return False
+    name = str(bonus_intent.spell_name or "").strip().lower()
+    if not name:
+        return False
+    for sp in view.spells:
+        if str(sp.name or "").strip().lower() == name:
+            return int(sp.slot_level) > 0  # a leveled bonus spell triggers the rule; a cantrip does not
+    return False
+
+
 # ── The rounds ───────────────────────────────────────────────────────────────────────
 
 def run_combat_round(campaign_id: str, mode: str = "live", max_turns: int = 60) -> dict:
@@ -654,6 +675,11 @@ def run_combat_round(campaign_id: str, mode: str = "live", max_turns: int = 60) 
         # HP lands before the swings. Returns None for a non-martial actor -> byte-identical (no
         # bonus call). The _apply_intent marks the bonus economy spent so it fires at most once.
         bonus_intent = combat_ai.pick_bonus_action(actor, view)
+        # #1106: a LEVELED bonus-action spell (Healing Word, …) forbids a SECOND leveled spell as this
+        # turn's ACTION — only a cantrip may follow. Detect it here (over the view the bonus was decided
+        # on) and thread it onto every MAIN-action view this turn so pick_action refuses a leveled cast.
+        # A cantrip / Second Wind / Rage bonus leaves this False == today (no constraint).
+        bonus_spell_used = _bonus_was_leveled_spell(bonus_intent, view)
         if bonus_intent is not None:
             digest.append(_apply_intent(server, campaign_id, actor.id, bonus_intent))
             acted = True
@@ -677,6 +703,11 @@ def run_combat_round(campaign_id: str, mode: str = "live", max_turns: int = 60) 
             if sneak_used and view.sneak_attack is not None:
                 # 5e RAW: Sneak Attack once per turn — already dealt this turn, never re-tag a later strike.
                 view = replace(view, sneak_attack=None)
+            if bonus_spell_used and not view.bonus_spell_used:
+                # #1106: re-thread the leveled-bonus-spell rule onto every freshly-built main-action
+                # view this turn (_build_view doesn't know the loop already cast a leveled bonus spell),
+                # so pick_action refuses a SECOND leveled cast (no double Healing Word / leveled+leveled).
+                view = replace(view, bonus_spell_used=True)
             _view_cache[actor.id] = view.attacks
             # ACTION SURGE (v2.0c): when the normal strikes are spent but the fight is still hot,
             # the fighter can spend Action Surge for a FRESH Attack action. Spend it ONCE, then keep
