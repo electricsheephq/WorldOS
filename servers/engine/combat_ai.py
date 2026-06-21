@@ -43,15 +43,35 @@ RETREAT_FRACTION = 0.0
 # A monster/NPC's declared intent for its turn. The loop maps `kind` to one or more
 # existing write verbs (a Multiattack re-asks pick_action per granted strike). DECLARATIVE
 # only — it names WHAT the actor wants; it never mutates state. See ADR §2.
+#
+# v2.0c martial riders (ALL additive — empty/None == today's Intent byte-for-byte):
+#   * `use_resource` + `resource` — a class-resource spend (Action Surge / Rage) the loop
+#     applies via the locked server.use_resource verb. `kind="use_resource"` is the new
+#     dedicated intent for a bare resource spend (Rage entry, Action Surge);
+#   * on an `attack` Intent, `maneuver` / `maneuver_resource` declare a Battle Master damage
+#     maneuver, `channel` declares a flat to-hit option (Guided Strike), and `sneak_attack`
+#     (a damage_rolls component dict) tags a Sneak Attack — all consumed by the existing
+#     attack() riders. A plain attack leaves every one empty == today.
 @dataclass(frozen=True)
 class Intent:
-    kind: Literal["attack", "cast", "move", "dash", "disengage", "dodge", "skip"]
+    kind: Literal[
+        "attack", "cast", "move", "dash", "disengage", "dodge", "skip", "use_resource"
+    ]
     target_id: str = ""           # attack / single-target cast
     attack_name: str = ""         # scopes a Multiattack budget (server._attacker_multiattack_count)
     spell_name: str = ""          # cast
     to_cell: Optional[tuple[int, int]] = None  # move (grid / #461)
     to_zone: str = ""             # move (zone / S2.7)
     note: str = ""                # human-readable rationale for the digest / debugging
+    # v2.0c riders (additive; default empty == today). The loop folds these into the
+    # SAME locked verbs (use_resource / attack riders) — no new write path.
+    resource: str = ""            # use_resource: the pool to spend (e.g. "action_surge", "rage")
+    amount: int = 1               # use_resource: how much to spend (default 1)
+    maneuver: str = ""            # attack: a Battle Master damage maneuver name (Trip Attack, …)
+    maneuver_resource: str = "superiority_dice"  # attack: the die pool the maneuver spends
+    channel: str = ""             # attack: a flat to-hit option (Guided Strike) declared via use_resource
+    channel_resource: str = ""    # attack: the pool the channel option spends (channel_divinity)
+    sneak_attack: tuple = ()      # attack: a damage_rolls component dict for Sneak Attack ({} == none)
 
 
 # ── The read-only CombatView the loop assembles per turn (no new persistent model) ───
@@ -106,6 +126,42 @@ class SpellOption:
 
 
 @dataclass(frozen=True)
+class AbilityOption:
+    """A MARTIAL class ability the actor can spend a class-resource on this turn (v2.0c). The view
+    surfaces it from the actor's `class_resources` (the loop reads the authoritative pool); the AI
+    decides WHEN to spend and the loop applies it via the locked `use_resource` / attack-rider verbs.
+
+    `kind` selects the decision branch + how the loop applies it:
+      * "second_wind"  — fighter BONUS-action self-heal (1d10+level); `heal_amount` is the EV. The
+        bonus-action channel fires it when the fighter is hurt.
+      * "action_surge" — fighter: a fresh Attack action this turn. Spent via use_resource; the loop's
+        re-ask grants the extra strike. Worth it when the fight is hot / it converts to a likely kill.
+      * "maneuver"     — Battle Master: a superiority die added to an attack's damage (Trip/Menacing).
+        Declared ON a worthy attack via the attack() maneuver rider. `size` is the die (e.g. "d8").
+      * "guided_strike" — War-cleric Channel Divinity: +10 to one attack roll. Declared on a key
+        likely-to-miss attack via use_resource(channel_divinity, maneuver='Guided Strike').
+      * "rage"         — barbarian: enter rage (the obvious on when meleeing). A bare use_resource spend.
+    `resource` is the pool id `use_resource` spends; `remaining` is what's left (>0 to be usable)."""
+    kind: str                     # "second_wind" | "action_surge" | "maneuver" | "guided_strike" | "rage"
+    resource: str                 # the class_resources pool id (e.g. "second_wind", "action_surge")
+    remaining: int = 0            # uses left in the pool (>0 == usable)
+    is_bonus_action: bool = False  # consumes the BONUS action (Second Wind) vs the action / a rider
+    heal_amount: float = 0.0      # second_wind: expected HP restored (1d10 + fighter level)
+    size: str = ""                # maneuver: the die the pool rolls (e.g. "d8"), for the EV note
+    name: str = ""                # the human ability name (Trip Attack / Guided Strike / Rage / …)
+
+
+@dataclass(frozen=True)
+class SneakAttackOption:
+    """The actor's Sneak Attack rider (rogue, v2.0c). `dice` is the sheet's Sneak-Attack dice (e.g.
+    "3d6"); the AI TAGS an eligible attack with it as a damage_rolls component, and the existing
+    attack() multi-component path rolls + crit-doubles it. `value` is the EV (avg of the dice) so the
+    AI can note the magnitude. None on the view == not a rogue / no sneak dice (byte-identical)."""
+    dice: str                     # e.g. "3d6" (the rogue's Sneak Attack dice from the sheet)
+    value: float = 0.0            # avg damage of `dice`, for the rationale note
+
+
+@dataclass(frozen=True)
 class CombatantView:
     """A combatant the AI reasons about: position + the numbers needed for EV. For an ALLY the
     healer triage also reads `current_hp`/`max_hp` + `downed` (0 HP / dying) to decide who to heal."""
@@ -148,6 +204,27 @@ class CombatView:
     # (or "" if none). pick_action will not start a NEW concentration spell that breaks a >= -value
     # active one — "" == today's behavior (no active concentration to protect).
     active_concentration: str = ""
+    # ── Martial class abilities + bonus-action economy (v2.0c) ───────────────────────────
+    # The actor's own HP, surfaced so the Second-Wind / Action-Surge thresholds read from the
+    # view (not getattr(actor)) — a non-martial actor never looks at these (byte-identical).
+    actor_current_hp: int = 0
+    actor_max_hp: int = 0
+    # The actor's spendable MARTIAL abilities this turn (Second Wind / Action Surge / Battle
+    # Master maneuver / Guided Strike / Rage). Empty == a non-martial actor (today's behavior):
+    # pick_action / pick_bonus_action skip every ability branch and the fight is unchanged.
+    abilities: tuple[AbilityOption, ...] = ()
+    # Whether the barbarian is ALREADY raging this fight (the loop tracks rage-entry per fight, since
+    # the engine has no active-rage state — see the v2.0d flag in combat_loop). True suppresses a
+    # second Rage spend (don't drain the pool). False/default == not yet raging.
+    is_raging: bool = False
+    # The rogue's Sneak Attack rider (or None == not a rogue / no sneak dice). When present the AI
+    # TAGS an eligible attack (advantage OR an ally within 5 ft of the target, no disadvantage).
+    sneak_attack: Optional[SneakAttackOption] = None
+    # Whether the actor still has its ACTION / BONUS action this turn. The bonus-action channel
+    # (pick_bonus_action) only fires a bonus ability when bonus_action_available; both default True
+    # so a fresh turn behaves as today. Action Surge needs the action; Second Wind the bonus.
+    action_available: bool = True
+    bonus_action_available: bool = True
 
 
 # ── Pure EV helpers ──────────────────────────────────────────────────────────────────
@@ -382,6 +459,241 @@ def _pick_heal(view: CombatView) -> Optional[tuple[CombatantView, SpellOption]]:
     return target, chosen
 
 
+# ── Martial class abilities (v2.0c) — pure detectors + decision helpers ──────────────
+#
+# Each helper reads ONLY the view (the loop already surfaced the authoritative pool + numbers)
+# and returns whether/which ability to spend. A view with no `abilities` short-circuits every
+# one of these to None/False, so a non-martial actor is byte-identical to today.
+
+# Second Wind fires when the fighter is meaningfully hurt — at/below this fraction of max HP. 1/2
+# matches the brief ("< ~1/2 HP"); pure constant (a future tier could lower it for a cautious AI).
+_SECOND_WIND_FRACTION = 0.5
+# Action Surge is a NOVA button: don't waste it round 1 vs trivial foes. Spend it when the fight is
+# HOT — the actor is hurt, OR the action's extra attack is likely to CONVERT a worthy foe to a kill.
+# A foe whose current HP is within this multiple of one attack's EV is "finishable" by the surge.
+_SURGE_FINISH_MULT = 2.0
+# A Battle Master spends a die on an attack worth boosting — a foe that's a real threat (not a sliver
+# a plain swing already kills). Spend when the foe's HP is above the plain-attack EV (the +die matters)
+# AND the strike has a reasonable chance to land (the die only adds damage on a hit).
+_MANEUVER_MIN_PHIT = 0.4
+# Guided Strike (+10 to hit) is best spent on a KEY attack that would OTHERWISE likely MISS — its
+# whole value is turning a miss into a hit. Spend when the best attack's P(hit) is at/below this.
+_GUIDED_STRIKE_MAX_PHIT = 0.6
+
+
+def _ability(view: CombatView, kind: str) -> Optional[AbilityOption]:
+    """The first usable (remaining > 0) ability of `kind` on the view, or None. Pure lookup."""
+    for ab in view.abilities:
+        if ab.kind == kind and ab.remaining > 0:
+            return ab
+    return None
+
+
+def _sneak_attack_eligible(view: CombatView, target: CombatantView,
+                           attack_has_advantage: bool) -> bool:
+    """Is the rogue's Sneak Attack rider TRIGGERED on `target` this strike (5e RAW, no disadvantage
+    branch — the engine's loop doesn't pass disadvantage here)? Either the attack has ADVANTAGE, OR
+    an ALLY of the rogue is within 5 ft of the target (a flanking-style trigger). Pure geometry +
+    the advantage flag. The once-per-turn cap is enforced by the loop (it tags ONE strike)."""
+    if view.sneak_attack is None:
+        return False
+    if attack_has_advantage:
+        return True
+    # An ally within 5 ft of the target (the "another enemy of the target is within 5 ft" trigger,
+    # here read as one of the rogue's own-side allies adjacent to the foe). On the grid, Chebyshev
+    # distance; off-grid we can't prove adjacency, so require the explicit advantage path only.
+    if not view.grid_enabled or target.cell is None:
+        return False
+    for ally in view.allies:
+        if ally.cell is None or not _alive_for_flank(ally):
+            continue
+        if combat_grid.distance_ft(ally.cell, target.cell, view.cell_size) <= 5:
+            return True
+    return False
+
+
+def _alive_for_flank(ally: CombatantView) -> bool:
+    """An ally that can actually threaten a foe for the Sneak-Attack adjacency trigger: not downed
+    and above 0 HP. (A downed ally on the floor doesn't menace the target.)"""
+    return (not ally.downed) and int(ally.current_hp) > 0
+
+
+def _target_advantage(view: CombatView, target: CombatantView) -> bool:
+    """Does the actor have ADVANTAGE attacking `target` from condition? A foe that's prone /
+    restrained / stunned / paralyzed / unconscious grants advantage to melee attackers. Pure read
+    of the target's surfaced conditions (the engine's attack() recomputes the real advantage; this
+    is the AI's pre-check for the Sneak-Attack trigger so the rider is only TAGGED when warranted)."""
+    adv_conditions = {"prone", "restrained", "stunned", "paralyzed", "unconscious", "incapacitated"}
+    return bool(adv_conditions & {str(cn).lower() for cn in target.conditions})
+
+
+def _enrich_attack_intent(view: CombatView, opt: AttackOption, foe: CombatantView,
+                          base_ev: float) -> Intent:
+    """Build the `attack` Intent for `opt` on `foe`, folding in the v2.0c martial ON-ATTACK riders
+    when warranted (Sneak Attack / Guided Strike / Battle Master maneuver). A non-martial actor (no
+    sneak_attack, no abilities) gets a PLAIN attack Intent byte-identical to v2.0b — every rider
+    branch is gated on a surfaced ability/dice, so empty == today. The riders are mutually compatible
+    where 5e allows (a maneuver + a sneak attack can ride the same strike); Guided Strike is reserved
+    for a likely-MISS attack (its value is the to-hit, not extra damage). All consumed by the
+    EXISTING attack() riders — the loop adds no new write path. Pure: reads only the view + the foe."""
+    phit = p_hit(opt.to_hit, foe.armor_class)
+    note_bits = [
+        f"best in-reach attack {opt.name} on {foe.name} (EV {base_ev:.1f}, P(hit) {phit:.0%})"
+    ]
+    # SNEAK ATTACK (rogue): tag the strike when the trigger is met (advantage OR an ally within 5 ft
+    # of the target). The engine rolls + crit-doubles the extra dice via the multi-component path.
+    sneak_rider: tuple = ()
+    has_adv = _target_advantage(view, foe)
+    if view.sneak_attack is not None and _sneak_attack_eligible(view, foe, has_adv):
+        sneak_rider = ({"dice": view.sneak_attack.dice,
+                        "type": opt.damage_type or "piercing"},)
+        note_bits.append(
+            f"+ Sneak Attack {view.sneak_attack.dice} (~{view.sneak_attack.value:.0f}, "
+            f"{'advantage' if has_adv else 'ally adjacent'})"
+        )
+    # GUIDED STRIKE (War cleric Channel Divinity, +10 to hit): reserve it for a KEY attack that
+    # would OTHERWISE likely MISS — its whole value is turning a miss into a hit. Spend only when the
+    # plain P(hit) is at/below the bar AND the foe is a real (non-trivial) threat worth the channel.
+    channel = ""
+    channel_resource = ""
+    gs = _ability(view, "guided_strike")
+    if (gs is not None and phit <= _GUIDED_STRIKE_MAX_PHIT
+            and int(foe.current_hp) > math.ceil(base_ev)):
+        channel = gs.name or "Guided Strike"
+        channel_resource = gs.resource or "channel_divinity"
+        note_bits.append(f"+ {channel} (+10 to hit; P(hit) was {phit:.0%})")
+    # BATTLE MASTER MANEUVER (superiority die -> +damage on a hit): spend on a worthy strike — a foe
+    # that's a real threat (HP above what a plain swing removes) and a strike likely to LAND (the die
+    # only adds damage on a hit). Skip Guided-Strike turns (don't double-spend two resources on one
+    # marginal swing) and trivial foes (a plain swing already finishes them).
+    maneuver = ""
+    maneuver_resource = "superiority_dice"
+    man = _ability(view, "maneuver")
+    if (man is not None and not channel and phit >= _MANEUVER_MIN_PHIT
+            and int(foe.current_hp) > math.ceil(base_ev)):
+        maneuver = man.name or "Trip Attack"
+        maneuver_resource = man.resource or "superiority_dice"
+        note_bits.append(f"+ maneuver {maneuver} ({man.size or 'die'} on hit)")
+    return Intent(
+        kind="attack",
+        target_id=foe.id,
+        attack_name=opt.name,
+        sneak_attack=sneak_rider,
+        channel=channel,
+        channel_resource=channel_resource,
+        maneuver=maneuver,
+        maneuver_resource=maneuver_resource,
+        note="; ".join(note_bits),
+    )
+
+
+def should_action_surge(combat_state: CombatView) -> Optional[Intent]:
+    """Decide whether the fighter should spend Action Surge for an EXTRA Attack action this turn
+    (v2.0c), or None. Called by the loop AFTER the actor's normal strikes resolve — Action Surge is a
+    NOVA button, so it's gated to a HOT moment so it isn't wasted round 1 on a trivial foe:
+      * the actor is HURT (<= 1/2 max HP — surging to end the fight faster is worth it), OR
+      * a worthy foe is FINISHABLE — the best in-reach attack's EV is within `_SURGE_FINISH_MULT` of
+        a living foe's current HP, so the extra action is likely to convert to a KILL.
+    Returns a `use_resource` Intent for action_surge (the loop applies it via the locked verb, then
+    re-runs the strike budget which now sees the granted surge action). A non-fighter / no-surge /
+    no-foes view returns None == today (the loop never surges). Pure: reads only the view.
+
+    NOTE: this does NOT gate on `action_available` — Action Surge's whole purpose is to grant a FRESH
+    action AFTER the turn's normal Attack action is already spent (attack() sets action_used), so the
+    loop calls this once the normal strikes are exhausted. The loop's own `surged` guard prevents a
+    second surge in the same turn (don't drain the pool)."""
+    view = combat_state
+    surge = _ability(view, "action_surge")
+    if surge is None or not view.foes:
+        return None
+    # Best in-reach single-attack EV (the per-strike value a surged action would add again).
+    best_ev = 0.0
+    for opt in view.attacks:
+        for foe in view.foes:
+            if _in_reach(view, foe, opt.reach_ft):
+                best_ev = max(best_ev, _attack_ev(opt, foe))
+    if best_ev <= 0:
+        return None  # nothing to swing at from here — a surged action would do nothing
+    hurt = view.actor_max_hp > 0 and (view.actor_current_hp / max(1, view.actor_max_hp)) <= 0.5
+    finishable = any(
+        int(foe.current_hp) <= math.ceil(best_ev * _SURGE_FINISH_MULT) for foe in view.foes
+    )
+    if not (hurt or finishable):
+        return None
+    why = "hurt — surge to end it" if hurt else "a foe is finishable with an extra action"
+    return Intent(
+        kind="use_resource",
+        resource=surge.resource,
+        amount=1,
+        note=f"Action Surge: extra Attack action ({why})",
+    )
+
+
+def pick_bonus_action(actor: "Character", combat_state: CombatView) -> Optional[Intent]:
+    """Choose a worthwhile BONUS action for the actor THIS turn, or None (v2.0c). Separate from
+    pick_action so the bonus-action ECONOMY is a clean, removable channel: the loop calls this ONCE
+    per turn (alongside the main action), and a non-martial / no-bonus actor returns None so the turn
+    is byte-identical to today. Priority:
+      1. Second Wind (fighter) — self-heal when hurt (< ~1/2 HP) and a use remains.
+      2. a BONUS-ACTION heal (Healing Word) on a downed/critical ally — the classic save, when the
+         actor has a bonus-action heal spell + a needy ally (reuses the v2.0a heal triage).
+    Returns a `use_resource` Intent (Second Wind) or a bonus `cast` Intent (Healing Word). PURE."""
+    view = combat_state
+    if not view.bonus_action_available:
+        return None
+    if not view.foes:  # the fight is over — no bonus action worth spending
+        return None
+    # 1. Second Wind — a fighter's bonus-action self-heal. Fire when meaningfully hurt.
+    sw = _ability(view, "second_wind")
+    if sw is not None and view.actor_max_hp > 0:
+        frac = view.actor_current_hp / max(1, view.actor_max_hp)
+        if frac <= _SECOND_WIND_FRACTION:
+            return Intent(
+                kind="use_resource",
+                resource=sw.resource,
+                amount=1,
+                note=(
+                    f"Second Wind (bonus action): self-heal ~{sw.heal_amount:.0f} HP at "
+                    f"{view.actor_current_hp}/{view.actor_max_hp}"
+                ),
+            )
+    # 2. Rage (barbarian) — the obvious bonus-action "on" when meleeing. Enter ONCE per fight (the
+    #    is_raging flag, which the loop tracks since the engine has no active-rage state). Only when a
+    #    foe is within MELEE reach (rage benefits melee), and a use remains. FLAG (v2.0d): the engine
+    #    models the rage POOL but not its +damage / resistance — entering rage drains a use and is
+    #    narrated; the mechanical bonus is deferred. Gated so it can't burn the pool turn after turn.
+    rage = _ability(view, "rage")
+    if rage is not None and not view.is_raging:
+        in_melee = any(
+            _in_reach(view, foe, opt.reach_ft)
+            for opt in view.attacks if not opt.is_ranged
+            for foe in view.foes
+        )
+        if in_melee:
+            return Intent(
+                kind="use_resource",
+                resource=rage.resource,
+                amount=1,
+                note="Rage (bonus action): enter rage — a foe is in melee reach",
+            )
+    # 3. A bonus-action heal (Healing Word) on a downed/critical ally — reuse the v2.0a triage but
+    #    restricted to BONUS-action heals so it rides the bonus channel alongside the main action.
+    heal = _pick_heal(view)
+    if heal is not None:
+        ally, sp = heal
+        if sp.is_bonus_action:
+            return Intent(
+                kind="cast",
+                target_id=ally.id,
+                spell_name=sp.name,
+                note=(
+                    f"bonus-action heal {sp.name} on {ally.name} "
+                    f"({ally.current_hp}/{ally.max_hp} HP{', DOWNED' if ally.downed else ''})"
+                ),
+            )
+    return None
+
+
 # ── The greedy-v1 policy ─────────────────────────────────────────────────────────────
 
 def pick_action(
@@ -406,6 +718,13 @@ def pick_action(
       4. move-to-reach toward the best target (the loop re-asks pick_action so move-then-attack
          resolves both halves)
       5. dodge / skip fallback when nothing productive is reachable
+
+    MARTIAL on-attack riders (v2.0c): the chosen weapon attack is enriched (`_enrich_attack_intent`)
+    with Sneak Attack (rogue, when the trigger is met), Guided Strike (War cleric, on a likely-MISS
+    key attack), and a Battle Master maneuver (on a worthy hit) — all via the EXISTING attack()
+    riders, gated on a surfaced ability/dice so a non-martial actor's attack is byte-identical to
+    v2.0b. The BONUS action (Second Wind / bonus heal / Rage) and Action Surge are decided by the
+    sibling `pick_bonus_action` / `should_action_surge`, which the loop calls alongside this.
 
     PURE + deterministic: reads only `actor` (read-only Character) and `combat_state` (a
     read-only CombatView). Returns an Intent; the loop is the sole writer that applies it.
@@ -546,15 +865,7 @@ def pick_action(
     if best_attack is not None:
         opt = best_attack[4]
         foe = best_attack[5]
-        return Intent(
-            kind="attack",
-            target_id=foe.id,
-            attack_name=opt.name,
-            note=(
-                f"best in-reach attack {opt.name} on {foe.name} "
-                f"(EV {best_attack[0]:.1f}, P(hit) {p_hit(opt.to_hit, foe.armor_class):.0%})"
-            ),
-        )
+        return _enrich_attack_intent(view, opt, foe, best_attack[0])
 
     # 4. Move-to-reach: no attack/spell lands from here -> close on the best (lowest-HP) target
     #    so next turn (the loop re-asks pick_action) the strike resolves. Needs the grid.
