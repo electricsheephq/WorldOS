@@ -36,7 +36,8 @@ Meshy→Blender render → hand/AI paintover.
    ```
    Produces `sheet.png` (rows = 8 facings, cols = 24 = idle4/walk8/attack6/cast6, 128px cells →
    3072×1024) + `sheet.json` (manifest v1, identical shape to the committed placeholder, with
-   `source:"meshy-blender-render"`). **The output dir MUST be `…/images/<scope_key>/`** (the
+   `source:"meshy-blender-render"`). The sprite-sheet manifest is part of the locked
+   **render-profile contract** — see `docs/roadmap/contracts/render-profile.md`. **The output dir MUST be `…/images/<scope_key>/`** (the
    `/image` bridge resolves `content/worlds/_private/<world>/images/<scope>/`; a `sprites/` dir is
    orphaned). For finals under `_private/`, pack_sheet also emits a sibling **`wiki_ingest.json`**
    descriptor so the atlas is served by `/image?scope=<scope_key>` with no renderer change (#1063);

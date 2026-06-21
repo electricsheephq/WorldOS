@@ -10,6 +10,9 @@ star: **epic Baldur's-Gate-caliber STORY on a deterministic SRD 5.2 engine**; go
 universe-system that generates worlds. Source-available commercial product, BG-focused. **Read `WorldOS-RUNBOOK.md`
 (repo root) for the full project/architecture/state.** This skill is the operational loop.
 
+**Graphics:** the **Godot GT2 isometric renderer** → `godot/HANDOFF.md` + the `godot-dev` skill.
+**AI asset generation** (3D chars, rigging, painterly backdrops, sprites) → the `asset-gen` skill.
+
 > **⚠ HEAVY QA SWEEPS (5-persona / RRI) → USE THE SUPPORT VM, NOT LOCAL.** The 16 GB Mac OOMs mid-sweep
 > (proven 2026-06-02: cratered to 147 M free, personas 2–5 backends never minted, shipped a junk PARTIAL RRI 2.7).
 > Documented lane: **`WorldOS-GUI-RUNBOOK.md` § "Support VM lane (heavy sweeps)"** + memory note

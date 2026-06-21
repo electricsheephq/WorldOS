@@ -33,6 +33,10 @@ engine, and the sprite-sheet manifest + render-profile contract — not the pixe
 product.** Art swaps `CC0 → AI → Meshy/Blender` at the same `scope_key` with zero renderer change.
 Proven this session (placeholder green-oval → a real rendered ranger, no code change).
 
+> **Note:** Phaser 3 was the original GT2 MVP renderer; **retired 2026-06-21** (didn't deliver the
+> painterly-iso look) — Godot 4 is now the ONLY GT2 path. Decision record:
+> `docs/roadmap/WORLDOS-GRAPHICS-ROADMAP.md` §4.
+
 <a name="status"></a>
 ## 2. Status — done vs open
 
@@ -211,6 +215,10 @@ with zero renderer change**. Proven.
 
 <a name="run"></a>
 ## 5. How to run / validate (local)
+**Prerequisites** (install these first): **Godot 4.6.3** (godotengine.org → `/Applications/Godot.app`;
+verify `godot --version`), **Blender 5.1.2** (`brew install blender`), and `uv`/Python (already required
+by the engine). For the asset-pipeline API keys, see §6.
+
 - Godot **4.6.3** at `/Applications/Godot.app/Contents/MacOS/Godot`; Blender **5.1.2** at `/opt/homebrew/bin/blender`.
 - Parse/compile: `godot --headless --path godot --import`
 - Logic smoke: `godot --headless --path godot --quit-after 180 -- --smoke-intent`
@@ -222,6 +230,12 @@ with zero renderer change**. Proven.
 **Full toolkit: the `asset-gen` skill** (Meshy / Tripo3D / Scenario / PixelLab — job matrix, key
 locations, the `tripo_gen.py`/`scenario_gen.py` wrappers, the wired `scenario`+`pixellab` MCPs).
 Full bake detail in `tools/README.md`. In short:
+
+**Keys & setup:** create accounts at meshy.ai / tripo3d.ai / scenario.com / pixellab.ai → copy each
+API key from its dashboard → store in `~/.worldos/{meshy,tripo3d,scenario,pixellab}.key` (+
+`scenario.secret`), `chmod 600` → verify with `python3 godot/tools/<svc>_gen.py --test-key`. Env
+fallback `WORLDOS_*_API_KEY` (CI). Invoke the **`asset-gen` skill** for the full routing / job matrix.
+
 ```
 python3 godot/tools/meshy_gen.py --prompt "..." --out <dir>            # Meshy text-to-3D (preview->refine PBR) -> model.glb
 blender --background --python godot/tools/bake_sprites.py -- \

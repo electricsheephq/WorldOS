@@ -50,6 +50,11 @@ DEFAULT_TIMEOUT_SEC = 600
 # Key handling. NEVER print/log the key; NEVER write it to a repo file.
 # ---------------------------------------------------------------------------
 def _load_api_key() -> str:
+    # Precedence (mirrors the sibling wrappers): WORLDOS_MESHY_API_KEY (CI/env-canonical),
+    # then the legacy MESHY_API_KEY, then the mode-600 file outside the repo.
+    key = os.environ.get("WORLDOS_MESHY_API_KEY", "").strip()
+    if key:
+        return key
     key = os.environ.get("MESHY_API_KEY", "").strip()
     if key:
         return key
@@ -60,7 +65,8 @@ def _load_api_key() -> str:
         if key:
             return key
     sys.exit(
-        "[meshy_gen] ERROR: no API key. Set $MESHY_API_KEY or put it in ~/.worldos/meshy.key"
+        "[meshy_gen] ERROR: no API key. Set $WORLDOS_MESHY_API_KEY or $MESHY_API_KEY, "
+        "or put it in ~/.worldos/meshy.key"
     )
 
 
@@ -213,12 +219,60 @@ def _glb_url(task: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# --test-key (cheap auth probe) and --dry-run (no API call).
+# ---------------------------------------------------------------------------
+# Rough per-stage credit estimates (for --dry-run only; the API is the source of truth).
+CREDIT_EST = {"preview": "~5-20", "refine": "~10"}
+
+
+def _cmd_test_key() -> None:
+    """Cheap auth smoke-test. GET a dummy task id:
+       401/403 => bad key; 404 => key is valid (task just doesn't exist); 200 => valid.
+       Never generates anything, never spends credits, never prints the key."""
+    key = _load_api_key()
+    headers = _auth_headers(key)
+    url = API_BASE + POLL_TEMPLATE.format(task_id="00000000-0000-0000-0000-000000000000")
+    req = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            resp.read()
+        print("Meshy Auth OK")
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            sys.exit("[meshy_gen] AUTH FAILED: HTTP %d — bad/expired Meshy API key." % e.code)
+        # 404 (and any other non-auth code) means the request was authenticated/accepted.
+        print("Meshy Auth OK")
+    except urllib.error.URLError as e:
+        sys.exit("[meshy_gen] ERROR: network failure on --test-key: %s" % e.reason)
+
+
+def _cmd_dry_run(args) -> None:
+    """Print the generation plan + estimated credits and exit — NO API call, NO key needed."""
+    out_dir = os.path.abspath(args.out)
+    print("[meshy_gen] DRY-RUN text-to-3d (NO API call)")
+    print("  prompt     : %s" % args.prompt)
+    print("  out dir    : %s" % out_dir)
+    if args.no_refine:
+        print("  plan       : preview only (untextured geometry; --no-refine)")
+        print("  est credits: preview %s" % CREDIT_EST["preview"])
+    else:
+        print("  plan       : preview -> refine (PBR-textured)")
+        print("  est credits: preview %s + refine %s (API is source of truth)" % (
+            CREDIT_EST["preview"], CREDIT_EST["refine"]))
+
+
+# ---------------------------------------------------------------------------
 # Main.
 # ---------------------------------------------------------------------------
 def main() -> None:
     ap = argparse.ArgumentParser(description="Generate a textured .glb via Meshy text-to-3d.")
-    ap.add_argument("--prompt", required=True, help="text-to-3d prompt")
-    ap.add_argument("--out", required=True, help="output dir for model.glb (+ thumbnail.png)")
+    # --prompt/--out are NOT required for --test-key (and we validate them for the real run below).
+    ap.add_argument("--prompt", help="text-to-3d prompt (required unless --test-key)")
+    ap.add_argument("--out", help="output dir for model.glb (+ thumbnail.png) (required unless --test-key)")
+    ap.add_argument("--test-key", action="store_true",
+                    help="cheap auth smoke-test (no generation, no credits) -> 'Meshy Auth OK'")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="print the plan + est credits and exit; makes NO API call")
     ap.add_argument("--no-refine", action="store_true",
                     help="stop after preview (untextured geometry only)")
     ap.add_argument("--force", action="store_true",
@@ -226,6 +280,17 @@ def main() -> None:
     ap.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SEC,
                     help="per-stage poll timeout in seconds (default %d)" % DEFAULT_TIMEOUT_SEC)
     args = ap.parse_args()
+
+    if args.test_key:
+        _cmd_test_key()
+        return
+
+    if not args.prompt or not args.out:
+        ap.error("--prompt and --out are required (unless --test-key).")
+
+    if args.dry_run:
+        _cmd_dry_run(args)
+        return
 
     out_dir = os.path.abspath(args.out)
     os.makedirs(out_dir, exist_ok=True)
