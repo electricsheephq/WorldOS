@@ -2513,6 +2513,216 @@ def _combat_battle_log(raw_events: list[dict] | None) -> list[dict]:
     return out
 
 
+# ---------------------------------------------------------------------------
+# Action-Replay envelope projection (#645 / R645.1).
+# docs/roadmap/contracts/action-replay-envelope.md.
+#
+# Projects the engine's session-log COMBAT events (the `worldos.combat_event.v1`
+# payload `_combat_battle_log` already reads) into the ordered, replayable
+# Action-Replay envelope a thin-client renderer (the Godot GT2 view, #1120) plays
+# as discrete animated beats: `{seq, actor_fk, verb, target_fk, result, anim_hint}`.
+#
+# INVARIANT (the one this whole contract exists for): the engine is the SOLE
+# WRITER; this is a PURE, READ-ONLY projection of committed engine truth. Every
+# field except `anim_hint` is an engine-decided value (an FK or an outcome the
+# engine already rolled/applied) — the renderer reads `result` to choose the
+# numbers/states to show and NEVER recomputes them. `anim_hint` is the only
+# renderer-facing presentation cue and is ADVISORY (an unknown hint falls back to
+# a generic beat). seq-ordered + idempotent: `seq` is the engine's absolute
+# session-log line index (stamped by _read_events / _session_event_tail_from_dir),
+# so re-fetching from any cursor yields the same beats with the same `seq`.
+# ---------------------------------------------------------------------------
+
+# The engine's combat-event schema tag (servers/engine/server.py `_COMBAT_EVENT_SCHEMA`).
+# Kept as a module constant so the envelope projection + the battle-log builder agree.
+_COMBAT_EVENT_SCHEMA = "worldos.combat_event.v1"
+
+# Engine combat-event `event` class → envelope `verb`. The envelope `verb`
+# vocabulary is the CLOSED set the Godot dispatcher (WorldView.gd `_play_beat`)
+# animates: attack / cast / damage / condition / death / move_to_zone (+ heal,
+# accepted for fixtures). Engine events with no animated beat (turn/round
+# bookkeeping) map to `narrate`, which the renderer accept-and-ignores. Healing is
+# its own engine event but rides a `cast` beat in the envelope (the dispatcher
+# pulses the target green off the heal `result`), per the contract's verb table.
+_COMBAT_EVENT_VERB = {
+    "attack": "attack",
+    "damage": "damage",
+    "healing": "cast",
+    "zone_movement": "move_to_zone",
+    "grid_movement": "move_to_zone",
+    "combatant_added": "narrate",
+    "combat_start": "narrate",
+    "combat_end": "narrate",
+    "turn_advanced": "narrate",
+    # death_save is mapped contextually below (death vs save) off the result state.
+}
+
+# Envelope `verb` → advisory `anim_hint` (the renderer's presentation cue). A heal
+# `cast` overrides to `heal_pulse`; a death overrides to `death_fall`. Advisory
+# only — the renderer falls back to a generic beat for an unknown/absent hint.
+_VERB_ANIM_HINT = {
+    "attack": "melee_swing",
+    "cast": "cast_projectile",
+    "damage": "damage_flinch",
+    "condition": "status_apply",
+    "death": "death_fall",
+    "move_to_zone": "zone_move",
+    "narrate": "none",
+}
+
+
+def _envelope_ref_id(value: object) -> str | None:
+    """Resolve an engine actor/target ref to its FK id (`char_…`/`mon_…`/…), or
+    None for an absent/idless ref. The engine's `_combatant_ref` writes `{id,name}`;
+    we project only the id (the FK the render-profile `core.actors[]` joins on)."""
+    if not isinstance(value, dict):
+        return None
+    rid = _text(value.get("id"))
+    return rid or None
+
+
+def _combat_event_envelope_fields(payload: dict) -> dict | None:
+    """Project ONE `worldos.combat_event.v1` payload into the Action-Replay
+    envelope's combat fields `{actor_fk, verb, target_fk, result, anim_hint}` (the
+    `seq`/`sid` are stamped by the caller from the session-log line index). Returns
+    None for a payload we don't recognize as a combat event (so a non-combat row is
+    left untouched). PURE: reads engine-decided values only; never recomputes."""
+    if not isinstance(payload, dict) or payload.get("schema") != _COMBAT_EVENT_SCHEMA:
+        return None
+    event = _text(payload.get("event"))
+    if not event:
+        return None
+
+    actor_fk = _envelope_ref_id(payload.get("actor"))
+    target_fk = _envelope_ref_id(payload.get("target"))
+
+    # death_save resolves to a `death` beat once the engine has marked the target
+    # dead; otherwise it is a non-animated `save` (the renderer accept-and-ignores).
+    if event == "death_save":
+        state = payload.get("state") if isinstance(payload.get("state"), dict) else {}
+        result_block = payload.get("result")
+        is_dead = bool(state.get("dead")) or _text(result_block) == "dead"
+        verb = "death" if is_dead else "save"
+    else:
+        verb = _COMBAT_EVENT_VERB.get(event)
+        if verb is None:
+            # A future/unknown engine combat event → a non-animated narrate beat
+            # (additive/back-compat: the renderer never crashes on a new event).
+            verb = "narrate"
+
+    # Build the engine-decided `result` the renderer renders verbatim. We carry the
+    # outcome class + the numbers the engine already produced (roll / damage / hp /
+    # heal / outcome) — NEVER a recomputed value.
+    result: dict = {}
+    outcome = _text(payload.get("outcome"))
+    if outcome:
+        result["outcome"] = outcome
+
+    roll = payload.get("roll")
+    if isinstance(roll, dict):
+        compact_roll = {
+            k: roll.get(k) for k in ("d20", "natural", "total") if roll.get(k) is not None
+        }
+        if compact_roll:
+            result["roll"] = compact_roll
+
+    damage = payload.get("damage")
+    if isinstance(damage, dict) and damage.get("total") is not None:
+        dmg: dict = {"total": damage.get("total")}
+        dtype = _text(damage.get("type"))
+        if dtype:
+            dmg["type"] = dtype
+        result["damage"] = dmg
+
+    # The engine's apply_damage / apply_healing nest the post-application status in a
+    # `result` block ({current_hp, dead, dying, stable, healed, revived, …}). Project
+    # hp_after / hp_max / state flags so the renderer shows the engine-decided HP.
+    inner = payload.get("result") if isinstance(payload.get("result"), dict) else {}
+    target_state = payload.get("target_state") if isinstance(payload.get("target_state"), dict) else {}
+    hp_after = inner.get("current_hp")
+    if hp_after is None:
+        hp_after = target_state.get("current_hp")
+    if hp_after is not None:
+        result["hp_after"] = hp_after
+
+    healed = inner.get("healed")
+    if healed is not None:
+        result["heal"] = healed
+        if not outcome:
+            result["outcome"] = "heal"
+
+    if event == "zone_movement":
+        to_zone = _text(payload.get("to_zone"))
+        if to_zone:
+            result.setdefault("outcome", "moved")
+            result["zone"] = to_zone
+            # The destination zone IS the target for a move beat (the contract's
+            # `target_fk` carries the zone name for move_to_zone).
+            target_fk = target_fk or to_zone
+
+    if verb == "death" or bool(inner.get("dead")):
+        # A death beat always carries its outcome so the renderer plays the death state.
+        # (death_save nests its disposition in a STRING `result` field, not a dict, so the
+        # inner.dead check above can't see it — key off the resolved verb too.)
+        result.setdefault("outcome", "dead")
+
+    # death_save carries its save disposition (success/fail/dead) + the running tally
+    # in a string `result`; surface it so a non-death save beat still shows the roll.
+    if event == "death_save":
+        disposition = _text(payload.get("result"))
+        if disposition:
+            result.setdefault("save_result", disposition)
+
+    # anim_hint: the verb's default, with the two result-driven overrides.
+    anim_hint = _VERB_ANIM_HINT.get(verb, "none")
+    if verb == "cast" and (healed is not None or outcome == "heal"):
+        anim_hint = "heal_pulse"
+
+    return {
+        "actor_fk": actor_fk,
+        "verb": verb,
+        "target_fk": target_fk,
+        "result": result,
+        "anim_hint": anim_hint,
+    }
+
+
+def _enrich_events_envelope(entries: list[dict]) -> list[dict]:
+    """ADDITIVELY enrich the raw `/events` session rows with Action-Replay envelope
+    fields, returning fresh dicts (never mutates the input rows).
+
+    - A combat row (`worldos.combat_event.v1`) gains `{actor_fk, verb, target_fk,
+      result, anim_hint}` — projected by _combat_event_envelope_fields — so the
+      Godot renderer's existing /events poll animates it (WorldView.enqueue_replay /
+      _parse_replay_beat read exactly these keys). The original `kind`/`text`/
+      `payload`/`seq`/`sid` are PRESERVED untouched, so the web `#battle` narration
+      feed (which drops `kind:"combat"` rows and reads only `text`) is byte-unchanged.
+    - A narration/dialogue row that already carries a `verb` (the #1055 zone_move
+      stub) is left as-is; a plain narration row gets `verb:"narrate"` so a renderer
+      that consumes every entry classifies it as a non-animated beat.
+
+    PURE projection of engine truth; engine stays sole writer (read-only on state)."""
+    out: list[dict] = []
+    for row in entries:
+        if not isinstance(row, dict):
+            out.append(row)
+            continue
+        enriched = dict(row)
+        payload = row.get("payload")
+        fields = _combat_event_envelope_fields(payload) if isinstance(payload, dict) else None
+        if fields is not None:
+            # Additive: only set envelope keys the row doesn't already carry, so an
+            # engine that one day emits the envelope inline wins over our projection.
+            for k, v in fields.items():
+                enriched.setdefault(k, v)
+        elif not _text(row.get("verb")):
+            # Non-combat story row with no verb → a non-animated narrate beat.
+            enriched.setdefault("verb", "narrate")
+            enriched.setdefault("anim_hint", "none")
+        out.append(enriched)
+    return out
+
+
 def _combat_slot(available: object, spent_reason: str) -> dict:
     available_bool = bool(available)
     return {
@@ -8471,10 +8681,32 @@ class _Handler(BaseHTTPRequestHandler):
             since = int((qs.get("since") or ["0"])[0])
             view_cid = self._view_campaign(qs)
             entries, nxt = _read_events(view_cid, since)
+            # #645 R645.1: ADDITIVELY enrich combat rows with Action-Replay envelope fields
+            # ({actor_fk, verb, target_fk, result, anim_hint}) so the Godot renderer's existing
+            # /events poll animates an engine-run fight (WorldView.enqueue_replay reads these keys),
+            # while the web `#battle` narration feed — which drops kind:"combat" rows and reads only
+            # `text` — is byte-unchanged (the original keys are all preserved). Pure projection of
+            # the session log; engine stays sole writer.
+            entries = _enrich_events_envelope(entries)
             # BUG2: include the resolved session id so the client composes a globally-unique
             # `${sid}:${seq}` dedup/order key — a bare per-session line index collides across a
             # session rotation (cold-open + DM-turn-retry re-mint), suppressing the new session's
             # post-move narration (seq 0,1,2 already claimed by the prior session's cold-open).
+            self._json({"entries": entries, "next": nxt, "sid": _active_session_id(view_cid)})
+        elif route == "/events-replay":
+            # #645 R645.1: the PURE Action-Replay envelope stream — same {entries, next, sid}
+            # transport shape the Godot SurfaceClient polls, but projected to envelope records ONLY
+            # (combat rows → {seq, actor_fk, verb, target_fk, result, anim_hint}; non-combat story
+            # rows → a non-animated `narrate` beat). This is the explicit, envelope-only consumer
+            # surface (a renderer pointed here animates the live fight without reading any web-feed
+            # fields); /events stays the enriched-but-back-compat feed the web narration band shares.
+            # Read-only projection — no engine state change, sole-writer held. seq-ordered + idempotent
+            # (re-fetch from any cursor ≤ current returns the same beats with the same seq/result).
+            qs = parse_qs(parsed.query)
+            since = int((qs.get("since") or ["0"])[0])
+            view_cid = self._view_campaign(qs)
+            entries, nxt = _read_events(view_cid, since)
+            entries = _enrich_events_envelope(entries)
             self._json({"entries": entries, "next": nxt, "sid": _active_session_id(view_cid)})
         elif route == "/beat-stream":
             # #835 Live Composition Increment 1 — poll the wrapper-owned live-stream sidecar
