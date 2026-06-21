@@ -39,7 +39,7 @@
       },
       "actor_sheets": {
         "char-aubree": {
-          "sheet_scope_key": "sprite-aubree-iso8",
+          "sheet_scope_key": "sprite-fighter-iso8",
           "kind": "character",
           "projection": "dimetric-2to1",
           "facings": 8,

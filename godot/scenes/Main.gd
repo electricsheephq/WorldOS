@@ -171,7 +171,7 @@ func _run_smoke_intent() -> void:
 
 # ---------------------------------------------------------------------------
 # #1063 part 2 SERVED-FINALS-SMOKE: prove a SERVED sprite atlas (fetched from a live
-# /image?scope=sprite-aubree-iso8 stub) is resolved by the ImageResolver AND swapped
+# /image?scope=sprite-fighter-iso8 stub) is resolved by the ImageResolver AND swapped
 # onto the spawned token (re-sliced from the render-profile layout → 32 anims). The
 # token spawn already kicked an async resolve(); we await texture_ready (bounded), then
 # assert (a) the resolver cached the served atlas and (b) the token carries 32 anims
@@ -180,7 +180,7 @@ func _run_smoke_intent() -> void:
 # case so the smoke FAILS LOUDLY rather than passing on the fallback.
 # ---------------------------------------------------------------------------
 func _run_served_finals_smoke() -> void:
-	var scope := "sprite-aubree-iso8"
+	var scope := "sprite-fighter-iso8"
 	print("[Main] --served-finals-smoke: awaiting SERVED atlas scope=%s" % scope)
 
 	# Bounded wait for the async fetch the token spawn already started. We poll the
