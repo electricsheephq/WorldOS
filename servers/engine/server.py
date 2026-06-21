@@ -5279,6 +5279,40 @@ def _effective_armor_class(ch: Character) -> tuple[int, dict | None]:
     return ac, detail
 
 
+def _combat_test_mode_enabled(c: "Campaign") -> bool:
+    """The DOUBLE GUARD for the TEST-ONLY combat toggles (force_hit / fast_resolve).
+
+    Returns True ONLY when BOTH halves hold: the env opt-in WORLDOS_COMBAT_TEST=1 AND the
+    campaign carries Campaign.is_sandbox. Either alone is not enough — a production deployment
+    never sets the env, and a real campaign never carries the sandbox flag (it is set only by
+    the engine-only combat-smoke pre-seed). When this returns False the toggles are DEAD CODE:
+    `if hr.force_hit and _combat_test_mode_enabled(c)` short-circuits, so a force_hit/fast_resolve
+    value on a live (non-sandbox) campaign changes NOTHING. See the ADR §4a; the dead-code-when-off
+    invariant is proven by tests/test_combat_core.py. Belt-and-suspenders by design — the headline
+    risk is force_hit corrupting a real game, so the guard is STRUCTURAL, not merely defaulted off."""
+    return os.environ.get("WORLDOS_COMBAT_TEST") == "1" and bool(getattr(c, "is_sandbox", False))
+
+
+def _resolve_damage_roll(expression: str, fast_resolve: bool) -> "dice_mod.DiceRoll":
+    """Resolve a DAMAGE expression to a DiceRoll. The default path rolls it (today's behavior).
+    When `fast_resolve` is True (TEST-only, already double-guarded by the caller), it returns a
+    synthetic DiceRoll whose total is the deterministic AVERAGE of the expression instead of a
+    random draw — so a sandbox fight resolves in a predictable number of rounds. The expression
+    passed in is ALREADY crit-doubled when the strike crit (the caller doubles the dice first),
+    so averaging preserves the crit-doubling magnitude. Average only changes the damage NUMBER;
+    it never changes whether a hit landed or whether a crit happened. Reuses dice.average_total
+    so the term grammar stays single-sourced with roll()."""
+    if not fast_resolve:
+        return dice_mod.roll(expression)
+    avg = dice_mod.average_total(expression)
+    return dice_mod.DiceRoll(
+        expression=expression,
+        total=avg,
+        rolls=[],
+        detail=f"{expression} = {avg} (avg, fast_resolve)",
+    )
+
+
 @mcp.tool()
 def attack(
     campaign_id: str,
@@ -5487,6 +5521,16 @@ def attack(
         atk_total = atk.total + rider_bonus + guided_bonus
         target_ac, target_ac_detail = _effective_armor_class(target)
         hit = atk.crit or (not atk.fumble and atk_total >= target_ac)
+        # TEST-ONLY force_hit (Track 2b — DOUBLE-GUARDED): force the HIT BOOLEAN only so a
+        # sandbox fight resolves to a terminal state without depending on the dice landing hits.
+        # CRUCIALLY this does NOT touch the natural die: `is_crit`/`crit_source`/crit-doubling
+        # below still read atk.crit/atk.natural, so a forced hit on a natural non-20 stays a
+        # NORMAL hit (it is not a synthesized nat-20) and crit/damage accounting stays honest.
+        # DEAD CODE outside the guard — a force_hit value on a live (non-sandbox) campaign, or
+        # with the env unset, changes nothing here. Parry/auto-crit-vs-helpless run unchanged
+        # afterwards (a defender may still legitimately spend a reaction to turn the blow aside).
+        if c.house_rules.force_hit and _combat_test_mode_enabled(c):
+            hit = True
         # PARRY (#218): a defender with an available defensive reaction (+N AC vs one melee
         # attack it can see) turns the blow aside — but ONLY when doing so FLIPS this hit to a
         # miss. The engine never wastes the reaction on a crit it can't stop or a blow that
@@ -5660,6 +5704,12 @@ def attack(
                     "amount": man_total,
                     "type": man_bonus.damage_type or damage_type,
                 }
+            # TEST-ONLY fast_resolve (Track 2b — DOUBLE-GUARDED): average the damage dice
+            # instead of rolling, so a sandbox fight resolves in a predictable number of rounds.
+            # DEAD CODE outside the guard (a fast_resolve value on a live campaign / env unset
+            # leaves the random roll path exactly as today). Computed once; threaded into the
+            # per-component and single-type damage rolls below via _resolve_damage_roll.
+            _fast_resolve = c.house_rules.fast_resolve and _combat_test_mode_enabled(c)
             if damage_rolls or man_part is not None:
                 # MULTI-COMPONENT (#210): roll + crit-double EACH component on its own
                 # dice, then apply per-type resistance/immunity/vulnerability per
@@ -5679,7 +5729,7 @@ def attack(
                     if not cd:
                         continue
                     cexpr = combat.double_dice(cd) if is_crit else cd
-                    cdmg = dice_mod.roll(cexpr)
+                    cdmg = _resolve_damage_roll(cexpr, _fast_resolve)
                     ctotal = max(0, cdmg.total)
                     comp_results.append(
                         {"type": ct, "total": ctotal, "expr": cexpr, "detail": cdmg.detail}
@@ -5719,7 +5769,7 @@ def attack(
                 }
             else:
                 expr = combat.double_dice(damage_dice) if is_crit else damage_dice
-                dmg = dice_mod.roll(expr)
+                dmg = _resolve_damage_roll(expr, _fast_resolve)
                 outcome = combat.apply_damage(target, max(0, dmg.total), crit=is_crit, damage_type=damage_type)
                 result["damage"] = {"total": max(0, dmg.total), "type": damage_type, "expr": expr, "detail": dmg.detail}
             if man_bonus is not None:
@@ -11817,7 +11867,18 @@ def set_house_rules(campaign_id: str, patch: dict) -> dict:
     flanking_advantage, slow_natural_healing, feats_allowed, multiclass_allowed,
     dm_can_fudge, wandering_encounters, enforce_sell_cap, sell_cap_multiple (F09-9:
     when enforce_sell_cap is on, sell_item rejects a price above sell_cap_multiple× the
-    item's listed cost). Unknown keys are rejected."""
+    item's listed cost). Unknown keys are rejected, as are the TEST-only
+    toggles force_hit/fast_resolve."""
+    # Defense-in-depth: force_hit/fast_resolve are real HouseRules fields, so Pydantic's
+    # extra="forbid" does NOT reject them on this patch path. Reject them explicitly so the
+    # documented whitelist is enforced and a live tool can never even *persist* a TEST toggle.
+    _test_only = {"force_hit", "fast_resolve"}
+    blocked = sorted(_test_only.intersection(patch or {}))
+    if blocked:
+        raise ValueError(
+            f"house-rule key(s) {blocked} are TEST-only and cannot be set via set_house_rules; "
+            "they apply only under the engine-only combat smoke."
+        )
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         data = c.house_rules.model_dump()
