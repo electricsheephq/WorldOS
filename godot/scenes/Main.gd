@@ -111,6 +111,9 @@ func _on_snapshot(atlas: Dictionary, _combat: Dictionary, character: Dictionary)
 		if _has_arg("--preview-scene"):
 			call_deferred("_run_preview_scene")
 			return
+		if _has_arg("--walk-demo"):
+			call_deferred("_run_walk_demo")
+			return
 		_maybe_quit()
 
 
@@ -763,6 +766,19 @@ func _run_preview_scene() -> void:
 	if overlay_mode == "full" and not actors_arr.is_empty():
 		_spawn_preview_sprites(nav_block, actors_arr, spec)
 
+	# Wire the nav data to WorldView so interactive clicks / --walk-demo can walk the grid.
+	if not nav_block.is_empty():
+		_world.setup_nav(nav_block)
+		# The first non-foe actor in the spec is the "active" token for click-to-walk.
+		var first_actor: Dictionary = _first_party_actor(actors_arr)
+		if not first_actor.is_empty():
+			var a_id := String(first_actor.get("id", ""))
+			var a_cell_v: Variant = first_actor.get("cell", [0, 0])
+			var a_cell := Vector2i(0, 0)
+			if typeof(a_cell_v) == TYPE_ARRAY and (a_cell_v as Array).size() >= 2:
+				a_cell = Vector2i(int((a_cell_v as Array)[0]), int((a_cell_v as Array)[1]))
+			_world.set_active_preview_actor(a_id, a_cell)
+
 	# 3. Settle a few frames so the rendering pipeline flushes, then capture.
 	await _settle_frames(3)
 	await get_tree().create_timer(0.05).timeout
@@ -905,6 +921,219 @@ func _spawn_preview_sprites(nav: Dictionary, actors: Array, _spec: Dictionary) -
 		spawned += 1
 
 	print("[PreviewScene] spawned %d preview sprite(s)" % spawned)
+
+
+## Return the first non-foe actor from an actors array (i.e., a party/pc actor).
+## Used to designate the "active" walk token in --preview-scene and --walk-demo.
+func _first_party_actor(actors: Array) -> Dictionary:
+	for a_v in actors:
+		if typeof(a_v) != TYPE_DICTIONARY:
+			continue
+		var a: Dictionary = a_v
+		var id_lower := String(a.get("id", "")).to_lower()
+		if not id_lower.begins_with("foe") and not id_lower.begins_with("enemy"):
+			return a
+	return {}
+
+
+# ---------------------------------------------------------------------------
+# --walk-demo: interactive A* walk visual proof. Loads the tavern milestone spec
+# (from /tmp/tavern_milestone.json or a built-in inline fallback), spawns the
+# preview sprites, then SCRIPTS a click at a far cell whose straight-line path
+# crosses the blocked table cells (forcing an A* detour). Captures screenshots
+# at start, mid-walk, and end to /tmp/walk_{start,mid,end}.png, then quits.
+# ---------------------------------------------------------------------------
+func _run_walk_demo() -> void:
+	print("[Main] --walk-demo: scripted A* walk visual proof")
+
+	# Load the spec — prefer /tmp/tavern_milestone.json, else use an inline default
+	# with table-blocking cells that force a detour.
+	var spec: Dictionary = {}
+	var spec_candidates := ["/tmp/tavern_milestone.json", "/tmp/scene.json"]
+	for sp in spec_candidates:
+		if FileAccess.file_exists(sp):
+			var txt := FileAccess.get_file_as_string(sp)
+			var parsed: Variant = JSON.parse_string(txt)
+			if typeof(parsed) == TYPE_DICTIONARY:
+				spec = parsed
+				print("[WalkDemo] loaded spec from %s" % sp)
+				break
+	if spec.is_empty():
+		# Inline fallback: a 10×7 grid with a table-block cluster at [4,3],[5,3],[4,4]
+		# so a walk from [1,4] to [8,2] must arc around it rather than going straight.
+		spec = {
+			"nav": {
+				"cols": 10, "rows": 7, "cell_w_px": 56,
+				"origin_px": [548, 405],
+				"blocked": [[4,3],[5,3],[4,4],[6,2],[7,2]]
+			},
+			"actors": [
+				{"id": "pc1", "cell": [1,4], "facing": "SE"},
+				{"id": "foe1", "cell": [9,3], "facing": "W"}
+			],
+			"path_probe": {"from": [1,4], "to": [8,2]}
+		}
+		print("[WalkDemo] using inline fallback spec (no /tmp/tavern_milestone.json)")
+
+	# Detach the live feed so the fixture poll does not stomp our preview.
+	_detach_live_feed()
+
+	# Apply backdrop if the spec has one.
+	var backdrop_path: String = String(spec.get("backdrop", ""))
+	if backdrop_path != "" and FileAccess.file_exists(backdrop_path):
+		var ok: bool = _world.apply_local_backdrop(backdrop_path)
+		if not ok:
+			print("[WalkDemo] backdrop load failed — using procedural fallback")
+	else:
+		print("[WalkDemo] no backdrop or not found — using procedural fallback")
+
+	# Spawn the preview sprites.
+	var nav_block: Dictionary = {}
+	var nav_v: Variant = spec.get("nav", {})
+	if typeof(nav_v) == TYPE_DICTIONARY:
+		nav_block = nav_v
+
+	var actors_arr: Array = []
+	var actors_v: Variant = spec.get("actors", [])
+	if typeof(actors_v) == TYPE_ARRAY:
+		actors_arr = actors_v
+
+	var path_probe: Dictionary = {}
+	var probe_v: Variant = spec.get("path_probe", {})
+	if typeof(probe_v) == TYPE_DICTIONARY:
+		path_probe = probe_v
+
+	var zone_anchors: Array = []
+	var zones_v: Variant = nav_block.get("zones", [])
+	if typeof(zones_v) == TYPE_ARRAY:
+		for z in (zones_v as Array):
+			if typeof(z) == TYPE_ARRAY and (z as Array).size() >= 2:
+				zone_anchors.append(Vector2(float((z as Array)[0]), float((z as Array)[1])))
+
+	# Add a NavOverlay so the grid + solved A* path are visible.
+	var nav_overlay := preload("res://scenes/NavOverlay.gd").new()
+	nav_overlay.name = "NavOverlay"
+	nav_overlay.z_index = -5
+	nav_overlay.setup(nav_block, actors_arr, path_probe, zone_anchors, "full")
+	_world.add_child(nav_overlay)
+
+	# Spawn sprites.
+	if not actors_arr.is_empty():
+		_spawn_preview_sprites(nav_block, actors_arr, spec)
+
+	# Wire nav to WorldView.
+	if not nav_block.is_empty():
+		_world.setup_nav(nav_block)
+		var first_actor: Dictionary = _first_party_actor(actors_arr)
+		if not first_actor.is_empty():
+			var a_id := String(first_actor.get("id", ""))
+			var a_cell_v: Variant = first_actor.get("cell", [0, 0])
+			var a_cell := Vector2i(0, 0)
+			if typeof(a_cell_v) == TYPE_ARRAY and (a_cell_v as Array).size() >= 2:
+				a_cell = Vector2i(int((a_cell_v as Array)[0]), int((a_cell_v as Array)[1]))
+			_world.set_active_preview_actor(a_id, a_cell)
+
+	# Settle so the scene is fully rendered before the first screenshot.
+	await _settle_frames(3)
+	await get_tree().create_timer(0.1).timeout
+	await _settle_frames(2)
+
+	# SCREENSHOT 1 — START: the token is at its initial cell.
+	var start_img := _capture_viewport()
+	if start_img != null:
+		start_img.save_png("/tmp/walk_start.png")
+		print("[WalkDemo] screenshot: /tmp/walk_start.png (%dx%d)" % [start_img.get_width(), start_img.get_height()])
+
+	# Build the click target: the path_probe "to" cell in screen coords.
+	# This walk crosses the blocked table cells, so A* must detour.
+	var target_cell := Vector2i(8, 2)  # default far cell
+	var to_v: Variant = path_probe.get("to", null)
+	if typeof(to_v) == TYPE_ARRAY and (to_v as Array).size() >= 2:
+		target_cell = Vector2i(int((to_v as Array)[0]), int((to_v as Array)[1]))
+
+	# Verify the target is not itself blocked (sanity check).
+	var blocked_set: Dictionary = {}
+	for b in (_nav_blocked_from_spec(nav_block)):
+		blocked_set[b] = true
+	if blocked_set.has(target_cell):
+		print("[WalkDemo] target cell (%d,%d) is blocked — adjusting to (8,1)" % [target_cell.x, target_cell.y])
+		target_cell = Vector2i(8, 1)
+
+	print("[WalkDemo] scripted click target_cell=(%d,%d)" % [target_cell.x, target_cell.y])
+
+	# Compute screen position of the target cell and pass it to WorldView as a click.
+	var cell_w := float(nav_block.get("cell_w_px", 64))
+	var orig := Vector2.ZERO
+	var orig_v_2: Variant = nav_block.get("origin_px", [0, 0])
+	if typeof(orig_v_2) == TYPE_ARRAY and (orig_v_2 as Array).size() >= 2:
+		orig = Vector2(float((orig_v_2 as Array)[0]), float((orig_v_2 as Array)[1]))
+	var target_screen := Vector2(
+		orig.x + float(target_cell.x - target_cell.y) * cell_w * 0.5,
+		orig.y + float(target_cell.x + target_cell.y) * cell_w * 0.25
+	)
+
+	# Trigger the walk by calling _handle_floor_click directly (no real mouse needed).
+	print("[WalkDemo] calling _handle_floor_click at screen=(%.0f,%.0f)" % [target_screen.x, target_screen.y])
+	_world._handle_floor_click(target_screen)
+
+	# SCREENSHOT 2 — MID: wait ~half the total walk time then capture mid-walk.
+	# The walk is cell-by-cell; each step is MOVE_TWEEN_SEC = 0.45s.
+	# Estimate path length (A* on the grid); capture after roughly half the steps.
+	# We wait a fixed time since we can't easily introspect the path length here.
+	var half_walk_wait := CharacterToken.MOVE_TWEEN_SEC * 2.5  # ~2-3 steps in
+	await get_tree().create_timer(half_walk_wait).timeout
+	await _settle_frames(2)
+	var mid_img := _capture_viewport()
+	if mid_img != null:
+		mid_img.save_png("/tmp/walk_mid.png")
+		print("[WalkDemo] screenshot: /tmp/walk_mid.png (%dx%d)" % [mid_img.get_width(), mid_img.get_height()])
+
+	# SCREENSHOT 3 — END: wait for the walk to complete (generous ceiling 15s).
+	var waited := 0.0
+	while bool(_world._walking) and waited < 15.0:
+		await get_tree().create_timer(0.1).timeout
+		waited += 0.1
+	await _settle_frames(3)
+	var end_img := _capture_viewport()
+	if end_img != null:
+		end_img.save_png("/tmp/walk_end.png")
+		print("[WalkDemo] screenshot: /tmp/walk_end.png (%dx%d)" % [end_img.get_width(), end_img.get_height()])
+
+	var final_cell: Vector2i = _world._active_cell
+	print("[WalkDemo] RESULT walk_complete=%s final_cell=(%d,%d) target_cell=(%d,%d) match=%s" % [
+		str(not bool(_world._walking)),
+		final_cell.x, final_cell.y, target_cell.x, target_cell.y,
+		str(final_cell == target_cell)
+	])
+
+	# Also test blocked-cell rejection: attempt a walk to a known blocked cell.
+	var blocked_arr: Array = _nav_blocked_from_spec(nav_block)
+	if not blocked_arr.is_empty():
+		var blocked_cell: Vector2i = blocked_arr[0]
+		var b_screen := Vector2(
+			orig.x + float(blocked_cell.x - blocked_cell.y) * cell_w * 0.5,
+			orig.y + float(blocked_cell.x + blocked_cell.y) * cell_w * 0.25
+		)
+		print("[WalkDemo] testing blocked-cell rejection at cell=(%d,%d)" % [blocked_cell.x, blocked_cell.y])
+		_world._handle_floor_click(b_screen)
+		await get_tree().create_timer(0.1).timeout
+		var still_idle := not bool(_world._walking)
+		print("[WalkDemo] blocked-cell click is_noop=%s (expected true)" % str(still_idle))
+
+	call_deferred("_quit_clean")
+
+
+## Extract blocked cells from a nav spec block as Array of Vector2i. Helper for
+## _run_walk_demo to validate the target cell and test blocked-click rejection.
+func _nav_blocked_from_spec(nav: Dictionary) -> Array:
+	var out: Array = []
+	var blocked_v: Variant = nav.get("blocked", [])
+	if typeof(blocked_v) != TYPE_ARRAY:
+		return out
+	for b in (blocked_v as Array):
+		if typeof(b) == TYPE_ARRAY and (b as Array).size() >= 2:
+			out.append(Vector2i(int((b as Array)[0]), int((b as Array)[1])))
+	return out
 
 
 func _quit_clean() -> void:
