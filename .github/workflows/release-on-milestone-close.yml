@@ -1,0 +1,240 @@
+name: Release on milestone close (auto-tag — DRY-RUN default, RELEASE-gated)
+
+# Versioning Phase-2 — the automation behind "complete a milestone → tag/release".
+#
+# WHAT IT DOES
+#   When a GitHub milestone is CLOSED (or on a manual workflow_dispatch), this job decides whether
+#   that milestone is allowed to be tagged + released, and — ONLY in real mode — creates the
+#   annotated tag + a `gh release`. The decision is made by qa/release_gate_check.py (unit-tested),
+#   NOT by ad-hoc shell, so the gate logic is covered by tests instead of living only in YAML.
+#
+# THE GATE (no milestone labels — GitHub milestones don't support them)
+#   GitHub milestones cannot carry labels, so the "ready-for-release" opt-in is an explicit
+#   `[release-ready]` MARKER in the milestone TITLE or DESCRIPTION, AND the formal RRI must report
+#   STATUS: RELEASE (all 11 gates PASSED) via qa/generate_release_notes.py / the per-gate verdict.
+#   If the marker is absent OR the status is DEVELOPMENT, the job LOGS WHY and EXITS WITHOUT TAGGING
+#   — a development milestone closing must never auto-tag. See docs/roadmap/release-automation.md.
+#
+# SAFETY — DRY-RUN BY DEFAULT
+#   `dry_run` defaults to **true**. On a real milestone-close event there is no input, so dry-run is
+#   true (the default) UNLESS the repo variable RELEASE_AUTOMATION_LIVE == "true" is set (owner opt-in).
+#   In dry-run the job runs the FULL resolution + generate_release_notes.py and prints EXACTLY what it
+#   WOULD tag/release — but creates NOTHING. Only an explicit dispatch `dry_run=false`, or the live
+#   repo-var, performs the real `git tag` + `gh release create`. This makes the workflow safe to merge
+#   without it ever acting unexpectedly.
+#
+# INVARIANTS
+#   * Reads ONLY the scores ledger + git + gh; runs NO gameplay / heavy job; NEVER touches Eva or any
+#     gateway. Uses the repo's GITHUB_TOKEN (contents: write for tags/releases). Minimal permissions.
+#   * The scores ledger (qa/scores.db) is opened READ-ONLY by the gate/notes scripts; this job never
+#     commits or mutates it.
+
+on:
+  milestone:
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      milestone:
+        description: "Milestone title to evaluate (e.g. v1.0.5). Required for a manual run."
+        required: true
+        type: string
+      dry_run:
+        description: "Dry-run (resolve + print, tag NOTHING). Default true — uncheck to really tag."
+        required: false
+        type: boolean
+        default: true
+      allow_prerelease_dev:
+        description: "Allow a -rcN tag to ship as a pre-release even on DEVELOPMENT status (GA always needs RELEASE)."
+        required: false
+        type: boolean
+        default: false
+
+# One release evaluation at a time per milestone; never cancel an in-flight tag/release.
+concurrency:
+  group: release-on-milestone-close-${{ github.event.milestone.title || github.event.inputs.milestone }}
+  cancel-in-progress: false
+
+# Minimal token: contents:write is needed ONLY in real mode (annotated tag + gh release). The dry-run
+# default never exercises the write — but the permission is declared at the lowest level that covers
+# the real path. Nothing else is granted.
+permissions:
+  contents: write
+
+jobs:
+  evaluate-and-maybe-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history + tags for the tag-exists + consistency guards)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Resolve milestone + dry-run mode
+        id: resolve
+        # The milestone title/description come from the event payload on a real close, or from the
+        # dispatch inputs on a manual run. dry_run is TRUE unless an explicit dispatch said false OR
+        # the owner set the repo var RELEASE_AUTOMATION_LIVE=true. allow_prerelease_dev is opt-in.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          MS_TITLE_EVENT: ${{ github.event.milestone.title }}
+          MS_DESC_EVENT: ${{ github.event.milestone.description }}
+          MS_TITLE_INPUT: ${{ github.event.inputs.milestone }}
+          DRY_RUN_INPUT: ${{ github.event.inputs.dry_run }}
+          ALLOW_PRE_INPUT: ${{ github.event.inputs.allow_prerelease_dev }}
+          LIVE_VAR: ${{ vars.RELEASE_AUTOMATION_LIVE }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            TITLE="$MS_TITLE_INPUT"
+            DESC=""   # dispatch has no description; the marker is then expected in the title
+          else
+            TITLE="$MS_TITLE_EVENT"
+            DESC="$MS_DESC_EVENT"
+          fi
+
+          # dry_run: default true. An explicit dispatch dry_run=false flips it; the live repo-var
+          # also flips it (owner standing opt-in). If BOTH are absent → dry_run stays true (safe).
+          DRY_RUN=true
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$DRY_RUN_INPUT" = "false" ]; then
+            DRY_RUN=false
+          elif [ "${LIVE_VAR:-}" = "true" ]; then
+            DRY_RUN=false
+          fi
+
+          ALLOW_PRE=false
+          [ "$ALLOW_PRE_INPUT" = "true" ] && ALLOW_PRE=true
+
+          {
+            echo "title<<__EOF__"; echo "$TITLE"; echo "__EOF__"
+            echo "desc<<__EOF__";  echo "$DESC";  echo "__EOF__"
+            echo "dry_run=$DRY_RUN"
+            echo "allow_pre=$ALLOW_PRE"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "::notice title=Release automation::milestone='$TITLE' dry_run=$DRY_RUN allow_prerelease_dev=$ALLOW_PRE (live-var='${LIVE_VAR:-unset}')"
+          if [ -z "$TITLE" ]; then
+            echo "::error title=Release automation::no milestone title resolved — nothing to evaluate."
+            exit 1
+          fi
+
+      - name: Gate check (qa/release_gate_check.py) — marker + clean tag + version + STATUS:RELEASE
+        id: gate
+        # The single decision, extracted so it is unit-tested (qa/test_release_gate_check.py). It is
+        # READ-ONLY: it reads the committed qa/scores.db + git tags + VERSION files and emits a JSON
+        # verdict. NO per-gate RRI artifact is committed in the repo, so on a normal run the status
+        # falls back to ledger-inference — which can NEVER certify RELEASE (the honesty guard). To
+        # actually GO, point --verdict-json / --rri-json at a real all-PASS RRI artifact (e.g. one
+        # downloaded from the Release Readiness sweep). This is intentional: a GO requires real
+        # release evidence, not just a closed milestone.
+        run: |
+          set -uo pipefail
+          ALLOW_FLAG=""
+          [ "${{ steps.resolve.outputs.allow_pre }}" = "true" ] && ALLOW_FLAG="--allow-prerelease-dev"
+
+          set +e
+          uv run --directory servers/engine --no-project python "${GITHUB_WORKSPACE}/qa/release_gate_check.py" \
+            --milestone-title "${{ steps.resolve.outputs.title }}" \
+            --milestone-description "${{ steps.resolve.outputs.desc }}" \
+            --repo-root "${GITHUB_WORKSPACE}" \
+            --db "${GITHUB_WORKSPACE}/qa/scores.db" \
+            $ALLOW_FLAG \
+            --out "${GITHUB_WORKSPACE}/gate_verdict.json"
+          GATE_RC=$?
+          set -e
+
+          echo "----- gate_verdict.json -----"
+          cat "${GITHUB_WORKSPACE}/gate_verdict.json" || true
+          echo "-----------------------------"
+
+          DECISION="$(python3 -c 'import json;print(json.load(open("gate_verdict.json"))["decision"])' 2>/dev/null || echo no_go)"
+          TAG="$(python3 -c 'import json;print(json.load(open("gate_verdict.json")).get("tag") or "")' 2>/dev/null || echo '')"
+          PRE="$(python3 -c 'import json;print(str(json.load(open("gate_verdict.json")).get("prerelease")).lower())' 2>/dev/null || echo true)"
+          {
+            echo "decision=$DECISION"
+            echo "tag=$TAG"
+            echo "prerelease=$PRE"
+          } >> "$GITHUB_OUTPUT"
+
+          if [ "$DECISION" != "go" ]; then
+            echo "::notice title=Release automation::NO-GO — exiting WITHOUT tagging. See gate_verdict.json reasons above (rc=$GATE_RC)."
+          else
+            echo "::notice title=Release automation::GO — gate passed for tag $TAG (prerelease=$PRE)."
+          fi
+
+      - name: Generate release notes (qa/generate_release_notes.py)
+        if: steps.gate.outputs.decision == 'go'
+        # READ-ONLY over qa/scores.db. The notes carry the DEVELOPMENT-vs-RELEASE banner + the 11-gate
+        # table + the closed-issue list (via gh, authed by GITHUB_TOKEN). This body is used for the
+        # release whether we dry-run or really cut it.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          uv run --directory servers/engine --no-project python "${GITHUB_WORKSPACE}/qa/generate_release_notes.py" \
+            --tag "${{ steps.gate.outputs.tag }}" \
+            --milestone "${{ steps.resolve.outputs.title }}" \
+            --db "${GITHUB_WORKSPACE}/qa/scores.db" \
+            --repo "${{ github.repository }}" \
+            --out "${GITHUB_WORKSPACE}/RELEASE_NOTES.md"
+          echo "----- RELEASE_NOTES.md (first 60 lines) -----"
+          head -60 "${GITHUB_WORKSPACE}/RELEASE_NOTES.md"
+
+      - name: DRY-RUN — print what WOULD be tagged/released (no side effects)
+        if: steps.gate.outputs.decision == 'go' && steps.resolve.outputs.dry_run == 'true'
+        run: |
+          echo "::notice title=Release automation (DRY-RUN)::WOULD create annotated tag '${{ steps.gate.outputs.tag }}' at ${{ github.sha }} and a gh release (prerelease=${{ steps.gate.outputs.prerelease }}). No tag/release was created (dry_run=true)."
+          echo "==================================================================="
+          echo "DRY-RUN: would run ->"
+          echo "  git tag -a ${{ steps.gate.outputs.tag }} -m '<release-notes title>' ${{ github.sha }}"
+          echo "  git push origin ${{ steps.gate.outputs.tag }}"
+          echo "  gh release create ${{ steps.gate.outputs.tag }} --title ... --notes-file RELEASE_NOTES.md \\"
+          echo "      $([ '${{ steps.gate.outputs.prerelease }}' = 'true' ] && echo --prerelease)"
+          echo "To go LIVE: re-dispatch with dry_run=false (after one successful dry-run on a real"
+          echo "closed milestone) or set repo variable RELEASE_AUTOMATION_LIVE=true. Owner sign-off required."
+          echo "==================================================================="
+
+      - name: REAL — create the annotated tag + gh release (only on dry_run=false)
+        if: steps.gate.outputs.decision == 'go' && steps.resolve.outputs.dry_run == 'false'
+        # Reached ONLY by an explicit dispatch dry_run=false OR the live repo-var. Creates the
+        # annotated tag at the checked-out SHA and a gh release (pre-release when the version has -rc).
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.gate.outputs.tag }}"
+          PRE_FLAG=""
+          [ "${{ steps.gate.outputs.prerelease }}" = "true" ] && PRE_FLAG="--prerelease"
+
+          # Defense-in-depth: re-confirm the tag is still free right before we cut it (gate_check
+          # already asserted this, but the working tree could have moved).
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "::error title=Release automation::tag $TAG appeared since the gate check — refusing to clobber."
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "WorldOS $TAG (auto-tagged on milestone close)" "${{ github.sha }}"
+          git push origin "$TAG"
+
+          gh release create "$TAG" \
+            --title "WorldOS $TAG" \
+            --notes-file "${GITHUB_WORKSPACE}/RELEASE_NOTES.md" \
+            --target "${{ github.sha }}" \
+            $PRE_FLAG
+          echo "::notice title=Release automation::created tag $TAG + gh release (prerelease=${{ steps.gate.outputs.prerelease }})."
+
+      - name: Upload gate verdict + notes (audit trail)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-gate-${{ github.run_id }}
+          path: |
+            gate_verdict.json
+            RELEASE_NOTES.md
+          if-no-files-found: ignore
+          retention-days: 30
