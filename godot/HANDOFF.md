@@ -219,7 +219,9 @@ with zero renderer change**. Proven.
 
 <a name="assets"></a>
 ## 6. Asset pipeline — Meshy → Blender → sprite sheet
-Full detail in `tools/README.md`. In short:
+**Full toolkit: the `asset-gen` skill** (Meshy / Tripo3D / Scenario / PixelLab — job matrix, key
+locations, the `tripo_gen.py`/`scenario_gen.py` wrappers, the wired `scenario`+`pixellab` MCPs).
+Full bake detail in `tools/README.md`. In short:
 ```
 python3 godot/tools/meshy_gen.py --prompt "..." --out <dir>            # Meshy text-to-3D (preview->refine PBR) -> model.glb
 blender --background --python godot/tools/bake_sprites.py -- \
@@ -232,10 +234,12 @@ python3 godot/tools/pack_sheet.py --frames <dir>/frames \
   ~10–20 credits/character. **Key:** `~/.worldos/meshy.key` (mode 600, OUTSIDE the repo) or `$MESHY_API_KEY`.
   ⚠ *The key was pasted into a chat transcript 2026-06-21 — rotate it.* (Webhooks + MCP servers exist —
   official `meshy-dev/meshy-mcp-server`, community `pasie15/meshy-ai-mcp-server` — not wired.)
-- **Backgrounds & the Eva caveat:** the engine's only *wired* image provider
-  (`WORLDOS_IMAGE_PROVIDER=openclaw`) rides **Eva's OpenClaw gateway + Codex OAuth** — do **NOT** drive
-  it autonomously (the "never touch Eva" invariant). For #1089 use the **Meshy 3D-env → Blender
-  render-down** route, or add a direct gpt-image key.
+- **Backgrounds & the Eva caveat:** the engine's `openclaw` image provider rides **Eva's OpenClaw
+  gateway + Codex OAuth** — do **NOT** drive it autonomously (the "never touch Eva" invariant).
+  **Now solved:** a `ScenarioImageProvider` is wired (`WORLDOS_IMAGE_PROVIDER=scenario`, direct API,
+  non-Eva), and `scenario_gen.py` / the `scenario` MCP generate painterly backdrops with trained-model
+  consistency (#1089). Rigged character animation (#1091) similarly via Tripo `rig`→`retarget`
+  (`tripo_gen.py rig`). See the **`asset-gen` skill**.
 
 <a name="invariants"></a>
 ## 7. Invariants (never violate)
