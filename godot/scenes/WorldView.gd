@@ -551,6 +551,210 @@ func reset_replay() -> void:
 
 
 # ---------------------------------------------------------------------------
+# Interactive grid-walk (#iso-interactive-walk). Store the nav spec loaded by
+# the --preview-scene harness so _unhandled_input can convert a floor click →
+# grid cell → A* path → cell-by-cell animated walk for the active token.
+# ---------------------------------------------------------------------------
+
+## The nav spec block most recently loaded via setup_nav (called from Main after
+## _run_preview_scene parses the spec JSON). Stored here so _unhandled_input can
+## access the grid transform + blocked cells without coupling to NavOverlay.
+var _nav_cols: int = 0
+var _nav_rows: int = 0
+var _nav_cell_w: float = 64.0
+var _nav_origin: Vector2 = Vector2.ZERO
+var _nav_blocked: Array = []   ## Array of Vector2i
+
+## The current cell of the ACTIVE token (the one that moves on click). Updated on
+## each successful walk step so the next click starts from the right cell.
+var _active_cell: Vector2i = Vector2i(0, 0)
+
+## True while a cell-by-cell walk coroutine is running (so a second click does not
+## start a second concurrent walk — it is ignored until the current one finishes).
+var _walking: bool = false
+
+## The actor id that is the "active" token for interactive walk (default = first party
+## actor in the spec, set by Main after spawning preview sprites via set_active_preview_actor).
+var _active_preview_actor_id: String = ""
+
+
+## Called by Main after parsing the spec JSON so WorldView knows the grid geometry.
+## Stores the nav data so _unhandled_input can invert the transform and do A*.
+func setup_nav(nav: Dictionary) -> void:
+	_nav_cols = int(nav.get("cols", 0))
+	_nav_rows = int(nav.get("rows", 0))
+	_nav_cell_w = float(nav.get("cell_w_px", 64))
+	var orig_v: Variant = nav.get("origin_px", [0, 0])
+	if typeof(orig_v) == TYPE_ARRAY and (orig_v as Array).size() >= 2:
+		_nav_origin = Vector2(float((orig_v as Array)[0]), float((orig_v as Array)[1]))
+	_nav_blocked.clear()
+	var blocked_v: Variant = nav.get("blocked", [])
+	if typeof(blocked_v) == TYPE_ARRAY:
+		for b in (blocked_v as Array):
+			if typeof(b) == TYPE_ARRAY and (b as Array).size() >= 2:
+				_nav_blocked.append(Vector2i(int((b as Array)[0]), int((b as Array)[1])))
+	print("[NavWalk] setup_nav cols=%d rows=%d cell_w=%.0f blocked=%d" % [
+		_nav_cols, _nav_rows, _nav_cell_w, _nav_blocked.size()])
+
+
+## Set which actor is the "active" one for interactive walk, and what cell it starts on.
+func set_active_preview_actor(actor_id: String, start_cell: Vector2i) -> void:
+	_active_preview_actor_id = actor_id
+	_active_cell = start_cell
+	print("[NavWalk] active actor=%s start_cell=(%d,%d)" % [actor_id, start_cell.x, start_cell.y])
+
+
+## Convert a screen position (WorldView-local px) to a grid cell using the inverse
+## of the dimetric 2:1 transform from ISO-PROJECTION.md:
+##   dx = sx - origin.x,  dy = sy - origin.y
+##   c  = ( (2*dx/cell_w) + (4*dy/cell_w) ) / 2
+##   r  = ( (4*dy/cell_w) - (2*dx/cell_w) ) / 2
+## Returns Vector2i(-1,-1) if the result is out of grid bounds.
+func _screen_to_cell(screen_pos: Vector2) -> Vector2i:
+	if _nav_cols <= 0 or _nav_rows <= 0 or _nav_cell_w <= 0.0:
+		return Vector2i(-1, -1)
+	var dx := screen_pos.x - _nav_origin.x
+	var dy := screen_pos.y - _nav_origin.y
+	var c := int(round(((2.0 * dx / _nav_cell_w) + (4.0 * dy / _nav_cell_w)) / 2.0))
+	var r := int(round(((4.0 * dy / _nav_cell_w) - (2.0 * dx / _nav_cell_w)) / 2.0))
+	if c < 0 or c >= _nav_cols or r < 0 or r >= _nav_rows:
+		return Vector2i(-1, -1)
+	return Vector2i(c, r)
+
+
+## Convert a grid cell (c, r) to screen position — same as NavOverlay._cell_to_screen.
+func _cell_to_screen_nav(c: int, r: int) -> Vector2:
+	return Vector2(
+		_nav_origin.x + float(c - r) * _nav_cell_w * 0.5,
+		_nav_origin.y + float(c + r) * _nav_cell_w * 0.25
+	)
+
+
+## Build an AStarGrid2D for the current nav spec (same settings as NavOverlay._solve_astar).
+func _build_nav_grid() -> AStarGrid2D:
+	var grid := AStarGrid2D.new()
+	grid.region = Rect2i(0, 0, _nav_cols, _nav_rows)
+	grid.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_AT_LEAST_ONE_WALKABLE
+	grid.cell_shape = AStarGrid2D.CELL_SHAPE_SQUARE
+	grid.update()
+	for b in _nav_blocked:
+		grid.set_point_solid(b, true)
+	return grid
+
+
+## Handle a left floor click: convert to grid cell, solve A*, walk the active token
+## along the path cell-by-cell. Called from _unhandled_input.
+func _handle_floor_click(screen_pos: Vector2) -> void:
+	if _active_preview_actor_id == "" or _nav_cols <= 0:
+		return
+	if _walking:
+		print("[NavWalk] ignoring click — walk already in progress")
+		return
+
+	# Convert screen → cell.
+	var target_cell := _screen_to_cell(screen_pos)
+	if target_cell.x < 0:
+		print("[NavWalk] click out of grid bounds — no move")
+		return
+
+	# Reject blocked cells.
+	for b in _nav_blocked:
+		if b == target_cell:
+			print("[NavWalk] click on blocked cell (%d,%d) — no move" % [target_cell.x, target_cell.y])
+			return
+
+	# Build the grid and solve the path.
+	var grid := _build_nav_grid()
+	var id_path := grid.get_id_path(_active_cell, target_cell)
+	if id_path.is_empty():
+		print("[NavWalk] no A* path from (%d,%d) to (%d,%d) — no move" % [
+			_active_cell.x, _active_cell.y, target_cell.x, target_cell.y])
+		return
+
+	# Convert PackedVector2Array → Array of Vector2i (grid ids).
+	var path: Array = []
+	for p in id_path:
+		path.append(Vector2i(int(p.x), int(p.y)))
+
+	print("[NavWalk] walking actor=%s path_len=%d from=(%d,%d) to=(%d,%d)" % [
+		_active_preview_actor_id, path.size(),
+		_active_cell.x, _active_cell.y, target_cell.x, target_cell.y])
+
+	# Walk the token along the path.
+	_walk_along_path(path)
+
+
+## Coroutine: walk the active preview token along a grid path, one cell at a time.
+## Each step: set facing (octant of segment), set walk anim, tween to next cell,
+## await; on arrival set idle.
+func _walk_along_path(path: Array) -> void:
+	_walking = true
+	var tok: CharacterToken = _get_active_preview_token()
+	if tok == null:
+		_walking = false
+		return
+
+	# Skip the first cell (it is the current position).
+	for i in range(1, path.size()):
+		tok = _get_active_preview_token()
+		if tok == null:
+			break
+		var from_cell: Vector2i = path[i - 1]
+		var to_cell: Vector2i = path[i]
+		var from_screen := _cell_to_screen_nav(from_cell.x, from_cell.y)
+		var to_screen := _cell_to_screen_nav(to_cell.x, to_cell.y)
+
+		# Derive 8-way facing for this segment.
+		var facing := FacingResolver.octant(from_screen, to_screen, FACING_ORDER)
+		tok.set_facing(facing)
+		tok.set_anim("walk")
+
+		# Tween to the next cell's screen position.
+		tok.set_zone_target(to_screen)
+		_token_prev_pos[_active_preview_actor_id] = to_screen
+		_active_cell = to_cell
+
+		# Await the tween duration.
+		await get_tree().create_timer(CharacterToken.MOVE_TWEEN_SEC).timeout
+
+	# Arrived — return to idle.
+	tok = _get_active_preview_token()
+	if tok != null:
+		tok.set_anim("idle")
+		print("[NavWalk] walk complete, actor=%s final_cell=(%d,%d)" % [
+			_active_preview_actor_id, _active_cell.x, _active_cell.y])
+
+	_walking = false
+
+
+## Return the active preview token (or null if not found / freed).
+func _get_active_preview_token() -> CharacterToken:
+	var ysort := get_node_or_null("YSortLayer") as Node2D
+	if ysort == null:
+		return null
+	var node_name := "PreviewToken_" + _active_preview_actor_id
+	var tok := ysort.get_node_or_null(node_name) as CharacterToken
+	if tok == null or not is_instance_valid(tok):
+		return null
+	return tok
+
+
+## Handle unhandled input for interactive walk (only active when nav is configured).
+func _unhandled_input(event: InputEvent) -> void:
+	if _nav_cols <= 0 or _active_preview_actor_id == "":
+		return
+	if not (event is InputEventMouseButton):
+		return
+	var mb := event as InputEventMouseButton
+	if mb.button_index != MOUSE_BUTTON_LEFT or not mb.pressed:
+		return
+	# Convert the global mouse position to WorldView-local coordinates.
+	var local_pos := to_local(mb.global_position)
+	_handle_floor_click(local_pos)
+	get_viewport().set_input_as_handled()
+
+
+# ---------------------------------------------------------------------------
 # #1055 — input-facing query surface (consumed by InputController). All of these
 # are PURE reads of the already-projected scene; none mutate or assert state.
 # ---------------------------------------------------------------------------
