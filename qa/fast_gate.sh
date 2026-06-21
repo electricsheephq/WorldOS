@@ -58,7 +58,12 @@ _fastgate_run_inner() {
   #   - test_rests            : rest-that-restores HP/slots + advances the clock (G1 rest limb)
   #   - test_travel           : travel-that-moves location + clock (G1 travel limb)
   #   - test_combat           : combat resolved THROUGH the engine — start_combat/attack/rounds (G1 combat limb)
-  local TESTS="tests/test_canon_abilities.py tests/test_character_skill_normalization.py tests/test_rests.py tests/test_travel.py tests/test_combat.py"
+  #   - test_combat_smoke     : engine-only combat smoke (Track 2d) — random-vs-random ALL-MECHANICS-fire
+  #                             (hit/miss/crit/save/condition/concentration/resource/XP/death-save) + a
+  #                             spell-resolution sweep (every category). A TRUSTWORTHY mechanical signal
+  #                             independent of the LLM scorer; deterministic, ~1-2s. (Path is relative to
+  #                             servers/engine, like the qa-release-gate-tests CI job.)
+  local TESTS="tests/test_canon_abilities.py tests/test_character_skill_normalization.py tests/test_rests.py tests/test_travel.py tests/test_combat.py ../../qa/test_combat_smoke.py"
   if uv run --directory servers/engine python -m pytest -q -p no:xdist $TESTS >"$LOG" 2>&1; then
     echo "  ✓ deterministic engine tier: $(grep -oE '[0-9]+ passed' "$LOG" | tail -1)"
     return 0
