@@ -494,7 +494,8 @@ def _sneak_attack_eligible(view: CombatView, target: CombatantView,
     """Is the rogue's Sneak Attack rider TRIGGERED on `target` this strike (5e RAW, no disadvantage
     branch — the engine's loop doesn't pass disadvantage here)? Either the attack has ADVANTAGE, OR
     an ALLY of the rogue is within 5 ft of the target (a flanking-style trigger). Pure geometry +
-    the advantage flag. The once-per-turn cap is enforced by the loop (it tags ONE strike)."""
+    the advantage flag. The once-per-turn cap (5e RAW) is enforced by run_combat_round, which nulls
+    view.sneak_attack for the rest of the actor's turn once a Sneak Attack LANDS (a miss doesn't)."""
     if view.sneak_attack is None:
         return False
     if attack_has_advantage:

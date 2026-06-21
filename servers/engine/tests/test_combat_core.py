@@ -989,3 +989,24 @@ def test_set_house_rules_rejects_test_only_toggles(tmp_path, monkeypatch):
     hr = server.set_house_rules(cid, {"difficulty": "hard"})
     assert hr["difficulty"] == "hard"
     assert hr.get("force_hit") is False and hr.get("fast_resolve") is False
+
+
+def test_v2c_sneak_attack_is_once_per_turn_in_the_loop(tmp_path, monkeypatch):
+    """5e RAW: Sneak Attack is ONCE PER TURN. run_combat_round tracks `sneak_used` and, after a Sneak
+    Attack LANDS, nulls view.sneak_attack for the rest of the actor's turn — so a multi-strike rogue
+    can't re-tag it (the bug: the strike loop rebuilt the view each strike with sneak still populated →
+    6d6 instead of 3d6). This pins the suppression MECHANISM the loop applies: an eligible view tags
+    sneak; the SAME view with sneak_attack nulled (what the loop does after a landed sneak) does NOT."""
+    from dataclasses import replace
+    dagger = AttackOption(name="Dagger", to_hit=7, damage_expr="1d4+4", reach_ft=5)
+    sneak = SneakAttackOption(dice="3d6", value=10.0)
+    ally = CombatantView(id="ally", name="ally", side="enemy", current_hp=20, max_hp=20,
+                         armor_class=15, cell=(2, 0))
+    eligible = _mk_view([dagger], [_foe("t", hp=20, ac=13, cell=(1, 0))], grid=True, actor_cell=(0, 0),
+                        sneak_attack=sneak, allies=(ally,))
+    # Strike 1: sneak is available + the adjacency trigger fires -> tagged (3d6).
+    i1 = combat_ai.pick_action(object(), eligible)
+    assert i1.kind == "attack" and i1.sneak_attack and i1.sneak_attack[0]["dice"] == "3d6"
+    # After it LANDS the loop nulls view.sneak_attack -> a second strike THAT SAME TURN does NOT re-tag.
+    i2 = combat_ai.pick_action(object(), replace(eligible, sneak_attack=None))
+    assert i2.kind == "attack" and i2.sneak_attack == (), "Sneak re-tagged after it was used this turn"

@@ -23,6 +23,7 @@ TWO MODES (owner-decided):
 from __future__ import annotations
 
 from typing import Optional
+from dataclasses import replace
 
 import combat_ai
 import dice as dice_mod
@@ -663,6 +664,7 @@ def run_combat_round(campaign_id: str, mode: str = "live", max_turns: int = 60) 
         ma = max(1, server._attacker_multiattack_count(actor, c)) if actor is not None else 1
         strikes_left = ma
         surged = False  # Action Surge spent this turn? (one extra Attack action, v2.0c)
+        sneak_used = False  # Sneak Attack is once-per-turn (5e RAW): suppress after the first LANDS
         # Re-ask pick_action per granted strike (move-then-attack, or several strikes).
         for _strike in range(max(1, ma) + 4):  # +4 headroom: a move, the strikes, an Action Surge
             c = server._require(campaign_id)
@@ -672,6 +674,9 @@ def run_combat_round(campaign_id: str, mode: str = "live", max_turns: int = 60) 
             if not _living_sides(c) or len(_living_sides(c)) < 2:
                 break  # fight is decided; stop issuing this actor's strikes
             view = _build_view(server, c, actor)
+            if sneak_used and view.sneak_attack is not None:
+                # 5e RAW: Sneak Attack once per turn — already dealt this turn, never re-tag a later strike.
+                view = replace(view, sneak_attack=None)
             _view_cache[actor.id] = view.attacks
             # ACTION SURGE (v2.0c): when the normal strikes are spent but the fight is still hot,
             # the fighter can spend Action Surge for a FRESH Attack action. Spend it ONCE, then keep
@@ -691,6 +696,8 @@ def run_combat_round(campaign_id: str, mode: str = "live", max_turns: int = 60) 
             digest.append(entry)
             acted = True
             if intent.kind == "attack":
+                if intent.sneak_attack and (entry.get("result") or {}).get("hit"):
+                    sneak_used = True  # Sneak Attack DEALT — a miss does NOT consume the once-per-turn
                 strikes_left -= 1
                 if strikes_left <= 0 and surged:
                     break  # already surged once; don't loop forever
