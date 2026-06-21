@@ -48,6 +48,21 @@ INPUT="$(printf '%s\n\n# ===== OUTPUT FORMAT =====\nRespond with ONLY a single J
 ERR="${OUT%.json}.err"
 RAW="${OUT%.json}.raw.json"   # raw claude --output-format json envelope (kept for the guard)
 
+# --- (c) Scorer EFFORT (#1040 latency). The Angry-DM 5e-fidelity lens is the HEAVY one (~32 KB rubric);
+# at default effort it ran ~400s — far too long for a GRADING call. Scoring is checklist-application, not
+# generation, so LOW effort holds quality while cutting wall-clock ~2.2x (measured on csmed-1: 402s -> 179s,
+# a valid full scorecard). Auto-apply low effort to the angrydm lens BY RUBRIC NAME; the story (tolkien)
+# lens — quality-critical AND already fast (~60-150s) — stays at default. Override per call with
+# WORLDOS_SCORER_EFFORT (low|medium|high|max, or empty "" to force NO flag). Uses `-` (not `:-`) so an
+# explicit empty override means "no --effort", while unset uses the per-rubric default.
+case "$RUBRIC" in
+  *angry_dm*) _EFFORT_DEFAULT="low" ;;
+  *)          _EFFORT_DEFAULT="" ;;
+esac
+SCORER_EFFORT="${WORLDOS_SCORER_EFFORT-$_EFFORT_DEFAULT}"
+EFFORT_ARG=""
+[ -n "$SCORER_EFFORT" ] && EFFORT_ARG="--effort $SCORER_EFFORT"
+
 # stamp_prompt_hash <json-file>: merge the prompt_construction_hash into a score JSON in place.
 stamp_prompt_hash() {
   local f="$1" tmp
@@ -104,7 +119,7 @@ while [ "$attempt" -lt 3 ]; do
   # so it gets full API throughput and lands near the ~400s baseline rather than slower under contention.
   printf '%s' "$INPUT" | env -u ANTHROPIC_BASE_URL -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN \
     -u API_TIMEOUT_MS -u CLAUDE_CONFIG_DIR timeout "${WORLDOS_SCORE_TIMEOUT:-600}" claude -p \
-    --model "$SCORER_MODEL" --permission-mode bypassPermissions \
+    --model "$SCORER_MODEL" --permission-mode bypassPermissions $EFFORT_ARG \
     --max-budget-usd "$BUDGET" \
     --output-format json > "$RAW" 2> "$ERR"
 
