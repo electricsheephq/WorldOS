@@ -465,7 +465,7 @@ def run_part2(server, store_mod, base_seed: int):
             tid = targs.get("target_id") or (targs.get("target_ids") or [None])[0]
             before_hp = c.characters[tid].current_hp if tid and tid in c.characters else None
             caster_ch = c.characters[caster]
-            before_slots = {l: s.maximum - s.used for l, s in caster_ch.spell_slots.items()}
+            before_slots = {lvl: s.maximum - s.used for lvl, s in caster_ch.spell_slots.items()}
 
             _make_current(server, store_mod, cid, caster)
             res = server.cast_spell(cid, caster, spell_name=name, **targs)
@@ -474,7 +474,7 @@ def run_part2(server, store_mod, base_seed: int):
             c2 = server._require(cid)
             after_hp = c2.characters[tid].current_hp if tid and tid in c2.characters else None
             caster2 = c2.characters[caster]
-            after_slots = {l: s.maximum - s.used for l, s in caster2.spell_slots.items()}
+            after_slots = {lvl: s.maximum - s.used for lvl, s in caster2.spell_slots.items()}
 
             ok, why = _assert_spell_effect(category, name, res, before_hp, after_hp,
                                            before_slots, after_slots, c2, caster, tid)
@@ -497,7 +497,7 @@ def _assert_spell_effect(category, name, res, before_hp, after_hp, before_slots,
     """SRD-consistent gauge assertion per category. Returns (ok, why)."""
     # A leveled spell must have spent a slot; a cantrip spends none (slot_used None).
     slot_used = res.get("slot_used")
-    spent_a_slot = any(after_slots.get(l, 0) < before_slots.get(l, 0) for l in before_slots)
+    spent_a_slot = any(after_slots.get(lvl, 0) < before_slots.get(lvl, 0) for lvl in before_slots)
 
     if category in ("attack-cantrip", "auto-hit", "save-for-half"):
         # Damage spell: cast_spell returns the resolution; for a single attack/auto/save target the
@@ -669,7 +669,9 @@ def _seed_wizard_fight(server, store_mod, seed_off, *, monster="Goblin", count=1
     cid = server.create_campaign(title="Wizard Competence")["id"]
     server.add_location(campaign_id=cid, name="Tower", description="x", make_current=True)
     server.start_session(cid, title="Wizard Competence")
-    c = server._require(cid); c.is_sandbox = True; store_mod.save_campaign(c)
+    c = server._require(cid)
+    c.is_sandbox = True
+    store_mod.save_campaign(c)
     wiz = server.create_character(
         cid, "Tarn", kind="player", race="human", class_name="wizard", level=5,
         abilities=dict(strength=8, dexterity=14, constitution=12, intelligence=18, wisdom=10, charisma=10),
@@ -728,7 +730,9 @@ def run_part4(server, store_mod, base_seed: int) -> dict:
     server.prepare_spells(cidB, wizB, ["Burning Hands"])
     c = server._require(cidB)
     idx = next(i for i, cb in enumerate(c.combat.order) if cb.character_id == wizB)
-    c.combat.turn_index = idx; c.combat.action_used = False; store_mod.save_campaign(c)
+    c.combat.turn_index = idx
+    c.combat.action_used = False
+    store_mod.save_campaign(c)
     intentB, viewB, beforeB, afterB, entryB = _ai_turn(server, store_mod, cidB, wizB)
     save_dmg = entryB.get("result", {}).get("damage", {}) if entryB else {}
     saveB = (intentB.kind == "cast" and intentB.spell_name == "Burning Hands"
