@@ -12,6 +12,44 @@ WorldOS is source-available commercial software; world seeds are licensed separa
 
 - Gameplay toward the RRI bar (story ≥4.3, mechanical ≥4.5) — the GA work, now built on the
   honest, un-gamed measurement that 1.0.5-rc1 established.
+- Engine-run VTile combat (auto-combat loop + monster AI + test toggles + engine-only smoke),
+  versioned-milestone roadmap, and scoring hardening (one-decimal lenses + the deterministic
+  feature-engagement/fact-fidelity layer) — the post-rc4 plan.
+
+---
+
+## [1.0.5-rc4] — 2026-06-21
+
+**The GT2 Godot isometric renderer foundation + scorer optimization + mech fidelity + the #461
+grid spine — still NOT a GA** (the RRI gameplay gates — story ≥4.3, mechanical ≥4.5, cross-persona
+sat ≥7 — are not yet re-measured under the current ruler `sc_d4b93982763a`; the last formal RRI was
+the rc3 partial). 32 commits since rc3.
+
+**GT2 Godot painterly-isometric renderer (epic #1050) — the vertical slice, CI-gated:**
+- `godot/` project + thin-client transport + bundled fixtures (#1052), WorldView backdrop +
+  renderer-owned walkmask + zone markers (#1053), directional `CharacterToken` + sprite-sheet
+  manifest v1 + CC0 placeholder (#1054), click-to-move + `FacingResolver` + Y-sort occlusion —
+  the vertical slice (#1055), headless export + conformance + screenshot CI lane (#1056).
+- Meshy→Blender directional-sprite asset pipeline (#1062); served `_private` finals via `/image`
+  (#1063); combat/zone token rendering for every combatant, team-styled (#1060).
+- The dimetric-2:1 projection lock + `renderer_profiles.godot` contract (#1051); the
+  HANDOFF/knowledge-base for the renderer (#1094/#1095).
+
+**Scorer optimization (#1040):** the "combat-scorer hang" was a too-short timeout, not a stuck
+stream — the Angry-DM lens is legitimately ~400s on combat-dense transcripts (#1080); `--effort
+low` for that heavy lens (2.2× faster, #1082); deterministic 5e checks migrated INTO the gate +
+the Angry-DM rubric shrunk 32→11 KB (#1083). The edition false-positives are gone.
+
+**Mechanical fidelity:** Battle Master superiority-die + War-Domain Guided-Strike enforcement
+(#1081); the deterministic Guiding-Bolt advantage-consumed gate (#1086).
+
+**#461 grid / coordinate authority:** the additive movement spine — `combat_grid.py`, `set_grid`,
+`move_to_coords`, Chebyshev distance, reach-leave OA (#1046); grid-mode ranged-in-melee
+auto-disadvantage (#1088).
+
+**Measurement honesty:** differential fact-fidelity — the content-loss measure the 1–5 lens is
+blind to (#1065/#1068); `qa/closeout.py` — the standardized closeout from the scores ledger
+(#1087); the #842 quota circuit-breaker + stale-evidence hygiene (#1042).
 
 ---
 
