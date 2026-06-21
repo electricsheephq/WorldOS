@@ -152,18 +152,25 @@ def _spell_options(server, ch, caster_level: int, casting_mod: int) -> tuple[Spe
             heal_amt = float(dice_mod.average_total(heal_expr)) if heal_expr else 0.0
             opts.append(SpellOption(
                 name=str(rec.get("name", name)), range_ft=rng, requires_slot=not is_cantrip,
-                is_heal=True, heal_amount=heal_amt, slot_level=int(slot_level or 0),
+                kind="heal", is_heal=True, heal_amount=heal_amt, slot_level=int(slot_level or 0),
                 is_bonus_action=is_bonus,
             ))
         else:
-            # Offensive / control / utility — carried best-effort for v2.0b (pick_action ignores
-            # these in v2.0a; populating them now keeps the discovery single-sourced + additive).
+            # Offensive / control / utility (v2.0b: SCORED by pick_action). resolve_effect already
+            # applies caster-level cantrip scaling (Fire Bolt 1d10 -> 4d10) + slot upcast, so `value`
+            # is the avg damage at THIS cast. We carry the effect `kind` (attack / auto / save) +
+            # `on_save` so the AI scores attack-roll vs auto-hit vs save-for-half correctly, and the
+            # spell's top-level `concentration` so the AI won't break a better active concentration.
             eff = spells_mod.resolve_effect(rec, int(slot_level or level), caster_level, casting_mod)
+            eff_kind = str(eff.get("kind", "") or "")
             dmg = eff.get("damage", "")
             value = float(dice_mod.average_total(dmg)) if dmg else 0.0
             opts.append(SpellOption(
                 name=str(rec.get("name", name)), value=value, range_ft=rng,
                 save_ability=str(eff.get("save_ability", "") or ""),
+                kind=eff_kind, on_save=str(eff.get("on_save", "") or ""),
+                damage_type=str(eff.get("damage_type", "") or ""),
+                concentration=bool(rec.get("concentration", False)),
                 requires_slot=not is_cantrip, slot_level=int(slot_level or 0),
                 is_bonus_action=is_bonus,
             ))
@@ -182,6 +189,21 @@ def _spell_range_ft(rec: dict) -> int:
     import re
     m = re.search(r"(\d+)", raw)
     return int(m.group(1)) if m else 60
+
+
+def _save_bonuses(ch) -> dict:
+    """The combatant's six saving-throw bonuses keyed by the SHORT ability name ("dex", "wis", …)
+    so they match a curated spell's `save_ability` (resolve_effect emits the short form). Used by
+    the AI's save-spell EV. Best-effort + pure: a sheet that can't compute a save yields no key for
+    it (the EV falls back to a 0 bonus). Never mutates."""
+    from models import Ability  # local import keeps this module's load-time import set unchanged
+    out: dict = {}
+    for ab in Ability:
+        try:
+            out[ab.value] = int(ch.saving_throw_bonus(ab))
+        except Exception:
+            continue
+    return out
 
 
 def _build_view(server, c, actor) -> CombatView:
@@ -217,6 +239,7 @@ def _build_view(server, c, actor) -> CombatView:
             id=ch.id, name=ch.name, side=_side_of(ch.kind),
             current_hp=int(ch.current_hp), max_hp=int(ch.max_hp),
             armor_class=int(ac), cell=cell, zone=cb.zone,
+            save_bonuses=_save_bonuses(ch),  # v2.0b: real save bonuses for save-spell EV
             conditions=tuple(str(getattr(cn, "value", cn)) for cn in getattr(ch, "conditions", ())),
             downed=bool(downed),
         )
@@ -254,6 +277,9 @@ def _build_view(server, c, actor) -> CombatView:
         spell_attack_bonus=atk_bonus,
         spell_save_dc=save_dc,
         caster_level=caster_level,
+        # v2.0b: the spell the actor is ALREADY concentrating on (or "" — today's default). Lets the
+        # AI avoid breaking a higher-value active concentration with a new concentration spell.
+        active_concentration=str(getattr(actor, "concentration", "") or ""),
     )
 
 
@@ -321,6 +347,53 @@ def _apply_intent(server, campaign_id: str, actor_id: str, intent: Intent) -> di
                         "healed": healed.get("healed"), "revived": healed.get("revived"),
                         "hp": healed.get("hp"),
                     }
+            # OFFENSIVE APPLY (v2.0b): cast_spell spends the slot + resolves the damage EXPRESSION but
+            # — like a heal — does NOT auto-bump a single-target's HP (in real play the DM applies it
+            # via attack()/apply_damage; only the AoE target_ids path auto-resolves). To make the
+            # engine-run loop's offensive cast actually REMOVE HP, roll the resolved damage and call
+            # apply_damage — the SAME locked verb the DM uses (sole writer preserved: cast_spell +
+            # apply_damage, NO new write path). For a SAVE spell, roll the target's save vs the real
+            # DC and halve on a success ("half") / negate ("none"). Inert for heal/buff/utility
+            # (effect.kind not in the offensive set) so non-damage casts are byte-identical to today.
+            elif isinstance(effect, dict) and effect.get("kind") in ("attack", "auto", "save") \
+                    and intent.target_id:
+                dmg_expr = str(effect.get("damage", "") or "")
+                if dmg_expr:
+                    rolled = dice_mod.roll(dmg_expr)
+                    amount = int(rolled.total)
+                    half = False
+                    save_made = None
+                    if effect.get("kind") == "save":
+                        # Resolve the target's save vs the real DC the engine just computed.
+                        dc = int(res.get("spell_save_dc", 0) or 0)
+                        ability = str(effect.get("save_ability", "") or "")
+                        sv = server.saving_throw(
+                            campaign_id=campaign_id, character_id=intent.target_id,
+                            ability=ability, dc=dc,
+                        ) if (dc and ability) else None
+                        save_made = bool(sv.get("success")) if isinstance(sv, dict) else None
+                        on_save = str(effect.get("on_save", "") or "")
+                        if save_made and on_save == "half":
+                            half = True
+                        elif save_made:
+                            amount = 0  # save-or-nothing: a successful save negates the damage
+                    if amount > 0:
+                        hit = server.apply_damage(
+                            campaign_id=campaign_id, target_id=intent.target_id,
+                            amount=amount, damage_type=str(effect.get("damage_type", "") or ""),
+                            half=half,
+                        )
+                        entry["result"]["damage"] = {
+                            "expr": dmg_expr, "rolled": int(rolled.total),
+                            "applied": int(hit.get("damage_to_hp", 0)),
+                            "target_hp": hit.get("hp"), "target_dead": hit.get("dead"),
+                            "save_made": save_made,
+                        }
+                    else:
+                        entry["result"]["damage"] = {
+                            "expr": dmg_expr, "rolled": int(rolled.total), "applied": 0,
+                            "save_made": save_made,
+                        }
         elif intent.kind == "move":
             if intent.to_cell is not None:
                 server.move_to_coords(campaign_id, actor_id, intent.to_cell[0], intent.to_cell[1])

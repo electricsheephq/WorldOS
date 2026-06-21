@@ -233,6 +233,121 @@ def test_pick_action_heal_triage_is_deterministic():
         combat_ai.pick_action(actor=object(), combat_state=v)
 
 
+# ── pick_action: offensive-spell EV + slot economy + concentration (v2.0b, #1106) ────
+
+def _firebolt(value=11.0, rng=120):
+    return SpellOption(name="Fire Bolt", value=value, kind="attack", range_ft=rng,
+                       requires_slot=False, slot_level=0)
+
+
+def _magic_missile(value=10.0, rng=120, slot=1):
+    return SpellOption(name="Magic Missile", value=value, kind="auto", range_ft=rng, slot_level=slot)
+
+
+def _save_spell(name="Burning Hands", value=10.0, rng=15, slot=1, save="dex", on_save="half"):
+    return SpellOption(name=name, value=value, kind="save", save_ability=save, on_save=on_save,
+                       range_ft=rng, slot_level=slot)
+
+
+def _mkv(spells, foes, *, atk_bonus=7, save_dc=15, active_conc="", weapon=None, **kw):
+    atks = [weapon] if weapon is not None else [AttackOption(name="Dagger", to_hit=2, damage_expr="1d4")]
+    v = _mk_view(atks, foes, spells=spells, caster_level=5, **kw)
+    # _mk_view doesn't thread the v2.0b caster numbers — rebuild with them set.
+    from dataclasses import replace
+    return replace(v, spell_attack_bonus=atk_bonus, spell_save_dc=save_dc,
+                   active_concentration=active_conc)
+
+
+def test_pick_action_casts_attack_cantrip_over_a_weak_weapon():
+    """A caster whose best spell out-EVs a feeble weapon CASTS it (the whole point of v2.0b)."""
+    v = _mkv([_firebolt()], [_foe("ogre", hp=60, ac=11)])
+    intent = combat_ai.pick_action(actor=object(), combat_state=v)
+    assert intent.kind == "cast" and intent.spell_name == "Fire Bolt"
+
+
+def test_pick_action_keeps_weapon_when_it_out_evs_the_spell():
+    """ADDITIVE: a martial whose weapon out-EVs any spell still SWINGS — a tie also keeps the weapon
+    (conserving the spell). Here a big greataxe beats a tiny cantrip."""
+    axe = AttackOption(name="Greataxe", to_hit=9, damage_expr="1d12+5")
+    v = _mkv([_firebolt(value=3.0)], [_foe("ogre", hp=60, ac=11)], weapon=axe)
+    intent = combat_ai.pick_action(actor=object(), combat_state=v)
+    assert intent.kind == "attack" and intent.attack_name == "Greataxe"
+
+
+def test_pick_action_attack_roll_spell_uses_spell_attack_bonus_p_hit():
+    """An attack-roll spell is scored P(hit | spell_attack_bonus) * value — a high AC lowers its EV
+    below an auto-hit spell of equal raw value, so the auto-hit wins."""
+    foe = _foe("foe", hp=60, ac=22)  # very high AC: Fire Bolt rarely hits
+    v = _mkv([_firebolt(value=11.0), _magic_missile(value=11.0)], [foe])
+    intent = combat_ai.pick_action(actor=object(), combat_state=v)
+    # Fire Bolt P(hit) at +7 vs AC22 is ~0.30 -> EV ~3.3; Magic Missile auto -> EV 11. Auto wins.
+    assert intent.kind == "cast" and intent.spell_name == "Magic Missile"
+
+
+def test_pick_action_save_spell_ev_uses_real_dc_and_save_for_half():
+    """A save-for-half spell vs a LOW-save foe (high P(fail)) out-EVs the same spell vs a HIGH-save
+    foe — and beats a weak weapon. Proves the real spell_save_dc threads into the EV."""
+    weak_foe = CombatantView(id="weak", name="weak", side="party", current_hp=40, max_hp=40,
+                             armor_class=18, save_bonuses={"dex": -1})
+    v = _mkv([_save_spell(value=12.0)], [weak_foe], save_dc=16)
+    intent = combat_ai.pick_action(actor=object(), combat_state=v)
+    assert intent.kind == "cast" and intent.spell_name == "Burning Hands"
+
+
+def test_pick_action_does_not_waste_a_leveled_slot_on_a_trivial_target():
+    """SLOT ECONOMY: a single low-HP foe a FREE cantrip already kills does NOT draw a leveled slot —
+    the AI prefers the cantrip (slot_level 0)."""
+    v = _mkv([_firebolt(value=11.0), _magic_missile(value=10.0, slot=1)], [_foe("g", hp=4, ac=12)])
+    intent = combat_ai.pick_action(actor=object(), combat_state=v)
+    assert intent.kind == "cast" and intent.spell_name == "Fire Bolt"  # the free cantrip, not the slot
+
+
+def test_pick_action_does_not_blow_a_high_slot_on_one_weak_goblin():
+    """The brief's rule: don't Fireball one 8-HP goblin. A L3 slot's EV is capped at the target's HP
+    (8), which is below the L3 slot floor (18) -> the AI falls back to the free weapon."""
+    fireball = SpellOption(name="Fireball", value=28.0, kind="save", save_ability="dex",
+                           on_save="half", range_ft=150, slot_level=3)
+    v = _mkv([fireball], [_foe("g", hp=8, ac=12)])
+    intent = combat_ai.pick_action(actor=object(), combat_state=v)
+    assert intent.kind == "attack"  # the slot isn't worth it on one weak goblin -> the dagger
+
+
+def test_pick_action_spends_a_leveled_slot_on_a_worthy_target():
+    """The flip side: vs a worthy (high-HP) target with no cantrip available, a leveled slot whose
+    EV clears the floor IS spent."""
+    v = _mkv([_magic_missile(value=10.0, slot=1)], [_foe("ogre", hp=60, ac=11)])
+    intent = combat_ai.pick_action(actor=object(), combat_state=v)
+    assert intent.kind == "cast" and intent.spell_name == "Magic Missile"
+
+
+def test_pick_action_does_not_break_a_better_active_concentration():
+    """CONCENTRATION AWARENESS: the AI will NOT start a NEW concentration spell when it is already
+    concentrating on a different one — it keeps the active concentration and swings instead."""
+    conc = SpellOption(name="Spirit Guardians", value=14.0, kind="save", save_ability="dex",
+                       on_save="half", range_ft=15, slot_level=3, concentration=True)
+    v = _mkv([conc], [_foe("ogre", hp=60, ac=11)], active_conc="Hold Person")
+    intent = combat_ai.pick_action(actor=object(), combat_state=v)
+    assert not (intent.kind == "cast" and intent.spell_name == "Spirit Guardians")
+
+
+def test_pick_action_offensive_scoring_is_deterministic():
+    v = _mkv([_firebolt(), _magic_missile(), _save_spell()],
+             [_foe("a", hp=30, ac=14), _foe("b", hp=30, ac=14)])
+    assert combat_ai.pick_action(actor=object(), combat_state=v) == \
+        combat_ai.pick_action(actor=object(), combat_state=v)
+
+
+def test_pick_action_no_offensive_spells_is_byte_identical_to_pre_pr_attack():
+    """ADDITIVE BYTE-IDENTITY: a martial with NO offensive spells picks the EXACT same attack Intent
+    as before v2.0b (the offensive path is inert when there are no offensive options)."""
+    axe = AttackOption(name="Greataxe", to_hit=9, damage_expr="1d12+5")
+    foes = [_foe("a", hp=30, ac=14), _foe("b", hp=12, ac=14)]
+    v = _mkv([], foes, weapon=axe, atk_bonus=0, save_dc=0)
+    intent = combat_ai.pick_action(actor=object(), combat_state=v)
+    assert intent.kind == "attack" and intent.attack_name == "Greataxe"
+    assert intent.target_id == "b"  # focus-fire the lower-HP foe (today's tiebreak), unchanged
+
+
 # ── run_combat_autonomous(mode="test"): seeded random-vs-random to a terminal state ──
 
 def _seed_fight(server, store_mod, *, sandbox=True, monsters=3):
@@ -367,6 +482,81 @@ def test_non_caster_view_has_no_spells_and_no_caster_numbers(tmp_path, monkeypat
     view = combat_loop._build_view(server, c, c.characters[hero])
     assert view.spells == ()
     assert (view.spell_attack_bonus, view.spell_save_dc, view.caster_level) == (0, 0, 0)
+
+
+# ── v2.0b: the AI casts an offensive spell + applies damage through the real loop (#1106) ──
+
+def _seed_wizard_fight(server, store_mod, *, monster="Ogre", monsters=1):
+    """A level-5 wizard (feeble STR-8 dagger) who knows Fire Bolt + Magic Missile + Burning Hands,
+    vs `monsters` `monster`s, pinned as the current actor with a fresh action economy."""
+    cid = server.create_campaign("Wizard Test")["id"]
+    server.add_location(campaign_id=cid, name="Tower", description="x", make_current=True)
+    c = server._require(cid)
+    c.is_sandbox = True
+    store_mod.save_campaign(c)
+    wiz = server.create_character(
+        cid, "Tarn", kind="player", race="human", class_name="wizard", level=5,
+        abilities={"strength": 8, "dexterity": 14, "constitution": 12,
+                   "intelligence": 18, "wisdom": 10, "charisma": 10},
+        apply_srd_defaults=True,
+    )["id"]
+    server.learn_spells(cid, wiz, ["Fire Bolt", "Magic Missile", "Burning Hands"])
+    server.prepare_spells(cid, wiz, ["Fire Bolt", "Magic Missile", "Burning Hands"])
+    mons = [m["id"] for m in server.spawn_monster(cid, monster, count=monsters)["spawned"]]
+    server.start_combat(cid, [wiz] + mons)
+    c = server._require(cid)
+    idx = next(i for i, cb in enumerate(c.combat.order) if cb.character_id == wiz)
+    c.combat.turn_index = idx
+    c.combat.action_used = False
+    store_mod.save_campaign(c)
+    return cid, wiz, mons
+
+
+def test_ai_itself_casts_an_offensive_spell_through_the_loop(tmp_path, monkeypatch):
+    """END-TO-END: the engine-run AI (NOT a scripted assist) casts an OFFENSIVE spell over its feeble
+    dagger and the foe's HP DROPS — applied through the sole-writer _apply_intent (cast_spell +
+    apply_damage). Proves v2.0b: the view sees the offensive spells + the caster's attack bonus, and
+    the AI chooses the spell AND the damage lands through the locked verbs."""
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    import server
+    dice_mod.reseed_process_rng(11)
+    cid, wiz, mons = _seed_wizard_fight(server, store, monster="Ogre", monsters=1)
+    ogre = mons[0]
+
+    c = server._require(cid)
+    view = combat_loop._build_view(server, c, c.characters[wiz])
+    # The view sees offensive spells + the caster numbers (the v2.0b foundations).
+    offensive = [s for s in view.spells if not s.is_heal and s.kind in ("attack", "auto", "save")]
+    assert offensive, "no offensive spells discovered in the wizard's view"
+    assert view.spell_attack_bonus > 0 and view.spell_save_dc > 0
+
+    before = c.characters[ogre].current_hp
+    intent = combat_ai.pick_action(c.characters[wiz], view)
+    assert intent.kind == "cast", f"AI swung instead of casting (chose {intent.kind})"
+    assert intent.spell_name in [s.name for s in offensive], f"cast a non-offensive spell: {intent.spell_name}"
+
+    entry = combat_loop._apply_intent(server, cid, wiz, intent)
+    after = server._require(cid).characters[ogre].current_hp
+    assert after < before, f"the offensive cast did not remove HP ({before} -> {after})"
+    assert entry["result"]["damage"]["applied"] >= 1  # the locked apply_damage verb ran
+
+
+def test_non_caster_fight_is_byte_identical_under_v2b(tmp_path, monkeypatch):
+    """ADDITIVE BYTE-IDENTITY: a martial-only fight (no offensive spells) resolves to the SAME
+    outcome under v2.0b — same seed, two runs, identical victor/rounds/turns. The offensive-spell
+    path is inert for a non-caster (default-off / empty == today)."""
+    import server
+
+    def _run(seed, state):
+        monkeypatch.setenv("WORLDOS_STATE_DIR", str(state))
+        dice_mod.reseed_process_rng(seed)
+        cid, hero, mons = _seed_fight(server, store, monsters=3)
+        return combat_loop.run_combat_autonomous(cid, mode="test", max_rounds=25)
+
+    r1 = _run(909, tmp_path / "a")
+    r2 = _run(909, tmp_path / "b")
+    assert (r1["victor"], r1["rounds"], r1["turns"]) == (r2["victor"], r2["rounds"], r2["turns"])
+    assert r1["round_cap_hit"] is False
 
 
 def test_run_combat_autonomous_test_runs_to_terminal_and_everyone_acted(tmp_path, monkeypatch):
