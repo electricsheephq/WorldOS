@@ -59,6 +59,8 @@ API_BASE = "https://api.cloud.scenario.com/v1"
 MODELS_PATH = "/models"
 TXT2IMG_PATH = "/generate/txt2img"
 UPSCALE_PATH = "/generate/upscale"
+CONTROLNET_PATH = "/generate/custom/{model_id}"
+ASSETS_PATH = "/assets"
 JOB_PATH = "/jobs/{job_id}"
 ASSET_PATH = "/assets/{asset_id}"
 
@@ -405,6 +407,137 @@ def _cmd_upscale(args) -> None:
     print("[scenario_gen] OK — job=%s assets=%d" % (job_id, len(saved)))
 
 
+def _upload_image(headers: dict, local_path: str) -> str:
+    """Upload a local image file to Scenario as a private asset and return its asset id.
+
+    The Scenario asset-create endpoint accepts a JSON body with:
+      { "image": "data:<mime>;base64,<b64>", "name": "<filename>" }
+    and returns { "asset": { "id": "<asset_id>", ... } }.
+
+    This is the proven approach (confirmed live 2026-06-22 on POST /v1/assets):
+    no presigned-URL multipart flow is needed — a single JSON POST suffices.
+    """
+    if not os.path.isfile(local_path):
+        sys.exit("[scenario_gen] ERROR: control image not found: %s" % local_path)
+    ext = os.path.splitext(local_path)[1].lower()
+    mime_map = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                ".webp": "image/webp", ".gif": "image/gif"}
+    mime = mime_map.get(ext, "image/png")
+    with open(local_path, "rb") as f:
+        raw = f.read()
+    b64 = base64.b64encode(raw).decode("ascii")
+    data_url = "data:%s;base64,%s" % (mime, b64)
+    name = os.path.basename(local_path)
+    body = {"image": data_url, "name": name}
+    res = _post_json(API_BASE + ASSETS_PATH, headers, body)
+    asset = res.get("asset") or res
+    asset_id = asset.get("id") or asset.get("assetId")
+    if not asset_id:
+        sys.exit(
+            "[scenario_gen] ERROR: upload returned no asset id: %s" % json.dumps(res)
+        )
+    print("[scenario_gen] uploaded %s -> asset_id=%s" % (name, asset_id))
+    return asset_id
+
+
+def _cmd_controlnet(args) -> None:
+    """Pipeline A: painterly-on-grid ControlNet generation (FLUX.1-dev canny/depth).
+
+    Proven MCP recipe (2026-06-22):
+      model:   model_bfl-flux-1-dev
+      params:  { controlImage:<scenario_asset_id>, controlModality:'canny',
+                 controlStrength:0.7, width:1024, height:1024,
+                 numSamples:N, seed:S, prompt:... }
+    The output painterly floor preserves the grid + obstacle cells with ~zero drift
+    when the control image is a 2:1 dimetric structure plate.
+
+    REST contract (confirmed live 2026-06-22):
+      * Upload local image  : POST /v1/assets  {"image":"data:...", "name":"..."}
+                              -> {"asset":{"id":"<id>"}}
+      * Submit ControlNet   : POST /v1/generate/custom/<modelId>
+                              {"prompt", "controlImage", "controlModality",
+                               "controlStrength", "width", "height", "numSamples", "seed",
+                               "loras"}
+                              -> job (same shape as txt2img)
+      * Poll + download     : same _poll_job / _job_asset_ids / _asset_url / _download
+    """
+    out_dir = _resolve_out(args)
+
+    # Resolve control asset id
+    control_asset_id = getattr(args, "control_asset_id", None)
+    control_image_path = getattr(args, "control_image", None)
+
+    if args.dry_run:
+        print("[scenario_gen] DRY-RUN controlnet (Pipeline A)")
+        print("  model-id          : %s" % args.model_id)
+        print("  prompt            : %s" % args.prompt)
+        print("  control-image     : %s" % (control_image_path or "(none)"))
+        print("  control-asset-id  : %s" % (control_asset_id or "(will upload)"))
+        print("  control-modality  : %s" % args.control_modality)
+        print("  control-strength  : %s" % args.control_strength)
+        print("  samples           : %d" % args.num_samples)
+        print("  size              : %dx%d" % (args.width, args.height))
+        print("  out dir           : %s" % out_dir)
+        print("  est credits       : ~%d (API is source of truth)" % (CREDIT_EST["generate_per_sample"] * args.num_samples))
+        return
+
+    if not control_asset_id and not control_image_path:
+        sys.exit(
+            "[scenario_gen] ERROR: controlnet requires --control-image <path> "
+            "OR --control-asset-id <id>."
+        )
+
+    os.makedirs(out_dir, exist_ok=True)
+    key, secret = _load_credentials()
+    headers = _auth_headers(key, secret)
+
+    # Upload local image if no asset id given
+    if not control_asset_id:
+        print("[scenario_gen] uploading control image: %s" % control_image_path)
+        control_asset_id = _upload_image(headers, control_image_path)
+
+    body = {
+        "prompt": args.prompt,
+        "controlImage": control_asset_id,
+        "controlModality": args.control_modality,
+        "controlStrength": float(args.control_strength),
+        "numSamples": args.num_samples,
+        "width": args.width,
+        "height": args.height,
+    }
+    if args.seed is not None:
+        body["seed"] = args.seed
+    if getattr(args, "loras", None):
+        lora_list = [s.strip() for s in args.loras.split(",") if s.strip()]
+        if lora_list:
+            body["loras"] = [{"assetId": lid} for lid in lora_list]
+
+    url = API_BASE + CONTROLNET_PATH.format(model_id=args.model_id)
+    print("[scenario_gen] submitting controlnet job (model=%s, modality=%s, strength=%.2f)"
+          % (args.model_id, args.control_modality, float(args.control_strength)))
+    res = _post_json(url, headers, body)
+    job_id = _job_id_from_create(res, "controlnet create")
+    print("[scenario_gen] controlnet job submitted: %s" % job_id)
+    job = _poll_job(headers, job_id, "controlnet", args.timeout)
+    stem = _safe_scope(getattr(args, "scope", "") or "controlnet") or "controlnet"
+    saved = _download_job_assets(headers, job, out_dir, stem)
+    _write_meta(out_dir, {
+        "prompt": args.prompt,
+        "model_id": args.model_id,
+        "control_asset_id": control_asset_id,
+        "control_image_path": control_image_path,
+        "control_modality": args.control_modality,
+        "control_strength": float(args.control_strength),
+        "num_samples": args.num_samples,
+        "width": args.width,
+        "height": args.height,
+        "job_id": job_id,
+        "assets": saved,
+        "source": "scenario-controlnet",
+    })
+    print("[scenario_gen] OK — job=%s assets=%d" % (job_id, len(saved)))
+
+
 def _write_meta(out_dir: str, meta: dict) -> None:
     meta_path = os.path.join(out_dir, "scenario_meta.json")
     with open(meta_path, "w") as f:
@@ -449,6 +582,53 @@ def main(argv=None) -> None:
     sp_up.add_argument("--scale", type=int, default=2, help="scaling factor (default 2)")
     _add_out(sp_up)
 
+    sp_cn = sub.add_parser(
+        "controlnet",
+        help="Pipeline A: painterly-on-grid ControlNet generation (FLUX.1-dev canny/depth). "
+             "Upload a 2:1 dimetric structure plate as the control image; outputs a painterly "
+             "scene whose floor/obstacle layout is grid-aligned BY CONSTRUCTION.",
+    )
+    sp_cn.add_argument(
+        "--control-image",
+        metavar="PATH",
+        help="local path to the control image (structure plate PNG). Uploaded automatically. "
+             "Mutually exclusive with --control-asset-id.",
+    )
+    sp_cn.add_argument(
+        "--control-asset-id",
+        metavar="ASSET_ID",
+        help="Scenario asset id of an already-uploaded control image (skips upload step). "
+             "Mutually exclusive with --control-image.",
+    )
+    sp_cn.add_argument("--prompt", required=True, help="painterly scene prompt")
+    sp_cn.add_argument(
+        "--control-modality",
+        default="canny",
+        choices=["canny", "depth", "mlsd", "pose", "scribble", "seg", "normal", "softedge"],
+        help="ControlNet modality (default: canny)",
+    )
+    sp_cn.add_argument(
+        "--control-strength",
+        type=float,
+        default=0.7,
+        help="ControlNet conditioning strength 0.0–1.0 (default: 0.7)",
+    )
+    sp_cn.add_argument(
+        "--model-id",
+        default="model_bfl-flux-1-dev",
+        help="Scenario model id (default: model_bfl-flux-1-dev)",
+    )
+    sp_cn.add_argument("--num-samples", type=int, default=2,
+                       help="number of output images (default: 2)")
+    sp_cn.add_argument("--width", type=int, default=1024, help="output width px (default: 1024)")
+    sp_cn.add_argument("--height", type=int, default=1024, help="output height px (default: 1024)")
+    sp_cn.add_argument("--seed", type=int, help="deterministic seed (optional)")
+    sp_cn.add_argument(
+        "--loras",
+        help="comma-separated Scenario LoRA asset ids to apply (optional)",
+    )
+    _add_out(sp_cn)
+
     args = ap.parse_args(argv)
 
     if args.test_key:
@@ -460,9 +640,11 @@ def main(argv=None) -> None:
         _cmd_generate(args)
     elif args.command == "upscale":
         _cmd_upscale(args)
+    elif args.command == "controlnet":
+        _cmd_controlnet(args)
     else:
         ap.print_help()
-        sys.exit("\n[scenario_gen] ERROR: a subcommand (list-models|generate|upscale) or --test-key is required.")
+        sys.exit("\n[scenario_gen] ERROR: a subcommand (list-models|generate|upscale|controlnet) or --test-key is required.")
 
 
 if __name__ == "__main__":
