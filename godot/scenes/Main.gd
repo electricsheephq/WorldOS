@@ -96,6 +96,9 @@ func _on_snapshot(atlas: Dictionary, _combat: Dictionary, character: Dictionary)
 		if _has_arg("--served-finals-smoke"):
 			call_deferred("_run_served_finals_smoke")
 			return
+		if _has_arg("--combat-tokens"):
+			call_deferred("_run_combat_tokens")
+			return
 		if _has_arg("--demo-occlusion"):
 			call_deferred("_run_demo_occlusion")
 			return
@@ -206,6 +209,98 @@ func _run_served_finals_smoke() -> void:
 		str(all_ok), str(resolver_ok), anims])
 
 	call_deferred("_quit_clean")
+
+
+# ---------------------------------------------------------------------------
+# #1060 COMBAT-TOKENS: prove the iso view renders a token for EVERY combatant (party +
+# foes), each at its named ZONE, visually distinguished by TEAM. Drives an ACTIVE combat
+# snapshot (res://fixtures/combat-surface-active.json — the steady SurfaceClient path
+# keeps combat-surface.json active:false = the exploration default) straight into
+# WorldView.apply_snapshot, then asserts (a) one token per combat token, (b) each placed
+# at its zone's screen anchor, (c) foes carry the hostile team tint and allies do not.
+# Deterministic + headless (no window needed). Quits cleanly.
+# ---------------------------------------------------------------------------
+func _run_combat_tokens() -> void:
+	print("[Main] --combat-tokens: rendering an ACTIVE combat roster (party + foes)")
+
+	# Load the read-only surfaces directly (the active combat fixture + the standalone
+	# atlas/character fixtures), exactly the shape SurfaceClient emits to apply_snapshot.
+	var combat: Dictionary = _load_fixture_dict("combat-surface-active")
+	var atlas: Dictionary = _load_fixture_dict("atlas-surface")
+	var character: Dictionary = _load_fixture_dict("character-surface")
+	if combat.is_empty():
+		print("[CombatTokens] RESULT ok=false reason=missing-active-fixture")
+		call_deferred("_quit_clean")
+		return
+
+	# Project the ACTIVE combat snapshot into the world (the #1060 path under test).
+	# A token that PRE-EXISTED from the prior exploration snapshot (the lead party
+	# token) is reconciled with a short walk-tween to its combat zone rather than an
+	# instant snap; let that tween settle so the placement assertion reads the final
+	# position, not a mid-walk frame. (New tokens are placed instantly.)
+	_world.apply_snapshot(atlas, combat, character)
+	await get_tree().create_timer(CharacterToken.MOVE_TWEEN_SEC + 0.2).timeout
+
+	var tokens: Array = combat.get("tokens", []) if typeof(combat.get("tokens", [])) == TYPE_ARRAY else []
+	var expected: int = tokens.size()
+	var spawned: int = _world.token_count()
+	print("[CombatTokens] expected=%d spawned=%d" % [expected, spawned])
+
+	# (a) one token per combat token; (b) each at its named zone's anchor; (c) the team
+	# tint matches (foes = hostile wash != WHITE; allies = neutral WHITE).
+	var all_present := true
+	var all_zoned := true
+	var all_tinted := true
+	var foe_seen := false
+	var ally_seen := false
+	for entry in tokens:
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		var t: Dictionary = entry
+		var actor_id := String(t.get("id", ""))
+		var team := String(t.get("team", "ally"))
+		var zone := String(t.get("zone", ""))
+		var tok: CharacterToken = _world.token_for(actor_id)
+		var present := tok != null and is_instance_valid(tok)
+		all_present = all_present and present
+		if not present:
+			print("[CombatTokens] MISSING token actor=%s team=%s zone=%s" % [actor_id, team, zone])
+			continue
+		# (b) placement == the zone anchor (when the zone is known this tick).
+		var zone_pos: Vector2 = _world.zone_screen_pos(zone)
+		var at_zone := zone == "" or zone_pos == Vector2.ZERO or tok.position.distance_to(zone_pos) < 1.0
+		all_zoned = all_zoned and at_zone
+		# (c) team tint: foes must be tinted (non-white); allies stay neutral white.
+		var tint: Color = _world.team_tint_for(actor_id)
+		var is_white := tint.is_equal_approx(Color(1, 1, 1, 1))
+		if team == "foe":
+			foe_seen = true
+			all_tinted = all_tinted and not is_white
+		else:
+			ally_seen = true
+			all_tinted = all_tinted and is_white
+		print("[CombatTokens] actor=%s team=%s zone=%s at_zone=%s tint=(%.2f,%.2f,%.2f)" % [
+			actor_id, team, zone, str(at_zone), tint.r, tint.g, tint.b])
+
+	var count_ok: bool = spawned == expected and expected > 0
+	var all_ok: bool = count_ok and all_present and all_zoned and all_tinted and foe_seen and ally_seen
+	print("[CombatTokens] RESULT ok=%s count=%d/%d all_zoned=%s team_tinted=%s (foes=%s allies=%s)" % [
+		str(all_ok), spawned, expected, str(all_zoned), str(all_tinted), str(foe_seen), str(ally_seen)])
+
+	call_deferred("_quit_clean")
+
+
+## #1060 — load + parse a bundled res://fixtures/<name>.json into a Dictionary (or {}
+## on any missing/parse failure). Mirrors SurfaceClient's fixture loader so the
+## conformance drives apply_snapshot with the exact same shapes the transport emits.
+func _load_fixture_dict(name: String) -> Dictionary:
+	var path := "res://fixtures/%s.json" % name
+	if not FileAccess.file_exists(path):
+		push_warning("[Main] missing fixture: " + path)
+		return {}
+	var text := FileAccess.get_file_as_string(path)
+	var parsed: Variant = JSON.parse_string(text)
+	return parsed if typeof(parsed) == TYPE_DICTIONARY else {}
 
 
 # ---------------------------------------------------------------------------

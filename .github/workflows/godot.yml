@@ -142,6 +142,18 @@ jobs:
           grep -qE "\[ServedFinals\] RESULT served-atlas-applied=true resolver_cached=true anims=32" /tmp/served.log
           kill $STUB_PID 2>/dev/null || true
 
+      - name: Conformance — combat/zone tokens render for EVERY combatant (#1060)
+        run: |
+          set -euxo pipefail
+          # Drive an ACTIVE combat snapshot (fixtures/combat-surface-active.json: 2 allies
+          # + 3 foes at named zones) into WorldView and assert one team-tinted token per
+          # combat token, each at its zone anchor. The steady SurfaceClient path keeps
+          # combat-surface.json active:false (the exploration default), so the exploration
+          # party[0] path + the anims=32 conformance above stay untouched.
+          godot --headless --path godot --quit-after 180 -- --combat-tokens 2>&1 | tee /tmp/combat.log
+          # Five combatants -> five spawned tokens, each at its zone, foes tinted + allies neutral.
+          grep -qE "\[CombatTokens\] RESULT ok=true count=5/5 all_zoned=true team_tinted=true \(foes=true allies=true\)" /tmp/combat.log
+
       - name: Export validation — Web (single-threaded) + Linux
         working-directory: godot
         run: |

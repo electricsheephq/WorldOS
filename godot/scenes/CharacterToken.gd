@@ -35,6 +35,9 @@ var _anim: String = "idle"
 var _facing_order: Array = LOCKED_FACING_ORDER.duplicate()
 var _anchor: Vector2 = Vector2(64, 116)
 var _kind: String = "character"
+## #1060 — renderer-owned team modulate (WHITE = neutral/none). Re-applied after every
+## set_manifest (which rebuilds the sprite) so a served-atlas swap keeps the tint.
+var _team_tint: Color = Color(1, 1, 1, 1)
 
 var _sprite: AnimatedSprite2D
 var _frames: SpriteFrames
@@ -131,6 +134,8 @@ func set_manifest(manifest: Dictionary, sheet_texture: Texture2D) -> void:
 	_sprite.centered = false
 	# Place the cell so its anchor px lands on the node origin (feet at origin).
 	_sprite.offset = -_anchor
+	# #1060 — re-apply the team tint (this rebuilt the sprite; modulate would reset).
+	_sprite.modulate = _team_tint
 
 	# Default: idle at the profile default facing (fallback S).
 	var default_facing := RenderProfile.default_facing()
@@ -164,6 +169,21 @@ func facing() -> String:
 
 func anim() -> String:
 	return _anim
+
+
+## #1060 — apply a renderer-owned TEAM tint (modulate) to the sprite so foe vs ally
+## reads at a glance. This is PURE presentation (it owns no game state); the engine
+## ships only the `team` string and WorldView maps it to a Color. Persists across
+## set_anim/set_facing because it modulates the AnimatedSprite2D, not a single clip.
+func set_team_tint(tint: Color) -> void:
+	_team_tint = tint
+	if _sprite != null:
+		_sprite.modulate = tint
+
+
+## The team tint currently applied (WHITE == neutral/none). For validation.
+func team_tint() -> Color:
+	return _team_tint
 
 
 ## The SpriteFrames animation count (for validation: expect anim_count*facings = 32).
