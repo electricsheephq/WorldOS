@@ -1367,3 +1367,97 @@ def test_signature_feature_passes_when_superiority_dice_used(tmp_path):
     rc, out = _run_gate(tmp_path, [], state)
     assert rc == 0, out
     assert "[PASS] signature_feature_exercised" in out, out
+
+
+# ── guiding_bolt_advantage_consumed: the GB advantage rider must benefit the next attack (cs-wave2-val) ──
+
+def _gb_landing_attack(tool_use_id: str, target: str = "Goblin") -> list:
+    """A Guiding Bolt SPELL attack that HITS and materializes the advantage marker on `target`
+    (engine: on_hit_effect_applied: ['Guiding Bolt']). This attack itself carries NO advantage
+    (none pre-existed) — it ARMS the marker for the NEXT attack."""
+    return [
+        _assistant_tool_use(tool_use_id, "mcp__engine__attack",
+                            {"attacker_id": "cleric", "target_id": "foe"}),
+        _user_tool_result(tool_use_id, json.dumps({
+            "attacker": "Pious", "target": target, "hit": True,
+            "advantage": False, "disadvantage": False,
+            "on_hit_effect_applied": ["Guiding Bolt"],
+        })),
+    ]
+
+
+def test_guiding_bolt_advantage_warns_when_next_attack_drops_it(tmp_path):
+    # GB lands its marker on the Goblin; the NEXT attack against the Goblin shows advantage=False
+    # and NO advantage_source — the SRD "next attack has Advantage" rider was dropped -> WARN
+    # (run stays GREEN; the smell surfaces to the scorer).
+    events = _gb_landing_attack("gb1") + [
+        _assistant_tool_use("a2", "mcp__engine__attack",
+                            {"attacker_id": "fighter", "target_id": "foe"}),
+        _user_tool_result("a2", json.dumps({
+            "attacker": "Brawn", "target": "Goblin", "hit": True,
+            "advantage": False, "disadvantage": False,  # <-- the rider was NOT auto-granted
+        })),
+    ]
+    rc, out = _run_gate(tmp_path, events, {"leveling_mode": "milestone"})
+    assert rc == 0, out  # WARN never REDs the run
+    assert "[WARN] guiding_bolt_advantage_consumed" in out, out
+    assert "Goblin" in out and "Brawn" in out, out
+
+
+def test_guiding_bolt_advantage_passes_when_next_attack_carries_it(tmp_path):
+    # GB lands its marker; the next attack on the same target reports advantage_source='Guiding Bolt'
+    # + advantage_consumed=True (the engine auto-granted + consumed it) -> PASS.
+    events = _gb_landing_attack("gb2") + [
+        _assistant_tool_use("a3", "mcp__engine__attack",
+                            {"attacker_id": "fighter", "target_id": "foe"}),
+        _user_tool_result("a3", json.dumps({
+            "attacker": "Brawn", "target": "Goblin", "hit": True,
+            "advantage": True, "disadvantage": False,
+            "advantage_source": "Guiding Bolt", "advantage_consumed": True,
+        })),
+    ]
+    rc, out = _run_gate(tmp_path, events, {"leveling_mode": "milestone"})
+    assert rc == 0, out
+    assert "[PASS] guiding_bolt_advantage_consumed" in out, out
+
+
+def test_guiding_bolt_advantage_silent_when_marker_never_lands(tmp_path):
+    # A run that never materializes a Guiding Bolt marker (a plain attack, no on_hit_effect_applied)
+    # emits the check as a vacuous PASS — it never WARNs on the absence of the feature (scope-guard:
+    # additive / byte-identical to a non-GB run).
+    events = [
+        _assistant_tool_use("p1", "mcp__engine__attack",
+                            {"attacker_id": "fighter", "target_id": "foe"}),
+        _user_tool_result("p1", json.dumps({
+            "attacker": "Brawn", "target": "Goblin", "hit": True,
+            "advantage": False, "disadvantage": False,
+        })),
+    ]
+    rc, out = _run_gate(tmp_path, events, {"leveling_mode": "milestone"})
+    assert rc == 0, out
+    assert "[WARN] guiding_bolt_advantage_consumed" not in out, out
+    assert "[PASS] guiding_bolt_advantage_consumed" in out, out
+
+
+def test_guiding_bolt_advantage_ignores_attack_on_other_target(tmp_path):
+    # The marker is the Goblin's; an attack on a DIFFERENT (unmarked) target between the landing and
+    # the marked-target follow-up does not falsely consume/charge the marker — only the FIRST attack
+    # on the MARKED foe is judged, and here it correctly carries the advantage -> PASS.
+    events = _gb_landing_attack("gb3") + [
+        _assistant_tool_use("o1", "mcp__engine__attack",
+                            {"attacker_id": "fighter", "target_id": "rat"}),
+        _user_tool_result("o1", json.dumps({
+            "attacker": "Brawn", "target": "Rat", "hit": True,  # a different, unmarked target
+            "advantage": False, "disadvantage": False,
+        })),
+        _assistant_tool_use("o2", "mcp__engine__attack",
+                            {"attacker_id": "fighter", "target_id": "foe"}),
+        _user_tool_result("o2", json.dumps({
+            "attacker": "Brawn", "target": "Goblin", "hit": True,
+            "advantage": True, "disadvantage": False,
+            "advantage_source": "Guiding Bolt", "advantage_consumed": True,
+        })),
+    ]
+    rc, out = _run_gate(tmp_path, events, {"leveling_mode": "milestone"})
+    assert rc == 0, out
+    assert "[PASS] guiding_bolt_advantage_consumed" in out, out
