@@ -506,14 +506,22 @@ jq -rs 'map((.role|ascii_upcase) + ": " + (.text // "")) | join("\n\n")' "$CHAT"
 # a lock-only dir with no snapshot, which head -1 may grab -> false "no state" RED).
 SNAP="$(find "$STATE_DIR/campaigns" -mindepth 2 -maxdepth 2 -name snapshot.json -size +1c -exec ls -S {} + 2>/dev/null | head -1)"
 if [ -n "$SNAP" ]; then cp "$SNAP" "$T/$RUN.state.json"; else echo '{"warning":"no state"}' > "$T/$RUN.state.json"; fi
-# Three lenses, run CONCURRENTLY (background + wait) so the third pass adds no wall-clock.
-# Mechanical + Angry-DM (5e rules-fidelity) score the DM distill `$RUN.md` — the tool
+# Lenses. Mechanical + Angry-DM (5e rules-fidelity) score the DM distill `$RUN.md` — the tool
 # stream (→ tool / ← result) where the MECHANICS live; Tolkien scores the two-sided $PLAY
 # (scene-craft must be judged on the actual back-and-forth).
+#
+# #1040: the two LIGHT lenses (mechanical ~4 KB rubric, tolkien ~12 KB) run CONCURRENTLY (they
+# finish in ~60–150s, so the second adds no wall-clock). The Angry-DM lens (rubric ~32 KB) is the
+# HEAVY one — it LEGITIMATELY takes ~400s on a combat-dense transcript (single-turn generation,
+# MEASURED 402s). Running it concurrently with the others made the calls share API throughput so the
+# heaviest one routinely blew past the timeout and produced NOTHING (the false "combat-scorer hang").
+# So: score the two light lenses in parallel, WAIT, THEN score Angry-DM ALONE — full throughput, lands
+# near its ~400s baseline, comfortably under score.sh's 600s guard. Adds ~the angrydm time in extra
+# wall-clock vs the old all-parallel, but the old way silently LOST the mech lens on every combat run.
 [ -f "$T/$RUN.md" ] && "$SCORE_SCRIPT" "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric.md qa/score_schema.json "$T/$RUN.score.json" 1.50 &
 [ -s "$PLAY" ] && "$SCORE_SCRIPT" "$PLAY" "$T/$RUN.state.json" qa/rubric_tolkien.md qa/score_schema_tolkien.json "$T/$RUN.tolkien.json" 1.50 &
-[ -f "$T/$RUN.md" ] && "$SCORE_SCRIPT" "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric_angry_dm.md qa/score_schema_angry_dm.json "$T/$RUN.angrydm.json" 1.50 &
 wait
+[ -f "$T/$RUN.md" ] && "$SCORE_SCRIPT" "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric_angry_dm.md qa/score_schema_angry_dm.json "$T/$RUN.angrydm.json" 1.50
 # #842 Fix F (caller half): score.sh now FAILS FAST on a 429, writing a {"quota_exhausted":true,…}
 # sentinel into its OUT and exiting rc=2 — so the scorer can quota-trip even when the DM cold-open
 # itself didn't (e.g. the account hits the limit AFTER the play, during scoring). Any lens carrying
