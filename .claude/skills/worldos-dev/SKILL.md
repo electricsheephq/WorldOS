@@ -149,8 +149,13 @@ Keep Python tests single-process unless the lane explicitly supports parallel ex
    ```
    **DO NOT pipe `gh pr create` through `tail` inside an `&&` chain** — it masks a transient
    failure and silently skips the merge (bit us on #185). Verify the returned PR URL.
-4. **Merge only after checks pass.** Use the repository's normal PR merge path and treat
-   local `license_check` + focused pytest as pre-push confidence, not a replacement for CI.
+4. **Merge through the protected path (see ## THE MERGE GATE).** Default
+   `gh pr merge <#> --squash --auto` (waits for the 5 required `ci.yml` checks + conversation
+   resolution, then squash-merges). Local `license_check` + focused pytest are pre-push
+   confidence, NOT a CI replacement. `--admin` is **emergency-only** (declare why in a PR
+   comment + open a follow-up issue) — it bypasses branch protection. *(main is branch-protected
+   as of 2026-06-21 — Guardrail + admin-override; `allow_auto_merge` + `delete_branch_on_merge`
+   are on.)*
 5. **Sync + clean:**
    ```bash
    git pull --ff-only origin main
@@ -162,18 +167,57 @@ Keep Python tests single-process unless the lane explicitly supports parallel ex
   `origin/main` + merging on GitHub means `/Users/lume/WorldOS` is only ever `fetch`ed — its working
   tree silently falls behind and files look "not there." After a merge batch:
   `git -C /Users/lume/WorldOS pull --ff-only`.
-- **Merge race.** `gh pr merge --squash --admin` can fail "base branch was modified" when a parallel
-  session's PR lands mid-flight — and your LOCAL branch may get cleaned even though the PR stayed
-  OPEN. Verify with `gh pr view <n> --json state` and **retry** the merge on any still-open PR.
+- **Merge race.** With `--auto` a parallel PR landing mid-flight just re-queues your merge; with
+  `--admin` (emergency-only) it can fail "base branch was modified" and your LOCAL branch may get
+  cleaned even though the PR stayed OPEN. Verify with `gh pr view <n> --json state` and **retry** on
+  any still-open PR.
 - **A worktree's gitignored files are DESTROYED on `git worktree remove`.** Generated/uncommitted
   output written into a worktree's `_private` (or any gitignored path) is gone on cleanup — write
   durable generated artifacts into the **canonical** repo, not a worktree.
 - **Secret-scan the diff before every commit** — `git diff --cached | grep -iE '<key-prefixes>'` must
   be empty. Keys live in `~/.worldos/*.key` (mode 600), never the tree.
-- **CI-only-validatable changes:** watch CI to conclusion (`gh run watch`) before merging. `godot/`-only
-  PRs skip CodeQL (the deterministic lanes + the `godot.yml` lane gate them), so squash-`--admin` is fine once green.
+- **CI-only-validatable changes:** let `--auto` hold the merge until CI concludes (or `gh run watch`).
+  `godot/`-only PRs skip CodeQL (the deterministic lanes + the `godot.yml` lane gate them) — they still
+  merge through the protected `--auto` path once the 5 required checks are green.
 - **New-subsystem skills:** **`godot-dev`** (GT2 Godot renderer), **`asset-gen`** (Meshy/Tripo/Scenario/
   PixelLab art), **`wire-external-api-service`** (integrate a new API/MCP), **`sprint-handoff-doc`** (hand off a sprint).
+
+## THE MERGE GATE — CI + CodeRabbit (don't push-and-abandon)
+**Shepherd every PR to merge; never open-and-walk-away.** Stay engaged (or hand to a report-only
+watcher) until it lands. Merge only when ALL hold:
+1. **CI green AND present** — all 5 required `ci.yml` contexts (`test`, `viewer-tests`,
+   `qa-release-gate-tests`, `server-contracts`, `license-check`) have a check-run on THIS head and
+   are SUCCESS. A *missing* context reads as no-status, not pass (strict=false + a job added to
+   ci.yml after your last push ⇒ re-push to regenerate it).
+2. **CodeRabbit reviewed & clear** (or degraded-mode handled). The reliable "done" signal is a
+   **review object whose `commit_id == head SHA`**, NOT the early `summarize by coderabbit.ai`
+   comment and NOT the commit status (a rate-limited run shows a green status with zero review).
+   Nitpicks hide in the review body's `<details>` blocks — don't trust "Actionable comments: N" alone.
+3. **All review threads genuinely addressed** (required_conversation_resolution is on). Resolve a
+   thread only after FIX / FILE / WON'T-FIX / FALSE-POSITIVE — never resolve-without-addressing.
+4. **No human `CHANGES_REQUESTED`** outstanding + stale-base rebase check (strict=false lets a green
+   stale PR merge; rebase if main moved in a semantically-conflicting way).
+
+**Nit-triage** — judge each finding by **PX-relevance** (does it change what a player sees/hears/does,
+or corrupt save state?). "actionable = 0" = *zero unaddressed PX-relevant correctness findings*, not
+zero total comments. FIX-in-PR if P≤2 & PX-relevant & in-scope; FILE a `Post-1.0 / vNext` issue (reply
+linking it, then resolve) if real-but-out-of-scope; WON'T-FIX (one batched reply) for P3/P4 cosmetics;
+FALSE-POSITIVE if the bot misread. **Only P0 + un-concurred P1 PX-relevant findings block the merge;
+nits NEVER block.** Before applying any bot suggestion touching engine/snapshot/facade/schema, run the
+invariant-conflict check (sole-writer / additive / gates-read-engine / `extra=forbid`) — a suggestion
+that breaks an invariant is a FALSE-POSITIVE, not a fix.
+
+**Degraded mode (CodeRabbit rate-limited / credit-exhausted / silent):** retry once with `@coderabbitai
+review`; if still no review-object, substitute a review (`adversarial-pr-sweep` or your own adversarial
+diff read), label `needs-coderabbit-rereview`, proceed — NEVER treat a green status as "clear". Bound
+the wait. **Trivial lane:** lint/docs/comment-only diffs merge on CI-green + your own review. **Headless
+sink:** with no reachable human, label `blocked`+`needs-human`, leave threads unresolved, exit cleanly.
+**Cache cost is NEVER a reason to merge early.**
+
+**Multi-round → delegate to a report-only watcher** (`pr-review-loop`): poll in segmented ≤270s chunks
+(keep the cache warm — a completion-only `sleep 600` just defers a cold read), triage + reply, and
+RETURN `{ci_status, coderabbit_review_status, actionable_comments[], unresolved_threads}`. The MAIN
+thread owns the final 95% merge decision; the watcher does not merge.
 
 ## QA STRATEGY — pick the TIER (don't run the 90-min sweep to iterate)
 **Match the test to the change + your confidence — run a MIX, not all-or-nothing.** The full 5-persona
