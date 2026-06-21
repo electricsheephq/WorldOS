@@ -324,4 +324,155 @@ def test_measure_math_is_pure_no_state_dir():
     assert combat_grid.in_melee_reach((0, 0), (2, 0)) is False
 
 
+# ── (9) GRID ranged-in-melee auto-disadvantage (PR-5 increment, SRD 5.24) ─────
+#   SRD "Ranged Attacks in Close Combat": Disadvantage on a ranged attack roll if
+#   within 5 ft of an enemy who can SEE you and is NOT Incapacitated. On the GRID the
+#   engine HAS positions, so it AUTO-APPLIES the rule (theater-of-mind keeps the nudge).
+
+
+def _make_current(cid, who, other):
+    """Ensure `who` is the current combatant (so attack()'s turn-ownership gate passes)."""
+    if server.get_state(cid)["current_turn"] != who:
+        server.next_turn(cid)
+    return server.get_state(cid)["current_turn"]
+
+
+def test_grid_ranged_in_melee_auto_disadvantage(fight):
+    """On-grid: a RANGED attack while a hostile is within 5 ft (1 cell) → the engine
+    auto-applies disadvantage and surfaces ranged_in_melee_disadvantage=True."""
+    cid, hero, gob = fight
+    cur = _make_current(cid, hero, gob)
+    shooter, foe = (hero, gob) if cur == hero else (gob, hero)
+    server.set_grid(cid, 20, 20)
+    server.place_combatant_at_coords(cid, shooter, 0, 0)
+    server.place_combatant_at_coords(cid, foe, 1, 0)  # adjacent (5 ft)
+    res = server.attack(cid, attacker_id=shooter, target_id=foe,
+                        attack_bonus=5, damage_dice="1d6", is_ranged=True)
+    assert res["disadvantage"] is True
+    assert res["attack_roll"].get("ranged_in_melee_disadvantage") is True
+
+
+def test_grid_ranged_not_in_melee_no_disadvantage(fight):
+    """On-grid: a RANGED attack with the nearest hostile 10 ft away (2 cells) → no
+    auto-disadvantage, and the new field is absent (today's behaviour preserved)."""
+    cid, hero, gob = fight
+    cur = _make_current(cid, hero, gob)
+    shooter, foe = (hero, gob) if cur == hero else (gob, hero)
+    server.set_grid(cid, 20, 20)
+    server.place_combatant_at_coords(cid, shooter, 0, 0)
+    server.place_combatant_at_coords(cid, foe, 2, 0)  # 10 ft — out of melee reach
+    res = server.attack(cid, attacker_id=shooter, target_id=foe,
+                        attack_bonus=5, damage_dice="1d6", is_ranged=True)
+    assert res["disadvantage"] is False
+    assert "ranged_in_melee_disadvantage" not in res["attack_roll"]
+
+
+def test_grid_ranged_in_melee_incapacitated_foe_no_disadvantage(fight):
+    """On-grid: an adjacent foe that is INCAPACITATED (unconscious) does not impose the
+    penalty (SRD: the enemy must NOT have the Incapacitated condition)."""
+    cid, hero, gob = fight
+    cur = _make_current(cid, hero, gob)
+    shooter, foe = (hero, gob) if cur == hero else (gob, hero)
+    server.set_grid(cid, 20, 20)
+    server.place_combatant_at_coords(cid, shooter, 0, 0)
+    server.place_combatant_at_coords(cid, foe, 1, 0)
+    c = store.load_campaign(cid)
+    c.characters[foe].conditions.append(Condition.UNCONSCIOUS)
+    store.save_campaign(c)
+    res = server.attack(cid, attacker_id=shooter, target_id=foe,
+                        attack_bonus=5, damage_dice="1d6", is_ranged=True)
+    assert res["disadvantage"] is False
+    assert "ranged_in_melee_disadvantage" not in res["attack_roll"]
+
+
+def test_grid_ranged_in_melee_blind_foe_no_disadvantage(fight):
+    """On-grid: an adjacent foe that is BLINDED (can't see the shooter) does not impose
+    the penalty (SRD: the enemy must be able to SEE you)."""
+    cid, hero, gob = fight
+    cur = _make_current(cid, hero, gob)
+    shooter, foe = (hero, gob) if cur == hero else (gob, hero)
+    server.set_grid(cid, 20, 20)
+    server.place_combatant_at_coords(cid, shooter, 0, 0)
+    server.place_combatant_at_coords(cid, foe, 1, 0)
+    c = store.load_campaign(cid)
+    c.characters[foe].conditions.append(Condition.BLINDED)
+    store.save_campaign(c)
+    res = server.attack(cid, attacker_id=shooter, target_id=foe,
+                        attack_bonus=5, damage_dice="1d6", is_ranged=True)
+    assert res["disadvantage"] is False
+    assert "ranged_in_melee_disadvantage" not in res["attack_roll"]
+
+
+def test_grid_ranged_in_melee_only_hostile_counts(fight):
+    """On-grid: an adjacent ALLY is not a threat — only a HOSTILE (opposite team) within
+    5 ft imposes the penalty. Monster shooter + adjacent same-team ally + distant foe."""
+    cid, hero, gob = fight
+    # Add a second monster so the monster shooter has an adjacent same-team ally.
+    ally = server.create_character(cid, "Goblin2", kind="monster", max_hp=15, armor_class=12)["id"]
+    server.end_combat(cid)  # the fixture already started a 2-combatant fight
+    server.start_combat(cid, [hero, gob, ally])
+    server.set_grid(cid, 20, 20)
+    server.place_combatant_at_coords(cid, gob, 0, 0)
+    server.place_combatant_at_coords(cid, ally, 1, 0)   # adjacent ALLY (same team)
+    server.place_combatant_at_coords(cid, hero, 5, 5)   # distant foe
+    # Seat the monster `gob` as the current combatant directly (avoid the PC-skip guard):
+    # current_combatant_id derives from turn_index, so point turn_index at gob's slot.
+    c = store.load_campaign(cid)
+    c.combat.turn_index = next(
+        i for i, cb in enumerate(c.combat.order) if cb.character_id == gob
+    )
+    store.save_campaign(c)
+    assert server.get_state(cid)["current_turn"] == gob
+    res = server.attack(cid, attacker_id=gob, target_id=hero,
+                        attack_bonus=5, damage_dice="1d6", is_ranged=True)
+    assert res["disadvantage"] is False
+    assert "ranged_in_melee_disadvantage" not in res["attack_roll"]
+
+
+def test_grid_ranged_in_melee_advantage_cancels(fight):
+    """On-grid: an explicit advantage + the auto ranged-in-melee disadvantage CANCEL
+    (5e: adv+dis ⇒ neither). The field still records that the rule fired."""
+    cid, hero, gob = fight
+    cur = _make_current(cid, hero, gob)
+    shooter, foe = (hero, gob) if cur == hero else (gob, hero)
+    server.set_grid(cid, 20, 20)
+    server.place_combatant_at_coords(cid, shooter, 0, 0)
+    server.place_combatant_at_coords(cid, foe, 1, 0)
+    res = server.attack(cid, attacker_id=shooter, target_id=foe,
+                        attack_bonus=5, damage_dice="1d6", is_ranged=True, advantage=True)
+    # adv + the auto-dis BOTH read True (the d20 roller normalizes the cancel); the
+    # field records that the rule fired so the DM/scorer can see it.
+    assert res["disadvantage"] is True
+    assert res["advantage"] is True
+    assert res["attack_roll"].get("ranged_in_melee_disadvantage") is True
+
+
+def test_grid_ranged_in_melee_no_double_apply_when_dm_flagged(fight):
+    """On-grid: if the DM already passed disadvantage=True, the engine still surfaces the
+    rule but does not 'double' anything (disadvantage doesn't stack)."""
+    cid, hero, gob = fight
+    cur = _make_current(cid, hero, gob)
+    shooter, foe = (hero, gob) if cur == hero else (gob, hero)
+    server.set_grid(cid, 20, 20)
+    server.place_combatant_at_coords(cid, shooter, 0, 0)
+    server.place_combatant_at_coords(cid, foe, 1, 0)
+    res = server.attack(cid, attacker_id=shooter, target_id=foe,
+                        attack_bonus=5, damage_dice="1d6", is_ranged=True, disadvantage=True)
+    assert res["disadvantage"] is True
+    assert res["attack_roll"].get("ranged_in_melee_disadvantage") is True
+
+
+def test_theater_ranged_in_melee_unchanged_nudge_only(fight):
+    """Theater-of-mind (NO grid): the engine has no positions → it must NOT auto-apply
+    disadvantage; the ranged_in_melee_check NUDGE stays (today's behaviour)."""
+    cid, hero, gob = fight
+    cur = _make_current(cid, hero, gob)
+    shooter, foe = (hero, gob) if cur == hero else (gob, hero)
+    res = server.attack(cid, attacker_id=shooter, target_id=foe,
+                        attack_bonus=5, damage_dice="1d6", is_ranged=True)
+    assert res["disadvantage"] is False  # no auto-apply off-grid
+    assert "ranged_in_melee_disadvantage" not in res["attack_roll"]
+    assert "ranged_in_melee_check" in res  # the DM-surfaced nudge remains
+
+
 # ── (9) schema budget stays green is enforced by test_tool_schema_budget.py ──

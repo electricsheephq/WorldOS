@@ -5424,6 +5424,40 @@ def attack(
         cadv, cdis = combat.attack_modifiers(attacker, target, is_ranged=is_ranged)
         adv = advantage or cadv
         dis = disadvantage or cdis
+        # #461 grid (PR-5 increment): RANGED-IN-MELEE auto-disadvantage. SRD 5.24 "Ranged
+        # Attacks in Close Combat": Disadvantage on a ranged attack roll if you are within
+        # 5 ft of an enemy who can SEE you and is NOT Incapacitated. Off-grid (theater-of-
+        # mind) the engine has no positions, so this stays a DM-surfaced NUDGE below; ON a
+        # grid the engine HAS positions and AUTO-APPLIES it — folded into `dis` here so it
+        # actually bends the roll, and disadvantage doesn't stack (one dis flag). Only when
+        # the attacker is placed; an unplaced shooter can't be reasoned about positionally.
+        ranged_in_melee_grid = False
+        if is_ranged and c.combat.grid_enabled:
+            acb = next((cb for cb in c.combat.order if cb.character_id == attacker_id), None)
+            shooter_cell = _cell(acb) if acb is not None else None
+            if shooter_cell is not None:
+                ally_kinds = {"player", "companion"}
+                shooter_ally = attacker.kind in ally_kinds
+                for foe_cb in c.combat.order:
+                    if foe_cb.character_id == attacker_id:
+                        continue
+                    foe = c.characters.get(foe_cb.character_id)
+                    if foe is None or foe.dead or foe.current_hp <= 0:
+                        continue
+                    if (foe.kind in ally_kinds) == shooter_ally:
+                        continue  # same side — an adjacent ally is not a threat
+                    foe_cell = _cell(foe_cb)
+                    if foe_cell is None:
+                        continue  # an unplaced foe threatens no cell
+                    if not combat_grid.in_melee_reach(shooter_cell, foe_cell):
+                        continue  # not within 5 ft (1 cell)
+                    if combat.is_incapacitated(foe):
+                        continue  # SRD: the enemy must NOT be Incapacitated
+                    if not _can_see(foe):
+                        continue  # SRD: the enemy must be able to SEE you
+                    ranged_in_melee_grid = True
+                    break
+        dis = dis or ranged_in_melee_grid
         # crit_min threads the attacker's expanded crit range (Champion Improved/Superior
         # Critical → 19/18; everyone else 20 = today's behavior) so a Champion's nat-19
         # actually flags atk.crit and crit_source() resolves "expanded_crit_range".
@@ -5493,6 +5527,11 @@ def attack(
             "target_base_ac": target.armor_class,
             "damage": None,
         }
+        if ranged_in_melee_grid:
+            # #461 grid (PR-5): surface that the engine AUTO-APPLIED the SRD ranged-in-melee
+            # disadvantage (folded into `dis` above), so the DM narrates it and the behavioral
+            # gate / scorer see the rule actually fired on-grid (not announced-then-dropped).
+            result["attack_roll"]["ranged_in_melee_disadvantage"] = True
         if rider_rolls:
             # The engine-rolled rider components (SYN-06), itemized so the DM narrates
             # "the blessing guides the blade (+3)" — and sees the buff actually counted.
@@ -5823,7 +5862,15 @@ def attack(
             # exact pattern that needs disadvantage if a foe is within 5 ft. Conservative: a
             # nudge to re-issue, never a block, honoring theater-of-mind (the foe MAY be 10 ft
             # away). Only when the attacker is a combatant and didn't already flag adv/dis.
-            if is_ranged and not adv and not dis and attacker_cb is not None:
+            # #461 grid (PR-5): on a grid the engine ALREADY ruled authoritatively above
+            # (auto-applied dis if adjacent, none if not) for a PLACED shooter — so the
+            # guess-nudge would be noise/contradiction; suppress it there. The nudge still
+            # fires for an UNPLACED on-grid shooter (no cell ⇒ no positional ruling) and for
+            # every off-grid (theater) attack exactly as before.
+            attacker_on_grid_placed = bool(
+                c.combat.grid_enabled and attacker_cb is not None and _cell(attacker_cb) is not None
+            )
+            if is_ranged and not adv and not dis and attacker_cb is not None and not attacker_on_grid_placed:
                 opp = "monster" if attacker.kind in ("player", "companion") else "player"
                 foes_live = any(
                     (h := c.characters.get(cb.character_id)) is not None
