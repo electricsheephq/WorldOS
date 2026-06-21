@@ -129,6 +129,20 @@ var _prev_location_id: String = ""
 ## renderer caching any game state of its own.
 var _atlas_cache: Dictionary = {}
 
+## #1060 — Action-Replay beat queue. Beats arrive from /events (via Main →
+## enqueue_replay) and must play in `seq` order, ONE AT A TIME, each frame-bounded
+## (no overlapping unbounded tweens). We append parsed beats here, sort by seq, and
+## drain them serially in _drain_replay (await each beat's bounded duration). The
+## renderer NEVER computes a result — it only chooses how to SHOW the engine-decided
+## beat. Owns no game state: this is a transient presentation queue, cleared as it drains.
+var _replay_queue: Array = []
+## True while _drain_replay is running, so a second enqueue_replay just appends to the
+## queue rather than starting a second concurrent drain (keeps beats totally ordered).
+var _draining: bool = false
+## #1060 — the last `seq` we have already enqueued, so re-fetched/duplicate beats (the
+## envelope's idempotent-replay guarantee) are dropped rather than animated twice.
+var _last_replayed_seq: int = -1
+
 
 func _ready() -> void:
 	# Art arrives asynchronously through the /image bridge; swap the backdrop the
@@ -207,24 +221,277 @@ func apply_snapshot(atlas: Dictionary, combat: Dictionary, character: Dictionary
 
 
 # ---------------------------------------------------------------------------
-# Replay stub (#1055 / combat). Connected to SurfaceClient.events_appended by
-# Main. Real Action-Replay (combat token motion + facing from target_fk) is a
-# later issue — for now we accept and ignore so the signal interface is wired.
+# Action-Replay (#1060 / the #645 envelope). Connected to SurfaceClient.events_appended
+# by Main. Each /events record is one animated COMBAT beat in the Action-Replay-envelope
+# shape `{ seq, actor_fk, verb, target_fk, result, anim_hint }`
+# (docs/roadmap/contracts/action-replay-envelope.md). The renderer plays each beat in
+# `seq` order, ONE AT A TIME, frame-bounded — it never decides WHAT happened, only HOW
+# to show it. It also stays backward-compatible with the #1055 `zone_move` stub shape
+# (`{kind, actor, zone}`) so the earlier wiring keeps working.
+#
+# CONTRACT (the one invariant): the engine is the sole writer; this is a pure projection
+# of committed engine truth. The renderer reads `result` to choose numbers/states to show
+# and NEVER recomputes them. Unknown verbs are accepted-and-ignored (a generic no-op) so a
+# new envelope verb never crashes an old renderer (additive/back-compat, §Versioning).
 # ---------------------------------------------------------------------------
 func enqueue_replay(records: Array) -> void:
-	# #1055: honor `zone_move` beats for facing derivation (renderer-derived). Full
-	# Action-Replay (combat token motion + facing from target_fk) is still a later
-	# issue; everything else is accepted-and-ignored so the wiring stays verifiable.
+	# Parse + append every recognizable beat, then (re)start the serial drain. We sort
+	# by seq so beats animate in the engine's authoritative order regardless of arrival
+	# order (the envelope's total-order-via-seq guarantee).
 	for rec in records:
 		if typeof(rec) != TYPE_DICTIONARY:
 			continue
-		var r: Dictionary = rec
-		if String(r.get("kind", "")) != "zone_move":
+		var beat := _parse_replay_beat(rec)
+		if beat.is_empty():
 			continue
-		var actor_id := String(r.get("actor", r.get("actor_id", "")))
-		var zone_name := String(r.get("zone", r.get("target", "")))
-		if actor_id != "" and zone_name != "":
-			apply_zone_move(actor_id, zone_name)
+		# Drop duplicates (idempotent re-fetch): a beat we've already enqueued by seq is
+		# not animated twice. Beats with no seq (the #1055 stub) always pass (seq == -1).
+		var seq := int(beat.get("seq", -1))
+		if seq >= 0 and seq <= _last_replayed_seq:
+			continue
+		if seq >= 0:
+			_last_replayed_seq = seq
+		_replay_queue.append(beat)
+
+	if _replay_queue.is_empty():
+		return
+	# Stable sort by seq (beats without a seq keep arrival order at the front).
+	_replay_queue.sort_custom(func(a, b): return int(a.get("seq", -1)) < int(b.get("seq", -1)))
+
+	if not _draining:
+		_drain_replay()
+
+
+## Normalize one /events record into a beat Dictionary the dispatcher understands, or {}
+## if it carries no actor/verb we can animate. Accepts BOTH:
+##   - the Action-Replay envelope: {seq, actor_fk, verb, target_fk, result, anim_hint}
+##   - the #1055 stub:             {kind, actor/actor_id, zone/target}
+## so the new combat path and the old zone_move wiring share one entry point.
+func _parse_replay_beat(r: Dictionary) -> Dictionary:
+	# verb (envelope) takes precedence; fall back to the stub `kind`.
+	var verb := String(r.get("verb", r.get("kind", "")))
+	if verb == "":
+		return {}
+	var actor := String(r.get("actor_fk", r.get("actor", r.get("actor_id", ""))))
+	var target := String(r.get("target_fk", r.get("target", r.get("zone", ""))))
+	var result: Dictionary = r.get("result", {}) if typeof(r.get("result", {})) == TYPE_DICTIONARY else {}
+	var hint := String(r.get("anim_hint", ""))
+	var seq := int(r.get("seq", -1)) if (typeof(r.get("seq", null)) == TYPE_FLOAT or typeof(r.get("seq", null)) == TYPE_INT) else -1
+	return {"seq": seq, "verb": verb, "actor": actor, "target": target, "result": result, "anim_hint": hint}
+
+
+## Drain the replay queue serially: pop the front beat, play it, await its bounded
+## duration, repeat until empty. Each beat returns its own frame-bounded length, so the
+## whole exchange is deterministic and never blocks forever. A new enqueue_replay while
+## draining just appends (the guard keeps a single ordered drain).
+func _drain_replay() -> void:
+	_draining = true
+	while not _replay_queue.is_empty():
+		var beat: Dictionary = _replay_queue.pop_front()
+		var dur := _play_beat(beat)
+		print("[Replay] beat seq=%d verb=%s actor=%s target=%s dur=%.2f" % [
+			int(beat.get("seq", -1)), String(beat.get("verb", "")),
+			String(beat.get("actor", "")), String(beat.get("target", "")), dur])
+		if dur > 0.0:
+			await get_tree().create_timer(dur).timeout
+	_draining = false
+
+
+## Dispatch ONE beat to its per-verb handler and return the beat's bounded duration
+## (seconds the drain waits before the next beat). Unknown verbs are accepted-and-ignored
+## (return 0 — a generic no-op). The verb vocabulary mirrors the envelope contract's
+## closed `verb` set: attack/cast/damage/condition/death/save/check/move_to_zone/travel/narrate.
+func _play_beat(beat: Dictionary) -> float:
+	var verb := String(beat.get("verb", ""))
+	match verb:
+		"attack":
+			return _beat_attack(beat)
+		"cast":
+			return _beat_cast(beat)
+		"damage":
+			return _beat_damage(beat)
+		"heal":
+			# Not an envelope verb on its own (heals ride a `cast`/`condition` result),
+			# but accepted for fixtures/forward-compat: pulse the target green.
+			return _beat_heal(beat)
+		"condition":
+			return _beat_condition(beat)
+		"death":
+			return _beat_death(beat)
+		"move_to_zone", "zone_move":
+			return _beat_move(beat)
+		_:
+			# Unknown / non-animated verb (save/check/travel/narrate or a future verb):
+			# accept-and-ignore so the wiring never crashes (envelope §Versioning).
+			return 0.0
+
+
+# --- per-verb beat handlers (#1060). Each is RENDERER-OWNED presentation of the
+# engine-decided beat; none touch game state. ----------------------------------
+
+## attack: the actor faces its target (facing derived from actor→target zone anchors,
+## ISO-PROJECTION.md combat rule) and plays the one-shot attack clip, then auto-returns
+## to idle. A following `damage` beat (its own seq) flashes/floats on the target.
+func _beat_attack(beat: Dictionary) -> float:
+	var tok := _replay_token(String(beat.get("actor", "")))
+	if tok == null:
+		return 0.0
+	_face_token_at_target(tok, String(beat.get("actor", "")), String(beat.get("target", "")))
+	return tok.play_oneshot("attack")
+
+
+## cast: the actor plays the cast clip. If the result is a heal (anim_hint heal_pulse or
+## result.outcome == "heal"), the TARGET gets a green pulse + (if hp surfaced) an HP-bar
+## update + a floating "+N" — the heal is shown on the target in the same beat.
+func _beat_cast(beat: Dictionary) -> float:
+	var tok := _replay_token(String(beat.get("actor", "")))
+	if tok == null:
+		return 0.0
+	_face_token_at_target(tok, String(beat.get("actor", "")), String(beat.get("target", "")))
+	var dur := tok.play_oneshot("cast")
+	# A cast that resolves to a heal also pulses the target (the result is engine-decided).
+	var result: Dictionary = beat.get("result", {})
+	var hint := String(beat.get("anim_hint", ""))
+	if hint == "heal_pulse" or String(result.get("outcome", "")) == "heal":
+		_apply_heal_to_target(beat)
+	return dur
+
+
+## damage: HP applied to the target — flash the target red + float the damage number +
+## (if hp surfaced) update its HP bar. The amount/hp come straight from the engine result.
+func _beat_damage(beat: Dictionary) -> float:
+	var target_tok := _replay_token(String(beat.get("target", "")))
+	if target_tok == null:
+		return 0.0
+	var result: Dictionary = beat.get("result", {})
+	var amount := _result_amount(result, ["damage", "amount", "total"])
+	if amount != "":
+		_float_on_token(target_tok, amount, false)
+	_apply_hp_from_result(target_tok, result)
+	return target_tok.flash(CharacterToken.DAMAGE_FLASH_COLOR)
+
+
+## heal (explicit verb / fixture): pulse the target green + float "+N" + update HP bar.
+func _beat_heal(beat: Dictionary) -> float:
+	return _apply_heal_to_target(beat)
+
+
+## condition: a status changed (bloodied, prone, downed, blessed…). Brief violet flash on
+## the target + (if hp surfaced, e.g. bloodied carries hp_after) an HP-bar update.
+func _beat_condition(beat: Dictionary) -> float:
+	var target_tok := _replay_token(String(beat.get("target", "")))
+	if target_tok == null:
+		return 0.0
+	var result: Dictionary = beat.get("result", {})
+	_apply_hp_from_result(target_tok, result)
+	return target_tok.flash(CharacterToken.CONDITION_FLASH_COLOR)
+
+
+## death: the target drops — fade it out and free the token (it leaves the stage). The
+## actor_fk on a death beat is usually the dier; we resolve target first, then actor.
+func _beat_death(beat: Dictionary) -> float:
+	var who := String(beat.get("target", ""))
+	if who == "" or _tokens.get(who, null) == null:
+		who = String(beat.get("actor", ""))
+	var tok := _replay_token(who)
+	if tok == null:
+		return 0.0
+	return tok.fade_out_and_free()
+
+
+## move_to_zone / zone_move: the actor walks to a named zone (renderer-derived facing).
+## Reuses the existing #1055 walk path exactly.
+func _beat_move(beat: Dictionary) -> float:
+	var actor := String(beat.get("actor", ""))
+	# Envelope move_to_zone carries the zone in target_fk; the stub carried it in zone.
+	var zone := String(beat.get("target", ""))
+	if actor == "" or zone == "":
+		return 0.0
+	apply_zone_move(actor, zone)
+	# The walk tween is MOVE_TWEEN_SEC long; bound the beat to it so the next beat waits.
+	return CharacterToken.MOVE_TWEEN_SEC
+
+
+# --- replay helpers ---------------------------------------------------------
+
+## The spawned CharacterToken for an actor id, or null if not on stage / already dead.
+func _replay_token(actor_id: String) -> CharacterToken:
+	if actor_id == "":
+		return null
+	var tok: CharacterToken = _tokens.get(actor_id, null)
+	if tok == null or not is_instance_valid(tok) or tok.is_dead():
+		return null
+	return tok
+
+
+## Face `tok` toward `target_id`'s zone anchor (combat facing = actor-zone → target-zone,
+## ISO-PROJECTION.md). Uses each token's CURRENT screen position (their zone anchor) so the
+## facing is derived, never engine-supplied. A no-op if the target isn't on stage.
+func _face_token_at_target(tok: CharacterToken, actor_id: String, target_id: String) -> void:
+	var target_tok: CharacterToken = _tokens.get(target_id, null)
+	if target_tok == null or not is_instance_valid(target_tok):
+		return
+	var from_pos: Vector2 = _token_prev_pos.get(actor_id, tok.position)
+	var to_pos: Vector2 = target_tok.position
+	var facing := FacingResolver.octant(from_pos, to_pos, FACING_ORDER)
+	tok.set_facing(facing)
+
+
+## Apply a heal beat's result to its TARGET: green pulse + float "+N" + HP-bar update.
+## Shared by `cast→heal` and the explicit `heal` verb. Returns the pulse's bounded length.
+func _apply_heal_to_target(beat: Dictionary) -> float:
+	var target_tok := _replay_token(String(beat.get("target", "")))
+	if target_tok == null:
+		return 0.0
+	var result: Dictionary = beat.get("result", {})
+	var amount := _result_amount(result, ["amount", "heal", "total"])
+	if amount != "":
+		_float_on_token(target_tok, "+" + amount, true)
+	_apply_hp_from_result(target_tok, result)
+	return target_tok.heal_pulse()
+
+
+## If the engine result surfaced hp (hp_after + an hp_max, or an explicit fraction),
+## push it to the token's HP bar. Pure projection — the renderer never recomputes hp.
+func _apply_hp_from_result(tok: CharacterToken, result: Dictionary) -> void:
+	if result.is_empty():
+		return
+	# Prefer hp_after + a max (hpMax / hp_max / max); else an explicit hp_frac.
+	var has_after := result.has("hp_after") or result.has("hp")
+	if has_after:
+		var hp := float(result.get("hp_after", result.get("hp", 0)))
+		var hp_max := float(result.get("hp_max", result.get("hpMax", result.get("max", 0))))
+		if hp_max > 0.0:
+			tok.set_hp_fraction(hp / hp_max)
+			return
+	if result.has("hp_frac"):
+		tok.set_hp_fraction(float(result["hp_frac"]))
+
+
+## Stringify the first present numeric field in `keys` from the result (or a nested
+## {damage:{total}} / {amount} shape). "" if none — the renderer floats nothing then.
+func _result_amount(result: Dictionary, keys: Array) -> String:
+	for k in keys:
+		if result.has(k):
+			var v: Variant = result[k]
+			# {damage:{total:8}} nested shape (the envelope example).
+			if typeof(v) == TYPE_DICTIONARY and (v as Dictionary).has("total"):
+				return str(int((v as Dictionary)["total"]))
+			if typeof(v) == TYPE_FLOAT or typeof(v) == TYPE_INT:
+				return str(int(v))
+	return ""
+
+
+## Float a combat number above a token via the FxLayer (Main parents it to WorldView as
+## the child "FxLayer"). Positioned over the token's head. A no-op if no FxLayer exists
+## (e.g. a bare conformance harness that drives apply-only without the input/fx layer).
+func _float_on_token(tok: CharacterToken, text: String, is_heal: bool) -> void:
+	var fx := get_node_or_null("FxLayer")
+	if fx == null:
+		return
+	# Above the head: the token origin is its feet; lift by ~110px to clear the body.
+	var at := tok.position + Vector2(0.0, -110.0)
+	fx.call("float_number", at, text, is_heal)
 
 
 # ---------------------------------------------------------------------------
@@ -265,6 +532,22 @@ func team_tint_for(engine_actor_id: String) -> Color:
 ## The static pillar prop (null until spawned). Exposed for #1055's occlusion test.
 func pillar_prop() -> PropActor:
 	return _pillar
+
+
+## #1060 — true while the Action-Replay queue is draining (a beat is mid-play or queued).
+## Exposed so a conformance/visual harness can await the full exchange before asserting.
+func is_replaying() -> bool:
+	return _draining or not _replay_queue.is_empty()
+
+
+## #1060 — clear the replay queue + dedup cursor so a fresh sequence replays from scratch.
+## For a conformance/visual harness that drives beats DELIBERATELY (after the standalone
+## FIXTURE auto-poll already consumed events.json once against the exploration stage).
+## NOT used on the live path — there the cursor advances monotonically and never resets.
+func reset_replay() -> void:
+	_replay_queue.clear()
+	_last_replayed_seq = -1
+	_draining = false
 
 
 # ---------------------------------------------------------------------------

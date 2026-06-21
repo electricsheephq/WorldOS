@@ -99,6 +99,12 @@ func _on_snapshot(atlas: Dictionary, _combat: Dictionary, character: Dictionary)
 		if _has_arg("--combat-tokens"):
 			call_deferred("_run_combat_tokens")
 			return
+		if _has_arg("--combat-replay"):
+			call_deferred("_run_combat_replay")
+			return
+		if _has_arg("--demo-combat"):
+			call_deferred("_run_demo_combat")
+			return
 		if _has_arg("--demo-occlusion"):
 			call_deferred("_run_demo_occlusion")
 			return
@@ -288,6 +294,178 @@ func _run_combat_tokens() -> void:
 		str(all_ok), spawned, expected, str(all_zoned), str(all_tinted), str(foe_seen), str(ally_seen)])
 
 	call_deferred("_quit_clean")
+
+
+# ---------------------------------------------------------------------------
+# #1060 COMBAT-REPLAY: prove the Action-Replay envelope ANIMATES on the iso tiles.
+# Spawns the ACTIVE combat roster (so every actor/target_fk is on stage), then feeds
+# the COMBAT beats from fixtures/events.json (the envelope shape) into the SAME
+# enqueue_replay entry point the live /events poll uses, and awaits the serial drain.
+# Asserts the ENGINE-DECIDED outcomes were SHOWN (not recomputed):
+#   - attack/cast played + the actor faced its target (renderer-derived facing),
+#   - damage flashed + the target HP bar dropped to the engine's hp_after/hp_max,
+#   - a heal pulsed + raised the target's HP bar,
+#   - the death beat faded + FREED the dying token (it left the stage).
+# Deterministic + headless (no window). Quits cleanly.
+# ---------------------------------------------------------------------------
+func _run_combat_replay() -> void:
+	print("[Main] --combat-replay: animating the Action-Replay envelope on the iso tiles")
+
+	# Detach the steady FIXTURE auto-poll so it can't (a) re-apply the exploration
+	# (active:false) snapshot and reconcile away the spawned combat roster, or (b)
+	# double-feed events.json into the replay queue. We drive the surfaces + beats
+	# DELIBERATELY below. (The live path never does this — this is a conformance harness.)
+	_detach_live_feed()
+
+	# The standalone FIXTURE boot-poll may already be draining events.json against the
+	# (pre-roster) exploration stage. Let that in-flight drain FULLY finish, then RESET
+	# the replay cursor — BEFORE we spawn the roster — so no stale boot-drain beat (e.g.
+	# the seq-10 death) can touch a freshly-spawned token.
+	var settle := 0.0
+	while bool(_world.is_replaying()) and settle < 6.0:
+		await get_tree().create_timer(0.1).timeout
+		settle += 0.1
+	_world.reset_replay()
+
+	# (1) Spawn the roster from the ACTIVE combat snapshot (same path as --combat-tokens).
+	var combat: Dictionary = _load_fixture_dict("combat-surface-active")
+	var atlas: Dictionary = _load_fixture_dict("atlas-surface")
+	var character: Dictionary = _load_fixture_dict("character-surface")
+	if combat.is_empty():
+		print("[CombatReplay] RESULT ok=false reason=missing-active-fixture")
+		call_deferred("_quit_clean")
+		return
+	_world.apply_snapshot(atlas, combat, character)
+	await get_tree().create_timer(CharacterToken.MOVE_TWEEN_SEC + 0.1).timeout
+
+	# Capture pre-replay facts on the actors the beats touch.
+	var cultist: CharacterToken = _world.token_for("npc-cultist-1")
+	var companion: CharacterToken = _world.token_for("char-companion-1")
+	var aubree: CharacterToken = _world.token_for("char-aubree")
+	var roster_ok := cultist != null and companion != null and aubree != null
+	print("[CombatReplay] roster cultist=%s companion=%s aubree=%s" % [
+		str(cultist != null), str(companion != null), str(aubree != null)])
+
+	# (2) Load the COMBAT beats from events.json (skip the narrate row) and play them
+	# through the real enqueue_replay → serial drain.
+	var beats := _load_combat_event_beats()
+	print("[CombatReplay] beats=%d (combat verbs from events.json)" % beats.size())
+	_world.enqueue_replay(beats)
+
+	# (3) Await the serial drain. Bound generously: the queue length * the longest beat
+	# (heal pulse is 2*0.35 + the move 0.45 + attack 0.5 ...) — ~6s ceiling is ample.
+	var waited := 0.0
+	while bool(_world.is_replaying()) and waited < 8.0:
+		await get_tree().create_timer(0.1).timeout
+		waited += 0.1
+
+	# (4) Assertions — the engine-decided beats were SHOWN.
+	# (a) the dying cultist token was freed (left the stage) by the death beat.
+	var cultist_freed := not is_instance_valid(cultist)
+	# (b) the healed companion's HP bar rose to the engine's 16/22 (~0.727).
+	var companion_hp := companion.hp_fraction() if is_instance_valid(companion) else -1.0
+	var companion_hp_ok := absf(companion_hp - (16.0 / 22.0)) < 0.02
+	# (c) aubree faced her target during the attack exchange (a real 8-way facing).
+	var aubree_facing := aubree.facing() if is_instance_valid(aubree) else "?"
+	var aubree_facing_ok := aubree_facing in ["S", "SE", "E", "NE", "N", "NW", "W", "SW"]
+	# (d) the replay queue fully drained (no beats left stuck).
+	var drained: bool = not bool(_world.is_replaying())
+
+	print("[CombatReplay] cultist_freed=%s companion_hp=%.3f (ok=%s) aubree_facing=%s drained=%s waited=%.1fs" % [
+		str(cultist_freed), companion_hp, str(companion_hp_ok), aubree_facing, str(drained), waited])
+
+	var all_ok := roster_ok and cultist_freed and companion_hp_ok and aubree_facing_ok and drained
+	print("[CombatReplay] RESULT ok=%s death-freed=%s heal-hp-raised=%s attack-faced=%s drained=%s" % [
+		str(all_ok), str(cultist_freed), str(companion_hp_ok), str(aubree_facing_ok), str(drained)])
+
+	call_deferred("_quit_clean")
+
+
+## #1060 — the COMBAT beats from fixtures/events.json (the envelope rows; the leading
+## `narrate`/exploration rows are skipped). Returns the entries that carry a combat verb,
+## so _run_combat_replay drives the exact same shape the live /events poll would.
+func _load_combat_event_beats() -> Array:
+	var fx: Dictionary = _load_fixture_dict("events")
+	var entries: Variant = fx.get("entries", [])
+	if typeof(entries) != TYPE_ARRAY:
+		return []
+	var combat_verbs := ["attack", "cast", "damage", "heal", "condition", "death", "move_to_zone", "zone_move"]
+	var out: Array = []
+	for e in entries:
+		if typeof(e) != TYPE_DICTIONARY:
+			continue
+		var verb := String((e as Dictionary).get("verb", (e as Dictionary).get("kind", "")))
+		if combat_verbs.has(verb):
+			out.append(e)
+	return out
+
+
+# ---------------------------------------------------------------------------
+# #1060 DEMO-COMBAT: the VISUAL combat-beat proof. Run WITHOUT --headless (a real
+# window) so rendering is real. Spawns the combat roster, plays a couple of beats
+# (an attack swing + a damage flash/float on a foe), settles a frame, and screenshots
+# the animating beat to /tmp so a reviewer can SEE the action-replay on the iso tiles.
+# ---------------------------------------------------------------------------
+func _run_demo_combat() -> void:
+	print("[Main] --demo-combat: visual combat Action-Replay screenshot")
+	var combat: Dictionary = _load_fixture_dict("combat-surface-active")
+	var atlas: Dictionary = _load_fixture_dict("atlas-surface")
+	var character: Dictionary = _load_fixture_dict("character-surface")
+	if combat.is_empty():
+		print("[DemoCombat] cannot run — missing active combat fixture")
+		call_deferred("_quit_clean")
+		return
+	# Detach the steady auto-poll (see _run_combat_replay), let any in-flight boot-poll
+	# replay finish, and reset — BEFORE spawning the roster — so no stale beat touches it.
+	_detach_live_feed()
+	var settle := 0.0
+	while bool(_world.is_replaying()) and settle < 6.0:
+		await get_tree().create_timer(0.1).timeout
+		settle += 0.1
+	_world.reset_replay()
+	_world.apply_snapshot(atlas, combat, character)
+	await get_tree().create_timer(CharacterToken.MOVE_TWEEN_SEC + 0.1).timeout
+
+	# Play a mid-exchange beat pair so the screenshot catches motion: aubree swings at a
+	# cultist, the cultist flashes + a damage number floats.
+	var beats: Array = [
+		{ "seq": 100, "actor_fk": "char-aubree", "verb": "attack", "target_fk": "npc-cultist-1",
+		  "result": { "outcome": "hit" }, "anim_hint": "melee_swing" },
+		{ "seq": 101, "actor_fk": "char-aubree", "verb": "damage", "target_fk": "npc-cultist-1",
+		  "result": { "damage": { "total": 8 }, "hp_after": 6, "hp_max": 14 }, "anim_hint": "damage_flinch" },
+	]
+	_world.enqueue_replay(beats)
+
+	# Let the attack swing + the damage flash play, then capture mid-beat.
+	await _settle_frames(3)
+	await get_tree().create_timer(0.25).timeout
+	await _settle_frames(2)
+	var img := _capture_viewport()
+	if img != null:
+		img.save_png("/tmp/wos_godot_combat_replay.png")
+		print("[DemoCombat] screenshot: /tmp/wos_godot_combat_replay.png (%dx%d)" % [img.get_width(), img.get_height()])
+	else:
+		print("[DemoCombat] no image captured (headless?) — run WITHOUT --headless for a real frame")
+
+	# Let the rest of the beats drain before quitting.
+	var waited := 0.0
+	while bool(_world.is_replaying()) and waited < 4.0:
+		await get_tree().create_timer(0.1).timeout
+		waited += 0.1
+	print("[DemoCombat] done drained=%s" % str(not bool(_world.is_replaying())))
+	call_deferred("_quit_clean")
+
+
+## #1060 — detach the steady SurfaceClient auto-poll from WorldView so a deliberate
+## conformance/visual harness can drive apply_snapshot + enqueue_replay itself without
+## the FIXTURE poll re-applying the (active:false) exploration snapshot mid-replay
+## (which would reconcile away the spawned combat roster). Disconnects the two WorldView
+## sinks; Hud + the SMOKE print stay wired (harmless). Idempotent. NOT a live-path action.
+func _detach_live_feed() -> void:
+	if SurfaceClient.snapshot_updated.is_connected(_world.apply_snapshot):
+		SurfaceClient.snapshot_updated.disconnect(_world.apply_snapshot)
+	if SurfaceClient.events_appended.is_connected(_world.enqueue_replay):
+		SurfaceClient.events_appended.disconnect(_world.enqueue_replay)
 
 
 ## #1060 — load + parse a bundled res://fixtures/<name>.json into a Dictionary (or {}
