@@ -309,6 +309,32 @@ def _cmd_list_models(args) -> None:
     print("[scenario_gen] %d model(s)." % len(models))
 
 
+def _validate_model_id(headers: dict, model_id: str) -> None:
+    """Confirm the model exists and is ready BEFORE generating, so we fail fast with an
+    actionable error instead of submitting a job that silently never produces an asset."""
+    res = _get_json(API_BASE + MODELS_PATH + "?pageSize=100", headers)
+    models = res.get("models") or []
+    match = None
+    for m in models:
+        if (m.get("id") or m.get("modelId")) == model_id:
+            match = m
+            break
+    if match is None:
+        sys.exit(
+            "[scenario_gen] ERROR: model %s not found or not ready — run "
+            "`scenario_gen.py list-models`, or train/import a model in the Scenario UI." % model_id
+        )
+    status = str(match.get("status") or "").lower()
+    # Treat empty/unknown status as ready (some accounts omit it); only block on a clearly-not-ready state.
+    ready_states = ("", "ready", "trained", "active", "available", "succeeded", "success", "completed")
+    if status not in ready_states:
+        sys.exit(
+            "[scenario_gen] ERROR: model %s not found or not ready (status=%s) — run "
+            "`scenario_gen.py list-models`, or train/import a model in the Scenario UI."
+            % (model_id, status)
+        )
+
+
 def _cmd_generate(args) -> None:
     out_dir = _resolve_out(args)
     if args.dry_run:
@@ -323,6 +349,8 @@ def _cmd_generate(args) -> None:
     os.makedirs(out_dir, exist_ok=True)
     key, secret = _load_credentials()
     headers = _auth_headers(key, secret)
+    # Fail fast on a missing/not-ready model instead of wasting a long poll on a job that never lands.
+    _validate_model_id(headers, args.model_id)
     body = {
         "modelId": args.model_id,
         "prompt": args.prompt,

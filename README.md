@@ -102,6 +102,7 @@ servers/engine/      deterministic campaign state, rolls, combat, travel, memory
 servers/rules/       bundled SRD 5.2 rules lookup
 servers/voice/       local/null voice backend boundary
 viewer/openworlds/   browser OpenWorlds UI
+godot/               experimental Godot isometric (GT2) renderer — see godot/HANDOFF.md
 macos/WorldOSApp/    native macOS app shell
 scripts/             provider and play wrappers
 qa/                  app, provider, scoring, and release gates

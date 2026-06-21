@@ -61,6 +61,8 @@ dist/WorldOS.app
 
 Use the native app when you need to prove the release surface: provider settings, app launch, private/public art loading, native window behavior, and provider process startup.
 
+To develop the Godot isometric renderer or generate art, see `godot/HANDOFF.md` and the `godot-dev` / `asset-gen` skills.
+
 ## Pick A Provider
 
 WorldOS supports provider families rather than a single hard-coded model path.

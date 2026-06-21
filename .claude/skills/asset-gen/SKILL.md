@@ -32,10 +32,16 @@ Stored mode-600 OUTSIDE the repo in `~/.worldos/`: `meshy.key`, `tripo3d.key`, `
 paths and never echo the key. ⚠ **All keys were pasted in a chat transcript (2026-06-21) — rotate them
 in each service dashboard when convenient, then update the `~/.worldos/*.key` file.**
 
+**Get the keys (4 steps):**
+1. Create an account at **meshy.ai** / **tripo3d.ai** / **scenario.com** / **pixellab.ai** (whichever you need).
+2. Copy the **API key** from that service's dashboard (Scenario also gives a **secret**).
+3. Store it OUTSIDE the repo: `~/.worldos/{meshy,tripo3d,scenario,pixellab}.key` (+ `scenario.secret`), then `chmod 600 ~/.worldos/*.key ~/.worldos/*.secret`.
+4. Verify auth: `python3 godot/tools/<svc>_gen.py --test-key` (e.g. `meshy_gen.py --test-key`).
+
 ## CLI wrappers (`godot/tools/`, urllib-only, mirror `meshy_gen.py`)
 - **`tripo_gen.py`** — `text|image|rig` subcommands; `--lowpoly` (P1); `--test-key`; `--dry-run` (credit est). Polls `GET /v3/task/{id}` ≥2s; **downloads GLB immediately (URLs expire ~5 min)**. Output → gitignored `content/worlds/_private/<world>/images/<scope>/`.
-- **`scenario_gen.py`** — `generate|list-models|upscale`; `--model-id`; `--test-key`; `--dry-run`. HTTP Basic; async job → asset download.
-- **`meshy_gen.py`** — existing: text→3D (preview→refine), `--prompt --out`.
+- **`scenario_gen.py`** — `generate|list-models|upscale`; `--model-id`; `--test-key`; `--dry-run`. HTTP Basic; async job → asset download. Scenario has TWO interfaces — REST `https://api.cloud.scenario.com/v1` (Basic, used by `scenario_gen.py`) AND MCP `https://mcp.scenario.com/mcp` (for direct agent tool calls). Both work.
+- **`meshy_gen.py`** — text→3D, `--prompt --out`; `--test-key`; `--dry-run`. The wrapper uses `POST /openapi/v2/text-to-3d` (preview→refine PBR) at `https://api.meshy.ai`. (Meshy's API also exposes `/v1/rigging` + `/v1/animations`, but `meshy_gen.py` does **text-to-3d only** — use **Tripo** for rig→animate.)
 - **`pixellab_gen.py`** — STUB for GT1; `--test-key` only.
 Always run `--test-key` first to confirm auth.
 
@@ -44,6 +50,10 @@ Always run `--test-key` first to confirm auth.
 - **`pixellab`** (`https://api.pixellab.ai/mcp`, Bearer) — ✔ connected, 41 tools (pixel chars 4/8-dir, animation, Wang/topdown/sidescroller/isometric tilesets). GT1-future.
 Add `@https://api.pixellab.ai/mcp/docs` to a prompt for the full PixelLab tool list.
 (Meshy + Tripo have no wired MCP — use the CLI wrappers.)
+
+**MCP not required.** The CLI wrappers (`scenario_gen.py`, `pixellab_gen.py`) are urllib-only and need
+NO MCP — they're the portable path. A freshly-spawned subagent may not inherit the user-scope MCP in
+its own tool list; the wrappers always work regardless.
 
 ## Non-Eva engine image provider
 `ScenarioImageProvider` is registered in `servers/engine/imagegen.py` `_HOSTED`. Select with
@@ -58,7 +68,7 @@ null when unconfigured/offline; the default provider stays null.
 - **PixelLab**: MCP-first, Bearer, `https://api.pixellab.ai/mcp` (JSON-RPC, returns **SSE** `text/event-stream`). REST `/balance` is 404.
 
 ## Rate limits / cost / gotchas
-Meshy ~200/day; Tripo 1 req/s (poll ≥2s or 429); Scenario 50–100/s + 10–30 min model training; PixelLab async queue. No hard spend caps — use `--dry-run` for a credit estimate + check balance before bulk. Download asset URLs immediately (finite TTL). Pin seeds / prefer Scenario trained models for consistency. Validate bakes (frame dims + foot-anchor) before trusting a sheet.
+Meshy ~200/day; Tripo enforces ~1 req/s — the wrapper polls at ≥3s to stay under it (else 429); Scenario 50–100/s + 10–30 min model training; PixelLab async queue. No hard spend caps — use `--dry-run` for a credit estimate + check balance before bulk. Download asset URLs immediately (finite TTL). Pin seeds / prefer Scenario trained models for consistency. Validate bakes (frame dims + foot-anchor) before trusting a sheet.
 
 ## What this unblocks
 - **#1089 painterly backdrops** → Scenario (train a style model → `scenario_gen.py generate` or the `scenario` MCP), served via the engine's `/image` from `_private` (no Eva).

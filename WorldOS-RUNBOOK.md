@@ -115,6 +115,19 @@ every NPC; a voiced AI companion adventures alongside you with its own sheet and
   **`agents/`** (`companion-agent.md`), **`commands/`** (player slash commands),
   **`data/srd/`** (SRD 5.2.1), **`tools/ingest/`** (wiki → lore corpus).
 
+### Graphics & renderers
+
+The viewer has multiple render paths:
+
+- **GT0 — OpenWorlds React** (default; ships today): the `viewer/openworlds/` app above.
+- **GT2 — Godot 4 painterly-isometric** (in-progress; the new GT2 renderer): a stateless thin
+  client over the engine read-models. **See `godot/HANDOFF.md` + invoke the `godot-dev` skill.**
+- **GT1 — pixel** (future).
+
+For **AI art generation** (3D characters, rigging, painterly backdrops, sprites/tilesets):
+**the `asset-gen` skill** (Meshy / Tripo3D / Scenario / PixelLab). Canonical roadmap:
+`docs/roadmap/WORLDOS-GRAPHICS-ROADMAP.md`.
+
 ---
 
 ## INVARIANTS (load-bearing — do not violate)
