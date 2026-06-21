@@ -168,3 +168,42 @@ def test_part4_ai_itself_casts_the_best_offensive_spell():
     assert p4["C_did_not_waste_leveled_slot"], (
         f"the AI wasted a leveled slot (L{p4['C_chosen_slot_level']}) on a "
         f"{p4['C_target_hp']}-HP target: intent={p4['C_intent']}")
+
+
+# ── PART 5: the AI ITSELF uses martial class abilities (engine-AI competence v2.0c, #1106) ──
+
+def test_part5_ai_itself_uses_martial_abilities():
+    """The v2.0c COMPETENCE gauge: the REAL combat AI uses MARTIAL class abilities on its own (not a
+    scripted assist). The brief's bar is the AI itself uses >= 2 abilities; this asserts the floor AND
+    each individually-wired ability (Second Wind / Action Surge / Battle Master maneuver / Sneak
+    Attack / Guided Strike), so a regression in any ONE is caught even while the >= 2 gate stays green."""
+    server, store_mod = _server_store()
+    p5 = smoke.run_part5(server, store_mod, _SEED)
+    # The owner floor: the AI used at least 2 martial abilities entirely on its own.
+    assert p5["abilities_used"] >= 2, (
+        f"the AI used < 2 martial abilities on its own: {p5['abilities_used']}/5")
+    # A) Second Wind — a hurt fighter self-healed via its own bonus action.
+    a = p5["A_second_wind"]
+    assert a["ability_in_view"], "Second Wind not surfaced in the fighter's view"
+    assert a["ok"], f"the AI did not self-heal via Second Wind: {a}"
+    # B) Action Surge — the REAL LOOP spent the surge AND it bought strikes beyond the base budget
+    #    (this exercises the loop path, which would catch the action_used-blocks-surge regression).
+    b = p5["B_action_surge"]
+    assert b["ability_in_view"], "Action Surge not surfaced in the fighter's view"
+    assert b["surge_spent_in_loop"], f"the loop did not spend Action Surge: {b}"
+    assert b["strikes_made"] > b["base_strike_budget"], (
+        f"Action Surge did not grant extra strikes: {b['strikes_made']} <= base "
+        f"{b['base_strike_budget']}")
+    assert b["ok"], f"Action Surge competence gauge failed: {b}"
+    # C) Battle Master maneuver — the AI declared a maneuver ON a worthy attack.
+    cc = p5["C_maneuver"]
+    assert cc["ability_in_view"], "the maneuver (superiority_dice) was not surfaced in the BM's view"
+    assert cc["ok"], f"the AI did not declare a Battle Master maneuver: {cc}"
+    # D) Sneak Attack — the rogue tagged its strike when an ally was adjacent to the target.
+    d = p5["D_sneak_attack"]
+    assert d["sneak_in_view"], "Sneak Attack dice not surfaced in the rogue's view"
+    assert d["ok"], f"the AI did not tag a Sneak Attack when eligible: {d}"
+    # E) Guided Strike — the War cleric spent Channel Divinity (+10) on a likely-miss attack.
+    e = p5["E_guided_strike"]
+    assert e["ability_in_view"], "Guided Strike not surfaced in the War cleric's view"
+    assert e["ok"], f"the AI did not spend Guided Strike on a likely-miss attack: {e}"

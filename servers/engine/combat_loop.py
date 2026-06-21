@@ -23,11 +23,20 @@ TWO MODES (owner-decided):
 from __future__ import annotations
 
 from typing import Optional
+from dataclasses import replace
 
 import combat_ai
 import dice as dice_mod
 import spells as spells_mod
-from combat_ai import AttackOption, CombatantView, CombatView, Intent, SpellOption
+from combat_ai import (
+    AbilityOption,
+    AttackOption,
+    CombatantView,
+    CombatView,
+    Intent,
+    SneakAttackOption,
+    SpellOption,
+)
 
 # The two "sides". Party = the player-aligned team (PCs + companions); Enemy = monsters/NPCs.
 _PARTY_KINDS = ("player", "companion")
@@ -206,6 +215,88 @@ def _save_bonuses(ch) -> dict:
     return out
 
 
+# ── Martial class abilities + Sneak Attack discovery (v2.0c) ──────────────────────────
+
+# The barbarians who have ENTERED rage this fight (keyed by character id). The engine has no
+# active-rage state (rage is a pool decrement only), so the loop tracks rage-entry here to stop
+# the AI re-spending Rage every turn. Cleared whenever a fresh combat starts (no rage spent yet).
+# This is loop-local bookkeeping, NOT campaign state — it never touches the snapshot (additive).
+_raged_this_fight: set = set()
+
+
+def _fighter_level(actor) -> int:
+    """The actor's FIGHTER class level (for the Second Wind heal EV = 1d10 + fighter level). Falls
+    back to total level for a single-class sheet / a stub. Pure read."""
+    for cl in getattr(actor, "classes", ()) or ():
+        if str(getattr(cl, "name", "")).strip().lower() == "fighter":
+            return int(getattr(cl, "level", 0)) or 1
+    return int(getattr(actor, "total_level", 1)) or 1
+
+
+def _ability_options(server, actor) -> tuple[AbilityOption, ...]:
+    """Surface the actor's spendable MARTIAL class abilities (v2.0c) from its authoritative
+    `class_resources` pools (the SAME pools `use_resource` spends). Empty == a non-martial actor or
+    a fully-spent pool, so the view is byte-identical to today. Maps a known resource id -> the AI's
+    AbilityOption `kind`; Second Wind carries its heal EV (1d10 + fighter level). PURE — reads the
+    sheet only, never mutates. The AI decides WHEN to spend; the loop applies via the locked verbs."""
+    out: list[AbilityOption] = []
+    res = getattr(actor, "class_resources", {}) or {}
+    for rid, pool in res.items():
+        remaining = int(getattr(pool, "max", 0)) - int(getattr(pool, "used", 0))
+        if remaining <= 0:
+            continue
+        rid_l = str(rid).lower()
+        if rid_l == "second_wind":
+            lvl = _fighter_level(actor)
+            heal_amt = float(dice_mod.average_total(f"1d10+{lvl}"))
+            out.append(AbilityOption(kind="second_wind", resource=rid, remaining=remaining,
+                                     is_bonus_action=True, heal_amount=heal_amt, name="Second Wind"))
+        elif rid_l == "action_surge":
+            out.append(AbilityOption(kind="action_surge", resource=rid, remaining=remaining,
+                                     name="Action Surge"))
+        elif rid_l == "channel_divinity":
+            # War Domain Guided Strike (+10 to one attack roll) rides channel_divinity. Surface it as
+            # a guided_strike option only for a War-Domain cleric (the SRD subclass that grants it);
+            # other channel uses aren't a flat to-hit option the engine models, so we don't claim them.
+            if _has_war_domain(actor):
+                out.append(AbilityOption(kind="guided_strike", resource=rid, remaining=remaining,
+                                         name="Guided Strike"))
+        elif rid_l == "superiority_dice":
+            out.append(AbilityOption(kind="maneuver", resource=rid, remaining=remaining,
+                                     size=str(getattr(pool, "size", "") or "d8"), name="Trip Attack"))
+        elif rid_l == "rage":
+            out.append(AbilityOption(kind="rage", resource=rid, remaining=remaining,
+                                     is_bonus_action=True, name="Rage"))
+    return tuple(out)
+
+
+def _has_war_domain(actor) -> bool:
+    """Is `actor` a War-Domain cleric (the SRD subclass whose Channel Divinity is Guided Strike)?
+    Checks the subclass tag on the sheet / its cleric ClassLevel. Conservative: only a clear War
+    Domain match returns True, so a non-War cleric's channel_divinity is NOT claimed as Guided Strike."""
+    sub = str(getattr(actor, "subclass", "") or "").lower()
+    if "war" in sub:
+        return True
+    for cl in getattr(actor, "classes", ()) or ():
+        if str(getattr(cl, "name", "")).strip().lower() == "cleric":
+            if "war" in str(getattr(cl, "subclass", "") or "").lower():
+                return True
+    return False
+
+
+def _sneak_attack_option(actor) -> "SneakAttackOption | None":
+    """The actor's Sneak Attack rider (rogue) — the sheet's `sneak_attack_dice` + its avg value, or
+    None for a non-rogue / no sneak dice (byte-identical). PURE read."""
+    dice = str(getattr(actor, "sneak_attack_dice", "") or "").strip()
+    if not dice:
+        return None
+    try:
+        value = float(dice_mod.average_total(dice))
+    except (ValueError, TypeError):
+        value = 0.0
+    return SneakAttackOption(dice=dice, value=value)
+
+
 def _build_view(server, c, actor) -> CombatView:
     """Assemble the read-only CombatView for `actor` from the live Combat. READ-ONLY — touches
     no state; the loop never mutates here."""
@@ -259,6 +350,17 @@ def _build_view(server, c, actor) -> CombatView:
         casting_mod = 0
     spells = _spell_options(server, actor, caster_level, casting_mod)
 
+    # Martial abilities + Sneak Attack (v2.0c). Empty/None for a non-martial actor == today.
+    abilities = _ability_options(server, actor)
+    sneak = _sneak_attack_option(actor)
+    # The action economy this turn — meaningful only when `actor` is the CURRENT combatant (the
+    # engine tracks action_used / bonus_action_used on c.combat for the current turn). When the
+    # actor isn't current, default both to available (the AI's bonus channel only fires on the
+    # actor's own turn anyway, and an out-of-combat view stays as today).
+    is_current = bool(c.combat.active and c.combat.current_combatant_id == actor.id)
+    action_available = (not c.combat.action_used) if is_current else True
+    bonus_action_available = (not c.combat.bonus_action_used) if is_current else True
+
     return CombatView(
         actor_id=actor.id,
         actor_cell=actor_cell,
@@ -280,6 +382,16 @@ def _build_view(server, c, actor) -> CombatView:
         # v2.0b: the spell the actor is ALREADY concentrating on (or "" — today's default). Lets the
         # AI avoid breaking a higher-value active concentration with a new concentration spell.
         active_concentration=str(getattr(actor, "concentration", "") or ""),
+        # v2.0c: martial abilities + Sneak Attack + the actor's HP + this turn's action economy +
+        # whether the barbarian is already raging this fight. All default to today's behavior so a
+        # non-martial actor's view is byte-identical (empty abilities, None sneak, fresh economy).
+        actor_current_hp=int(getattr(actor, "current_hp", 0)),
+        actor_max_hp=int(getattr(actor, "max_hp", 0)),
+        abilities=abilities,
+        sneak_attack=sneak,
+        action_available=action_available,
+        bonus_action_available=bonus_action_available,
+        is_raging=actor.id in _raged_this_fight,
     )
 
 
@@ -299,8 +411,14 @@ def _apply_intent(server, campaign_id: str, actor_id: str, intent: Intent) -> di
                 campaign_id=campaign_id, attacker_id=actor_id, target_id=intent.target_id,
                 attack_name=intent.attack_name,
             )
-            if opt is not None and opt.damage_rolls:
-                kwargs["damage_rolls"] = [dict(r) for r in opt.damage_rolls]
+            # SNEAK ATTACK (v2.0c): a tagged rider is a damage_rolls component. Fold it in WITH the
+            # weapon's components so the engine rolls + crit-doubles both via the multi-component
+            # path. When there's no sneak rider the path is byte-identical to v2.0b.
+            sneak_components = [dict(r) for r in (intent.sneak_attack or ())]
+            if opt is not None and (opt.damage_rolls or sneak_components):
+                weapon_rolls = ([dict(r) for r in opt.damage_rolls] if opt.damage_rolls
+                                else [{"dice": opt.damage_expr or "1d4", "type": opt.damage_type}])
+                kwargs["damage_rolls"] = weapon_rolls + sneak_components
                 kwargs["attack_bonus"] = opt.to_hit
             elif opt is not None:
                 kwargs["attack_bonus"] = opt.to_hit
@@ -310,6 +428,23 @@ def _apply_intent(server, campaign_id: str, actor_id: str, intent: Intent) -> di
                 # No cached option (defensive) — a minimal legal strike so the turn resolves.
                 kwargs["attack_bonus"] = 0
                 kwargs["damage_dice"] = "1d4"
+                if sneak_components:
+                    kwargs.pop("damage_dice", None)
+                    kwargs["damage_rolls"] = [{"dice": "1d4", "type": "piercing"}] + sneak_components
+            # BATTLE MASTER MANEUVER (v2.0c): declared ON the attack — the engine spends the die only
+            # on a hit and folds it into the damage (the attack() maneuver rider). Empty == today.
+            if intent.maneuver:
+                kwargs["maneuver"] = intent.maneuver
+                kwargs["maneuver_resource"] = intent.maneuver_resource or "superiority_dice"
+            # GUIDED STRIKE (v2.0c): a flat +10-to-hit option is a SEPARATE use_resource declared
+            # BEFORE the attack (it stashes a pending_attack_bonus the next attack folds in). Spend
+            # it via the locked verb; if the pool refuses we just lose the bonus (the strike lands).
+            if intent.channel:
+                ch_res = intent.channel_resource or "channel_divinity"
+                gs = server.use_resource(
+                    campaign_id, actor_id, resource=ch_res, maneuver=intent.channel,
+                )
+                entry["channel"] = {"option": intent.channel, "ok": bool(gs.get("ok"))}
             res = server.attack(**kwargs)
             dmg = res.get("damage")
             dmg_applied = None
@@ -321,6 +456,10 @@ def _apply_intent(server, campaign_id: str, actor_id: str, intent: Intent) -> di
                 "damage": dmg_applied,
                 "target_state": res.get("target_state"),
             }
+            if intent.sneak_attack:
+                entry["result"]["sneak_attack"] = intent.sneak_attack[0].get("dice")
+            if intent.maneuver:
+                entry["result"]["maneuver"] = res.get("maneuver_damage") or intent.maneuver
         elif intent.kind == "cast":
             res = server.cast_spell(
                 campaign_id=campaign_id, character_id=actor_id,
@@ -406,6 +545,34 @@ def _apply_intent(server, campaign_id: str, actor_id: str, intent: Intent) -> di
                 server.move_to_coords(campaign_id, actor_id, intent.to_cell[0], intent.to_cell[1])
             elif intent.to_zone:
                 server.move_to_zone(campaign_id, combatant_id=actor_id, zone=intent.to_zone)
+        elif intent.kind == "use_resource":
+            # A class-resource spend (v2.0c): Second Wind / Rage (bonus action) or Action Surge (a
+            # fresh Action grantor). The locked use_resource verb deducts the pool; Action Surge bumps
+            # c.combat.surge_actions so the loop's re-ask gets an extra Attack action. For a BONUS-
+            # action ability (Second Wind / Rage), also mark the bonus action spent + apply Second
+            # Wind's heal via the locked apply_healing (the pool spend alone doesn't raise HP). Rage
+            # entry is tracked per-fight so the AI won't re-spend it (see _raged_this_fight).
+            rr = server.use_resource(campaign_id, actor_id, resource=intent.resource,
+                                     amount=max(1, int(intent.amount)))
+            entry["result"] = {"resource": intent.resource, "ok": bool(rr.get("ok")),
+                               "remaining": rr.get("remaining")}
+            rid_l = str(intent.resource).lower()
+            if rr.get("ok") and rid_l == "second_wind":
+                # Second Wind heals 1d10 + fighter level — apply via the SAME locked verb the DM uses.
+                actor = server._require(campaign_id).characters.get(actor_id)
+                lvl = _fighter_level(actor) if actor is not None else 1
+                rolled = dice_mod.roll(f"1d10+{lvl}")
+                healed = server.apply_healing(campaign_id=campaign_id, target_id=actor_id,
+                                              amount=int(rolled.total))
+                entry["result"]["heal"] = {"amount": int(rolled.total), "hp": healed.get("hp")}
+            if rr.get("ok") and rid_l == "rage":
+                _raged_this_fight.add(actor_id)
+            # Mark the BONUS action consumed for a bonus-action ability so the loop doesn't re-issue it.
+            if rr.get("ok") and rid_l in ("second_wind", "rage"):
+                try:
+                    server.use_action(campaign_id, actor_id, kind="bonus")
+                except Exception:
+                    pass
         elif intent.kind == "dash":
             server.use_action(campaign_id, actor_id, kind="dash")
         elif intent.kind == "dodge":
@@ -480,12 +647,26 @@ def run_combat_round(campaign_id: str, mode: str = "live", max_turns: int = 60) 
         # One full turn for `actor`: ask the AI, apply, repeat for a Multiattack budget.
         view = _build_view(server, c, actor)
         _view_cache[actor.id] = view.attacks
-        # Multiattack budget: how many attack() strikes this actor's Attack action grants.
-        ma = max(1, server._attacker_multiattack_count(actor, c))
-        strikes_left = ma
         acted = False
+
+        # BONUS ACTION (v2.0c): fire a worthwhile bonus action ALONGSIDE the main action (Second
+        # Wind self-heal / Rage entry / bonus-action Healing Word). Resolved FIRST so Second Wind's
+        # HP lands before the swings. Returns None for a non-martial actor -> byte-identical (no
+        # bonus call). The _apply_intent marks the bonus economy spent so it fires at most once.
+        bonus_intent = combat_ai.pick_bonus_action(actor, view)
+        if bonus_intent is not None:
+            digest.append(_apply_intent(server, campaign_id, actor.id, bonus_intent))
+            acted = True
+
+        # Multiattack budget: how many attack() strikes this actor's Attack action grants.
+        c = server._require(campaign_id)
+        actor = c.characters.get(cur_id)
+        ma = max(1, server._attacker_multiattack_count(actor, c)) if actor is not None else 1
+        strikes_left = ma
+        surged = False  # Action Surge spent this turn? (one extra Attack action, v2.0c)
+        sneak_used = False  # Sneak Attack is once-per-turn (5e RAW): suppress after the first LANDS
         # Re-ask pick_action per granted strike (move-then-attack, or several strikes).
-        for _strike in range(max(1, ma) + 2):  # +2 headroom for a move then attacks
+        for _strike in range(max(1, ma) + 4):  # +4 headroom: a move, the strikes, an Action Surge
             c = server._require(campaign_id)
             actor = c.characters.get(cur_id)
             if actor is None or not _alive(actor) or not c.combat.active:
@@ -493,20 +674,38 @@ def run_combat_round(campaign_id: str, mode: str = "live", max_turns: int = 60) 
             if not _living_sides(c) or len(_living_sides(c)) < 2:
                 break  # fight is decided; stop issuing this actor's strikes
             view = _build_view(server, c, actor)
+            if sneak_used and view.sneak_attack is not None:
+                # 5e RAW: Sneak Attack once per turn — already dealt this turn, never re-tag a later strike.
+                view = replace(view, sneak_attack=None)
             _view_cache[actor.id] = view.attacks
+            # ACTION SURGE (v2.0c): when the normal strikes are spent but the fight is still hot,
+            # the fighter can spend Action Surge for a FRESH Attack action. Spend it ONCE, then keep
+            # swinging (the engine's surge_actions grants the extra strikes). Only a fighter with the
+            # surge ability + a hot moment surges (should_action_surge gates it); else None == today.
+            if strikes_left <= 0 and not surged:
+                surge_intent = combat_ai.should_action_surge(view)
+                if surge_intent is not None:
+                    digest.append(_apply_intent(server, campaign_id, actor.id, surge_intent))
+                    surged = True
+                    strikes_left = ma  # the surged action grants another Attack action's strikes
+                    acted = True
+                    continue
+                break  # no surge — the actor's attacks are done
             intent = combat_ai.pick_action(actor, view)
             entry = _apply_intent(server, campaign_id, actor.id, intent)
             digest.append(entry)
             acted = True
             if intent.kind == "attack":
+                if intent.sneak_attack and (entry.get("result") or {}).get("hit"):
+                    sneak_used = True  # Sneak Attack DEALT — a miss does NOT consume the once-per-turn
                 strikes_left -= 1
-                if strikes_left <= 0:
-                    break
+                if strikes_left <= 0 and surged:
+                    break  # already surged once; don't loop forever
             elif intent.kind in ("skip", "dodge", "disengage"):
                 break
             elif intent.kind == "move":
                 continue  # let the next iteration try to attack from the new cell
-            else:  # cast / dash
+            else:  # cast / dash / use_resource
                 break
 
         # Advance the turn (auto-resolves end-of-turn repeat saves). If the actor never acted,
@@ -556,6 +755,11 @@ def run_combat_autonomous(campaign_id: str, mode: str = "test", max_rounds: int 
 
     if mode not in ("live", "test"):
         raise ValueError("mode must be 'live' or 'test'")
+
+    # v2.0c: this is a FRESH fight from the AI's perspective — clear the per-fight rage tracker so a
+    # barbarian can enter rage again (a new fight, rested or not, is a new rage decision). Loop-local
+    # bookkeeping only; never touches the snapshot.
+    _raged_this_fight.clear()
 
     rounds: list[dict] = []
     actors_acted: set = set()

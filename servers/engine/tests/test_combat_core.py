@@ -40,6 +40,14 @@ def _mk_view(actor_attacks, foes, grid=False, actor_cell=None, **kw) -> CombatVi
         attacks=tuple(actor_attacks),
         spells=tuple(kw.get("spells", ())),
         caster_level=int(kw.get("caster_level", 0)),
+        # v2.0c martial fields (all default to today's behavior when omitted).
+        actor_current_hp=int(kw.get("actor_current_hp", 0)),
+        actor_max_hp=int(kw.get("actor_max_hp", 0)),
+        abilities=tuple(kw.get("abilities", ())),
+        sneak_attack=kw.get("sneak_attack", None),
+        action_available=bool(kw.get("action_available", True)),
+        bonus_action_available=bool(kw.get("bonus_action_available", True)),
+        is_raging=bool(kw.get("is_raging", False)),
     )
 
 
@@ -57,6 +65,27 @@ def _ally(aid, hp=10, max_hp=10, cell=None, name=None, downed=False):
 def _heal(name="Healing Word", amount=6.0, rng=60, slot=1, bonus=True):
     return SpellOption(name=name, range_ft=rng, requires_slot=True,
                        is_heal=True, heal_amount=amount, slot_level=slot, is_bonus_action=bonus)
+
+
+import contextlib  # noqa: E402
+
+
+@contextlib.contextmanager
+def _seeded_ids(seed: int):
+    """Install a SEEDED entity-id generator (models._new_id) for the duration, then restore it. A
+    seeded `seed` makes the WHOLE fight reproducible — character ids feed the AI's focus-fire and
+    v2.0c ability tie-breaks, so RANDOM ids would let the round count drift even at a fixed dice seed
+    (the richer martial behavior — Action Surge / Second Wind — surfaced this: which-goblin-dies-when
+    becomes id-order-sensitive). Mirrors qa/combat_smoke._install_deterministic_ids."""
+    import random as _r
+    import models
+    orig = models._new_id
+    rng = _r.Random(0xC0FFEE ^ int(seed))
+    models._new_id = lambda prefix: f"{prefix}_{rng.getrandbits(48):012x}"
+    try:
+        yield
+    finally:
+        models._new_id = orig
 
 
 # ── p_hit / EV math ────────────────────────────────────────────────────────────────
@@ -348,6 +377,135 @@ def test_pick_action_no_offensive_spells_is_byte_identical_to_pre_pr_attack():
     assert intent.target_id == "b"  # focus-fire the lower-HP foe (today's tiebreak), unchanged
 
 
+# ── pick_action / pick_bonus_action / should_action_surge: martial abilities (v2.0c, #1106) ──
+
+from combat_ai import AbilityOption, SneakAttackOption  # noqa: E402
+
+
+def _ability(kind, resource, **kw):
+    return AbilityOption(kind=kind, resource=resource, remaining=kw.pop("remaining", 1), **kw)
+
+
+def test_v2c_no_abilities_attack_is_byte_identical():
+    """ADDITIVE BYTE-IDENTITY (v2.0c): an actor with NO abilities + NO sneak dice picks the EXACT
+    same plain attack Intent as before v2.0c — every rider field is empty (no maneuver/channel/sneak),
+    so the loop applies a byte-identical strike. The whole martial layer is inert when nothing is set."""
+    axe = AttackOption(name="Greataxe", to_hit=9, damage_expr="1d12+5")
+    v = _mk_view([axe], [_foe("a", hp=30, ac=14)])
+    intent = combat_ai.pick_action(actor=object(), combat_state=v)
+    assert intent.kind == "attack" and intent.attack_name == "Greataxe"
+    assert intent.maneuver == "" and intent.channel == "" and intent.sneak_attack == ()
+
+
+def test_v2c_no_abilities_bonus_and_surge_are_none():
+    """A view with no abilities yields NO bonus action and NO Action Surge (the channels are inert)."""
+    axe = AttackOption(name="Sword", to_hit=5, damage_expr="1d8+3")
+    v = _mk_view([axe], [_foe("a", hp=20, ac=12)])
+    assert combat_ai.pick_bonus_action(object(), v) is None
+    assert combat_ai.should_action_surge(v) is None
+
+
+def test_v2c_second_wind_fires_when_hurt_only():
+    """Second Wind is a bonus-action self-heal that fires ONLY when the fighter is hurt (<= 1/2 HP)."""
+    axe = AttackOption(name="Sword", to_hit=5, damage_expr="1d8+3")
+    sw = _ability("second_wind", "second_wind", is_bonus_action=True, heal_amount=10.0, name="Second Wind")
+    foes = [_foe("a", hp=20, ac=12)]
+    # Healthy: no Second Wind.
+    healthy = _mk_view([axe], foes, abilities=(sw,), actor_current_hp=40, actor_max_hp=40)
+    assert combat_ai.pick_bonus_action(object(), healthy) is None
+    # Hurt (<= 1/2): Second Wind fires as a use_resource bonus Intent.
+    hurt = _mk_view([axe], foes, abilities=(sw,), actor_current_hp=15, actor_max_hp=40)
+    bi = combat_ai.pick_bonus_action(object(), hurt)
+    assert bi is not None and bi.kind == "use_resource" and bi.resource == "second_wind"
+
+
+def test_v2c_action_surge_only_when_hot():
+    """Action Surge is a NOVA button: NOT spent vs a full-HP lone foe round 1, but spent when a foe
+    is finishable (HP within ~2x one attack's EV) or the fighter is hurt."""
+    axe = AttackOption(name="Sword", to_hit=8, damage_expr="2d6+4")  # EV ~ 0.85 * 11 ~ 9.4
+    surge = _ability("action_surge", "action_surge", name="Action Surge")
+    # A tough full-HP foe, healthy fighter -> don't waste the surge.
+    cold = _mk_view([axe], [_foe("a", hp=80, ac=12)], abilities=(surge,),
+                    actor_current_hp=50, actor_max_hp=50)
+    assert combat_ai.should_action_surge(cold) is None
+    # A finishable foe (HP ~ one attack's EV) -> surge for the kill.
+    hot = _mk_view([axe], [_foe("a", hp=10, ac=12)], abilities=(surge,),
+                   actor_current_hp=50, actor_max_hp=50)
+    si = combat_ai.should_action_surge(hot)
+    assert si is not None and si.resource == "action_surge"
+
+
+def test_v2c_battle_master_maneuver_declared_on_a_worthy_attack():
+    """A Battle Master declares a maneuver on a worthy (non-trivial, likely-to-hit) attack."""
+    sword = AttackOption(name="Sword", to_hit=8, damage_expr="1d8+4")
+    man = _ability("maneuver", "superiority_dice", size="d8", name="Trip Attack")
+    v = _mk_view([sword], [_foe("a", hp=40, ac=12)], abilities=(man,))
+    intent = combat_ai.pick_action(object(), v)
+    assert intent.kind == "attack" and intent.maneuver == "Trip Attack"
+    assert intent.maneuver_resource == "superiority_dice"
+
+
+def test_v2c_maneuver_not_wasted_on_a_trivial_foe():
+    """A maneuver is NOT spent on a foe a plain swing already finishes (HP <= the attack EV)."""
+    sword = AttackOption(name="Sword", to_hit=12, damage_expr="2d8+5")  # EV ~ 14
+    man = _ability("maneuver", "superiority_dice", size="d8", name="Trip Attack")
+    v = _mk_view([sword], [_foe("a", hp=3, ac=10)], abilities=(man,))
+    intent = combat_ai.pick_action(object(), v)
+    assert intent.kind == "attack" and intent.maneuver == ""  # trivial foe — conserve the die
+
+
+def test_v2c_sneak_attack_tagged_when_ally_adjacent():
+    """A rogue tags Sneak Attack when an ALLY is within 5 ft of the target (the flanking trigger)."""
+    dagger = AttackOption(name="Dagger", to_hit=7, damage_expr="1d4+4", reach_ft=5)
+    sneak = SneakAttackOption(dice="3d6", value=10.0)
+    # Grid: rogue at (0,0), foe at (1,0), ally at (2,0) — the ally is adjacent to the foe.
+    ally = CombatantView(id="ally", name="ally", side="enemy", current_hp=20, max_hp=20,
+                         armor_class=15, cell=(2, 0))
+    v = _mk_view([dagger], [_foe("t", hp=20, ac=13, cell=(1, 0))], grid=True, actor_cell=(0, 0),
+                 sneak_attack=sneak, allies=(ally,))
+    intent = combat_ai.pick_action(object(), v)
+    assert intent.kind == "attack" and intent.sneak_attack
+    assert intent.sneak_attack[0]["dice"] == "3d6"
+
+
+def test_v2c_sneak_attack_not_tagged_without_a_trigger():
+    """No advantage and no adjacent ally -> the Sneak Attack rider is NOT tagged (no free sneak)."""
+    dagger = AttackOption(name="Dagger", to_hit=7, damage_expr="1d4+4", reach_ft=5)
+    sneak = SneakAttackOption(dice="3d6", value=10.0)
+    # Lone rogue on the grid, no ally near the foe.
+    v = _mk_view([dagger], [_foe("t", hp=20, ac=13, cell=(1, 0))], grid=True, actor_cell=(0, 0),
+                 sneak_attack=sneak)
+    intent = combat_ai.pick_action(object(), v)
+    assert intent.kind == "attack" and intent.sneak_attack == ()
+
+
+def test_v2c_guided_strike_only_on_a_likely_miss():
+    """Guided Strike (+10) is reserved for a likely-MISS key attack; a likely-HIT strike doesn't burn it."""
+    gs = _ability("guided_strike", "channel_divinity", name="Guided Strike")
+    # High AC -> low P(hit) -> Guided Strike fires.
+    weak = AttackOption(name="Mace", to_hit=4, damage_expr="1d6+2")
+    miss = _mk_view([weak], [_foe("a", hp=20, ac=20)], abilities=(gs,))
+    i1 = combat_ai.pick_action(object(), miss)
+    assert i1.kind == "attack" and i1.channel == "Guided Strike"
+    # Low AC -> high P(hit) -> the channel is conserved (no point spending +10 on a sure hit).
+    strong = AttackOption(name="Mace", to_hit=10, damage_expr="1d6+2")
+    hit = _mk_view([strong], [_foe("a", hp=20, ac=8)], abilities=(gs,))
+    i2 = combat_ai.pick_action(object(), hit)
+    assert i2.kind == "attack" and i2.channel == ""
+
+
+def test_v2c_rage_enters_once_when_meleeing():
+    """Rage fires as a bonus action when a foe is in melee reach and the barbarian isn't yet raging;
+    once raging (is_raging=True) it does NOT re-enter (don't drain the pool)."""
+    axe = AttackOption(name="Greataxe", to_hit=7, damage_expr="1d12+4", reach_ft=5)
+    rage = _ability("rage", "rage", is_bonus_action=True, name="Rage")
+    not_raging = _mk_view([axe], [_foe("a", hp=20, ac=13)], abilities=(rage,), is_raging=False)
+    bi = combat_ai.pick_bonus_action(object(), not_raging)
+    assert bi is not None and bi.kind == "use_resource" and bi.resource == "rage"
+    already = _mk_view([axe], [_foe("a", hp=20, ac=13)], abilities=(rage,), is_raging=True)
+    assert combat_ai.pick_bonus_action(object(), already) is None
+
+
 # ── run_combat_autonomous(mode="test"): seeded random-vs-random to a terminal state ──
 
 def _seed_fight(server, store_mod, *, sandbox=True, monsters=3):
@@ -542,16 +700,18 @@ def test_ai_itself_casts_an_offensive_spell_through_the_loop(tmp_path, monkeypat
 
 
 def test_non_caster_fight_is_byte_identical_under_v2b(tmp_path, monkeypatch):
-    """ADDITIVE BYTE-IDENTITY: a martial-only fight (no offensive spells) resolves to the SAME
-    outcome under v2.0b — same seed, two runs, identical victor/rounds/turns. The offensive-spell
-    path is inert for a non-caster (default-off / empty == today)."""
+    """ADDITIVE BYTE-IDENTITY: a martial-only fight resolves to the SAME outcome on a re-run — same
+    seed, two runs, identical victor/rounds/turns. Seeds BOTH the dice RNG and the entity-id
+    generator so the WHOLE fight is reproducible (character ids feed the AI's focus-fire / v2.0c
+    ability tie-breaks; random ids would let the round count drift at a fixed dice seed)."""
     import server
 
     def _run(seed, state):
         monkeypatch.setenv("WORLDOS_STATE_DIR", str(state))
-        dice_mod.reseed_process_rng(seed)
-        cid, hero, mons = _seed_fight(server, store, monsters=3)
-        return combat_loop.run_combat_autonomous(cid, mode="test", max_rounds=25)
+        with _seeded_ids(seed):
+            dice_mod.reseed_process_rng(seed)
+            cid, hero, mons = _seed_fight(server, store, monsters=3)
+            return combat_loop.run_combat_autonomous(cid, mode="test", max_rounds=25)
 
     r1 = _run(909, tmp_path / "a")
     r2 = _run(909, tmp_path / "b")
@@ -562,26 +722,36 @@ def test_non_caster_fight_is_byte_identical_under_v2b(tmp_path, monkeypatch):
 def test_run_combat_autonomous_test_runs_to_terminal_and_everyone_acted(tmp_path, monkeypatch):
     monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     import server
-    dice_mod.reseed_process_rng(4242)
-    cid, hero, mons = _seed_fight(server, store)
-    res = combat_loop.run_combat_autonomous(cid, mode="test", max_rounds=25)
+    with _seeded_ids(4242):  # seed ids too so the fight is fully reproducible (v2.0c tie-breaks)
+        dice_mod.reseed_process_rng(4242)
+        cid, hero, mons = _seed_fight(server, store)
+        res = combat_loop.run_combat_autonomous(cid, mode="test", max_rounds=25)
     # terminal: a victor or a draw (never left mid-fight in test mode)
     assert res["victor"] in ("party", "enemy", "draw")
     assert res["round_cap_hit"] is False
-    # EVERY combatant got at least one turn
-    assert set(res["actors_acted"]) == set([hero] + mons), res["actors_acted"]
+    # The hero acted, and EVERY actor that acted is a real combatant (a valid subset of the order).
+    # NOTE (v2.0c): "everyone acts" is no longer guaranteed — a stronger martial AI (Action Surge /
+    # maneuvers) can drop a monster BEFORE its turn comes up, so a foe may die without acting. The
+    # loop's contract is "sequence each combatant that still has a turn", not "force a dead foe to
+    # act"; so we assert the acted set is a non-empty subset including the hero, not a strict equality.
+    acted = set(res["actors_acted"])
+    all_combatants = set([hero] + mons)
+    assert acted, "no combatant acted"
+    assert hero in acted, "the hero never took a turn"
+    assert acted <= all_combatants, f"a non-combatant acted: {acted - all_combatants}"
     # combat closed out (end_combat fired on a decisive result)
     assert res["turns"] > 0
 
 
 def test_dice_seed_is_deterministic(tmp_path, monkeypatch):
-    """Same seed -> byte-identical fight outcome; the seed fixes the whole sequence."""
+    """Same seed -> byte-identical fight outcome; the seed fixes the whole sequence (dice AND ids)."""
     import server
 
     def _run(seed):
-        dice_mod.reseed_process_rng(seed)
-        cid, hero, mons = _seed_fight(server, store)
-        return combat_loop.run_combat_autonomous(cid, mode="test", max_rounds=25)
+        with _seeded_ids(seed):
+            dice_mod.reseed_process_rng(seed)
+            cid, hero, mons = _seed_fight(server, store)
+            return combat_loop.run_combat_autonomous(cid, mode="test", max_rounds=25)
 
     monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path / "a"))
     r1 = _run(909)
@@ -819,3 +989,24 @@ def test_set_house_rules_rejects_test_only_toggles(tmp_path, monkeypatch):
     hr = server.set_house_rules(cid, {"difficulty": "hard"})
     assert hr["difficulty"] == "hard"
     assert hr.get("force_hit") is False and hr.get("fast_resolve") is False
+
+
+def test_v2c_sneak_attack_is_once_per_turn_in_the_loop(tmp_path, monkeypatch):
+    """5e RAW: Sneak Attack is ONCE PER TURN. run_combat_round tracks `sneak_used` and, after a Sneak
+    Attack LANDS, nulls view.sneak_attack for the rest of the actor's turn — so a multi-strike rogue
+    can't re-tag it (the bug: the strike loop rebuilt the view each strike with sneak still populated →
+    6d6 instead of 3d6). This pins the suppression MECHANISM the loop applies: an eligible view tags
+    sneak; the SAME view with sneak_attack nulled (what the loop does after a landed sneak) does NOT."""
+    from dataclasses import replace
+    dagger = AttackOption(name="Dagger", to_hit=7, damage_expr="1d4+4", reach_ft=5)
+    sneak = SneakAttackOption(dice="3d6", value=10.0)
+    ally = CombatantView(id="ally", name="ally", side="enemy", current_hp=20, max_hp=20,
+                         armor_class=15, cell=(2, 0))
+    eligible = _mk_view([dagger], [_foe("t", hp=20, ac=13, cell=(1, 0))], grid=True, actor_cell=(0, 0),
+                        sneak_attack=sneak, allies=(ally,))
+    # Strike 1: sneak is available + the adjacency trigger fires -> tagged (3d6).
+    i1 = combat_ai.pick_action(object(), eligible)
+    assert i1.kind == "attack" and i1.sneak_attack and i1.sneak_attack[0]["dice"] == "3d6"
+    # After it LANDS the loop nulls view.sneak_attack -> a second strike THAT SAME TURN does NOT re-tag.
+    i2 = combat_ai.pick_action(object(), replace(eligible, sneak_attack=None))
+    assert i2.kind == "attack" and i2.sneak_attack == (), "Sneak re-tagged after it was used this turn"

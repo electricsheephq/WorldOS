@@ -786,6 +786,251 @@ def _print_part4(p4: dict) -> bool:
     return ok
 
 
+# ── PART 5: the AI ITSELF uses martial class abilities (engine-AI competence v2.0c, #1106) ──
+#
+# PART 1's table proved the ability VERBS resolve via a SCRIPTED assist. PART 5 is the v2.0c
+# COMPETENCE gauge: the REAL combat AI (combat_ai over combat_loop, the exact loop path) *chooses*
+# the martial ability itself. Five sub-scenarios, each a different ability the AI fires on its own:
+#   A) Second Wind  — a HURT fighter uses its bonus-action self-heal; HP rises via the AI's choice.
+#   B) Action Surge — a fighter with a finishable foe spends Action Surge for an EXTRA Attack action
+#      (the loop grants more strikes than the base budget).
+#   C) Maneuver     — a Battle Master declares a Trip-Attack maneuver on a worthy attack (die folds in).
+#   D) Sneak Attack — a rogue with an ally adjacent to the target TAGS the strike with its sneak dice.
+#   E) Guided Strike — a War cleric spends Channel Divinity (+10) on a likely-MISS key attack.
+# Bar: each ability is CHOSEN BY THE AI (not scripted) and APPLIED through the locked verbs.
+
+def _p5_seed(server, store_mod, tag, seed_off):
+    """A fresh sandboxed campaign + current-location + combat scaffold for a PART-5 scenario."""
+    import dice as dice_mod
+    sdir = tempfile.mkdtemp(prefix=f"combat_smoke_p5_{tag}_{seed_off}_")
+    os.environ["WORLDOS_STATE_DIR"] = sdir
+    dice_mod.reseed_process_rng(90000 + seed_off)
+    cid = server.create_campaign(title=f"Martial {tag}")["id"]
+    server.add_location(campaign_id=cid, name="Arena", description="x", make_current=True)
+    server.start_session(cid, title=f"Martial {tag}")
+    c = server._require(cid); c.is_sandbox = True; store_mod.save_campaign(c)
+    return cid
+
+
+def _p5_make_current(server, store_mod, cid, who):
+    """Pin `who` as the current combatant with a fresh action economy so its turn is legal."""
+    c = server._require(cid)
+    idx = next(i for i, cb in enumerate(c.combat.order) if cb.character_id == who)
+    c.combat.turn_index = idx
+    c.combat.action_used = False
+    c.combat.bonus_action_used = False
+    c.combat.action_attacks_made = 0
+    c.combat.surge_actions = 0
+    store_mod.save_campaign(c)
+
+
+def _p5_fighter(server, cid, level=5, subclass=None):
+    kw = dict(subclass=subclass) if subclass else {}
+    return server.create_character(
+        cid, "Garrick", kind="player", race="human", class_name="fighter", level=level,
+        abilities=dict(strength=18, dexterity=14, constitution=16, intelligence=10, wisdom=12, charisma=10),
+        apply_srd_defaults=True, **kw,
+    )["id"]
+
+
+def run_part5(server, store_mod, base_seed: int) -> dict:
+    """Prove the engine-AI v2.0c uses MARTIAL class abilities ITSELF (no scripted assist)."""
+    import combat_ai
+    import combat_loop
+    import dice as dice_mod
+
+    out: dict = {}
+
+    # A) SECOND WIND — a hurt fighter self-heals via its own bonus action.
+    cid = _p5_seed(server, store_mod, "sw", base_seed + 1)
+    ft = _p5_fighter(server, cid, level=5)
+    gob = [m["id"] for m in server.spawn_monster(cid, "Goblin", count=1)["spawned"]]
+    server.start_combat(cid, [ft] + gob)
+    c = server._require(cid)
+    server.set_hp(cid, target_id=ft, current_hp=max(1, c.characters[ft].max_hp // 3))
+    _p5_make_current(server, store_mod, cid, ft)
+    c = server._require(cid)
+    view = combat_loop._build_view(server, c, c.characters[ft])
+    sw_ability = any(a.kind == "second_wind" for a in view.abilities)
+    bonus = combat_ai.pick_bonus_action(c.characters[ft], view)
+    sw_before = c.characters[ft].current_hp
+    sw_after = sw_before
+    if bonus is not None and bonus.kind == "use_resource" and bonus.resource == "second_wind":
+        combat_loop._apply_intent(server, cid, ft, bonus)
+        sw_after = server._require(cid).characters[ft].current_hp
+    out["A_second_wind"] = {
+        "ability_in_view": sw_ability,
+        "chose_second_wind": bool(bonus is not None and bonus.resource == "second_wind"),
+        "hp": f"{sw_before} -> {sw_after}",
+        "healed": sw_after > sw_before,
+        "ok": bool(sw_ability and bonus is not None and bonus.resource == "second_wind"
+                   and sw_after > sw_before),
+    }
+
+    # B) ACTION SURGE — exercise the REAL LOOP (not an isolated should_action_surge call, which would
+    #    miss that attack() sets action_used before the surge decision). A level-5 fighter (Extra
+    #    Attack: base 2 strikes) vs finishable goblins runs ONE loop round; we assert the loop spent
+    #    Action Surge AND the fighter made MORE than its base-budget strikes (the surge granted them).
+    cid = _p5_seed(server, store_mod, "as", base_seed + 2)
+    ft = _p5_fighter(server, cid, level=5)
+    gobs = [m["id"] for m in server.spawn_monster(cid, "Goblin", count=4)["spawned"]]
+    server.start_combat(cid, [ft] + gobs)
+    _p5_make_current(server, store_mod, cid, ft)
+    c = server._require(cid)
+    view = combat_loop._build_view(server, c, c.characters[ft])
+    as_ability = any(a.kind == "action_surge" for a in view.abilities)
+    base_budget = max(1, server._attacker_multiattack_count(c.characters[ft], c))
+    surge_uses_before = (c.characters[ft].class_resources["action_surge"].max
+                         - c.characters[ft].class_resources["action_surge"].used)
+    rr = combat_loop.run_combat_round(cid, mode="test")
+    ft_entries = [e for e in rr["round_digest"] if e["actor_id"] == ft]
+    surge_spent = any(
+        e["kind"] == "use_resource" and e.get("result", {}).get("resource") == "action_surge"
+        and e.get("result", {}).get("ok") for e in ft_entries
+    )
+    strikes = sum(1 for e in ft_entries if e["kind"] == "attack")
+    c2 = server._require(cid)
+    surge_uses_after = (c2.characters[ft].class_resources["action_surge"].max
+                        - c2.characters[ft].class_resources["action_surge"].used)
+    out["B_action_surge"] = {
+        "ability_in_view": as_ability,
+        "base_strike_budget": base_budget,
+        "strikes_made": strikes,
+        "surge_spent_in_loop": surge_spent,
+        "surge_uses": f"{surge_uses_before} -> {surge_uses_after}",
+        # The bar: the LOOP spent Action Surge AND it bought extra strikes beyond the base budget.
+        "ok": bool(as_ability and surge_spent and strikes > base_budget),
+    }
+
+    # C) BATTLE MASTER MANEUVER — declare a Trip-Attack maneuver on a worthy attack; the die lands.
+    cid = _p5_seed(server, store_mod, "bm", base_seed + 3)
+    bm = _p5_fighter(server, cid, level=5, subclass="Battle Master")
+    server.set_class_resource(cid, bm, resource="superiority_dice", max=4, recharge="short", size="d8")
+    ogre = [m["id"] for m in server.spawn_monster(cid, "Ogre", count=1)["spawned"]]
+    server.start_combat(cid, [bm] + ogre)
+    _p5_make_current(server, store_mod, cid, bm)
+    c = server._require(cid)
+    view = combat_loop._build_view(server, c, c.characters[bm])
+    bm_ability = any(a.kind == "maneuver" for a in view.abilities)
+    intent = combat_ai.pick_action(c.characters[bm], view)
+    dice_before = (c.characters[bm].class_resources["superiority_dice"].max
+                   - c.characters[bm].class_resources["superiority_dice"].used)
+    entry = combat_loop._apply_intent(server, cid, bm, intent) if intent.kind == "attack" else {}
+    c2 = server._require(cid)
+    dice_after = (c2.characters[bm].class_resources["superiority_dice"].max
+                  - c2.characters[bm].class_resources["superiority_dice"].used)
+    out["C_maneuver"] = {
+        "ability_in_view": bm_ability,
+        "declared_maneuver": intent.maneuver if intent.kind == "attack" else "",
+        "dice": f"{dice_before} -> {dice_after}",
+        # The maneuver die is spent only ON A HIT (the attack() rider) — a miss spends nothing, so the
+        # competence bar is "the AI DECLARED the maneuver on its attack" (the spend is hit-gated RAW).
+        "ok": bool(bm_ability and intent.kind == "attack" and intent.maneuver),
+    }
+
+    # D) SNEAK ATTACK — a rogue with an ally adjacent to the target tags the strike with sneak dice.
+    cid = _p5_seed(server, store_mod, "sa", base_seed + 4)
+    rogue = server.create_character(
+        cid, "Astra", kind="player", race="halfling", class_name="rogue", level=5,
+        abilities=dict(strength=10, dexterity=18, constitution=14, intelligence=12, wisdom=12, charisma=12),
+        apply_srd_defaults=True,
+    )["id"]
+    ally = _p5_fighter(server, cid, level=3)
+    gob = [m["id"] for m in server.spawn_monster(cid, "Goblin", count=1)["spawned"]]
+    server.start_combat(cid, [rogue, ally] + gob)
+    c = server._require(cid)
+    # Grid: rogue at (0,0), goblin at (1,0), ally at (2,0) — the ally is within 5 ft of the goblin.
+    c.combat.grid_enabled = True
+    c.combat.grid_width = 10; c.combat.grid_height = 10; c.combat.grid_cell_size = 5
+    for cb in c.combat.order:
+        if cb.character_id == rogue:
+            cb.x, cb.y = 0, 0
+        elif cb.character_id == gob[0]:
+            cb.x, cb.y = 1, 0
+        elif cb.character_id == ally:
+            cb.x, cb.y = 2, 0
+    store_mod.save_campaign(c)
+    _p5_make_current(server, store_mod, cid, rogue)
+    c = server._require(cid)
+    view = combat_loop._build_view(server, c, c.characters[rogue])
+    sa_in_view = view.sneak_attack is not None
+    intent = combat_ai.pick_action(c.characters[rogue], view)
+    foe_before = c.characters[gob[0]].current_hp
+    entry = combat_loop._apply_intent(server, cid, rogue, intent) if intent.kind == "attack" else {}
+    out["D_sneak_attack"] = {
+        "sneak_in_view": sa_in_view,
+        "tagged_sneak": bool(intent.kind == "attack" and intent.sneak_attack),
+        "sneak_dice": (intent.sneak_attack[0].get("dice") if intent.sneak_attack else ""),
+        "ok": bool(sa_in_view and intent.kind == "attack" and intent.sneak_attack),
+    }
+
+    # E) GUIDED STRIKE — a War cleric spends Channel Divinity (+10 to hit) on a likely-MISS attack.
+    cid = _p5_seed(server, store_mod, "gs", base_seed + 5)
+    cler = server.create_character(
+        cid, "Sera", kind="player", race="human", class_name="cleric", level=5, subclass="War Domain",
+        abilities=dict(strength=14, dexterity=10, constitution=14, intelligence=10, wisdom=18, charisma=12),
+        apply_srd_defaults=True,
+    )["id"]
+    foe = [m["id"] for m in server.spawn_monster(cid, "Goblin", count=1)["spawned"]]
+    server.start_combat(cid, [cler] + foe)
+    c = server._require(cid)
+    c.characters[foe[0]].armor_class = 22  # a high-AC foe → the cleric's weapon is a likely miss
+    store_mod.save_campaign(c)
+    _p5_make_current(server, store_mod, cid, cler)
+    c = server._require(cid)
+    view = combat_loop._build_view(server, c, c.characters[cler])
+    gs_in_view = any(a.kind == "guided_strike" for a in view.abilities)
+    intent = combat_ai.pick_action(c.characters[cler], view)
+    cd_before = (c.characters[cler].class_resources["channel_divinity"].max
+                 - c.characters[cler].class_resources["channel_divinity"].used)
+    entry = combat_loop._apply_intent(server, cid, cler, intent) if intent.kind == "attack" else {}
+    c2 = server._require(cid)
+    cd_after = (c2.characters[cler].class_resources["channel_divinity"].max
+                - c2.characters[cler].class_resources["channel_divinity"].used)
+    out["E_guided_strike"] = {
+        "ability_in_view": gs_in_view,
+        "declared_channel": intent.channel if intent.kind == "attack" else "",
+        "channel_divinity": f"{cd_before} -> {cd_after}",
+        "channel_spent": cd_after < cd_before,
+        "ok": bool(gs_in_view and intent.kind == "attack" and intent.channel and cd_after < cd_before),
+    }
+
+    out["abilities_used"] = sum(
+        1 for k in ("A_second_wind", "B_action_surge", "C_maneuver", "D_sneak_attack", "E_guided_strike")
+        if out[k]["ok"]
+    )
+    return out
+
+
+def _print_part5(p5: dict) -> bool:
+    print("\n" + "=" * 78)
+    print("PART 5 — engine-AI competence v2.0c: the AI ITSELF uses martial class abilities (#1106)")
+    print("=" * 78)
+    a = p5["A_second_wind"]
+    print(f"  A) Second Wind  : chose={a['chose_second_wind']} HP {a['hp']} -> {'PASS' if a['ok'] else 'FAIL'}")
+    b = p5["B_action_surge"]
+    print(f"  B) Action Surge : spent_in_loop={b['surge_spent_in_loop']} "
+          f"strikes={b['strikes_made']} (base {b['base_strike_budget']}) uses {b['surge_uses']} "
+          f"-> {'PASS' if b['ok'] else 'FAIL'}")
+    cc = p5["C_maneuver"]
+    print(f"  C) Maneuver     : declared={cc['declared_maneuver']!r} dice {cc['dice']} "
+          f"-> {'PASS' if cc['ok'] else 'FAIL'}")
+    d = p5["D_sneak_attack"]
+    print(f"  D) Sneak Attack : tagged={d['tagged_sneak']} dice={d['sneak_dice']!r} "
+          f"-> {'PASS' if d['ok'] else 'FAIL'}")
+    e = p5["E_guided_strike"]
+    print(f"  E) Guided Strike: declared={e['declared_channel']!r} CD {e['channel_divinity']} "
+          f"-> {'PASS' if e['ok'] else 'FAIL'}")
+    # The owner bar: the AI itself uses >= 2 martial abilities. We assert ALL FIVE wired here, but the
+    # PASS gate is >= 2 (the brief's floor) so a single-ability harness hiccup doesn't red the gate.
+    used = p5["abilities_used"]
+    ok = used >= 2
+    print("-" * 78)
+    print(f"  abilities the AI used on its own: {used}/5  (bar: >= 2)")
+    print(f"  PART 5 (AI uses martial abilities): {'PASS' if ok else 'FAIL'}")
+    return ok
+
+
 # ── reporting ──────────────────────────────────────────────────────────────────────────
 
 def _print_part1(checks, summaries, *, fast: bool):
@@ -874,12 +1119,16 @@ def main() -> int:
     p4 = run_part4(server, store_mod, args.seed)
     part4_ok = _print_part4(p4)
 
+    p5 = run_part5(server, store_mod, args.seed)
+    part5_ok = _print_part5(p5)
+
     print("\n" + "=" * 78)
-    overall = part1_ok and part2_ok and part3_ok and part4_ok
+    overall = part1_ok and part2_ok and part3_ok and part4_ok and part5_ok
     print(f"PART 1 (mechanics fired):          {'PASS' if part1_ok else 'FAIL'}")
     print(f"PART 2 (spells resolve):           {'PASS' if part2_ok else 'FAIL'}")
     print(f"PART 3 (AI heals dying ally):      {'PASS' if part3_ok else 'FAIL'}")
     print(f"PART 4 (AI casts offensive spell): {'PASS' if part4_ok else 'FAIL'}")
+    print(f"PART 5 (AI uses martial abilities):{'PASS' if part5_ok else 'FAIL'}")
     print(f"OVERALL: {'PASS' if overall else 'FAIL'}")
     print("=" * 78)
 
@@ -887,11 +1136,11 @@ def main() -> int:
         print("JSON " + json.dumps({
             "seed": args.seed, "fast": args.fast,
             "part1_ok": part1_ok, "part2_ok": part2_ok, "part3_ok": part3_ok,
-            "part4_ok": part4_ok, "overall": overall,
+            "part4_ok": part4_ok, "part5_ok": part5_ok, "overall": overall,
             "mechanics": {k: ck.fired for k, ck in checks.items()},
             "spells": [{"name": r.name, "category": r.category, "status": r.status} for r in results],
             "not_swept_count": not_swept_count, "total_castable": total_castable,
-            "part3": p3, "part4": p4,
+            "part3": p3, "part4": p4, "part5": p5,
         }))
 
     return 0 if overall else 1
