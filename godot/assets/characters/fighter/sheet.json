@@ -52,5 +52,5 @@
   },
   "source": "meshy-blender-render",
   "license": "proprietary-owner-generated (Meshy AI)",
-  "attribution": "WorldOS final render — Meshy AI text-to-3d (prompt: \"a stylized fantasy human fighter adventurer, leather and chainmail armor, sword sheathed at hip, short brown hair, neutral standing A-pose, arms slightly away from body, full body, game character, clean silhouette\") baked to 8-facing dimetric-2to1 frames via godot/tools/bake_sprites.py (Blender headless), packed by godot/tools/pack_sheet.py."
+  "attribution": "WorldOS final render — Meshy AI text-to-3d (prompt: \"heroic fantasy knight in bright polished steel plate armor with a deep royal-blue tabard and gold trim, clean saturated colors, crisp readable silhouette, brave young human hero, short hair, neutral standing A-pose with arms slightly away from the body, full body, high detail, stylized painterly game character, studio-lit\") baked to 8-facing dimetric-2to1 frames via godot/tools/bake_sprites.py (Blender headless), packed by godot/tools/pack_sheet.py."
 }

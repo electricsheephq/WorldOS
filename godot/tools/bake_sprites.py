@@ -96,14 +96,64 @@ def _reset_scene() -> None:
     scene.render.film_transparent = True
     scene.render.image_settings.file_format = "PNG"
     scene.render.image_settings.color_mode = "RGBA"
-    # World: a faint ambient so shadowed sides aren't pure black.
+
+    # --- COLOR MANAGEMENT (the #1 brightness fix) ---------------------------------
+    # Blender 4.x defaults the view transform to AgX (older builds: Filmic), which
+    # heavily desaturates + crushes midtones — that is what turned the old fighter bake
+    # into a murky grey blob. Force the STANDARD (linear-sRGB) transform so the model's
+    # albedo reads bright + saturated, then add a touch of exposure + contrast so the
+    # character pops off the transparent background instead of sinking into shadow.
+    try:
+        vs = scene.view_settings
+        vs.view_transform = "Standard"
+        vs.look = "None"
+        vs.exposure = 0.35       # ~+0.35 stop — lift the whole frame out of the murk
+        vs.gamma = 1.0
+    except Exception as e:
+        print("[bake_sprites] WARN: could not set view transform: %s" % e)
+
+    # --- WORLD AMBIENT (lift the shadow side off near-black) -----------------------
+    # A much brighter, slightly cool ambient so the facing AWAY from the key light still
+    # reads as lit armor, not a silhouette. EEVEE uses the world as flat ambient fill.
     world = bpy.data.worlds.new("W")
     scene.world = world
     world.use_nodes = True
     bg = world.node_tree.nodes.get("Background")
     if bg:
-        bg.inputs[0].default_value = (0.05, 0.05, 0.06, 1.0)
-        bg.inputs[1].default_value = 0.6
+        bg.inputs[0].default_value = (0.45, 0.47, 0.52, 1.0)  # bright neutral-cool ambient
+        bg.inputs[1].default_value = 1.0
+
+    # EEVEE quality: ambient occlusion for grounded contact + more TAA samples for clean
+    # edges. Both are best-effort across the EEVEE / EEVEE-Next property split.
+    _boost_eevee_quality(scene)
+
+
+def _boost_eevee_quality(scene) -> None:
+    """Best-effort EEVEE quality knobs. Property names differ across Blender versions:
+    Blender 4.2+/5.x EEVEE (a.k.a. "EEVEE Next") replaced the old screen-space GTAO with
+    Fast GI (`use_fast_gi`/`fast_gi_*`); pre-4.2 legacy EEVEE used `use_gtao`. We set
+    whichever exists so the bake gets soft contact AO + clean AA on any CI Blender."""
+    ee = getattr(scene, "eevee", None)
+    if ee is None:
+        return
+    # More TAA samples -> cleaner anti-aliased silhouette edges.
+    _try_set(ee, "taa_render_samples", 64)
+    # Ambient occlusion: prefer the modern Fast-GI path, fall back to legacy GTAO.
+    if hasattr(ee, "use_fast_gi"):
+        _try_set(ee, "use_fast_gi", True)
+        _try_set(ee, "fast_gi_method", "AMBIENT_OCCLUSION_ONLY")
+        _try_set(ee, "fast_gi_distance", 0.5)
+    else:
+        _try_set(ee, "use_gtao", True)
+        _try_set(ee, "gtao_distance", 0.4)
+
+
+def _try_set(obj, attr: str, val) -> None:
+    """Set obj.attr = val, swallowing AttributeError/TypeError for cross-version safety."""
+    try:
+        setattr(obj, attr, val)
+    except Exception:
+        pass
 
 
 def _has_eevee_next() -> bool:
@@ -170,26 +220,49 @@ def _setup_model(objs):
 
 
 def _add_lights() -> None:
-    # Key (sun) from the camera-ish front-upper.
-    sun_data = bpy.data.lights.new("Key", type="SUN")
-    sun_data.energy = 3.0
-    sun = bpy.data.objects.new("Key", sun_data)
-    bpy.context.scene.collection.objects.link(sun)
-    sun.rotation_euler = (math.radians(55), 0.0, math.radians(45))
+    """Bright, even 3-point + rim rig.
 
-    # Two fill area lights for a soft 3-point feel.
-    for name, loc, energy in [
-        ("FillL", (-4.0, -4.0, 3.0), 300.0),
-        ("FillR", (4.0, -2.0, 2.0), 200.0),
-    ]:
-        ad = bpy.data.lights.new(name, type="AREA")
-        ad.energy = energy
-        ad.size = 5.0
-        a = bpy.data.objects.new(name, ad)
-        bpy.context.scene.collection.objects.link(a)
-        a.location = loc
-        # Aim roughly at origin.
-        _aim_at(a, Vector((0, 0, 1.0)))
+    The old rig (sun energy 3 + two weak fills) left the bake murky. This one keeps the
+    KEY from the camera-front-upper but raises it, adds a STRONG broad FILL on the shadow
+    side so no facing goes dark, a soft TOP fill for even coverage across all 8 yaws, and a
+    cool RIM/back light to separate the silhouette from the (transparent) background. Sun
+    lights are direction-only (distance-independent), so the rig reads the same at every
+    facing — important because the turntable spins the model through all 8 directions.
+    """
+    # KEY (sun) — warm, strong, from front-upper-right (camera side).
+    key = bpy.data.lights.new("Key", type="SUN")
+    key.energy = 5.0
+    key.color = (1.0, 0.97, 0.92)          # subtly warm
+    key.angle = math.radians(3.0)          # soft-ish shadow edge
+    ko = bpy.data.objects.new("Key", key)
+    bpy.context.scene.collection.objects.link(ko)
+    ko.rotation_euler = (math.radians(52), 0.0, math.radians(35))
+
+    # FILL (sun) — broad, cool, from the opposite side to open up the shadows on every
+    # facing. Direction-only so it lifts whichever side the turntable rotates into shadow.
+    fill = bpy.data.lights.new("Fill", type="SUN")
+    fill.energy = 2.6
+    fill.color = (0.90, 0.94, 1.0)         # cool
+    fo = bpy.data.objects.new("Fill", fill)
+    bpy.context.scene.collection.objects.link(fo)
+    fo.rotation_euler = (math.radians(60), 0.0, math.radians(-130))
+
+    # TOP fill (sun) — gentle straight-down wash for even coverage across all yaws.
+    top = bpy.data.lights.new("Top", type="SUN")
+    top.energy = 1.6
+    top.color = (1.0, 1.0, 1.0)
+    to = bpy.data.objects.new("Top", top)
+    bpy.context.scene.collection.objects.link(to)
+    to.rotation_euler = (math.radians(10), 0.0, math.radians(10))
+
+    # RIM / back light (sun) — bright, slightly cool, from behind-above to pop the edge of
+    # the silhouette so the hero reads cleanly over the painterly backdrop in-game.
+    rim = bpy.data.lights.new("Rim", type="SUN")
+    rim.energy = 3.0
+    rim.color = (0.95, 0.97, 1.0)
+    ro = bpy.data.objects.new("Rim", rim)
+    bpy.context.scene.collection.objects.link(ro)
+    ro.rotation_euler = (math.radians(115), 0.0, math.radians(200))
 
 
 def _aim_at(obj, target: Vector) -> None:
