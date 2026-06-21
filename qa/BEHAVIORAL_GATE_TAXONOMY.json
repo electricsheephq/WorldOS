@@ -310,9 +310,9 @@
     },
     "ranged_disadvantage_in_melee": {
       "category": "DM_ADHERENCE",
-      "likely_code_locations": ["qa/rubric_angry_dm.md", "qa/play_dm_duo.txt", "servers/engine/combat.py"],
+      "likely_code_locations": ["qa/rubric_angry_dm.md", "qa/play_dm_duo.txt", "servers/engine/combat.py", "servers/engine/server.py"],
       "retest": "bash qa/run_combat_sprint.sh sprint-retest",
-      "hint": "A ranged shot fired in melee (mutual-melee proxy => adjacency) without disadvantage. Reinforce the ranged-in-melee disadvantage rule in the DM/angry-DM guidance; the proxy can mis-fire on a genuine gap. WARN only."
+      "hint": "A ranged shot fired in melee (mutual-melee proxy => adjacency) without disadvantage. OFF-grid (theater-of-mind) this is a DM-adherence WARN — reinforce the ranged-in-melee disadvantage rule in the DM/angry-DM guidance; the proxy can mis-fire on a genuine gap. ON a grid (#461 PR-5) the engine AUTO-APPLIES the rule in server.py attack() and surfaces attack_roll.ranged_in_melee_disadvantage; the check reads that field so a grid run passes by construction. WARN only."
     }
   }
 }

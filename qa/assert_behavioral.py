@@ -1137,8 +1137,24 @@ def main() -> int:
     # so the structural proxy is a MUTUAL melee exchange: if `victim` also meleed `shooter`
     # (a clearly-melee attack: slashing/bludgeoning damage), they were adjacent, so the shooter's
     # ranged shot needed disadvantage. WARN — the proxy can mis-fire on a genuine 10-ft gap.
+    #
+    # #461 grid (PR-5): on a GRID the engine HAS positions and AUTO-APPLIES the rule, surfacing
+    # attack_roll.ranged_in_melee_disadvantage=True (and folding disadvantage into the roll). For
+    # those engine-ruled attacks the brittle theater proxy is moot — the engine already decided
+    # authoritatively. We READ the new field: an attack that carries it is definitively clean
+    # (the rule fired), and it does not need the mutual-melee heuristic. (An on-grid ranged shot
+    # with NO field is the engine ruling "no adjacent hostile" — also authoritative, not a miss.)
     attacks = [(i, inp, r) for i, (n, inp, r, err, _) in enumerate(evs)
                if n == "attack" and isinstance(r, dict)]
+
+    def _grid_ranged_ruled(res: dict) -> bool:
+        """True if the engine AUTO-APPLIED the on-grid ranged-in-melee disadvantage to this
+        attack (the surfaced result field). On-grid the engine is authoritative on adjacency,
+        so such an attack is clean by construction — never a proxy false-flag."""
+        ar = res.get("attack_roll") or {}
+        return bool(isinstance(ar, dict) and ar.get("ranged_in_melee_disadvantage"))
+
+    grid_auto_applied = sum(1 for (_i, _inp, r) in attacks if _grid_ranged_ruled(r))
 
     def _melee_damage(inp_dict: dict, res: dict) -> bool:
         """A clearly-MELEE attack: its damage type is slashing/bludgeoning (a sword/club), not
@@ -1149,8 +1165,8 @@ def main() -> int:
 
     ranged_flags = []
     for ai, (idx_a, inp_a, ra) in enumerate(attacks):
-        if ra.get("disadvantage"):
-            continue  # already applied → clean
+        if ra.get("disadvantage") or _grid_ranged_ruled(ra):
+            continue  # disadvantage already applied (incl. on-grid auto-apply) → clean
         shooter, victim = ra.get("attacker"), ra.get("target")
         if not shooter or not victim:
             continue
@@ -1168,7 +1184,14 @@ def main() -> int:
         if mutual_melee and shooter_also_meleed and not _melee_damage(inp_a, ra):
             ranged_flags.append(f"{shooter}->{victim} ranged w/o disadvantage (mutual melee exchange ⇒ adjacent)")
     if attacks:
-        chk("ranged_disadvantage_in_melee", not ranged_flags, "; ".join(ranged_flags), fatal=False)
+        # On a grid run the engine auto-applies the rule (grid_auto_applied attacks above);
+        # the theater proxy only ever fires off-grid. Either way the check PASSES when no
+        # un-disadvantaged adjacent shot remains; the detail notes the grid auto-applies so a
+        # green grid run is legible (not a silent pass).
+        detail = "; ".join(ranged_flags)
+        if not ranged_flags and grid_auto_applied:
+            detail = f"grid: engine auto-applied ranged-in-melee disadvantage on {grid_auto_applied} shot(s)"
+        chk("ranged_disadvantage_in_melee", not ranged_flags, detail, fatal=False)
 
     # cs-1040val (#1/#2): a class-feature rider spent via use_resource MUST be consumed by a
     # following attack — a Battle Master superiority die appears in that attack's DAMAGE, and a

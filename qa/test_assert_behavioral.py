@@ -416,6 +416,64 @@ def test_a2_parry_monster_hit_no_reaction_warns(tmp_path):
     assert "parry_reaction_considered" in out
 
 
+# ── ranged_disadvantage_in_melee: grid auto-apply vs theater proxy (WARN) ──────
+# #461 PR-5: on a GRID the engine auto-applies the rule and surfaces
+# attack_roll.ranged_in_melee_disadvantage; the gate reads that field so a grid run
+# passes by construction. Off-grid the mutual-melee proxy still WARNs.
+
+
+def _melee_back(uid, attacker, target):
+    """A clearly-MELEE attack event (slashing damage) — feeds the mutual-melee proxy."""
+    return [
+        _assistant_tool_use(uid, "mcp__engine__attack", {"attacker_id": attacker, "target_id": target}),
+        _user_tool_result(uid, json.dumps({"attacker": attacker, "target": target, "hit": True,
+                                           "damage": {"type": "slashing", "total": 6}})),
+    ]
+
+
+def test_ranged_in_melee_theater_proxy_warns_without_disadvantage(tmp_path):
+    """OFF-grid control: a both-meleed-and-ranged mutual exchange with NO disadvantage on the
+    ranged shot trips the theater proxy → WARN (the pre-existing behaviour, unchanged)."""
+    events = []
+    # Shooter rangedly attacks Foe with no disadvantage, AND both melee each other.
+    events += [
+        _assistant_tool_use("r1", "mcp__engine__attack",
+                            {"attacker_id": "Shooter", "target_id": "Foe", "is_ranged": True}),
+        _user_tool_result("r1", json.dumps({"attacker": "Shooter", "target": "Foe", "hit": True,
+                                            "disadvantage": False,
+                                            "damage": {"type": "piercing", "total": 5}})),
+    ]
+    events += _melee_back("m1", "Shooter", "Foe")   # shooter also meleed the foe
+    events += _melee_back("m2", "Foe", "Shooter")   # foe meleed back ⇒ adjacency proxy
+    state = {"leveling_mode": "milestone"}
+    rc, out = _run_gate(tmp_path, events, state)
+    assert rc == 0, out  # WARN, not RED
+    assert "[WARN] ranged_disadvantage_in_melee" in out
+
+
+def test_ranged_in_melee_grid_auto_applied_passes(tmp_path):
+    """ON-grid: the SAME mutual-melee pattern, but the ranged shot carries the engine's
+    auto-applied field (attack_roll.ranged_in_melee_disadvantage=True) → the gate reads it
+    and PASSES (no WARN), because the engine ruled adjacency authoritatively."""
+    events = []
+    events += [
+        _assistant_tool_use("r1", "mcp__engine__attack",
+                            {"attacker_id": "Shooter", "target_id": "Foe", "is_ranged": True}),
+        _user_tool_result("r1", json.dumps({"attacker": "Shooter", "target": "Foe", "hit": True,
+                                            "disadvantage": True,
+                                            "attack_roll": {"total": 9, "natural": 9,
+                                                            "ranged_in_melee_disadvantage": True},
+                                            "damage": {"type": "piercing", "total": 5}})),
+    ]
+    events += _melee_back("m1", "Shooter", "Foe")
+    events += _melee_back("m2", "Foe", "Shooter")
+    state = {"leveling_mode": "milestone"}
+    rc, out = _run_gate(tmp_path, events, state)
+    assert rc == 0, out
+    assert "[WARN] ranged_disadvantage_in_melee" not in out
+    assert "[PASS] ranged_disadvantage_in_melee" in out
+
+
 # ── regression: the existing 17 gates still load / a clean run stays GREEN ──────
 
 def test_clean_minimal_run_is_green(tmp_path):
