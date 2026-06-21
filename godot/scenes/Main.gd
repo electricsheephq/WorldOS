@@ -114,6 +114,9 @@ func _on_snapshot(atlas: Dictionary, _combat: Dictionary, character: Dictionary)
 		if _has_arg("--walk-demo"):
 			call_deferred("_run_walk_demo")
 			return
+		if _has_arg("--cam-demo"):
+			call_deferred("_run_cam_demo")
+			return
 		_maybe_quit()
 
 
@@ -1120,6 +1123,147 @@ func _run_walk_demo() -> void:
 		var still_idle := not bool(_world._walking)
 		print("[WalkDemo] blocked-cell click is_noop=%s (expected true)" % str(still_idle))
 
+	call_deferred("_quit_clean")
+
+
+# ---------------------------------------------------------------------------
+# --cam-demo: camera milestone visual proof. Run WITHOUT --headless (real window).
+# Loads the tavern spec (or inline fallback), spawns sprites, then:
+#   1. Captures a DEFAULT framing screenshot (/tmp/cam_default.png)
+#   2. Programmatically zooms to 1.6x centered on the active token + captures
+#      (/tmp/cam_zoom.png)
+#   3. Prints camera behaviour summary.
+# The committed backdrop res://assets/backdrops/scene-lower-city.png is used
+# via apply_local_backdrop if available at the res:// path.
+# ---------------------------------------------------------------------------
+func _run_cam_demo() -> void:
+	print("[Main] --cam-demo: camera milestone visual proof")
+
+	# Detach the live feed (same pattern as walk-demo).
+	_detach_live_feed()
+
+	# Load the tavern spec.
+	var spec: Dictionary = {}
+	for sp in ["/tmp/tavern_milestone.json", "/tmp/scene.json"]:
+		if FileAccess.file_exists(sp):
+			var txt := FileAccess.get_file_as_string(sp)
+			var parsed: Variant = JSON.parse_string(txt)
+			if typeof(parsed) == TYPE_DICTIONARY:
+				spec = parsed
+				print("[CamDemo] loaded spec from %s" % sp)
+				break
+	if spec.is_empty():
+		spec = {
+			"backdrop": "res://assets/backdrops/scene-lower-city.png",
+			"nav": {
+				"cols": 10, "rows": 7, "cell_w_px": 56,
+				"origin_px": [548, 405],
+				"blocked": [[4,3],[5,3],[4,4]]
+			},
+			"actors": [
+				{"id": "pc1", "cell": [2,4], "facing": "SE"},
+				{"id": "foe1", "cell": [8,2], "facing": "W"}
+			],
+			"path_probe": {"from": [2,4], "to": [7,2]}
+		}
+		print("[CamDemo] using inline fallback spec")
+
+	# Apply backdrop — accept both "res://" paths and absolute /tmp paths.
+	var bp: String = String(spec.get("backdrop", ""))
+	if bp != "":
+		# If it's a res:// path, translate to filesystem for apply_local_backdrop.
+		var local_bp := bp
+		if bp.begins_with("res://"):
+			local_bp = ProjectSettings.globalize_path(bp)
+		var ok: bool = _world.apply_local_backdrop(local_bp)
+		if not ok:
+			print("[CamDemo] backdrop load failed path=%s — using procedural fallback" % bp)
+	else:
+		# Try the committed tavern backdrop by default.
+		var default_bp := ProjectSettings.globalize_path("res://assets/backdrops/scene-lower-city.png")
+		if FileAccess.file_exists(default_bp):
+			var _ok: bool = _world.apply_local_backdrop(default_bp)
+
+	var nav_block: Dictionary = {}
+	var nav_v: Variant = spec.get("nav", {})
+	if typeof(nav_v) == TYPE_DICTIONARY:
+		nav_block = nav_v
+
+	var actors_arr: Array = []
+	var actors_v: Variant = spec.get("actors", [])
+	if typeof(actors_v) == TYPE_ARRAY:
+		actors_arr = actors_v
+
+	var path_probe: Dictionary = {}
+	var probe_v: Variant = spec.get("path_probe", {})
+	if typeof(probe_v) == TYPE_DICTIONARY:
+		path_probe = probe_v
+
+	# NavOverlay.
+	var nav_overlay := preload("res://scenes/NavOverlay.gd").new()
+	nav_overlay.name = "NavOverlay"
+	nav_overlay.z_index = -5
+	nav_overlay.setup(nav_block, actors_arr, path_probe, [], "full")
+	_world.add_child(nav_overlay)
+
+	# Spawn sprites.
+	if not actors_arr.is_empty():
+		_spawn_preview_sprites(nav_block, actors_arr, spec)
+
+	# Wire nav.
+	if not nav_block.is_empty():
+		_world.setup_nav(nav_block)
+		var first_actor := _first_party_actor(actors_arr)
+		if not first_actor.is_empty():
+			var a_id := String(first_actor.get("id", ""))
+			var a_cell_v: Variant = first_actor.get("cell", [0, 0])
+			var a_cell := Vector2i(0, 0)
+			if typeof(a_cell_v) == TYPE_ARRAY and (a_cell_v as Array).size() >= 2:
+				a_cell = Vector2i(int((a_cell_v as Array)[0]), int((a_cell_v as Array)[1]))
+			_world.set_active_preview_actor(a_id, a_cell)
+
+	# Settle with default framing.
+	await _settle_frames(4)
+	await get_tree().create_timer(0.1).timeout
+	await _settle_frames(2)
+
+	# SCREENSHOT 1 — DEFAULT framing.
+	var img1 := _capture_viewport()
+	if img1 != null:
+		img1.save_png("/tmp/cam_default.png")
+		print("[CamDemo] screenshot 1 (default): /tmp/cam_default.png (%dx%d)" % [img1.get_width(), img1.get_height()])
+	else:
+		print("[CamDemo] no image captured (headless?) — run WITHOUT --headless")
+
+	# SCREENSHOT 2 — ZOOMED framing: programmatically zoom to 1.6x and pan toward
+	# the active token to prove camera zoom works.
+	var cam: Camera2D = _world.scene_camera()
+	if cam != null:
+		# Zoom to 1.6x.
+		cam.zoom = Vector2(1.6, 1.6)
+		# Pan to the first actor's screen position (if we can get it).
+		var cell_w := float(nav_block.get("cell_w_px", 56))
+		var orig_v: Variant = nav_block.get("origin_px", [548, 405])
+		var orig := Vector2(548, 405)
+		if typeof(orig_v) == TYPE_ARRAY and (orig_v as Array).size() >= 2:
+			orig = Vector2(float((orig_v as Array)[0]), float((orig_v as Array)[1]))
+		# Center on a point of interest — the midpoint between pc1 and foe1.
+		var cell_w_half := cell_w * 0.5
+		var pc_pos := Vector2(orig.x + (2 - 4) * cell_w_half, orig.y + (2 + 4) * cell_w * 0.25)
+		var foe_pos := Vector2(orig.x + (8 - 2) * cell_w_half, orig.y + (8 + 2) * cell_w * 0.25)
+		cam.position = (pc_pos + foe_pos) * 0.5
+		print("[CamDemo] camera zoom=%.2f position=(%.0f,%.0f)" % [cam.zoom.x, cam.position.x, cam.position.y])
+
+	await _settle_frames(4)
+	await get_tree().create_timer(0.1).timeout
+	await _settle_frames(2)
+
+	var img2 := _capture_viewport()
+	if img2 != null:
+		img2.save_png("/tmp/cam_zoom.png")
+		print("[CamDemo] screenshot 2 (zoomed): /tmp/cam_zoom.png (%dx%d)" % [img2.get_width(), img2.get_height()])
+
+	print("[CamDemo] RESULT ok=%s cam_zoom=%.2f" % [str(img1 != null), cam.zoom.x if cam != null else 0.0])
 	call_deferred("_quit_clean")
 
 

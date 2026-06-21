@@ -79,6 +79,8 @@ const TEAM_TINT_NEUTRAL := Color(0.92, 0.92, 1.0, 1.0)   ## faint cool for unkno
 ## Bound (though unused in #1053) to assert the empty YSortLayer exists — it is the
 ## home CharacterToken lands in for #1054. Do not remove the node.
 @onready var _ysort: Node2D = $YSortLayer
+## #iso-camera — Camera2D for drag-to-pan / scroll-to-zoom / recenter.
+@onready var _camera: Camera2D = $SceneCamera
 
 ## Last-resolved facts, exposed for #1054/#1055.
 var _location_id: String = ""
@@ -151,6 +153,11 @@ func _ready() -> void:
 	# Draw an initial procedural backdrop so there is never an empty frame before
 	# the first snapshot lands.
 	_apply_procedural_backdrop()
+	# #iso-camera: place the camera at the viewport centre so it starts centred on the
+	# backdrop. position_smoothing is enabled in the .tscn for gentle drift.
+	if _camera != null:
+		var vp := _viewport_size()
+		_camera.position = vp * 0.5
 
 
 # ---------------------------------------------------------------------------
@@ -577,6 +584,27 @@ var _walking: bool = false
 ## actor in the spec, set by Main after spawning preview sprites via set_active_preview_actor).
 var _active_preview_actor_id: String = ""
 
+# ---------------------------------------------------------------------------
+# #iso-camera — Camera2D state. Camera lives in the .tscn as SceneCamera;
+# pan/zoom/clamp helpers all live here so the GDScript stays in one place.
+# Zoom range: 0.75x (zoomed out) to 2.0x (zoomed in). Camera.zoom is a
+# Vector2 scale factor — zoom=Vector2(2,2) means things appear 2x larger.
+# ---------------------------------------------------------------------------
+const CAM_ZOOM_MIN := 0.75  ## zoomed out (small camera zoom = see more)
+const CAM_ZOOM_MAX := 2.00  ## zoomed in  (large camera zoom = see less)
+
+## True while the player is dragging (middle or right mouse held).
+var _cam_dragging: bool = false
+## Where the drag started (global px), so delta is relative.
+var _cam_drag_origin: Vector2 = Vector2.ZERO
+## Camera world-position at the drag start, so pan tracks the finger 1:1.
+var _cam_pos_at_drag_start: Vector2 = Vector2.ZERO
+## Last known backdrop texture size (px) — used to clamp pan so we can't scroll off.
+var _cam_backdrop_size: Vector2 = Vector2(1152.0, 648.0)
+## True once the camera was explicitly panned/zoomed by the user; used by
+## _camera_recenter to know whether a recenter makes sense.
+var _cam_user_moved: bool = false
+
 
 ## Called by Main after parsing the spec JSON so WorldView knows the grid geometry.
 ## Stores the nav data so _unhandled_input can invert the transform and do A*.
@@ -640,6 +668,94 @@ func _build_nav_grid() -> AStarGrid2D:
 	for b in _nav_blocked:
 		grid.set_point_solid(b, true)
 	return grid
+
+
+## Zoom the camera by `factor` centered on `anchor_global_px` (the mouse position),
+## clamped to [CAM_ZOOM_MIN, CAM_ZOOM_MAX]. Adjusts camera position so the world
+## point under the cursor stays fixed (standard "zoom toward cursor" behaviour).
+func _camera_zoom_by(factor: float, anchor_global_px: Vector2) -> void:
+	if _camera == null:
+		return
+	var old_zoom := _camera.zoom.x
+	var new_zoom := clampf(old_zoom * factor, CAM_ZOOM_MIN, CAM_ZOOM_MAX)
+	if is_equal_approx(new_zoom, old_zoom):
+		return
+	# world point under cursor BEFORE the zoom.
+	var vp := _viewport_size()
+	var cursor_world := _camera.position + (anchor_global_px - vp * 0.5) / old_zoom
+	# Apply the new zoom.
+	_camera.zoom = Vector2(new_zoom, new_zoom)
+	# Shift camera so the cursor point stays fixed.
+	_camera.position = cursor_world - (anchor_global_px - vp * 0.5) / new_zoom
+	_clamp_camera()
+	_cam_user_moved = true
+
+
+## Clamp the camera position so the viewport never pans entirely off the backdrop.
+## The backdrop is centered at (vp/2) in world-space and has size _cam_backdrop_size *
+## its Sprite2D scale. We allow panning up to half the backdrop in each direction,
+## minus half the visible window — so at least one pixel of backdrop remains visible.
+func _clamp_camera() -> void:
+	if _camera == null:
+		return
+	var vp := _viewport_size()
+	var bw := _cam_backdrop_size.x * _backdrop.scale.x
+	var bh := _cam_backdrop_size.y * _backdrop.scale.y
+	var zoom := _camera.zoom.x
+	# Half the viewport in world units at this zoom level.
+	var hw := (vp.x * 0.5) / zoom
+	var hh := (vp.y * 0.5) / zoom
+	# Backdrop half-extents in world units (backdrop centered at vp/2).
+	var cx := vp.x * 0.5
+	var cy := vp.y * 0.5
+	var max_x := cx + bw * 0.5 - hw
+	var min_x := cx - bw * 0.5 + hw
+	var max_y := cy + bh * 0.5 - hh
+	var min_y := cy - bh * 0.5 + hh
+	# If the backdrop is smaller than the viewport (zoomed out past native), allow
+	# the camera to stay centered (clamp collapses to the center).
+	if min_x > max_x:
+		min_x = cx
+		max_x = cx
+	if min_y > max_y:
+		min_y = cy
+		max_y = cy
+	_camera.position = Vector2(
+		clampf(_camera.position.x, min_x, max_x),
+		clampf(_camera.position.y, min_y, max_y)
+	)
+
+
+## Smoothly recenter the camera on the active party token (or viewport centre).
+## Called on Home/Space. Uses a create_tween so the smoothing is visible.
+func _camera_recenter() -> void:
+	if _camera == null:
+		return
+	# Target: the active party token's position, or viewport centre if none.
+	var target := _viewport_size() * 0.5
+	if _active_preview_actor_id != "":
+		var tok := _get_active_preview_token()
+		if tok != null and is_instance_valid(tok):
+			target = tok.position
+	elif not _tokens.is_empty():
+		# Exploration path: recenter on any token.
+		for aid in _tokens.keys():
+			var t: CharacterToken = _tokens[aid]
+			if is_instance_valid(t):
+				target = t.position
+				break
+	# Smooth tween to target over 0.4s.
+	var tw := get_tree().create_tween()
+	tw.set_trans(Tween.TRANS_SINE)
+	tw.set_ease(Tween.EASE_IN_OUT)
+	tw.tween_property(_camera, "position", target, 0.4)
+	print("[Camera] recenter → (%.0f,%.0f)" % [target.x, target.y])
+
+
+## Expose the camera for the --preview-scene screenshot helper (e.g. programmatic zoom).
+## Returns null if no camera is present.
+func scene_camera() -> Camera2D:
+	return _camera
 
 
 ## Handle a left floor click: convert to grid cell, solve A*, walk the active token
@@ -740,18 +856,59 @@ func _get_active_preview_token() -> CharacterToken:
 
 
 ## Handle unhandled input for interactive walk (only active when nav is configured).
+## Also handles camera pan (middle/right drag) and zoom (wheel), and recenter (Home/Space).
 func _unhandled_input(event: InputEvent) -> void:
-	if _nav_cols <= 0 or _active_preview_actor_id == "":
+	# --- CAMERA: scroll-to-zoom ---
+	if event is InputEventMouseButton:
+		var mb := event as InputEventMouseButton
+		if mb.pressed:
+			if mb.button_index == MOUSE_BUTTON_WHEEL_UP:
+				_camera_zoom_by(1.1, mb.global_position)
+				get_viewport().set_input_as_handled()
+				return
+			elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+				_camera_zoom_by(1.0 / 1.1, mb.global_position)
+				get_viewport().set_input_as_handled()
+				return
+			# Track middle/right button drag start.
+			elif mb.button_index == MOUSE_BUTTON_MIDDLE or mb.button_index == MOUSE_BUTTON_RIGHT:
+				_cam_dragging = true
+				_cam_drag_origin = mb.global_position
+				_cam_pos_at_drag_start = _camera.position
+				get_viewport().set_input_as_handled()
+				return
+		else:
+			if mb.button_index == MOUSE_BUTTON_MIDDLE or mb.button_index == MOUSE_BUTTON_RIGHT:
+				_cam_dragging = false
+				get_viewport().set_input_as_handled()
+				return
+		# Left click — fall through to floor-click / walk logic below.
+		if mb.button_index != MOUSE_BUTTON_LEFT or not mb.pressed:
+			return
+		if _nav_cols <= 0 or _active_preview_actor_id == "":
+			return
+		var local_pos := to_local(mb.global_position)
+		_handle_floor_click(local_pos)
+		get_viewport().set_input_as_handled()
 		return
-	if not (event is InputEventMouseButton):
+
+	# --- CAMERA: drag-to-pan ---
+	if event is InputEventMouseMotion and _cam_dragging:
+		var mm := event as InputEventMouseMotion
+		var delta := (mm.global_position - _cam_drag_origin) / _camera.zoom.x
+		_camera.position = _cam_pos_at_drag_start - delta
+		_clamp_camera()
+		get_viewport().set_input_as_handled()
 		return
-	var mb := event as InputEventMouseButton
-	if mb.button_index != MOUSE_BUTTON_LEFT or not mb.pressed:
-		return
-	# Convert the global mouse position to WorldView-local coordinates.
-	var local_pos := to_local(mb.global_position)
-	_handle_floor_click(local_pos)
-	get_viewport().set_input_as_handled()
+
+	# --- CAMERA: recenter on party (Home or Space) ---
+	if event is InputEventKey:
+		var ke := event as InputEventKey
+		if ke.pressed and not ke.echo:
+			if ke.keycode == KEY_HOME or ke.keycode == KEY_SPACE:
+				_camera_recenter()
+				get_viewport().set_input_as_handled()
+				return
 
 
 # ---------------------------------------------------------------------------
@@ -1341,6 +1498,8 @@ func _apply_texture_backdrop(texture: Texture2D) -> void:
 		var sy := vp.y / tex_size.y
 		var s := maxf(sx, sy)
 		_backdrop.scale = Vector2(s, s)
+		# #iso-camera: record the backdrop texture size for pan clamping.
+		_cam_backdrop_size = tex_size
 
 
 ## Procedural painted-ish fallback backdrop: a vertical sky→ground GradientTexture2D

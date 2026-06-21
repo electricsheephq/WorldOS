@@ -19,3 +19,9 @@ color = Color(0.23, 0.27, 0.345, 0.16)
 
 [node name="YSortLayer" type="Node2D" parent="."]
 y_sort_enabled = true
+
+[node name="SceneCamera" type="Camera2D" parent="."]
+enabled = true
+zoom = Vector2(1, 1)
+position_smoothing_enabled = true
+position_smoothing_speed = 5.0
