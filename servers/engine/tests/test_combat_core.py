@@ -360,3 +360,53 @@ def test_new_fields_default_off_and_round_trip(tmp_path, monkeypatch):
     reloaded = server._require(cid)
     assert reloaded.is_sandbox is False
     assert reloaded.house_rules.force_hit is False
+
+
+def test_unseeded_live_rolls_do_not_consume_the_shared_stream(monkeypatch):
+    """Default-off / 'empty == today' (LOAD-BEARING): with NO active seed — the live-game default —
+    an un-seeded roll uses a fresh per-call RNG and must NOT advance the shared process stream. This
+    pins the additive invariant (a production game's dice mechanism is byte-identical to pre-Track-2b)
+    AND guarantees a seeded TEST cannot leak determinism into a later un-seeded (live) run."""
+    monkeypatch.delenv("WORLDOS_COMBAT_SEED", raising=False)
+    dice_mod.reseed_process_rng(None)               # deactivate -> live default
+    assert dice_mod._SEED_ACTIVE is False
+    before = dice_mod._PROCESS_RNG.getstate()
+    for _ in range(20):
+        dice_mod.roll("1d20")                       # un-seeded, live-default rolls
+    assert dice_mod._PROCESS_RNG.getstate() == before   # the shared stream was NOT consumed
+
+
+def test_active_seed_consumes_shared_stream_and_is_reproducible():
+    """When a seed is ACTIVE (a TEST), un-seeded rolls DRAW from the shared stream and the sequence
+    is reproducible — the Track-2b feature. Restores the live default at the end so no later test
+    inherits an active seed."""
+    try:
+        dice_mod.reseed_process_rng(777)
+        assert dice_mod._SEED_ACTIVE is True
+        before = dice_mod._PROCESS_RNG.getstate()
+        dice_mod.roll("1d20")
+        assert dice_mod._PROCESS_RNG.getstate() != before   # active -> the shared stream advances
+        dice_mod.reseed_process_rng(777)
+        a = [dice_mod.roll("1d20").total for _ in range(8)]
+        dice_mod.reseed_process_rng(777)
+        b = [dice_mod.roll("1d20").total for _ in range(8)]
+        assert a == b
+    finally:
+        dice_mod.reseed_process_rng(None)           # restore the live default
+
+
+def test_set_house_rules_rejects_test_only_toggles(tmp_path, monkeypatch):
+    """Defense-in-depth: the live set_house_rules tool REJECTS the TEST-only combat toggles
+    (force_hit/fast_resolve) — real HouseRules fields that Pydantic's extra='forbid' would otherwise
+    accept — so a live tool can never even persist a TEST toggle. A normal house rule still applies."""
+    import pytest
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    import server
+    cid = server.create_campaign("HR")["id"]
+    for bad in ({"force_hit": True}, {"fast_resolve": True}, {"difficulty": "hard", "force_hit": True}):
+        with pytest.raises(ValueError, match="TEST-only"):
+            server.set_house_rules(cid, bad)
+    # the rejected patches never persisted; a normal patch still works and the toggles stay OFF
+    hr = server.set_house_rules(cid, {"difficulty": "hard"})
+    assert hr["difficulty"] == "hard"
+    assert hr.get("force_hit") is False and hr.get("fast_resolve") is False

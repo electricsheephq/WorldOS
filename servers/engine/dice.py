@@ -16,17 +16,19 @@ from dataclasses import dataclass, field
 _TERM = re.compile(r"(\d*)d(\d+)(kh\d+|kl\d+)?$")
 
 # ── Process-level RNG (Track 2b — deterministic combat seed) ─────────────────────────
-# A SINGLE module-level random.Random the engine draws from whenever roll() is called
-# WITHOUT an explicit per-call `seed`. This is the correct way to make a *sequence* of
-# rolls reproducible: a per-call seed would re-seed before every roll and collapse every
-# draw to the same constant (a degenerate fight). One shared stream, seeded once, means
-# "same seed -> same fight" while each individual roll is still a fresh draw.
+# When a deterministic seed is ACTIVE (WORLDOS_COMBAT_SEED set at import, or reseed_process_rng(int)
+# called by the engine-only combat smoke / TEST loop), roll() draws every un-seeded roll from a
+# SINGLE module-level stream so a *sequence* of rolls is reproducible — "same seed -> same fight".
+# (A per-call seed would re-seed before every roll and collapse every draw to a constant, so the
+# shared stream is the correct mechanism for sequence-reproducibility.)
 #
-# ADDITIVE / default-off: when WORLDOS_COMBAT_SEED is unset, the stream is seeded from
-# random.Random(None) — i.e. OS entropy, byte-identical to today's non-deterministic
-# random.Random(seed=None) behaviour. The env seed is a TEST affordance only (the TEST
-# combat loop sets it); it does NOT need the sandbox guard because a deterministic seed in
-# a live game is harmless — it only fixes WHICH dice come up, it never bends an outcome.
+# ADDITIVE / default-off (LOAD-BEARING — "empty == today"): when NO seed is active — i.e.
+# WORLDOS_COMBAT_SEED is unset and reseed_process_rng(int) was never called — roll() WITHOUT a
+# per-call seed falls back to a fresh random.Random() PER CALL, byte-identical to the pre-Track-2b
+# behaviour (each roll independently OS-entropy seeded). The shared stream is never touched in a
+# normal live game; it exists only when a TEST explicitly activates a seed. (A deterministic seed
+# needs no sandbox guard — it only fixes WHICH dice come up, never an outcome — but it must not
+# silently change the production RNG mechanism, hence the _SEED_ACTIVE gate below.)
 def _initial_seed() -> int | None:
     raw = os.environ.get("WORLDOS_COMBAT_SEED")
     if raw is None or raw == "":
@@ -39,13 +41,19 @@ def _initial_seed() -> int | None:
 
 
 _PROCESS_RNG = random.Random(_initial_seed())
+# True only when a deterministic seed is in effect (env set at import, or reseed_process_rng(int)).
+# When False (the live-game default), un-seeded rolls use a fresh per-call RNG == pre-Track-2b.
+_SEED_ACTIVE = _initial_seed() is not None
 
 
 def reseed_process_rng(seed: int | None) -> None:
-    """Reseed the shared process-level dice stream (TEST affordance). Passing an int makes
-    the subsequent sequence of un-seeded rolls reproducible; passing None reseeds from OS
-    entropy. Used by the engine-only combat smoke / TEST loop to fix a whole fight. No effect
-    on any roll that passes an explicit per-call `seed`."""
+    """Reseed the shared process-level dice stream (TEST affordance). Passing an int ACTIVATES the
+    deterministic stream and makes the subsequent sequence of un-seeded rolls reproducible; passing
+    None DEACTIVATES it (un-seeded rolls return to fresh per-call OS entropy — the live default, so a
+    seeded TEST never leaks determinism into a later un-seeded run). Used by the engine-only combat
+    smoke / TEST loop to fix a whole fight. No effect on any roll that passes an explicit per-call `seed`."""
+    global _SEED_ACTIVE
+    _SEED_ACTIVE = seed is not None
     _PROCESS_RNG.seed(seed)
 
 # Bounds on a single dice term. Real D&D never needs more (a high-level fireball is
@@ -87,11 +95,11 @@ def roll(
     if advantage and disadvantage:
         advantage = disadvantage = False
 
-    # An explicit per-call seed keeps its old meaning (a self-contained reproducible single
-    # roll — used by unit tests). With NO per-call seed, draw from the shared process-level
-    # stream so a *sequence* of rolls is reproducible under WORLDOS_COMBAT_SEED without every
-    # roll collapsing to a constant. Unset env -> _PROCESS_RNG is OS-entropy seeded == today.
-    rng = random.Random(seed) if seed is not None else _PROCESS_RNG
+    # An explicit per-call seed keeps its old meaning (a self-contained reproducible single roll —
+    # used by unit tests). With NO per-call seed: if a deterministic seed is ACTIVE (a TEST), draw
+    # from the shared process-level stream so a *sequence* is reproducible without collapsing to a
+    # constant; otherwise (the live default) use a fresh per-call RNG == pre-Track-2b behaviour.
+    rng = random.Random(seed) if seed is not None else (_PROCESS_RNG if _SEED_ACTIVE else random.Random())
     expr = expression.replace(" ", "").lower().replace("d%", "d100")
     if not expr:
         raise ValueError("empty dice expression")

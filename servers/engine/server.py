@@ -11857,7 +11857,20 @@ def set_house_rules(campaign_id: str, patch: dict) -> dict:
     flanking_advantage, slow_natural_healing, feats_allowed, multiclass_allowed,
     dm_can_fudge, wandering_encounters, enforce_sell_cap, sell_cap_multiple (F09-9:
     when enforce_sell_cap is on, sell_item rejects a price above sell_cap_multiple× the
-    item's listed cost). Unknown keys are rejected."""
+    item's listed cost). Unknown keys are rejected. The TEST-only combat toggles
+    (force_hit, fast_resolve) are ALSO rejected here — they are settable only by the
+    engine-only combat smoke / TEST loop (behind the WORLDOS_COMBAT_TEST + sandbox guard),
+    never via this live-play tool."""
+    # Defense-in-depth: force_hit/fast_resolve are real HouseRules fields, so Pydantic's
+    # extra="forbid" does NOT reject them on this patch path. Reject them explicitly so the
+    # documented whitelist is enforced and a live tool can never even *persist* a TEST toggle.
+    _test_only = {"force_hit", "fast_resolve"}
+    blocked = sorted(_test_only.intersection(patch or {}))
+    if blocked:
+        raise ValueError(
+            f"house-rule key(s) {blocked} are TEST-only and cannot be set via set_house_rules; "
+            "they apply only under the engine-only combat smoke."
+        )
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         data = c.house_rules.model_dump()
