@@ -266,6 +266,12 @@
       "retest": "bash qa/run_combat_sprint.sh sprint-retest",
       "hint": "A maneuver / to-hit rider (Battle Master superiority die, War-Domain Guided Strike) was spent via use_resource but the following attack did not fold the bonus in (the +Nd8 damage or +10 to-hit was dropped). Check the use_resource -> attack pending-bonus fold (server.py) + the DM's two-step maneuver usage. WARN only."
     },
+    "guiding_bolt_advantage_consumed": {
+      "category": "DM_ADHERENCE",
+      "likely_code_locations": ["servers/engine/server.py", "servers/engine/combat.py", "skills/dungeon-master/SKILL.md"],
+      "retest": "bash qa/run_combat_sprint.sh sprint-retest",
+      "hint": "A Guiding Bolt advantage rider LANDED on a target (attack -> on_hit_effect_applied: ['Guiding Bolt']) but the next attack against that same target did NOT carry advantage_source='Guiding Bolt' — the SRD 'next attack roll against it has Advantage' rider was dropped. The engine auto-grants + consumes it via combat.attack_modifiers + attack() (#194/#1033), so a miss means the engine attack() path was bypassed (the follow-up was narrated, not resolved through the tool) or the marker expired early. Check that the follow-up strike is resolved via attack() against the marked target within the caster's next-turn window. WARN only."
+    },
     "multiattack_budget_honored": {
       "category": "DM_ADHERENCE",
       "likely_code_locations": ["qa/rubric_angry_dm.md", "qa/play_prompt_combat_sprint.txt", "servers/engine/server.py"],

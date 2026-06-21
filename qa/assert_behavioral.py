@@ -1213,6 +1213,53 @@ def main() -> int:
             dangling_riders.append(f"{spender or '?'} spent a {kind} ({src}) but no following attack carried it")
     chk("maneuver_rider_consumed", not dangling_riders, "; ".join(dangling_riders), fatal=False)
 
+    # cs-wave2-val: a Guiding Bolt advantage rider, once it LANDS on a target, must auto-grant
+    # advantage to the NEXT attack against that target ("on a hit ... the next attack roll made
+    # against it ... has Advantage", SRD 5.2). The engine materializes the rider on a hit
+    # (attack -> on_hit_effect_applied: ["Guiding Bolt"]) and combat.attack_modifiers auto-grants
+    # + attack() consumes it (advantage_source == "Guiding Bolt"), with NO advantage= flag needed
+    # from the DM (#194/#1033). This catches the residual omission the Angry-DM scorer flagged:
+    # the rider was registered + narrated as landing, but the next attack on the marked target did
+    # not carry the advantage (the engine path was bypassed, or the marker silently dropped). We
+    # find each attack that MATERIALIZED the marker (on_hit_effect_applied), then check the FIRST
+    # subsequent attack against that SAME target (before any GB re-materialization on it) — it must
+    # report advantage_source == "Guiding Bolt". WARN, not FATAL — a single missed rider is a
+    # DM/path-adherence smell that should surface to the scorer, not RED-cap the whole run
+    # (graduate to FATAL after clean sweeps, per the gate-graduation discipline). Scope-guarded: a
+    # run that never lands a Guiding Bolt rider emits NOTHING (additive — byte-identical to today).
+    GB = "Guiding Bolt"
+    gb_unconsumed: list[str] = []
+    for i, (short, inp, obj, is_err, _t) in enumerate(evs):
+        if short != "attack" or is_err or not isinstance(obj, dict):
+            continue
+        if GB not in (obj.get("on_hit_effect_applied") or []):
+            continue  # this attack did not LAND a Guiding Bolt advantage marker — skip
+        marked = obj.get("target")  # the foe now carrying the "next attack has advantage" marker
+        if not marked:
+            continue
+        # The FIRST subsequent attack against this SAME target must carry the GB advantage. The
+        # attack that materialized the marker (this one, a GB spell attack) is NOT the consumer —
+        # the marker benefits the NEXT attack roll against the foe. A later GB re-cast on the same
+        # foe re-arms a fresh marker, so we stop the search there (the new marker owns its own
+        # window) and never charge this incident with a follow-up that belongs to the re-arm.
+        for short2, inp2, obj2, is_err2, _t2 in evs[i + 1:]:
+            if short2 != "attack" or is_err2 or not isinstance(obj2, dict):
+                continue
+            if obj2.get("target") != marked:
+                continue  # an attack on a different target neither consumes nor proves the marker
+            if GB in (obj2.get("on_hit_effect_applied") or []):
+                break  # a re-materialized GB marker on this foe — new window owns the next attack
+            ok = obj2.get("advantage_source") == GB or bool(obj2.get("advantage_consumed"))
+            if not ok:
+                attacker2 = obj2.get("attacker") or "?"
+                gb_unconsumed.append(
+                    f"{attacker2}->{marked}: a Guiding Bolt advantage marker was live on "
+                    f"{marked} but the next attack against it showed "
+                    f"advantage_source={obj2.get('advantage_source')!r} (expected 'Guiding Bolt')"
+                )
+            break  # only the FIRST subsequent attack on the marked foe is the marker's beneficiary
+    chk("guiding_bolt_advantage_consumed", not gb_unconsumed, "; ".join(gb_unconsumed), fatal=False)
+
     # ── #1040 scorer-opt: deterministic 5e-fidelity checks MIGRATED from the slow Angry-DM LLM
     # lens into the fast gate. Each is WARN-first (graduate to FATAL after clean sweeps) and
     # scope-guarded so a run lacking the feature/state emits NOTHING (additive: byte-identical).
