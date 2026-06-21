@@ -186,7 +186,8 @@ Keep Python tests single-process unless the lane explicitly supports parallel ex
 
 ## THE MERGE GATE — CI + CodeRabbit (don't push-and-abandon)
 **Shepherd every PR to merge; never open-and-walk-away.** Stay engaged (or hand to a report-only
-watcher) until it lands. Merge only when ALL hold:
+watcher) until it lands. **Orphaned PRs** (whose driving agent died/abandoned them) surface daily in
+the open **`stuck-pr-report`** issue — when idle or resuming, check it and adopt one. Merge only when ALL hold:
 1. **CI green AND present** — all 5 required `ci.yml` contexts (`test`, `viewer-tests`,
    `qa-release-gate-tests`, `server-contracts`, `license-check`) have a check-run on THIS head and
    are SUCCESS. A *missing* context reads as no-status, not pass (strict=false + a job added to
