@@ -32,7 +32,25 @@ quality regression.** Expect current numbers to read below historic numbers; tha
 scorer exists to drive autonomous build-and-improve.
 
 ### Ruler history
-- **`sc_d4b93982763a` / `lc_d7fcfddd5bf7` — current (2026-06 cycle → `v1.0.5-rc1`).** Materially
+- **`sc_f283fdce1d24` / `lc_e52028b6acd3` — current (2026-06 scoring-hardening).** Re-versioned ONLY
+  by the **one-decimal lens precision** change: the per-dimension score type in all three lens schemas
+  (and the Tolkien per-act `score`) went `integer 1–5` → `number, minimum 1, maximum 5`, and the four
+  rubric files now instruct "score each dimension 1.0–5.0 to one decimal." **No range, threshold, cap,
+  or weighting changed** (story ≥ 4.3, mech ≥ 4.5 unchanged) — the bands are identical, the grader can
+  just register *where within a band* a dimension lands instead of rounding to a whole number. This is a
+  **precision** re-version, not a stringency one: a given session should read at the *same* overall ±
+  the rounding it no longer has to do.
+  - **Why not `multipleOf: 0.1`?** It looks like the natural "one decimal" constraint but is an
+    IEEE-754 footgun — under a real validator `4.3` is *not* a multiple of `0.1` (`4.3/0.1 = 42.9999…`
+    in binary float), so `multipleOf: 0.1` would REJECT legitimate one-decimal scores. The pipeline feeds
+    the schema to the LLM as advisory *text* (no runtime `jsonschema.validate()` on scorecards), so the
+    one-decimal expectation is carried by the **rubric instruction**, and the schema stays a plain
+    `number` in `[1,5]` — accepts `4.3`, still rejects `5.5` / `0.5` / a string. Do not "tighten" it back
+    to `multipleOf: 0.1`.
+  - Was `sc_cf47d34e219e` / `lc_e06a888f7c08` on origin/main pre-change; the older `sc_d4b93982763a` line
+    below was already stale — PRs #1040/#1081/#1083/#1086 had re-versioned the ruler since it was written,
+    the exact silent-drift this stamping discipline exists to catch.
+- **`sc_d4b93982763a` / `lc_d7fcfddd5bf7` — the 2026-06 cycle → `v1.0.5-rc1` ruler.** Materially
   STRICTER than the v1.0.4 rulers. Adds: the **feature-engagement coverage scorer + forcing gate**
   (#1018 — every *owed* authored system narrated-but-not-gauged is now a coverage miss); the
   **acts-engine felt-shape scorer + flat-arc gate** (#1001/#1002 — a flat, act-less arc is penalized);
@@ -47,6 +65,25 @@ scorer exists to drive autonomous build-and-improve.
 To compare a historic run to today honestly, **re-score its transcript under the current ruler**
 (`qa/score.sh <transcript.md> <state.json> <rubric> <schema> <out> [budget]`), then compare `sc_`-equal
 rows only.
+
+### Re-versioning discipline — the MECHANICAL rule (run it after ANY rubric/schema/gate edit)
+The hashes above silently re-version themselves the instant any ruler file changes (a rubric anchor, a
+schema, a behavioral/RRI gate). That is the point — but a stale "current" line in this doc (which is
+exactly what `sc_d4b93982763a` had become) means a reader trusts the wrong hash. So after **any** edit to
+a file in `SCORING_CONFIG_FILES` (`python3 qa/scoring_config_version.py --files` lists them), the
+mechanical, do-not-skip steps are:
+
+1. **Recompute** both hashes — `python3 qa/scoring_config_version.py --label` (the FULL `sc_…` ruler) and
+   `python3 qa/scoring_config_version.py --lens` (the `lc_…` lens ruler).
+2. **Confirm the hash changed** vs the previous "current" entry. If it did NOT change but you edited a
+   ruler file, the file is not in `SCORING_CONFIG_FILES` (a real gap — add it) or your edit was a no-op.
+3. **Re-stamp** the new `sc_…` / `lc_…` as a fresh top entry in the *Ruler history* above (1 line on WHAT
+   changed and whether it was a *precision* / *stringency* / *RRI-only* re-version), and add a 1-line
+   note to `CHANGELOG.md` under `[Unreleased]` with both hashes.
+
+This keeps the ledger's `scoring_config_version` / `lens_config_version` columns trustworthy and the doc's
+"current" marker honest. (`--label` exists today; there is no auto-restamp — re-stamping is the deliberate
+human step that records the *why*.)
 
 ## 1. Behavioral gate — HARD pass/fail (`qa/assert_behavioral.py`)
 LLM scorers grade prose and can't be trusted to flip RED on a structurally broken run,

@@ -16,13 +16,13 @@
         "memorability"
       ],
       "properties": {
-        "scene_craft": { "type": "integer", "minimum": 1, "maximum": 5 },
-        "grandeur": { "type": "integer", "minimum": 1, "maximum": 5 },
-        "character_depth": { "type": "integer", "minimum": 1, "maximum": 5 },
-        "prose_atmosphere": { "type": "integer", "minimum": 1, "maximum": 5 },
-        "dramatic_momentum": { "type": "integer", "minimum": 1, "maximum": 5 },
-        "thematic_resonance": { "type": "integer", "minimum": 1, "maximum": 5 },
-        "memorability": { "type": "integer", "minimum": 1, "maximum": 5 }
+        "scene_craft": { "type": "number", "minimum": 1, "maximum": 5 },
+        "grandeur": { "type": "number", "minimum": 1, "maximum": 5 },
+        "character_depth": { "type": "number", "minimum": 1, "maximum": 5 },
+        "prose_atmosphere": { "type": "number", "minimum": 1, "maximum": 5 },
+        "dramatic_momentum": { "type": "number", "minimum": 1, "maximum": 5 },
+        "thematic_resonance": { "type": "number", "minimum": 1, "maximum": 5 },
+        "memorability": { "type": "number", "minimum": 1, "maximum": 5 }
       }
     },
     "overall": { "type": "number", "minimum": 1, "maximum": 5 },
@@ -55,7 +55,7 @@
           "act": { "type": "string" },
           "present": { "type": "boolean" },
           "assessment": { "type": "string" },
-          "score": { "type": "integer", "minimum": 1, "maximum": 5 }
+          "score": { "type": "number", "minimum": 1, "maximum": 5 }
         }
       }
     }

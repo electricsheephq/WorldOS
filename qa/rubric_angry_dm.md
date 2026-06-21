@@ -118,7 +118,8 @@ this run.
      short slice. ~6+ beats is the threshold for "substantial enough to expect breadth."
 
 ## OUTPUT — JSON ONLY, conforming to the schema you are given. No prose, no code fences.
-  - `scores` (each integer 1–5, 5 = a veteran DM nods):
+  - `scores` (each **1.0–5.0 to one decimal**, 5 = a veteran DM nods; e.g. 4.4, 3.8 — use the
+    decimal to register where in a band the table lands, don't round to whole numbers):
       - `rules_as_written` — correctness of the mechanics that WERE invoked.
       - `mechanical_completeness` — were required DM-owned mechanics invoked at all, or
         skipped (the seams above)?

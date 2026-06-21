@@ -10,7 +10,9 @@ The whole premise of WorldOS is that **the world is consistent and fair because
 mechanics come from deterministic tools, never from the model's imagination.**
 Weight your judgment accordingly: hallucinated mechanics are the worst defect.
 
-Score each criterion 1–5 (5 = excellent, 1 = broken). Be skeptical; reserve 5s.
+Score each criterion **1.0–5.0 to one decimal** (5 = excellent, 1 = broken; e.g. 4.3,
+3.7). Use the decimal to register *where in a band* the play lands — don't round to whole
+numbers. Be skeptical; reserve 4.5+.
 
 1. **tool_sourced** — Were ALL dice rolls, rule/spell/monster lookups, HP/condition
    changes, attacks, XP, and state writes performed via worldos tools? Any number

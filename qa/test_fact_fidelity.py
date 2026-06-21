@@ -161,3 +161,72 @@ def test_cli_main_exit_codes(tmp_path, capsys):
     gutted = tmp_path / "gutted.md"
     gutted.write_text(full[: full.index("CLIMAX — ")])
     assert ff.main([str(SAMPLE_INVENTORY), str(gutted), "--min-fidelity", "0.9"]) == 1
+
+
+# ---------------------------------------------------------------------------------------
+# The ≥90% critical-fact guard, pinned to the COMMITTED evidence inventory. This makes the
+# operational contract — "a new run vs the reference must preserve ≥90% of facts, RED on loss"
+# — a named, load-bearing assertion against the canonical `ow-combat-031717` inventory (not
+# only the synthetic sample): the inventory is faithful (clears its own ≥90% bar), and dropping
+# a single CRITICAL fact (the antagonist reveal) trips the guard RED at that 0.90 floor.
+# ---------------------------------------------------------------------------------------
+COMBAT_INVENTORY = QA_DIR / "fact_inventories" / "ow-combat-031717.facts.json"
+MIN_FIDELITY_GUARD = 0.90  # the operational floor: ≥90% of the reference's facts must survive
+
+
+def _synthesize_candidate(facts: list, drop_ids: set[str]) -> str:
+    """Build a candidate transcript that contains a literal token matching every fact's FIRST
+    pattern EXCEPT the dropped ids — a deterministic stand-in for 'a fresh run that preserved
+    (or lost) these facts', independent of the gitignored raw transcript.
+
+    Inventories legitimately overlap (e.g. a 'consequence' fact may name the antagonist), so a
+    dropped fact's token can re-appear in another fact's literal. After assembling the candidate
+    we SCRUB every pattern of every dropped fact from the text, guaranteeing the drop is real."""
+    import re as _re
+
+    def _to_literal(pattern: str) -> str:
+        lit = _re.sub(r"\\b|[\^\$]", "", pattern)
+        return lit.replace("\\", "")
+
+    chunks: list[str] = []
+    for f in facts:
+        if f.id in drop_ids or not f.patterns:
+            continue
+        chunks.append(_to_literal(f.patterns[0]))
+    text = " ; ".join(chunks)
+    # SCRUB any residual occurrence of a dropped fact's patterns (handles inventory overlap)
+    for f in facts:
+        if f.id in drop_ids:
+            for p in f.patterns:
+                text = _re.sub(p, "", text, flags=_re.IGNORECASE)
+    return text
+
+
+def test_committed_inventory_is_faithful_and_clears_the_90pct_guard():
+    """A faithful candidate (every fact present) clears the ≥90% operational floor with no
+    critical loss — the GREEN baseline for 'a new run vs the reference'."""
+    facts = ff.load_inventory(COMBAT_INVENTORY)
+    assert len(facts) >= 20, "the committed evidence inventory should carry ~20-30 facts"
+    candidate = _synthesize_candidate(facts, drop_ids=set())
+    report = ff.score_fidelity(facts, candidate)
+    assert report.fidelity >= MIN_FIDELITY_GUARD, report.missing
+    assert not report.critical_loss
+    assert ff.passed(report, min_fidelity=MIN_FIDELITY_GUARD) is True
+
+
+def test_dropping_a_critical_fact_trips_the_90pct_guard_red():
+    """Deleting ONE critical fact (the antagonist reveal) from an otherwise-faithful run trips
+    the guard RED — even though the flat fidelity (>90%) alone would clear the floor. This is
+    the content-loss the 1–5 lens is blind to, caught deterministically."""
+    facts = ff.load_inventory(COMBAT_INVENTORY)
+    crit_ids = [f.id for f in facts if f.severity == "critical"]
+    assert crit_ids, "inventory must carry at least one critical fact"
+    dropped = crit_ids[0]
+    candidate = _synthesize_candidate(facts, drop_ids={dropped})
+    report = ff.score_fidelity(facts, candidate)
+    # the flat fraction stays high (one fact of ~25 dropped), so ONLY the critical-loss rule
+    # catches it — proving the guard isn't satisfied by a high headline percentage alone.
+    assert report.fidelity > MIN_FIDELITY_GUARD
+    assert report.critical_loss is True
+    assert dropped in report.missing
+    assert ff.passed(report, min_fidelity=MIN_FIDELITY_GUARD) is False

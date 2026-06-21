@@ -49,7 +49,11 @@ or a climax from a setup scene. So FIRST judge the arc, THEN the beats:
    `assessment` of the beat it delivered or missed, and a 1–5. Only the acts present — don't invent
    ones a slice doesn't reach.
 
-## Score each 1–5
+## Score each 1.0–5.0 (one decimal)
+Score every dimension below **1.0–5.0 to one decimal** (e.g. 4.3, 3.7) — and the per-act
+`score` likewise. Use the decimal to register *where in a band* a scene lands rather than
+rounding to a whole number; it does not change any band boundary or cap (the caps below still
+bind exactly as written).
 - **scene_craft** *(playability — the one we were missing)* — Does this read like a PLAYED scene you could step INTO, or a recap of one? In-the-moment and immersive; **NPCs SPEAK in real quoted dialogue** (not "X reveals/explains…"); the **protagonist visibly ACTS and CHOOSES**; each beat hands back an open moment + a choice. A third-person after-action summary, described-not-spoken NPCs, or no felt choice ⇒ **2 or below**. This is what catches "I couldn't actually play this."
 - **grandeur** — Epic scope *felt in the present*: the vast/ancient/mythic pressing on the local scene as concrete detail, not backstory. (5 = the local crisis clearly belongs to a looming epic; 2 = small, self-contained.)
 - **character_depth** — Layered, contradictory adult humans (companion + NPCs) with wants/wounds/secrets that can surprise — vs quest-dispensers. (5 = a character you'd ache for; 1 = cardboard.)
@@ -95,7 +99,7 @@ matter how lovely the writing — and the HARD CAP below then binds `overall ≤
 `scope` = the arc scope this transcript represents (`setup-slice` | `one-shot` | `short-3act` | `campaign-arc`). Label honestly — do NOT call a long, gone-nowhere session a `setup-slice`.
 `progressed` = boolean — did the world MOVE over the session (clock advanced AND/OR the party traveled to a new place AND/OR a new named face entered)? `false` for a session long enough to have moved that stayed frozen in one Act-1 scene; `true` otherwise (a genuinely short slice that simply hasn't reached travel yet is `true` — it isn't a *failure*, it just hasn't gotten there). When `false`, the failure-to-progress cap binds.
 `acts` = the per-act breakdown — ONLY the acts actually present — each `{act, present, assessment, score}`.
-`scores` = the **7** dims above (1–5), judged ACT-RELATIVE per the arc section.
+`scores` = the **7** dims above (each 1.0–5.0 to one decimal), judged ACT-RELATIVE per the arc section.
 `overall` = an honest weighted average that **rewards PLAYABLE epic** — weight
 **scene_craft, grandeur, dramatic_momentum, and memorability** most (the "is this a game
 worth playing?" core); character_depth + thematic_resonance next; prose_atmosphere last.
