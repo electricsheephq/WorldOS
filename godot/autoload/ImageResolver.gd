@@ -33,8 +33,28 @@ func resolve(scope: String) -> void:
 	var st: int = _state.get(scope, State.UNTRIED)
 	if st == State.LOADING or st == State.OK or st == State.MISS:
 		return
+	# Committed res:// backdrop art (mirrors the res:// character placeholders): a standalone /
+	# fixture run with no live /image host still shows real painted location art instead of the
+	# procedural gradient. A live served-finals /image is only consulted when this is absent.
+	if _try_local_backdrop(scope):
+		return
 	_state[scope] = State.LOADING
 	_do_fetch(scope)  # fire-and-forget coroutine; never blocks the frame
+
+
+## Committed local backdrop fallback: res://assets/backdrops/<scope>.png, loaded directly (no
+## HTTP) so a standalone/fixture run shows real painted art. Returns true on a hit (cached + OK).
+func _try_local_backdrop(scope: String) -> bool:
+	var path := "res://assets/backdrops/" + scope + ".png"
+	if not ResourceLoader.exists(path):
+		return false
+	var tex := load(path) as Texture2D
+	if tex == null:
+		return false
+	_textures[scope] = tex
+	_state[scope] = State.OK
+	emit_signal("texture_ready", scope, tex)
+	return true
 
 
 func _do_fetch(scope: String) -> void:
