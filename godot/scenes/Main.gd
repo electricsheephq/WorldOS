@@ -108,6 +108,9 @@ func _on_snapshot(atlas: Dictionary, _combat: Dictionary, character: Dictionary)
 		if _has_arg("--demo-occlusion"):
 			call_deferred("_run_demo_occlusion")
 			return
+		if _has_arg("--preview-scene"):
+			call_deferred("_run_preview_scene")
+			return
 		_maybe_quit()
 
 
@@ -624,6 +627,160 @@ func _maybe_quit() -> void:
 	if smoke_flag or headless:
 		# Defer the quit one frame so the prints flush before teardown.
 		call_deferred("_quit_clean")
+
+
+## Return the value that follows `flag` in the post-`--` user args (or "").
+## E.g. for args ["--spec", "/tmp/scene.json"] returns "/tmp/scene.json" when
+## flag=="--spec".
+func _arg_value(flag: String) -> String:
+	var args := OS.get_cmdline_user_args()
+	var idx := args.find(flag)
+	if idx < 0 or idx + 1 >= args.size():
+		return ""
+	return args[idx + 1]
+
+
+# ---------------------------------------------------------------------------
+# --preview-scene: scene-preview harness (additive, non-interactive).
+#
+# Spec format (/tmp/scene.json):
+#   {
+#     "backdrop": "/tmp/art/tavern.png",          // local PNG path, optional
+#     "nav": {
+#       "cols": 12, "rows": 8,                    // grid dimensions
+#       "cell_w_px": 72,                          // screen diamond width
+#       "origin_px": [512, 300],                  // screen coords of cell(0,0) center
+#       "blocked": [[3,3],[8,2],[6,5]]            // solid (unwalkable) cells
+#     },
+#     "actors": [                                 // optional actor overlays
+#       {"id":"pc",  "cell":[1,4], "facing":"E"},
+#       {"id":"foe", "cell":[10,4],"facing":"W"}
+#     ],
+#     "path_probe": {"from":[1,4], "to":[10,4]}, // A* probe (full overlay mode)
+#     "camera": {"zoom": 1.0}                     // reserved, not yet wired
+#   }
+#
+# Args:
+#   --spec  <path>   JSON spec file (required)
+#   --shot  <path>   output PNG (default /tmp/scene.png)
+#   --overlay <none|grid|full>  (default full)
+#
+# Output:
+#   <shot>.png              — viewport capture with grid/path overlay
+#   <shot>.nav.json         — {"path_found":bool,"path":[[c,r],...],"blocked_count":int,...}
+#
+# Usage (qa/preview_scene.sh wraps this):
+#   godot --path godot --quit-after 300 -- \
+#     --preview-scene --spec /tmp/scene.json --shot /tmp/scene.png --overlay full
+# ---------------------------------------------------------------------------
+func _run_preview_scene() -> void:
+	print("[Main] --preview-scene: scene-preview harness")
+
+	var spec_path := _arg_value("--spec")
+	if spec_path == "":
+		push_warning("[PreviewScene] --spec not supplied — aborting")
+		print("[PreviewScene] RESULT ok=false reason=missing_spec")
+		call_deferred("_quit_clean")
+		return
+
+	var shot_path := _arg_value("--shot")
+	if shot_path == "":
+		shot_path = "/tmp/scene.png"
+
+	var overlay_mode := _arg_value("--overlay")
+	if overlay_mode == "" or (overlay_mode != "none" and overlay_mode != "grid" and overlay_mode != "full"):
+		overlay_mode = "full"
+
+	# Parse spec JSON.
+	if not FileAccess.file_exists(spec_path):
+		push_warning("[PreviewScene] spec file not found: " + spec_path)
+		print("[PreviewScene] RESULT ok=false reason=spec_not_found path=%s" % spec_path)
+		call_deferred("_quit_clean")
+		return
+
+	var text := FileAccess.get_file_as_string(spec_path)
+	var parsed: Variant = JSON.parse_string(text)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		push_warning("[PreviewScene] spec JSON parse failed: " + spec_path)
+		print("[PreviewScene] RESULT ok=false reason=spec_parse_error")
+		call_deferred("_quit_clean")
+		return
+
+	var spec: Dictionary = parsed
+
+	# Detach the live SurfaceClient feed so the fixture poll doesn't stomp our overlay.
+	_detach_live_feed()
+
+	# 1. Apply backdrop — local path first (no HTTP, no scope resolution).
+	var backdrop_path: String = String(spec.get("backdrop", ""))
+	if backdrop_path != "":
+		var ok: bool = _world.apply_local_backdrop(backdrop_path)
+		if not ok:
+			print("[PreviewScene] backdrop load failed for path=%s — using procedural fallback" % backdrop_path)
+	else:
+		print("[PreviewScene] no backdrop specified — using procedural fallback")
+
+	# 2. Build and attach the NavOverlay.
+	var nav_block: Dictionary = {}
+	var nav_v: Variant = spec.get("nav", {})
+	if typeof(nav_v) == TYPE_DICTIONARY:
+		nav_block = nav_v
+
+	var actors_arr: Array = []
+	var actors_v: Variant = spec.get("actors", [])
+	if typeof(actors_v) == TYPE_ARRAY:
+		actors_arr = actors_v
+
+	var path_probe: Dictionary = {}
+	var probe_v: Variant = spec.get("path_probe", {})
+	if typeof(probe_v) == TYPE_DICTIONARY:
+		path_probe = probe_v
+
+	# Zone anchors from the nav spec (optional "zones" key: [[x,y],...] in screen px).
+	var zone_anchors: Array = []
+	var zones_v: Variant = nav_block.get("zones", [])
+	if typeof(zones_v) == TYPE_ARRAY:
+		for z in (zones_v as Array):
+			if typeof(z) == TYPE_ARRAY and (z as Array).size() >= 2:
+				zone_anchors.append(Vector2(float((z as Array)[0]), float((z as Array)[1])))
+
+	var nav_overlay := preload("res://scenes/NavOverlay.gd").new()
+	nav_overlay.name = "NavOverlay"
+	nav_overlay.setup(nav_block, actors_arr, path_probe, zone_anchors, overlay_mode)
+	_world.add_child(nav_overlay)
+
+	# 3. Settle a few frames so the rendering pipeline flushes, then capture.
+	await _settle_frames(3)
+	await get_tree().create_timer(0.05).timeout
+	await _settle_frames(2)
+
+	var img := _capture_viewport()
+	if img != null:
+		img.save_png(shot_path)
+		print("[PreviewScene] screenshot: %s (%dx%d)" % [shot_path, img.get_width(), img.get_height()])
+	else:
+		print("[PreviewScene] no image captured (headless?) — run WITHOUT --headless for a real frame")
+
+	# 4. Write <shot>.nav.json.
+	var nav_result: Dictionary = nav_overlay.nav_result()
+	var nav_json_path := shot_path + ".nav.json"
+	# strip ".png.nav.json" and replace with ".nav.json"
+	if shot_path.ends_with(".png"):
+		nav_json_path = shot_path.substr(0, shot_path.length() - 4) + ".nav.json"
+
+	var nav_json := JSON.stringify(nav_result, "\t")
+	var f := FileAccess.open(nav_json_path, FileAccess.WRITE)
+	if f != null:
+		f.store_string(nav_json)
+		f.close()
+		print("[PreviewScene] nav.json: %s path_found=%s" % [nav_json_path, str(nav_result.get("path_found", false))])
+	else:
+		push_warning("[PreviewScene] could not write nav.json to " + nav_json_path)
+
+	print("[PreviewScene] RESULT ok=%s overlay=%s path_found=%s shot=%s" % [
+		str(img != null), overlay_mode, str(nav_result.get("path_found", false)), shot_path])
+
+	call_deferred("_quit_clean")
 
 
 func _quit_clean() -> void:
