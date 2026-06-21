@@ -1,0 +1,36 @@
+# Dependabot — version + security updates (ADVISORY; not a required merge gate).
+# Security updates surface vulnerable direct/transitive deps; version updates keep the
+# lockfiles current. Public repo, so no GHAS is required. If the `uv` ecosystem is ever
+# rejected for a directory, fall back to `pip` for that entry.
+version: 2
+updates:
+  # --- Python services (uv) ---
+  - package-ecosystem: "uv"
+    directory: "/servers/engine"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+  - package-ecosystem: "uv"
+    directory: "/servers/rules"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+  - package-ecosystem: "uv"
+    directory: "/servers/voice"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  # --- Playwright QA harness (npm) ---
+  - package-ecosystem: "npm"
+    directory: "/qa/playwright"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  # --- GitHub Actions ---
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5

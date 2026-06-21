@@ -1,0 +1,23 @@
+name: Dependency Review
+
+# ADVISORY PR check: flags NEW high/critical dependency vulnerabilities a PR would introduce.
+# It is NOT added as a required branch-protection context, so it surfaces a signal (and a PR
+# comment on failure) WITHOUT blocking the `--squash --auto` merge path. The existing alert
+# backlog is unaffected — dependency-review only inspects the PR's own dependency diff.
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: on-failure
