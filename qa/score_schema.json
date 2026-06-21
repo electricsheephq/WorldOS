@@ -17,14 +17,14 @@
         "robustness"
       ],
       "properties": {
-        "tool_sourced": { "type": "integer", "minimum": 1, "maximum": 5 },
-        "rules_correctness": { "type": "integer", "minimum": 1, "maximum": 5 },
-        "state_integrity": { "type": "integer", "minimum": 1, "maximum": 5 },
-        "companion_agency": { "type": "integer", "minimum": 1, "maximum": 5 },
-        "player_agency": { "type": "integer", "minimum": 1, "maximum": 5 },
-        "exploration": { "type": "integer", "minimum": 1, "maximum": 5 },
-        "narrative_pacing": { "type": "integer", "minimum": 1, "maximum": 5 },
-        "robustness": { "type": "integer", "minimum": 1, "maximum": 5 }
+        "tool_sourced": { "type": "number", "minimum": 1, "maximum": 5 },
+        "rules_correctness": { "type": "number", "minimum": 1, "maximum": 5 },
+        "state_integrity": { "type": "number", "minimum": 1, "maximum": 5 },
+        "companion_agency": { "type": "number", "minimum": 1, "maximum": 5 },
+        "player_agency": { "type": "number", "minimum": 1, "maximum": 5 },
+        "exploration": { "type": "number", "minimum": 1, "maximum": 5 },
+        "narrative_pacing": { "type": "number", "minimum": 1, "maximum": 5 },
+        "robustness": { "type": "number", "minimum": 1, "maximum": 5 }
       }
     },
     "overall": { "type": "number", "minimum": 1, "maximum": 5 },

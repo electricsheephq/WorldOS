@@ -10,6 +10,22 @@ WorldOS is source-available commercial software; world seeds are licensed separa
 
 ## [Unreleased]
 
+- **Scoring hardening — one-decimal lens precision + ruler-versioning discipline.** The three lens
+  schemas (`qa/score_schema.json` / `score_schema_tolkien.json` / `score_schema_angry_dm.json`, plus the
+  Tolkien per-act `score`) now type each per-dimension score `number` in `[1,5]` (was `integer 1–5`), and
+  the four rubrics (`rubric.md` / `rubric_tolkien.md` / `rubric_angry_dm.src.md` → regenerated
+  `rubric_angry_dm.md`) instruct "score each dimension 1.0–5.0 to one decimal." (`multipleOf: 0.1` was
+  deliberately NOT used — it's an IEEE-754 footgun that rejects legitimate values like 4.3; the rubric
+  text carries the one-decimal expectation, the schema just permits non-integers.) **No range, threshold,
+  cap, or weighting changed** (story ≥4.3, mech ≥4.5 unchanged) — a *precision* re-version, not a
+  stringency one. This re-versions the ruler: **`sc_cf47d34e219e` → `sc_f283fdce1d24`**,
+  **`lc_e06a888f7c08` → `lc_e52028b6acd3`**. Documented in `qa/SCORING.md` (Ruler history + the new
+  mechanical re-versioning discipline: after any rubric/schema/gate edit, run
+  `python3 qa/scoring_config_version.py --label` / `--lens`, confirm the hash moved, re-stamp the history +
+  this CHANGELOG). Operationalized the differential fact-fidelity guard (`qa/fact_fidelity.py`, #1065/#1068)
+  with an explicit ≥90% critical-fact assertion against the committed `ow-combat-031717` inventory
+  (`qa/test_fact_fidelity.py` — drop a critical fact → RED, intact → GREEN). Feature-engagement coverage
+  stays WARN (FATAL graduation remains VM-sweep-gated).
 - Gameplay toward the RRI bar (story ≥4.3, mechanical ≥4.5) — the GA work, now built on the
   honest, un-gamed measurement that 1.0.5-rc1 established.
 

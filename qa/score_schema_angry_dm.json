@@ -16,13 +16,13 @@
         "coverage"
       ],
       "properties": {
-        "rules_as_written": { "type": "integer", "minimum": 1, "maximum": 5 },
-        "mechanical_completeness": { "type": "integer", "minimum": 1, "maximum": 5 },
-        "tool_fidelity": { "type": "integer", "minimum": 1, "maximum": 5 },
-        "action_economy": { "type": "integer", "minimum": 1, "maximum": 5 },
-        "combat_resolution": { "type": "integer", "minimum": 1, "maximum": 5 },
-        "conditions_and_effects": { "type": "integer", "minimum": 1, "maximum": 5 },
-        "coverage": { "type": "integer", "minimum": 1, "maximum": 5 }
+        "rules_as_written": { "type": "number", "minimum": 1, "maximum": 5 },
+        "mechanical_completeness": { "type": "number", "minimum": 1, "maximum": 5 },
+        "tool_fidelity": { "type": "number", "minimum": 1, "maximum": 5 },
+        "action_economy": { "type": "number", "minimum": 1, "maximum": 5 },
+        "combat_resolution": { "type": "number", "minimum": 1, "maximum": 5 },
+        "conditions_and_effects": { "type": "number", "minimum": 1, "maximum": 5 },
+        "coverage": { "type": "number", "minimum": 1, "maximum": 5 }
       }
     },
     "overall": { "type": "number", "minimum": 1, "maximum": 5 },
