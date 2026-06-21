@@ -12,6 +12,9 @@ permissions:
   contents: read
   issues: write
   pull-requests: read
+  checks: read      # gh pr list --json statusCheckRollup reads check runs
+  statuses: read    # ...and commit statuses
+  actions: read     # ...and workflow-run data, under GITHUB_TOKEN
 
 concurrency:
   group: stuck-pr-report
