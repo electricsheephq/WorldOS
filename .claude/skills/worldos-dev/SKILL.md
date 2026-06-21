@@ -150,12 +150,14 @@ Keep Python tests single-process unless the lane explicitly supports parallel ex
    **DO NOT pipe `gh pr create` through `tail` inside an `&&` chain** — it masks a transient
    failure and silently skips the merge (bit us on #185). Verify the returned PR URL.
 4. **Merge through the protected path (see ## THE MERGE GATE).** Default
-   `gh pr merge <#> --squash --auto` (waits for the 5 required `ci.yml` checks + conversation
-   resolution, then squash-merges). Local `license_check` + focused pytest are pre-push
-   confidence, NOT a CI replacement. `--admin` is **emergency-only** (declare why in a PR
-   comment + open a follow-up issue) — it bypasses branch protection. *(main is branch-protected
-   as of 2026-06-21 — Guardrail + admin-override; `allow_auto_merge` + `delete_branch_on_merge`
-   are on.)*
+   `gh pr merge <#> --squash --auto` — this **enables auto-merge and returns immediately** (it
+   does NOT block); GitHub squash-merges later once the 5 required `ci.yml` checks + conversation
+   resolution pass. **Poll `gh pr view <#> --json state,mergeCommit` until `state==MERGED` before
+   step 5** — never sync/clean a still-open PR (stale `main` + premature branch delete). Local
+   `license_check` + focused pytest are pre-push confidence, NOT a CI replacement. `--admin` is
+   **emergency-only** (declare why in a PR comment + open a follow-up issue) — it bypasses branch
+   protection. *(main is branch-protected as of 2026-06-21 — Guardrail + admin-override;
+   `allow_auto_merge` + `delete_branch_on_merge` are on.)*
 5. **Sync + clean:**
    ```bash
    git pull --ff-only origin main
