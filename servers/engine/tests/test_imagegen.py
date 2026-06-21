@@ -124,6 +124,149 @@ def test_configured_provider_still_raises_until_wired(monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
+# Scenario provider: registered, real-but-non-gateway, graceful-degrading.
+# The HTTP is mocked — these tests NEVER touch the network or spend credits.
+# --------------------------------------------------------------------------- #
+
+from imagegen import ScenarioImageProvider  # noqa: E402
+
+
+@pytest.fixture
+def _no_scenario_creds(monkeypatch, tmp_path):
+    """Remove every credential source so configured() is False: env vars AND the
+    ~/.worldos fallback files (point HOME at an empty tmp dir)."""
+    monkeypatch.delenv("WORLDOS_SCENARIO_API_KEY", raising=False)
+    monkeypatch.delenv("WORLDOS_SCENARIO_SECRET", raising=False)
+    monkeypatch.delenv("WORLDOS_SCENARIO_MODEL_ID", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))  # ~/.worldos/scenario.* won't exist here
+    return tmp_path
+
+
+def test_scenario_provider_is_registered():
+    # WORLDOS_IMAGE_PROVIDER=scenario must resolve to the Scenario class.
+    assert imagegen._HOSTED.get("scenario") is ScenarioImageProvider
+    assert ScenarioImageProvider().name == "scenario"
+
+
+def test_scenario_provider_satisfies_protocol():
+    assert isinstance(ScenarioImageProvider(), imagegen.ImageProvider)
+
+
+def test_scenario_unconfigured_is_not_configured(_no_scenario_creds):
+    assert ScenarioImageProvider().configured() is False
+
+
+def test_scenario_unconfigured_selection_degrades_to_null(_no_scenario_creds, monkeypatch):
+    # Named but no creds -> get_provider() degrades to the null provider (never crashes).
+    monkeypatch.setenv("WORLDOS_IMAGE_PROVIDER", "scenario")
+    assert isinstance(imagegen.get_provider(), NullImageProvider)
+
+
+def test_scenario_generate_unconfigured_returns_placeholder(_no_scenario_creds):
+    # Even invoked directly while unconfigured, it self-degrades — never raises.
+    d = ScenarioImageProvider().generate("portrait", "a sellsword", seed=2)
+    assert d["provider"] == "scenario"
+    assert d["placeholder"] is True
+    assert d["kind"] == "portrait" and d["prompt"] == "a sellsword"
+    assert d.get("degraded") == "unconfigured"
+
+
+def test_scenario_configured_provider_is_selected(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_IMAGE_PROVIDER", "scenario")
+    monkeypatch.setenv("WORLDOS_SCENARIO_API_KEY", "key-abc")
+    monkeypatch.setenv("WORLDOS_SCENARIO_SECRET", "sec-xyz")
+    p = imagegen.get_provider()
+    assert isinstance(p, ScenarioImageProvider) and p.name == "scenario"
+
+
+def test_scenario_configured_but_no_model_degrades(monkeypatch, tmp_path):
+    # Configured (key+secret) but no model id -> placeholder, no network call.
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_SCENARIO_API_KEY", "key-abc")
+    monkeypatch.setenv("WORLDOS_SCENARIO_SECRET", "sec-xyz")
+    monkeypatch.delenv("WORLDOS_SCENARIO_MODEL_ID", raising=False)
+    d = ScenarioImageProvider().generate("scene", "a foggy harbor")
+    assert d["placeholder"] is True
+    assert d.get("degraded") == "no WORLDOS_SCENARIO_MODEL_ID"
+
+
+def test_scenario_generate_success_returns_descriptor(monkeypatch, tmp_path):
+    """With creds + model + the HTTP fully MOCKED, generate() returns a real descriptor
+    carrying the asset url. NO network, NO credit spend."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_SCENARIO_API_KEY", "key-abc")
+    monkeypatch.setenv("WORLDOS_SCENARIO_SECRET", "sec-xyz")
+    monkeypatch.setenv("WORLDOS_SCENARIO_MODEL_ID", "model_123")
+
+    import json as _json
+    import urllib.request
+
+    class _FakeResp:
+        def __init__(self, payload):
+            self._b = _json.dumps(payload).encode("utf-8")
+
+        def read(self):
+            return self._b
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    calls = {"n": 0}
+
+    def _fake_urlopen(req, timeout=0):
+        url = req.full_url
+        method = req.get_method()
+        if "/generate/txt2img" in url and method == "POST":
+            return _FakeResp({"job": {"jobId": "job_777", "status": "queued"}})
+        if "/jobs/job_777" in url and method == "GET":
+            calls["n"] += 1
+            if calls["n"] < 2:
+                return _FakeResp({"job": {"jobId": "job_777", "status": "in-progress"}})
+            return _FakeResp({"job": {"jobId": "job_777", "status": "success",
+                                       "metadata": {"assetIds": ["asset_999"]}}})
+        if "/assets/asset_999" in url and method == "GET":
+            return _FakeResp({"asset": {"id": "asset_999",
+                                         "url": "https://cdn.scenario.example/asset_999.png"}})
+        raise AssertionError("unexpected url: %s %s" % (method, url))
+
+    monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
+    # No real sleeping between polls.
+    import time as _time
+    monkeypatch.setattr(_time, "sleep", lambda *_a, **_k: None)
+
+    d = ScenarioImageProvider().generate("portrait", "a hooded ranger", seed=11)
+    assert d["provider"] == "scenario"
+    assert d["placeholder"] is False
+    assert d["url"] == "https://cdn.scenario.example/asset_999.png"
+    assert d["kind"] == "portrait" and d["prompt"] == "a hooded ranger" and d["seed"] == 11
+    assert d["job_id"] == "job_777" and d["asset_id"] == "asset_999"
+
+
+def test_scenario_generate_network_error_degrades(monkeypatch, tmp_path):
+    """A network error mid-generation degrades to a placeholder, never raises."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("WORLDOS_SCENARIO_API_KEY", "key-abc")
+    monkeypatch.setenv("WORLDOS_SCENARIO_SECRET", "sec-xyz")
+    monkeypatch.setenv("WORLDOS_SCENARIO_MODEL_ID", "model_123")
+
+    import urllib.error
+    import urllib.request
+
+    def _boom(req, timeout=0):
+        raise urllib.error.URLError("connection refused")
+
+    monkeypatch.setattr(urllib.request, "urlopen", _boom)
+    d = ScenarioImageProvider().generate("scene", "a storm at sea")
+    assert d["placeholder"] is True
+    assert d["provider"] == "scenario"
+    assert d.get("degraded", "").startswith("error:")
+
+
+# --------------------------------------------------------------------------- #
 # Content-hash cache: write/read by hash under a tmp WORLDOS_STATE_DIR.
 # --------------------------------------------------------------------------- #
 

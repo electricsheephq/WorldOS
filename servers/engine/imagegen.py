@@ -340,11 +340,177 @@ class OpenClawImageProvider:
         return descriptor
 
 
+class ScenarioImageProvider:
+    """Generate images through the Scenario API (https://api.cloud.scenario.com/v1).
+
+    A REAL hosted provider that does NOT touch the OpenClaw/Eva gateway — it carries its
+    OWN credential pair (an API key + a secret) and talks straight to Scenario over HTTPS
+    with HTTP Basic auth. This gives the engine an image-gen path independent of the
+    gateway. Selection: `WORLDOS_IMAGE_PROVIDER=scenario`.
+
+    Credentials are read from `WORLDOS_SCENARIO_API_KEY` + `WORLDOS_SCENARIO_SECRET`,
+    falling back to `~/.worldos/scenario.key` + `~/.worldos/scenario.secret`. The model is
+    read from `WORLDOS_SCENARIO_MODEL_ID` (Scenario's txt2img requires a modelId).
+
+    Graceful degradation (matches the engine's null-degrade pattern): `configured()` is
+    False when credentials are missing, so get_provider() degrades to null. And once
+    invoked, generate() NEVER raises — on missing config, missing model, or any network
+    error it returns a null-style placeholder descriptor so a transient blip or a
+    half-config never crashes the DM's turn (the synchronous generate() above ALSO catches,
+    but this provider is defensively self-degrading too).
+
+    The heavy work (urllib HTTP, base64 auth, job poll) is all stdlib and done lazily
+    inside generate(), keeping import-time free of network.
+
+    Contract (confirmed live): POST /v1/generate/txt2img {modelId,prompt,...} -> a job;
+    poll GET /v1/jobs/{id} until success; resolve output asset ids -> GET /v1/assets/{id}
+    -> {asset:{url}}. The returned descriptor carries that asset URL (finite TTL).
+    """
+
+    name = "scenario"
+    _API_BASE = "https://api.cloud.scenario.com/v1"
+    _POLL_INTERVAL_SEC = 4.0
+    _POLL_TIMEOUT_SEC = 180.0
+
+    def _credentials(self) -> tuple[Optional[str], Optional[str]]:
+        """Resolve (key, secret) from env, then ~/.worldos/scenario.{key,secret}.
+
+        Reads no network. Returns (None, None) when not fully configured."""
+        key = (env_var("SCENARIO_API_KEY", "") or "").strip()
+        secret = (env_var("SCENARIO_SECRET", "") or "").strip()
+        if not key:
+            kp = os.path.expanduser("~/.worldos/scenario.key")
+            if os.path.isfile(kp):
+                try:
+                    with open(kp, "r") as f:
+                        key = f.read().strip()
+                except OSError:
+                    key = ""
+        if not secret:
+            sp = os.path.expanduser("~/.worldos/scenario.secret")
+            if os.path.isfile(sp):
+                try:
+                    with open(sp, "r") as f:
+                        secret = f.read().strip()
+                except OSError:
+                    secret = ""
+        return (key or None, secret or None)
+
+    def configured(self) -> bool:
+        """True when BOTH the Scenario key and secret are resolvable. get_provider()
+        degrades to null otherwise."""
+        key, secret = self._credentials()
+        return bool(key and secret)
+
+    def _placeholder(self, kind: str, prompt: str, seed: Optional[int], reason: str) -> dict:
+        """A null-style descriptor (never raises). Mirrors NullImageProvider's shape so the
+        caller/cache treats it identically, but tags why it degraded."""
+        return {
+            "provider": self.name,
+            "kind": _normalize_kind(kind),
+            "prompt": prompt,
+            "placeholder": True,
+            "seed": seed,
+            "degraded": reason,
+        }
+
+    def generate(self, kind: str, prompt: str, *, seed: Optional[int] = None) -> dict:
+        """Generate via Scenario; return a descriptor with the asset `url` on success.
+
+        Self-degrading: returns a placeholder descriptor (never raises) when unconfigured,
+        when no model id is set, or on any HTTP/network error — matching the engine's
+        graceful-degradation contract.
+        """
+        import base64
+        import json as _json
+        import time as _time
+        import urllib.error
+        import urllib.request
+
+        key, secret = self._credentials()
+        if not (key and secret):
+            return self._placeholder(kind, prompt, seed, "unconfigured")
+        model_id = (env_var("SCENARIO_MODEL_ID", "") or "").strip()
+        if not model_id:
+            return self._placeholder(kind, prompt, seed, "no WORLDOS_SCENARIO_MODEL_ID")
+
+        token = base64.b64encode(f"{key}:{secret}".encode("utf-8")).decode("ascii")
+        headers = {"Authorization": f"Basic {token}", "Content-Type": "application/json"}
+
+        def _req_json(url: str, method: str, body: Optional[dict]) -> dict:
+            data = _json.dumps(body).encode("utf-8") if body is not None else None
+            req = urllib.request.Request(url, data=data, headers=headers, method=method)
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return _json.loads(resp.read().decode("utf-8"))
+
+        try:
+            create = _req_json(
+                f"{self._API_BASE}/generate/txt2img",
+                "POST",
+                {"modelId": model_id, "prompt": prompt, "numSamples": 1},
+            )
+            job = create.get("job") or {}
+            job_id = job.get("jobId") or job.get("id") or create.get("jobId")
+            if not job_id:
+                return self._placeholder(kind, prompt, seed, "no job id in create response")
+
+            # Poll the job until it succeeds or times out.
+            deadline = _time.time() + self._POLL_TIMEOUT_SEC
+            final_job: dict = {}
+            while True:
+                res = _req_json(f"{self._API_BASE}/jobs/{job_id}", "GET", None)
+                jb = res.get("job") or res
+                status = str(jb.get("status", "")).lower()
+                if status in ("success", "succeeded", "completed", "done"):
+                    final_job = jb
+                    break
+                if status in ("failure", "failed", "error", "canceled", "cancelled"):
+                    return self._placeholder(kind, prompt, seed, f"job {status}")
+                if _time.time() > deadline:
+                    return self._placeholder(kind, prompt, seed, "job timed out")
+                _time.sleep(self._POLL_INTERVAL_SEC)
+
+            # Resolve the first output asset's download URL.
+            md = final_job.get("metadata") or {}
+            asset_ids = (
+                md.get("assetIds") or final_job.get("assetIds")
+                or md.get("assets") or final_job.get("assets") or []
+            )
+            first = None
+            if isinstance(asset_ids, list) and asset_ids:
+                a0 = asset_ids[0]
+                first = a0 if isinstance(a0, str) else (a0.get("id") or a0.get("assetId"))
+            if not first:
+                return self._placeholder(kind, prompt, seed, "no output assets")
+            asset_res = _req_json(f"{self._API_BASE}/assets/{first}", "GET", None)
+            asset = asset_res.get("asset") or asset_res
+            url = asset.get("url") or asset.get("downloadUrl") or asset.get("signedUrl")
+            if not url:
+                return self._placeholder(kind, prompt, seed, "asset has no url")
+        except (urllib.error.HTTPError, urllib.error.URLError, OSError, ValueError) as exc:
+            # Degrade to null on ANY network/parse error — never crash the engine.
+            return self._placeholder(kind, prompt, seed, f"error: {str(exc)[:120]}")
+
+        return {
+            "provider": self.name,
+            "kind": _normalize_kind(kind),
+            "prompt": prompt,
+            "url": url,
+            "seed": seed,
+            "placeholder": False,
+            "job_id": job_id,
+            "asset_id": first,
+        }
+
+
 # Real, hosted providers keyed by WORLDOS_IMAGE_PROVIDER value.
 _HOSTED: dict[str, type] = {
     "openai": OpenAIImageProvider,
     "stability": StabilityImageProvider,
     "openclaw": OpenClawImageProvider,
+    # Scenario: a REAL non-gateway hosted provider (own key+secret, HTTP Basic). The
+    # DEFAULT stays null — selected only via WORLDOS_IMAGE_PROVIDER=scenario.
+    "scenario": ScenarioImageProvider,
 }
 
 
