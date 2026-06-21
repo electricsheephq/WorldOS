@@ -113,6 +113,21 @@ pure harness-evidence plumbing. The corrected reference harness is checked in at
    agent): no gateway restart/reconfigure, no `doctor --fix`, no global `mcp set`, don't
    touch agents `main`/`operations`.
 
+## PLANNING A NEW SUBSYSTEM (research → design → batch → execute)
+For a NEW feature/subsystem (not a one-line fix), don't jump to code — this arc works:
+1. **Clarify** — if the request is vague, ask 2-3 questions that LOCK the load-bearing constraints
+   (delivery target, art/tech direction, scope) BEFORE researching. Wrong constraint → wrong research.
+2. **External research FIRST** (`deep-research`) — the outside question (libraries, techniques, prior
+   art) — before touching the repo.
+3. **Repo design SECOND** (parallel `Explore`/`Plan` agents or a design workflow) — find the
+   integration SEAM + what ALREADY EXISTS (the engine is usually 80-90% there — reuse before rebuild).
+4. **Verify contested claims against SOURCE before writing the plan** — agents and your own research
+   are wrong ~half the time on specifics; read the load-bearing file yourself to resolve disagreements
+   before committing to a plan (see [[feedback_validate_adversarial_subagent_findings]]).
+5. **Plan → file the epic + child issues in ONE batch script** (not one-at-a-time), labeled per the
+   repo's convention → execute each as a worktree PR via the dev loop below. Hand off with the
+   `sprint-handoff-doc` skill.
+
 ## THE DEV LOOP (exact)
 Test policy: **GitHub-CI-first for broad validation; focused local tests for fast feedback.**
 Keep Python tests single-process unless the lane explicitly supports parallel execution.
