@@ -121,6 +121,16 @@ from store import load_campaign, save_campaign
 from store import load_slot as _load_slot_store
 from store import save_slot as _save_slot_store
 
+# Product version — the single source of truth is servers/engine/__version__.py (mirrored to
+# the repo-root VERSION file; asserted equal by qa/test_version_consistency.py). Imported
+# tolerantly so a partial/odd checkout never breaks the server: absence degrades to "0.0.0+unknown"
+# rather than crashing the engine at import time (additive — nothing in runtime behavior depends
+# on it; it is the version a tag/release links to).
+try:
+    from __version__ import __version__ as ENGINE_VERSION
+except Exception:  # pragma: no cover - defensive: a missing/odd checkout must not break the server
+    ENGINE_VERSION = "0.0.0+unknown"
+
 mcp = FastMCP("worldos-engine")
 
 
