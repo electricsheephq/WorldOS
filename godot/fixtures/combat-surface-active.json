@@ -1,0 +1,42 @@
+{
+  "_comment": "ACTIVE combat fixture for the #1060 combat-token conformance. Mirrors the REAL /combat-surface (viewer/server.py build_combat_surface -> _combat_tokens): active:true with a tokens[] roster (2 allies + 3 foes) at the SAME named zones as atlas-surface.json / render-profile.json. `zone` is the only spatial truth; x/y are a DERIVED render-hint (positionAuthority:'derived') the renderer IGNORES, re-deriving its own screen position from the named zone. Loaded directly by Main.gd's --combat-tokens mode (the steady SurfaceClient path keeps combat-surface.json active:false = the exploration default).",
+  "campaign_id": "bg-absolute-remnants",
+  "title": "Baldur's Gate — Absolute Remnants",
+  "world": "baldurs-gate",
+  "location": { "id": "loc-lower-city", "name": "Baldur's Gate — Lower City", "imageScope": "location:loc-lower-city" },
+  "encounter": { "active": true, "name": "Ambush in the Lower City", "summary": "Combat round 1", "round": 1, "warnings": [] },
+  "grid": { "mode": "zones", "cols": 16, "rows": 10 },
+  "active": true,
+  "round": 1,
+  "turn_index": 0,
+  "current_id": "char-aubree",
+  "zones": [
+    { "name": "the gate approach", "occupants": ["char-aubree"] },
+    { "name": "the market row", "occupants": ["char-companion-1", "npc-cultist-1"] },
+    { "name": "the alley mouth", "occupants": ["npc-cultist-2", "npc-ogre-1"] }
+  ],
+  "tokens": [
+    { "id": "char-aubree", "name": "Aubree", "initial": "A", "short": "A portrait", "team": "ally", "initiative": 18, "isCurrent": true, "reactionAvailable": true, "conditions": [], "zone": "the gate approach", "x": 0.5, "y": 0.58, "positionAuthority": "derived", "hpKnown": true, "health": "steady", "hp": 24, "hpMax": 30, "ac": 15 },
+    { "id": "char-companion-1", "name": "Shadowheart", "initial": "S", "short": "S portrait", "team": "ally", "initiative": 14, "isCurrent": false, "reactionAvailable": true, "conditions": [], "zone": "the market row", "x": 0.34, "y": 0.72, "positionAuthority": "derived", "hpKnown": true, "health": "wounded", "hp": 18, "hpMax": 22, "ac": 18 },
+    { "id": "npc-cultist-1", "name": "Cultist Acolyte", "initial": "C", "short": "C portrait", "team": "foe", "initiative": 12, "isCurrent": false, "reactionAvailable": true, "conditions": [], "zone": "the market row", "x": 0.38, "y": 0.7, "positionAuthority": "derived", "hpKnown": false, "health": "unknown" },
+    { "id": "npc-cultist-2", "name": "Cultist Zealot", "initial": "C", "short": "C portrait", "team": "foe", "initiative": 9, "isCurrent": false, "reactionAvailable": true, "conditions": ["prone"], "zone": "the alley mouth", "x": 0.72, "y": 0.8, "positionAuthority": "derived", "hpKnown": false, "health": "unknown" },
+    { "id": "npc-ogre-1", "name": "Ogre Enforcer", "initial": "O", "short": "O portrait", "team": "foe", "initiative": 6, "isCurrent": false, "reactionAvailable": true, "conditions": [], "zone": "the alley mouth", "x": 0.68, "y": 0.82, "positionAuthority": "derived", "hpKnown": false, "health": "unknown" }
+  ],
+  "initiative": [
+    { "id": "char-aubree", "name": "Aubree", "init": 18, "active": true, "team": "ally", "health": "steady", "reactionAvailable": true },
+    { "id": "char-companion-1", "name": "Shadowheart", "init": 14, "active": false, "team": "ally", "health": "wounded", "reactionAvailable": true },
+    { "id": "npc-cultist-1", "name": "Cultist Acolyte", "init": 12, "active": false, "team": "foe", "health": "unknown", "reactionAvailable": true },
+    { "id": "npc-cultist-2", "name": "Cultist Zealot", "init": 9, "active": false, "team": "foe", "health": "unknown", "reactionAvailable": true },
+    { "id": "npc-ogre-1", "name": "Ogre Enforcer", "init": 6, "active": false, "team": "foe", "health": "unknown", "reactionAvailable": true }
+  ],
+  "selectedTokenId": "char-aubree",
+  "actionEconomy": {},
+  "commandCenter": {},
+  "actionBar": [],
+  "battleLog": [],
+  "live": false,
+  "is_live_view": false,
+  "can_act": false,
+  "state_authority": "engine",
+  "write_lane": "/move"
+}

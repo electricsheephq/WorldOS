@@ -60,6 +60,18 @@ const PropActorScript := preload("res://scenes/PropActor.gd")
 ## so the standalone fixture run shows a real directional token, not just markers.
 const CHAR_ASSET_ROOT := "res://assets/characters/"
 const PILLAR_PROP_DIR := "res://assets/props/pillar/"
+## #1060 — the DEFAULT committed placeholder slug a combatant without its OWN committed
+## asset dir falls back to. Enemies/NPCs have no per-actor sheet (and no served atlas),
+## so they render with this real directional placeholder + a team tint (below). Always
+## present in the committed tree, so a combat token can ALWAYS be built.
+const DEFAULT_CHAR_SLUG := "aubree"
+
+## #1060 — renderer-owned TEAM tint (modulate) so foe vs ally reads at a glance. This is
+## pure presentation the renderer owns (the engine ships only the `team` string); it does
+## NOT touch state. Allies are left neutral (white = no tint); foes get a hostile red wash.
+const TEAM_TINT_ALLY := Color(1.0, 1.0, 1.0, 1.0)        ## neutral — committed sprite as-is
+const TEAM_TINT_FOE := Color(1.0, 0.55, 0.5, 1.0)        ## hostile red wash
+const TEAM_TINT_NEUTRAL := Color(0.92, 0.92, 1.0, 1.0)   ## faint cool for unknown/other teams
 
 @onready var _backdrop: Sprite2D = $BackdropPlane
 @onready var _floor_poly: Polygon2D = $WalkmaskLayer/FloorPolygon
@@ -84,9 +96,13 @@ var _pending_backdrop_scope: String = ""
 var _backdrop_is_resolved: bool = false
 
 ## #1054 — spawned tokens reconciled by engine_actor_id across ticks (no leaks).
-## actor_id -> CharacterToken. Today we only spawn party[0], but the dictionary
-## keeps the reconcile contract right for when the party grows.
+## actor_id -> CharacterToken. In exploration we spawn party[0]; in combat (#1060) we
+## spawn one token per combat token. Either way the dictionary keeps the reconcile
+## contract right (build once, reposition thereafter, free departed actors).
 var _tokens: Dictionary = {}
+## #1060 — last applied team modulate per spawned token (actor_id -> Color), so a
+## re-spawn / re-tint is idempotent and the conformance can read back the tint.
+var _token_team_tint: Dictionary = {}
 ## #1063 part 2 — sprite-atlas scope_key -> actor_id, so when ImageResolver emits
 ## texture_ready for a SERVED sprite atlas (/image?scope=sprite-<name>) we know which
 ## token to re-set_manifest. Distinct namespace from the backdrop scope (scene-*), so
@@ -154,9 +170,11 @@ func apply_snapshot(atlas: Dictionary, combat: Dictionary, character: Dictionary
 	_rebuild_zone_markers(zones, scope, vp, baseline)
 	_zone_count = zones.size()
 
-	# --- #1054: spawn/reconcile the lead party token + the static pillar prop into
-	# the Y-sorted layer (foot-anchored, so #1055's occlusion sorts by foot-y) ---
-	_reconcile_actors(character)
+	# --- #1054/#1060: spawn/reconcile actor tokens + the static pillar prop into the
+	# Y-sorted layer (foot-anchored, so #1055's occlusion sorts by foot-y). In COMBAT
+	# we render one token per combat token (team-tinted) at its zone; in exploration we
+	# render the lead party token — exactly today's behavior. ---
+	_reconcile_actors(character, combat, in_combat)
 	_place_pillar()
 
 	# DIAGNOSTIC (validation proof): location, zone-marker count, backdrop status.
@@ -230,6 +248,18 @@ func zone_screen_pos(zone_name: String) -> Vector2:
 ## to drive set_zone_target / set_facing on click. Exposed for validation too.
 func token_for(engine_actor_id: String) -> CharacterToken:
 	return _tokens.get(engine_actor_id, null)
+
+
+## #1060 — the count of currently-spawned actor tokens (party in exploration, the full
+## roster in combat). Exposed for the combat-tokens conformance assertion.
+func token_count() -> int:
+	return _tokens.size()
+
+
+## #1060 — the renderer-owned team modulate last applied to a token (WHITE if none).
+## Exposed so the conformance can assert foes carry the hostile wash and allies don't.
+func team_tint_for(engine_actor_id: String) -> Color:
+	return _token_team_tint.get(engine_actor_id, Color(1, 1, 1, 1))
 
 
 ## The static pillar prop (null until spawned). Exposed for #1055's occlusion test.
@@ -357,32 +387,29 @@ func _prop_contains(prop: PropActor, world_pos: Vector2) -> bool:
 # #1054 — actor tokens + the static pillar prop, in the Y-sorted layer.
 # ---------------------------------------------------------------------------
 
-## Spawn/reconcile ONE CharacterToken for character.party[0] (the lead actor),
-## keyed by engine_actor_id so it is built ONCE and only repositioned thereafter.
-## Tokens for actors no longer present are freed (reconcile = no leaks across ticks).
-## Placed at a FOREGROUND zone (the front-most marker) so it reads near the camera.
-func _reconcile_actors(character: Dictionary) -> void:
-	var lead := _lead_actor(character)
+## Spawn/reconcile actor tokens into the Y-sorted layer, keyed by engine_actor_id so
+## each is built ONCE and only repositioned/re-tinted thereafter. Tokens for actors no
+## longer present are freed (reconcile = no leaks across ticks).
+##   - COMBAT (#1060): one token PER combat token (the whole roster — party + foes),
+##     placed at its named ZONE's anchor, with a renderer-owned TEAM tint.
+##   - EXPLORATION (#1054, unchanged): ONE token for character.party[0] at the
+##     FOREGROUND zone. Empty combat == today's behavior exactly.
+## The combat-token x/y are IGNORED (positionAuthority:"derived"); the renderer derives
+## the screen position from the engine's named zone via zone_screen_pos(), staying the
+## sole owner of layout while the engine stays the sole owner of WHERE (the zone).
+func _reconcile_actors(character: Dictionary, combat: Dictionary, in_combat: bool) -> void:
 	var wanted: Dictionary = {}  # actor_id -> true (actors that should exist this tick)
 	# A location change since the last snapshot is a `travel` — reset facing to the
 	# rest/default facing rather than deriving a walk direction (ISO-PROJECTION.md).
 	var traveled := _prev_location_id != "" and _prev_location_id != _location_id
 
-	if not lead.is_empty():
-		var actor_id := String(lead.get("id", ""))
-		if actor_id != "":
-			wanted[actor_id] = true
-			var tok: CharacterToken = _tokens.get(actor_id, null)
-			var is_new := tok == null
-			if is_new:
-				tok = _spawn_token(actor_id)
-				if tok != null:
-					_tokens[actor_id] = tok
-			if tok != null:
-				var target_pos := _foreground_pos()
-				_reconcile_token_motion(tok, actor_id, target_pos, is_new, traveled)
+	var combat_tokens := _combat_token_list(combat) if in_combat else []
+	if not combat_tokens.is_empty():
+		_reconcile_combat_tokens(combat_tokens, wanted, traveled)
+	else:
+		_reconcile_exploration_token(character, wanted, traveled)
 
-	# Free tokens whose actor left the party (no leaks).
+	# Free tokens whose actor is no longer present (no leaks).
 	for existing_id in _tokens.keys():
 		if not wanted.has(existing_id):
 			var stale: CharacterToken = _tokens[existing_id]
@@ -390,10 +417,100 @@ func _reconcile_actors(character: Dictionary) -> void:
 				stale.queue_free()
 			_tokens.erase(existing_id)
 			_token_prev_pos.erase(existing_id)
+			_token_team_tint.erase(existing_id)
 			# Drop any served-atlas scope mapping pointing at the freed token (#1063).
 			for sc in _sheet_scope_actor.keys():
 				if String(_sheet_scope_actor[sc]) == String(existing_id):
 					_sheet_scope_actor.erase(sc)
+
+
+## #1054 (UNCHANGED behavior) — spawn/reconcile ONE token for character.party[0] at the
+## foreground zone. The exploration path; runs whenever combat is inactive/empty.
+func _reconcile_exploration_token(character: Dictionary, wanted: Dictionary, traveled: bool) -> void:
+	var lead := _lead_actor(character)
+	if lead.is_empty():
+		return
+	var actor_id := String(lead.get("id", ""))
+	if actor_id == "":
+		return
+	wanted[actor_id] = true
+	var tok: CharacterToken = _tokens.get(actor_id, null)
+	var is_new := tok == null
+	if is_new:
+		tok = _spawn_token(actor_id)
+		if tok != null:
+			_tokens[actor_id] = tok
+	if tok != null:
+		# Exploration tokens carry the neutral ally tint (no hostile wash).
+		_apply_team_tint(tok, actor_id, "ally")
+		var target_pos := _foreground_pos()
+		_reconcile_token_motion(tok, actor_id, target_pos, is_new, traveled)
+
+
+## #1060 — spawn/reconcile a token for EVERY combatant at its named zone, team-tinted.
+## Each token is keyed by its engine_actor_id (combat token `id`); foes render with the
+## committed placeholder (no per-actor atlas) plus a hostile tint so they read as enemies.
+func _reconcile_combat_tokens(combat_tokens: Array, wanted: Dictionary, traveled: bool) -> void:
+	for entry in combat_tokens:
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		var t: Dictionary = entry
+		var actor_id := String(t.get("id", ""))
+		if actor_id == "":
+			continue
+		wanted[actor_id] = true
+		var tok: CharacterToken = _tokens.get(actor_id, null)
+		var is_new := tok == null
+		if is_new:
+			tok = _spawn_token(actor_id)
+			if tok != null:
+				_tokens[actor_id] = tok
+		if tok == null:
+			continue
+		# Renderer-owned team tint (foe = hostile red wash, ally = neutral).
+		_apply_team_tint(tok, actor_id, String(t.get("team", "ally")))
+		# Derive the screen position from the engine's named ZONE (never the x/y hint).
+		var target_pos := _combat_token_pos(t)
+		_reconcile_token_motion(tok, actor_id, target_pos, is_new, traveled)
+
+
+## #1060 — the combat token list (combat.tokens[]) or [] if absent/empty/malformed.
+func _combat_token_list(combat: Dictionary) -> Array:
+	var toks: Variant = combat.get("tokens", [])
+	return toks if typeof(toks) == TYPE_ARRAY else []
+
+
+## #1060 — screen position for a combat token: its named zone's anchor (the derived,
+## projection-correct placement). Falls back to the foreground when the zone is unknown
+## this tick (e.g. a combatant in a zone the profile/atlas didn't declare), so a token
+## is never lost off-stage.
+func _combat_token_pos(token: Dictionary) -> Vector2:
+	var zone := String(token.get("zone", ""))
+	if zone != "" and _zone_screen.has(zone):
+		return _zone_screen[zone]
+	return _foreground_pos()
+
+
+## #1060 — apply the renderer-owned TEAM tint to a token's sprite (idempotent). Modulate
+## is pure presentation; it touches no game state. Cached so a re-tint is a no-op.
+func _apply_team_tint(tok: CharacterToken, actor_id: String, team: String) -> void:
+	var tint := _team_tint(team)
+	if _token_team_tint.get(actor_id, null) == tint:
+		return
+	tok.set_team_tint(tint)
+	_token_team_tint[actor_id] = tint
+
+
+## #1060 — map a team string to its modulate Color. foe → hostile red; ally → neutral;
+## anything else → a faint cool wash so unknown teams still read as "not an ally".
+func _team_tint(team: String) -> Color:
+	match team.to_lower():
+		"foe", "enemy", "monster", "hostile":
+			return TEAM_TINT_FOE
+		"ally", "pc", "companion", "friendly":
+			return TEAM_TINT_ALLY
+		_:
+			return TEAM_TINT_NEUTRAL
 
 
 ## #1055 — drive ONE token to its new screen position with renderer-derived facing.
@@ -580,7 +697,12 @@ func _resolve_character_sheet(actor_id: String) -> Dictionary:
 		var resolved := _load_sheet_dir(dir)
 		if not resolved.is_empty():
 			return resolved
-	return {}
+	# #1060 — FALLBACK-SAFE default: a combatant without its OWN committed asset dir
+	# (every foe/NPC today) renders with the shared committed placeholder. The team
+	# tint (_apply_team_tint) is what distinguishes it visually. Without this, foes
+	# would silently fail to spawn (_spawn_token returns null), losing the roster.
+	var default_dir: String = CHAR_ASSET_ROOT + DEFAULT_CHAR_SLUG + "/"
+	return _load_sheet_dir(default_dir)
 
 
 ## Ordered, de-duplicated slug candidates for an actor's committed asset dir.
