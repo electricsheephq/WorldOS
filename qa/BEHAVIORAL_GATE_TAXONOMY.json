@@ -260,6 +260,12 @@
       "retest": "bash qa/run_combat_sprint.sh sprint-retest",
       "hint": "A Fighter took >25% HP but ended with Second Wind unused — a tactical-adherence smell. Reinforce 'use signature class features when warranted' in the DM/angry-DM guidance. WARN only."
     },
+    "maneuver_rider_consumed": {
+      "category": "DM_ADHERENCE",
+      "likely_code_locations": ["servers/engine/server.py", "qa/rubric_angry_dm.md", "skills/dungeon-master/SKILL.md"],
+      "retest": "bash qa/run_combat_sprint.sh sprint-retest",
+      "hint": "A maneuver / to-hit rider (Battle Master superiority die, War-Domain Guided Strike) was spent via use_resource but the following attack did not fold the bonus in (the +Nd8 damage or +10 to-hit was dropped). Check the use_resource -> attack pending-bonus fold (server.py) + the DM's two-step maneuver usage. WARN only."
+    },
     "signature_feature_exercised": {
       "category": "DM_ADHERENCE",
       "likely_code_locations": ["qa/play_prompt_combat_sprint.txt", "qa/rubric_angry_dm.md", "servers/engine/combat.py"],
