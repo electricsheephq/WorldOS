@@ -1,14 +1,105 @@
 {
-  "_comment": "Fixture mirroring the REAL /events response (viewer/server.py /events route): {entries, next, sid}. Each entry is a {kind, text, label?, seq?, sid?} record. One harmless narration row so listeners get a shaped payload standalone.",
+  "_comment": "Fixture mirroring the REAL /events response (viewer/server.py /events route): {entries, next, sid}. Entry 0 is a harmless narration row (the #1055 exploration smoke). Entries 1..N are an Action-Replay COMBAT sequence in the #645 envelope shape {seq, actor_fk, verb, target_fk, result, anim_hint} (docs/roadmap/contracts/action-replay-envelope.md) referencing the actor ids in combat-surface-active.json. Driven by Main.gd's --combat-replay mode (which first spawns the combat roster from the active combat snapshot, then plays these beats). In a plain exploration boot only on-stage actors animate; off-stage combatants are accept-and-ignored (no crash), and the narrate verb is accept-and-ignored too.",
   "entries": [
     {
       "kind": "narration",
+      "verb": "narrate",
       "label": "DM",
       "text": "The Lower City breathes around you — gulls wheel over the harbor, and the gate guards wave the party through.",
       "seq": 0,
       "sid": "fixture-session"
+    },
+    {
+      "seq": 1,
+      "actor_fk": "char-aubree",
+      "verb": "move_to_zone",
+      "target_fk": "the market row",
+      "result": { "outcome": "moved", "zone": "the market row" },
+      "anim_hint": "zone_move",
+      "sid": "fixture-session"
+    },
+    {
+      "seq": 2,
+      "actor_fk": "char-aubree",
+      "verb": "attack",
+      "target_fk": "npc-cultist-1",
+      "result": { "outcome": "hit", "roll": { "d20": 17, "total": 21 } },
+      "anim_hint": "melee_swing",
+      "sid": "fixture-session"
+    },
+    {
+      "seq": 3,
+      "actor_fk": "char-aubree",
+      "verb": "damage",
+      "target_fk": "npc-cultist-1",
+      "result": { "outcome": "hit", "damage": { "total": 8, "type": "slashing" }, "hp_after": 6, "hp_max": 14 },
+      "anim_hint": "damage_flinch",
+      "sid": "fixture-session"
+    },
+    {
+      "seq": 4,
+      "actor_fk": "npc-cultist-1",
+      "verb": "condition",
+      "target_fk": "npc-cultist-1",
+      "result": { "outcome": "bloodied", "hp_after": 6, "hp_max": 14 },
+      "anim_hint": "status_apply",
+      "sid": "fixture-session"
+    },
+    {
+      "seq": 5,
+      "actor_fk": "npc-ogre-1",
+      "verb": "attack",
+      "target_fk": "char-companion-1",
+      "result": { "outcome": "hit", "roll": { "d20": 14, "total": 19 } },
+      "anim_hint": "melee_swing",
+      "sid": "fixture-session"
+    },
+    {
+      "seq": 6,
+      "actor_fk": "npc-ogre-1",
+      "verb": "damage",
+      "target_fk": "char-companion-1",
+      "result": { "outcome": "hit", "damage": { "total": 11, "type": "bludgeoning" }, "hp_after": 7, "hp_max": 22 },
+      "anim_hint": "damage_flinch",
+      "sid": "fixture-session"
+    },
+    {
+      "seq": 7,
+      "actor_fk": "char-companion-1",
+      "verb": "cast",
+      "target_fk": "char-companion-1",
+      "result": { "outcome": "heal", "amount": 9, "hp_after": 16, "hp_max": 22 },
+      "anim_hint": "heal_pulse",
+      "sid": "fixture-session"
+    },
+    {
+      "seq": 8,
+      "actor_fk": "char-aubree",
+      "verb": "attack",
+      "target_fk": "npc-cultist-1",
+      "result": { "outcome": "hit", "roll": { "d20": 19, "total": 23 } },
+      "anim_hint": "melee_swing",
+      "sid": "fixture-session"
+    },
+    {
+      "seq": 9,
+      "actor_fk": "char-aubree",
+      "verb": "damage",
+      "target_fk": "npc-cultist-1",
+      "result": { "outcome": "hit", "damage": { "total": 7, "type": "slashing" }, "hp_after": 0, "hp_max": 14 },
+      "anim_hint": "damage_flinch",
+      "sid": "fixture-session"
+    },
+    {
+      "seq": 10,
+      "actor_fk": "npc-cultist-1",
+      "verb": "death",
+      "target_fk": "npc-cultist-1",
+      "result": { "outcome": "dead", "hp_after": 0 },
+      "anim_hint": "death_fall",
+      "sid": "fixture-session"
     }
   ],
-  "next": 1,
+  "next": 11,
   "sid": "fixture-session"
 }

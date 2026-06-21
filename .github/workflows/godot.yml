@@ -154,6 +154,19 @@ jobs:
           # Five combatants -> five spawned tokens, each at its zone, foes tinted + allies neutral.
           grep -qE "\[CombatTokens\] RESULT ok=true count=5/5 all_zoned=true team_tinted=true \(foes=true allies=true\)" /tmp/combat.log
 
+      - name: Conformance — combat Action-Replay animates each beat (#645)
+        run: |
+          set -euxo pipefail
+          # Spawn the ACTIVE combat roster, then play the COMBAT beats from
+          # fixtures/events.json (the #645 Action-Replay envelope: attack/cast/damage/
+          # heal/condition/death/move_to_zone) through the SAME enqueue_replay the live
+          # /events poll uses, and assert the ENGINE-DECIDED beats were SHOWN: the death
+          # beat freed the dying token, a heal raised the target HP bar to the engine's
+          # 16/22, the attacker faced its target (renderer-derived facing), queue drained.
+          # 1200 frames (~20s headless) covers the boot-drain settle + the ~4.4s exchange.
+          godot --headless --path godot --quit-after 1200 -- --combat-replay 2>&1 | tee /tmp/replay.log
+          grep -qE "\[CombatReplay\] RESULT ok=true death-freed=true heal-hp-raised=true attack-faced=true drained=true" /tmp/replay.log
+
       - name: Export validation — Web (single-threaded) + Linux
         working-directory: godot
         run: |
@@ -174,8 +187,12 @@ jobs:
           mkdir -p ci-artifacts
           cp /tmp/wos_godot_occlusion_*.png ci-artifacts/ 2>/dev/null || true
           grep -E "\[DEMO\] occlusion" /tmp/demo.log || echo "demo: no occlusion line (software-GL may be unavailable on the runner)"
+          # #645 — a combat Action-Replay beat animating on the iso tiles (best-effort).
+          xvfb-run -a -s "-screen 0 1280x720x24" godot --path godot --demo-combat --quit-after 1200 2>&1 | tee /tmp/demo_combat.log || true
+          cp /tmp/wos_godot_combat_replay.png ci-artifacts/ 2>/dev/null || true
+          grep -E "\[DemoCombat\] screenshot" /tmp/demo_combat.log || echo "demo-combat: no screenshot line (software-GL may be unavailable on the runner)"
 
-      - name: Upload occlusion screenshots
+      - name: Upload occlusion + combat-replay screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:

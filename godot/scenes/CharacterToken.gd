@@ -25,6 +25,28 @@ const PROJECTION_LOCK := "dimetric-2to1"
 ## How long set_zone_target's position tween runs (seconds). #1055 may override.
 const MOVE_TWEEN_SEC := 0.45
 
+## #1060 combat Action-Replay timings (deterministic + FRAME-BOUNDED — no unbounded
+## tweens; every beat resolves inside a known wall-clock so the replay queue always
+## drains). Kept short so a multi-beat exchange reads as one brisk animated turn.
+const ATTACK_ANIM_SEC := 0.5    ## attack/cast clip dwell before returning to idle
+const FLASH_SEC := 0.3          ## damage red / condition flash (each direction)
+const HEAL_PULSE_SEC := 0.35    ## heal green/gold pulse (each direction)
+const DEATH_FADE_SEC := 0.5     ## death fade-to-transparent before queue_free
+
+## #1060 — renderer-owned flash/pulse modulate targets (pure presentation; the engine
+## ships only the resolved beat, the renderer chooses the color cue).
+const DAMAGE_FLASH_COLOR := Color(1.0, 0.25, 0.2, 1.0)     ## hostile red wash on a hit
+const HEAL_PULSE_COLOR := Color(0.5, 1.0, 0.6, 1.0)        ## restorative green/gold pulse
+const CONDITION_FLASH_COLOR := Color(0.82, 0.7, 1.0, 1.0)  ## arcane violet status flash
+
+## #1060 — HP bar geometry (a slim renderer-owned overlay above the head). Only shown
+## when the engine surfaces hp/hpMax on a beat; otherwise the token has no bar.
+const HP_BAR_W := 44.0
+const HP_BAR_H := 5.0
+const HP_BAR_BG := Color(0.06, 0.06, 0.08, 0.85)
+const HP_BAR_FILL := Color(0.4, 0.85, 0.45, 0.95)
+const HP_BAR_LOW := Color(0.9, 0.4, 0.35, 0.95)  ## fill turns red when wounded (<35%)
+
 ## The engine actor this token stands for (e.g. "char-aubree"). Exposed for #1055
 ## inspect-click selection + reconcile-by-id in WorldView.
 var engine_actor_id: String = ""
@@ -44,6 +66,15 @@ var _frames: SpriteFrames
 var _picker: Area2D
 var _picker_shape: CollisionShape2D
 var _move_tween: Tween
+## #1060 — combat-beat tweens/timers, tracked so a new beat cancels the prior one
+## cleanly (a beat is frame-bounded: it never leaves the sprite mid-flash forever).
+var _fx_tween: Tween
+var _anim_timer: SceneTreeTimer
+## #1060 — true once death has been applied (so a stray later beat can't re-show it).
+var _dead: bool = false
+## #1060 — the slim HP bar (built lazily the first time HP is surfaced on a beat).
+var _hp_bar: Node2D = null
+var _hp_frac: float = -1.0  ## 0..1 when known; <0 == no bar drawn yet
 
 
 func _ready() -> void:
@@ -233,6 +264,114 @@ func set_zone_target(world_pos: Vector2) -> void:
 
 
 # ---------------------------------------------------------------------------
+# #1060 — combat Action-Replay beat presentation. Each returns the beat's bounded
+# duration (seconds) so WorldView's replay queue can serialize beats deterministically
+# (it waits the returned duration before playing the next beat). All effects are
+# RENDERER-OWNED presentation — none touch game state; the engine ships the resolved
+# beat and the token only chooses how to SHOW it. A dead token ignores further beats.
+# ---------------------------------------------------------------------------
+
+## True once death has been applied (a freed/dying token plays no more beats).
+func is_dead() -> bool:
+	return _dead
+
+## Play a one-shot clip (attack/cast), then auto-return to idle after ATTACK_ANIM_SEC.
+## Non-looping clips (attack/cast in the manifest) hold their last frame; the timer
+## restores idle so the token never freezes mid-swing. Returns the bounded duration.
+func play_oneshot(clip_name: String) -> float:
+	if _dead:
+		return 0.0
+	set_anim(clip_name)
+	_arm_idle_return(ATTACK_ANIM_SEC)
+	return ATTACK_ANIM_SEC
+
+## Flash the sprite toward `color` then tween back to the team tint. Used for the
+## damage red flash + the condition status flash. Returns the bounded duration.
+func flash(color: Color, dur: float = FLASH_SEC) -> float:
+	if _dead:
+		return 0.0
+	_start_fx_tween()
+	_sprite.modulate = color
+	_fx_tween.tween_property(_sprite, "modulate", _team_tint, dur)
+	return dur
+
+## A heal pulse: tween UP to the heal color then back to the team tint (so it reads as
+## a restorative glow, not a hit flash). Returns the bounded duration.
+func heal_pulse() -> float:
+	if _dead:
+		return 0.0
+	_start_fx_tween()
+	_fx_tween.tween_property(_sprite, "modulate", HEAL_PULSE_COLOR, HEAL_PULSE_SEC)
+	_fx_tween.tween_property(_sprite, "modulate", _team_tint, HEAL_PULSE_SEC)
+	return HEAL_PULSE_SEC * 2.0
+
+## Set the renderer-owned HP bar to `frac` in [0,1] (clamped). Builds the bar lazily on
+## first call. A no-op-equivalent when frac is unknown (caller passes <0). The bar is
+## pure presentation — it shows the engine-decided hp/hpMax, never recomputes it.
+func set_hp_fraction(frac: float) -> void:
+	if frac < 0.0:
+		return
+	_hp_frac = clampf(frac, 0.0, 1.0)
+	_ensure_hp_bar()
+	if _hp_bar != null:
+		_hp_bar.queue_redraw()
+
+## The HP fraction last surfaced (0..1), or <0 if no HP has been shown yet. For validation.
+func hp_fraction() -> float:
+	return _hp_frac
+
+## Fade the sprite to transparent over DEATH_FADE_SEC, then queue_free the whole token
+## (so a dead combatant leaves the stage). Marks the token dead so no later beat shows
+## it. Returns the bounded duration; the token frees itself when the fade completes.
+func fade_out_and_free() -> float:
+	if _dead:
+		return 0.0
+	_dead = true
+	_cancel_anim_timer()
+	_start_fx_tween()
+	_fx_tween.tween_property(_sprite, "modulate:a", 0.0, DEATH_FADE_SEC)
+	_fx_tween.tween_callback(queue_free)
+	return DEATH_FADE_SEC
+
+
+# --- combat-fx internals ----------------------------------------------------
+
+## (Re)create the single fx tween, killing any prior one so beats never stack.
+func _start_fx_tween() -> void:
+	if _fx_tween != null and _fx_tween.is_valid():
+		_fx_tween.kill()
+	# Restore a clean modulate baseline before the new effect so a cancelled flash
+	# can't leave the sprite stuck on a transient color.
+	if _sprite != null:
+		_sprite.modulate = _team_tint
+	_fx_tween = create_tween()
+
+## Arm a one-shot timer to return to idle after `sec`, cancelling any prior one.
+func _arm_idle_return(sec: float) -> void:
+	_cancel_anim_timer()
+	_anim_timer = get_tree().create_timer(sec)
+	_anim_timer.timeout.connect(func():
+		if is_instance_valid(self) and not _dead:
+			set_anim("idle"))
+
+func _cancel_anim_timer() -> void:
+	# SceneTreeTimers can't be cancelled directly; we just drop our reference and the
+	# guarded callback (is_instance_valid + not _dead) makes a stale fire harmless.
+	_anim_timer = null
+
+## Build the slim HP bar above the head once (a _draw()-based Node2D child).
+func _ensure_hp_bar() -> void:
+	if _hp_bar != null and is_instance_valid(_hp_bar):
+		return
+	_hp_bar = _HpBar.new()
+	_hp_bar.name = "HpBar"
+	_hp_bar.token = self
+	# Sit above the head: the cell top is at -_anchor.y from the foot origin.
+	_hp_bar.position = Vector2(0.0, -_anchor.y - 10.0)
+	add_child(_hp_bar)
+
+
+# ---------------------------------------------------------------------------
 # Inspect-click picker (#1055). Size the Area2D's shape to the body cell so a click
 # anywhere on the token selects it. No input is handled here yet.
 # ---------------------------------------------------------------------------
@@ -256,3 +395,27 @@ func _resize_picker() -> void:
 	# Center the shape over the body: the node origin is at the feet (anchor), so
 	# the cell center is at (-anchor + cell/2) relative to origin.
 	_picker_shape.position = Vector2(-_anchor.x + w * 0.5, -_anchor.y + h * 0.5)
+
+
+# ---------------------------------------------------------------------------
+# #1060 — the slim renderer-owned HP bar (a _draw()-based child centered above the
+# head). It reads the parent token's _hp_frac (engine-decided hp/hpMax); it computes
+# nothing. Drawn centered on the token's screen-x so it tracks the body.
+# ---------------------------------------------------------------------------
+class _HpBar extends Node2D:
+	var token: CharacterToken = null
+
+	func _draw() -> void:
+		if token == null:
+			return
+		var frac: float = token._hp_frac
+		if frac < 0.0:
+			return
+		var w := CharacterToken.HP_BAR_W
+		var h := CharacterToken.HP_BAR_H
+		var x0 := -w * 0.5
+		# Background track.
+		draw_rect(Rect2(x0, 0.0, w, h), CharacterToken.HP_BAR_BG, true)
+		# Filled portion (red when wounded, green otherwise).
+		var fill_col := CharacterToken.HP_BAR_LOW if frac < 0.35 else CharacterToken.HP_BAR_FILL
+		draw_rect(Rect2(x0, 0.0, w * frac, h), fill_col, true)
