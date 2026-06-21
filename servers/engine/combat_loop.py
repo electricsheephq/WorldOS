@@ -25,7 +25,9 @@ from __future__ import annotations
 from typing import Optional
 
 import combat_ai
-from combat_ai import AttackOption, CombatantView, CombatView, Intent
+import dice as dice_mod
+import spells as spells_mod
+from combat_ai import AttackOption, CombatantView, CombatView, Intent, SpellOption
 
 # The two "sides". Party = the player-aligned team (PCs + companions); Enemy = monsters/NPCs.
 _PARTY_KINDS = ("player", "companion")
@@ -91,6 +93,97 @@ def _monster_attack_options(server, ch, c) -> tuple[AttackOption, ...]:
     return tuple(opts) if opts else _pc_attack_options(server, ch)
 
 
+# ── Caster numbers + castable-spell discovery (v2.0a) ────────────────────────────────
+
+def _caster_numbers(server, ch) -> tuple[int, int, int]:
+    """The actor's (spell_attack_bonus, spell_save_dc, caster_level) — computed via the SAME
+    primitives server.spell_save_dc uses (8 + prof + casting-mod / prof + casting-mod), so the
+    AI's numbers match what the DM would see. A non-caster (no casting ability) returns (0,0,0)
+    so the view stays byte-identical to today. v2.0a uses caster_level for heal/cantrip scaling;
+    the DC + attack bonus land for v2.0b offensive scoring. Pure read — never mutates."""
+    try:
+        mod = server._casting_mod(ch)
+    except Exception:
+        return 0, 0, 0
+    prof = int(getattr(ch, "proficiency_bonus", 0))
+    caster_level = int(getattr(ch, "total_level", 0)) or 1
+    return prof + mod, 8 + prof + mod, caster_level
+
+
+def _spell_options(server, ch, caster_level: int, casting_mod: int) -> tuple[SpellOption, ...]:
+    """Discover the actor's castable spells as SpellOptions (v2.0a). For each known/prepared
+    spell that resolves to a curated record WITH an available slot (or a cantrip), build an option:
+    HEALS get is_heal + the expected heal amount at the lowest available slot (avg dice + casting
+    mod) + the casting-time / range; offensive damage/save/cantrip spells are carried best-effort
+    (pick_action ignores them in v2.0a — additive). A non-caster / no-known-spells actor returns ()
+    so the view is byte-identical to today. PURE — reads the sheet + the bundled spell registry,
+    never mutates state, never casts."""
+    names = list(getattr(ch, "spells_prepared", None) or getattr(ch, "spells_known", None) or ())
+    if not names:
+        return ()
+    slots = getattr(ch, "spell_slots", {}) or {}
+    # The available slot levels (a slot with maximum > used), low -> high.
+    avail = sorted(lvl for lvl, s in slots.items() if int(s.maximum) - int(s.used) > 0)
+
+    opts: list[SpellOption] = []
+    seen: set[str] = set()
+    for name in names:
+        key = str(name).strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        try:
+            rec = spells_mod.spell_data(name)  # curated full-automation record (heals live here)
+        except ValueError:
+            continue  # srd524-only spell: no curated mechanics to score in v2.0a (offence = v2.0b)
+        mech = rec.get("mechanics", {}) or {}
+        kind = mech.get("kind", "utility")
+        level = int(rec.get("level", 0) or 0)
+        is_cantrip = level == 0
+        # A leveled spell needs an available slot at >= its level; a cantrip needs none.
+        slot_level = 0 if is_cantrip else next((lvl for lvl in avail if lvl >= level), None)
+        if not is_cantrip and slot_level is None:
+            continue  # no slot can pay for this leveled spell -> not castable this turn
+        rng = _spell_range_ft(rec)
+        is_bonus = "bonus action" in str(rec.get("casting_time", "")).lower()
+        if kind == "heal":
+            eff = spells_mod.resolve_effect(rec, int(slot_level or level), caster_level, casting_mod)
+            heal_expr = eff.get("heal", "")
+            heal_amt = float(dice_mod.average_total(heal_expr)) if heal_expr else 0.0
+            opts.append(SpellOption(
+                name=str(rec.get("name", name)), range_ft=rng, requires_slot=not is_cantrip,
+                is_heal=True, heal_amount=heal_amt, slot_level=int(slot_level or 0),
+                is_bonus_action=is_bonus,
+            ))
+        else:
+            # Offensive / control / utility — carried best-effort for v2.0b (pick_action ignores
+            # these in v2.0a; populating them now keeps the discovery single-sourced + additive).
+            eff = spells_mod.resolve_effect(rec, int(slot_level or level), caster_level, casting_mod)
+            dmg = eff.get("damage", "")
+            value = float(dice_mod.average_total(dmg)) if dmg else 0.0
+            opts.append(SpellOption(
+                name=str(rec.get("name", name)), value=value, range_ft=rng,
+                save_ability=str(eff.get("save_ability", "") or ""),
+                requires_slot=not is_cantrip, slot_level=int(slot_level or 0),
+                is_bonus_action=is_bonus,
+            ))
+    return tuple(opts)
+
+
+def _spell_range_ft(rec: dict) -> int:
+    """Parse a curated spell's free-text `range` ("60 feet", "Touch", "Self") into feet. Touch/
+    Self -> 5 (adjacent); a bare number -> that many feet; anything unparseable -> 60 (a safe
+    default). Pure string parse — the engine/DM still gates true range at cast time."""
+    raw = str(rec.get("range", "") or "").strip().lower()
+    if not raw or raw in ("self",):
+        return 5
+    if "touch" in raw:
+        return 5
+    import re
+    m = re.search(r"(\d+)", raw)
+    return int(m.group(1)) if m else 60
+
+
 def _build_view(server, c, actor) -> CombatView:
     """Assemble the read-only CombatView for `actor` from the live Combat. READ-ONLY — touches
     no state; the loop never mutates here."""
@@ -105,21 +198,43 @@ def _build_view(server, c, actor) -> CombatView:
     allies: list[CombatantView] = []
     for cb in c.combat.order:
         ch = c.characters.get(cb.character_id)
-        if ch is None or ch.id == actor.id or not _alive(ch):
+        if ch is None or ch.id == actor.id:
             continue
+        is_ally = _side_of(ch.kind) == actor_side
+        # A FOE that's down (0 HP / dead) is no longer a target — skip it (today's behavior).
+        # An ALLY at 0 HP but not dead is DOWNED/DYING and is the whole point of v2.0a: include it
+        # (so the healer can see it) even though _alive() is False. A dead ally is never healable.
+        downed = (not getattr(ch, "dead", False)) and int(getattr(ch, "current_hp", 0)) <= 0
+        if is_ally:
+            if not _alive(ch) and not downed:
+                continue  # dead ally — nothing to heal
+        else:
+            if not _alive(ch):
+                continue  # down/dead foe — not a target
         cell = (cb.x, cb.y) if (cb.x is not None and cb.y is not None) else None
         ac, _ = server._effective_armor_class(ch)
         cv = CombatantView(
             id=ch.id, name=ch.name, side=_side_of(ch.kind),
             current_hp=int(ch.current_hp), max_hp=int(ch.max_hp),
             armor_class=int(ac), cell=cell, zone=cb.zone,
+            conditions=tuple(str(getattr(cn, "value", cn)) for cn in getattr(ch, "conditions", ())),
+            downed=bool(downed),
         )
-        (foes if cv.side != actor_side else allies).append(cv)
+        (allies if is_ally else foes).append(cv)
 
     if actor.kind in _ENEMY_KINDS:
         attacks = _monster_attack_options(server, actor, c)
     else:
         attacks = _pc_attack_options(server, actor)
+
+    # Caster numbers + castable spells (v2.0a). A non-caster yields (0,0,0) + () so the view is
+    # byte-identical to today (a party with no healer produces the same fight as pre-PR).
+    atk_bonus, save_dc, caster_level = _caster_numbers(server, actor)
+    try:
+        casting_mod = server._casting_mod(actor)
+    except Exception:
+        casting_mod = 0
+    spells = _spell_options(server, actor, caster_level, casting_mod)
 
     return CombatView(
         actor_id=actor.id,
@@ -135,7 +250,10 @@ def _build_view(server, c, actor) -> CombatView:
         foes=tuple(foes),
         allies=tuple(allies),
         attacks=tuple(attacks),
-        spells=(),  # v1: weapon/natural attacks only; spell EV is a later increment
+        spells=spells,
+        spell_attack_bonus=atk_bonus,
+        spell_save_dc=save_dc,
+        caster_level=caster_level,
     )
 
 
@@ -183,6 +301,26 @@ def _apply_intent(server, campaign_id: str, actor_id: str, intent: Intent) -> di
                 spell_name=intent.spell_name, target_id=intent.target_id,
             )
             entry["result"] = {"spell": intent.spell_name, "target_id": intent.target_id}
+            # HEAL APPLY (v2.0a): cast_spell spends the slot + resolves the heal EXPRESSION but does
+            # NOT auto-bump HP (in real play the DM applies it via apply_healing — see the cast_spell
+            # note). To make the engine-run loop's heal actually raise the ally's HP, roll the
+            # resolved heal expr and call apply_healing — the SAME locked verb the DM uses (sole
+            # writer preserved: cast_spell + apply_healing, no new write path). Inert for any
+            # non-heal cast (effect.kind != "heal") so offensive casts are byte-identical to today.
+            effect = res.get("effect") if isinstance(res, dict) else None
+            if isinstance(effect, dict) and effect.get("kind") == "heal" and intent.target_id:
+                heal_expr = str(effect.get("heal", "") or "")
+                if heal_expr:
+                    rolled = dice_mod.roll(heal_expr)
+                    healed = server.apply_healing(
+                        campaign_id=campaign_id, target_id=intent.target_id,
+                        amount=int(rolled.total),
+                    )
+                    entry["result"]["heal"] = {
+                        "expr": heal_expr, "amount": int(rolled.total),
+                        "healed": healed.get("healed"), "revived": healed.get("revived"),
+                        "hp": healed.get("hp"),
+                    }
         elif intent.kind == "move":
             if intent.to_cell is not None:
                 server.move_to_coords(campaign_id, actor_id, intent.to_cell[0], intent.to_cell[1])

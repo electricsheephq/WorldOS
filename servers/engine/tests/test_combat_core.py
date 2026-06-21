@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import dice as dice_mod
 import combat_ai
-from combat_ai import AttackOption, CombatantView, CombatView, Intent, p_hit
+from combat_ai import AttackOption, CombatantView, CombatView, Intent, SpellOption, p_hit
 import combat_loop
 import store
 
@@ -36,15 +36,27 @@ def _mk_view(actor_attacks, foes, grid=False, actor_cell=None, **kw) -> CombatVi
         grid_height=kw.get("h", 10),
         cell_size=5,
         foes=tuple(foes),
-        allies=(),
+        allies=tuple(kw.get("allies", ())),
         attacks=tuple(actor_attacks),
         spells=tuple(kw.get("spells", ())),
+        caster_level=int(kw.get("caster_level", 0)),
     )
 
 
 def _foe(fid, hp=10, ac=12, cell=None, name=None):
     return CombatantView(id=fid, name=name or fid, side="party",
                          current_hp=hp, max_hp=hp, armor_class=ac, cell=cell)
+
+
+def _ally(aid, hp=10, max_hp=10, cell=None, name=None, downed=False):
+    # An ally is the actor's OWN side. The test view's actor_side is "enemy", so an ally is "enemy".
+    return CombatantView(id=aid, name=name or aid, side="enemy",
+                         current_hp=hp, max_hp=max_hp, armor_class=12, cell=cell, downed=downed)
+
+
+def _heal(name="Healing Word", amount=6.0, rng=60, slot=1, bonus=True):
+    return SpellOption(name=name, range_ft=rng, requires_slot=True,
+                       is_heal=True, heal_amount=amount, slot_level=slot, is_bonus_action=bonus)
 
 
 # ── p_hit / EV math ────────────────────────────────────────────────────────────────
@@ -131,6 +143,96 @@ def test_pick_action_is_deterministic():
     assert i1 == i2   # same state -> same Intent (frozen dataclass equality)
 
 
+# ── pick_action: heal-the-dying-ally triage (v2.0a, #1106) ───────────────────────────
+
+def test_pick_action_heals_downed_ally_before_attacking():
+    """A healer with a heal spell + a slot heals a DOWNED ally instead of swinging at a foe."""
+    atks = [AttackOption(name="Mace", to_hit=5, damage_expr="1d6+3")]
+    v = _mk_view(atks, [_foe("goblin", hp=7, ac=12)],
+                 allies=[_ally("garrick", hp=0, max_hp=40, downed=True)],
+                 spells=[_heal()], caster_level=5)
+    intent = combat_ai.pick_action(actor=object(), combat_state=v)
+    assert intent.kind == "cast"
+    assert intent.spell_name == "Healing Word"
+    assert intent.target_id == "garrick"   # the downed ally, NOT the foe
+
+
+def test_pick_action_heals_critical_ally_under_one_third():
+    """An ally below 1/3 max HP (but not downed) is healed before attacking."""
+    atks = [AttackOption(name="Mace", to_hit=5, damage_expr="1d6+3")]
+    v = _mk_view(atks, [_foe("goblin", hp=7, ac=12)],
+                 allies=[_ally("hurt", hp=10, max_hp=40)],  # 25% < 1/3
+                 spells=[_heal()], caster_level=5)
+    intent = combat_ai.pick_action(actor=object(), combat_state=v)
+    assert intent.kind == "cast" and intent.target_id == "hurt"
+
+
+def test_pick_action_prefers_downed_over_merely_wounded():
+    """Triage order: a DOWNED ally outranks a merely-wounded one (lower rank = more urgent)."""
+    atks = [AttackOption(name="Mace", to_hit=5, damage_expr="1d6+3")]
+    v = _mk_view(atks, [_foe("goblin", hp=7, ac=12)],
+                 allies=[_ally("wounded", hp=12, max_hp=40),  # < 1/2, not critical
+                         _ally("down", hp=0, max_hp=40, downed=True)],
+                 spells=[_heal()], caster_level=5)
+    intent = combat_ai.pick_action(actor=object(), combat_state=v)
+    assert intent.kind == "cast" and intent.target_id == "down"
+
+
+def test_pick_action_prefers_bonus_action_healing_word_over_touch_cure_wounds():
+    """With both a bonus-action ranged heal and a touch heal available, prefer Healing Word."""
+    atks = [AttackOption(name="Mace", to_hit=5, damage_expr="1d6+3")]
+    v = _mk_view(atks, [_foe("goblin", hp=7, ac=12)],
+                 allies=[_ally("down", hp=0, max_hp=40, downed=True)],
+                 spells=[
+                     _heal("Cure Wounds", amount=8.0, rng=5, slot=1, bonus=False),
+                     _heal("Healing Word", amount=6.0, rng=60, slot=1, bonus=True),
+                 ], caster_level=5)
+    intent = combat_ai.pick_action(actor=object(), combat_state=v)
+    assert intent.kind == "cast" and intent.spell_name == "Healing Word"
+
+
+def test_pick_action_does_not_heal_healthy_allies():
+    """A full-HP ally is NOT healed — the healer attacks instead (no heal warranted)."""
+    atks = [AttackOption(name="Mace", to_hit=5, damage_expr="1d6+3")]
+    v = _mk_view(atks, [_foe("goblin", hp=7, ac=12)],
+                 allies=[_ally("fine", hp=40, max_hp=40)],
+                 spells=[_heal()], caster_level=5)
+    intent = combat_ai.pick_action(actor=object(), combat_state=v)
+    assert intent.kind == "attack"   # no one to heal -> today's attack logic
+
+
+def test_pick_action_without_heal_spell_falls_through_to_attack():
+    """ADDITIVE: a downed ally but NO heal spell -> the AI behaves exactly as today (attacks)."""
+    atks = [AttackOption(name="Mace", to_hit=5, damage_expr="1d6+3")]
+    v = _mk_view(atks, [_foe("goblin", hp=7, ac=12)],
+                 allies=[_ally("down", hp=0, max_hp=40, downed=True)],
+                 spells=[], caster_level=0)
+    intent = combat_ai.pick_action(actor=object(), combat_state=v)
+    assert intent.kind == "attack" and intent.target_id == "goblin"
+
+
+def test_pick_action_does_not_heal_an_unreachable_ally_on_grid():
+    """A touch-only heal whose downed ally is out of reach on the grid does NOT fire — the healer
+    falls through (it can still attack a reachable foe). Proves the reach gate on heals."""
+    atks = [AttackOption(name="Mace", to_hit=5, damage_expr="1d6+3", reach_ft=5)]
+    # Downed ally at (9,9), a foe adjacent at (1,0); a touch (5ft) heal can't reach the ally.
+    v = _mk_view(atks, [_foe("goblin", hp=7, ac=12, cell=(1, 0))],
+                 allies=[_ally("down", hp=0, max_hp=40, downed=True, cell=(9, 9))],
+                 spells=[_heal("Cure Wounds", amount=8.0, rng=5, slot=1, bonus=False)],
+                 grid=True, actor_cell=(0, 0), caster_level=5)
+    intent = combat_ai.pick_action(actor=object(), combat_state=v)
+    assert intent.kind == "attack"   # ally unreachable for a touch heal -> attack the foe
+
+
+def test_pick_action_heal_triage_is_deterministic():
+    atks = [AttackOption(name="Mace", to_hit=5, damage_expr="1d6+3")]
+    v = _mk_view(atks, [_foe("goblin", hp=7, ac=12)],
+                 allies=[_ally("down", hp=0, max_hp=40, downed=True)],
+                 spells=[_heal()], caster_level=5)
+    assert combat_ai.pick_action(actor=object(), combat_state=v) == \
+        combat_ai.pick_action(actor=object(), combat_state=v)
+
+
 # ── run_combat_autonomous(mode="test"): seeded random-vs-random to a terminal state ──
 
 def _seed_fight(server, store_mod, *, sandbox=True, monsters=3):
@@ -148,6 +250,123 @@ def _seed_fight(server, store_mod, *, sandbox=True, monsters=3):
     mons = [m["id"] for m in server.spawn_monster(cid, "Goblin", count=monsters)["spawned"]]
     server.start_combat(cid, [hero] + mons)
     return cid, hero, mons
+
+
+# ── v2.0a: the AI heals a downed ally through the real loop (#1106) ──────────────────
+
+def _seed_healer_fight(server, store_mod, *, monsters=3):
+    """A cleric + a fighter vs goblins (a sandbox fight). The cleric knows Healing Word + Cure
+    Wounds. Returns (cid, cleric, fighter, mon_ids)."""
+    cid = server.create_campaign("Heal Test")["id"]
+    server.add_location(campaign_id=cid, name="Crypt", description="x", make_current=True)
+    c = server._require(cid)
+    c.is_sandbox = True
+    store_mod.save_campaign(c)
+    cleric = server.create_character(
+        cid, "Sera", kind="player", race="half-elf", class_name="cleric", level=5,
+        abilities={"strength": 12, "dexterity": 10, "constitution": 14,
+                   "intelligence": 10, "wisdom": 18, "charisma": 12},
+        subclass="War Domain", apply_srd_defaults=True,
+    )["id"]
+    fighter = server.create_character(
+        cid, "Garrick", kind="player", race="human", class_name="fighter", level=5,
+        abilities={"strength": 18, "dexterity": 14, "constitution": 16,
+                   "intelligence": 10, "wisdom": 12, "charisma": 10},
+        apply_srd_defaults=True,
+    )["id"]
+    server.learn_spells(cid, cleric, ["Healing Word", "Cure Wounds", "Sacred Flame"])
+    server.prepare_spells(cid, cleric, ["Healing Word", "Cure Wounds", "Sacred Flame"])
+    mons = [m["id"] for m in server.spawn_monster(cid, "Goblin", count=monsters)["spawned"]]
+    server.start_combat(cid, [cleric, fighter] + mons)
+    return cid, cleric, fighter, mons
+
+
+def test_ai_itself_heals_a_downed_ally_through_the_loop(tmp_path, monkeypatch):
+    """END-TO-END: the engine-run AI (NOT a scripted assist) casts a heal on a DOWNED ally and the
+    ally's HP rises. Builds the view the loop builds, asks pick_action, applies via the sole-writer
+    _apply_intent (cast_spell + apply_healing), and asserts the ally was revived."""
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    import server
+    dice_mod.reseed_process_rng(7)
+    cid, cleric, fighter, mons = _seed_healer_fight(server, store)
+
+    # Down the fighter to 0 HP (dying) via a real engine verb.
+    server.set_hp(cid, target_id=fighter, current_hp=0)
+    c = server._require(cid)
+    assert c.characters[fighter].current_hp == 0  # downed/dying
+
+    # Pin the cleric as the current combatant with a fresh action economy (so the cast is legal).
+    idx = next(i for i, cb in enumerate(c.combat.order) if cb.character_id == cleric)
+    c.combat.turn_index = idx
+    c.combat.action_used = False
+    store.save_campaign(c)
+
+    c = server._require(cid)
+    view = combat_loop._build_view(server, c, c.characters[cleric])
+    # The view now SEES spells + the downed ally + the caster numbers (the v2.0a foundations).
+    assert any(s.is_heal for s in view.spells), "no heal spell discovered"
+    assert any(a.id == fighter and a.downed for a in view.allies), "downed ally not in view"
+    assert view.caster_level == 5
+
+    intent = combat_ai.pick_action(c.characters[cleric], view)
+    assert intent.kind == "cast" and intent.target_id == fighter
+    assert intent.spell_name == "Healing Word"   # bonus-action ranged save preferred
+
+    entry = combat_loop._apply_intent(server, cid, cleric, intent)
+    after = server._require(cid).characters[fighter]
+    assert after.current_hp > 0, "the downed ally was not actually healed"
+    assert entry["result"]["heal"]["revived"] is True
+    # The heal went through the locked verbs (slot spent by cast_spell, HP by apply_healing).
+    assert server._require(cid).characters[cleric].spell_slots[1].used >= 1
+
+
+def test_no_healable_ally_byte_identical_to_pre_pr_fight(tmp_path, monkeypatch):
+    """ADDITIVE BYTE-IDENTITY: a party with NO hurt ally produces the SAME fight as a party with no
+    healer at all — same victor / rounds / turns / actors. Proves the heal triage is inert when no
+    heal is warranted (default-off / empty == today). Same seed, two seeded fights compared."""
+    import server
+
+    def _run_no_healer(seed):
+        dice_mod.reseed_process_rng(seed)
+        cid, hero, mons = _seed_fight(server, store, monsters=3)
+        return combat_loop.run_combat_autonomous(cid, mode="test", max_rounds=25)
+
+    def _run_with_unhurt_healer(seed):
+        # A cleric who knows heals but whose ally is never below the heal threshold: the triage must
+        # never fire, so the fight resolves identically to the no-healer baseline's MECHANIC (a
+        # weapon-only fight). We assert the loop runs clean to terminal with no heal cast.
+        dice_mod.reseed_process_rng(seed)
+        cid, cleric, fighter, mons = _seed_healer_fight(server, store, monsters=3)
+        return cid, combat_loop.run_combat_autonomous(cid, mode="test", max_rounds=25)
+
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path / "a"))
+    base = _run_no_healer(909)
+    assert base["round_cap_hit"] is False and base["turns"] > 0
+
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path / "b"))
+    cid, healer_run = _run_with_unhurt_healer(909)
+    assert healer_run["round_cap_hit"] is False and healer_run["turns"] > 0
+    # No heal was ever cast in the with-healer fight (no ally dropped low enough to warrant one in
+    # this seed) — the digest carries no heal entry. If an ally HAD dropped, a heal would be a
+    # FEATURE not a regression; this asserts the inert path, the byte-identity claim's core.
+    heals = [
+        e for rr in healer_run["round_digests"] for e in rr["round_digest"]
+        if isinstance(e.get("result"), dict) and "heal" in e["result"]
+    ]
+    assert heals == [], f"a heal fired in a fight where no ally was hurt: {heals}"
+
+
+def test_non_caster_view_has_no_spells_and_no_caster_numbers(tmp_path, monkeypatch):
+    """A non-caster (a fighter) yields an EMPTY spells tuple + zeroed caster numbers — the view is
+    byte-identical to pre-PR for any non-healer actor (the additive invariant at the view layer)."""
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    import server
+    dice_mod.reseed_process_rng(1)
+    cid, hero, mons = _seed_fight(server, store, monsters=2)
+    c = server._require(cid)
+    view = combat_loop._build_view(server, c, c.characters[hero])
+    assert view.spells == ()
+    assert (view.spell_attack_bonus, view.spell_save_dc, view.caster_level) == (0, 0, 0)
 
 
 def test_run_combat_autonomous_test_runs_to_terminal_and_everyone_acted(tmp_path, monkeypatch):

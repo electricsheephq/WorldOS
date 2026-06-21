@@ -127,3 +127,22 @@ def test_part2_covers_every_owner_named_category():
         "utility-buff", "condition-control", "aoe",
     }
     assert required <= cats, f"missing categories: {required - cats}"
+
+
+# ── PART 3: the AI ITSELF heals a downed ally (engine-AI competence v2.0a, #1106) ──────
+
+def test_part3_ai_itself_heals_a_downed_ally():
+    """The COMPETENCE gauge: the REAL combat AI (combat_ai.pick_action over the loop's _build_view)
+    casts a heal on a DOWNED ally on its own — NOT a scripted assist — and the ally's HP rises. This
+    is the v2.0a bar: the view sees spells + the downed ally, and the AI chooses the heal."""
+    server, store_mod = _server_store()
+    p3 = smoke.run_part3(server, store_mod, _SEED)
+    # The foundations: the view sees the healer's spells + the downed ally + a caster level.
+    assert p3["view_sees_heal_spells"], "the AI's view discovered NO heal spells"
+    assert p3["view_sees_downed_ally"], "the AI's view did not see the downed ally"
+    assert p3["caster_level"] >= 1
+    # The competence: the AI chose to CAST a heal AT the downed ally, and the HP actually rose.
+    assert p3["intent_kind"] == "cast", f"AI did not cast (chose {p3['intent_kind']})"
+    assert p3["intent_target_is_downed_ally"], "AI healed the wrong target"
+    assert p3["ally_hp_after"] > p3["ally_hp_before"], "the downed ally's HP did not rise"
+    assert p3["healed"] and p3["revived"], f"ally not revived: {p3['turn_log']}"

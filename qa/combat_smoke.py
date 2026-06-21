@@ -536,6 +536,105 @@ def _assert_spell_effect(category, name, res, before_hp, after_hp, before_slots,
     return True, "resolved"
 
 
+# ── PART 3: the AI ITSELF heals a downed ally (engine-AI competence v2.0a, #1106) ──────
+#
+# PART 1's mechanic-fired table proved the heal VERB resolves via a SCRIPTED assist. PART 3 is
+# the COMPETENCE gauge the owner asked for: it proves the AI *chooses* the heal on its own. It
+# seeds a cleric + a fighter vs goblins, downs the fighter, and asks the REAL combat AI
+# (combat_ai.pick_action over combat_loop._build_view — the exact path the loop runs) what the
+# cleric wants. The PASS bar: the AI returns a `cast` heal Intent at the DOWNED ally (NOT a
+# weapon swing), and applying it through the sole-writer _apply_intent RAISES the ally's HP.
+
+def run_part3(server, store_mod, base_seed: int) -> dict:
+    """Down a fighter beside a cleric and prove the engine-AI heals the ally ITSELF (no scripted
+    assist). Returns a dict with the chosen Intent + the before/after ally HP + a turn log line."""
+    import combat_ai
+    import combat_loop
+    import dice as dice_mod
+
+    sdir = tempfile.mkdtemp(prefix=f"combat_smoke_p3_{base_seed}_")
+    os.environ["WORLDOS_STATE_DIR"] = sdir
+    dice_mod.reseed_process_rng(70000 + base_seed)
+
+    cid = server.create_campaign(title="Heal Triage")["id"]
+    server.add_location(campaign_id=cid, name="Crypt", description="x", make_current=True)
+    server.start_session(cid, title="Heal Triage")
+    c = server._require(cid)
+    c.is_sandbox = True
+    store_mod.save_campaign(c)
+
+    cleric = server.create_character(
+        cid, "Sera", kind="player", race="half-elf", class_name="cleric", level=5,
+        abilities=dict(strength=12, dexterity=10, constitution=14, intelligence=10, wisdom=18, charisma=12),
+        subclass="War Domain", apply_srd_defaults=True,
+    )["id"]
+    fighter = server.create_character(
+        cid, "Garrick", kind="player", race="human", class_name="fighter", level=5,
+        abilities=dict(strength=18, dexterity=14, constitution=16, intelligence=10, wisdom=12, charisma=10),
+        apply_srd_defaults=True,
+    )["id"]
+    server.learn_spells(cid, cleric, ["Healing Word", "Cure Wounds", "Sacred Flame"])
+    server.prepare_spells(cid, cleric, ["Healing Word", "Cure Wounds", "Sacred Flame"])
+    mons = [m["id"] for m in server.spawn_monster(cid, "Goblin", count=3)["spawned"]]
+    server.start_combat(cid, [cleric, fighter] + mons)
+
+    # Down the fighter to 0 HP (dying) via a real engine verb.
+    server.set_hp(cid, target_id=fighter, current_hp=0)
+    c = server._require(cid)
+    idx = next(i for i, cb in enumerate(c.combat.order) if cb.character_id == cleric)
+    c.combat.turn_index = idx
+    c.combat.action_used = False
+    store_mod.save_campaign(c)
+
+    c = server._require(cid)
+    view = combat_loop._build_view(server, c, c.characters[cleric])
+    intent = combat_ai.pick_action(c.characters[cleric], view)
+
+    before = c.characters[fighter].current_hp
+    entry = {}
+    after = before
+    if intent.kind == "cast":
+        entry = combat_loop._apply_intent(server, cid, cleric, intent)
+        after = server._require(cid).characters[fighter].current_hp
+
+    spell_names = [s.name for s in view.spells if s.is_heal]
+    ally_seen = any(a.id == fighter and a.downed for a in view.allies)
+    healed = (intent.kind == "cast" and intent.target_id == fighter and after > before)
+    return {
+        "view_sees_heal_spells": spell_names,
+        "view_sees_downed_ally": ally_seen,
+        "caster_level": view.caster_level,
+        "intent_kind": intent.kind,
+        "intent_spell": intent.spell_name,
+        "intent_target_is_downed_ally": intent.target_id == fighter,
+        "ally_hp_before": before,
+        "ally_hp_after": after,
+        "revived": bool(entry.get("result", {}).get("heal", {}).get("revived")) if entry else False,
+        "healed": healed,
+        "turn_log": (
+            f"Sera (cleric) -> {intent.kind} {intent.spell_name or ''} on the DOWNED Garrick: "
+            f"Garrick {before} -> {after} HP"
+        ),
+    }
+
+
+def _print_part3(p3: dict) -> bool:
+    print("\n" + "=" * 78)
+    print("PART 3 — engine-AI competence v2.0a: the AI ITSELF heals a downed ally (#1106)")
+    print("=" * 78)
+    print(f"  view sees heal spells : {p3['view_sees_heal_spells']}")
+    print(f"  view sees downed ally : {p3['view_sees_downed_ally']}  caster_level={p3['caster_level']}")
+    print(f"  AI Intent             : {p3['intent_kind']} {p3['intent_spell']!r} "
+          f"(target is downed ally: {p3['intent_target_is_downed_ally']})")
+    print(f"  ally HP               : {p3['ally_hp_before']} -> {p3['ally_hp_after']} "
+          f"(revived={p3['revived']})")
+    print(f"  >>> {p3['turn_log']}")
+    ok = bool(p3["healed"] and p3["view_sees_downed_ally"] and p3["view_sees_heal_spells"])
+    print("-" * 78)
+    print(f"  PART 3 (AI heals the dying ally): {'PASS' if ok else 'FAIL'}")
+    return ok
+
+
 # ── reporting ──────────────────────────────────────────────────────────────────────────
 
 def _print_part1(checks, summaries, *, fast: bool):
@@ -618,20 +717,25 @@ def main() -> int:
     )
     part2_ok = _print_part2(results, not_swept_count, not_swept_sample, total_castable)
 
+    p3 = run_part3(server, store_mod, args.seed)
+    part3_ok = _print_part3(p3)
+
     print("\n" + "=" * 78)
-    overall = part1_ok and part2_ok
-    print(f"PART 1 (mechanics fired): {'PASS' if part1_ok else 'FAIL'}")
-    print(f"PART 2 (spells resolve):  {'PASS' if part2_ok else 'FAIL'}")
+    overall = part1_ok and part2_ok and part3_ok
+    print(f"PART 1 (mechanics fired):       {'PASS' if part1_ok else 'FAIL'}")
+    print(f"PART 2 (spells resolve):        {'PASS' if part2_ok else 'FAIL'}")
+    print(f"PART 3 (AI heals dying ally):   {'PASS' if part3_ok else 'FAIL'}")
     print(f"OVERALL: {'PASS' if overall else 'FAIL'}")
     print("=" * 78)
 
     if args.json:
         print("JSON " + json.dumps({
             "seed": args.seed, "fast": args.fast,
-            "part1_ok": part1_ok, "part2_ok": part2_ok, "overall": overall,
+            "part1_ok": part1_ok, "part2_ok": part2_ok, "part3_ok": part3_ok, "overall": overall,
             "mechanics": {k: ck.fired for k, ck in checks.items()},
             "spells": [{"name": r.name, "category": r.category, "status": r.status} for r in results],
             "not_swept_count": not_swept_count, "total_castable": total_castable,
+            "part3": p3,
         }))
 
     return 0 if overall else 1

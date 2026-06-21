@@ -76,19 +76,31 @@ class AttackOption:
 
 @dataclass(frozen=True)
 class SpellOption:
-    """A castable damaging-cantrip or save-or-suck spell the actor knows with an available
-    slot. `save_ability` set => a save spell scored by P(target fails) * value; else an
-    attack/auto cantrip scored like a weapon. EV uses `value` (avg damage, or a control weight)."""
+    """A castable spell the actor knows/prepared with an available slot that can reach a target.
+    Three families share this one option:
+      * a HEAL (`is_heal=True`) — `heal_amount` is the expected HP restored at `slot_level`
+        (v2.0a: the healer triage targets a hurt/downed ALLY, not a foe);
+      * a save-or-suck (`save_ability` set) — scored by P(target fails) * `value`;
+      * an attack/auto cantrip (`save_ability` == "") — scored like a weapon via `value`.
+    EV uses `value` (avg damage / control weight) for offence; `heal_amount` for a heal. v2.0a
+    populates heals correctly + best-effort offence; pick_action only SCORES heals (offence is the
+    v2.0b increment — additive: the offensive options are carried but ignored by the policy today)."""
     name: str
-    value: float                 # EV magnitude: avg damage, or a control-weight for a save-or-suck
+    value: float = 0.0           # EV magnitude: avg damage, or a control-weight for a save-or-suck
     range_ft: int = 60
     save_ability: str = ""       # "" => attack/auto cantrip; else the save (e.g. "wisdom")
     requires_slot: bool = True   # cantrips set False
+    # Healing-spell fields (v2.0a). is_heal => this option restores HP to a chosen TARGET (an ally).
+    is_heal: bool = False
+    heal_amount: float = 0.0     # expected HP restored when cast at slot_level (avg dice + casting mod)
+    slot_level: int = 0          # the slot level this option spends (0 == a cantrip / no slot)
+    is_bonus_action: bool = False  # bonus-action casting time (Healing Word) — preferred for the save
 
 
 @dataclass(frozen=True)
 class CombatantView:
-    """A living combatant the AI reasons about: position + the numbers needed for EV."""
+    """A combatant the AI reasons about: position + the numbers needed for EV. For an ALLY the
+    healer triage also reads `current_hp`/`max_hp` + `downed` (0 HP / dying) to decide who to heal."""
     id: str
     name: str
     side: str                    # "party" (player/companion) or "enemy" (monster/npc)
@@ -98,6 +110,8 @@ class CombatantView:
     cell: Optional[tuple[int, int]] = None   # grid position, or None (zone/theater)
     zone: str = ""
     save_bonuses: dict = field(default_factory=dict)  # ability -> save bonus, for save-spell EV
+    conditions: tuple[str, ...] = ()  # 5e condition names (e.g. "unconscious"), for triage/EV
+    downed: bool = False         # at 0 HP / dying (a downed ally is the top heal-triage priority)
 
 
 @dataclass(frozen=True)
@@ -114,9 +128,14 @@ class CombatView:
     grid_height: int = 0
     cell_size: int = 5
     foes: tuple[CombatantView, ...] = ()    # living opposite-side combatants
-    allies: tuple[CombatantView, ...] = ()  # living same-side combatants (for occupancy)
+    allies: tuple[CombatantView, ...] = ()  # same-side combatants (occupancy + heal triage; incl. downed)
     attacks: tuple[AttackOption, ...] = ()  # the actor's authoritative attack lines
-    spells: tuple[SpellOption, ...] = ()    # the actor's castable damaging/control spells
+    spells: tuple[SpellOption, ...] = ()    # the actor's castable heal/damage/control spells
+    # Caster numbers (v2.0a). caster_level drives heal/cantrip scaling + heal amounts; the
+    # save DC / attack bonus land for v2.0b offensive scoring (0 == a non-caster, today's behavior).
+    spell_attack_bonus: int = 0
+    spell_save_dc: int = 0
+    caster_level: int = 0
 
 
 # ── Pure EV helpers ──────────────────────────────────────────────────────────────────
@@ -214,6 +233,64 @@ def _step_toward(view: CombatView, target: CombatantView, reach_ft: int) -> Opti
     return best if new < cur else None
 
 
+# ── Heal-the-dying-ally triage (v2.0a) ───────────────────────────────────────────────
+
+# An ally below this fraction of max HP is "critical" and worth a heal (after a downed ally,
+# who is always top priority). 1/3 is the v2.0a threshold; the < 1/2 tier is an optional
+# extra rung below it. Pure constants — no morale/personality yet (a v2.0b/tier lever).
+_HEAL_CRITICAL_FRACTION = 1.0 / 3.0
+_HEAL_WOUNDED_FRACTION = 1.0 / 2.0
+
+
+def _heal_priority(ally: CombatantView) -> Optional[int]:
+    """Triage rank for healing `ally`: 0 == downed (0 HP / dying), 1 == critical (< 1/3 max),
+    2 == wounded (< 1/2 max), or None == healthy enough to skip. Lower rank = more urgent.
+    Pure read of the ally's HP/downed flag — no state, no roll."""
+    if ally.downed or ally.current_hp <= 0:
+        return 0
+    max_hp = max(1, int(ally.max_hp))
+    frac = ally.current_hp / max_hp
+    if frac < _HEAL_CRITICAL_FRACTION:
+        return 1
+    if frac < _HEAL_WOUNDED_FRACTION:
+        return 2
+    return None
+
+
+def _pick_heal(view: CombatView) -> Optional[tuple[CombatantView, SpellOption]]:
+    """The (ally, heal-spell) the actor should cast THIS turn, or None when no heal is warranted
+    or possible. Only fires when the actor HAS a heal option AND an ally needs one. Picks the most
+    urgent ally (downed > critical > wounded; ties -> most missing HP, then stable id), then prefers
+    the BONUS-ACTION ranged heal (Healing Word — the classic save) over a touch heal (Cure Wounds)
+    that needs an adjacent target, and a lower-slot heal over a higher one (cheap first). Pure."""
+    heals = [sp for sp in view.spells if sp.is_heal and sp.heal_amount > 0]
+    if not heals:
+        return None
+    # The neediest healable ally: lowest triage rank, then most missing HP, then stable id.
+    best_ally: Optional[tuple] = None  # (rank, -missing, id, CombatantView)
+    for ally in view.allies:
+        rank = _heal_priority(ally)
+        if rank is None:
+            continue
+        missing = max(0, int(ally.max_hp) - int(ally.current_hp))
+        key = (rank, -missing, ally.id)
+        if best_ally is None or key < best_ally[:3]:
+            best_ally = (*key, ally)
+    if best_ally is None:
+        return None
+    target = best_ally[3]
+    # Among heal spells that can REACH this ally, prefer a bonus-action ranged heal, then the
+    # cheapest slot, then the larger expected heal, then stable name (full determinism).
+    reachable = [sp for sp in heals if _in_reach(view, target, sp.range_ft)]
+    if not reachable:
+        return None
+    chosen = min(
+        reachable,
+        key=lambda sp: (not sp.is_bonus_action, sp.slot_level, -sp.heal_amount, sp.name),
+    )
+    return target, chosen
+
+
 # ── The greedy-v1 policy ─────────────────────────────────────────────────────────────
 
 def pick_action(
@@ -225,6 +302,10 @@ def pick_action(
 
     Greedy-v1 (ADR §2), in priority order:
       1. retreat-if-low (disengage+move from the nearest threat) — only when RETREAT_FRACTION>0
+      1.5 heal-the-dying-ally (v2.0a) — ONLY when the actor has a heal spell + a slot AND an
+         ally needs it: a downed/dying ally first, then a critical (< 1/3 max HP) ally, then a
+         wounded (< 1/2) one. Prefers bonus-action ranged Healing Word over touch Cure Wounds.
+         No healable target / no heal spell -> falls straight through to the attack logic (today's behavior).
       2. best in-reach attack (P(hit)*E[damage], focus-fire ties by lowest target HP)
       3. best castable cantrip / save-or-suck spell that can reach
       4. move-to-reach toward the best target (the loop re-asks pick_action so move-then-attack
@@ -265,6 +346,27 @@ def pick_action(
                         to_cell=flee_cell,
                         note=f"retreat-if-low: {cur_hp}/{max_hp} HP, disengage from {threat.name}",
                     )
+
+    # 1.5 Heal-the-dying-ally (v2.0a). HIGH priority — a healer with a slot saves a downed/critical
+    #     ally BEFORE it swings a weapon. Gated inside _pick_heal so it fires ONLY when the actor
+    #     HAS a heal spell + slot AND an ally needs one; otherwise it returns None and we fall
+    #     through to today's attack logic UNCHANGED (additive: a non-caster / no-hurt-ally party is
+    #     byte-identical). Returns a `cast` Intent targeting the ally (the loop's cast_spell ->
+    #     apply_healing sole-writer path applies it).
+    heal = _pick_heal(view)
+    if heal is not None:
+        ally, sp = heal
+        return Intent(
+            kind="cast",
+            target_id=ally.id,
+            spell_name=sp.name,
+            note=(
+                f"heal {ally.name} ({ally.current_hp}/{ally.max_hp} HP"
+                f"{', DOWNED' if ally.downed else ''}) with {sp.name} "
+                f"(~{sp.heal_amount:.0f} HP, L{sp.slot_level}"
+                f"{', bonus action' if sp.is_bonus_action else ''})"
+            ),
+        )
 
     # 2. Best in-reach attack. EV = P(hit)*E[damage]; ties -> lowest-HP target (focus-fire),
     #    then stable target id, then stable attack name (full determinism).
