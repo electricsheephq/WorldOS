@@ -93,14 +93,14 @@ jobs:
       - name: Conformance — SERVED sprite final renders via /image (#1063 part 2)
         run: |
           set -euxo pipefail
-          # Serve the committed REAL placeholder PNG as the SERVED Meshy/Blender "final"
-          # atlas for scope sprite-aubree-iso8 (the PNG is a real decodable 24x8 sheet, so
+          # Serve the committed REAL fighter sheet PNG as the SERVED Meshy/Blender "final"
+          # atlas for scope sprite-fighter-iso8 (the PNG is a real decodable 24x8 sheet, so
           # a MISS can't pass). We use a tiny /image-ONLY stub (not the full viewer): it
           # serves the PNG for /image?scope=... but 404s the SurfaceClient surface
           # endpoints, so the client stays in FIXTURE snapshot mode (party[0]=char-aubree
           # spawns the token) while ImageResolver fetches the SERVED atlas from the same
           # base_url. Pointing at a gameLESS live viewer would empty the party (no token).
-          cp godot/assets/characters/aubree/sheet.png /tmp/served_atlas.png
+          cp godot/assets/characters/fighter/sheet.png /tmp/served_atlas.png
           cat > /tmp/image_stub.py <<'PY'
           import sys, http.server
           PNG = open("/tmp/served_atlas.png", "rb").read()
@@ -124,7 +124,7 @@ jobs:
           trap 'kill $STUB_PID 2>/dev/null || true' EXIT
           # Wait until /image actually serves the PNG (200).
           for i in $(seq 1 50); do
-            code=$(curl -s -o /tmp/served.png -w '%{http_code}' "http://127.0.0.1:${PORT}/image?scope=sprite-aubree-iso8" || true)
+            code=$(curl -s -o /tmp/served.png -w '%{http_code}' "http://127.0.0.1:${PORT}/image?scope=sprite-fighter-iso8" || true)
             if [ "$code" = "200" ]; then echo "[smoke] /image served 200 after ${i} tries"; break; fi
             sleep 0.2
           done
