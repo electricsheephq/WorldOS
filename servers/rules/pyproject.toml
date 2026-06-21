@@ -4,7 +4,7 @@ version = "0.0.1"
 description = "WorldOS rules MCP: D&D 5e SRD lookup (spells, monsters, conditions, rules) with fuzzy matching."
 requires-python = ">=3.11,<3.13"
 dependencies = [
-  "mcp>=1.2.0",
+  "mcp>=1.28.0",
   "httpx>=0.27",
   "rapidfuzz>=3.6",
 ]
