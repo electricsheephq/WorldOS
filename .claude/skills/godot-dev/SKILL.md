@@ -38,3 +38,13 @@ Next: **#1090** (narration/dialogue in-view) → **#1089** (painterly backdrop, 
 ## Dev loop
 Worktree off `origin/main` → additive change → local Godot validate → PR → squash-merge → prune.
 Multi-session repo: never branch-flip the shared checkout; `godot/`-only PRs skip CodeQL.
+
+## Gotchas (cost real time — see HANDOFF.md §8)
+- **`export_presets.cfg` is in Godot's default `.gitignore`, but `godot --headless --export` fails
+  "no preset named X" without it.** Remove it from `.gitignore` and commit minimal Web + Linux
+  presets. Validate a preset locally *without* templates by checking the error is *"export template
+  not found"* (preset OK) vs *"no preset named X"* (preset wrong).
+- **Asset bake output is gitignored — destroyed on `git worktree remove`.** Run the bake
+  (`meshy_gen`/`tripo_gen` → `bake_sprites.py` → `pack_sheet.py`) so finals land in the **canonical**
+  repo's `content/worlds/_private/.../images/<scope>/`, never inside a `WorldOS-worktrees/wt-*/` worktree.
+- Art generation → the **`asset-gen`** skill; integrating a new gen service → **`wire-external-api-service`**.
