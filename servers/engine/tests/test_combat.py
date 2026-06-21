@@ -2261,6 +2261,99 @@ def test_maneuver_on_point_pool_refused_no_spend(tmp_path, monkeypatch):
     assert sheet["pending_damage_bonus"] is None
 
 
+def test_bare_superiority_die_auto_folds_into_next_attack(tmp_path, monkeypatch):
+    # #1 (cs-1040val): a BARE in-combat superiority-die spend (no maneuver=) auto-folds — the
+    # engine rolls the die and the NEXT attack's damage strictly exceeds the weapon by it
+    # (weapon 7 + die 6 = 13), so the die is never burned for nothing.
+    import server
+    cid, hero, gob = _bm_combat(server, monkeypatch, tmp_path, die_total=6, weapon_total=7)
+    spent = server.use_resource(cid, hero, "superiority_dice")  # bare — no maneuver=
+    assert spent["ok"] is True and spent["remaining"] == 5
+    assert "auto_folded" in spent and "warning" not in spent
+    assert spent["maneuver_damage"]["rolled"] == 6  # the die WAS rolled
+    assert server.get_character(cid, hero)["pending_damage_bonus"]["amount"] == 6
+    res = server.attack(cid, hero, gob, attack_bonus=5, damage_dice="1d6+3", damage_type="slashing")
+    assert res["hit"] is True and res["damage"]["total"] == 13  # 7 weapon + 6 die, one hit
+    assert server.get_character(cid, gob)["current_hp"] == 27  # 40 - 13
+
+
+def _war_cleric_combat(server, monkeypatch, tmp_path, *, foe_ac: int, d20: int, weapon_total: int):
+    """A War-Domain-style cleric (Channel Divinity point pool) vs a foe, cleric current, with a
+    rigged roller: d20 -> `d20`, 1d8+3 -> `weapon_total`."""
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("War Cleric")["id"]
+    cleric = server.create_character(cid, "Maren", kind="player", max_hp=24, armor_class=16)["id"]
+    foe = server.create_character(cid, "Bandit", kind="monster", max_hp=20, armor_class=foe_ac)["id"]
+    server.set_class_resource(cid, cleric, "channel_divinity", max=2, recharge="short")  # point pool
+    server.start_combat(cid, [cleric, foe])
+    if server.get_state(cid)["current_turn"] != cleric:
+        server.next_turn(cid)
+    assert server.get_state(cid)["current_turn"] == cleric
+    monkeypatch.setattr(server.dice_mod, "roll", _rigged_roller(d20, {"1d8+3": weapon_total}))
+    return cid, cleric, foe
+
+
+def test_guided_strike_sets_pending_attack_bonus(tmp_path, monkeypatch):
+    # #2: use_resource(channel_divinity, maneuver='Guided Strike') spends a use and stashes a
+    # +10 pending to-hit bonus on the cleric (a POINT pool is allowed for a to-hit option —
+    # it is NOT refused like a damage maneuver would be).
+    import server
+    cid, cleric, foe = _war_cleric_combat(server, monkeypatch, tmp_path, foe_ac=15, d20=8, weapon_total=6)
+    spent = server.use_resource(cid, cleric, "channel_divinity", maneuver="Guided Strike")
+    assert spent["ok"] is True and spent["remaining"] == 1
+    assert spent["attack_bonus"]["attack_bonus"] == 10 and spent["attack_bonus"]["option"] == "Guided Strike"
+    pab = server.get_character(cid, cleric)["pending_attack_bonus"]
+    assert pab is not None and pab["amount"] == 10 and pab["resource"] == "channel_divinity"
+
+
+def test_guided_strike_plus10_turns_miss_into_hit(tmp_path, monkeypatch):
+    # #2 the core fix: a roll of 8 vs AC 15 MISSES (8 < 15), but Guided Strike's +10 folds into
+    # the attack-roll total (18 >= 15) and turns the miss into a hit — the +10 actually lands.
+    import server
+    cid, cleric, foe = _war_cleric_combat(server, monkeypatch, tmp_path, foe_ac=15, d20=8, weapon_total=6)
+    server.use_resource(cid, cleric, "channel_divinity", maneuver="Guided Strike")
+    res = server.attack(cid, cleric, foe, attack_bonus=0, damage_dice="1d8+3", damage_type="bludgeoning")
+    assert res["target_ac"] == 15
+    assert res["attack_roll"]["total"] == 18  # 8 (roll) + 10 (Guided Strike)
+    assert res["attack_roll"]["to_hit_bonus"]["amount"] == 10
+    assert res["hit"] is True  # 18 >= 15 (would be a miss at 8 without the +10)
+    # Consumed once — the pending bonus is cleared and does not carry to a later strike.
+    assert server.get_character(cid, cleric)["pending_attack_bonus"] is None
+
+
+def test_channel_divinity_non_to_hit_maneuver_refused_no_spend(tmp_path, monkeypatch):
+    # REGRESSION: a DAMAGE maneuver name (not a recognized to-hit option) against the
+    # channel_divinity POINT pool is still refused cleanly — no spend, no pending of either kind.
+    import server
+    cid, cleric, foe = _war_cleric_combat(server, monkeypatch, tmp_path, foe_ac=15, d20=8, weapon_total=6)
+    out = server.use_resource(cid, cleric, "channel_divinity", maneuver="Trip Attack")
+    assert out["ok"] is False and "point pool" in out["error"]
+    sheet = server.get_character(cid, cleric)
+    assert sheet["class_resources"]["channel_divinity"]["used"] == 0  # nothing spent
+    assert sheet["pending_attack_bonus"] is None and sheet["pending_damage_bonus"] is None
+
+
+def test_orphaned_pending_riders_cleared_on_next_turn(tmp_path, monkeypatch):
+    # LEAK GUARD: a maneuver die / Guided Strike spent but never consumed by an attack this turn
+    # must NOT carry to a later turn. Use two monsters (their turn advance has no PC-skip guard)
+    # so we can end the spender's turn without attacking.
+    import server
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("Leak")["id"]
+    m1 = server.create_character(cid, "Brute", kind="monster", max_hp=20, armor_class=12)["id"]
+    m2 = server.create_character(cid, "Thug", kind="monster", max_hp=20, armor_class=12)["id"]
+    server.set_class_resource(cid, m1, "superiority_dice", max=4, recharge="short", size="d8")
+    server.start_combat(cid, [m1, m2])
+    if server.get_state(cid)["current_turn"] != m1:
+        server.next_turn(cid)
+    assert server.get_state(cid)["current_turn"] == m1
+    monkeypatch.setattr(server.dice_mod, "roll", _rigged_roller(25, {"1d8": 6}))
+    server.use_resource(cid, m1, "superiority_dice", maneuver="Trip Attack")  # pending set, no attack
+    assert server.get_character(cid, m1)["pending_damage_bonus"] is not None
+    server.next_turn(cid)  # m1's turn ends unused -> the orphaned rider is cleared
+    assert server.get_character(cid, m1)["pending_damage_bonus"] is None
+
+
 def test_maneuver_die_typed_damage_respects_resistance(tmp_path, monkeypatch):
     # A maneuver with an explicit damage_type lands as that type — and a resistant target
     # halves only the maneuver component (the weapon's type is untouched). Trip 'Attack' with

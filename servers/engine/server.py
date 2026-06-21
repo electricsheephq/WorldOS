@@ -90,6 +90,7 @@ from models import (
     HouseRules,
     Item,
     Location,
+    PendingAttackBonus,
     PendingDamageBonus,
     PendingOnHitRider,
     Quest,
@@ -4567,15 +4568,18 @@ def _turn_brief(ch: "Character", c: "Campaign") -> dict:
                     "bloodied foe or land a second Attack action.")
             elif rid_l == "channel_divinity":
                 entry_r["suggested_when"] = (
-                    "Channel Divinity is available (e.g. War Domain Guided Strike: +10 to one "
-                    "attack roll) — spend it to turn a key miss into a hit.")
+                    "Channel Divinity is available — War Domain Guided Strike adds +10 to one "
+                    "attack roll: call use_resource(channel_divinity, maneuver='Guided Strike') "
+                    "then attack, and the engine folds +10 into that roll (turns a key miss "
+                    "into a hit).")
             elif rid_l == "superiority_dice":
                 entry_r["suggested_when"] = (
-                    "Battle Master maneuvers: to add this 1d8 to a strike, declare it ON the "
-                    "attack — attack(maneuver='Trip Attack', maneuver_resource='superiority_dice'). "
-                    "The engine spends the die only on a hit, folds +1d8 into damage, and "
-                    "crit-doubles it. Do NOT spend it via a bare use_resource — that burns the "
-                    "die for no bonus.")
+                    "Battle Master maneuvers: add this 1d8 to a strike by declaring it ON the "
+                    "attack — attack(maneuver='Trip Attack', maneuver_resource='superiority_dice') "
+                    "— so the engine spends the die only on a hit, folds +1d8 into damage, and "
+                    "crit-doubles it. A bare in-combat use_resource(superiority_dice) is now "
+                    "AUTO-FOLDED into your next attack's damage; still name the maneuver so the "
+                    "narration matches the die.")
             resources[rid] = entry_r
     brief["resources"] = resources
     # --- reactions (#A2): surface a monster's stat-block reaction (Parry) so the DM knows
@@ -4743,6 +4747,15 @@ def next_turn(campaign_id: str) -> dict:
         # Attack action's worth of strikes and no Action Surge spent yet.
         c.combat.action_attacks_made = 0
         c.combat.surge_actions = 0
+        # LEAK GUARD (cs-1040val): a maneuver die / Guided Strike bonus rides the attack you
+        # spent it on (SRD: "add it to that attack's roll/damage"). If the outgoing combatant
+        # spent one but never attacked this turn, clear the orphaned pending rider so it can't
+        # silently land on a LATER turn's strike. A rider consumed by an attack this turn is
+        # already None here, so this only nulls true orphans (additive, no behavior change to
+        # the spend→attack same-turn path).
+        if previous is not None:
+            previous.pending_damage_bonus = None
+            previous.pending_attack_bonus = None
         if cur is not None:
             for cb in order:
                 if cb.character_id == cur.id:
@@ -5377,6 +5390,14 @@ def attack(
         man_bonus = attacker.pending_damage_bonus
         if man_bonus is not None:
             attacker.pending_damage_bonus = None
+        # Capture + CLEAR any pending TO-HIT bonus (War Domain Guided Strike: +10 to one attack
+        # roll, #2/cs-1040val) the attacker declared via use_resource(channel_divinity,
+        # maneuver='Guided Strike'). Like the damage-maneuver above it's consumed by THIS one
+        # strike whatever the outcome (already spent) and folded into the attack-roll total
+        # below, BEFORE the hit check. None == no to-hit option spent (the default path).
+        atk_bonus_rider = attacker.pending_attack_bonus
+        if atk_bonus_rider is not None:
+            attacker.pending_attack_bonus = None
         # ATOMIC maneuver (#213/B): a maneuver declared ON this attack rolls + spends its
         # superiority die ONLY when the strike HITS (SRD: spent "when you hit"). Validate the
         # pool NOW (before the roll) so a bad pool surfaces cleanly without burning state, but
@@ -5415,7 +5436,11 @@ def attack(
         # advertises instead of tracking it as theater. Nat-20 auto-hit / nat-1 auto-miss
         # still read the natural die; no riders == atk.total exactly as before.
         rider_bonus, rider_rolls = _roll_effect_bonus_dice(attacker, "attack_bonus_dice")
-        atk_total = atk.total + rider_bonus
+        # Guided Strike (+10) and any other pending flat to-hit bonus fold into the roll total
+        # here — before the hit check — so the bonus can turn a near-miss into a hit. It does
+        # NOT change crit/fumble (those read the natural die), matching SRD Guided Strike.
+        guided_bonus = atk_bonus_rider.amount if atk_bonus_rider is not None else 0
+        atk_total = atk.total + rider_bonus + guided_bonus
         target_ac, target_ac_detail = _effective_armor_class(target)
         hit = atk.crit or (not atk.fumble and atk_total >= target_ac)
         # PARRY (#218): a defender with an available defensive reaction (+N AC vs one melee
@@ -5472,6 +5497,15 @@ def attack(
             # The engine-rolled rider components (SYN-06), itemized so the DM narrates
             # "the blessing guides the blade (+3)" — and sees the buff actually counted.
             result["attack_roll"]["bonus_dice"] = rider_rolls
+        if atk_bonus_rider is not None:
+            # Surface the consumed flat to-hit bonus (Guided Strike +10), folded into `total`
+            # above, so the DM narrates it AND the scorer sees the +10 actually landed on the
+            # roll instead of being announced-then-dropped (the cs-1040val omission).
+            result["attack_roll"]["to_hit_bonus"] = {
+                "amount": atk_bonus_rider.amount,
+                "source": atk_bonus_rider.source,
+                "resource": atk_bonus_rider.resource,
+            }
         if target_ac_detail is not None:
             result["target_ac_detail"] = target_ac_detail
         # Commit the action economy now — an attack spends its action/reaction whether
@@ -8602,6 +8636,14 @@ def long_rest(campaign_id: str, character_id: str, watch: str = "") -> dict:
         return out
 
 
+# Channel-Divinity-style options that grant a flat TO-HIT bonus to one attack roll (not a
+# damage die). Spent via use_resource(channel_divinity, maneuver=<name>) → a one-shot
+# PendingAttackBonus the next attack folds into its roll. Keyed lowercase. The War Domain
+# Cleric's Guided Strike is the canonical +10 (SRD 2014/2024 alike); extend as new subclass
+# to-hit options are modeled. SRD-only: the engine ships the mechanism, not non-SRD numbers.
+_TO_HIT_CHANNEL_OPTIONS = {"guided strike": 10}
+
+
 @mcp.tool()
 def use_resource(
     campaign_id: str,
@@ -8639,12 +8681,26 @@ def use_resource(
                 "remaining": remaining,
                 "max": res.max,
             }
-        # A DAMAGE maneuver adds the spent die to the next attack's damage — so the pool MUST
-        # roll a die. Refuse a maneuver against a point pool (no `size`) up front, BEFORE
-        # spending, so the DM gets a clean signal instead of a silently-wasted point with no
-        # bonus (and no phantom pending record gets written). Inert when `maneuver` is empty.
+        # A named maneuver/option folds into the NEXT attack one of two ways: a DAMAGE-die
+        # maneuver (Battle Master Trip/Menacing — adds the spent die to that attack's DAMAGE) or
+        # a flat TO-HIT option (War Domain Guided Strike — +10 to that attack's ROLL). Resolve
+        # the to-hit options FIRST: they ride a POINT pool (channel_divinity) and grant a flat
+        # bonus, so they must NOT trip the die-pool requirement below. Inert when empty.
         man = maneuver.strip()
-        if man and not res.size.strip():
+        to_hit = _TO_HIT_CHANNEL_OPTIONS.get(man.lower()) if man else None
+        # #1 (cs-1040val): a DIE pool (Superiority Dice) spent in active combat with NO
+        # maneuver= is the common Battle Master mistake — the die would burn for no bonus, and
+        # the turn_brief cue didn't stop it. AUTO-FOLD: treat a bare in-combat die spend as a
+        # generic damage maneuver so the rolled die lands on the next attack rather than relying
+        # on the DM to pass maneuver=. Out of combat / a point pool: inert (byte-identical).
+        auto_folded = False
+        if not man and to_hit is None and res.size.strip() and c.combat.active:
+            man = "Maneuver"
+            auto_folded = True
+        # A DAMAGE maneuver needs a DIE pool. A maneuver name that ISN'T a recognized to-hit
+        # option, against a point pool (no `size`), is refused up front — BEFORE spending — so
+        # the DM gets a clean signal instead of a silently-wasted point (no phantom pending).
+        if man and to_hit is None and not res.size.strip():
             return {
                 "ok": False,
                 "error": (
@@ -8657,7 +8713,19 @@ def use_resource(
             }
         res.used += amount
         man_damage = None
-        if man:
+        to_hit_rider = None
+        if to_hit is not None:
+            # A flat TO-HIT option (Guided Strike +10): stash a one-shot attack-roll bonus the
+            # next attack() folds into its roll BEFORE the hit check (engine-rolls-and-tells).
+            ch.pending_attack_bonus = PendingAttackBonus(
+                amount=int(to_hit), source=man, resource=resource,
+            )
+            to_hit_rider = {
+                "option": man,
+                "attack_bonus": int(to_hit),
+                "applies_to": "next attack roll",
+            }
+        elif man:
             # Roll the spent die(s) NOW (engine-rolls-and-tells, like an on-hit rider): one
             # source of truth — the result is fixed at declare time, and the next attack just
             # reads it. `amount` × the pool's die size (1 die per maneuver in 5e RAW, so this
@@ -8705,16 +8773,15 @@ def use_resource(
         }
         if man_damage is not None:
             out["maneuver_damage"] = man_damage
-        # FOOTGUN ADVISORY (#213 follow-up): a die-pool resource (Superiority Dice) spent in
-        # active combat WITHOUT maneuver= burns the die for no damage bonus — the common Battle
-        # Master mistake. ADVISORY ONLY: the spend already happened and is correct (you may
-        # legitimately spend a die for a non-damage maneuver the engine doesn't model), so we
-        # do NOT block — we only surface a steer toward the attack(maneuver=) path. Inert unless
-        # the pool has a die AND no maneuver was declared AND combat is live.
-        if res.size.strip() and not man and c.combat.active:
-            out["warning"] = (
-                f"{resource!r} is a die pool but no maneuver= was declared — this die added no "
-                "damage bonus. To fold +1d8 into a strike, declare it ON the attack instead: "
+        if to_hit_rider is not None:
+            out["attack_bonus"] = to_hit_rider
+        # #1 (cs-1040val): a bare in-combat die-pool spend was AUTO-FOLDED into the next attack
+        # as a generic damage maneuver (replacing the old advisory-only warning that the DM kept
+        # ignoring). Surface what happened so the DM can name the maneuver next time.
+        if auto_folded:
+            out["auto_folded"] = (
+                f"no maneuver= was declared — the engine auto-rolled this {resource} die and "
+                "folded it into your NEXT attack's damage. Name it next time, e.g. "
                 "attack(maneuver='Trip Attack', maneuver_resource='superiority_dice')."
             )
         return out

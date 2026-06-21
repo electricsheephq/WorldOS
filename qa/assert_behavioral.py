@@ -1164,6 +1164,49 @@ def main() -> int:
     if attacks:
         chk("ranged_disadvantage_in_melee", not ranged_flags, "; ".join(ranged_flags), fatal=False)
 
+    # cs-1040val (#1/#2): a class-feature rider spent via use_resource MUST be consumed by a
+    # following attack — a Battle Master superiority die appears in that attack's DAMAGE, and a
+    # War Domain Guided Strike's +10 in its attack ROLL. The engine now auto-folds the die and
+    # surfaces the +10, so this catches the residual "burned the resource but never attacked"
+    # sequencing miss (the exact cs-1040val omission: die/+10 spent, narrated as landing, but no
+    # attack carried it). The pending rider is consumed by the spender's FIRST subsequent attack,
+    # so we check that attack. WARN, not FATAL — a sequencing miss is a DM-adherence defect that
+    # should surface to the scorer, not RED-cap the whole run (graduate to FATAL after clean
+    # sweeps, per the gate-graduation discipline).
+    def _spender(inp_dict: dict) -> str:
+        return inp_dict.get("character_id") or inp_dict.get("actor_id") or ""
+
+    def _attacker_id(inp_dict: dict) -> str:
+        return (inp_dict.get("attacker_id") or inp_dict.get("character_id")
+                or inp_dict.get("npc_id") or "")
+
+    dangling_riders: list[str] = []
+    for i, (short, inp, obj, is_err, _t) in enumerate(evs):
+        if short != "use_resource" or is_err or not isinstance(obj, dict):
+            continue
+        sets_dmg = bool(obj.get("maneuver_damage") or obj.get("auto_folded"))
+        sets_hit = bool(obj.get("attack_bonus"))
+        if not (sets_dmg or sets_hit):
+            continue  # an ordinary resource spend (no pending attack rider) — nothing to track
+        spender = _spender(inp)
+        consumed = False
+        for short2, inp2, obj2, is_err2, _t2 in evs[i + 1:]:
+            # a later rider-setting spend by the same spender supersedes this one — stop here
+            if (short2 == "use_resource" and _spender(inp2) == spender
+                    and isinstance(obj2, dict)
+                    and (obj2.get("maneuver_damage") or obj2.get("auto_folded") or obj2.get("attack_bonus"))):
+                break
+            if short2 == "attack" and isinstance(obj2, dict) and _attacker_id(inp2) == spender:
+                ar = obj2.get("attack_roll") or {}
+                consumed = (sets_dmg and bool(obj2.get("maneuver_damage"))) or \
+                           (sets_hit and bool(ar.get("to_hit_bonus")))
+                break  # the FIRST attack consumes the pending rider, carried or not
+        if not consumed:
+            kind = "Guided Strike +10" if sets_hit else "superiority die"
+            src = obj.get("resource") or "?"
+            dangling_riders.append(f"{spender or '?'} spent a {kind} ({src}) but no following attack carried it")
+    chk("maneuver_rider_consumed", not dangling_riders, "; ".join(dangling_riders), fatal=False)
+
     fails = [c for c in checks if c[2] and not c[1]]
     warns = [c for c in checks if not c[2] and not c[1]]
     print("=== behavioral assertions ===")
