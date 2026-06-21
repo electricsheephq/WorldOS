@@ -1112,3 +1112,258 @@ def test_ordinary_resource_spend_not_tracked(tmp_path):
     ]
     rc, out = _run_gate(tmp_path, events, _with_party({}))
     assert "[PASS] maneuver_rider_consumed" in out, out
+
+
+# ── #1040 scorer-opt: deterministic 5e checks migrated from the Angry-DM lens ──────────
+# Each new WARN check is exercised in BOTH a tripping case and a clean/scope-guarded-silent case.
+
+def _run_gate_chat(tmp_path, events, state, env=None):
+    """Like _run_gate but supplies a 6-beat chat log so session_beats>=MIN_BEATS — needed for
+    the substantial-run scope-guards (caster/multiattack are gated on a real session). Returns
+    (returncode, stdout+stderr).
+
+    The 6-beat session arms the PRE-EXISTING world-progression FATAL floor (world_advanced_time /
+    party_traveled), so we also seed an advanced clock + two visited locations by default — these
+    are unrelated to the new #1040 checks and would otherwise RED the run on a baseline gate. A
+    fixture that sets its own day/locations keeps them."""
+    state = _with_party(state)
+    state.setdefault("day", 2)  # clock moved → world_advanced_time PASSes (baseline floor)
+    state.setdefault("current_location_id", "loc_b")
+    state.setdefault("locations", {"loc_a": {"visited": True}, "loc_b": {"visited": True}})
+    events = list(events)
+    if not _has_dice(events):
+        events = [_assistant_tool_use("__dice", "mcp__engine__roll", {}),
+                  _user_tool_result("__dice", json.dumps({"total": 12}))] + events
+    run = tmp_path / "run.jsonl"
+    run.write_text("\n".join(json.dumps(e) for e in events), encoding="utf-8")
+    st = tmp_path / "state.json"
+    st.write_text(json.dumps(state), encoding="utf-8")
+    chat = _enough_beats_chat(tmp_path)
+    proc = subprocess.run([sys.executable, SCRIPT, str(run), str(st), chat],
+                          capture_output=True, text=True, env=env)
+    return proc.returncode, proc.stdout + proc.stderr
+
+
+# ── multiattack_budget_honored (WARN) ─────────────────────────────────────────────────
+
+def test_multiattack_budget_warns_when_truncated(tmp_path):
+    # A combat ran (start_combat) and Aldric has extra_attacks=1 (budget 2), but only ONE attack
+    # call across the run -> Multiattack truncated to one swing -> WARN, run stays GREEN.
+    events = [
+        _assistant_tool_use("s1", _eng("start_combat"), {}),
+        _user_tool_result("s1", json.dumps({"ok": True})),
+        _assistant_tool_use("a1", _eng("attack"), {"attacker_id": "pc1", "target_id": "m1"}),
+        _user_tool_result("a1", json.dumps({"attacker": "Aldric", "target": "Goblin", "hit": True})),
+    ]
+    state = {"party": ["pc1"], "combat": {"active": False}, "characters": {
+        "pc1": {"name": "Aldric", "kind": "player", "extra_attacks": 1, "current_hp": 40,
+                "max_hp": 44, "location_id": "loc_b", "classes": [{"name": "fighter", "level": 5}]},
+        "m1": {"name": "Goblin", "kind": "monster", "current_hp": 0, "dead": True}}}
+    rc, out = _run_gate_chat(tmp_path, events, state)
+    assert rc == 0, out
+    assert "[WARN] multiattack_budget_honored" in out, out
+    assert "Aldric" in out
+
+
+def test_multiattack_budget_passes_when_budget_met(tmp_path):
+    # extra_attacks=1 (budget 2) and TWO attack calls -> budget honored -> PASS.
+    events = [
+        _assistant_tool_use("s1", _eng("start_combat"), {}),
+        _user_tool_result("s1", json.dumps({"ok": True})),
+        _assistant_tool_use("a1", _eng("attack"), {"attacker_id": "pc1", "target_id": "m1"}),
+        _user_tool_result("a1", json.dumps({"attacker": "Aldric", "target": "Goblin", "hit": True})),
+        _assistant_tool_use("a2", _eng("attack"), {"attacker_id": "pc1", "target_id": "m1"}),
+        _user_tool_result("a2", json.dumps({"attacker": "Aldric", "target": "Goblin", "hit": True})),
+    ]
+    state = {"party": ["pc1"], "combat": {"active": False}, "characters": {
+        "pc1": {"name": "Aldric", "kind": "player", "extra_attacks": 1,
+                "classes": [{"name": "fighter", "level": 5}]},
+        "m1": {"name": "Goblin", "kind": "monster", "current_hp": 0, "dead": True}}}
+    rc, out = _run_gate_chat(tmp_path, events, state)
+    assert rc == 0, out
+    assert "[PASS] multiattack_budget_honored" in out, out
+
+
+def test_multiattack_budget_silent_without_extra_attacks(tmp_path):
+    # A combat ran but NO party member carries extra_attacks (every <L5 build) -> no key emitted.
+    events = [
+        _assistant_tool_use("s1", _eng("start_combat"), {}),
+        _user_tool_result("s1", json.dumps({"ok": True})),
+        _assistant_tool_use("a1", _eng("attack"), {"attacker_id": "pc1", "target_id": "m1"}),
+        _user_tool_result("a1", json.dumps({"attacker": "Tav", "target": "Goblin", "hit": True})),
+    ]
+    state = {"party": ["pc1"], "combat": {"active": False}, "characters": {
+        "pc1": {"name": "Tav", "kind": "player", "extra_attacks": 0, "current_hp": 24,
+                "max_hp": 27, "location_id": "loc_b", "classes": [{"name": "rogue", "level": 3}]},
+        "m1": {"name": "Goblin", "kind": "monster", "current_hp": 0, "dead": True}}}
+    rc, out = _run_gate_chat(tmp_path, events, state)
+    assert rc == 0, out
+    assert "multiattack_budget_honored" not in out  # no multiattacker → check skipped
+
+
+def test_multiattack_budget_silent_without_combat(tmp_path):
+    # A multiattacker exists but NO combat ran (start_combat=0) -> the check is scope-guarded off.
+    state = {"party": ["pc1"], "characters": {
+        "pc1": {"name": "Aldric", "kind": "player", "extra_attacks": 1, "current_hp": 40,
+                "max_hp": 44, "location_id": "loc_b", "classes": [{"name": "fighter", "level": 5}]}}}
+    rc, out = _run_gate_chat(tmp_path, [], state)
+    assert rc == 0, out
+    assert "multiattack_budget_honored" not in out
+
+
+# ── caster_exercised_spellcasting (WARN) ──────────────────────────────────────────────
+
+def test_caster_exercised_warns_when_never_cast(tmp_path):
+    # A wizard with spell_slots present but cast_spell=0 across a 6-beat run -> WARN.
+    state = {"party": ["pc1"], "characters": {
+        "pc1": {"name": "Gale", "kind": "player", "current_hp": 24, "max_hp": 26,
+                "location_id": "loc_b", "classes": [{"name": "wizard", "level": 5}],
+                "spell_slots": {"1": {"maximum": 4, "used": 0}},
+                "spells_known": ["Magic Missile"]}}}
+    rc, out = _run_gate_chat(tmp_path, [], state)
+    assert rc == 0, out
+    assert "[WARN] caster_exercised_spellcasting" in out, out
+    assert "Gale" in out
+
+
+def test_caster_exercised_silent_when_cast(tmp_path):
+    # cast_spell fired at least once -> the caster engaged -> the check is SILENT (scope-guarded:
+    # the WARN key is only emitted for a wholly-uncast caster; a caster that cast emits no key).
+    events = [
+        _assistant_tool_use("c1", _eng("cast_spell"), {"caster_id": "pc1", "spell": "Magic Missile"}),
+        _user_tool_result("c1", json.dumps({"ok": True})),
+    ]
+    state = {"party": ["pc1"], "characters": {
+        "pc1": {"name": "Gale", "kind": "player", "current_hp": 24, "max_hp": 26,
+                "location_id": "loc_b", "classes": [{"name": "wizard", "level": 5}],
+                "spell_slots": {"1": {"maximum": 4, "used": 1}},
+                "spells_known": ["Magic Missile"]}}}
+    rc, out = _run_gate_chat(tmp_path, events, state)
+    assert rc == 0, out
+    assert "caster_exercised_spellcasting" not in out  # cast → no WARN key
+
+
+def test_caster_exercised_silent_for_martial(tmp_path):
+    # A martial with NO spell fields -> not a caster -> no key emitted (additive).
+    state = {"party": ["pc1"], "characters": {
+        "pc1": {"name": "Aldric", "kind": "player", "current_hp": 40, "max_hp": 44,
+                "location_id": "loc_b", "classes": [{"name": "fighter", "level": 5}]}}}
+    rc, out = _run_gate_chat(tmp_path, [], state)
+    assert rc == 0, out
+    assert "caster_exercised_spellcasting" not in out
+
+
+# ── death_saves_rolled_when_downed (WARN) ─────────────────────────────────────────────
+
+def test_death_saves_warns_when_downed_unrolled(tmp_path):
+    # A PC at current_hp=0, not dead, not stable, with NO roll_death_save and no death_saves -> WARN.
+    state = {"party": ["pc1"], "characters": {
+        "pc1": {"name": "Shadowheart", "kind": "player", "current_hp": 0, "dead": False,
+                "stable": False, "death_saves": {"successes": 0, "failures": 0}}}}
+    rc, out = _run_gate(tmp_path, [], state)
+    assert rc == 0, out
+    assert "[WARN] death_saves_rolled_when_downed" in out, out
+    assert "Shadowheart" in out
+
+
+def test_death_saves_silent_when_rolled(tmp_path):
+    # roll_death_save fired -> the dying state was resolved -> the check is SILENT (scope-guarded:
+    # the WARN key is only emitted when a downed char went UNROLLED; a resolved downed char emits
+    # no key, like signature_feature when the feature was exercised).
+    events = [
+        _assistant_tool_use("d1", _eng("roll_death_save"), {"character_id": "pc1"}),
+        _user_tool_result("d1", json.dumps({"ok": True, "result": "success"})),
+    ]
+    state = {"party": ["pc1"], "characters": {
+        "pc1": {"name": "Shadowheart", "kind": "player", "current_hp": 0, "dead": False,
+                "stable": False, "death_saves": {"successes": 1, "failures": 0}}}}
+    rc, out = _run_gate(tmp_path, events, state)
+    assert rc == 0, out
+    assert "death_saves_rolled_when_downed" not in out  # resolved → no WARN key
+
+
+def test_death_saves_silent_when_death_saves_recorded(tmp_path):
+    # No manual roll_death_save call, but the engine auto-clocked a save (death_saves ledger has
+    # a failure) -> resolved -> SILENT (no false WARN).
+    state = {"party": ["pc1"], "characters": {
+        "pc1": {"name": "Shadowheart", "kind": "player", "current_hp": 0, "dead": False,
+                "stable": False, "death_saves": {"successes": 0, "failures": 1}}}}
+    rc, out = _run_gate(tmp_path, [], state)
+    assert rc == 0, out
+    assert "death_saves_rolled_when_downed" not in out  # auto-clocked save → no WARN key
+
+
+def test_death_saves_silent_when_nobody_downed(tmp_path):
+    # A healthy / stable / dead party -> nobody in the downed-but-dying state -> no key emitted.
+    state = {"party": ["pc1", "pc2", "pc3"], "characters": {
+        "pc1": {"name": "Tav", "kind": "player", "current_hp": 20, "dead": False},
+        "pc2": {"name": "Karlach", "kind": "player", "current_hp": 0, "dead": True},     # dead
+        "pc3": {"name": "Astarion", "kind": "player", "current_hp": 0, "stable": True}}}  # stabilized
+    rc, out = _run_gate(tmp_path, [], state)
+    assert rc == 0, out
+    assert "death_saves_rolled_when_downed" not in out
+
+
+# ── concentration_dropped_cleanly (WARN) ──────────────────────────────────────────────
+
+def test_concentration_double_warns(tmp_path):
+    # A caster ends concentrating AND carries TWO own-source concentration effects -> the second
+    # concentration spell should have dropped the first -> WARN.
+    state = {"party": ["pc1"], "characters": {
+        "pc1": {"name": "Gale", "kind": "player", "concentration": "Haste",
+                "active_effects": [
+                    {"name": "Bless", "concentration": True},
+                    {"name": "Haste", "concentration": True}]}}}
+    rc, out = _run_gate(tmp_path, [], state)
+    assert rc == 0, out
+    assert "[WARN] concentration_dropped_cleanly" in out, out
+    assert "Gale" in out
+
+
+def test_concentration_single_passes(tmp_path):
+    # Exactly ONE own concentration effect while concentrating -> clean -> the check is silent
+    # (scope-guarded: it only emits when >1 own concentration effect is present).
+    state = {"party": ["pc1"], "characters": {
+        "pc1": {"name": "Gale", "kind": "player", "concentration": "Haste",
+                "active_effects": [{"name": "Haste", "concentration": True}]}}}
+    rc, out = _run_gate(tmp_path, [], state)
+    assert rc == 0, out
+    assert "concentration_dropped_cleanly" not in out
+
+
+def test_concentration_ignores_ally_twin(tmp_path):
+    # An ally-side linked twin (linked_to_concentration=True, e.g. Bless on an ally) is NOT an
+    # own-source concentration effect -> the caster ending with one own + one linked is clean.
+    state = {"party": ["pc1"], "characters": {
+        "pc1": {"name": "Shadowheart", "kind": "player", "concentration": "Bless",
+                "active_effects": [
+                    {"name": "Bless", "concentration": True},
+                    {"name": "Bless (ally)", "concentration": True,
+                     "linked_to_concentration": True}]}}}
+    rc, out = _run_gate(tmp_path, [], state)
+    assert rc == 0, out
+    assert "concentration_dropped_cleanly" not in out
+
+
+# ── signature_feature_exercised: superiority_dice extension (#1040) ────────────────────
+
+def test_signature_feature_warns_on_unused_superiority_dice(tmp_path):
+    # A Battle Master with a seeded superiority_dice pool at used:0 -> WARN (the new pool joins
+    # the coverage check); run stays GREEN.
+    state = {"leveling_mode": "milestone", "party": ["pc1"], "characters": {
+        "pc1": {"name": "Laezel", "kind": "player", "classes": [{"name": "fighter", "level": 5}],
+                "class_resources": {"superiority_dice": {"max": 4, "used": 0, "recharge": "short"}}}}}
+    rc, out = _run_gate(tmp_path, [], state)
+    assert rc == 0, out
+    assert "[WARN] signature_feature_exercised" in out, out
+    assert "superiority_dice" in out and "Laezel" in out
+
+
+def test_signature_feature_passes_when_superiority_dice_used(tmp_path):
+    # used>0 on the final sheet -> exercised -> PASS.
+    state = {"leveling_mode": "milestone", "party": ["pc1"], "characters": {
+        "pc1": {"name": "Laezel", "kind": "player", "classes": [{"name": "fighter", "level": 5}],
+                "class_resources": {"superiority_dice": {"max": 4, "used": 1, "recharge": "short"}}}}}
+    rc, out = _run_gate(tmp_path, [], state)
+    assert rc == 0, out
+    assert "[PASS] signature_feature_exercised" in out, out

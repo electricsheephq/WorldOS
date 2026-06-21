@@ -1074,7 +1074,13 @@ def main() -> int:
     # coverage floor (the feature was never touched at all). WARN, never fatal — a short fight
     # may legitimately not need every cooldown. Additive: a party with none of these pools is
     # byte-identical (no key emitted). Source: mech-climb evidence agent (combat-sprint scorecards).
-    _SIGNATURE_POOLS = ("channel_divinity", "action_surge", "second_wind")
+    # superiority_dice (Battle Master) joins the seeded-but-unused coverage pool (#1040 scorer-opt):
+    # the Angry-DM lens used to flag a seeded-but-never-spent Superiority-Dice pool as a 5e-fidelity
+    # omission; it's a pure COVERAGE signal exactly like the other three, scope-guarded the same way
+    # (only emitted when a BM sheet actually carries the `superiority_dice` pool — a party without it
+    # is byte-identical, no key emitted). The pool key is `superiority_dice` (server.py use_resource +
+    # the L631 re-derive note both key it that way).
+    _SIGNATURE_POOLS = ("channel_divinity", "action_surge", "second_wind", "superiority_dice")
     # Pools a use_resource call exercised this run (snapshot may have been reset by a rest).
     used_via_stream = {
         (inp.get("resource") or "").lower()
@@ -1103,8 +1109,8 @@ def main() -> int:
     if has_signature_pool:
         chk("signature_feature_exercised", not sig_unused,
             "; ".join(sig_unused) + " — seeded signature feature(s) never invoked this session "
-            "(channel_divinity / action_surge / second_wind); the combat seed should exercise them "
-            "(csmed-1/2/4 coverage omission)" if sig_unused else "",
+            "(channel_divinity / action_surge / second_wind / superiority_dice); the combat seed "
+            "should exercise them (csmed-1/2/4 + #1040 coverage omission)" if sig_unused else "",
             fatal=False)
 
     # A2 (WARN) — a melee attack HIT a parry-capable monster (state parry>0) but the attack
@@ -1206,6 +1212,136 @@ def main() -> int:
             src = obj.get("resource") or "?"
             dangling_riders.append(f"{spender or '?'} spent a {kind} ({src}) but no following attack carried it")
     chk("maneuver_rider_consumed", not dangling_riders, "; ".join(dangling_riders), fatal=False)
+
+    # ── #1040 scorer-opt: deterministic 5e-fidelity checks MIGRATED from the slow Angry-DM LLM
+    # lens into the fast gate. Each is WARN-first (graduate to FATAL after clean sweeps) and
+    # scope-guarded so a run lacking the feature/state emits NOTHING (additive: byte-identical).
+    # They read ONLY persisted snapshot fields + the tool counter — never fiction.
+
+    # M1) MULTIATTACK BUDGET HONORED (the single biggest omission class). The 5e Extra-Attack
+    # feature lets a char with extra_attacks>0 make extra_attacks+1 attacks per Attack action; the
+    # Angry-DM lens repeatedly flagged a Multiattack truncated to ONE swing. Deterministic proxy:
+    # if a combat ran (start_combat>0) and a player/companion has extra_attacks>0, the run should
+    # show at least extra_attacks+1 attack() calls. Conservative + aggregate (run-total, not
+    # per-turn — the snapshot doesn't expose a reliable per-turn attack ledger): we only WARN when
+    # the WHOLE run's attack count is below a SINGLE multiattacker's own budget, which is an
+    # unambiguous truncation (even one Attack action by the highest-budget combatant should clear
+    # it). Scope-guarded: never emitted unless a combat ran AND a party member carries extra_attacks
+    # (a party with none — every <L5 build — produces no key). Reads chars_all["extra_attacks"],
+    # tools["attack"], state["combat"]. WARN: theater-of-mind can't prove a SPECIFIC turn truncated;
+    # this surfaces the smell to the scorer without RED-capping the run.
+    if tools.get("start_combat", 0) > 0:
+        multiattackers = [
+            c for c in chars_all.values()
+            if isinstance(c, dict) and c.get("kind") in ("player", "companion")
+            and int(c.get("extra_attacks") or 0) > 0
+        ]
+        if multiattackers:
+            attack_calls = tools.get("attack", 0)
+            # The single largest per-Attack-action budget in the party (extra_attacks+1). If the
+            # whole run made fewer attack() calls than even ONE such combatant's single-action
+            # budget, Multiattack was almost certainly truncated to one swing.
+            top_budget = max(int(c.get("extra_attacks") or 0) + 1 for c in multiattackers)
+            truncated = attack_calls < top_budget
+            names = [f"{c.get('name', '?')} (extra_attacks={int(c.get('extra_attacks') or 0)})"
+                     for c in multiattackers]
+            chk("multiattack_budget_honored", not truncated,
+                f"{attack_calls} attack call(s) across the run but a multiattacker's budget is "
+                f"{top_budget} (extra_attacks+1) — Multiattack likely truncated to one attack "
+                f"[{', '.join(names)}]" if truncated else "",
+                fatal=False)
+
+    # M3) CASTER EXERCISED SPELLCASTING. A spellcaster present for a multi-beat run that NEVER cast
+    # a spell is a 5e-fidelity smell the Angry-DM lens flagged (a wizard who only swung a dagger).
+    # Scope-guard: "is a caster" is read from REAL serialized fields — non-empty spell_slots /
+    # spells_known / spells_prepared / cantrips_known (the engine's _recompute_spellcasting sizes
+    # spell_slots, so a real seeded caster always carries them) OR a truthy `spellcasting` blob
+    # (test/legacy fixtures). A non-caster (martial) carries none of these → no key emitted
+    # (additive). "Cast" is read broadly: cast_spell OR an attack-roll spell resolves via attack(),
+    # so we require ZERO of (cast_spell) AND the run to be substantial — a caster who only ever
+    # cantripped via attack() is NOT flagged (attack>0 means they engaged). Only a caster with
+    # cast_spell==0 across a MIN_BEATS+ run WARNs. WARN, never fatal.
+    def _is_caster(c: dict) -> bool:
+        return bool(
+            c.get("spell_slots") or c.get("spells_known") or c.get("spells_prepared")
+            or c.get("cantrips_known") or c.get("cantrips") or c.get("prepared_spells")
+            or c.get("spellcasting")
+        )
+    if session_beats >= MIN_BEATS:
+        idle_casters = []
+        for c in chars_all.values():
+            if not isinstance(c, dict) or c.get("kind") not in ("player", "companion"):
+                continue
+            if _is_caster(c) and tools.get("cast_spell", 0) == 0:
+                idle_casters.append(c.get("name", "?"))
+        # Scope-guard: only emit when at least one caster is present (a martial-only party → no key).
+        if idle_casters:
+            chk("caster_exercised_spellcasting", False,
+                f"caster(s) present but cast_spell=0 across {session_beats} beats: {idle_casters} "
+                f"— a spellcaster that never cast a leveled/prepared spell (note: attack-roll "
+                f"cantrips resolve via attack(); this only flags a wholly-uncast caster)",
+                fatal=False)
+
+    # M4) DEATH SAVES ROLLED WHEN DOWNED. A char at the snapshot with current_hp==0, not dead, not
+    # stable is actively dying — the engine rolls death saves (auto-clocked on next_turn) or the DM
+    # calls roll_death_save. If the run shows NO roll_death_save call AND no death_saves recorded on
+    # the dying char, the dying state was narrated, not resolved (the Angry-DM "downed but no death
+    # saves" flag). Scope-guard: only emitted when a char is actually in the downed-but-dying state
+    # (current_hp==0 and not dead and not stable). A clean run with nobody downed produces no key.
+    # WARN, never fatal — a player downed on the VERY LAST beat legitimately may not have rolled yet.
+    downed_dying = [
+        c for c in chars_all.values()
+        if isinstance(c, dict) and c.get("kind") in ("player", "companion")
+        and (c.get("current_hp") or 0) == 0 and not c.get("dead") and not c.get("stable")
+    ]
+    if downed_dying:
+        # A death save may have been recorded on the char's own death_saves ledger even without a
+        # manual roll_death_save call (the engine auto-clocks them) — count that as resolved.
+        def _has_death_saves(c: dict) -> bool:
+            ds = c.get("death_saves") or {}
+            if not isinstance(ds, dict):
+                return False
+            return bool((ds.get("successes") or 0) or (ds.get("failures") or 0))
+        unrolled = [c.get("name", "?") for c in downed_dying
+                    if tools.get("roll_death_save", 0) == 0 and not _has_death_saves(c)]
+        if unrolled:
+            chk("death_saves_rolled_when_downed", False,
+                f"char(s) downed (current_hp=0, not dead, not stable) at end-of-run with NO "
+                f"roll_death_save call and no death_saves recorded: {unrolled} — the dying state was "
+                f"narrated, not rolled (roll_death_save / the auto-clocked save on next_turn)",
+                fatal=False)
+
+    # M5) CONCENTRATION DROPPED CLEANLY. A char can concentrate on only ONE spell; casting a second
+    # concentration spell must drop the first (the engine enforces this on cast_spell, but a DM that
+    # narrates a second concentration spell while leaving the first on the sheet is the Angry-DM
+    # "double-concentration" flag). Detecting the SEQUENCE of concentration casts is unreliable from
+    # the available data (cast_spell payloads don't reliably tag concentration), so — per the task's
+    # fallback — this is the SIMPLER, conservative end-state check: a char ends with `concentration`
+    # set to a spell AND its active_effects carry >1 concentration-tagged effect from ITS OWN casting
+    # (an own-source concentration effect is one with concentration==True that is NOT a
+    # linked_to_concentration child — those are ally-side twins of someone else's spell). Two
+    # own-source concentration effects on one caster is a clean double-concentration the drop never
+    # cleared. Scope-guard: only emitted when a char actually ends concentrating with >1 own
+    # concentration effect — every other run produces no key. WARN, never fatal (conservative proxy).
+    double_conc = []
+    for c in chars_all.values():
+        if not isinstance(c, dict) or c.get("kind") not in ("player", "companion"):
+            continue
+        if not c.get("concentration"):
+            continue  # not concentrating at end → nothing to check
+        own_conc = [
+            eff for eff in (c.get("active_effects") or [])
+            if isinstance(eff, dict) and eff.get("concentration")
+            and not eff.get("linked_to_concentration")
+        ]
+        if len(own_conc) > 1:
+            eff_names = [eff.get("name", "?") for eff in own_conc]
+            double_conc.append(
+                f"{c.get('name', '?')} ends concentrating on {c.get('concentration')!r} but "
+                f"carries {len(own_conc)} own concentration effects {eff_names} — a second "
+                f"concentration spell should have dropped the first (drop_concentration)")
+    if double_conc:
+        chk("concentration_dropped_cleanly", False, "; ".join(double_conc), fatal=False)
 
     fails = [c for c in checks if c[2] and not c[1]]
     warns = [c for c in checks if not c[2] and not c[1]]
