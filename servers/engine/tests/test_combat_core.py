@@ -48,6 +48,7 @@ def _mk_view(actor_attacks, foes, grid=False, actor_cell=None, **kw) -> CombatVi
         action_available=bool(kw.get("action_available", True)),
         bonus_action_available=bool(kw.get("bonus_action_available", True)),
         is_raging=bool(kw.get("is_raging", False)),
+        bonus_spell_used=bool(kw.get("bonus_spell_used", False)),  # #1106 bonus-action-spell rule
     )
 
 
@@ -174,24 +175,31 @@ def test_pick_action_is_deterministic():
 
 # ── pick_action: heal-the-dying-ally triage (v2.0a, #1106) ───────────────────────────
 
+def _cure(name="Cure Wounds", amount=8.0, rng=5, slot=1):
+    """An ACTION-castable heal (Cure Wounds, casting time '1 action') — the spell the MAIN-action
+    heal-triage may legally cast (#1106: a bonus-action-only Healing Word is the bonus channel's job)."""
+    return _heal(name=name, amount=amount, rng=rng, slot=slot, bonus=False)
+
+
 def test_pick_action_heals_downed_ally_before_attacking():
-    """A healer with a heal spell + a slot heals a DOWNED ally instead of swinging at a foe."""
+    """A healer with an ACTION heal + a slot heals a DOWNED ally instead of swinging at a foe (#1106:
+    the MAIN action uses an action-castable heal — Cure Wounds — not the bonus-only Healing Word)."""
     atks = [AttackOption(name="Mace", to_hit=5, damage_expr="1d6+3")]
     v = _mk_view(atks, [_foe("goblin", hp=7, ac=12)],
                  allies=[_ally("garrick", hp=0, max_hp=40, downed=True)],
-                 spells=[_heal()], caster_level=5)
+                 spells=[_cure()], caster_level=5)
     intent = combat_ai.pick_action(actor=object(), combat_state=v)
     assert intent.kind == "cast"
-    assert intent.spell_name == "Healing Word"
+    assert intent.spell_name == "Cure Wounds"
     assert intent.target_id == "garrick"   # the downed ally, NOT the foe
 
 
 def test_pick_action_heals_critical_ally_under_one_third():
-    """An ally below 1/3 max HP (but not downed) is healed before attacking."""
+    """An ally below 1/3 max HP (but not downed) is healed before attacking (action-castable heal)."""
     atks = [AttackOption(name="Mace", to_hit=5, damage_expr="1d6+3")]
     v = _mk_view(atks, [_foe("goblin", hp=7, ac=12)],
                  allies=[_ally("hurt", hp=10, max_hp=40)],  # 25% < 1/3
-                 spells=[_heal()], caster_level=5)
+                 spells=[_cure()], caster_level=5)
     intent = combat_ai.pick_action(actor=object(), combat_state=v)
     assert intent.kind == "cast" and intent.target_id == "hurt"
 
@@ -202,13 +210,15 @@ def test_pick_action_prefers_downed_over_merely_wounded():
     v = _mk_view(atks, [_foe("goblin", hp=7, ac=12)],
                  allies=[_ally("wounded", hp=12, max_hp=40),  # < 1/2, not critical
                          _ally("down", hp=0, max_hp=40, downed=True)],
-                 spells=[_heal()], caster_level=5)
+                 spells=[_cure()], caster_level=5)
     intent = combat_ai.pick_action(actor=object(), combat_state=v)
     assert intent.kind == "cast" and intent.target_id == "down"
 
 
-def test_pick_action_prefers_bonus_action_healing_word_over_touch_cure_wounds():
-    """With both a bonus-action ranged heal and a touch heal available, prefer Healing Word."""
+def test_pick_action_main_heal_skips_bonus_only_healing_word_uses_cure_wounds():
+    """#1106: the MAIN-action heal-triage must NOT select a bonus-action-only spell (Healing Word) —
+    that's the bonus channel's job. With both a bonus Healing Word and a touch Cure Wounds available,
+    pick_action (the ACTION) casts Cure Wounds. (The bonus channel separately fires Healing Word.)"""
     atks = [AttackOption(name="Mace", to_hit=5, damage_expr="1d6+3")]
     v = _mk_view(atks, [_foe("goblin", hp=7, ac=12)],
                  allies=[_ally("down", hp=0, max_hp=40, downed=True)],
@@ -217,7 +227,60 @@ def test_pick_action_prefers_bonus_action_healing_word_over_touch_cure_wounds():
                      _heal("Healing Word", amount=6.0, rng=60, slot=1, bonus=True),
                  ], caster_level=5)
     intent = combat_ai.pick_action(actor=object(), combat_state=v)
-    assert intent.kind == "cast" and intent.spell_name == "Healing Word"
+    assert intent.kind == "cast" and intent.spell_name == "Cure Wounds"
+
+
+def test_pick_bonus_action_prefers_bonus_action_healing_word():
+    """The BONUS channel is where the bonus-action ranged heal (Healing Word) lives: pick_bonus_action
+    fires Healing Word on a downed ally (the v2.0a triage restricted to bonus-action heals)."""
+    atks = [AttackOption(name="Mace", to_hit=5, damage_expr="1d6+3")]
+    v = _mk_view(atks, [_foe("goblin", hp=7, ac=12)],
+                 allies=[_ally("down", hp=0, max_hp=40, downed=True)],
+                 spells=[
+                     _heal("Cure Wounds", amount=8.0, rng=5, slot=1, bonus=False),
+                     _heal("Healing Word", amount=6.0, rng=60, slot=1, bonus=True),
+                 ], caster_level=5)
+    bonus = combat_ai.pick_bonus_action(object(), v)
+    assert bonus is not None and bonus.kind == "cast" and bonus.spell_name == "Healing Word"
+
+
+def test_pick_action_with_bonus_spell_used_does_not_cast_a_leveled_spell():
+    """#1106 UNIT: when a LEVELED bonus-action spell was already cast this turn (bonus_spell_used=True),
+    pick_action's ACTION may NOT be a leveled cast — neither a leveled heal nor a leveled offensive
+    spell. It falls through to a CANTRIP or a weapon attack (RAW: a cantrip action may follow a bonus
+    spell)."""
+    atks = [AttackOption(name="Mace", to_hit=5, damage_expr="1d6+3")]
+    # A leveled heal (Cure Wounds) AND a leveled offensive spell (Magic Missile) are both on offer, plus
+    # a downed ally + a foe — yet with bonus_spell_used the action can cast NEITHER leveled spell.
+    v = _mk_view(atks, [_foe("goblin", hp=30, ac=12)],
+                 allies=[_ally("down", hp=0, max_hp=40, downed=True)],
+                 spells=[
+                     _heal("Cure Wounds", amount=8.0, rng=5, slot=1, bonus=False),
+                     SpellOption(name="Magic Missile", value=10.0, kind="auto",
+                                 range_ft=120, slot_level=1),
+                 ], caster_level=5, bonus_spell_used=True)
+    intent = combat_ai.pick_action(actor=object(), combat_state=v)
+    # No leveled `cast` — only a cantrip cast or a weapon attack is allowed.
+    assert not (intent.kind == "cast" and intent.spell_name in ("Cure Wounds", "Magic Missile"))
+    assert intent.kind in ("attack", "cast")
+    if intent.kind == "cast":
+        # any cast that slipped through MUST be a cantrip (slot_level 0)
+        sp = next(s for s in v.spells if s.name == intent.spell_name)
+        assert sp.slot_level == 0
+
+
+def test_pick_action_with_bonus_spell_used_still_allows_a_cantrip():
+    """#1106: a cantrip action MAY follow a leveled bonus spell (RAW). With bonus_spell_used=True and an
+    attack cantrip that out-EVs the weapon, pick_action still casts the CANTRIP (slot_level 0)."""
+    weak = AttackOption(name="Dagger", to_hit=2, damage_expr="1d4")
+    v = _mk_view([weak], [_foe("ogre", hp=60, ac=11)],
+                 spells=[SpellOption(name="Fire Bolt", value=11.0, kind="attack",
+                                     range_ft=120, requires_slot=False, slot_level=0)],
+                 caster_level=5, bonus_spell_used=True)
+    from dataclasses import replace
+    v = replace(v, spell_attack_bonus=7)
+    intent = combat_ai.pick_action(actor=object(), combat_state=v)
+    assert intent.kind == "cast" and intent.spell_name == "Fire Bolt"  # cantrip OK after a bonus spell
 
 
 def test_pick_action_does_not_heal_healthy_allies():
@@ -583,7 +646,9 @@ def test_ai_itself_heals_a_downed_ally_through_the_loop(tmp_path, monkeypatch):
 
     intent = combat_ai.pick_action(c.characters[cleric], view)
     assert intent.kind == "cast" and intent.target_id == fighter
-    assert intent.spell_name == "Healing Word"   # bonus-action ranged save preferred
+    # #1106: the MAIN-action heal-triage uses the ACTION-castable heal (Cure Wounds), NOT the bonus-
+    # action-only Healing Word (which is the bonus channel's job — see run_combat_round below).
+    assert intent.spell_name == "Cure Wounds"
 
     entry = combat_loop._apply_intent(server, cid, cleric, intent)
     after = server._require(cid).characters[fighter]
@@ -591,6 +656,78 @@ def test_ai_itself_heals_a_downed_ally_through_the_loop(tmp_path, monkeypatch):
     assert entry["result"]["heal"]["revived"] is True
     # The heal went through the locked verbs (slot spent by cast_spell, HP by apply_healing).
     assert server._require(cid).characters[cleric].spell_slots[1].used >= 1
+
+
+def test_no_double_healing_word_in_one_turn_through_the_loop(tmp_path, monkeypatch):
+    """#1106 REGRESSION GAUGE (the bug a capstone demo caught): a War/Life cleric with a DOWNED ally,
+    driven through run_combat_round, must cast Healing Word EXACTLY ONCE that turn — not twice. Before
+    the fix the cleric cast Healing Word as the BONUS action (pick_bonus_action) AND again as the MAIN
+    action (pick_action heal-triage), spending TWO L1 slots. 5e RAW forbids two leveled spells in a
+    turn when one is a bonus-action spell. The fix threads bonus_spell_used through the loop so the
+    main action can only be a CANTRIP / weapon — so exactly ONE L1 slot is spent on the bonus heal."""
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    import server
+    dice_mod.reseed_process_rng(7)
+    cid, cleric, fighter, mons = _seed_healer_fight(server, store)
+
+    # Down the fighter to 0 HP (dying), then pin the CLERIC's turn with a fresh action economy.
+    server.set_hp(cid, target_id=fighter, current_hp=0)
+    c = server._require(cid)
+    idx = next(i for i, cb in enumerate(c.combat.order) if cb.character_id == cleric)
+    c.combat.turn_index = idx
+    c.combat.action_used = False
+    c.combat.bonus_action_used = False
+    # Record the L1 slot usage BEFORE the cleric's turn so we measure the per-turn delta.
+    slots_before = c.characters[cleric].spell_slots[1].used
+    store.save_campaign(c)
+
+    # Run ONE round in TEST mode (auto-runs everyone). The cleric's turn fires its bonus + main action.
+    combat_loop.run_combat_round(cid, mode="test")
+
+    c = server._require(cid)
+    cleric_ch = c.characters[cleric]
+    slots_after = cleric_ch.spell_slots[1].used
+    # EXACTLY ONE L1 slot was spent this turn (the bonus Healing Word) — NOT two (the old double-heal).
+    assert slots_after - slots_before == 1, (
+        f"expected exactly ONE L1 slot spent (the single Healing Word), got "
+        f"{slots_after - slots_before} (used {slots_before}->{slots_after}) — the double-heal bug"
+    )
+
+
+def test_loop_marks_bonus_spell_used_and_main_action_is_not_a_leveled_heal(tmp_path, monkeypatch):
+    """#1106: the SAME repro, asserted at the digest level — the cleric's turn contains EXACTLY ONE
+    `cast Healing Word` (the bonus channel) and its MAIN action that turn is NOT a second leveled heal
+    (Healing Word / Cure Wounds). Proves the loop threaded the bonus-action-spell rule into pick_action."""
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    import server
+    dice_mod.reseed_process_rng(7)
+    cid, cleric, fighter, mons = _seed_healer_fight(server, store)
+
+    server.set_hp(cid, target_id=fighter, current_hp=0)
+    c = server._require(cid)
+    idx = next(i for i, cb in enumerate(c.combat.order) if cb.character_id == cleric)
+    c.combat.turn_index = idx
+    c.combat.action_used = False
+    c.combat.bonus_action_used = False
+    store.save_campaign(c)
+
+    rr = combat_loop.run_combat_round(cid, mode="test")
+    cleric_entries = [e for e in rr["round_digest"] if e.get("actor_id") == cleric]
+    casts = [e for e in cleric_entries
+             if e.get("kind") == "cast" and (e.get("result") or {}).get("spell")]
+    healing_word_casts = [e for e in casts
+                          if str((e.get("result") or {}).get("spell", "")).lower() == "healing word"]
+    # Exactly ONE Healing Word cast this turn (the bonus action) — never two.
+    assert len(healing_word_casts) == 1, (
+        f"expected exactly ONE Healing Word cast, got {len(healing_word_casts)}: {healing_word_casts}"
+    )
+    # No SECOND leveled heal cast as the action (Cure Wounds is the only other action-castable heal here).
+    leveled_heal_casts = [e for e in casts
+                          if str((e.get("result") or {}).get("spell", "")).lower()
+                          in ("healing word", "cure wounds")]
+    assert len(leveled_heal_casts) == 1, (
+        f"the cleric cast more than one leveled heal this turn (double-heal): {leveled_heal_casts}"
+    )
 
 
 def test_no_healable_ally_byte_identical_to_pre_pr_fight(tmp_path, monkeypatch):

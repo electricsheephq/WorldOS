@@ -225,6 +225,13 @@ class CombatView:
     # so a fresh turn behaves as today. Action Surge needs the action; Second Wind the bonus.
     action_available: bool = True
     bonus_action_available: bool = True
+    # 5e RAW bonus-action-spell rule (#1106): if a LEVELED spell was already cast as this turn's BONUS
+    # action (Healing Word / Spiritual Weapon / …), the ACTION this turn may cast ONLY a CANTRIP — never
+    # a second leveled spell. The loop sets this True (replace(view, bonus_spell_used=True)) once its
+    # per-turn bonus action was a slot-spending cast; pick_action then refuses a leveled main-action cast
+    # (heal-triage OR offence). False/default == no leveled bonus spell this turn (today's behavior): the
+    # main action is unconstrained. A cantrip / Second Wind / Rage bonus does NOT set this (no slot spent).
+    bonus_spell_used: bool = False
 
 
 # ── Pure EV helpers ──────────────────────────────────────────────────────────────────
@@ -425,13 +432,22 @@ def _heal_priority(ally: CombatantView) -> Optional[int]:
     return None
 
 
-def _pick_heal(view: CombatView) -> Optional[tuple[CombatantView, SpellOption]]:
+def _pick_heal(view: CombatView, *, action_only: bool = False) -> Optional[tuple[CombatantView, SpellOption]]:
     """The (ally, heal-spell) the actor should cast THIS turn, or None when no heal is warranted
     or possible. Only fires when the actor HAS a heal option AND an ally needs one. Picks the most
     urgent ally (downed > critical > wounded; ties -> most missing HP, then stable id), then prefers
     the BONUS-ACTION ranged heal (Healing Word — the classic save) over a touch heal (Cure Wounds)
-    that needs an adjacent target, and a lower-slot heal over a higher one (cheap first). Pure."""
+    that needs an adjacent target, and a lower-slot heal over a higher one (cheap first). Pure.
+
+    `action_only` (#1106): when True, a BONUS-action-only heal (Healing Word, casting time "1 bonus
+    action") is NOT a candidate — that spell is the bonus channel's job (pick_bonus_action), and the
+    MAIN-action heal-triage must use only an ACTION-castable heal (Cure Wounds). Default False keeps
+    the bonus channel's behavior (it filters to bonus heals itself after this call) byte-identical."""
     heals = [sp for sp in view.spells if sp.is_heal and sp.heal_amount > 0]
+    if action_only:
+        # The MAIN action can't cast a bonus-action-only spell (Healing Word) — drop those candidates
+        # so the action-heal can only ever be an action-castable heal (Cure Wounds).
+        heals = [sp for sp in heals if not sp.is_bonus_action]
     if not heals:
         return None
     # The neediest healable ally: lowest triage rank, then most missing HP, then stable id.
@@ -768,7 +784,17 @@ def pick_action(
     #     through to today's attack logic UNCHANGED (additive: a non-caster / no-hurt-ally party is
     #     byte-identical). Returns a `cast` Intent targeting the ally (the loop's cast_spell ->
     #     apply_healing sole-writer path applies it).
-    heal = _pick_heal(view)
+    #
+    #     #1106 RAW gates: (a) `action_only=True` — the MAIN-action heal can NEVER be a bonus-action-
+    #     only spell (Healing Word); that's the bonus channel's job, so a main-action heal uses only an
+    #     ACTION-castable heal (Cure Wounds). (b) When a LEVELED spell was already cast as this turn's
+    #     bonus action (`bonus_spell_used`), the action may cast ONLY a cantrip — so a LEVELED main-
+    #     action heal (Cure Wounds is a leveled spell) is forbidden; skip the heal-triage entirely and
+    #     fall through to a cantrip/weapon. (Heal cantrips don't exist in SRD, so this skips heals.)
+    if not view.bonus_spell_used:
+        heal = _pick_heal(view, action_only=True)
+    else:
+        heal = None
     if heal is not None:
         ally, sp = heal
         return Intent(
@@ -816,6 +842,12 @@ def pick_action(
     for sp in view.spells:
         if sp.is_heal or sp.kind not in ("attack", "auto", "save"):
             continue  # heals are step 1.5; buff/utility aren't an offensive option
+        # #1106 RAW: after a LEVELED bonus-action spell this turn, the ACTION may cast ONLY a cantrip —
+        # a leveled offensive cast is forbidden. A cantrip (slot_level 0) is still allowed, so the
+        # caster can follow Healing Word with Sacred Flame / Fire Bolt. (Empty view.bonus_spell_used
+        # == today: no constraint, every leveled offensive cast is still a candidate.)
+        if view.bonus_spell_used and sp.slot_level > 0:
+            continue
         # Concentration guard (v2.0b): don't START a new concentration spell that would break an
         # active one of >= EV. (Damage spells here rarely concentrate, but Scorching-Ray-class data
         # could; the guard keeps a high-value lockdown from being clobbered by a marginal swap.)
