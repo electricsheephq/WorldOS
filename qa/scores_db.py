@@ -299,6 +299,32 @@ def fetch_rows(db_path: Path | str = DB_PATH) -> list[dict]:
         conn.close()
 
 
+def fetch_rows_readonly(db_path: Path | str = DB_PATH) -> list[dict]:
+    """Like :func:`fetch_rows`, but opens the db in SQLite read-only (``mode=ro``) mode and does
+    NOT run ``_ensure_schema`` — so reading the COMMITTED ``qa/scores.db`` never rewrites it
+    (the schema-ensure / journal touch that ``connect`` performs would otherwise mark the binary
+    as modified in git). A missing file or missing ``runs`` table yields ``[]`` (no creation).
+    Use this for pure read paths (e.g. release_readiness_verdict) over a committed db."""
+    p = Path(db_path)
+    if not p.exists():
+        return []
+    uri = f"file:{p}?mode=ro"
+    try:
+        conn = sqlite3.connect(uri, uri=True)
+    except sqlite3.OperationalError:
+        return []
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            "SELECT * FROM runs ORDER BY ts DESC, build_date DESC, run_id DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+    except sqlite3.OperationalError:
+        return []  # no runs table yet
+    finally:
+        conn.close()
+
+
 # ---------------------------------------------------------------------------
 # Canonical GREEN baseline (P1): mark / query the ONE reference run per comparability key
 # ---------------------------------------------------------------------------
@@ -738,6 +764,143 @@ def reconcile(db_path: Path | str = DB_PATH, index_path: Path | str = QA_DIR / "
 
 
 # ---------------------------------------------------------------------------
+# Versioning Phase-1: machine-readable release_readiness_verdict.json
+# ---------------------------------------------------------------------------
+# The 11 canonical RRI gates (qa/release_readiness.py: LLM_PERSONA_GATES + the 4 base
+# DETERMINISTIC_GATES, EXCLUDING the additive opt-in gates story_engagement + the two latency
+# gates, which are evidence-gap SKIPs when absent and would otherwise make a clean RRI.json
+# read as "missing" gates). A gate that is not PASSED — failed, skipped, or simply absent from
+# the RRI.json — is the signal a tag was cut WITHOUT a complete formal RRI (DEVELOPMENT, not
+# RELEASE). This is the same 11-gate spine qa/generate_release_notes.py reasons over.
+RRI_CANONICAL_GATES: tuple[str, ...] = (
+    "native_gate",
+    "arc_completed",
+    "cross_persona_sat",
+    "no_give_up",
+    "zero_critical",
+    "story_craft",
+    "mechanical",
+    "behavioral",
+    "ui_audit",
+    "image_render",
+    "palette_live",
+)
+
+
+def _classify_gate(name: str, rri: dict) -> str:
+    """Classify ONE canonical gate from a release_readiness.py RRI.json payload.
+
+    Returns "PASSED" / "FAILED" / "SKIPPED" / "MISSING". The RRI.json carries the booleans
+    indirectly: a gate is FAILED if it is listed in ``failed_gates``, SKIPPED if in
+    ``skipped_gates``, MISSING if the run produced no gate evidence at all (no gates_total),
+    else PASSED. ``failed_gates`` may also carry the synthetic ``missing_personas`` /
+    ``missing_release_personas`` entries, which are not real gates and are ignored here."""
+    failed = set(rri.get("failed_gates") or [])
+    skipped = set(rri.get("skipped_gates") or [])
+    if name in skipped:
+        return "SKIPPED"
+    if name in failed:
+        return "FAILED"
+    # No evaluated gates at all (e.g. an empty/aborted rollup) -> every gate is unproven.
+    if not rri.get("gates_total"):
+        return "MISSING"
+    return "PASSED"
+
+
+def release_readiness_verdict(
+    rri_json: Path | str,
+    *,
+    db_path: Path | str = DB_PATH,
+    out_path: Optional[Path | str] = None,
+    build_sha: Optional[str] = None,
+) -> dict:
+    """Emit a machine-readable release-readiness verdict (the 11 gate results + ruler versions
+    + build SHA + timestamp) so every tag can link to it. ADDITIVE + READ-ONLY: this reads an
+    existing ``release_readiness.py`` RRI.json (the authoritative per-gate source) and the scores
+    ledger (for ruler provenance), and NEVER mutates the committed db (no rows, no schema change).
+
+    The DEVELOPMENT-vs-RELEASE flag is the crux: if ANY of the 11 canonical gates is not PASSED
+    (FAILED / SKIPPED / MISSING), the verdict is **DEVELOPMENT** (a tag cut without a complete
+    formal RRI); only all-11-PASSED is **RELEASE**.
+
+    Ruler versions (``scoring_config_version`` / ``lens_config_version``) are taken, in order, from
+    the RRI.json itself (if it stamped them), then from the matching ledger row (matched by build
+    SHA), then from the CURRENT rulers as a last resort (clearly labelled ``ruler_source``).
+
+    Returns the verdict dict; if ``out_path`` is given, also writes it there as indented JSON.
+    """
+    rri_path = Path(rri_json)
+    try:
+        rri = json.loads(rri_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"could not read RRI JSON {rri_path}: {exc}") from exc
+    if not isinstance(rri, dict):
+        raise ValueError(f"RRI JSON {rri_path} root is not an object")
+
+    sha = (build_sha or rri.get("build_sha") or "").strip()
+
+    gate_detail = rri.get("gate_detail") if isinstance(rri.get("gate_detail"), dict) else {}
+    gates = {
+        name: {
+            "status": _classify_gate(name, rri),
+            "detail": gate_detail.get(name, ""),
+        }
+        for name in RRI_CANONICAL_GATES
+    }
+    not_passed = [n for n, g in gates.items() if g["status"] != "PASSED"]
+    skipped = sorted(n for n, g in gates.items() if g["status"] == "SKIPPED")
+    failed = sorted(n for n, g in gates.items() if g["status"] == "FAILED")
+    missing = sorted(n for n, g in gates.items() if g["status"] == "MISSING")
+    status = "RELEASE" if not not_passed else "DEVELOPMENT"
+
+    # Ruler provenance: RRI.json first, then the ledger row at this SHA, then current rulers.
+    scv = rri.get("scoring_config_version")
+    lcv = rri.get("lens_config_version")
+    ruler_source = "rri_json"
+    if not scv:
+        match = None
+        if sha:
+            for r in fetch_rows_readonly(db_path):
+                rb = str(r.get("build_sha") or "")
+                if rb and (rb == sha or rb.startswith(sha) or sha.startswith(rb)):
+                    match = r
+                    break
+        if match is not None:
+            scv = match.get("scoring_config_version")
+            lcv = lcv or match.get("lens_config_version")
+            ruler_source = "scores_ledger"
+        else:
+            scv = scoring_config_version()
+            lcv = lcv or lens_config_version()
+            ruler_source = "current_rulers"
+
+    verdict = {
+        "schema": "worldos.release-readiness-verdict.v1",
+        "status": status,  # RELEASE | DEVELOPMENT
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "build_sha": sha,
+        "rri": rri.get("rri"),
+        "rri_status": rri.get("status"),
+        "release_ready": bool(rri.get("release_ready")),
+        "gates_passed": sum(1 for g in gates.values() if g["status"] == "PASSED"),
+        "gates_total": len(RRI_CANONICAL_GATES),
+        "gates": gates,
+        "gates_not_passed": not_passed,
+        "gates_failed": failed,
+        "gates_skipped": skipped,
+        "gates_missing": missing,
+        "scoring_config_version": scv,
+        "lens_config_version": lcv,
+        "ruler_source": ruler_source,
+        "source_rri_json": str(rri_path),
+    }
+
+    if out_path is not None:
+        Path(out_path).write_text(json.dumps(verdict, indent=2) + "\n", encoding="utf-8")
+    return verdict
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 def _build_parser() -> argparse.ArgumentParser:
@@ -769,6 +932,14 @@ def _build_parser() -> argparse.ArgumentParser:
                         "the orphan lists (ledger-only / index-only) as JSON")
     p.add_argument("--index", default=str(QA_DIR / "INDEX.jsonl"),
                    help="with --reconcile: path to INDEX.jsonl (default qa/INDEX.jsonl)")
+    # --- Versioning Phase-1: emit the machine-readable release_readiness_verdict.json ---
+    p.add_argument("--release-verdict", dest="release_verdict_rri", default=None,
+                   metavar="RRI_JSON",
+                   help="emit a machine-readable release_readiness_verdict.json (11 gate results "
+                        "+ ruler versions + build SHA + timestamp) from a release_readiness.py "
+                        "RRI.json; pair with --release-verdict-out to write it (default stdout)")
+    p.add_argument("--release-verdict-out", default=None,
+                   help="with --release-verdict: write the verdict JSON to this path")
     p.add_argument("--run-id")
     for col in COLUMNS:
         p.add_argument(f"--{col.replace('_', '-')}", dest=col, default=None)
@@ -819,8 +990,17 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.reconcile:
         print(json.dumps(reconcile(db, args.index), indent=2, ensure_ascii=False))
 
+    if args.release_verdict_rri:
+        verdict = release_readiness_verdict(
+            args.release_verdict_rri, db_path=db,
+            out_path=args.release_verdict_out, build_sha=args.build_sha,
+        )
+        print(json.dumps(verdict, indent=2, ensure_ascii=False))
+        if args.release_verdict_out:
+            print(f"wrote {args.release_verdict_out}", file=sys.stderr)
+
     if not any([args.init, args.add, args.list, args.render, args.compare,
-                args.trends_json, args.reconcile]):
+                args.trends_json, args.reconcile, args.release_verdict_rri]):
         _build_parser().print_help()
     return 0
 
