@@ -425,8 +425,14 @@ func _beat_move(beat: Dictionary) -> float:
 func _replay_token(actor_id: String) -> CharacterToken:
 	if actor_id == "":
 		return null
-	var tok: CharacterToken = _tokens.get(actor_id, null)
-	if tok == null or not is_instance_valid(tok) or tok.is_dead():
+	# _tokens may briefly hold a freed instance (a token queue_free'd mid-replay before its
+	# dict entry is erased). Fetch UNTYPED + validate BEFORE the typed cast, so we never assign
+	# a freed instance to a typed var (which throws "previously freed instance").
+	var raw: Variant = _tokens.get(actor_id, null)
+	if raw == null or not is_instance_valid(raw):
+		return null
+	var tok := raw as CharacterToken
+	if tok == null or tok.is_dead():
 		return null
 	return tok
 
@@ -435,9 +441,10 @@ func _replay_token(actor_id: String) -> CharacterToken:
 ## ISO-PROJECTION.md). Uses each token's CURRENT screen position (their zone anchor) so the
 ## facing is derived, never engine-supplied. A no-op if the target isn't on stage.
 func _face_token_at_target(tok: CharacterToken, actor_id: String, target_id: String) -> void:
-	var target_tok: CharacterToken = _tokens.get(target_id, null)
-	if target_tok == null or not is_instance_valid(target_tok):
+	var raw_target: Variant = _tokens.get(target_id, null)
+	if raw_target == null or not is_instance_valid(raw_target):
 		return
+	var target_tok := raw_target as CharacterToken
 	var from_pos: Vector2 = _token_prev_pos.get(actor_id, tok.position)
 	var to_pos: Vector2 = target_tok.position
 	var facing := FacingResolver.octant(from_pos, to_pos, FACING_ORDER)
@@ -740,9 +747,9 @@ func _camera_recenter() -> void:
 	elif not _tokens.is_empty():
 		# Exploration path: recenter on any token.
 		for aid in _tokens.keys():
-			var t: CharacterToken = _tokens[aid]
+			var t: Variant = _tokens[aid]
 			if is_instance_valid(t):
-				target = t.position
+				target = (t as CharacterToken).position
 				break
 	# Smooth tween to target over 0.4s.
 	var tw := get_tree().create_tween()
@@ -1201,9 +1208,13 @@ func _walk_token_to(tok: CharacterToken, actor_id: String, from_pos: Vector2, to
 	tok.set_zone_target(to_pos)
 	# Return to idle when the move-tween finishes (tween length == MOVE_TWEEN_SEC).
 	var idle_timer := get_tree().create_timer(CharacterToken.MOVE_TWEEN_SEC)
+	# Capture actor_id (a String), NOT tok — a token can be freed (e.g. a death beat) before
+	# this timer fires, and a lambda capturing the freed instance throws "Lambda capture freed".
+	# Re-fetch via _replay_token (freed-safe) instead.
 	idle_timer.timeout.connect(func():
-		if is_instance_valid(tok):
-			tok.set_anim("idle"))
+		var t := _replay_token(actor_id)
+		if t != null:
+			t.set_anim("idle"))
 	_token_prev_pos[actor_id] = to_pos
 	print("[Facing] move %s => %s" % [actor_id, facing])
 
