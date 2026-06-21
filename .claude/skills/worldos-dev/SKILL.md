@@ -142,6 +142,24 @@ Keep Python tests single-process unless the lane explicitly supports parallel ex
    git worktree remove --force <worktree> && git branch -D <branch> && git worktree prune
    ```
 
+### Multi-session / worktree gotchas (learned the hard way — these cost real time)
+- **`fetch`-not-`pull` leaves the canonical checkout STALE.** Building every PR in worktrees off
+  `origin/main` + merging on GitHub means `/Users/lume/WorldOS` is only ever `fetch`ed — its working
+  tree silently falls behind and files look "not there." After a merge batch:
+  `git -C /Users/lume/WorldOS pull --ff-only`.
+- **Merge race.** `gh pr merge --squash --admin` can fail "base branch was modified" when a parallel
+  session's PR lands mid-flight — and your LOCAL branch may get cleaned even though the PR stayed
+  OPEN. Verify with `gh pr view <n> --json state` and **retry** the merge on any still-open PR.
+- **A worktree's gitignored files are DESTROYED on `git worktree remove`.** Generated/uncommitted
+  output written into a worktree's `_private` (or any gitignored path) is gone on cleanup — write
+  durable generated artifacts into the **canonical** repo, not a worktree.
+- **Secret-scan the diff before every commit** — `git diff --cached | grep -iE '<key-prefixes>'` must
+  be empty. Keys live in `~/.worldos/*.key` (mode 600), never the tree.
+- **CI-only-validatable changes:** watch CI to conclusion (`gh run watch`) before merging. `godot/`-only
+  PRs skip CodeQL (the deterministic lanes + the `godot.yml` lane gate them), so squash-`--admin` is fine once green.
+- **New-subsystem skills:** **`godot-dev`** (GT2 Godot renderer), **`asset-gen`** (Meshy/Tripo/Scenario/
+  PixelLab art), **`wire-external-api-service`** (integrate a new API/MCP), **`sprint-handoff-doc`** (hand off a sprint).
+
 ## QA STRATEGY — pick the TIER (don't run the 90-min sweep to iterate)
 **Match the test to the change + your confidence — run a MIX, not all-or-nothing.** The full 5-persona
 sweep is the MILESTONE verdict, not the inner loop. Design + the honest signal accounting (the
