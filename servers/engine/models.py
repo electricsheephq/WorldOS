@@ -758,6 +758,25 @@ class PendingDamageBonus(_StrictModel):
     damage_type: str = ""  # type of the added damage; "" == same type as the weapon strike
 
 
+class PendingAttackBonus(_StrictModel):
+    """A DECLARED-but-not-yet-applied flat bonus the NEXT attack ROLL folds in.
+
+    The War Domain Cleric's Channel Divinity: Guided Strike grants "+10 to one attack roll."
+    But spending the Channel Divinity and resolving the strike are two engine calls
+    (`use_resource(channel_divinity, maneuver='Guided Strike')` then `attack`), so — exactly
+    like PendingDamageBonus for a maneuver's damage die — the bonus is stashed HERE when the
+    resource is spent; the next `attack()` adds `amount` to that strike's attack-roll TOTAL
+    (before the hit check) and clears this record (consumed once, never double-applied).
+
+    ADDITIVE: `Character.pending_attack_bonus` defaults to None, so every existing snapshot
+    round-trips unchanged and any spend that ISN'T a recognized to-hit option never creates
+    one — a plain Channel Divinity spend behaves exactly as today."""
+
+    amount: int  # the flat bonus added to the next attack roll (Guided Strike: 10)
+    source: str = ""  # the option name (Guided Strike, …) for surfacing
+    resource: str = ""  # the pool it was spent from (e.g. "channel_divinity")
+
+
 class PendingOnHitRider(_StrictModel):
     """An attack-roll spell's ON-HIT rider effect that has NOT yet landed (#186).
 
@@ -865,6 +884,12 @@ class Character(_StrictModel):
     # attack() adds it to that strike's damage and clears it (see PendingDamageBonus, #213).
     # None == today's behavior; a maneuver-less use_resource never sets it.
     pending_damage_bonus: Optional[PendingDamageBonus] = None
+    # A DECLARED-but-not-yet-applied flat bonus the NEXT attack ROLL folds in — the War
+    # Domain Cleric's Channel Divinity: Guided Strike (+10 to one attack roll) is spent at
+    # use_resource(channel_divinity, maneuver='Guided Strike') time and stashed here; the
+    # next attack() adds it to that strike's attack-roll total and clears it (see
+    # PendingAttackBonus). None == today's behavior; a non-to-hit spend never sets it.
+    pending_attack_bonus: Optional[PendingAttackBonus] = None
     death_saves: DeathSaves = Field(default_factory=DeathSaves)
     dead: bool = False
     stable: bool = False  # stabilized at 0 HP; no longer rolling death saves

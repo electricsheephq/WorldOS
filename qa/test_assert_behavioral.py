@@ -1026,3 +1026,89 @@ def test_narration_leak_clean_run_passes(tmp_path):
     events = _dm_text_turns(4) + [_dm_leak(t) for t in _CLEAN_NEARMISS]
     rc, out = _run_gate(tmp_path, events, _with_party({"leveling_mode": "milestone"}))
     assert "[PASS] narration_no_ooc_leak" in out, out
+
+
+# ── maneuver_rider_consumed (cs-1040val #1/#2) ──────────────────────────────────
+def _eng(tool: str) -> str:
+    return f"mcp__engine__{tool}"
+
+
+def test_maneuver_rider_consumed_superiority_die_folded(tmp_path):
+    # A superiority-die spend (auto-folded or named) followed by an attack carrying the die in
+    # damage is the correct chain -> PASS.
+    events = [
+        _assistant_tool_use("u1", _eng("use_resource"),
+                            {"character_id": "h", "resource": "superiority_dice"}),
+        _user_tool_result("u1", json.dumps(
+            {"ok": True, "resource": "superiority_dice", "auto_folded": "…",
+             "maneuver_damage": {"rolled": 6}})),
+        _assistant_tool_use("a1", _eng("attack"), {"attacker_id": "h", "target_id": "g"}),
+        _user_tool_result("a1", json.dumps(
+            {"attacker": "Hero", "target": "Goblin", "hit": True,
+             "attack_roll": {"total": 18}, "maneuver_damage": {"rolled": 6, "applied": True}})),
+    ]
+    rc, out = _run_gate(tmp_path, events, _with_party({}))
+    assert "[PASS] maneuver_rider_consumed" in out, out
+
+
+def test_maneuver_rider_consumed_guided_strike_plus10(tmp_path):
+    # A Guided Strike spend (channel_divinity -> +10) followed by an attack whose roll carries
+    # the to_hit_bonus is the correct chain -> PASS.
+    events = [
+        _assistant_tool_use("u1", _eng("use_resource"),
+                            {"character_id": "c", "resource": "channel_divinity", "maneuver": "Guided Strike"}),
+        _user_tool_result("u1", json.dumps(
+            {"ok": True, "resource": "channel_divinity",
+             "attack_bonus": {"option": "Guided Strike", "attack_bonus": 10}})),
+        _assistant_tool_use("a1", _eng("attack"), {"attacker_id": "c", "target_id": "g"}),
+        _user_tool_result("a1", json.dumps(
+            {"attacker": "Maren", "target": "Bandit", "hit": True,
+             "attack_roll": {"total": 18, "to_hit_bonus": {"amount": 10, "source": "Guided Strike"}}})),
+    ]
+    rc, out = _run_gate(tmp_path, events, _with_party({}))
+    assert "[PASS] maneuver_rider_consumed" in out, out
+
+
+def test_maneuver_rider_dangling_superiority_die_warns(tmp_path):
+    # A superiority die spent but NO following attack carries it (the cs-1040val omission) ->
+    # WARN (surfaced to the scorer), never RED-capping the run.
+    events = [
+        _assistant_tool_use("u1", _eng("use_resource"),
+                            {"character_id": "h", "resource": "superiority_dice"}),
+        _user_tool_result("u1", json.dumps(
+            {"ok": True, "resource": "superiority_dice", "auto_folded": "…",
+             "maneuver_damage": {"rolled": 6}})),
+        # … no attack by "h" after the spend.
+    ]
+    rc, out = _run_gate(tmp_path, events, _with_party({}))
+    assert "[WARN] maneuver_rider_consumed" in out, out
+    assert "[FAIL] maneuver_rider_consumed" not in out, out
+
+
+def test_maneuver_rider_dangling_guided_strike_warns(tmp_path):
+    # Guided Strike's +10 spent but the following attack did NOT carry the to_hit_bonus -> WARN.
+    events = [
+        _assistant_tool_use("u1", _eng("use_resource"),
+                            {"character_id": "c", "resource": "channel_divinity", "maneuver": "Guided Strike"}),
+        _user_tool_result("u1", json.dumps(
+            {"ok": True, "resource": "channel_divinity",
+             "attack_bonus": {"option": "Guided Strike", "attack_bonus": 10}})),
+        _assistant_tool_use("a1", _eng("attack"), {"attacker_id": "c", "target_id": "g"}),
+        _user_tool_result("a1", json.dumps(
+            {"attacker": "Maren", "target": "Bandit", "hit": False,
+             "attack_roll": {"total": 8}})),  # no to_hit_bonus — the +10 was dropped
+    ]
+    rc, out = _run_gate(tmp_path, events, _with_party({}))
+    assert "[WARN] maneuver_rider_consumed" in out, out
+
+
+def test_ordinary_resource_spend_not_tracked(tmp_path):
+    # A plain resource spend that sets NO pending attack rider (e.g. Second Wind) is ignored by
+    # the check -> PASS (no dangling-rider noise).
+    events = [
+        _assistant_tool_use("u1", _eng("use_resource"),
+                            {"character_id": "h", "resource": "second_wind"}),
+        _user_tool_result("u1", json.dumps({"ok": True, "resource": "second_wind", "remaining": 2})),
+    ]
+    rc, out = _run_gate(tmp_path, events, _with_party({}))
+    assert "[PASS] maneuver_rider_consumed" in out, out

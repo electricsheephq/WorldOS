@@ -289,10 +289,11 @@ def test_turn_brief_superiority_dice_suggests_maneuver_on_attack(cid):
     assert sd["label"].endswith("d8")  # the die is surfaced
 
 
-def test_use_resource_bare_superiority_die_in_combat_warns(cid):
-    """FOOTGUN ADVISORY: a die-pool spend (superiority_dice) in active combat with NO maneuver=
-    surfaces an advisory `warning` steering the DM to attack(maneuver=). Advisory only — the
-    spend still succeeds (it does not block)."""
+def test_use_resource_bare_superiority_die_in_combat_auto_folds(cid):
+    """#1 (cs-1040val): a die-pool spend (superiority_dice) in active combat with NO maneuver=
+    is the common Battle Master mistake. The engine no longer just warns (the DM ignored that)
+    — it AUTO-FOLDS: rolls the die and stashes a pending_damage_bonus the next attack folds in.
+    `auto_folded` is surfaced; the old `warning` key is gone."""
     fid = server.create_character(
         cid, "Aldric", kind="player", class_name="Fighter", level=3, apply_srd_defaults=True,
         abilities={"strength": 16, "constitution": 14},
@@ -300,8 +301,11 @@ def test_use_resource_bare_superiority_die_in_combat_warns(cid):
     server.set_class_resource(cid, fid, "superiority_dice", max=4, recharge="short", size="d8")
     server.start_combat(cid, [fid])
     out = server.use_resource(cid, fid, "superiority_dice")  # bare spend, in combat
-    assert out["ok"] is True and out["remaining"] == 3  # the spend SUCCEEDS (advisory, not block)
-    assert "warning" in out and "attack(maneuver=" in out["warning"]
+    assert out["ok"] is True and out["remaining"] == 3  # the spend SUCCEEDS
+    assert "warning" not in out
+    assert "auto_folded" in out and "maneuver_damage" in out  # the die was rolled + folded
+    # The rolled bonus is now pending on the character (consumed by the next attack).
+    assert server.get_character(cid, fid)["pending_damage_bonus"] is not None
 
 
 def test_use_resource_bare_superiority_die_out_of_combat_no_warning(cid):
