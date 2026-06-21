@@ -92,13 +92,18 @@ while [ "$attempt" -lt 3 ]; do
   # so it uses the default ~/.claude (Claude OAuth) + api.anthropic.com. On a normal Claude run
   # these vars are unset, so `env -u …` is a NO-OP → byte-identical to today.
   # TIMEOUT GUARD: `claude -p` occasionally HANGS (a stuck stream / a slow response that never
-  # returns) — without a wall-clock bound that blocks the ENTIRE run forever (seen repeatedly on
-  # combat-sprint + north-star scoring; the run fights+gates fine, then scoring hangs). `timeout`
-  # kills a hung call so the retry loop below catches it (empty $RAW → the EMPTY branch → retry).
-  # Default 300s; override via WORLDOS_SCORE_TIMEOUT. A healthy score is ~60–150s, so this never
-  # fires on a good call — it only rescues a genuine hang.
+  # returns) — without a wall-clock bound that blocks the ENTIRE run forever. `timeout` kills a hung
+  # call so the retry loop below catches it (empty $RAW → the EMPTY branch → retry).
+  # Default 600s (#1040): the social lenses (tolkien/mechanical) finish in ~60–150s, but the
+  # Angry-DM 5e-fidelity lens (rubric_angry_dm.md is ~32 KB, ~3× tolkien) LEGITIMATELY takes ~400s
+  # to grade a COMBAT-DENSE transcript — a single-turn generation, MEASURED 402s on csmed-1 (num_turns=1,
+  # valid 7.7 KB scorecard). The old 300s default KILLED that mid-generation → empty stdout that LOOKED
+  # like a hang (the #1040 "combat-scorer hang" was a too-short timeout, not a true hang). 600s covers it
+  # with headroom; the fast lenses are unaffected (the bound only fires on a genuinely slow/stuck call).
+  # run_duo.sh ALSO isolates the angrydm lens (scores it alone, not concurrent with the 2 light lenses)
+  # so it gets full API throughput and lands near the ~400s baseline rather than slower under contention.
   printf '%s' "$INPUT" | env -u ANTHROPIC_BASE_URL -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN \
-    -u API_TIMEOUT_MS -u CLAUDE_CONFIG_DIR timeout "${WORLDOS_SCORE_TIMEOUT:-300}" claude -p \
+    -u API_TIMEOUT_MS -u CLAUDE_CONFIG_DIR timeout "${WORLDOS_SCORE_TIMEOUT:-600}" claude -p \
     --model "$SCORER_MODEL" --permission-mode bypassPermissions \
     --max-budget-usd "$BUDGET" \
     --output-format json > "$RAW" 2> "$ERR"
@@ -130,7 +135,7 @@ while [ "$attempt" -lt 3 ]; do
   fi
   if [ ! -s "$RAW" ]; then
     # No envelope at all → claude itself never produced output (E2BIG, killed, exec fail).
-    echo "[score] attempt $attempt: EMPTY output for $(basename "$OUT") — claude wrote NOTHING to stdout (E2BIG / killed / TIMED OUT at ${WORLDOS_SCORE_TIMEOUT:-300}s). Retrying. stderr tail:" >&2
+    echo "[score] attempt $attempt: EMPTY output for $(basename "$OUT") — claude wrote NOTHING to stdout (E2BIG / killed / TIMED OUT at ${WORLDOS_SCORE_TIMEOUT:-600}s). Retrying. stderr tail:" >&2
     tail -n 20 "$ERR" >&2 2>/dev/null || echo "[score]   (no stderr captured at $ERR)" >&2
   elif [ -n "$api_err" ]; then
     # A real API-error envelope (e.g. 401 auth, 400, overload). Surface it — don't bury it.
