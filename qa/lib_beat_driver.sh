@@ -1398,6 +1398,65 @@ json.dump(d, open(path, "w"), indent=2)
 PY
 }
 
+# SCORER-INTEGRITY (WS0a) — validate ONE lens scorecard file. A scorer FAILURE must never read
+# as a valid no-score: when qa/score.sh exhausts its retries it now writes an {error:scorer_failed}
+# sentinel (or, on a 429, {quota_exhausted}); a hard process kill could still leave the file
+# missing/empty. This helper is the single source of truth for "is this lens file a TRUSTWORTHY
+# numeric scorecard?" so run_duo.sh and the test agree by construction.
+# Echoes exactly ONE token on stdout:
+#   ok        — file exists, non-empty, valid JSON, has a NUMERIC .overall (a real scorecard)
+#   missing   — file absent or empty (claude wrote nothing / no sentinel was reachable)
+#   invalid   — present + non-empty but NOT parseable JSON
+#   sentinel  — valid JSON carrying a failure sentinel (.error=="scorer_failed" or .quota_exhausted)
+#   nonnumeric— valid JSON but .overall is absent/non-numeric (a malformed card, not a score)
+# Returns rc=0 ONLY for 'ok'; rc=1 for every NON-ok status so callers can `if worldos_validate_lens_file …`.
+worldos_validate_lens_file() {
+  local path="$1" status
+  if [ ! -s "$path" ]; then
+    echo missing
+    return 1
+  fi
+  # python via `-c` (single-quoted, no heredoc) so the verdict logic can be captured into a var
+  # with $(...) cleanly (a heredoc INSIDE $(...) is fragile across bash versions). $0 is unused;
+  # the lens path is $1.
+  status="$(python3 -c '
+import json, numbers, sys
+try:
+    with open(sys.argv[1]) as fh:
+        d = json.load(fh)
+except Exception:
+    print("invalid"); sys.exit(0)
+if not isinstance(d, dict):
+    print("invalid"); sys.exit(0)
+# A failure sentinel (scorer exhausted retries, or a 429 quota trip) is NOT a score.
+if d.get("error") == "scorer_failed" or d.get("quota_exhausted") is True:
+    print("sentinel"); sys.exit(0)
+ov = d.get("overall")
+# bool is a subclass of int — exclude it; a scorecard overall is a real number.
+if isinstance(ov, bool) or not isinstance(ov, numbers.Number):
+    print("nonnumeric"); sys.exit(0)
+print("ok")
+' "$path" 2>/dev/null)"
+  # A python crash / empty stdout (e.g. python3 missing) → treat as invalid, never silently 'ok'.
+  [ -n "$status" ] || status="invalid"
+  echo "$status"
+  [ "$status" = "ok" ]
+}
+
+# WS0a — render ONE lens's value for the human-facing result line. For a valid scorecard, echo the
+# numeric .overall; for ANYTHING else echo FAILED:<status> so a scorer failure can never print as a
+# BLANK that misreads as a valid no-score (the bug this whole change fixes). Single source of truth
+# for the print so it can't drift from worldos_validate_lens_file's verdict.
+worldos_lens_display() {
+  local path="$1" status
+  status="$(worldos_validate_lens_file "$path")"
+  if [ "$status" = "ok" ]; then
+    jq -r '.overall' "$path" 2>/dev/null
+  else
+    echo "FAILED:${status}"
+  fi
+}
+
 # Campaign Director advisory (#72): at the START of a beat, surface what the campaign OWES — an
 # untracked hook to add_quest, an NPC introduced but still silent, a due consequence to land — so
 # the DM is REMINDED structurally instead of relying on reach-for (the add_quest gap a QA run

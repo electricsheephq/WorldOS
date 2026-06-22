@@ -86,6 +86,7 @@ if [ "${WORLDOS_SCORE_GUARD_ONLY:-}" = "1" ]; then
 fi
 
 attempt=0
+LAST_API_ERROR="unknown"   # WS0a: captured per-attempt; stamped into the scorer_failed sentinel below
 while [ "$attempt" -lt 3 ]; do
   attempt=$((attempt + 1))
   # The rubric+schema+transcript+state prompt is ~100-200KB. Passing it as a single
@@ -152,16 +153,40 @@ while [ "$attempt" -lt 3 ]; do
     # No envelope at all → claude itself never produced output (E2BIG, killed, exec fail).
     echo "[score] attempt $attempt: EMPTY output for $(basename "$OUT") — claude wrote NOTHING to stdout (E2BIG / killed / TIMED OUT at ${WORLDOS_SCORE_TIMEOUT:-600}s). Retrying. stderr tail:" >&2
     tail -n 20 "$ERR" >&2 2>/dev/null || echo "[score]   (no stderr captured at $ERR)" >&2
+    LAST_API_ERROR="empty_output (E2BIG / killed / timed out at ${WORLDOS_SCORE_TIMEOUT:-600}s)"
   elif [ -n "$api_err" ]; then
     # A real API-error envelope (e.g. 401 auth, 400, overload). Surface it — don't bury it.
     echo "[score] attempt $attempt: API ERROR ($api_err) for $(basename "$OUT"): $(jq -r '.result // "<no message>"' "$RAW" 2>/dev/null | head -1)" >&2
+    LAST_API_ERROR="$api_err: $(jq -r '.result // "<no message>"' "$RAW" 2>/dev/null | head -1)"
   else
     echo "[score] attempt $attempt: unparseable scorecard / missing .scores for $(basename "$OUT") (possibly transient); retrying…" >&2
+    LAST_API_ERROR="unparseable_scorecard / missing .scores"
   fi
   sleep 5
 done
 
 echo "[score] FAILED after $attempt attempts: $OUT — last stderr tail:" >&2
 tail -n 20 "$ERR" >&2 2>/dev/null || echo "[score]   (no stderr captured at $ERR)" >&2
+# SCORER-INTEGRITY (WS0a): on GENERIC retry-exhaustion (NOT a 429 — that already wrote a
+# {quota_exhausted} sentinel + exited rc=2 above) the old code exited rc=1 WITHOUT writing
+# anything to $OUT, so the lens file was MISSING/EMPTY. Downstream `jq -r '.overall//"?"'`
+# then printed BLANK with no failure indicator — a failed scoring masqueraded as a silent
+# valid no-score (observed live: 'story-craft= mechanical= angry-dm= behavioral=GREEN').
+# Mirror the 429 sentinel block: ALWAYS leave the lens file as valid JSON carrying an
+# explicit {error:"scorer_failed"} marker so run_duo.sh can detect the failure and mark the
+# run 'unscorable' instead of reading a blank as a pass. Use a python heredoc (NOT printf with
+# a raw $LAST_API_ERROR) so an error string with quotes/newlines can never produce invalid JSON.
+python3 - "$OUT" "$attempt" "${LAST_API_ERROR:-unknown}" <<'PY' 2>/dev/null || \
+  printf '{"error":"scorer_failed","attempts":%s,"last_api_error":"json_encode_failed"}\n' "$attempt" > "$OUT"
+import json, sys
+out, attempts, last = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    attempts_n = int(attempts)
+except ValueError:
+    attempts_n = attempts
+json.dump({"error": "scorer_failed", "attempts": attempts_n, "last_api_error": last},
+          open(out, "w"))
+open(out, "a").write("\n")
+PY
 rm -f "$RAW"
 exit 1
