@@ -90,7 +90,9 @@ def _dims(row: dict) -> dict:
     if not isinstance(parsed, dict):
         return {}
     # Keep only keys with numeric values; skip non-numeric (malformed) entries.
-    return {k: v for k, v in parsed.items() if isinstance(v, (int, float))}
+    # Explicitly exclude booleans — isinstance(True, int) is True in Python, but a bool
+    # score is a data error, not a meaningful 0-10 lens value.
+    return {k: v for k, v in parsed.items() if isinstance(v, (int, float)) and not isinstance(v, bool)}
 
 
 def detect_visual_regression(candidate: dict, db_path: Path | str = scores_db.DB_PATH) -> dict:

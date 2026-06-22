@@ -351,10 +351,16 @@ def gate_floor_contact_and_scale(scenegrid: SceneGrid, camera: CameraSpec, actor
                           "value": None, "threshold": None,
                           "detail": f"actor {aid}: malformed or missing cell (expected [c,r]); skipped"})
             continue
-        c, r = int(_cell[0]) if _cell[0] is not None else None, int(_cell[1]) if _cell[1] is not None else None
+        try:
+            c, r = int(_cell[0]), int(_cell[1])
+        except (TypeError, ValueError):
+            gates.append({"gate": "G3_floor_contact", "severity": "SKIPPED", "metric": "input",
+                          "value": None, "threshold": None,
+                          "detail": f"actor {aid}: cell values must be integers; skipped (got {_cell!r})"})
+            continue
         feet_px = a.get("feet_px")            # [sx, sy] measured screen feet (bottom of the actor)
         px_height = a.get("px_height")        # measured rendered pixel height (feet->head)
-        if c is None or r is None or feet_px is None:
+        if feet_px is None:
             gates.append({"gate": "G3_floor_contact", "severity": "SKIPPED", "metric": "input",
                           "value": None, "threshold": None,
                           "detail": f"actor {aid}: missing cell or feet_px; skipped"})
