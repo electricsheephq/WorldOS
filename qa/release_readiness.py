@@ -33,6 +33,16 @@ image_render gate sources (signals.image_render_source):
                     health.image_probe_ok:true + the private art root across every
                     required handoff gate. This is a representative built-app image
                     probe, NOT a render rate — weaker but real Mac evidence.
+  - "waived"      : (#843, opt-in --waive-image-render + --waive-image-render-reason) the
+                    gate was RED-BY-CONSTRUCTION on a VM-only sweep (minted-scope /image 404s
+                    the resolver cannot answer + no imagegen gateway) and has been explicitly
+                    WAIVED-WITH-REASON so the RRI is HONEST, NOT a silent fail. Deliberately
+                    narrow: engages ONLY when source would be "none" AND there are NO KNOWN
+                    unexpected 404s — a recorded vm-network rate or a blocking unexpected-404
+                    gap stays authoritative and hard-fails the gate even with the flag set
+                    (the #762 invariant: a waiver never papers over genuine failure evidence).
+                    The waiver is recorded in signals.image_render_waived/_reason and as a
+                    waived=True annotation in the displayed evidence_gaps.
   - "none"        : neither source -> the gate stays a HARD FAIL with an evidence gap.
 
 A score.json image_404s count with no success denominator is an EVIDENCE GAP, never a
@@ -744,6 +754,15 @@ def main() -> int:
     ap.add_argument("--palette-source", default="", help="path or label for the palette-live evidence source")
     ap.add_argument("--handoff-json", default="", help="Mac app handoff gate JSON proving built-app smoke/play evidence")
     ap.add_argument("--support-preflight-json", default="", help="Support VM preflight JSON proving same-SHA heavy-lane readiness")
+    ap.add_argument("--waive-image-render", dest="waive_image_render", action="store_true",
+                    help="(#843) waive image_render for a VM-only sweep where it is RED-BY-CONSTRUCTION "
+                    "(minted-scope /image 404s the resolver cannot answer + no imagegen gateway), so the "
+                    "RRI is HONEST (image_render = waived-with-reason, NOT a silent fail). REQUIRES "
+                    "--waive-image-render-reason. NEVER papers over GENUINE failure evidence: a recorded "
+                    "vm-network render rate OR a KNOWN unexpected-404 evidence gap still hard-fails the gate.")
+    ap.add_argument("--waive-image-render-reason", dest="waive_image_render_reason", default="",
+                    help="mandatory reason recorded with a --waive-image-render waiver (e.g. 'VM-only "
+                    "sweep: minted-scope 404s by construction (#843); render proven on the Mac handoff lane')")
     ap.add_argument("--build-sha", dest="build_sha", default="")
     ap.add_argument("--abort-marker", default="", help="path to a sweep QUOTA_ABORT marker; if it "
                     "exists the rollup is forced to an ABORTED status (infra abort, not a product RRI)")
@@ -1122,6 +1141,56 @@ def main() -> int:
         image_render_ok = image_evidence_complete and img_rate >= 0.95 and "image_render" not in evidence_gap_gates
         image_render_detail = f"source={image_render_source}; rate={img_rate:.2%}; denominator={total_image_denominator}"
 
+    # ---- #843 image_render WAIVER (VM-only RED-by-construction escape) ----
+    # On the VM lane the UI requests minted-scope /image ids the resolver cannot answer (0
+    # location_* dirs ingested + a null provider + no imagegen gateway), so image_render is
+    # RED-BY-CONSTRUCTION and the #762 mac-handoff escape can never fire. --waive-image-render
+    # marks the gate WAIVED-WITH-REASON so a VM-only sweep RRI is HONEST (waived, not a silent
+    # fail). The waive is DELIBERATELY narrow — it NEVER papers over GENUINE failure evidence:
+    #   * it engages ONLY when the gate is failing purely by-construction: source=="none"
+    #     (no VM denominator, no valid mac-handoff) AND no KNOWN unexpected-404 gap; and
+    #   * a recorded vm-network render rate (source=="vm-network") or a blocking unexpected-404
+    #     evidence gap stays AUTHORITATIVE and hard-fails the gate even with the flag set.
+    # It REQUIRES a non-empty reason; a bare flag is not a valid honest waiver (the gate stays
+    # failed with a "reason required" gap). Default-off → every pre-existing RRI is byte-identical.
+    image_render_waived = False
+    image_render_waive_reason = ""
+    waived_image_render_gaps: list[dict] = []
+    if args.waive_image_render and not image_render_ok:
+        reason = (args.waive_image_render_reason or "").strip()
+        # A waive may only neutralize a PURELY by-construction failure: no VM render rate
+        # (source!="vm-network"), no valid mac-handoff carrying the gate (source!="mac-handoff"),
+        # and no recorded KNOWN unexpected 404s (blocking_image_gap_personas) — those are real
+        # render-failure evidence the #762 invariant forbids any escape from papering over.
+        waivable = image_render_source == "none" and not blocking_image_gap_personas
+        if not reason:
+            evidence_gaps.append({
+                "gate": "image_render",
+                "missing": "--waive-image-render-reason",
+                "detail": "--waive-image-render requires a non-empty --waive-image-render-reason "
+                          "(a waiver with no recorded reason is not honest)",
+            })
+            evidence_gap_gates = {gap["gate"] for gap in evidence_gaps}
+        elif waivable:
+            image_render_waived = True
+            image_render_waive_reason = reason
+            # Pull the by-construction image_render gaps OUT of the BLOCKING list and re-file
+            # them as a WAIVED annotation (stamped waived=True + reason) so the RRI carries the
+            # waiver in its evidence trail WITHOUT blocking release_ready. Other gates' gaps stay.
+            for gap in evidence_gaps:
+                if gap.get("gate") == "image_render":
+                    waived_image_render_gaps.append({**gap, "waived": True, "waive_reason": reason})
+            evidence_gaps = [gap for gap in evidence_gaps if gap.get("gate") != "image_render"]
+            evidence_gap_gates = {gap["gate"] for gap in evidence_gaps}
+            image_render_ok = True
+            image_render_source = "waived"
+            image_render_detail = (
+                "source=waived (#843 VM-only RED-by-construction: minted-scope 404s the resolver "
+                f"cannot answer + no imagegen gateway); reason={reason!r}"
+            )
+        # else: not waivable (vm-network rate or known unexpected 404s) → leave the hard fail
+        # in place; the genuine failure evidence is authoritative (the #762 invariant).
+
     # ---- ADDITIVE latency gates (Phase-3) ----
     # s_per_beat / coldopen are HARD gates ONLY when latency evidence is present AND over
     # budget; ABSENT latency -> the gate is SKIPPED with a documented evidence gap, never a
@@ -1301,7 +1370,12 @@ def main() -> int:
         "missing_personas": missing_personas,
         "missing_release_personas": missing_release_personas,
         "harness_failures": harness_failures,
-        "evidence_gaps": evidence_gaps,
+        # The DISPLAYED evidence trail surfaces any #843 WAIVED image_render gaps (stamped
+        # waived=True + reason) alongside the BLOCKING gaps — an honest record that the gate was
+        # waived, never silently dropped. The waived entries do NOT count toward release_ready /
+        # partial / harness_contaminated (those read the blocking list), so a clean VM-only sweep
+        # with a valid waiver can be release_ready while still showing the waiver in evidence_gaps.
+        "evidence_gaps": evidence_gaps + waived_image_render_gaps,
         "handoff_evidence": {
             **handoff_proof,
             "evidence_gaps": handoff_evidence_gaps,
@@ -1359,6 +1433,13 @@ def main() -> int:
             "image_404_personas_without_denominator": [
                 str(p["persona"]) for p in image_gap_personas
             ],
+            # #843 — honest record of a VM-only image_render WAIVER. image_render_waived is True
+            # ONLY when the gate was failing purely by-construction (source=="none", no known
+            # unexpected 404s) and a valid --waive-image-render-reason was supplied; False (and the
+            # reason empty) in every other case, including when a waive was REFUSED for genuine
+            # failure evidence. Default-off → byte-identical for every pre-existing RRI.
+            "image_render_waived": image_render_waived,
+            "image_render_waive_reason": image_render_waive_reason,
             "palette_live": args.palette_live,
             "run_build_shas": build_shas,
             # ADDITIVE latency signals (Phase-3). None when no persona recorded latency
@@ -1411,6 +1492,9 @@ def main() -> int:
         print("  FAILED: " + ", ".join(details))
     if evidence_gaps:
         print("  EVIDENCE GAPS: " + "; ".join(f"{g['gate']} missing {g['missing']}" for g in evidence_gaps))
+    if image_render_waived:
+        print(f"  IMAGE_RENDER WAIVED (#843): {image_render_waive_reason} "
+              f"— VM-only RED-by-construction; NOT a silent pass (recorded in evidence_gaps as waived).")
 
     # WS0 ENGAGEMENT section — name each dead authored system across the sweep + a fix hint, so an
     # all-inert subsystem (the failure WS0 exists to surface) is visible even while it is WARN-only.
