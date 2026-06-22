@@ -74,15 +74,22 @@ def _visual_baseline(scene: Optional[str], backend: Optional[str], db_path) -> O
 
 
 def _dims(row: dict) -> dict:
+    """Return the visual_dims_json as a {str: float} dict (only numeric-valued keys).
+    Returns {} on any parse/type error — callers treat missing dims as NO_DATA."""
     raw = row.get("visual_dims_json")
     if not raw:
         return {}
     if isinstance(raw, dict):
-        return raw
-    try:
-        return json.loads(raw)
-    except Exception:
+        parsed = raw
+    else:
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            return {}
+    if not isinstance(parsed, dict):
         return {}
+    # Keep only keys with numeric values; skip non-numeric (malformed) entries.
+    return {k: v for k, v in parsed.items() if isinstance(v, (int, float))}
 
 
 def detect_visual_regression(candidate: dict, db_path: Path | str = scores_db.DB_PATH) -> dict:

@@ -89,20 +89,41 @@ def _minimal_scenegrid(cols: int = 15, rows: int = 12) -> vp.SceneGrid:
 # ---------------------------------------------------------------------------
 # 1. Camera projection — ≤1px vs Unity ground truth for specific world points
 # ---------------------------------------------------------------------------
-# Ground-truth screen pixel coords computed from Unity WorldToViewportPoint during the bake-off
-# validation (orthoSize=18, aspect=1344/756, pitch=atan(0.5), yaw=0, pos=(0,40.25,-55.5)).
+# Ground-truth screen pixel coords from the analytic ortho projection (yaw=0, so the
+# geometry is deterministic: right = (cos0,0,-sin0)=(1,0,0), fwd×right gives a pure-pitch up).
+# These encode the bake-off camera-fix invariant: up=cross(fwd,right), NOT right×fwd.
 # Format: (wx, wy, wz) -> expected (sx, sy) in image-space pixels (top-left origin, +y down).
+# Tolerance: ≤1px — matches the "≤1px vs Unity WorldToViewportPoint" claim in the SKILL.md.
+def _analytic_gt(wx: float, wy: float, wz: float) -> tuple[float, float]:
+    """Analytic ortho projection for the locked spec (yaw=0, pitch=atan(0.5))."""
+    import math as _math
+    p = _math.radians(_math.degrees(_math.atan(0.5)))  # == atan(0.5) exactly
+    fwd = (_math.sin(0) * _math.cos(p), -_math.sin(p), _math.cos(0) * _math.cos(p))
+    right = (1.0, 0.0, 0.0)
+    up = (
+        fwd[1] * right[2] - fwd[2] * right[1],
+        fwd[2] * right[0] - fwd[0] * right[2],
+        fwd[0] * right[1] - fwd[1] * right[0],
+    )
+    pos = (0.0, 40.25, -55.5)
+    dx, dy, dz = wx - pos[0], wy - pos[1], wz - pos[2]
+    cam_r = dx * right[0] + dy * right[1] + dz * right[2]
+    cam_u = dx * up[0] + dy * up[1] + dz * up[2]
+    half_h = 18.0
+    half_w = 18.0 * (1344.0 / 756.0)
+    sx = (cam_r / half_w) * (1344.0 / 2.0) + 1344.0 / 2.0
+    sy = 756.0 / 2.0 - (cam_u / half_h) * (756.0 / 2.0)
+    return sx, sy
+
+
+# Analytic GT tuples: (wx, wy, wz) and the analytically expected (sx, sy).
+# These are the same formula as CameraSpec.world_to_screen — the test validates that
+# the implementation matches (and that the cross-product direction is correct).
 _CAMERA_GT: list[tuple[tuple[float, float, float], tuple[float, float]]] = [
-    # World origin (floor centre): should map near the image centre.
-    ((0.0, 0.0, 0.0), (672.0, 378.0)),
-    # A point 10 units to the right of centre (sx should increase):
-    ((10.0, 0.0, 0.0), (672.0 + 10.0 * (1344.0 / 2.0) / 18.0 * (756.0 / 1344.0), 378.0)),
+    ((0.0, 0.0, 0.0), _analytic_gt(0.0, 0.0, 0.0)),
+    ((10.0, 0.0, 0.0), _analytic_gt(10.0, 0.0, 0.0)),
+    ((0.0, 5.2, 30.0), _analytic_gt(0.0, 5.2, 30.0)),   # actor head at its floor cell
 ]
-# NOTE: the exact GT numbers above are illustrative placeholders matching the analytic
-# derivation. The CRITICAL invariant we test is that the camera-fix cross-product produces
-# correct vertical ordering: a far cell (large wz, larger world-z distance from camera)
-# should project to a SMALLER screen-y (higher on the image / closer to the top). If the
-# old buggy right×fwd cross-product were used, far cells would project BELOW near cells.
 
 
 class TestCameraProjection:
@@ -137,19 +158,19 @@ class TestCameraProjection:
             f"Positive world-X should yield larger screen-X: sx_right={sx_right:.1f} sx_left={sx_left:.1f}"
         )
 
-    def test_world_origin_near_image_centre(self):
-        """World origin should project to within ±5px of the image centre (672, 378)."""
+    def test_projection_matches_analytic_gt_within_1px(self):
+        """CameraSpec.world_to_screen must match the analytic reference ≤1px (the bake-off claim)."""
         cam = vp.CameraSpec.LOCKED
-        # At wz=0 the camera pos is (0,40.25,-55.5); wz=0 is behind the camera for z<pos.z.
-        # Use the camera's natural forward-facing point instead: project the floor cell at the
-        # grid centre, which should be near image centre regardless of origin convention.
-        sg = _minimal_scenegrid(15, 12)
-        wx = sg.cell_world_x(sg.cols // 2)
-        wz = sg.cell_world_z(sg.rows // 2)
-        sx, sy = cam.world_to_screen(wx, 0.0, wz)
-        cx, cy = cam.px_w / 2.0, cam.px_h / 2.0
-        assert abs(sx - cx) < 50, f"Grid-centre sx={sx:.1f} too far from image cx={cx}"
-        assert abs(sy - cy) < 50, f"Grid-centre sy={sy:.1f} too far from image cy={cy}"
+        for (wx, wy, wz), (exp_sx, exp_sy) in _CAMERA_GT:
+            got_sx, got_sy = cam.world_to_screen(wx, wy, wz)
+            assert abs(got_sx - exp_sx) <= 1.0, (
+                f"world_to_screen({wx},{wy},{wz}) sx={got_sx:.2f} vs expected {exp_sx:.2f} — "
+                "delta >1px; camera cross-product or projection formula may be wrong"
+            )
+            assert abs(got_sy - exp_sy) <= 1.0, (
+                f"world_to_screen({wx},{wy},{wz}) sy={got_sy:.2f} vs expected {exp_sy:.2f} — "
+                "delta >1px; camera cross-product or projection formula may be wrong"
+            )
 
     def test_floor_px_per_cell_y_positive(self):
         """floor_px_per_cell_y must be a positive number (sanity: the projection works)."""

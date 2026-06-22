@@ -137,8 +137,6 @@ class CameraSpec:
     def floor_px_per_cell_y(self, scenegrid: "SceneGrid") -> float:
         """Vertical screen pixels spanned by one floor cell of depth, near frame center.
         Used to convert a floor-Y screen delta into floor-CELL units (the G3 unit)."""
-        cs = scenegrid.cell_size_ft
-        x0, _ = (0.0, 0.0)
         # Two adjacent floor cells along +Z (depth) at the same X:
         wz0 = scenegrid.cell_world_z(scenegrid.rows // 2)
         wz1 = scenegrid.cell_world_z(scenegrid.rows // 2 + 1)
@@ -347,10 +345,17 @@ def gate_floor_contact_and_scale(scenegrid: SceneGrid, camera: CameraSpec, actor
     px_per_cell_y = camera.floor_px_per_cell_y(scenegrid)
     for a in actors:
         aid = a.get("id", "?")
-        c, r = a.get("cell", [None, None])
+        _cell = a.get("cell")
+        # Validate cell is a 2-element sequence before unpacking.
+        if not (isinstance(_cell, (list, tuple)) and len(_cell) == 2):
+            gates.append({"gate": "G3_floor_contact", "severity": "SKIPPED", "metric": "input",
+                          "value": None, "threshold": None,
+                          "detail": f"actor {aid}: malformed or missing cell (expected [c,r]); skipped"})
+            continue
+        c, r = int(_cell[0]) if _cell[0] is not None else None, int(_cell[1]) if _cell[1] is not None else None
         feet_px = a.get("feet_px")            # [sx, sy] measured screen feet (bottom of the actor)
         px_height = a.get("px_height")        # measured rendered pixel height (feet->head)
-        if c is None or feet_px is None:
+        if c is None or r is None or feet_px is None:
             gates.append({"gate": "G3_floor_contact", "severity": "SKIPPED", "metric": "input",
                           "value": None, "threshold": None,
                           "detail": f"actor {aid}: missing cell or feet_px; skipped"})
@@ -381,10 +386,11 @@ def gate_floor_contact_and_scale(scenegrid: SceneGrid, camera: CameraSpec, actor
                                  f"{abs(delta_cells):.2f} cells ({delta_px:+.0f}px)" if sev != "PASS"
                                  else f"actor {aid} @cell[{c},{r}] grounded ({delta_cells:+.2f} cells)")})
         # G4 scale: expected pixel height = actor world height projected at this depth.
+        # Reuse floor_sy from G3 (same floor-plane point) instead of recomputing.
         if px_height is not None:
             world_h = float(a.get("world_height_ft", DEFAULT_ACTOR_WORLD_H))
-            _, sy_feet = camera.world_to_screen(wx, 0.0, wz)
             _, sy_head = camera.world_to_screen(wx, world_h, wz)
+            sy_feet = floor_sy   # floor_sy computed above for G3 — same cell, y=0
             expected_px = abs(sy_head - sy_feet)
             rel = abs(px_height - expected_px) / (expected_px or 1.0)
             if rel > SCALE_REL_HIGH:
@@ -415,9 +421,17 @@ def gate_occupancy(scenegrid: SceneGrid, occupancy_tint: Optional[dict]) -> list
                            "render draws a walkable/blocked overlay, e.g. tactical mode)"}]
     total = 0
     mismatch = 0
+    skipped_keys = 0
     examples: list[str] = []
     for key, rendered in occupancy_tint.items():
-        c, r = (int(x) for x in str(key).replace(" ", "").split(","))
+        try:
+            parts = str(key).replace(" ", "").split(",")
+            if len(parts) != 2:
+                raise ValueError("not 2 parts")
+            c, r = int(parts[0]), int(parts[1])
+        except (ValueError, TypeError):
+            skipped_keys += 1
+            continue
         truth = "walkable" if scenegrid.is_walkable(c, r) else "blocked"
         total += 1
         if rendered != truth:
@@ -431,11 +445,12 @@ def gate_occupancy(scenegrid: SceneGrid, occupancy_tint: Optional[dict]) -> list
         sev = "MED"
     else:
         sev = "PASS"
+    skip_note = f"; {skipped_keys} key(s) skipped (malformed 'c,r' format)" if skipped_keys else ""
     return [{"gate": "G2_occupancy", "severity": sev, "metric": "cell_mismatch_frac",
              "value": round(frac, 3), "threshold": OCC_MISMATCH_MED,
              "detail": (f"{mismatch}/{total} cells' rendered tint disagree with the walk-mask "
-                        f"({frac*100:.0f}%): {', '.join(examples)}" if sev != "PASS"
-                        else f"occupancy tint matches mask ({mismatch}/{total} mismatch)")}]
+                        f"({frac*100:.0f}%): {', '.join(examples)}{skip_note}" if sev != "PASS"
+                        else f"occupancy tint matches mask ({mismatch}/{total} mismatch){skip_note}")}]
 
 
 # ---------------------------------------------------------------------------
@@ -506,7 +521,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     sg = load_scenegrid(args.scenegrid) if args.scenegrid else None
     actors = _load_actors(args.actors)
     occ = _load_actors(args.occupancy) if args.occupancy else None
-    occ = occ if isinstance(occ, dict) else None
+    if occ is not None and not isinstance(occ, dict):
+        import sys as _sys
+        print(f"WARNING: --occupancy input is not a dict (got {type(occ).__name__}); G2 will be SKIPPED", file=_sys.stderr)
+        occ = None
     res = run_pregates(args.render, scenegrid=sg, actors=actors, occupancy_tint=occ)
     if args.json:
         print(json.dumps(res, indent=2))

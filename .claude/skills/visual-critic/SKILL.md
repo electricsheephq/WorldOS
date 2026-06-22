@@ -51,7 +51,8 @@ to drive a scene to BG/PoE/Disco caliber, with the convergence and regression ev
 same ledger as story/mech.
 
 ## The loop (one cycle)
-```
+
+```plaintext
 RENDER  (Unity CL pipeline: Tools/WorldOS/CL/0 → step-4 Scenario → step-5 assemble → screenshot;
          or Godot --demo; or a still)  →  /tmp/<scene>-r<N>.png  (+ measured actor boxes from the
          render side, + the scenegrid fixture)
@@ -109,6 +110,7 @@ Inputs the render side must emit for G2/G3/G4 (G1 needs only the PNG): the `*.sc
 fixture, and per-actor measured boxes `{id, cell:[c,r], feet_px:[x,y], px_height, world_height_ft?}`.
 The Unity side knows each actor's spawn cell and can read its rendered screen bounds; emit them
 to a sidecar JSON next to the capture. Run:
+
 ```bash
 python qa/visual_pregate.py --render /tmp/scene-r2.png \
   --scenegrid /Volumes/LEXAR/WorldOS-Unity-spike/fixtures/tavern.scenegrid.json \
