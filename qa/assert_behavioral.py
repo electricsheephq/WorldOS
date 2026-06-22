@@ -854,20 +854,68 @@ def main() -> int:
     def _quest_reward_already_awarded(q: dict) -> bool:
         return any(bool(q.get(k)) for k in ("milestone_awarded", "awarded", "rewarded", "xp_awarded"))
 
-    # A8 (FATAL) — any tool call REJECTED with a schema/validation error (extra_forbidden ⇒
-    # version-skew or a wrong field). The DM's intent silently did not take effect; this is the
-    # class of failure that has produced 2 RED-capped runs historically. Benign engine guards
-    # the DM is EXPECTED to hit and recover from (travel-graph rejections etc.) are split off to
-    # a WARN so healthy recovery never false-REDs.
+    # A8 — a tool call REJECTED with a schema/validation error (extra_forbidden ⇒ version-skew
+    # or a wrong field). The DM's intent for that call silently did not take effect.
+    #
+    # DE-FLAKE (#897, mirrors #1030's discriminator-aware severity). Behavioral is computed from
+    # ONE stochastic duo; the bare "ANY schema rejection ⇒ FATAL" rule made a SINGLE recovered
+    # transient (the DM emits one malformed call, immediately retries the SAME tool correctly, the
+    # session completes cleanly — invisible to the player) RED-cap EVERY lens to 2.5 and swing the
+    # headline RRI by ~1.0 (observed twice). That is a precision bug, not a real integrity signal.
+    #
+    # A rejection now counts toward the FATAL set only when it is a PATTERN, not a recovered blip:
+    #   • UNRECOVERED — the offending tool was NEVER successfully called (is_error=False) anywhere
+    #     in the run, so the DM's intent for that tool silently never took effect (the genuine
+    #     version-skew defect: a stale signature the DM could not get right). [corpus fixture]
+    #   • REPEATED — the SAME tool was rejected with a schema/validation error >=2x across the run
+    #     = a systematic skew (the DM keeps re-using a stale/wrong signature). Repetition is the
+    #     real-skew signal, so this stays FATAL EVEN IF a later call eventually succeeds.
+    # A SINGLE rejection of a tool the DM then successfully retried (recovered transient) ⇒ WARN,
+    # never RED. This is a PRECISION improvement (distinguish player-felt skew from invisible
+    # recovered transients), NOT a leniency hack — the unrecovered + repeated classes the gate was
+    # built for still flip RED; the corpus fixture (an unrecovered update_character) still REDs.
     errors = [(n, text) for (n, inp, r, err, text) in evs if err]
     if errors:
-        fatal_errs = [(n, t) for (n, t) in errors
-                      if "extra_forbidden" in t or "validation error" in t.lower()]
-        benign = [(n, t) for (n, t) in errors if (n, t) not in fatal_errs]
-        chk("no_rejected_tool_calls", not fatal_errs,
-            f"{len(fatal_errs)} tool call(s) rejected with a schema/validation error "
-            f"(extra_forbidden ⇒ version skew or wrong field): {[n for n, _ in fatal_errs]}; "
-            f"first: {fatal_errs[0][1][:160] if fatal_errs else ''}", fatal=True)
+        schema_errs = [(n, t) for (n, t) in errors
+                       if "extra_forbidden" in t or "validation error" in t.lower()]
+        benign = [(n, t) for (n, t) in errors if (n, t) not in schema_errs]
+        # Which tools were EVER called successfully (is_error=False) anywhere in the run? A schema
+        # rejection of tool X is "recovered" iff X also appears with a clean result somewhere —
+        # the DM got the call right (order-independent: a clean call before or after a flub both
+        # prove the DM CAN issue that tool; the rejected intent itself is what we score).
+        succeeded_tools = {n for (n, inp, r, err, _) in evs if not err}
+        # How many times was each tool rejected with a schema/validation error?
+        schema_reject_counts: Counter = Counter(n for (n, _t) in schema_errs)
+        # FATAL set: a rejection is fatal if its tool was NEVER successfully called (unrecovered)
+        # OR its tool was rejected >=2x (repeated = systematic skew). De-dup by tool for the
+        # message (the per-tool classification is what matters, not the raw rejection count).
+        fatal_tools = sorted({
+            n for (n, _t) in schema_errs
+            if n not in succeeded_tools or schema_reject_counts[n] >= 2
+        })
+        # Recovered transients: a tool rejected exactly once that was later (or earlier) called
+        # cleanly — surfaced as a WARN so the flub is never silently dropped.
+        recovered_tools = sorted({
+            n for (n, _t) in schema_errs
+            if n in succeeded_tools and schema_reject_counts[n] < 2
+        })
+        if fatal_tools:
+            # Detail names which fatal class each tool fell into, so a RED is diagnosable.
+            why = ", ".join(
+                f"{n}(" + ("repeated x%d" % schema_reject_counts[n]
+                           if schema_reject_counts[n] >= 2 else "unrecovered") + ")"
+                for n in fatal_tools)
+            first = next((t for (n, t) in schema_errs if n in set(fatal_tools)), "")
+            chk("no_rejected_tool_calls", False,
+                f"{len(fatal_tools)} tool(s) with a SYSTEMATIC schema/validation rejection "
+                f"(extra_forbidden ⇒ version skew / wrong field): {why}; first: {first[:160]}",
+                fatal=True)
+        elif recovered_tools:
+            # All schema rejections were single + recovered ⇒ GREEN, but WARN so it's visible.
+            chk("no_rejected_tool_calls", False,
+                f"{len(recovered_tools)} RECOVERED transient schema rejection(s) "
+                f"(flubbed once, retried the same tool successfully ⇒ invisible to the player): "
+                f"{recovered_tools} — surfaced, not RED-capped (#897)", fatal=False)
         if benign:
             chk("engine_guards_hit", False,
                 f"{len(benign)} engine guard rejection(s) (recoverable, DM expected to retry): "

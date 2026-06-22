@@ -198,6 +198,15 @@
         "state.json"
       ],
       "note": "must exit GREEN (rc 0) with warn_check as a [WARN] \u2014 locks a deliberate FATAL->WARN scope guard so a re-promotion to FATAL is caught (#1036)."
+    },
+    {
+      "case_dir": "no_rejected_tool_calls_recovered_warn",
+      "warn_check": "no_rejected_tool_calls",
+      "artifacts": [
+        "run.jsonl",
+        "state.json"
+      ],
+      "note": "must exit GREEN (rc 0) with warn_check as a [WARN] \u2014 locks a deliberate FATAL->WARN scope guard so a re-promotion to FATAL is caught (#1036)."
     }
   ]
 }

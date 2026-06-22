@@ -198,7 +198,7 @@
       "category": "HARNESS_WIRING",
       "likely_code_locations": ["servers/engine/server.py", "servers/engine/models.py", "qa/run_duo.sh"],
       "retest": "bash qa/run_duo.sh duo-retest",
-      "hint": "A tool call was REJECTED with a schema/validation error (extra_forbidden => version skew or a wrong field). The DM's intent silently did not take effect — classic version-skew between the DM's expected tool schema and the engine's models. Check the tool param schema in server.py / models.py vs what the DM sent. FATAL."
+      "hint": "A tool was REJECTED with a schema/validation error (extra_forbidden => version skew or a wrong field) in a SYSTEMATIC pattern — classic version-skew between the DM's expected tool schema and the engine's models. De-flaked (#897): FATAL only when the rejection is UNRECOVERED (the same tool was NEVER successfully called) OR REPEATED (the same tool rejected >=2x = real skew). A SINGLE rejection the DM immediately retried correctly is a recovered transient => WARN, not RED (it was false-RED-capping whole runs on one invisible flub). Check the tool param schema in server.py / models.py vs what the DM sent for the named tool(s). FATAL (systematic) / WARN (recovered transient)."
     },
     "engine_guards_hit": {
       "category": "DM_ADHERENCE",
