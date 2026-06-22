@@ -263,9 +263,26 @@ Scored by `qa/score.sh` (claude -p) or `qa/score_openclaw.sh` (gpt-5.4, off the 
 Default DM/player model = `sonnet` (`WORLDOS_DM_MODEL` / `WORLDOS_ACTOR_MODEL` env override; Opus for key structural-adherence runs).
 
 ## 5. Reading a result line
-`[duo] done. story-craft=X mechanical=Y angry-dm=Z behavioral=GREEN|RED`
+`[duo] done. story-craft=X mechanical=Y angry-dm=Z behavioral=GREEN|RED [status=unscorable]`
 - **RED** ⇒ X/Y/Z are RED-capped; read `$RUN.gate.txt` for the failed checks.
 - **GREEN** ⇒ real scores; compare against the North-Star targets and append via `qa/scores_db.py` `add_run(...)` (→ `scores_ledger.md`; `SCORECARD.md` is legacy).
+
+### A BLANK lens value = scorer FAILURE, not a valid no-score (WS0a)
+A lens value of `FAILED:<status>` (or, on an old build, a **BLANK** value — `story-craft= mechanical=`
+with nothing after the `=`) means **the scorer itself FAILED to produce a score**, NOT that the run
+legitimately has no score. This used to masquerade as a silent valid no-score: when `qa/score.sh`
+exhausted its retries on a generic failure it exited rc=1 **without writing the lens file**, so the
+result line's `jq -r '.overall//"?"'` printed BLANK while `behavioral=GREEN` still printed — a failed
+scoring read as a passing run (observed live: `story-craft= mechanical= angry-dm= behavioral=GREEN`).
+- `qa/score.sh` now **always** leaves the lens file as valid JSON: an `{"error":"scorer_failed",…}`
+  sentinel on generic retry-exhaustion, or `{"quota_exhausted":true,…}` on a 429.
+- `qa/run_duo.sh` validates all three lens files (`worldos_validate_lens_file`): a lens that is
+  missing / empty / non-JSON / a sentinel / non-numeric-`.overall` is **not** a score. Any such
+  lens marks the whole run **`status=unscorable`** — a DISTINCT status that is **neither GREEN
+  (passing) nor a blank no-score**. The lens prints as `FAILED:<missing|invalid|sentinel|nonnumeric>`.
+- **An `unscorable` run is an INFRA failure of the measurement, not a product measurement** — do
+  NOT record it in `scores_db`, do NOT read its (failed) lenses as quality signal. Re-run the
+  scoring (or the whole duo); inspect `$RUN.<lens>.json` for the `error`/`last_api_error` field.
 
 ## 6. Variance & noise floor
 The three LLM lenses are **stochastic graders**: re-scoring the *same comparable run* yields
