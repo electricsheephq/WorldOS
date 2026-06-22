@@ -55,7 +55,8 @@ import scores_db  # noqa: E402
 
 OVERALL_FLOOR = 0.7
 DIM_FLOOR = 1.0
-_VISUAL_KEY = ("visual_scene", "visual_backend")
+# Comparability key: a scene's baseline is keyed on (visual_scene, visual_backend).
+# Cross-scene comparison is intentionally refused (a tavern frame is not a baseline for a dungeon).
 _EXIT = {"IMPROVED": 0, "WITHIN_NOISE": 0, "REGRESSED": 2, "NO_BASELINE": 3, "NO_DATA": 3}
 
 

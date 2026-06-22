@@ -21,16 +21,12 @@ state, no committed data artifact mutations.
 
 from __future__ import annotations
 
-import io
 import json
 import math
 import struct
 import sys
 import zlib
 from pathlib import Path
-from typing import Any
-
-import pytest
 
 # ---------------------------------------------------------------------------
 # Path fixup so imports work from the worktree root

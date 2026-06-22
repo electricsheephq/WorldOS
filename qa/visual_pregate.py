@@ -67,11 +67,10 @@ import argparse
 import json
 import math
 import struct
-import sys
 import zlib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 # ---------------------------------------------------------------------------
 # Tunable thresholds (the noise floor for the deterministic gates). Conservative on purpose:
