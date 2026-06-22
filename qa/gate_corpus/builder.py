@@ -325,12 +325,38 @@ def case_no_duplicate_companion():
 def case_no_rejected_tool_calls():
     # chk A8: a tool call REJECTED with an extra_forbidden schema/validation error (version skew /
     # wrong field). Modeled on ow-swB-123842's update_character rejection that RED-capped the run.
+    # NOTE (#897 de-flake): this fixture is deliberately UNRECOVERED — update_character is rejected
+    # and NEVER successfully retried, so it is the genuine version-skew defect that must STAY FATAL.
+    # (A recovered-transient variant lives in the GREEN corpus as
+    # case_no_rejected_tool_calls_recovered_warn.) Do NOT add a clean update_character call here or
+    # this case would correctly demote to a WARN and stop RED-ing.
     err = ("Error executing tool update_character: 1 validation error for Character\n"
            "skills\n  Extra inputs are not permitted "
            "[type=extra_forbidden, input_value=['Arcana'], input_type=list]")
     events = _roll() + [
         _assistant_tool_use("t_uc", "mcp__engine__update_character", {"skills": ["Arcana"]}),
         _user_tool_result("t_uc", err, is_error=True),
+    ]
+    return events, _clean_player_state(), None, None
+
+
+def case_no_rejected_tool_calls_recovered_warn():
+    # GREEN fixture (#897) — the A8 de-flake scope guard. A SINGLE malformed update_character
+    # (extra_forbidden) that the DM immediately RETRIES correctly (the same tool, is_error=False)
+    # is a recovered transient — invisible to the player. Under the #897 de-flake A8 is demoted to
+    # a WARN (recovered transient), so the gate must exit GREEN with no_rejected_tool_calls as a
+    # [WARN] line — NOT a RED cap. A future edit that re-promotes recovered transients to FATAL
+    # (re-introducing the high-variance false-RED) flips this case RED and the green test fails.
+    err = ("Error executing tool update_character: 1 validation error for Character\n"
+           "skills\n  Extra inputs are not permitted "
+           "[type=extra_forbidden, input_value=['Arcana'], input_type=list]")
+    events = _roll() + [
+        _assistant_tool_use("t_uc_bad", "mcp__engine__update_character", {"skills": ["Arcana"]}),
+        _user_tool_result("t_uc_bad", err, is_error=True),
+        # the DM retries the SAME tool correctly -> recovered.
+        _assistant_tool_use("t_uc_ok", "mcp__engine__update_character",
+                            {"skill_proficiencies": ["Arcana"]}),
+        _user_tool_result("t_uc_ok", json.dumps({"ok": True})),
     ]
     return events, _clean_player_state(), None, None
 
@@ -472,6 +498,8 @@ _CASES_SPEC: list[tuple] = [
 _GREEN_CASES_SPEC: list[tuple] = [
     ("structural_completeness_authored_warn", case_structural_completeness_authored_warn,
      "structural_completeness"),
+    ("no_rejected_tool_calls_recovered_warn", case_no_rejected_tool_calls_recovered_warn,
+     "no_rejected_tool_calls"),
 ]
 
 

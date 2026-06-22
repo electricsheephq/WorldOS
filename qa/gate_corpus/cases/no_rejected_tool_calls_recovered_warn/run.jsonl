@@ -1,0 +1,6 @@
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t_roll", "name": "mcp__engine__roll", "input": {"sides": 20}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t_roll", "content": [{"type": "text", "text": "{\"total\": 14}"}], "is_error": false}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t_uc_bad", "name": "mcp__engine__update_character", "input": {"skills": ["Arcana"]}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t_uc_bad", "content": [{"type": "text", "text": "Error executing tool update_character: 1 validation error for Character\nskills\n  Extra inputs are not permitted [type=extra_forbidden, input_value=['Arcana'], input_type=list]"}], "is_error": true}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t_uc_ok", "name": "mcp__engine__update_character", "input": {"skill_proficiencies": ["Arcana"]}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t_uc_ok", "content": [{"type": "text", "text": "{\"ok\": true}"}], "is_error": false}]}}
