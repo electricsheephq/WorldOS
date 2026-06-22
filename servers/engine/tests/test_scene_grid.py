@@ -240,3 +240,91 @@ def test_emit_hooks_do_not_clobber_existing_grid():
     server.travel_to(cid, dest)
     grid_after = server._require(cid).locations[dest].scene_grid.model_dump_json()
     assert grid_after == grid_before
+
+
+# ── SERIALIZATION (omit-when-None) — the store dirty-skip / byte-identity contract ────
+# scene_grid defaults to None; an unconditional Pydantic dump would emit "scene_grid":null
+# for EVERY grid-less location — a key a pre-A1 on-disk snapshot never carried. That breaks
+# byte-identity with old snapshots AND defeats the store's F08-2 dirty-skip (store.py:135-148),
+# so a pure cross-campaign inspect (check_*/world_tick/scene_context) would silently rewrite +
+# re-stamp the file and could flip the #640 "most-recently-updated == live" pointer. The
+# Location wrap serializer OMITS scene_grid when it is None (only that one key).
+
+
+def test_grid_less_location_omits_scene_grid_key():
+    """(a) A grid-less Location dump contains NO scene_grid key (json + dict), while OTHER
+    Optional=None fields (e.g. hex) are STILL emitted — i.e. we omit ONLY scene_grid, not
+    every None field (no blanket exclude_none)."""
+    loc = Location(id="loc_a", name="Bare Room")
+    dj = loc.model_dump_json()
+    dd = loc.model_dump()
+    assert "scene_grid" not in dj
+    assert "scene_grid" not in dd
+    # The other additive Optional[...]=None field is unaffected (still serialized as null).
+    assert '"hex":null' in dj
+    assert "hex" in dd and dd["hex"] is None
+    # And it still round-trips back to a valid grid-less Location.
+    again = Location.model_validate_json(dj)
+    assert again.scene_grid is None and again.name == "Bare Room"
+
+
+def test_grid_ful_location_serializes_scene_grid_and_round_trips():
+    """(b) A Location WITH an emitted grid DOES serialize scene_grid (not null, not omitted)
+    and is byte-stable across load -> dump."""
+    loc = Location(id="loc_b", name="The Yawning Portal", notes="tavern")
+    loc.scene_grid = emit_scene_grid("baldurs-gate", "tavern_lower_city",
+                                     name="The Yawning Portal Tavern")
+    dumped = loc.model_dump_json()
+    assert '"scene_grid":' in dumped and '"scene_grid":null' not in dumped
+    assert "scene_grid" in loc.model_dump()
+    reloaded = Location.model_validate_json(dumped)
+    assert isinstance(reloaded.scene_grid, SceneGrid)
+    assert reloaded.model_dump_json() == dumped  # byte-identical (save -> load -> save)
+
+
+def test_pure_inspect_of_pre_a1_snapshot_is_a_no_op(tmp_path, monkeypatch):
+    """(c) THE DIRTY-SKIP REGRESSION (the real hazard): a real Campaign with a grid-less
+    Location, persisted then STRIPPED of any scene_grid keys on disk to mimic a pre-A1
+    snapshot, must survive a pure load -> save (NO mutation) BYTE-IDENTICALLY with NO
+    updated_at bump — otherwise an un-migrated campaign gets silently rewritten + can steal
+    the #640 live pointer. This is the exact reviewer reproduction; it must now PASS."""
+    import json
+    import re
+
+    import store
+
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+
+    # A real Campaign with a grid-less Location, written through the store's save path.
+    cid = server.create_campaign("dirty-skip pre-A1")["id"]
+    c = server._require(cid)
+    c.locations["loc_pre"] = Location(id="loc_pre", name="A Pre-A1 Room")
+    assert c.locations["loc_pre"].scene_grid is None
+    path = store.save_campaign(c)
+
+    # Strip ANY residual "scene_grid":... fragments from the on-disk JSON to mimic a snapshot
+    # written before A1 ever existed (belt-and-suspenders: the omit-serializer already drops
+    # grid-less ones, so this only removes a grid-ful key if some location carried one).
+    on_disk = path.read_text(encoding="utf-8")
+    stripped = re.sub(r',?\s*"scene_grid":\s*(?:null|\{.*?\})', "", on_disk, flags=re.DOTALL)
+    # Sanity: the stripped bytes carry NO scene_grid key and still parse as a Campaign snapshot.
+    assert "scene_grid" not in stripped
+    json.loads(stripped)  # still valid JSON
+    path.write_text(stripped, encoding="utf-8")
+
+    before_bytes = path.read_text(encoding="utf-8")
+    before_mtime = path.stat().st_mtime_ns
+    before_updated_at = json.loads(before_bytes)["updated_at"]
+
+    # The hazard path: a pure load -> (no mutation) -> save. Must be a NO-OP.
+    loaded = store.load_campaign(cid)
+    assert loaded is not None
+    assert loaded.locations["loc_pre"].scene_grid is None
+    store.save_campaign(loaded)
+
+    after_bytes = path.read_text(encoding="utf-8")
+    after_updated_at = json.loads(after_bytes)["updated_at"]
+
+    assert after_bytes == before_bytes, "pure inspect of a pre-A1 snapshot REWROTE the file"
+    assert after_updated_at == before_updated_at, "pure inspect bumped updated_at (#640 risk)"
+    assert path.stat().st_mtime_ns == before_mtime, "the snapshot file was rewritten on disk"

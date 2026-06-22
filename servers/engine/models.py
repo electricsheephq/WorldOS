@@ -15,7 +15,14 @@ from enum import Enum
 from typing import Annotated, Any, Literal, Optional
 from uuid import uuid4
 
-from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    model_serializer,
+    model_validator,
+)
 
 
 def _coerce_list(v):
@@ -1167,6 +1174,31 @@ class Location(_StrictModel):
     # model lives in scene_grid.py (imported + the forward-ref rebuilt at the foot of this file
     # to keep models.py the foundational, dependency-free module). See scene_grid.py.
     scene_grid: Optional["SceneGrid"] = None
+
+    @model_serializer(mode="wrap")
+    def _ser_omit_none_scene_grid(self, handler):
+        """OMIT ``scene_grid`` from the dump when it is None so a grid-less Location
+        serializes BYTE-IDENTICALLY to a pre-A1 snapshot (which never carried the key).
+
+        Why this matters (and why it is narrowly scoped to ONE key, NOT a blanket
+        ``exclude_none``): the store's F08-2 dirty-skip (store.py:135-148) byte-compares
+        the candidate ``campaign.model_dump_json()`` to disk so a pure load->save with no
+        mutation is a no-op that does NOT bump ``updated_at`` / steal the #640
+        "most-recently-updated == live" pointer. With ``scene_grid`` defaulting to None,
+        an unconditional Pydantic dump emits ``"scene_grid": null`` for EVERY (incl.
+        grid-less) location — a key an un-migrated on-disk snapshot lacks — so the
+        candidate no longer matches disk, the dirty-skip is defeated, and a cross-campaign
+        inspect (check_*/world_tick/scene_context) silently rewrites + re-stamps the file.
+
+        This wrap serializer runs through BOTH model_dump and model_dump_json and through
+        nested serialization (Location lives inside Campaign.locations), preserving ALL
+        other keys, order, and every other ``Optional=None`` field (e.g. ``hex``) exactly
+        as before — it only drops ``scene_grid`` when it is None. A grid-FUL Location
+        serializes ``scene_grid`` normally."""
+        data = handler(self)
+        if self.scene_grid is None:
+            data.pop("scene_grid", None)
+        return data
 
 
 class WorldGraphNode(_StrictModel):
