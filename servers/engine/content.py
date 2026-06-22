@@ -43,6 +43,7 @@ from models import (
     WorldGraphNode,
     WorldState,
 )
+from scene_grid import ensure_scene_grid  # A1 SceneGrid emitter (engine sole-writer)
 from store import safe_path_segment  # path-containment guard for world/adventure ids
 
 
@@ -2187,5 +2188,15 @@ def seed_world(world: dict, start_at: str = "", ending: str = "") -> Campaign:
     # goal_ref binding. Additive + degrade-not-abort: a world with no anchors yields an empty
     # backlog (today's behavior); `last_tick_day` is set to c.day so the first advance owes nothing.
     _seed_campaign_backlog(c, world)
+
+    # A1 — the SceneGrid emitter (engine sole-writer): emit a deterministic procedural
+    # spatial layout per seeded location, so the Unity Tier-1 block-out renderer has a
+    # grid to draw the moment the world exists. GUARDED (ensure_scene_grid skips any
+    # location that already has one) + ADDITIVE (each grid is seeded off (world_id,
+    # location_id), isolated from the global combat dice stream; an old snapshot lacking
+    # the field round-trips to None and behaves exactly as today). Runs LAST, after every
+    # region/area is seeded above, and BEFORE the caller saves the campaign.
+    for loc in c.locations.values():
+        ensure_scene_grid(c.world_id, loc)
 
     return c

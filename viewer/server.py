@@ -1707,6 +1707,51 @@ def _session_location(snapshot: dict) -> dict:
     }
 
 
+# The pre-A1 default combat board extents. Used as the fallback whenever the current
+# location has no engine-authored SceneGrid (an old snapshot, or a location the emitter
+# hasn't reached) — so the board renders byte-identically to today in that case.
+_DEFAULT_GRID_COLS = 16
+_DEFAULT_GRID_ROWS = 10
+
+
+def _scene_grid_block(snapshot: dict, mode: str) -> dict:
+    """The combat board's grid extents (A1). When the party's current location carries an
+    engine-authored ``scene_grid``, use ITS extents + cells; otherwise fall back to the
+    legacy 16x10 default so an old snapshot (scene_grid absent) renders exactly as before.
+
+    ADDITIVE / presentation-only: this READS the engine-owned snapshot (the engine is the
+    sole writer of scene_grid) and never mutates it. ``mode`` is preserved unchanged. When a
+    scene_grid is present we surface its ``cells`` (the floor/wall/prop map the Tier-1 block-
+    out draws), ``cellDefault``, and ``sceneId`` so the client can tint walkable vs blocked
+    cells; absent/malformed scene_grid yields only ``{mode, cols, rows}`` — today's shape."""
+    block: dict = {"mode": mode, "cols": _DEFAULT_GRID_COLS, "rows": _DEFAULT_GRID_ROWS}
+    loc_id = _text(snapshot.get("current_location_id"))
+    locs = snapshot.get("locations")
+    loc = locs.get(loc_id) if isinstance(locs, dict) and loc_id else None
+    sg = loc.get("scene_grid") if isinstance(loc, dict) else None
+    if not isinstance(sg, dict):
+        return block
+    grid = sg.get("grid")
+    if not isinstance(grid, dict):
+        return block
+    cols = grid.get("cols")
+    rows = grid.get("rows")
+    if not (isinstance(cols, int) and isinstance(rows, int) and cols > 0 and rows > 0):
+        return block  # degrade to the default extents on a malformed grid
+    block["cols"] = cols
+    block["rows"] = rows
+    sid = sg.get("scene_id")
+    if isinstance(sid, str) and sid:
+        block["sceneId"] = sid
+    cells = sg.get("cells")
+    if isinstance(cells, list):
+        block["cells"] = cells
+    cell_default = sg.get("cell_default")
+    if isinstance(cell_default, dict):
+        block["cellDefault"] = cell_default
+    return block
+
+
 def _session_party_cards(snapshot: dict) -> list[dict]:
     chars = snapshot.get("characters")
     party = snapshot.get("party")
@@ -2964,7 +3009,7 @@ def build_combat_surface(
             "round": combat_view.get("round") if combat_active else None,
             "warnings": combat_view.get("warnings", []),
         },
-        "grid": {"mode": mode, "cols": 16, "rows": 10},
+        "grid": _scene_grid_block(snapshot, mode),
         "tokens": tokens,
         "initiative": initiative,
         "zones": zones,

@@ -51,6 +51,7 @@ import spells
 import srd_tables
 import director
 import scene_debt as _scene_debt_mod
+import scene_grid as scene_grid_mod
 import travel
 import wander
 import worldsim
@@ -1172,6 +1173,13 @@ def add_location(
                 f"location {loc.id!r} has NO connections — it is unreachable; call add_location "
                 f"again with connections=[an existing location id] to wire it into the map"
             )
+        # A1 — the SceneGrid emitter (engine sole-writer): a newly added/live-gen location
+        # gets a deterministic Tier-1 spatial layout to render. GUARDED (no-op when the
+        # location already carries a scene_grid — an update-existing add_location never
+        # re-rolls) + deterministic (seeded off (world_id, location_id), isolated from the
+        # combat dice stream). Additive: an old snapshot round-trips to None. Runs BEFORE
+        # save so the emitted grid is persisted in the same atomic write.
+        scene_grid_mod.ensure_scene_grid(c.world_id, loc)
         save_campaign(c)
     result = {
         "id": loc.id,
