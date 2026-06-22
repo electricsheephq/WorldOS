@@ -54,6 +54,48 @@
                 "type": "array",
                 "description": "Named tactical regions for this location, mirroring the engine's Zone vocabulary ('the dais', 'the rafters'). NOT coordinates.",
                 "items": { "type": "string" }
+              },
+              "scene_grid": {
+                "type": ["object", "null"],
+                "description": "ADDITIVE (A1 SceneGrid emitter). The engine-authored deterministic procedural spatial layout for this location (grid extents + per-cell floor/wall/prop map + props/occluders + zone_anchors + exits + spawns + lighting + a Tier-2 art cache slot). The Unity Tier-1 block-out renderer draws straight from it; the Tier-2 painterly upgrade conditions a Scenario ControlNet render on the SAME grid. Engine sole-writer; absent/null == today (the renderer falls back to its default grid). UNLIKE core's named-zone positioning, scene_grid DOES carry authoritative cell coordinates — this is the always-present generalization of the combat #461 x/y carve-out, NOT a change to the v1 named-zone combat positioning. Shape mirrors servers/engine/scene_grid.py:SceneGrid; additionalProperties:true keeps the contract forward-compatible as the emitter grows per-kind fields.",
+                "additionalProperties": true,
+                "properties": {
+                  "scene_id": { "type": "string", "description": "Deterministic key '<world_id>:<location_id>'." },
+                  "location_id": { "type": "string", "description": "FK to the engine Location id." },
+                  "kind": { "type": "string", "description": "tavern|dungeon|forest|town|cave|road|interior|..." },
+                  "biome": { "type": "string", "description": "Material/mood hint for the painterly gen." },
+                  "seed": { "type": "integer", "description": "Deterministic seed derived from (world_id, location_id)." },
+                  "grid": {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "properties": {
+                      "cols": { "type": "integer" },
+                      "rows": { "type": "integer" },
+                      "cell_size_ft": { "type": "integer" },
+                      "projection": { "type": "string" }
+                    }
+                  },
+                  "cell_default": { "type": "object", "additionalProperties": true },
+                  "cells": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+                  "props": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+                  "zone_anchors": { "type": "object", "additionalProperties": true },
+                  "exits": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+                  "spawns": { "type": "object", "additionalProperties": true },
+                  "lighting": { "type": "object", "additionalProperties": true },
+                  "art": {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "description": "Tier-2 painterly cache slot, filled async. status: tier1_blockout|tier2_pending|tier2_ready.",
+                    "properties": {
+                      "layout_hash": { "type": "string" },
+                      "backdrop_ref": { "type": ["string", "null"] },
+                      "depth_ref": { "type": ["string", "null"] },
+                      "walkmask_ref": { "type": ["string", "null"] },
+                      "status": { "type": "string" },
+                      "critic_score": { "type": ["number", "null"] }
+                    }
+                  }
+                }
               }
             }
           }

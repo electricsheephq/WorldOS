@@ -1156,6 +1156,17 @@ class Location(_StrictModel):
     # Spatial "walk-time" context (fables-style) — ADDITIVE; empty = today's behavior.
     region: str = ""  # the parent zone this location nests in ("South West Odrun Fell")
     travel_times: dict[str, int] = Field(default_factory=dict)  # connected location id -> walk minutes
+    # The engine-authored SceneGrid for this location (the A1 SceneGrid emitter) — ADDITIVE.
+    # A deterministic procedural floor/wall/prop layout the Unity Tier-1 block-out renderer
+    # draws straight from (and the Tier-2 painterly upgrade conditions on). The engine is the
+    # SOLE WRITER: emitted at location creation (seed_world / travel_to / add_location), seeded
+    # off (world_id, location_id) so it is reproducible, and isolated from the global combat
+    # dice stream. Default None == today's behavior EXACTLY: an old snapshot lacking the field
+    # round-trips to None, the viewer falls back to its legacy 16x10 default grid, and nothing
+    # in the engine reads this field (it only enriches the snapshot the renderer consumes). The
+    # model lives in scene_grid.py (imported + the forward-ref rebuilt at the foot of this file
+    # to keep models.py the foundational, dependency-free module). See scene_grid.py.
+    scene_grid: Optional["SceneGrid"] = None
 
 
 class WorldGraphNode(_StrictModel):
@@ -2107,3 +2118,22 @@ class Campaign(_StrictModel):
     # get_campaign_director. Resolved debts are marked in-place (resolved=True) by
     # resolve_scene_debt and then preserved here as an audit trail.
     scene_debts: list[SceneDebt] = Field(default_factory=list)
+
+
+# ── Deferred import: resolve the Location.scene_grid forward reference ────────────────
+# scene_grid.py imports _StrictModel from THIS module, so the dependency points one way
+# (scene_grid -> models). We import it at the FOOT of models.py — after every model above
+# is defined — and rebuild Location so its ``Optional["SceneGrid"]`` forward annotation
+# resolves. This keeps models.py the foundational module (no top-level dependency on
+# scene_grid) while letting Location carry a fully-typed, strictly-validated SceneGrid.
+from scene_grid import (  # noqa: E402  (deliberate end-of-module import to break the cycle)
+    SceneArt,
+    SceneCell,
+    SceneCellDefault,
+    SceneGrid,
+    SceneGridSpec,
+    SceneLighting,
+    SceneProp,
+)
+
+Location.model_rebuild()

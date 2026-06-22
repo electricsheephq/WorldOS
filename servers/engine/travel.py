@@ -22,6 +22,7 @@ import difflib
 from collections import deque
 
 from models import Campaign, Location
+from scene_grid import ensure_scene_grid  # A1 SceneGrid emitter (engine sole-writer)
 
 # The in-world day, in order. Travel advances along this cycle; passing the end
 # rolls over into the next day.
@@ -161,6 +162,14 @@ def travel_to(campaign: Campaign, destination_id: str, advance_time: bool = Fals
     first_visit = not dest.visited
     dest.visited = True
     campaign.current_location_id = destination_id
+
+    # A1 — the SceneGrid emitter (engine sole-writer): the party is arriving at `dest`, so
+    # make sure it has a Tier-1 spatial layout to render. GUARDED (no-op if dest already
+    # carries a scene_grid — a re-visit never re-rolls) + deterministic (seeded off
+    # (world_id, location_id), isolated from the combat dice stream). Additive: a world
+    # with no world_id still emits a deterministic grid; an old snapshot round-trips. The
+    # MCP wrapper in server.py save_campaigns the mutated campaign after this returns.
+    ensure_scene_grid(campaign.world_id, dest)
 
     if advance_time:
         advance_clock(campaign, 1)

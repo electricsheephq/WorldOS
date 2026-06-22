@@ -1,0 +1,88 @@
+"""A1 — the combat board's grid block consumes the location's engine-authored SceneGrid.
+
+build_combat_surface previously hardcoded {mode, cols:16, rows:10}. With the SceneGrid
+emitter, the board now uses the current location's scene_grid extents/cells when present,
+and falls back to the old 16x10 default when absent (ADDITIVE — an old snapshot renders
+byte-identically). Presentation-only: the viewer READS the engine-owned snapshot.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import unittest
+from pathlib import Path
+
+
+_SERVER_PATH = Path(__file__).resolve().parents[1] / "server.py"
+_SPEC = importlib.util.spec_from_file_location("viewer_server", _SERVER_PATH)
+assert _SPEC is not None
+server = importlib.util.module_from_spec(_SPEC)
+assert _SPEC.loader is not None
+_SPEC.loader.exec_module(server)
+
+
+def _surface(snapshot: dict) -> dict:
+    return server.build_combat_surface(
+        snapshot, campaign_id="c", live=False, is_live_view=False, recent_events=[]
+    )
+
+
+class SceneGridBoardTests(unittest.TestCase):
+    def test_falls_back_to_default_extents_when_no_scene_grid(self):
+        """An old snapshot whose current location has no scene_grid renders the legacy
+        16x10 board (byte-identical to pre-A1)."""
+        snap = {
+            "current_location_id": "loc1",
+            "locations": {"loc1": {"name": "A Room"}},
+        }
+        grid = _surface(snap)["grid"]
+        self.assertEqual(grid["cols"], 16)
+        self.assertEqual(grid["rows"], 10)
+        self.assertIn("mode", grid)  # mode is preserved from the combat-tokens derivation
+        # No scene_grid -> the block carries ONLY the legacy keys (no cells/sceneId).
+        self.assertNotIn("cells", grid)
+        self.assertNotIn("sceneId", grid)
+
+    def test_uses_scene_grid_extents_and_cells_when_present(self):
+        snap = {
+            "current_location_id": "loc1",
+            "locations": {
+                "loc1": {
+                    "name": "The Tavern",
+                    "scene_grid": {
+                        "scene_id": "w:loc1",
+                        "location_id": "loc1",
+                        "kind": "tavern",
+                        "grid": {"cols": 14, "rows": 10, "cell_size_ft": 5,
+                                 "projection": "dimetric-2to1"},
+                        "cell_default": {"type": "floor", "walkable": True, "cost": 1},
+                        "cells": [
+                            {"c": 0, "r": 0, "type": "wall", "walkable": False, "cost": 1},
+                        ],
+                    },
+                }
+            },
+        }
+        grid = _surface(snap)["grid"]
+        self.assertEqual(grid["cols"], 14)
+        self.assertEqual(grid["rows"], 10)
+        self.assertEqual(grid["sceneId"], "w:loc1")
+        self.assertEqual(grid["cellDefault"], {"type": "floor", "walkable": True, "cost": 1})
+        self.assertEqual(len(grid["cells"]), 1)
+        self.assertEqual(grid["cells"][0]["type"], "wall")
+        # mode is preserved from the combat-tokens derivation (no active combat -> theater).
+        self.assertIn("mode", grid)
+
+    def test_malformed_scene_grid_degrades_to_default(self):
+        """A scene_grid with a missing/bad grid block must NOT crash — degrade to 16x10."""
+        snap = {
+            "current_location_id": "loc1",
+            "locations": {"loc1": {"name": "Broken", "scene_grid": {"grid": {"cols": 0}}}},
+        }
+        grid = _surface(snap)["grid"]
+        self.assertEqual(grid["cols"], 16)
+        self.assertEqual(grid["rows"], 10)
+
+
+if __name__ == "__main__":
+    unittest.main()
