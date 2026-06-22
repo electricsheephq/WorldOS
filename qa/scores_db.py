@@ -27,6 +27,11 @@ SURFACE TAXONOMY (the crux of the forensics — classify EVERY run precisely)
                             ``/openworlds/`` viewer served by ``play_party.sh`` / ``server.py``
                             (byte-identical backend to the .app). Persona satisfaction runs.
 * ``smoke-only``         — deterministic / scripted wiring proof, no LLM quality read.
+* ``visual``             — a single rendered FRAME scored by the visual-critic loop (the painterly
+                           render→critique→fix→re-render cycle). dm_model/actor_model are unused;
+                           ``scorer_model`` = the panel model; ``methodology`` = the lens set + round,
+                           e.g. "vc-panel-6lens round=2". The visual quality numbers live in the
+                           visual_* columns, NOT story/mech/angry (which stay NULL).
 
 USAGE
 -----
@@ -72,7 +77,7 @@ DB_PATH = QA_DIR / "scores.db"
 MD_PATH = QA_DIR / "scores_ledger.md"
 
 # Allowed surface values (validated on insert; the crux of the forensic story).
-SURFACES = ("engine-duo", "GUI-built-app", "GUI-headless-proxy", "smoke-only")
+SURFACES = ("engine-duo", "GUI-built-app", "GUI-headless-proxy", "smoke-only", "visual")
 
 # Column order is the canonical schema. Adding a column is additive: bump this list and
 # _ensure_schema() will ALTER TABLE ADD COLUMN on an existing db (old rows read NULL).
@@ -146,6 +151,18 @@ COLUMNS: tuple[str, ...] = (
                               # key (surface + dm_model + methodology + lens_config_version); 0/NULL
                               # otherwise. At most ONE per key (set_canonical_baseline clears prior).
                               # add_run defaults this to 0 — today's behavior is "not canonical".
+    # --- visual-critic loop (the painterly render scorer; surface="visual"). overall + per-dim
+    # gap-to-reference scores, the render path, and the round index so a scene's convergence is a
+    # trend. NULL on every non-visual row (additive, migration-free). per-dim is a JSON map
+    # {dim: score} matching the 6-lens panel (see qa/visual_pregate.py / SKILL.md lens ids). ---
+    "visual_overall",     # 0-10 holistic "reads as ONE painting at the reference bar", NULL if not visual
+    "visual_dims_json",   # JSON {registration, occlusion_grounding, scene_light_coherence,
+                          #       character_integration, tactical_readability, painterly_vs_reference}
+    "visual_round",       # 1-based round index within a scene's convergence loop (NULL if not visual)
+    "visual_scene",       # scene_id / fixture the frame is of (e.g. "fixture:...tavern")
+    "visual_backend",     # render backend: "unity-cl" | "godot" | "still" (the SKILL's render source)
+    "visual_pregate",     # the deterministic pre-gate verdict for this frame: PASS|FLAG|SKIPPED
+    "visual_blocking",    # comma-joined CRITICAL/HIGH defect ids still open at this round (NULL = none)
 )
 
 # Numeric columns get REAL; pass is an INTEGER bool; the rest TEXT.
@@ -159,8 +176,10 @@ _REAL_COLS = {
     "duration_wall_s",
     # WS0 engagement coverage fraction (0.0-1.0 → REAL; engagement_inert is TEXT)
     "engagement_pct",
+    # visual-critic loop (0-10 gap-to-reference score → REAL)
+    "visual_overall",
 }
-_INT_COLS = {"critical_bugs", "pass", "is_canonical_baseline", "acts_reached"}
+_INT_COLS = {"critical_bugs", "pass", "is_canonical_baseline", "acts_reached", "visual_round"}
 
 
 def _coltype(col: str) -> str:
@@ -209,8 +228,8 @@ def add_run(
     """Append (or replace) ONE run row in the canonical ledger.
 
     Pass ``run_id`` plus any subset of :data:`COLUMNS` as keyword args. Unknown keys raise
-    (so a typo is caught, not silently dropped). ``per_persona_json`` may be passed as a
-    dict/list and is JSON-encoded automatically. ``surface`` is validated against
+    (so a typo is caught, not silently dropped). ``per_persona_json`` and ``visual_dims_json``
+    may be passed as dicts and are JSON-encoded automatically. ``surface`` is validated against
     :data:`SURFACES`. ``ts`` defaults to now (UTC, ISO8601) if omitted.
     """
     unknown = set(fields) - set(COLUMNS)
@@ -260,10 +279,12 @@ def add_run(
                     f"another run's ruler, cite its run_id, not its hash)"
                 )
 
-    # JSON-encode structured per-persona payloads.
-    ppj = fields.get("per_persona_json")
-    if ppj is not None and not isinstance(ppj, str):
-        fields["per_persona_json"] = json.dumps(ppj, ensure_ascii=False, sort_keys=True)
+    # JSON-encode structured payloads (per_persona_json and visual_dims_json may be passed as
+    # dicts and are auto-encoded to avoid sqlite3.ProgrammingError on non-string values).
+    for _jcol in ("per_persona_json", "visual_dims_json"):
+        _jv = fields.get(_jcol)
+        if _jv is not None and not isinstance(_jv, str):
+            fields[_jcol] = json.dumps(_jv, ensure_ascii=False, sort_keys=True)
 
     # Coerce bool pass / is_canonical_baseline -> int.
     if isinstance(fields.get("pass"), bool):
