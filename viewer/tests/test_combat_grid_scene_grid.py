@@ -74,7 +74,10 @@ class SceneGridBoardTests(unittest.TestCase):
         self.assertIn("mode", grid)
 
     def test_malformed_scene_grid_degrades_to_default(self):
-        """A scene_grid with a missing/bad grid block must NOT crash — degrade to 16x10."""
+        """A scene_grid with a missing/bad grid block must NOT crash — degrade to 16x10.
+
+        The fallback must mirror the full legacy key-shape: ONLY {mode, cols, rows} — no
+        partial sceneId / cells / cellDefault leak that would cause UI regressions."""
         snap = {
             "current_location_id": "loc1",
             "locations": {"loc1": {"name": "Broken", "scene_grid": {"grid": {"cols": 0}}}},
@@ -82,6 +85,10 @@ class SceneGridBoardTests(unittest.TestCase):
         grid = _surface(snap)["grid"]
         self.assertEqual(grid["cols"], 16)
         self.assertEqual(grid["rows"], 10)
+        # Full legacy key-shape: no scene-grid-specific keys must leak through.
+        self.assertNotIn("cells", grid)
+        self.assertNotIn("sceneId", grid)
+        self.assertNotIn("cellDefault", grid)
 
 
 if __name__ == "__main__":

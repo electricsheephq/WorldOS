@@ -29,10 +29,13 @@ def test_old_location_without_scene_grid_loads_to_none():
     legacy = '{"id":"loc_legacy","name":"Old Room","description":"a room"}'
     loc = Location.model_validate_json(legacy)
     assert loc.scene_grid is None
-    # ...and re-serializing leaves the place otherwise intact.
+    # ...and re-serializing keeps the legacy shape (no forced scene_grid materialization).
     again = Location.model_validate_json(loc.model_dump_json())
     assert again.scene_grid is None
     assert again.name == "Old Room"
+    # Byte-identical additive contract: scene_grid key must be ABSENT from the dump,
+    # not merely None. A pre-A1 snapshot that round-trips must stay key-for-key identical.
+    assert "scene_grid" not in again.model_dump(exclude_none=True)
 
 
 def test_location_default_scene_grid_is_none():
@@ -173,12 +176,23 @@ def test_ensure_scene_grid_guards_re_entry():
 def test_emitter_does_not_touch_global_dice_stream():
     """Invariant #4 — the engine rolls combat. Emitting a SceneGrid must NOT activate or
     advance the global process RNG (it uses a LOCAL random.Random), so a later un-seeded
-    combat roll stays on its pre-existing mechanism."""
+    combat roll stays on its pre-existing mechanism.
+
+    Two probes: (a) the seed-gate flag must be unchanged, and (b) the underlying RNG
+    state must be identical before vs after — even without flipping the flag, a stream
+    advance would corrupt later combat rolls."""
     import dice
 
     before_active = dice._SEED_ACTIVE
+    process_rng = getattr(dice, "_PROCESS_RNG", None)
+    before_state = process_rng.getstate() if process_rng is not None else None
+
     emit_scene_grid("baldurs-gate", "tav", name="A Tavern")
+
     assert dice._SEED_ACTIVE == before_active  # the emitter never flipped the seed gate
+    after_rng = getattr(dice, "_PROCESS_RNG", None)
+    after_state = after_rng.getstate() if after_rng is not None else None
+    assert after_state == before_state  # RNG stream was NOT advanced by the emit
 
 
 # ── EMIT HOOKS (integration through the real server/content/travel paths) ─────────────

@@ -28,6 +28,7 @@ travel.py / server.py wrap ``emit_scene_grid`` and persist via the existing save
 from __future__ import annotations
 
 import hashlib
+import json
 import random
 from typing import Literal, Optional
 
@@ -149,7 +150,7 @@ def _layout_hash(grid: SceneGrid) -> str:
         mode="json",
         include={"grid", "cell_default", "cells", "props", "spawns", "exits", "zone_anchors", "lighting"},
     )
-    blob = repr(payload).encode("utf-8")
+    blob = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(blob).hexdigest()[:16]
 
 

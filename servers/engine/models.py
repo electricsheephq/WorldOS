@@ -2158,14 +2158,6 @@ class Campaign(_StrictModel):
 # is defined — and rebuild Location so its ``Optional["SceneGrid"]`` forward annotation
 # resolves. This keeps models.py the foundational module (no top-level dependency on
 # scene_grid) while letting Location carry a fully-typed, strictly-validated SceneGrid.
-from scene_grid import (  # noqa: E402  (deliberate end-of-module import to break the cycle)
-    SceneArt,
-    SceneCell,
-    SceneCellDefault,
-    SceneGrid,
-    SceneGridSpec,
-    SceneLighting,
-    SceneProp,
-)
+from scene_grid import SceneGrid  # noqa: E402  (deliberate end-of-module import to break the cycle — only SceneGrid needed to resolve Location's Optional["SceneGrid"] forward ref; nested types are concrete within scene_grid.py and need not be in models' namespace)
 
 Location.model_rebuild()
