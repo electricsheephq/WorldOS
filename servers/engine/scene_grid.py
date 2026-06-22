@@ -279,9 +279,10 @@ def _gen_tavern(scene_id: str, location_id: str, seed: int, rng: random.Random) 
 def _gen_default(scene_id: str, location_id: str, kind: str, seed: int,
                  rng: random.Random) -> SceneGrid:
     """A safe generic interior for any kind we don't yet have a bespoke generator for:
-    a perimeter-walled room with a door gap, no props, party spawns at the entrance. This
-    keeps the emitter total (every location gets a valid, walkable Tier-1 block-out) while
-    we add richer per-kind generators incrementally."""
+    a perimeter-walled room, a few ambient props (crates, barrels, a table), warm-neutral
+    interior lighting (NOT white), and party spawns at the entrance. Keeps the emitter
+    total (every location gets a valid, walkable Tier-1 block-out) while we add richer
+    per-kind generators incrementally."""
     cols = 12 + rng.randint(0, 2)
     rows = 9 + rng.randint(0, 2)
 
@@ -292,26 +293,390 @@ def _gen_default(scene_id: str, location_id: str, kind: str, seed: int,
         cells.append(SceneCell(c=0, r=r, type="wall", walkable=False))
         cells.append(SceneCell(c=cols - 1, r=r, type="wall", walkable=False))
 
+    props: list[SceneProp] = []
+
+    def _place_prop(pid: str, pkind: str, footprint: list[Cell], band: str,
+                    silhouette: str, occluder: bool = True) -> None:
+        anchor = footprint[0]
+        props.append(SceneProp(
+            id=pid, kind=pkind, cells=footprint, anchor_cell=anchor,
+            occluder=occluder, height_band=band, silhouette=silhouette,
+        ))
+        for (c, r) in footprint:
+            cells.append(SceneCell(c=c, r=r, type="prop", walkable=False, prop_ref=pid))
+
+    # A crate stack against the back-left interior wall (row 1).
+    _place_prop("crate_stack", "crates",
+                [(2, 1)], "mid",
+                "stacked wooden crates", occluder=True)
+
+    # A barrel against the back-right interior (row 1).
+    _place_prop("barrel", "barrels",
+                [(cols - 3, 1)], "low",
+                "an old wooden barrel", occluder=True)
+
+    # A simple table in the mid-floor.
     mid_c = cols // 2
+    _place_prop("table", "simple_table",
+                [(mid_c, rows // 2)], "mid",
+                "a plain wooden table", occluder=True)
+
+    # De-dup (belt-and-suspenders: props are small here, but keep pattern consistent).
+    seen: set[Cell] = set()
+    deduped: list[SceneCell] = []
+    for sc in cells:
+        key = (sc.c, sc.r)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(sc)
+    cells = deduped
+
     zone_anchors = {
         "the entrance": (mid_c, rows - 1),
         "center floor": (mid_c, rows // 2),
     }
     exits = [{"cell": [mid_c, rows - 1], "to_location_id": "", "label": "the way out"}]
-    spawns = {"party": [(mid_c - 1, rows - 2), (mid_c, rows - 2), (mid_c + 1, rows - 2)]}
+    spawns = {
+        "party": [(mid_c - 1, rows - 2), (mid_c, rows - 2), (mid_c + 1, rows - 2)],
+        "foes": [(mid_c - 1, 2), (mid_c + 1, 2)],
+    }
+
+    # Warm-neutral interior key — NOT #ffffff/0. A muted amber lantern-light from the left.
+    lighting = SceneLighting(
+        key_dir_deg=240,
+        key_color="#d4a96a",
+        ambient_color="#3a3f55",
+        mood="dim interior, warm lantern light from the left, cool shadow fill",
+    )
 
     grid = SceneGrid(
         scene_id=scene_id,
         location_id=location_id,
         kind=kind or "interior",
-        biome="",
+        biome="generic interior",
         seed=seed,
         grid=SceneGridSpec(cols=cols, rows=rows, cell_size_ft=5, projection="dimetric-2to1"),
         cell_default=SceneCellDefault(type="floor", walkable=True, cost=1),
         cells=cells,
+        props=props,
         zone_anchors=zone_anchors,
         exits=exits,
         spawns=spawns,
+        lighting=lighting,
+    )
+    grid.art.layout_hash = _layout_hash(grid)
+    grid.art.status = "tier1_blockout"
+    return grid
+
+
+def _gen_dungeon(scene_id: str, location_id: str, seed: int, rng: random.Random) -> SceneGrid:
+    """A procedural dungeon chamber: perimeter walls, a walkable stone-floor interior,
+    load-bearing props (pillars + rubble + a sarcophagus), brazier key light, cold-blue
+    ambient. Deterministic from ``rng``."""
+    cols = 14 + rng.randint(0, 3)   # 14..17
+    rows = 11 + rng.randint(0, 3)   # 11..14
+
+    cells: list[SceneCell] = []
+    walls: set[Cell] = set()
+
+    # Solid perimeter walls on all four sides.
+    for c in range(cols):
+        walls.add((c, 0))
+        walls.add((c, rows - 1))
+    for r in range(1, rows - 1):
+        walls.add((0, r))
+        walls.add((cols - 1, r))
+    for (c, r) in sorted(walls):
+        cells.append(SceneCell(c=c, r=r, type="wall", walkable=False))
+
+    props: list[SceneProp] = []
+
+    def _place_prop(pid: str, pkind: str, footprint: list[Cell], band: str,
+                    silhouette: str, occluder: bool = True) -> None:
+        anchor = footprint[0]
+        props.append(SceneProp(
+            id=pid, kind=pkind, cells=footprint, anchor_cell=anchor,
+            occluder=occluder, height_band=band, silhouette=silhouette,
+        ))
+        for (c, r) in footprint:
+            cells.append(SceneCell(c=c, r=r, type="prop", walkable=False, prop_ref=pid))
+
+    # Two interior pillars, symmetric left/right at back-quarter row.
+    pillar_r = 2 + rng.randint(0, 1)
+    _place_prop("pillar_l", "stone_pillar",
+                [(2, pillar_r)], "tall",
+                "ancient stone pillar, cracked", occluder=True)
+    _place_prop("pillar_r", "stone_pillar",
+                [(cols - 3, pillar_r)], "tall",
+                "ancient stone pillar, mossy", occluder=True)
+
+    # Rubble pile low near the left side.
+    rubble_r = rows // 2 + rng.randint(0, 1)
+    _place_prop("rubble", "rubble_pile",
+                [(2, rubble_r)], "low",
+                "fallen masonry rubble", occluder=False)
+
+    # A sarcophagus along the back wall center.
+    mid_c = cols // 2
+    _place_prop("sarcophagus", "sarcophagus",
+                [(mid_c - 1, 1), (mid_c, 1)], "tall",
+                "carved stone sarcophagus, lid ajar", occluder=True)
+
+    # Two braziers — the warm key-light sources — flanking the sarcophagus.
+    _place_prop("brazier_l", "brazier",
+                [(mid_c - 3, 1)], "mid",
+                "iron brazier, fire lit (warm key light)", occluder=False)
+    _place_prop("brazier_r", "brazier_r",
+                [(mid_c + 2, 1)], "mid",
+                "iron brazier, fire lit (warm key light)", occluder=False)
+
+    # De-dup.
+    seen: set[Cell] = set()
+    deduped: list[SceneCell] = []
+    for sc in cells:
+        key = (sc.c, sc.r)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(sc)
+    cells = deduped
+
+    zone_anchors: dict[str, Cell] = {
+        "the sarcophagus": (mid_c, 2),
+        "the entrance": (mid_c, rows - 2),
+        "center floor": (mid_c, rows // 2),
+    }
+    exits = [{"cell": [mid_c, rows - 1], "to_location_id": "", "label": "the passage back"}]
+    spawns = {
+        "party": [(mid_c - 1, rows - 3), (mid_c, rows - 3), (mid_c + 1, rows - 3)],
+        "foes": [(mid_c - 1, 3), (mid_c + 1, 3)],
+    }
+
+    # Warm brazier key, cold-blue ambient — classic dungeon contrast.
+    lighting = SceneLighting(
+        key_dir_deg=200,
+        key_color="#e8823a",
+        ambient_color="#1a2040",
+        mood="dim torchlit dungeon, warm brazier glow, cold blue shadow fill",
+    )
+
+    grid = SceneGrid(
+        scene_id=scene_id,
+        location_id=location_id,
+        kind="dungeon",
+        biome="ancient stone dungeon chamber, flickering brazier light",
+        seed=seed,
+        grid=SceneGridSpec(cols=cols, rows=rows, cell_size_ft=5, projection="dimetric-2to1"),
+        cell_default=SceneCellDefault(type="floor", walkable=True, cost=1),
+        cells=cells,
+        props=props,
+        zone_anchors=zone_anchors,
+        exits=exits,
+        spawns=spawns,
+        lighting=lighting,
+    )
+    grid.art.layout_hash = _layout_hash(grid)
+    grid.art.status = "tier1_blockout"
+    return grid
+
+
+def _gen_forest(scene_id: str, location_id: str, seed: int, rng: random.Random) -> SceneGrid:
+    """A procedural forest clearing: no hard perimeter walls (open sides), scattered tree
+    and rock props as occluders, mostly walkable interior, daylight lighting (cool-neutral
+    key, no torch). Deterministic from ``rng``."""
+    cols = 16 + rng.randint(0, 3)   # 16..19
+    rows = 12 + rng.randint(0, 3)   # 12..15
+
+    cells: list[SceneCell] = []
+    props: list[SceneProp] = []
+
+    def _place_prop(pid: str, pkind: str, footprint: list[Cell], band: str,
+                    silhouette: str, occluder: bool = True) -> None:
+        anchor = footprint[0]
+        props.append(SceneProp(
+            id=pid, kind=pkind, cells=footprint, anchor_cell=anchor,
+            occluder=occluder, height_band=band, silhouette=silhouette,
+        ))
+        for (c, r) in footprint:
+            cells.append(SceneCell(c=c, r=r, type="prop", walkable=False, prop_ref=pid))
+
+    # Tree line along the back (row 0..1) — four trees, evenly spaced.
+    spacing = cols // 4
+    for i, col_base in enumerate(range(1, cols - 1, spacing)):
+        c = min(col_base + rng.randint(0, 1), cols - 2)
+        _place_prop(f"tree_{i}", "large_tree",
+                    [(c, 0), (c, 1)], "tall",
+                    "gnarled forest tree, dense canopy", occluder=True)
+
+    # Two rock clusters on the sides — visual anchors for the clearing.
+    rock_r = rows // 2 + rng.randint(0, 1)
+    _place_prop("rock_l", "boulder",
+                [(1, rock_r)], "mid",
+                "mossy boulder", occluder=True)
+    _place_prop("rock_r", "boulder_r",
+                [(cols - 2, rock_r)], "mid",
+                "lichen-covered boulder", occluder=True)
+
+    # A fallen log across the lower mid — low occluder, adds depth.
+    log_c = cols // 2 - 1
+    log_r = rows - 4
+    _place_prop("log", "fallen_log",
+                [(log_c, log_r), (log_c + 1, log_r)], "low",
+                "fallen mossy log", occluder=True)
+
+    # De-dup.
+    seen: set[Cell] = set()
+    deduped: list[SceneCell] = []
+    for sc in cells:
+        key = (sc.c, sc.r)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(sc)
+    cells = deduped
+
+    mid_c = cols // 2
+    zone_anchors: dict[str, Cell] = {
+        "the clearing center": (mid_c, rows // 2),
+        "the tree line": (mid_c, 2),
+        "the trail": (mid_c, rows - 1),
+    }
+    exits = [{"cell": [mid_c, rows - 1], "to_location_id": "", "label": "the forest trail"}]
+    spawns = {
+        "party": [(mid_c - 1, rows - 3), (mid_c, rows - 3), (mid_c + 1, rows - 3)],
+        "foes": [(mid_c - 1, 3), (mid_c + 1, 3)],
+    }
+
+    # Daylight — cool-neutral key from upper-left (sun), pale blue ambient (open sky).
+    lighting = SceneLighting(
+        key_dir_deg=145,
+        key_color="#e8dcc8",
+        ambient_color="#7090b0",
+        mood="dappled forest daylight, cool-neutral sun from the upper-left, blue-sky ambient",
+    )
+
+    grid = SceneGrid(
+        scene_id=scene_id,
+        location_id=location_id,
+        kind="forest",
+        biome="open forest clearing, dappled daylight",
+        seed=seed,
+        grid=SceneGridSpec(cols=cols, rows=rows, cell_size_ft=5, projection="dimetric-2to1"),
+        cell_default=SceneCellDefault(type="floor", walkable=True, cost=1),
+        cells=cells,
+        props=props,
+        zone_anchors=zone_anchors,
+        exits=exits,
+        spawns=spawns,
+        lighting=lighting,
+    )
+    grid.art.layout_hash = _layout_hash(grid)
+    grid.art.status = "tier1_blockout"
+    return grid
+
+
+def _gen_town(scene_id: str, location_id: str, seed: int, rng: random.Random) -> SceneGrid:
+    """A procedural town square/plaza: building-edge walls along back + sides, a central
+    open plaza with stalls, a well, and a cart as props, daylight lighting. Deterministic
+    from ``rng``."""
+    cols = 16 + rng.randint(0, 3)   # 16..19
+    rows = 12 + rng.randint(0, 2)   # 12..14
+
+    cells: list[SceneCell] = []
+    walls: set[Cell] = set()
+
+    # Building fronts: back wall (row 0) + partial left/right walls (just a few rows deep)
+    # — simulates building facades, leaving the lower area open to the street.
+    for c in range(cols):
+        walls.add((c, 0))
+    side_depth = 3 + rng.randint(0, 1)
+    for r in range(1, side_depth):
+        walls.add((0, r))
+        walls.add((cols - 1, r))
+    for (c, r) in sorted(walls):
+        cells.append(SceneCell(c=c, r=r, type="wall", walkable=False))
+
+    props: list[SceneProp] = []
+
+    def _place_prop(pid: str, pkind: str, footprint: list[Cell], band: str,
+                    silhouette: str, occluder: bool = True) -> None:
+        anchor = footprint[0]
+        props.append(SceneProp(
+            id=pid, kind=pkind, cells=footprint, anchor_cell=anchor,
+            occluder=occluder, height_band=band, silhouette=silhouette,
+        ))
+        for (c, r) in footprint:
+            cells.append(SceneCell(c=c, r=r, type="prop", walkable=False, prop_ref=pid))
+
+    mid_c = cols // 2
+
+    # A market well at the plaza center — tall, two cells wide.
+    well_r = rows // 2
+    _place_prop("well", "stone_well",
+                [(mid_c - 1, well_r), (mid_c, well_r)], "tall",
+                "stone well with a rope and bucket, plaza centerpiece", occluder=True)
+
+    # Two market stalls flanking the well on both sides.
+    stall_r = well_r - 1
+    _place_prop("stall_l", "market_stall",
+                [(mid_c - 4, stall_r), (mid_c - 3, stall_r)], "mid",
+                "canvas market stall, herbs and bread on display", occluder=True)
+    _place_prop("stall_r", "market_stall_r",
+                [(mid_c + 2, stall_r), (mid_c + 3, stall_r)], "mid",
+                "canvas market stall, bolts of cloth for sale", occluder=True)
+
+    # A cart near the entrance side — low, adds scale.
+    cart_r = rows - 4
+    _place_prop("cart", "merchants_cart",
+                [(mid_c - 1, cart_r), (mid_c, cart_r)], "low",
+                "wooden merchant's cart, parked", occluder=True)
+
+    # De-dup.
+    seen: set[Cell] = set()
+    deduped: list[SceneCell] = []
+    for sc in cells:
+        key = (sc.c, sc.r)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(sc)
+    cells = deduped
+
+    zone_anchors: dict[str, Cell] = {
+        "the well": (mid_c, well_r),
+        "the market stalls": (mid_c, stall_r),
+        "the plaza entrance": (mid_c, rows - 1),
+        "center plaza": (mid_c, rows // 2),
+    }
+    exits = [{"cell": [mid_c, rows - 1], "to_location_id": "", "label": "the main street"}]
+    spawns = {
+        "party": [(mid_c - 1, rows - 3), (mid_c, rows - 3), (mid_c + 1, rows - 3)],
+        "foes": [(mid_c - 2, well_r - 2), (mid_c + 2, well_r - 2)],
+    }
+
+    # Daylight — bright overhead sun from upper-right, pale-blue sky ambient.
+    lighting = SceneLighting(
+        key_dir_deg=120,
+        key_color="#f5e8c8",
+        ambient_color="#98b8d0",
+        mood="bright town square midday, warm overhead sun from the upper-right, clear-sky ambient",
+    )
+
+    grid = SceneGrid(
+        scene_id=scene_id,
+        location_id=location_id,
+        kind="town",
+        biome="outdoor town square, open plaza with market stalls and a stone well",
+        seed=seed,
+        grid=SceneGridSpec(cols=cols, rows=rows, cell_size_ft=5, projection="dimetric-2to1"),
+        cell_default=SceneCellDefault(type="floor", walkable=True, cost=1),
+        cells=cells,
+        props=props,
+        zone_anchors=zone_anchors,
+        exits=exits,
+        spawns=spawns,
+        lighting=lighting,
     )
     grid.art.layout_hash = _layout_hash(grid)
     grid.art.status = "tier1_blockout"
@@ -322,17 +687,57 @@ def _gen_default(scene_id: str, location_id: str, kind: str, seed: int,
 # anything not listed falls back to the generic interior.
 _GENERATORS = {
     "tavern": _gen_tavern,
+    "dungeon": _gen_dungeon,
+    "forest": _gen_forest,
+    "town": _gen_town,
 }
 
+# ── Kind-resolution keyword tables ──────────────────────────────────────────────────────
 
-def _infer_kind(name: str, notes: str) -> str:
-    """Best-effort scene KIND from a Location's free text (name + notes/tags). The engine
-    has no explicit per-location ``kind`` field, so we infer one for the generator pick.
-    Conservative: only the kinds we have a bespoke generator for are matched; everything
-    else falls through to the generic interior."""
-    text = f"{name} {notes}".lower()
-    if any(w in text for w in ("tavern", "inn", "alehouse", "pub", "taproom")):
-        return "tavern"
+# Ordered list of (kind, keywords) tuples. Resolution walks this list and returns the FIRST
+# match. Longer/more-specific lists go FIRST so "crypt" beats a hypothetical generic "cave".
+_KIND_KEYWORDS: list[tuple[str, tuple[str, ...]]] = [
+    ("tavern",  ("tavern", "inn", "alehouse", "pub", "taproom")),
+    ("dungeon", ("dungeon", "crypt", "cave", "catacomb", "tomb", "mine", "vault", "cellar")),
+    ("forest",  ("forest", "wood", "woods", "glade", "grove", "clearing", "jungle", "thicket")),
+    ("town",    ("town", "market", "square", "plaza", "district", "village", "city", "hamlet",
+                 "settlement")),
+]
+
+
+def _infer_kind_from_text(text: str) -> str:
+    """Resolve a scene kind from free text (name + notes). Returns the matching kind string
+    or "" if nothing matches."""
+    t = text.lower()
+    for kind, keywords in _KIND_KEYWORDS:
+        if any(w in t for w in keywords):
+            return kind
+    return ""
+
+
+def _infer_kind_from_id(location_id: str) -> str:
+    """Resolve a scene kind from the location_id itself (underscore/hyphen-segmented).
+    Example: ``tavern_lower_city`` -> ``tavern``.  Returns the matching kind or ""."""
+    t = location_id.lower().replace("-", " ").replace("_", " ")
+    return _infer_kind_from_text(t)
+
+
+def _infer_kind(name: str, notes: str, location_id: str = "") -> str:
+    """Best-effort scene KIND resolution for generator selection.
+
+    Resolution order (first non-empty match wins):
+      (a) name + notes keywords (highest signal — the DM set the name deliberately);
+      (b) location_id keywords (e.g. ``tavern_lower_city`` -> ``tavern``);
+      (c) generic "interior" fallback.
+
+    The caller (``emit_scene_grid``) applies the even-higher-priority explicit ``kind``
+    argument BEFORE calling this function, so we never need to handle that here."""
+    hit = _infer_kind_from_text(f"{name} {notes}")
+    if hit:
+        return hit
+    hit = _infer_kind_from_id(location_id)
+    if hit:
+        return hit
     return "interior"
 
 
@@ -348,14 +753,27 @@ def emit_scene_grid(
 
     The layout is generated from a LOCAL ``random.Random`` seeded off
     ``derive_seed(world_id, location_id)`` — deterministic, reproducible, and isolated from
-    the global combat dice stream. ``kind`` is taken as given, else inferred from name/notes.
+    the global combat dice stream.
+
+    Kind resolution (first non-empty match wins):
+      (a) explicit ``kind`` arg (caller override);
+      (b) Location ``kind``/``type``/``biome`` field, if the Location model has one
+          (``ensure_scene_grid`` passes these via the ``kind`` kwarg when present);
+      (c) name + notes keywords;
+      (d) location_id keywords (e.g. ``tavern_lower_city`` → ``tavern``);
+      (e) generic "interior" fallback.
+
     Callers (content.seed_world / travel.travel_to / server.add_location) GUARD re-entry
     (skip if ``Location.scene_grid`` is already present) and persist via the existing save
     path; this function itself is pure (no I/O, no mutation of campaign state)."""
     seed = derive_seed(world_id, location_id)
     rng = random.Random(seed)
     scene_id = f"{world_id}:{location_id}"
-    resolved_kind = kind.strip() or _infer_kind(name, notes)
+    # (a) explicit kind wins
+    resolved_kind = kind.strip()
+    # (b/c/d) infer from name+notes, then from location_id
+    if not resolved_kind:
+        resolved_kind = _infer_kind(name, notes, location_id)
     generator = _GENERATORS.get(resolved_kind, None)
     if generator is not None:
         return generator(scene_id, location_id, seed, rng)
@@ -370,13 +788,28 @@ def ensure_scene_grid(world_id: str, location) -> bool:
     no-op (returns False) — so a re-visit / re-seed / re-emit never clobbers an existing
     grid (and so an async Tier-2 ``art`` fill is preserved). Returns True iff it attached
     a fresh grid. The caller persists via the existing save path; this only mutates the
-    passed Location in memory. Pure-deterministic via ``emit_scene_grid``."""
+    passed Location in memory. Pure-deterministic via ``emit_scene_grid``.
+
+    Kind-resolution from the Location model: reads ``location.kind``, ``location.type``,
+    and ``location.biome`` (in that order) if they exist, passing the first non-empty one
+    as the explicit ``kind`` arg so the emitter's highest-priority resolution path fires.
+    The Location model currently has no such fields (they're inferred from name/notes/id),
+    but this is forward-compatible: if a future Location model gains a ``kind`` field the
+    emitter will use it automatically."""
     if getattr(location, "scene_grid", None) is not None:
         return False
+    # Probe the Location for an explicit kind/type/biome field (forward-compatible).
+    explicit_kind = ""
+    for field in ("kind", "type", "biome"):
+        val = getattr(location, field, None)
+        if val and isinstance(val, str):
+            explicit_kind = val
+            break
     location.scene_grid = emit_scene_grid(
         world_id,
         location.id,
         name=getattr(location, "name", "") or "",
         notes=getattr(location, "notes", "") or "",
+        kind=explicit_kind,
     )
     return True

@@ -147,15 +147,19 @@ def test_tavern_generator_emits_valid_scenegrid():
     assert g.lighting.mood and g.lighting.key_color == "#ff9a45"
 
 
-def test_non_tavern_falls_back_to_valid_default_interior():
-    g = emit_scene_grid("baldurs-gate", "crypt1", name="The Crypt", notes="dungeon")
-    assert g.kind == "interior"  # no bespoke dungeon generator yet -> generic interior
+def test_unknown_location_falls_back_to_valid_default_interior():
+    """A location with no recognisable keywords resolves to the generic interior fallback."""
+    g = emit_scene_grid("baldurs-gate", "loc_unknown", name="Somewhere Unknown", notes="")
+    assert g.kind == "interior"  # no bespoke generator match -> generic interior
     assert g.grid.cols > 0 and g.grid.rows > 0
     cells = _cells_by_coord(g)
-    # Perimeter walls + a walkable center, even with no props.
+    # Perimeter walls + a walkable center.
     assert cells[(0, 0)].type == "wall"
     assert g.cell_default.walkable is True
     assert g.art.status == "tier1_blockout"
+    # Generic generator now emits props + non-white lighting.
+    assert len(g.props) >= 1
+    assert g.lighting.key_color != "#ffffff"
 
 
 # ── GUARD: ensure_scene_grid is a no-op when one already exists ───────────────────────
@@ -342,3 +346,157 @@ def test_pure_inspect_of_pre_a1_snapshot_is_a_no_op(tmp_path, monkeypatch):
     assert after_bytes == before_bytes, "pure inspect of a pre-A1 snapshot REWROTE the file"
     assert after_updated_at == before_updated_at, "pure inspect bumped updated_at (#640 risk)"
     assert path.stat().st_mtime_ns == before_mtime, "the snapshot file was rewritten on disk"
+
+
+# ── NEW GENERATORS (dungeon / forest / town) ─────────────────────────────────────────
+
+
+def _assert_valid_generator(g, *, expected_kind: str) -> None:
+    """Shared validity assertions for every bespoke generator.
+
+    Checks:
+      * kind matches expected_kind
+      * grid dims are non-zero
+      * art.status == "tier1_blockout", layout_hash is non-empty
+      * cell_default is walkable floor
+      * at least one occluder prop with a height_band set
+      * party + foe spawns present
+      * lighting key_color is NOT white (#ffffff) and NOT the zero-direction-only default
+    """
+    assert g.kind == expected_kind, f"expected kind={expected_kind!r}, got {g.kind!r}"
+    assert g.grid.cols > 0 and g.grid.rows > 0
+    assert g.art.status == "tier1_blockout"
+    assert g.art.layout_hash, "layout_hash must be non-empty"
+    assert g.cell_default.type == "floor" and g.cell_default.walkable is True
+    # At least one occluder prop with a height_band value.
+    occluders = [p for p in g.props if p.occluder and p.height_band]
+    assert occluders, f"{expected_kind}: must have ≥1 occluder prop with height_band"
+    # Spawns.
+    assert g.spawns.get("party"), f"{expected_kind}: must have party spawns"
+    assert g.spawns.get("foes"), f"{expected_kind}: must have foe spawns"
+    # Non-white lighting.
+    assert g.lighting.key_color != "#ffffff", \
+        f"{expected_kind}: key_color must not be #ffffff (got {g.lighting.key_color!r})"
+
+
+def test_dungeon_generator_emits_valid_scenegrid():
+    g = emit_scene_grid("world", "dungeon_chamber", kind="dungeon")
+    _assert_valid_generator(g, expected_kind="dungeon")
+
+    cells = _cells_by_coord(g)
+    # Full perimeter walls on all four sides (dungeon has no open front unlike tavern).
+    for c in range(g.grid.cols):
+        assert cells[(c, 0)].type == "wall"
+        assert cells[(c, g.grid.rows - 1)].type == "wall"
+    for r in range(1, g.grid.rows - 1):
+        assert cells[(0, r)].type == "wall"
+        assert cells[(g.grid.cols - 1, r)].type == "wall"
+
+    # Must have a sarcophagus and at least one brazier prop.
+    prop_ids = {p.id for p in g.props}
+    assert "sarcophagus" in prop_ids, "dungeon must have a sarcophagus prop"
+    assert any("brazier" in pid for pid in prop_ids), "dungeon must have a brazier prop"
+
+    # Dungeon uses a warm brazier key (NOT blue — that's ambient) + cold-blue ambient.
+    assert g.lighting.ambient_color.lower() != "#3a3f55", \
+        "dungeon ambient should be cold blue, not the generic warm-neutral"
+
+
+def test_forest_generator_emits_valid_scenegrid():
+    g = emit_scene_grid("world", "forest_clearing", kind="forest")
+    _assert_valid_generator(g, expected_kind="forest")
+
+    # Forest has no hard perimeter walls — the cell list should NOT have a full wall row.
+    cells = _cells_by_coord(g)
+    # The interior center MUST be walkable (either default floor or explicitly walkable).
+    mid = (g.grid.cols // 2, g.grid.rows // 2)
+    assert mid not in cells or cells[mid].walkable, "forest center must be walkable"
+
+    # Must have tree props as tall occluders.
+    tall_occluders = [p for p in g.props if p.occluder and p.height_band == "tall"]
+    assert tall_occluders, "forest must have tall occluder props (trees)"
+
+    # Daylight — key_dir_deg should NOT be the default 0, and key_color should be pale.
+    assert g.lighting.key_dir_deg != 0, "forest daylight key must not be at 0°"
+
+
+def test_town_generator_emits_valid_scenegrid():
+    g = emit_scene_grid("world", "market_square", kind="town")
+    _assert_valid_generator(g, expected_kind="town")
+
+    cells = _cells_by_coord(g)
+    # Town has a back wall at row 0.
+    for c in range(g.grid.cols):
+        assert cells[(c, 0)].type == "wall", f"town back wall missing at col {c}"
+
+    # Must have a well prop.
+    prop_ids = {p.id for p in g.props}
+    assert "well" in prop_ids, "town square must have a stone well prop"
+
+    # Daylight — should be lighter/brighter than interior amber.
+    assert g.lighting.key_color.lower() != "#d4a96a", \
+        "town square daylight key should not match the generic interior amber"
+
+
+# ── KIND-RESOLUTION: explicit, location_id keywords, name/notes, fallback ─────────────
+
+
+def test_kind_resolution_explicit_kind_wins():
+    """Explicit ``kind`` arg overrides everything else."""
+    g = emit_scene_grid("w", "tavern_style_id", name="Tavern Name", kind="dungeon")
+    assert g.kind == "dungeon"
+
+
+def test_kind_resolution_from_location_id_tavern():
+    """``tavern_lower_city`` resolves to ``tavern`` via the location_id keyword."""
+    g = emit_scene_grid("baldurs-gate", "tavern_lower_city")
+    assert g.kind == "tavern", \
+        f"tavern_lower_city should resolve to tavern, got {g.kind!r}"
+
+
+def test_kind_resolution_from_location_id_dungeon():
+    """``dungeon_level_2`` resolves to ``dungeon`` via the location_id keyword."""
+    g = emit_scene_grid("w", "dungeon_level_2")
+    assert g.kind == "dungeon"
+
+
+def test_kind_resolution_from_location_id_forest():
+    """``forest_of_shadows`` resolves to ``forest`` via the location_id keyword."""
+    g = emit_scene_grid("w", "forest_of_shadows")
+    assert g.kind == "forest"
+
+
+def test_kind_resolution_from_location_id_town():
+    """``market_district_east`` resolves to ``town`` via the location_id keyword."""
+    g = emit_scene_grid("w", "market_district_east")
+    assert g.kind == "town"
+
+
+def test_kind_resolution_name_beats_location_id():
+    """name/notes keyword resolution fires before location_id keyword resolution."""
+    # location_id says "crypt" (dungeon), but name says "tavern" -> name wins.
+    g = emit_scene_grid("w", "crypt_old", name="The Rusty Anchor Tavern")
+    assert g.kind == "tavern", \
+        f"name keyword should beat location_id keyword, got {g.kind!r}"
+
+
+def test_kind_resolution_unknown_id_falls_back_to_generic():
+    """An id with no matching keyword falls through to the generic interior."""
+    g = emit_scene_grid("w", "loc_xyzzy_007", name="A Mysterious Place")
+    assert g.kind == "interior"
+
+
+# ── DETERMINISM: new generators are reproducible ──────────────────────────────────────
+
+
+def test_new_generators_are_deterministic():
+    """Same world_id + location_id always produces byte-identical output for each new kind."""
+    for location_id, kind in [
+        ("dungeon_crypt", "dungeon"),
+        ("forest_glade", "forest"),
+        ("town_square_east", "town"),
+    ]:
+        a = emit_scene_grid("world-a", location_id, kind=kind)
+        b = emit_scene_grid("world-a", location_id, kind=kind)
+        assert a.model_dump_json() == b.model_dump_json(), \
+            f"{kind} generator is not deterministic for location_id={location_id!r}"
