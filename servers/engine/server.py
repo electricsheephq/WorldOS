@@ -2366,10 +2366,10 @@ def reroll_character(
     level: Optional[int] = None,
 ) -> dict:
     """Re-roll a NEW player character after a PC dies, and continue the same quest — the
-    D&D-table answer to "no save states". Death is one-way (the engine never resurrects
-    the fallen); this is *forward* motion: a new hero, at the dead PC's level, joins the
-    ongoing campaign. The world-state — quests, day, locations, lore, factions, surviving
-    companions and their memories — is untouched (it lives on the Campaign, not the PC)."""
+    D&D-table answer to "no save states". Death is one-way (no resurrection); this is forward
+    motion: a new hero, at the dead PC's level, joins the ongoing campaign. World-state
+    (quests, day, locations, lore, factions, surviving companions + memories) is untouched —
+    it lives on the Campaign, not the PC."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         dead = _char(c, dead_id)  # raises if the id isn't in the campaign
@@ -7128,15 +7128,12 @@ def build_options(campaign_id: str, character_id: str) -> dict:
 
 @mcp.tool()
 def level_roadmap(campaign_id: str, character_id: str, through_level: int = 20) -> dict:
-    """A READ-ONLY projection of what a character GAINS at each level from its current
-    level + 1 through ``through_level`` (≤20) — the "see your path to 20" planning view
-    (build_options only shows the single next level). Projects the PC's PRIMARY class (most
-    levels) along the SRD tables: features gained, subclass-feature deltas, ASI/feat levels,
-    the proficiency bonus, class-resource changes, and a caster's spell-slot note. Returns
-    ``{character_id, character_name, primary_class, subclass, from, through_level,
-    multiclass, roadmap:[…]}``. Pure projection — never writes state, never fabricates; an
-    empty ``roadmap`` when the PC is already at ``through_level``, has no class (a stat-block
-    NPC/monster), or the primary class is unknown to the tables."""
+    """READ-ONLY projection of what a character GAINS at each level from current+1 through
+    ``through_level`` (≤20) — the "see your path to 20" planning view (build_options shows
+    only the next level). Projects the PC's PRIMARY class (most levels) along the SRD tables:
+    features, subclass-feature deltas, ASI/feat levels, proficiency bonus, class-resource
+    changes, caster spell-slot note. Never writes; empty ``roadmap`` when already at
+    ``through_level``, classless (stat-block NPC/monster), or class unknown to the tables."""
     c = _require(campaign_id)
     ch = _char(c, character_id)
     base = {
@@ -8290,14 +8287,12 @@ def _equip_mechanics(ch: Character, item_name: str, equipped: bool) -> Optional[
 
 @mcp.tool()
 def lookup_item(name: str) -> dict:
-    """Look up a single SRD item by name (case-insensitive) in the bundled
-    ~960-item catalog (magic items, weapons, armor, gear, potions, etc.). Returns
-    the flattened record — {name, kind, rarity, requires_attunement, weight, cost,
-    description, properties} plus damage/damage_type for weapons and ac for armor —
-    or {"error", "suggestions"} on a miss. `cost` is the listed price in gp, or
-    null when the SRD lists no price (every magic item) — null means the DM sets
-    the price, NOT that it is free. Use this (then add_item with item_name=...)
-    to grant a REAL item instead of free-texting it."""
+    """Look up a single SRD item by name (case-insensitive) in the bundled ~960-item catalog
+    (magic items, weapons, armor, gear, potions, …). Returns the flattened record — {name,
+    kind, rarity, requires_attunement, weight, cost, description, properties} plus
+    damage/damage_type (weapons) and ac (armor) — or {"error", "suggestions"} on a miss.
+    `cost` is null when the SRD lists no price (means the DM sets it, NOT free). Use this then
+    add_item(item_name=...) to grant a REAL item instead of free-texting it."""
     rec = itemcatalog.resolve(name)
     if rec is None:
         return {"error": f"no item named {name!r} in the SRD catalog",
@@ -8328,14 +8323,11 @@ def feats(query: str = "") -> dict:
 
 @mcp.tool()
 def lookup_feature(name: str, class_name: str = "") -> dict:
-    """Look up a class/subclass feature's FULL SRD 5.2 rules text by name (#756-family,
-    from the RRI-25e55fa optimizer sweep — "every feature is static text with no
-    click-through to full rules text").
-
-    `class_name` (a class OR subclass name, e.g. "Fighter" or "Champion") disambiguates a
-    feature whose name is shared across classes ("Extra Attack", "Spellcasting") and lets a
-    subclass feature fall back to its parent class's feature. Returns {name, desc, owner}
-    with the complete rules text, or {"error"} on a miss. Read-only; mirrors lookup_item."""
+    """Look up a class/subclass feature's FULL SRD 5.2 rules text by name. `class_name` (a class
+    OR subclass name, e.g. "Fighter" or "Champion") disambiguates a name shared across classes
+    ("Extra Attack", "Spellcasting") and lets a subclass feature fall back to its parent class.
+    Returns {name, desc, owner} with the complete rules text, or {"error"} on a miss.
+    Read-only; mirrors lookup_item."""
     rec = (
         feature_catalog_mod.lookup(class_name, name)
         if class_name
@@ -8358,12 +8350,11 @@ def feature_catalog(owner: str) -> dict:
 
 @mcp.tool()
 def character_feature_rules(campaign_id: str, character_id: str) -> dict:
-    """The FULL SRD rules text for each feature a character actually has — resolved against
-    the PC's own class(es)/subclass(es) so a shared name ("Extra Attack", "Spellcasting")
-    reads the RIGHT class's rules. Returns {features: [{name, desc, owner}]} for the
-    sheet's feature click-through (the optimizer's "class-feature inspector absent"). A
-    feature whose rules text the SRD dump doesn't carry is returned with an empty desc
-    (HONEST — the curated short desc still renders inline); never a fabrication. Read-only."""
+    """The FULL SRD rules text for each feature a character actually has — resolved against the
+    PC's own class(es)/subclass(es) so a shared name ("Extra Attack", "Spellcasting") reads the
+    RIGHT class's rules. Returns {features: [{name, desc, owner}]} for the sheet's feature
+    click-through. A feature the SRD dump lacks is returned with an empty desc (never a
+    fabrication). Read-only."""
     c = _require(campaign_id)
     ch = _char(c, character_id)
     # The PC's class + subclass names are the disambiguation hints (subclass first so a
@@ -8913,12 +8904,11 @@ def set_class_resource(
     used: int = 0,
 ) -> dict:
     """Register (or update) a CUSTOM depletable pool the SRD class tables don't seed — a
-    SUBCLASS, feat, or homebrew resource. The SRD tables only know base-class pools (Rage,
-    Ki, Second Wind, Action Surge, Sorcery Points, …), so a Battle Master's **Superiority
-    Dice**, a Psi Warrior's **Energy Dice**, an Arcane Archer's **Arcane Shots**, etc. are
-    invisible to the engine until you register them here. The engine supplies the *mechanism*
-    (a tracked pool `use_resource` spends and rests recharge); YOU supply the subclass numbers
-    (the engine stays SRD-only and ships no non-SRD subclass tables)."""
+    SUBCLASS, feat, or homebrew resource. The SRD tables know only base-class pools (Rage, Ki,
+    Action Surge, …), so a Battle Master's Superiority Dice, a Psi Warrior's Energy Dice, etc.
+    are invisible until registered here. The engine supplies the mechanism (a tracked pool
+    `use_resource` spends and rests recharge); YOU supply the subclass numbers (engine is
+    SRD-only and ships no non-SRD subclass tables)."""
     if int(max) < 0:
         raise ValueError("max must be >= 0")
     rech = recharge if recharge in ("short", "long", "none") else "short"
@@ -8994,12 +8984,10 @@ def _canonicalize_spell_list(spells_list: list, existing: list, mode: str) -> li
 def learn_spells(campaign_id: str, character_id: str, spells_list: ReqListArg,
                  mode: str = "replace") -> dict:
     """Set a character's KNOWN spells. Each name is VALIDATED + CANONICALIZED (F03-7): an
-    unknown spell (typo, non-SRD) is rejected listing the offenders, and any casing you pass
-    ("fire bolt") is stored proper-cased ("Fire Bolt") so the case-sensitive cast gate accepts
-    a later cast. `mode='replace'` (default) substitutes the whole list; `mode='add'` appends
-    the new spells to the existing known list (de-duped) — so you can teach one spell without
-    re-listing the whole spellbook. Rejection happens BEFORE any change (nothing is stored on
-    an unknown name)."""
+    unknown spell (typo, non-SRD) is rejected listing the offenders, and casing is normalized
+    ("fire bolt" -> "Fire Bolt") so the case-sensitive cast gate accepts a later cast.
+    `mode='replace'` (default) substitutes the whole list; `mode='add'` appends (de-duped) so
+    you teach one spell without re-listing the spellbook. Rejection happens BEFORE any change."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
@@ -9012,11 +9000,10 @@ def learn_spells(campaign_id: str, character_id: str, spells_list: ReqListArg,
 def prepare_spells(campaign_id: str, character_id: str, spells_list: ReqListArg,
                    mode: str = "replace") -> dict:
     """Set a character's PREPARED spells. Each name is VALIDATED + CANONICALIZED (F03-7) like
-    learn_spells. With a non-empty prepared list, cast_spell now enforces preparation for
-    LEVELED spells (F03-8): a prepared caster (cleric/wizard/druid) casts only what it has
-    prepared, while cantrips stay always-castable once known. `mode='replace'` (default)
-    substitutes the list (your daily preparation); `mode='add'` appends. An unknown spell is
-    rejected before any change."""
+    learn_spells. With a non-empty prepared list, cast_spell enforces preparation for LEVELED
+    spells (F03-8): a prepared caster casts only what it has prepared; cantrips stay
+    always-castable once known. `mode='replace'` (default) substitutes the daily preparation;
+    `mode='add'` appends. An unknown spell is rejected before any change."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
@@ -9525,12 +9512,11 @@ def encounter_outlook(
     monster_xps: Optional[list[int]] = None,
     monster_ids: OptStrListArg = None,
 ) -> dict:
-    """Call this BEFORE staging a fight to see how over-matched it is against the LIVING
-    party: it makes the SRD over-match math legible so the balancing doctrine is followable.
-    The engine NEVER alters combat — the dragon stays a dragon. Returns the SRD difficulty
-    band PLUS an `overmatch_ratio` (the band alone caps at 'deadly' and can't tell a
-    winnable 1.12x troll from a guaranteed-wipe 6.25x dragon) and a `must_offer_out` flag
-    that fires only in the unwinnable low-level zone."""
+    """Call BEFORE staging a fight to see how over-matched it is against the LIVING party — it
+    makes the SRD over-match math legible. The engine NEVER alters combat. Returns the SRD
+    difficulty band PLUS an `overmatch_ratio` (the band caps at 'deadly' and can't tell a
+    winnable 1.12x troll from a wipe-6.25x dragon) and a `must_offer_out` flag that fires only
+    in the unwinnable low-level zone."""
     c = _require(campaign_id)
     xps = _resolve_monster_xps(c, monster_xps, monster_ids)
     if not xps:
@@ -9692,13 +9678,11 @@ def _camp_beat_view(c: Campaign, beat: CampBeatCandidate) -> dict:
 @mcp.tool()
 def camp_scene(campaign_id: str, setting: str = "") -> dict:
     """Gather the party for a CAMP scene — the hub where companions breathe between adventures
-    (around the campfire, at the tavern bar, in a safe house). It returns deterministic
-    scheduled frames for living companions: `voice_id`/participants, current standing
-    (`attitude` + `attitude_value` for solo beats), player-facing prompts, and read-only
-    relationship `arc` summaries. Run it at a long rest / downtime / on reaching a safe hub:
-    voice the returned frames, let the player talk to any of them, and play any arc beat that's
-    ripe — then `check_companion_arc` to fire/mark it and `record_camp_beat` to persist that the
-    camp beat happened. Read-only (advice + state; it changes nothing)."""
+    (campfire, tavern bar, safe house). Returns deterministic scheduled frames for living
+    companions: `voice_id`/participants, current standing (`attitude`/`attitude_value`),
+    player-facing prompts, read-only `arc` summaries. Run at a long rest / downtime / safe hub:
+    voice the frames, let the player talk, play any ripe arc beat — then `check_companion_arc`
+    to fire/mark it and `record_camp_beat` to persist it. Read-only (changes nothing)."""
     c = _require(campaign_id)
     # F06-5: gather EVERY living companion (incl. de-facto companions not in c.party) via the
     # shared scheduler helper — camp was the one seam that gated on c.party while relocate/XP
@@ -10295,15 +10279,13 @@ def check_companion_arc(campaign_id: str, companion_id: str = "") -> dict:
 @mcp.tool()
 def set_companion_arc(campaign_id: str, companion_id: str = "", arc: dict = None,
                       companion: str = "", character_id: str = "") -> dict:
-    """Attach (or REPLACE) a companion's relationship arc + sealed agenda, so the DM —
-    or the ending-seed loader — can author what a bond grows into and what a saboteur is
-    planning. `arc` is `{arc_gates: [{kind, threshold, note?}], agenda: {trigger, value?,
-    note?}}` where gate `kind` is personal_quest|romance|loyalty|betrayal and agenda
-    `trigger` is attitude_below|day_reached|party_vulnerable|prize_seized. The companion
-    must exist and be a companion. `check_companion_arc` then evaluates it each beat.
-
-    Identify the companion via ``companion_id`` (canonical) or the aliases ``companion`` /
-    ``character_id`` — equivalent; canonical ``companion_id`` wins if more than one is given."""
+    """Attach (or REPLACE) a companion's relationship arc + sealed agenda — what a bond grows
+    into and what a saboteur is planning. `arc` is `{arc_gates: [{kind, threshold, note?}],
+    agenda: {trigger, value?, note?}}` where gate `kind` is
+    personal_quest|romance|loyalty|betrayal and agenda `trigger` is
+    attitude_below|day_reached|party_vulnerable|prize_seized. `check_companion_arc` evaluates
+    it each beat. Identify via ``companion_id`` (canonical) or aliases ``companion`` /
+    ``character_id``."""
     companion_id = companion_id or companion or character_id  # accept intuitive aliases
     if not companion_id:
         raise ValueError("set_companion_arc needs a companion id (pass `companion_id` or an alias: `companion`/`character_id`)")
@@ -10480,11 +10462,9 @@ def _approval_ledger_view(ch: "Character", limit: int) -> dict:
 def companion_approval_ledger(campaign_id: str, companion_id: str = "", limit: int = 8) -> dict:
     """Read the legible APPROVAL LEDGER — the "why does Ondine distrust me?" answer. For each
     party companion returns its current attitude_value, the most-recent approval moves
-    (newest-first, capped at `limit`), and the net positive / net negative cause totals
-    aggregated from its rolling approval_log. LOCK-FREE read-only snapshot (no evaluate, no
-    mutation) — the engine stays sole writer; this is a pure projection of engine-mutated
-    state. `companion_id` optional => all party companions; a companion with no logged moves
-    returns empty `recent`/nets."""
+    (newest-first, capped at `limit`), and net positive / net negative cause totals from its
+    rolling approval_log. Read-only snapshot (no mutation). `companion_id` optional => all
+    party companions; one with no logged moves returns empty `recent`/nets."""
     c = _require(campaign_id)
     if companion_id:
         ch = _require_companion(c, companion_id)
@@ -11060,12 +11040,10 @@ def _validate_faction_arc_links(c: Campaign, arc: FactionArc) -> None:
 @mcp.tool()
 def grant_standing(campaign_id: str, faction_id: str, amount: int, reason: str = "") -> dict:
     """Raise (or lower) a faction's MONOTONIC membership `standing` by `amount` — the Skyrim-style
-    "rank progress" gauge, distinct from `reputation` (how the faction FEELS about you). Use it
-    when the party performs SERVICE that advances them inside a faction (completing a faction
-    job, proving themselves) — standing is what unlocks the next stage of a faction questline
-    gated on `gauge="standing"`. Floored at 0 (it never goes negative — you don't un-rise through
-    service; `reputation` is the gauge that can be burned). The faction must already exist (join
-    it / earn reputation first). Returns the faction's new standing."""
+    "rank progress" gauge, distinct from `reputation` (how the faction FEELS about you). Use when
+    the party performs SERVICE that advances them inside a faction; standing unlocks the next
+    stage of a questline gated on `gauge="standing"`. Floored at 0 (never negative — `reputation`
+    is the gauge that can be burned). The faction must already exist. Returns the new standing."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         fac = c.factions.get(faction_id)
@@ -11093,10 +11071,10 @@ def set_faction_arc(campaign_id: str, arc: dict) -> dict:
 @mcp.tool()
 def join_faction(campaign_id: str, faction_id: str, rank: int = 1) -> dict:
     """JOIN a faction — the membership latch that ARMS its questline (the Skyrim/Kingmaker
-    join->grow->lead loop). Sets the faction `joined=True` and its starting `rank` (default 1 —
-    the lowest membership tier), then ARMS any linked FactionArc: a `requires_joined` arc that was
-    `locked` opens to `available`, and any stage whose gauge gate ALREADY holds unlocks. Use it
-    when the party formally enlists with / is inducted into a group."""
+    join->grow->lead loop). Sets `joined=True` and the starting `rank` (default 1, lowest tier),
+    then ARMS any linked FactionArc: a `requires_joined` arc that was `locked` opens to
+    `available`, and any stage whose gauge gate ALREADY holds unlocks. Use when the party
+    formally enlists with a group."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         fac = c.factions.get(faction_id)
@@ -11126,10 +11104,10 @@ def join_faction(campaign_id: str, faction_id: str, rank: int = 1) -> dict:
 @mcp.tool()
 def get_faction_arcs(campaign_id: str, faction_id: str = "", status: str = "") -> dict:
     """Read faction questlines (the join->grow->lead arcs), optionally filtered by faction and
-    lifecycle status. Read-only; does NOT evaluate gates or advance anything (use
-    `check_faction_arcs` to advance locked->available, `advance_faction_arc` to take a stage). Each
-    arc view resolves the faction's name + current reputation/standing/joined/rank so the DM can
-    see how close each locked stage sits to its `unlock_at`."""
+    status. Read-only; does NOT evaluate gates or advance (use `check_faction_arcs` to advance
+    locked->available, `advance_faction_arc` to take a stage). Each view resolves the faction's
+    name + current reputation/standing/joined/rank so the DM sees how close each locked stage
+    sits to its `unlock_at`."""
     c = _require(campaign_id)
     wanted = _companion_quest_status(status, "status") if status else ""
     arcs = list(c.faction_arcs.values())
@@ -11719,13 +11697,11 @@ def scaffold_adventure(title: str, premise: str = "", min_level: int = 1, max_le
 def generate_campaign(
     title: str, premise: str = "", num_acts: int = 3, min_level: int = 1, max_level: int = 5
 ) -> dict:
-    """Generate a MULTI-ACT campaign skeleton (not just a one-shot scaffold): a
-    hidden antagonist, `num_acts` arcs each with hook/challenge/climax beats across
-    escalating level bands, and a home-base hub connected to one site per act. The
-    campaign-author fills in original prose, the NPC roster + companion, and
-    CR-balanced encounters per act, then validates with validate_adventure before
-    saving under content/campaigns/<id>/. Use for a full campaign rather than a
-    single dungeon."""
+    """Generate a MULTI-ACT campaign skeleton (not just a one-shot scaffold): a hidden
+    antagonist, `num_acts` arcs each with hook/challenge/climax beats across escalating level
+    bands, and a home-base hub connected to one site per act. The campaign-author fills in
+    prose, the NPC roster + companion, and CR-balanced encounters per act, then validates with
+    validate_adventure before saving under content/campaigns/<id>/."""
     return generator.generate_campaign(title, premise, num_acts, (min_level, max_level))
 
 
@@ -11737,13 +11713,11 @@ def get_house_rules(campaign_id: str) -> dict:
 
 @mcp.tool()
 def get_quest_outcomes(campaign_id: str) -> dict:
-    """Return the campaign's resolved MAJOR-quest outcomes (the replayability layer) —
-    a `{quest_id: outcome_id}` map picked once at world-gen (ending-tied to the chosen
-    ending's world-state, else a seeded random roll) plus a `count`. Each resolved
-    outcome's narrative + any follow-up hook is ALSO in recallable lore as
-    `[Outcome] …` / `[Hook] …` lines (surfaced under the canon header by recall /
-    lookup_lore) — so this tool is the structured index, recall is the prose. Empty
-    `{}` for a world that ships no quest_variants. Read-only."""
+    """Return the campaign's resolved MAJOR-quest outcomes (the replayability layer) — a
+    `{quest_id: outcome_id}` map picked once at world-gen (ending-tied, else a seeded roll)
+    plus a `count`. Each outcome's narrative + follow-up hook is ALSO recallable lore
+    (`[Outcome]`/`[Hook]` lines via recall / lookup_lore) — this tool is the structured index,
+    recall is the prose. Empty `{}` when the world ships no quest_variants. Read-only."""
     c = _require(campaign_id)
     return {"quest_outcomes": dict(c.quest_outcomes), "count": len(c.quest_outcomes)}
 
@@ -13228,11 +13202,9 @@ def persist_beat(
 @mcp.tool()
 def advance_act(campaign_id: str, to_act: int, note: str = "") -> dict:
     """Advance the engine-owned 3-act cursor when the FICTION crosses an act threshold — the
-    DM-driven boundary verb the act-shape cues lean on (act_one_stalled cues the 1→2 push,
-    act_climax_owed the converge). Sets the act, stamps day_act_entered = the current in-world
-    day, and resets the act-local beat tally. CONTIGUOUS ONLY: the cursor advances by exactly +1
-    (1→2→3); a non-contiguous jump (e.g. 1→3) or a rewind is REJECTED (the cursor never skips an
-    act or runs backward). Engine = sole writer (campaign_lock + save_campaign)."""
+    DM-driven boundary verb the act-shape cues lean on. Sets the act, stamps day_act_entered =
+    the current in-world day, and resets the act-local beat tally. CONTIGUOUS ONLY: advances by
+    exactly +1 (1→2→3); a jump (1→3) or rewind is REJECTED. Engine = sole writer."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         arc = c.narrative_arc
