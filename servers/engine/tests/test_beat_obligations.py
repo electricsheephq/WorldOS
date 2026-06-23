@@ -20,6 +20,8 @@ from models import (
     Campaign,
     CampBeatRecord,
     Character,
+    Combat,
+    Combatant,
     CompanionAgenda,
     CompanionArc,
     CompanionDossier,
@@ -27,6 +29,7 @@ from models import (
     Consequence,
     Faction,
     FactionArc,
+    Location,
     NarrativeArc,
     Quest,
 )
@@ -870,3 +873,319 @@ def test_faction_cue_absent_on_factionless_campaign():
     c = Campaign(title="Empty")
     c.narrative_arc = NarrativeArc(act=1, beats_in_act=20)
     assert "faction_joinable_unjoined" not in _kinds(server._compute_beat_obligations(c))
+
+
+# === WS3a — DM-unavoidable PER-BEAT PROGRESSION / CLOSURE cues =====================================
+#
+# Five engine-gauge cues that keep the HARD mechanical loop from quietly stalling: a party stuck in
+# one scene, a fight left hanging, XP that never landed, a frozen clock, a quest never resolved. Each
+# reads only an ENGINE-MUTATED gauge (never a tool-count / beat-history / Decision prose). Each gets a
+# FIRE test (owed gauge -> kind present) + a CLEAR test (move the gauge -> kind gone).
+
+
+def _location(name="Opening Scene", visited=True, connections=None):
+    return Location(name=name, visited=visited, connections=list(connections or []))
+
+
+def _arced_campaign(*members: Character, beats_in_act=8, day=1, act=1) -> Campaign:
+    """A campaign whose narrative arc has been DRIVEN beats_in_act beats — the _beats_in_act
+    signal the WS3a beats-gated cues (party_stuck, clock_dm_frozen, quest_unresolved_late) read."""
+    c = _campaign_with(*members, day=day)
+    c.narrative_arc = NarrativeArc(act=act, day_act_entered=1, beats_in_act=beats_in_act)
+    return c
+
+
+# --- WS3a-1. party_stuck_one_location --------------------------------------------------------------
+
+
+def test_party_stuck_one_location_fires_after_substantial_beats_in_one_scene():
+    """8+ act-local beats, only one visited location, no in-place progression -> the cue fires."""
+    pc = Character(name="Hero", kind="player")
+    c = _arced_campaign(pc, beats_in_act=8, day=1)
+    loc = _location(visited=True)
+    c.locations[loc.id] = loc
+    c.current_location_id = loc.id
+    cue = next((o for o in server._compute_beat_obligations(c)
+                if o["kind"] == "party_stuck_one_location"), None)
+    assert cue is not None
+    assert cue["severity"] == "med"
+    assert "travel_to" in cue["detail"]
+
+
+def test_party_stuck_one_location_clears_once_a_second_location_is_visited():
+    """Moving the visited gauge to >= 2 clears the cue (the party traveled)."""
+    pc = Character(name="Hero", kind="player")
+    c = _arced_campaign(pc, beats_in_act=8, day=1)
+    a, b = _location("A", visited=True), _location("B", visited=True)
+    c.locations[a.id] = a
+    c.locations[b.id] = b
+    assert "party_stuck_one_location" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_party_stuck_one_location_silent_below_the_beats_threshold():
+    """A short run (< _PARTY_STUCK_BEATS) in one scene is a legitimate vignette, not a stall."""
+    pc = Character(name="Hero", kind="player")
+    c = _arced_campaign(pc, beats_in_act=7, day=1)
+    loc = _location(visited=True)
+    c.locations[loc.id] = loc
+    assert "party_stuck_one_location" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_party_stuck_one_location_silent_under_in_place_progression_exception():
+    """The byte-identical assert_behavioral exception: visited>=1 AND clock advanced AND a quest
+    actually completed AND beats>=8 -> a complete single-scene drama, NOT a stuck stall."""
+    pc = Character(name="Hero", kind="player")
+    c = _arced_campaign(pc, beats_in_act=9, day=2)  # clock advanced (day>1)
+    loc = _location(visited=True)
+    c.locations[loc.id] = loc
+    q = Quest(title="A single-scene resolution", status="completed",
+              objectives=["x"], completed_objectives=["x"])
+    c.quests[q.id] = q
+    assert "party_stuck_one_location" not in _kinds(server._compute_beat_obligations(c))
+
+
+# --- WS3a-2. combat_left_hanging -------------------------------------------------------------------
+
+
+def _combat_with_monster(monster: Character) -> Combat:
+    return Combat(active=True, order=[Combatant(character_id=monster.id, initiative=10)])
+
+
+def test_combat_left_hanging_fires_when_active_with_no_living_hostile():
+    """Combat active but the only hostile in the order is dead -> cue end_combat."""
+    pc = Character(name="Hero", kind="player")
+    rat = Character(name="Cellar Rat", kind="monster", dead=True, current_hp=0, max_hp=7)
+    c = _campaign_with(pc, day=1)
+    c.characters[rat.id] = rat
+    c.combat = _combat_with_monster(rat)
+    cue = next((o for o in server._compute_beat_obligations(c)
+                if o["kind"] == "combat_left_hanging"), None)
+    assert cue is not None
+    assert cue["severity"] == "med"
+    assert "end_combat" in cue["detail"]
+
+
+def test_combat_left_hanging_clears_while_a_living_hostile_remains():
+    """A monster still up at >0 HP keeps the fight legitimately live -> no cue."""
+    pc = Character(name="Hero", kind="player")
+    rat = Character(name="Cellar Rat", kind="monster", dead=False, current_hp=7, max_hp=7)
+    c = _campaign_with(pc, day=1)
+    c.characters[rat.id] = rat
+    c.combat = _combat_with_monster(rat)
+    assert "combat_left_hanging" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_combat_left_hanging_silent_when_combat_inactive():
+    """No active combat -> the cue never fires (and xp_unawarded owns the post-fight case)."""
+    pc = Character(name="Hero", kind="player")
+    rat = Character(name="Cellar Rat", kind="monster", dead=True, current_hp=0, max_hp=7)
+    c = _campaign_with(pc, day=1)
+    c.characters[rat.id] = rat
+    c.combat = Combat(active=False)
+    assert "combat_left_hanging" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_combat_left_hanging_owns_the_beat_over_xp_unawarded_while_combat_active():
+    """PRECEDENCE: while combat is active, a dead monster carrying XP surfaces combat_left_hanging,
+    NOT xp_unawarded (xp_unawarded is gated NON-combat only)."""
+    pc = Character(name="Hero", kind="player")
+    rat = Character(name="Cellar Rat", kind="monster", dead=True, current_hp=0, max_hp=7,
+                    xp_value=25)
+    c = _campaign_with(pc, day=1)
+    c.characters[rat.id] = rat
+    c.combat = _combat_with_monster(rat)
+    kinds = _kinds(server._compute_beat_obligations(c))
+    assert "combat_left_hanging" in kinds
+    assert "xp_unawarded" not in kinds
+
+
+# --- WS3a-3. xp_unawarded --------------------------------------------------------------------------
+
+
+def test_xp_unawarded_fires_for_defeated_monster_carrying_xp_out_of_combat():
+    """xp-mode, non-combat, living party member, dead monster with xp_value>0 -> cue."""
+    pc = Character(name="Hero", kind="player")
+    rat = Character(name="Cellar Rat", kind="monster", dead=True, current_hp=0, max_hp=7,
+                    xp_value=25)
+    c = _campaign_with(pc, day=1)
+    c.characters[rat.id] = rat
+    c.combat = Combat(active=False)
+    cue = next((o for o in server._compute_beat_obligations(c)
+                if o["kind"] == "xp_unawarded"), None)
+    assert cue is not None
+    assert cue["severity"] == "med"
+    assert "award_xp" in cue["detail"]
+
+
+def test_xp_unawarded_clears_once_xp_value_is_zeroed():
+    """Moving the gauge (xp_value -> 0, as the kill-time / end_combat award does) clears the cue."""
+    pc = Character(name="Hero", kind="player")
+    rat = Character(name="Cellar Rat", kind="monster", dead=True, current_hp=0, max_hp=7,
+                    xp_value=0)
+    c = _campaign_with(pc, day=1)
+    c.characters[rat.id] = rat
+    c.combat = Combat(active=False)
+    assert "xp_unawarded" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_xp_unawarded_silent_in_milestone_mode():
+    """leveling_mode='milestone' has no auto-XP, so a dead monster's xp_value is irrelevant."""
+    pc = Character(name="Hero", kind="player")
+    rat = Character(name="Cellar Rat", kind="monster", dead=True, current_hp=0, max_hp=7,
+                    xp_value=25)
+    c = _campaign_with(pc, day=1)
+    c.leveling_mode = "milestone"
+    c.characters[rat.id] = rat
+    c.combat = Combat(active=False)
+    assert "xp_unawarded" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_xp_unawarded_silent_after_a_tpk_no_living_party_member():
+    """After a total party wipe (no living party member) a dead monster keeping xp is a legitimate
+    'awarded to no one' state -> mirror the xp_not_orphaned FATAL's party_alive guard."""
+    pc = Character(name="Hero", kind="player", dead=True)
+    rat = Character(name="Cellar Rat", kind="monster", dead=True, current_hp=0, max_hp=7,
+                    xp_value=25)
+    c = _campaign_with(pc, day=1)
+    c.characters[rat.id] = rat
+    c.combat = Combat(active=False)
+    assert "xp_unawarded" not in _kinds(server._compute_beat_obligations(c))
+
+
+# --- WS3a-4. clock_dm_frozen -----------------------------------------------------------------------
+
+
+def test_clock_dm_frozen_fires_when_party_moved_but_clock_stuck_at_day_one_morning():
+    """Party has visited >= 2 (so party_stuck is silent) but the clock still reads day 1 morning
+    after substantial play -> the LOW frozen-clock cue."""
+    pc = Character(name="Hero", kind="player")
+    c = _arced_campaign(pc, beats_in_act=8, day=1)
+    c.time_of_day = "morning"
+    a, b = _location("A", visited=True), _location("B", visited=True)
+    c.locations[a.id] = a
+    c.locations[b.id] = b
+    c.combat = Combat(active=False)
+    cue = next((o for o in server._compute_beat_obligations(c)
+                if o["kind"] == "clock_dm_frozen"), None)
+    assert cue is not None
+    assert cue["severity"] == "low"
+    assert "advance_time" in cue["detail"]
+
+
+def test_clock_dm_frozen_clears_once_the_clock_advances():
+    """Moving the clock gauge (day>1 OR time_of_day past morning) clears the cue."""
+    pc = Character(name="Hero", kind="player")
+    c = _arced_campaign(pc, beats_in_act=8, day=2)  # day advanced
+    c.time_of_day = "afternoon"
+    a, b = _location("A", visited=True), _location("B", visited=True)
+    c.locations[a.id] = a
+    c.locations[b.id] = b
+    assert "clock_dm_frozen" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_clock_dm_frozen_yields_to_party_stuck_when_both_would_fire():
+    """PRECEDENCE: a party stuck in ONE scene with a frozen clock surfaces party_stuck_one_location,
+    NOT clock_dm_frozen (which requires visited >= 2)."""
+    pc = Character(name="Hero", kind="player")
+    c = _arced_campaign(pc, beats_in_act=8, day=1)
+    c.time_of_day = "morning"
+    loc = _location(visited=True)
+    c.locations[loc.id] = loc
+    kinds = _kinds(server._compute_beat_obligations(c))
+    assert "party_stuck_one_location" in kinds
+    assert "clock_dm_frozen" not in kinds
+
+
+# --- WS3a-5. quest_unresolved_late -----------------------------------------------------------------
+
+
+def test_quest_unresolved_late_fires_when_no_quest_progress_after_substantial_beats():
+    """A quest exists, ZERO quests completed, no completed_objectives anywhere, and it isn't already
+    flagged resolvable/stalled -> cue recording SOME quest progress."""
+    pc = Character(name="Hero", kind="player")
+    c = _arced_campaign(pc, beats_in_act=8, day=1)
+    q = Quest(title="The untouched thread", objectives=["step one", "step two"])
+    c.quests[q.id] = q
+    cue = next((o for o in server._compute_beat_obligations(c)
+                if o["kind"] == "quest_unresolved_late"), None)
+    assert cue is not None
+    assert cue["severity"] == "med"
+    assert "complete_objective" in cue["detail"]
+
+
+def test_quest_unresolved_late_clears_once_an_objective_is_recorded_done():
+    """Moving the gauge (one completed_objective) clears the late-unresolved cue."""
+    pc = Character(name="Hero", kind="player")
+    c = _arced_campaign(pc, beats_in_act=8, day=1)
+    q = Quest(title="A progressing thread", objectives=["step one", "step two"],
+              completed_objectives=["step one"])
+    c.quests[q.id] = q
+    assert "quest_unresolved_late" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_quest_unresolved_late_silent_when_a_quest_is_already_flagged_this_beat():
+    """ANTI-SPAM precedence: a quest already surfaced as quest_resolvable (all objectives done)
+    suppresses the campaign-level 'nothing moved' cue."""
+    pc = Character(name="Hero", kind="player")
+    c = _arced_campaign(pc, beats_in_act=8, day=1)
+    # A resolvable quest -> quest_resolvable fires AND it has completed_objectives, so the
+    # any_objective_completed branch is also false; assert the anti-spam gate explicitly.
+    q = Quest(title="Ripe", objectives=["x"], completed_objectives=["x"])
+    c.quests[q.id] = q
+    kinds = _kinds(server._compute_beat_obligations(c))
+    assert "quest_resolvable" in kinds
+    assert "quest_unresolved_late" not in kinds
+
+
+def test_quest_unresolved_late_silent_below_the_beats_threshold():
+    """A short run with an open quest is normal -> no late-unresolved cue."""
+    pc = Character(name="Hero", kind="player")
+    c = _arced_campaign(pc, beats_in_act=7, day=1)
+    q = Quest(title="A young thread", objectives=["step one"])
+    c.quests[q.id] = q
+    assert "quest_unresolved_late" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_quest_unresolved_late_silent_with_no_quests():
+    """No quest exists -> the cue cannot fire (nothing to resolve)."""
+    pc = Character(name="Hero", kind="player")
+    c = _arced_campaign(pc, beats_in_act=8, day=1)
+    assert "quest_unresolved_late" not in _kinds(server._compute_beat_obligations(c))
+
+
+# --- the FULLY-PROGRESSED additive contract -------------------------------------------------------
+
+
+def test_fully_progressed_snapshot_yields_no_obligations():
+    """The ADDITIVE/EMPTY contract extended to WS3a: a snapshot that is fully progressed on EVERY
+    WS3a axis — visited >= 2, combat closed, no orphaned XP, day > 1, a completed quest — AND on the
+    pre-WS3a axes (gauged companion with a personal arc, recently rested, approval moved) yields the
+    byte-identical empty digest (no obligations key)."""
+    comp = _companion(name="Wyll", attitude=20, likes=["mercy"], last_long_rest_day=4)
+    pc = Character(name="Hero", kind="player")
+    # _beats_in_act >= _PARTY_STUCK_BEATS so the WS3a beats-gated cues are ARMED, but the arc is
+    # otherwise healthy (Act 3, climax landed, fresh in act) so no act-transition cue fires either.
+    c = _campaign_with(comp, pc, day=5)
+    c.narrative_arc = NarrativeArc(act=3, day_act_entered=5, beats_in_act=8,
+                                   midpoint_reversal_landed=True, climax_landed=True)
+    c.time_of_day = "afternoon"  # clock advanced
+    # visited >= 2
+    a, b = _location("A", visited=True), _location("B", visited=True)
+    c.locations[a.id] = a
+    c.locations[b.id] = b
+    # combat closed; no orphaned XP (dead monster's xp already zeroed by the award)
+    c.combat = Combat(active=False)
+    rat = Character(name="Cellar Rat", kind="monster", dead=True, current_hp=0, max_hp=7,
+                    xp_value=0)
+    c.characters[rat.id] = rat
+    # a completed quest with progress recorded; an ongoing one with fresh progress (no stall)
+    done = Quest(title="A resolved thread", status="completed", objectives=["x"],
+                 completed_objectives=["x"], evolves_to="a lingering echo")
+    ongoing = Quest(title="An ongoing thread", objectives=["keep going"],
+                    completed_objectives=[], last_progress_day=5)
+    c.quests[done.id] = done
+    c.quests[ongoing.id] = ongoing
+    # the gauged companion owns a personal quest arc (WS-A/WS-C healthy fixture)
+    arc = CompanionQuestArc(companion_id=comp.id, title="Wyll's personal thread")
+    c.companion_quest_arcs[arc.id] = arc
+    assert server._compute_beat_obligations(c) == []
