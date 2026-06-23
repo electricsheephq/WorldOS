@@ -872,40 +872,79 @@ run_part_b() {
       part_b_player_model=""
       ;;
   esac
-  case "$PART_B_PROVIDER" in
-    claude)
-      (
-        export PATH="$PATH_NOOPEN"
-        export WORLDOS_DM_MODEL="$DM_MODEL"
-        export WORLDOS_PLAY_PORT="$b_port"
-        # Per-turn cap scales to the DM model: the Opus max-effort cold-open world-build needs ~$12;
-        # the Sonnet-tuned $1.50 cap trips error_max_budget_usd on the Opus cold-open → no PC seated.
-        # CAP, not spend — routine beats spend far less; sess_cap still bounds total DM spend.
-        case "$DM_MODEL" in *opus*) : "${WORLDOS_PLAY_BUDGET:=12.00}" ;; *) : "${WORLDOS_PLAY_BUDGET:=1.50}" ;; esac
-        export WORLDOS_PLAY_BUDGET
-        export WORLDOS_PLAY_SESSION_BUDGET="$sess_cap"
-        export WORLDOS_PLAY_MAX_TURNS="${WORLDOS_PLAY_MAX_TURNS:-$((BEATS + 4))}"
-        export WORLDOS_PLAY_MAX_IDLE="${WORLDOS_PLAY_MAX_IDLE:-600}"
-        exec "$ROOT/scripts/play_party.sh" "$WORLD" "$b_run" "$b_port" >> "$RUNDIR/backend.log" 2>&1
-      ) &
-      ;;
-    codex)
-      (
-        export PATH="$PATH_NOOPEN"
-        export WORLDOS_PROVIDER=codex
-        export WORLDOS_WORLD="$WORLD"
-        export WORLDOS_RUN_ID="$b_run"
-        export WORLDOS_PLAY_PORT="$b_port"
-        export WORLDOS_PLAY_BUDGET="${WORLDOS_PLAY_BUDGET:-1.50}"
-        export WORLDOS_PLAY_SESSION_BUDGET="$sess_cap"
-        export WORLDOS_PLAY_MAX_TURNS="${WORLDOS_PLAY_MAX_TURNS:-$((BEATS + 4))}"
-        export WORLDOS_CODEX_MODEL="$part_b_dm_model"
-        export WORLDOS_CODEX_MODEL="$part_b_dm_model"
-        exec "$ROOT/scripts/play_codex_dm.sh" >> "$RUNDIR/backend.log" 2>&1
-      ) &
-      ;;
-  esac
-  B_BACKEND=$!
+  # Launch the faithful backend on the CURRENT $b_port/$b_url. Factored into a function so the
+  # port-conflict relaunch below can re-invoke it on a freshly-picked port without duplicating the
+  # provider env. Sets B_BACKEND to the launched subshell pid.
+  _launch_b_backend() {
+    case "$PART_B_PROVIDER" in
+      claude)
+        (
+          export PATH="$PATH_NOOPEN"
+          export WORLDOS_DM_MODEL="$DM_MODEL"
+          export WORLDOS_PLAY_PORT="$b_port"
+          # Per-turn cap scales to the DM model: the Opus max-effort cold-open world-build needs ~$12;
+          # the Sonnet-tuned $1.50 cap trips error_max_budget_usd on the Opus cold-open → no PC seated.
+          # CAP, not spend — routine beats spend far less; sess_cap still bounds total DM spend.
+          case "$DM_MODEL" in *opus*) : "${WORLDOS_PLAY_BUDGET:=12.00}" ;; *) : "${WORLDOS_PLAY_BUDGET:=1.50}" ;; esac
+          export WORLDOS_PLAY_BUDGET
+          export WORLDOS_PLAY_SESSION_BUDGET="$sess_cap"
+          export WORLDOS_PLAY_MAX_TURNS="${WORLDOS_PLAY_MAX_TURNS:-$((BEATS + 4))}"
+          export WORLDOS_PLAY_MAX_IDLE="${WORLDOS_PLAY_MAX_IDLE:-600}"
+          exec "$ROOT/scripts/play_party.sh" "$WORLD" "$b_run" "$b_port" >> "$RUNDIR/backend.log" 2>&1
+        ) &
+        ;;
+      codex)
+        (
+          export PATH="$PATH_NOOPEN"
+          export WORLDOS_PROVIDER=codex
+          export WORLDOS_WORLD="$WORLD"
+          export WORLDOS_RUN_ID="$b_run"
+          export WORLDOS_PLAY_PORT="$b_port"
+          export WORLDOS_PLAY_BUDGET="${WORLDOS_PLAY_BUDGET:-1.50}"
+          export WORLDOS_PLAY_SESSION_BUDGET="$sess_cap"
+          export WORLDOS_PLAY_MAX_TURNS="${WORLDOS_PLAY_MAX_TURNS:-$((BEATS + 4))}"
+          export WORLDOS_CODEX_MODEL="$part_b_dm_model"
+          export WORLDOS_CODEX_MODEL="$part_b_dm_model"
+          exec "$ROOT/scripts/play_codex_dm.sh" >> "$RUNDIR/backend.log" 2>&1
+        ) &
+        ;;
+    esac
+    B_BACKEND=$!
+  }
+  _launch_b_backend
+  # PORT-CONFLICT RELAUNCH (the #1158 sequential-canary race, PROVEN on the VM 2026-06-23). Even with
+  # a bind-probe pick_free_port, a just-finished previous run's dying viewer can re-take $b_port in the
+  # microseconds between our probe and play.sh's bind — and play.sh's worldos_choose_port treats an
+  # EXPLICIT port (we pass it positionally) as a HARD FAIL, printing "Port $b_port is already in use"
+  # and exiting WITHOUT falling back. The result was an instant backend_not_ready / no score. So: watch
+  # the backend's first few seconds; if it dies fast AND backend.log shows the "already in use" string,
+  # re-pick a fresh free port and relaunch ONCE. (Bounded to a couple attempts so a genuinely wedged
+  # host still fails honestly instead of looping.) Only fires on the explicit "already in use" exit —
+  # a normal slow cold-open never trips it (the backend stays alive, so the early-death check is false).
+  local _relaunch
+  for _relaunch in 1 2; do
+    # give the backend a moment to either bind or die on the port conflict
+    local _early _alive=1
+    for _early in 1 2 3 4 5 6; do
+      kill -0 "$B_BACKEND" 2>/dev/null || { _alive=0; break; }
+      grep -qiE "is already in use|address already in use" "$RUNDIR/backend.log" 2>/dev/null && { _alive=0; break; }
+      sleep 0.5
+    done
+    if [ "$_alive" = "1" ]; then
+      break   # backend is up and binding the port — proceed to the readiness wait
+    fi
+    if ! grep -qiE "is already in use|address already in use" "$RUNDIR/backend.log" 2>/dev/null; then
+      break   # died early for some OTHER reason — let the readiness wait + classifier handle it honestly
+    fi
+    log "[B] backend hit a port conflict on $b_port (a dying prior viewer re-took it) — re-picking a free port and relaunching (attempt $_relaunch)…"
+    # reap whatever transiently holds $b_port, then pick a NEW port above it and relaunch.
+    lsof -nP -tiTCP:"$b_port" -sTCP:LISTEN 2>/dev/null | xargs -r kill -9 2>/dev/null || true
+    local _new_port; _new_port="$(pick_free_port $((b_port+1)))" || { log "[B] no free port for relaunch"; break; }
+    b_port="$_new_port"; b_url="http://127.0.0.1:$b_port/openworlds/"
+    : > "$RUNDIR/backend.log"   # fresh log so the next early-death check reads only THIS attempt
+    log "[B] relaunching faithful backend on port $b_port"
+    _launch_b_backend
+  done
   # Clean teardown: kill the backend subshell, THEN the play.sh supervisor + DM-loop bash procs
   # (matched by the run-id positional — they don't carry the play-state path, and the supervisor
   # respawns the viewer, so a path-only kill leaves it alive), then the viewer + state dir, belt
@@ -918,6 +957,23 @@ run_part_b() {
     pkill -f "$WORLD $b_run " 2>/dev/null || true
     pkill -f "play-state/$b_run/" 2>/dev/null || true
     pkill -f "server.py .* $b_port\$" 2>/dev/null || true
+    # ROOT-CAUSE drain (PROVEN on the VM 2026-06-23): the pkills above SIGNAL the backend but do NOT
+    # wait for the viewer to release $b_port. A SIGTERM that lands while play.sh is blocked inside the
+    # DM cold-open `claude -p` can ORPHAN the viewer (play.sh's own EXIT/TERM cleanup never runs while
+    # it is blocked), leaving it bound. And even on a clean stop, the socket lingers briefly in
+    # shutdown/TIME_WAIT. The NEXT sequential persona/run whose backend wants this same port then
+    # races onto a still-bound socket → play.sh's worldos_choose_port (explicit port) HARD-FAILS with
+    # "Port $b_port is already in use" → backend_not_ready → no score (the #1158 canary bug, where
+    # testfix→testfix2 collided on 8830 with NO manual reap). So: HARD-kill any straggler still
+    # LISTENING on $b_port (an orphaned viewer the path/pgroup pkills missed), then WAIT (≤10s) for
+    # the port to actually drain before this run returns, so the next run gets a truly free port.
+    local _bdrain _bpid
+    for _bdrain in $(seq 1 20); do
+      _bpid="$(lsof -nP -tiTCP:"$b_port" -sTCP:LISTEN 2>/dev/null | head -1)"
+      [ -z "$_bpid" ] && break
+      kill -9 "$_bpid" 2>/dev/null || true   # only the listener on OUR backend port; nothing else
+      sleep 0.5
+    done
   }
   trap 'b_cleanup' RETURN
 
@@ -1147,8 +1203,24 @@ PY
 pick_free_port() {
   local start="${1:-8800}" p
   for p in $(seq "$start" $((start+30))); do
-    if ! (exec 3<>"/dev/tcp/127.0.0.1/$p") 2>/dev/null; then echo "$p"; return 0; fi
-    exec 3>&- 2>/dev/null || true
+    # Use a REAL bind-and-release probe (not a /dev/tcp CONNECT). The old connect probe is racy in
+    # the wrong direction: it reports "free" for a port whose listener is mid-shutdown (the connect
+    # is refused while the socket still holds the address), so a just-finished run's dying viewer
+    # made pick_free_port hand back a port that play.sh then could NOT bind → "Port … already in
+    # use" → backend_not_ready (the #1158 sequential-canary race, PROVEN on the VM 2026-06-23). A
+    # bind probe matches what the viewer itself does (launch_common.sh worldos_port_available), so a
+    # port reported free here is actually bindable by the backend a moment later.
+    if python3 - "$p" <<'PY' 2>/dev/null
+import socket, sys
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+try:
+    s.bind(("127.0.0.1", int(sys.argv[1])))
+except OSError:
+    sys.exit(1)
+finally:
+    s.close()
+PY
+    then echo "$p"; return 0; fi
   done
   return 1
 }
