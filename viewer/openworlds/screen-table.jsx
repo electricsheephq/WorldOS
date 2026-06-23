@@ -65,13 +65,21 @@ const _BARE_TOOL_LINE = new RegExp(
   "^\\s*[`'\"(_*]*\\s*(?:" + _TOOLS_ALT + ")\\s*(?:\\([^)]*\\))?\\s*[`'\")_*]*\\s*[.;:]?\\s*$",
   "i",
 );
+// SAT→7 (narrative friction): the DM agent occasionally emits a Markdown HORIZONTAL RULE as a
+// section separator ("---", "***", "___", or "— —") on its OWN line — a bare structural divider
+// that reads as a stray glyph in the player's story scroll. A line that is NOTHING BUT a rule
+// (3+ of the same rule char, optionally spaced) is formatting, never fiction, so drop it whole.
+// HIGH-CONFIDENCE: requires the whole line to be the rule (an em-dash "—pause—" mid-prose, or a
+// real "wait — what?" with surrounding words, is NOT a bare rule line and is untouched).
+const _HRULE_LINE = /^\s*(?:-\s*){3,}\s*$|^\s*(?:\*\s*){3,}\s*$|^\s*(?:_\s*){3,}\s*$|^\s*(?:—\s*){2,}\s*$/;
 function _isInternalLine(line) {
   const t = (line || "").trim();
   if (!t) return false; // keep blank lines for caller's join (they're harmless)
   return _GM_ADVISORY_HEADER.test(t)
     || _ADVISORY_SUBTITLE.test(t)
     || _ADVISORY_DIRECTIVE.test(t)
-    || _BARE_TOOL_LINE.test(t);
+    || _BARE_TOOL_LINE.test(t)
+    || _HRULE_LINE.test(t);
 }
 
 // #347: the SECOND class of DM-internal leak — the DM agent's STORY-CRAFT scaffolding
@@ -124,6 +132,35 @@ const _STAGE_DIRECTION = new RegExp(
     // "<anything> of the <structural-unit> complete" (e.g. "Meeting beat of the cold open complete")
     "\\bof the\\b[^.]{0,30}\\b(?:cold open|beat|act|scene)\\b[^.]{0,30}\\bcomplete\\b" +
   ")", "i",
+);
+// (3b) SAT→7 (narrative's only major — this "cracked the 9/10"): the ROLL-RESULT-SUMMARY HEADER.
+// Before narrating an outcome the DM agent sometimes states the raw check totals as a header line —
+// "The intimidation lands at 18; the quiet interpose at 16." — bookkeeping that belongs in the dice
+// tray, not the story prose. The fingerprint is a check NOUN/result "lands at <N>" optionally chained
+// with one or more "; <thing> at <M>" clauses, all on bare INTEGER roll totals. Drop the whole sentence.
+//
+// HIGH-CONFIDENCE (story quality is the north star — never eat real prose): the trigger REQUIRES a bare
+// integer immediately after "at" (a roll total, e.g. "at 18") AND a roll-summary VERB ("lands at"). The
+// canonical verb is what disambiguates a check total from ordinary fiction: "the arrow lands at his feet"
+// (noun, not a number) and "we arrive at the gate" (no roll verb) both pass through untouched, and a bare
+// "the bell strikes at 12." / "we meet at 3." (no roll verb) is NEVER matched. This is the PRIMARY arm —
+// "<thing> lands/comes-in/settles/resolves/clears at <N>".
+const _ROLL_RESULT_SUMMARY = new RegExp(
+  "\\b(?:lands?|comes?(?:\\s+in)?|falls?|settles?|resolves?|clears?)\\s+(?:in\\s+)?at\\s+\\d+\\b",
+  "i",
+);
+// The FULL roll-summary HEADER LINE — the verb-anchored primary PLUS any "; <thing> at <N>" continuations
+// chained onto it ("The intimidation lands at 18; the quiet interpose at 16."). This is matched at the LINE
+// level (before the per-sentence splitter fragments it on the ";"), so the whole header — including its
+// trailing clauses and an optional trailing rule — is dropped as a unit. It REQUIRES the leading roll verb,
+// so it can only extend a genuine roll-summary; a standalone "; we meet at 3" never has the primary verb and
+// is never reached. Anchored to the whole line ('^…$') so it only fires on a header, not a mid-prose clause.
+const _ROLL_SUMMARY_HEADER_LINE = new RegExp(
+  "^\\s*[^.!?]*?" +
+    "\\b(?:lands?|comes?(?:\\s+in)?|falls?|settles?|resolves?|clears?)\\s+(?:in\\s+)?at\\s+\\d+\\b" +
+    "(?:[^.!?]*?\\bat\\s+\\d+\\b)*" +
+    "\\s*[.!?]?\\s*(?:-{3,}|\\*{3,}|_{3,}|—{2,})?\\s*$",
+  "i",
 );
 // (4) #752: INTER-BEAT TRANSITION meta-text — the engine/DM "seam" stage-directions that leaked
 // into the chronicle BETWEEN player beats (adversarial confirm sweep: "Engine META-TEXT transition
@@ -216,22 +253,28 @@ function _isScaffoldingSentence(sentence) {
   const s = (sentence || "").trim();
   if (!s) return false;
   return _CRAFT_JARGON.test(s) || _STAGE_DIRECTION.test(s) || _BEAT_TRANSITION.test(s)
-    || _AUTHORING_PREAMBLE.test(s);
+    || _AUTHORING_PREAMBLE.test(s) || _ROLL_RESULT_SUMMARY.test(s);
 }
 function _hasScaffolding(text) {
   return _TALLY_TEST.test(text) || _CRAFT_JARGON.test(text)
     || _STAGE_DIRECTION.test(text) || _BEAT_TRANSITION.test(text)
-    || _AUTHORING_PREAMBLE.test(text);
+    || _AUTHORING_PREAMBLE.test(text) || _ROLL_RESULT_SUMMARY.test(text);
 }
-// Clean scaffolding from one line, preserving the real prose. Two grains:
+// Clean scaffolding from one line, preserving the real prose. Three grains:
+//   0. drop a WHOLE roll-summary HEADER line (verb-anchored "lands at N" + its "; … at M" chain) — done
+//      before the splitter so the chained clauses don't get peeled apart and survive piecemeal;
 //   1. excise dice/check TALLY phrases in place (keeps the rest of their sentence);
 //   2. split into sentences (on . ! ? ;, terminator kept) and DROP any sentence that is
-//      wholly plot-craft jargon / a stage-direction.
+//      wholly plot-craft jargon / a stage-direction / a (single-clause) roll-summary.
 // Returns the cleaned line (possibly "").
 function _stripScaffoldingSentences(line) {
   if (typeof line !== "string" || !line) return line;
   // Fast path: nothing scaffolding-shaped here, don't touch the line at all.
   if (!_hasScaffolding(line)) return line;
+  // (0) A line that is WHOLLY a roll-summary header (the verb-anchored primary plus any chained "; … at N"
+  // continuations, modulo a trailing rule) is bookkeeping through-and-through — drop it entirely so a
+  // chained second clause ("…; the quiet interpose at 16.") can't ride through after the ";"-splitter.
+  if (_ROLL_SUMMARY_HEADER_LINE.test(line)) return "";
   // (1) In-place tally excision (global; reset lastIndex defensively).
   _TALLY.lastIndex = 0;
   let cleaned = line.replace(_TALLY, "");
@@ -240,10 +283,15 @@ function _stripScaffoldingSentences(line) {
   if (parts) cleaned = parts.filter((p) => !_isScaffoldingSentence(p)).join("");
   // Tidy punctuation/space the excisions may have left (" ." / "  " / leading "; " /
   // a clause separator now dangling at the end, e.g. "Zevlor held silence;" → "…silence.").
+  // SAT→7: also peel a TRAILING horizontal-rule glyph the DM tacked after a roll-summary header
+  // ("…at 16. ---") so the divider doesn't linger once its summary line is gone. Only a trailing
+  // run of pure rule chars is removed; an em-dash bound to words ("groans open —") is left intact
+  // because the rule run must be ≥3 dashes / ≥2 em-dashes (a bare divider, never inline prose).
   return cleaned
     .replace(/\s+([.!?;,])/g, "$1")
     .replace(/\s{2,}/g, " ")
     .replace(/^[\s;,.]+/, "")
+    .replace(/\s*(?:-{3,}|\*{3,}|_{3,}|—{2,})\s*$/, "")
     .replace(/\s*[;,]\s*$/, ".")
     .trim();
 }
@@ -275,6 +323,27 @@ function _isWrapperProgressLine(line) {
 if (typeof window !== "undefined") {
   window.WRAPPER_PROGRESS_LINES = Array.from(_WRAPPER_PROGRESS_LINES);
   window.isWrapperProgressLine = _isWrapperProgressLine;
+}
+// SAT→7 (die-roll button context): pure builder for the dice-button move + its chronicle echo, so the
+// "never fire a contextless roll" guard is unit-testable without mounting ScreenTable. Mirrors the
+// Declare text-guard: a TYPED intent is the move's reason; absent one, the latest narrative line is
+// attached so the DM resolves the check against the moment in play. Returns { move, echo } where `move`
+// is the POST payload (kind/name/text) and `echo` is the verb PHRASE recordPlayerEcho prepends the
+// hero name to. `intent`/`context` are trimmed defensively; no name is baked into the echo.
+function composeRollMove(sides, intent, context) {
+  const n = Number(sides) || 20;
+  const want = (typeof intent === "string" ? intent : "").trim();
+  const ctx = (typeof context === "string" ? context : "").trim();
+  const text = want
+    ? `I roll a d${n} to ${want}`
+    : ctx
+      ? `I roll a d${n} (in response to: ${ctx})`
+      : `I roll a d${n}`;
+  const echo = want ? `rolls a d${n} to ${want}` : `rolls a d${n}`;
+  return { move: { kind: "check", name: `d${n}`, text }, echo };
+}
+if (typeof window !== "undefined") {
+  window.composeRollMove = composeRollMove;
 }
 function sanitizeNarration(text) {
   if (typeof text !== "string" || !text) return "";
@@ -1205,13 +1274,23 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
             ? "Type a move before declaring"
             : "Declare move";
 
+  // SAT→7 (adversarial minor): the dice buttons used to fire a CONTEXTLESS "requests a d20 roll" —
+  // they bypassed the Declare guard entirely, so the DM got a bare die with no idea WHAT the hero is
+  // attempting. Parity with the Declare text-guard: prefer the intent the player TYPED into the composer
+  // (so "d20 to pick the lock" reaches the engine); otherwise ATTACH the latest narrative context (the
+  // newest sanitized scene line) so the roll resolves against the moment in play instead of nothing.
+  // Either way the move carries a reason, and the echo the player sees names it — never a bare "d20 roll".
   const requestRoll = (sides = 20) => {
     const action = actionById("check");
     if (!action?.available) {
       toast({ kind: "danger", title: `d${sides} unavailable`, body: action?.disabled_reason || readOnlyReason });
       return;
     }
-    postMove({ kind: "check", name: `d${sides}`, text: `roll d${sides}` }, `requests a d${sides} roll`, "check");
+    // Build the contextful move + echo via the pure helper (typed intent first, else the latest scene
+    // line). recordPlayerEcho prepends hero.name to the verb-phrase echo, so it never reads as a bare die.
+    const { move, echo } = composeRollMove(sides, draftText, latestStreamedLine);
+    postMove(move, echo, "check");
+    if (draftText) setInput("");
   };
 
   const invokeAction = (action) => {

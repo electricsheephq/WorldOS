@@ -294,6 +294,79 @@ class SanitizeNarrationTests(unittest.TestCase):
         self.assertIn("The lantern gutters", out["multiline_beat"])
         self.assertIn("He draws his blade", out["multiline_beat"])
 
+    # SAT→7 (narrative's ONLY major — this "cracked the 9/10"): the ROLL-RESULT-SUMMARY header form
+    # ("The intimidation lands at 18; the quiet interpose at 16.") and a leading/standalone Markdown
+    # HORIZONTAL RULE ("---") are DM bookkeeping that leaked into the player's story scroll. Both must be
+    # stripped — while genuine prose that merely uses "lands at"/"arrive at"/a dash MUST survive.
+    def test_strips_dice_result_summary_header(self):
+        cases = {
+            "verbatim": "The intimidation lands at 18; the quiet interpose at 16.",
+            "with_trailing_rule": "The intimidation lands at 18; the quiet interpose at 16. ---",
+            "single_roll": "The lockpick check lands at 14.",
+            "comes_in_at": "Her stealth comes in at 12.",
+            "settles_at": "His persuasion settles at 9.",
+            "triple_chain": "The strike lands at 19; the parry at 14; the riposte at 11.",
+        }
+        out = self._sanitize_many(cases)
+        for key, original in cases.items():
+            with self.subTest(case=key):
+                self.assertEqual(out[key], "", f"roll-summary not stripped for {key!r}: {out[key]!r}")
+
+    def test_strips_dice_header_keeps_surrounding_prose(self):
+        beat = (
+            "The intimidation lands at 18; the quiet interpose at 16.\n"
+            "The guard narrows his eyes and steps back from the door."
+        )
+        out = self._sanitize_many({"beat": beat})["beat"]
+        self.assertNotIn("lands at 18", out.lower())
+        self.assertNotIn("interpose at 16", out.lower())
+        self.assertNotIn("---", out)
+        self.assertIn("The guard narrows his eyes", out)
+
+    def test_strips_leading_and_standalone_horizontal_rule(self):
+        cases = {
+            "leading_rule": "---\nThe guard narrows his eyes.",
+            "rule_dashes": "---",
+            "rule_stars": "***",
+            "rule_underscores": "___",
+            "rule_emdash": "— —",
+            "spaced_dashes": "- - - -",
+        }
+        out = self._sanitize_many(cases)
+        self.assertEqual(out["leading_rule"], "The guard narrows his eyes.")
+        for key in ("rule_dashes", "rule_stars", "rule_underscores", "rule_emdash", "spaced_dashes"):
+            with self.subTest(case=key):
+                self.assertEqual(out[key], "", f"horizontal rule not dropped for {key!r}: {out[key]!r}")
+
+    def test_dice_header_and_rule_guard_preserves_legitimate_fiction(self):
+        # NEGATIVE test (the critical false-positive guard the file's comments stress): real narration
+        # using "lands at"/"arrive at"/"glances at"/a number-after-at-that-is-not-terminal, or an em-dash
+        # bound to words, MUST pass through verbatim. Genuine prose is never eaten.
+        legit = {
+            "arrow_feet": "The arrow lands at his feet, quivering in the mud.",
+            "arrive_gate": "They arrive at the gate just past dawn, hooves steaming.",
+            "settles_table": "She settles at the table and glances at him across the candle.",
+            "lands_stair": "He lands at the bottom of the stair, breathless but whole.",
+            "arrive_oclock": "We arrive at 5 in the morning, road-weary and cold.",
+            "dash_pause": "Wait — what did you just say to me?",
+            "emdash_aside": "The door — old, iron-banded — groans open on its hinges.",
+            "single_inline_dash": "A long-forgotten path - half-overgrown - wound up the ridge.",
+            "rain_prose": "Rain hammers the cobbles outside the Elfsong as the bard tunes his lute.",
+            # NUMBER-after-"at" with NO roll verb — the canonical false-positive class. A bell that
+            # "strikes at 12", a rendezvous "at 3", a candle that "gutters out at 9" are all real prose;
+            # only a roll-summary VERB ("lands/settles/comes in at <N>") triggers the strip.
+            "bell_strikes_12": "The bell tower strikes at 12.",
+            "meet_at_3": "We meet at 3 by the broken fountain.",
+            "candle_at_9": "The candle gutters out at 9, and the room goes dark.",
+            "camp_at_6": "The caravan reached the river and made camp at 6.",
+            # a roll-summary VERB but a NOUN target (not a number) is fiction, not a roll total.
+            "cat_lands_side": "The cat lands at her side without a sound.",
+        }
+        out = self._sanitize_many(legit)
+        for key, original in legit.items():
+            with self.subTest(case=key):
+                self.assertEqual(out[key], original)
+
     def test_authoring_preamble_guard_preserves_legitimate_fiction(self):
         # The false-positive guard, mirroring _NARRATION_LEAK's FP-hardening notes: a literal-
         # machinery "through the engine" (the bare form that wrongly matched Gond/artificer/Steel-

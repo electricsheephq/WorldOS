@@ -754,13 +754,25 @@ function ApBadge({ used, label }) {
 
 function BattleLogLine({ l }) {
   const meta = Array.isArray(l.meta) ? l.meta : [];
+  // SAT→7 (adversarial friction): the player-facing Battle Log must get the SAME read/projection
+  // hygiene as the main Chronicle. The /move + combat-event tail can carry DM engine META-TEXT — a
+  // wrapper-progress line ("Momentum carries through the scene…", "Your choice takes hold…"), a
+  // roll-summary header, or other scaffolding — which leaked here RAW because this panel never
+  // routed through the Chronicle's guard. Reuse the SAME window-exported sanitizeNarration (the engine
+  // stays sole writer; this is a projection filter only). Defensive: fall back to the raw string if the
+  // sibling <script> that defines it hasn't published yet (mirrors screen-table's own window-guard).
+  const sanitize = (t) => (typeof window !== "undefined" && typeof window.sanitizeNarration === "function")
+    ? window.sanitizeNarration(t || "")
+    : (t || "");
+  const title = sanitize(l.title) || l.event || "Combat";
+  const text = sanitize(l.text);
   return (
     <div style={{ padding: "5px 0", borderBottom: "1px solid rgba(140,100,60,0.16)" }}>
       <div style={{ display: "flex", gap: 6, alignItems: "baseline" }}>
         <span style={{ fontFamily: "var(--f-display)", fontSize: 10, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--ink-900)" }}>
-          {l.title || l.event || "Combat"}
+          {title}
         </span>
-        <span className="body-sm" style={{ color: "var(--ink-700)" }}>{l.text}</span>
+        <span className="body-sm" style={{ color: "var(--ink-700)" }}>{text}</span>
       </div>
       {meta.length > 0 && (
         <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 4 }}>
