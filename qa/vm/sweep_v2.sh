@@ -43,6 +43,7 @@ RES=/root/worldos-qa/results; mkdir -p "$RES"
 SHA="$(git rev-parse --short HEAD)"; LOG="$RES/sweep2.log"; : > "$LOG"
 note(){ echo "[$(date +%H:%M:%S)] $*" | tee -a "$LOG"; }
 rm -f "$RES/DONE" "$RES/CANARY_FAIL" "$RES/QUOTA_ABORT" "$RES/RRI.json" 2>/dev/null  # #842 Fix A: wipe the stale RRI.json too — a sweep that quota-aborts before it writes a fresh one must NEVER leave the PREVIOUS run's RRI in place to masquerade as this run's measurement.
+rm -f "$RES"/score-*.json 2>/dev/null; rm -rf qa/ui_playtest_runs/vm2-* 2>/dev/null  # FRESHNESS (the Jun-20 stale-score bug): a CRASHED canary/persona must NOT false-pass on a prior run's score-newbie.json (the canary's `[ ! -f ]` check), and the RRI rollup must NOT read a prior run's persona score.json. Wipe both up front so every persona score is THIS run's or absent.
 
 # QUOTA-ABORT detection (the rc3 lesson). A `claude -p` DM beat that 429s on the account
 # session limit writes "session limit" / "HTTP 429" into the persona backend.log. A sweep
@@ -82,7 +83,7 @@ pkill -f gate_sweep.sh 2>/dev/null
 pkill -f 'lean_beats_check' 2>/dev/null
 pkill -f 'play.sh baldurs-gate vm-' 2>/dev/null; pkill -f 'play_party.sh baldurs-gate vm-' 2>/dev/null
 pkill -f 'play.sh baldurs-gate leanchk' 2>/dev/null
-for p in $(seq 8810 8830) 8884 8885; do lsof -ti:$p 2>/dev/null | xargs kill -9 2>/dev/null; done
+for p in $(seq 8800 8870) 8884 8885; do lsof -ti:$p 2>/dev/null | xargs kill -9 2>/dev/null; done  # widened 8810-8830 -> 8800-8870: each persona's GUI BACKEND binds app_port+~20 (8830-8838); a prior run's un-reaped backend held 8836 and crashed EVERY persona rc=1 ("Port 8836 already in use"). Reap the full app+backend range.
 sleep 4
 note "start build=$SHA (sequential personas — quota-safe #844, lean ON — production-matching, fast Opus beats)"
 
