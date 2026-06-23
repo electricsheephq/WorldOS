@@ -367,6 +367,27 @@ class SanitizeNarrationTests(unittest.TestCase):
             with self.subTest(case=key):
                 self.assertEqual(out[key], original)
 
+    def test_roll_verb_with_in_world_quantity_survives_verbatim(self):
+        # REGRESSION (adversarial-verify catch): the roll-summary strip is verb-anchored AND
+        # number-anchored, but "<roll verb> at <N>" is ONLY a check total when <N> ENDS the clause
+        # ("lands at 18." / "lands at 18;"). A roll total never reads "lands at 18 men" — when the
+        # integer is followed by a WORD it is an in-world QUANTITY (men, gold, wagons, pounds, votes,
+        # bells), genuine fiction that must survive verbatim. The verb-only guard wrongly ate the WHOLE
+        # line on these; the clause-terminal requirement (followed by [.;,!?] or end-of-string) spares
+        # them while STILL stripping the real header (verified in test_strips_dice_result_summary_header).
+        legit = {
+            "falls_12_men": "The line falls at 12 men, and still the orcs come.",
+            "settles_5_gold": "After haggling, the merchant settles at 5 gold and a promise.",
+            "lands_7_wagons": "The caravan lands at 7 wagons strong before the gates.",
+            "comes_in_40_pounds": "The hauled net comes in at 40 pounds of silver carp.",
+            "resolves_9_votes": "The council resolves at 9 votes to 4.",
+            "clears_6_bells": "The fog clears at 6 bells, grey and cold.",
+        }
+        out = self._sanitize_many(legit)
+        for key, original in legit.items():
+            with self.subTest(case=key):
+                self.assertEqual(out[key], original)
+
     def test_authoring_preamble_guard_preserves_legitimate_fiction(self):
         # The false-positive guard, mirroring _NARRATION_LEAK's FP-hardening notes: a literal-
         # machinery "through the engine" (the bare form that wrongly matched Gond/artificer/Steel-

@@ -145,20 +145,30 @@ const _STAGE_DIRECTION = new RegExp(
 // (noun, not a number) and "we arrive at the gate" (no roll verb) both pass through untouched, and a bare
 // "the bell strikes at 12." / "we meet at 3." (no roll verb) is NEVER matched. This is the PRIMARY arm —
 // "<thing> lands/comes-in/settles/resolves/clears at <N>".
-const _ROLL_RESULT_SUMMARY = new RegExp(
-  "\\b(?:lands?|comes?(?:\\s+in)?|falls?|settles?|resolves?|clears?)\\s+(?:in\\s+)?at\\s+\\d+\\b",
-  "i",
-);
+//
+// CRITICAL refinement (the false-positive the verb anchor alone did NOT catch): the integer must be a
+// roll TOTAL, which always ends the clause — a check result is "lands at 18." / "lands at 18;", NEVER
+// "lands at 18 men". So the bare "at <N>" is only a roll summary when <N> is CLAUSE-TERMINAL: immediately
+// followed by clause-ending punctuation ([.;,!?]) or end-of-string (the "; <thing> at <M>" chained-
+// continuation case is just a ';'-terminal primary). When <N> is followed by a WORD/noun it is an in-world
+// quantity — "the line falls at 12 men", "settles at 5 gold", "comes in at 40 pounds", "clears at 6 bells"
+// — genuine fiction that MUST survive verbatim. `_ROLL_VERB_AT_N` is the shared, clause-terminal core.
+const _ROLL_VERB_AT_N =
+  "\\b(?:lands?|comes?(?:\\s+in)?|falls?|settles?|resolves?|clears?)\\s+(?:in\\s+)?at\\s+\\d+(?=[.;,!?]|\\s*$)";
+const _ROLL_RESULT_SUMMARY = new RegExp(_ROLL_VERB_AT_N, "i");
 // The FULL roll-summary HEADER LINE — the verb-anchored primary PLUS any "; <thing> at <N>" continuations
 // chained onto it ("The intimidation lands at 18; the quiet interpose at 16."). This is matched at the LINE
 // level (before the per-sentence splitter fragments it on the ";"), so the whole header — including its
 // trailing clauses and an optional trailing rule — is dropped as a unit. It REQUIRES the leading roll verb,
 // so it can only extend a genuine roll-summary; a standalone "; we meet at 3" never has the primary verb and
 // is never reached. Anchored to the whole line ('^…$') so it only fires on a header, not a mid-prose clause.
+// Each "at <N>" (primary AND every chained continuation) is clause-terminal — the same total-ends-the-clause
+// rule as `_ROLL_VERB_AT_N` — so a header whose number is followed by a noun ("falls at 12 men …") never
+// matches and the genuine-fiction line survives whole.
 const _ROLL_SUMMARY_HEADER_LINE = new RegExp(
   "^\\s*[^.!?]*?" +
-    "\\b(?:lands?|comes?(?:\\s+in)?|falls?|settles?|resolves?|clears?)\\s+(?:in\\s+)?at\\s+\\d+\\b" +
-    "(?:[^.!?]*?\\bat\\s+\\d+\\b)*" +
+    _ROLL_VERB_AT_N +
+    "(?:[^.!?]*?\\bat\\s+\\d+(?=[.;,!?]|\\s*$))*" +
     "\\s*[.!?]?\\s*(?:-{3,}|\\*{3,}|_{3,}|—{2,})?\\s*$",
   "i",
 );
