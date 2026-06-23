@@ -39,11 +39,12 @@ export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.local/bin:$PATH
 export IS_SANDBOX=1
 export WORLDOS_LEAN_BEATS=1   # lean-ON (production-matching; #683/#685-fixed; fast Opus beats). See header.
 cd /root/worldos-qa/WorldOS || { echo "NO REPO"; exit 1; }
+ROOT="$PWD"   # repo-root anchor (CodeRabbit #1158): EVERY repo-relative cleanup below MUST use "$ROOT" so a non-repo cwd can't leave stale vm2-* run dirs that contaminate the canary/RRI inputs. The cd above lands us at the repo root; capture it once.
 RES=/root/worldos-qa/results; mkdir -p "$RES"
 SHA="$(git rev-parse --short HEAD)"; LOG="$RES/sweep2.log"; : > "$LOG"
 note(){ echo "[$(date +%H:%M:%S)] $*" | tee -a "$LOG"; }
 rm -f "$RES/DONE" "$RES/CANARY_FAIL" "$RES/QUOTA_ABORT" "$RES/RRI.json" 2>/dev/null  # #842 Fix A: wipe the stale RRI.json too — a sweep that quota-aborts before it writes a fresh one must NEVER leave the PREVIOUS run's RRI in place to masquerade as this run's measurement.
-rm -f "$RES"/score-*.json 2>/dev/null; rm -rf qa/ui_playtest_runs/vm2-* 2>/dev/null  # FRESHNESS (the Jun-20 stale-score bug): a CRASHED canary/persona must NOT false-pass on a prior run's score-newbie.json (the canary's `[ ! -f ]` check), and the RRI rollup must NOT read a prior run's persona score.json. Wipe both up front so every persona score is THIS run's or absent.
+rm -f "$RES"/score-*.json 2>/dev/null; rm -rf "$ROOT"/qa/ui_playtest_runs/vm2-* 2>/dev/null  # FRESHNESS (the Jun-20 stale-score bug): a CRASHED canary/persona must NOT false-pass on a prior run's score-newbie.json (the canary's `[ ! -f ]` check), and the RRI rollup must NOT read a prior run's persona score.json. Wipe both up front so every persona score is THIS run's or absent. ANCHORED to "$ROOT" (CodeRabbit #1158) — the sibling above already anchors on "$RES"; this matches it so a non-repo cwd can never silently skip the wipe.
 
 # QUOTA-ABORT detection (the rc3 lesson). A `claude -p` DM beat that 429s on the account
 # session limit writes "session limit" / "HTTP 429" into the persona backend.log. A sweep
@@ -77,13 +78,45 @@ json.dump({"status": "ABORTED", "aborted": True, "abort_reason": "quota_session_
 PY
 }
 
+# reap_sweep_ports LOW HIGH — free the sweep's OWN listeners on ports LOW..HIGH, NARROWLY.
+# CodeRabbit #1158 (overbroad reap): the old `lsof -ti:$p | kill -9` killed ANY listener on the
+# range, which on a shared host/CI runner can break unrelated jobs and cause nondeterministic sweep
+# failures. Narrow it: for each PID listening on the port, kill ONLY when its argv matches a sweep
+# backend (viewer/server.py · play.sh · play_party.sh · play_codex_dm.sh · ui_playtest). A
+# non-matching listener (some unrelated service that happens to squat a port in the range) is LEFT
+# ALONE. This is ALSO the root-cause reap for the orphaned-viewer bug (PROVEN on the VM 2026-06-23):
+# a timeout-/SIGTERM-killed play.sh leaves its viewer ORPHANED + still bound on the backend port
+# (app_port+~20, e.g. 8830) because the SIGTERM hits the main shell while it is blocked inside the
+# DM cold-open `claude -p`, so play.sh's own EXIT/TERM cleanup never runs. The next persona/retry
+# whose backend wants that port then hits "Port 8830 is already in use" and aborts backend_not_ready.
+# TERM first (let the supervisor's trap run if it can), then KILL the stragglers. bash 3.2-clean.
+reap_sweep_ports() {
+  local lo="$1" hi="$2" p pid cmd
+  for p in $(seq "$lo" "$hi"); do
+    for pid in $(lsof -nP -tiTCP:"$p" -sTCP:LISTEN 2>/dev/null); do
+      cmd="$(ps -o command= -p "$pid" 2>/dev/null || true)"
+      case "$cmd" in
+        *viewer/server.py*|*play.sh*|*play_party.sh*|*play_codex_dm.sh*|*ui_playtest*)
+          kill "$pid" 2>/dev/null || true
+          sleep 0.2
+          kill -9 "$pid" 2>/dev/null || true
+          ;;
+      esac
+    done
+  done
+}
+
 # 0) kill the stuck v1 orchestrator + any stray vm- play procs; free ports
 note "killing v1 orchestrator + stray procs..."
 pkill -f gate_sweep.sh 2>/dev/null
 pkill -f 'lean_beats_check' 2>/dev/null
 pkill -f 'play.sh baldurs-gate vm-' 2>/dev/null; pkill -f 'play_party.sh baldurs-gate vm-' 2>/dev/null
 pkill -f 'play.sh baldurs-gate leanchk' 2>/dev/null
-for p in $(seq 8800 8870) 8884 8885; do lsof -ti:$p 2>/dev/null | xargs kill -9 2>/dev/null; done  # widened 8810-8830 -> 8800-8870: each persona's GUI BACKEND binds app_port+~20 (8830-8838); a prior run's un-reaped backend held 8836 and crashed EVERY persona rc=1 ("Port 8836 already in use"). Reap the full app+backend range.
+# NARROWED reap (CodeRabbit #1158): only the sweep's OWN backend listeners on 8800-8870 (each
+# persona's GUI BACKEND binds app_port+~20, 8830-8838) + the audit viewer ports 8884/8885. A prior
+# run's un-reaped/orphaned backend that held a port and crashed EVERY persona rc=1 ("Port … already
+# in use") is killed; an unrelated service squatting a port in the range is left untouched.
+reap_sweep_ports 8800 8870; reap_sweep_ports 8884 8885
 sleep 4
 note "start build=$SHA (sequential personas — quota-safe #844, lean ON — production-matching, fast Opus beats)"
 
@@ -127,13 +160,24 @@ run_persona(){  # $1=persona $2=port  -> writes results/score-$1.json
   if [ -n "$persona" ]; then
     rm -rf "play-state/vm2-$persona" "play-state/vm2-$persona-b" 2>/dev/null
   fi
+  # ROOT-CAUSE reap (PROVEN on the VM 2026-06-23): ui_playtest_app.sh part-B binds its faithful
+  # backend at WOS_APP_PREFERRED_PORT+20 ($port+20, e.g. 8830 for app port 8810). A previous
+  # persona/attempt whose play.sh was timeout-/SIGTERM-killed mid-cold-open leaves its viewer
+  # ORPHANED + still bound on that backend port (the SIGTERM hit play.sh while it was blocked inside
+  # the DM `claude -p`, so play.sh's own EXIT/TERM cleanup never ran). The next launch then hits
+  # "Port $((port+20)) is already in use" → backend_not_ready → no score (the exact #1158 canary
+  # bug). Reap the WHOLE app+backend band ($port..$port+30) — NARROWLY (sweep backends only) —
+  # BEFORE the launch so a lingering orphan can't crash THIS persona.
+  reap_sweep_ports "$port" "$((port+30))"
   # Opus de-risk: longer per-persona deadline (Opus cold-open ~300s + slower beats) + a bigger run
   # budget (Opus cold-open ~$2.4 + beats + player). The harnesses cap per-turn model-aware (#684/#686).
   WOS_APP_PART=B WOS_APP_SKIP_BUILD=1 WOS_APP_PREFERRED_PORT=$port \
     timeout 2400 bash qa/ui_playtest_app.sh "vm2-$persona" baldurs-gate "$persona" 40 18.00 \
     > "$RES/vm2-$persona.log" 2>&1
   local rc=$?
-  lsof -ti:$port 2>/dev/null | xargs kill -9 2>/dev/null
+  # Reap the FULL app+backend band (not just $port): attempt-1's faithful backend lives on
+  # $port+20, so the old single-port `lsof -ti:$port` left it bound and crashed the retry below.
+  reap_sweep_ports "$port" "$((port+30))"
   # FIX 1 (#623 false-cap): a NON-ZERO player/harness PROCESS exit (rc!=0) is a harness CRASH,
   # not a product-quality signal — it must NOT be laundered into a score_pass quality fail.
   # RETRY ONCE on a clean store before we believe it. A 429 still short-circuits to the honest
@@ -148,12 +192,15 @@ run_persona(){  # $1=persona $2=port  -> writes results/score-$1.json
     if [ -n "$persona" ]; then
       rm -rf "play-state/vm2-$persona" "play-state/vm2-$persona-b" 2>/dev/null
     fi
+    # Reap the backend band before the retry too: attempt-1's orphaned viewer on $port+20 is the
+    # very thing that crashes the retry with "Port … already in use" if left bound.
+    reap_sweep_ports "$port" "$((port+30))"
     WOS_APP_PART=B WOS_APP_SKIP_BUILD=1 WOS_APP_PREFERRED_PORT=$port \
       timeout 2400 bash qa/ui_playtest_app.sh "vm2-$persona" baldurs-gate "$persona" 40 18.00 \
       >> "$RES/vm2-$persona.log" 2>&1
     rc=$?
     note "  $persona retry rc=$rc"
-    lsof -ti:$port 2>/dev/null | xargs kill -9 2>/dev/null
+    reap_sweep_ports "$port" "$((port+30))"
   fi
   pkill -f "play.sh baldurs-gate vm2-$persona" 2>/dev/null
   pkill -f "play_party.sh baldurs-gate vm2-$persona" 2>/dev/null
