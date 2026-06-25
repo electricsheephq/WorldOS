@@ -193,6 +193,18 @@ change must respect them.
    silently skipped. (This bit us on #185.) Check the exit / the returned PR URL.
 4. **Merge only after checks pass.** Use the standard PR merge flow once GitHub CI
    and required review gates are green.
+   - During the GitHub Actions billing outage, the Linux replacement gates are the Woodpecker
+     **pull_request** contexts only:
+     `ci/woodpecker/pr/test`, `ci/woodpecker/pr/viewer-tests`,
+     `ci/woodpecker/pr/qa-release-gate-tests`, `ci/woodpecker/pr/server-contracts`, and
+     `ci/woodpecker/pr/license-check`. Do not require the matching `ci/woodpecker/push/*`
+     contexts for PR merges.
+   - These Woodpecker gates are checks-only: no deploy, release, registry publish, production
+     database mutation, or server move belongs in this lane.
+   - Rollback if Woodpecker server/agent health regresses: remove only those five Woodpecker PR
+     contexts from required status checks (or restore the previous five GitHub Actions contexts
+     after Actions billing recovers), leave review/thread/deletion/force-push protections intact,
+     and do not upgrade or move the Woodpecker server as part of the emergency rollback.
 5. **Sync + clean up:**
    ```bash
    git pull --ff-only origin main
