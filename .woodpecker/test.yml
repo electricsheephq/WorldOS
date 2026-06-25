@@ -5,6 +5,7 @@ steps:
   - name: test
     image: ghcr.io/astral-sh/uv:python3.12-bookworm
     commands:
+      - bash -lc 'set -euo pipefail; apt-get update; apt-get install -y --no-install-recommends jq; rm -rf /var/lib/apt/lists/*'
       - bash -lc 'set -euo pipefail; uv run --directory servers/engine --group dev pytest -q --cov=. --cov-report=term-missing'
       - bash -lc 'set -euo pipefail; WORLDOS_RULES_OFFLINE=1 uv run --directory servers/rules --group dev pytest -q --cov=. --cov-report=term-missing'
       - bash -lc 'set -euo pipefail; uv run --directory servers/voice --group dev pytest -q --cov=. --cov-report=term-missing'

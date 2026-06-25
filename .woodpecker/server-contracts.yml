@@ -7,5 +7,6 @@ steps:
     environment:
       WORLDOS_RULES_OFFLINE: "1"
     commands:
+      - bash -lc 'set -euo pipefail; apt-get update; apt-get install -y --no-install-recommends jq; rm -rf /var/lib/apt/lists/*'
       - bash -lc 'set -euo pipefail; uv sync --directory servers/rules'
       - bash -lc 'set -euo pipefail; uv run --directory servers/engine --group dev python -m pytest -q -p no:xdist ../../servers/integration_tests'
