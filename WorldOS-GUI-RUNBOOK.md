@@ -273,6 +273,10 @@ release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI s
 
 ## Support VM lane (heavy sweeps, not Mac-only app truth)
 
+> **Successor host:** the GPU box **GEX44 `evaos-gpu-gex44-1`** (see `## GPU-VM lane` below) now runs this
+> same heavy part-B sweep AND a Unity/visual renderer the 32 GB VM could not host — prefer it for new heavy
+> sweeps. This section stays as the reference for the lane mechanics + a fallback host.
+
 - Target: owner-provided **32GB support VM** (`support-vm-1`); connection/auth details live in local
   operator-only runbooks/evidence, not tracked repo docs.
 - Do not assume it is ready for Codex runs until credentials/config are intentionally installed and verified.
@@ -346,6 +350,51 @@ release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI s
   Claude** (`qa/score.sh`, pinned-Sonnet, isolated `~/.claude`). Use GLM for bug-finding/smoke; **Claude
   stays the quality bar** for the release RRI. Full strategy + the cap-rate finding:
   `docs/MODEL-TIERING-STRATEGY.md`.
+
+## GPU-VM lane (evaos-gpu-gex44-1) — heavy part-B sweep + Unity/visual renderer
+
+The **Hetzner GEX44 GPU dedicated server** (`evaos-gpu-gex44-1`, provisioned 2026-06-25; RTX 4000 SFF Ada /
+64 GB / Ubuntu 24.04) is the **successor heavy-QA host** to the `## Support VM lane` above. It runs the same
+part-B 5-persona sweep AND hosts a Unity 6 / Unity-MCP renderer the 32 GB support VM could not. Prefer it for
+new heavy sweeps; the Support VM lane stays documented as the lane-mechanics reference + a fallback host.
+**Connection/auth details live in `~/.openclaw/secrets/gex44.env` (operator-only)** — never put the endpoint,
+SSH key, or the VNC password in this tracked doc (same convention as the Support VM lane).
+
+**Two roles on one box:**
+
+1. **WorldOS heavy part-B sweep lane** — repo `/root/worldos-qa/WorldOS`, runs as **root + `IS_SANDBOX=1`**.
+   Same one-command part-B procedure as the Support VM lane (the full step-by-step lives in the `worldos-dev`
+   skill → "VM GATE SWEEP — exact procedure"). Drop `qa/vm/sweep_v2.sh` → `/root/worldos-qa/sweep_v2.sh` and
+   run it; results roll up into the RRI exactly as the Support VM lane does. Private art is rsynced to
+   `content/worlds/_private` (NOT top-level `_private`).
+2. **Unity 6 + Unity-MCP host** — Unity `6000.5.0f1` + the project at `/home/unity/worldos-unity`, run as the
+   **`unity` user** (NOT root — Electron/Hub refuses root). Renders on **GPU display `:0` with real GL** — launch
+   the Editor WITHOUT `-nographics` or captures come back blank. Bring up the Editor + MCP server with
+   `sudo -u unity /usr/local/bin/unity-mcp-up.sh`, then reach the MCP HTTP endpoint (8080) from the Mac over an
+   SSH tunnel and register it:
+   ```bash
+   ssh -N -L 8080:127.0.0.1:8080 root@<gex44>   # host in gex44.env (8080 is localhost-only on the box)
+   claude mcp add --transport http unity http://127.0.0.1:8080/mcp
+   ```
+
+**RRI rollup is unchanged** — this box supplies the **part-B** persona/behavior/score evidence; the **Mac still
+owns native Part-A** (the built `dist/WorldOS.app` handoff) at the **SAME SHA**, because Linux cannot build the
+macOS `.app`. A full RRI = VM part-B + the Mac handoff at one SHA (same split + same evidence-path rules as the
+Support VM lane's RRI rollup rule above).
+
+**Gotchas:**
+
+- **`IS_SANDBOX=1` is MANDATORY** (the box runs as root) — same root-bypass guard as the Support VM lane;
+  without it `claude -p --permission-mode bypassPermissions` is refused → silent empty-turn abort at beat 0.
+  `sweep_v2.sh` exports it; a standalone `run_duo.sh`/`play.sh` needs `IS_SANDBOX=1 bash qa/...`.
+- **Claude creds are copied from the Mac Keychain** into `/root/.claude/.credentials.json` and **expire with no
+  auto-refresh → re-copy on the first 401** (the standing Keychain-copy method is in the `worldos-dev` notes).
+- **Personas stay sequential** — parallel runs trip the 4× quota 429.
+- **The GPU does NOT speed the sweep** — it is LLM-bound; the GPU is for the Unity / visual-critic lanes only.
+- **Unity 6 Personal is hardware-bound** → the one human-gated step: a **one-time interactive Hub login on the
+  box** via a tunneled VNC (`ssh -N -L 5900:127.0.0.1:5900 root@<gex44>` → VNC `localhost:5900`, sign in,
+  activate Personal, open the project once). After that the MCP render loop works headlessly. The VNC host +
+  password are in `gex44.env`.
 
 ## Release (when RRI = 10/10 on a fresh .app build)
 Bump `.claude-plugin/plugin.json` → 1.0.4, tag `v1.0.4`, GitHub release + CHANGELOG. Then MAINTAIN:
