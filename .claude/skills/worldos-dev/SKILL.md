@@ -10,7 +10,8 @@ star: **epic Baldur's-Gate-caliber STORY on a deterministic SRD 5.2 engine**; go
 universe-system that generates worlds. Source-available commercial product, BG-focused. **Read `WorldOS-RUNBOOK.md`
 (repo root) for the full project/architecture/state.** This skill is the operational loop.
 
-**Graphics:** the **Godot GT2 isometric renderer** → `godot/HANDOFF.md` + the `godot-dev` skill.
+**Graphics:** the **Unity/current-renderer lane** + deterministic SceneGrid/visual-critic checks.
+Godot GT2 is archived as reference/extension material under `extensions/renderers/godot/`.
 **AI asset generation** (3D chars, rigging, painterly backdrops, sprites) → the `asset-gen` skill.
 
 > **⚠ HEAVY QA SWEEPS (5-persona / RRI) → USE THE SUPPORT VM, NOT LOCAL.** The 16 GB Mac OOMs mid-sweep
@@ -179,10 +180,10 @@ Keep Python tests single-process unless the lane explicitly supports parallel ex
 - **Secret-scan the diff before every commit** — `git diff --cached | grep -iE '<key-prefixes>'` must
   be empty. Keys live in `~/.worldos/*.key` (mode 600), never the tree.
 - **CI-only-validatable changes:** let `--auto` hold the merge until CI concludes (or `gh run watch`).
-  `godot/`-only PRs skip CodeQL (the deterministic lanes + the `godot.yml` lane gate them) — they still
-  merge through the protected `--auto` path once the 5 required checks are green.
-- **New-subsystem skills:** **`godot-dev`** (GT2 Godot renderer), **`asset-gen`** (Meshy/Tripo/Scenario/
-  PixelLab art), **`wire-external-api-service`** (integrate a new API/MCP), **`sprint-handoff-doc`** (hand off a sprint).
+  Godot extension/archive-only PRs are optional/manual proof only and are not branch-protection gates;
+  the protected path still waits for the 5 required Woodpecker checks.
+- **New-subsystem skills:** **`asset-gen`** (Meshy/Tripo/Scenario/PixelLab art),
+  **`wire-external-api-service`** (integrate a new API/MCP), **`sprint-handoff-doc`** (hand off a sprint).
 
 ## THE MERGE GATE — CI + CodeRabbit (don't push-and-abandon)
 **Shepherd every PR to merge; never open-and-walk-away.** Stay engaged (or hand to a report-only

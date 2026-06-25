@@ -1,0 +1,34 @@
+{
+  "manifest_version": 1,
+  "scope_key": "prop-pillar-iso8",
+  "kind": "prop",
+  "projection": "dimetric-2to1",
+  "image": "sheet.png",
+  "frame": {
+    "w": 128,
+    "h": 192
+  },
+  "sheet": {
+    "cols": 1,
+    "rows": 1
+  },
+  "facings": 1,
+  "facing_order": [
+    "S"
+  ],
+  "anchor": {
+    "x": 64,
+    "y": 184
+  },
+  "fps": 10,
+  "animations": {
+    "idle": {
+      "start": 0,
+      "count": 1,
+      "loop": true
+    }
+  },
+  "source": "worldos-placeholder",
+  "license": "CC0-1.0",
+  "attribution": "WorldOS original placeholder (CC0) \u2014 regenerate via extensions/renderers/godot/tools/gen_placeholder_sheet.py"
+}

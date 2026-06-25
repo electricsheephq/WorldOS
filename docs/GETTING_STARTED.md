@@ -62,8 +62,8 @@ dist/WorldOS.app
 Use the native app when you need to prove the release surface: provider settings, app launch, private/public art loading, native window behavior, and provider process startup.
 
 For current visual renderer work, use the Unity 6 / Unity-MCP GPU-VM lane described in
-`WorldOS-GUI-RUNBOOK.md`. `godot/HANDOFF.md` is now historical/reference material only;
-see #1165 before moving, deleting, or reviving `godot/`.
+`WorldOS-GUI-RUNBOOK.md`. `extensions/renderers/godot/HANDOFF.md` is historical/reference
+extension material only.
 
 ## Pick A Provider
 
