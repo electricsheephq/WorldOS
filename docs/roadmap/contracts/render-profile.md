@@ -8,10 +8,11 @@
 
 ## What it is
 
-The render-profile is the **single, versioned, layered contract** that every renderer
-(Phaser web today; an optional Godot desktop client and an optional RPG Maker exploration
-adapter later) and the AI build-loop consume to draw a WorldOS game. It is **presentation
-that joins to engine state by id** — it never holds game state.
+The render-profile is the **single, versioned, layered contract** that renderers and the
+AI build-loop consume to draw a WorldOS game. The current renderer lane consumes the
+engine-agnostic `core`/SceneGrid contracts; the Phaser, Godot, and RPG Maker blocks are
+optional reference/extension surfaces unless a follow-up renderer issue explicitly promotes
+one of them. It is **presentation that joins to engine state by id** — it never holds game state.
 
 ## The one invariant
 
@@ -33,7 +34,7 @@ render-profile
 │   ├── locations[]           { engine_location_id (FK), art.scope_key, zones[] }
 │   ├── actors[]              { engine_actor_id (FK), art.scope_key }
 │   └── ai_disclosure         { generated_by, model, date }
-└── renderer_profiles         ← OPTIONAL; a renderer reads core + its OWN block
+└── renderer_profiles         ← OPTIONAL reference/extension blocks
     ├── phaser                { tileset/tile_size/ui_skin | backdrop_layout/walkmask/… }
     ├── godot                 { projection | backdrop_layout(zone_anchors) | actor_sheets | default_facing }
     └── rpgmaker              (reserved / spec-only; deferred)
@@ -46,10 +47,11 @@ block. The **core-only conformance test (#428)** enforces this: a renderer using
 its own block must render every M0 scene. (The repo's existing SVG/React viewer is a free
 third "renderer" to validate that `core` stays renderer-agnostic.)
 
-### Godot renderer block (GT2 painterly-isometric)
+### Godot reference/extension block (GT2 painterly-isometric)
 
-The `godot` block (added 2026-06-21; sibling of `phaser`/`rpgmaker`) carries the GT2 Godot
-client's presentation — and **only** presentation:
+The `godot` block (added 2026-06-21; sibling of `phaser`/`rpgmaker`) is retained as a
+checked-in reference/extension contract. It is **not** the current required renderer lane.
+It carries the GT2 Godot client's presentation — and **only** presentation:
 
 - `projection` — the LOCKED dimetric 2:1 (~26.57°) isometric (see `godot/ISO-PROJECTION.md`,
   the single source of truth both the renderer and the Blender bake cite). Irreversible once

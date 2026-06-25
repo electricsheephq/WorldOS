@@ -1,10 +1,16 @@
-# GT2 Godot painterly-isometric renderer — HANDOFF / KNOWLEDGE BASE
+# GT2 Godot painterly-isometric renderer — QUARANTINED REFERENCE / KNOWLEDGE BASE
 
-> The single source of truth for the GT2 Godot renderer (epic **#1050**, milestone *Graphics M5
-> — GT2 Godot painterly-isometric renderer*). Built to make a cold agent productive without
-> re-deriving the research. Companions: `ISO-PROJECTION.md` (locked projection), `tools/README.md`
-> (asset pipeline), `docs/roadmap/contracts/render-profile.md` (the contract),
-> `docs/roadmap/WORLDOS-GRAPHICS-ROADMAP.md` (where GT2 sits). Last updated 2026-06-21.
+> **Quarantine note (2026-06-25):** this is historical/reference material for the Godot
+> prototype, not the current GT2 renderer path or a required merge gate. Owner direction moved
+> GT2 visual renderer work to the Unity 6 / Unity-MCP GPU-VM lane; #1165 owns the decision about
+> archiving, moving, or converting `godot/` into an extension lane. Keep the engine-agnostic
+> projection, SceneGrid, render-profile, and conformance lessons, but do not route new current
+> renderer work here unless #1165 explicitly reopens that path.
+>
+> Built to make a cold agent productive without re-deriving the research. Companions:
+> `ISO-PROJECTION.md` (locked projection), `tools/README.md` (asset pipeline),
+> `docs/roadmap/contracts/render-profile.md` (the contract),
+> `docs/roadmap/WORLDOS-GRAPHICS-ROADMAP.md` (where GT2 sits). Last updated 2026-06-25.
 
 ## Contents
 1. [TL;DR](#tldr)
@@ -22,11 +28,12 @@
 <a name="tldr"></a>
 ## 1. TL;DR
 
-The **foundation is done and CI-gated; the renderer is NOT yet feature-complete or shipped.** A
+The **prototype foundation was done and CI-gated; the renderer is NOT current, feature-complete, or shipped.** A
 vertical slice works: a directional character (real Meshy→Blender art) on **live engine state**,
 **click-to-move** on the frozen `/move` vocab, correct **Y-sort occlusion** — validated locally
 and in CI. The "looks-like-Pillars, fully-playable, shipped-to-web+native" end state is backlog
-(see §2, §9). The architecture diagram is the *plan*; ~half is built (§3 marks what's real).
+(see §2, §9), but that backlog is now reference material pending #1165. The architecture diagram
+is the *historical plan*; ~half is built (§3 marks what's real).
 
 The deepest thing to internalize: **the renderer is a stateless thin client over a zone-based
 engine, and the sprite-sheet manifest + render-profile contract — not the pixels — is the durable
@@ -34,8 +41,9 @@ product.** Art swaps `CC0 → AI → Meshy/Blender` at the same `scope_key` with
 Proven this session (placeholder green-oval → a real rendered ranger, no code change).
 
 > **Note:** Phaser 3 was the original GT2 MVP renderer; **retired 2026-06-21** (didn't deliver the
-> painterly-iso look) — Godot 4 is now the ONLY GT2 path. Decision record:
-> `docs/roadmap/WORLDOS-GRAPHICS-ROADMAP.md` §4.
+> painterly-iso look). Godot 4 then became the GT2 path, but **2026-06-25 owner direction
+> quarantines Godot as reference/extension material** and moves current visual renderer work to
+> Unity 6 / Unity-MCP. Decision record: `docs/roadmap/WORLDOS-GRAPHICS-ROADMAP.md` §4 and #1165.
 
 <a name="status"></a>
 ## 2. Status — done vs open
@@ -214,7 +222,11 @@ with zero renderer change**. Proven.
   render-profile `ai_disclosure` block for shipped AI content.
 
 <a name="run"></a>
-## 5. How to run / validate (local)
+## 5. How to run / validate (optional historical/reference lane)
+These commands are optional proof for changes under `godot/`; they are not the current GT2
+renderer proof path and must not be made branch-protection-required during the Woodpecker
+emergency recovery.
+
 **Prerequisites** (install these first): **Godot 4.6.3** (godotengine.org → `/Applications/Godot.app`;
 verify `godot --version`), **Blender 5.1.2** (`brew install blender`), and `uv`/Python (already required
 by the engine). For the asset-pipeline API keys, see §6.
@@ -223,7 +235,7 @@ by the engine). For the asset-pipeline API keys, see §6.
 - Parse/compile: `godot --headless --path godot --import`
 - Logic smoke: `godot --headless --path godot --quit-after 180 -- --smoke-intent`
 - Visual proof (real window): `godot --path godot --demo-occlusion --quit-after 300` → `/tmp/wos_godot_occlusion_{behind,front}.png`
-- CI: `.github/workflows/godot.yml` runs all of the above + Web/Linux export on every `godot/**` change — deterministic, **no model keys**.
+- CI: `.github/workflows/godot.yml` runs all of the above + Web/Linux export on every `godot/**` change — deterministic, **no model keys**. It is a reference/extension lane only, not part of required Linux CI replacement.
 
 <a name="assets"></a>
 ## 6. Asset pipeline — Meshy → Blender → sprite sheet
@@ -282,7 +294,7 @@ python3 godot/tools/pack_sheet.py --frames <dir>/frames \
 - **After a merge batch**, refresh GitNexus once: `gitnexus analyze /Users/lume/WorldOS --name worldos --embeddings --index-only`.
 
 <a name="backlog"></a>
-## 9. The full issue backlog (prioritized)
+## 9. The historical issue backlog (reference only until #1165 resolves)
 **Story / visual (look + play like Pillars):**
 - **#1090 — narration + dialogue in-view.** *Biggest gap:* the Godot view shows zero story text; prose
   only appears in the React dashboard. Wire `/events` + `/chat` into an in-view panel + a `say`/`clarify` affordance.

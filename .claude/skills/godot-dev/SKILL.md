@@ -1,14 +1,16 @@
 ---
 name: godot-dev
-description: Develop / test / debug the WorldOS GT2 Godot painterly-isometric renderer (the `godot/` project). Use when working on the isometric view — GDScript (`.gd`) or scenes (`.tscn`), the `SurfaceClient`/`WorldView`/`CharacterToken`/`InputController`, the render-profile contract, sprite sheets, click-to-move/Y-sort, or the Godot CI lane. Encodes the thin-client invariants, the dimetric-2:1 projection, how to run/validate locally, and points at the full knowledge base.
+description: Develop / test / debug the WorldOS GT2 Godot painterly-isometric reference/extension renderer (the `godot/` project). Use only for explicit `godot/` work or a renderer-migration issue that reopens Godot; current isometric/visual-renderer work routes through the Unity/current-renderer and visual-critic lane instead. Encodes the thin-client invariants, the dimetric-2:1 projection, how to run/validate locally, and points at the full knowledge base.
 ---
 
-# WorldOS GT2 Godot renderer — dev skill
+# WorldOS GT2 Godot reference renderer — dev skill
 
-The GT2 renderer is a **stateless thin client** over the zone-based WorldOS engine. **Read
-`godot/HANDOFF.md` first** — it is the full knowledge base (architecture diagrams, the
-isometric/painterly/Pillars research, gotchas, the prioritized backlog). Companions:
-`godot/ISO-PROJECTION.md` (the locked projection), `godot/tools/README.md` (asset pipeline).
+The GT2 renderer is a **stateless thin client** over the zone-based WorldOS engine, kept as
+reference/extension material while the current renderer lane is Unity/current-renderer plus
+deterministic SceneGrid/visual-critic checks. **Read `godot/HANDOFF.md` first** — it is the full
+Godot knowledge base (architecture diagrams, the isometric/painterly/Pillars research, gotchas,
+the prioritized backlog). Companions: `godot/ISO-PROJECTION.md` (the locked projection),
+`godot/tools/README.md` (asset pipeline).
 
 ## The non-negotiables (full list in HANDOFF.md §7)
 - Engine = **sole writer**; the renderer owns ZERO state but the `/events` cursor.
@@ -36,8 +38,9 @@ Next: **#1090** (narration/dialogue in-view) → **#1089** (painterly backdrop, 
 (real rigged animation, via `asset-gen`/Tripo). Delivery: #1057–#1059. Epic **#1050**.
 
 ## Dev loop
-Worktree off `origin/main` → additive change → local Godot validate → PR → squash-merge → prune.
-Multi-session repo: never branch-flip the shared checkout; `godot/`-only PRs skip CodeQL.
+Only use this loop for explicit `godot/` reference/extension work. Worktree off `origin/main` →
+additive change → local Godot validate → PR → squash-merge → prune. Multi-session repo: never
+branch-flip the shared checkout; `godot/`-only PRs skip CodeQL.
 
 ## Gotchas (cost real time — see HANDOFF.md §8)
 - **`export_presets.cfg` is in Godot's default `.gitignore`, but `godot --headless --export` fails

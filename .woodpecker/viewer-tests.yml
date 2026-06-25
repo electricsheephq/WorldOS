@@ -1,0 +1,22 @@
+when:
+  - event: [push, pull_request, manual]
+
+steps:
+  - name: viewer-tests
+    image: node:20-bookworm
+    commands:
+      - bash -lc 'set -euo pipefail; apt-get update; apt-get install -y --no-install-recommends ca-certificates git jq python3 python3-venv; rm -rf /var/lib/apt/lists/*'
+      - >-
+        bash -lc 'set -euo pipefail;
+        if [ "${CI_PIPELINE_EVENT:-}" = "pull_request" ]; then
+          _ref="${CI_COMMIT_REF:-}";
+          if [ -z "$_ref" ] && [ -n "${CI_COMMIT_PULL_REQUEST:-}" ]; then _ref="refs/pull/${CI_COMMIT_PULL_REQUEST}/merge"; fi;
+          case "$_ref" in
+            refs/pull/*/merge) git fetch --no-tags --depth=1 origin "$_ref"; git checkout --force FETCH_HEAD; echo "checked out $_ref at $(git rev-parse HEAD)" ;;
+            *) echo "pull_request event without merge ref: ${_ref:-empty}"; exit 1 ;;
+          esac;
+        fi'
+      - bash -lc 'set -euo pipefail; python3 -m venv .venv-uv; .venv-uv/bin/python -m pip install --disable-pip-version-check --no-input "uv==0.11.24"'
+      - bash -lc 'set -euo pipefail; .venv-uv/bin/uv venv .venv-viewer --python 3.12'
+      - bash -lc 'set -euo pipefail; .venv-uv/bin/uv pip install --python .venv-viewer pydantic pytest'
+      - bash -lc 'set -euo pipefail; export VIRTUAL_ENV="$PWD/.venv-viewer"; export PATH="$PWD/.venv-viewer/bin:$PATH"; python -m pytest viewer/tests -q -p no:xdist'
