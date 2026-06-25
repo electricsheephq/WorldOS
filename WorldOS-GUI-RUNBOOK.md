@@ -367,15 +367,20 @@ SSH key, or the VNC password in this tracked doc (same convention as the Support
    skill → "VM GATE SWEEP — exact procedure"). Drop `qa/vm/sweep_v2.sh` → `/root/worldos-qa/sweep_v2.sh` and
    run it; results roll up into the RRI exactly as the Support VM lane does. Private art is rsynced to
    `content/worlds/_private` (NOT top-level `_private`).
-2. **Unity 6 + Unity-MCP host** — Unity `6000.5.0f1` + the project at `/home/unity/worldos-unity`, run as the
-   **`unity` user** (NOT root — Electron/Hub refuses root). Renders on **GPU display `:0` with real GL** — launch
-   the Editor WITHOUT `-nographics` or captures come back blank. Bring up the Editor + MCP server with
-   `sudo -u unity /usr/local/bin/unity-mcp-up.sh`, then reach the MCP HTTP endpoint (8080) from the Mac over an
-   SSH tunnel and register it:
+2. **Unity 6 + Unity-MCP renderer (PROVEN end-to-end)** — Unity `6000.5.1f1` + the project at
+   `/home/unity/worldos-unity`, run as the **`unity` user** (NOT root — Electron/Hub refuses root). Renders on
+   **GPU display `:0` with real GL** (OpenGL 4.5) — launch the Editor WITHOUT `-nographics` or captures come back
+   blank. The standalone `mcp-for-unity --transport http` server OWNS **:8080** (run it from a clean cwd —
+   pydantic reads `./.env` and 500s if the cwd is unreadable); the editor's **MCP For Unity** panel
+   (Transport=HTTP Local → **Start Server**) bridges to it → "Session Active". Reach it from the Mac over an SSH
+   tunnel and register it:
    ```bash
    ssh -N -L 8080:127.0.0.1:8080 root@<gex44>   # host in gex44.env (8080 is localhost-only on the box)
    claude mcp add --transport http unity http://127.0.0.1:8080/mcp
    ```
+   43 tools (manage_camera / manage_scene / execute_code / …). **HIGH-QUALITY captures (agents MUST do this):**
+   `manage_camera action=screenshot screenshot_super_size=2` (→ 5120×2880; use 3–4 for the visual-critic) —
+   default super_size=1 reads soft. Frames land in `<proj>/Assets/Screenshots/`.
 
 **RRI rollup is unchanged** — this box supplies the **part-B** persona/behavior/score evidence; the **Mac still
 owns native Part-A** (the built `dist/WorldOS.app` handoff) at the **SAME SHA**, because Linux cannot build the
@@ -391,10 +396,17 @@ Support VM lane's RRI rollup rule above).
   auto-refresh → re-copy on the first 401** (the standing Keychain-copy method is in the `worldos-dev` notes).
 - **Personas stay sequential** — parallel runs trip the 4× quota 429.
 - **The GPU does NOT speed the sweep** — it is LLM-bound; the GPU is for the Unity / visual-critic lanes only.
-- **Unity 6 Personal is hardware-bound** → the one human-gated step: a **one-time interactive Hub login on the
-  box** via a tunneled VNC (`ssh -N -L 5900:127.0.0.1:5900 root@<gex44>` → VNC `localhost:5900`, sign in,
-  activate Personal, open the project once). After that the MCP render loop works headlessly. The VNC host +
-  password are in `gex44.env`.
+- **Unity setup is human-gated ONCE (via the Hub):** Personal license is hardware-bound (one-time Hub sign-in on
+  the box) AND the per-version **Software-Terms EULA must be accepted in the Hub** — a headless CLI editor launch
+  HANGS forever on the unaccepted EULA modal (`Selected window backend: (null)` is a RED HERRING, NOT a
+  window-backend bug). Once accepted for the version, launches proceed. Open the Hub via the remote desktop, add
+  the project from disk, open it, accept the terms.
+- **Human remote VIEW = NoMachine (port 4000), NOT macOS Screen Sharing / x11vnc:5900** — RFB over the WAN is
+  dog-slow (the box sits idle; it is the transport, not the box). `ssh -N -L 4000:127.0.0.1:4000 root@<gex44>` →
+  NoMachine client → `localhost:4000` (login `unity`). The agent drives Unity via the MCP (no display needed); the
+  desktop is only for occasional human inspection. VNC/NoMachine hosts + passwords are in `gex44.env`.
+- **Supabase source of truth for this host = `fleet_nodes` (`role = gpu_compute`)** — do NOT create/use a
+  `gpu_vms` inventory table. Internal GPU compute node, not a customer VM.
 
 ## Release (when RRI = 10/10 on a fresh .app build)
 Bump `.claude-plugin/plugin.json` → 1.0.4, tag `v1.0.4`, GitHub release + CHANGELOG. Then MAINTAIN:
