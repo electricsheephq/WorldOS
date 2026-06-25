@@ -256,7 +256,7 @@ Filler-first: ONE hero + ONE monster animating well before any roster.
 - Render pipeline: `/Volumes/LEXAR/WorldOS-Unity-spike/CLOSED-LOOP-PIPELINE.md` (the CL menu + Scenario step).
 - `qa/visual_pregate.py` (deterministic gates), `qa/visual_regression.py` (worse-vs-baseline),
   `qa/scores_db.py` (the ledger, now includes `visual` surface + `visual_*` columns).
-- `asset-gen` (the gen pipeline fix_actions drive), the archived Godot extension under
-  `extensions/renderers/godot/` when explicitly reopened,
+- `asset-gen` (the gen pipeline fix_actions drive), the archived Godot dev skill at
+  `extensions/renderers/godot/skills/godot-dev/SKILL.md` when explicitly reopened,
   `worldos-decide` (gate big calls at 95%), the engine story/mech QA loop in `worldos-dev` (the
   analogue this mirrors), Unity-pivot decision at `worldos-session-notes/2026-06-22-unity-pivot/`.

@@ -110,9 +110,9 @@ def _manifest(scope: str, anchor: dict, prompt: str, cell: int) -> dict:
         "source": "meshy-blender-render",
         "license": "proprietary-owner-generated (Meshy AI)",
         "attribution": (
-            "WorldOS final render — Meshy AI text-to-3d (prompt: \"%s\") baked to 8-facing "
+            f'WorldOS final render — Meshy AI text-to-3d (prompt: "{prompt}") baked to 8-facing '
             "dimetric-2to1 frames via extensions/renderers/godot/tools/bake_sprites.py (Blender headless), packed "
-            "by extensions/renderers/godot/tools/pack_sheet.py." % prompt
+            "by extensions/renderers/godot/tools/pack_sheet.py."
         ),
     }
 

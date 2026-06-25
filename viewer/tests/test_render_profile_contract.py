@@ -91,7 +91,15 @@ def test_full_jsonschema_validation_when_available():
 
 # --- GT2 Godot reference/extension renderer block (#1051/#1165) -----------------------------
 _GODOT_EXAMPLE = _REPO / "docs" / "roadmap" / "contracts" / "examples" / "render-profile.godot.reference.json"
+_GODOT_BUNDLED_FIXTURE = _REPO / "extensions" / "renderers" / "godot" / "fixtures" / "render-profile.json"
 _FACING_KEYS = {"facing", "direction", "orientation", "heading"}
+
+
+def test_godot_reference_fixture_matches_bundled_runtime_copy():
+    bundled = _load(_GODOT_BUNDLED_FIXTURE)
+    bundled_payload = {k: v for k, v in bundled.items() if k != "_comment"}
+    assert set(bundled) - set(_load(_GODOT_EXAMPLE)) <= {"_comment"}
+    assert bundled_payload == _load(_GODOT_EXAMPLE)
 
 
 def test_schema_exposes_optional_godot_renderer_block():

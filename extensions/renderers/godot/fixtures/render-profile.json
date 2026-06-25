@@ -1,5 +1,6 @@
 {
   "_comment": "Bundled render-profile fixture for the GT2 Godot renderer (#1053). A verbatim copy of docs/roadmap/contracts/examples/render-profile.godot.reference.json so the renderer has a real core + `renderer_profiles.godot` block to consume standalone (backdrop scope `scene-lower-city`, zones, zone_anchors, projection). The `engine_location_id` (`loc-lower-city`) and its zones MATCH extensions/renderers/godot/fixtures/atlas-surface.json's `current_location`, so the data lines up out of the box. RenderProfile.gd is fully defaultable: a profile-less run still renders.",
+  "$schema": "../../../docs/roadmap/contracts/render-profile.schema.json",
   "schema_version": 1,
   "game_id": "bg-absolute-remnants-gt2-godot",
   "title": "Baldur's Gate — Absolute Remnants (GT2 Godot painterly-isometric)",

@@ -40,14 +40,23 @@
       "actor_sheets": {
         "char-aubree": {
           "sheet_scope_key": "sprite-fighter-iso8",
+          "kind": "character",
+          "projection": "dimetric-2to1",
           "facings": 8,
           "facing_order": ["S", "SE", "E", "NE", "N", "NW", "W", "SW"],
-          "frames_per_facing": 8,
-          "cols": 8,
+          "frames_per_facing": 24,
+          "cols": 24,
           "rows": 8,
           "cell_w": 128,
           "cell_h": 128,
-          "anchor": [64, 116]
+          "fps": 10,
+          "anchor": [64, 109],
+          "animations": {
+            "idle": { "start": 0, "count": 4, "loop": true },
+            "walk": { "start": 4, "count": 8, "loop": true },
+            "attack": { "start": 12, "count": 6, "loop": false },
+            "cast": { "start": 18, "count": 6, "loop": false }
+          }
         }
       }
     }

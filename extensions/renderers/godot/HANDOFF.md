@@ -248,13 +248,14 @@ API key from its dashboard → store in `~/.worldos/{meshy,tripo3d,scenario,pixe
 `scenario.secret`), `chmod 600` → verify with `python3 extensions/renderers/godot/tools/<svc>_gen.py --test-key`. Env
 fallback `WORLDOS_*_API_KEY` (CI). Invoke the **`asset-gen` skill** for the full routing / job matrix.
 
-```
+```shell
 python3 extensions/renderers/godot/tools/meshy_gen.py --prompt "..." --out <dir>            # Meshy text-to-3D (preview->refine PBR) -> model.glb
 blender --background --python extensions/renderers/godot/tools/bake_sprites.py -- \
     --model <dir>/model.glb --out <dir>/frames                          # 8 facings x idle/walk/attack/cast at dimetric 2:1
 python3 extensions/renderers/godot/tools/pack_sheet.py --frames <dir>/frames \
     --scope sprite-aubree-iso8 --out <dir>                              # tile -> 3072x1024 sheet.png + sheet.json (manifest v1)
 ```
+
 - **Meshy API:** base `https://api.meshy.ai`, `POST /openapi/v2/text-to-3d` (`mode: preview` then `refine`,
   `pose_mode: t-pose`, `target_formats: ["glb"]`), Bearer auth, poll `GET .../:id` for `model_urls.glb`.
   ~10–20 credits/character. **Key:** `~/.worldos/meshy.key` (mode 600, OUTSIDE the repo) or `$MESHY_API_KEY`.
