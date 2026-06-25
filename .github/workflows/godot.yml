@@ -1,6 +1,8 @@
 name: Godot GT2
 
-# Deterministic, model-key-free CI lane for the GT2 Godot renderer (#1056). Proves the project
+# Reference/extension CI lane for the quarantined GT2 Godot prototype (#1056, #1165).
+# This workflow is intentionally not branch-protection-required and is not ported to
+# Woodpecker in the emergency CI recovery. Proves the project
 # parses/compiles, renders the slice from the bundled fixtures (core + the godot render-profile
 # block), only emits the FROZEN /move vocabulary, and exports cleanly to Web (single-threaded)
 # + Linux. Best-effort screenshot artifact via xvfb. NEVER touches a live engine/provider —

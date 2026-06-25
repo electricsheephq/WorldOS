@@ -1,0 +1,11 @@
+when:
+  - event: [push, pull_request, manual]
+
+steps:
+  - name: license-check
+    image: python:3.12-slim
+    commands:
+      - apt-get update
+      - apt-get install -y --no-install-recommends git
+      - rm -rf /var/lib/apt/lists/*
+      - python3 scripts/license_check.py

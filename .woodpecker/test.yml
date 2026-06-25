@@ -1,0 +1,20 @@
+when:
+  - event: [push, pull_request, manual]
+
+steps:
+  - name: test
+    image: ghcr.io/astral-sh/uv:python3.12-bookworm
+    commands:
+      - bash -lc 'set -euo pipefail; uv run --directory servers/engine --group dev pytest -q --cov=. --cov-report=term-missing'
+      - bash -lc 'set -euo pipefail; WORLDOS_RULES_OFFLINE=1 uv run --directory servers/rules --group dev pytest -q --cov=. --cov-report=term-missing'
+      - bash -lc 'set -euo pipefail; uv run --directory servers/voice --group dev pytest -q --cov=. --cov-report=term-missing'
+      - bash -lc 'set -euo pipefail; bash qa/test_play_party_single_flight.sh'
+      - bash -lc 'set -euo pipefail; bash qa/test_velocity_gates.sh'
+      - bash -lc 'set -euo pipefail; bash qa/test_dry_run_gate_fix.sh'
+      - bash -lc 'set -euo pipefail; bash qa/test_run_duo_retry_robustness.sh'
+      - bash -lc 'set -euo pipefail; bash qa/test_play_party_actor_timeout.sh'
+      - bash -lc 'set -euo pipefail; bash qa/test_provider_status_claude_lanes.sh'
+      - bash -lc 'set -euo pipefail; bash qa/test_run_duo_dm_timeout.sh'
+      - bash -lc 'set -euo pipefail; bash qa/test_stream_tailer_lifecycle.sh'
+      - bash -lc 'set -euo pipefail; bash qa/test_ui_playtest_heartbeat.sh'
+      - bash -lc 'set -euo pipefail; uv run --directory servers/engine --group dev python ../../qa/smoke_pre_seed_combat.py'

@@ -120,8 +120,10 @@ every NPC; a voiced AI companion adventures alongside you with its own sheet and
 The viewer has multiple render paths:
 
 - **GT0 — OpenWorlds React** (default; ships today): the `viewer/openworlds/` app above.
-- **GT2 — Godot 4 painterly-isometric** (in-progress; the new GT2 renderer): a stateless thin
-  client over the engine read-models. **See `godot/HANDOFF.md` + invoke the `godot-dev` skill.**
+- **GT2 — Unity 6 / Unity-MCP visual renderer** (current direction): a stateless thin
+  client over the engine read-models. The GPU-VM lane in `WorldOS-GUI-RUNBOOK.md` owns
+  current visual renderer proof. `godot/` remains reference/extension material only; see
+  #1165 before moving or deleting it.
 - **GT1 — pixel** (future).
 
 For **AI art generation** (3D characters, rigging, painterly backdrops, sprites/tilesets):

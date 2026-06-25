@@ -1,0 +1,11 @@
+when:
+  - event: [push, pull_request, manual]
+
+steps:
+  - name: server-contracts
+    image: ghcr.io/astral-sh/uv:python3.12-bookworm
+    environment:
+      WORLDOS_RULES_OFFLINE: "1"
+    commands:
+      - bash -lc 'set -euo pipefail; uv sync --directory servers/rules'
+      - bash -lc 'set -euo pipefail; uv run --directory servers/engine --group dev python -m pytest -q -p no:xdist ../../servers/integration_tests'
