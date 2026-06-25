@@ -93,6 +93,7 @@ def test_full_jsonschema_validation_when_available():
 _GODOT_EXAMPLE = _REPO / "docs" / "roadmap" / "contracts" / "examples" / "render-profile.godot.reference.json"
 _GODOT_BUNDLED_FIXTURE = _REPO / "extensions" / "renderers" / "godot" / "fixtures" / "render-profile.json"
 _FACING_KEYS = {"facing", "direction", "orientation", "heading"}
+_LOCKED_DIMETRIC_FACING_ORDER = ["S", "SE", "E", "NE", "N", "NW", "W", "SW"]
 
 
 def test_godot_reference_fixture_matches_bundled_runtime_copy():
@@ -152,6 +153,7 @@ def test_godot_reference_example_is_strict_and_valid():
     for actor_id, sheet in (godot.get("actor_sheets") or {}).items():
         assert actor_id in known_ids, f"actor_sheets key {actor_id} is not a core engine_actor_id"
         assert sheet["facings"] == len(sheet["facing_order"]), "facings count must match facing_order length"
+        assert sheet["facing_order"] == _LOCKED_DIMETRIC_FACING_ORDER
 
 
 def test_godot_reference_example_full_jsonschema_validation_when_available():
