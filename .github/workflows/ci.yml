@@ -8,7 +8,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install uv
         uses: astral-sh/setup-uv@v5
       - name: Engine tests
@@ -58,7 +58,7 @@ jobs:
     # are caught in CI like the engine/rules/voice suites.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install uv
         uses: astral-sh/setup-uv@v5
       - name: Install Node (for the JSX behaviour harness)
@@ -95,7 +95,7 @@ jobs:
     # a regression there can no longer merge green.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install uv
         uses: astral-sh/setup-uv@v5
       - name: QA release-gate + scoring + wrapper-contract tests
@@ -153,7 +153,7 @@ jobs:
     # boundary runs through the rules venv (rapidfuzz), so sync BOTH servers before running.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install uv
         uses: astral-sh/setup-uv@v5
       - name: Sync rules venv (rapidfuzz/httpx for the offline rules worker)
@@ -168,6 +168,6 @@ jobs:
   license-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: License / content gate
         run: python3 scripts/license_check.py
