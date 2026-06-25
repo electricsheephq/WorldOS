@@ -33,7 +33,7 @@
 
 - Internal GPU compute host `evaos-gpu-gex44-1` (Hetzner GEX44, RTX 4000 SFF Ada / 64 GB / Ubuntu 24.04) — NOT a customer VM. Supabase source of truth is `fleet_nodes` with `role = gpu_compute`; do not create or use a `gpu_vms` inventory table for this host.
 - Operator access is operator-only (outside tracked docs): key `~/.openclaw/secrets/evaos-gpu-gex44-1-key`, connection refs in `~/.openclaw/secrets/gex44.env`.
-- **Provisioning is COMPLETE (2026-06-26):** the heavy part-B sweep lane, CUDA/local-AI, and the Unity 6000.5.1f1 + Unity-MCP render loop are all proven on the box. GEX44 is now the **preferred** heavy-sweep + Unity/visual-renderer host (the 32 GB support VM is the fallback). Operational details + the connect/capture recipes live in `WorldOS-GUI-RUNBOOK.md` → "GPU-VM lane".
+- **Provisioning is COMPLETE** (verified on-box: the heavy part-B sweep lane, CUDA/local-AI, and the Unity 6000.5.1f1 + Unity-MCP render loop are all proven). GEX44 is now the **preferred** heavy-sweep + Unity/visual-renderer host (the 32 GB support VM is the fallback). Operational details + the connect/capture recipes live in `WorldOS-GUI-RUNBOOK.md` → "GPU-VM lane".
 - No customer data, no customer-VM bootstrap, no live Eva/customer runtime use on this host.
 
 ## GitHub And Reviews

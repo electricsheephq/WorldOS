@@ -376,7 +376,7 @@ SSH key, or the VNC password in this tracked doc (same convention as the Support
    tunnel and register it:
    ```bash
    ssh -N -L 8080:127.0.0.1:8080 root@<gex44>   # host in gex44.env (8080 is localhost-only on the box)
-   claude mcp add --transport http unity http://127.0.0.1:8080/mcp
+   claude mcp add --scope user --transport http unity http://127.0.0.1:8080/mcp
    ```
    43 tools (manage_camera / manage_scene / execute_code / …). **HIGH-QUALITY captures (agents MUST do this):**
    `manage_camera action=screenshot screenshot_super_size=2` (→ 5120×2880; use 3–4 for the visual-critic) —
