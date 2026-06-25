@@ -122,8 +122,8 @@ The viewer has multiple render paths:
 - **GT0 — OpenWorlds React** (default; ships today): the `viewer/openworlds/` app above.
 - **GT2 — Unity 6 / Unity-MCP visual renderer** (current direction): a stateless thin
   client over the engine read-models. The GPU-VM lane in `WorldOS-GUI-RUNBOOK.md` owns
-  current visual renderer proof. `godot/` remains reference/extension material only; see
-  #1165 before moving or deleting it.
+  proof for the active visual renderer. The Godot archive remains reference/extension
+  material only under `extensions/renderers/godot/`.
 - **GT1 — pixel** (future).
 
 For **AI art generation** (3D characters, rigging, painterly backdrops, sprites/tilesets):

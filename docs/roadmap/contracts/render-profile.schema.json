@@ -158,7 +158,7 @@
           "properties": {
             "projection": {
               "type": "object",
-              "description": "LOCKED isometric projection — advisory presentation metadata the renderer asserts its camera matches and every sprite manifest is baked to. Irreversible once finals bake. Owner lock 2026-06-21: dimetric 2:1 (~26.57deg). See godot/ISO-PROJECTION.md (single source of truth).",
+              "description": "LOCKED isometric projection — advisory presentation metadata the renderer asserts its camera matches and every sprite manifest is baked to. Irreversible once finals bake. Owner lock 2026-06-21: dimetric 2:1 (~26.57deg). See extensions/renderers/godot/ISO-PROJECTION.md (archived reference source of truth).",
               "additionalProperties": false,
               "properties": {
                 "kind": { "type": "string", "enum": ["dimetric", "isometric"], "description": "dimetric = 2:1 (~26.57deg, Diablo II / Infinity-Engine lineage); isometric = true 30deg." },

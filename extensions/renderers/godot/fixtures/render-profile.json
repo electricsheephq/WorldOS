@@ -1,0 +1,64 @@
+{
+  "_comment": "Bundled render-profile fixture for the GT2 Godot renderer (#1053). A verbatim copy of docs/roadmap/contracts/examples/render-profile.godot.reference.json so the renderer has a real core + `renderer_profiles.godot` block to consume standalone (backdrop scope `scene-lower-city`, zones, zone_anchors, projection). The `engine_location_id` (`loc-lower-city`) and its zones MATCH extensions/renderers/godot/fixtures/atlas-surface.json's `current_location`, so the data lines up out of the box. RenderProfile.gd is fully defaultable: a profile-less run still renders.",
+  "schema_version": 1,
+  "game_id": "bg-absolute-remnants-gt2-godot",
+  "title": "Baldur's Gate — Absolute Remnants (GT2 Godot painterly-isometric)",
+  "core": {
+    "scene_kind": "backdrop",
+    "positioning": "zone",
+    "locations": [
+      {
+        "engine_location_id": "loc-lower-city",
+        "art": { "scope_key": "scene-lower-city" },
+        "zones": ["the gate approach", "the market row", "the alley mouth"]
+      }
+    ],
+    "actors": [
+      { "engine_actor_id": "char-aubree", "art": { "scope_key": "portrait-aubree" } }
+    ],
+    "ai_disclosure": {
+      "generated_by": "worldos-ai-build-loop",
+      "model": "example",
+      "date": "2026-06-21"
+    }
+  },
+  "renderer_profiles": {
+    "godot": {
+      "projection": { "kind": "dimetric", "tile_ratio": "2:1", "angle_deg": 26.57 },
+      "default_facing": "S",
+      "backdrop_layout": {
+        "scene-lower-city": {
+          "walk_polygon_ref": "procedural",
+          "depth_baseline_y": 0.62,
+          "zone_anchors": {
+            "the gate approach": [0.5, 0.58],
+            "the market row": [0.34, 0.72],
+            "the alley mouth": [0.7, 0.8]
+          }
+        }
+      },
+      "actor_sheets": {
+        "char-aubree": {
+          "sheet_scope_key": "sprite-fighter-iso8",
+          "kind": "character",
+          "projection": "dimetric-2to1",
+          "facings": 8,
+          "facing_order": ["S", "SE", "E", "NE", "N", "NW", "W", "SW"],
+          "frames_per_facing": 24,
+          "cols": 24,
+          "rows": 8,
+          "cell_w": 128,
+          "cell_h": 128,
+          "fps": 10,
+          "anchor": [64, 109],
+          "animations": {
+            "idle": { "start": 0, "count": 4, "loop": true },
+            "walk": { "start": 4, "count": 8, "loop": true },
+            "attack": { "start": 12, "count": 6, "loop": false },
+            "cast": { "start": 18, "count": 6, "loop": false }
+          }
+        }
+      }
+    }
+  }
+}

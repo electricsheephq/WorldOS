@@ -36,7 +36,7 @@ _SPEC.loader.exec_module(server)
 # The GT2 sprite packer — imported for its descriptor/guard helpers (PIL-free at module level).
 # This pins the #1063 serve contract: the wiki_ingest.json pack_sheet emits for a baked atlas is
 # actually servable by THIS server's /image bridge (so a real Meshy/Blender atlas renders).
-_PACK_PATH = Path(__file__).resolve().parents[2] / "godot" / "tools" / "pack_sheet.py"
+_PACK_PATH = Path(__file__).resolve().parents[2] / "extensions" / "renderers" / "godot" / "tools" / "pack_sheet.py"
 _PACK_SPEC = importlib.util.spec_from_file_location("pack_sheet", _PACK_PATH)
 assert _PACK_SPEC is not None and _PACK_SPEC.loader is not None
 pack_sheet = importlib.util.module_from_spec(_PACK_SPEC)
@@ -345,7 +345,7 @@ class SpriteAtlasServeTests(unittest.TestCase):
         # path that is wrong on every other machine + would be committed).
         self.assertTrue(pack_sheet._is_private_finals_dir(
             "/x/content/worlds/_private/baldurs-gate/images/sprite-aubree-iso8"))
-        self.assertFalse(pack_sheet._is_private_finals_dir("godot/assets/characters/aubree"))
+        self.assertFalse(pack_sheet._is_private_finals_dir("extensions/renderers/godot/assets/characters/aubree"))
 
     def test_write_outputs_emits_descriptor_for_private_skips_committed(self):
         # _write_outputs glue (PIL-free via a fake sheet): the descriptor lands ONLY in the _private
@@ -356,7 +356,7 @@ class SpriteAtlasServeTests(unittest.TestCase):
 
         manifest = {"scope_key": "sprite-x", "license": "L", "attribution": "A"}
         priv = self._art_root / "content" / "worlds" / "_private" / "w" / "images" / "sprite-x"
-        committed = self._tmp / "godot" / "assets" / "characters" / "x"
+        committed = self._tmp / "extensions" / "renderers" / "godot" / "assets" / "characters" / "x"
         pack_sheet._write_outputs(_FakeSheet(), manifest, [str(priv), str(committed)])
         self.assertTrue((priv / pack_sheet.DESCRIPTOR_FILENAME).exists())
         self.assertTrue((priv / "sheet.png").exists() and (priv / "sheet.json").exists())

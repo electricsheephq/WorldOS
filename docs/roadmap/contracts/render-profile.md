@@ -53,9 +53,9 @@ The `godot` block (added 2026-06-21; sibling of `phaser`/`rpgmaker`) is retained
 checked-in reference/extension contract. It is **not** the current required renderer lane.
 It carries the GT2 Godot client's presentation — and **only** presentation:
 
-- `projection` — the LOCKED dimetric 2:1 (~26.57°) isometric (see `godot/ISO-PROJECTION.md`,
-  the single source of truth both the renderer and the Blender bake cite). Irreversible once
-  finals bake.
+- `projection` — the LOCKED dimetric 2:1 (~26.57°) isometric (see
+  `extensions/renderers/godot/ISO-PROJECTION.md`, the archived reference source of truth both
+  the renderer and the Blender bake cite). Irreversible once finals bake.
 - `backdrop_layout[scope]` — renderer-owned `walk_polygon_ref` + `depth_baseline_y` +
   `zone_anchors{<zone>:[x,y]}` (data-driven zone→screen placement + the Y-sort baseline) +
   optional `normal_map_ref` (Branch B). Absent ⇒ procedural trapezoid fallback.
@@ -70,8 +70,8 @@ added** — the engine is the sole writer of game *state*; facing is pure presen
 `positionAuthority:'derived'` rule below and the v1 `grid` exclusion). Out of combat the
 renderer snaps facing from the zone→zone screen-vector on a `move_to_zone` (reset to
 `default_facing` on a `travel`); in combat from actor-zone→target-zone (the Action-Replay
-envelope `target_fk`). Example instance:
-`viewer/openworlds/render/render-profile.godot.example.json`.
+envelope `target_fk`). Reference instance:
+`docs/roadmap/contracts/examples/render-profile.godot.reference.json`.
 
 ## Zones, not x,y (#427)
 

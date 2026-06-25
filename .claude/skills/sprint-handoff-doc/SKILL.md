@@ -27,7 +27,7 @@ A handoff doc that isn't reachable from the main entry points **doesn't count**.
 ```
 grep -ciE '<subsystem>|HANDOFF' WorldOS-RUNBOOK.md README.md docs/GETTING_STARTED.md .claude/skills/worldos-dev/SKILL.md
 ```
-If any count is **0**, add a one-line pointer there. Also create or point a dev skill (`godot-dev`-style)
+If any count is **0**, add a one-line pointer there. Also create or point a focused dev skill
 so the skill matcher auto-surfaces the subsystem for a fresh agent.
 
 > Validated 2026-06-21: this structure took fresh-agent onboarding to ~95% — a lean status-only first

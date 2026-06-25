@@ -37,7 +37,7 @@ largely gone — GLM is a fine DM for nearly all QA.
 | **scoring / rubrics / gates** | `fast_gate` + `qa/test_lens_variance.py` + `test_score_determinism` → **re-version the ruler** (`scoring_config_version.py --label/--lens`, stamp `sc_`/`lc_` + CHANGELOG) |
 | **viewer / OpenWorlds UI** | `qa/ui_playtest.sh` (blind persona) + the viewer tests; for combat UI, `qa/preview_combat.sh` + watch `#battle` |
 | **Unity/current visual renderer** | GPU-VM Unity/visual-critic proof for renderer work; keep Linux CI to deterministic SceneGrid/render-contract tests unless a PR intentionally changes renderer-host code. |
-| **Godot reference/extension material** | Optional/manual only: `godot --headless --path godot --import` + the conformance/screenshot lane when touching `godot/`. Do not make it a required merge gate; see #1165. |
+| **Godot reference/extension material** | Optional/manual only: `godot --headless --path extensions/renderers/godot --import` + the archived conformance/screenshot lane when explicitly touching `extensions/renderers/godot/`. Do not make it a required merge gate. |
 | **a RELEASE** (not just a tag) | the FULL round: `combat_smoke` + beat smoke + a 3-act run + **5-persona VM sweep + RRI** + the Mac native part-A |
 
 ## Tags vs releases

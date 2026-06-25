@@ -1,14 +1,15 @@
 ---
 name: asset-gen
-description: Generate game art for WorldOS via Meshy / Tripo3D / Scenario / PixelLab — 3D characters, auto-rigging, animation, painterly backgrounds, sprites, tilesets. Use when creating or regenerating ANY visual asset for the Godot GT2 renderer (character sheets, NPC/companion models, backdrops, props) or the future GT1 tile engine, or when wiring a non-Eva image-gen provider. Routes the right service to each job and gives the keys, the CLI wrappers, the MCPs, and the sprite-sheet bake contract.
+description: Generate game art for WorldOS via Meshy / Tripo3D / Scenario / PixelLab — 3D characters, auto-rigging, animation, painterly backgrounds, sprites, tilesets. Use when creating or regenerating visual assets for the active Unity renderer lane, the archived Godot GT2 reference extension, the future GT1 tile engine, or when wiring a non-Eva image-gen provider. Routes the right service to each job and gives the keys, the CLI wrappers, the MCPs, and the sprite-sheet bake contract.
 ---
 
 # WorldOS AI asset-generation toolkit
 
 Four services cover every visual asset need. Keys are stored OUTSIDE the repo; two services
-are wired as MCPs; all four have CLI wrappers (or a stub). The renderer reads only the
-**sprite-sheet manifest** (see `godot/HANDOFF.md` §4.6), so any source drops in at the same
-`scope_key` with zero renderer change.
+are wired as MCPs; all four have CLI wrappers (or a stub). Renderer lanes read only the
+**sprite-sheet manifest**; the archived Godot reference notes live at
+`extensions/renderers/godot/HANDOFF.md` §4.6, so any source drops in at the same `scope_key`
+with zero renderer change.
 
 ## Which tool for which job
 
@@ -21,8 +22,10 @@ are wired as MCPs; all four have CLI wrappers (or a stub). The renderer reads on
 | **Engine 2D image-gen, non-Eva** | **Scenario provider** | `WORLDOS_IMAGE_PROVIDER=scenario` (see below) |
 | **Pixel sprites / tilesets** | **PixelLab** | **GT1 FUTURE only** — MCP `pixellab`; `pixellab_gen.py` is a stub |
 
-The 3D path always ends at the bake: **`tripo_gen.py`/`meshy_gen.py` → `godot/tools/bake_sprites.py`
-(8 facings @ dimetric 2:1, see `godot/ISO-PROJECTION.md`) → `godot/tools/pack_sheet.py`** (manifest v1:
+The 3D path always ends at the bake: **`tripo_gen.py`/`meshy_gen.py` →
+`extensions/renderers/godot/tools/bake_sprites.py` (8 facings @ dimetric 2:1, see
+`extensions/renderers/godot/ISO-PROJECTION.md`) →
+`extensions/renderers/godot/tools/pack_sheet.py`** (manifest v1:
 rows=8 facings, cols=24 idle4/walk8/attack6/cast6, 128px, foot-anchor).
 
 ## Keys (NEVER commit; NEVER print)
@@ -36,9 +39,9 @@ in each service dashboard when convenient, then update the `~/.worldos/*.key` fi
 1. Create an account at **meshy.ai** / **tripo3d.ai** / **scenario.com** / **pixellab.ai** (whichever you need).
 2. Copy the **API key** from that service's dashboard (Scenario also gives a **secret**).
 3. Store it OUTSIDE the repo: `~/.worldos/{meshy,tripo3d,scenario,pixellab}.key` (+ `scenario.secret`), then `chmod 600 ~/.worldos/*.key ~/.worldos/*.secret`.
-4. Verify auth: `python3 godot/tools/<svc>_gen.py --test-key` (e.g. `meshy_gen.py --test-key`).
+4. Verify auth: `python3 extensions/renderers/godot/tools/<svc>_gen.py --test-key` (e.g. `meshy_gen.py --test-key`).
 
-## CLI wrappers (`godot/tools/`, urllib-only, mirror `meshy_gen.py`)
+## CLI wrappers (`extensions/renderers/godot/tools/`, urllib-only, mirror `meshy_gen.py`)
 - **`tripo_gen.py`** — `text|image|rig` subcommands; `--lowpoly` (P1); `--test-key`; `--dry-run` (credit est). Polls `GET /v3/task/{id}` ≥2s; **downloads GLB immediately (URLs expire ~5 min)**. Output → gitignored `content/worlds/_private/<world>/images/<scope>/`.
 - **`scenario_gen.py`** — `generate|list-models|upscale`; `--model-id`; `--test-key`; `--dry-run`. HTTP Basic; async job → asset download. Scenario has TWO interfaces — REST `https://api.cloud.scenario.com/v1` (Basic, used by `scenario_gen.py`) AND MCP `https://mcp.scenario.com/mcp` (for direct agent tool calls). Both work.
 - **`meshy_gen.py`** — text→3D, `--prompt --out`; `--test-key`; `--dry-run`. The wrapper uses `POST /openapi/v2/text-to-3d` (preview→refine PBR) at `https://api.meshy.ai`. (Meshy's API also exposes `/v1/rigging` + `/v1/animations`, but `meshy_gen.py` does **text-to-3d only** — use **Tripo** for rig→animate.)

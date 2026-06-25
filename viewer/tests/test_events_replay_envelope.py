@@ -43,7 +43,7 @@ server = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(server)
 
 
-# The Godot dispatcher (godot/scenes/WorldView.gd `_play_beat`) animates exactly these
+# The archived Godot dispatcher (extensions/renderers/godot/scenes/WorldView.gd `_play_beat`) animates exactly these
 # verbs; every other verb is accept-and-ignored (a non-animated beat). The envelope's
 # projected verbs must stay inside this closed set so a live beat is never undefined.
 _GODOT_KNOWN_VERBS = {

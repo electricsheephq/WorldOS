@@ -3,7 +3,7 @@ name: visual-critic
 description: >-
   The "Angry-DM for graphics" — WorldOS's recursive self-improving VISUAL feedback loop.
   Use to SCORE/critique any WorldOS render (a frame from the Unity closed-loop pipeline, the
-  Godot prototype, or a still) against the BG1/2 + Pillars of Eternity + Disco Elysium painterly
+  archived Godot extension, or a still) against the BG1/2 + Pillars of Eternity + Disco Elysium painterly
   bar, and to drive the render→pre-gate→panel→fix→re-render loop until a scene CONVERGES to that
   bar instead of plateauing. v2: REFERENCE-ANCHORED (the critic scores the GAP to specific named
   reference frames), a DIVERSE 5-6 lens PANEL (parallel subagents), DETERMINISTIC pre-gates
@@ -54,7 +54,7 @@ same ledger as story/mech.
 
 ```plaintext
 RENDER  (Unity CL pipeline: Tools/WorldOS/CL/0 → step-4 Scenario → step-5 assemble → screenshot;
-         or Godot --demo; or a still)  →  /tmp/<scene>-r<N>.png  (+ measured actor boxes from the
+         or an explicit archived-Godot extension proof; or a still)  →  /tmp/<scene>-r<N>.png  (+ measured actor boxes from the
          render side, + the scenegrid fixture)
   │
   ├─① PRE-GATES  qa/visual_pregate.py  (deterministic, <1s, no LLM)
@@ -256,6 +256,7 @@ Filler-first: ONE hero + ONE monster animating well before any roster.
 - Render pipeline: `/Volumes/LEXAR/WorldOS-Unity-spike/CLOSED-LOOP-PIPELINE.md` (the CL menu + Scenario step).
 - `qa/visual_pregate.py` (deterministic gates), `qa/visual_regression.py` (worse-vs-baseline),
   `qa/scores_db.py` (the ledger, now includes `visual` surface + `visual_*` columns).
-- `asset-gen` (the gen pipeline fix_actions drive), `godot-dev` (the Godot render path),
+- `asset-gen` (the gen pipeline fix_actions drive), the archived Godot extension under
+  `extensions/renderers/godot/` when explicitly reopened,
   `worldos-decide` (gate big calls at 95%), the engine story/mech QA loop in `worldos-dev` (the
   analogue this mirrors), Unity-pivot decision at `worldos-session-notes/2026-06-22-unity-pivot/`.

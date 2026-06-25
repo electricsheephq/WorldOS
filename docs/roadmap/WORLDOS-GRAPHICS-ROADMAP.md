@@ -46,7 +46,7 @@ lane. No renderer, no AI loop, no UGC tool ever becomes a second source of truth
 |----|-----------|--------|---------------|-------|
 | **GT0** | **Narrative dashboard** (the current OpenWorlds web UI) | **SHIPS TODAY** | React/JSX in WKWebView | The living-world DM + companion RPG; text/portrait-first. The proof that engine-as-authority + thin-client works. |
 | **GT1** | **SNES-style pixel turn-based** (JRPG / RPG-Maker-like feel) | Planned (MVP tier 1) | Phaser 3 (MIT), in the existing shell | Tilemap + sprite actors + 16-bit UI; zone-mode turn combat. |
-| **GT2** | **Pillars / BG1-2 isometric party cRPG** | In progress (Unity pivot; Godot quarantined 2026-06-25) | **Unity 6 / Unity-MCP** on the GPU-VM lane | Painted backdrop + token actors. **Owner direction 2026-06-25:** Unity is now the current renderer direction; `godot/` stays as reference/extension material until #1165 decides its archive/extension shape. **Branch A = the LOOK; Branch B = measured tactics (evidence-gated).** |
+| **GT2** | **Pillars / BG1-2 isometric party cRPG** | In progress (Unity pivot; Godot archived 2026-06-25) | **Unity 6 / Unity-MCP** on the GPU-VM lane | Painted backdrop + token actors. **Owner direction 2026-06-25:** Unity is now the active renderer direction. Godot is archived as reference/extension material under `extensions/renderers/godot/`. **Branch A = the LOOK; Branch B = measured tactics (evidence-gated).** |
 | GT3+ | (future families — e.g. tactical-grid SRPG, top-down action) | Not scoped | TBD | Added only when a capability set + audience justify it. |
 
 **Rejected engines (recorded so they're not re-litigated):**
@@ -151,13 +151,13 @@ autonomy, ship/sell UGC)* layered on as the long-term plan proves out.
 
 ### M2 — GT2: Pillars/BG1-2 backdrop-isometric MVP (Branch A = the LOOK)  *(C2=backdrop, C3=zone-band, C4=walkmask, C7=flat)*
 - **R2.1 Backdrop render profile + occlusion** (walkmask renderer-owned; destinations resolve to engine zones/locations) · **R2.2 T2 combat + polish** (pure replay; normal-map lighting deferred) · **R2.3 T2 QA gates**
-- **⚠ RETIRED 2026-06-21 (the Phaser implementation):** the GT2 *renderer* moved out of Phaser (M5, pulled forward — epic #1050); the Phaser backdrop renderer (`viewer/openworlds/render/backdrop.html`) is reference-only. **2026-06-25 owner update:** Unity is the current renderer direction; Godot is quarantined as reference/extension material until #1165 resolves. The render-profile contract work (R2.1) stays valid — renderers consume the same `core` plus renderer-specific optional blocks.
+- **⚠ RETIRED 2026-06-21 (the Phaser implementation):** the GT2 *renderer* moved out of Phaser (M5, pulled forward — epic #1050); the Phaser backdrop renderer (`viewer/openworlds/render/backdrop.html`) is reference-only. **2026-06-25 owner update:** Unity is the active renderer direction. Godot is archived as reference/extension material under `extensions/renderers/godot/`. The render-profile contract work (R2.1) stays valid — renderers consume the same `core` plus renderer-specific optional blocks.
 
 ### M3 — Gated AI build-loop + UGC  *(C9=gated autonomy, C10=author→ship, C5 disclosure)*
 - **R3.1 Gated AI build-loop** (generate render-profile core from lore; resolve art; emit Phaser glue; gate each iter; human-gate queue for taste/story/contract) · **R3.2 UGC platform + licensing/compliance** (per-user ownership; AI-disclosure end-to-end [EU 2026-08-02, Steam survey]; MIT redistribution story) · **R3.3 Transport upgrade** (C8: websocket/SSE; swap behind SurfaceClient interface)
 
 ### M5 — GT2 Unity painterly-isometric renderer (web + native) — **PULLED FORWARD, IN PROGRESS** (epic #1050)
-- The GT2 renderer (Branch A = the LOOK now; Branch B = C7 normal-map lighting later). Unity is the current thin-client direction over the surfaces; it consumes the `core`/SceneGrid contract today. **2026-06-25 owner update:** Godot is quarantined as reference/extension material, not the current required renderer or emergency CI path; preserve the useful projection/contract notes until #1165 decides archive vs extension placement. A formal Unity renderer-profile block remains a future contract change, not part of this emergency CI recovery.
+- The GT2 renderer (Branch A = the LOOK now; Branch B = C7 normal-map lighting later). Unity is the active thin-client direction over the surfaces; it consumes the `core`/SceneGrid contract today. **2026-06-25 owner update:** Godot is archived as reference/extension material, not a required renderer or emergency CI path; preserve the useful projection/contract notes under `extensions/renderers/godot/`. A formal Unity renderer-profile block remains a future contract change, not part of this emergency CI recovery.
 
 ### M6 — *(optional, post-M1)* GT1 BYOL RPG Maker exploration export
 - Asset-clean (no RTP), exploration/dialogue only (battle-system mismatch is fatal), contract-taker; RTP legal guardrails + counsel review.

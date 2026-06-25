@@ -89,8 +89,8 @@ def test_full_jsonschema_validation_when_available():
     jsonschema.validate(ex, schema)
 
 
-# --- GT2 Godot renderer block (#1051) -------------------------------------------------------
-_GODOT_EXAMPLE = _REPO / "viewer" / "openworlds" / "render" / "render-profile.godot.example.json"
+# --- GT2 Godot reference/extension renderer block (#1051/#1165) -----------------------------
+_GODOT_EXAMPLE = _REPO / "docs" / "roadmap" / "contracts" / "examples" / "render-profile.godot.reference.json"
 _FACING_KEYS = {"facing", "direction", "orientation", "heading"}
 
 
@@ -119,10 +119,10 @@ def test_core_has_no_engine_facing_field():
     assert _FACING_KEYS.isdisjoint(loc_props), f"engine facing leaked into core.locations: {loc_props & _FACING_KEYS}"
 
 
-def test_godot_example_is_strict_and_valid():
-    """The godot example profile (core + a godot renderer block) satisfies the same strict core
-    rules as every instance AND carries a well-formed godot block with the LOCKED projection +
-    a directional sprite-sheet layout keyed by engine_actor_id (the FK join)."""
+def test_godot_reference_example_is_strict_and_valid():
+    """The Godot reference profile (core + a godot renderer block) satisfies the same strict core
+    rules as every instance AND carries a well-formed archived extension block with the LOCKED
+    projection + a directional sprite-sheet layout keyed by engine_actor_id (the FK join)."""
     ex = _load(_GODOT_EXAMPLE)
     assert ex.get("schema_version") == 1
     core = ex["core"]
@@ -146,6 +146,6 @@ def test_godot_example_is_strict_and_valid():
         assert sheet["facings"] == len(sheet["facing_order"]), "facings count must match facing_order length"
 
 
-def test_godot_example_full_jsonschema_validation_when_available():
+def test_godot_reference_example_full_jsonschema_validation_when_available():
     jsonschema = pytest.importorskip("jsonschema")
     jsonschema.validate(_load(_GODOT_EXAMPLE), _load(_SCHEMA))
