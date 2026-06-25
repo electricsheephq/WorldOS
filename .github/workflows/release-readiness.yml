@@ -116,7 +116,7 @@ jobs:
 
       - name: Upload RRI-deterministic.json
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: rri-deterministic-${{ github.run_id }}
           path: RRI-deterministic.json

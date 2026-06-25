@@ -120,7 +120,7 @@ jobs:
 
       - name: Upload loop runlog + scorecard
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nightly-quality-loop-${{ github.run_id }}
           # The loop writes per-run *.runlog / *.tolkien.json / *.score.json / *.gate.txt into
