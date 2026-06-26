@@ -109,10 +109,9 @@ _MOVE_KINDS = {
 # Kinds whose payload is carried by `target` alone (no free `text`/`name`) — the graphical
 # intents. Used to relax the "needs text or name" guard below for these click-driven moves.
 _TARGET_ONLY_KINDS = {"travel", "inspect", "examine", "move_to_zone"}
-# Grid-combat player-turn kinds the ENGINE resolves in-process (not the DM agent). Carried by
-# x/y (move_to_cell) and/or target_id (attack on turn); `end_turn` passes the turn. Relaxes the
-# "needs text or name" guard.
-_COMBAT_CELL_KINDS = {"move_to_cell", "attack", "end_turn"}
+# Grid-combat player-turn kinds (move_to_cell / on-turn attack / end_turn) are resolved by the
+# ENGINE in-process (not the DM agent): carried by x/y and/or target_id, with the per-kind checks
+# below relaxing the "needs text or name" guard for them.
 _MOVE_FIELDS = ("text", "name", "skill", "target", "weapon", "dc", "x", "y", "target_id", "end_turn")
 _MOVE_MAXLEN = 2000
 

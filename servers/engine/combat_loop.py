@@ -989,8 +989,11 @@ def resolve_player_turn(
     if turn_should_end and not consumed_action:
         try:
             server.use_action(campaign_id, actor.id, kind="skip")
-        except Exception:
-            pass
+        except Exception as exc:
+            # Advisory + best-effort: declaring the skip can fail harmlessly (e.g. the action was
+            # already spent). next_turn's PC-skip guard still legally ends a do-nothing-action turn,
+            # so we tolerate it but record it for diagnostics rather than masking it silently.
+            resolved.setdefault("skip_declare_error", str(exc))
 
     if not turn_should_end:
         # The turn is still the PC's (a bare move, or advance=False introspection). Do NOT touch
@@ -1019,7 +1022,6 @@ def resolve_player_turn(
     # awaiting_pc (it can wrap to a PC at the top of the next round). So loop until the current
     # combatant is a PC/companion (the next decision) or the fight ends — bounded by a turn cap.
     enemy_digest: list[dict] = []
-    c = server._require(campaign_id)
     for _ in range(64):  # safety rail against a non-advancing order
         c = server._require(campaign_id)
         if not c.combat.active or len(_living_sides(c)) < 2:
