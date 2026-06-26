@@ -31,8 +31,11 @@ and the v2 fix for each:
 | **No convergence target above the floor, no regression memory.** "≥7.5" with no per-scene baseline meant a scene could oscillate forever and a fix that *helped* could silently *regress* a dimension. | **Convergence + regression.** Stop at overall **≥7.5 AND no CRITICAL/HIGH** (target **≥8** for "caliber"). Log every round to `scores_db` (surface="visual") and run `qa/visual_regression.py` so a round that drops a dimension ≥1.0 or the overall ≥0.7 is flagged REGRESSED vs the scene's canonical baseline frame. |
 
 **Bake-off validated (2026-06-22):** the v2 loop drove a scene from 4→6 in one cycle and caught
-real geometric defects (floating actors, wrong scale) as numbers. These two lessons are now
-codified:
+real geometric defects (floating actors, wrong scale) as numbers. These lessons are now codified:
+
+> ★ **CAPTURE QUALITY:** render at `super_size=4` (~10k px) BEFORE scoring — LOW-RES captures INFLATE the critic (a real miss: low-res screencaps fooled the panel into scoring degraded images; the owner caught it).
+>
+> ★ **VERIFY VISUAL CLAIMS vs PIXELS:** a lean single self-critic INFLATES (self-reported 7.27 vs rigorous-panel ~4-5.5; an agent over-claimed "reads as a combat beat" while the pixels showed one figure + a forbidden camera-flip). ALWAYS verify an agent's visual success claim against the actual frame — trust the rigorous reference-anchored 5–6-lens panel, not a lean self-score.
 
 1. **Camera fix is permanent** — `qa/visual_pregate.py` uses `up=cross(fwd,right)` for the
    dimetric camera basis. The old `right×fwd` negated the up vector and flipped depth→screen-Y,
