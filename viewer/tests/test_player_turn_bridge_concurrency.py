@@ -77,6 +77,16 @@ class PlayerTurnBridgeTests(unittest.TestCase):
         eng.place_combatant_at_coords(cid, gob, 1, 0)  # adjacent so the strike is in reach
         start_round = eng._require(cid).combat.round
 
+        # The idempotency token. _resolve_player_combat_turn reads the snake_case `turn_token`
+        # directly (sanitize_move normalizes the client's camelCase `turnToken` -> turn_token in
+        # the /move route — that mapping is unit-tested separately in test_move_intents). Both
+        # duplicate submits carry the SAME token; the first advances + invalidates it, the second
+        # MUST reject — it cannot slip through as a fresh turn after the order wraps back to the hero.
+        token = server.build_combat_surface(
+            server._read_snapshot(cid), campaign_id=cid, live=True, is_live_view=True
+        )["turnToken"]
+        self.assertTrue(token)  # an active combat emits a non-empty turn token
+
         results: list[dict] = []
         barrier = threading.Barrier(2)
 
@@ -84,7 +94,7 @@ class PlayerTurnBridgeTests(unittest.TestCase):
             barrier.wait()  # maximize the race: both threads enter together
             results.append(
                 server._resolve_player_combat_turn(
-                    cid, {"kind": "attack", "target_id": gob}, live=True
+                    cid, {"kind": "attack", "target_id": gob, "turn_token": token}, live=True
                 )
             )
 
@@ -97,24 +107,21 @@ class PlayerTurnBridgeTests(unittest.TestCase):
 
         self.assertEqual(len(results), 2)
         advanced = [r for r in results if r.get("ok") and r["arbiter"].get("advanced")]
-        # Each advancing PC turn must have run the enemy (a non-empty enemy_digest) — the goblin
-        # was never silently skipped. THIS is the TOCTOU harm: a double-advance consumes the
-        # goblin's turn with no digest.
-        for r in advanced:
-            self.assertTrue(
-                r["arbiter"]["resolved"].get("enemy_digest"),
-                f"a PC turn advanced WITHOUT the enemy acting — skipped enemy turn: {r['arbiter']}",
-            )
-        # The round advanced by exactly one per resolved PC turn (each PC turn + the goblin's turn
-        # wraps the order once). A double-step (two PC turns sharing one goblin turn) would make
-        # the round delta exceed the number of advancing turns.
+        rejected = [r for r in results if not r.get("ok")]
+        # The dedup invariant: EXACTLY one advance + one reject (the stale duplicate). Without the
+        # turn-token guard (or with the token silently stripped) BOTH would advance as two full
+        # rounds — the post-wrap double-advance.
+        self.assertEqual(len(advanced), 1, f"expected exactly one advance: {results}")
+        self.assertEqual(len(rejected), 1, f"expected exactly one reject (stale token): {results}")
+        # The one advancing PC turn ran the enemy (a non-empty enemy_digest) — the goblin was NOT
+        # silently skipped — and initiative advanced by exactly one round (PC turn + goblin wraps).
+        self.assertTrue(
+            advanced[0]["arbiter"]["resolved"].get("enemy_digest"),
+            f"the advancing PC turn did not run the enemy: {advanced[0]['arbiter']}",
+        )
         c = eng._require(cid)
         if c.combat.active:
-            round_delta = c.combat.round - start_round
-            self.assertEqual(
-                round_delta, len(advanced),
-                f"initiative double-stepped: round_delta={round_delta} but advanced={len(advanced)}",
-            )
+            self.assertEqual(c.combat.round - start_round, 1, "initiative double-stepped")
             self.assertIn(c.combat.current_combatant_id, (hero, gob))
 
 

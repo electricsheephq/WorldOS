@@ -1011,20 +1011,20 @@ def resolve_player_turn(
     # mutated) instead of silently degrading to a skip inside _apply_intent.
     if intent.kind == "attack" and not intent.target_id:
         return {"ok": False, "reason": "an attack needs a target_id"}
-    if intent.kind == "move":
-        if intent.to_cell is None and not intent.to_zone:
-            return {"ok": False, "reason": "a move needs a to_cell (x,y) or a to_zone"}
-        # Validate the to_cell shape up front: a 2-tuple/list of ints. A malformed cell
-        # (wrong arity, non-int) would otherwise raise deep inside move_to_coords AFTER the
-        # turn-ownership gate — reject it here so nothing is mutated and the UI gets a clear why.
-        if intent.to_cell is not None:
-            tc = intent.to_cell
-            if not (
-                isinstance(tc, (tuple, list))
-                and len(tc) == 2
-                and all(isinstance(coord, int) and not isinstance(coord, bool) for coord in tc)
-            ):
-                return {"ok": False, "reason": f"to_cell must be an (x, y) pair of ints, got {tc!r}"}
+    # ANY intent carrying a to_cell must carry a well-formed one — an (x,y) int pair — not just
+    # `move`. The public arbiter admits every action-consuming kind (the bridge only ever sends
+    # move/attack/skip, but harden the contract): a malformed cell on e.g. a disengage would
+    # otherwise raise deep inside a verb AFTER the turn-ownership gate. Reject here so nothing is
+    # mutated and the UI gets a clear why.
+    tc = intent.to_cell
+    if tc is not None and not (
+        isinstance(tc, (tuple, list))
+        and len(tc) == 2
+        and all(isinstance(coord, int) and not isinstance(coord, bool) for coord in tc)
+    ):
+        return {"ok": False, "reason": f"to_cell must be an (x, y) pair of ints, got {tc!r}"}
+    if intent.kind == "move" and intent.to_cell is None and not intent.to_zone:
+        return {"ok": False, "reason": "a move needs a to_cell (x,y) or a to_zone"}
 
     # Prime the per-turn attack-option cache the way run_combat_round does, so an `attack`
     # Intent's damage spec resolves from the actor's authoritative attack lines (a PC gets the

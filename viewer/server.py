@@ -131,7 +131,18 @@ def sanitize_move(raw: object) -> tuple[Optional[dict], str]:
     move: dict = {"role": "player", "kind": kind}
     for f in _MOVE_FIELDS:
         v = raw.get(f)
-        if f == "end_turn":
+        if f == "turn_token":
+            # The surface emits the idempotency token as `turnToken` (camelCase). Accept the field
+            # the client actually received (turnToken) OR the snake_case name, normalized to
+            # turn_token. WITHOUT this, a client echoing `turnToken` loses the token ->
+            # expected_turn_token="" -> the dedup guard never fires (a stale/double submit could
+            # advance again after initiative wraps).
+            tok = raw.get("turn_token")
+            if not (isinstance(tok, str) and tok.strip()):
+                tok = raw.get("turnToken")
+            if isinstance(tok, str) and tok.strip():
+                move[f] = tok.strip()[:_MOVE_MAXLEN]
+        elif f == "end_turn":
             # `end_turn` is the only boolean field — preserved verbatim (ends a move-only turn).
             if isinstance(v, bool):
                 move[f] = v

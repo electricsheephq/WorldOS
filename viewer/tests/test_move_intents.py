@@ -108,6 +108,16 @@ class GridCombatMoveKindTests(unittest.TestCase):
         self.assertIsInstance(move["x"], int)
         self.assertEqual((move["x"], move["y"]), (4, 0))
 
+    def test_turn_token_accepts_camelcase_echo_and_snake(self):
+        # #2: the surface emits the idempotency token as `turnToken`; a client echoing that exact
+        # field must NOT lose it (else expected_turn_token="" and the dedup guard never fires).
+        # sanitize_move accepts the camelCase echo OR the snake name, normalized to turn_token.
+        camel, r1 = server.sanitize_move({"kind": "move_to_cell", "x": 1, "y": 2, "turnToken": "3:0:c1"})
+        self.assertEqual(r1, "")
+        self.assertEqual(camel["turn_token"], "3:0:c1")
+        snake, _ = server.sanitize_move({"kind": "move_to_cell", "x": 1, "y": 2, "turn_token": "3:0:c1"})
+        self.assertEqual(snake["turn_token"], "3:0:c1")
+
     def test_move_to_cell_without_xy_rejected(self):
         for bad in ({"kind": "move_to_cell"}, {"kind": "move_to_cell", "x": 2},
                     {"kind": "move_to_cell", "text": "go there"}):
