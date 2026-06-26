@@ -234,5 +234,55 @@ class GridOriginPositionTests(unittest.TestCase):
         self.assertEqual((hero["x"], hero["y"]), (18, 17))
 
 
+class SceneGridBlockExtentTests(unittest.TestCase):
+    """#10 — the surface board EXTENT must follow the COMBAT tactical grid (where _combat_tokens
+    places tokens), not a hardcoded 16x10 default, else a token on a larger grid lands off the
+    rendered board. Additive: no explicit combat grid ⇒ today's 16x10 default is unchanged."""
+
+    def test_default_when_no_combat_grid(self):
+        block = server._scene_grid_block({}, "grid")
+        self.assertEqual((block["cols"], block["rows"]), (16, 10))  # unchanged legacy default
+
+    def test_combat_grid_sets_board_extent(self):
+        block = server._scene_grid_block({"combat": {"grid_width": 14, "grid_height": 10}}, "grid")
+        self.assertEqual((block["cols"], block["rows"]), (14, 10))
+
+    def test_combat_grid_larger_than_default_not_clipped(self):
+        # the pre-fix bug: a 20x20 fight reported a 16x10 board → tokens at >16,>10 fell off-board.
+        block = server._scene_grid_block({"combat": {"grid_width": 20, "grid_height": 20}}, "grid")
+        self.assertEqual((block["cols"], block["rows"]), (20, 20))
+
+    def test_malformed_combat_grid_degrades_to_default(self):
+        for bad in ({"grid_width": 0, "grid_height": 10}, {"grid_width": "x", "grid_height": 10},
+                    {"grid_width": -5, "grid_height": 5}, {"grid_width": 14}):
+            with self.subTest(bad=bad):
+                block = server._scene_grid_block({"combat": bad}, "grid")
+                self.assertEqual((block["cols"], block["rows"]), (16, 10))
+
+    def test_mode_preserved(self):
+        block = server._scene_grid_block({"combat": {"grid_width": 14, "grid_height": 10}}, "zones")
+        self.assertEqual(block["mode"], "zones")
+
+    def test_combat_grid_wins_extent_but_scene_grid_metadata_survives(self):
+        # Mixed source: a location scene_grid (10x8 + cells/sceneId/cellDefault) AND an explicit combat
+        # grid (14x10). Combat owns cols/rows (where tokens live); the scene_grid's cells/sceneId/
+        # cellDefault (the floor/wall map for tinting) are PRESERVED, not overwritten by its own 10x8.
+        snap = {
+            "current_location_id": "loc-tavern",
+            "locations": {"loc-tavern": {"scene_grid": {
+                "scene_id": "fixture:tavern",
+                "grid": {"cols": 10, "rows": 8},
+                "cells": [{"c": 0, "r": 0, "type": "wall", "walkable": False}],
+                "cell_default": {"type": "floor", "walkable": True},
+            }}},
+            "combat": {"grid_width": 14, "grid_height": 10},
+        }
+        block = server._scene_grid_block(snap, "grid")
+        self.assertEqual((block["cols"], block["rows"]), (14, 10))   # combat owns the extent
+        self.assertEqual(block["sceneId"], "fixture:tavern")          # scene_grid metadata survives
+        self.assertEqual(block["cells"], [{"c": 0, "r": 0, "type": "wall", "walkable": False}])
+        self.assertEqual(block["cellDefault"], {"type": "floor", "walkable": True})
+
+
 if __name__ == "__main__":
     unittest.main()

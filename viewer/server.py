@@ -1994,26 +1994,34 @@ def _scene_grid_block(snapshot: dict, mode: str) -> dict:
     locs = snapshot.get("locations")
     loc = locs.get(loc_id) if isinstance(locs, dict) and loc_id else None
     sg = loc.get("scene_grid") if isinstance(loc, dict) else None
-    if not isinstance(sg, dict):
-        return block
-    grid = sg.get("grid")
-    if not isinstance(grid, dict):
-        return block
-    cols = grid.get("cols")
-    rows = grid.get("rows")
-    if not (isinstance(cols, int) and isinstance(rows, int) and cols > 0 and rows > 0):
-        return block  # degrade to the default extents on a malformed grid
-    block["cols"] = cols
-    block["rows"] = rows
-    sid = sg.get("scene_id")
-    if isinstance(sid, str) and sid:
-        block["sceneId"] = sid
-    cells = sg.get("cells")
-    if isinstance(cells, list):
-        block["cells"] = cells
-    cell_default = sg.get("cell_default")
-    if isinstance(cell_default, dict):
-        block["cellDefault"] = cell_default
+    grid = sg.get("grid") if isinstance(sg, dict) else None
+    if isinstance(grid, dict):
+        cols = grid.get("cols")
+        rows = grid.get("rows")
+        if isinstance(cols, int) and isinstance(rows, int) and cols > 0 and rows > 0:
+            block["cols"] = cols
+            block["rows"] = rows
+        sid = sg.get("scene_id")
+        if isinstance(sid, str) and sid:
+            block["sceneId"] = sid
+        cells = sg.get("cells")
+        if isinstance(cells, list):
+            block["cells"] = cells
+        cell_default = sg.get("cell_default")
+        if isinstance(cell_default, dict):
+            block["cellDefault"] = cell_default
+    # #10 — the combat TACTICAL grid is the authority for the board EXTENT: combatant tokens are
+    # placed at its grid_width/grid_height coords (see _combat_tokens), so the rendered board MUST
+    # contain them or a token lands off-board (a 20x20 fight reported a 16x10 board pre-fix). Override
+    # cols/rows when combat declares an explicit grid; any scene_grid cells/sceneId set above stay.
+    # Additive: no explicit combat grid ⇒ unchanged (empty == today).
+    combat = snapshot.get("combat")
+    if isinstance(combat, dict):
+        cgw = combat.get("grid_width")
+        cgh = combat.get("grid_height")
+        if isinstance(cgw, int) and isinstance(cgh, int) and cgw > 0 and cgh > 0:
+            block["cols"] = cgw
+            block["rows"] = cgh
     return block
 
 
