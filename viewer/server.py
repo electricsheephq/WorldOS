@@ -41,6 +41,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 import types
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -1350,6 +1351,30 @@ def _save_load_slot_response(action: str, campaign_id: Optional[str], slot: Opti
     return {"ok": True, "campaign_id": safe_campaign, "slot": safe_slot}
 
 
+# Per-campaign in-process serialization for the grid-combat player-turn lane. The arbiter reads
+# current_combatant_id, validates, then drives the locked verbs — but the engine's campaign_lock
+# is PER-VERB (it does not span the read->validate->advance sequence) and is NOT re-entrant (a
+# nested flock on a new fd in the same process DEADLOCKS), so we cannot wrap the arbiter in it.
+# Two concurrent POSTs on the ThreadingHTTPServer (a double-click / client retry) would otherwise
+# both pass the turn-ownership gate before either advances, double-advancing initiative and
+# silently consuming an enemy turn (a TOCTOU caught by adversarial-invariant-verify). This
+# in-process lock serializes the player-turn lane PER CAMPAIGN within the viewer process — the
+# only place concurrent player-turn POSTs originate. It does NOT touch the engine's sole-writer
+# campaign_lock (the cross-process DM-vs-viewer case is already handled by that flock); it only
+# closes the same-process double-POST window.
+_PLAYER_TURN_LOCKS: dict[str, threading.Lock] = {}
+_PLAYER_TURN_LOCKS_GUARD = threading.Lock()
+
+
+def _player_turn_lock(campaign_id: str) -> threading.Lock:
+    with _PLAYER_TURN_LOCKS_GUARD:
+        lock = _PLAYER_TURN_LOCKS.get(campaign_id)
+        if lock is None:
+            lock = threading.Lock()
+            _PLAYER_TURN_LOCKS[campaign_id] = lock
+        return lock
+
+
 def _resolve_player_combat_turn(campaign_id: str, move: dict, *, live: bool) -> dict:
     """Resolve a grid-combat player-turn move (`move_to_cell` / on-turn `attack`) DETERMINISTICALLY
     through the engine's player-turn arbiter, then re-emit the combat surface (S1 keystone).
@@ -1361,7 +1386,17 @@ def _resolve_player_combat_turn(campaign_id: str, move: dict, *, live: bool) -> 
     SOLE WRITER. On success returns the arbiter verdict PLUS a freshly-read build_combat_surface
     so the client (browser / Unity) re-renders from authoritative state without a second GET.
 
+    The whole read->validate->resolve->advance->re-emit sequence runs under a PER-CAMPAIGN
+    in-process lock so two concurrent POSTs can't double-advance initiative (the engine's
+    per-verb campaign_lock does not span this sequence and is not re-entrant — see
+    _player_turn_lock). The engine remains the sole WRITER; this lock only serializes the lane.
+
     Rejections (wrong turn, no combat, bad cell) return {ok:False, reason} with NOTHING mutated."""
+    with _player_turn_lock(campaign_id):
+        return _resolve_player_combat_turn_locked(campaign_id, move, live=live)
+
+
+def _resolve_player_combat_turn_locked(campaign_id: str, move: dict, *, live: bool) -> dict:
     loop = _load_combat_loop()
     if loop is None:
         return {"ok": False, "reason": f"combat arbiter unavailable: {_COMBAT_LOOP_IMPORT_ERROR}"}
