@@ -263,6 +263,26 @@ class SceneGridBlockExtentTests(unittest.TestCase):
         block = server._scene_grid_block({"combat": {"grid_width": 14, "grid_height": 10}}, "zones")
         self.assertEqual(block["mode"], "zones")
 
+    def test_combat_grid_wins_extent_but_scene_grid_metadata_survives(self):
+        # Mixed source: a location scene_grid (10x8 + cells/sceneId/cellDefault) AND an explicit combat
+        # grid (14x10). Combat owns cols/rows (where tokens live); the scene_grid's cells/sceneId/
+        # cellDefault (the floor/wall map for tinting) are PRESERVED, not overwritten by its own 10x8.
+        snap = {
+            "current_location_id": "loc-tavern",
+            "locations": {"loc-tavern": {"scene_grid": {
+                "scene_id": "fixture:tavern",
+                "grid": {"cols": 10, "rows": 8},
+                "cells": [{"c": 0, "r": 0, "type": "wall", "walkable": False}],
+                "cell_default": {"type": "floor", "walkable": True},
+            }}},
+            "combat": {"grid_width": 14, "grid_height": 10},
+        }
+        block = server._scene_grid_block(snap, "grid")
+        self.assertEqual((block["cols"], block["rows"]), (14, 10))   # combat owns the extent
+        self.assertEqual(block["sceneId"], "fixture:tavern")          # scene_grid metadata survives
+        self.assertEqual(block["cells"], [{"c": 0, "r": 0, "type": "wall", "walkable": False}])
+        self.assertEqual(block["cellDefault"], {"type": "floor", "walkable": True})
+
 
 if __name__ == "__main__":
     unittest.main()

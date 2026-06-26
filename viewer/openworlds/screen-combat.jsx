@@ -495,6 +495,14 @@ function CombatGridBoard({ tokens, grid, selected, onSelect, onCellMove, onAttac
     const x = Number(t.x), y = Number(t.y);
     if (Number.isInteger(x) && Number.isInteger(y)) at[`${x},${y}`] = t;
   });
+  // #10 terrain: cells the engine marks non-walkable (walls/props, `{c,r,walkable:false}`) must NOT be
+  // move targets — any in-bounds cell not listed in grid.cells is the cellDefault (walkable by default).
+  const blocked = {};
+  ((grid && Array.isArray(grid.cells)) ? grid.cells : []).forEach((c) => {
+    if (c && Number.isInteger(c.c) && Number.isInteger(c.r) && c.walkable === false) blocked[`${c.c},${c.r}`] = true;
+  });
+  const defaultWalkable = !(grid && grid.cellDefault && grid.cellDefault.walkable === false);
+  const isWalkable = (x, y) => (blocked[`${x},${y}`] ? false : defaultWalkable);
   const curId = ((tokens || []).find((t) => t.isCurrent) || {}).id || "";
   const cells = [];
   for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) cells.push({ x, y, t: at[`${x},${y}`] });
@@ -520,16 +528,31 @@ function CombatGridBoard({ tokens, grid, selected, onSelect, onCellMove, onAttac
       }}>
         {cells.map(({ x, y, t }) => {
           const isFoe = t && t.team === "foe";
-          const clickable = canAct && (!t || isFoe);
+          const walkable = isWalkable(x, y);
+          // Selecting a token is ALWAYS allowed (inspect on any turn); move/attack gate on can_act.
+          const onActivate = t
+            ? () => { if (isFoe && canAct) onAttack(t.id); else onSelect(t.id); }
+            : () => { if (canAct && walkable) onCellMove(x, y); };
+          const actionable = t ? true : (canAct && walkable);   // gets button semantics + keyboard
+          const hoverBg = t ? (isFoe && canAct ? "rgba(197,64,64,0.22)" : "rgba(244,210,123,0.10)") : "rgba(244,210,123,0.12)";
+          const title = t ? `${t.name}${isFoe && canAct ? " — attack" : ""}` : (walkable ? `move → (${x}, ${y})` : "blocked");
+          const restBox = walkable ? "inset 0 0 0 0.5px rgba(176,141,87,0.10)" : "inset 0 0 0 0.5px rgba(80,40,30,0.5)";
           return (
             <div key={`${x},${y}`}
-              title={t ? `${t.name}${isFoe ? " — attack" : ""}` : `move → (${x}, ${y})`}
-              onClick={() => { if (!canAct) return; if (t) { isFoe ? onAttack(t.id) : onSelect(t.id); } else { onCellMove(x, y); } }}
-              onMouseEnter={(e) => { if (clickable) e.currentTarget.style.background = t ? "rgba(197,64,64,0.22)" : "rgba(244,210,123,0.12)"; }}
+              title={title} aria-label={title}
+              role={actionable ? "button" : undefined}
+              tabIndex={actionable ? 0 : -1}
+              onClick={onActivate}
+              onKeyDown={(e) => { if (actionable && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onActivate(); } }}
+              onMouseEnter={(e) => { if (actionable) e.currentTarget.style.background = hoverBg; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+              onFocus={(e) => { if (actionable) e.currentTarget.style.boxShadow = "inset 0 0 0 1.5px var(--gold-glow)"; }}
+              onBlur={(e) => { e.currentTarget.style.boxShadow = restBox; }}
               style={{
-                position: "relative", boxShadow: "inset 0 0 0 0.5px rgba(176,141,87,0.10)",
-                cursor: clickable ? "pointer" : "default", transition: "background 0.08s",
+                position: "relative", boxShadow: restBox,
+                background: walkable ? "transparent" : "rgba(20,10,6,0.45)",
+                cursor: actionable ? "pointer" : "default", outline: "none",
+                transition: "background 0.08s, box-shadow 0.08s",
                 display: "flex", alignItems: "center", justifyContent: "center",
               }}>
               {t ? <GridCellToken t={t} selected={selected === t.id} isCurrent={t.id === curId} /> : null}
