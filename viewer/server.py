@@ -1492,10 +1492,13 @@ def _resolve_player_combat_turn_locked(campaign_id: str, move: dict, *, live: bo
         if _engine_mod is not None:
             sys.modules["server"] = _engine_mod
         try:
-            verdict = loop.resolve_player_turn(
-                campaign_id, actor_id, intent, end_turn=end_turn,
-                expected_turn_token=expected_turn_token,
-            )
+            try:
+                verdict = loop.resolve_player_turn(
+                    campaign_id, actor_id, intent, end_turn=end_turn,
+                    expected_turn_token=expected_turn_token,
+                )
+            except Exception as exc:  # never leak a raw 500 from /move — degrade to the bridge's
+                verdict = {"ok": False, "reason": f"combat arbiter failed: {exc}"}  # JSON shape
         finally:
             if _saved_server_mod is not None:
                 sys.modules["server"] = _saved_server_mod
