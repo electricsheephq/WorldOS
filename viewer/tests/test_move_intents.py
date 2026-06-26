@@ -90,6 +90,54 @@ class MoveIntentVocabularyTests(unittest.TestCase):
         self.assertNotIn("narration", move)               # extra field dropped
 
 
+class GridCombatMoveKindTests(unittest.TestCase):
+    """S1 keystone — the grid-combat player-turn kinds the ENGINE resolves (move_to_cell /
+    on-turn attack). Pure sanitize_move checks: the new kinds validate x/y/target_id, the
+    existing kinds + invariants are byte-identical (additive)."""
+
+    def test_move_to_cell_accepted_with_int_xy(self):
+        move, reason = server.sanitize_move({"kind": "move_to_cell", "x": 3, "y": 7})
+        self.assertEqual(reason, "")
+        self.assertEqual(move["kind"], "move_to_cell")
+        self.assertEqual((move["x"], move["y"]), (3, 7))
+        self.assertEqual(move["role"], "player")  # role still forced
+
+    def test_move_to_cell_coerces_float_cell_to_int(self):
+        move, reason = server.sanitize_move({"kind": "move_to_cell", "x": 4.0, "y": 0.0})
+        self.assertEqual(reason, "")
+        self.assertIsInstance(move["x"], int)
+        self.assertEqual((move["x"], move["y"]), (4, 0))
+
+    def test_move_to_cell_without_xy_rejected(self):
+        for bad in ({"kind": "move_to_cell"}, {"kind": "move_to_cell", "x": 2},
+                    {"kind": "move_to_cell", "text": "go there"}):
+            with self.subTest(payload=bad):
+                move, reason = server.sanitize_move(bad)
+                self.assertIsNone(move)
+                self.assertIn("x", reason)
+
+    def test_on_turn_attack_accepted_with_target_id(self):
+        move, reason = server.sanitize_move({"kind": "attack", "target_id": "mon-goblin-1"})
+        self.assertEqual(reason, "")
+        self.assertEqual(move["kind"], "attack")
+        self.assertEqual(move["target_id"], "mon-goblin-1")
+
+    def test_legacy_freetext_attack_still_works(self):
+        # The existing DM-resolved attack lane (name/target, no target_id) is untouched.
+        move, reason = server.sanitize_move({"kind": "attack", "name": "Longsword", "target": "goblin"})
+        self.assertEqual(reason, "")
+        self.assertEqual(move["name"], "Longsword")
+        self.assertNotIn("target_id", move)
+
+    def test_move_to_cell_drops_unknown_fields_and_forces_role(self):
+        move, reason = server.sanitize_move(
+            {"kind": "move_to_cell", "x": 1, "y": 1, "role": "dm", "narration": "boom"}
+        )
+        self.assertEqual(reason, "")
+        self.assertEqual(move["role"], "player")
+        self.assertNotIn("narration", move)
+
+
 class DerivedPositionAuthorityTests(unittest.TestCase):
     """#432: zone-derived token x/y must be flagged positionAuthority='derived'."""
 
@@ -128,6 +176,52 @@ class DerivedPositionAuthorityTests(unittest.TestCase):
                 # the authoritative spatial field is the named zone
                 self.assertIn(tk["zone"], ("the market row", "the alley mouth"))
         self.assertEqual(mode, "zones")  # no engine coords → zone mode, not grid
+
+
+class GridOriginPositionTests(unittest.TestCase):
+    """S1 keystone regression — _combat_display_position must report the ENGINE grid cell
+    faithfully, including the origin (cell 0). The pre-fix `x or col` coalesce treated a 0
+    coordinate as missing and fell through to the synthesized zone layout, corrupting any token
+    on row/column 0 — exactly the cells the grid-combat arbiter places PCs at."""
+
+    def _grid_snapshot(self, hx, hy):
+        return {
+            "combat": {
+                "active": True,
+                "grid_enabled": True, "grid_width": 20, "grid_height": 20,
+                "order": [
+                    {"id": "hero", "character_id": "hero", "name": "Hero", "kind": "player",
+                     "x": hx, "y": hy, "is_current": True, "hp": {"current": 30, "max": 30}},
+                    {"id": "gob", "character_id": "gob", "name": "Goblin", "kind": "monster",
+                     "x": 12, "y": 5, "hp": {"current": 15, "max": 15}},
+                ],
+            },
+            "characters": {"hero": {"id": "hero", "kind": "player"},
+                           "gob": {"id": "gob", "kind": "monster"}},
+        }
+
+    def test_origin_cell_reported_faithfully_as_grid(self):
+        # cell (0,0) must surface as (0,0) with positionAuthority='engine' (not a zone synth).
+        snap = self._grid_snapshot(0, 0)
+        tokens, _i, _z, _s, mode = server._combat_tokens(snap, snap["combat"])
+        self.assertEqual(mode, "grid")
+        hero = next(t for t in tokens if t["id"] == "hero")
+        self.assertEqual((hero["x"], hero["y"]), (0, 0))
+        self.assertEqual(hero["positionAuthority"], "engine")
+
+    def test_grid_cell_on_row_zero_not_synthesized(self):
+        # (3,0) — y is the falsy-0 that the old `or` dropped. Must surface exactly (3,0).
+        snap = self._grid_snapshot(3, 0)
+        tokens, *_rest = server._combat_tokens(snap, snap["combat"])
+        hero = next(t for t in tokens if t["id"] == "hero")
+        self.assertEqual((hero["x"], hero["y"]), (3, 0))
+
+    def test_grid_clamps_to_engine_extents_not_16x10(self):
+        # A 20x20 engine grid must allow a cell beyond the legacy 16x10 display clamp.
+        snap = self._grid_snapshot(18, 17)
+        tokens, *_rest = server._combat_tokens(snap, snap["combat"])
+        hero = next(t for t in tokens if t["id"] == "hero")
+        self.assertEqual((hero["x"], hero["y"]), (18, 17))
 
 
 if __name__ == "__main__":

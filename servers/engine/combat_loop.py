@@ -851,3 +851,212 @@ def run_combat_autonomous(campaign_id: str, mode: str = "test", max_rounds: int 
         "round_digests": rounds,
         "end_combat": ended,
     }
+
+
+# ── The PLAYER-TURN ARBITER (S1 keystone) ────────────────────────────────────────────
+# The one path by which a HUMAN/UI-authored Intent is resolved on the player's combat turn.
+# It is the mirror of the AI loop's `awaiting_pc` branch: where `run_combat_round(mode="live")`
+# STOPS at a PC turn and hands a digest to the DM, THIS entry-point accepts the PC's own
+# Intent (the cell to move to / the target to strike), resolves it through the SAME
+# `_apply_intent` mapping the AI uses, advances the turn, then auto-runs the following enemy
+# turns up to the next PC decision.
+#
+# SOLE-WRITER INVARIANT (unchanged): like the rest of this module, the arbiter holds NO lock
+# and introduces NO new write path — every mutation goes through an existing server.py verb
+# (move_to_coords / attack / next_turn), each of which takes its own campaign_lock +
+# save_campaign. The arbiter only READS a snapshot to validate turn-ownership + prime the
+# attack-option cache, then delegates to the locked verbs.
+#
+# TURN-OWNERSHIP is load-bearing: move_to_coords() does NOT gate on whose turn it is (it
+# charges the named mover's own budget regardless), so a wrong-turn move would otherwise
+# silently mutate the board. The arbiter REJECTS (mutating nothing) unless the actor is the
+# current combatant AND a PC/companion. (attack() additionally self-guards turn-ownership,
+# but we gate up front so BOTH kinds reject identically and nothing is half-applied.)
+
+# A PC/companion player Intent the arbiter accepts. Mirrors _LIVE_AUTORUN_KINDS' complement:
+# only a party actor (player/companion) is ever "awaiting" in a live fight.
+_PLAYER_TURN_KINDS = _PARTY_KINDS
+
+
+# Intent kinds that CONSUME the turn's action economy (so next_turn's PC-skip guard passes and
+# the turn legally ends). A bare `move` consumes NO action (5e: you may move AND act), so it
+# leaves the turn OPEN for a following action — the arbiter does NOT auto-advance on a bare move.
+_ACTION_CONSUMING_KINDS = frozenset({"attack", "cast", "dash", "disengage", "dodge", "skip", "use_resource"})
+
+
+def resolve_player_turn(
+    campaign_id: str,
+    actor_id: str,
+    intent: Intent,
+    *,
+    advance: bool = True,
+    end_turn: bool = False,
+) -> dict:
+    """Resolve ONE player/companion combat action from an injected Intent (S1 keystone).
+
+    This is the player-control mirror of run_combat_round(mode="live")'s `awaiting_pc` stop:
+    the loop hands a PC turn back to the human/UI; the UI POSTs the PC's chosen Intent (move
+    to a cell, or attack a target); THIS function validates it is that actor's turn, resolves
+    it through the EXISTING `_apply_intent` (the same Intent->locked-verb mapping the AI loop
+    uses), and — when the turn is actually OVER — advances initiative + auto-runs the following
+    enemy turns to the next PC decision.
+
+    TURN MODEL (5e-correct): a bare `move` consumes NO action — the player may move AND then act
+    — so a move-to-cell DOES NOT end the turn; the turn stays OPEN (awaiting_pc == actor) for a
+    following action. An action-consuming intent (attack / cast / dash / disengage / dodge /
+    skip) ends the turn → the arbiter advances. A move-then-end-without-acting is requested via
+    `end_turn=True` (the UI's explicit "End Turn"): the arbiter declares a skip and advances.
+
+    Args:
+      campaign_id: the live campaign.
+      actor_id:    the combatant declaring the action — MUST be the current combatant AND a
+                   player/companion, or the call is rejected with nothing mutated.
+      intent:      a `move` (to_cell set) or `attack` (target_id set) Intent. Other kinds are
+                   resolvable too (cast/skip/dodge/disengage) via the shared mapping.
+      advance:     master switch (default True). When False, resolve the intent only and never
+                   touch initiative (test-introspection); the turn stays open.
+      end_turn:    when True, end the turn after resolving even if the intent did not consume an
+                   action (move-then-End-Turn) — the arbiter declares a skip so next_turn's
+                   PC-skip guard passes, then advances.
+
+    Returns (NEVER raises for a normal rejection):
+      {ok: False, reason}                              — rejected; NOTHING mutated.
+      {ok: True, resolved, advanced, turn_open,        — resolved. `turn_open` True == the PC may
+       awaiting_pc, combat_active, round}                still act this turn (a bare move); when
+                                                         the turn ended, `awaiting_pc` is whose
+                                                         turn it is next (None if the fight ended).
+
+    Sole writer: only the verbs `_apply_intent`/next_turn/run_combat_round invoke mutate; the
+    arbiter holds no lock. Additive: a campaign that never calls this is byte-identical to today.
+    """
+    import server  # lazy: avoid a server->combat_loop import cycle at module load
+
+    if intent is None or not isinstance(intent, Intent):
+        return {"ok": False, "reason": "resolve_player_turn needs an Intent"}
+
+    c = server._require(campaign_id)
+    if not c.combat.active or not c.combat.order:
+        return {"ok": False, "reason": "no active combat"}
+
+    cur_id = c.combat.current_combatant_id
+    if cur_id is None:
+        return {"ok": False, "reason": "no current combatant"}
+
+    # TURN-OWNERSHIP GATE (load-bearing — move_to_coords does not self-gate). Reject a move by
+    # anyone other than the current combatant, BEFORE any verb runs, so nothing is mutated.
+    if actor_id != cur_id:
+        cur = c.characters.get(cur_id)
+        cur_name = cur.name if cur is not None else cur_id
+        return {"ok": False, "reason": f"not {actor_id}'s turn — it is {cur_name}'s ({cur_id}) turn"}
+
+    actor = c.characters.get(actor_id)
+    if actor is None:
+        return {"ok": False, "reason": f"unknown combatant {actor_id!r}"}
+    # Only a PC/companion is ever the "awaiting" actor; refuse to drive a monster/NPC turn
+    # through the player lane (those are the AI loop's / the DM's to run).
+    if actor.kind not in _PLAYER_TURN_KINDS:
+        return {"ok": False, "reason": f"{actor.name} is a {actor.kind}, not a player-controlled combatant"}
+    if not _alive(actor):
+        return {"ok": False, "reason": f"{actor.name} cannot act (downed/dead)"}
+
+    # Per-kind required-field validation, so an ill-formed Intent REJECTS cleanly (with nothing
+    # mutated) instead of silently degrading to a skip inside _apply_intent.
+    if intent.kind == "attack" and not intent.target_id:
+        return {"ok": False, "reason": "an attack needs a target_id"}
+    if intent.kind == "move" and intent.to_cell is None and not intent.to_zone:
+        return {"ok": False, "reason": "a move needs a to_cell (x,y) or a to_zone"}
+
+    # Prime the per-turn attack-option cache the way run_combat_round does, so an `attack`
+    # Intent's damage spec resolves from the actor's authoritative attack lines (a PC gets the
+    # synthesized weapon line). A pure move ignores the cache; priming is harmless either way.
+    view = _build_view(server, c, actor)
+    _view_cache[actor.id] = view.attacks
+    try:
+        resolved = _apply_intent(server, campaign_id, actor.id, intent)
+    finally:
+        _view_cache.pop(actor.id, None)
+
+    # Decide whether the TURN is over. A bare `move` consumes no action -> the turn stays OPEN
+    # (the PC may still act). An action-consuming intent ends it. `end_turn=True` ends a
+    # move-only turn on explicit request (the arbiter declares the skip so the guard passes).
+    # If _apply_intent itself degraded an action-consuming intent to a skip on a refusal, it
+    # already called use_action(skip) -> the guard is satisfied and the turn legally ends.
+    consumed_action = intent.kind in _ACTION_CONSUMING_KINDS
+    turn_should_end = advance and (consumed_action or end_turn)
+
+    # If the player is ENDING the turn but resolved only a move (no action consumed), declare an
+    # explicit skip so next_turn's PC-skip guard passes (a do-nothing-action turn is legal).
+    if turn_should_end and not consumed_action:
+        try:
+            server.use_action(campaign_id, actor.id, kind="skip")
+        except Exception:
+            pass
+
+    if not turn_should_end:
+        # The turn is still the PC's (a bare move, or advance=False introspection). Do NOT touch
+        # initiative — return turn_open so the UI keeps the action bar live for this actor.
+        c = server._require(campaign_id)
+        return {
+            "ok": True,
+            "resolved": resolved,
+            "advanced": False,
+            "turn_open": bool(c.combat.active and c.combat.current_combatant_id == actor.id),
+            "awaiting_pc": cur_id,
+            "combat_active": c.combat.active,
+            "round": c.combat.round,
+        }
+
+    # Advance the turn (the locked next_turn enforces the PC-skip guard + end-of-turn saves).
+    c = server._require(campaign_id)
+    if c.combat.active and c.combat.current_combatant_id == actor.id:
+        try:
+            server.next_turn(campaign_id)
+        except Exception as exc:  # advisory: report, don't crash the turn
+            resolved.setdefault("error", str(exc))
+
+    # Auto-run the following ENEMY turns to the next PC decision — the existing live loop.
+    # run_combat_round is ONE round per call and breaks at a round boundary WITHOUT reporting
+    # awaiting_pc (it can wrap to a PC at the top of the next round). So loop until the current
+    # combatant is a PC/companion (the next decision) or the fight ends — bounded by a turn cap.
+    enemy_digest: list[dict] = []
+    c = server._require(campaign_id)
+    for _ in range(64):  # safety rail against a non-advancing order
+        c = server._require(campaign_id)
+        if not c.combat.active or len(_living_sides(c)) < 2:
+            break
+        cur = c.characters.get(c.combat.current_combatant_id)
+        if cur is not None and cur.kind in _PLAYER_TURN_KINDS and _alive(cur):
+            break  # reached the next PC decision — stop auto-running
+        rr = run_combat_round(campaign_id, mode="live")
+        enemy_digest.extend(rr.get("round_digest") or [])
+        # If the round produced no progress (no digest AND the current combatant is unchanged),
+        # bail to avoid spinning (defensive — run_combat_round always advances or stops).
+        if not rr.get("round_digest") and rr.get("awaiting_pc") is None:
+            # nudge past a stuck non-PC current via next_turn, else break
+            c2 = server._require(campaign_id)
+            if c2.combat.active and c2.combat.current_combatant_id == (cur.id if cur else None):
+                try:
+                    server.next_turn(campaign_id)
+                except Exception:
+                    break
+    if enemy_digest:
+        resolved.setdefault("enemy_digest", enemy_digest)
+
+    # The next PC decision == the current combatant IF it is now a living PC/companion.
+    awaiting_pc: Optional[str] = None
+    c = server._require(campaign_id)
+    if c.combat.active:
+        cur = c.characters.get(c.combat.current_combatant_id)
+        if cur is not None and cur.kind in _PLAYER_TURN_KINDS and _alive(cur):
+            awaiting_pc = cur.id
+
+    return {
+        "ok": True,
+        "resolved": resolved,
+        "advanced": True,
+        "turn_open": False,
+        "awaiting_pc": awaiting_pc,
+        "combat_active": c.combat.active,
+        "round": c.combat.round,
+        "living_sides": sorted(_living_sides(c)),
+    }
