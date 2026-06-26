@@ -36,11 +36,13 @@ import binascii
 import hashlib
 import importlib.util
 import json
+import math
 import mimetypes
 import os
 import re
 import subprocess
 import sys
+import threading
 import time
 import types
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -91,14 +93,27 @@ _OPENWORLDS_MIME_TYPES = {
 # world-assertions): the renderer emits them on click; the DM reads them from the moves
 # file and resolves them through the engine, exactly like say/do. They reuse the existing
 # `target` field — no new field, so the anti-injection field-allowlist is untouched.
+#
+# GRID-COMBAT player-turn intents (S1 keystone — the player-turn combat arbiter): `move_to_cell`
+# (step the PC's token to grid cell x,y on its initiative turn). These are PLAYER intents that
+# the ENGINE resolves DETERMINISTICALLY (not the DM agent): do_POST routes them straight to
+# combat_loop.resolve_player_turn via the in-process engine bridge (the SAME sole-writer-
+# preserving path /save-slot uses), which validates turn-ownership, charges the movement
+# budget, runs opportunity attacks, advances initiative, then re-emits build_combat_surface.
+# `attack` (already a kind) gains the same on-turn lane when it carries a `target_id`. They add
+# x/y/target_id to the field-allowlist (keyword, defaulted; the existing fields are untouched,
+# so the anti-injection allowlist only WIDENS).
 _MOVE_KINDS = {
     "say", "do", "check", "save", "combat", "attack", "cast", "use_item", "clarify",
-    "travel", "inspect", "examine", "move_to_zone",
+    "travel", "inspect", "examine", "move_to_zone", "move_to_cell", "end_turn",
 }
 # Kinds whose payload is carried by `target` alone (no free `text`/`name`) — the graphical
 # intents. Used to relax the "needs text or name" guard below for these click-driven moves.
 _TARGET_ONLY_KINDS = {"travel", "inspect", "examine", "move_to_zone"}
-_MOVE_FIELDS = ("text", "name", "skill", "target", "weapon", "dc")
+# Grid-combat player-turn kinds (move_to_cell / on-turn attack / end_turn) are resolved by the
+# ENGINE in-process (not the DM agent): carried by x/y and/or target_id, with the per-kind checks
+# below relaxing the "needs text or name" guard for them.
+_MOVE_FIELDS = ("text", "name", "skill", "target", "weapon", "dc", "x", "y", "target_id", "end_turn", "turn_token")
 _MOVE_MAXLEN = 2000
 
 
@@ -116,15 +131,57 @@ def sanitize_move(raw: object) -> tuple[Optional[dict], str]:
     move: dict = {"role": "player", "kind": kind}
     for f in _MOVE_FIELDS:
         v = raw.get(f)
-        if isinstance(v, str) and v.strip():
+        if f == "turn_token":
+            # The surface emits the idempotency token as `turnToken` (camelCase). Accept the field
+            # the client actually received (turnToken) OR the snake_case name, normalized to
+            # turn_token. WITHOUT this, a client echoing `turnToken` loses the token ->
+            # expected_turn_token="" -> the dedup guard never fires (a stale/double submit could
+            # advance again after initiative wraps).
+            tok = raw.get("turn_token")
+            if not (isinstance(tok, str) and tok.strip()):
+                tok = raw.get("turnToken")
+            if isinstance(tok, str) and tok.strip():
+                move[f] = tok.strip()[:_MOVE_MAXLEN]
+        elif f == "end_turn":
+            # `end_turn` is the only boolean field — preserved verbatim (ends a move-only turn).
+            if isinstance(v, bool):
+                move[f] = v
+        elif f in ("x", "y"):
+            # Grid coordinates: accept an int, or a FINITE INTEGRAL float (a UI may send 3.0).
+            # REJECT NaN/Inf (a blind int() raises on those) and a fractional float like 3.9
+            # (a blind int() would silently truncate to 3 -> the wrong cell). A bad value is
+            # left UNSET so the move_to_cell guard below rejects with a clear reason. (bool is
+            # an int subclass -> excluded explicitly so True/False is never read as cell 1/0.)
+            if isinstance(v, bool):
+                continue
+            if isinstance(v, int):
+                move[f] = v
+            elif isinstance(v, float) and math.isfinite(v) and v.is_integer():
+                move[f] = int(v)
+        elif isinstance(v, str) and v.strip():
             move[f] = v.strip()[:_MOVE_MAXLEN]
         elif isinstance(v, (int, float)) and not isinstance(v, bool):
             move[f] = v
+    # A bare `end_turn` passes the turn — no other field required.
+    if kind == "end_turn":
+        move["end_turn"] = True
+        return move, ""
+    # `move_to_cell` is the grid-combat player-turn intent the ENGINE resolves: it needs a
+    # numeric x AND y cell (carried alongside, never text). Validated here so a malformed
+    # cell rejects before it reaches the engine bridge.
+    if kind == "move_to_cell":
+        if not (isinstance(move.get("x"), int) and isinstance(move.get("y"), int)):
+            return None, "'move_to_cell' needs integer 'x' and 'y' grid coordinates"
+        return move, ""
     # The graphical intents (travel/inspect/examine/move_to_zone) are carried by `target`;
-    # everything else needs a `text` or `name` so the DM has something to act on.
+    # everything else needs a `text` or `name` so the DM has something to act on. An `attack`
+    # that carries a `target_id` is the on-turn engine-resolved lane (no text/name required);
+    # an `attack` with text/name stays the existing DM-resolved free-text lane.
     if kind in _TARGET_ONLY_KINDS:
         if "target" not in move:
             return None, f"{kind!r} move needs a 'target'"
+    elif kind == "attack" and "target_id" in move:
+        pass  # on-turn engine attack: target_id is enough
     elif "text" not in move and "name" not in move:
         return None, "move needs a 'text' or 'name'"
     return move, ""
@@ -720,35 +777,98 @@ def _install_fastmcp_shim() -> None:
     sys.modules["mcp.server.fastmcp"] = fastmcp_mod
 
 
+_ENGINE_SERVER_LOAD_LOCK = threading.Lock()
+
+
 def _load_engine_server():
     global _ENGINE_SERVER, _ENGINE_IMPORT_ERROR
     if _ENGINE_SERVER is not None:
         return _ENGINE_SERVER
-    engine_dir = (_HERE.parent / "servers" / "engine").resolve()
-    try:
+    with _ENGINE_SERVER_LOAD_LOCK:
+        if _ENGINE_SERVER is not None:  # double-check: another thread loaded it while we waited
+            return _ENGINE_SERVER
+        engine_dir = (_HERE.parent / "servers" / "engine").resolve()
         try:
-            from mcp.server.fastmcp import FastMCP as _FastMCP  # noqa: F401
-        except ModuleNotFoundError:
-            _install_fastmcp_shim()
-        if str(engine_dir) not in sys.path:
-            sys.path.insert(0, str(engine_dir))
-        spec = importlib.util.spec_from_file_location("_worldos_engine_server_for_viewer", engine_dir / "server.py")
-        if spec is None or spec.loader is None:
-            raise RuntimeError("could not load engine server module")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[spec.name] = module
-        spec.loader.exec_module(module)
-        _ENGINE_SERVER = module
-        _ENGINE_IMPORT_ERROR = ""
-        return module
-    except Exception as exc:  # import/dependency failures become explicit JSON degradation
-        _ENGINE_IMPORT_ERROR = str(exc)
-        return None
+            try:
+                from mcp.server.fastmcp import FastMCP as _FastMCP  # noqa: F401
+            except ModuleNotFoundError:
+                _install_fastmcp_shim()
+            if str(engine_dir) not in sys.path:
+                sys.path.insert(0, str(engine_dir))
+            spec = importlib.util.spec_from_file_location("_worldos_engine_server_for_viewer", engine_dir / "server.py")
+            if spec is None or spec.loader is None:
+                raise RuntimeError("could not load engine server module")
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[spec.name] = module
+            try:
+                spec.loader.exec_module(module)
+            except Exception:
+                sys.modules.pop(spec.name, None)  # don't leave a half-initialized module published
+                raise
+            _ENGINE_SERVER = module
+            _ENGINE_IMPORT_ERROR = ""
+            return module
+        except Exception as exc:  # import/dependency failures become explicit JSON degradation
+            _ENGINE_IMPORT_ERROR = str(exc)
+            return None
 
 
 def _engine_server():
     """Test-visible accessor for the engine-owned planner module."""
     return _load_engine_server()
+
+
+_COMBAT_LOOP_MOD = None
+_COMBAT_LOOP_IMPORT_ERROR = ""
+
+
+def _load_combat_loop():
+    """Load the engine's combat_loop module in-process (the player-turn arbiter lives there).
+
+    Same in-process bridge contract as _load_engine_server: the viewer NEVER writes campaign
+    state itself — combat_loop.resolve_player_turn delegates to the engine's locked verbs
+    (move_to_coords / attack / next_turn), each of which takes its own campaign_lock +
+    save_campaign, so the engine stays the SOLE WRITER. Loading the engine server first puts
+    servers/engine on sys.path so `combat_loop` (and its `import server`) resolve."""
+    global _COMBAT_LOOP_MOD, _COMBAT_LOOP_IMPORT_ERROR
+    if _COMBAT_LOOP_MOD is not None:
+        return _COMBAT_LOOP_MOD
+    # Loading the engine server registers servers/engine on sys.path + installs the FastMCP shim.
+    engine = _load_engine_server()
+    if engine is None:
+        _COMBAT_LOOP_IMPORT_ERROR = _ENGINE_IMPORT_ERROR or "engine server unavailable"
+        return None
+    engine_dir = (_HERE.parent / "servers" / "engine").resolve()
+    try:
+        if str(engine_dir) not in sys.path:
+            sys.path.insert(0, str(engine_dir))
+        # combat_loop.resolve_player_turn does a lazy `import server`. The bridge loaded the
+        # engine under an aliased module name (_worldos_engine_server_for_viewer), so a bare
+        # `import server` would load a SECOND copy of the ~10k-line engine module with its own
+        # globals. State stays correct EITHER WAY (every verb is file-backed: _require ->
+        # load_campaign re-reads snapshot.json under a cross-process flock; there is NO in-memory
+        # campaign cache — verified), but a redundant second instance is wasteful and makes the
+        # correctness depend implicitly on "no module ever adds a cache". Bind `import server` to
+        # the SAME engine instance the bridge already loaded by registering it under the canonical
+        # name `server` — UNLESS something already owns that name (don't clobber a real engine
+        # process's own `server`). This makes the single-instance guarantee EXPLICIT.
+        existing = sys.modules.get("server")
+        if existing is None:
+            sys.modules["server"] = engine
+        spec = importlib.util.spec_from_file_location(
+            "_worldos_combat_loop_for_viewer", engine_dir / "combat_loop.py"
+        )
+        if spec is None or spec.loader is None:
+            raise RuntimeError("could not load combat_loop module")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        _COMBAT_LOOP_MOD = module
+        _COMBAT_LOOP_IMPORT_ERROR = ""
+        return module
+    except Exception as exc:
+        _COMBAT_LOOP_IMPORT_ERROR = str(exc)
+        return None
 
 
 def _clean_character_id(character_id: Optional[str]) -> Optional[str]:
@@ -1275,6 +1395,151 @@ def _save_load_slot_response(action: str, campaign_id: Optional[str], slot: Opti
     if isinstance(result, dict):
         return result
     return {"ok": True, "campaign_id": safe_campaign, "slot": safe_slot}
+
+
+# Per-campaign in-process serialization for the grid-combat player-turn lane. The arbiter reads
+# current_combatant_id, validates, then drives the locked verbs — but the engine's campaign_lock
+# is PER-VERB (it does not span the read->validate->advance sequence) and is NOT re-entrant (a
+# nested flock on a new fd in the same process DEADLOCKS), so we cannot wrap the arbiter in it.
+# Two concurrent POSTs on the ThreadingHTTPServer (a double-click / client retry) would otherwise
+# both pass the turn-ownership gate before either advances, double-advancing initiative and
+# silently consuming an enemy turn (a TOCTOU caught by adversarial-invariant-verify). This
+# in-process lock serializes the player-turn lane PER CAMPAIGN within the viewer process — the
+# only place concurrent player-turn POSTs originate. It does NOT touch the engine's sole-writer
+# campaign_lock (the cross-process DM-vs-viewer case is already handled by that flock); it only
+# closes the same-process double-POST window.
+_PLAYER_TURN_LOCKS: dict[str, threading.Lock] = {}
+_PLAYER_TURN_LOCKS_GUARD = threading.Lock()
+# Process-wide lock guarding the brief `sys.modules["server"]` swap in
+# _resolve_player_combat_turn_locked. combat_loop does a lazy `import server` that MUST resolve to
+# the ENGINE module, but the viewer process also legitimately owns the name `server` (so the
+# load-time "bind only if unowned" can't win). We bind it to the engine for the duration of the
+# arbiter call and restore after; this lock serializes the swap so a concurrent different-campaign
+# call can never observe `server` mid-swap. Acquired ONLY inside the per-campaign lock (one order).
+_ENGINE_SERVER_BIND_LOCK = threading.Lock()
+
+
+def _player_turn_lock(campaign_id: str) -> threading.Lock:
+    with _PLAYER_TURN_LOCKS_GUARD:
+        lock = _PLAYER_TURN_LOCKS.get(campaign_id)
+        if lock is None:
+            lock = threading.Lock()
+            _PLAYER_TURN_LOCKS[campaign_id] = lock
+        return lock
+
+
+def _resolve_player_combat_turn(campaign_id: str, move: dict, *, live: bool) -> dict:
+    """Resolve a grid-combat player-turn move (`move_to_cell` / on-turn `attack`) DETERMINISTICALLY
+    through the engine's player-turn arbiter, then re-emit the combat surface (S1 keystone).
+
+    Mirrors /save-slot's in-process bridge EXACTLY: the viewer never writes campaign state; it
+    builds the engine's Intent and calls combat_loop.resolve_player_turn, which validates
+    turn-ownership and delegates to the engine's locked verbs (move_to_coords / attack /
+    next_turn) under the engine's own campaign_lock + save_campaign — so the engine stays the
+    SOLE WRITER. On success returns the arbiter verdict PLUS a freshly-read build_combat_surface
+    so the client (browser / Unity) re-renders from authoritative state without a second GET.
+
+    The whole read->validate->resolve->advance->re-emit sequence runs under a PER-CAMPAIGN
+    in-process lock so two concurrent POSTs can't double-advance initiative (the engine's
+    per-verb campaign_lock does not span this sequence and is not re-entrant — see
+    _player_turn_lock). The engine remains the sole WRITER; this lock only serializes the lane.
+
+    Rejections (wrong turn, no combat, bad cell) return {ok:False, reason} with NOTHING mutated."""
+    with _player_turn_lock(campaign_id):
+        return _resolve_player_combat_turn_locked(campaign_id, move, live=live)
+
+
+def _resolve_player_combat_turn_locked(campaign_id: str, move: dict, *, live: bool) -> dict:
+    loop = _load_combat_loop()
+    if loop is None:
+        return {"ok": False, "reason": f"combat arbiter unavailable: {_COMBAT_LOOP_IMPORT_ERROR}"}
+    # The actor is the live PC/companion whose turn it is. The arbiter is the authority on
+    # turn-ownership; the viewer does not pre-resolve "who" — it reads current_combatant_id
+    # from the engine snapshot and lets the arbiter reject a non-current actor.
+    try:
+        engine = _load_engine_server()
+        snap = engine._require(campaign_id) if engine is not None else None
+        actor_id = snap.combat.current_combatant_id if snap is not None and snap.combat.active else None
+    except Exception as exc:
+        return {"ok": False, "reason": f"could not read combat state: {exc}"}
+    if not actor_id:
+        return {"ok": False, "reason": "no active combat / no current combatant"}
+
+    kind = str(move.get("kind") or "")
+    # `end_turn` (optional bool on a move_to_cell, or a bare end_turn kind) ends a move-only turn.
+    end_turn = bool(move.get("end_turn"))
+    # Optional idempotency token the client echoed off the surface (turnToken). When present, a
+    # double-click / stale retry rejects (the slot advanced). Absent == no check (back-compat).
+    expected_turn_token = str(move.get("turn_token") or "")
+    try:
+        Intent = loop.Intent
+        if kind == "move_to_cell":
+            x, y = int(move["x"]), int(move["y"])
+            intent = Intent(kind="move", to_cell=(x, y), note="player move (UI)")
+        elif kind == "attack":
+            target_id = str(move.get("target_id") or "")
+            if not target_id:
+                return {"ok": False, "reason": "an on-turn attack needs a target_id"}
+            intent = Intent(kind="attack", target_id=target_id, note="player attack (UI)")
+        elif kind == "end_turn":
+            # Pass the turn without moving/acting: a skip Intent, force the advance.
+            intent = Intent(kind="skip", note="player end-turn (UI)")
+            end_turn = True
+        else:
+            return {"ok": False, "reason": f"{kind!r} is not a grid-combat player-turn move"}
+    except (KeyError, ValueError, TypeError) as exc:
+        return {"ok": False, "reason": f"malformed combat move: {exc}"}
+
+    # combat_loop.resolve_player_turn (and the run_combat_round it auto-runs) do a lazy
+    # `import server` that must resolve to the ENGINE — but the viewer process also owns the name
+    # `server`. Bind it to the engine module for the duration of the arbiter call (serialized
+    # process-wide so a concurrent different-campaign call can't observe the swap mid-flight),
+    # then restore. State stays sole-writer-correct regardless (every verb is file-backed); this
+    # only fixes WHICH module object the lazy import resolves to.
+    _engine_mod = _load_engine_server()
+    with _ENGINE_SERVER_BIND_LOCK:
+        _saved_server_mod = sys.modules.get("server")
+        if _engine_mod is not None:
+            sys.modules["server"] = _engine_mod
+        try:
+            try:
+                verdict = loop.resolve_player_turn(
+                    campaign_id, actor_id, intent, end_turn=end_turn,
+                    expected_turn_token=expected_turn_token,
+                )
+            except Exception:
+                # The arbiter may have MUTATED combat (via _apply_intent) before a later step (the
+                # enemy auto-resolution) raised. Don't return a bare {ok:false} that hides the
+                # already-advanced board + invites blind retries — return the REFRESHED surface so
+                # the client renders the real post-mutation state. (The outer finally still restores
+                # sys.modules; build_combat_surface does not `import server`.)
+                _raw = _read_snapshot(campaign_id)
+                if not isinstance(_raw, dict):
+                    _raw = {}
+                return {
+                    "ok": False,
+                    "reason": "combat arbiter failed; state may have changed",
+                    "combat": build_combat_surface(
+                        _raw, campaign_id=campaign_id, live=bool(live), is_live_view=bool(live)
+                    ),
+                }
+        finally:
+            if _saved_server_mod is not None:
+                sys.modules["server"] = _saved_server_mod
+            else:
+                sys.modules.pop("server", None)
+    if not isinstance(verdict, dict) or not verdict.get("ok"):
+        return verdict if isinstance(verdict, dict) else {"ok": False, "reason": "arbiter error"}
+
+    # Re-emit the authoritative surface from the freshly-written snapshot so the client renders
+    # the moved token / new initiative without a follow-up read. Read-only projection.
+    raw_snap = _read_snapshot(campaign_id)
+    if not isinstance(raw_snap, dict):
+        raw_snap = {}
+    surface = build_combat_surface(
+        raw_snap, campaign_id=campaign_id, live=bool(live), is_live_view=bool(live)
+    )
+    return {"ok": True, "arbiter": verdict, "combat": surface}
 
 
 def _display_location(snapshot: dict) -> str:
@@ -2322,10 +2587,30 @@ def _combat_display_position(
     idx: int,
     zones: list[dict],
     zone_offsets: dict[str, int],
+    grid_extents: tuple[int, int] | None = None,
 ) -> tuple[int, int, str]:
-    x = _num(row.get("x") or row.get("col") or row.get("grid_x"))
-    y = _num(row.get("y") or row.get("row") or row.get("grid_y"))
+    # Read the engine's authoritative grid coords. Use a None-coalesce (NOT `or`): a cell of 0
+    # is a VALID coordinate (origin column/row), and `x or col` would treat 0 as missing and
+    # silently fall through to the synthesized zone layout — corrupting the board for any token
+    # on row/column 0 (the S1 grid-combat arbiter surfaces real engine cells, incl. 0).
+    def _first_coord(*keys):
+        for k in keys:
+            v = _num(row.get(k))
+            if v is not None:
+                return v
+        return None
+    x = _first_coord("x", "col", "grid_x")
+    y = _first_coord("y", "row", "grid_y")
     if x is not None and y is not None:
+        # Clamp to the ENGINE grid extents (not the fixed 16x10 zone-display grid), preserving
+        # cell 0 — the surface must report the true engine cell so the client renders the moved
+        # token where the engine actually placed it. Fall back to the legacy 16x10 clamp only
+        # when the engine grid extents are unknown (keeps old grid-source snapshots stable).
+        if grid_extents is not None:
+            gw, gh = grid_extents
+            cx = max(0, min(gw - 1, int(x))) if gw > 0 else int(x)
+            cy = max(0, min(gh - 1, int(y))) if gh > 0 else int(y)
+            return cx, cy, "grid"
         return max(1, min(16, int(x))), max(1, min(10, int(y))), "grid"
     zone_name = _text(row.get("zone"))
     zone_index = next((i for i, z in enumerate(zones) if z.get("name") == zone_name), idx)
@@ -2343,6 +2628,16 @@ def _combat_tokens(snapshot: dict, combat_view: dict) -> tuple[list[dict], list[
     zones = [dict(z) for z in combat_view.get("zones", []) if isinstance(z, dict)]
     zone_occupants: dict[str, list[str]] = {z.get("name", ""): [] for z in zones}
     zone_offsets: dict[str, int] = {}
+    # Engine grid extents (S1): when the fight is on a grid the token clamp must respect the
+    # ENGINE grid size (e.g. 20x20), not the fixed 16x10 zone-display grid, and must preserve
+    # cell 0. None when there's no engine grid -> the zone-display fallback clamp applies.
+    _combat_blk = snapshot.get("combat") if isinstance(snapshot, dict) else None
+    grid_extents: tuple[int, int] | None = None
+    if isinstance(_combat_blk, dict) and _combat_blk.get("grid_enabled"):
+        gw = _num(_combat_blk.get("grid_width"))
+        gh = _num(_combat_blk.get("grid_height"))
+        if isinstance(gw, int) and isinstance(gh, int) and gw > 0 and gh > 0:
+            grid_extents = (gw, gh)
     tokens: list[dict] = []
     initiative: list[dict] = []
     position_sources: set[str] = set()
@@ -2373,7 +2668,9 @@ def _combat_tokens(snapshot: dict, combat_view: dict) -> tuple[list[dict], list[
             token["zone"] = zone
             if zone in zone_occupants:
                 zone_occupants[zone].append(cid)
-        x, y, source = _combat_display_position(raw, idx=idx, zones=zones, zone_offsets=zone_offsets)
+        x, y, source = _combat_display_position(
+            raw, idx=idx, zones=zones, zone_offsets=zone_offsets, grid_extents=grid_extents
+        )
         token["x"] = x
         token["y"] = y
         # #432 (graphics M0): x/y here are a DERIVED render-hint, never authoritative state.
@@ -2954,6 +3251,28 @@ def _combat_command_center(
     }
 
 
+def _combat_turn_token(snapshot: dict) -> str:
+    """The current turn-slot token (round:turn_index:current_combatant_id), mirroring the engine's
+    combat_loop.turn_token so the surface and the arbiter agree byte-for-byte. The client echoes
+    this on its next player-turn POST; the arbiter rejects a stale token (a double-click / retry),
+    deduplicating the player turn. "" when there's no active combat."""
+    combat = snapshot.get("combat") if isinstance(snapshot, dict) else None
+    if not isinstance(combat, dict) or not combat.get("active"):
+        return ""
+    order = combat.get("order")
+    if not isinstance(order, list) or not order:
+        return ""
+    rnd = combat.get("round")
+    ti = combat.get("turn_index")
+    rnd = rnd if isinstance(rnd, int) and not isinstance(rnd, bool) else 0
+    ti = ti if isinstance(ti, int) and not isinstance(ti, bool) else 0
+    # Mirror models.Combat.current_combatant_id EXACTLY (it indexes order[turn_index % len]) so
+    # the surface token equals combat_loop.turn_token byte-for-byte.
+    row = order[ti % len(order)]
+    cur = _text(row.get("character_id")) if isinstance(row, dict) else ""
+    return f"{rnd}:{ti}:{cur}"
+
+
 def build_combat_surface(
     snapshot: dict,
     *,
@@ -2998,6 +3317,10 @@ def build_combat_surface(
 
     return {
         "campaign_id": campaign_id,
+        # The current turn-slot token (round:turn_index:current) — the client echoes it on its
+        # next player-turn POST so a double-click / stale retry rejects (idempotency). Mirrors
+        # combat_loop.turn_token; "" when no active combat. (Placed first for stable key order.)
+        "turnToken": _combat_turn_token(snapshot) if combat_active else "",
         "title": _text(snapshot.get("title"), campaign_id or "Open Worlds"),
         "world": _text(snapshot.get("world_id"), "unknown"),
         "dayLabel": _openworlds_day_label(snapshot),
@@ -8842,6 +9165,19 @@ class _Handler(BaseHTTPRequestHandler):
         move, why = sanitize_move(payload)
         if move is None:
             self._json({"ok": False, "reason": why})
+            return
+        # GRID-COMBAT PLAYER-TURN LANE (S1 keystone): a `move_to_cell` (or an on-turn `attack`
+        # carrying a target_id) is resolved DETERMINISTICALLY by the engine's player-turn arbiter
+        # in-process (the SAME sole-writer-preserving bridge /save-slot uses), NOT appended for
+        # the DM agent to narrate. The arbiter validates turn-ownership, charges the budget, runs
+        # OAs, advances initiative, and we re-emit build_combat_surface. The campaign is bound to
+        # the live run (the cross-campaign refusal above already ran). Every OTHER kind keeps the
+        # append-only intent-log behavior (byte-identical to today).
+        is_combat_cell = move.get("kind") in ("move_to_cell", "end_turn") or (
+            move.get("kind") == "attack" and "target_id" in move
+        )
+        if is_combat_cell:
+            self._json(_resolve_player_combat_turn(self.campaign_id, move, live=True))
             return
         try:
             dest.parent.mkdir(parents=True, exist_ok=True)
