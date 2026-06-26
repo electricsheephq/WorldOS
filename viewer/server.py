@@ -777,30 +777,40 @@ def _install_fastmcp_shim() -> None:
     sys.modules["mcp.server.fastmcp"] = fastmcp_mod
 
 
+_ENGINE_SERVER_LOAD_LOCK = threading.Lock()
+
+
 def _load_engine_server():
     global _ENGINE_SERVER, _ENGINE_IMPORT_ERROR
     if _ENGINE_SERVER is not None:
         return _ENGINE_SERVER
-    engine_dir = (_HERE.parent / "servers" / "engine").resolve()
-    try:
+    with _ENGINE_SERVER_LOAD_LOCK:
+        if _ENGINE_SERVER is not None:  # double-check: another thread loaded it while we waited
+            return _ENGINE_SERVER
+        engine_dir = (_HERE.parent / "servers" / "engine").resolve()
         try:
-            from mcp.server.fastmcp import FastMCP as _FastMCP  # noqa: F401
-        except ModuleNotFoundError:
-            _install_fastmcp_shim()
-        if str(engine_dir) not in sys.path:
-            sys.path.insert(0, str(engine_dir))
-        spec = importlib.util.spec_from_file_location("_worldos_engine_server_for_viewer", engine_dir / "server.py")
-        if spec is None or spec.loader is None:
-            raise RuntimeError("could not load engine server module")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[spec.name] = module
-        spec.loader.exec_module(module)
-        _ENGINE_SERVER = module
-        _ENGINE_IMPORT_ERROR = ""
-        return module
-    except Exception as exc:  # import/dependency failures become explicit JSON degradation
-        _ENGINE_IMPORT_ERROR = str(exc)
-        return None
+            try:
+                from mcp.server.fastmcp import FastMCP as _FastMCP  # noqa: F401
+            except ModuleNotFoundError:
+                _install_fastmcp_shim()
+            if str(engine_dir) not in sys.path:
+                sys.path.insert(0, str(engine_dir))
+            spec = importlib.util.spec_from_file_location("_worldos_engine_server_for_viewer", engine_dir / "server.py")
+            if spec is None or spec.loader is None:
+                raise RuntimeError("could not load engine server module")
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[spec.name] = module
+            try:
+                spec.loader.exec_module(module)
+            except Exception:
+                sys.modules.pop(spec.name, None)  # don't leave a half-initialized module published
+                raise
+            _ENGINE_SERVER = module
+            _ENGINE_IMPORT_ERROR = ""
+            return module
+        except Exception as exc:  # import/dependency failures become explicit JSON degradation
+            _ENGINE_IMPORT_ERROR = str(exc)
+            return None
 
 
 def _engine_server():
@@ -1497,8 +1507,22 @@ def _resolve_player_combat_turn_locked(campaign_id: str, move: dict, *, live: bo
                     campaign_id, actor_id, intent, end_turn=end_turn,
                     expected_turn_token=expected_turn_token,
                 )
-            except Exception as exc:  # never leak a raw 500 from /move — degrade to the bridge's
-                verdict = {"ok": False, "reason": f"combat arbiter failed: {exc}"}  # JSON shape
+            except Exception:
+                # The arbiter may have MUTATED combat (via _apply_intent) before a later step (the
+                # enemy auto-resolution) raised. Don't return a bare {ok:false} that hides the
+                # already-advanced board + invites blind retries — return the REFRESHED surface so
+                # the client renders the real post-mutation state. (The outer finally still restores
+                # sys.modules; build_combat_surface does not `import server`.)
+                _raw = _read_snapshot(campaign_id)
+                if not isinstance(_raw, dict):
+                    _raw = {}
+                return {
+                    "ok": False,
+                    "reason": "combat arbiter failed; state may have changed",
+                    "combat": build_combat_surface(
+                        _raw, campaign_id=campaign_id, live=bool(live), is_live_view=bool(live)
+                    ),
+                }
         finally:
             if _saved_server_mod is not None:
                 sys.modules["server"] = _saved_server_mod

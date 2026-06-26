@@ -1030,6 +1030,13 @@ def resolve_player_turn(
     # Intent's damage spec resolves from the actor's authoritative attack lines (a PC gets the
     # synthesized weapon line). A pure move ignores the cache; priming is harmless either way.
     view = _build_view(server, c, actor)
+    # A player /move attack carries only a target_id (no attack_name), so default it to the PC's
+    # authoritative first attack option — otherwise _apply_intent fails the name match and falls
+    # back to the defensive +0/1d4 strike instead of the real weapon/to-hit profile.
+    if intent.kind == "attack" and not intent.attack_name:
+        if not view.attacks:
+            return {"ok": False, "reason": f"{actor.name} has no available attack option"}
+        intent = replace(intent, attack_name=view.attacks[0].name)
     _view_cache[actor.id] = view.attacks
     try:
         resolved = _apply_intent(server, campaign_id, actor.id, intent)
@@ -1134,8 +1141,17 @@ def resolve_player_turn(
         if not c.combat.active or len(_living_sides(c)) < 2:
             break
         cur = c.characters.get(c.combat.current_combatant_id)
-        if cur is not None and cur.kind in _PLAYER_TURN_KINDS and _alive(cur):
-            break  # reached the next PC decision — stop auto-running
+        if cur is not None and cur.kind in _PLAYER_TURN_KINDS:
+            if _alive(cur):
+                break  # reached the next PC decision — stop auto-running
+            # A DOWNED PC/companion: run_combat_round(mode="live") would STOP here without acting,
+            # so this loop would spin to its 64-turn cap and return no actionable awaiting_pc.
+            # Advance past it ourselves toward the next decision (or terminal state).
+            try:
+                server.next_turn(campaign_id)
+            except Exception:
+                break
+            continue
         rr = run_combat_round(campaign_id, mode="live")
         enemy_digest.extend(rr.get("round_digest") or [])
         # If the round produced no progress (no digest AND the current combatant is unchanged),
