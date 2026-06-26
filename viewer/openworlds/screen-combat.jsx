@@ -495,14 +495,20 @@ function CombatGridBoard({ tokens, grid, selected, onSelect, onCellMove, onAttac
     const x = Number(t.x), y = Number(t.y);
     if (Number.isInteger(x) && Number.isInteger(y)) at[`${x},${y}`] = t;
   });
-  // #10 terrain: cells the engine marks non-walkable (walls/props, `{c,r,walkable:false}`) must NOT be
-  // move targets — any in-bounds cell not listed in grid.cells is the cellDefault (walkable by default).
-  const blocked = {};
+  // #10 terrain: honor the engine's per-cell walkability override (`{c,r,walkable:bool}`) — record BOTH
+  // true and false, so a cellDefault.walkable=false scene with explicit walkable floors works too. Any
+  // in-bounds cell NOT listed in grid.cells falls back to cellDefault (walkable unless it says otherwise).
+  const walkability = {};
   ((grid && Array.isArray(grid.cells)) ? grid.cells : []).forEach((c) => {
-    if (c && Number.isInteger(c.c) && Number.isInteger(c.r) && c.walkable === false) blocked[`${c.c},${c.r}`] = true;
+    if (c && Number.isInteger(c.c) && Number.isInteger(c.r) && typeof c.walkable === "boolean") {
+      walkability[`${c.c},${c.r}`] = c.walkable;
+    }
   });
   const defaultWalkable = !(grid && grid.cellDefault && grid.cellDefault.walkable === false);
-  const isWalkable = (x, y) => (blocked[`${x},${y}`] ? false : defaultWalkable);
+  const isWalkable = (x, y) => {
+    const key = `${x},${y}`;
+    return Object.prototype.hasOwnProperty.call(walkability, key) ? walkability[key] : defaultWalkable;
+  };
   const curId = ((tokens || []).find((t) => t.isCurrent) || {}).id || "";
   const cells = [];
   for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) cells.push({ x, y, t: at[`${x},${y}`] });
