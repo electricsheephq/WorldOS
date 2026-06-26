@@ -171,6 +171,49 @@ function ScreenCombat({ onNavigate, state }) {
     }
   };
 
+  // Grid-combat player-turn intents (move_to_cell / on-turn attack). POST /move with the turnToken
+  // echoed for idempotency; the grid lane returns the REFRESHED surface in {ok,arbiter,combat}, so we
+  // apply it directly (no extra GET). The engine stays the sole writer — this only posts an intent.
+  const postCombatIntent = async (move, label) => {
+    if (!canAct) {
+      toast({ kind: "danger", eyebrow: "Combat", title: `${label} unavailable`, body: "Not your turn, or read-only surface." });
+      return;
+    }
+    if (busyRef.current) return; // synchronous double-click guard
+    busyRef.current = true;
+    setBusyAction(label);
+    try {
+      const body = { ...move, turn_token: surface?.turnToken || "", campaign: surface?.campaign_id || campaignId };
+      const response = await fetch("/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.reason || `move ${response.status}`);
+      }
+      setLocalLog((rows) => [
+        ...rows,
+        {
+          event: "player-intent",
+          title: `Player ${label}`,
+          text: move.kind === "move_to_cell" ? `→ cell (${move.x}, ${move.y})` : "attack",
+          meta: [{ label: "lane", value: "/move" }],
+        },
+      ]);
+      if (payload.combat) { setSurface(payload.combat); setSurfaceStatus("ready"); }
+      else await loadSurface();
+    } catch (error) {
+      toast({ kind: "danger", title: `${label} not sent`, body: error?.message || "The viewer could not reach /move." });
+    } finally {
+      busyRef.current = false;
+      setBusyAction("");
+    }
+  };
+  const onCellMove = (x, y) => postCombatIntent({ kind: "move_to_cell", x, y }, "move");
+  const onAttackToken = (targetId) => postCombatIntent({ kind: "attack", target_id: targetId }, "attack");
+
   const actionTile = (id, fallbackIcon, fallbackLabel) => {
     const action = actionById(id);
     return (
@@ -218,7 +261,7 @@ function ScreenCombat({ onNavigate, state }) {
           </div>
 
           {encounter.active ? (
-            <CombatMap tokens={tokens} zones={zones} selected={selected?.id} onSelect={setSelectedToken} sceneScope={sceneScope} />
+            <CombatMap tokens={tokens} zones={zones} grid={surface?.grid} selected={selected?.id} onSelect={setSelectedToken} onCellMove={onCellMove} onAttack={onAttackToken} canAct={canAct} sceneScope={sceneScope} />
           ) : (
             <CombatEmptyState status={surfaceStatus} onNavigate={onNavigate} />
           )}
@@ -439,6 +482,90 @@ function CombatEmptyState({ status, onNavigate }) {
   );
 }
 
+/* Grid combat board (#10/#461): when the engine sends authoritative cell coordinates
+   (grid.mode==="grid", tokens positionAuthority:"engine"), render a real cols×rows tactical board.
+   Tokens sit at their (x,y) cell; an EMPTY-cell click posts move_to_cell, a FOE click posts attack,
+   an ALLY click selects. The engine validates reach/budget/OA and re-emits the surface (it is the
+   sole writer) — this board only POSTS intents and renders what comes back. */
+function CombatGridBoard({ tokens, grid, selected, onSelect, onCellMove, onAttack, canAct, sceneScope }) {
+  const cols = Math.max(1, Number(grid && grid.cols) || 16);
+  const rows = Math.max(1, Number(grid && grid.rows) || 10);
+  const at = {};
+  (tokens || []).forEach((t) => {
+    const x = Number(t.x), y = Number(t.y);
+    if (Number.isInteger(x) && Number.isInteger(y)) at[`${x},${y}`] = t;
+  });
+  const curId = ((tokens || []).find((t) => t.isCurrent) || {}).id || "";
+  const cells = [];
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) cells.push({ x, y, t: at[`${x},${y}`] });
+  return (
+    <div style={{
+      position: "relative", width: "100%", height: "calc(100% - 50px)", overflow: "hidden",
+      background:
+        `radial-gradient(ellipse at 50% 40%, rgba(60,30,10,0.2), transparent 70%),
+         linear-gradient(135deg, #3a2418 0%, #25160e 100%)`,
+      boxShadow: "inset 0 0 0 1px var(--w-500), inset 0 0 60px rgba(0,0,0,0.6)",
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 12,
+    }}>
+      {sceneScope ? (
+        <Img scope={sceneScope} label="scene · battlefield" w="100%" h="100%" fit="cover"
+          style={{ position: "absolute", inset: 0, zIndex: 0, opacity: 0.9 }} />
+      ) : null}
+      <div style={{
+        position: "relative", zIndex: 1,
+        display: "grid",
+        gridTemplateColumns: `repeat(${cols}, 1fr)`, gridTemplateRows: `repeat(${rows}, 1fr)`,
+        gap: 1, aspectRatio: `${cols} / ${rows}`, height: "100%", maxWidth: "100%", width: "auto",
+        boxShadow: "inset 0 0 0 1px rgba(176,141,87,0.25)",
+      }}>
+        {cells.map(({ x, y, t }) => {
+          const isFoe = t && t.team === "foe";
+          const clickable = canAct && (!t || isFoe);
+          return (
+            <div key={`${x},${y}`}
+              title={t ? `${t.name}${isFoe ? " — attack" : ""}` : `move → (${x}, ${y})`}
+              onClick={() => { if (!canAct) return; if (t) { isFoe ? onAttack(t.id) : onSelect(t.id); } else { onCellMove(x, y); } }}
+              onMouseEnter={(e) => { if (clickable) e.currentTarget.style.background = t ? "rgba(197,64,64,0.22)" : "rgba(244,210,123,0.12)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+              style={{
+                position: "relative", boxShadow: "inset 0 0 0 0.5px rgba(176,141,87,0.10)",
+                cursor: clickable ? "pointer" : "default", transition: "background 0.08s",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+              {t ? <GridCellToken t={t} selected={selected === t.id} isCurrent={t.id === curId} /> : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* A token sized to its grid cell: circle + team tint + isCurrent ring + tiny HP pip. */
+function GridCellToken({ t, selected, isCurrent }) {
+  const isFoe = t.team === "foe";
+  const ratio = healthRatio(t);
+  const ring = isCurrent
+    ? "0 0 0 2px var(--gold-glow), 0 0 16px rgba(244,210,123,0.7)"
+    : (selected ? "0 0 0 2px rgba(244,210,123,0.6)" : "none");
+  return (
+    <div style={{ width: "84%", height: "84%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2 }}>
+      <div style={{
+        width: "72%", aspectRatio: "1", borderRadius: "50%",
+        background: isFoe
+          ? "radial-gradient(circle at 35% 30%, #d35a5a, #7a1414 70%, #3a0a0a)"
+          : "radial-gradient(circle at 35% 30%, var(--p-100, #e8d6a8), var(--p-300, #b08d57) 70%, #4a3618)",
+        boxShadow: `${ring}, inset 0 -2px 4px rgba(0,0,0,0.4)`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        color: isFoe ? "#fff" : "#2a1c08", fontFamily: "var(--f-display)", fontWeight: 700, fontSize: "min(2.4vmin, 17px)",
+      }}>{t.initial || (t.name || "?").slice(0, 1)}</div>
+      <div style={{ width: "72%", height: 3, background: "rgba(0,0,0,0.5)", boxShadow: "inset 0 0 0 0.5px rgba(0,0,0,0.6)" }}>
+        <div style={{ width: `${Math.round(ratio * 100)}%`, height: "100%", background: hpBarFill(t, isFoe) }} />
+      </div>
+    </div>
+  );
+}
+
 /* HONEST RENDERING (graphics #432 / #438): the engine's combat is GRIDLESS / named-zone. A
    token's x/y are DERIVED render-hints (positionAuthority:"derived"), never authoritative — so
    we must NOT draw a measured VTT grid and place tokens by x/y. The previous board did exactly
@@ -450,7 +577,17 @@ function CombatEmptyState({ status, onNavigate }) {
    A real measured-tile grid (range/LoS/flanking) is the evidence-gated #461 future: it requires
    the engine to gain authoritative coordinates (positionAuthority:"engine" + grid.mode==="grid").
    When that lands, a grid board plugs in here behind that flag; until then, zones are the truth. */
-function CombatMap({ tokens, zones, selected, onSelect, sceneScope }) {
+function CombatMap({ tokens, zones, grid, selected, onSelect, onCellMove, onAttack, canAct, sceneScope }) {
+  // #10/#461: when the engine sends authoritative cell coords (grid.mode==="grid"), render a real
+  // tactical board (the slot this comment-block reserved). Otherwise fall back to the zone bands.
+  if (grid && grid.mode === "grid" && Number(grid.cols) > 0 && Number(grid.rows) > 0) {
+    return (
+      <CombatGridBoard
+        tokens={tokens} grid={grid} selected={selected} onSelect={onSelect}
+        onCellMove={onCellMove} onAttack={onAttack} canAct={canAct} sceneScope={sceneScope}
+      />
+    );
+  }
   const named = (zones || []).map((z) => (typeof z === "string" ? z : z && z.name)).filter(Boolean);
   const FIELD = "The Field";
   let zoneNames = named.slice();
