@@ -1389,6 +1389,13 @@ def _save_load_slot_response(action: str, campaign_id: Optional[str], slot: Opti
 # closes the same-process double-POST window.
 _PLAYER_TURN_LOCKS: dict[str, threading.Lock] = {}
 _PLAYER_TURN_LOCKS_GUARD = threading.Lock()
+# Process-wide lock guarding the brief `sys.modules["server"]` swap in
+# _resolve_player_combat_turn_locked. combat_loop does a lazy `import server` that MUST resolve to
+# the ENGINE module, but the viewer process also legitimately owns the name `server` (so the
+# load-time "bind only if unowned" can't win). We bind it to the engine for the duration of the
+# arbiter call and restore after; this lock serializes the swap so a concurrent different-campaign
+# call can never observe `server` mid-swap. Acquired ONLY inside the per-campaign lock (one order).
+_ENGINE_SERVER_BIND_LOCK = threading.Lock()
 
 
 def _player_turn_lock(campaign_id: str) -> threading.Lock:
@@ -1462,9 +1469,27 @@ def _resolve_player_combat_turn_locked(campaign_id: str, move: dict, *, live: bo
     except (KeyError, ValueError, TypeError) as exc:
         return {"ok": False, "reason": f"malformed combat move: {exc}"}
 
-    verdict = loop.resolve_player_turn(
-        campaign_id, actor_id, intent, end_turn=end_turn, expected_turn_token=expected_turn_token
-    )
+    # combat_loop.resolve_player_turn (and the run_combat_round it auto-runs) do a lazy
+    # `import server` that must resolve to the ENGINE — but the viewer process also owns the name
+    # `server`. Bind it to the engine module for the duration of the arbiter call (serialized
+    # process-wide so a concurrent different-campaign call can't observe the swap mid-flight),
+    # then restore. State stays sole-writer-correct regardless (every verb is file-backed); this
+    # only fixes WHICH module object the lazy import resolves to.
+    _engine_mod = _load_engine_server()
+    with _ENGINE_SERVER_BIND_LOCK:
+        _saved_server_mod = sys.modules.get("server")
+        if _engine_mod is not None:
+            sys.modules["server"] = _engine_mod
+        try:
+            verdict = loop.resolve_player_turn(
+                campaign_id, actor_id, intent, end_turn=end_turn,
+                expected_turn_token=expected_turn_token,
+            )
+        finally:
+            if _saved_server_mod is not None:
+                sys.modules["server"] = _saved_server_mod
+            else:
+                sys.modules.pop("server", None)
     if not isinstance(verdict, dict) or not verdict.get("ok"):
         return verdict if isinstance(verdict, dict) else {"ok": False, "reason": "arbiter error"}
 
