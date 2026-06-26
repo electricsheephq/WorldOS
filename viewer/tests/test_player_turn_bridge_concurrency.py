@@ -90,7 +90,10 @@ class PlayerTurnBridgeTests(unittest.TestCase):
 
         t1 = threading.Thread(target=fire)
         t2 = threading.Thread(target=fire)
-        t1.start(); t2.start(); t1.join(); t2.join()
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
 
         self.assertEqual(len(results), 2)
         advanced = [r for r in results if r.get("ok") and r["arbiter"].get("advanced")]

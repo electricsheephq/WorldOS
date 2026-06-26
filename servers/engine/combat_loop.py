@@ -883,6 +883,25 @@ _PLAYER_TURN_KINDS = _PARTY_KINDS
 # leaves the turn OPEN for a following action — the arbiter does NOT auto-advance on a bare move.
 _ACTION_CONSUMING_KINDS = frozenset({"attack", "cast", "dash", "disengage", "dodge", "skip", "use_resource"})
 
+# The intent kinds the PLAYER lane will resolve through _apply_intent: the action-consuming kinds
+# plus a bare `move` (which keeps the turn open). Any other kind is rejected by the arbiter up
+# front (defense-in-depth) so a malformed/unknown intent never reaches _apply_intent's skip
+# fallback and burns the PC's turn.
+_PLAYER_INTENT_KINDS = _ACTION_CONSUMING_KINDS | {"move"}
+
+
+def turn_token(c) -> str:
+    """A stable identity for the CURRENT turn slot: round + turn_index + current combatant.
+
+    The UI reads this off build_combat_surface and echoes it on its next player-turn POST; the
+    arbiter rejects a POST whose token != the live slot (idempotency). A double-click reuses the
+    SAME token (the client read the surface once), so the second, now-stale POST rejects instead
+    of burning a second PC turn — while a genuine NEXT turn carries a FRESH token (the client
+    re-read the surface) and is accepted. Empty string when there's no active combat."""
+    if not c.combat.active or not c.combat.order:
+        return ""
+    return f"{c.combat.round}:{c.combat.turn_index}:{c.combat.current_combatant_id or ''}"
+
 
 def resolve_player_turn(
     campaign_id: str,
@@ -891,6 +910,7 @@ def resolve_player_turn(
     *,
     advance: bool = True,
     end_turn: bool = False,
+    expected_turn_token: str = "",
 ) -> dict:
     """Resolve ONE player/companion combat action from an injected Intent (S1 keystone).
 
@@ -918,6 +938,10 @@ def resolve_player_turn(
       end_turn:    when True, end the turn after resolving even if the intent did not consume an
                    action (move-then-End-Turn) — the arbiter declares a skip so next_turn's
                    PC-skip guard passes, then advances.
+      expected_turn_token: OPTIONAL idempotency token (see turn_token()). When non-empty, the
+                   call is rejected unless it matches the LIVE turn slot — so a double-click /
+                   stale retry (which echoes the token the client read once) rejects instead of
+                   burning a second PC turn. Empty (default) == today's behavior (no token check).
 
     Returns (NEVER raises for a normal rejection):
       {ok: False, reason}                              — rejected; NOTHING mutated.
@@ -942,6 +966,22 @@ def resolve_player_turn(
     if cur_id is None:
         return {"ok": False, "reason": "no current combatant"}
 
+    # IDEMPOTENCY / TURN-SLOT GUARD (dedup): when the caller supplies a token, it must match the
+    # LIVE turn slot. A double-click / stale retry echoes the token the client read ONCE off the
+    # surface; after the first POST resolves + the order advances, the slot token changes, so the
+    # second (stale-token) POST rejects here — NOTHING mutated — instead of being accepted as a
+    # second legitimate PC turn. A genuine next turn carries a FRESH token (the client re-read the
+    # surface) and passes. Empty token (default) == no check (today's behavior / tests).
+    if expected_turn_token:
+        live_token = turn_token(c)
+        if expected_turn_token != live_token:
+            return {
+                "ok": False,
+                "reason": "stale turn — the board advanced since this action was chosen (re-read and retry)",
+                "expected_turn_token": expected_turn_token,
+                "live_turn_token": live_token,
+            }
+
     # TURN-OWNERSHIP GATE (load-bearing — move_to_coords does not self-gate). Reject a move by
     # anyone other than the current combatant, BEFORE any verb runs, so nothing is mutated.
     if actor_id != cur_id:
@@ -959,12 +999,32 @@ def resolve_player_turn(
     if not _alive(actor):
         return {"ok": False, "reason": f"{actor.name} cannot act (downed/dead)"}
 
+    # KIND ALLOWLIST (defense-in-depth): only resolve the intent kinds the player lane supports.
+    # An unsupported/unknown kind REJECTS cleanly (nothing mutated) rather than slipping into
+    # _apply_intent, whose `else` branch silently degrades to a skip (which would burn the PC's
+    # turn on a malformed request). Mirrors the engine's "reject the illegal action outright"
+    # posture. The set is the union of the action-consuming kinds + the bare `move`.
+    if intent.kind not in _PLAYER_INTENT_KINDS:
+        return {"ok": False, "reason": f"unsupported player intent kind {intent.kind!r}"}
+
     # Per-kind required-field validation, so an ill-formed Intent REJECTS cleanly (with nothing
     # mutated) instead of silently degrading to a skip inside _apply_intent.
     if intent.kind == "attack" and not intent.target_id:
         return {"ok": False, "reason": "an attack needs a target_id"}
-    if intent.kind == "move" and intent.to_cell is None and not intent.to_zone:
-        return {"ok": False, "reason": "a move needs a to_cell (x,y) or a to_zone"}
+    if intent.kind == "move":
+        if intent.to_cell is None and not intent.to_zone:
+            return {"ok": False, "reason": "a move needs a to_cell (x,y) or a to_zone"}
+        # Validate the to_cell shape up front: a 2-tuple/list of ints. A malformed cell
+        # (wrong arity, non-int) would otherwise raise deep inside move_to_coords AFTER the
+        # turn-ownership gate — reject it here so nothing is mutated and the UI gets a clear why.
+        if intent.to_cell is not None:
+            tc = intent.to_cell
+            if not (
+                isinstance(tc, (tuple, list))
+                and len(tc) == 2
+                and all(isinstance(coord, int) and not isinstance(coord, bool) for coord in tc)
+            ):
+                return {"ok": False, "reason": f"to_cell must be an (x, y) pair of ints, got {tc!r}"}
 
     # Prime the per-turn attack-option cache the way run_combat_round does, so an `attack`
     # Intent's damage spec resolves from the actor's authoritative attack lines (a PC gets the
@@ -986,14 +1046,46 @@ def resolve_player_turn(
 
     # If the player is ENDING the turn but resolved only a move (no action consumed), declare an
     # explicit skip so next_turn's PC-skip guard passes (a do-nothing-action turn is legal).
+    # FAIL CLOSED: use_action(kind="skip") reports a REJECTED pass via ok=False (it does NOT
+    # raise) — e.g. the actor is no longer current, or the action was already spent (state drift /
+    # a racing call). If the skip did not succeed we must NOT advance into next_turn (whose PC-skip
+    # guard would then raise, or which would advance an out-of-sync turn): return a clean
+    # not-advanced result with the reason and keep the turn OPEN. A genuine raise is handled the
+    # same way. (When the action WAS already consumed, the skip's "already used" rejection is
+    # benign — the guard is already satisfied — so we only bail when the turn is still ACTABLE.)
     if turn_should_end and not consumed_action:
+        skip_failed_reason: Optional[str] = None
         try:
-            server.use_action(campaign_id, actor.id, kind="skip")
+            skip_res = server.use_action(campaign_id, actor.id, kind="skip")
+            if isinstance(skip_res, dict) and not skip_res.get("ok"):
+                skip_failed_reason = str(skip_res.get("reason") or "skip rejected")
         except Exception as exc:
-            # Advisory + best-effort: declaring the skip can fail harmlessly (e.g. the action was
-            # already spent). next_turn's PC-skip guard still legally ends a do-nothing-action turn,
-            # so we tolerate it but record it for diagnostics rather than masking it silently.
-            resolved.setdefault("skip_declare_error", str(exc))
+            skip_failed_reason = str(exc)
+        if skip_failed_reason is not None:
+            # Re-read: only bail if the turn is genuinely NOT yet endable (the actor is still
+            # current AND hasn't acted). If the skip was rejected merely because the action was
+            # already spent, the PC-skip guard is already satisfied and we proceed to advance.
+            c = server._require(campaign_id)
+            cur = c.combat.current_combatant_id if c.combat.active else None
+            already_acted = (
+                c.combat.action_used
+                or c.combat.action_attacks_made > 0
+                or c.combat.bonus_action_used
+            ) if c.combat.active else False
+            if cur == actor.id and not already_acted:
+                return {
+                    "ok": True,
+                    "resolved": resolved,
+                    "advanced": False,
+                    "turn_open": True,
+                    "skip_declare_error": skip_failed_reason,
+                    "awaiting_pc": actor.id,
+                    "combat_active": c.combat.active,
+                    "round": c.combat.round,
+                }
+            # Otherwise the guard is satisfiable (already acted, or the actor is no longer
+            # current) — record the benign rejection and proceed to advance.
+            resolved.setdefault("skip_declare_error", skip_failed_reason)
 
     if not turn_should_end:
         # The turn is still the PC's (a bare move, or advance=False introspection). Do NOT touch
@@ -1010,12 +1102,27 @@ def resolve_player_turn(
         }
 
     # Advance the turn (the locked next_turn enforces the PC-skip guard + end-of-turn saves).
+    # If next_turn RAISES (e.g. the PC-skip guard refuses because the action didn't register),
+    # the turn did NOT advance — the actor is STILL current. Returning advanced=True here would
+    # be a lie the UI acts on (it would stop showing this PC's action bar though the engine still
+    # awaits its turn). So on a raise we return a clean NOT-advanced result with the reason; the
+    # action the player took (the resolved move/attack) still landed via the locked verb.
     c = server._require(campaign_id)
     if c.combat.active and c.combat.current_combatant_id == actor.id:
         try:
             server.next_turn(campaign_id)
-        except Exception as exc:  # advisory: report, don't crash the turn
-            resolved.setdefault("error", str(exc))
+        except Exception as exc:
+            c = server._require(campaign_id)
+            return {
+                "ok": True,
+                "resolved": resolved,
+                "advanced": False,
+                "turn_open": bool(c.combat.active and c.combat.current_combatant_id == actor.id),
+                "advance_error": str(exc),
+                "awaiting_pc": actor.id if c.combat.active else None,
+                "combat_active": c.combat.active,
+                "round": c.combat.round,
+            }
 
     # Auto-run the following ENEMY turns to the next PC decision — the existing live loop.
     # run_combat_round is ONE round per call and breaks at a round boundary WITHOUT reporting

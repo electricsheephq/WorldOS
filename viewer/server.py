@@ -36,6 +36,7 @@ import binascii
 import hashlib
 import importlib.util
 import json
+import math
 import mimetypes
 import os
 import re
@@ -112,7 +113,7 @@ _TARGET_ONLY_KINDS = {"travel", "inspect", "examine", "move_to_zone"}
 # Grid-combat player-turn kinds (move_to_cell / on-turn attack / end_turn) are resolved by the
 # ENGINE in-process (not the DM agent): carried by x/y and/or target_id, with the per-kind checks
 # below relaxing the "needs text or name" guard for them.
-_MOVE_FIELDS = ("text", "name", "skill", "target", "weapon", "dc", "x", "y", "target_id", "end_turn")
+_MOVE_FIELDS = ("text", "name", "skill", "target", "weapon", "dc", "x", "y", "target_id", "end_turn", "turn_token")
 _MOVE_MAXLEN = 2000
 
 
@@ -134,11 +135,22 @@ def sanitize_move(raw: object) -> tuple[Optional[dict], str]:
             # `end_turn` is the only boolean field — preserved verbatim (ends a move-only turn).
             if isinstance(v, bool):
                 move[f] = v
+        elif f in ("x", "y"):
+            # Grid coordinates: accept an int, or a FINITE INTEGRAL float (a UI may send 3.0).
+            # REJECT NaN/Inf (a blind int() raises on those) and a fractional float like 3.9
+            # (a blind int() would silently truncate to 3 -> the wrong cell). A bad value is
+            # left UNSET so the move_to_cell guard below rejects with a clear reason. (bool is
+            # an int subclass -> excluded explicitly so True/False is never read as cell 1/0.)
+            if isinstance(v, bool):
+                continue
+            if isinstance(v, int):
+                move[f] = v
+            elif isinstance(v, float) and math.isfinite(v) and v.is_integer():
+                move[f] = int(v)
         elif isinstance(v, str) and v.strip():
             move[f] = v.strip()[:_MOVE_MAXLEN]
         elif isinstance(v, (int, float)) and not isinstance(v, bool):
-            # x/y are grid integers — coerce a float cell to int (a UI may send 3.0).
-            move[f] = int(v) if f in ("x", "y") else v
+            move[f] = v
     # A bare `end_turn` passes the turn — no other field required.
     if kind == "end_turn":
         move["end_turn"] = True
@@ -801,13 +813,27 @@ def _load_combat_loop():
     if _COMBAT_LOOP_MOD is not None:
         return _COMBAT_LOOP_MOD
     # Loading the engine server registers servers/engine on sys.path + installs the FastMCP shim.
-    if _load_engine_server() is None:
+    engine = _load_engine_server()
+    if engine is None:
         _COMBAT_LOOP_IMPORT_ERROR = _ENGINE_IMPORT_ERROR or "engine server unavailable"
         return None
     engine_dir = (_HERE.parent / "servers" / "engine").resolve()
     try:
         if str(engine_dir) not in sys.path:
             sys.path.insert(0, str(engine_dir))
+        # combat_loop.resolve_player_turn does a lazy `import server`. The bridge loaded the
+        # engine under an aliased module name (_worldos_engine_server_for_viewer), so a bare
+        # `import server` would load a SECOND copy of the ~10k-line engine module with its own
+        # globals. State stays correct EITHER WAY (every verb is file-backed: _require ->
+        # load_campaign re-reads snapshot.json under a cross-process flock; there is NO in-memory
+        # campaign cache — verified), but a redundant second instance is wasteful and makes the
+        # correctness depend implicitly on "no module ever adds a cache". Bind `import server` to
+        # the SAME engine instance the bridge already loaded by registering it under the canonical
+        # name `server` — UNLESS something already owns that name (don't clobber a real engine
+        # process's own `server`). This makes the single-instance guarantee EXPLICIT.
+        existing = sys.modules.get("server")
+        if existing is None:
+            sys.modules["server"] = engine
         spec = importlib.util.spec_from_file_location(
             "_worldos_combat_loop_for_viewer", engine_dir / "combat_loop.py"
         )
@@ -1414,6 +1440,9 @@ def _resolve_player_combat_turn_locked(campaign_id: str, move: dict, *, live: bo
     kind = str(move.get("kind") or "")
     # `end_turn` (optional bool on a move_to_cell, or a bare end_turn kind) ends a move-only turn.
     end_turn = bool(move.get("end_turn"))
+    # Optional idempotency token the client echoed off the surface (turnToken). When present, a
+    # double-click / stale retry rejects (the slot advanced). Absent == no check (back-compat).
+    expected_turn_token = str(move.get("turn_token") or "")
     try:
         Intent = loop.Intent
         if kind == "move_to_cell":
@@ -1433,7 +1462,9 @@ def _resolve_player_combat_turn_locked(campaign_id: str, move: dict, *, live: bo
     except (KeyError, ValueError, TypeError) as exc:
         return {"ok": False, "reason": f"malformed combat move: {exc}"}
 
-    verdict = loop.resolve_player_turn(campaign_id, actor_id, intent, end_turn=end_turn)
+    verdict = loop.resolve_player_turn(
+        campaign_id, actor_id, intent, end_turn=end_turn, expected_turn_token=expected_turn_token
+    )
     if not isinstance(verdict, dict) or not verdict.get("ok"):
         return verdict if isinstance(verdict, dict) else {"ok": False, "reason": "arbiter error"}
 
@@ -3157,6 +3188,28 @@ def _combat_command_center(
     }
 
 
+def _combat_turn_token(snapshot: dict) -> str:
+    """The current turn-slot token (round:turn_index:current_combatant_id), mirroring the engine's
+    combat_loop.turn_token so the surface and the arbiter agree byte-for-byte. The client echoes
+    this on its next player-turn POST; the arbiter rejects a stale token (a double-click / retry),
+    deduplicating the player turn. "" when there's no active combat."""
+    combat = snapshot.get("combat") if isinstance(snapshot, dict) else None
+    if not isinstance(combat, dict) or not combat.get("active"):
+        return ""
+    order = combat.get("order")
+    if not isinstance(order, list) or not order:
+        return ""
+    rnd = combat.get("round")
+    ti = combat.get("turn_index")
+    rnd = rnd if isinstance(rnd, int) and not isinstance(rnd, bool) else 0
+    ti = ti if isinstance(ti, int) and not isinstance(ti, bool) else 0
+    # Mirror models.Combat.current_combatant_id EXACTLY (it indexes order[turn_index % len]) so
+    # the surface token equals combat_loop.turn_token byte-for-byte.
+    row = order[ti % len(order)]
+    cur = _text(row.get("character_id")) if isinstance(row, dict) else ""
+    return f"{rnd}:{ti}:{cur}"
+
+
 def build_combat_surface(
     snapshot: dict,
     *,
@@ -3201,6 +3254,10 @@ def build_combat_surface(
 
     return {
         "campaign_id": campaign_id,
+        # The current turn-slot token (round:turn_index:current) — the client echoes it on its
+        # next player-turn POST so a double-click / stale retry rejects (idempotency). Mirrors
+        # combat_loop.turn_token; "" when no active combat. (Placed first for stable key order.)
+        "turnToken": _combat_turn_token(snapshot) if combat_active else "",
         "title": _text(snapshot.get("title"), campaign_id or "Open Worlds"),
         "world": _text(snapshot.get("world_id"), "unknown"),
         "dayLabel": _openworlds_day_label(snapshot),
