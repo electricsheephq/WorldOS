@@ -59,6 +59,7 @@ def reachable(
     occupied: set[Cell],
     width: int,
     height: int,
+    impassable: set[Cell] = frozenset(),
 ) -> set[Cell]:
     """Open-floor reachability: every in-bounds cell reachable from `start` within
     `budget_cells` of movement, flooding over the 8-neighbourhood at a flat cost of 1
@@ -93,6 +94,8 @@ def reachable(
                     cell = (nx, ny)
                     if cell in occupied:
                         continue  # can't enter (and so can't pass through) a token
+                    if cell in impassable:
+                        continue  # terrain/wall/prop — can't enter or pass through (P1)
                     if cell in dist:
                         continue
                     dist[cell] = d + 1
@@ -100,6 +103,60 @@ def reachable(
         frontier = nxt
     # Exclude the start cell (it's where you already are, not a destination).
     return {c for c in dist if c != start}
+
+
+def shortest_path(
+    start: Cell,
+    goal: Cell,
+    occupied: set[Cell],
+    width: int,
+    height: int,
+    impassable: set[Cell] = frozenset(),
+) -> list[Cell] | None:
+    """P1: BFS shortest route from `start` to `goal` over the 8-neighbourhood, routing
+    AROUND cells that cannot be entered (`occupied` tokens + `impassable` terrain/walls/
+    props). Returns the list of step cells EXCLUDING `start` (so `path_cost_cells` sums its
+    Chebyshev hops = the routed distance), `[]` if already at the goal, or None if the goal
+    is itself blocked / out of bounds / unreachable without crossing a blocked cell. Uniform
+    cost 1/step; deterministic (neighbour order fixed). On OPEN floor this returns a straight
+    diagonal whose cost equals the old straight-line Chebyshev — so behaviour is unchanged
+    when there are no obstacles (additive)."""
+    if start == goal:
+        return []
+    if not (0 <= goal[0] < width and 0 <= goal[1] < height):
+        return None
+    if goal in occupied or goal in impassable:
+        return None
+    from collections import deque
+
+    prev: dict[Cell, Cell] = {start: start}
+    q: deque[Cell] = deque([start])
+    while q:
+        cur = q.popleft()
+        if cur == goal:
+            break
+        cx, cy = cur
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+                nx, ny = cx + dx, cy + dy
+                if not (0 <= nx < width and 0 <= ny < height):
+                    continue
+                cell = (nx, ny)
+                if cell in prev or cell in occupied or cell in impassable:
+                    continue
+                prev[cell] = cur
+                q.append(cell)
+    if goal not in prev:
+        return None
+    route: list[Cell] = []
+    cur = goal
+    while cur != start:
+        route.append(cur)
+        cur = prev[cur]
+    route.reverse()
+    return route
 
 
 def path_cost_cells(from_cell: Cell, to_cell: Cell, path: list[Cell] | None = None) -> int:

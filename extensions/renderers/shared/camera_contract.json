@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "projection": "dimetric-2to1",
+  "camera_type": "orthographic",
+  "elevation_deg": 30.0,
+  "yaw_deg": 45.0,
+  "zoom_locked": true,
+  "rotation_locked": true,
+  "cell_size_world": 2.0,
+  "ortho_size_world": 12.0,
+  "char_height_world": 3.6,
+  "near": 0.3,
+  "far": 500.0,
+  "notes": [
+    "elevation_deg = asin(0.5) = 30deg gives a TRUE 2:1 screen foreshortening of a ground tile: screen_h/screen_w = sin(elevation). (Corrects the old atan(0.5)=26.565deg, which gives 2.236:1.)",
+    "cellToWorld(c,r) = ((c-cx0)*S, 0, (cy0-r)*S); S=cell_size_world; cx0=(cols-1)/2; cy0=(rows-1)/2. The on-screen 2:1 diamond emerges from the camera (yaw + 30deg pitch), NOT from per-axis steps. Inverse: c = cx0 + wx/S, r = cy0 - wz/S.",
+    "yaw_deg = 0 = front-tilted framing (the owner-liked crypt look). Set 45 for classic corner-iso (must then match bake_sprites.py facings). Owner eyeball-pick during P0; reconcile bake yaw in P3.",
+    "ortho_size_world = half the vertical view height in world units (= ortho_rows/2 * cell_size). px_per_world = render_height / (2*ortho_size_world). Plate aspect MUST equal the capture-camera aspect or the tiles skew."
+  ]
+}

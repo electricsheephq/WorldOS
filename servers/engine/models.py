@@ -1433,6 +1433,11 @@ class Combat(_StrictModel):
     grid_height: int = 0
     grid_cell_size: int = 5
     diagonal_mode: Literal["chebyshev", "five_ten_five"] = "chebyshev"
+    # P1: impassable cells (terrain/walls/props) that move_to_coords routes AROUND. Empty ==
+    # open floor (PR-1 behaviour, byte-for-byte unchanged). `last_move_path` is the most-recent
+    # routed path (incl. the from-cell) for the renderer to draw the detour — presentation only.
+    grid_impassable: list[list[int]] = Field(default_factory=list)
+    last_move_path: list[list[int]] = Field(default_factory=list)
 
     @property
     def current_combatant_id(self) -> Optional[str]:

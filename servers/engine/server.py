@@ -4284,14 +4284,22 @@ def _cell(cb: "Combatant") -> tuple[int, int] | None:
 
 @mcp.tool()
 def set_grid(campaign_id: str, width: int, height: int, cell_size: int = 5,
-             diagonal_mode: str = "chebyshev") -> dict:
-    """#461: switch this fight to a coordinate grid (the only tool that sets grid mode).
+             diagonal_mode: str = "chebyshev", obstacles: ListArg = None) -> dict:
+    """#461 / P1: switch this fight to a coordinate grid (the only tool that sets grid mode).
     Optional; without it combat stays zone/theater. Sets extents (cells; cell_size ft);
-    idempotent; needs width/height>0."""
+    idempotent; needs width/height>0. P1: `obstacles` is a list of [x,y] IMPASSABLE cells
+    (walls/props) that move_to_coords routes AROUND; omit == leave obstacles unchanged,
+    [] == clear them (open floor, PR-1 behaviour byte-for-byte unchanged)."""
     if width <= 0 or height <= 0:
         raise ValueError("set_grid needs width > 0 and height > 0")
     if diagonal_mode not in ("chebyshev", "five_ten_five"):
         raise ValueError("diagonal_mode must be 'chebyshev' or 'five_ten_five'")
+    imp: list[list[int]] | None = None
+    if obstacles is not None:
+        imp = []
+        for cellv in _coerce_list(obstacles):
+            pr = list(cellv) if isinstance(cellv, (list, tuple)) else cellv
+            imp.append([int(pr[0]), int(pr[1])])
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         c.combat.grid_enabled = True
@@ -4299,6 +4307,8 @@ def set_grid(campaign_id: str, width: int, height: int, cell_size: int = 5,
         c.combat.grid_height = height
         c.combat.grid_cell_size = cell_size
         c.combat.diagonal_mode = diagonal_mode  # type: ignore[assignment]
+        if imp is not None:
+            c.combat.grid_impassable = imp
         save_campaign(c)
         return _combat_view(c)
 
@@ -4371,11 +4381,36 @@ def move_to_coords(campaign_id: str, combatant_id: str, x: int, y: int,
             )
 
         to_cell = (x, y)
-        # Measured movement cost (PR-1: open floor — straight Chebyshev, or the summed
-        # explicit path). Accumulates across a broken-up move this turn.
+        # P1: route AROUND impassable terrain (walls/props) + other tokens. impassable/occupied
+        # empty == open floor (PR-1 behaviour byte-for-byte unchanged: straight-line Chebyshev).
+        impassable = {(int(ix), int(iy)) for ix, iy in (c.combat.grid_impassable or [])}
+        occupied = {
+            (o.x, o.y) for o in c.combat.order
+            if o.character_id != combatant_id and o.x is not None and o.y is not None
+        }
         if from_cell is None:
             cost = 0  # an unplaced combatant: this is effectively a placement, no cost
         else:
+            if path_cells is None and (impassable or occupied):
+                routed = combat_grid.shortest_path(
+                    from_cell, to_cell, occupied, c.combat.grid_width, c.combat.grid_height, impassable
+                )
+                if routed is None:
+                    # P1: never walk onto/through a wall/prop (or into an occupied cell) — reject, stay put.
+                    c.combat.last_move_path = []
+                    save_campaign(c)
+                    view = _combat_view(c)
+                    view["from"] = list(from_cell)
+                    view["to"] = list(from_cell)
+                    view["cost_cells"] = 0
+                    view["move_blocked"] = {
+                        "target": [x, y],
+                        "reason": f"({x}, {y}) is impassable (wall/prop/occupied) or unreachable — move rejected; stayed at {list(from_cell)}.",
+                    }
+                    view["warnings"] = warnings + [f"({x}, {y}) blocked/unreachable — stayed at {list(from_cell)}."]
+                    return view
+                if routed:
+                    path_cells = routed  # charge + draw the routed detour
             cost = combat_grid.path_cost_cells(from_cell, to_cell, path_cells)
         prior_used = cb.moved_cells_this_turn
         dashed = bool(dash) or bool(cb.dashed)
@@ -4446,6 +4481,12 @@ def move_to_coords(campaign_id: str, combatant_id: str, x: int, y: int,
         cb.x = x
         cb.y = y
         cb.moved_cells_this_turn = prior_used + cost
+        # P1: record the routed path (incl. the from-cell) for the renderer to draw the detour.
+        if from_cell is not None:
+            steps = path_cells if path_cells else [to_cell]
+            c.combat.last_move_path = [list(from_cell)] + [list(pc) for pc in steps]
+        else:
+            c.combat.last_move_path = []
         _log_combat_event(
             c,
             f"{mover.name if mover else combatant_id} moves to ({x}, {y}).",
@@ -4468,6 +4509,7 @@ def move_to_coords(campaign_id: str, combatant_id: str, x: int, y: int,
     view["from"] = list(from_cell) if from_cell else None
     view["to"] = [x, y]
     view["cost_cells"] = cost
+    view["path"] = c.combat.last_move_path
     view["opportunity_attack"] = bool(provokers)
     view["provokers"] = provokers
     view["warnings"] = warnings
