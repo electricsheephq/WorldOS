@@ -11,7 +11,7 @@ export const meta = {
 let _A = args; if (typeof _A === 'string') { try { _A = JSON.parse(_A) } catch (e) { _A = {} } }
 const candidates = (_A && _A.candidates) || []
 const refs = (_A && _A.refs) || []
-if (!candidates.length) { log('no candidates in args: ' + JSON.stringify(args).slice(0, 200)) }
+if (!candidates.length) { log('no candidates in args: ' + String(JSON.stringify(args)).slice(0, 200)) }
 
 const SCHEMA = {
   type: 'object', additionalProperties: false,

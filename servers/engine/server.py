@@ -4298,8 +4298,9 @@ def set_grid(campaign_id: str, width: int, height: int, cell_size: int = 5,
     if obstacles is not None:
         imp = []
         for cellv in _coerce_list(obstacles):
-            pr = list(cellv) if isinstance(cellv, (list, tuple)) else cellv
-            imp.append([int(pr[0]), int(pr[1])])
+            if not isinstance(cellv, (list, tuple)) or len(cellv) != 2:
+                raise ValueError("set_grid obstacles must be a list of [x, y] cell pairs")
+            imp.append([int(cellv[0]), int(cellv[1])])
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         c.combat.grid_enabled = True
@@ -4403,6 +4404,7 @@ def move_to_coords(campaign_id: str, combatant_id: str, x: int, y: int,
                     view["from"] = list(from_cell)
                     view["to"] = list(from_cell)
                     view["cost_cells"] = 0
+                    view["path"] = []
                     view["move_blocked"] = {
                         "target": [x, y],
                         "reason": f"({x}, {y}) is impassable (wall/prop/occupied) or unreachable — move rejected; stayed at {list(from_cell)}.",
