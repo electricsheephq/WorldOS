@@ -3341,6 +3341,10 @@ def build_combat_surface(
             "warnings": combat_view.get("warnings", []),
         },
         "grid": _scene_grid_block(snapshot, mode),
+        # P1: the most-recent routed move path (incl. the from-cell) + the impassable cells, so the
+        # read-only renderer can draw the detour around walls/props. Presentation-only; [] == none.
+        "lastPath": (snapshot.get("combat") or {}).get("last_move_path") or [],
+        "impassable": (snapshot.get("combat") or {}).get("grid_impassable") or [],
         "tokens": tokens,
         "initiative": initiative,
         "zones": zones,
