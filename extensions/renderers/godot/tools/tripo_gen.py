@@ -20,17 +20,29 @@ Downstream contract (the manifest this output ultimately feeds):
 This tool is WorldOS-ORIGINAL code; the ART it downloads (model.glb + animated GLBs) is
 NOT committed — it lives under content/worlds/_private/ (gitignored, owner-licensed).
 
-VERIFIED Tripo3D contract (some details differ from public docs — confirmed live):
+VERIFIED Tripo3D contract (v2 OpenAPI — confirmed live + against the official tripo3d
+Python SDK v0.4.1, 2026-06-28). The old openapi.tripo3d.ai/v3 paths are DEAD (404
+"No endpoint found"). ALL tasks are created via a single POST /task with a "type"
+discriminator in the JSON body — there are NO per-operation paths.
   * Auth: Bearer  ``Authorization: Bearer <key>``  (NOT x-api-key).
-  * Base: https://openapi.tripo3d.ai/v3
-  * Create text-to-3D:    POST /generation/text          (prompt; model default v3.1, or P1 low-poly)
-  * Create image-to-3D:   POST /generation/image-to-model
-  * Upload an image/glb:  POST /upload                    (multipart)
-  * Rig pre-check:        POST /animations/rig-check      (input=task_id, rig_type=biped)  -- run FIRST
-  * Rig:                  POST /animations/rig            (input=task_id, rig_type=biped, spec=mixamo)
-  * Retarget animations:  POST /animations/retarget       (input=rigged_task_id, animations=[preset:*])
-  * Each create returns a TASK ID. Poll GET /task/{id} at >= 2s intervals (1 req/s limit -> 429).
+  * Base: https://api.tripo3d.ai/v2/openapi
+  * Create ANY task:      POST /task   (body.type selects the operation; returns data.task_id)
+      - text-to-3D:       {"type":"text_to_model","prompt":...,"model_version":...}
+      - image-to-3D:      {"type":"image_to_model","file":{...},"model_version":...}
+      - rig pre-check:    {"type":"animate_prerigcheck","original_model_task_id":...}   -- run FIRST
+      - rig:             {"type":"animate_rig","original_model_task_id":...,"rig_type":"biped","spec":"mixamo","out_format":"glb"}
+      - retarget anims:  {"type":"animate_retarget","original_model_task_id":<rig_task>,"animation"|"animations":[preset:*],"out_format":"glb"}
+  * Upload an image:      POST /upload  (multipart "file"; legacy fallback) — returns data.image_token,
+                          referenced as file={"type":"jpg","file_token":<token>}. (SDK prefers STS S3,
+                          but the multipart /upload path still works for a single image.)
+  * Poll task status:     GET /task/{id}   ->  data.{status,progress,output}. Poll >= 2s (rate limit).
+      status values: queued|running|success|failed|cancelled|banned|expired|unknown
+  * Model URL lives under data.output.{model | pbr_model | base_model} (rig/retarget reuse the
+    SAME output.* fields — there is NO rigged_model / animation_model key on the wire).
   * The model download URL EXPIRES ~5 min -> download immediately on success.
+  * Preset animation names (Animation enum): idle, walk, run, dive, climb, jump, slash, shoot,
+    hurt, fall, turn (+ multi-leg variants). NOTE: there is NO "attack"/"cast" preset — the
+    closest melee/ranged presets are "slash"/"shoot"; CLI aliases map attack->slash, cast->shoot.
 
 The API key is read from ~/.worldos/tripo3d.key or $WORLDOS_TRIPO_API_KEY. It is NEVER
 printed/logged and NEVER written into any repo file.
@@ -66,21 +78,29 @@ import urllib.error
 import urllib.request
 import uuid
 
-API_BASE = "https://openapi.tripo3d.ai/v3"
-CREATE_TEXT_PATH = "/generation/text"
-CREATE_IMAGE_PATH = "/generation/image-to-model"
+API_BASE = "https://api.tripo3d.ai/v2/openapi"
+# v2 OpenAPI: every operation is a POST to the single /task endpoint; the body's
+# "type" field selects the operation. There are NO per-operation create paths anymore.
+TASK_CREATE_PATH = "/task"
 UPLOAD_PATH = "/upload"
-RIG_CHECK_PATH = "/animations/rig-check"
-RIG_PATH = "/animations/rig"
-RETARGET_PATH = "/animations/retarget"
 TASK_PATH = "/task/{task_id}"
 
-# Models: H3.1 (default, high quality) vs P1 (low-poly / game-ready).
-MODEL_DEFAULT = "v3.1"
-MODEL_LOWPOLY = "P1-low-poly"
+# Models (dated model_version ids per the v2 schema): v3.1 (default, high quality) vs P1 (low-poly / game-ready).
+MODEL_DEFAULT = "v3.1-20260211"
+MODEL_LOWPOLY = "P1-20260311"
 
-# The 5 retarget presets that align with the bake manifest's idle/walk/attack/cast columns.
+# The retarget presets that align with the bake manifest's idle/walk/attack/cast columns.
+# NOTE: Tripo has no "attack"/"cast" preset; ANIM_ALIAS maps the bake-manifest names to the
+# real Animation enum values (attack->slash, cast->shoot) so the CLI surface stays stable.
 DEFAULT_ANIMATIONS = ["walk", "idle", "run", "attack", "cast"]
+
+# Map friendly/bake-manifest animation names -> Tripo preset names (Animation enum, sans "preset:").
+ANIM_ALIAS = {"attack": "slash", "cast": "shoot"}
+# Canonical Tripo preset animation names (used to validate / pass through unknown names).
+TRIPO_PRESETS = {
+    "idle", "walk", "run", "dive", "climb", "jump", "slash", "shoot",
+    "hurt", "fall", "turn",
+}
 
 # Polling cadence + ceilings. >= 2s honors the documented 1 req/s rate limit (else 429).
 POLL_INTERVAL_SEC = 3
@@ -124,7 +144,9 @@ def _post_json(url: str, headers: dict, body: dict) -> dict:
     req = urllib.request.Request(url, data=data, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            res = json.loads(resp.read().decode("utf-8"))
+            _check_api_code(res, "POST " + url)
+            return res
     except urllib.error.HTTPError as e:
         _explain_http(e.code, _read_error(e), "POST " + url)
     except urllib.error.URLError as e:
@@ -181,7 +203,30 @@ def _read_error(e: urllib.error.HTTPError) -> str:
         return "<no body>"
 
 
+def _check_api_code(res: dict, what: str) -> None:
+    """The v2 API returns a non-zero `code` (with a human `message`) for business errors
+    even on HTTP 200 (e.g. code 2010 = insufficient credit). Surface those clearly."""
+    code = res.get("code")
+    if code in (None, 0):
+        return
+    msg = res.get("message") or ""
+    if code == 2010 or "credit" in msg.lower():
+        sys.exit(
+            "[tripo_gen] ERROR: insufficient Tripo credits on %s (code=%s). Top up the "
+            "account at https://platform.tripo3d.ai/ ; art was NOT generated. Detail: %s"
+            % (what, code, json.dumps(res))
+        )
+    sys.exit("[tripo_gen] ERROR: Tripo API error code=%s on %s. Detail: %s"
+             % (code, what, json.dumps(res)))
+
+
 def _explain_http(code: int, detail: str, what: str) -> None:
+    # code 2010 (insufficient credit) is returned with HTTP 403 in some paths.
+    if "2010" in detail or '"credit"' in detail.lower() or "enough credit" in detail.lower():
+        sys.exit(
+            "[tripo_gen] ERROR: insufficient Tripo credits on %s. Top up the account at "
+            "https://platform.tripo3d.ai/ ; art was NOT generated. Detail: %s" % (what, detail)
+        )
     if code == 401:
         sys.exit(
             "[tripo_gen] ERROR 401 unauthorized on %s — bad/expired API key. Detail: %s"
@@ -238,7 +283,7 @@ def _task_id_from_create(res: dict, what: str) -> str:
 
 def _create_text(headers: dict, prompt: str, model: str) -> str:
     body = {"type": "text_to_model", "prompt": prompt, "model_version": model}
-    res = _post_json(API_BASE + CREATE_TEXT_PATH, headers, body)
+    res = _post_json(API_BASE + TASK_CREATE_PATH, headers, body)
     task_id = _task_id_from_create(res, "text-to-3D create")
     print("[tripo_gen] text-to-3D task submitted: %s (model=%s)" % (task_id, model))
     return task_id
@@ -247,16 +292,18 @@ def _create_text(headers: dict, prompt: str, model: str) -> str:
 def _create_image(headers: dict, file_token: str, model: str) -> str:
     body = {
         "type": "image_to_model",
-        "file": {"type": "image", "file_token": file_token},
+        # v2 file content block: a single image by upload token. "type" is the file ext.
+        "file": {"type": "jpg", "file_token": file_token},
         "model_version": model,
     }
-    res = _post_json(API_BASE + CREATE_IMAGE_PATH, headers, body)
+    res = _post_json(API_BASE + TASK_CREATE_PATH, headers, body)
     task_id = _task_id_from_create(res, "image-to-3D create")
     print("[tripo_gen] image-to-3D task submitted: %s (model=%s)" % (task_id, model))
     return task_id
 
 
 def _upload_image(key: str, image_path: str) -> str:
+    # v2 legacy multipart upload -> data.image_token (referenced as file.file_token).
     res = _post_multipart(API_BASE + UPLOAD_PATH, key, image_path)
     data = res.get("data") or {}
     token = data.get("image_token") or data.get("file_token") or data.get("token")
@@ -267,9 +314,9 @@ def _upload_image(key: str, image_path: str) -> str:
 
 
 def _rig_check(headers: dict, task_id: str) -> dict:
-    """Pre-flight rigging check — MUST pass before /animations/rig."""
-    body = {"input": task_id, "rig_type": "biped"}
-    res = _post_json(API_BASE + RIG_CHECK_PATH, headers, body)
+    """Pre-flight rigging check (animate_prerigcheck) — MUST pass before animate_rig."""
+    body = {"type": "animate_prerigcheck", "original_model_task_id": task_id}
+    res = _post_json(API_BASE + TASK_CREATE_PATH, headers, body)
     check_task = _task_id_from_create(res, "rig-check create")
     print("[tripo_gen] rig-check submitted: %s" % check_task)
     final = _poll(headers, check_task, "rig-check", DEFAULT_TIMEOUT_SEC)
@@ -285,19 +332,41 @@ def _rig_check(headers: dict, task_id: str) -> dict:
 
 
 def _rig(headers: dict, task_id: str) -> str:
-    body = {"input": task_id, "rig_type": "biped", "spec": "mixamo"}
-    res = _post_json(API_BASE + RIG_PATH, headers, body)
+    body = {
+        "type": "animate_rig",
+        "original_model_task_id": task_id,
+        "rig_type": "biped",
+        "spec": "mixamo",
+        "out_format": "glb",
+    }
+    res = _post_json(API_BASE + TASK_CREATE_PATH, headers, body)
     rig_task = _task_id_from_create(res, "rig create")
     print("[tripo_gen] rig task submitted: %s (spec=mixamo)" % rig_task)
     return rig_task
 
 
+def _preset_for(name: str) -> str:
+    """Map a friendly/bake-manifest animation name to a Tripo 'preset:<name>' value."""
+    base = ANIM_ALIAS.get(name, name)
+    return "preset:%s" % base
+
+
 def _retarget(headers: dict, rigged_task_id: str, animations: list) -> str:
-    presets = ["preset:%s" % a for a in animations]
-    body = {"input": rigged_task_id, "animations": presets}
-    res = _post_json(API_BASE + RETARGET_PATH, headers, body)
+    presets = [_preset_for(a) for a in animations]
+    # v2 takes a single "animation" for one clip, or "animations" for a list.
+    body = {
+        "type": "animate_retarget",
+        "original_model_task_id": rigged_task_id,
+        "out_format": "glb",
+    }
+    if len(presets) == 1:
+        body["animation"] = presets[0]
+    else:
+        body["animations"] = presets
+    res = _post_json(API_BASE + TASK_CREATE_PATH, headers, body)
     rt_task = _task_id_from_create(res, "retarget create")
-    print("[tripo_gen] retarget task submitted: %s (animations=%s)" % (rt_task, ",".join(animations)))
+    print("[tripo_gen] retarget task submitted: %s (animations=%s)" % (
+        rt_task, ",".join("%s->%s" % (a, ANIM_ALIAS.get(a, a)) for a in animations)))
     return rt_task
 
 
@@ -329,10 +398,14 @@ def _poll(headers: dict, task_id: str, label: str, timeout_sec: int) -> dict:
 
 
 def _model_url(task: dict) -> str:
-    """Pull the downloadable GLB URL out of a succeeded task (URL expires ~5 min)."""
+    """Pull the downloadable GLB URL out of a succeeded task (URL expires ~5 min).
+
+    v2 OpenAPI puts the model URL under output.{pbr_model,model,base_model}; rig and
+    retarget tasks reuse these SAME keys (there is no rigged_model/animation_model on the
+    wire). pbr_model is preferred (textured), then model, then base_model.
+    """
     out = task.get("output") or {}
-    # Tripo exposes the model under several keys across endpoints/versions.
-    for k in ("pbr_model", "model", "rigged_model", "animation_model", "base_model"):
+    for k in ("pbr_model", "model", "base_model"):
         v = out.get(k)
         if isinstance(v, str) and v:
             return v
@@ -340,13 +413,6 @@ def _model_url(task: dict) -> str:
             url = v.get("url") or v.get("glb")
             if url:
                 return url
-    result = task.get("result") or {}
-    for k in ("pbr_model", "model"):
-        v = result.get(k)
-        if isinstance(v, dict) and v.get("url"):
-            return v["url"]
-        if isinstance(v, str) and v:
-            return v
     sys.exit("[tripo_gen] ERROR: succeeded task has no downloadable model URL: %s" % json.dumps(out))
 
 
@@ -565,7 +631,9 @@ def _add_common(sp) -> None:
     sp.add_argument("--rig", action="store_true",
                     help="after generation, run rig-check -> rig(spec=mixamo) -> retarget")
     sp.add_argument("--animations", nargs="+", default=list(DEFAULT_ANIMATIONS),
-                    help="retarget preset animations (default: %s)" % " ".join(DEFAULT_ANIMATIONS))
+                    help="retarget preset animations (default: %s). "
+                         "Tripo presets: %s. Aliases: attack->slash, cast->shoot."
+                         % (" ".join(DEFAULT_ANIMATIONS), " ".join(sorted(TRIPO_PRESETS))))
     sp.add_argument("--force", action="store_true", help="regenerate even if model.glb exists")
     sp.add_argument("--dry-run", action="store_true", help="print plan + est credits, make NO API calls")
     sp.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SEC,
