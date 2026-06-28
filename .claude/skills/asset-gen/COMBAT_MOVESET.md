@@ -32,7 +32,22 @@ mixamo_gen.py moveset --out <dir>             # the same 9 named anim_<name>.fbx
 mixamo_gen.py search "sword slash"            # explore the library
 ```
 - ⚠ Mixamo's API is **unofficial** and Adobe has signaled a sunset — always `--test-key` first.
-- The token **expires (~hours)** — re-extract when `--test-key` reports unauthorized.
+  (Live-confirmed working 2026-06-28: token + search + export + download all functional.)
+- The token **expires (~hours)** — when `--test-key`/any call returns 401, refresh it (next section).
+
+### Token refresh — the agent procedure (when `--test-key` says unauthorized)
+Mixamo is browser-login only, so the token is extracted from a **logged-in mixamo.com browser tab on
+the Mac** via Claude-in-Chrome. A Mac-side agent can do this fully autonomously (no human needed) as
+long as a Mixamo session is logged in:
+1. `list_connected_browsers` → `select_browser` (the local macOS Chrome).
+2. `tabs_context_mcp{createIfEmpty:true}` → `navigate` an MCP tab to `https://www.mixamo.com/`
+   (localStorage is shared per-origin with the logged-in session).
+3. `javascript_tool`: trigger a Blob **download** of `localStorage.getItem('access_token')` (keeps the
+   raw token OUT of the transcript) — `new Blob([t]) → a.download='mixamo_token.txt' → a.click()`.
+4. `mv ~/Downloads/mixamo_token*.txt ~/.worldos/mixamo.token && chmod 600` it; re-run `--test-key`.
+5. If `mixamo_gen.py` runs on the GEX44 box, `scp ~/.worldos/mixamo.token` to the box's `~/.worldos/`.
+This is safe to automate: it's the user's own short-lived token for their own tool. If NO logged-in
+Mixamo tab exists, that's the one human gate — ask the owner to log in, then refresh.
 - Mixamo clips ride Mixamo's skeleton, which matches our `spec:"mixamo"` rigs, so they retarget onto
   Meshy/Tripo actors. Default export is clip-only (no skin) for retargeting; `--skin` for a base.
 - **When to use which:** Meshy = the per-actor baseline for the filler-first loop (keep it primary);

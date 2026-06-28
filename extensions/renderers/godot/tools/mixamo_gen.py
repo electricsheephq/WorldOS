@@ -158,18 +158,23 @@ def _download(url: str, dest: str) -> int:
 # --------------------------------------------------------------------------- #
 # Mixamo API flow (search -> details -> export -> monitor -> download).
 # --------------------------------------------------------------------------- #
+def _pick_character_id(data) -> str:
+    """GET /characters returns a LIST of {uuid,name,type,source} (system chars + any user upload).
+    Export retargets onto a character; for GENERIC clips any works. Prefer a user-uploaded character,
+    else the first system one. (Also tolerate a dict shape just in case the API changes.)"""
+    chars = data if isinstance(data, list) else (data.get("results") or [])
+    if not chars:
+        return ""
+    user = next((c for c in chars if c.get("type") == "user" or c.get("source") == "user"), None)
+    chosen = user or chars[0]
+    return chosen.get("uuid") or chosen.get("character_id") or chosen.get("id") or ""
+
+
 def _primary_character_id(headers: dict) -> str:
-    """Mixamo retargets onto a character; export needs the account's character_id."""
-    data = _get(BASE_URL + "/characters", headers)
-    cid = data.get("primary_character_id")
-    if cid:
-        return cid
-    results = data.get("results") or []
-    if results:
-        cid = results[0].get("character_id") or results[0].get("id")
-        if cid:
-            return cid
-    sys.exit("[mixamo_gen] ERROR: no character in the Mixamo account; upload one at mixamo.com first.")
+    cid = _pick_character_id(_get(BASE_URL + "/characters", headers))
+    if not cid:
+        sys.exit("[mixamo_gen] ERROR: no usable character returned by Mixamo /characters.")
+    return cid
 
 
 def _search(headers: dict, query: str, limit: int = 12) -> list:
@@ -246,8 +251,7 @@ def _fetch_clip(headers: dict, character_id: str, query: str, out_path: str,
 def _cmd_test_key() -> None:
     """Validate the token + confirm the (unofficial, sunset-risk) API is still live."""
     headers = _headers(_load_token())
-    data = _get(BASE_URL + "/characters", headers)
-    cid = data.get("primary_character_id") or (data.get("results") or [{}])[0].get("character_id")
+    cid = _pick_character_id(_get(BASE_URL + "/characters", headers))
     print("Mixamo Auth OK" + (" (character %s)" % cid if cid else " (no character uploaded yet)"))
 
 
