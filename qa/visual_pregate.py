@@ -91,6 +91,14 @@ SCALE_REL_HIGH = 0.32         # ... over this => HIGH (clearly a different scale
 # G2 occupancy
 OCC_MISMATCH_MED = 0.10       # >10% of cells whose rendered tint disagrees with the mask => MED
 OCC_MISMATCH_HIGH = 0.22      # >22% => HIGH (tactical space is unreadable)
+# G5 motion-liveness (objective inter-frame deltas over a render REEL; 0..1 normalized luminance).
+# A FROZEN idle (no inter-frame change across the idle frames) is the #1 "static billboard, not a
+# living 3D actor" tell — now a number. A MOVE that produces no walk-centroid displacement is an
+# actor sliding/teleporting without locomotion.
+FROZEN_IDLE_DELTA = 0.0005    # mean abs inter-frame luminance delta below this over the idle frames
+                              # => CRITICAL "frozen idle" (the reel is static; nothing is animating)
+MOVE_CENTROID_MIN_PX = 2.0    # a beat tagged as a MOVE must shift the bright-mass centroid at least
+                              # this many px between its frames; below => HIGH "no locomotion displacement"
 
 
 # ---------------------------------------------------------------------------
@@ -265,8 +273,10 @@ def _stdlib_png_lum(p: Path) -> tuple[float, float]:
     prev = bytearray(stride)
     pos = 0
     for _ in range(height):
-        ftype = raw[pos]; pos += 1
-        line = bytearray(raw[pos:pos + stride]); pos += stride
+        ftype = raw[pos]
+        pos += 1
+        line = bytearray(raw[pos:pos + stride])
+        pos += stride
         for i in range(stride):
             a = line[i - channels] if i >= channels else 0
             b = prev[i]
@@ -459,6 +469,234 @@ def gate_occupancy(scenegrid: SceneGrid, occupancy_tint: Optional[dict]) -> list
 
 
 # ---------------------------------------------------------------------------
+# G5 motion-liveness — objective inter-frame deltas over a render REEL.
+# ---------------------------------------------------------------------------
+# G5 is the motion analogue of G1: instead of "is ONE frame lit?", it asks "does the REEL actually
+# MOVE?" It reads a small downscaled luminance grid from each reel frame (Pillow if present, else a
+# stdlib PNG decode — same graceful degradation as G1) and computes two objective signals:
+#   * mean abs inter-frame luminance delta over the IDLE frames -> a FROZEN idle is CRITICAL.
+#   * bright-mass centroid displacement over a frame-pair tagged as a MOVE -> no shift is HIGH.
+# When no reel is supplied (the common still-only round), G5 SKIPS — additive, empty == today.
+
+# Downscale target for the per-frame luminance grid (cheap; matches G1's 128px thumbnail budget).
+_G5_GRID = 64
+
+
+def _lum_grid(png_path: str | Path) -> Optional[tuple[list[float], int, int]]:
+    """Return (luminance[], width, height) of a downscaled (<= _G5_GRID) luminance grid in 0..1,
+    or None if the PNG can't be decoded. Tries Pillow (fast), else reuses the stdlib PNG decoder.
+    Used by G5 for inter-frame delta + centroid math (G1 only needs the scalar stats)."""
+    p = Path(png_path)
+    if not p.exists():
+        return None
+    try:
+        from PIL import Image  # type: ignore
+        im = Image.open(p).convert("L")
+        im.thumbnail((_G5_GRID, _G5_GRID))
+        w, h = im.size
+        vals = [v / 255.0 for v in im.tobytes()]
+        return vals, w, h
+    except Exception:
+        pass
+    # stdlib fallback: decode the full PNG, then box-sample down to a coarse grid.
+    try:
+        return _stdlib_png_lum_grid(p, _G5_GRID)
+    except Exception:
+        return None
+
+
+def _stdlib_png_lum_grid(p: Path, target: int) -> tuple[list[float], int, int]:
+    """Minimal PNG decode (8-bit RGB/RGBA, no interlace) -> a <=target luminance grid. stdlib only.
+    Nearest-sample downscale (cheap + deterministic); good enough for delta/centroid signals."""
+    data = p.read_bytes()
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError("not a PNG")
+    off = 8
+    width = height = bit_depth = color_type = 0
+    idat = bytearray()
+    while off < len(data):
+        ln = struct.unpack(">I", data[off:off + 4])[0]
+        ctype = data[off + 4:off + 8]
+        body = data[off + 8:off + 8 + ln]
+        if ctype == b"IHDR":
+            width, height, bit_depth, color_type = (*struct.unpack(">IIBB", body[:10]),)
+        elif ctype == b"IDAT":
+            idat += body
+        elif ctype == b"IEND":
+            break
+        off += 12 + ln
+    if bit_depth != 8 or color_type not in (2, 6):
+        raise ValueError(f"unsupported PNG bit_depth={bit_depth} color_type={color_type}")
+    channels = 4 if color_type == 6 else 3
+    raw = zlib.decompress(bytes(idat))
+    stride = width * channels
+    out = bytearray()
+    prev = bytearray(stride)
+    pos = 0
+    for _ in range(height):
+        ftype = raw[pos]
+        pos += 1
+        line = bytearray(raw[pos:pos + stride])
+        pos += stride
+        for i in range(stride):
+            a = line[i - channels] if i >= channels else 0
+            b = prev[i]
+            c = prev[i - channels] if i >= channels else 0
+            x = line[i]
+            if ftype == 1:
+                line[i] = (x + a) & 0xFF
+            elif ftype == 2:
+                line[i] = (x + b) & 0xFF
+            elif ftype == 3:
+                line[i] = (x + ((a + b) >> 1)) & 0xFF
+            elif ftype == 4:
+                pp = a + b - c
+                pa, pb, pc = abs(pp - a), abs(pp - b), abs(pp - c)
+                pr = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
+                line[i] = (x + pr) & 0xFF
+        out += line
+        prev = line
+    # Nearest-sample downscale to <= target on the long edge.
+    scale = max(1, max(width, height) // target)
+    gw = max(1, width // scale)
+    gh = max(1, height // scale)
+    vals: list[float] = []
+    for gy in range(gh):
+        sy = min(height - 1, gy * scale)
+        for gx in range(gw):
+            sx = min(width - 1, gx * scale)
+            base = sy * stride + sx * channels
+            r, g, b = out[base], out[base + 1], out[base + 2]
+            vals.append((0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0)
+    return vals, gw, gh
+
+
+def _mean_abs_delta(a: list[float], b: list[float]) -> Optional[float]:
+    """Mean absolute per-pixel luminance delta between two equal-length grids (0..1). None if the
+    grids differ in length (mismatched frame sizes — can't compare)."""
+    if not a or not b or len(a) != len(b):
+        return None
+    # lengths are guaranteed equal here (guarded above) -> strict=True is safe + correct.
+    return sum(abs(x - y) for x, y in zip(a, b, strict=True)) / len(a)
+
+
+def _bright_centroid(vals: list[float], w: int, h: int) -> Optional[tuple[float, float]]:
+    """Luminance-weighted centroid (x,y) in grid px of the bright mass, or None if the frame has no
+    bright mass. Used to detect whether a MOVE actually displaced the actor."""
+    total = sum(vals)
+    if total <= 0:
+        return None
+    cx = sum(vals[i] * (i % w) for i in range(len(vals))) / total
+    cy = sum(vals[i] * (i // w) for i in range(len(vals))) / total
+    return cx, cy
+
+
+def gate_motion_liveness(reel: Optional[list[dict]]) -> list[dict]:
+    """G5: objective inter-frame deltas over a render REEL.
+
+    ``reel`` is an ordered list of frame dicts (the qa/motion_reel.py sidecar's ``frames``):
+        [{"frame": "<png path>", "label": "idle"|"walk"|"attack"|..., "is_move": bool, ...}, ...]
+    Each frame must carry a decodable PNG ``frame`` path. ``label`` (or ``anim``) classifies the
+    beat; a frame with ``is_move`` true (or label in the MOVE set) participates in the displacement
+    check. SKIPPED when no reel is supplied (additive — the still-only round is unchanged).
+
+    Checks:
+      * FROZEN IDLE (CRITICAL) — over the IDLE frames (label/anim contains "idle"), the mean abs
+        inter-frame luminance delta < FROZEN_IDLE_DELTA. Nothing is animating: a static billboard.
+      * NO LOCOMOTION DISPLACEMENT (HIGH) — for a MOVE pair, the bright-mass centroid shifts <
+        MOVE_CENTROID_MIN_PX. The engine said the actor moved but the render didn't displace it.
+    """
+    if not reel:
+        return [{"gate": "G5_motion_liveness", "severity": "SKIPPED", "metric": "reel",
+                 "value": None, "threshold": None,
+                 "detail": "no render reel supplied; G5 skipped (only meaningful with a motion reel — "
+                           "build one with qa/motion_reel.py and pass its frames)"}]
+
+    # Decode each frame's grid once (graceful: undecodable frames are dropped + noted).
+    grids: list[tuple[Optional[tuple[list[float], int, int]], dict]] = []
+    for fr in reel:
+        path = fr.get("frame") or fr.get("path")
+        grids.append((_lum_grid(path) if path else None, fr))
+    decoded = [(g, fr) for g, fr in grids if g is not None]
+    if len(decoded) < 2:
+        return [{"gate": "G5_motion_liveness", "severity": "SKIPPED", "metric": "frames",
+                 "value": len(decoded), "threshold": 2,
+                 "detail": f"reel has <2 decodable frames ({len(decoded)}); G5 needs >=2 to measure motion"}]
+
+    def _label(fr: dict) -> str:
+        return str(fr.get("label") or fr.get("anim") or "").lower()
+
+    _MOVE_LABELS = ("walk", "run", "move", "locomot", "step", "approach", "charge")
+
+    gates: list[dict] = []
+
+    # --- FROZEN IDLE: mean abs inter-frame delta across consecutive IDLE frames. ---
+    idle = [(g, fr) for g, fr in decoded if "idle" in _label(fr)]
+    if len(idle) >= 2:
+        deltas = []
+        for (ga, _), (gb, _) in zip(idle, idle[1:]):
+            d = _mean_abs_delta(ga[0], gb[0])
+            if d is not None:
+                deltas.append(d)
+        if deltas:
+            mean_delta = sum(deltas) / len(deltas)
+            if mean_delta < FROZEN_IDLE_DELTA:
+                gates.append({"gate": "G5_motion_liveness", "severity": "CRITICAL",
+                              "metric": "idle_interframe_delta", "value": round(mean_delta, 6),
+                              "threshold": FROZEN_IDLE_DELTA,
+                              "detail": (f"FROZEN idle: mean inter-frame luminance delta {mean_delta:.6f} "
+                                         f"< {FROZEN_IDLE_DELTA} over {len(idle)} idle frames — the actor is "
+                                         "a static billboard, not a living 3D actor; animate the idle BEFORE scoring")})
+            else:
+                gates.append({"gate": "G5_motion_liveness", "severity": "PASS",
+                              "metric": "idle_interframe_delta", "value": round(mean_delta, 6),
+                              "threshold": FROZEN_IDLE_DELTA,
+                              "detail": f"idle is alive (mean inter-frame delta {mean_delta:.6f} >= {FROZEN_IDLE_DELTA})"})
+
+    # --- NO LOCOMOTION DISPLACEMENT: a MOVE beat must shift the bright-mass centroid. ---
+    # A frame is a MOVE if is_move is truthy OR its label is in the move set. We use the centroid
+    # SPREAD — the MAX pairwise displacement across ALL move frames — NOT just first-vs-last net
+    # displacement. A valid out-and-back move (A->B->A) nets ~0 first-vs-last but clearly travels;
+    # spread captures that the actor reached B. Only frames whose grid size matches the first move
+    # frame's are compared (the frame-size guard); centroid-less frames (no bright mass) are skipped.
+    moves = [(g, fr) for g, fr in decoded
+             if fr.get("is_move") or any(m in _label(fr) for m in _MOVE_LABELS)]
+    if len(moves) >= 2:
+        (g0, w0, h0) = moves[0][0]
+        centroids: list[tuple[float, float]] = []
+        for (gi, wi, hi), _ in moves:
+            if (wi, hi) != (w0, h0):
+                continue  # frame-size guard: only compare same-size frames
+            ci = _bright_centroid(gi, wi, hi)
+            if ci is not None:
+                centroids.append((ci[0], ci[1]))
+        if len(centroids) >= 2:
+            # Max pairwise displacement (spread). Cheap O(n^2) — reels are short (a handful of frames).
+            disp = max(math.hypot(cx2 - cx1, cy2 - cy1)
+                       for i, (cx1, cy1) in enumerate(centroids)
+                       for (cx2, cy2) in centroids[i + 1:])
+            if disp < MOVE_CENTROID_MIN_PX:
+                gates.append({"gate": "G5_motion_liveness", "severity": "HIGH",
+                              "metric": "move_centroid_px", "value": round(disp, 3),
+                              "threshold": MOVE_CENTROID_MIN_PX,
+                              "detail": (f"a MOVE beat's bright-mass centroid spread only {disp:.2f}px "
+                                         f"(< {MOVE_CENTROID_MIN_PX}px) across {len(moves)} move frames — the "
+                                         "actor slides/teleports without locomotion; check the walk cycle / root motion")})
+            else:
+                gates.append({"gate": "G5_motion_liveness", "severity": "PASS",
+                              "metric": "move_centroid_px", "value": round(disp, 3),
+                              "threshold": MOVE_CENTROID_MIN_PX,
+                              "detail": f"move beat displaced the actor {disp:.2f}px (>= {MOVE_CENTROID_MIN_PX}px, max spread)"})
+
+    if not gates:
+        gates.append({"gate": "G5_motion_liveness", "severity": "SKIPPED", "metric": "beats",
+                      "value": len(decoded), "threshold": None,
+                      "detail": "reel decoded but no idle pair / move beat to measure; tag frames with "
+                                "label='idle' and/or is_move=true (or a walk/run label) to enable G5 checks"})
+    return gates
+
+
+# ---------------------------------------------------------------------------
 # Orchestrator
 # ---------------------------------------------------------------------------
 _SEV_RANK = {"CRITICAL": 4, "HIGH": 3, "MED": 2, "LOW": 1, "PASS": 0, "SKIPPED": 0}
@@ -470,15 +708,21 @@ def run_pregates(
     camera: CameraSpec = CameraSpec.LOCKED,  # type: ignore[attr-defined]
     actors: Optional[list[dict]] = None,
     occupancy_tint: Optional[dict] = None,
+    reel: Optional[list[dict]] = None,
 ) -> dict:
     """Run all available pre-gates. Returns {verdict, blocking, gates[]}.
     verdict = FLAG if any CRITICAL/HIGH fired (the loop must fix the deterministic defect and
-    re-render BEFORE the LLM panel); else PASS; SKIPPED only if literally nothing could run."""
+    re-render BEFORE the LLM panel); else PASS; SKIPPED only if literally nothing could run.
+
+    ``reel`` (optional) is the ordered list of motion-reel frame dicts (qa/motion_reel.py's sidecar
+    ``frames``); when supplied, G5 motion-liveness also runs. Omitting it == today's behavior (G5
+    SKIPS) — additive, no still-only round changes."""
     gates: list[dict] = []
     gates += gate_frame_lit(render_png)
     if scenegrid is not None:
         gates += gate_floor_contact_and_scale(scenegrid, camera, actors or [])
         gates += gate_occupancy(scenegrid, occupancy_tint)
+    gates += gate_motion_liveness(reel)
     worst = max((_SEV_RANK[g["severity"]] for g in gates), default=0)
     blocking = [g for g in gates if g["severity"] in ("CRITICAL", "HIGH")]
     ran = [g for g in gates if g["severity"] not in ("SKIPPED",)]
@@ -514,12 +758,27 @@ def _load_actors(arg: Optional[str]) -> list[dict]:
     return json.loads(arg)
 
 
+def _load_reel(arg: Optional[str]) -> Optional[list[dict]]:
+    """Load the motion-reel frames for G5. Accepts a bare list of frame dicts OR a motion_reel.py
+    sidecar object with a top-level 'frames' key. Returns None on empty/unrecognized input."""
+    if not arg:
+        return None
+    raw = Path(arg[1:]).read_text() if arg.startswith("@") else arg
+    obj = json.loads(raw)
+    if isinstance(obj, dict):
+        obj = obj.get("frames")
+    return obj if isinstance(obj, list) else None
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Deterministic visual pre-gates for the visual-critic loop")
     ap.add_argument("--render", required=True, help="path to the rendered PNG")
     ap.add_argument("--scenegrid", help="path to the *.scenegrid.json (enables G2/G3/G4)")
     ap.add_argument("--actors", help="measured actor boxes JSON or @file.json")
     ap.add_argument("--occupancy", help="rendered occupancy tint JSON or @file.json")
+    ap.add_argument("--reel", help="motion-reel frames JSON or @file.json (enables G5); accepts a "
+                                   "bare list of frame dicts OR a qa/motion_reel.py sidecar object "
+                                   "with a top-level 'frames' key")
     ap.add_argument("--json", action="store_true", help="emit JSON")
     args = ap.parse_args(argv)
 
@@ -530,7 +789,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         import sys as _sys
         print(f"WARNING: --occupancy input is not a dict (got {type(occ).__name__}); G2 will be SKIPPED", file=_sys.stderr)
         occ = None
-    res = run_pregates(args.render, scenegrid=sg, actors=actors, occupancy_tint=occ)
+    reel = _load_reel(args.reel) if args.reel else None
+    res = run_pregates(args.render, scenegrid=sg, actors=actors, occupancy_tint=occ, reel=reel)
     if args.json:
         print(json.dumps(res, indent=2))
     else:
