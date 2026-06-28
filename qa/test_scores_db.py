@@ -674,3 +674,63 @@ def test_render_includes_1b_timing_columns(tmp_path):
     assert "slowest tool" in md
     assert "scene_context" in md
     assert "3%" in md                      # tool_exec_pct rendered as a percentage
+
+
+# --- L7 MOTION columns (the "PoE2 + motion" recalibration: motion_overall / motion_dims_json /
+#     motion_reel_ref / milestone) ---
+
+def test_motion_columns_registered_with_right_types():
+    """The four motion columns exist; motion_overall is REAL, the rest are TEXT."""
+    for col in ("motion_overall", "motion_dims_json", "motion_reel_ref", "milestone"):
+        assert col in scores_db.COLUMNS, f"{col} missing from COLUMNS"
+    assert scores_db._coltype("motion_overall") == "REAL"
+    assert scores_db._coltype("motion_dims_json") == "TEXT"
+    assert scores_db._coltype("motion_reel_ref") == "TEXT"
+    assert scores_db._coltype("milestone") == "TEXT"
+
+
+def test_motion_columns_roundtrip_with_dict_dims(tmp_path):
+    """add_run accepts motion fields; motion_dims_json may be a dict and is auto-JSON-encoded."""
+    db = tmp_path / "t.db"
+    dims = {"idle_life": 7, "locomotion_weight": 6, "attack_arc": 8, "hit_react": 5,
+            "death": 6, "timing_sync": 7, "turn_to_face": 9}
+    scores_db.add_run(
+        "vc-tavern-r3", db_path=db, surface="visual", scorer_model="opus",
+        visual_scene="fixture:tavern", visual_backend="unity-cl", visual_round=3,
+        visual_overall=7.6, motion_overall=6.8, motion_dims_json=dims,
+        motion_reel_ref="/tmp/tavern_reel.png", milestone="M1.2",
+    )
+    row = scores_db.fetch_rows(db)[0]
+    assert row["motion_overall"] == 6.8
+    assert json.loads(row["motion_dims_json"]) == dims
+    assert row["motion_reel_ref"] == "/tmp/tavern_reel.png"
+    assert row["milestone"] == "M1.2"
+
+
+def test_motion_columns_read_null_on_still_only_row(tmp_path):
+    """ADDITIVITY: a still-only visual row (no motion fields) reads back NULL for all four — and an
+    old non-visual row is likewise unaffected (empty == today)."""
+    db = tmp_path / "t.db"
+    scores_db.add_run("vc-still", db_path=db, surface="visual", visual_overall=7.0,
+                      visual_scene="fixture:tavern", visual_backend="unity-cl")
+    row = scores_db.fetch_rows(db)[0]
+    for col in ("motion_overall", "motion_dims_json", "motion_reel_ref", "milestone"):
+        assert row[col] is None, f"{col} should read NULL on a still-only row"
+
+
+def test_motion_columns_alter_into_an_old_db(tmp_path):
+    """A db created before the motion columns gets all four ALTER-added on connect (migration-free)."""
+    db = tmp_path / "old.db"
+    conn = sqlite3.connect(db)
+    conn.execute('CREATE TABLE runs ("run_id" TEXT PRIMARY KEY, "surface" TEXT, "visual_overall" REAL)')
+    conn.execute('INSERT INTO runs ("run_id","surface","visual_overall") VALUES (?,?,?)',
+                 ("legacy-visual", "visual", 6.5))
+    conn.commit()
+    conn.close()
+    rows = scores_db.fetch_rows(db)  # connect() ALTERs in the new columns
+    cols = set(rows[0].keys())
+    assert {"motion_overall", "motion_dims_json", "motion_reel_ref", "milestone"} <= cols
+    legacy = {r["run_id"]: r for r in rows}["legacy-visual"]
+    # the pre-existing row reads NULL for the new columns + keeps its old value
+    assert legacy["visual_overall"] == 6.5
+    assert legacy["motion_overall"] is None

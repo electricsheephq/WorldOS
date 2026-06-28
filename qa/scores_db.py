@@ -163,6 +163,16 @@ COLUMNS: tuple[str, ...] = (
     "visual_backend",     # render backend: "unity-cl" | "godot" | "still" (the SKILL's render source)
     "visual_pregate",     # the deterministic pre-gate verdict for this frame: PASS|FLAG|SKIPPED
     "visual_blocking",    # comma-joined CRITICAL/HIGH defect ids still open at this round (NULL = none)
+    # --- L7 MOTION lens (the "PoE2 + motion" recalibration; scored from a render REEL, not a still).
+    # The still-frame quality stays in visual_* above; the MOTION quality lives here so a frozen-but-
+    # pretty render and a moving-but-ugly render are distinguishable. NULL on every still-only row and
+    # on every non-visual row (additive, migration-free; empty == today). ---
+    "motion_overall",     # 0-10 holistic L7 motion score (idle life + locomotion weight + attack arc
+                          # + hit-react + death + timing-sync + turn-to-face), NULL if no reel scored
+    "motion_dims_json",   # JSON {idle_life, locomotion_weight, attack_arc, hit_react, death,
+                          #       timing_sync, turn_to_face} — the L7 sub-scores (auto-JSON-encoded)
+    "motion_reel_ref",    # path/id of the scored motion reel (the qa/motion_reel.py contact-sheet)
+    "milestone",          # coarse art-milestone tag, e.g. "M1.0" | "M1.2" (groups rounds by milestone)
 )
 
 # Numeric columns get REAL; pass is an INTEGER bool; the rest TEXT.
@@ -178,6 +188,8 @@ _REAL_COLS = {
     "engagement_pct",
     # visual-critic loop (0-10 gap-to-reference score → REAL)
     "visual_overall",
+    # L7 motion lens (0-10 holistic motion score → REAL)
+    "motion_overall",
 }
 _INT_COLS = {"critical_bugs", "pass", "is_canonical_baseline", "acts_reached", "visual_round"}
 
@@ -228,9 +240,9 @@ def add_run(
     """Append (or replace) ONE run row in the canonical ledger.
 
     Pass ``run_id`` plus any subset of :data:`COLUMNS` as keyword args. Unknown keys raise
-    (so a typo is caught, not silently dropped). ``per_persona_json`` and ``visual_dims_json``
-    may be passed as dicts and are JSON-encoded automatically. ``surface`` is validated against
-    :data:`SURFACES`. ``ts`` defaults to now (UTC, ISO8601) if omitted.
+    (so a typo is caught, not silently dropped). ``per_persona_json``, ``visual_dims_json``, and
+    ``motion_dims_json`` may be passed as dicts and are JSON-encoded automatically. ``surface`` is
+    validated against :data:`SURFACES`. ``ts`` defaults to now (UTC, ISO8601) if omitted.
     """
     unknown = set(fields) - set(COLUMNS)
     if unknown:
@@ -279,9 +291,9 @@ def add_run(
                     f"another run's ruler, cite its run_id, not its hash)"
                 )
 
-    # JSON-encode structured payloads (per_persona_json and visual_dims_json may be passed as
-    # dicts and are auto-encoded to avoid sqlite3.ProgrammingError on non-string values).
-    for _jcol in ("per_persona_json", "visual_dims_json"):
+    # JSON-encode structured payloads (per_persona_json, visual_dims_json, and motion_dims_json may
+    # be passed as dicts and are auto-encoded to avoid sqlite3.ProgrammingError on non-string values).
+    for _jcol in ("per_persona_json", "visual_dims_json", "motion_dims_json"):
         _jv = fields.get(_jcol)
         if _jv is not None and not isinstance(_jv, str):
             fields[_jcol] = json.dumps(_jv, ensure_ascii=False, sort_keys=True)

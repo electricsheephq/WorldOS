@@ -382,6 +382,96 @@ class TestRunPregates:
         res = vp.run_pregates(str(tmp_path / "missing.png"))
         assert res["verdict"] == "SKIPPED"
 
+    def test_no_reel_g5_skips_still_only_round_unchanged(self, tmp_path):
+        """ADDITIVITY: a still-only round (no reel) leaves G5 SKIPPED — empty == today."""
+        # A lit, varied frame so G1 PASSes; no scenegrid, no reel.
+        p = tmp_path / "lit.png"
+        rows = bytearray()
+        for row_i in range(16):
+            rows.append(0)
+            val = 60 if (row_i % 2) == 0 else 200
+            for _ in range(16):
+                rows += bytes([val, val, val])
+        p.write_bytes(
+            b"\x89PNG\r\n\x1a\n"
+            + _chunk(b"IHDR", struct.pack(">IIBBBBB", 16, 16, 8, 2, 0, 0, 0))
+            + _chunk(b"IDAT", zlib.compress(bytes(rows), 9))
+            + _chunk(b"IEND", b"")
+        )
+        res = vp.run_pregates(str(p))  # no reel kwarg
+        g5 = [g for g in res["gates"] if g["gate"] == "G5_motion_liveness"]
+        assert g5 and g5[0]["severity"] == "SKIPPED", f"G5 must SKIP with no reel; got {g5}"
+        assert res["verdict"] in ("PASS", "SKIPPED")  # the still round is unchanged
+
+
+# ---------------------------------------------------------------------------
+# 5b. G5 MOTION-LIVENESS — frozen-idle CRITICAL + no-displacement HIGH on synthetic reels
+# ---------------------------------------------------------------------------
+
+class TestG5MotionLiveness:
+    def _reel(self, tmp_path, specs: list[tuple[str, tuple[int, int], bool]]) -> list[dict]:
+        """specs: list of (label, bright_top_left, is_move). Writes PNGs + returns reel frame dicts."""
+        frames = []
+        for i, (label, (bx, by), is_move) in enumerate(specs):
+            p = tmp_path / f"r{i}.png"
+            rows = bytearray()
+            for y in range(16):
+                rows.append(0)
+                for x in range(16):
+                    v = 240 if (bx <= x < bx + 4 and by <= y < by + 4) else 10
+                    rows += bytes([v, v, v])
+            p.write_bytes(
+                b"\x89PNG\r\n\x1a\n"
+                + _chunk(b"IHDR", struct.pack(">IIBBBBB", 16, 16, 8, 2, 0, 0, 0))
+                + _chunk(b"IDAT", zlib.compress(bytes(rows), 9))
+                + _chunk(b"IEND", b"")
+            )
+            frames.append({"frame": str(p), "label": label, "is_move": is_move})
+        return frames
+
+    def test_no_reel_skipped(self):
+        gates = vp.gate_motion_liveness(None)
+        assert any(g["severity"] == "SKIPPED" for g in gates)
+
+    def test_frozen_idle_critical(self, tmp_path):
+        """Two identical idle frames → frozen-idle CRITICAL."""
+        reel = self._reel(tmp_path, [("idle", (6, 6), False), ("idle", (6, 6), False)])
+        gates = vp.gate_motion_liveness(reel)
+        crit = [g for g in gates if g["severity"] == "CRITICAL"]
+        assert crit, f"identical idle frames should fire CRITICAL; got {gates}"
+        assert "frozen" in crit[0]["detail"].lower()
+
+    def test_breathing_idle_passes(self, tmp_path):
+        """Two differing idle frames → idle PASS (the idle is alive)."""
+        reel = self._reel(tmp_path, [("idle", (6, 6), False), ("idle", (7, 7), False)])
+        gates = vp.gate_motion_liveness(reel)
+        assert any(g["severity"] == "PASS" and g["metric"] == "idle_interframe_delta" for g in gates), \
+            f"a moving idle should PASS; got {gates}"
+
+    def test_static_move_high(self, tmp_path):
+        """A MOVE beat whose centroid does not displace → HIGH (slide/teleport)."""
+        reel = self._reel(tmp_path, [("walk", (6, 6), True), ("walk", (6, 6), True)])
+        gates = vp.gate_motion_liveness(reel)
+        high = [g for g in gates if g["severity"] == "HIGH" and g["metric"] == "move_centroid_px"]
+        assert high, f"a non-displacing move should be HIGH; got {gates}"
+
+    def test_real_move_passes(self, tmp_path):
+        """A MOVE beat that displaces the centroid >= threshold → move PASS."""
+        reel = self._reel(tmp_path, [("walk", (1, 6), True), ("walk", (11, 6), True)])
+        gates = vp.gate_motion_liveness(reel)
+        assert any(g["severity"] == "PASS" and g["metric"] == "move_centroid_px" for g in gates), \
+            f"a displacing move should PASS; got {gates}"
+
+    def test_run_pregates_frozen_idle_flags(self, tmp_path):
+        """End-to-end: a frozen-idle reel makes run_pregates verdict FLAG."""
+        # G1 needs a real render png too (use a lit one).
+        lit = _write_png(tmp_path, "lit.png", 120, 120, 120, w=16, h=16)
+        reel = self._reel(tmp_path, [("idle", (6, 6), False), ("idle", (6, 6), False)])
+        res = vp.run_pregates(str(lit), reel=reel)
+        assert res["verdict"] == "FLAG", f"frozen idle reel should FLAG; got {res['verdict']}"
+        assert any(g["gate"] == "G5_motion_liveness" and g["severity"] == "CRITICAL"
+                   for g in res["gates"])
+
 
 # ---------------------------------------------------------------------------
 # 6. visual_regression.detect_visual_regression — verdict logic (no DB, stub rows)
@@ -486,3 +576,37 @@ class TestDetectVisualRegression:
         assert res["verdict"] in ("WITHIN_NOISE", "IMPROVED"), (
             f"Same pre-existing blocking should not trigger REGRESSED; got {res['verdict']}: {res}"
         )
+
+    # --- L7 motion-regression arm (mirrors the still arm; motion_overall drop > 0.7) ---
+
+    def test_motion_overall_regression(self):
+        """A motion_overall drop >0.7 → REGRESSED even when the still overall holds."""
+        dims = {"registration": 7}
+        base = self._baseline(7.5, dims)
+        base["motion_overall"] = 8.0
+        cand = self._candidate(7.5, dims)   # still overall flat
+        cand["motion_overall"] = 6.5        # motion drops 1.5 > 0.7
+        res = self._run(cand, base)
+        assert res["verdict"] == "REGRESSED", f"motion drop should REGRESS; got {res['verdict']}: {res}"
+        assert res["motion_overall"]["classification"] == "REGRESSED"
+
+    def test_motion_overall_within_noise(self):
+        """A motion_overall drop ≤0.7 with no still regression → WITHIN_NOISE."""
+        dims = {"registration": 7}
+        base = self._baseline(7.5, dims)
+        base["motion_overall"] = 8.0
+        cand = self._candidate(7.5, dims)
+        cand["motion_overall"] = 7.5        # -0.5, within the 0.7 floor
+        res = self._run(cand, base)
+        assert res["verdict"] == "WITHIN_NOISE", f"got {res['verdict']}: {res}"
+        assert res["motion_overall"]["classification"] == "WITHIN_NOISE"
+
+    def test_motion_no_data_when_still_only(self):
+        """ADDITIVITY: a still-only candidate/baseline (no motion_overall) leaves motion NO_DATA and
+        never falsely flags — the still arm is unchanged."""
+        dims = {"registration": 7}
+        base = self._baseline(7.5, dims)
+        cand = self._candidate(7.5, dims)   # neither carries motion_overall
+        res = self._run(cand, base)
+        assert res["motion_overall"]["classification"] == "NO_DATA"
+        assert res["verdict"] in ("WITHIN_NOISE", "IMPROVED")  # unaffected by motion arm
