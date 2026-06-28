@@ -70,6 +70,8 @@ def _load_token() -> str:
         return tok
     path = os.path.expanduser("~/.worldos/mixamo.token")
     if os.path.isfile(path):
+        if os.stat(path).st_mode & 0o077:  # the token is a credential — warn if group/other-readable
+            sys.stderr.write("[mixamo_gen] WARN: %s is not mode 600; run `chmod 600 %s`.\n" % (path, path))
         with open(path) as f:
             tok = f.read().strip()
         if tok:
@@ -139,10 +141,20 @@ def _explain(code: int, detail: str, what: str) -> None:
     sys.exit("[mixamo_gen] ERROR HTTP %d on %s. Detail: %s" % (code, what, detail))
 
 
+_ALLOWED_DL_HOSTS = ("mixamo.com", "adobe.com", "adobe.io", "akamaihd.net", "cloudfront.net", "amazonaws.com")
+
+
 def _download(url: str, dest: str) -> int:
+    # The export job_result URL comes from Mixamo's API; still validate the host (cheap SSRF guard)
+    # and require https before fetching.
+    parsed = urllib.parse.urlparse(url)
+    host = parsed.hostname or ""
+    if parsed.scheme != "https" or not any(host == h or host.endswith("." + h) for h in _ALLOWED_DL_HOSTS):
+        sys.exit("[mixamo_gen] ERROR: refusing to download from unexpected host %r (%s)." % (host, url))
+    tmp = dest + ".part"   # write atomically: a partial/interrupted fetch never leaves a corrupt FBX
     req = urllib.request.Request(url, method="GET")
     try:
-        with urllib.request.urlopen(req, timeout=300) as resp, open(dest, "wb") as out:
+        with urllib.request.urlopen(req, timeout=300) as resp, open(tmp, "wb") as out:
             total = 0
             while True:
                 chunk = resp.read(65536)
@@ -150,8 +162,13 @@ def _download(url: str, dest: str) -> int:
                     break
                 out.write(chunk)
                 total += len(chunk)
-            return total
+        os.replace(tmp, dest)
+        return total
     except (urllib.error.HTTPError, urllib.error.URLError) as e:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
         sys.exit("[mixamo_gen] ERROR downloading %s -> %s: %s" % (url, dest, e))
 
 
@@ -195,8 +212,8 @@ def _resolve_animation(headers: dict, name_or_id: str) -> dict:
     sys.exit("[mixamo_gen] ERROR: no Mixamo animation matches %r." % name_or_id)
 
 
-def _gms_hash(headers: dict, animation_id: str, character_id: str) -> dict:
-    """Fetch product details and build the export gms_hash (params array -> comma string)."""
+def _gms_hash(headers: dict, animation_id: str, character_id: str) -> tuple:
+    """Fetch product details and build the export gms_hash; returns (gms_hash, product_name)."""
     details = _get(BASE_URL + "/products/%s" % animation_id, headers,
                    params={"similar": 0, "character_id": character_id})
     gms = (details.get("details") or {}).get("gms_hash") or {}
@@ -252,7 +269,9 @@ def _cmd_test_key() -> None:
     """Validate the token + confirm the (unofficial, sunset-risk) API is still live."""
     headers = _headers(_load_token())
     cid = _pick_character_id(_get(BASE_URL + "/characters", headers))
-    print("Mixamo Auth OK" + (" (character %s)" % cid if cid else " (no character uploaded yet)"))
+    if not cid:
+        sys.exit("[mixamo_gen] ERROR: token valid but no usable Mixamo character — exports can't run.")
+    print("Mixamo Auth OK (character %s)" % cid)
 
 
 def _cmd_search(args) -> None:
@@ -284,8 +303,12 @@ def _cmd_moveset(args) -> None:
             done[name] = _fetch_clip(headers, cid, query, path, skin, args.timeout)
         except SystemExit as e:
             print("[mixamo_gen] WARN: %s (%r) skipped — %s" % (name, query, e))
-    print("[mixamo_gen] moveset OK — %d/%d clips: %s"
-          % (len(done), len(WORLDOS_MOVESET), ", ".join(done)))
+    print("[mixamo_gen] moveset %s — %d/%d clips: %s"
+          % ("OK" if len(done) == len(WORLDOS_MOVESET) else "INCOMPLETE",
+             len(done), len(WORLDOS_MOVESET), ", ".join(done)))
+    if len(done) != len(WORLDOS_MOVESET):
+        missing = [n for n in WORLDOS_MOVESET if n not in done]
+        sys.exit("[mixamo_gen] ERROR: moveset incomplete — missing %s." % ", ".join(missing))
 
 
 def main(argv=None) -> None:
