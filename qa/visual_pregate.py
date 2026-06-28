@@ -273,8 +273,10 @@ def _stdlib_png_lum(p: Path) -> tuple[float, float]:
     prev = bytearray(stride)
     pos = 0
     for _ in range(height):
-        ftype = raw[pos]; pos += 1
-        line = bytearray(raw[pos:pos + stride]); pos += stride
+        ftype = raw[pos]
+        pos += 1
+        line = bytearray(raw[pos:pos + stride])
+        pos += stride
         for i in range(stride):
             a = line[i - channels] if i >= channels else 0
             b = prev[i]
@@ -532,8 +534,10 @@ def _stdlib_png_lum_grid(p: Path, target: int) -> tuple[list[float], int, int]:
     prev = bytearray(stride)
     pos = 0
     for _ in range(height):
-        ftype = raw[pos]; pos += 1
-        line = bytearray(raw[pos:pos + stride]); pos += stride
+        ftype = raw[pos]
+        pos += 1
+        line = bytearray(raw[pos:pos + stride])
+        pos += stride
         for i in range(stride):
             a = line[i - channels] if i >= channels else 0
             b = prev[i]
@@ -572,7 +576,8 @@ def _mean_abs_delta(a: list[float], b: list[float]) -> Optional[float]:
     grids differ in length (mismatched frame sizes — can't compare)."""
     if not a or not b or len(a) != len(b):
         return None
-    return sum(abs(x - y) for x, y in zip(a, b)) / len(a)
+    # lengths are guaranteed equal here (guarded above) -> strict=True is safe + correct.
+    return sum(abs(x - y) for x, y in zip(a, b, strict=True)) / len(a)
 
 
 def _bright_centroid(vals: list[float], w: int, h: int) -> Optional[tuple[float, float]]:
@@ -649,29 +654,39 @@ def gate_motion_liveness(reel: Optional[list[dict]]) -> list[dict]:
                               "detail": f"idle is alive (mean inter-frame delta {mean_delta:.6f} >= {FROZEN_IDLE_DELTA})"})
 
     # --- NO LOCOMOTION DISPLACEMENT: a MOVE beat must shift the bright-mass centroid. ---
-    # A frame is a MOVE if is_move is truthy OR its label is in the move set. We compare the FIRST
-    # and LAST move frame's centroids (the net displacement of the move beat).
+    # A frame is a MOVE if is_move is truthy OR its label is in the move set. We use the centroid
+    # SPREAD — the MAX pairwise displacement across ALL move frames — NOT just first-vs-last net
+    # displacement. A valid out-and-back move (A->B->A) nets ~0 first-vs-last but clearly travels;
+    # spread captures that the actor reached B. Only frames whose grid size matches the first move
+    # frame's are compared (the frame-size guard); centroid-less frames (no bright mass) are skipped.
     moves = [(g, fr) for g, fr in decoded
              if fr.get("is_move") or any(m in _label(fr) for m in _MOVE_LABELS)]
     if len(moves) >= 2:
-        (ga, wa, ha), _ = moves[0][0], moves[0][1]
-        (gb, wb, hb) = moves[-1][0]
-        ca = _bright_centroid(ga, wa, ha)
-        cb = _bright_centroid(gb, wb, hb)
-        if ca is not None and cb is not None and (wa, ha) == (wb, hb):
-            disp = math.hypot(cb[0] - ca[0], cb[1] - ca[1])
+        (g0, w0, h0) = moves[0][0]
+        centroids: list[tuple[float, float]] = []
+        for (gi, wi, hi), _ in moves:
+            if (wi, hi) != (w0, h0):
+                continue  # frame-size guard: only compare same-size frames
+            ci = _bright_centroid(gi, wi, hi)
+            if ci is not None:
+                centroids.append((ci[0], ci[1]))
+        if len(centroids) >= 2:
+            # Max pairwise displacement (spread). Cheap O(n^2) — reels are short (a handful of frames).
+            disp = max(math.hypot(cx2 - cx1, cy2 - cy1)
+                       for i, (cx1, cy1) in enumerate(centroids)
+                       for (cx2, cy2) in centroids[i + 1:])
             if disp < MOVE_CENTROID_MIN_PX:
                 gates.append({"gate": "G5_motion_liveness", "severity": "HIGH",
                               "metric": "move_centroid_px", "value": round(disp, 3),
                               "threshold": MOVE_CENTROID_MIN_PX,
-                              "detail": (f"a MOVE beat displaced the bright-mass centroid only {disp:.2f}px "
+                              "detail": (f"a MOVE beat's bright-mass centroid spread only {disp:.2f}px "
                                          f"(< {MOVE_CENTROID_MIN_PX}px) across {len(moves)} move frames — the "
                                          "actor slides/teleports without locomotion; check the walk cycle / root motion")})
             else:
                 gates.append({"gate": "G5_motion_liveness", "severity": "PASS",
                               "metric": "move_centroid_px", "value": round(disp, 3),
                               "threshold": MOVE_CENTROID_MIN_PX,
-                              "detail": f"move beat displaced the actor {disp:.2f}px (>= {MOVE_CENTROID_MIN_PX}px)"})
+                              "detail": f"move beat displaced the actor {disp:.2f}px (>= {MOVE_CENTROID_MIN_PX}px, max spread)"})
 
     if not gates:
         gates.append({"gate": "G5_motion_liveness", "severity": "SKIPPED", "metric": "beats",

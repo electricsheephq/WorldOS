@@ -694,16 +694,17 @@ def test_motion_columns_roundtrip_with_dict_dims(tmp_path):
     db = tmp_path / "t.db"
     dims = {"idle_life": 7, "locomotion_weight": 6, "attack_arc": 8, "hit_react": 5,
             "death": 6, "timing_sync": 7, "turn_to_face": 9}
+    reel_ref = str(tmp_path / "tavern_reel.png")  # a stored ref-string (never opened); use tmp_path
     scores_db.add_run(
         "vc-tavern-r3", db_path=db, surface="visual", scorer_model="opus",
         visual_scene="fixture:tavern", visual_backend="unity-cl", visual_round=3,
         visual_overall=7.6, motion_overall=6.8, motion_dims_json=dims,
-        motion_reel_ref="/tmp/tavern_reel.png", milestone="M1.2",
+        motion_reel_ref=reel_ref, milestone="M1.2",
     )
     row = scores_db.fetch_rows(db)[0]
     assert row["motion_overall"] == 6.8
     assert json.loads(row["motion_dims_json"]) == dims
-    assert row["motion_reel_ref"] == "/tmp/tavern_reel.png"
+    assert row["motion_reel_ref"] == reel_ref
     assert row["milestone"] == "M1.2"
 
 
@@ -731,6 +732,7 @@ def test_motion_columns_alter_into_an_old_db(tmp_path):
     cols = set(rows[0].keys())
     assert {"motion_overall", "motion_dims_json", "motion_reel_ref", "milestone"} <= cols
     legacy = {r["run_id"]: r for r in rows}["legacy-visual"]
-    # the pre-existing row reads NULL for the new columns + keeps its old value
+    # the pre-existing row reads NULL for ALL four new columns + keeps its old value
     assert legacy["visual_overall"] == 6.5
-    assert legacy["motion_overall"] is None
+    for col in ("motion_overall", "motion_dims_json", "motion_reel_ref", "milestone"):
+        assert legacy[col] is None, f"{col} should read NULL on a pre-migration row after _ensure_schema()"

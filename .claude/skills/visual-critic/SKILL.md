@@ -202,15 +202,19 @@ its single-lens prompt. Each returns TEXT-only JSON. **A specialist obsessed wit
 it 2-3 points harsher than a generalist — that harshness is the point.** L1–L6 score a STILL; **L7
 (MOTION) scores a REEL** and runs only when a reel was rendered.
 
-> ★ **GROUNDING auto-downgrade (the billboard false-negative fix).** The deterministic G3
-> floor-contact gate is MEASURED truth; an LLM lens guessing "the actor is a pasted sticker with no
-> contact shadow" is a PRIOR. **Rule: if an L2 or L4 lens raises a CRITICAL whose claim CONTRADICTS
-> a deterministic G3 floor-contact PASS (e.g. "floating / no contact shadow / not grounded" when G3
-> says feet-on-floor PASS), auto-DOWNGRADE that defect by one severity (CRITICAL→HIGH→MED) and tag
-> it `downgraded:contradicts-G3-PASS`.** Pass the G3 result into the L2/L4 prompts and tell the lens
-> NOT to claim "floating / ungrounded / no shadow" when G3 PASSed — credit the measured grounding
-> first, and only flag a SUBTLER integration tell (shadow too hard-edged, wrong shadow color, etc.).
-> This is what stops the v2 "billboard = sticker" prior from overriding measured grounding.
+> ★ **GROUNDING auto-DROP (the billboard false-negative fix).** The deterministic G3 floor-contact
+> gate is MEASURED truth; an LLM lens guessing "the actor is a pasted sticker with no contact
+> shadow" is a PRIOR. **Rule: if an L2 or L4 lens raises a defect whose claim CONTRADICTS a
+> deterministic G3 floor-contact PASS (e.g. "floating / no contact shadow / not grounded" when G3
+> says feet-on-floor PASS), DROP that defect entirely BEFORE synthesis — or, if you want to retain
+> a paper trail, cap it to LOW and tag it `dropped:contradicts-G3-PASS`. Do NOT merely demote it one
+> notch (CRITICAL→HIGH): a HIGH still caps `overall` at synthesis (§④), so a one-notch demotion just
+> re-creates the billboard false-negative as a re-render loop.** A G3-contradicted grounding claim
+> must NOT feed the synthesis severity caps at all. Pass the G3 result into the L2/L4 prompts and
+> tell the lens NOT to claim "floating / ungrounded / no shadow" when G3 PASSed — credit the
+> measured grounding first, and only flag a SUBTLER integration tell (shadow too hard-edged, wrong
+> shadow color, etc.), which is a separate (non-dropped) defect on its own merits. This is what stops
+> the v2 "billboard = sticker" prior from overriding measured grounding.
 
 Common preamble (prepend to every lens prompt):
 > You are ONE lens of a harsh visual-critic PANEL for WorldOS. Score ONLY your assigned dimension —
@@ -305,17 +309,19 @@ Merge the six lens JSONs:
 Every round is one `visual` row (see `qa/scores_db_visual_patch.md` for the additive schema). The
 L1–L6 STILL scores go in the `visual_*` columns; the L7 MOTION scores go in the additive `motion_*`
 columns (`motion_overall` 0-10, `motion_dims_json` = the L7 sub-scores, `motion_reel_ref` = the reel
-path/id) + the `milestone` tag (e.g. "M1.0"|"M1.2"). All `motion_*`/`milestone` are NULL on a
-still-only round (empty == today):
+path/id). **`milestone` is an INDEPENDENT grouping tag (e.g. "M1.0"|"M1.2") — set it on EVERY visual
+round, reel or not**, so a milestone's rounds group regardless of whether a reel was scored. Only
+the three `motion_*` columns are NULL/omitted on a still-only round (empty == today):
 ```python
 from qa.scores_db import add_run, set_canonical_baseline
 add_run(run_id=f"vc-{scene}-r{N}-{sha8}", surface="visual", scorer_model="opus",
-        methodology=f"vc-panel-7lens round={N}", build_sha=sha8, milestone="M1.2",
+        methodology=f"vc-panel-7lens round={N}", build_sha=sha8,
+        milestone="M1.2",                       # ALWAYS set — independent of reel availability
         visual_scene=scene_id, visual_backend="unity-cl", visual_round=N,
         visual_overall=overall, visual_dims_json={ "registration":L1, "occlusion_grounding":L2,
           "scene_light_coherence":L3, "character_integration":L4, "tactical_readability":L5,
           "painterly_vs_reference":L6 },
-        # L7 MOTION (only on a reel round; omit/None on a still-only round):
+        # L7 MOTION — these three only on a reel round; omit/None on a still-only round:
         motion_overall=L7_overall, motion_reel_ref=reel_contact_sheet_path,
         motion_dims_json={ "idle_life":..., "locomotion_weight":..., "attack_arc":...,
           "hit_react":..., "death":..., "timing_sync":..., "turn_to_face":... },

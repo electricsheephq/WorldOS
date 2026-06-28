@@ -401,7 +401,10 @@ class TestRunPregates:
         res = vp.run_pregates(str(p))  # no reel kwarg
         g5 = [g for g in res["gates"] if g["gate"] == "G5_motion_liveness"]
         assert g5 and g5[0]["severity"] == "SKIPPED", f"G5 must SKIP with no reel; got {g5}"
-        assert res["verdict"] in ("PASS", "SKIPPED")  # the still round is unchanged
+        # G1 PASSes on this lit/varied frame, so the overall verdict is deterministically PASS — the
+        # still round is unchanged by G5 being SKIPPED (additivity: empty reel == today's behavior).
+        assert res["verdict"] == "PASS", f"a lit still-only round should PASS; got {res['verdict']}"
+        assert any(g["gate"] == "G1_frame_lit" and g["severity"] == "PASS" for g in res["gates"])
 
 
 # ---------------------------------------------------------------------------
@@ -606,7 +609,9 @@ class TestDetectVisualRegression:
         never falsely flags — the still arm is unchanged."""
         dims = {"registration": 7}
         base = self._baseline(7.5, dims)
-        cand = self._candidate(7.5, dims)   # neither carries motion_overall
+        cand = self._candidate(7.5, dims)   # identical still metrics; neither carries motion_overall
         res = self._run(cand, base)
         assert res["motion_overall"]["classification"] == "NO_DATA"
-        assert res["verdict"] in ("WITHIN_NOISE", "IMPROVED")  # unaffected by motion arm
+        # identical still overall + dims => no regression AND no improvement => deterministically
+        # WITHIN_NOISE (the motion arm contributes nothing when both rows lack motion_overall).
+        assert res["verdict"] == "WITHIN_NOISE", f"identical still metrics should be WITHIN_NOISE; got {res['verdict']}"

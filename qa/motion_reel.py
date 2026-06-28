@@ -68,6 +68,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import struct
 import sys
 import zlib
@@ -130,8 +131,10 @@ def _stdlib_decode_rgb(p: Path) -> tuple[bytearray, int, int]:
     prev = bytearray(stride)
     pos = 0
     for _ in range(height):
-        ftype = raw[pos]; pos += 1
-        line = bytearray(raw[pos:pos + stride]); pos += stride
+        ftype = raw[pos]
+        pos += 1
+        line = bytearray(raw[pos:pos + stride])
+        pos += stride
         for i in range(stride):
             a = line[i - channels] if i >= channels else 0
             b = prev[i]
@@ -378,10 +381,18 @@ def build_timeline_reel(
     return sidecar
 
 
+def _natural_key(name: str) -> list:
+    """Natural-sort key: split on digit runs so '2.png' sorts before '10.png' (a plain string sort
+    would order '10' before '2'). Digit chunks compare as ints, text chunks as lowercase strings."""
+    return [int(tok) if tok.isdigit() else tok.lower()
+            for tok in re.split(r"(\d+)", name) if tok != ""]
+
+
 def _frames_from_dir(frames_dir: str | Path) -> list[str]:
-    """All *.png in a directory, sorted by name (the natural frame order for an exported sequence)."""
+    """All *.png in a directory in NATURAL frame order (so an unpadded export — frame2, frame10 —
+    assembles as 2,10 not 10,2). Sorts by the file name's natural key."""
     d = Path(frames_dir)
-    return [str(p) for p in sorted(d.glob("*.png"))]
+    return [str(p) for p in sorted(d.glob("*.png"), key=lambda p: _natural_key(p.name))]
 
 
 # ---------------------------------------------------------------------------

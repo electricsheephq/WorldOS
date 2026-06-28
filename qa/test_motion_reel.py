@@ -44,7 +44,7 @@ def _chunk(tag: bytes, data: bytes) -> bytes:
 
 def _png(path: Path, w: int, h: int, *, bright_at: tuple[int, int] | None = None,
          block: int = 4, base: int = 10) -> Path:
-    """A w×h dark PNG with an optional bright block whose top-left is bright_at (moves the centroid)."""
+    """A w x h dark PNG with an optional bright block whose top-left is bright_at (moves the centroid)."""
     rows = bytearray()
     for y in range(h):
         rows.append(0)  # filter None
@@ -124,14 +124,14 @@ class TestTimelineReel:
 
     def test_no_frames_raises(self, tmp_path):
         import pytest
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="no frames provided"):
             mr.build_timeline_reel([], tmp_path / "x.png")
 
     def test_undecodable_frame_raises(self, tmp_path):
         bad = tmp_path / "bad.png"
         bad.write_bytes(b"not a png")
         import pytest
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="cannot decode frame"):
             mr.build_timeline_reel([str(bad)], tmp_path / "x.png")
 
 
@@ -187,8 +187,11 @@ class TestEngineReel:
             beat = state["beat"]
             return str(_png(Path(out_png), 24, 16, bright_at=(2 + beat * 4, 6)))
 
+        # Inject explicit states so the test does not depend on the default fetch hook (which is a
+        # TODO stub) — fake_renderer is then fully deterministic over these beats.
+        states = [{"beat": 0}, {"beat": 1}, {"beat": 2}]
         res = mr.build_engine_reel("demo-crypt", 3, tmp_path / "engine_reel.png",
-                                   _renderer=fake_renderer)
+                                   _states=states, _renderer=fake_renderer)
         assert res["mode"] == "engine"
         assert res["scene"] == "demo-crypt"
         assert Path(res["contact_sheet"]).exists()
