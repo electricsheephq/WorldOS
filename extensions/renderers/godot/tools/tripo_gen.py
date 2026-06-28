@@ -504,6 +504,18 @@ def _do_rig_pipeline(headers: dict, source_task_id: str, animations, out_dir: st
     rig_type = _rig_check(headers, source_task_id)
     if animations is None:  # pick defaults now that rig_type is known
         animations = DEFAULT_BIPED_ANIMATIONS if rig_type == "biped" else DEFAULT_CREATURE_ANIMATIONS
+    else:
+        # Dedup by the ALIAS-RESOLVED leaf (attack/slash both -> slash) so we don't double-bill a
+        # retarget or clobber a per-clip output file. Preserve first-occurrence order.
+        seen, deduped = set(), []
+        for anim in animations:
+            leaf = ANIM_ALIAS.get(anim, anim)
+            if leaf in seen:
+                print("[tripo_gen] WARN: %r resolves to %r already requested — skipping." % (anim, leaf))
+                continue
+            seen.add(leaf)
+            deduped.append(anim)
+        animations = deduped
     rig_task_id = _rig(headers, source_task_id, rig_type, out_format)
     rigged = _poll(headers, rig_task_id, "rig", timeout)
     rigged_path = os.path.join(out_dir, "rigged.%s" % ext)
@@ -572,7 +584,9 @@ def _cmd_text(args) -> None:
         print("[tripo_gen] DRY-RUN text-to-3D")
         print("  prompt    : %s" % args.prompt)
         print("  model     : %s" % model)
-        print("  rig+anim  : %s (%s)" % (args.rig, ",".join(anims) if args.rig else "-"))
+        anim_note = "" if (not args.rig or args.animations) else \
+            " — biped default; a non-biped rig uses only %s" % ",".join(DEFAULT_CREATURE_ANIMATIONS)
+        print("  rig+anim  : %s (%s)%s" % (args.rig, ",".join(anims) if args.rig else "-", anim_note))
         print("  out dir   : %s" % out_dir)
         print("  est credits: ~%d (API is source of truth)" % est)
         return
@@ -610,7 +624,9 @@ def _cmd_image(args) -> None:
         print("[tripo_gen] DRY-RUN image-to-3D")
         print("  image     : %s" % args.image)
         print("  model     : %s" % model)
-        print("  rig+anim  : %s (%s)" % (args.rig, ",".join(anims) if args.rig else "-"))
+        anim_note = "" if (not args.rig or args.animations) else \
+            " — biped default; a non-biped rig uses only %s" % ",".join(DEFAULT_CREATURE_ANIMATIONS)
+        print("  rig+anim  : %s (%s)%s" % (args.rig, ",".join(anims) if args.rig else "-", anim_note))
         print("  out dir   : %s" % out_dir)
         print("  est credits: ~%d (API is source of truth)" % est)
         return
