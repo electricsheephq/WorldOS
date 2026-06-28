@@ -33,7 +33,8 @@ Usage:
     python3 meshy_gen.py --prompt "..." --out <dir> --force        # re-generate even if model.glb exists
     python3 meshy_gen.py --prompt "..." --out <dir> --rig          # gen -> rig (+ free walk/run)
     python3 meshy_gen.py --prompt "..." --out <dir> --rig --animate 0 4   # + Idle(0) + Attack(4)
-    python3 meshy_gen.py --rig-from-task <meshy_model_task_id> --out <dir> --animate 0  # rig an existing model
+    python3 meshy_gen.py --prompt "..." --out <dir> --moveset             # FULL WorldOS combat moveset, one command
+    python3 meshy_gen.py --rig-from-task <meshy_model_task_id> --out <dir> --moveset  # moveset onto an existing model
 """
 
 from __future__ import annotations
@@ -53,6 +54,14 @@ POLL_TEMPLATE = "/openapi/v2/text-to-3d/{task_id}"
 RIGGING_PATH = "/openapi/v1/rigging"
 RIGGING_POLL = "/openapi/v1/rigging/{task_id}"
 ANIM_PATH = "/openapi/v1/animations"
+
+# ★ The canonical WorldOS combat moveset → Meshy animation-library action_ids (ALL live-verified
+# 2026-06-28: each id generated a real clip on a rigged elf). walk + run come FREE with the rig
+# (basic_animations), so `--moveset` only spends 3 cr/clip on these 7 library actions.
+# Source of ids: Meshy's animation library (no REST list endpoint — cache from the docs).
+WORLDOS_MOVESET = {
+    "idle": 0, "attack": 4, "cast": 125, "block": 138, "dodge": 156, "hit": 178, "death": 8,
+}
 ANIM_POLL = "/openapi/v1/animations/{task_id}"
 
 # Polling cadence + ceilings.
@@ -278,8 +287,13 @@ def _download_pairs(result: dict, out_dir: str, pairs: list) -> dict:
 
 
 def _run_rig_and_animate(headers: dict, model_task_id: str, out_dir: str, height: float,
-                         action_ids: list, timeout: int, meta: dict) -> None:
-    """rig the model (humanoid) -> download rigged FBX/GLB + free walk/run -> optional library clips."""
+                         action_ids: list, timeout: int, meta: dict, clip_names: dict = None) -> None:
+    """rig the model (humanoid) -> download rigged FBX/GLB + free walk/run -> optional library clips.
+
+    clip_names maps action_id -> friendly name (e.g. {4: "attack"}); when present, clips are saved as
+    anim_<name>.fbx (not anim_action_<id>.fbx) so the moveset lands as named, agent-readable files.
+    """
+    names = clip_names or {}
     rig_id = _create_rigging(headers, model_task_id, height)
     rig_task = _poll(headers, rig_id, "rigging", timeout, poll_template=RIGGING_POLL)
     result = rig_task.get("result", {}) or {}
@@ -289,8 +303,8 @@ def _run_rig_and_animate(headers: dict, model_task_id: str, out_dir: str, height
     ])
     basic = result.get("basic_animations", {}) or {}
     basic_files = _download_pairs(basic, out_dir, [
-        ("walking_fbx_url", "anim_walking.fbx"),
-        ("running_fbx_url", "anim_running.fbx"),
+        ("walking_fbx_url", "anim_walk.fbx"),    # the rig's FREE locomotion clips, named for the moveset
+        ("running_fbx_url", "anim_run.fbx"),
     ])
     meta["rig_task_id"] = rig_id
     meta["rig_files"] = rig_files
@@ -298,14 +312,15 @@ def _run_rig_and_animate(headers: dict, model_task_id: str, out_dir: str, height
 
     anim_files: dict = {}
     for aid in action_ids or []:
+        label = names.get(int(aid), "action_%d" % int(aid))
         an_id = _create_animation(headers, rig_id, aid)
-        an_task = _poll(headers, an_id, "animation:%s" % aid, timeout, poll_template=ANIM_POLL)
+        an_task = _poll(headers, an_id, "animation:%s" % label, timeout, poll_template=ANIM_POLL)
         an_result = an_task.get("result", {}) or {}
         files = _download_pairs(an_result, out_dir, [
-            ("animation_fbx_url", "anim_action_%d.fbx" % int(aid)),
-            ("animation_glb_url", "anim_action_%d.glb" % int(aid)),
+            ("animation_fbx_url", "anim_%s.fbx" % label),
+            ("animation_glb_url", "anim_%s.glb" % label),
         ])
-        anim_files[str(int(aid))] = dict(task_id=an_id, **files)
+        anim_files[label] = dict(action_id=int(aid), task_id=an_id, **files)
     if action_ids:
         meta["animation_files"] = anim_files
 
@@ -357,7 +372,10 @@ def _cmd_dry_run(args) -> None:
     if args.rig or args.rig_from_task or args.action_ids:
         print("  rig        : YES (HUMANOID only) height=%.2fm -> rigged fbx/glb + free walk/run (~5 cr)"
               % args.rig_height)
-        if args.action_ids:
+        if args.moveset:
+            print("  moveset    : WorldOS combat set %s (~%d cr) -> named anim_<name>.fbx"
+                  % (",".join(WORLDOS_MOVESET), 3 * len(WORLDOS_MOVESET)))
+        elif args.action_ids:
             print("  animate    : action_ids %s (~3 cr each)" % " ".join(str(a) for a in args.action_ids))
 
 
@@ -385,6 +403,9 @@ def main() -> None:
                     help="character height in meters for rigging (default 1.7)")
     ap.add_argument("--animate", dest="action_ids", nargs="+", type=int, metavar="ACTION_ID",
                     help="library action_id(s) to apply after rigging (e.g. 0=Idle 4=Attack); implies --rig")
+    ap.add_argument("--moveset", action="store_true",
+                    help="apply the full WorldOS combat moveset (rig + walk/run free + %s); "
+                         "clips land as named anim_<name>.fbx" % "/".join(WORLDOS_MOVESET))
     ap.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SEC,
                     help="per-stage poll timeout in seconds (default %d)" % DEFAULT_TIMEOUT_SEC)
     args = ap.parse_args()
@@ -392,6 +413,14 @@ def main() -> None:
     if args.test_key:
         _cmd_test_key()
         return
+
+    # --moveset = the canonical combat set, saved under friendly names.
+    clip_names = None
+    if args.moveset:
+        if args.action_ids:
+            ap.error("--moveset and --animate are mutually exclusive.")
+        args.action_ids = list(WORLDOS_MOVESET.values())
+        clip_names = {v: k for k, v in WORLDOS_MOVESET.items()}
 
     do_rig = bool(args.rig or args.rig_from_task or args.action_ids)
 
@@ -483,7 +512,7 @@ def main() -> None:
     # ---- rig + animate (HUMANOID only) ----
     if do_rig:
         _run_rig_and_animate(headers, model_task_id, out_dir, args.rig_height,
-                             args.action_ids, args.timeout, meta)
+                             args.action_ids, args.timeout, meta, clip_names=clip_names)
 
     with open(meta_path, "w") as f:
         json.dump(meta, f, indent=2)

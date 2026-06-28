@@ -39,8 +39,9 @@ and **[MESHY_PIPELINE.md](MESHY_PIPELINE.md)** (both live-verified 2026-06-28).
    LoRA above). `scenario_gen.py` or the `scenario` MCP, or the engine provider `WORLDOS_IMAGE_PROVIDER=scenario`.
 2. **Pixel sprite / tileset** → **PixelLab** (GT1-future; `pixellab` MCP).
 3. **3D rigged + animated, HUMANOID (biped)** → **Meshy** (cheapest: ~5 cr rig **includes free
-   walk/run**, +3 cr/clip) — `meshy_gen.py --rig --animate ...`. **Fallback: Tripo** (richer preset
-   set, same code path as creatures) — `tripo_gen.py text --rig`.
+   walk/run**, +3 cr/clip) — `meshy_gen.py --rig --animate ...`, or **`--moveset`** for the full
+   WorldOS combat set in one command. **Fallback: Tripo** (`tripo_gen.py text --rig`). Richer human
+   mocap → **`mixamo_gen.py moveset`** (headless Mixamo). Full process → **[COMBAT_MOVESET.md](COMBAT_MOVESET.md)**.
 4. **3D rigged + animated, CREATURE (quadruped/avian/serpentine/…)** → **Tripo ONLY** — Meshy 422s on
    non-humanoids. `tripo_gen.py text --rig` (rig-check auto-detects the rig_type). **No fallback.**
 5. **3D static / low-poly prop** → **Tripo `--lowpoly` (P1)** or Meshy `model_type=lowpoly`.
@@ -79,7 +80,8 @@ in each service dashboard when convenient, then update the `~/.worldos/*.key` fi
 ## CLI wrappers (`extensions/renderers/godot/tools/`, urllib-only, mirror `meshy_gen.py`)
 - **`tripo_gen.py`** — `text|image|rig` subcommands; `--rig` (rig-check→rig→retarget), `--out-format glb|fbx`, `--animations`, `--lowpoly` (P1), `--test-key`, `--dry-run`. Rigs **humanoids AND creatures** (rig_type auto-detected). Polls `GET /v3/tasks/{id}` (plural) ≥3s; **downloads immediately (URLs expire ~5 min)**. Full recipe + verified API facts in **[TRIPO_PIPELINE.md](TRIPO_PIPELINE.md)**.
 - **`scenario_gen.py`** — `generate|list-models|upscale`; `--model-id`; `--test-key`; `--dry-run`. HTTP Basic; async job → asset download. Scenario has TWO interfaces — REST `https://api.cloud.scenario.com/v1` (Basic, used by `scenario_gen.py`) AND MCP `https://mcp.scenario.com/mcp` (for direct agent tool calls). Both work.
-- **`meshy_gen.py`** — text→3D (`--prompt --out`, preview→refine PBR) **plus rig+animate** (`--rig` / `--rig-from-task <id>` / `--animate <action_id...>`, HUMANOID only — Meshy 422s on creatures). The 5-cr rig **includes free walk/run**. `--test-key`, `--dry-run`. Full recipe in **[MESHY_PIPELINE.md](MESHY_PIPELINE.md)**.
+- **`meshy_gen.py`** — text→3D (`--prompt --out`, preview→refine PBR) **plus rig+animate** (`--rig` / `--rig-from-task <id>` / `--animate <action_id...>`, HUMANOID only — Meshy 422s on creatures). The 5-cr rig **includes free walk/run**; **`--moveset`** = the full WorldOS combat set in one command (named `anim_<name>.fbx`). `--test-key`, `--dry-run`. Recipe: **[MESHY_PIPELINE.md](MESHY_PIPELINE.md)** + **[COMBAT_MOVESET.md](COMBAT_MOVESET.md)**.
+- **`mixamo_gen.py`** — headless Mixamo (the richer free human-mocap library) via the owner's OAuth token (no browser/Unity/.exe; the `unity-mcp-mixamo` MCP is Windows/GUI-only and doesn't fit). `search` / `download <name>` / **`moveset`** → named `anim_<name>.fbx`. Token in `~/.worldos/mixamo.token`; `--test-key` first (unofficial API, Adobe-sunset risk; token expires ~hours). HUMANOID only.
 - **`pixellab_gen.py`** — STUB for GT1; `--test-key` only.
 Always run `--test-key` first to confirm auth.
 
