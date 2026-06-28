@@ -106,6 +106,15 @@ DEFAULT_CREATURE_ANIMATIONS = ["walk"]   # cross-rig-safe; the only clip verifie
 # Back-compat alias (the biped set is what callers historically referenced).
 DEFAULT_ANIMATIONS = DEFAULT_BIPED_ANIMATIONS
 
+# Map the bake-manifest's friendly clip names -> real Tripo preset leaf names, so callers/columns
+# that say "attack"/"cast" still resolve (Tripo has no attack/cast preset). Applied to the LEAF
+# name before namespacing -> e.g. attack -> preset:biped:slash. (Grafted from the v2 wrapper.)
+ANIM_ALIAS = {"attack": "slash", "cast": "shoot"}
+
+# Supported image-to-model input extensions (jpeg normalizes to jpg). Used to fail fast on an
+# unsupported image before spending an upload round-trip.
+IMAGE_EXT_TO_TYPE = {".jpg": "jpg", ".jpeg": "jpg", ".png": "png", ".webp": "webp"}
+
 # Polling cadence + ceilings. >= 2s honors the documented 1 req/s rate limit (else 429).
 POLL_INTERVAL_SEC = 3
 DEFAULT_TIMEOUT_SEC = 600
@@ -148,7 +157,9 @@ def _post_json(url: str, headers: dict, body: dict) -> dict:
     req = urllib.request.Request(url, data=data, headers=headers, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            res = json.loads(resp.read().decode("utf-8"))
+            _check_api_code(res, "POST " + url)
+            return res
     except urllib.error.HTTPError as e:
         _explain_http(e.code, _read_error(e), "POST " + url)
     except urllib.error.URLError as e:
@@ -159,7 +170,9 @@ def _get_json(url: str, headers: dict) -> dict:
     req = urllib.request.Request(url, headers=headers, method="GET")
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            res = json.loads(resp.read().decode("utf-8"))
+            _check_api_code(res, "GET " + url)
+            return res
     except urllib.error.HTTPError as e:
         _explain_http(e.code, _read_error(e), "GET " + url)
     except urllib.error.URLError as e:
@@ -191,7 +204,9 @@ def _post_multipart(url: str, key: str, file_path: str) -> dict:
     )
     try:
         with urllib.request.urlopen(req, timeout=120) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            res = json.loads(resp.read().decode("utf-8"))
+            _check_api_code(res, "POST(multipart) " + url)
+            return res
     except urllib.error.HTTPError as e:
         _explain_http(e.code, _read_error(e), "POST(multipart) " + url)
     except urllib.error.URLError as e:
@@ -205,7 +220,35 @@ def _read_error(e: urllib.error.HTTPError) -> str:
         return "<no body>"
 
 
+def _check_api_code(res: dict, what: str) -> None:
+    """Tripo returns a non-zero `code` (with a human `message`) for BUSINESS errors even on
+    HTTP 200 — e.g. code 2010 = insufficient credit, code 1004 = invalid model. Without this,
+    such a body is treated as success and crashes later with a confusing "no task id"/"no model
+    URL". A missing/zero `code` (or a non-envelope payload) passes through as success.
+    """
+    if not isinstance(res, dict):
+        return
+    code = res.get("code")
+    if code in (None, 0):
+        return
+    msg = res.get("message") or ""
+    if code == 2010 or "credit" in msg.lower():
+        sys.exit(
+            "[tripo_gen] ERROR: insufficient Tripo credits on %s (code=%s). Top up at "
+            "https://platform.tripo3d.ai/ ; art was NOT generated. Detail: %s"
+            % (what, code, json.dumps(res))
+        )
+    sys.exit("[tripo_gen] ERROR: Tripo API error code=%s on %s. Detail: %s"
+             % (code, what, json.dumps(res)))
+
+
 def _explain_http(code: int, detail: str, what: str) -> None:
+    # Insufficient credit (code 2010) is returned with HTTP 403 on some paths.
+    if "2010" in detail or "enough credit" in detail.lower() or '"credit"' in detail.lower():
+        sys.exit(
+            "[tripo_gen] ERROR: insufficient Tripo credits on %s. Top up at "
+            "https://platform.tripo3d.ai/ ; art was NOT generated. Detail: %s" % (what, detail)
+        )
     if code == 401:
         sys.exit(
             "[tripo_gen] ERROR 401 unauthorized on %s — bad/expired API key. Detail: %s"
@@ -269,11 +312,26 @@ def _create_text(headers: dict, prompt: str, model: str) -> str:
     return task_id
 
 
-def _create_image(headers: dict, file_token: str, model: str) -> str:
-    # v3 canonical: {model, file:{type:"image", file_token}} (no top-level `type`/`model_version`).
+def _image_file_type(image_path: str) -> str:
+    """Derive the image file.type from the extension (jpeg->jpg). Reject unsupported types so we
+    never silently mislabel a file and waste an upload round-trip. (Grafted from the v2 wrapper.)"""
+    ext = os.path.splitext(image_path)[1].lower()
+    file_type = IMAGE_EXT_TO_TYPE.get(ext)
+    if not file_type:
+        sys.exit(
+            "[tripo_gen] ERROR: unsupported image type %r for %s — supported: %s"
+            % (ext or "<none>", os.path.basename(image_path),
+               ", ".join(sorted(set(IMAGE_EXT_TO_TYPE.values()))))
+        )
+    return file_type
+
+
+def _create_image(headers: dict, file_token: str, model: str, file_type: str) -> str:
+    # NOTE: the image-to-3D path is NOT live-tested on v3 (only text-to-model was). Body mirrors the
+    # SDK contract: file.type is the extension-derived type (jpg/png/webp), not a literal "image".
     body = {
         "model": model,
-        "file": {"type": "image", "file_token": file_token},
+        "file": {"type": file_type, "file_token": file_token},
     }
     res = _post_json(API_BASE + CREATE_IMAGE_PATH, headers, body)
     task_id = _task_id_from_create(res, "image-to-3D create")
@@ -341,8 +399,9 @@ def _rig(headers: dict, task_id: str, rig_type: str, out_format: str = "glb") ->
 def _retarget(headers: dict, rigged_task_id: str, rig_type: str, animation: str,
               out_format: str = "glb") -> str:
     # Presets are namespaced by rig_type and applied ONE per call (batches fail). e.g.
-    # "preset:biped:walk", "preset:quadruped:walk".
-    preset = "preset:%s:%s" % (rig_type, animation)
+    # "preset:biped:walk", "preset:quadruped:walk". Alias friendly names (attack->slash, cast->shoot).
+    leaf = ANIM_ALIAS.get(animation, animation)
+    preset = "preset:%s:%s" % (rig_type, leaf)
     body = {"input": rigged_task_id, "animations": [preset], "out_format": out_format}
     res = _post_json(API_BASE + RETARGET_PATH, headers, body)
     rt_task = _task_id_from_create(res, "retarget create")
@@ -562,10 +621,11 @@ def _cmd_image(args) -> None:
     if os.path.exists(model_path) and not args.force:
         print("[tripo_gen] %s exists; skipping (use --force)." % model_path)
         return
+    file_type = _image_file_type(args.image)  # fail fast on an unsupported image before uploading
     key = _load_api_key()
     headers = _auth_headers(key)
     token = _upload_image(key, args.image)
-    task_id = _create_image(headers, token, model)
+    task_id = _create_image(headers, token, model, file_type)
     task = _poll(headers, task_id, "image-to-3D", args.timeout)
     size = _download(_model_url(task), model_path)
     print("[tripo_gen] downloaded model.glb (%d bytes) -> %s" % (size, model_path))
