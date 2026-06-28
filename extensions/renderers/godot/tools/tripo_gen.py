@@ -102,6 +102,10 @@ TRIPO_PRESETS = {
     "hurt", "fall", "turn",
 }
 
+# Supported image-to-model input types -> the v2 file.type value (mirrors the SDK's
+# _EXT_TO_STS_FORMAT image subset; jpeg normalizes to jpg).
+IMAGE_EXT_TO_TYPE = {".jpg": "jpg", ".jpeg": "jpg", ".png": "png", ".webp": "webp"}
+
 # Polling cadence + ceilings. >= 2s honors the documented 1 req/s rate limit (else 429).
 POLL_INTERVAL_SEC = 3
 DEFAULT_TIMEOUT_SEC = 600
@@ -157,7 +161,9 @@ def _get_json(url: str, headers: dict) -> dict:
     req = urllib.request.Request(url, headers=headers, method="GET")
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            res = json.loads(resp.read().decode("utf-8"))
+            _check_api_code(res, "GET " + url)
+            return res
     except urllib.error.HTTPError as e:
         _explain_http(e.code, _read_error(e), "GET " + url)
     except urllib.error.URLError as e:
@@ -189,7 +195,9 @@ def _post_multipart(url: str, key: str, file_path: str) -> dict:
     )
     try:
         with urllib.request.urlopen(req, timeout=120) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            res = json.loads(resp.read().decode("utf-8"))
+            _check_api_code(res, "POST(multipart) " + url)
+            return res
     except urllib.error.HTTPError as e:
         _explain_http(e.code, _read_error(e), "POST(multipart) " + url)
     except urllib.error.URLError as e:
@@ -205,7 +213,13 @@ def _read_error(e: urllib.error.HTTPError) -> str:
 
 def _check_api_code(res: dict, what: str) -> None:
     """The v2 API returns a non-zero `code` (with a human `message`) for business errors
-    even on HTTP 200 (e.g. code 2010 = insufficient credit). Surface those clearly."""
+    even on HTTP 200 (e.g. code 2010 = insufficient credit). Surface those clearly.
+
+    A MISSING `code` key (or a non-dict / non-envelope response) is treated as success so
+    plain payloads pass through cleanly — only an EXPLICIT non-zero code is an error.
+    """
+    if not isinstance(res, dict):
+        return
     code = res.get("code")
     if code in (None, 0):
         return
@@ -289,11 +303,25 @@ def _create_text(headers: dict, prompt: str, model: str) -> str:
     return task_id
 
 
-def _create_image(headers: dict, file_token: str, model: str) -> str:
+def _image_file_type(image_path: str) -> str:
+    """Derive the v2 file.type from the image extension (jpeg->jpg). Reject unsupported types
+    so we never silently mislabel a PNG/WebP as jpg (which corrupts the upload contract)."""
+    ext = os.path.splitext(image_path)[1].lower()
+    file_type = IMAGE_EXT_TO_TYPE.get(ext)
+    if not file_type:
+        sys.exit(
+            "[tripo_gen] ERROR: unsupported image type %r for %s — supported: %s"
+            % (ext or "<none>", os.path.basename(image_path),
+               ", ".join(sorted(set(IMAGE_EXT_TO_TYPE.values()))))
+        )
+    return file_type
+
+
+def _create_image(headers: dict, file_token: str, model: str, file_type: str) -> str:
     body = {
         "type": "image_to_model",
-        # v2 file content block: a single image by upload token. "type" is the file ext.
-        "file": {"type": "jpg", "file_token": file_token},
+        # v2 file content block: a single image by upload token. "type" is the real file ext.
+        "file": {"type": file_type, "file_token": file_token},
         "model_version": model,
     }
     res = _post_json(API_BASE + TASK_CREATE_PATH, headers, body)
@@ -306,7 +334,13 @@ def _upload_image(key: str, image_path: str) -> str:
     # v2 legacy multipart upload -> data.image_token (referenced as file.file_token).
     res = _post_multipart(API_BASE + UPLOAD_PATH, key, image_path)
     data = res.get("data") or {}
-    token = data.get("image_token") or data.get("file_token") or data.get("token")
+    # Prefer the most-specific token key; warn if several differ or none is present.
+    token = None
+    for k in ("image_token", "file_token", "token"):
+        v = data.get(k)
+        if v:
+            token = v
+            break
     if not token:
         sys.exit("[tripo_gen] ERROR: upload returned no file token: %s" % json.dumps(res))
     print("[tripo_gen] uploaded %s -> file token acquired" % os.path.basename(image_path))
@@ -353,7 +387,11 @@ def _preset_for(name: str) -> str:
 
 def _retarget(headers: dict, rigged_task_id: str, animations: list) -> str:
     presets = [_preset_for(a) for a in animations]
-    # v2 takes a single "animation" for one clip, or "animations" for a list.
+    # v2 takes a single scalar "animation" for one clip, or a list "animations" for many.
+    # This scalar/list split mirrors the official tripo3d SDK v0.4.1 verbatim
+    # (retarget_animation: `if isinstance(animation, list): animations=... else: animation=...`),
+    # so the single-clip scalar form is the SDK-sanctioned path — NOT changed to a 1-elem list.
+    # (Live end-to-end retarget is credit-blocked, so this is verified vs the SDK, not a run.)
     body = {
         "type": "animate_retarget",
         "original_model_task_id": rigged_task_id,
@@ -413,6 +451,22 @@ def _model_url(task: dict) -> str:
             url = v.get("url") or v.get("glb")
             if url:
                 return url
+    # Defensive fallback: the three keys above are what the official SDK v0.4.1 reads for
+    # ALL task types incl. animate_rig/animate_retarget (TaskOutput has no rig-specific model
+    # key). But a live succeeded animate-task shape is UNVERIFIED here (account is credit-
+    # blocked), so if Tripo ever returns the model under a different output key, scan output.*
+    # for any value that looks like a model URL (.glb/.fbx, or a key mentioning "model")
+    # rather than silently returning None on the rig path.
+    for k, v in out.items():
+        cand = v
+        if isinstance(cand, dict):
+            cand = cand.get("url") or cand.get("glb")
+        if isinstance(cand, str) and cand:
+            low = cand.split("?", 1)[0].lower()
+            if low.endswith((".glb", ".fbx")) or "model" in k.lower():
+                print("[tripo_gen] WARN: model URL found under unexpected output key %r "
+                      "(SDK-known keys absent) — using it." % k)
+                return cand
     sys.exit("[tripo_gen] ERROR: succeeded task has no downloadable model URL: %s" % json.dumps(out))
 
 
@@ -578,6 +632,7 @@ def _cmd_image(args) -> None:
         return
     if not os.path.isfile(args.image):
         sys.exit("[tripo_gen] ERROR: image not found: %s" % args.image)
+    file_type = _image_file_type(args.image)  # validate/derive before any upload
     os.makedirs(out_dir, exist_ok=True)
     model_path = os.path.join(out_dir, "model.glb")
     if os.path.exists(model_path) and not args.force:
@@ -586,7 +641,7 @@ def _cmd_image(args) -> None:
     key = _load_api_key()
     headers = _auth_headers(key)
     token = _upload_image(key, args.image)
-    task_id = _create_image(headers, token, model)
+    task_id = _create_image(headers, token, model, file_type)
     task = _poll(headers, task_id, "image-to-3D", args.timeout)
     size = _download(_model_url(task), model_path)
     print("[tripo_gen] downloaded model.glb (%d bytes) -> %s" % (size, model_path))
