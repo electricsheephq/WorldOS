@@ -11,7 +11,7 @@ implements exactly this recipe — prefer it; drop to raw curl only when debuggi
 
 ## Auth + conventions
 - Base `https://openapi.tripo3d.ai/v3`. Header `Authorization: Bearer <key>` (key in `~/.worldos/tripo3d.key`, env `WORLDOS_TRIPO_API_KEY`).
-- Every POST returns `{"code":0,"data":{"task_id":"..."}}`. Poll `GET /tasks/{id}` (**plural** — `/task/{id}` 404s) at **≥3 s** (1 req/s limit → 429).
+- **Task-creating** POSTs (`/generation/*`, `/animations/*`) return `{"code":0,"data":{"task_id":"..."}}`. (The one exception is the upload step `POST /files`, which returns `data.file_token`, not a task.) Poll `GET /tasks/{id}` (**plural** — `/task/{id}` 404s) at **≥3 s** (1 req/s limit → 429).
 - Success output URL is `data.output.model_url` and **expires ~5 min** — download immediately.
 - Status flow: `queued → running → success` (or `failed`).
 - Balance: `GET https://api.tripo3d.ai/v2/openapi/user/balance` → `data.balance`.

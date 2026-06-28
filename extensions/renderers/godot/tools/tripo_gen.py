@@ -40,8 +40,9 @@ public docs AND the prior version of this wrapper; the corrections below are wha
                           Presets are NAMESPACED by rig_type: "preset:biped:walk", "preset:quadruped:walk"
                           (bare "preset:walk" FAILS). ONE preset per call — multi-preset batches FAIL.
                           out_format=fbx -> a Unity-ready FBX directly (no Blender needed).
-  * Each create returns a TASK ID. Poll GET /task/{id} at >= 3s (1 req/s limit -> 429). Output URL is
-    at data.output.model_url and EXPIRES ~5 min -> download immediately on success.
+  * Each create returns a TASK ID. Poll GET /tasks/{id} (PLURAL — singular /task/{id} 404s) at
+    >= 3s (1 req/s limit -> 429). Output URL is at data.output.model_url and EXPIRES ~5 min ->
+    download immediately on success.
 
 The API key is read from ~/.worldos/tripo3d.key or $WORLDOS_TRIPO_API_KEY. It is NEVER
 printed/logged and NEVER written into any repo file.
@@ -96,10 +97,14 @@ MODEL_LOWPOLY = "P1-20260311"
 # default (v2.5-20250123) is REJECTED, and v1.0-20240301's retarget fails — so pin this one.
 RIG_MODEL = "v2.5-20260210"
 
-# Default retarget clips (biped names live-verified: walk/idle/run/slash succeed individually).
-# Presets are namespaced per rig_type at call time -> "preset:<rig_type>:<name>". Per-clip failures
-# are non-fatal (e.g. a quadruped only supports `walk`), so an unsupported name just warns + skips.
-DEFAULT_ANIMATIONS = ["walk", "idle", "run", "slash"]
+# Default retarget clips, chosen by rig_type AFTER rig-check (so a quadruped doesn't queue failing
+# biped-only clips). Names live-verified per rig_type; presets namespaced at call time as
+# "preset:<rig_type>:<name>". `--animations` overrides these for any rig_type. Per-clip failures
+# are non-fatal (warn + skip) for the rare unsupported name.
+DEFAULT_BIPED_ANIMATIONS = ["walk", "idle", "run", "slash"]
+DEFAULT_CREATURE_ANIMATIONS = ["walk"]   # cross-rig-safe; the only clip verified for non-bipeds
+# Back-compat alias (the biped set is what callers historically referenced).
+DEFAULT_ANIMATIONS = DEFAULT_BIPED_ANIMATIONS
 
 # Polling cadence + ceilings. >= 2s honors the documented 1 req/s rate limit (else 429).
 POLL_INTERVAL_SEC = 3
@@ -298,13 +303,22 @@ def _rig_check(headers: dict, task_id: str) -> str:
     print("[tripo_gen] rig-check submitted: %s" % check_task)
     final = _poll(headers, check_task, "rig-check", DEFAULT_TIMEOUT_SEC)
     out = final.get("output") or {}
-    riggable = out.get("riggable", out.get("rig_ready", True))
-    if riggable is False:
+    # Treat riggable + rig_type as REQUIRED. Defaulting them (riggable=True, rig_type=biped) would
+    # turn an upstream contract break into a wrong-skeleton run (mixamo spec + preset:biped:* on a
+    # creature) that burns a full rig/retarget cycle — fail fast instead.
+    riggable = out.get("riggable", out.get("rig_ready"))
+    if riggable is not True:
         sys.exit(
-            "[tripo_gen] ERROR: model is NOT riggable per rig-check (%s). "
+            "[tripo_gen] ERROR: rig-check did not confirm riggable=true (got %s). "
             "Rigging aborted." % json.dumps(out)
         )
-    rig_type = out.get("rig_type") or "biped"
+    rig_type = out.get("rig_type")
+    valid_types = ("biped", "quadruped", "hexapod", "octopod", "avian", "serpentine", "aquatic")
+    if rig_type not in valid_types:
+        sys.exit(
+            "[tripo_gen] ERROR: rig-check returned no/unknown rig_type (%s); expected one of %s. "
+            "Rigging aborted." % (json.dumps(out), ", ".join(valid_types))
+        )
     print("[tripo_gen] rig-check OK — riggable, rig_type=%s." % rig_type)
     return rig_type
 
@@ -417,17 +431,20 @@ def _resolve_out(args) -> str:
 # --------------------------------------------------------------------------- #
 # Sub-command bodies.
 # --------------------------------------------------------------------------- #
-def _do_rig_pipeline(headers: dict, source_task_id: str, animations: list,
-                     out_dir: str, timeout: int, meta: dict, out_format: str = "glb") -> None:
+def _do_rig_pipeline(headers: dict, source_task_id: str, animations, out_dir: str,
+                     timeout: int, meta: dict, out_format: str = "glb") -> None:
     """rig-check -> rig -> retarget (ONE preset per call); download rigged + per-clip animated files.
 
     rig-check returns the recommended rig_type (biped/quadruped/...), which drives the rig spec and
-    the namespaced retarget presets. Per-clip retargets are non-fatal so one unsupported preset
-    (e.g. a creature that only supports `walk`) just warns and skips. out_format glb|fbx (fbx is
-    Unity-ready directly, no Blender).
+    the namespaced retarget presets. When `animations` is None, the clip set is chosen by rig_type
+    (a biped set vs the cross-rig-safe creature set) so non-bipeds don't queue failing biped-only
+    clips. Per-clip retargets are non-fatal so an unsupported preset just warns and skips.
+    out_format glb|fbx (fbx is Unity-ready directly, no Blender).
     """
     ext = "fbx" if out_format == "fbx" else "glb"
     rig_type = _rig_check(headers, source_task_id)
+    if animations is None:  # pick defaults now that rig_type is known
+        animations = DEFAULT_BIPED_ANIMATIONS if rig_type == "biped" else DEFAULT_CREATURE_ANIMATIONS
     rig_task_id = _rig(headers, source_task_id, rig_type, out_format)
     rigged = _poll(headers, rig_task_id, "rig", timeout)
     rigged_path = os.path.join(out_dir, "rigged.%s" % ext)
@@ -488,14 +505,15 @@ def _cmd_text(args) -> None:
     model = MODEL_LOWPOLY if args.lowpoly else MODEL_DEFAULT
     out_dir = _resolve_out(args)
     if args.dry_run:
+        anims = args.animations or DEFAULT_BIPED_ANIMATIONS  # actual set is rig_type-chosen at run time
         est = CREDIT_EST["text"] + (
-            CREDIT_EST["rig"] + CREDIT_EST["retarget_each"] * len(args.animations)
+            CREDIT_EST["rig"] + CREDIT_EST["retarget_each"] * len(anims)
             if args.rig else 0
         )
         print("[tripo_gen] DRY-RUN text-to-3D")
         print("  prompt    : %s" % args.prompt)
         print("  model     : %s" % model)
-        print("  rig+anim  : %s (%s)" % (args.rig, ",".join(args.animations) if args.rig else "-"))
+        print("  rig+anim  : %s (%s)" % (args.rig, ",".join(anims) if args.rig else "-"))
         print("  out dir   : %s" % out_dir)
         print("  est credits: ~%d (API is source of truth)" % est)
         return
@@ -525,14 +543,15 @@ def _cmd_image(args) -> None:
     model = MODEL_LOWPOLY if args.lowpoly else MODEL_DEFAULT
     out_dir = _resolve_out(args)
     if args.dry_run:
+        anims = args.animations or DEFAULT_BIPED_ANIMATIONS  # actual set is rig_type-chosen at run time
         est = CREDIT_EST["image"] + (
-            CREDIT_EST["rig"] + CREDIT_EST["retarget_each"] * len(args.animations)
+            CREDIT_EST["rig"] + CREDIT_EST["retarget_each"] * len(anims)
             if args.rig else 0
         )
         print("[tripo_gen] DRY-RUN image-to-3D")
         print("  image     : %s" % args.image)
         print("  model     : %s" % model)
-        print("  rig+anim  : %s (%s)" % (args.rig, ",".join(args.animations) if args.rig else "-"))
+        print("  rig+anim  : %s (%s)" % (args.rig, ",".join(anims) if args.rig else "-"))
         print("  out dir   : %s" % out_dir)
         print("  est credits: ~%d (API is source of truth)" % est)
         return
@@ -564,10 +583,12 @@ def _cmd_image(args) -> None:
 def _cmd_rig(args) -> None:
     out_dir = _resolve_out(args)
     if args.dry_run:
-        est = CREDIT_EST["rig"] + CREDIT_EST["retarget_each"] * len(args.animations)
+        anims = args.animations or DEFAULT_BIPED_ANIMATIONS  # actual set is rig_type-chosen at run time
+        est = CREDIT_EST["rig"] + CREDIT_EST["retarget_each"] * len(anims)
         print("[tripo_gen] DRY-RUN rig pipeline (rig-check -> rig -> retarget, one preset/call)")
         print("  source task: %s" % args.task)
-        print("  animations : %s" % ",".join(args.animations))
+        print("  animations : %s (biped default shown; non-biped uses %s)"
+              % (",".join(anims), ",".join(DEFAULT_CREATURE_ANIMATIONS)))
         print("  out format : %s" % args.out_format)
         print("  out dir    : %s" % out_dir)
         print("  est credits: ~%d (API is source of truth)" % est)
@@ -593,9 +614,10 @@ def _add_common(sp) -> None:
                     help="use the P1 low-poly / game-ready model instead of v3.1")
     sp.add_argument("--rig", action="store_true",
                     help="after generation, run rig-check -> rig(spec=mixamo) -> retarget")
-    sp.add_argument("--animations", nargs="+", default=list(DEFAULT_ANIMATIONS),
-                    help="retarget clip names, namespaced per rig_type at call time "
-                         "(default: %s)" % " ".join(DEFAULT_ANIMATIONS))
+    sp.add_argument("--animations", nargs="+", default=None,
+                    help="retarget clip names, namespaced per rig_type at call time. Default depends "
+                         "on rig_type: biped=[%s], non-biped=[%s]."
+                         % (" ".join(DEFAULT_BIPED_ANIMATIONS), " ".join(DEFAULT_CREATURE_ANIMATIONS)))
     sp.add_argument("--out-format", choices=("glb", "fbx"), default="glb", dest="out_format",
                     help="rig/retarget output format; fbx is Unity-ready directly (no Blender)")
     sp.add_argument("--force", action="store_true", help="regenerate even if model.glb exists")

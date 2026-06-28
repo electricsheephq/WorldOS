@@ -400,6 +400,12 @@ def main() -> None:
         ap.error("--out is required (unless --test-key).")
     if not args.rig_from_task and not args.prompt:
         ap.error("--prompt is required (unless --test-key or --rig-from-task).")
+    if args.action_ids:
+        # Reject duplicate ids: each clip writes anim_action_<id>.* + meta["animation_files"][id],
+        # so a repeat would bill twice and silently clobber the earlier output.
+        deduped = list(dict.fromkeys(args.action_ids))
+        if len(deduped) != len(args.action_ids):
+            ap.error("--animate action IDs must be unique.")
 
     if args.dry_run:
         _cmd_dry_run(args)
@@ -419,12 +425,15 @@ def main() -> None:
 
     key = _load_api_key()
     headers = _auth_headers(key)
-    meta: dict = {"ai_model": "meshy-5", "source": "meshy-text-to-3d-v2"}
+    # Provenance is set per-branch — don't stamp text-to-3d defaults onto a reused task.
+    meta: dict = {}
 
     if args.rig_from_task:
-        # Rig an EXISTING Meshy model task — skip generation entirely.
+        # Rig an EXISTING Meshy model task — skip generation entirely. Its origin (which model /
+        # whether image-to-3d) is unknown here, so record only the rigging-reuse provenance.
         model_task_id = args.rig_from_task
         meta["model_task_id"] = model_task_id
+        meta["source"] = "meshy-rigging-existing-task"
         print("[meshy_gen] rigging existing model task %s (generation skipped)." % model_task_id)
     else:
         # ---- preview ----
@@ -457,16 +466,19 @@ def main() -> None:
             or final_task.get("credits")
             or preview_task.get("consumed_credits")
         )
+        # Rigging consumes the textured model (refine) when present, else the preview geometry.
+        model_task_id = refine_id or preview_id
         meta.update({
+            "ai_model": "meshy-5",
+            "source": "meshy-text-to-3d-v2",
             "prompt": args.prompt,
             "preview_task_id": preview_id,
             "refine_task_id": refine_id,
+            "model_task_id": model_task_id,
             "refined": not args.no_refine,
             "glb_bytes": size,
             "consumed_credits": consumed,
         })
-        # Rigging consumes the textured model (refine) when present, else the preview geometry.
-        model_task_id = refine_id or preview_id
 
     # ---- rig + animate (HUMANOID only) ----
     if do_rig:
