@@ -52,7 +52,7 @@ WORLDOS_MOVESET = {
     "attack": "sword and shield slash",
     "cast": "standing 2h magic attack 01",
     "block": "sword and shield block",
-    "dodge": "sword and shield dodge",
+    "dodge": "standing dodge right",
     "hit": "standing react large from right",
     "death": "standing death backward 01",
 }
