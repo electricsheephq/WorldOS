@@ -99,3 +99,10 @@ venv/
 .coverage.*
 servers/*/.coverage
 .qa-archive/
+
+# Asset registry (gfx M-C, #1195): ONLY the manifest (registry.json) is committed.
+# Any co-located binary assets (.fbx/.glb/.png/.wav/...) are regenerable via the
+# gen_recipe rows and live on the Unity box's Assets/ tree, never in git.
+/data/asset-registry/**
+!/data/asset-registry/
+!/data/asset-registry/registry.json
