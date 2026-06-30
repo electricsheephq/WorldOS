@@ -55,4 +55,6 @@ System.IO.Directory.CreateDirectory("/home/unity/worldos-unity/Captures-Durable"
 System.IO.File.WriteAllBytes("/home/unity/worldos-unity/Captures-Durable/m10_spike.png", t2.EncodeToPNG());
 UnityEngine.Object.DestroyImmediate(t2); rt.Release(); UnityEngine.Object.DestroyImmediate(rt);
 sb.AppendLine("captured "+W+"x"+Hh+" -> m10_spike.png hidden="+hidden);
+// PERSIST the built scene (anti render-and-forget — CANONICAL.md discipline). Best-effort Save-As.
+try { var _scn=UnityEngine.SceneManagement.SceneManager.GetActiveScene(); System.IO.Directory.CreateDirectory("Assets/Scenes"); UnityEditor.SceneManagement.EditorSceneManager.SaveScene(_scn, "Assets/Scenes/CombatCrypt_canonical.unity"); sb.AppendLine("scene SAVED -> Assets/Scenes/CombatCrypt_canonical.unity"); } catch(System.Exception _e){ sb.AppendLine("SaveScene FAILED: "+_e.Message); }
 return sb.ToString();
