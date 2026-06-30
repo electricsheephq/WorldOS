@@ -69,7 +69,10 @@ System.Func<string,string,string,int,int,float,Color,string,Vector3> spawn=(fbxP
 };
 
 // LIVE engine combat-surface (engine = SOLE WRITER; this renderer is READ-ONLY — positions come from the engine cells).
-string CID="camp_gfxdemo01"; string surfJson="";
+// CID is configurable (mirrors the active-plate config), so ANY room's campaign drives the render — not just
+// the crypt demo. deploy_room.sh writes _active_campaign.txt alongside _active_combat.txt.
+string CID="camp_gfxdemo01"; { var _ac="/home/unity/worldos-unity/Assets/painterly/backdrops/_active_campaign.txt"; if(System.IO.File.Exists(_ac)){ var _c=System.IO.File.ReadAllText(_ac).Trim(); if(_c.Length>0) CID=_c; } }
+string surfJson="";
 try { surfJson=new System.Net.WebClient().DownloadString("http://127.0.0.1:8765/combat-surface?campaign="+CID); } catch (System.Exception e) { return "surface GET failed: "+e.Message; }
 var root=MiniJson.Parse(surfJson) as System.Collections.Generic.Dictionary<string,object>;
 if(root==null) return "surface parse failed";

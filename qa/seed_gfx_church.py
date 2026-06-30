@@ -3,11 +3,13 @@
 pipeline scales to a world (gfx M-E "scale" gate: >=2 distinct rooms, each authored + carved + playable).
 
 Same one-source discipline as the crypt: one authored 14x11 scene_grid drives BOTH the carved greybox
-(-> img2img painted church) AND the combat pathing (impassable_cells == the column/altar cells). Distinct
-LAYOUT from the crypt — a long nave flanked by two rows of columns, an altar at the apse — so the painted
-room reads as a church, not a re-skinned crypt.
+(-> img2img painted church) AND the combat pathing — the combat obstacles are the FULL scene-grid
+impassable set (perimeter WALLS + every prop), via impassable_cells(), so a token can never stop on a
+cell painted as wall or furniture. Distinct LAYOUT from the crypt — a long nave flanked by two rows of
+columns, an altar at the apse — so the painted room reads as a church, not a re-skinned crypt.
 
-  WORLDOS_STATE_DIR=<dir> uv run --directory servers/engine python qa/seed_gfx_church.py <state_dir>
+  # NOTE: uv --directory cd's into servers/engine first, so pass the script by ABSOLUTE path:
+  WORLDOS_STATE_DIR=<dir> uv run --directory servers/engine python "$PWD/qa/seed_gfx_church.py" <state_dir>
 
 Then: export_scene_grid.py -> build_room_greybox.cs -> generate_room.py --room church -> deploy_room.sh.
 Engine = SOLE WRITER (writes only via server.* + save_campaign). Additive (a new seed/campaign).
@@ -71,6 +73,7 @@ def _author_church_grid(server, cid: str) -> None:
     grid.location_id = loc.id
     loc.scene_grid = grid
     server.save_campaign(c)
+    return grid
 
 
 def main() -> None:
@@ -87,7 +90,7 @@ def main() -> None:
                                   summary="A second distinct carved room — a cathedral nave."))
     server.add_location(campaign_id=CID, name="Cathedral Nave", make_current=True,
                         description="A vaulted stone nave: flanking columns, a candlelit altar at the apse.")
-    _author_church_grid(server, CID)
+    grid = _author_church_grid(server, CID)
     server.start_session(CID, title="GFX Church Demo")
 
     hero = server.create_character(
@@ -101,14 +104,19 @@ def main() -> None:
     gob = server.spawn_monster(CID, name="Goblin", count=1)
     goblin_id = gob["spawned"][0]["id"]
 
+    import scene_grid as sg  # noqa: PLC0415
+    # ONE source: the combat obstacles are the FULL scene-grid impassable set (perimeter WALLS + every
+    # prop), not a props-only subset — so a token can never end on a cell the room art paints as wall or
+    # furniture. (A props-only override would silently drop the perimeter walls the greybox/img2img paint.)
+    impassable = sg.impassable_cells(grid, GRID_W, GRID_H)
     server.start_combat(CID, [hero_id, goblin_id], surpriser_ids=[hero_id])
-    server.set_grid(CID, width=GRID_W, height=GRID_H, obstacles=OBSTACLES)
+    server.set_grid(CID, width=GRID_W, height=GRID_H, obstacles=impassable)
     server.place_combatant_at_coords(CID, hero_id, HERO_CELL[0], HERO_CELL[1])
     server.place_combatant_at_coords(CID, goblin_id, GOBLIN_CELL[0], GOBLIN_CELL[1])
 
     print(json.dumps({
         "campaign_id": CID, "hero_id": hero_id, "goblin_id": goblin_id,
-        "grid": f"{GRID_W}x{GRID_H}", "obstacles": OBSTACLES,
+        "grid": f"{GRID_W}x{GRID_H}", "prop_obstacles": OBSTACLES, "impassable_total": len(impassable),
         "hero_cell": HERO_CELL, "goblin_cell": GOBLIN_CELL,
     }))
 

@@ -35,8 +35,9 @@
     },
     "church": {
       "key_light": "altar candles and a shaft of stained-glass light",
-      "shadow_casters": "the carved columns, the altar, and the pews",
-      "room_detail_tokens": "stone nave flagstones, fluted carved columns, a stone altar, worn wooden pews, gothic pointed arches, dust motes suspended in the light shaft",
+      "_prop_note": "shadow_casters/detail-tokens name ONLY props that exist as SceneProp footprints in the authored church scene_grid (qa/seed_gfx_church.py) — so every painted solid is also a combat obstacle (authored-pathing). Re-add pews here ONLY together with pew footprints in the seed.",
+      "shadow_casters": "the carved columns and the altar",
+      "room_detail_tokens": "stone nave flagstones, fluted carved columns, a stone altar, gothic pointed arches, dust motes suspended in the light shaft",
       "base_plate": null,
       "status": "TODO — needs a camera-pinned greybox/base plate"
     }

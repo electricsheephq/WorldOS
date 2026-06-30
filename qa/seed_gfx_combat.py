@@ -9,7 +9,8 @@ hero@(6,6) / goblin@(9,5), and starts combat. After this, GET /combat-surface?ca
 camp_gfxdemo01 returns real engine cells (positionAuthority='grid') for the READ-ONLY
 renderer to consume + the M-B bridge routes movement around exactly the painted props.
 
-  WORLDOS_STATE_DIR=<dir> uv run --directory servers/engine python qa/seed_gfx_combat.py <state_dir>
+  # NOTE: uv --directory cd's into servers/engine first, so pass the script by ABSOLUTE path:
+  WORLDOS_STATE_DIR=<dir> uv run --directory servers/engine python "$PWD/qa/seed_gfx_combat.py" <state_dir>
 
 Engine = SOLE WRITER: writes only via server.* engine calls + save_campaign. Additive
 (a new seed; touches no existing seed/contract).
@@ -73,6 +74,7 @@ def _author_crypt_grid(server, cid: str) -> None:
     grid.location_id = loc.id
     loc.scene_grid = grid
     server.save_campaign(c)
+    return grid
 
 
 def main() -> None:
@@ -95,7 +97,7 @@ def main() -> None:
     # greybox (build_room_greybox.cs) -> img2img painted room has its props on the EXACT combat pathing
     # cells (authored-by-construction; replaces the auto-generated 16x11 grid which mismatched the 14x11
     # combat). One source: this scene_grid drives BOTH the painted room AND the obstacles below.
-    _author_crypt_grid(server, CID)
+    grid = _author_crypt_grid(server, CID)
 
     server.start_session(CID, title="GFX Combat Demo")
 
@@ -113,14 +115,18 @@ def main() -> None:
 
     # Hero surprises the goblin so the PLAYER acts first (a surprised NPC skips its first turn);
     # leading NPC turns don't auto-resolve headless (no DM), so the demo drive loop needs a PC current.
+    import scene_grid as sg  # noqa: PLC0415
+    # ONE source: combat obstacles = the FULL scene-grid impassable set (perimeter WALLS + props), not a
+    # props-only subset — else a token could end on a cell the room art paints as wall.
+    impassable = sg.impassable_cells(grid, GRID_W, GRID_H)
     server.start_combat(CID, [hero_id, goblin_id], surpriser_ids=[hero_id])
-    server.set_grid(CID, width=GRID_W, height=GRID_H, obstacles=OBSTACLES)
+    server.set_grid(CID, width=GRID_W, height=GRID_H, obstacles=impassable)
     server.place_combatant_at_coords(CID, hero_id, HERO_CELL[0], HERO_CELL[1])
     server.place_combatant_at_coords(CID, goblin_id, GOBLIN_CELL[0], GOBLIN_CELL[1])
 
     print(json.dumps({
         "campaign_id": CID, "hero_id": hero_id, "goblin_id": goblin_id,
-        "grid": f"{GRID_W}x{GRID_H}", "obstacles": OBSTACLES,
+        "grid": f"{GRID_W}x{GRID_H}", "prop_obstacles": OBSTACLES, "impassable_total": len(impassable),
         "hero_cell": HERO_CELL, "goblin_cell": GOBLIN_CELL,
     }))
 
