@@ -93,12 +93,22 @@ export → greybox → img2img → deploy.
 
 - **Pathing works — proven + structural.** The alignment is by construction (one scene_grid → both), so
   pathing is correct for *any* generated room, not tuned per room. ✅
-- **Look amazing — NOT yet at ≥8; the carved-greybox is a real but insufficient lever (honest, scored).**
-  A rigorous 2-run visual-critic panel (logged to `qa/scores_db`, surface=visual) corrected an earlier
-  eyeball over-claim: the generated rooms score **4.75 (carved crypt) / 5.0 (live combat) / 6.1 (church)**,
-  washout-bound — not ≥8. The carved geometry IS directionally good (the critic credits "real carved
-  flagstone + fluted pilasters + arch"), but there is a **fundamental alignment↔quality tradeoff** with a
-  GRAY greybox + this LoRA:
+- **Look amazing — driven to ~7.07 via a TEXTURED greybox; ≥8 is now empirically LoRA-bound.** A scored
+  loop (`qa/scores_db`, harsh PoE2 panel) climbed the carved-greybox to its ceiling: flat gray greybox
+  **4.75** → procedural stone albedo+normal (a textured base, not flat grey) **5.75** → LIT walls (strong
+  cool fill so the carved walls don't crush to black) **6.5** → GEOMETRIC masonry coursing on the wall
+  faces (the floor painted into flagstones because it has geometric grout boxes; the walls needed the same)
+  **7.07**. Denser coursing yielded no gain. The win: 7.07 is reached at **LOW img2img strength (0.5)**, so
+  the camera-pin holds and props stay on the authored-pathing cells — authored-pathing-aligned AND
+  repeatable from any scene_grid (the old 7.4 firelit plate needed a hand-made painterly base + hand-tuned
+  obstacles). **≥8 is LoRA-bound, not geometry-bound:** the LoRA paints focal craft (floor flagstones,
+  statue niches, fluted columns, figural relief panels) at PoE2-grade but smooths the broad wall *fields*
+  into value-pass regardless of coursing — so ≥8 needs a crisper architectural/stone LoRA (or a dedicated
+  wall-field detail pass), per `room_recipes.json:textured_greybox_result_2026_07_01`. Renders:
+  `crypt14_walledcourse_v1.png` (7.07) + `m1_combat_textured.png` (live combat) + `LEVER_progression_6up.png`.
+  - The earlier rigorous panel had corrected an eyeball over-claim (a flat carved greybox is ~5, not ≥8);
+    this textured-greybox loop is the honest, scored path that lifted it to 7.07. There is a real
+    **alignment↔quality tradeoff** with a GRAY greybox + this LoRA, which the textured base mitigates:
   - **Low strength (~0.55–0.62):** preserves the carved geometry on-cell (alignment holds) but under-paints
     the gray → washed-out / gray-fog (~5). This is what the aligned-pathing system uses.
   - **High strength (~0.82):** fully repaints into painterly firelit carved stone (**scored 7.0**, washout
