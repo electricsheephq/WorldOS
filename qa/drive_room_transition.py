@@ -42,9 +42,10 @@ def main() -> None:
     if c.combat.active:
         server.end_combat(CID, resolution="The party cuts down the goblin in the stair hall.")
 
-    # 2) CROSS THE DOORWAY: travel to the linked tomb unit. travel_to co-locates the whole party
-    #    (current_location_id + each member's location_id) — the engine half of the room transition.
-    tr = server.travel_to(CID, tomb_id)
+    # 2) CROSS THE DOORWAY via the authored door primitive: cross_door validates (6,0) is a door cell
+    #    of the current (stair) room + finds the linked unit from Location.connections, then travel_to
+    #    co-locates the whole party. (6,0) = the shared back-wall doorway authored in seed_gfx_crypt_2room.
+    tr = server.cross_door(CID, 6, 0)
 
     # 3) a NEW encounter in the tomb: a skeleton rises from the sarcophagus -> a fresh fight.
     sk = server.spawn_monster(CID, name="Skeleton", count=1)
