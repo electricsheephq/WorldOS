@@ -64,6 +64,9 @@ venv/
 *.onnx
 *.pt
 *.bin
+# Unity renderer model weights are intentionally committed through Git LFS.
+!/extensions/renderers/unity/**/*.onnx
+!/extensions/renderers/unity/**/*.pt
 .cache/
 /state/audio/
 
