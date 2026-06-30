@@ -77,6 +77,10 @@ def _build_prompt(recipe: dict, room: str, lighting: str = "firelit") -> tuple:
     else:
         template = recipe["firelit_positive_template"]
         negative = recipe["washout_negative"]
+    # Sprint 4: suppress img2img-invented stray props (the owner's "lantern on top of a pillar").
+    stray = recipe.get("stray_item_negative", "")
+    if stray:
+        negative = f"{negative}, {stray}"
     positive = template.format(
         room=room,
         key_light=rc["key_light"],
