@@ -106,6 +106,7 @@ _OPENWORLDS_MIME_TYPES = {
 _MOVE_KINDS = {
     "say", "do", "check", "save", "combat", "attack", "cast", "use_item", "clarify",
     "travel", "inspect", "examine", "move_to_zone", "move_to_cell", "end_turn",
+    "cross_door",  # M-E: cross an authored doorway to the linked room-unit (engine-resolved)
 }
 # Kinds whose payload is carried by `target` alone (no free `text`/`name`) — the graphical
 # intents. Used to relax the "needs text or name" guard below for these click-driven moves.
@@ -172,6 +173,11 @@ def sanitize_move(raw: object) -> tuple[Optional[dict], str]:
     if kind == "move_to_cell":
         if not (isinstance(move.get("x"), int) and isinstance(move.get("y"), int)):
             return None, "'move_to_cell' needs integer 'x' and 'y' grid coordinates"
+        return move, ""
+    # `cross_door` is the engine-resolved M-E room-transition intent: carry the doorway cell (x,y).
+    if kind == "cross_door":
+        if not (isinstance(move.get("x"), int) and isinstance(move.get("y"), int)):
+            return None, "'cross_door' needs integer 'x' and 'y' (the doorway cell)"
         return move, ""
     # The graphical intents (travel/inspect/examine/move_to_zone) are carried by `target`;
     # everything else needs a `text` or `name` so the DM has something to act on. An `attack`
@@ -1426,6 +1432,31 @@ def _player_turn_lock(campaign_id: str) -> threading.Lock:
             lock = threading.Lock()
             _PLAYER_TURN_LOCKS[campaign_id] = lock
         return lock
+
+
+def _resolve_cross_door(campaign_id: str, move: dict) -> dict:
+    """Resolve a `cross_door` intent (M-E room transition): cross an authored doorway to the linked
+    room-unit via the engine's ``cross_door`` verb (which delegates to ``travel_to`` under the engine
+    lock — the engine stays the SOLE WRITER). Gated on combat being RESOLVED (finish the fight before
+    leaving the room). Returns ``{ok:True, crossed:[x,y]}`` so the client re-fetches /combat-surface and
+    swaps to the new room's plate; rejections (active combat / not a doorway / no connection) leave
+    NOTHING mutated and return ``{ok:False, reason}``. Mirrors the move_to_cell engine-resolved lane."""
+    engine = _load_engine_server()
+    if engine is None:
+        return {"ok": False, "reason": "engine unavailable"}
+    try:
+        snap = engine._require(campaign_id)
+    except Exception as exc:
+        return {"ok": False, "reason": f"could not read combat state: {exc}"}
+    if snap.combat.active:
+        return {"ok": False, "reason": "finish the fight before crossing the doorway"}
+    try:
+        result = engine.cross_door(campaign_id, int(move["x"]), int(move["y"]))
+    except ValueError as exc:
+        return {"ok": False, "reason": str(exc)}
+    except Exception as exc:  # noqa: BLE001 — surface any engine error as a clean rejection
+        return {"ok": False, "reason": f"cross failed: {exc}"}
+    return {"ok": True, "crossed": result.get("crossed_door")}
 
 
 def _resolve_player_combat_turn(campaign_id: str, move: dict, *, live: bool) -> dict:
@@ -9227,6 +9258,11 @@ class _Handler(BaseHTTPRequestHandler):
         # OAs, advances initiative, and we re-emit build_combat_surface. The campaign is bound to
         # the live run (the cross-campaign refusal above already ran). Every OTHER kind keeps the
         # append-only intent-log behavior (byte-identical to today).
+        # M-E ROOM-TRANSITION LANE: a `cross_door` is engine-resolved in-process (engine.cross_door ->
+        # travel_to under the engine lock), NOT appended for the DM. Gated on combat being resolved.
+        if move.get("kind") == "cross_door":
+            self._json(_resolve_cross_door(self.campaign_id, move))
+            return
         is_combat_cell = move.get("kind") in ("move_to_cell", "end_turn") or (
             move.get("kind") == "attack" and "target_id" in move
         )

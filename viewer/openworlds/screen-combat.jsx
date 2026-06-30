@@ -99,6 +99,8 @@ function ScreenCombat({ onNavigate, state }) {
   const zones = Array.isArray(surface?.zones) ? surface.zones : [];
   const battleLog = Array.isArray(surface?.battleLog) ? surface.battleLog : [];
   const encounter = surface?.encounter || { active: false, name: "No active encounter" };
+  // M-E room transition: authored doorways to linked room-units (door_cells x connections, server-surfaced).
+  const doors = Array.isArray(surface?.doors) ? surface.doors : [];
   // FIX A (combat scene backdrop): the servable scene scope the server projects on
   // the location block (`location:<id>`). Mirror the dialogue screen's sceneScope
   // fallback so an older surface without imageScope still resolves via location.id;
@@ -133,6 +135,27 @@ function ScreenCombat({ onNavigate, state }) {
     if (action.move?.name) return action.move.name;
     if (action.move?.kind) return action.move.kind;
     return action.available ? "ready" : "unavailable";
+  };
+
+  // M-E: cross an authored doorway to the linked room-unit. POSTs a cross_door intent (engine-resolved;
+  // the server gates on combat being RESOLVED). NOT gated on canAct — the cross happens AFTER the fight.
+  const crossDoor = async (door) => {
+    if (busyRef.current || !Array.isArray(door?.cell)) return;
+    busyRef.current = true;
+    try {
+      const response = await fetch("/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "cross_door", x: door.cell[0], y: door.cell[1], campaign: surface?.campaign_id || campaignId }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) throw new Error(payload.reason || `cross ${response.status}`);
+      await loadSurface();
+    } catch (error) {
+      toast({ kind: "danger", title: "Could not cross", body: error?.message || "The viewer could not reach /move." });
+    } finally {
+      busyRef.current = false;
+    }
   };
 
   const postMove = async (action) => {
@@ -268,7 +291,18 @@ function ScreenCombat({ onNavigate, state }) {
           {encounter.active ? (
             <CombatMap tokens={tokens} zones={zones} grid={surface?.grid} selected={selected?.id} onSelect={setSelectedToken} onCellMove={onCellMove} onAttack={onAttackToken} canAct={canAct} sceneScope={sceneScope} />
           ) : (
-            <CombatEmptyState status={surfaceStatus} onNavigate={onNavigate} />
+            <React.Fragment>
+              {doors.length ? (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                  {doors.map((d, i) => (
+                    <BrassButton key={i} size="sm" onClick={() => crossDoor(d)}>
+                      Cross to {d.toName || "the next room"} →
+                    </BrassButton>
+                  ))}
+                </div>
+              ) : null}
+              <CombatEmptyState status={surfaceStatus} onNavigate={onNavigate} />
+            </React.Fragment>
           )}
         </Panel>
 
