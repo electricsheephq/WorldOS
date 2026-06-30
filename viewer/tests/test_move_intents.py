@@ -31,6 +31,18 @@ _SPEC.loader.exec_module(server)
 class MoveIntentVocabularyTests(unittest.TestCase):
     # ---- #429: the new graphical intents are accepted ----
 
+    def test_cross_door_intent_accepted_with_xy(self):
+        """M-E: cross_door carries the doorway cell (x,y), engine-resolved like move_to_cell."""
+        move, reason = server.sanitize_move({"kind": "cross_door", "x": 6, "y": 0})
+        self.assertEqual(reason, "")
+        self.assertEqual(move["kind"], "cross_door")
+        self.assertEqual((move["x"], move["y"]), (6, 0))
+
+    def test_cross_door_without_coords_is_rejected(self):
+        move, reason = server.sanitize_move({"kind": "cross_door"})
+        self.assertIsNone(move)
+        self.assertIn("x", reason.lower())
+
     def test_travel_intent_accepted_with_target(self):
         move, reason = server.sanitize_move({"kind": "travel", "target": "loc-lower-city"})
         self.assertEqual(reason, "")
