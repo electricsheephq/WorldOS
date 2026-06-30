@@ -61,7 +61,7 @@ def _load_recipe() -> dict:
         return json.load(f)
 
 
-def _build_prompt(recipe: dict, room: str) -> tuple:
+def _build_prompt(recipe: dict, room: str, lighting: str = "firelit") -> tuple:
     rooms = recipe.get("rooms", {})
     if room not in rooms:
         sys.exit(
@@ -69,13 +69,21 @@ def _build_prompt(recipe: dict, room: str) -> tuple:
             % (room, ", ".join(sorted(rooms)))
         )
     rc = rooms[room]
-    positive = recipe["firelit_positive_template"].format(
+    # day/night dimension: same camera-pinned greybox, swapped lighting prompt (zero-drift regen). The
+    # firelit (night) template is the default; daylight floods the room cool with a stained-glass shaft.
+    if lighting == "daylight":
+        template = recipe.get("daylight_positive_template", recipe["firelit_positive_template"])
+        negative = recipe.get("daylight_negative", recipe["washout_negative"])
+    else:
+        template = recipe["firelit_positive_template"]
+        negative = recipe["washout_negative"]
+    positive = template.format(
         room=room,
         key_light=rc["key_light"],
         shadow_casters=rc["shadow_casters"],
         room_detail_tokens=rc["room_detail_tokens"],
     )
-    return positive, recipe["washout_negative"]
+    return positive, negative
 
 
 def main(argv=None) -> None:
@@ -93,6 +101,8 @@ def main(argv=None) -> None:
     ap.add_argument("--width", type=int, default=d["width"])
     ap.add_argument("--height", type=int, default=d["height"])
     ap.add_argument("--seed", type=int, default=None)
+    ap.add_argument("--lighting", choices=["firelit", "daylight"], default="firelit",
+                    help="day/night dimension: firelit (night, default) or daylight (cool sunlit, stained-glass shaft)")
     ap.add_argument("--timeout", type=int, default=600)
     ap.add_argument("--dry-run", action="store_true", help="print the resolved request without calling the API")
     args = ap.parse_args(argv)
@@ -103,7 +113,7 @@ def main(argv=None) -> None:
     if src_count != 1:
         ap.error("provide EXACTLY ONE of --base-plate <png> or --refine-from <asset_id>")
 
-    positive, negative = _build_prompt(recipe, args.room)
+    positive, negative = _build_prompt(recipe, args.room, args.lighting)
     # Standalone base models (model_z-image) run img2img via POST /generate/custom/{modelId}
     # with `image` + `strength` (the txt2img endpoint rejects standalone models). The base model
     # is in the PATH; the painterly LoRA rides `loras`/`lorasScale` (string ids, per the proven job).
