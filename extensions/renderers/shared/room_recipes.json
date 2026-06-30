@@ -51,6 +51,12 @@
       "room_detail_tokens": "stone nave flagstones, fluted carved columns, a stone altar, gothic pointed arches, dust motes suspended in the light shaft",
       "base_plate": null,
       "status": "TODO — needs a camera-pinned greybox/base plate"
+    },
+    "hell": {
+      "key_light": "molten lava glow and gouts of flame",
+      "shadow_casters": "the jagged obsidian spires and the bone piles",
+      "room_detail_tokens": "rivers of molten orange lava casting hot light across the floor, jagged black volcanic obsidian rock, glowing cracks and drifting embers, sulfurous haze, charred bone piles, hanging rusted iron chains, ash falling",
+      "_note": "the depths of hell (owner north-star example) — a dramatic hellish cavern. Extreme warm lava key vs cool ash-grey shadows; tests the pipeline on an EXTREME biome beyond the proven cool-stone interiors."
     }
   }
 }
