@@ -4,13 +4,18 @@
 // NO AnimatorController (its assembly isn't referenced by code-execute); actors are placed (pose-sampling = v2).
 // Run: unity-mcp code execute --no-safety-checks -f paint_combat_v1.cs
 AssetDatabase.Refresh();
+// Room-agnostic plate: read the active room's plate filename from a box config (written by the seed/driver);
+// default = the crypt. Lets the SAME renderer play combat on ANY generated room (tavern/church/...) by swapping
+// the plate with no code edit — the modular-room analogue of the asset registry.
+string PLATE="crypt_firelit_v2.png"; { var _abs="/home/unity/worldos-unity/Assets/painterly/backdrops/_active_combat.txt"; if(System.IO.File.Exists(_abs)){ var _n=System.IO.File.ReadAllText(_abs).Trim(); if(_n.Length>0) PLATE=_n; } }
+string PLATE_PATH="Assets/painterly/backdrops/"+PLATE;
 // New backdrop plates default to NPOT=ToNearest, which square-distorts a 1344x768 plate and breaks the
 // camera-pin aspect. Force NPOT=None so the plate keeps native dims (idempotent — only reimports if needed).
-{ var _ti=AssetImporter.GetAtPath("Assets/painterly/backdrops/crypt_firelit_v2.png") as TextureImporter; if(_ti!=null && _ti.npotScale!=TextureImporterNPOTScale.None){ _ti.npotScale=TextureImporterNPOTScale.None; _ti.maxTextureSize=2048; _ti.SaveAndReimport(); } }
+{ var _ti=AssetImporter.GetAtPath(PLATE_PATH) as TextureImporter; if(_ti!=null && _ti.npotScale!=TextureImporterNPOTScale.None){ _ti.npotScale=TextureImporterNPOTScale.None; _ti.maxTextureSize=2048; _ti.SaveAndReimport(); } }
 var sb=new System.Text.StringBuilder();
 Camera cam=Camera.main; if(cam==null && Camera.allCameras.Length>0) cam=Camera.allCameras[0]; if(cam==null) return "no cam";
 // validate the plate BEFORE mutating camera/renderers — a missing plate must not leave the editor scene corrupted.
-var bdTex=AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/painterly/backdrops/crypt_firelit_v2.png"); if(bdTex==null) return "no plate";
+var bdTex=AssetDatabase.LoadAssetAtPath<Texture2D>(PLATE_PATH); if(bdTex==null) return "no plate: "+PLATE_PATH;
 cam.orthographic=true; cam.orthographicSize=13f; cam.nearClipPlane=0.3f; cam.farClipPlane=500f;
 { Quaternion _crot=Quaternion.Euler(30f,45f,0f); cam.transform.rotation=_crot; cam.transform.position=-(_crot*Vector3.forward)*80f; }
 cam.clearFlags=CameraClearFlags.SolidColor; cam.backgroundColor=new Color(0.02f,0.02f,0.03f);
