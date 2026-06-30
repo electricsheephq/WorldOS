@@ -71,7 +71,11 @@ if(root==null) return "surface parse failed";
 var toks=root.ContainsKey("tokens")?(root["tokens"] as System.Collections.Generic.List<object>):null;
 if(toks==null||toks.Count==0) return "no tokens on surface";
 // sweep prior actors/overlays so a moved/removed token never leaves a stale instance (deterministic rerun).
-foreach(var g in UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None)){ var gn=g.name; if(gn.StartsWith("Actor_")||gn.EndsWith("_AO")||gn.EndsWith("_Ring")||gn=="ImpactFX"||gn=="DmgNum") UnityEngine.Object.DestroyImmediate(g); }
+// COLLECT then destroy with null-checks: destroying an actor root also destroys its children still in the
+// FindObjectsByType array, so a single-loop destroy would access a destroyed child (Unity throws).
+{ var _toKill=new System.Collections.Generic.List<GameObject>();
+  foreach(var g in UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None)){ if(g==null) continue; var gn=g.name; if(gn.StartsWith("Actor_")||gn.EndsWith("_AO")||gn.EndsWith("_Ring")||gn=="ImpactFX"||gn=="DmgNum") _toKill.Add(g); }
+  foreach(var g in _toKill){ if(g!=null) UnityEngine.Object.DestroyImmediate(g); } }
 // place an actor per token by SLOT (foe -> goblin template / ally -> hero template); cyan party / red foe ring (critic L5).
 var posByName=new System.Collections.Generic.Dictionary<string,Vector3>(); int spawned=0; string celldbg="";
 foreach(var o in toks){ var t=o as System.Collections.Generic.Dictionary<string,object>; if(t==null||!t.ContainsKey("x")||t["x"]==null) continue;

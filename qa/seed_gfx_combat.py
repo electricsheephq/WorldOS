@@ -55,7 +55,9 @@ def main() -> None:
     gob = server.spawn_monster(CID, name="Goblin", count=1)
     goblin_id = gob["spawned"][0]["id"]
 
-    server.start_combat(CID, [hero_id, goblin_id])
+    # Hero surprises the goblin so the PLAYER acts first (a surprised NPC skips its first turn);
+    # leading NPC turns don't auto-resolve headless (no DM), so the demo drive loop needs a PC current.
+    server.start_combat(CID, [hero_id, goblin_id], surpriser_ids=[hero_id])
     server.set_grid(CID, width=GRID_W, height=GRID_H, obstacles=OBSTACLES)
     server.place_combatant_at_coords(CID, hero_id, HERO_CELL[0], HERO_CELL[1])
     server.place_combatant_at_coords(CID, goblin_id, GOBLIN_CELL[0], GOBLIN_CELL[1])
