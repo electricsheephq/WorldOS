@@ -63,23 +63,47 @@ System.Func<string,string,string,int,int,float,Color,string,Vector3> spawn=(fbxP
   return go.transform.position;
 };
 
-// NOTE: rigged.fbx's UVs don't match hero_albedo (white) and its rig orientation doesn't compose with the
-// stand-up rotation (collapses). Use the proven textured hero.fbx (T-pose) until a correct rig+retarget lands.
-// ring colors: cyan party / saturated-red foe (gold was camouflaged on the warm flagstone — critic L5).
-var heroPos=spawn("Assets/painterly/models/hero.fbx","Assets/painterly/models/hero_albedo.png",null,6,6,5.0f,new Color(0.4f,0.95f,1f,1f),"Hero3D");
-var gobPos=spawn("Assets/chars_v2/goblin/goblin.fbx","Assets/chars_v2/goblin/albedo.png",null,9,5,4.2f,new Color(1f,0.13f,0.10f,1f),"Goblin3D");
-// fail fast: never write a "successful" durable frame that's missing a required actor.
+// LIVE engine combat-surface (engine = SOLE WRITER; this renderer is READ-ONLY — positions come from the engine cells).
+string CID="camp_gfxdemo01"; string surfJson="";
+try { surfJson=new System.Net.WebClient().DownloadString("http://127.0.0.1:8765/combat-surface?campaign="+CID); } catch (System.Exception e) { return "surface GET failed: "+e.Message; }
+var root=MiniJson.Parse(surfJson) as System.Collections.Generic.Dictionary<string,object>;
+if(root==null) return "surface parse failed";
+var toks=root.ContainsKey("tokens")?(root["tokens"] as System.Collections.Generic.List<object>):null;
+if(toks==null||toks.Count==0) return "no tokens on surface";
+// sweep prior actors/overlays so a moved/removed token never leaves a stale instance (deterministic rerun).
+// COLLECT then destroy with null-checks: destroying an actor root also destroys its children still in the
+// FindObjectsByType array, so a single-loop destroy would access a destroyed child (Unity throws).
+{ var _toKill=new System.Collections.Generic.List<GameObject>();
+  foreach(var g in UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None)){ if(g==null) continue; var gn=g.name; if(gn.StartsWith("Actor_")||gn.EndsWith("_AO")||gn.EndsWith("_Ring")||gn=="ImpactFX"||gn=="DmgNum") _toKill.Add(g); }
+  foreach(var g in _toKill){ if(g!=null) UnityEngine.Object.DestroyImmediate(g); } }
+// place an actor per token by SLOT (foe -> goblin template / ally -> hero template); cyan party / red foe ring (critic L5).
+var posByName=new System.Collections.Generic.Dictionary<string,Vector3>(); int spawned=0; string celldbg="";
+foreach(var o in toks){ var t=o as System.Collections.Generic.Dictionary<string,object>; if(t==null||!t.ContainsKey("x")||t["x"]==null) continue;
+  int cx=System.Convert.ToInt32(t["x"]); int cy=System.Convert.ToInt32(t["y"]); string team=t["team"] as string; string nm=t["name"] as string;
+  string tid=t.ContainsKey("id")?(t["id"] as string):null; if(string.IsNullOrEmpty(tid)) tid=nm;
+  bool foe=(team=="foe");
+  string fbx=foe?"Assets/chars_v2/goblin/goblin.fbx":"Assets/painterly/models/hero.fbx";
+  string alb=foe?"Assets/chars_v2/goblin/albedo.png":"Assets/painterly/models/hero_albedo.png";
+  float h=foe?4.2f:5.0f; Color ring=foe?new Color(1f,0.13f,0.10f,1f):new Color(0.4f,0.95f,1f,1f);
+  var pos=spawn(fbx,alb,null,cx,cy,h,ring,"Actor_"+tid);
+  if(nm!=null) posByName[nm]=pos; spawned++; celldbg+=" "+nm+"("+team+")@"+cx+","+cy;
+}
 if(missingActor){ sb.AppendLine("ABORT capture — a required actor prefab was missing (no PNG written)"); return sb.ToString(); }
+sb.AppendLine("LIVE "+CID+": spawned "+spawned+" actors:"+celldbg);
+// latest damage from the battleLog -> floating "-N" + impact burst over the struck token (skip if no recent hit).
+string dmgTarget=""; int dmgN=0; var blog=root.ContainsKey("battleLog")?(root["battleLog"] as System.Collections.Generic.List<object>):null;
+if(blog!=null){ foreach(var e in blog){ string tx=null; var ed=e as System.Collections.Generic.Dictionary<string,object>; if(ed!=null&&ed.ContainsKey("text")) tx=ed["text"] as string; else tx=e as string;
+  if(tx!=null&&tx.Contains(" hits ")&&tx.Contains(" for ")&&tx.Contains("damage")){ int hi=tx.IndexOf(" hits "); int fi=tx.IndexOf(" for ",hi); if(hi>=0&&fi>hi){ dmgTarget=tx.Substring(hi+6,fi-(hi+6)).Trim(); var aft=tx.Substring(fi+5).TrimStart().Split(' '); if(aft.Length>0) int.TryParse(aft[0],out dmgN); } } } }
 
-// impact VFX burst at the goblin (additive orange radial), billboarded
-var oldFx=GameObject.Find("ImpactFX"); if(oldFx!=null) UnityEngine.Object.DestroyImmediate(oldFx);
-var fx=GameObject.CreatePrimitive(PrimitiveType.Quad); fx.name="ImpactFX"; UnityEngine.Object.DestroyImmediate(fx.GetComponent<Collider>()); fx.transform.position=gobPos+new Vector3(0f,2.0f,0f); fx.transform.rotation=cam.transform.rotation; fx.transform.localScale=new Vector3(3.4f,3.4f,1f);
-var fxT=new Texture2D(128,128,TextureFormat.RGBA32,false); { var px=new Color[128*128]; float c=63.5f; for(int y=0;y<128;y++)for(int x=0;x<128;x++){ float d=Mathf.Sqrt((x-c)*(x-c)+(y-c)*(y-c))/c; float a=Mathf.Clamp01(1f-d); px[y*128+x]=new Color(1f,0.62f,0.16f,a*a); } fxT.SetPixels(px); fxT.Apply(); }
-var fxm=new Material(Shader.Find("Unlit/Transparent")); fxm.mainTexture=fxT; fxm.color=new Color(1f,1f,1f,0.92f); fxm.renderQueue=3000; fx.GetComponent<Renderer>().sharedMaterial=fxm; fx.GetComponent<Renderer>().shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off;
-
-// floating "-8" damage number above the goblin (billboarded TextMesh)
-var oldD=GameObject.Find("DmgNum"); if(oldD!=null) UnityEngine.Object.DestroyImmediate(oldD);
-var dmgGo=new GameObject("DmgNum"); dmgGo.transform.position=gobPos+new Vector3(0f,3.7f,0f); dmgGo.transform.rotation=cam.transform.rotation; var tm=dmgGo.AddComponent<TextMesh>(); tm.text="-8"; tm.fontSize=90; tm.characterSize=0.22f; tm.anchor=TextAnchor.MiddleCenter; tm.alignment=TextAlignment.Center; tm.color=new Color(1f,0.95f,0.45f,1f); var tmr=dmgGo.GetComponent<MeshRenderer>(); if(tmr!=null && tmr.sharedMaterial!=null) tmr.sharedMaterial.renderQueue=3100;
+// impact VFX burst + floating "-N" over the STRUCK token — ONLY when the battleLog has a recent hit (no false VFX, no dead air).
+if(dmgN>0 && !string.IsNullOrEmpty(dmgTarget) && posByName.ContainsKey(dmgTarget)){
+  Vector3 tpos=posByName[dmgTarget];
+  var fx=GameObject.CreatePrimitive(PrimitiveType.Quad); fx.name="ImpactFX"; UnityEngine.Object.DestroyImmediate(fx.GetComponent<Collider>()); fx.transform.position=tpos+new Vector3(0f,2.0f,0f); fx.transform.rotation=cam.transform.rotation; fx.transform.localScale=new Vector3(3.4f,3.4f,1f);
+  var fxT=new Texture2D(128,128,TextureFormat.RGBA32,false); { var px=new Color[128*128]; float c=63.5f; for(int y=0;y<128;y++)for(int x=0;x<128;x++){ float d=Mathf.Sqrt((x-c)*(x-c)+(y-c)*(y-c))/c; float a=Mathf.Clamp01(1f-d); px[y*128+x]=new Color(1f,0.62f,0.16f,a*a); } fxT.SetPixels(px); fxT.Apply(); }
+  var fxm=new Material(Shader.Find("Unlit/Transparent")); fxm.mainTexture=fxT; fxm.color=new Color(1f,1f,1f,0.92f); fxm.renderQueue=3000; fx.GetComponent<Renderer>().sharedMaterial=fxm; fx.GetComponent<Renderer>().shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off;
+  var dmgGo=new GameObject("DmgNum"); dmgGo.transform.position=tpos+new Vector3(0f,3.7f,0f); dmgGo.transform.rotation=cam.transform.rotation; var tm=dmgGo.AddComponent<TextMesh>(); tm.text="-"+dmgN; tm.fontSize=90; tm.characterSize=0.22f; tm.anchor=TextAnchor.MiddleCenter; tm.alignment=TextAlignment.Center; tm.color=new Color(1f,0.95f,0.45f,1f); var tmr=dmgGo.GetComponent<MeshRenderer>(); if(tmr!=null && tmr.sharedMaterial!=null) tmr.sharedMaterial.renderQueue=3100;
+  sb.AppendLine("VFX: "+dmgTarget+" -"+dmgN);
+}
 
 // capture
 int W=1920,Hh=Mathf.RoundToInt(1920f*(float)bdTex.height/bdTex.width); var rt=new RenderTexture(W,Hh,24,RenderTextureFormat.ARGB32); rt.Create();

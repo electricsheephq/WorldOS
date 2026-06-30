@@ -14,10 +14,11 @@ Dimetric, orthographic, **elevation 30°** (asin .5 = true 2:1), **yaw 45** corn
 ## Current-best per surface (2026-06-28)
 | Surface | CURRENT-BEST asset | Build script | Best capture / score | Status |
 |---|---|---|---|---|
-| Room plate | `Assets/painterly/backdrops/crypt_pinned_v1.png` (camera-pinned painterly crypt; L6 ~6–7) | `paint_3d_spike.cs` | `Captures-Durable/painted_backdrop_r3.png` | ✅ canonical |
+| Room plate | `Assets/painterly/backdrops/crypt_firelit_v2.png` (firelit chiaroscuro crypt; backdrop **7.4** — L1=8/detail=7, no washout; ≥8 needs a carved-geometry greybox, see `room_recipes.json:ceiling_2026_06_30`) | `generate_room.py` (recipe `extensions/renderers/shared/room_recipes.json`) | `~/worldos-session-notes/renders/m1_combat_firelit.png` | ✅ canonical (crypt_pinned_v1 = DEPRECATED) |
 | Character (hero) | `Assets/painterly/models/hero.fbx` + `hero_albedo.png` (2048²) on a Standard/PainterlyActor mat | `paint_3d_spike.cs` | `Captures-Durable/m10_spike.png` — **Gate-1 PASSED** (textured, lit, grounded 3D actor) | ✅ canonical 3D actor |
 | Animator | `HeroAnim_CL.controller` + 9-clip moveset from `meshy_gen.py --moveset` | `ClosedLoopBuilder.cs` + `unity-editor-patterns-m1-combat.md` | — | ⚠ WIP |
-| Combat SCENE (multi-actor) | **NOT YET BUILT on the canonical foundation** | (target) `ClosedLoopBuilder.cs` on crypt + 3D hero + goblin | — | ▶ **NEXT TARGET** |
+| Combat SCENE (LIVE, multi-actor) | **BUILT (P2)** — engine-driven hero+goblin on `crypt_firelit_v2`; actors placed at LIVE `/combat-surface` cells, move routes around painted props (M-B), attack → impact VFX + floating damage, NPC auto-counterattacks | `paint_combat_v1.cs` (LIVE; reads `/combat-surface`) + seed `qa/seed_gfx_combat.py` + driver `qa/drive_gfx_combat.py` | `~/worldos-session-notes/renders/m1_combat_02_attack.png` (full round: move + hit-for-7) | ✅ **P2 DONE** |
+| Playable IN-APP (M-D) | serve the box frame into the OpenWorlds viewer (`combatFrameScope` → `<Img>` poll); 2D `CombatGridBoard` = input/fallback | (target) `build_combat_surface` + `screen-combat.jsx` + the driver's scp-to-`images/combat-frame:<cid>/` | — | ▶ **NEXT** |
 
 ## DEPRECATED (do NOT resume from these)
 - `TavernTier1.unity` + `Captures/combat_0[1-4]_*.png` (06-23) — week-old tavern; floating dark actors,
