@@ -382,6 +382,17 @@ SSH key, or the VNC password in this tracked doc (same convention as the Support
    `manage_camera action=screenshot screenshot_super_size=2` (→ 5120×2880; use 3–4 for the visual-critic) —
    default super_size=1 reads soft. Frames land in `<proj>/Assets/Screenshots/`.
 
+**Enhancing the MCP's capabilities → our fork + upstream (standing practice).** The Unity MCP
+(`com.coplaydev.unity-mcp`, by Coplay) is our **external-AI → Unity Editor bridge** and the SOLE writer-into-editor
+path for the renderer + all Unity work — enhancing it (new tools / fixes / behaviors) is recurring, core work, not
+a one-off. When you add or fix MCP tools/behaviors, commit them to **our fork → https://github.com/100yenadmin/unity-mcp**
+(a fork of upstream `CoplayDev/unity-mcp`, default branch `beta`); for clean/general fixes also open an **issue +
+PR upstream to `CoplayDev/unity-mcp`** so others benefit (same fork-and-upstream pattern as `electricsheephq/GitNexus`).
+Develop in a clone of the fork (branch off `beta`) → push to the fork → deploy the built `MCPForUnity` Editor
+package to the box (its `/home/unity/unity-mcp/MCPForUnity` is a **loose copy, not a git clone**; the `:8080` server is the standalone `mcp-for-unity --transport http` process (run via `uvx --from mcpforunityserver` -- one service, package name vs CLI name). Separate, unrelated product — keep Unity's first-party `com.unity.ai.assistant` (AI
+Assistant) **OUT** of the project manifest: it livelocks the AssetDatabase on import (the editor spins forever in
+`GuidDB::ValidateChangedGUIDs` and never opens; removal is the only reliable fix).
+
 **RRI rollup is unchanged** — this box supplies the **part-B** persona/behavior/score evidence; the **Mac still
 owns native Part-A** (the built `dist/WorldOS.app` handoff) at the **SAME SHA**, because Linux cannot build the
 macOS `.app`. A full RRI = VM part-B + the Mac handoff at one SHA (same split + same evidence-path rules as the
