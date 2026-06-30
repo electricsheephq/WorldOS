@@ -813,3 +813,80 @@ def ensure_scene_grid(world_id: str, location) -> bool:
         kind=explicit_kind,
     )
     return True
+
+
+# ── SceneGrid → combat-grid obstacle derivation (gfx M-B) ─────────────────────────────
+
+
+def impassable_cells(
+    grid: "SceneGrid",
+    width: int,
+    height: int,
+    *,
+    occupied: set[Cell] = frozenset(),
+) -> list[list[int]]:
+    """Derive the IMPASSABLE combat-grid cells (walls + prop footprints) from a SceneGrid,
+    so a fight bound to a painted room routes movement around its geometry.
+
+    Returns a sorted list of ``[x, y]`` pairs in the exact shape ``Combat.grid_impassable``
+    expects (the same shape ``set_grid(obstacles=...)`` produces), ready to assign directly.
+
+    Coordinate mapping (the alignment care-point): a SceneGrid cell is ``(c, r)`` = (col, row),
+    cols along +x and rows along +y (see the ``_gen_*`` generators), and the combat grid is
+    ``(x, y)`` with ``grid_width == cols`` and ``grid_height == rows``. So the mapping is the
+    identity ``c -> x``, ``r -> y`` — both are 0-indexed and ``cell_size_ft`` matches the combat
+    ``grid_cell_size`` default of 5. We still CLIP every derived cell to ``0 <= x < width`` and
+    ``0 <= y < height`` so a grid sized smaller than the scene (or vice-versa) never emits an
+    out-of-bounds obstacle.
+
+    A cell is impassable if EITHER:
+      * an explicit ``SceneCell`` lists it with ``walkable=False`` (walls/props/water/void), OR
+      * it falls inside any ``SceneProp.cells`` footprint (belt-and-suspenders: props already
+        emit ``walkable=False`` cells, but a footprint cell missing from ``cells`` is still a
+        solid object), OR
+      * ``cell_default.walkable`` is False (a fully-solid default — every UNLISTED in-bounds
+        cell is then a wall; rare, but honored).
+
+    ``occupied`` cells (where a combatant already stands at fight-start) are EXCLUDED from the
+    result so nobody is trapped on a cell the router would treat as a wall — a placement on a
+    prop cell stays legal and movable. Pure: no I/O, no mutation, deterministic order.
+    """
+    if width <= 0 or height <= 0:
+        return []
+
+    blocked: set[Cell] = set()
+
+    # A fully-solid default makes every in-bounds cell a wall unless an explicit cell overrides
+    # it to walkable below. (Default is walkable=True for every authored generator, so this
+    # branch is inert in practice — empty == today — but it keeps the derivation total.)
+    default_walkable = True
+    cd = getattr(grid, "cell_default", None)
+    if cd is not None:
+        default_walkable = bool(getattr(cd, "walkable", True))
+    if not default_walkable:
+        for x in range(width):
+            for y in range(height):
+                blocked.add((x, y))
+
+    # Explicit cells: a walkable cell CLEARS the default-solid fill; a non-walkable cell BLOCKS.
+    for sc in getattr(grid, "cells", None) or []:
+        cell = (int(sc.c), int(sc.r))
+        if not (0 <= cell[0] < width and 0 <= cell[1] < height):
+            continue
+        if getattr(sc, "walkable", True):
+            blocked.discard(cell)
+        else:
+            blocked.add(cell)
+
+    # Prop footprints: every cell a prop sits on is solid (occluder or not). Props already emit
+    # walkable=False cells, but honor the footprint directly in case a cell was elided.
+    for prop in getattr(grid, "props", None) or []:
+        for (c, r) in getattr(prop, "cells", None) or []:
+            cell = (int(c), int(r))
+            if 0 <= cell[0] < width and 0 <= cell[1] < height:
+                blocked.add(cell)
+
+    # Never trap a combatant: a cell someone already stands on is walkable for this fight.
+    blocked -= set(occupied)
+
+    return [[x, y] for (x, y) in sorted(blocked)]

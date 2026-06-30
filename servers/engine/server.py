@@ -3911,6 +3911,42 @@ def _gate_combat_verb(c: "Campaign", actor: "Character", *, verb: str, consumes:
         )
 
 
+def _derive_grid_from_scene(c: Campaign) -> None:
+    """gfx M-B (#1194): if the campaign's CURRENT location carries a SceneGrid, switch the
+    just-started fight onto that grid and auto-derive its impassable cells (walls + prop
+    footprints) — so movement routes around the painted geometry with no manual set_grid call.
+
+    SOLE-WRITER-safe: this IS the engine writing its own combat state from its own scene data.
+    ADDITIVE: a no-op when there's no current location or it has no scene_grid (grid_enabled
+    stays False → zone/theater combat unchanged, byte-for-byte). Mutates ``c.combat`` in place
+    via the SAME fields ``set_grid`` writes (grid_enabled / extents / grid_impassable); the caller
+    persists. It NEVER clobbers a grid the DM already set up — if the fight is already grid-enabled
+    (an explicit set_grid ran first), we leave it alone."""
+    if c.combat.grid_enabled:
+        return  # the DM/engine already configured this fight's grid — don't override it
+    loc = c.locations.get(c.current_location_id) if c.current_location_id else None
+    grid = getattr(loc, "scene_grid", None) if loc is not None else None
+    if grid is None:
+        return  # no painted room → today's zone/theater combat, unchanged
+    width = int(grid.grid.cols)
+    height = int(grid.grid.rows)
+    if width <= 0 or height <= 0:
+        return
+    # Exclude any cell a combatant already stands on (defensive: combatants are unplaced at
+    # start_combat, but a fixture may carry x/y) so a placement is never trapped on a prop.
+    occupied = {
+        (cb.x, cb.y)
+        for cb in c.combat.order
+        if getattr(cb, "x", None) is not None and getattr(cb, "y", None) is not None
+    }
+    imp = scene_grid_mod.impassable_cells(grid, width, height, occupied=occupied)
+    c.combat.grid_enabled = True
+    c.combat.grid_width = width
+    c.combat.grid_height = height
+    c.combat.grid_cell_size = int(grid.grid.cell_size_ft) or 5
+    c.combat.grid_impassable = imp
+
+
 @mcp.tool()
 def start_combat(
     campaign_id: str,
@@ -3953,6 +3989,14 @@ def start_combat(
             ch = c.characters.get(cid)
             if ch is not None and getattr(ch, "kind", "") == "monster":
                 _bump_intel(c, getattr(ch, "creature_slug", ""), 2)
+        # gfx M-B (#1194): a fight bound to a painted room AUTO-derives its combat obstacles
+        # from the location's SceneGrid (walls + prop footprints), so movement routes around
+        # the painted geometry without anyone hand-calling set_grid(obstacles=...). Reuses the
+        # EXISTING grid plumbing internally (flips grid_enabled + sets extents + grid_impassable,
+        # exactly what set_grid does) — NO new tool/param on the public surface. Purely additive:
+        # absent when the current location has no scene_grid (grid_enabled stays False == today's
+        # zone/theater combat, byte-for-byte unchanged).
+        _derive_grid_from_scene(c)
         save_campaign(c)
         view = _combat_view(c)
         # Surface the surprise edge in the runtime view so the DM resolves the opener
