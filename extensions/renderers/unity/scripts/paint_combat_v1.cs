@@ -6,12 +6,13 @@
 AssetDatabase.Refresh();
 var sb=new System.Text.StringBuilder();
 Camera cam=Camera.main; if(cam==null && Camera.allCameras.Length>0) cam=Camera.allCameras[0]; if(cam==null) return "no cam";
+// validate the plate BEFORE mutating camera/renderers — a missing plate must not leave the editor scene corrupted.
+var bdTex=AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/painterly/backdrops/crypt_pinned_v1.png"); if(bdTex==null) return "no plate";
 cam.orthographic=true; cam.orthographicSize=13f; cam.nearClipPlane=0.3f; cam.farClipPlane=500f;
 { Quaternion _crot=Quaternion.Euler(30f,45f,0f); cam.transform.rotation=_crot; cam.transform.position=-(_crot*Vector3.forward)*80f; }
 cam.clearFlags=CameraClearFlags.SolidColor; cam.backgroundColor=new Color(0.02f,0.02f,0.03f);
 int hidden=0; foreach(var r in UnityEngine.Object.FindObjectsByType<Renderer>(FindObjectsSortMode.None)){ if(r.enabled){r.enabled=false;hidden++;} }
 
-var bdTex=AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/painterly/backdrops/crypt_pinned_v1.png"); if(bdTex==null) return "no plate";
 var oldBd=GameObject.Find("PaintedBackdrop"); if(oldBd!=null) UnityEngine.Object.DestroyImmediate(oldBd);
 var bd=GameObject.CreatePrimitive(PrimitiveType.Quad); bd.name="PaintedBackdrop"; UnityEngine.Object.DestroyImmediate(bd.GetComponent<Collider>());
 bd.transform.SetParent(cam.transform,false); float texAsp=(float)bdTex.width/bdTex.height; float oh=cam.orthographicSize*2f; float ow=oh*texAsp;
@@ -33,8 +34,9 @@ var blobT=new Texture2D(256,256,TextureFormat.RGBA32,false); blobT.wrapMode=Text
 var ringT=new Texture2D(256,256,TextureFormat.RGBA32,false); ringT.wrapMode=TextureWrapMode.Clamp; { var px=new Color[256*256]; float c=127.5f; for(int y=0;y<256;y++)for(int x=0;x<256;x++){ float d=Mathf.Sqrt((x-c)*(x-c)+(y-c)*(y-c))/c; float a=(d>0.70f&&d<0.96f)?Mathf.Clamp01(1f-Mathf.Abs(d-0.83f)/0.13f):0f; px[y*256+x]=new Color(1f,1f,1f,a); } ringT.SetPixels(px); ringT.Apply(); }
 
 // actor spawner (generalizes the spike's hero block): load fbx, stand up, scale to height, place at cell, foot-snap, albedo, AO, ring.
+bool missingActor=false;
 System.Func<string,string,string,int,int,float,Color,string,Vector3> spawn=(fbxPath,albedoPath,poseClipPath,cx,cy,height,ringCol,nm)=>{
-  var prefab=AssetDatabase.LoadAssetAtPath<GameObject>(fbxPath); if(prefab==null){ sb.AppendLine("MISSING "+fbxPath); return cellToWorld(cx,cy); }
+  var prefab=AssetDatabase.LoadAssetAtPath<GameObject>(fbxPath); if(prefab==null){ sb.AppendLine("MISSING "+fbxPath); missingActor=true; return cellToWorld(cx,cy); }
   var old=GameObject.Find(nm); if(old!=null) UnityEngine.Object.DestroyImmediate(old);
   var go=(GameObject)UnityEngine.Object.Instantiate(prefab); go.name=nm;
   if(poseClipPath!=null){ var pas=AssetDatabase.LoadAllAssetsAtPath(poseClipPath); foreach(var clipAsset in pas){ var clip=clipAsset as AnimationClip; if(clip!=null && !clip.name.StartsWith("__")){ clip.SampleAnimation(go, clip.length*0.45f); sb.AppendLine(nm+" posed by "+clip.name); break; } } }
@@ -44,6 +46,8 @@ System.Func<string,string,string,int,int,float,Color,string,Vector3> spawn=(fbxP
   Bounds bb=measure(); float curH=bb.size.y>0.001f?bb.size.y:1f; float s=height/curH; go.transform.localScale=go.transform.localScale*s;
   var p=cellToWorld(cx,cy); go.transform.position=p; bb=measure(); go.transform.position+=new Vector3(0f,-bb.min.y,0f);
   if(albedoPath!=null){ var al=AssetDatabase.LoadAssetAtPath<Texture2D>(albedoPath); if(al!=null){ var mm=new Material(Shader.Find("Standard")); mm.mainTexture=al; mm.SetFloat("_Glossiness",0.2f); mm.SetFloat("_Metallic",0f); foreach(var r in rends) r.sharedMaterial=mm; } }
+  var oldAo=GameObject.Find(nm+"_AO"); if(oldAo!=null) UnityEngine.Object.DestroyImmediate(oldAo);
+  var oldRg=GameObject.Find(nm+"_Ring"); if(oldRg!=null) UnityEngine.Object.DestroyImmediate(oldRg);
   var ao=GameObject.CreatePrimitive(PrimitiveType.Quad); ao.name=nm+"_AO"; UnityEngine.Object.DestroyImmediate(ao.GetComponent<Collider>()); ao.transform.position=new Vector3(p.x,0.04f,p.z); ao.transform.localEulerAngles=new Vector3(90f,0f,0f); ao.transform.localScale=new Vector3(2.2f,1.4f,1f); var aom=new Material(Shader.Find("Unlit/Transparent")); aom.mainTexture=blobT; aom.renderQueue=1950; ao.GetComponent<Renderer>().sharedMaterial=aom; ao.GetComponent<Renderer>().shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off;
   var rg=GameObject.CreatePrimitive(PrimitiveType.Quad); rg.name=nm+"_Ring"; UnityEngine.Object.DestroyImmediate(rg.GetComponent<Collider>()); rg.transform.position=new Vector3(p.x,0.06f,p.z); rg.transform.localEulerAngles=new Vector3(90f,0f,0f); rg.transform.localScale=new Vector3(2.7f,1.7f,1f); var rgm=new Material(Shader.Find("Unlit/Transparent")); rgm.mainTexture=ringT; rgm.color=ringCol; rgm.renderQueue=1955; rg.GetComponent<Renderer>().sharedMaterial=rgm; rg.GetComponent<Renderer>().shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off;
   sb.AppendLine(nm+" x"+s.ToString("F2")+" @cell("+cx+","+cy+") rends="+rends.Length);
@@ -54,8 +58,11 @@ System.Func<string,string,string,int,int,float,Color,string,Vector3> spawn=(fbxP
 // stand-up rotation (collapses). Use the proven textured hero.fbx (T-pose) until a correct rig+retarget lands.
 var heroPos=spawn("Assets/painterly/models/hero.fbx","Assets/painterly/models/hero_albedo.png",null,6,6,5.0f,new Color(1f,0.82f,0.4f,1f),"Hero3D");
 var gobPos=spawn("Assets/chars_v2/goblin/goblin.fbx","Assets/chars_v2/goblin/albedo.png",null,9,5,4.2f,new Color(1f,0.24f,0.20f,1f),"Goblin3D");
+// fail fast: never write a "successful" durable frame that's missing a required actor.
+if(missingActor){ sb.AppendLine("ABORT capture — a required actor prefab was missing (no PNG written)"); return sb.ToString(); }
 
 // impact VFX burst at the goblin (additive orange radial), billboarded
+var oldFx=GameObject.Find("ImpactFX"); if(oldFx!=null) UnityEngine.Object.DestroyImmediate(oldFx);
 var fx=GameObject.CreatePrimitive(PrimitiveType.Quad); fx.name="ImpactFX"; UnityEngine.Object.DestroyImmediate(fx.GetComponent<Collider>()); fx.transform.position=gobPos+new Vector3(0f,2.0f,0f); fx.transform.rotation=cam.transform.rotation; fx.transform.localScale=new Vector3(3.4f,3.4f,1f);
 var fxT=new Texture2D(128,128,TextureFormat.RGBA32,false); { var px=new Color[128*128]; float c=63.5f; for(int y=0;y<128;y++)for(int x=0;x<128;x++){ float d=Mathf.Sqrt((x-c)*(x-c)+(y-c)*(y-c))/c; float a=Mathf.Clamp01(1f-d); px[y*128+x]=new Color(1f,0.62f,0.16f,a*a); } fxT.SetPixels(px); fxT.Apply(); }
 var fxm=new Material(Shader.Find("Unlit/Transparent")); fxm.mainTexture=fxT; fxm.color=new Color(1f,1f,1f,0.92f); fxm.renderQueue=3000; fx.GetComponent<Renderer>().sharedMaterial=fxm; fx.GetComponent<Renderer>().shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off;

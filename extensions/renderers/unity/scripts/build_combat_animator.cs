@@ -46,7 +46,8 @@ System.Func<string, UnityEngine.AnimationClip> clipOf = (m) => {
 
 var states = new System.Collections.Generic.Dictionary<string, UnityEditor.Animations.AnimatorState>();
 foreach (var m in moves) {
-    string trig = "to" + char.ToUpper(m[0]) + m.Substring(1);
+    // CombatBeatDriver.cs fires SetTrigger("doAttack") for the attack verb — match that name, not "toAttack".
+    string trig = (m == "attack") ? "doAttack" : "to" + char.ToUpper(m[0]) + m.Substring(1);
     ctrl.AddParameter(trig, UnityEngine.AnimatorControllerParameterType.Trigger);
     var st = sm.AddState(m);
     st.motion = clipOf(m);
@@ -54,10 +55,13 @@ foreach (var m in moves) {
     if (st.motion == null) sb.AppendLine("WARN no clip in anim_" + m + ".fbx");
 }
 sm.defaultState = states["idle"];
+// CombatBeatDriver.cs drives locomotion via SetBool("IsWalking", …); declare it so those calls aren't silent no-ops.
+// (walk/run STATES still await Blender-cleaned clips — the bool is wired ahead of the locomotion states.)
+ctrl.AddParameter("IsWalking", UnityEngine.AnimatorControllerParameterType.Bool);
 
 foreach (var m in moves) {
     if (m == "idle") continue;
-    string trig = "to" + char.ToUpper(m[0]) + m.Substring(1);
+    string trig = (m == "attack") ? "doAttack" : "to" + char.ToUpper(m[0]) + m.Substring(1);
     var anyT = sm.AddAnyStateTransition(states[m]);
     anyT.AddCondition(UnityEditor.Animations.AnimatorConditionMode.If, 0, trig);
     anyT.duration = 0.10f; anyT.canTransitionToSelf = false;
@@ -67,5 +71,5 @@ foreach (var m in moves) {
     }
 }
 UnityEditor.AssetDatabase.SaveAssets();
-sb.AppendLine("CombatActor.controller: imported=" + imported + "/7 states=" + sm.states.Length + " params=" + ctrl.parameters.Length);
+sb.AppendLine("CombatActor.controller: imported=" + imported + "/" + moves.Length + " states=" + sm.states.Length + " params=" + ctrl.parameters.Length);
 return sb.ToString();
