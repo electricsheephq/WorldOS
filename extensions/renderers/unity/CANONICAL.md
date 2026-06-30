@@ -25,6 +25,26 @@ Camera sits at the **−x,−z near corner** → the near occluders are the **�
   still occludes after the above (the owner's "sometimes the walls have transparency when you walk around
   them"). Not built — only needed if a near interior prop is observed occluding despite the back-half rule.
 
+## Room composition + LIVE TRANSITION (M-E — PROVEN 2026-07-01)
+Bigger spaces = several camera-sized **room-units** linked at a shared door cell, NOT a widened grid
+(the 14×11 camera contract is fixed). One campaign holds N linked locations (`Location.connections`);
+each unit has its own `scene_grid` (door_cells, #1214) → own greybox → own painted plate.
+- **Author:** `qa/seed_gfx_crypt_2room.py` (crypt: stair+tomb) + `qa/seed_gfx_church_crypt.py` (DIFFERENT
+  types: cathedral nave + crypt undercroft → composition generalizes across recipes). `export_scene_grid.py
+  --location <id>` exports a specific unit.
+- **Cross (engine):** `server.cross_door(cid, x, y)` (#1225) — (x,y) is a door cell → travels to the
+  connection (delegates to `travel_to`, co-locates the party). INTERNAL verb (not an MCP tool). The
+  combat-surface surfaces `doors` (#1224: door_cells × connections) so the renderer/UI can offer to cross.
+- **Render:** swap `_active_combat.txt` to the new unit's plate (`deploy_room.sh`); the room-agnostic
+  `paint_combat_v1.cs` follows. The viewer re-reads snapshot.json per /combat-surface (NO restart needed).
+- **PROVEN:** `renders/TRANSITION_stair_to_tomb.png` (same hero crosses crypt stair→tomb) +
+  `renders/cc2_nave_combat.png` (live 3D combat in the cathedral nave). Driver `qa/drive_room_transition.py`.
+- **Live machinery:** viewer on Mac:8770 (state dir) + reverse tunnel box:8765→Mac:8770
+  (`ssh -O forward -R 8765:127.0.0.1:8770`); NEVER touch Mac:8765 (Eva's bridge). Run Scenario paints
+  SEQUENTIALLY (concurrent paints collide → silent no-output).
+- **Open (next):** the in-app UI "cross" button (a post-combat cross_door intent + jsx affordance) is the
+  player-triggered completion — needs its own resolution lane (cross_door is post-combat, not a combat turn).
+
 ## Current-best per surface (2026-06-28)
 | Surface | CURRENT-BEST asset | Build script | Best capture / score | Status |
 |---|---|---|---|---|
