@@ -3329,6 +3329,12 @@ def build_combat_surface(
         # next player-turn POST so a double-click / stale retry rejects (idempotency). Mirrors
         # combat_loop.turn_token; "" when no active combat. (Placed first for stable key order.)
         "turnToken": _combat_turn_token(snapshot) if combat_active else "",
+        # M-D: per-turn render-hint scope for the box-rendered 3D-on-2D combat frame. The box driver scp's the
+        # rendered PNG into <state_dir>/images/<safe-scope>/; the viewer's <Img> backdrop polls /image?scope=this
+        # and cache-busts on change. Turn-suffixed so a not-yet-rendered turn 404s to a placeholder rather than a
+        # stale frame. "" when no active combat -> the board falls back to the static location plate. Purely
+        # additive (a derived render hint; engine stays sole writer; no existing field altered).
+        "combatFrameScope": (("combat-frame:" + (campaign_id or "") + ":" + (_combat_turn_token(snapshot) or "").replace(":", "_")) if combat_active else ""),
         "title": _text(snapshot.get("title"), campaign_id or "Open Worlds"),
         "world": _text(snapshot.get("world_id"), "unknown"),
         "dayLabel": _openworlds_day_label(snapshot),

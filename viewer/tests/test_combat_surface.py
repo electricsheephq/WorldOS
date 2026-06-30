@@ -103,6 +103,8 @@ class CombatSurfaceTests(unittest.TestCase):
         self.assertEqual(surface["state_authority"], "engine")
         self.assertEqual(surface["write_lane"], "/move")
         self.assertTrue(surface["can_act"])
+        # M-D: active combat -> a per-turn frame scope the viewer <Img> polls (turn-suffixed for cache-bust).
+        self.assertTrue(surface["combatFrameScope"].startswith("combat-frame:camp_combat:"))
         self.assertEqual(surface["encounter"]["name"], "Basilisk Gate")
         self.assertEqual(surface["encounter"]["round"], 2)
         self.assertEqual(surface["selectedTokenId"], "hero")
@@ -307,6 +309,8 @@ class CombatSurfaceTests(unittest.TestCase):
         self.assertEqual(surface["tokens"], [])
         self.assertEqual(surface["initiative"], [])
         self.assertFalse(surface["can_act"])
+        # M-D: no active combat -> empty frame scope (board falls back to the static location plate).
+        self.assertEqual(surface["combatFrameScope"], "")
         self.assertEqual(_find_action(surface, "attack")["disabled_reason"], "not in combat")
 
     def assert_no_private_keys(self, value) -> None:
