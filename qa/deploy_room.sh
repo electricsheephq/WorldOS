@@ -7,7 +7,10 @@
 # This deploys a local plate PNG to the box and points the renderer at it (+ optionally at a campaign id).
 # Combat then plays on the new room (crypt / tavern / church / ...).
 #
-#   qa/deploy_room.sh <local_plate.png> [box_plate_name.png] [campaign_id]
+#   qa/deploy_room.sh <local_plate.png> [box_plate_name.png] [campaign_id] [location_id]
+#
+# Pass a <location_id> for a MULTI-ROOM dungeon: it records {loc_id: plate} in _location_plates.json so the
+# renderer auto-picks the right plate by the CURRENT engine location (cross_door auto-swap, #1230).
 #
 # Pre-req: the GEX44 ControlMaster at /tmp/gex44-cm.sock (gex44-unity-host skill).
 set -euo pipefail
@@ -15,6 +18,7 @@ set -euo pipefail
 LOCAL_PLATE="${1:?usage: deploy_room.sh <local_plate.png> [box_plate_name.png] [campaign_id]}"
 BOX_NAME="${2:-$(basename "$LOCAL_PLATE")}"
 CAMPAIGN="${3:-}"
+LOC_ID="${4:-}"
 CM="/tmp/gex44-cm.sock"
 BOX="root@46.4.26.123"
 BDIR="/home/unity/worldos-unity/Assets/painterly/backdrops"
@@ -28,5 +32,11 @@ ssh -o ControlPath="$CM" "$BOX" \
 if [ -n "$CAMPAIGN" ]; then
   ssh -o ControlPath="$CM" "$BOX" "printf '%s' '$CAMPAIGN' | sudo -u unity tee $BDIR/_active_campaign.txt"
   echo "[deploy_room] active campaign -> $CAMPAIGN"
+fi
+# #1230: per-location plate map -> the renderer auto-picks the plate by current location (cross_door auto-swap).
+if [ -n "$LOC_ID" ]; then
+  PYMERGE="import json,os; f='$BDIR/_location_plates.json'; d=json.load(open(f)) if os.path.exists(f) else {}; d['$LOC_ID']='$BOX_NAME'; json.dump(d,open(f,'w'))"
+  ssh -o ControlPath="$CM" "$BOX" "sudo -u unity python3 -c \"$PYMERGE\""
+  echo "[deploy_room] location $LOC_ID -> plate $BOX_NAME (per-location map)"
 fi
 echo "[deploy_room] active combat room -> $BOX_NAME (render paint_combat_v1.cs to see it)"

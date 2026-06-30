@@ -7,7 +7,24 @@ AssetDatabase.Refresh();
 // Room-agnostic plate: read the active room's plate filename from a box config (written by the seed/driver);
 // default = the crypt. Lets the SAME renderer play combat on ANY generated room (tavern/church/...) by swapping
 // the plate with no code edit — the modular-room analogue of the asset registry.
-string PLATE="crypt_firelit_v2.png"; { var _abs="/home/unity/worldos-unity/Assets/painterly/backdrops/_active_combat.txt"; if(System.IO.File.Exists(_abs)){ var _n=System.IO.File.ReadAllText(_abs).Trim(); if(_n.Length>0) PLATE=_n; } }
+// #1230: pick the plate by the CURRENT engine location (a per-location plate map written by deploy_room.sh),
+// so cross_door AUTO-SWAPS the rendered room with no manual re-deploy. Reads the current location.id off the
+// SAME /combat-surface the renderer uses for tokens; ANY failure (no map, tunnel down, parse) falls back to
+// _active_combat.txt -> today's single-room behavior (back-compat, additive). The per-location fetch is as
+// reliable as the token fetch below (same endpoint).
+string PLATE="crypt_firelit_v2.png"; string _locPlate="";
+try {
+  var _cidF="/home/unity/worldos-unity/Assets/painterly/backdrops/_active_campaign.txt";
+  string _cid="camp_gfxdemo01"; if(System.IO.File.Exists(_cidF)){ var _c=System.IO.File.ReadAllText(_cidF).Trim(); if(_c.Length>0) _cid=_c; }
+  var _sj=new System.Net.WebClient().DownloadString("http://127.0.0.1:8765/combat-surface?campaign="+_cid);
+  var _r=MiniJson.Parse(_sj) as System.Collections.Generic.Dictionary<string,object>;
+  var _loc=(_r!=null && _r.ContainsKey("location"))?_r["location"] as System.Collections.Generic.Dictionary<string,object>:null;
+  var _lid=(_loc!=null && _loc.ContainsKey("id"))?_loc["id"] as string:null;
+  var _mapF="/home/unity/worldos-unity/Assets/painterly/backdrops/_location_plates.json";
+  if(!string.IsNullOrEmpty(_lid) && System.IO.File.Exists(_mapF)){ var _m=MiniJson.Parse(System.IO.File.ReadAllText(_mapF)) as System.Collections.Generic.Dictionary<string,object>; if(_m!=null && _m.ContainsKey(_lid)) _locPlate=_m[_lid] as string; }
+} catch {}
+if(!string.IsNullOrEmpty(_locPlate)) PLATE=_locPlate;
+else { var _abs="/home/unity/worldos-unity/Assets/painterly/backdrops/_active_combat.txt"; if(System.IO.File.Exists(_abs)){ var _n=System.IO.File.ReadAllText(_abs).Trim(); if(_n.Length>0) PLATE=_n; } }
 string PLATE_PATH="Assets/painterly/backdrops/"+PLATE;
 // New backdrop plates default to NPOT=ToNearest, which square-distorts a 1344x768 plate and breaks the
 // camera-pin aspect. Force NPOT=None so the plate keeps native dims (idempotent — only reimports if needed).
