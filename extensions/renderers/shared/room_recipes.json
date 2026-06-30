@@ -1,0 +1,40 @@
+{
+  "_doc": "Committed recipe for the REPEATABLE painterly backdrop workflow (generate_room.py). The renderer/registry consume the GENERATED plate; this file is the source of truth for HOW a plate is generated, so any room is regeneratable on demand. Proven 2026-06-30: the crypt base plate (flat museum-lit, lighting 5/10, L6 6) re-lit via this img2img recipe into firelit chiaroscuro. Pipeline = Scenario img2img on model_z-image + our painterly LoRA. The lever from 6.5->8 is LIGHTING DRAMA, not more texture (drop ambient, single warm key, deep blue-violet shadows, hard cast shadows). Composition is camera-pinned and must NOT drift: strength stays low (~0.45) so the dimetric layout (pillars/sarcophagus/brazier/walls) holds while diffusion re-lights.",
+  "pipeline": "scenario-img2img",
+  "base_model": "model_z-image",
+  "lora": "model_MB22WaRCBLtfhi5R2CRpHoEL",
+  "lora_scale": 0.78,
+  "defaults": {
+    "strength": 0.45,
+    "num_inference_steps": 40,
+    "guidance": 7.5,
+    "num_outputs": 4,
+    "width": 1344,
+    "height": 768
+  },
+  "firelit_positive_template": "painterly isometric dimetric {room} interior background plate, Pillars of Eternity II Deadfire pre-rendered background quality, SINGLE warm {key_light} as the sole dramatic key light, dramatic chiaroscuro, steep warm-to-cool value falloff from a hot amber lit pool to near-black corners, deep blue-violet shadow pockets in the far corners and along the back and side walls, hard directional cast shadows thrown from {shadow_casters} across the floor, warm amber rim on edges facing the flame, cool blue bounce on shadow-side stone, low-key moody candlelit interior, {room_detail_tokens}, tactile hand-painted texture, rich oil-painted detail, atmospheric depth, fixed camera composition, cinematic torchlit interior",
+  "washout_negative": "flat even ambient light, overcast lighting, museum lighting, uniform gray floor, washed out, blown highlights, clipped white hotspot, pure white, overexposed, low contrast, hazy, milky, foggy bloom, pale watercolor wash, mushy smeared detail, neutral gray shadows, desaturated shadows, evenly lit, no shadows, flat shading, soft diffuse fill light, second light source, multiple key lights, daylight, characters, people, figures, text, watermark, blurry, low detail",
+  "rooms": {
+    "crypt": {
+      "key_light": "brazier firelight",
+      "shadow_casters": "the pillars, the sarcophagus, and the brazier legs",
+      "room_detail_tokens": "crisp painterly flagstone mortar lines, weathered cracked stone relief, grime moss and water-staining in the cracks, fluted pillar detail, carved sarcophagus relief",
+      "base_plate": "crypt_plate_v2_s50.png",
+      "status": "PROVEN 2026-06-30 (relit_v3)"
+    },
+    "tavern": {
+      "key_light": "hearth fire and hanging iron lanterns",
+      "shadow_casters": "the timber posts, the bar counter, and the tables",
+      "room_detail_tokens": "worn wooden plank floor, heavy timber roof beams, ale barrels and tankards, a stone hearth with glowing embers, candlelit tables, hanging dried herbs",
+      "base_plate": null,
+      "status": "TODO — needs a camera-pinned greybox/base plate (Unity render or txt2img at contract aspect)"
+    },
+    "church": {
+      "key_light": "altar candles and a shaft of stained-glass light",
+      "shadow_casters": "the carved columns, the altar, and the pews",
+      "room_detail_tokens": "stone nave flagstones, fluted carved columns, a stone altar, worn wooden pews, gothic pointed arches, dust motes suspended in the light shaft",
+      "base_plate": null,
+      "status": "TODO — needs a camera-pinned greybox/base plate"
+    }
+  }
+}
