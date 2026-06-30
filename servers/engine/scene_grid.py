@@ -124,6 +124,13 @@ class SceneGrid(_StrictModel):
     zone_anchors: dict[str, Cell] = Field(default_factory=dict)
     exits: list[dict] = Field(default_factory=list)
     spawns: dict[str, list[Cell]] = Field(default_factory=dict)
+    # PROTECTED-PATHING discipline (additive; empty == today): door_cells are first-class doorway cells
+    # (every exit cell is also a door cell, plus any authored interior archway); protected_lane_cells are a
+    # connectivity-critical path the prop pass must keep CLEAR. A prop may NEVER occupy a door-zone cell
+    # (door + Chebyshev-1) or a protected-lane cell (see validate_scene_grid). See
+    # docs/roadmap/ROOM-OCCLUSION-PATHING-SPRINTS.md.
+    door_cells: list[Cell] = Field(default_factory=list)
+    protected_lane_cells: list[Cell] = Field(default_factory=list)
     lighting: SceneLighting = Field(default_factory=SceneLighting)
     art: SceneArt = Field(default_factory=SceneArt)
 
@@ -890,3 +897,88 @@ def impassable_cells(
     blocked -= set(occupied)
 
     return [[x, y] for (x, y) in sorted(blocked)]
+
+
+# ── Protected-pathing discipline: door zones + a pre-greybox validator (gfx occlusion/pathing Sprint 2) ──
+
+
+def door_zone_cells(grid: "SceneGrid", width: int, height: int) -> set[Cell]:
+    """The cells props must keep CLEAR around every doorway: each ``door_cell`` plus its Chebyshev-1 ring
+    (clipped to bounds), so a doorway always has a free landing on both sides (the D&D 2-square-doorway /
+    PoE2 'no furniture behind the door' convention). Pure, deterministic."""
+    zone: set[Cell] = set()
+    for (c, r) in getattr(grid, "door_cells", None) or []:
+        for dc in (-1, 0, 1):
+            for dr in (-1, 0, 1):
+                x, y = int(c) + dc, int(r) + dr
+                if 0 <= x < width and 0 <= y < height:
+                    zone.add((x, y))
+    return zone
+
+
+def validate_scene_grid(grid: "SceneGrid", width: int, height: int) -> list[str]:
+    """Pre-greybox GATE (run before any art is generated — Diablo's 'topology decided before dressing').
+    Returns a list of human-readable violation strings (``[]`` == valid). Enforces the protected-pathing
+    discipline so a generated room can never (a) place a prop in a door zone or a protected lane, (b) wall
+    off a pocket of floor with a prop, or (c) be too crunched for actors to move. Pure: no I/O, no mutation,
+    deterministic order. See docs/roadmap/ROOM-OCCLUSION-PATHING-SPRINTS.md."""
+    issues: list[str] = []
+    if width <= 0 or height <= 0:
+        return ["grid has non-positive dimensions"]
+
+    dz = door_zone_cells(grid, width, height)
+    lanes: set[Cell] = {(int(c), int(r)) for (c, r) in (getattr(grid, "protected_lane_cells", None) or [])}
+
+    # (1)+(2) prop placement: no prop footprint may sit in a door zone or a protected lane.
+    for prop in getattr(grid, "props", None) or []:
+        pid = getattr(prop, "id", "?")
+        for (c, r) in getattr(prop, "cells", None) or []:
+            cell = (int(c), int(r))
+            if cell in dz:
+                issues.append(f"prop '{pid}' at {list(cell)} blocks a DOOR ZONE (door + 1-cell landing)")
+            if cell in lanes:
+                issues.append(f"prop '{pid}' at {list(cell)} blocks a PROTECTED LANE")
+
+    blocked: set[Cell] = {(x, y) for (x, y) in (tuple(p) for p in impassable_cells(grid, width, height))}
+    walkable: list[Cell] = [(x, y) for x in range(width) for y in range(height) if (x, y) not in blocked]
+
+    # (3) connectivity: every walkable cell must be in ONE region (a prop must never wall off a pocket —
+    # this is exactly the 'sarcophagus jammed next to the staircase' failure the owner named).
+    if walkable:
+        from collections import deque  # noqa: PLC0415
+
+        start = walkable[0]
+        seen: set[Cell] = {start}
+        q: deque[Cell] = deque([start])
+        while q:
+            cx, cy = q.popleft()
+            for dc in (-1, 0, 1):
+                for dr in (-1, 0, 1):
+                    if dc == 0 and dr == 0:
+                        continue
+                    nb = (cx + dc, cy + dr)
+                    if nb not in blocked and nb not in seen and 0 <= nb[0] < width and 0 <= nb[1] < height:
+                        seen.add(nb)
+                        q.append(nb)
+        unreached = [c for c in walkable if c not in seen]
+        if unreached:
+            issues.append(
+                f"{len(unreached)} walkable cells are a DISCONNECTED pocket (a prop/wall walls them off), "
+                f"e.g. {list(unreached[0])} — pathing would be broken"
+            )
+
+    # (4) every door cell + spawn cell must itself be walkable (you can't enter/spawn on a wall or prop).
+    for (c, r) in getattr(grid, "door_cells", None) or []:
+        if (int(c), int(r)) in blocked:
+            issues.append(f"door cell {[int(c), int(r)]} is BLOCKED (wall/prop) — unusable doorway")
+    for cells in (getattr(grid, "spawns", None) or {}).values():
+        for (c, r) in cells:
+            if (int(c), int(r)) in blocked:
+                issues.append(f"spawn cell {[int(c), int(r)]} is BLOCKED (wall/prop)")
+
+    # (5) enough clear combat floor (outside door zones/lanes) for actors to actually maneuver.
+    clear = sum(1 for cell in walkable if cell not in dz and cell not in lanes)
+    if clear < 12:
+        issues.append(f"only {clear} clear combat-floor cells (< 12) — too crunched for actor movement")
+
+    return issues

@@ -45,11 +45,23 @@ def main() -> None:
     _bio = (getattr(grid, "biome", "") + " " + getattr(loc, "name", "")).lower()
     material = "wood" if any(w in _bio for w in ("wood", "timber", "tavern", "plank", "hall of") ) and "stone" not in _bio else "stone"
 
+    # PRE-GREYBOX GATE: pathing/lanes must be valid BEFORE any art is generated (Diablo's topology-then-
+    # dressing). Refuse to write room_geometry.json on a violation so a broken room can never reach the
+    # Unity greybox / img2img step. See docs/roadmap/ROOM-OCCLUSION-PATHING-SPRINTS.md.
+    violations = sg.validate_scene_grid(grid, cols, rows)
+    if violations:
+        print("[export_scene_grid] VALIDATION FAILED — refusing to write geometry:", file=sys.stderr)
+        for v in violations:
+            print(f"  - {v}", file=sys.stderr)
+        sys.exit(1)
+
     payload = {
         "location": getattr(loc, "name", ""),
         "cols": cols, "rows": rows, "material": material,
         "cell_default_walkable": bool(getattr(grid.cell_default, "walkable", True)),
         "walls": walls, "props": props, "impassable": impassable,
+        "door_cells": [[int(c), int(r)] for (c, r) in (getattr(grid, "door_cells", None) or [])],
+        "protected_lane_cells": [[int(c), int(r)] for (c, r) in (getattr(grid, "protected_lane_cells", None) or [])],
     }
     text = json.dumps(payload)
     if out:
