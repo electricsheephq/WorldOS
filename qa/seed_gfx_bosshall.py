@@ -20,7 +20,10 @@ import sys
 
 CID = "camp_gfxbosshall01"
 GRID_W, GRID_H = 14, 11
-COLUMNS = [[4, 4], [9, 4], [4, 7], [9, 7]]   # two rows flanking the central aisle (cols 5-8)
+# NEAR-ZONE OCCLUSION RULE (occlusion-sprint dev-start): tall columns stay in the BACK HALF (r<=5) so
+# the near approach (r>=6, where the hero enters at r=9) is clear of foreground occluders — the front
+# colonnade pair pulled from r=7 to r=5. See qa/seed_gfx_church.py for the rule rationale.
+COLUMNS = [[4, 3], [9, 3], [4, 5], [9, 5]]   # two rows flanking the central aisle (cols 5-8), back half
 DAIS = [[6, 1], [7, 1], [6, 2], [7, 2]]      # a raised 2x2 throne dais at the back-center
 OBSTACLES = COLUMNS + DAIS
 HERO_CELL = [6, 9]    # hall entrance
