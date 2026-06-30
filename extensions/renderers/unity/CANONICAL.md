@@ -11,6 +11,20 @@ Dimetric, orthographic, **elevation 30°** (asin .5 = true 2:1), **yaw 45** corn
 **cell_size 2.0**, **ortho_size 13**, grid **14×11**. `cellToWorld(c,r) = ((c-6.5)*2.0, 0, (5.0-r)*2.0)`.
 (The 06-23 `TavernTier1` used cell 5 / 14×10 — **DEPRECATED contract**; do not reuse it.)
 
+## Occlusion model (load-bearing — the room must work WITH actors; owner 2026-07-01)
+The camera is permanently fixed, so occlusion is solved at ART TIME by CUTAWAY, not a runtime fade.
+Camera sits at the **−x,−z near corner** → the near occluders are the **−x (left) + front** walls.
+- **CUT the near walls + NEVER build a ceiling.** `build_room_greybox.cs` `cutNear=true` omits WallLeft +
+  PilLeft + CrsLeftH; the +z/+x FAR walls stay as the backdrop. No roof geometry, ever, for interiors.
+  PROVEN: live combat with actors fully visible on open floor (`renders/m1_combat_cutnear.png`). [#1213]
+- **Keep tall INTERIOR occluder props (columns/pillars) in the BACK HALF (r ≤ 5 on an 11-row grid)** so
+  the camera-near third — where actors enter (r≈8-9) + fight — is never occluded by a foreground column.
+  Authored in the seeds (`seed_gfx_church.py`/`seed_gfx_bosshall.py` colonnade pulled r=7→r=5). PROVEN
+  in the painted output (`renders/church_nearzone_stray_v{1,2}.png` — open foreground). [#1219]
+- **DEFERRED Phase-2:** a per-prop "see-through on approach" alpha-clip fade, for any near-side PROP that
+  still occludes after the above (the owner's "sometimes the walls have transparency when you walk around
+  them"). Not built — only needed if a near interior prop is observed occluding despite the back-half rule.
+
 ## Current-best per surface (2026-06-28)
 | Surface | CURRENT-BEST asset | Build script | Best capture / score | Status |
 |---|---|---|---|---|

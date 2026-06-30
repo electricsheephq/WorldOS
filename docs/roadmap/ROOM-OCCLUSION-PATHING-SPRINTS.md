@@ -44,16 +44,25 @@
 
 - **Sprint 1 — occlusion cutaway (SHIPPED, #1213):** `cutNear` omits the −x wall + pilasters + coursing;
   no-ceiling guard. Proven: `renders/m1_combat_cutnear.png` (actors fully visible, clear floor).
-- **Sprint 2 — pathing-lane + door-zone schema + validator (THIS PR):** `SceneGrid.door_cells` +
-  `protected_lane_cells`; `door_zone_cells()` / `near_zone_cells()` / `validate_scene_grid()` in
-  `scene_grid.py`; prop-placement guard in the seeds; `qa/validate_scene_grid.py` + hard-fail wire into
-  `export_scene_grid.py`; tests.
-- **Sprint 3 — room-unit composition:** author multi-section spaces (e.g. crypt = stair + tomb) as room-units
-  linked at door cells; recipe entries; verify the plate-swap flips on crossing a door cell.
-- **Sprint 4 — stray-item control:** greybox depth pass + prop mask; regional ControlNet conditioning at the
-  Scenario img2img call; `stray_item_negative`; a post-gen mask-violation QA check.
+- **Sprint 1b — near-zone tall-prop rule (SHIPPED, #1219):** the cut-near handles the near WALL; tall
+  INTERIOR props (columns) in the camera-near band still occluded (the owner's "church near-left pillars",
+  verified on a re-render). Dev-start fix (the owner's "don't generate pillars there" — the per-prop fade
+  is the deferred Phase-2 layer): tall occluder props stay in the BACK HALF (r ≤ 5). Church + throne
+  colonnade pulled r=7→r=5. Proven painted: `renders/church_nearzone_stray_v{1,2}.png` (open foreground).
+- **Sprint 2 — pathing-lane + door-zone schema + validator (SHIPPED, #1214):** `SceneGrid.door_cells` +
+  `protected_lane_cells`; `door_zone_cells()` / `validate_scene_grid()` in `scene_grid.py` (no prop in a
+  door zone/lane, no disconnected floor pocket, no crunch); hard-fail wired into `export_scene_grid.py`;
+  `test_scene_grid_validate.py`.
+- **Sprint 3 — room-unit composition (OPEN, #1217):** author multi-section spaces (e.g. crypt = stair + tomb)
+  as room-units linked at door cells; recipe entries; verify the plate-swap flips on crossing a door cell.
+  NOTE: current single rooms already read SPACIOUS post-occlusion-fix (see church renders) — the crunch was
+  largely the near walls/pillars closing in the view; composition is for genuinely bigger multi-feature spaces.
+- **Sprint 4 — stray-item control (OPEN, #1218):** `stray_item_negative` SHIPPED (#1220 — suppresses
+  img2img-invented props like the lantern-on-a-pillar; proven no over-suppression on church renders);
+  REMAINING: greybox depth pass + prop-occupancy mask + regional conditioning so img2img only ENRICHES
+  authored props (note: our pipeline is img2img not controlnet — validate the regional-conditioning fit).
 - **Backlog (deferred, gated on observed need):** per-prop dithered alpha-clip fade for a near-side PROP that
-  still occludes an actor after Sprints 1–3.
+  still occludes an actor after the back-half rule (the owner's "transparency when you walk around them").
 
 ## Invariants (unchanged)
 
