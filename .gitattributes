@@ -6,7 +6,6 @@
 
 extensions/renderers/unity/**/*.fbx filter=lfs diff=lfs merge=lfs -text
 extensions/renderers/unity/**/*.glb filter=lfs diff=lfs merge=lfs -text
-extensions/renderers/unity/**/*.gltf filter=lfs diff=lfs merge=lfs -text
 extensions/renderers/unity/**/*.obj filter=lfs diff=lfs merge=lfs -text
 extensions/renderers/unity/**/*.dae filter=lfs diff=lfs merge=lfs -text
 extensions/renderers/unity/**/*.blend filter=lfs diff=lfs merge=lfs -text
