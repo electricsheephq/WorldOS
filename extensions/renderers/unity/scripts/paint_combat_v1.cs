@@ -83,12 +83,29 @@ if(toks==null||toks.Count==0) return "no tokens on surface";
   foreach(var g in _toKill){ if(g!=null) UnityEngine.Object.DestroyImmediate(g); } }
 // place an actor per token by SLOT (foe -> goblin template / ally -> hero template); cyan party / red foe ring (critic L5).
 var posByName=new System.Collections.Generic.Dictionary<string,Vector3>(); int spawned=0; string celldbg="";
+// Asset registry (modular default-template-on-miss): read registry.json via MiniJson; resolve each token's
+// SLOT (name-slug + kind) -> exact asset OR default template, so a monster with no model auto-falls to the
+// demon template with ZERO renderer edits (the asset analogue of engine=sole-writer). Absent registry -> the
+// team default fbx (today's behavior), never null.
+System.Collections.Generic.Dictionary<string,object> regAssets=null, regDefaults=null, regAliases=null;
+{ var _rp="/home/unity/worldos-unity/registry.json"; if(System.IO.File.Exists(_rp)){ var _rr=MiniJson.Parse(System.IO.File.ReadAllText(_rp)) as System.Collections.Generic.Dictionary<string,object>; if(_rr!=null){ regAssets=_rr.ContainsKey("assets")?_rr["assets"] as System.Collections.Generic.Dictionary<string,object>:null; regDefaults=_rr.ContainsKey("defaults")?_rr["defaults"] as System.Collections.Generic.Dictionary<string,object>:null; regAliases=_rr.ContainsKey("aliases")?_rr["aliases"] as System.Collections.Generic.Dictionary<string,object>:null; } } }
+System.Func<string,string> slugify=(s)=>{ if(string.IsNullOrEmpty(s)) return ""; var _b=new System.Text.StringBuilder(); foreach(char c in s.ToLower()){ if(char.IsLetterOrDigit(c)) _b.Append(c); else if(_b.Length>0 && _b[_b.Length-1]!='-') _b.Append('-'); } return _b.ToString().Trim('-'); };
+System.Func<string,string,string[]> resolveAsset=(slug,kind)=>{
+  string fbxDef=kind=="monster"?"Assets/chars_v2/goblin/goblin.fbx":"Assets/painterly/models/hero.fbx";
+  string albDef=kind=="monster"?"Assets/chars_v2/goblin/albedo.png":"Assets/painterly/models/hero_albedo.png";
+  if(regAssets==null) return new string[]{fbxDef,albDef};
+  string id=slug;
+  if(!regAssets.ContainsKey(id) && regAliases!=null && regAliases.ContainsKey(id)) id=regAliases[id] as string;
+  if((id==null||!regAssets.ContainsKey(id)) && regDefaults!=null){ if(regDefaults.ContainsKey(kind)) id=regDefaults[kind] as string; else if(regDefaults.ContainsKey("__any__")) id=regDefaults["__any__"] as string; }
+  if(id!=null && regAssets.ContainsKey(id)){ var a=regAssets[id] as System.Collections.Generic.Dictionary<string,object>; if(a!=null){ string m=a.ContainsKey("model_ref")?a["model_ref"] as string:null; string al=a.ContainsKey("albedo_ref")?a["albedo_ref"] as string:null; return new string[]{ string.IsNullOrEmpty(m)?fbxDef:m, string.IsNullOrEmpty(al)?albDef:al }; } }
+  return new string[]{fbxDef,albDef};
+};
 foreach(var o in toks){ var t=o as System.Collections.Generic.Dictionary<string,object>; if(t==null||!t.ContainsKey("x")||t["x"]==null) continue;
   int cx=System.Convert.ToInt32(t["x"]); int cy=System.Convert.ToInt32(t["y"]); string team=t["team"] as string; string nm=t["name"] as string;
   string tid=t.ContainsKey("id")?(t["id"] as string):null; if(string.IsNullOrEmpty(tid)) tid=nm;
   bool foe=(team=="foe");
-  string fbx=foe?"Assets/chars_v2/goblin/goblin.fbx":"Assets/painterly/models/hero.fbx";
-  string alb=foe?"Assets/chars_v2/goblin/albedo.png":"Assets/painterly/models/hero_albedo.png";
+  string kind=foe?"monster":"character";
+  var aref=resolveAsset(slugify(nm),kind); string fbx=aref[0]; string alb=aref[1];
   float h=foe?4.2f:5.0f; Color ring=foe?new Color(1f,0.13f,0.10f,1f):new Color(0.4f,0.95f,1f,1f);
   var pos=spawn(fbx,alb,null,cx,cy,h,ring,"Actor_"+tid);
   if(nm!=null) posByName[nm]=pos; spawned++; celldbg+=" "+nm+"("+team+")@"+cx+","+cy;
