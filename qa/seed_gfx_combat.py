@@ -26,6 +26,55 @@ HERO_CELL = [6, 6]
 GOBLIN_CELL = [9, 5]
 
 
+def _author_crypt_grid(server, cid: str) -> None:
+    """Attach a 14x11 crypt scene_grid whose PROP footprints are EXACTLY the combat OBSTACLES, so the
+    greybox->img2img painted room and the combat pathing share one source (the props ARE the obstacles).
+    Replaces the auto-generated dungeon grid (14..17 wide -> mismatched the fixed 14x11 combat contract)."""
+    from scene_grid import (  # noqa: PLC0415
+        SceneGrid, SceneGridSpec, SceneCell, SceneCellDefault, SceneProp, SceneLighting, _layout_hash,
+    )
+
+    cols, rows = GRID_W, GRID_H
+    cells: list = []
+    # solid perimeter walls (impassable, and the greybox encloses the room).
+    for c in range(cols):
+        cells.append(SceneCell(c=c, r=0, type="wall", walkable=False))
+        cells.append(SceneCell(c=c, r=rows - 1, type="wall", walkable=False))
+    for r in range(1, rows - 1):
+        cells.append(SceneCell(c=0, r=r, type="wall", walkable=False))
+        cells.append(SceneCell(c=cols - 1, r=r, type="wall", walkable=False))
+
+    props: list = []
+
+    def _prop(pid: str, kind: str, cell: list, band: str, sil: str) -> None:
+        props.append(SceneProp(id=pid, kind=kind, cells=[(cell[0], cell[1])],
+                               anchor_cell=(cell[0], cell[1]), occluder=True,
+                               height_band=band, silhouette=sil))
+        cells.append(SceneCell(c=cell[0], r=cell[1], type="prop", walkable=False, prop_ref=pid))
+
+    # the THREE obstacle props — footprints == OBSTACLES (kept in lock-step with set_grid below).
+    _prop("pillar_l", "stone_pillar", OBSTACLES[0], "tall", "ancient cracked stone pillar")
+    _prop("pillar_r", "stone_pillar", OBSTACLES[1], "tall", "ancient mossy stone pillar")
+    _prop("sarcophagus", "sarcophagus", OBSTACLES[2], "tall", "carved stone sarcophagus, lid ajar")
+
+    grid = SceneGrid(
+        scene_id=f"{cid}:crypt", location_id="", kind="dungeon",
+        biome="ancient stone crypt, flickering brazier light",
+        grid=SceneGridSpec(cols=cols, rows=rows, cell_size_ft=5, projection="dimetric-2to1"),
+        cell_default=SceneCellDefault(type="floor", walkable=True, cost=1),
+        cells=cells, props=props,
+        lighting=SceneLighting(key_dir_deg=200, key_color="#e8823a", ambient_color="#1a2040",
+                               mood="dim torchlit crypt, warm brazier glow, cold blue shadow fill"),
+    )
+    grid.art.layout_hash = _layout_hash(grid)
+
+    c = server._require(cid)
+    loc = c.locations.get(c.current_location_id)
+    grid.location_id = loc.id
+    loc.scene_grid = grid
+    server.save_campaign(c)
+
+
 def main() -> None:
     if len(sys.argv) < 2:
         print("usage: seed_gfx_combat.py <state_dir>", file=sys.stderr)
@@ -41,6 +90,13 @@ def main() -> None:
                                   summary="Playable PoE2 3D-on-2D combat demo on crypt_firelit_v2."))
     server.add_location(campaign_id=CID, name="Crypt", make_current=True,
                         description="A firelit stone crypt: pillars, a sarcophagus, braziers, deep shadows.")
+
+    # Author a CONTRACT-MATCHING 14x11 scene_grid whose PROP cells == the combat OBSTACLES, so the
+    # greybox (build_room_greybox.cs) -> img2img painted room has its props on the EXACT combat pathing
+    # cells (authored-by-construction; replaces the auto-generated 16x11 grid which mismatched the 14x11
+    # combat). One source: this scene_grid drives BOTH the painted room AND the obstacles below.
+    _author_crypt_grid(server, CID)
+
     server.start_session(CID, title="GFX Combat Demo")
 
     hero = server.create_character(
