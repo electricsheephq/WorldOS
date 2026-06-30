@@ -33,10 +33,11 @@ var blobT=new Texture2D(256,256,TextureFormat.RGBA32,false); blobT.wrapMode=Text
 var ringT=new Texture2D(256,256,TextureFormat.RGBA32,false); ringT.wrapMode=TextureWrapMode.Clamp; { var px=new Color[256*256]; float c=127.5f; for(int y=0;y<256;y++)for(int x=0;x<256;x++){ float d=Mathf.Sqrt((x-c)*(x-c)+(y-c)*(y-c))/c; float a=(d>0.70f&&d<0.96f)?Mathf.Clamp01(1f-Mathf.Abs(d-0.83f)/0.13f):0f; px[y*256+x]=new Color(1f,1f,1f,a); } ringT.SetPixels(px); ringT.Apply(); }
 
 // actor spawner (generalizes the spike's hero block): load fbx, stand up, scale to height, place at cell, foot-snap, albedo, AO, ring.
-System.Func<string,string,int,int,float,Color,string,Vector3> spawn=(fbxPath,albedoPath,cx,cy,height,ringCol,nm)=>{
+System.Func<string,string,string,int,int,float,Color,string,Vector3> spawn=(fbxPath,albedoPath,poseClipPath,cx,cy,height,ringCol,nm)=>{
   var prefab=AssetDatabase.LoadAssetAtPath<GameObject>(fbxPath); if(prefab==null){ sb.AppendLine("MISSING "+fbxPath); return cellToWorld(cx,cy); }
   var old=GameObject.Find(nm); if(old!=null) UnityEngine.Object.DestroyImmediate(old);
   var go=(GameObject)UnityEngine.Object.Instantiate(prefab); go.name=nm;
+  if(poseClipPath!=null){ var pas=AssetDatabase.LoadAllAssetsAtPath(poseClipPath); foreach(var clipAsset in pas){ var clip=clipAsset as AnimationClip; if(clip!=null && !clip.name.StartsWith("__")){ clip.SampleAnimation(go, clip.length*0.45f); sb.AppendLine(nm+" posed by "+clip.name); break; } } }
   go.transform.rotation=Quaternion.Euler(-90f, cam.transform.eulerAngles.y+180f, 0f);
   var rends=go.GetComponentsInChildren<Renderer>(); foreach(var r in rends){ r.enabled=true; r.shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.On; r.receiveShadows=true; }
   System.Func<Bounds> measure=()=>{ Bounds b=new Bounds(go.transform.position,Vector3.zero); bool a=false; foreach(var r in rends){ if(!a){b=r.bounds;a=true;} else b.Encapsulate(r.bounds);} return b; };
@@ -49,8 +50,10 @@ System.Func<string,string,int,int,float,Color,string,Vector3> spawn=(fbxPath,alb
   return go.transform.position;
 };
 
-var heroPos=spawn("Assets/painterly/models/hero.fbx","Assets/painterly/models/hero_albedo.png",6,6,5.0f,new Color(1f,0.82f,0.4f,1f),"Hero3D");
-var gobPos=spawn("Assets/chars_v2/goblin/goblin.fbx",null,9,5,4.2f,new Color(0.92f,0.32f,0.30f,1f),"Goblin3D");
+// NOTE: rigged.fbx's UVs don't match hero_albedo (white) and its rig orientation doesn't compose with the
+// stand-up rotation (collapses). Use the proven textured hero.fbx (T-pose) until a correct rig+retarget lands.
+var heroPos=spawn("Assets/painterly/models/hero.fbx","Assets/painterly/models/hero_albedo.png",null,6,6,5.0f,new Color(1f,0.82f,0.4f,1f),"Hero3D");
+var gobPos=spawn("Assets/chars_v2/goblin/goblin.fbx","Assets/chars_v2/goblin/albedo.png",null,9,5,4.2f,new Color(1f,0.24f,0.20f,1f),"Goblin3D");
 
 // impact VFX burst at the goblin (additive orange radial), billboarded
 var fx=GameObject.CreatePrimitive(PrimitiveType.Quad); fx.name="ImpactFX"; UnityEngine.Object.DestroyImmediate(fx.GetComponent<Collider>()); fx.transform.position=gobPos+new Vector3(0f,2.0f,0f); fx.transform.rotation=cam.transform.rotation; fx.transform.localScale=new Vector3(3.4f,3.4f,1f);
