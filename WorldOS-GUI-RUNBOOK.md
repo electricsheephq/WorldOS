@@ -389,8 +389,7 @@ a one-off. When you add or fix MCP tools/behaviors, commit them to **our fork �
 (a fork of upstream `CoplayDev/unity-mcp`, default branch `beta`); for clean/general fixes also open an **issue +
 PR upstream to `CoplayDev/unity-mcp`** so others benefit (same fork-and-upstream pattern as `electricsheephq/GitNexus`).
 Develop in a clone of the fork (branch off `beta`) → push to the fork → deploy the built `MCPForUnity` Editor
-package to the box (its `/home/unity/unity-mcp/MCPForUnity` is a **loose copy, not a git clone**; the server runs
-via `uvx mcpforunityserver`). Separate, unrelated product — keep Unity's first-party `com.unity.ai.assistant` (AI
+package to the box (its `/home/unity/unity-mcp/MCPForUnity` is a **loose copy, not a git clone**; the `:8080` server is the standalone `mcp-for-unity --transport http` process (run via `uvx --from mcpforunityserver` -- one service, package name vs CLI name). Separate, unrelated product — keep Unity's first-party `com.unity.ai.assistant` (AI
 Assistant) **OUT** of the project manifest: it livelocks the AssetDatabase on import (the editor spins forever in
 `GuidDB::ValidateChangedGUIDs` and never opens; removal is the only reliable fix).
 
