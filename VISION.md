@@ -143,6 +143,17 @@ warm hearth/lantern key against cool fill, **blue-violet shadows (NEVER pure bla
 **atmospheric and moody — NOT flat-gray**. A washed-out, flat, gray, or pure-black-shadow frame
 fails the bar by definition.
 
+**Rooms must work WITH actors (occlusion = art-time CUTAWAY).** Because the camera is permanently
+fixed, occlusion is solved at ART TIME, not by a runtime fade: the camera-near walls are **CUT** and
+there is **NO ceiling**, so the interior + actors + pathing are always visible; tall interior props
+stay in the **back half** of the grid (a per-prop see-through fade on approach is a deferred Phase-2
+layer). A room is authored as one or more **camera-sized room-units** — each its own plate + one-source
+pathing — and bigger spaces are **composed** by linking units at authored **door cells**: the party
+crosses a doorway (`cross_door`) and the room-agnostic renderer swaps to the linked unit's plate (a live
+room transition). One authored `scene_grid` per unit is the SINGLE source of both the painted room and
+its pathing (props are obstacles by construction). See `CANONICAL.md` "Occlusion model" +
+`docs/roadmap/ROOM-OCCLUSION-PATHING-SPRINTS.md`.
+
 ### The graphics scorecard (BACKDROP-BINDING)
 
 The graphics gate is **split into two tiers**, and the **backdrop tier is the binding one** — it is
