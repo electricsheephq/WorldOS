@@ -2,10 +2,10 @@
 """Tests for the visual-critic v2 deterministic layer.
 
 Covers:
-  1. CameraSpec.world_to_screen — projection matches Unity's locked dimetric spec to ≤1px
-     (using the known camera params: orthoSize=18, pitch=atan(0.5), pos=(0,40.25,-55.5),
-     aspect=1344/756). Validated against Unity WorldToViewportPoint ground truth during the
-     bake-off (the camera-fix from right×fwd to fwd×right cross-product).
+  1. CameraSpec.world_to_screen — projection matches the PROVEN Unity combat renderer's locked
+     dimetric spec to ≤1px (orthoSize=13, pitch=30deg, yaw=45deg, pos=-(Euler(30,45,0)*fwd)*80,
+     aspect=1920/1097). The renderer (extensions/renderers/unity/scripts/paint_combat_v1.cs) is the
+     ground truth; the camera looks at the world origin, so origin -> exact screen center.
   2. G1 FRAME-LIT verdicts on synthetic PNG inputs (black frame → CRITICAL, white-lit → PASS).
   3. G3 FLOOR-CONTACT verdicts on synthetic actor inputs (floating actor → CRITICAL, grounded → PASS).
   4. G4 SCREEN-SCALE verdicts on synthetic actor inputs (giant actor → HIGH, correct → PASS).
@@ -83,32 +83,44 @@ def _minimal_scenegrid(cols: int = 15, rows: int = 12) -> vp.SceneGrid:
 
 
 # ---------------------------------------------------------------------------
-# 1. Camera projection — ≤1px vs Unity ground truth for specific world points
+# 1. Camera projection — ≤1px vs the Unity-renderer contract for specific world points
 # ---------------------------------------------------------------------------
-# Ground-truth screen pixel coords from the analytic ortho projection (yaw=0, so the
-# geometry is deterministic: right = (cos0,0,-sin0)=(1,0,0), fwd×right gives a pure-pitch up).
-# These encode the bake-off camera-fix invariant: up=cross(fwd,right), NOT right×fwd.
+# Ground-truth screen pixel coords from the analytic ortho projection of the CANONICAL renderer
+# contract (orthoSize=13, pitch=30deg, yaw=45deg corner-iso, pos=-(Euler(30,45,0)*fwd)*80, capture
+# 1920x1097). The camera looks at the world origin. The fwd/right/up basis below was verified to
+# match Unity's Quaternion.Euler(30,45,0) transform to <1e-3.
 # Format: (wx, wy, wz) -> expected (sx, sy) in image-space pixels (top-left origin, +y down).
-# Tolerance: ≤1px — matches the "≤1px vs Unity WorldToViewportPoint" claim in the SKILL.md.
+# Tolerance: ≤1px. This is independent re-derivation of CameraSpec.world_to_screen — if the two
+# drift, one of them forked the renderer contract.
+_GT_ORTHO = 13.0
+_GT_PITCH = 30.0
+_GT_YAW = 45.0
+_GT_DIST = 80.0
+_GT_PW, _GT_PH = 1920, 1097
+
+
 def _analytic_gt(wx: float, wy: float, wz: float) -> tuple[float, float]:
-    """Analytic ortho projection for the locked spec (yaw=0, pitch=atan(0.5))."""
+    """Analytic ortho projection for the renderer contract (yaw=45, pitch=30, ortho=13, 1920x1097)."""
     import math as _math
-    p = _math.radians(_math.degrees(_math.atan(0.5)))  # == atan(0.5) exactly
-    fwd = (_math.sin(0) * _math.cos(p), -_math.sin(p), _math.cos(0) * _math.cos(p))
-    right = (1.0, 0.0, 0.0)
+    p = _math.radians(_GT_PITCH)
+    y = _math.radians(_GT_YAW)
+    fwd = (_math.sin(y) * _math.cos(p), -_math.sin(p), _math.cos(y) * _math.cos(p))
+    right = (_math.cos(y), 0.0, -_math.sin(y))
     up = (
         fwd[1] * right[2] - fwd[2] * right[1],
         fwd[2] * right[0] - fwd[0] * right[2],
         fwd[0] * right[1] - fwd[1] * right[0],
     )
-    pos = (0.0, 40.25, -55.5)
+    # Camera pulled back DIST along -forward, looking at the world origin (renderer: *80f).
+    pos = tuple(-fwd[i] * _GT_DIST for i in range(3))
     dx, dy, dz = wx - pos[0], wy - pos[1], wz - pos[2]
     cam_r = dx * right[0] + dy * right[1] + dz * right[2]
     cam_u = dx * up[0] + dy * up[1] + dz * up[2]
-    half_h = 18.0
-    half_w = 18.0 * (1344.0 / 756.0)
-    sx = (cam_r / half_w) * (1344.0 / 2.0) + 1344.0 / 2.0
-    sy = 756.0 / 2.0 - (cam_u / half_h) * (756.0 / 2.0)
+    aspect = _GT_PW / _GT_PH
+    half_h = _GT_ORTHO
+    half_w = _GT_ORTHO * aspect
+    sx = (cam_r / half_w) * (_GT_PW / 2.0) + _GT_PW / 2.0
+    sy = _GT_PH / 2.0 - (cam_u / half_h) * (_GT_PH / 2.0)
     return sx, sy
 
 
@@ -123,7 +135,7 @@ _CAMERA_GT: list[tuple[tuple[float, float, float], tuple[float, float]]] = [
 
 
 class TestCameraProjection:
-    """Validate the locked dimetric camera's world_to_screen projection.
+    """Validate the locked dimetric camera's world_to_screen projection against the renderer contract.
 
     Key invariant from the bake-off camera fix:
       up = cross(fwd, right)   ← correct (fwd×right)
@@ -131,7 +143,8 @@ class TestCameraProjection:
 
     Test 1: far cells (high Z) project ABOVE near cells (lower Z) — i.e. sy decreases with wz.
     Test 2: right-side points project to higher sx (positive cam_r).
-    Test 3: a known grid-centre cell produces sx near 672, sy near 378 (≤1px tol).
+    Test 3: world points project within ≤1px of the analytic renderer-contract GT (ortho=13/pitch=30/
+            yaw=45/1920x1097); the world origin lands on the exact screen center (960, 548.5).
     """
 
     def test_far_cell_projects_above_near_cell(self):
@@ -176,17 +189,117 @@ class TestCameraProjection:
         assert pcy > 0, f"floor_px_per_cell_y should be positive, got {pcy}"
 
     def test_camera_spec_locked_singleton(self):
-        """CameraSpec.LOCKED should match the known bake-off spec values."""
+        """CameraSpec.LOCKED must match the PROVEN Unity combat-renderer contract values
+        (paint_combat_v1.cs / paint_3d_spike.cs): ortho 13, pitch 30, yaw 45, 1920x1097, and the
+        pos = -(Euler(30,45,0)*forward)*80 pullback (camera looking at the world origin)."""
         c = vp.CameraSpec.LOCKED
-        assert abs(c.ortho_size - 18.0) < 1e-9
-        assert abs(c.pos[0] - 0.0) < 1e-9
-        assert abs(c.pos[1] - 40.25) < 1e-9
-        assert abs(c.pos[2] - (-55.5)) < 1e-9
-        assert abs(c.aspect - 1344.0 / 756.0) < 1e-6
-        expected_pitch = math.degrees(math.atan(0.5))
-        assert abs(c.pitch_deg - expected_pitch) < 1e-9
-        assert c.px_w == 1344
-        assert c.px_h == 756
+        assert abs(c.ortho_size - 13.0) < 1e-9
+        assert abs(c.pitch_deg - 30.0) < 1e-9
+        assert abs(c.yaw_deg - 45.0) < 1e-9
+        assert abs(c.aspect - 1920.0 / 1097.0) < 1e-6
+        assert c.px_w == 1920
+        assert c.px_h == 1097
+        # pos = -(forward)*80, forward=(0.61237,-0.5,0.61237) -> (-48.99, 40.0, -48.99).
+        assert abs(c.pos[0] - (-48.9898)) < 1e-3, c.pos
+        assert abs(c.pos[1] - 40.0) < 1e-3, c.pos
+        assert abs(c.pos[2] - (-48.9898)) < 1e-3, c.pos
+
+
+# ---------------------------------------------------------------------------
+# 1b. Pre-gate camera MATCHES the renderer's cellToWorld (the unfork regression guard)
+# ---------------------------------------------------------------------------
+# The whole point of the pre-gate is to project the SAME world points the Unity renderer placed
+# actors at. The renderer's grid mapping (paint_combat_v1.cs / paint_3d_spike.cs) is:
+#     cellToWorld(c,r) = ((c-6.5)*2.0, 0, (5.0-r)*2.0)        # 14 cols x 11 rows, cell_size 2.0
+# These tests assert CameraSpec.LOCKED projects that mapping the way the renderer does. If the
+# CameraSpec forks the renderer contract again (e.g. ortho 18 / pitch atan(0.5) / yaw 0 / 1344x756),
+# these break — that fork was exactly what made the G1-G4 geometry gates score the WRONG camera.
+
+
+def _render_cell_to_world(c: int, r: int) -> tuple[float, float, float]:
+    """The Unity renderer's exact cell->world mapping (cell_size 2.0, centers cx0=6.5, cy0=5.0)."""
+    return ((c - 6.5) * 2.0, 0.0, (5.0 - r) * 2.0)
+
+
+class TestPregateMatchesRendererCellToWorld:
+    def test_center_cell_projects_near_screen_center(self):
+        """A token at the renderer's cellToWorld(6,5)=(-1,0,0) projects NEAR the frame center.
+
+        The camera looks at the world origin, so the cell straddling grid-center (between cols 6/7,
+        at row 5) lands within a fraction of a cell of the exact screen center (px_w/2, px_h/2)."""
+        cam = vp.CameraSpec.LOCKED
+        wx, wy, wz = _render_cell_to_world(6, 5)
+        sx, sy = cam.world_to_screen(wx, wy, wz)
+        cx, cy = cam.px_w / 2.0, cam.px_h / 2.0
+        # (-1,0,0) is one world unit (half a cell) left of origin; allow a generous half-cell-ish band.
+        # The previous forked camera (ortho 18 / pos (0,40.25,-55.5)) put this point well outside it.
+        assert abs(sx - cx) < 60.0, f"cell(6,5) sx={sx:.1f} should be near center {cx:.1f}"
+        assert abs(sy - cy) < 60.0, f"cell(6,5) sy={sy:.1f} should be near center {cy:.1f}"
+
+    def test_world_origin_is_exact_screen_center(self):
+        """The renderer points the camera at the world origin (pos=-(fwd)*80), so origin -> exact
+        screen center. This pins the pos/look-at to the renderer's pullback contract."""
+        cam = vp.CameraSpec.LOCKED
+        sx, sy = cam.world_to_screen(0.0, 0.0, 0.0)
+        assert abs(sx - cam.px_w / 2.0) < 1e-6, f"origin sx={sx}"
+        assert abs(sy - cam.px_h / 2.0) < 1e-6, f"origin sy={sy}"
+
+    def test_feet_at_world_y0_land_on_floor_plane(self):
+        """An actor STANDING at a cell (renderer foot-snaps feet to world-Y=0) must have its measured
+        screen feet land on the projected floor-plane Y at that cell -> G3 PASS. This is the contract
+        G3 enforces; here we assert the GROUNDED case is a PASS under the renderer-matched camera.
+
+        We feed a SceneGrid whose cell centers reproduce the renderer's cellToWorld for the chosen
+        cell, project the floor plane (world-Y=0) there, and place the actor's feet exactly on it."""
+        cam = vp.CameraSpec.LOCKED
+        # Renderer cell -> world for cell (8,4); project its floor plane (y=0) to the screen.
+        c, r = 8, 4
+        wx, wy, wz = _render_cell_to_world(c, r)
+        _, floor_sy = cam.world_to_screen(wx, 0.0, wz)
+        # Build a SceneGrid whose cell_world_x/z reproduce this same world point at (c,r), so G3's
+        # internal projection lands on the SAME floor plane the renderer painted.
+        sg = vp.SceneGrid(
+            cols=14, rows=11, cell_size_ft=2.0,
+            cells={}, props=[], spawns={}, lighting={},
+            cell_default={"type": "floor", "walkable": True},
+        )
+        # Sanity: the SceneGrid X mapping matches the renderer's for this cell (both = (c-6.5)*2.0).
+        assert abs(sg.cell_world_x(c) - wx) < 1e-9, (sg.cell_world_x(c), wx)
+        # Place feet exactly on the projected floor plane at (c,r) per the SceneGrid's own mapping.
+        sg_wx, sg_wz = sg.cell_world_x(c), sg.cell_world_z(r)
+        sx_feet, sy_feet = cam.world_to_screen(sg_wx, 0.0, sg_wz)
+        actor = {"id": "stander", "cell": [c, r], "feet_px": [round(sx_feet), round(sy_feet)],
+                 "px_height": 100}
+        gates = vp.gate_floor_contact_and_scale(sg, cam, [actor])
+        g3 = [g for g in gates if g["gate"] == "G3_floor_contact"]
+        assert g3, "G3 should have run"
+        assert all(g["severity"] == "PASS" for g in g3), (
+            f"feet placed on the world-Y=0 floor plane must be GROUNDED (G3 PASS); got {g3}"
+        )
+
+    def test_actor_standing_height_matches_floor_to_head_projection(self):
+        """The renderer foot-snaps the actor to y=0 and scales it to a world height; the actor's
+        projected pixel-height (floor y=0 -> head y=H) is what G4 expects. A correctly-scaled actor
+        therefore PASSes G4 under the renderer-matched camera."""
+        cam = vp.CameraSpec.LOCKED
+        sg = vp.SceneGrid(
+            cols=14, rows=11, cell_size_ft=2.0,
+            cells={}, props=[], spawns={}, lighting={},
+            cell_default={"type": "floor", "walkable": True},
+        )
+        c, r = 8, 4
+        wx, wz = sg.cell_world_x(c), sg.cell_world_z(r)
+        _, sy_feet = cam.world_to_screen(wx, 0.0, wz)
+        _, sy_head = cam.world_to_screen(wx, vp.DEFAULT_ACTOR_WORLD_H, wz)
+        expected_px = abs(sy_head - sy_feet)
+        actor = {"id": "scaled", "cell": [c, r], "feet_px": [round(wx), round(sy_feet)],
+                 "px_height": expected_px}
+        gates = vp.gate_floor_contact_and_scale(sg, cam, [actor])
+        g4 = [g for g in gates if g["gate"] == "G4_screen_scale"]
+        assert g4, "G4 should run when px_height is supplied"
+        assert all(g["severity"] == "PASS" for g in g4), (
+            f"an actor at the floor->head projected height must PASS G4; got {g4}"
+        )
 
 
 # ---------------------------------------------------------------------------
