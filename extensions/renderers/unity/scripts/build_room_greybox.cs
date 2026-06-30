@@ -32,9 +32,55 @@ cam.clearFlags=CameraClearFlags.SolidColor; cam.backgroundColor=new Color(0.05f,
 { var _k=new System.Collections.Generic.List<GameObject>(); foreach(var g in UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None)){ if(g==null) continue; if(g.name.StartsWith("GB_") || g.GetComponent<Light>()!=null) _k.Add(g); } foreach(var g in _k){ if(g!=null) UnityEngine.Object.DestroyImmediate(g); } }
 int hidden=0; foreach(var r in UnityEngine.Object.FindObjectsByType<Renderer>(FindObjectsSortMode.None)){ if(r.enabled){r.enabled=false;hidden++;} }
 
+// --- PROCEDURAL STONE TEXTURE (the textured-greybox lever, gfx M-A ≥8 push) ---
+// A noise stone ALBEDO + NORMAL so the greybox base is ROUGH STONE, not flat grey. The root cause of the
+// alignment↔quality tradeoff was a GRAY base: low-strength img2img kept props on-cell but under-painted
+// (washout), high-strength repainted but DRIFTED. A textured base lets LOW strength preserve composition
+// (alignment) AND gives the LoRA painterly stone grain/relief to enhance — so we get ≥8 AND on-cell.
+int TS=256;
+var stoneAlb=new Texture2D(TS,TS,TextureFormat.RGB24,true);
+var stoneNrm=new Texture2D(TS,TS,TextureFormat.RGB24,true);
+{
+  float[,] hh=new float[TS,TS];
+  for(int y=0;y<TS;y++) for(int x=0;x<TS;x++){
+    float u=(float)x/TS, v=(float)y/TS;
+    float n=0f, amp=0.5f, freq=5f;
+    for(int o=0;o<5;o++){ n+=Mathf.PerlinNoise(u*freq+o*13.1f, v*freq+o*7.7f)*amp; amp*=0.5f; freq*=2f; }
+    float crack=Mathf.PerlinNoise(u*3.1f+40f, v*3.1f+40f);
+    float dark = crack<0.30f ? (0.30f-crack)*1.4f : 0f;
+    // MASONRY COURSING — darken at block joints (running-bond) so the img2img reads stone BLOCKS, not a
+    // smooth surface. This is why the FLOOR (grout grid) painted into flagstones but the WALLS (smooth
+    // texture) stayed greybox-flat at score 6.5 — the walls had no block structure for the LoRA to paint.
+    float courseH=0.135f, brickW=0.17f, jointW=0.05f;
+    float cf=v/courseH; float cFrac=cf-Mathf.Floor(cf); int courseI=(int)Mathf.Floor(cf);
+    float uo=u + (courseI%2==0?0f:0.085f);               // running-bond half-offset per course
+    float bf=uo/brickW; float bFrac=bf-Mathf.Floor(bf);
+    float horiz=(cFrac<jointW/courseH||cFrac>1f-jointW/courseH)?1f:0f;
+    float vert =(bFrac<jointW/brickW||bFrac>1f-jointW/brickW)?1f:0f;
+    float seam=Mathf.Max(horiz,vert)*0.26f;              // recessed mortar joint = darker
+    hh[x,y]=n - seam*0.7f;                               // joints also dent the normal (carved depth)
+    float g=Mathf.Clamp01(0.5f + (n-0.5f)*0.55f - dark - seam);  // mid-grey + mottle + cracks + block joints
+    stoneAlb.SetPixel(x,y,new Color(g,g*0.985f,g*0.96f));  // faint warm stone
+  }
+  for(int y=0;y<TS;y++) for(int x=0;x<TS;x++){
+    int xp=(x+1)%TS, yp=(y+1)%TS;
+    float dx=(hh[xp,y]-hh[x,y])*6f, dy=(hh[x,yp]-hh[x,y])*6f;
+    Vector3 nv=new Vector3(-dx,-dy,1f).normalized;
+    stoneNrm.SetPixel(x,y,new Color(nv.x*0.5f+0.5f, nv.y*0.5f+0.5f, nv.z*0.5f+0.5f));
+  }
+  stoneAlb.wrapMode=TextureWrapMode.Repeat; stoneNrm.wrapMode=TextureWrapMode.Repeat;
+  stoneAlb.Apply(); stoneNrm.Apply();
+}
+
 System.Func<string,Vector3,Vector3,Color,GameObject> box=(nm,center,size,col)=>{
   var b=GameObject.CreatePrimitive(PrimitiveType.Cube); b.name="GB_"+nm; UnityEngine.Object.DestroyImmediate(b.GetComponent<Collider>());
-  b.transform.position=center; b.transform.localScale=size; var m=new Material(Shader.Find("Standard")); m.color=col; m.SetFloat("_Glossiness",0.05f); b.GetComponent<Renderer>().sharedMaterial=m; return b; };
+  b.transform.position=center; b.transform.localScale=size;
+  var m=new Material(Shader.Find("Standard")); m.color=col; m.SetFloat("_Glossiness",0.04f);
+  m.mainTexture=stoneAlb;                                   // textured stone base, NOT flat grey
+  m.SetTexture("_BumpMap", stoneNrm); m.EnableKeyword("_NORMALMAP"); m.SetFloat("_BumpScale", 1.0f);
+  float tx=Mathf.Max(1.5f,(size.x+size.z)*0.35f), ty=Mathf.Max(1.5f,(size.x+size.y+size.z)*0.18f);
+  m.mainTextureScale=new Vector2(tx,ty); m.SetTextureScale("_BumpMap", new Vector2(tx,ty));
+  b.GetComponent<Renderer>().sharedMaterial=m; return b; };
 
 // floor — mid-grey (NOT light: light + bright key blows out to white, ruining the img2img form).
 { var f=box("Floor", new Vector3(0f,-0.05f,0f), new Vector3(cols*2.0f, 0.1f, rows*2.0f), new Color(0.42f,0.41f,0.40f)); }
@@ -64,6 +110,20 @@ box("WallRight", new Vector3((cx0+0.5f)*2.0f,sideH/2f,0f), new Vector3(0.5f,side
   // header course band along the back wall top (a cornice line for the LoRA)
   box("BackCornice", new Vector3(0f,backH*0.84f,(cy0+0.32f)*2.0f), new Vector3(cols*2.0f,0.7f,0.5f), bandC);
 }
+// GEOMETRIC masonry coursing on the WALL FACES — the score plateaued at 6.5 because the FLOOR has
+// geometric grout boxes (→ painted flagstones) but the walls had only TEXTURE (→ the LoRA smoothed them to
+// a "value-pass, not carved stone"). Add proud block seams as GEOMETRY (like the floor grout) so the wall
+// faces read as stone COURSES the LoRA paints into carved masonry, not a flat gradient.
+{ Color seamC=new Color(0.34f,0.33f,0.31f); float sw=0.14f;
+  float backZ=(cy0+0.5f)*2.0f-0.30f, lX=-(cx0+0.5f)*2.0f+0.30f, rX=(cx0+0.5f)*2.0f-0.30f;
+  // horizontal courses on all three walls (the dominant masonry read)
+  for(float yy=1.3f; yy<backH-0.7f; yy+=1.45f){ box("CrsBackH"+(int)(yy*10f), new Vector3(0f,yy,backZ), new Vector3(cols*2.0f,sw,0.14f), seamC); }
+  for(float yy=1.3f; yy<sideH-0.7f; yy+=1.45f){
+    box("CrsLeftH"+(int)(yy*10f),  new Vector3(lX,yy,0f), new Vector3(0.14f,sw,rows*2.0f), seamC);
+    box("CrsRightH"+(int)(yy*10f), new Vector3(rX,yy,0f), new Vector3(0.14f,sw,rows*2.0f), seamC); }
+  // sparse vertical joints (running bond) on the back wall so courses break into blocks, not stripes
+  for(int c=1;c<cols;c+=2){ float x=(c-cx0)*2.0f-1.0f; box("CrsBackV"+c, new Vector3(x,backH*0.42f,backZ), new Vector3(0.10f,backH*0.78f,0.14f), seamC); }
+}
 
 // props at their AUTHORED cells — height by kind so the control reads as a furnished room.
 var props=geo.ContainsKey("props")?geo["props"] as System.Collections.Generic.List<object>:null;
@@ -77,11 +137,18 @@ if(props!=null) foreach(var po in props){ var p=po as System.Collections.Generic
   foreach(var co in cells){ var cc=co as System.Collections.Generic.List<object>; if(cc==null||cc.Count<2) continue; int c=System.Convert.ToInt32(cc[0]); int r=System.Convert.ToInt32(cc[1]); var w=cellToWorld(c,r); box("Prop_"+np+"_"+kind, new Vector3(w.x,ph/2f,w.z), new Vector3(pw,ph,pw), pc); np++; }
 }
 
-// readable greybox lighting (warm key + cool fill so the img2img has form to repaint).
-foreach(var ln in new[]{"GB_Key","GB_Fill"}){ var o=GameObject.Find(ln); if(o!=null) UnityEngine.Object.DestroyImmediate(o); }
-{ var lg=new GameObject("GB_Key"); var L=lg.AddComponent<Light>(); L.type=LightType.Directional; L.color=new Color(1f,0.93f,0.82f); L.intensity=0.72f; L.shadows=LightShadows.Soft; L.shadowStrength=0.8f; lg.transform.rotation=Quaternion.Euler(50f,35f,0f); }
-{ var fg=new GameObject("GB_Fill"); var F=fg.AddComponent<Light>(); F.type=LightType.Directional; F.color=new Color(0.5f,0.55f,0.68f); F.intensity=0.3f; fg.transform.rotation=Quaternion.Euler(40f,210f,0f); }
-RenderSettings.ambientMode=UnityEngine.Rendering.AmbientMode.Flat; RenderSettings.ambientLight=new Color(0.2f,0.21f,0.24f);
+// readable greybox lighting (warm key + STRONG cool fill so the carved+textured WALLS read, not crush to
+// black). The score panel found the textured floor painterly (5.75 vs flat 4.75) but the walls crushed to
+// near-black ("no secondary cool fill" → invisible wall carving) → lift the shadow-side walls with a
+// brighter cool fill + a cool wall-wash + higher cool ambient, so the img2img sees blue-violet carved
+// stone on the walls (NOT pure black) at low strength. Softer key shadow so cast shadows aren't pure black.
+foreach(var ln in new[]{"GB_Key","GB_Fill","GB_WallWash"}){ var o=GameObject.Find(ln); if(o!=null) UnityEngine.Object.DestroyImmediate(o); }
+{ var lg=new GameObject("GB_Key"); var L=lg.AddComponent<Light>(); L.type=LightType.Directional; L.color=new Color(1f,0.93f,0.82f); L.intensity=0.78f; L.shadows=LightShadows.Soft; L.shadowStrength=0.55f; lg.transform.rotation=Quaternion.Euler(50f,35f,0f); }
+{ var fg=new GameObject("GB_Fill"); var F=fg.AddComponent<Light>(); F.type=LightType.Directional; F.color=new Color(0.52f,0.58f,0.74f); F.intensity=0.62f; fg.transform.rotation=Quaternion.Euler(40f,210f,0f); }
+// a cool wall-wash from the camera side so the back + side walls (which face the camera) catch blue-violet
+// light and their carved relief/pilasters read instead of crushing to black.
+{ var wg=new GameObject("GB_WallWash"); var Wl=wg.AddComponent<Light>(); Wl.type=LightType.Directional; Wl.color=new Color(0.46f,0.52f,0.70f); Wl.intensity=0.42f; Wl.shadows=LightShadows.None; wg.transform.rotation=Quaternion.Euler(18f,225f,0f); }
+RenderSettings.ambientMode=UnityEngine.Rendering.AmbientMode.Flat; RenderSettings.ambientLight=new Color(0.28f,0.30f,0.36f);
 
 // capture the greybox control at the contract aspect (1344x768 like the plates).
 int W=1344,Hh=768; var rt=new RenderTexture(W,Hh,24,RenderTextureFormat.ARGB32); rt.Create();
