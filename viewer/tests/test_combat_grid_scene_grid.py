@@ -91,5 +91,47 @@ class SceneGridBoardTests(unittest.TestCase):
         self.assertNotIn("cellDefault", grid)
 
 
+class CombatDoorsTests(unittest.TestCase):
+    """M-E room transition: build_combat_surface surfaces the current location's authored doorway
+    cells + their destination room-unit (scene_grid.door_cells x Location.connections)."""
+
+    def test_doors_empty_without_door_cells(self):
+        snap = {"current_location_id": "loc1",
+                "locations": {"loc1": {"name": "A", "connections": ["loc2"],
+                                       "scene_grid": {"grid": {"cols": 14, "rows": 11}}},
+                              "loc2": {"name": "B"}}}
+        self.assertEqual(_surface(snap)["doors"], [])
+
+    def test_doors_empty_without_connections(self):
+        snap = {"current_location_id": "loc1",
+                "locations": {"loc1": {"name": "Isolated",
+                                       "scene_grid": {"grid": {"cols": 14, "rows": 11}, "door_cells": [[6, 0]]}}}}
+        self.assertEqual(_surface(snap)["doors"], [])
+
+    def test_surfaces_door_cell_with_destination(self):
+        snap = {"current_location_id": "loc1",
+                "locations": {
+                    "loc1": {"name": "Crypt Stair", "connections": ["loc2"],
+                             "scene_grid": {"grid": {"cols": 14, "rows": 11}, "door_cells": [[6, 0]]}},
+                    "loc2": {"name": "Crypt Tomb", "connections": ["loc1"]}}}
+        doors = _surface(snap)["doors"]
+        self.assertEqual(len(doors), 1)
+        self.assertEqual(doors[0]["cell"], [6, 0])
+        self.assertEqual(doors[0]["to"], "loc2")
+        self.assertEqual(doors[0]["toName"], "Crypt Tomb")
+        self.assertFalse(doors[0]["multi"])
+
+    def test_multi_connection_flags_ambiguity_and_surfaces_first(self):
+        snap = {"current_location_id": "loc1",
+                "locations": {
+                    "loc1": {"name": "Hub", "connections": ["loc2", "loc3"],
+                             "scene_grid": {"grid": {"cols": 14, "rows": 11}, "door_cells": [[6, 0]]}},
+                    "loc2": {"name": "North"}, "loc3": {"name": "East"}}}
+        doors = _surface(snap)["doors"]
+        self.assertEqual(len(doors), 1)
+        self.assertTrue(doors[0]["multi"])
+        self.assertEqual(doors[0]["to"], "loc2")
+
+
 if __name__ == "__main__":
     unittest.main()

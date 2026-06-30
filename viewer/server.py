@@ -3281,6 +3281,39 @@ def _combat_turn_token(snapshot: dict) -> str:
     return f"{rnd}:{ti}:{cur}"
 
 
+def _combat_doors(snapshot: dict) -> list[dict]:
+    """The current location's authored DOORWAY cells + their destination room-unit, so the renderer/UI
+    can mark a doorway and offer to cross into the linked room (the player-triggered room transition).
+
+    ADDITIVE / presentation-only: READS engine-owned ``scene_grid.door_cells`` (the #1214 schema) +
+    ``Location.connections`` (the engine is the sole writer); never mutates. ``[]`` when the location has
+    no door cells or no connections (== today). Each entry: ``{cell:[c,r], to:<loc_id>, toName, multi}``.
+    For a single-connection room-unit (the common case) every door cell leads to the one neighbour; a
+    multi-connection room would need an authored door->destination map, so ``multi=true`` flags the
+    ambiguity and the FIRST connection is surfaced as a best-effort default."""
+    loc_id = _text(snapshot.get("current_location_id"))
+    locs = snapshot.get("locations")
+    loc = locs.get(loc_id) if isinstance(locs, dict) and loc_id else None
+    if not isinstance(loc, dict):
+        return []
+    sg = loc.get("scene_grid")
+    door_cells = sg.get("door_cells") if isinstance(sg, dict) else None
+    if not isinstance(door_cells, list) or not door_cells:
+        return []
+    conns = [cid for cid in (loc.get("connections") or []) if isinstance(cid, str)]
+    if not conns:
+        return []
+    dest_id = conns[0]
+    dest = locs.get(dest_id) if isinstance(locs, dict) else None
+    dest_name = _text(dest.get("name")) if isinstance(dest, dict) else ""
+    out: list[dict] = []
+    for cell in door_cells:
+        if isinstance(cell, (list, tuple)) and len(cell) == 2:
+            out.append({"cell": [int(cell[0]), int(cell[1])], "to": dest_id,
+                        "toName": dest_name, "multi": len(conns) > 1})
+    return out
+
+
 def build_combat_surface(
     snapshot: dict,
     *,
@@ -3351,6 +3384,9 @@ def build_combat_surface(
         # read-only renderer can draw the detour around walls/props. Presentation-only; [] == none.
         "lastPath": (snapshot.get("combat") or {}).get("last_move_path") or [],
         "impassable": (snapshot.get("combat") or {}).get("grid_impassable") or [],
+        # M-E room transition: the authored doorway cells + their destination room-unit, so the renderer
+        # can mark the doorway and the UI can offer to cross. [] == no doors/connections (today's shape).
+        "doors": _combat_doors(snapshot),
         "tokens": tokens,
         "initiative": initiative,
         "zones": zones,
