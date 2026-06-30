@@ -348,6 +348,27 @@ best-scoring round's frame path (do not silently loop forever).
 convergence only when: (a) the pre-gate is PASS, AND (b) TWO consecutive panel runs both score
 ≥7.5 overall, AND (c) no CRITICAL/HIGH defects remain. Do not claim convergence on a single run.
 
+## ⑦ TIER split — backdrop-BINDING vs actor-PLACEHOLDER (the gfx playable-demo gate)
+The PoE2 painterly-CRPG is **2D backdrop (the reusable foundation) + 3D placeholder actors**. Score them on
+DIFFERENT bars so placeholder actors don't drag the binding backdrop gate, and a good backdrop isn't masked
+by rough actors:
+- **TIER-1 BACKDROP (the BINDING room gate).** Score the **BACKDROP ALONE** — render the plate quad with NO
+  actors/rings/VFX (a backdrop-only capture), or score the source plate PNG directly. GATE: **L6 ≥ 8 AND L1 ≥ 8
+  AND detail ≥ 7 AND 0/3 washout AND pathing-map-correct** (you can read walkable floor vs walls/obstacles).
+  This is what a *room* must clear before it's "done."
+- **TIER-2 ACTOR / EFFECT / MOTION (placeholder-OK during the demo).** Score on the COMPOSITE. GATE: **pre-gates
+  G1–G4 PASS** (grounded, in-cell, correct scale) **AND L2/L3/L4 ≥ 5.0** (grounded, scene-lit-enough, reads as
+  belonging) **AND the backdrop still ≥ 8**. Actors are basic placeholders (a demo cast + default templates) we
+  polish much later — do NOT block a playable demo on actor AA. (Pillar-4 reconciliation: placeholders are the
+  PATH; real-art-via-the-proven-workflow is the destination.)
+- **Combat-FUN checklist (binary, the felt gate for a playable round):** ☐ turns are visible (whose turn, initiative
+  order) ☐ movement pathfinds (routes around painted walls) ☐ every action has feedback (swing/cast + VFX + damage
+  number + a sound) ☐ rhythm (you-then-enemy, no dead air) ☐ a win/lose arc. All-yes = "would I play another round."
+- **Diminishing-returns brake (don't re-loop a ceiling):** if a backdrop round yields **no material gain** vs the
+  prior (or REGRESSES), the **5-round brake FIRES** — record the residual + the structural lever to break the
+  ceiling (e.g. a carved-geometry greybox for L6 carved-stone), ADOPT the best plate as done-enough, and MOVE ON.
+  A hit ceiling is a legitimate stop, not a failure to keep grinding.
+
 ## Build-the-system workflows (this critic is the gate inside each)
 Filler-first: ONE hero + ONE monster animating well before any roster.
 - **gen-character / gen-enemy**: Scenario/Meshy/PixelLab → import → animate → render on the
