@@ -6,7 +6,11 @@ there." The fix is NOT a bigger grid (the 14x11 contract is fixed, and research 
 D&D floor) — it's COMPOSITION: author the crypt as TWO linked room-units, each its own spacious 14x11
 scene_grid + greybox + painted plate, glued at a DOOR cell:
 
-  [ Crypt Stair ]  --door (6,0)<->(6,9)-->  [ Crypt Tomb ]
+  [ Crypt Stair ]  --shared (6,0) back-wall doorway-->  [ Crypt Tomb ]
+
+Both units link at the SAME door cell (6,0) — the back (+z) wall, which the cut-near occlusion KEEPS
+(the near front/left walls are cut, so a VISIBLE doorway must sit on a kept wall). The party crosses
+(6,0) in one unit and re-enters just inside (6,1) of the other.
 
 - Each unit is a full room (own scene_grid, own greybox -> img2img plate), so neither is crunched.
 - The units are linked in the engine by Location.connections (the existing adjacency model) — the door
@@ -44,7 +48,7 @@ TOMB_PROPS = [
 ]
 
 
-def _author_room(server, loc_id: str, scene_id: str, biome: str, props_spec: list) -> object:
+def _author_room(loc_id: str, scene_id: str, biome: str, props_spec: list) -> object:
     """Author a 14x11 scene_grid with a back-center DOORWAY (gap in the far wall) + the given props.
     Props are obstacles by construction; the door cell is walkable (it is the link to the other unit)."""
     from scene_grid import (  # noqa: PLC0415
@@ -93,7 +97,7 @@ def main() -> None:
     os.environ["WORLDOS_STATE_DIR"] = state_dir
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "servers", "engine"))
     import server  # noqa: PLC0415
-    import scene_grid as sg  # noqa: PLC0415
+    from scene_grid import impassable_cells  # noqa: PLC0415
     from models import Campaign  # noqa: PLC0415
 
     server.save_campaign(Campaign(id=CID, title="GFX Crypt (2 room-units)",
@@ -107,9 +111,9 @@ def main() -> None:
 
     c = server._require(CID)
     c.locations[stair["id"]].scene_grid = _author_room(
-        server, stair["id"], f"{CID}:stair", "cold stone crypt stair hall, descending steps, torchlit", STAIR_PROPS)
+        stair["id"], f"{CID}:stair", "cold stone crypt stair hall, descending steps, torchlit", STAIR_PROPS)
     c.locations[tomb["id"]].scene_grid = _author_room(
-        server, tomb["id"], f"{CID}:tomb", "cold stone crypt tomb chamber, sarcophagus, torchlit", TOMB_PROPS)
+        tomb["id"], f"{CID}:tomb", "cold stone crypt tomb chamber, sarcophagus, torchlit", TOMB_PROPS)
     server.save_campaign(c)
     server.start_session(CID, title="GFX Crypt 2-room Demo")
 
@@ -124,7 +128,7 @@ def main() -> None:
     gob = server.spawn_monster(CID, name="Goblin", count=1)
     goblin_id = gob["spawned"][0]["id"]
     stair_grid = c.locations[stair["id"]].scene_grid
-    impassable = sg.impassable_cells(stair_grid, GRID_W, GRID_H)
+    impassable = impassable_cells(stair_grid, GRID_W, GRID_H)
     server.start_combat(CID, [hero_id, goblin_id], surpriser_ids=[hero_id])
     server.set_grid(CID, width=GRID_W, height=GRID_H, obstacles=impassable)
     server.place_combatant_at_coords(CID, hero_id, STAIR_HERO[0], STAIR_HERO[1])
