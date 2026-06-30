@@ -91,6 +91,9 @@ System.Func<string,Vector3,Vector3,Color,GameObject> box=(nm,center,size,col)=>{
   for(int c=1;c<cols;c++){ float x=(c-cx0)*2.0f-1.0f; box("FloorGroutV"+c, new Vector3(x,gy,0f), new Vector3(gw,0.05f,rows*2.0f), grout); }
   for(int r=1;r<rows;r++){ float z=(cy0-r)*2.0f+1.0f; box("FloorGroutH"+r, new Vector3(0f,gy,z), new Vector3(cols*2.0f,0.05f,gw), grout); }
 }
+// ★ NO CEILING / NO ROOF GEOMETRY — EVER, for interior rooms (the universal iso-CRPG convention: PoE1/2,
+// Infinity Engine, Disco Elysium, Diablo all omit ceilings so the top-down camera sees the floor + actors).
+// Do NOT add a ceiling/roof box here to "enclose" a room — it would occlude the interior. (Guard tripwire.)
 // enclosing walls — build only the FAR walls so the camera SEES IN (iso-CRPG cutaway). The camera sits at
 // the -x,-z near corner looking toward +x,+z, so the FAR walls are +z (back) and +x (right); the NEAR walls
 // are -x (left) and -z (front). The front (-z) was already open; now we also OMIT the near -x/LEFT wall so
