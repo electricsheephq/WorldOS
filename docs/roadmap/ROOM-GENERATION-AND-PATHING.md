@@ -93,18 +93,24 @@ export → greybox → img2img → deploy.
 
 - **Pathing works — proven + structural.** The alignment is by construction (one scene_grid → both), so
   pathing is correct for *any* generated room, not tuned per room. ✅
-- **Look amazing — the ≥8 carved-greybox lever is now PROVEN.** Adding carved geometry to the greybox —
-  **flagstone grout lines** on the floor, **pilasters/buttresses + a cornice** on the walls — takes the
-  img2img from a flat gray room (~6) to a carved-stone PoE2 crypt (~8): painted flagstones with mortar,
-  carved columns with capitals, multi-torch warm/cool lighting. **Same prompt, same LoRA, same strength —
-  the ONLY change is the greybox geometry.** This is the definitive confirmation that the ≥8 lever is
-  carved geometry, NOT the prompt (`extensions/renderers/shared/room_recipes.json:ceiling_2026_06_30`).
-  Proof: `~/worldos-session-notes/renders/flat_vs_carved_painted.png` (flat vs carved, side-by-side) +
-  `carved_greybox_to_painted.png` + `crypt_carved_v1.png`. `build_room_greybox.cs` emits the carved
-  geometry. ✅
-  - **Backdrop hygiene:** pick a figure-free variant — at strength ~0.62 the LoRA occasionally paints a
-    figure where a prop box is figure-sized; keep props chunky/low (braziers wide-not-tall) and select the
-    variant with no painted actor, since the 3D cast layers on top.
+- **Look amazing — NOT yet at ≥8; the carved-greybox is a real but insufficient lever (honest, scored).**
+  A rigorous 2-run visual-critic panel (logged to `qa/scores_db`, surface=visual) corrected an earlier
+  eyeball over-claim: the generated rooms score **4.75 (carved crypt) / 5.0 (live combat) / 6.1 (church)**,
+  washout-bound — not ≥8. The carved geometry IS directionally good (the critic credits "real carved
+  flagstone + fluted pilasters + arch"), but there is a **fundamental alignment↔quality tradeoff** with a
+  GRAY greybox + this LoRA:
+  - **Low strength (~0.55–0.62):** preserves the carved geometry on-cell (alignment holds) but under-paints
+    the gray → washed-out / gray-fog (~5). This is what the aligned-pathing system uses.
+  - **High strength (~0.82):** fully repaints into painterly firelit carved stone (**scored 7.0**, washout
+    solved, strong warm/cool chiaroscuro) — but **drifts the props off-cell** (breaks alignment), so it's a
+    non-aligned **"hero plate"** (`crypt_heroplate_str082_7p0.png`), not the combat backdrop.
+  - **The ≥8 ceiling** (carved-stone micro-craft: fluting, chiseled relief, masonry coursing) is **beyond
+    this painterly LoRA + img2img from a gray greybox**, exactly as `room_recipes.json:ceiling_2026_06_30`
+    predicted. The ≥8-AND-aligned path = a 2-stage **texture-then-relight** (so the base is painterly before
+    the low-strength pin) and/or **a crisper architectural model/LoRA**. **The owner deprioritized chasing
+    ≥8** ("don't re-loop the prompt") in favor of the SYSTEM below — which IS proven. ◐
+  - **Backdrop hygiene:** pick a figure-free variant — the LoRA occasionally paints a figure where a prop
+    box is figure-sized; keep props chunky/low and select the variant with no painted actor.
 
 ## Invariants honored
 
