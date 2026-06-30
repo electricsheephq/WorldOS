@@ -19,20 +19,38 @@ import sys
 
 
 def main() -> None:
-    if len(sys.argv) < 2:
-        print("usage: export_scene_grid.py <campaign> [out.json]", file=sys.stderr)
+    # optional --location <loc_id> selects a SPECIFIC location's grid (for multi-room-unit composition,
+    # where one campaign holds several linked room-units); default = the campaign's current location.
+    args = sys.argv[1:]
+    location_id = None
+    if "--location" in args:
+        i = args.index("--location")
+        if i + 1 >= len(args):  # --location given with no value -> usage, not an IndexError traceback
+            print("usage: export_scene_grid.py <campaign> [out.json] [--location <loc_id>]", file=sys.stderr)
+            sys.exit(2)
+        location_id = args[i + 1]
+        del args[i:i + 2]
+    if len(args) < 1:
+        print("usage: export_scene_grid.py <campaign> [out.json] [--location <loc_id>]", file=sys.stderr)
         sys.exit(2)
-    cid = sys.argv[1]
-    out = sys.argv[2] if len(sys.argv) > 2 else None
+    cid = args[0]
+    out = args[1] if len(args) > 1 else None
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "servers", "engine"))
     import server  # noqa: PLC0415
     import scene_grid as sg  # noqa: PLC0415
 
     c = server._require(cid)
-    loc = c.locations.get(c.current_location_id) if c.current_location_id else None
+    if location_id:
+        loc = c.locations.get(location_id)
+        if loc is None:  # explicit --location that doesn't resolve: a distinct, clear error
+            print(json.dumps({"error": f"location {location_id!r} not found in campaign {cid!r}"}))
+            sys.exit(1)
+    else:
+        loc = c.locations.get(c.current_location_id) if c.current_location_id else None
     grid = getattr(loc, "scene_grid", None) if loc is not None else None
     if grid is None:
-        print(json.dumps({"error": "no scene_grid on current location"}))
+        where = f"location {location_id!r}" if location_id else "the current location"
+        print(json.dumps({"error": f"no scene_grid on {where}"}))
         return
 
     cols = grid.grid.cols

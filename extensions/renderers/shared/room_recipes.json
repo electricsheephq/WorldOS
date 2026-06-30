@@ -31,6 +31,12 @@
       "backdrop_score": 7.4,
       "status": "ADOPTED 2026-06-30 — firelit chiaroscuro at 7.4 (L1=8, detail=7, no washout); deployed to box as Assets/painterly/backdrops/crypt_firelit_v2.png. >=8 needs the carved-greybox lever (see ceiling_2026_06_30)."
     },
+    "crypt_stair": {
+      "key_light": "brazier firelight",
+      "shadow_casters": "the broad descending staircase and the pillar",
+      "room_detail_tokens": "a broad descending stone staircase with worn carved steps leading down into shadow at the rear, crisp painterly flagstone mortar lines, weathered cracked stone relief, fluted pillar detail, an arched stone doorway in the back wall",
+      "_note": "a crypt STAIR-HALL room-unit (Sprint 3 composition): same firelit crypt look but the focal feature is a descending staircase (not a sarcophagus). Paired with the tomb unit via seed_gfx_crypt_2room.py."
+    },
     "tavern": {
       "key_light": "hearth fire and hanging iron lanterns",
       "shadow_casters": "the timber posts, the bar counter, and the tables",
