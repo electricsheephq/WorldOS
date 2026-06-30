@@ -19,6 +19,8 @@ var geo=MiniJson.Parse(System.IO.File.ReadAllText(GEO)) as System.Collections.Ge
 if(geo==null) return "geometry parse failed";
 int cols=geo.ContainsKey("cols")?System.Convert.ToInt32(geo["cols"]):14;
 int rows=geo.ContainsKey("rows")?System.Convert.ToInt32(geo["rows"]):11;
+// MATERIAL axis: "stone" (masonry coursing, grey) or "wood" (horizontal plank coursing + warm grain, brown).
+bool wood = geo.ContainsKey("material") && (geo["material"] as string)=="wood";
 // CONTRACT cell->world (cx0=(cols-1)/2, cy0=(rows-1)/2, isotropic cell 2.0) — matches paint_combat_v1.cs.
 float cx0=(cols-1)/2.0f, cy0=(rows-1)/2.0f;
 System.Func<int,int,Vector3> cellToWorld=(c,r)=> new Vector3((c-cx0)*2.0f, 0f, (cy0-r)*2.0f);
@@ -48,19 +50,32 @@ var stoneNrm=new Texture2D(TS,TS,TextureFormat.RGB24,true);
     for(int o=0;o<5;o++){ n+=Mathf.PerlinNoise(u*freq+o*13.1f, v*freq+o*7.7f)*amp; amp*=0.5f; freq*=2f; }
     float crack=Mathf.PerlinNoise(u*3.1f+40f, v*3.1f+40f);
     float dark = crack<0.30f ? (0.30f-crack)*1.4f : 0f;
-    // MASONRY COURSING — darken at block joints (running-bond) so the img2img reads stone BLOCKS, not a
-    // smooth surface. This is why the FLOOR (grout grid) painted into flagstones but the WALLS (smooth
-    // texture) stayed greybox-flat at score 6.5 — the walls had no block structure for the LoRA to paint.
-    float courseH=0.135f, brickW=0.17f, jointW=0.05f;
-    float cf=v/courseH; float cFrac=cf-Mathf.Floor(cf); int courseI=(int)Mathf.Floor(cf);
-    float uo=u + (courseI%2==0?0f:0.085f);               // running-bond half-offset per course
-    float bf=uo/brickW; float bFrac=bf-Mathf.Floor(bf);
-    float horiz=(cFrac<jointW/courseH||cFrac>1f-jointW/courseH)?1f:0f;
-    float vert =(bFrac<jointW/brickW||bFrac>1f-jointW/brickW)?1f:0f;
-    float seam=Mathf.Max(horiz,vert)*0.26f;              // recessed mortar joint = darker
-    hh[x,y]=n - seam*0.7f;                               // joints also dent the normal (carved depth)
-    float g=Mathf.Clamp01(0.5f + (n-0.5f)*0.55f - dark - seam);  // mid-grey + mottle + cracks + block joints
-    stoneAlb.SetPixel(x,y,new Color(g,g*0.985f,g*0.96f));  // faint warm stone
+    if(wood){
+      // WOOD PLANKS — long HORIZONTAL boards: only horizontal seams (no running-bond joints), fine grain
+      // streaks running along the board, warm brown tone. Gives the img2img wood-plank structure to paint.
+      float plankH=0.115f;
+      float pf=v/plankH; float pFrac=pf-Mathf.Floor(pf);
+      float seamW=0.045f/plankH;
+      float seam=(pFrac<seamW||pFrac>1f-seamW)?0.32f:0f;     // dark gap between planks
+      float grain=(Mathf.PerlinNoise(u*2.5f, v*26f)-0.5f)*0.18f;  // grain along the board
+      hh[x,y]=n - seam*0.8f + grain*0.6f;
+      float g=Mathf.Clamp01(0.46f + (n-0.5f)*0.34f - dark*0.6f - seam + grain);
+      stoneAlb.SetPixel(x,y,new Color(g, g*0.72f, g*0.46f));  // warm brown timber
+    } else {
+      // MASONRY COURSING — darken at block joints (running-bond) so the img2img reads stone BLOCKS, not a
+      // smooth surface. This is why the FLOOR (grout grid) painted into flagstones but the WALLS (smooth
+      // texture) stayed greybox-flat at score 6.5 — the walls had no block structure for the LoRA to paint.
+      float courseH=0.135f, brickW=0.17f, jointW=0.05f;
+      float cf=v/courseH; float cFrac=cf-Mathf.Floor(cf); int courseI=(int)Mathf.Floor(cf);
+      float uo=u + (courseI%2==0?0f:0.085f);               // running-bond half-offset per course
+      float bf=uo/brickW; float bFrac=bf-Mathf.Floor(bf);
+      float horiz=(cFrac<jointW/courseH||cFrac>1f-jointW/courseH)?1f:0f;
+      float vert =(bFrac<jointW/brickW||bFrac>1f-jointW/brickW)?1f:0f;
+      float seam=Mathf.Max(horiz,vert)*0.26f;              // recessed mortar joint = darker
+      hh[x,y]=n - seam*0.7f;                               // joints also dent the normal (carved depth)
+      float g=Mathf.Clamp01(0.5f + (n-0.5f)*0.55f - dark - seam);  // mid-grey + mottle + cracks + block joints
+      stoneAlb.SetPixel(x,y,new Color(g,g*0.985f,g*0.96f));  // faint warm stone
+    }
   }
   for(int y=0;y<TS;y++) for(int x=0;x<TS;x++){
     int xp=(x+1)%TS, yp=(y+1)%TS;
