@@ -157,5 +157,16 @@ var pAct=RenderTexture.active; RenderTexture.active=rt; var t2=new Texture2D(W,H
 System.IO.Directory.CreateDirectory("/home/unity/worldos-unity/Captures-Durable");
 System.IO.File.WriteAllBytes("/home/unity/worldos-unity/Captures-Durable/room_greybox.png", t2.EncodeToPNG());
 UnityEngine.Object.DestroyImmediate(t2); rt.Release(); UnityEngine.Object.DestroyImmediate(rt);
+// CLEANUP (capture is done; the greybox is transient + the scene is NOT saved): destroy this run's GB_*
+// GameObjects + their per-box Materials + the shared procedural stone Textures, so repeated invocations
+// don't leak native assets (CodeRabbit #1210). The shared stoneAlb/stoneNrm are deduped via the set + the
+// explicit destroy below; the next run's start-sweep is then a no-op safety net.
+{ var _gb=new System.Collections.Generic.List<GameObject>(); var _mat=new System.Collections.Generic.HashSet<Material>();
+  foreach(var g in UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None)){ if(g==null) continue; if(g.name.StartsWith("GB_")){ _gb.Add(g); var _r=g.GetComponent<Renderer>(); if(_r!=null && _r.sharedMaterial!=null) _mat.Add(_r.sharedMaterial); } }
+  foreach(var g in _gb){ if(g!=null) UnityEngine.Object.DestroyImmediate(g); }
+  foreach(var m in _mat){ if(m!=null) UnityEngine.Object.DestroyImmediate(m); }
+  if(stoneAlb!=null) UnityEngine.Object.DestroyImmediate(stoneAlb);
+  if(stoneNrm!=null) UnityEngine.Object.DestroyImmediate(stoneNrm);
+}
 sb.AppendLine("greybox "+cols+"x"+rows+" props="+np+" -> room_greybox.png (hidden="+hidden+")");
 return sb.ToString();
