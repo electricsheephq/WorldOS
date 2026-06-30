@@ -12,6 +12,8 @@ set (so /move is live), and the GEX44 box reachable via the ControlMaster + the 
   python3 qa/drive_gfx_combat.py [viewer_url] [campaign]
 """
 import json
+import os
+import shutil
 import subprocess
 import sys
 import urllib.request
@@ -23,6 +25,27 @@ BOX = "root@46.4.26.123"
 RENDER_SCRIPT = "/Users/lume/WorldOS/extensions/renderers/unity/scripts/paint_combat_v1.cs"
 BOX_CAP = "/home/unity/worldos-unity/Captures-Durable/m1_combat_v1.png"
 OUT_DIR = "/Users/lume/worldos-session-notes/renders"
+# M-D: deliver each frame into the viewer's /image cache so the in-app <Img> backdrop serves it.
+STATE_DIR = os.environ.get("WORLDOS_STATE_DIR", "/tmp/gfx_state")
+
+
+def _safe_scope(scope: str) -> str:
+    """Mirror viewer/server.py:_safe_scope so the driver writes the descriptor into the SAME
+    <state_dir>/images/<safe-scope> dir that GET /image?scope= reads (only alnum/-/_ survive)."""
+    return "".join(c if (c.isalnum() or c in "-_") else "_" for c in str(scope))[:128]
+
+
+def deliver(png_path: str, scope: str) -> None:
+    """Drop the rendered PNG + a {path,mime_type} descriptor into <state_dir>/images/<safe-scope>/ so
+    GET /image?scope=<scope> serves it — the M-D frame-serve seam (reuses /image; no new viewer route)."""
+    if not scope:
+        return
+    d = os.path.join(STATE_DIR, "images", _safe_scope(scope))
+    os.makedirs(d, exist_ok=True)
+    dst = os.path.join(d, "frame.png")
+    shutil.copy(png_path, dst)
+    with open(os.path.join(d, "frame.json"), "w") as f:
+        json.dump({"path": dst, "mime_type": "image/png", "scope": scope}, f)
 
 
 def surface() -> dict:
@@ -38,11 +61,13 @@ def post_move(move: dict) -> dict:
 
 
 def render(tag: str) -> None:
+    scope = surface().get("combatFrameScope", "")  # the current turn's frame scope (matches what the box renders)
     subprocess.run(["/Users/lume/.local/bin/unity-mcp", "code", "execute", "--no-safety-checks",
                     "-f", RENDER_SCRIPT], capture_output=True, timeout=160)
-    subprocess.run(["scp", "-o", f"ControlPath={CM}", f"{BOX}:{BOX_CAP}",
-                    f"{OUT_DIR}/m1_combat_{tag}.png"], capture_output=True, timeout=30)
-    print(f"  rendered -> {OUT_DIR}/m1_combat_{tag}.png")
+    png = f"{OUT_DIR}/m1_combat_{tag}.png"
+    subprocess.run(["scp", "-o", f"ControlPath={CM}", f"{BOX}:{BOX_CAP}", png], capture_output=True, timeout=30)
+    deliver(png, scope)  # M-D: also drop it in the viewer's /image cache so the in-app <Img> serves it
+    print(f"  rendered -> {png}  (in-app scope={scope})")
 
 
 def main() -> None:
