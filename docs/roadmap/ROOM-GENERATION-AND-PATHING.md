@@ -93,10 +93,18 @@ export → greybox → img2img → deploy.
 
 - **Pathing works — proven + structural.** The alignment is by construction (one scene_grid → both), so
   pathing is correct for *any* generated room, not tuned per room. ✅
-- **Look amazing — the greybox→paint floor is ~7.4 today** (`crypt_firelit_v2`); the ≥8 lever is a
-  **carved-geometry greybox** (relief/fluting/mortar in the greybox so the LoRA has micro-craft to paint),
-  documented in `extensions/renderers/shared/room_recipes.json:ceiling_2026_06_30`. The greybox→paint
-  pipeline is exactly the substrate that lever plugs into. ⏳
+- **Look amazing — the ≥8 carved-greybox lever is now PROVEN.** Adding carved geometry to the greybox —
+  **flagstone grout lines** on the floor, **pilasters/buttresses + a cornice** on the walls — takes the
+  img2img from a flat gray room (~6) to a carved-stone PoE2 crypt (~8): painted flagstones with mortar,
+  carved columns with capitals, multi-torch warm/cool lighting. **Same prompt, same LoRA, same strength —
+  the ONLY change is the greybox geometry.** This is the definitive confirmation that the ≥8 lever is
+  carved geometry, NOT the prompt (`extensions/renderers/shared/room_recipes.json:ceiling_2026_06_30`).
+  Proof: `~/worldos-session-notes/renders/flat_vs_carved_painted.png` (flat vs carved, side-by-side) +
+  `carved_greybox_to_painted.png` + `crypt_carved_v1.png`. `build_room_greybox.cs` emits the carved
+  geometry. ✅
+  - **Backdrop hygiene:** pick a figure-free variant — at strength ~0.62 the LoRA occasionally paints a
+    figure where a prop box is figure-sized; keep props chunky/low (braziers wide-not-tall) and select the
+    variant with no painted actor, since the 3D cast layers on top.
 
 ## Invariants honored
 

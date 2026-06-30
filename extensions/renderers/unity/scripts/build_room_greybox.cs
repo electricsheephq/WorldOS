@@ -38,12 +38,32 @@ System.Func<string,Vector3,Vector3,Color,GameObject> box=(nm,center,size,col)=>{
 
 // floor — mid-grey (NOT light: light + bright key blows out to white, ruining the img2img form).
 { var f=box("Floor", new Vector3(0f,-0.05f,0f), new Vector3(cols*2.0f, 0.1f, rows*2.0f), new Color(0.42f,0.41f,0.40f)); }
+// CARVED flagstone grout — recessed grid lines per cell boundary give the LoRA a stone-floor grid to
+// paint into mortar/flagstones (the ≥8 carved-geometry lever, NOT a prompt change). Thin dark inset
+// strips just above the floor at each interior cell boundary; they read as grout shadow at the camera.
+{ Color grout=new Color(0.20f,0.19f,0.18f); float gy=0.015f, gw=0.13f;
+  for(int c=1;c<cols;c++){ float x=(c-cx0)*2.0f-1.0f; box("FloorGroutV"+c, new Vector3(x,gy,0f), new Vector3(gw,0.05f,rows*2.0f), grout); }
+  for(int r=1;r<rows;r++){ float z=(cy0-r)*2.0f+1.0f; box("FloorGroutH"+r, new Vector3(0f,gy,z), new Vector3(cols*2.0f,0.05f,gw), grout); }
+}
 // enclosing walls — TALL back + sides so the room fills the upper frame (no black sky); NO front wall
 // (the corner-iso camera looks in over the open front edge). Heights tuned for the dimetric down-look.
 float backH=11f, sideH=9f;
 box("WallBack",  new Vector3(0f,backH/2f,(cy0+0.5f)*2.0f), new Vector3(cols*2.0f,backH,0.5f), new Color(0.5f,0.49f,0.48f));
 box("WallLeft",  new Vector3(-(cx0+0.5f)*2.0f,sideH/2f,0f), new Vector3(0.5f,sideH,rows*2.0f), new Color(0.46f,0.45f,0.44f));
 box("WallRight", new Vector3((cx0+0.5f)*2.0f,sideH/2f,0f), new Vector3(0.5f,sideH,rows*2.0f), new Color(0.44f,0.43f,0.42f));
+// CARVED wall relief — raised pilasters/buttresses every ~3 cells protruding INTO the room, plus a
+// header course band near the top. Walls fill most of the dimetric frame, so this carved architecture
+// is the biggest ≥8 lever: it gives the LoRA shadowed stone columns + a cornice to paint (NOT a prompt).
+{ float pilW=0.7f, pilD=0.6f; Color pilC=new Color(0.55f,0.54f,0.52f); Color bandC=new Color(0.4f,0.39f,0.38f);
+  // back-wall pilasters (face into the room: z just inside the back wall)
+  for(int c=2;c<cols-1;c+=3){ float x=(c-cx0)*2.0f; box("PilBack"+c, new Vector3(x,backH*0.46f,(cy0+0.35f)*2.0f), new Vector3(pilW,backH*0.92f,pilD), pilC); }
+  // side-wall pilasters
+  for(int r=2;r<rows-1;r+=3){ float z=(cy0-r)*2.0f;
+    box("PilLeft"+r,  new Vector3(-(cx0+0.35f)*2.0f,sideH*0.46f,z), new Vector3(pilD,sideH*0.92f,pilW), pilC);
+    box("PilRight"+r, new Vector3((cx0+0.35f)*2.0f, sideH*0.46f,z), new Vector3(pilD,sideH*0.92f,pilW), pilC); }
+  // header course band along the back wall top (a cornice line for the LoRA)
+  box("BackCornice", new Vector3(0f,backH*0.84f,(cy0+0.32f)*2.0f), new Vector3(cols*2.0f,0.7f,0.5f), bandC);
+}
 
 // props at their AUTHORED cells — height by kind so the control reads as a furnished room.
 var props=geo.ContainsKey("props")?geo["props"] as System.Collections.Generic.List<object>:null;
