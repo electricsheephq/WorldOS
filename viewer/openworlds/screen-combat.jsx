@@ -103,7 +103,12 @@ function ScreenCombat({ onNavigate, state }) {
   // the location block (`location:<id>`). Mirror the dialogue screen's sceneScope
   // fallback so an older surface without imageScope still resolves via location.id;
   // empty string -> CombatMap renders no backdrop (graceful, transparent).
-  const sceneScope = surface?.location?.imageScope ||
+  // M-D: prefer the box-rendered PoE2 3D-on-2D combat FRAME (combatFrameScope, turn-suffixed for cache-bust)
+  // as the backdrop when present; fall back to the static location plate (imageScope) so a fight with no box
+  // frame yet still shows a backdrop (the <Img> 404→placeholder covers the pending-frame window). The grid/
+  // zone input overlay (zIndex 1) is untouched — only the backdrop image swaps.
+  const sceneScope = surface?.combatFrameScope ||
+    surface?.location?.imageScope ||
     (surface?.location?.id ? `location:${surface.location.id}` : "");
   const commandCenter = surface?.commandCenter || {};
   const economy = surface?.actionEconomy || {};
