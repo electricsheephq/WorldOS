@@ -1265,6 +1265,37 @@ def travel_to(campaign_id: str, destination_id: str = "", advance_time: bool = F
         return result
 
 
+def cross_door(campaign_id: str, x: int, y: int) -> dict:
+    """Cross an authored DOORWAY to the linked room-unit (M-E room transition).
+
+    ``(x, y)`` must be a ``door_cell`` of the current location's ``scene_grid`` (the #1214 schema);
+    the party then travels to the location's connected room-unit. A thin gameplay primitive over
+    ``travel_to`` (which holds the campaign lock + co-locates the whole party). For a single-connection
+    room-unit (the common case) the door leads to the one neighbour; a multi-connection room needs an
+    authored door->destination map, so the FIRST connection is taken as a best-effort default and
+    surfaced via ``multi_connection``.
+
+    The gameplay GATE (party is at the door, the room is resolved) is the caller's responsibility —
+    this verb does NOT force-end an active combat. Raises if (x,y) is not a doorway or there is no
+    connected room. Additive INTERNAL verb (NOT an MCP tool — protects the tool-schema budget), called
+    by the renderer/driver, mirroring ``place_combatant_at_coords``. Engine stays sole writer."""
+    c = _require(campaign_id)
+    loc = c.locations.get(c.current_location_id) if c.current_location_id else None
+    sg = getattr(loc, "scene_grid", None) if loc is not None else None
+    if sg is None:
+        raise ValueError("no current location with a scene_grid to cross from")
+    door_cells = {(int(a), int(b)) for (a, b) in (getattr(sg, "door_cells", None) or [])}
+    if (int(x), int(y)) not in door_cells:
+        raise ValueError(f"({x},{y}) is not a doorway cell of {getattr(loc, 'name', '')!r}")
+    conns = [cid for cid in (getattr(loc, "connections", None) or []) if isinstance(cid, str)]
+    if not conns:
+        raise ValueError(f"{getattr(loc, 'name', '')!r} has no connected room to cross to")
+    result = travel_to(campaign_id, conns[0])
+    result["crossed_door"] = [int(x), int(y)]
+    result["multi_connection"] = len(conns) > 1
+    return result
+
+
 # Class -> the 5e ability PRIORITY order (highest stat first) for the standard array.
 # The standard array is [15, 14, 13, 12, 10, 8]; we assign its values down this list, so
 # index 0 gets the 15, index 1 the 14, and so on. This is the canonical "what does a level-1
