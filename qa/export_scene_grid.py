@@ -41,9 +41,13 @@ def main() -> None:
     props = [{"kind": getattr(p, "kind", "prop"), "cells": [[c0, r0] for (c0, r0) in p.cells]} for p in grid.props]
     impassable = sg.impassable_cells(grid, cols, rows)
 
+    # material hint for the greybox texture (stone masonry vs wood planks) — the room's MATERIAL axis.
+    _bio = (getattr(grid, "biome", "") + " " + getattr(loc, "name", "")).lower()
+    material = "wood" if any(w in _bio for w in ("wood", "timber", "tavern", "plank", "hall of") ) and "stone" not in _bio else "stone"
+
     payload = {
         "location": getattr(loc, "name", ""),
-        "cols": cols, "rows": rows,
+        "cols": cols, "rows": rows, "material": material,
         "cell_default_walkable": bool(getattr(grid.cell_default, "walkable", True)),
         "walls": walls, "props": props, "impassable": impassable,
     }
