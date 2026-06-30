@@ -91,11 +91,18 @@ System.Func<string,Vector3,Vector3,Color,GameObject> box=(nm,center,size,col)=>{
   for(int c=1;c<cols;c++){ float x=(c-cx0)*2.0f-1.0f; box("FloorGroutV"+c, new Vector3(x,gy,0f), new Vector3(gw,0.05f,rows*2.0f), grout); }
   for(int r=1;r<rows;r++){ float z=(cy0-r)*2.0f+1.0f; box("FloorGroutH"+r, new Vector3(0f,gy,z), new Vector3(cols*2.0f,0.05f,gw), grout); }
 }
-// enclosing walls — TALL back + sides so the room fills the upper frame (no black sky); NO front wall
-// (the corner-iso camera looks in over the open front edge). Heights tuned for the dimetric down-look.
+// ★ NO CEILING / NO ROOF GEOMETRY — EVER, for interior rooms (the universal iso-CRPG convention: PoE1/2,
+// Infinity Engine, Disco Elysium, Diablo all omit ceilings so the top-down camera sees the floor + actors).
+// Do NOT add a ceiling/roof box here to "enclose" a room — it would occlude the interior. (Guard tripwire.)
+// enclosing walls — build only the FAR walls so the camera SEES IN (iso-CRPG cutaway). The camera sits at
+// the -x,-z near corner looking toward +x,+z, so the FAR walls are +z (back) and +x (right); the NEAR walls
+// are -x (left) and -z (front). The front (-z) was already open; now we also OMIT the near -x/LEFT wall so
+// it doesn't occlude the interior floor + the actors + the pathing (the owner's #1 fix: "the wall comes
+// down so you can fully see in"). A transparent-able near-wall LAYER is a later polish.
+bool cutNear = true;   // INDOOR default: omit the camera-near (-x/left) wall for full interior visibility.
 float backH=11f, sideH=9f;
 box("WallBack",  new Vector3(0f,backH/2f,(cy0+0.5f)*2.0f), new Vector3(cols*2.0f,backH,0.5f), new Color(0.5f,0.49f,0.48f));
-box("WallLeft",  new Vector3(-(cx0+0.5f)*2.0f,sideH/2f,0f), new Vector3(0.5f,sideH,rows*2.0f), new Color(0.46f,0.45f,0.44f));
+if(!cutNear) box("WallLeft",  new Vector3(-(cx0+0.5f)*2.0f,sideH/2f,0f), new Vector3(0.5f,sideH,rows*2.0f), new Color(0.46f,0.45f,0.44f));
 box("WallRight", new Vector3((cx0+0.5f)*2.0f,sideH/2f,0f), new Vector3(0.5f,sideH,rows*2.0f), new Color(0.44f,0.43f,0.42f));
 // CARVED wall relief — raised pilasters/buttresses every ~3 cells protruding INTO the room, plus a
 // header course band near the top. Walls fill most of the dimetric frame, so this carved architecture
@@ -105,7 +112,7 @@ box("WallRight", new Vector3((cx0+0.5f)*2.0f,sideH/2f,0f), new Vector3(0.5f,side
   for(int c=2;c<cols-1;c+=3){ float x=(c-cx0)*2.0f; box("PilBack"+c, new Vector3(x,backH*0.46f,(cy0+0.35f)*2.0f), new Vector3(pilW,backH*0.92f,pilD), pilC); }
   // side-wall pilasters
   for(int r=2;r<rows-1;r+=3){ float z=(cy0-r)*2.0f;
-    box("PilLeft"+r,  new Vector3(-(cx0+0.35f)*2.0f,sideH*0.46f,z), new Vector3(pilD,sideH*0.92f,pilW), pilC);
+    if(!cutNear) box("PilLeft"+r,  new Vector3(-(cx0+0.35f)*2.0f,sideH*0.46f,z), new Vector3(pilD,sideH*0.92f,pilW), pilC);
     box("PilRight"+r, new Vector3((cx0+0.35f)*2.0f, sideH*0.46f,z), new Vector3(pilD,sideH*0.92f,pilW), pilC); }
   // header course band along the back wall top (a cornice line for the LoRA)
   box("BackCornice", new Vector3(0f,backH*0.84f,(cy0+0.32f)*2.0f), new Vector3(cols*2.0f,0.7f,0.5f), bandC);
@@ -119,7 +126,7 @@ box("WallRight", new Vector3((cx0+0.5f)*2.0f,sideH/2f,0f), new Vector3(0.5f,side
   // horizontal courses on all three walls (the dominant masonry read)
   for(float yy=1.3f; yy<backH-0.7f; yy+=1.45f){ box("CrsBackH"+(int)(yy*10f), new Vector3(0f,yy,backZ), new Vector3(cols*2.0f,sw,0.14f), seamC); }
   for(float yy=1.3f; yy<sideH-0.7f; yy+=1.45f){
-    box("CrsLeftH"+(int)(yy*10f),  new Vector3(lX,yy,0f), new Vector3(0.14f,sw,rows*2.0f), seamC);
+    if(!cutNear) box("CrsLeftH"+(int)(yy*10f),  new Vector3(lX,yy,0f), new Vector3(0.14f,sw,rows*2.0f), seamC);
     box("CrsRightH"+(int)(yy*10f), new Vector3(rX,yy,0f), new Vector3(0.14f,sw,rows*2.0f), seamC); }
   // sparse vertical joints (running bond) on the back wall so courses break into blocks, not stripes
   for(int c=1;c<cols;c+=2){ float x=(c-cx0)*2.0f-1.0f; box("CrsBackV"+c, new Vector3(x,backH*0.42f,backZ), new Vector3(0.10f,backH*0.78f,0.14f), seamC); }
