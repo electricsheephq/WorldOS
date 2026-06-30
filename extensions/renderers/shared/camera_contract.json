@@ -1,20 +1,28 @@
 {
-  "version": 1,
+  "version": 2,
   "projection": "dimetric-2to1",
   "camera_type": "orthographic",
   "elevation_deg": 30.0,
   "yaw_deg": 45.0,
   "zoom_locked": true,
   "rotation_locked": true,
+  "grid_cols": 14,
+  "grid_rows": 11,
   "cell_size_world": 2.0,
-  "ortho_size_world": 12.0,
-  "char_height_world": 3.6,
+  "ortho_size_world": 13.0,
+  "char_height_world": 5.0,
+  "camera_distance_world": 80.0,
+  "render_px_w": 1920,
+  "render_px_h": 1097,
   "near": 0.3,
   "far": 500.0,
+  "source_of_truth": "extensions/renderers/unity/scripts/paint_combat_v1.cs (+ paint_3d_spike.cs) — the PROVEN Unity combat renderer. qa/visual_pregate.py CameraSpec.LOCKED mirrors these exact numbers.",
   "notes": [
+    "RECONCILED 2026-06-30 to the proven Unity combat renderer (was: ortho_size_world=12, char_height_world=3.6, no grid/px/distance, and a stale yaw note). The Unity contract is: orthographicSize=13; Quaternion.Euler(30,45,0); position=-(rot*forward)*80 (camera pulled back 80 world units along -forward, looking at the world origin); capture 1920x1097.",
     "elevation_deg = asin(0.5) = 30deg gives a TRUE 2:1 screen foreshortening of a ground tile: screen_h/screen_w = sin(elevation). (Corrects the old atan(0.5)=26.565deg, which gives 2.236:1.)",
-    "cellToWorld(c,r) = ((c-cx0)*S, 0, (cy0-r)*S); S=cell_size_world; cx0=(cols-1)/2; cy0=(rows-1)/2. The on-screen 2:1 diamond emerges from the camera (yaw + 30deg pitch), NOT from per-axis steps. Inverse: c = cx0 + wx/S, r = cy0 - wz/S.",
-    "yaw_deg = 0 = front-tilted framing (the owner-liked crypt look). Set 45 for classic corner-iso (must then match bake_sprites.py facings). Owner eyeball-pick during P0; reconcile bake yaw in P3.",
-    "ortho_size_world = half the vertical view height in world units (= ortho_rows/2 * cell_size). px_per_world = render_height / (2*ortho_size_world). Plate aspect MUST equal the capture-camera aspect or the tiles skew."
+    "cellToWorld(c,r) = ((c-cx0)*S, 0, (cy0-r)*S); S=cell_size_world; cx0=(cols-1)/2=6.5; cy0=(rows-1)/2=5.0 for the 14x11 grid (== the renderer's literal ((c-6.5)*2.0, 0, (5.0-r)*2.0)). The on-screen 2:1 diamond emerges from the camera (yaw 45 + 30deg pitch), NOT from per-axis steps. Inverse: c = cx0 + wx/S, r = cy0 - wz/S.",
+    "yaw_deg = 45 = classic corner-iso (matches the proven combat renderer). Bake facings (bake_sprites.py) must match this yaw.",
+    "ortho_size_world = half the vertical view height in world units. px_per_world = render_px_h / (2*ortho_size_world). Plate/capture aspect = render_px_w/render_px_h = 1920/1097 ~= 1.75; the plate aspect MUST equal the capture-camera aspect or the tiles skew.",
+    "camera_distance_world is the magnitude of position = -(rot*forward)*80; with rot=Euler(30,45,0) this is world position (-48.99, 40.0, -48.99). Ortho => distance does not affect framing, only near/far ordering; kept for fidelity to the renderer."
   ]
 }

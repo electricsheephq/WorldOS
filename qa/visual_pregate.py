@@ -32,10 +32,14 @@ DEPENDENCIES (graceful degradation — never a hard import error):
     segmentation pass produces them); this module does NOT do CV detection — it does the MATH that
     turns measured boxes + the spec into a pass/fail with a numeric delta.
 
-CAMERA / PROJECTION (the locked dimetric registration authority — must match ClosedLoopBuilder.cs):
-  orthographic, orthoSize=18, aspect=1344/756 (16:9), pitch=atan(0.5)=26.565deg (dimetric 2:1),
-  yaw=0, roll=0, position=(0, 40.25, -55.5). World->screen below is derived from exactly this.
-  If the Unity camera changes, update CameraSpec (one place) — the registration stays single-authority.
+CAMERA / PROJECTION (the locked dimetric registration authority — must match the PROVEN Unity combat
+  renderer, i.e. extensions/renderers/unity/scripts/paint_combat_v1.cs + paint_3d_spike.cs):
+  orthographic, orthoSize=13, aspect=1920/1097 (~1.75), pitch(x)=30deg, yaw(y)=45deg corner-iso,
+  roll=0, position = -(Euler(30,45,0)*forward)*80 = (-48.99, 40.0, -48.99) — the camera is pulled
+  back 80 world units along its own forward axis and LOOKS AT the world origin; near 0.3 / far 500.
+  Grid 14x11; cellToWorld(c,r) = ((c-6.5)*2.0, 0, (5.0-r)*2.0), cell_size 2.0. World->screen below
+  is derived from exactly this. If the Unity camera changes, update CameraSpec (one place) — the
+  registration stays single-authority.
 
 USAGE
 -----
@@ -102,26 +106,56 @@ MOVE_CENTROID_MIN_PX = 2.0    # a beat tagged as a MOVE must shift the bright-ma
 
 
 # ---------------------------------------------------------------------------
-# Camera — the locked dimetric registration authority (mirror of ClosedLoopBuilder.cs LockCamera)
+# Camera — the locked dimetric registration authority (mirror of the PROVEN Unity combat renderer:
+# extensions/renderers/unity/scripts/paint_combat_v1.cs + paint_3d_spike.cs).
+#
+# Unity contract (paint_combat_v1.cs lines 11-12):
+#     cam.orthographic=true; cam.orthographicSize=13f; nearClip=0.3; farClip=500;
+#     Quaternion _crot=Quaternion.Euler(30f,45f,0f);
+#     cam.transform.rotation=_crot; cam.transform.position=-(_crot*Vector3.forward)*80f;
+# i.e. pitch(x)=30deg, yaw(y)=45deg, the camera pulled back DIST=80 world units along its own
+# forward axis so it LOOKS AT the world origin. Capture is 1920x1097 (aspect ~1.75).
+#
+# The world_to_screen basis (fwd/right/up) below is derived analytically from pitch+yaw and was
+# verified to match Unity's Quaternion.Euler(30,45,0) transform basis to <1e-3 (fwd=(0.612,-0.5,
+# 0.612), right=(0.707,0,-0.707), up=(0.354,0.866,0.354)). pos is the same -(fwd)*DIST pullback.
 # ---------------------------------------------------------------------------
+CAM_DIST = 80.0   # world units the camera is pulled back along -forward (renderer: *80f)
+
+
 @dataclass(frozen=True)
 class CameraSpec:
-    ortho_size: float = 18.0
-    aspect: float = 1344.0 / 756.0
-    pitch_deg: float = math.degrees(math.atan(0.5))   # 26.565 — true dimetric 2:1
-    yaw_deg: float = 0.0
-    pos: tuple[float, float, float] = (0.0, 40.25, -55.5)
-    px_w: int = 1344
-    px_h: int = 756
+    ortho_size: float = 13.0
+    aspect: float = 1920.0 / 1097.0
+    pitch_deg: float = 30.0   # Unity Euler x — elevation; asin(0.5)=30deg true 2:1 screen foreshortening
+    yaw_deg: float = 45.0     # Unity Euler y — corner-iso azimuth
+    px_w: int = 1920
+    px_h: int = 1097
+    # pos defaults to None -> derived in __post_init__ as -(forward)*CAM_DIST (the renderer's pullback,
+    # camera looking at the world origin). Pass an explicit pos only to model a non-origin-looking rig.
+    pos: Optional[tuple[float, float, float]] = None
+
+    def __post_init__(self):
+        if self.pos is None:
+            fwd = self._forward()
+            # -(rot*forward)*DIST: pull the camera back along -forward so it looks at world origin.
+            object.__setattr__(self, "pos", tuple(-fwd[i] * CAM_DIST for i in range(3)))
+
+    def _forward(self) -> tuple[float, float, float]:
+        """Camera forward (into the scene) from pitch (about X) + yaw (about Y). Matches Unity's
+        Quaternion.Euler(pitch, yaw, 0) * Vector3.forward to <1e-3 (verified)."""
+        p = math.radians(self.pitch_deg)
+        y = math.radians(self.yaw_deg)
+        return (math.sin(y) * math.cos(p), -math.sin(p), math.cos(y) * math.cos(p))
 
     def world_to_screen(self, wx: float, wy: float, wz: float) -> tuple[float, float]:
         """Project a world point to pixel coords under the locked ortho dimetric camera.
         Screen origin top-left, +y DOWN (image convention). Pure ortho => linear, no perspective."""
-        # Camera basis from pitch (about X) + yaw (about Y). yaw=0 in the locked rig, but kept general.
+        # Camera basis from pitch (about X) + yaw (about Y). yaw=45 in the locked rig (corner-iso).
         p = math.radians(self.pitch_deg)
         y = math.radians(self.yaw_deg)
-        # Forward (into scene), looking down by pitch:
-        fwd = (math.sin(y) * math.cos(p), -math.sin(p), math.cos(y) * math.cos(p))
+        # Forward (into scene), looking down by pitch + around by yaw:
+        fwd = self._forward()
         right = (math.cos(y), 0.0, -math.sin(y))
         # Up = fwd x right  (matches Unity's camera basis: verified against Unity
         # WorldToViewportPoint ground truth — the old right x fwd negated up, which
