@@ -22,7 +22,13 @@ import sys
 CID = "camp_gfxchurch01"
 GRID_W, GRID_H = 14, 11
 # a church nave: two rows of flanking COLUMNS + a 2-cell ALTAR at the back-center apse == the obstacles.
-COLUMNS = [[3, 3], [10, 3], [3, 7], [10, 7]]
+# NEAR-ZONE OCCLUSION RULE (the occlusion-sprint dev-start, owner 2026-07-01): tall occluder props
+# (columns/pillars) stay in the BACK HALF (r <= 5 on an 11-row grid) so the camera-near third (r>=6,
+# where actors enter + fight) is never occluded by a foreground column. The cut-near WALL (build_room_
+# greybox.cs cutNear) handles the near walls; this keeps tall INTERIOR props out of the near band too
+# (the per-prop "see-through on approach" fade is the deferred Phase-2 layer). So the front colonnade
+# pair is pulled from r=7 to r=5 — a 2-row colonnade in the mid/back nave, open near approach.
+COLUMNS = [[3, 3], [10, 3], [3, 5], [10, 5]]
 ALTAR = [[6, 1], [7, 1]]
 OBSTACLES = COLUMNS + ALTAR
 HERO_CELL = [6, 8]   # entrance end of the nave
