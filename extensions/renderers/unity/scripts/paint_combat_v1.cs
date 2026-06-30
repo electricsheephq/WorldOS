@@ -89,4 +89,9 @@ System.IO.Directory.CreateDirectory("/home/unity/worldos-unity/Captures-Durable"
 System.IO.File.WriteAllBytes("/home/unity/worldos-unity/Captures-Durable/m1_combat_v1.png", t2.EncodeToPNG());
 UnityEngine.Object.DestroyImmediate(t2); rt.Release(); UnityEngine.Object.DestroyImmediate(rt);
 sb.AppendLine("captured "+W+"x"+Hh+" -> m1_combat_v1.png hidden="+hidden);
+// Persist the combat frame (anti render-and-forget — a documented WorldOS regression cause) to a DEDICATED
+// scene file, mirroring paint_3d_spike.cs. Safe vs the paint_combat_scene.cs:18 corruption class: the
+// renderer-hide above is idempotent (only disables already-enabled renderers) and we save to a dedicated
+// M1CombatV1 scene, never overwriting a shared/source scene, so reruns don't compound-corrupt canonical state.
+try { var _scn=UnityEngine.SceneManagement.SceneManager.GetActiveScene(); System.IO.Directory.CreateDirectory("Assets/Scenes"); UnityEditor.SceneManagement.EditorSceneManager.SaveScene(_scn, "Assets/Scenes/M1CombatV1_canonical.unity"); sb.AppendLine("scene SAVED -> Assets/Scenes/M1CombatV1_canonical.unity"); } catch(System.Exception _e){ sb.AppendLine("SaveScene FAILED: "+_e.Message); }
 return sb.ToString();
