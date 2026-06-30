@@ -97,6 +97,12 @@ def main(argv=None) -> None:
     ap.add_argument("--dry-run", action="store_true", help="print the resolved request without calling the API")
     args = ap.parse_args(argv)
 
+    # Require EXACTLY ONE image source up front so an ambiguous/missing combo fails fast (incl. on --dry-run),
+    # not silently as "<upload:None>" or only at submit time.
+    src_count = (1 if args.base_plate else 0) + (1 if args.refine_from else 0)
+    if src_count != 1:
+        ap.error("provide EXACTLY ONE of --base-plate <png> or --refine-from <asset_id>")
+
     positive, negative = _build_prompt(recipe, args.room)
     # Standalone base models (model_z-image) run img2img via POST /generate/custom/{modelId}
     # with `image` + `strength` (the txt2img endpoint rejects standalone models). The base model
