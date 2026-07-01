@@ -3345,6 +3345,42 @@ def _combat_doors(snapshot: dict) -> list[dict]:
     return out
 
 
+def _combat_occluders(snapshot: dict) -> list[dict]:
+    """The current location's OCCLUDER props (columns / statues / a sarcophagus) with their footprint
+    cells + height band, so the read-only renderer can place invisible depth-only occluder proxies —
+    a 3D actor that moves BEHIND a painted column is then correctly HIDDEN by it (the owner's "can they
+    move behind columns / behind items?"). Without this the actor always draws on top of the flat plate.
+
+    ADDITIVE / presentation-only: READS engine-owned ``scene_grid.props`` where ``occluder`` is true
+    (the engine is the sole writer of scene_grid; ``SceneProp`` carries ``cells``/``occluder``/
+    ``height_band``); never mutates. ``[]`` when the location has no occluder props (== today's shape).
+    Each entry: ``{cells:[[c,r],...], band:"low"|"mid"|"tall"}``."""
+    loc_id = _text(snapshot.get("current_location_id"))
+    locs = snapshot.get("locations")
+    loc = locs.get(loc_id) if isinstance(locs, dict) and loc_id else None
+    if not isinstance(loc, dict):
+        return []
+    sg = loc.get("scene_grid")
+    props = sg.get("props") if isinstance(sg, dict) else None
+    if not isinstance(props, list) or not props:
+        return []
+    out: list[dict] = []
+    for p in props:
+        if not isinstance(p, dict) or not p.get("occluder"):
+            continue
+        cells = p.get("cells")
+        if not isinstance(cells, list) or not cells:
+            continue
+        norm = [[int(c[0]), int(c[1])] for c in cells
+                if isinstance(c, (list, tuple)) and len(c) == 2]
+        if not norm:
+            continue
+        band = p.get("height_band")
+        band = band if band in ("low", "mid", "tall") else "mid"
+        out.append({"cells": norm, "band": band})
+    return out
+
+
 def build_combat_surface(
     snapshot: dict,
     *,
@@ -3418,6 +3454,10 @@ def build_combat_surface(
         # M-E room transition: the authored doorway cells + their destination room-unit, so the renderer
         # can mark the doorway and the UI can offer to cross. [] == no doors/connections (today's shape).
         "doors": _combat_doors(snapshot),
+        # Occlusion: OCCLUDER props (columns/statues) with footprint cells + height band, so the read-only
+        # renderer can place invisible depth-only proxies -> a 3D actor moving BEHIND a painted column is
+        # correctly hidden by it. READS engine-owned scene_grid.props (occluder=true); [] == none (today).
+        "occluders": _combat_occluders(snapshot),
         "tokens": tokens,
         "initiative": initiative,
         "zones": zones,

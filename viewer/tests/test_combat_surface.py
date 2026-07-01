@@ -336,5 +336,54 @@ class CombatSurfaceTests(unittest.TestCase):
                 self.assert_no_private_keys(child)
 
 
+class CombatOccludersTests(unittest.TestCase):
+    """The `occluders` combat-surface field (occlusion of actors behind painted props)."""
+
+    def test_surfaces_only_occluder_props_with_footprint_and_band(self):
+        snapshot = {
+            "current_location_id": "crypt",
+            "locations": {
+                "crypt": {
+                    "name": "Crypt",
+                    "scene_grid": {
+                        "props": [
+                            {"id": "col1", "kind": "column", "cells": [[3, 4]],
+                             "occluder": True, "height_band": "tall"},
+                            {"id": "sarc", "kind": "sarcophagus", "cells": [[6, 5], [7, 5]],
+                             "occluder": True, "height_band": "low"},
+                            {"id": "rug", "kind": "rug", "cells": [[2, 2]],
+                             "occluder": False, "height_band": "mid"},
+                        ],
+                    },
+                },
+            },
+        }
+        occ = server._combat_occluders(snapshot)
+        self.assertEqual(occ, [
+            {"cells": [[3, 4]], "band": "tall"},
+            {"cells": [[6, 5], [7, 5]], "band": "low"},
+        ])
+
+    def test_defaults_bad_band_to_mid_and_skips_empty_footprints(self):
+        snapshot = {
+            "current_location_id": "x",
+            "locations": {"x": {"scene_grid": {"props": [
+                {"id": "p1", "cells": [[1, 1]], "occluder": True, "height_band": "bogus"},
+                {"id": "p2", "cells": [], "occluder": True, "height_band": "tall"},
+            ]}}},
+        }
+        self.assertEqual(server._combat_occluders(snapshot), [{"cells": [[1, 1]], "band": "mid"}])
+
+    def test_empty_when_no_scene_grid_or_no_occluders(self):
+        self.assertEqual(server._combat_occluders({}), [])
+        self.assertEqual(
+            server._combat_occluders({"current_location_id": "x", "locations": {"x": {"name": "X"}}}),
+            [],
+        )
+        no_occ = {"current_location_id": "x",
+                  "locations": {"x": {"scene_grid": {"props": [{"cells": [[1, 1]], "occluder": False}]}}}}
+        self.assertEqual(server._combat_occluders(no_occ), [])
+
+
 if __name__ == "__main__":
     unittest.main()
