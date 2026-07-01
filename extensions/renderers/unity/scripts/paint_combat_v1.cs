@@ -113,7 +113,7 @@ if(toks==null||toks.Count==0) return "no tokens on surface";
 // COLLECT then destroy with null-checks: destroying an actor root also destroys its children still in the
 // FindObjectsByType array, so a single-loop destroy would access a destroyed child (Unity throws).
 { var _toKill=new System.Collections.Generic.List<GameObject>();
-  foreach(var g in UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None)){ if(g==null) continue; var gn=g.name; if(gn.StartsWith("Actor_")||gn.EndsWith("_AO")||gn.EndsWith("_Ring")||gn=="ImpactFX"||gn=="DmgNum") _toKill.Add(g); }
+  foreach(var g in UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None)){ if(g==null) continue; var gn=g.name; if(gn.StartsWith("Actor_")||gn.EndsWith("_AO")||gn.EndsWith("_Ring")||gn=="ImpactFX"||gn=="DmgNum"||gn.StartsWith("Occluder_")) _toKill.Add(g); }
   foreach(var g in _toKill){ if(g!=null) UnityEngine.Object.DestroyImmediate(g); } }
 // place an actor per token by SLOT (foe -> goblin template / ally -> hero template); cyan party / red foe ring (critic L5).
 var posByName=new System.Collections.Generic.Dictionary<string,Vector3>(); int spawned=0; string celldbg="";
@@ -150,6 +150,46 @@ foreach(var o in toks){ var t=o as System.Collections.Generic.Dictionary<string,
 }
 if(missingActor){ sb.AppendLine("ABORT capture — a required actor prefab was missing (no PNG written)"); return sb.ToString(); }
 sb.AppendLine("LIVE "+CID+": spawned "+spawned+" actors:"+celldbg);
+
+// OCCLUSION (owner: "can they move BEHIND columns / behind items?"). The surface `occluders` field carries the
+// engine-authored OCCLUDER props (footprint cells + height band). Place an INVISIBLE depth-only box at each
+// occluder cell (ColorMask 0 -> writes DEPTH, not color; queue Geometry-1 -> renders BEFORE actors). A 3D actor
+// that stands BEHIND a painted column (greater camera depth) then fails the depth test where they overlap and is
+// correctly HIDDEN by it. The box aligns with the PAINTED column because both derive from the SAME cell + the
+// SAME contract camera (the greybox column was built at cellToWorld(cell)). [] occluders -> today's behavior.
+{ var occRoot = root.ContainsKey("occluders") ? root["occluders"] as System.Collections.Generic.List<object> : null;
+  int occN=0;
+  if(occRoot!=null && occRoot.Count>0){
+    string occSrc =
+      "Shader \"WorldOS/OccluderDepth\" {\n"+
+      "  SubShader {\n"+
+      "    Tags { \"RenderType\"=\"Opaque\" \"Queue\"=\"Geometry-1\" }\n"+
+      "    Pass {\n"+
+      "      ColorMask 0\n      ZWrite On\n"+
+      "      CGPROGRAM\n      #pragma vertex vert\n      #pragma fragment frag\n      #include \"UnityCG.cginc\"\n"+
+      "      float4 vert(float4 v:POSITION):SV_POSITION { return UnityObjectToClipPos(v); }\n"+
+      "      fixed4 frag():SV_Target { return fixed4(0,0,0,0); }\n"+
+      "      ENDCG\n    }\n  }\n}\n";
+    var occShader=UnityEditor.ShaderUtil.CreateShaderAsset(occSrc);
+    var occMat=new Material(occShader);
+    System.Func<string,float> bandH=(b)=> b=="tall"?7.5f : (b=="low"?1.4f : 3.8f);
+    foreach(var oo in occRoot){ var od=oo as System.Collections.Generic.Dictionary<string,object>; if(od==null) continue;
+      string band=od.ContainsKey("band")?od["band"] as string:"mid"; float H=bandH(band);
+      var ocells=od.ContainsKey("cells")?od["cells"] as System.Collections.Generic.List<object>:null; if(ocells==null) continue;
+      foreach(var cc in ocells){ var cell=cc as System.Collections.Generic.List<object>; if(cell==null||cell.Count<2) continue;
+        int ccx=System.Convert.ToInt32(cell[0]); int ccy=System.Convert.ToInt32(cell[1]);
+        var wp=cellToWorld(ccx,ccy);
+        var box=GameObject.CreatePrimitive(PrimitiveType.Cube); box.name="Occluder_"+ccx+"_"+ccy;
+        UnityEngine.Object.DestroyImmediate(box.GetComponent<Collider>());
+        box.transform.position=new Vector3(wp.x, H*0.5f, wp.z);
+        box.transform.localScale=new Vector3(2.0f, H, 2.0f);
+        var br=box.GetComponent<Renderer>(); br.sharedMaterial=occMat; br.shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off; br.receiveShadows=false;
+        occN++;
+      }
+    }
+  }
+  sb.AppendLine("occluders: "+occN+" depth-proxy boxes");
+}
 // latest damage from the battleLog -> floating "-N" + impact burst over the struck token (skip if no recent hit).
 string dmgTarget=""; int dmgN=0; var blog=root.ContainsKey("battleLog")?(root["battleLog"] as System.Collections.Generic.List<object>):null;
 if(blog!=null){ foreach(var e in blog){ string tx=null; var ed=e as System.Collections.Generic.Dictionary<string,object>; if(ed!=null&&ed.ContainsKey("text")) tx=ed["text"] as string; else tx=e as string;
