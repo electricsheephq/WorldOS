@@ -19,6 +19,12 @@
 
 ## Fresh GUI Agent Quick Start
 
+> **Doing anything with the Unity RENDERER (combat frames, plate previews, scene builds)?** Jump to
+> **`## GPU-VM lane` → "★★ DRIVING THE BOX UNITY EDITOR"** FIRST. You drive the box editor via the mcp-for-unity
+> `:8080` bridge — either the `mcp__UnityMCP__*` tools if your session has them, or the self-sufficient box-side
+> `execute_code` client if it doesn't (a spawned subagent/headless session WILL NOT have the tools; do NOT report
+> "Unity unavailable" without trying the box-side path).
+
 Before a main implementation agent spends time on long persona runs, run the hybrid handoff gate on
 the current commit. It catches stale tabs, dead launchers, missing private art, missing actor/actions,
 failed `/move`, no narration, console/network errors, provider trace failures, and evidence gaps.
@@ -381,6 +387,38 @@ SSH key, or the VNC password in this tracked doc (same convention as the Support
    43 tools (manage_camera / manage_scene / execute_code / …). **HIGH-QUALITY captures (agents MUST do this):**
    `manage_camera action=screenshot screenshot_super_size=2` (→ 5120×2880; use 3–4 for the visual-critic) —
    default super_size=1 reads soft. Frames land in `<proj>/Assets/Screenshots/`.
+
+   **★★ DRIVING THE BOX UNITY EDITOR — READ THIS BEFORE ANY UNITY / RENDER WORK (spawned subagents INCLUDED).**
+   Rendering is NOT a session tool call you can assume exists — the box editor is driven through the mcp-for-unity
+   `:8080` bridge, and there are TWO ways in. Use whichever your session has; **never conclude "Unity is
+   down/unavailable" without trying Path B.**
+   - **Path A — your session HAS the Unity MCP tools** (`mcp__UnityMCP__*`: `execute_code`, `execute_menu_item`,
+     `manage_camera`, `manage_scene`, `read_console`, …): use them directly. If they're absent, register once via
+     the tunnel above (`ssh -N -L 8080:127.0.0.1:8080 …` + `claude mcp add --scope user --transport http unity
+     http://127.0.0.1:8080/mcp`).
+   - **Path B — SELF-SUFFICIENT box-side client, when you CANNOT add the MCP** (a spawned subagent, a headless /
+     non-interactive session, or the MCP disconnected mid-run). SSH to the box and speak MCP-over-HTTP to
+     `127.0.0.1:8080/mcp` yourself — a ready client lives on the box at **`/tmp/mcprun.py`** (recreate it from memory
+     `reference_worldos_box_unity_render_pipeline` if `/tmp` was cleared by a reboot). Protocol: POST JSON-RPC with
+     headers `Content-Type: application/json` + `Accept: application/json, text/event-stream`; `initialize` → capture
+     the **`Mcp-Session-Id` RESPONSE header** and send it on every later call → `notifications/initialized` →
+     `tools/call`. Responses are **SSE** — parse the `data:` line as JSON.
+     **Run arbitrary C#:** `tools/call execute_code {"action":"execute","code":"<C#>","safety_checks":false}` —
+     `action` is REQUIRED; `safety_checks:false` allows `WebClient` (the combat-surface GET) + `File.WriteAllBytes`
+     (the capture); the code runs as a roslyn body that may `return` a value. (`execute_code` was NON-obvious and cost
+     a full reconstruction once when a session lost its Unity MCP — that is why this is written down here.)
+   - **Editor preflight (the trap that made a running editor look "down"):** `pgrep -af "Editor/Unity -project"` —
+     do **NOT** `grep -v hub`: the editor path is `/home/unity/Unity/`**`Hub`**`/Editor/6000.5.1f1/Editor/Unity`, so
+     filtering `hub` HIDES the running editor. Exactly ONE editor; kill a stray duplicate by its **specific pid**
+     (`kill -TERM <pid>` as root), never `pkill -9`. Launch only if genuinely none: `sudo -u unity
+     /home/unity/launch_editor.sh` (DISPLAY=:0). Sanity-check the bridge: `curl -s -m5 http://127.0.0.1:8080/health`
+     = 200, and Path B's `tools/list` returns ~42 tools when the editor plugin is connected.
+   - **Render live combat (the proven flow):** write the plate filename → `Assets/painterly/backdrops/_active_combat.txt`
+     (+ `_active_campaign.txt`=cid; `rm _location_plates.json` for single-room) and deploy the plate PNG into
+     `Assets/painterly/backdrops/`; `scp extensions/renderers/unity/scripts/paint_combat_v1.cs` to the box; `execute_code`
+     it (reads the plate + the surface `http://127.0.0.1:8765/combat-surface?campaign=<cid>`, spawns/grounds/lights the
+     actors + occluder depth-boxes, captures → `Captures-Durable/m1_combat_v1.png`); `scp` that back + gate non-black.
+     Full copy-paste recipe: memory `reference_worldos_box_unity_render_pipeline` + skill `gex44-unity-host`.
 
 **Enhancing the MCP's capabilities → our fork + upstream (standing practice).** The Unity MCP
 (`com.coplaydev.unity-mcp`, by Coplay) is our **external-AI → Unity Editor bridge** and the SOLE writer-into-editor
