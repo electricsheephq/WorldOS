@@ -73,7 +73,6 @@ System.Func<string,string,string,int,int,float,Color,string,Vector3> spawn=(fbxP
   // even when grounded (owner-observed). PREFER a clip named 'idle' (fall back to the first real clip); sample at
   // mid-clip for a settled frame. Static meshes (hero.fbx, no clips) are untouched. Grounding re-measures AFTER this.
   if(poseClipPath!=null){ var pas=AssetDatabase.LoadAllAssetsAtPath(poseClipPath); AnimationClip pick=null; foreach(var clipAsset in pas){ var clip=clipAsset as AnimationClip; if(clip==null||clip.name.StartsWith("__")) continue; if(clip.name.ToLower().Contains("idle")){ pick=clip; break; } if(pick==null) pick=clip; } if(pick!=null){ pick.SampleAnimation(go, 0f); sb.AppendLine(nm+" posed by "+pick.name+"@f0"); } }
-  go.transform.rotation=Quaternion.Euler(-90f, cam.transform.eulerAngles.y+180f, 0f);
   var rends=go.GetComponentsInChildren<Renderer>(); foreach(var r in rends){ r.enabled=true; r.shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.On; r.receiveShadows=true; }
   // Grounding uses TRUE posed geometry. SkinnedMeshRenderer.bounds is a conservative/inflated culling AABB whose
   // min.y sits BELOW the real feet -> grounding to min.y=0 leaves the actor FLOATING (owner-observed "goblin walking
@@ -81,6 +80,13 @@ System.Func<string,string,string,int,int,float,Color,string,Vector3> spawn=(fbxP
   // for an exact world min.y/center. Plain MeshRenderer.bounds are already accurate, so pass those through.
   System.Func<Renderer,Bounds> worldBounds=(r)=>{ var smr=r as SkinnedMeshRenderer; if(smr==null) return r.bounds; var bk=new Mesh(); smr.BakeMesh(bk); var vs=bk.vertices; if(vs.Length==0){ UnityEngine.Object.DestroyImmediate(bk); return r.bounds; } var m=smr.transform.localToWorldMatrix; var wb=new Bounds(m.MultiplyPoint3x4(vs[0]),Vector3.zero); for(int i=1;i<vs.Length;i++) wb.Encapsulate(m.MultiplyPoint3x4(vs[i])); UnityEngine.Object.DestroyImmediate(bk); return wb; };
   System.Func<Bounds> measure=()=>{ Bounds b=new Bounds(go.transform.position,Vector3.zero); bool a=false; foreach(var r in rends){ var rb=worldBounds(r); if(!a){b=rb;a=true;} else b.Encapsulate(rb);} return b; };
+  // Stand-up orientation per asset: the NEW Meshy --moveset cast FBXs (under Assets/cast/) are already Y-up; the OLD
+  // template FBXs (hero/goblin) are Z-up and need the -90 tip about X (applying -90 to a Y-up model tips it onto its
+  // back; applying 0 to a Z-up model leaves it lying down). Keyed on the path convention — DETERMINISTIC. (A bounds
+  // heuristic mis-fires: a T-pose's armspan exceeds height, and an imported FBX can carry a baked prefab rotation so
+  // "native" bounds aren't reliable — both observed here.) Then yaw to face the camera.
+  float xrot = fbxPath.Contains("/cast/") ? 0f : -90f;
+  go.transform.rotation=Quaternion.Euler(xrot, cam.transform.eulerAngles.y+180f, 0f);
   Bounds bb=measure(); float curH=bb.size.y>0.001f?bb.size.y:1f; float s=height/curH; go.transform.localScale=go.transform.localScale*s;
   // ground + CENTER on the cell: snap feet to Y=0 AND align bounds-center X/Z to the cell (fixes the critic's
   // "actor decoupled from its ring" — meshes whose geometry is offset from their transform origin drifted off-ring).
@@ -141,11 +147,10 @@ foreach(var o in toks){ var t=o as System.Collections.Generic.Dictionary<string,
   string kind=foe?"monster":"character";
   var aref=resolveAsset(slugify(nm),kind); string fbx=aref[0]; string alb=aref[1];
   float h=foe?4.2f:5.0f; Color ring=foe?new Color(1f,0.13f,0.10f,1f):new Color(0.4f,0.95f,1f,1f);
-  // poseClip: pass the fbx to auto-pose to a NEUTRAL IDLE (spawn prefers an 'idle' clip). Left null for the current
-  // Meshy placeholder cast whose idle/bind clips are non-neutral (crouch/lean) + inflate the height-normalized scale;
-  // the bind pose is the most PROPORTIONATE placeholder here. A properly-rigged demo-cast actor (owner-greenlit) with
-  // a clean idle should pass its fbx/clip so this poses it standing. (Grounding via BakeMesh is correct either way.)
-  var pos=spawn(fbx,alb,null,cx,cy,h,ring,"Actor_"+tid);
+  // poseClip = the fbx itself -> spawn samples a NEUTRAL IDLE (prefers an 'idle' clip). The new Meshy --moveset cast
+  // FBXs have clean standing idles (verified: fighter). Assets with no clips (static hero.fbx) are untouched; the
+  // orientation auto-detect above handles Z-up vs Y-up so a sampled idle stands correctly either way.
+  var pos=spawn(fbx,alb,fbx,cx,cy,h,ring,"Actor_"+tid);
   if(nm!=null) posByName[nm]=pos; spawned++; celldbg+=" "+nm+"("+team+")@"+cx+","+cy;
 }
 if(missingActor){ sb.AppendLine("ABORT capture — a required actor prefab was missing (no PNG written)"); return sb.ToString(); }
