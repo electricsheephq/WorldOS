@@ -13365,8 +13365,11 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
                 "character_ids": [getattr(ch, "id", None) for ch in orphaned],
                 "detail": (
                     f"Defeated monster(s) {names} still carry unawarded XP — progression silently "
-                    "lost. end_combat (it auto-awards defeated foes' XP) or award_xp(character_id, "
-                    "amount, reason) for each party member so the kill actually counts."
+                    "lost. Resolve it through the engine path that CONSUMES the foes' xp_value: "
+                    "end_combat auto-awards defeated foes' XP and zeroes their ledger (idempotent). "
+                    "Do NOT hand-compensate with a bare award_xp — that grants character XP without "
+                    "consuming xp_value, so this cue re-fires and invites duplicate awards; award_xp "
+                    "is for STORY/milestone progress only."
                 ),
             })
 
