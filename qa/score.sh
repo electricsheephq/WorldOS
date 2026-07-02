@@ -136,10 +136,22 @@ while [ "$attempt" -lt 3 ]; do
   # runner's auth block uses; measured to produce valid scorecards). The token is passed
   # via the child env only — never printed, never written. A caller-provided
   # CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_API_KEY still wins (first clause).
+  # Linux fallback (VM sweep hosts, #1264/#1266 follow-up): there is no Keychain on Linux —
+  # login state instead lives in a plain ~/.claude/.credentials.json (the CLI writes it there
+  # after `claude login`/token refresh). Same shape as the Keychain blob
+  # ({"claudeAiOauth":{"accessToken":...}}), so reuse the identical jq/python extraction.
+  # Respects CLAUDE_CONFIG_DIR if the caller already points it somewhere non-default. This
+  # branch never fires on Darwin (Keychain branch above wins there) and is a no-op if the
+  # file is absent — falls through to the existing "Not logged in" retry/failure path.
   _scorer_tok="${CLAUDE_CODE_OAUTH_TOKEN:-}"
   if [ -z "$_scorer_tok" ] && [ -z "${ANTHROPIC_API_KEY:-}" ] && [ "$(uname)" = "Darwin" ]; then
     _scorer_tok="$(security find-generic-password -s 'Claude Code-credentials' -a "$USER" -w 2>/dev/null \
       | python3 -c 'import json,sys;print(json.load(sys.stdin).get("claudeAiOauth",{}).get("accessToken",""))' 2>/dev/null || true)"
+  elif [ -z "$_scorer_tok" ] && [ -z "${ANTHROPIC_API_KEY:-}" ] && [ "$(uname)" != "Darwin" ]; then
+    _scorer_creds_file="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.credentials.json"
+    if [ -s "$_scorer_creds_file" ]; then
+      _scorer_tok="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("claudeAiOauth",{}).get("accessToken",""))' "$_scorer_creds_file" 2>/dev/null || true)"
+    fi
   fi
   printf '%s' "$INPUT" | env -u ANTHROPIC_BASE_URL -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN \
     -u API_TIMEOUT_MS \
