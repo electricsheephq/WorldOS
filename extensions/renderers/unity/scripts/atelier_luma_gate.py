@@ -1,20 +1,16 @@
 #!/usr/bin/env python3
 # Staging-law luma gate on the beauty pass. Gate: 60-85% of pixels L<26, 2-5% L>60 (Rec.709 luma).
 import sys
+import numpy as np
 from PIL import Image
 p = sys.argv[1] if len(sys.argv) > 1 else "atelier_beauty.png"
 im = Image.open(p).convert("RGB")
-px = im.getdata()
-n = len(px)
-dark = lit = 0
-tot = 0
-for r, g, b in px:
-    L = 0.2126 * r + 0.7152 * g + 0.0722 * b
-    tot += L
-    if L < 26:
-        dark += 1
-    if L > 60:
-        lit += 1
+arr = np.asarray(im, dtype=np.float64)
+n = arr.shape[0] * arr.shape[1]
+L = 0.2126 * arr[:, :, 0] + 0.7152 * arr[:, :, 1] + 0.0722 * arr[:, :, 2]
+dark = int(np.count_nonzero(L < 26))
+lit = int(np.count_nonzero(L > 60))
+tot = float(L.sum())
 pd = 100.0 * dark / n
 pl = 100.0 * lit / n
 mean = tot / n

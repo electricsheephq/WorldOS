@@ -42,7 +42,6 @@ def main():
     Image.fromarray(lin_to_srgb(out).astype(np.uint8)).save(out_p)
     # value-structure stats of the result (the staging-law gate)
     L = np.asarray(Image.fromarray(lin_to_srgb(out).astype(np.uint8)).convert('L'), dtype=np.float64)
-    n = L.size
     print(f"recomposite -> {out_p}  {size[0]}x{size[1]}")
     print(f"stats: near-black(L<26)={np.mean(L<26)*100:.0f}%  lit(L>60)={np.mean(L>60)*100:.1f}%  "
           f"high(L>120)={np.mean(L>120)*100:.1f}%  median={np.median(L):.0f}  [PoE: 66-80% / 2-4% / ~0-0.5% / 0-15]")

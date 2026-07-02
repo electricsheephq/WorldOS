@@ -20,8 +20,9 @@ string GEO="/home/unity/worldos-unity/room_geometry.json";
 if(!System.IO.File.Exists(GEO)) return "no geometry json: "+GEO;
 var geo=MiniJson.Parse(System.IO.File.ReadAllText(GEO)) as System.Collections.Generic.Dictionary<string,object>;
 if(geo==null) return "geometry parse failed";
-int cols=geo.ContainsKey("cols")?System.Convert.ToInt32(geo["cols"]):14;
-int rows=geo.ContainsKey("rows")?System.Convert.ToInt32(geo["rows"]):11;
+object colsObj, rowsObj;
+int cols=geo.TryGetValue("cols", out colsObj)?System.Convert.ToInt32(colsObj):14;
+int rows=geo.TryGetValue("rows", out rowsObj)?System.Convert.ToInt32(rowsObj):11;
 float cx0=(cols-1)/2.0f, cy0=(rows-1)/2.0f, CELL=2.0f;
 System.Func<int,int,Vector3> cellToWorld=(c,r)=> new Vector3((c-cx0)*CELL, 0f, (cy0-r)*CELL);
 
@@ -116,7 +117,8 @@ for(int r=0;r<rows;r++) for(int c=0;c<cols;c++){ var w=cellToWorld(c,r); if(plac
 // Read the grid's perimeter walls and keep ONLY the far ones so the camera sees the interior.
 // A wall piece spans one 2.0 cell edge; face inward. Wall_01's face lies in a plane — we scale its
 // footprint span to 2.0 along the edge axis and yaw it so its outward normal points AWAY from the room.
-var wallCells=geo.ContainsKey("walls")?geo["walls"] as System.Collections.Generic.List<object>:null;
+object wallsObj;
+var wallCells=geo.TryGetValue("walls", out wallsObj)?wallsObj as System.Collections.Generic.List<object>:null;
 int nWall=0;
 // Wall placer: scale the wall's LOCAL long axis (x, pre-yaw) so its footprint spans one 2.0 cell edge,
 // keep thickness+height native, THEN yaw so the face points inward, then seat base on floor (y=0) at edgePos.
@@ -261,7 +263,7 @@ System.Func<Color,float,Material> stoneMat=(col,gloss)=>{ var m=new Material(Sha
 // albedo there floods the LIT budget. Floor kept low for the same reason.
 Color colFloor=new Color(0.30f,0.29f,0.28f), colWall=new Color(0.28f,0.275f,0.265f), colPillar=new Color(0.42f,0.41f,0.39f), colTomb=new Color(0.52f,0.50f,0.47f), colProp=new Color(0.34f,0.32f,0.30f);
 { int nm2=0;
-  foreach(var r in root.GetComponentsInChildren<Renderer>(true)){ if(r==null) continue; string tn=r.transform.root==null?r.name:"";
+  foreach(var r in root.GetComponentsInChildren<Renderer>(true)){ if(r==null) continue;
     // classify by the top-of-root instance name (walk up to the AtelierCrypt direct child)
     var t=r.transform; while(t.parent!=null && t.parent!=root.transform) t=t.parent; string nm3=t.name;
     Color c=colProp; float g=0.05f;
