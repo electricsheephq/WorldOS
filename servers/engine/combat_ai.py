@@ -418,20 +418,53 @@ def _nearest_foe(view: CombatView) -> Optional[CombatantView]:
 def _step_toward(view: CombatView, target: CombatantView, reach_ft: int) -> Optional[tuple[int, int]]:
     """Pick the reachable cell (within this turn's movement budget) that gets the actor as
     close as possible to `target` — ideally into reach. Returns a cell or None (can't improve
-    / off-grid). Pure: combat_grid.reachable + Chebyshev distance, no state."""
+    / off-grid). Pure: combat_grid.reachable + Chebyshev distance, no state.
+
+    Terrain-aware (#1269): the fight's `blocking` (walls/props) and `difficult` cells are threaded
+    into the SAME terrain-aware Dijkstra the engine uses, so a greedy-v1 monster ROUTES AROUND walls
+    (impassable cells are never reachable) and, among equally-close cells, prefers a CHEAP clear route
+    over one through difficult ground (the routed-cost tie-break). On OPEN FLOOR (no walls / no
+    difficult — both sets empty) `reachable` degenerates to the flat-cost Dijkstra and the tie-break
+    stays `(distance, cell)` exactly as before — byte-identical to the pre-#1269 behaviour."""
     if not view.grid_enabled or view.actor_cell is None or target.cell is None:
         return None
     budget = combat_grid.movement_budget_cells(view.speed, view.cell_size, view.dashed)
     if budget <= 0:
         return None
     occupied = _occupied_cells(view) - {view.actor_cell}
-    reach = combat_grid.reachable(view.actor_cell, budget, occupied, view.grid_width, view.grid_height)
+    blocking = _blocking_set(view)
+    difficult = _difficult_set(view)
+    reach = combat_grid.reachable(
+        view.actor_cell, budget, occupied, view.grid_width, view.grid_height,
+        impassable=blocking, difficult=difficult,
+    )
     if not reach:
         return None
-    best = min(
-        reach,
-        key=lambda cell: (combat_grid.distance_ft(cell, target.cell, view.cell_size), cell),
-    )
+    if not blocking and not difficult:
+        # Open floor: the flat-cost path — key stays (distance, cell), byte-identical to pre-#1269.
+        best = min(
+            reach,
+            key=lambda cell: (combat_grid.distance_ft(cell, target.cell, view.cell_size), cell),
+        )
+    else:
+        # Walls/difficult terrain present: break distance ties by the terrain-aware ROUTED move cost
+        # (a same-distance CLEAR route beats one through difficult ground) — the same tie-break the
+        # tactical-v2 _terrain_step_toward uses, so v1-fallback routing matches the engine's picture.
+        def _routed_cost(cell: tuple[int, int]) -> int:
+            route = combat_grid.shortest_path(
+                view.actor_cell, cell, occupied, view.grid_width, view.grid_height,
+                impassable=blocking, difficult=difficult,
+            )
+            return combat_grid.path_cost_cells(view.actor_cell, cell, route, difficult=difficult)
+
+        best = min(
+            reach,
+            key=lambda cell: (
+                combat_grid.distance_ft(cell, target.cell, view.cell_size),
+                _routed_cost(cell),
+                cell,
+            ),
+        )
     cur = combat_grid.distance_ft(view.actor_cell, target.cell, view.cell_size)
     new = combat_grid.distance_ft(best, target.cell, view.cell_size)
     return best if new < cur else None
@@ -1155,8 +1188,12 @@ def pick_action(
             if threat is not None and view.grid_enabled and view.actor_cell is not None:
                 budget = combat_grid.movement_budget_cells(view.speed, view.cell_size, view.dashed)
                 occupied = _occupied_cells(view) - {view.actor_cell}
+                # Terrain-aware retreat (#1269): route the flee AROUND walls + difficult terrain via the
+                # SAME Dijkstra — a fleeing monster can't disengage THROUGH a wall. Empty sets (open floor)
+                # degenerate to the flat-cost reachable + the (distance, cell) flee key == byte-identical.
                 reach = combat_grid.reachable(
-                    view.actor_cell, budget, occupied, view.grid_width, view.grid_height
+                    view.actor_cell, budget, occupied, view.grid_width, view.grid_height,
+                    impassable=_blocking_set(view), difficult=_difficult_set(view),
                 )
                 if reach and threat.cell is not None:
                     flee_cell = max(
