@@ -7560,12 +7560,12 @@ def cast_spell(
             cells = _aoe_template_cells(c, ch, srd, aim)
             if cells is not None:
                 affected_tile_coords = sorted([cx, cy] for (cx, cy) in cells)
-                # Occupants standing in the template (excluding the caster's own cell — a
-                # burst can catch the caster, but self-targeting is the DM's call; keep it
-                # simple and hit everyone else on a covered cell). Order-stable by initiative.
+                # Every combatant standing in the template is caught — SRD 5.2: a creature in
+                # the area is affected, and the CASTER is not exempt (a Fireball centred on
+                # yourself catches you). The caster rides the same save-for-half loop as anyone
+                # else; the DM narrates. Cone/line geometry already excludes the emitter cell,
+                # so a cone/line never catches its own caster. Order-stable by initiative.
                 for cb in c.combat.order:
-                    if cb.character_id == character_id:
-                        continue
                     if cb.x is None or cb.y is None:
                         continue
                     if (cb.x, cb.y) in cells:

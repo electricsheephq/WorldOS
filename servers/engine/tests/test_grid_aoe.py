@@ -186,6 +186,31 @@ def test_cone_cast_uses_target_as_aim_point(gridfight):
     assert (2, 2) not in tiles  # caster's own cell excluded (it's the cone point)
 
 
+def test_sphere_centered_on_caster_catches_the_caster(gridfight):
+    # SRD 5.2: a creature in a spell's area is affected — the CASTER is not exempt (the
+    # classic fireball-centered-on-yourself). Burst the sphere on the caster's own cell.
+    cid, wiz, g1, g2, g3 = gridfight
+    server.place_combatant_at_coords(cid, g1, 3, 3)  # also inside the burst
+    res = server.cast_spell(cid, wiz, "Fireball", slot_level=3, origin=[2, 2])
+    tiles = {tuple(t) for t in res["affected_tile_coords"]}
+    assert (2, 2) in tiles  # the caster's cell is covered
+    hit_ids = {row["character_id"] for row in res["aoe"]["targets"]}
+    assert wiz in hit_ids  # the caster rides the same save-for-half loop
+    assert g1 in hit_ids
+    # And the caster took a save row like anyone else (full or halved, both honest).
+    caster_row = next(r for r in res["aoe"]["targets"] if r["character_id"] == wiz)
+    assert "save_roll" in caster_row and "damage_taken" in caster_row
+
+
+def test_cone_line_never_include_the_caster(gridfight):
+    # A cone/line is emitted FROM the caster's cell — the geometry excludes that cell, so
+    # the caster is never caught by their own cone/line even after the carve-out removal.
+    cid, wiz, g1, g2, g3 = gridfight
+    cone = server.cast_spell(cid, wiz, "Burning Hands", slot_level=1, origin=[3, 3])
+    assert [2, 2] not in cone["affected_tile_coords"]
+    assert wiz not in {r["character_id"] for r in cone.get("aoe", {}).get("targets", [])}
+
+
 # ── (5) BYTE-IDENTICAL regression: a cast WITHOUT origin is unchanged ─────────
 
 
