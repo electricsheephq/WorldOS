@@ -29,6 +29,9 @@ def load_lin(path, size=None):
     return srgb_to_lin(np.asarray(im, dtype=np.float64)), im.size
 
 def main():
+    if len(sys.argv) < 5:
+        print(__doc__)
+        sys.exit(1)
     beauty_p, albedo_p, painted_p, out_p = sys.argv[1:5]
     gain = float(sys.argv[5]) if len(sys.argv) > 5 else 1.0
     beauty, size = load_lin(beauty_p)
@@ -39,9 +42,10 @@ def main():
     # clamp transport to sane range (specular/emissive can exceed 1; runaway where albedo~0)
     transport = np.clip(transport, 0.0, 6.0)
     out = np.clip(painted * transport * gain, 0.0, 1.0)
-    Image.fromarray(lin_to_srgb(out).astype(np.uint8)).save(out_p)
+    out_img = Image.fromarray(lin_to_srgb(out).astype(np.uint8))
+    out_img.save(out_p)
     # value-structure stats of the result (the staging-law gate)
-    L = np.asarray(Image.fromarray(lin_to_srgb(out).astype(np.uint8)).convert('L'), dtype=np.float64)
+    L = np.asarray(out_img.convert('L'), dtype=np.float64)
     print(f"recomposite -> {out_p}  {size[0]}x{size[1]}")
     print(f"stats: near-black(L<26)={np.mean(L<26)*100:.0f}%  lit(L>60)={np.mean(L>60)*100:.1f}%  "
           f"high(L>120)={np.mean(L>120)*100:.1f}%  median={np.median(L):.0f}  [PoE: 66-80% / 2-4% / ~0-0.5% / 0-15]")

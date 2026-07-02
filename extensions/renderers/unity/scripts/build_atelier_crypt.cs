@@ -97,6 +97,17 @@ if(pTomb==null) pTomb=loadPrefab("SM_Prop_Tomb_01");
 var pLid   = loadPrefab("SM_Prop_Tomb_Royal_Lid_01");       // v2 fix 5: lid so the tomb reads CLOSED/solid
 if(pLid==null) pLid=loadPrefab("SM_Prop_Tomb_Lid_01");
 LOG("prefabs: Wall="+(pWall!=null)+" Floor="+(pFloor!=null)+" Pillar01="+(pPil1!=null)+" Pillar02="+(pPil2!=null)+" Tomb="+(pTomb!=null)+" Lid="+(pLid!=null));
+var missingRequired=new System.Collections.Generic.List<string>();
+if(pWall==null) missingRequired.Add("SM_Bld_Base_Wall_01");
+if(pFloor==null) missingRequired.Add("SM_Bld_Base_Floor_01");
+if(pPil1==null) missingRequired.Add("SM_Bld_Base_Pillar_01");
+if(pPil2==null) missingRequired.Add("SM_Bld_Base_Pillar_02");
+if(pTomb==null) missingRequired.Add("SM_Prop_Tomb_Royal_01/SM_Prop_Tomb_01");
+if(missingRequired.Count>0){
+  LOG("FAIL missing required prefabs: "+string.Join(", ", missingRequired));
+  System.IO.File.WriteAllText("/home/unity/worldos-unity/atelier_report.txt", sb.ToString());
+  return "FAIL atelier: missing required prefabs: "+string.Join(", ", missingRequired);
+}
 
 // --- MEASURE native bounds of each modular piece (report the Synty pivot/size gotchas) ---
 System.Func<GameObject,string,string> measure=(pf,label)=>{
@@ -149,6 +160,11 @@ if(wallCells!=null) foreach(var wo in wallCells){ var wc=wo as System.Collection
   // dedupe the shared far corner (cols-1,0): count it once as back.
   if(isBack){ placeWall("WallBack_"+c, new Vector3(w.x, 0, w.z+CELL*0.5f), 0f); }   // yaw 0: face -z inward
   else if(isRight){ placeWall("WallRight_"+r, new Vector3(w.x+CELL*0.5f, 0, w.z), 90f); } // yaw 90: face -x inward
+}
+if(wallCells==null || nWall==0){
+  LOG("FAIL missing/empty wall geometry (geo[\"walls\"] absent or produced 0 placed walls)");
+  System.IO.File.WriteAllText("/home/unity/worldos-unity/atelier_report.txt", sb.ToString());
+  return "FAIL atelier: missing/empty wall geometry";
 }
 
 // --- PILLARS (v3 fix 1): HEROIC load-bearing columns, two DIFFERENT variants (anti-clone).
@@ -322,15 +338,27 @@ cam.clearFlags=CameraClearFlags.SolidColor; cam.backgroundColor=new Color(0f,0f,
 int W=1344,Hh=768;
 
 // capture helper: render current cam to a PNG (respects lit scene or a replacement shader).
+// Render/readback state (targetTexture/aspect/RenderTexture.active) is restored via try/finally so a
+// throw mid-capture (render, readback, encode, or file write) never leaves the camera/RT state dangling.
 System.Action<string,Shader> capture=(fname,replShader)=>{
   var rt=new RenderTexture(W,Hh,24,RenderTextureFormat.ARGB32); rt.Create();
-  float pa=cam.aspect; var pt2=cam.targetTexture; cam.targetTexture=rt; cam.aspect=(float)W/Hh;
-  if(replShader!=null) cam.RenderWithShader(replShader,""); else cam.Render();
-  var pAct=RenderTexture.active; RenderTexture.active=rt; var t2=new Texture2D(W,Hh,TextureFormat.RGB24,false);
-  t2.ReadPixels(new Rect(0,0,W,Hh),0,0); t2.Apply(); RenderTexture.active=pAct; cam.targetTexture=pt2; cam.aspect=pa;
-  System.IO.Directory.CreateDirectory("/home/unity/worldos-unity/Captures-Durable");
-  System.IO.File.WriteAllBytes("/home/unity/worldos-unity/Captures-Durable/"+fname, t2.EncodeToPNG());
-  UnityEngine.Object.DestroyImmediate(t2); rt.Release(); UnityEngine.Object.DestroyImmediate(rt);
+  float pa=cam.aspect; var pt2=cam.targetTexture;
+  Texture2D t2=null;
+  try{
+    cam.targetTexture=rt; cam.aspect=(float)W/Hh;
+    if(replShader!=null) cam.RenderWithShader(replShader,""); else cam.Render();
+    var pAct=RenderTexture.active;
+    try{
+      RenderTexture.active=rt; t2=new Texture2D(W,Hh,TextureFormat.RGB24,false);
+      t2.ReadPixels(new Rect(0,0,W,Hh),0,0); t2.Apply();
+    } finally { RenderTexture.active=pAct; }
+    System.IO.Directory.CreateDirectory("/home/unity/worldos-unity/Captures-Durable");
+    System.IO.File.WriteAllBytes("/home/unity/worldos-unity/Captures-Durable/"+fname, t2.EncodeToPNG());
+  } finally {
+    cam.targetTexture=pt2; cam.aspect=pa;
+    if(t2!=null) UnityEngine.Object.DestroyImmediate(t2);
+    rt.Release(); UnityEngine.Object.DestroyImmediate(rt);
+  }
 };
 
 // (a) BEAUTY — normal lit render
@@ -357,10 +385,14 @@ RenderSettings.ambientMode=savedAmbMode; RenderSettings.ambientLight=savedAmb;
   Shader.SetGlobalFloat("_WOSDepthNear", mn); Shader.SetGlobalFloat("_WOSDepthFar", mx);
   var shRemap=Shader.Find("WOS/LinDepthRemap"); var shDepth=Shader.Find("WOS/LinDepth"); var shNorm=Shader.Find("WOS/ViewNormal");
   LOG("depth remap near="+mn.ToString("F2")+" far="+mx.ToString("F2")+" (Remap="+(shRemap!=null)+" LinDepth="+(shDepth!=null)+" ViewNormal="+(shNorm!=null)+")");
+  if((shRemap==null && shDepth==null) || shNorm==null){
+    LOG("FAIL missing required buffer shaders: Depth(Remap|LinDepth)="+(shRemap!=null||shDepth!=null)+" ViewNormal="+(shNorm!=null));
+    System.IO.File.WriteAllText("/home/unity/worldos-unity/atelier_report.txt", sb.ToString());
+    return "FAIL atelier: missing required buffer shaders";
+  }
   if(shRemap!=null) capture("atelier_depth_v4.png", shRemap);
-  else if(shDepth!=null){ capture("atelier_depth_v4.png", shDepth); LOG("  WARN: remap shader missing -> used hardcoded /80 WOS/LinDepth"); }
-  else LOG("  MISSING both depth shaders");
-  if(shNorm!=null) capture("atelier_normal_v4.png", shNorm); else LOG("  MISSING WOS/ViewNormal");
+  else { capture("atelier_depth_v4.png", shDepth); LOG("  WARN: remap shader missing -> used hardcoded /80 WOS/LinDepth"); }
+  capture("atelier_normal_v4.png", shNorm);
 }
 
 LOG("BUILT floor="+nFloor+" walls="+nWall+" pillars="+nPil+" sarc="+nSarc+" props="+nProp+" plinth/steps="+nPlinth);

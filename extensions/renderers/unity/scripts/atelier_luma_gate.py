@@ -3,10 +3,13 @@
 import sys
 import numpy as np
 from PIL import Image
-p = sys.argv[1] if len(sys.argv) > 1 else "atelier_beauty.png"
+p = sys.argv[1] if len(sys.argv) > 1 else "atelier_beauty_v4.png"
 im = Image.open(p).convert("RGB")
 arr = np.asarray(im, dtype=np.float64)
 n = arr.shape[0] * arr.shape[1]
+if n == 0:
+    print(f"{p}: empty image, cannot compute luma gate")
+    sys.exit(1)
 L = 0.2126 * arr[:, :, 0] + 0.7152 * arr[:, :, 1] + 0.0722 * arr[:, :, 2]
 dark = int(np.count_nonzero(L < 26))
 lit = int(np.count_nonzero(L > 60))
