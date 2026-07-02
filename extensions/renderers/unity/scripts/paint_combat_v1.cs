@@ -30,6 +30,28 @@ string PLATE_PATH="Assets/painterly/backdrops/"+PLATE;
 // camera-pin aspect. Force NPOT=None so the plate keeps native dims (idempotent — only reimports if needed).
 { var _ti=AssetImporter.GetAtPath(PLATE_PATH) as TextureImporter; if(_ti!=null && _ti.npotScale!=TextureImporterNPOTScale.None){ _ti.npotScale=TextureImporterNPOTScale.None; _ti.maxTextureSize=2048; _ti.SaveAndReimport(); } }
 var sb=new System.Text.StringBuilder();
+// #1280 actor-integration levers (FELT gap: contact shadows weak, actors don't take scene light, stiff poses).
+// ALL params are ADDITIVE and DEFAULT to today's exact render: an absent/partial _actor_integration.json leaves
+// every value at the byte-identical baseline below, so the default frame is unchanged. Config file (optional):
+//   /home/unity/worldos-unity/Assets/painterly/backdrops/_actor_integration.json
+//   { "shadow_scale":2.0, "shadow_intensity":1.0, "shadow_softness":0.9,   // grounding contact shadow
+//     "core_shadow":0.0, "core_scale":0.55,                                // 2nd tighter core shadow (0=off)
+//     "light_tint":0.0, "warmth":1.0,                                      // scene-light take on actor mats (0=off)
+//     "pose_yaw":0.0, "pose_time":0.0 }                                    // per-capture pose variety (0=today)
+float aiShadowScale=2.0f, aiShadowIntensity=1.0f, aiShadowSoftness=0.9f, aiCoreShadow=0.0f, aiCoreScale=0.55f;
+float aiLightTint=0.0f, aiWarmth=1.0f, aiPoseYaw=0.0f, aiPoseTime=0.0f;
+try {
+  var _aip="/home/unity/worldos-unity/Assets/painterly/backdrops/_actor_integration.json";
+  if(System.IO.File.Exists(_aip)){ var _a=MiniJson.Parse(System.IO.File.ReadAllText(_aip)) as System.Collections.Generic.Dictionary<string,object>;
+    if(_a!=null){ System.Func<string,float,float> gf=(k,d)=>{ if(_a.ContainsKey(k)&&_a[k]!=null){ try{ return (float)System.Convert.ToDouble(_a[k]); }catch{} } return d; };
+      aiShadowScale=gf("shadow_scale",aiShadowScale); aiShadowIntensity=gf("shadow_intensity",aiShadowIntensity); aiShadowSoftness=gf("shadow_softness",aiShadowSoftness);
+      aiCoreShadow=gf("core_shadow",aiCoreShadow); aiCoreScale=gf("core_scale",aiCoreScale);
+      aiLightTint=gf("light_tint",aiLightTint); aiWarmth=gf("warmth",aiWarmth);
+      aiPoseYaw=gf("pose_yaw",aiPoseYaw); aiPoseTime=gf("pose_time",aiPoseTime);
+      sb.AppendLine("actor-integration cfg: shadow(s="+aiShadowScale.ToString("F2")+",i="+aiShadowIntensity.ToString("F2")+",soft="+aiShadowSoftness.ToString("F2")+",core="+aiCoreShadow.ToString("F2")+") tint(t="+aiLightTint.ToString("F2")+",w="+aiWarmth.ToString("F2")+") pose(yaw="+aiPoseYaw.ToString("F1")+",t="+aiPoseTime.ToString("F2")+")");
+    }
+  }
+} catch {}
 Camera cam=Camera.main; if(cam==null && Camera.allCameras.Length>0) cam=Camera.allCameras[0]; if(cam==null) return "no cam";
 // validate the plate BEFORE mutating camera/renderers — a missing plate must not leave the editor scene corrupted.
 var bdTex=AssetDatabase.LoadAssetAtPath<Texture2D>(PLATE_PATH); if(bdTex==null) return "no plate: "+PLATE_PATH;
@@ -59,7 +81,13 @@ brazier("BrazierL",4,1,true); brazier("BrazierR",9,1,false);
 { var ck=new GameObject("CombatKey"); var CK=ck.AddComponent<Light>(); CK.type=LightType.Point; CK.color=new Color(1f,0.6f,0.32f); CK.range=26f; CK.intensity=2.2f; CK.shadows=LightShadows.None; ck.transform.position=new Vector3(0f,8f,3f); }
 
 // shared AO blob + ring textures
-var blobT=new Texture2D(256,256,TextureFormat.RGBA32,false); blobT.wrapMode=TextureWrapMode.Clamp; { var px=new Color[256*256]; float c=127.5f; for(int y=0;y<256;y++)for(int x=0;x<256;x++){ float d=Mathf.Clamp01(Mathf.Sqrt((x-c)*(x-c)+(y-c)*(y-c))/c); px[y*256+x]=new Color(0.02f,0.02f,0.03f,Mathf.Pow(1f-d,0.9f)); } blobT.SetPixels(px); blobT.Apply(); }
+// #1280 contact shadow: the alpha falloff exponent is aiShadowSoftness (higher = softer/tighter core, lower = wider
+// dark spread) and peak alpha scales by aiShadowIntensity; defaults (0.9, 1.0) reproduce the prior blobT byte-for-byte.
+var blobT=new Texture2D(256,256,TextureFormat.RGBA32,false); blobT.wrapMode=TextureWrapMode.Clamp; { var px=new Color[256*256]; float c=127.5f; for(int y=0;y<256;y++)for(int x=0;x<256;x++){ float d=Mathf.Clamp01(Mathf.Sqrt((x-c)*(x-c)+(y-c)*(y-c))/c); px[y*256+x]=new Color(0.02f,0.02f,0.03f,Mathf.Clamp01(Mathf.Pow(1f-d,aiShadowSoftness)*aiShadowIntensity)); } blobT.SetPixels(px); blobT.Apply(); }
+// #1280 optional tighter CORE shadow: a small, denser near-black ellipse under the feet that makes the actor read as
+// SITTING on the floor (the wide soft blob alone reads floaty at frame scale — the FELT panel's "weak contact shadow").
+// Built ONLY when aiCoreShadow>0 (default 0 = not created, no change to the baseline frame).
+Texture2D coreT=null; if(aiCoreShadow>0f){ coreT=new Texture2D(128,128,TextureFormat.RGBA32,false); coreT.wrapMode=TextureWrapMode.Clamp; var px=new Color[128*128]; float c=63.5f; for(int y=0;y<128;y++)for(int x=0;x<128;x++){ float d=Mathf.Clamp01(Mathf.Sqrt((x-c)*(x-c)+(y-c)*(y-c))/c); px[y*128+x]=new Color(0.01f,0.01f,0.015f,Mathf.Clamp01(Mathf.Pow(1f-d,1.6f)*aiCoreShadow)); } coreT.SetPixels(px); coreT.Apply(); }
 var ringT=new Texture2D(256,256,TextureFormat.RGBA32,false); ringT.wrapMode=TextureWrapMode.Clamp; { var px=new Color[256*256]; float c=127.5f; for(int y=0;y<256;y++)for(int x=0;x<256;x++){ float d=Mathf.Sqrt((x-c)*(x-c)+(y-c)*(y-c))/c; float a=(d>0.78f&&d<0.93f)?1f:0f; px[y*256+x]=new Color(1f,1f,1f,a); } ringT.SetPixels(px); ringT.Apply(); }
 
 // actor spawner (generalizes the spike's hero block): load fbx, stand up, scale to height, place at cell, foot-snap, albedo, AO, ring.
@@ -72,8 +100,13 @@ System.Func<string,string,string,int,int,float,Color,string,Vector3> spawn=(fbxP
   // bind pose, which for gen'd meshes (Meshy goblin) is often a dynamic action pose -> reads as "unstable/floating"
   // even when grounded (owner-observed). PREFER a clip named 'idle' (fall back to the first real clip); sample at
   // mid-clip for a settled frame. Static meshes (hero.fbx, no clips) are untouched. Grounding re-measures AFTER this.
-  if(poseClipPath!=null){ var pas=AssetDatabase.LoadAllAssetsAtPath(poseClipPath); AnimationClip pick=null; foreach(var clipAsset in pas){ var clip=clipAsset as AnimationClip; if(clip==null||clip.name.StartsWith("__")) continue; if(clip.name.ToLower().Contains("idle")){ pick=clip; break; } if(pick==null) pick=clip; } if(pick!=null){ pick.SampleAnimation(go, 0f); sb.AppendLine(nm+" posed by "+pick.name+"@f0"); } }
-  go.transform.rotation=Quaternion.Euler(-90f, cam.transform.eulerAngles.y+180f, 0f);
+  // #1280 pose variety: sample the pose clip at aiPoseTime (0..1 of clip length) instead of always f0, so captures can
+  // land on a readable ACTION-pose peak (the FELT panel's "stiff mid-leap / static" note) rather than one frozen frame.
+  // Default aiPoseTime=0 reproduces the prior @f0 sampling exactly.
+  if(poseClipPath!=null){ var pas=AssetDatabase.LoadAllAssetsAtPath(poseClipPath); AnimationClip pick=null; foreach(var clipAsset in pas){ var clip=clipAsset as AnimationClip; if(clip==null||clip.name.StartsWith("__")) continue; if(clip.name.ToLower().Contains("idle")){ pick=clip; break; } if(pick==null) pick=clip; } if(pick!=null){ float _pt=Mathf.Clamp01(aiPoseTime)*pick.length; pick.SampleAnimation(go, _pt); sb.AppendLine(nm+" posed by "+pick.name+"@t"+_pt.ToString("F2")); } }
+  // #1280: aiPoseYaw adds a per-capture yaw offset so actors can face slightly off-axis onto a more readable
+  // silhouette (default 0 = the prior fixed facing).
+  go.transform.rotation=Quaternion.Euler(-90f, cam.transform.eulerAngles.y+180f+aiPoseYaw, 0f);
   var rends=go.GetComponentsInChildren<Renderer>(); foreach(var r in rends){ r.enabled=true; r.shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.On; r.receiveShadows=true; }
   // Grounding uses TRUE posed geometry. SkinnedMeshRenderer.bounds is a conservative/inflated culling AABB whose
   // min.y sits BELOW the real feet -> grounding to min.y=0 leaves the actor FLOATING (owner-observed "goblin walking
@@ -85,7 +118,17 @@ System.Func<string,string,string,int,int,float,Color,string,Vector3> spawn=(fbxP
   // ground + CENTER on the cell: snap feet to Y=0 AND align bounds-center X/Z to the cell (fixes the critic's
   // "actor decoupled from its ring" — meshes whose geometry is offset from their transform origin drifted off-ring).
   var p=cellToWorld(cx,cy); go.transform.position=p; bb=measure(); Vector3 ctr=bb.center; go.transform.position+=new Vector3(p.x-ctr.x,-bb.min.y,p.z-ctr.z);
-  if(albedoPath!=null){ var al=AssetDatabase.LoadAssetAtPath<Texture2D>(albedoPath); if(al!=null){ var mm=new Material(Shader.Find("Standard")); mm.mainTexture=al; mm.SetFloat("_Glossiness",0.2f); mm.SetFloat("_Metallic",0f); foreach(var r in rends) r.sharedMaterial=mm; } }
+  if(albedoPath!=null){ var al=AssetDatabase.LoadAssetAtPath<Texture2D>(albedoPath); if(al!=null){ var mm=new Material(Shader.Find("Standard")); mm.mainTexture=al; mm.SetFloat("_Glossiness",0.2f); mm.SetFloat("_Metallic",0f);
+    // #1280 scene-light take: the FELT panel read actors as "flatly/differently lit — don't sit in the scene light".
+    // Approximate "lit by the scene" WITHOUT re-lighting geometry: nudge the albedo tint toward the plate's warm
+    // KEY (aiWarmth>1 = warmer) and add a faint warm emission rim on the key side so the actor picks up the firelight.
+    // aiLightTint is the 0..1 blend strength; default 0 leaves _Color=white / no emission -> baseline material unchanged.
+    if(aiLightTint>0f){ float k=Mathf.Clamp01(aiLightTint);
+      Color warm=new Color(1f, Mathf.Clamp01(0.86f/Mathf.Max(0.6f,aiWarmth)), Mathf.Clamp01(0.66f/Mathf.Max(0.6f,aiWarmth*aiWarmth)), 1f);
+      mm.SetColor("_Color", Color.Lerp(Color.white, warm, k*0.6f));
+      mm.EnableKeyword("_EMISSION"); mm.globalIlluminationFlags=MaterialGlobalIlluminationFlags.RealtimeEmissive;
+      mm.SetColor("_EmissionColor", new Color(1f,0.55f,0.22f,1f)*(k*0.18f)); }
+    foreach(var r in rends) r.sharedMaterial=mm; } }
   var oldAo=GameObject.Find(nm+"_AO"); if(oldAo!=null) UnityEngine.Object.DestroyImmediate(oldAo);
   var oldRg=GameObject.Find(nm+"_Ring"); if(oldRg!=null) UnityEngine.Object.DestroyImmediate(oldRg);
   // AO blob + selection ring are UNIFORM ground circles (equal X/Z), laid FLAT on the ground plane; the orthographic
@@ -93,7 +136,12 @@ System.Func<string,string,string,int,int,float,Color,string,Vector3> spawn=(fbxP
   // the view. (Prior code pre-squished them anisotropically in WORLD X/Z (2.7x1.7); because the camera is yawed 45deg
   // its foreshortening runs along the world DIAGONAL, so a world-axis pre-squish produced the skewed oval that did not
   // match the view -- owner-observed "the ring is off, like an oval, not matching the camera". Let the camera do it.)
-  var ao=GameObject.CreatePrimitive(PrimitiveType.Quad); ao.name=nm+"_AO"; UnityEngine.Object.DestroyImmediate(ao.GetComponent<Collider>()); ao.transform.position=new Vector3(p.x,0.04f,p.z); ao.transform.localEulerAngles=new Vector3(90f,0f,0f); ao.transform.localScale=new Vector3(2.0f,2.0f,1f); var aom=new Material(Shader.Find("Unlit/Transparent")); aom.mainTexture=blobT; aom.renderQueue=1950; ao.GetComponent<Renderer>().sharedMaterial=aom; ao.GetComponent<Renderer>().shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off;
+  // #1280: contact-shadow footprint scales with aiShadowScale (default 2.0 = unchanged). A larger, softer blob spreads
+  // the grounding AO so the actor reads planted, not pasted.
+  var ao=GameObject.CreatePrimitive(PrimitiveType.Quad); ao.name=nm+"_AO"; UnityEngine.Object.DestroyImmediate(ao.GetComponent<Collider>()); ao.transform.position=new Vector3(p.x,0.04f,p.z); ao.transform.localEulerAngles=new Vector3(90f,0f,0f); ao.transform.localScale=new Vector3(aiShadowScale,aiShadowScale,1f); var aom=new Material(Shader.Find("Unlit/Transparent")); aom.mainTexture=blobT; aom.renderQueue=1950; ao.GetComponent<Renderer>().sharedMaterial=aom; ao.GetComponent<Renderer>().shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off;
+  // #1280: optional tighter CORE shadow directly under the feet (only when coreT was built, i.e. aiCoreShadow>0).
+  if(coreT!=null){ var coreGo=GameObject.Find(nm+"_Core"); if(coreGo!=null) UnityEngine.Object.DestroyImmediate(coreGo);
+    var core=GameObject.CreatePrimitive(PrimitiveType.Quad); core.name=nm+"_Core"; UnityEngine.Object.DestroyImmediate(core.GetComponent<Collider>()); core.transform.position=new Vector3(p.x,0.05f,p.z); core.transform.localEulerAngles=new Vector3(90f,0f,0f); core.transform.localScale=new Vector3(aiShadowScale*aiCoreScale,aiShadowScale*aiCoreScale,1f); var cm=new Material(Shader.Find("Unlit/Transparent")); cm.mainTexture=coreT; cm.renderQueue=1951; core.GetComponent<Renderer>().sharedMaterial=cm; core.GetComponent<Renderer>().shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off; }
   var rg=GameObject.CreatePrimitive(PrimitiveType.Quad); rg.name=nm+"_Ring"; UnityEngine.Object.DestroyImmediate(rg.GetComponent<Collider>()); rg.transform.position=new Vector3(p.x,0.06f,p.z); rg.transform.localEulerAngles=new Vector3(90f,0f,0f); rg.transform.localScale=new Vector3(2.6f,2.6f,1f); var rgm=new Material(Shader.Find("Unlit/Transparent")); rgm.mainTexture=ringT; rgm.color=ringCol; rgm.renderQueue=1955; rg.GetComponent<Renderer>().sharedMaterial=rgm; rg.GetComponent<Renderer>().shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off;
   sb.AppendLine(nm+" x"+s.ToString("F2")+" @cell("+cx+","+cy+") rends="+rends.Length);
   return go.transform.position;
@@ -113,7 +161,7 @@ if(toks==null||toks.Count==0) return "no tokens on surface";
 // COLLECT then destroy with null-checks: destroying an actor root also destroys its children still in the
 // FindObjectsByType array, so a single-loop destroy would access a destroyed child (Unity throws).
 { var _toKill=new System.Collections.Generic.List<GameObject>();
-  foreach(var g in UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None)){ if(g==null) continue; var gn=g.name; if(gn.StartsWith("Actor_")||gn.EndsWith("_AO")||gn.EndsWith("_Ring")||gn=="ImpactFX"||gn=="DmgNum"||gn.StartsWith("Occluder_")) _toKill.Add(g); }
+  foreach(var g in UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None)){ if(g==null) continue; var gn=g.name; if(gn.StartsWith("Actor_")||gn.EndsWith("_AO")||gn.EndsWith("_Ring")||gn.EndsWith("_Core")||gn=="ImpactFX"||gn=="DmgNum"||gn.StartsWith("Occluder_")) _toKill.Add(g); }
   foreach(var g in _toKill){ if(g!=null) UnityEngine.Object.DestroyImmediate(g); } }
 // place an actor per token by SLOT (foe -> goblin template / ally -> hero template); cyan party / red foe ring (critic L5).
 var posByName=new System.Collections.Generic.Dictionary<string,Vector3>(); int spawned=0; string celldbg="";
