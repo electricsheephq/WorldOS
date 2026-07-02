@@ -163,16 +163,30 @@ until the polish phase. Lens names (`L1`–`L7`) are the `visual-critic` panel l
 `qa/scores_db.py` (`surface="visual"`); the deterministic checks are `qa/visual_pregate.py`.
 
 - **TIER-1 — BACKDROP (binding; the foundation; ALL must hold):**
-  - **L6 painterly-plate craft ≥ 8** (brush economy, atmospheric depth, PoE2-caliber art direction)
-    **AND**
-  - **L1 registration/cohesion ≥ 8** (the painted floor registers with the gameplay grid; actors
-    will plant on the same plane the engine reasons about) **AND**
-  - **detail ≥ 7** (no muddy / under-detailed plate) **AND**
+  > **★ GATE RECALIBRATED 2026-07-02 (the positive-control finding).** Absolute panel scores were
+  > proven un-citable: blind on our own instrument, REAL shipped PoE plates scored 3.0–4.6 and real
+  > BG2EE 4.6–5.6 while our plates scored 5.0–6.7 — the old "≥ 8 absolute" was unattainable BY
+  > CONSTRUCTION. The craft gates below are therefore **CONTROL-ANCHORED**: every verdict panel
+  > embeds a disguised REAL-ART CONTROL (a shipped plate not among the refs, fair presentation)
+  > and a gate passes when the candidate's same-panel score **meets or beats the control's**
+  > (protocol: `.claude/skills/visual-critic` "CALIBRATION-CONTROL PROTOCOL"). Deterministic gates
+  > (washout, pathing) are unchanged. Status: the crypt plate MEETS the recalibrated craft bar
+  > (6.72/median-7 vs real controls 3.0–5.6, clean instrument); remaining named craft work =
+  > brushstroke looseness, wall-repetition, relief crispness.
+  - **L6 painterly-plate craft ≥ the real-art control** (brush economy, atmospheric depth,
+    PoE2-caliber art direction — judged as same-panel delta vs the embedded control) **AND**
+  - **L1 registration/cohesion ≥ the real-art control** (the painted floor registers with the
+    gameplay grid; actors will plant on the same plane the engine reasons about) **AND**
+  - **detail ≥ the real-art control** (no muddy / under-detailed plate vs what real shipped plates
+    score on the same panel) **AND**
   - **0 / 3 washout** (the three deterministic illusion-breakers in `visual_pregate.py` — none may
     trip; a washed-out plate is an automatic fail) **AND**
   - **pathing-map-correct** (the walkmask / pathing map the renderer derives matches the painted
     geometry — walkable floor is walkable, painted obstacles block, destinations resolve to engine
-    zones). A backdrop is not "done" until pathing reads correctly off it.
+    zones). A backdrop is not "done" until pathing reads correctly off it. **AND**
+  - **FELT track** (new): the composed game frame (plate + actors + rings at viewport scale)
+    passes the "would a player screenshot and share this?" lens — the story side's felt-vs-scores
+    lesson applies to graphics identically; forensic deltas alone don't ship a game.
 - **TIER-2 — ACTOR / EFFECT (placeholder-OK now; polished much later):** the deterministic
   **pre-gates PASS** (frame-lit · floor-contact · screen-scale · occupancy · motion-liveness —
   numbers, not vibes) **AND** the integration lenses clear a **soft ≥ 5.0**:

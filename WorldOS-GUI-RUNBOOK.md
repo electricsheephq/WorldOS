@@ -420,6 +420,12 @@ SSH key, or the VNC password in this tracked doc (same convention as the Support
      actors + occluder depth-boxes, captures → `Captures-Durable/m1_combat_v1.png`); `scp` that back + gate non-black.
      Full copy-paste recipe: memory `reference_worldos_box_unity_render_pipeline` + skill `gex44-unity-host`.
 
+   **ComfyUI detail-finisher lane (installed 2026-07-02, box `/root/comfyui`, README-WORLDOS.md on box):**
+   SDXL + xinsir tile-ControlNet, headless API on `127.0.0.1:8188`. Driver:
+   `/root/comfyui/tile_detail.sh <in.png> <out.png> <denoise≈0.28-0.35>` (~52s @1344×768, ~2:44 @2760×1504,
+   12.4GB VRAM peak — coexists with the Unity editor). Structure-locked detail pass for DENSE surface fields.
+   ⚠ It MUSHES hero-prop relief under a key light (measured panel8) — never run it across the focal object.
+
 **Enhancing the MCP's capabilities → our fork + upstream (standing practice).** The Unity MCP
 (`com.coplaydev.unity-mcp`, by Coplay) is our **external-AI → Unity Editor bridge** and the SOLE writer-into-editor
 path for the renderer + all Unity work — enhancing it (new tools / fixes / behaviors) is recurring, core work, not
