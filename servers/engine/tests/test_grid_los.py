@@ -194,6 +194,47 @@ def test_aoe_sphere_excludes_cells_with_no_line_of_effect(tmp_path, monkeypatch)
     assert (5, 5) in coords
 
 
+def test_aoe_cone_loe_traced_from_caster_not_aim(tmp_path, monkeypatch):
+    # A cone's point of origin is the CASTER — LoE must be traced from the caster's cell, not
+    # the aim cell. The DISTINGUISHING case: a wall sits BETWEEN caster (2,10) and the aim cell
+    # (4,10). A cone cell (5,10) beyond the aim would PASS an aim-origin ray ((4,10)->(5,10) is
+    # clear) but is unreachable from the CASTER (the (3,10) wall severs (2,10)->(5,10)). Only a
+    # caster-origin trace culls it; an aim-origin trace (the pre-fix bug) would leak it through.
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("cone-loe")["id"]
+    wiz = server.create_character(cid, "Wiz", kind="player", max_hp=30, armor_class=14)["id"]
+    server.update_character(cid, wiz, patch={"spell_slots": {"1": {"maximum": 4, "used": 0}}})
+    server.start_combat(cid, [wiz])
+    # Wall band BETWEEN the caster and the aim cell (one cell out from the caster).
+    server.set_grid(cid, 20, 20, obstacles=[[3, 9], [3, 10], [3, 11]])
+    server.place_combatant_at_coords(cid, wiz, 2, 10)
+    res = server.cast_spell(cid, wiz, "Burning Hands", slot_level=1, origin=[4, 10])
+    coords = {tuple(xy) for xy in (res.get("affected_tile_coords") or [])}
+    # A cone cell beyond the aim, clear from the AIM but shielded from the CASTER by the wall,
+    # is culled (caster-origin LoE). An aim-origin trace (the bug) would keep it.
+    assert (5, 10) not in coords
+    # Sanity (pure geometry, no walls): the same cone cell IS reachable — proves the cell is
+    # in-geometry, so its absence above is the LoE cull, not a geometry gap.
+    assert (5, 10) in combat_grid.cone_cells((2, 10), (4, 10), 15, 20, 20)
+
+
+def test_aoe_line_stops_at_a_blocker(tmp_path, monkeypatch):
+    # A Lightning Bolt line traced east from the caster stops at a wall — cells past the wall
+    # have no line of effect from the caster and drop out.
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("line-loe")["id"]
+    wiz = server.create_character(cid, "Wiz", kind="player", max_hp=30, armor_class=14)["id"]
+    server.update_character(cid, wiz, patch={"spell_slots": {"3": {"maximum": 4, "used": 0}}})
+    server.start_combat(cid, [wiz])
+    server.set_grid(cid, 40, 40, obstacles=[[5, 20]])
+    server.place_combatant_at_coords(cid, wiz, 2, 20)
+    res = server.cast_spell(cid, wiz, "Lightning Bolt", slot_level=3, origin=[3, 20])
+    coords = {tuple(xy) for xy in (res.get("affected_tile_coords") or [])}
+    assert (4, 20) in coords         # before the wall — clear line from the caster
+    assert (6, 20) not in coords     # past the wall — no LoE from the caster, culled
+    assert (10, 20) not in coords    # far past the wall — shielded, culled
+
+
 # ── (5) BYTE-IDENTICAL regression: off-grid / unplaced == today ──────────────
 
 

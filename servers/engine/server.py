@@ -6451,24 +6451,33 @@ def _aoe_template_cells(c: "Campaign", caster: "Character", srd, aim: tuple[int,
     a shape PR-2 doesn't map — cube/wall land in #1253+). Read-only geometry over
     combat_grid; the caller resolves occupants + damage. SRD sizes are in FEET; the grid's
     cell_size converts them. A sphere bursts AT `aim`; a cone/line is cast FROM the caster's
-    cell TOWARD `aim` (so the caster must be placed). Line-of-effect is DEFERRED (#1252)."""
+    cell TOWARD `aim` (so the caster must be placed).
+
+    Returns ``(cells, loe_origin)`` — `loe_origin` is the spell's SRD POINT OF ORIGIN, the
+    cell line-of-effect (#1252) is traced FROM when culling shielded cells: the AIM cell for
+    a sphere (the burst's own origin IS the aim), but the CASTER'S cell for a cone/line (their
+    origin is the emitter, not the target point — a cone aimed past a wall must not reach cells
+    the caster can't see). None (not a tuple) when there is no template."""
     shape = (srd or {}).get("shape_type")
     if not shape:
         return None
     w, h, cs = c.combat.grid_width, c.combat.grid_height, c.combat.grid_cell_size
     size = int((srd.get("shape_size") or 0))
     if shape == "sphere":
-        # A burst centred on the aim cell — origin-independent (no facing needed).
-        return combat_grid.sphere_cells(aim, size, w, h, cs)
+        # A burst centred on the aim cell — origin-independent (no facing needed); LoE is
+        # traced from the burst point itself (the aim cell).
+        return combat_grid.sphere_cells(aim, size, w, h, cs), aim
     cb = next((o for o in c.combat.order if o.character_id == caster.id), None)
     if cb is None or cb.x is None or cb.y is None:
         return None  # a cone/line needs a placed emitter to fix its facing
     src = (cb.x, cb.y)
     if shape == "cone":
-        return combat_grid.cone_cells(src, aim, size, w, h, cs)
+        # A cone emits FROM the caster: LoE is traced from `src`, not the aim cell.
+        return combat_grid.cone_cells(src, aim, size, w, h, cs), src
     if shape == "line":
         # SRD `line` shape_size is the WIDTH; length lives in prose -> use the default.
-        return combat_grid.line_cells(src, aim, _DEFAULT_LINE_LENGTH_FT, size, w, h, cs)
+        # The line emits FROM the caster: LoE is traced from `src`.
+        return combat_grid.line_cells(src, aim, _DEFAULT_LINE_LENGTH_FT, size, w, h, cs), src
     return None  # cube / other shapes: not a PR-2 template (deferred)
 
 
@@ -7597,21 +7606,23 @@ def cast_spell(
             if len(oc) != 2:
                 raise ValueError("cast_spell origin must be an [x, y] cell pair")
             aim = (int(oc[0]), int(oc[1]))
-            cells = _aoe_template_cells(c, ch, srd, aim)
-            if cells is not None:
-                # LINE-OF-EFFECT cull (#1252 / PR-3): the template origin `aim` is the burst
-                # point (sphere) or the emitter's aim (cone/line). A cell with NO line of
-                # effect from that origin — a wall/prop between them severs the ray — is
-                # SHIELDED and drops out of the area (SRD 5.2: "a target has total cover ...
-                # can't be targeted; likewise a point of origin can't extend around corners").
-                # ADDITIVE: with no impassable cells the ray is never severed, so `cells` is
-                # unchanged byte-for-byte (open-floor AoE == PR-2 behaviour). The origin cell
-                # always has line of effect to itself and is retained.
+            template = _aoe_template_cells(c, ch, srd, aim)
+            if template is not None:
+                cells, loe_origin = template
+                # LINE-OF-EFFECT cull (#1252 / PR-3): trace LoE from the spell's SRD POINT OF
+                # ORIGIN (`loe_origin`) — the burst point (aim) for a sphere, the CASTER'S cell
+                # for a cone/line (their origin is the emitter, so a cone aimed past a wall must
+                # not reach cells the caster can't see). A cell with NO line of effect from that
+                # origin — a wall/prop between them severs the ray — is SHIELDED and drops out of
+                # the area (SRD 5.2: a point of origin can't extend around corners; a target with
+                # total cover can't be caught). ADDITIVE: with no impassable cells the ray is
+                # never severed, so `cells` is unchanged byte-for-byte (open-floor AoE == PR-2).
+                # The origin cell always has line of effect to itself and is retained.
                 blocking = {(int(bx), int(by)) for bx, by in (c.combat.grid_impassable or [])}
                 if blocking:
                     cells = {
                         cell for cell in cells
-                        if cell == aim or combat_grid.has_line_of_effect(aim, cell, blocking)
+                        if cell == loe_origin or combat_grid.has_line_of_effect(loe_origin, cell, blocking)
                     }
                 affected_tile_coords = sorted([cx, cy] for (cx, cy) in cells)
                 # Every combatant standing in the template is caught — SRD 5.2: a creature in
