@@ -118,16 +118,23 @@ while [ "$attempt" -lt 3 ]; do
   # with headroom; the fast lenses are unaffected (the bound only fires on a genuinely slow/stuck call).
   # run_duo.sh ALSO isolates the angrydm lens (scores it alone, not concurrent with the 2 light lenses)
   # so it gets full API throughput and lands near the ~400s baseline rather than slower under contention.
-  # #1260: ALSO scrub the SDK child-session markers. When a scorer runs inside a host-managed
-  # session (the Desktop app's Bash, an SDK harness), CLAUDECODE/CLAUDE_CODE_CHILD_SESSION +
-  # CLAUDE_CODE_SDK_HAS_{HOST_AUTH,OAUTH}_REFRESH tell the child CLI to expect auth from the
-  # HOST — which never arrives in a detached scorer call, so it hangs (measured rc=124) or
-  # 401s with a stale session token. Scrubbing the markers drops it to normal keychain auth
-  # (measured: same call succeeds in ~17s). Terminal contexts don't set them — no-op there.
+  # #1260 round 2: env scrubbing alone is NOT enough — with the process env clean, the child
+  # CLI re-applies ~/.claude/settings.json's `env` block, and on this host that block routes
+  # to the z.ai/GLM proxy (measured: the scrubbed scorer scored on a GLM-mapped model and died
+  # on its context window). The scorer is the CANONICAL instrument (pinned sonnet, real
+  # Anthropic, keychain auth) and must be immune to user routing config, so it runs under a
+  # FRESH scorer-only CLAUDE_CONFIG_DIR with an empty settings.json (measured to hit the
+  # default endpoint on keychain auth). The SDK child-session markers are still scrubbed —
+  # they make a detached child wait for host-provided auth that never comes (rc=124/401).
+  _scorer_cfg="${TMPDIR:-/tmp}/worldos-scorer-config"
+  mkdir -p "$_scorer_cfg"
+  [ -s "$_scorer_cfg/settings.json" ] || printf '{}' > "$_scorer_cfg/settings.json"
   printf '%s' "$INPUT" | env -u ANTHROPIC_BASE_URL -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN \
-    -u API_TIMEOUT_MS -u CLAUDE_CONFIG_DIR \
+    -u API_TIMEOUT_MS \
     -u CLAUDECODE -u CLAUDE_CODE_CHILD_SESSION -u CLAUDE_CODE_ENTRYPOINT \
     -u CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH -u CLAUDE_CODE_SDK_HAS_OAUTH_REFRESH \
+    -u CLAUDE_CODE_SESSION_ID \
+    CLAUDE_CONFIG_DIR="$_scorer_cfg" \
     timeout "${WORLDOS_SCORE_TIMEOUT:-600}" claude -p \
     --model "$SCORER_MODEL" --permission-mode bypassPermissions $EFFORT_ARG \
     --max-budget-usd "$BUDGET" \
