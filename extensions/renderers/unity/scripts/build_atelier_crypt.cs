@@ -195,13 +195,15 @@ if(dress("SM_Prop_Bookcase_Grand_01", 2,1, 180f)) nProp++;
 if(dress("SM_Prop_Bookcase_01",        4,1, 180f)) nProp++;
 if(dress("SM_Prop_Bookcase_02",        8,1, 180f)) nProp++;
 if(dress("SM_Prop_Bookcase_Grand_02", 11,1, 180f)) nProp++;
-// right wall (c=12, facing -x) — a row of knight stands + a broken one
-if(dress("SM_Prop_KnightStand_Royal_01", 12,2, -90f)) nProp++;
-if(dress("SM_Prop_KnightStand_01",       12,5, -90f)) nProp++;
-if(dress("SM_Prop_KnightStand_Broken_01",12,8, -90f)) nProp++;
-// KNIGHT STANDS flanking the tomb approach (the -z open side of the tomb, cells r=7 either side of x)
+// right wall (c=12, facing -x) — v4 DRESSING FIX: the 3 identical knight statuettes read as literal
+// clones, so keep ONE knight and replace the other two with DIFFERENT PolygonDungeonMap props (a leaning
+// ladder + a globe) for distinct silhouettes. Varied yaw/scale preserved via the jitter.
+if(dress("SM_Prop_KnightStand_Royal_01", 12,2, -90f)) nProp++;   // the one kept knight (royal)
+if(dress("SM_Prop_Ladder_01",            12,5, -90f)) nProp++;   // was KnightStand_01 -> leaning ladder
+if(dress("SM_Prop_Globe_01",             12,8, -90f)) nProp++;   // was KnightStand_Broken -> globe
+// tomb-flanking props (the -z open side, cells r=7 either side of x): one knight + one lectern-ish stand
 if(dress("SM_Prop_KnightStand_01",       4,7, 0f)) nProp++;
-if(dress("SM_Prop_KnightStand_Royal_01", 9,7, 0f)) nProp++;
+if(dress("SM_Prop_Book_Stand_01",        9,7, 0f)) nProp++;      // was 2nd knight -> book stand (distinct)
 // book piles + globes scattered at WALL BASES (back wall r=1 gaps, right wall c=12 gaps) + a couple corners
 if(dress("SM_Prop_Globe_01",      2,8, 45f)) nProp++;
 if(dress("SM_Prop_Book_Pile_01",  6,1, -30f)) nProp++;
@@ -283,51 +285,33 @@ int hidLight=0; foreach(var ll in UnityEngine.Object.FindObjectsByType<Light>(Fi
   if(ll==null) continue; if(ll.gameObject.name.StartsWith("AK_")) continue; if(ll.enabled){ ll.enabled=false; hidLight++; } }
 LOG("isolation: hid "+hidRend+" foreign renderers, "+hidLight+" foreign lights");
 
-// ================= STAGING-LAW LIGHT RIG v2 (the law: frame 60-85% L<26, 2-5% L>60) =================
-// v2: bigger walls eat more light -> point intensities raised ~1.5x vs v1. Emissive rim quad REMOVED
-// (builtin has no realtime GI -> it contributed 0 light and rendered as a glowing rectangle artifact);
-// replaced with a real cool rim POINT light behind/above the tomb. Added 2 warm wall-torch points sitting
-// ~0.5 units OFF a wall FACE so each throws a visible pool UP the wall surface (walls were reading as void fins).
+// ================= LIGHT RIG v4 — COMMITTED KEY + 3 POOLS (aim near-black 68-78%, lit 2.5-4.5%) ==========
+// Panel verdict on v3: the 5-6 pools read as a FLAT WASH — floor lit almost uniformly, wall-top rim read as
+// a baked-AO strip, NO committed key, NO true-black anchor. v4 reverses that: ONE strong warm DIRECTIONAL
+// KEY from the upper-left raking toward camera IS the main light (long legible cast shadows from the piers/
+// tomb/bookcases across the floor), ambient DOWN so the corners fall to legible near-black, and only THREE
+// pools (hero + one back-wall torch + arch ember). MoonKey / RimCool / the other 2 wall torches DELETED.
 RenderSettings.ambientMode=UnityEngine.Rendering.AmbientMode.Flat;
-RenderSettings.ambientLight=new Color(0.068f,0.072f,0.092f);
+RenderSettings.ambientLight=new Color(0.040f,0.043f,0.056f);   // v4: ambient DOWN — key + pools carry the frame (tuned)
 RenderSettings.reflectionIntensity=0f;
-// NO bright directional — a faint cool moon key only
-{ var g=new GameObject("AK_MoonKey"); var L=g.AddComponent<Light>(); L.type=LightType.Directional;
-  L.color=new Color(0.5f,0.6f,0.9f); L.intensity=0.30f; L.shadows=LightShadows.Soft; L.shadowStrength=0.85f;
-  g.transform.rotation=Quaternion.Euler(55f,40f,0f); }
+// FIX 1: COMMITTED KEY — one strong warm directional from the upper-left, raking across the room toward the
+// camera, SHADOWS ON (soft, strong) so the piers/tomb/bookcases throw long legible cast shadows on the floor.
+{ var g=new GameObject("AK_Key"); var L=g.AddComponent<Light>(); L.type=LightType.Directional;
+  L.color=new Color(1.0f,0.72f,0.45f); L.intensity=0.86f; L.shadows=LightShadows.Soft; L.shadowStrength=0.85f;
+  g.transform.rotation=Quaternion.Euler(50f,205f,0f); }
 System.Action<string,Vector3,float,float,Color,bool> pt=(nm,pos,rng,inten,col,shadow)=>{
   var g=new GameObject(nm); var L=g.AddComponent<Light>(); L.type=LightType.Point; L.color=col;
   L.range=rng; L.intensity=inten; L.shadows=shadow?LightShadows.Soft:LightShadows.None; L.shadowStrength=0.7f; g.transform.position=pos; };
 Color warm=new Color(1f,0.55f,0.25f);
 Vector3 backZ_edge=new Vector3(0f,0f,(cy0+0.5f)*CELL);  // z of the visible back(+z) wall face
-Vector3 rightX_edge=new Vector3((cx0+0.5f)*CELL,0f,0f); // x of the visible right(+x) wall face
-// iteration 4 (v2): the LIT budget is dominated by (a) the wall-torch near-field HOTSPOTS on the wall
-// surface (a point 0.5 off the face burns a bright core via steep inverse-square) and (b) a broad mid-floor
-// warm wash tipping over L=60. Fixes: push each wall torch ~1.1 off the face (softer near-field), drop
-// intensity, and tighten the tomb pool so the surrounding floor sits in the 26-60 MIDTONE band, not lit.
-// iteration 5 (v2): the wall-torch near-field cores stay >L60 regardless of wall albedo (it's the LIGHT,
-// not the surface), so cut wall-torch intensity hard — the wall still catches a warm MIDTONE wash (fix 3
-// satisfied: walls are lit, not void fins) but the core no longer blows past L60. Tomb pool trimmed too.
-// v3 (TRUE baseline continued): HEROIC 10.5u walls -> raise the hero pool + wall torches to y~6.5-7 so the
-// warm pools climb the tall wall faces (they'd only touch the base at y~4.8). THREE wall torches now
-// (back-left, back-right, right) so each big wall face carries a warm pool. Ranges 14-16 for the tall walls.
-// v3 iteration 2: the tomb HERO pool (cols5-7/rows2-3 = ~80% lit) dominates the LIT budget, so cut it
-// hard (intensity + range); trim the 3 wall pools; DARK has headroom (~70%) so this stays in-band.
-// v3 iteration 3: iter2 overcut (1.4% lit); bump the hero pool + wall pools back up to land ~3-4% lit.
+// FIX 2: THREE pools only.
+// hero pool over the tomb (shadowed):
 { var w6=cellToWorld(6,5); var w7=cellToWorld(7,5); Vector3 mid=(w6+w7)*0.5f;
-  pt("AK_TorchSarc", new Vector3(mid.x, 5.2f, mid.z), 14f, 4.4f, warm, true); }        // hero pool over the tomb
-// FIX 2: cool RIM point behind/above the tomb (replaces the dead emissive quad)
-{ var w6=cellToWorld(6,5); var w7=cellToWorld(7,5); Vector3 mid=(w6+w7)*0.5f;
-  pt("AK_RimCool", new Vector3(mid.x, 5.4f, mid.z+2.0f), 11f, 1.5f, new Color(0.30f,0.45f,0.70f), false); }
-// FIX 3: THREE warm WALL-TORCH points ~1.3 off a wall FACE at y~6.7 so each washes a warm pool UP the tall wall.
-// back wall LEFT (over the back-left bookcases / pillar A region):
-{ var wc=cellToWorld(3,1);  pt("AK_TorchBackL", new Vector3(wc.x, 6.7f, backZ_edge.z-1.3f), 14f, 2.9f, warm, false); }
-// back wall RIGHT (over the back-right bookcases):
-{ var wc=cellToWorld(10,1); pt("AK_TorchBackR", new Vector3(wc.x, 6.7f, backZ_edge.z-1.3f), 14f, 2.6f, warm, false); }
-// right wall (mid, washing the +x wall + knight stands):
-{ var wc=cellToWorld(12,4); pt("AK_TorchRight", new Vector3(rightX_edge.x-1.3f, 6.7f, wc.z), 14f, 2.9f, warm, false); }
-// faint archway/void point near the back-center door:
-{ var wa=cellToWorld(6,0); pt("AK_ArchVoid",  new Vector3(wa.x, 5.0f, wa.z+1.0f), 13f, 2.0f, new Color(1f,0.5f,0.2f), false); }
+  pt("AK_TorchSarc", new Vector3(mid.x, 5.2f, mid.z), 11f, 2.8f, warm, true); }
+// ONE back-wall torch (washes the back wall face):
+{ var wc=cellToWorld(4,1); pt("AK_TorchBack", new Vector3(wc.x, 6.5f, backZ_edge.z-1.3f), 13f, 2.4f, warm, false); }
+// arch-void ember near the back-center door:
+{ var wa=cellToWorld(6,0); pt("AK_ArchVoid",  new Vector3(wa.x, 5.0f, wa.z+1.0f), 13f, 1.8f, new Color(1f,0.5f,0.2f), false); }
 
 // ================= CONTRACT CAMERA (byte-identical) =================
 cam.orthographic=true; cam.orthographicSize=13f; cam.nearClipPlane=0.3f; cam.farClipPlane=500f;
@@ -348,7 +332,7 @@ System.Action<string,Shader> capture=(fname,replShader)=>{
 };
 
 // (a) BEAUTY — normal lit render
-capture("atelier_beauty_v3.png", null);
+capture("atelier_beauty_v4.png", null);
 
 // (b) ALBEDO — all lights off + flat white ambient (so URP/Lit shows base color unlit-ish).
 var allLights=UnityEngine.Object.FindObjectsByType<Light>(FindObjectsSortMode.None);
@@ -356,7 +340,7 @@ var savedEnabled=new System.Collections.Generic.Dictionary<Light,bool>();
 foreach(var L in allLights){ savedEnabled[L]=L.enabled; L.enabled=false; }
 var savedAmbMode=RenderSettings.ambientMode; var savedAmb=RenderSettings.ambientLight;
 RenderSettings.ambientMode=UnityEngine.Rendering.AmbientMode.Flat; RenderSettings.ambientLight=Color.white;
-capture("atelier_albedo_v3.png", null);
+capture("atelier_albedo_v4.png", null);
 // restore lights + ambient
 foreach(var kv in savedEnabled) if(kv.Key!=null) kv.Key.enabled=kv.Value;
 RenderSettings.ambientMode=savedAmbMode; RenderSettings.ambientLight=savedAmb;
@@ -371,13 +355,13 @@ RenderSettings.ambientMode=savedAmbMode; RenderSettings.ambientLight=savedAmb;
   Shader.SetGlobalFloat("_WOSDepthNear", mn); Shader.SetGlobalFloat("_WOSDepthFar", mx);
   var shRemap=Shader.Find("WOS/LinDepthRemap"); var shDepth=Shader.Find("WOS/LinDepth"); var shNorm=Shader.Find("WOS/ViewNormal");
   LOG("depth remap near="+mn.ToString("F2")+" far="+mx.ToString("F2")+" (Remap="+(shRemap!=null)+" LinDepth="+(shDepth!=null)+" ViewNormal="+(shNorm!=null)+")");
-  if(shRemap!=null) capture("atelier_depth_v3.png", shRemap);
-  else if(shDepth!=null){ capture("atelier_depth_v3.png", shDepth); LOG("  WARN: remap shader missing -> used hardcoded /80 WOS/LinDepth"); }
+  if(shRemap!=null) capture("atelier_depth_v4.png", shRemap);
+  else if(shDepth!=null){ capture("atelier_depth_v4.png", shDepth); LOG("  WARN: remap shader missing -> used hardcoded /80 WOS/LinDepth"); }
   else LOG("  MISSING both depth shaders");
-  if(shNorm!=null) capture("atelier_normal_v3.png", shNorm); else LOG("  MISSING WOS/ViewNormal");
+  if(shNorm!=null) capture("atelier_normal_v4.png", shNorm); else LOG("  MISSING WOS/ViewNormal");
 }
 
 LOG("BUILT floor="+nFloor+" walls="+nWall+" pillars="+nPil+" sarc="+nSarc+" props="+nProp+" plinth/steps="+nPlinth);
-LOG("captures -> Captures-Durable/atelier_{beauty,albedo,depth,normal}_v3.png");
+LOG("captures -> Captures-Durable/atelier_{beauty,albedo,depth,normal}_v4.png");
 System.IO.File.WriteAllText("/home/unity/worldos-unity/atelier_report.txt", sb.ToString());
-return "OK atelier v3: floor="+nFloor+" walls="+nWall+" pillars="+nPil+" sarc="+nSarc+" props="+nProp+" plinth="+nPlinth+" (report -> atelier_report.txt)";
+return "OK atelier v4: floor="+nFloor+" walls="+nWall+" pillars="+nPil+" sarc="+nSarc+" props="+nProp+" plinth="+nPlinth+" (report -> atelier_report.txt)";
