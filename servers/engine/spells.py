@@ -320,6 +320,46 @@ def parse_duration(duration: Optional[str]) -> Optional[dict]:
     return None
 
 
+def casting_time_class(*records: Optional[dict]) -> str:
+    """Classify a spell's casting time into the combat action-economy bucket the
+    engine gates on (#778). Reads the `casting_time` string off the first record
+    that carries one and normalizes across BOTH data sources — srd524 stores
+    "action" / "bonus-action" / "reaction" / "minute" / "hour"; curated records
+    store "1 action" / "1 bonus action". Returns one of:
+
+      * "action"   — an action-cost spell (default for anything unrecognized, so a
+                     new/odd string errs toward the strict once-per-turn gate);
+      * "bonus"    — a bonus-action spell (Healing Word) — consumes bonus_action_used;
+      * "reaction" — a reaction spell (Shield) — handled by the reaction path;
+      * "minute"   — a ritual-scale cast (Identify);
+      * "hour"     — an hour-scale cast (Ceremony).
+
+    Pass the records in the caller's precedence order (curated first, then srd);
+    the first with a non-empty casting_time wins. Pure data helper — no model dep."""
+    for rec in records:
+        if not rec:
+            continue
+        raw = rec.get("casting_time")
+        if not raw:
+            continue
+        text = str(raw).strip().lower()
+        # Order matters: match "bonus" before the bare "action" substring (a curated
+        # "1 bonus action" contains "action").
+        if "bonus" in text:
+            return "bonus"
+        if "reaction" in text:
+            return "reaction"
+        if "minute" in text or "min" in text:
+            return "minute"
+        if "hour" in text or "hr" in text:
+            return "hour"
+        if "action" in text:
+            return "action"
+        # An unrecognized non-empty string: fall through to the strict default below.
+        return "action"
+    return "action"
+
+
 # 5e condition names the engine tracks (mirrors models.Condition); used to spot which
 # condition a save-ends spell imposes. Kept here (not imported) so spells.py stays a
 # pure, I/O-light data helper with no model dependency.
