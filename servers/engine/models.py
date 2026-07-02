@@ -857,6 +857,13 @@ class Character(_StrictModel):
 
     # vitals
     armor_class: int = 10
+    # #806 stage 2 — AC ownership provenance. Records WHO last wrote armor_class so
+    # the equip path knows whether it may recompute it: "equipment" (engine wrote it
+    # from worn armor/shield on equip), "manual" (a DM update_character(armor_class=...)
+    # override — equip must NOT clobber it), "" (legacy/unknown — treated manual-safe, so
+    # equip never silently overwrites an AC baked into an old snapshot). Empty == today's
+    # behavior; old snapshots round-trip (additive, default "").
+    armor_ac_source: str = ""
     max_hp: int = 1
     current_hp: int = 1
     temp_hp: int = 0
