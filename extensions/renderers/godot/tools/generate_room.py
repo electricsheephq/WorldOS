@@ -85,6 +85,62 @@ def _run_gemini_pass(headers: dict, pass_spec: dict, image_ref: str, out_dir: st
     return job_id, saved
 
 
+def _staging_law_distance(path: str) -> tuple:
+    """Score one pass-1 sample's fit to the measured PoE staging-law luma bands.
+
+    Law (see room_recipes.json:washout_negative / gemini_polish_populate_pass_2026_07_01
+    and the crypt textured-greybox campaign): a well-staged dramatic-chiaroscuro plate has
+    ~66-80% of pixels near-black (L<26, deep shadow/void), ~2-4% lit (L>60, the hot key-light
+    pool), and a low overall median luma (~0-15) — i.e. small pools of light in a mostly-dark
+    scene, NOT an evenly-lit "museum lighting" wash. Targets below are the mid of those bands.
+
+    Returns (distance, near_black_frac, lit_frac, median_L) so callers can print stats.
+    Lower distance = closer fit to the staging law; used to pick the best of N pass-1 samples
+    deterministically instead of always chaining saved[0].
+    """
+    from PIL import Image
+
+    im = Image.open(path).convert("L")
+    pixels = list(im.getdata())
+    n = len(pixels)
+    near_black = sum(1 for p in pixels if p < 26) / n
+    lit = sum(1 for p in pixels if p > 60) / n
+    sorted_pixels = sorted(pixels)
+    median_L = sorted_pixels[n // 2]
+
+    target_near_black, target_lit, target_median = 0.73, 0.03, 8
+    distance = (
+        abs(near_black - target_near_black) / target_near_black
+        + abs(lit - target_lit) / target_lit
+        + abs(median_L - target_median) / 30
+    )
+    return distance, near_black, lit, median_L
+
+
+def _pick_best_pass1_sample(saved: list) -> dict:
+    """Deterministically pick the pass-1 sample to chain into pass2/pass3.
+
+    Replaces the old `saved[0]` (first-sample-wins) selection: score every downloaded
+    pass-1 image by `_staging_law_distance` and chain the argmin. Prints each candidate's
+    stats and which one won so the choice is auditable.
+    """
+    scored = []
+    for asset in saved:
+        distance, near_black, lit, median_L = _staging_law_distance(asset["path"])
+        scored.append((distance, near_black, lit, median_L, asset))
+        print(
+            "[generate_room] --layered pass1 candidate %s: distance=%.3f "
+            "near_black=%.1f%% lit=%.1f%% median_L=%d"
+            % (asset.get("asset_id", asset.get("path")), distance, near_black * 100, lit * 100, median_L)
+        )
+    best = min(scored, key=lambda t: t[0])
+    print(
+        "[generate_room] --layered pass1 WINNER: %s (distance=%.3f)"
+        % (best[4].get("asset_id", best[4].get("path")), best[0])
+    )
+    return best[4]
+
+
 def _downscale_to_plate(path: str, width: int, height: int) -> None:
     """Downscale a pass output to the plate contract size (LANCZOS) if it came back larger.
 
@@ -237,7 +293,10 @@ def main(argv=None) -> None:
                       "layered_pipeline_2026_07_02 entry: %s" % RECIPE_PATH)
         # _download_job_assets returns metadata dicts ({asset_id, path, bytes}) — the pass-1
         # output already LIVES on Scenario, so chain its asset id directly (no re-upload).
-        pass1_ref = saved[0]["asset_id"]
+        # Pick DETERMINISTICALLY by staging-law luma distance across all N pass-1 samples
+        # (was saved[0] — first-sample-wins, which ignored the other 3 candidates).
+        pass1_best = _pick_best_pass1_sample(saved)
+        pass1_ref = pass1_best["asset_id"]
 
         pass2_job, pass2_saved = _run_gemini_pass(
             headers, layered["pass2_detail_populate"], pass1_ref, out_dir,
@@ -256,6 +315,7 @@ def main(argv=None) -> None:
         _downscale_to_plate(pass3_saved[0]["path"], args.width, args.height)
 
         meta["layered"] = {
+            "pass1_selected": pass1_best,
             "pass2_job_id": pass2_job, "pass2_assets": pass2_saved,
             "pass3_job_id": pass3_job, "pass3_assets": pass3_saved,
             "final_plate": pass3_saved[0],
