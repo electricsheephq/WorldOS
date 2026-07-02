@@ -43,6 +43,25 @@ except Exception:  # pragma: no cover - defensive
     engagement_coverage = None
 
 
+def _run_infra_invalid_sentinel(run_jsonl_path: str) -> dict | None:
+    """#1285 — the run-invalidation guard's scorer-side reader. qa/lib_beat_driver.sh's
+    worldos_mark_run_infra_invalid stamps a sibling ``<run>.infra_invalid.json`` file (derived
+    from the run.jsonl path exactly like ``<run>.state.json`` / ``<run>.chat.jsonl`` already are)
+    when N consecutive DM beats fail — a quota window or host/session death mid-run (rri-a1-duo/
+    duo2), not a product defect. Returns the parsed sentinel dict when present + valid, else None
+    (no new CLI arg needed; this stays back-compat with every existing caller). Mirrors
+    worldos_validate_lens_file's sentinel discipline for the bash side."""
+    p = Path(run_jsonl_path)
+    marker = p.with_name(p.name[: -len(p.suffix)] + ".infra_invalid.json") if p.suffix else p.with_suffix(".infra_invalid.json")
+    if not marker.exists() or not marker.stat().st_size:
+        return None
+    try:
+        d = json.loads(marker.read_text(encoding="utf-8"))
+    except Exception:
+        return {"infra_invalid": True, "reason": "sentinel file present but unparseable"}
+    return d if isinstance(d, dict) else {"infra_invalid": True, "reason": "sentinel file malformed"}
+
+
 def _load_jsonl(p: str) -> list[dict]:
     out: list[dict] = []
     if not p or not Path(p).exists():
@@ -127,6 +146,24 @@ _AMBUSH_SIGNAL = [
 ]
 _AMBUSH_SIGNAL_RE = [re.compile(p, re.I) for p in _AMBUSH_SIGNAL]
 
+# DETECTION SIGNALS (#1287, WARN — same family as the ambush/surprise WARN #1271). DM narration
+# that plainly stages an NPC "noticing" or "spotting" the party — a passive-Perception/Insight
+# beat the rules gate behind a roll, not DM fiat. High-confidence, detection-only phrasings (a
+# clean beat with no detection language scores 0 and can never false-fire).
+_DETECTION_SIGNAL = [
+    r"\b(?:notices?|spots?|catches? sight of|glimpses?) (?:you|them|the party|movement|a shape)\b",
+    r"\b(?:hears?|catches?) (?:you|them|the party|a sound|footsteps|a noise)\b",
+    r"\b(?:eyes?|gaze) (?:snaps?|flicks?|turns?) (?:to|toward|on) (?:you|them|the party)\b",
+    r"\b(?:doesn'?t|does not|fails? to) notice (?:you|them|the party)\b",
+    r"\bpasses? (?:you|them|the party) by, unaware\b",
+    r"\bstiffens?,? sensing\b",
+]
+_DETECTION_SIGNAL_RE = [re.compile(p, re.I) for p in _DETECTION_SIGNAL]
+# Skills that gate a detection beat mechanically (skill_check(skill=…)) plus a bare `roll` whose
+# `reason` names the same family — so a DM that rolled raw dice for "perception" still counts.
+_DETECTION_SKILLS = ("perception", "insight", "investigation")
+_DETECTION_ROLL_REASON_RE = re.compile(r"\b(?:perception|insight|investigation)\b", re.I)
+
 
 def _tool_events(events: list[dict]) -> list[tuple[str, dict, object, bool, str]]:
     """Ordered (short_name, input, result_obj_or_None, is_error, raw_text).
@@ -169,6 +206,40 @@ def _tool_events(events: list[dict]) -> list[tuple[str, dict, object, bool, str]
     return out
 
 
+def _detection_beats_without_check(events: list[dict]) -> list[str]:
+    """DM narration text blocks that read like a detection beat (#1287 — same family as the
+    ambush/surprise WARN #1271) with NO qualifying Perception/Insight/Investigation tool call
+    in the SAME beat. A "beat" here is the run of events since the previous DM text block (i.e.
+    every tool_use/tool_result the DM issued while producing this reply) — a skill_check(skill=
+    perception|insight|investigation) or a bare roll(reason=~that family) ANYWHERE in that span
+    satisfies the gate; walking event order (not the whole run, unlike the ambush check) is what
+    makes this "same beat", not "anywhere in the transcript". Returns the offending text blocks."""
+    offenders: list[str] = []
+    span_has_check = False
+    for ev in events:
+        if ev.get("type") not in ("assistant", "user"):
+            continue
+        for b in (ev.get("message", {}) or {}).get("content") or []:
+            if not isinstance(b, dict):
+                continue
+            if b.get("type") == "tool_use":
+                short = (b.get("name") or "").split("__")[-1]
+                inp = b.get("input") or {}
+                if short == "skill_check":
+                    skill = str(inp.get("skill") or inp.get("ability") or inp.get("skill_name")
+                                or inp.get("check") or "").strip().lower()
+                    if skill in _DETECTION_SKILLS:
+                        span_has_check = True
+                elif short == "roll" and _DETECTION_ROLL_REASON_RE.search(str(inp.get("reason") or "")):
+                    span_has_check = True
+            elif b.get("type") == "text" and (b.get("text") or "").strip():
+                text = b["text"]
+                if any(rx.search(text) for rx in _DETECTION_SIGNAL_RE) and not span_has_check:
+                    offenders.append(text)
+                span_has_check = False  # a new beat starts after each DM reply
+    return offenders
+
+
 # A player turn that reads like DM narration or asserts an outcome (the dice's/DM's
 # call). Heuristic only -> a WARNING, not a hard fail (It.1's constrained tool surface
 # is the real, structural fix; this just surfaces drift until then).
@@ -209,6 +280,20 @@ def main() -> int:
 
     def chk(name: str, ok: bool, detail: str = "", fatal: bool = True) -> None:
         checks.append((name, bool(ok), fatal, detail))
+
+    # 0) RUN-INVALIDATION GUARD (#1285, FATAL). A stamped .infra_invalid.json sentinel means the
+    # beat driver detected N consecutive DM beat failures mid-run (a quota window / host-session
+    # death — rri-a1-duo/duo2: 5 straight is_error beats, narrated 'could not resolve this beat'
+    # at peak dramatic tension, then scored to a 3.8 that was actually the infra failure). FATAL,
+    # not WARN: this run's transcript is contaminated and must never be cited as a clean product
+    # measurement — run_duo.sh's existing gate-RED path (worldos_cap_score_red) already caps every
+    # scorecard to ≤2.5/INVALID on any FATAL failure, so this reuses that machinery for free.
+    _infra = _run_infra_invalid_sentinel(sys.argv[1])
+    chk("run_infra_valid", _infra is None,
+        f"run stamped INFRA-INVALID: {(_infra or {}).get('reason', '(no reason recorded)')} "
+        f"(consecutive_failed_beats={(_infra or {}).get('consecutive_failed_beats', '?')}) — "
+        f"this measures infra collapse, not the product; the run must be re-run, not cited.",
+        fatal=True)
 
     # 1) the run produced real DM output (catches the dead/blank run)
     chk("dm_produced_output", dm_text > 0 or sum(tools.values()) > 0,
@@ -286,6 +371,33 @@ def main() -> int:
             f"surfaced as visible failure rows (dead/error-class DM turns); recovered rows used "
             f"the #357 engine-log fallback. Reported only; gate policy stays #757's call.",
             fatal=False)
+
+        # #1285: promote an 'N consecutive error beats' VARIANT of dm_beat_honesty to a
+        # run-invalidating (FATAL) marker — the chat-log-derived twin of the run_infra_valid
+        # sentinel check above. This is the SAME rri-a1-duo/duo2 defect class (a quota window or
+        # host/session death that fails several beats in a row, not scattered across the run) but
+        # derived independently from $CHAT's beat_failed rows in order, so a run whose runner
+        # predates the #1285 sentinel (or a non-run_duo caller: run_party.sh / ui_playtest.sh,
+        # which share worldos_chatlog_dm_failed but not yet the abort-and-stamp wiring) still gets
+        # caught here rather than reading as a merely-WARNed, cite-able run. Threshold matches the
+        # beat driver's default (qa/lib_beat_driver.sh WORLDOS_INFRA_INVALID_STREAK=3).
+        _CONSECUTIVE_INVALID_THRESHOLD = 3
+        _max_consecutive_failed = 0
+        _run_len = 0
+        for r in chat:
+            if r.get("role") != "dm":
+                continue
+            if r.get("beat_failed") is True:
+                _run_len += 1
+                _max_consecutive_failed = max(_max_consecutive_failed, _run_len)
+            else:
+                _run_len = 0
+        chk("dm_beat_honesty_no_consecutive_collapse", _max_consecutive_failed < _CONSECUTIVE_INVALID_THRESHOLD,
+            f"{_max_consecutive_failed} consecutive DM beat failure(s) in $CHAT (threshold="
+            f"{_CONSECUTIVE_INVALID_THRESHOLD}) — a run of back-to-back failed beats is an infra "
+            f"collapse (quota window / host-session death mid-run), not scattered product defects; "
+            f"this transcript is contaminated and must not be cited as a clean product measurement.",
+            fatal=True)
 
     # 3.5) constrained-player (It.1 facade): the player must actually ACT through its
     # tools. An empty moves log means the facade was blocked/unused (e.g. a missing
@@ -891,6 +1003,20 @@ def main() -> int:
             "rolls Stealth vs passive Perception and applies SRD-5.2 initiative disadvantage to the "
             "surprised set.",
             fatal=False)
+
+    # DETECTION-BEAT-REQUIRES-CHECK GATE (#1287, WARN — same family as #1271 above). DM narration
+    # that plainly stages an NPC noticing/spotting/hearing the party ("the guard's eyes snap
+    # toward you", "she catches a sound") without a preceding Perception/Insight/Investigation
+    # skill_check (or a reason-tagged roll) in the SAME beat is DM fiat, not a gated roll — the
+    # rri-a1-duo defect this promotes from the scorer's suggested_fix. WARN, never fatal: prose
+    # alone is a soft signal and a false-fire here should never cap an otherwise-clean run.
+    _detection_offenders = _detection_beats_without_check(events)
+    chk("detection_beat_requires_check", not _detection_offenders,
+        f"{len(_detection_offenders)} DM narration beat(s) staged an NPC detecting/noticing the "
+        f"party with no preceding Perception/Insight/Investigation skill_check (or reason-tagged "
+        f"roll) in the same beat — DM fiat, not a gated roll — e.g. "
+        f"{_detection_offenders[0][:90]!r}" if _detection_offenders else "",
+        fatal=False)
 
     def _quest_reward_already_awarded(q: dict) -> bool:
         return any(bool(q.get(k)) for k in ("milestone_awarded", "awarded", "rewarded", "xp_awarded"))
