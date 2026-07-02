@@ -178,6 +178,21 @@ float pa=cam.aspect; var pt=cam.targetTexture; cam.targetTexture=rt; cam.aspect=
 var pAct=RenderTexture.active; RenderTexture.active=rt; var t2=new Texture2D(W,Hh,TextureFormat.RGB24,false); t2.ReadPixels(new Rect(0,0,W,Hh),0,0); t2.Apply(); RenderTexture.active=pAct; cam.targetTexture=pt; cam.aspect=pa;
 System.IO.Directory.CreateDirectory("/home/unity/worldos-unity/Captures-Durable");
 System.IO.File.WriteAllBytes("/home/unity/worldos-unity/Captures-Durable/room_greybox.png", t2.EncodeToPNG());
+// ★ G-buffer passes (PoE2-faithful, Phase A): render the greybox's view-space NORMAL + linear DEPTH at the SAME
+// contract camera. The greybox is a real 3D scene, so these are FREE (like PoE2's Maya depth/normal passes) — they
+// let a FLAT-lit painterly diffuse be relit IN-ENGINE (deferred lighting) + give per-pixel occlusion. Additive:
+// room_greybox.png (the img2img control) is unchanged; these are extra sidecar layers.
+System.Action<string,string> _capPass=(shaderName,outName)=>{
+  var sh=Shader.Find(shaderName); if(sh==null){ sb.AppendLine("MISSING shader "+shaderName); return; }
+  var _prt=cam.targetTexture; var _pa=cam.aspect; cam.targetTexture=rt; cam.aspect=(float)W/Hh;
+  cam.RenderWithShader(sh, "");
+  var _pa2=RenderTexture.active; RenderTexture.active=rt; var _tp=new Texture2D(W,Hh,TextureFormat.RGB24,false); _tp.ReadPixels(new Rect(0,0,W,Hh),0,0); _tp.Apply(); RenderTexture.active=_pa2;
+  cam.targetTexture=_prt; cam.aspect=_pa;
+  System.IO.File.WriteAllBytes("/home/unity/worldos-unity/Captures-Durable/"+outName, _tp.EncodeToPNG());
+  UnityEngine.Object.DestroyImmediate(_tp);
+};
+_capPass("WOS/ViewNormal","room_greybox_normal.png");
+_capPass("WOS/LinDepth","room_greybox_depth.png");
 UnityEngine.Object.DestroyImmediate(t2); rt.Release(); UnityEngine.Object.DestroyImmediate(rt);
 // CLEANUP (capture is done; the greybox is transient + the scene is NOT saved): destroy this run's GB_*
 // GameObjects + their per-box Materials + the shared procedural stone Textures, so repeated invocations
