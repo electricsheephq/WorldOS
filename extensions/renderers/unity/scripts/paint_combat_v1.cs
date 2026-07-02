@@ -25,6 +25,25 @@ try {
 } catch {}
 if(!string.IsNullOrEmpty(_locPlate)) PLATE=_locPlate;
 else { var _abs="/home/unity/worldos-unity/Assets/painterly/backdrops/_active_combat.txt"; if(System.IO.File.Exists(_abs)){ var _n=System.IO.File.ReadAllText(_abs).Trim(); if(_n.Length>0) PLATE=_n; } }
+// #1291: day-state plate selection. A sentinel (_time_of_day.txt, written by the deploy/driver step —
+// NOT the engine directly; today's engine time_of_day is not yet surfaced on /combat-surface) says
+// "day"/"night". When it says day AND a naming-convention sibling "<room>_day_v1.png" exists (room =
+// the resolved PLATE's prefix up to its first underscore, e.g. tavern_layered_v1.png -> tavern), prefer
+// it. ADDITIVE + default-off: no sentinel file, sentinel != "day", or missing day plate all fall through
+// to today's PLATE unchanged (night/current behavior stays the default).
+try {
+  var _todF="/home/unity/worldos-unity/Assets/painterly/backdrops/_time_of_day.txt";
+  if(System.IO.File.Exists(_todF)){
+    var _tod=System.IO.File.ReadAllText(_todF).Trim().ToLowerInvariant();
+    if(_tod=="day"){
+      var _us=PLATE.IndexOf('_');
+      var _room=_us>0?PLATE.Substring(0,_us):PLATE.Replace(".png","");
+      var _dayName=_room+"_day_v1.png";
+      var _dayPath="Assets/painterly/backdrops/"+_dayName;
+      if(System.IO.File.Exists("/home/unity/worldos-unity/"+_dayPath)) PLATE=_dayName;
+    }
+  }
+} catch {}
 string PLATE_PATH="Assets/painterly/backdrops/"+PLATE;
 // New backdrop plates default to NPOT=ToNearest, which square-distorts a 1344x768 plate and breaks the
 // camera-pin aspect. Force NPOT=None so the plate keeps native dims (idempotent — only reimports if needed).
