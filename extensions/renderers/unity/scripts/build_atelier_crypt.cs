@@ -120,9 +120,10 @@ var wallCells=geo.ContainsKey("walls")?geo["walls"] as System.Collections.Generi
 int nWall=0;
 // Wall placer: scale the wall's LOCAL long axis (x, pre-yaw) so its footprint spans one 2.0 cell edge,
 // keep thickness+height native, THEN yaw so the face points inward, then seat base on floor (y=0) at edgePos.
-// v2 fix 1: MONUMENTAL walls. Scale local long axis (x) to one 2.0-cell edge, scale Y by heightScale
-// (~2.2x -> ~6.6 world units tall from native 3.01), keep thickness native, THEN yaw + seat on floor.
-float WALL_H=2.2f;   // v2: walls ~6.6 world units tall (native 3.01 * 2.2)
+// v3 fix 1: HEROIC walls. Scale local long axis (x) to one 2.0-cell edge, scale Y by heightScale
+// (~3.5x -> ~10.5 world units tall from native 3.01 — PoE interiors are deliberately over-scaled so the
+// walls DOMINATE the frame, not read as low fins), keep thickness native, THEN yaw + seat on floor.
+float WALL_H=3.5f;   // v3: HEROIC walls ~10.5 world units tall (native 3.01 * 3.5)
 System.Action<string,Vector3,float> placeWall=(name,edgePos,yaw)=>{
   if(pWall==null){ LOG("  MISSING Wall prefab"); return; }
   var inst=(GameObject)PrefabUtility.InstantiatePrefab(pWall); inst.name=name; inst.transform.SetParent(root.transform,true);
@@ -148,21 +149,21 @@ if(wallCells!=null) foreach(var wo in wallCells){ var wc=wo as System.Collection
   else if(isRight){ placeWall("WallRight_"+r, new Vector3(w.x+CELL*0.5f, 0, w.z), 90f); } // yaw 90: face -x inward
 }
 
-// --- PILLARS (v2 fix 1): MONUMENTAL load-bearing columns, two DIFFERENT variants (anti-clone).
-// Native ~0.43 wide x 3.02 tall -> XZ x3.5 (~1.5 wide), Y x1.9 (~5.7 tall). Anti-clone: B a touch
-// beefier + yawed 45 so the two columns don't read identical.
+// --- PILLARS (v3 fix 1): HEROIC load-bearing columns, two DIFFERENT variants (anti-clone).
+// Native ~0.43 wide x 3.02 tall -> XZ x4.9 (~2.1 wide), Y x3.0 (~9.0 tall) so they read as massive
+// stone columns against the 10.5u walls. Anti-clone: B a touch beefier + yawed 45.
 int nPil=0;
-{ var w=cellToWorld(4,4); if(placeScaled(pPil1,"Pillar_A",new Vector3(w.x,0,w.z), new Vector3(3.5f,1.9f,3.5f), 0f)!=null) nPil++; }
-{ var w=cellToWorld(9,4); if(placeScaled(pPil2,"Pillar_B",new Vector3(w.x,0,w.z), new Vector3(3.8f,2.0f,3.8f), 45f)!=null) nPil++; }
+{ var w=cellToWorld(4,4); if(placeScaled(pPil1,"Pillar_A",new Vector3(w.x,0,w.z), new Vector3(4.9f,3.0f,4.9f), 0f)!=null) nPil++; }
+{ var w=cellToWorld(9,4); if(placeScaled(pPil2,"Pillar_B",new Vector3(w.x,0,w.z), new Vector3(5.2f,3.05f,5.2f), 45f)!=null) nPil++; }
 
-// --- SARCOPHAGUS (v2 fix 1c + 5): royal tomb spanning cells (6,5)-(7,5), the monumental HERO prop.
+// --- SARCOPHAGUS (v3 fix 1 + 5): royal tomb spanning cells (6,5)-(7,5), the HEROIC monument.
 // Native ~1.05 x 0.63 x 2.43 (long axis Z). yaw 90 lays the long axis along X (cells 6,7 adjacent in X);
-// uniform x1.6 makes it monumental. A ROYAL LID placed on top makes it read CLOSED/solid, not an open tray.
+// uniform x2.2 makes it a hero monument. A ROYAL LID placed on top makes it read CLOSED/solid, not an open tray.
 int nSarc=0;
 { var w6=cellToWorld(6,5); var w7=cellToWorld(7,5); Vector3 mid=(w6+w7)*0.5f;
-  float TOMB_S=1.6f;
+  float TOMB_S=2.2f;
   var inst=placeScaled(pTomb,"Sarcophagus",new Vector3(mid.x,0,mid.z), new Vector3(TOMB_S,TOMB_S,TOMB_S), 90f);
-  if(inst!=null){ nSarc++; LOG("sarcophagus: SM_Prop_Tomb_Royal_01 yaw90 x1.6 spanning (6,5)-(7,5)");
+  if(inst!=null){ nSarc++; LOG("sarcophagus: SM_Prop_Tomb_Royal_01 yaw90 x"+TOMB_S.ToString("F1")+" spanning (6,5)-(7,5)");
     var tb=worldBounds(inst);   // measure the placed tomb so the lid sits ON its top face
     if(pLid!=null){
       var lid=(GameObject)PrefabUtility.InstantiatePrefab(pLid); lid.name="SarcophagusLid"; lid.transform.SetParent(root.transform,true);
@@ -176,14 +177,15 @@ int nSarc=0;
   else LOG("sarcophagus: NO tomb prefab found -> using scaled Base piece note");
 }
 
-// --- SET-DRESSING (v2 fix 4): DENSITY x3, 15-20 props, edges only (pathing-safe), ANTI-CLONE jitter.
-// PolygonDungeonMap is a library/study pack (bookcases, knight-stands, globe, book piles) — a crypt-library.
+// --- SET-DRESSING (v3 fix 1+4): DENSITY x3 (19 props), edges only (pathing-safe), ANTI-CLONE jitter,
+// scaled UP x1.65 base so bookcases read ~4u tall against the 10.5u HEROIC walls (they were dwarfed at v2).
 // Each prop gets a per-instance yaw jitter (+-10 deg) and scale jitter (0.95-1.10) so no two read identical.
+float DRESS_S=1.65f;   // v3: heroic-scale base multiplier for all dressing
 int nProp=0; int jseed=0;
 System.Func<string,int,int,float,bool> dress=(prefabNm,c,r,baseYaw)=>{
   var pf=loadPrefab(prefabNm); if(pf==null){ LOG("  MISSING dressing "+prefabNm); return false; }
   // deterministic jitter from an incrementing seed (repeatable renders)
-  jseed++; float jy=((jseed*37)%21)-10f; float js=0.95f+(((jseed*53)%16)/100f);   // yaw +-10, scale 0.95-1.10
+  jseed++; float jy=((jseed*37)%21)-10f; float js=DRESS_S*(0.95f+(((jseed*53)%16)/100f));   // yaw +-10, scale x1.65 * 0.95-1.10
   var w=cellToWorld(c,r);
   var i=placeScaled(pf,"Dress_"+prefabNm+"_"+c+"_"+r,new Vector3(w.x,0,w.z), new Vector3(js,js,js), baseYaw+jy);
   return i!=null;
@@ -212,6 +214,36 @@ if(dress("SM_Prop_Book_Stand_02", 8,8, -20f)) nProp++;
 if(dress("SM_Prop_Bookcase_Small_01", 5,1, 180f)) nProp++;
 if(dress("SM_Prop_Papers_01",     7,9, 30f)) nProp++;
 
+// --- PLINTH + STEPS (v3 fix 2): the room floor sits on a raised platform ~1.4u tall. Add platform SIDE
+// faces (skirt) along the two CUT/NEAR edges (-x/left col and -z/front row) so the bottom of frame reads
+// as platform edge, NOT black void triangles; plus a 3-4 step staircase descending toward the camera at
+// the near-left. Simple scaled cubes with the stone material (normalized below via the "Plinth"/"Step" prefix).
+// Crib: build_room_greybox.cs uses primitive cubes for greybox; here they're the platform skirt + steps.
+int nPlinth=0; float PLINTH_H=1.4f;
+System.Func<string,Vector3,Vector3,GameObject> plbox=(nm,center,size)=>{
+  var b=GameObject.CreatePrimitive(PrimitiveType.Cube); b.name=nm; UnityEngine.Object.DestroyImmediate(b.GetComponent<Collider>());
+  b.transform.SetParent(root.transform,true); b.transform.position=center; b.transform.localScale=size; return b; };
+{ float roomW=cols*CELL, roomD=rows*CELL;
+  float leftX = -(cx0+0.5f)*CELL;   // -x near edge (world x of the left room boundary)
+  float frontZ= -(cy0+0.5f)*CELL;   // -z near edge (world z of the front room boundary)
+  float skirtT=0.6f;                 // skirt thickness (into the platform)
+  // LEFT (-x) skirt: a slab hanging from y=0 down to y=-PLINTH_H along the whole left edge
+  plbox("Plinth_Left",  new Vector3(leftX+skirtT*0.5f, -PLINTH_H*0.5f, 0f), new Vector3(skirtT, PLINTH_H, roomD)); nPlinth++;
+  // FRONT (-z) skirt: same along the whole front edge
+  plbox("Plinth_Front", new Vector3(0f, -PLINTH_H*0.5f, frontZ+skirtT*0.5f), new Vector3(roomW, PLINTH_H, skirtT)); nPlinth++;
+  // a solid corner block so the -x/-z corner isn't a gap
+  plbox("Plinth_Corner", new Vector3(leftX+skirtT*0.5f, -PLINTH_H*0.5f, frontZ+skirtT*0.5f), new Vector3(skirtT, PLINTH_H, skirtT)); nPlinth++;
+  // STAIRCASE at the near-left corner descending toward the camera (-x,-z direction). 4 steps, each drops
+  // 0.35u and steps out 0.7u from the platform's -x face, centred near the front-left.
+  int nSteps=4; float stepDrop=PLINTH_H/nSteps, stepRun=0.8f, stepW=5.0f;
+  float sz = frontZ + roomD*0.28f;   // steps centred toward the front-left of the left edge
+  for(int i2=0;i2<nSteps;i2++){
+    float topY=-(i2)*stepDrop; float sx=leftX - (i2+0.5f)*stepRun; // march out in -x, each lower
+    plbox("Step_"+i2, new Vector3(sx, topY-stepDrop*0.5f, sz), new Vector3(stepRun+0.02f, (PLINTH_H-i2*stepDrop), stepW));
+    nPlinth++;
+  }
+}
+
 // ================= MATERIAL NORMALIZATION (geometry spike) =================
 // The box's Synty import is PARTIAL: PolygonDungeonMap prefab renderers have NULL materials (missing
 // material/texture refs) -> Unity renders them MAGENTA; and some PolygonGeneric materials (e.g. the pillar's
@@ -233,6 +265,7 @@ Color colFloor=new Color(0.30f,0.29f,0.28f), colWall=new Color(0.28f,0.275f,0.26
     Color c=colProp; float g=0.05f;
     if(nm3.StartsWith("Floor_")) c=colFloor; else if(nm3.StartsWith("Wall")) c=colWall;
     else if(nm3.StartsWith("Pillar")) { c=colPillar; g=0.08f; } else if(nm3.StartsWith("Sarcophagus")) { c=colTomb; g=0.10f; }
+    else if(nm3.StartsWith("Plinth")||nm3.StartsWith("Step")) c=colWall;  // platform skirt + steps = stone
     else if(nm3=="AK_RimFill") continue;  // keep the emissive rim material
     int slots=r.sharedMaterials.Length; var arr=new Material[slots]; var one=stoneMat(c,g); for(int i=0;i<slots;i++) arr[i]=one; r.sharedMaterials=arr; nm2++;
   }
@@ -275,17 +308,26 @@ Vector3 rightX_edge=new Vector3((cx0+0.5f)*CELL,0f,0f); // x of the visible righ
 // iteration 5 (v2): the wall-torch near-field cores stay >L60 regardless of wall albedo (it's the LIGHT,
 // not the surface), so cut wall-torch intensity hard — the wall still catches a warm MIDTONE wash (fix 3
 // satisfied: walls are lit, not void fins) but the core no longer blows past L60. Tomb pool trimmed too.
-// iteration 6 (v2, TRUE baseline after the light-leak fix): re-tune up from a clean zero.
+// v3 (TRUE baseline continued): HEROIC 10.5u walls -> raise the hero pool + wall torches to y~6.5-7 so the
+// warm pools climb the tall wall faces (they'd only touch the base at y~4.8). THREE wall torches now
+// (back-left, back-right, right) so each big wall face carries a warm pool. Ranges 14-16 for the tall walls.
+// v3 iteration 2: the tomb HERO pool (cols5-7/rows2-3 = ~80% lit) dominates the LIT budget, so cut it
+// hard (intensity + range); trim the 3 wall pools; DARK has headroom (~70%) so this stays in-band.
+// v3 iteration 3: iter2 overcut (1.4% lit); bump the hero pool + wall pools back up to land ~3-4% lit.
 { var w6=cellToWorld(6,5); var w7=cellToWorld(7,5); Vector3 mid=(w6+w7)*0.5f;
-  pt("AK_TorchSarc", new Vector3(mid.x, 3.8f, mid.z), 14f, 5.0f, warm, true); }       // hero pool over the tomb
+  pt("AK_TorchSarc", new Vector3(mid.x, 5.2f, mid.z), 14f, 4.4f, warm, true); }        // hero pool over the tomb
 // FIX 2: cool RIM point behind/above the tomb (replaces the dead emissive quad)
 { var w6=cellToWorld(6,5); var w7=cellToWorld(7,5); Vector3 mid=(w6+w7)*0.5f;
-  pt("AK_RimCool", new Vector3(mid.x, 4.2f, mid.z+1.8f), 10f, 1.6f, new Color(0.30f,0.45f,0.70f), false); }
-// FIX 3: two warm WALL-TORCH points ~1.2 off a wall FACE — warm midtone wash up the wall (walls catch light).
-{ var wc=cellToWorld(4,1); pt("AK_TorchBackWall", new Vector3(wc.x, 4.8f, backZ_edge.z-1.2f), 11f, 3.0f, warm, false); }
-{ var wc=cellToWorld(12,4); pt("AK_TorchRightWall", new Vector3(rightX_edge.x-1.2f, 4.8f, wc.z), 11f, 3.0f, warm, false); }
+  pt("AK_RimCool", new Vector3(mid.x, 5.4f, mid.z+2.0f), 11f, 1.5f, new Color(0.30f,0.45f,0.70f), false); }
+// FIX 3: THREE warm WALL-TORCH points ~1.3 off a wall FACE at y~6.7 so each washes a warm pool UP the tall wall.
+// back wall LEFT (over the back-left bookcases / pillar A region):
+{ var wc=cellToWorld(3,1);  pt("AK_TorchBackL", new Vector3(wc.x, 6.7f, backZ_edge.z-1.3f), 14f, 2.9f, warm, false); }
+// back wall RIGHT (over the back-right bookcases):
+{ var wc=cellToWorld(10,1); pt("AK_TorchBackR", new Vector3(wc.x, 6.7f, backZ_edge.z-1.3f), 14f, 2.6f, warm, false); }
+// right wall (mid, washing the +x wall + knight stands):
+{ var wc=cellToWorld(12,4); pt("AK_TorchRight", new Vector3(rightX_edge.x-1.3f, 6.7f, wc.z), 14f, 2.9f, warm, false); }
 // faint archway/void point near the back-center door:
-{ var wa=cellToWorld(6,0); pt("AK_ArchVoid",  new Vector3(wa.x, 4.2f, wa.z+1.0f), 12f, 2.2f, new Color(1f,0.5f,0.2f), false); }
+{ var wa=cellToWorld(6,0); pt("AK_ArchVoid",  new Vector3(wa.x, 5.0f, wa.z+1.0f), 13f, 2.0f, new Color(1f,0.5f,0.2f), false); }
 
 // ================= CONTRACT CAMERA (byte-identical) =================
 cam.orthographic=true; cam.orthographicSize=13f; cam.nearClipPlane=0.3f; cam.farClipPlane=500f;
@@ -306,7 +348,7 @@ System.Action<string,Shader> capture=(fname,replShader)=>{
 };
 
 // (a) BEAUTY — normal lit render
-capture("atelier_beauty_v2.png", null);
+capture("atelier_beauty_v3.png", null);
 
 // (b) ALBEDO — all lights off + flat white ambient (so URP/Lit shows base color unlit-ish).
 var allLights=UnityEngine.Object.FindObjectsByType<Light>(FindObjectsSortMode.None);
@@ -314,7 +356,7 @@ var savedEnabled=new System.Collections.Generic.Dictionary<Light,bool>();
 foreach(var L in allLights){ savedEnabled[L]=L.enabled; L.enabled=false; }
 var savedAmbMode=RenderSettings.ambientMode; var savedAmb=RenderSettings.ambientLight;
 RenderSettings.ambientMode=UnityEngine.Rendering.AmbientMode.Flat; RenderSettings.ambientLight=Color.white;
-capture("atelier_albedo_v2.png", null);
+capture("atelier_albedo_v3.png", null);
 // restore lights + ambient
 foreach(var kv in savedEnabled) if(kv.Key!=null) kv.Key.enabled=kv.Value;
 RenderSettings.ambientMode=savedAmbMode; RenderSettings.ambientLight=savedAmb;
@@ -329,13 +371,13 @@ RenderSettings.ambientMode=savedAmbMode; RenderSettings.ambientLight=savedAmb;
   Shader.SetGlobalFloat("_WOSDepthNear", mn); Shader.SetGlobalFloat("_WOSDepthFar", mx);
   var shRemap=Shader.Find("WOS/LinDepthRemap"); var shDepth=Shader.Find("WOS/LinDepth"); var shNorm=Shader.Find("WOS/ViewNormal");
   LOG("depth remap near="+mn.ToString("F2")+" far="+mx.ToString("F2")+" (Remap="+(shRemap!=null)+" LinDepth="+(shDepth!=null)+" ViewNormal="+(shNorm!=null)+")");
-  if(shRemap!=null) capture("atelier_depth_v2.png", shRemap);
-  else if(shDepth!=null){ capture("atelier_depth_v2.png", shDepth); LOG("  WARN: remap shader missing -> used hardcoded /80 WOS/LinDepth"); }
+  if(shRemap!=null) capture("atelier_depth_v3.png", shRemap);
+  else if(shDepth!=null){ capture("atelier_depth_v3.png", shDepth); LOG("  WARN: remap shader missing -> used hardcoded /80 WOS/LinDepth"); }
   else LOG("  MISSING both depth shaders");
-  if(shNorm!=null) capture("atelier_normal_v2.png", shNorm); else LOG("  MISSING WOS/ViewNormal");
+  if(shNorm!=null) capture("atelier_normal_v3.png", shNorm); else LOG("  MISSING WOS/ViewNormal");
 }
 
-LOG("BUILT floor="+nFloor+" walls="+nWall+" pillars="+nPil+" sarc="+nSarc+" props="+nProp);
-LOG("captures -> Captures-Durable/atelier_{beauty,albedo,depth,normal}_v2.png");
+LOG("BUILT floor="+nFloor+" walls="+nWall+" pillars="+nPil+" sarc="+nSarc+" props="+nProp+" plinth/steps="+nPlinth);
+LOG("captures -> Captures-Durable/atelier_{beauty,albedo,depth,normal}_v3.png");
 System.IO.File.WriteAllText("/home/unity/worldos-unity/atelier_report.txt", sb.ToString());
-return "OK atelier v2: floor="+nFloor+" walls="+nWall+" pillars="+nPil+" sarc="+nSarc+" props="+nProp+" (report -> atelier_report.txt)";
+return "OK atelier v3: floor="+nFloor+" walls="+nWall+" pillars="+nPil+" sarc="+nSarc+" props="+nProp+" plinth="+nPlinth+" (report -> atelier_report.txt)";
