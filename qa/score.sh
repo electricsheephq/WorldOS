@@ -129,12 +129,25 @@ while [ "$attempt" -lt 3 ]; do
   _scorer_cfg="${TMPDIR:-/tmp}/worldos-scorer-config"
   mkdir -p "$_scorer_cfg"
   [ -s "$_scorer_cfg/settings.json" ] || printf '{}' > "$_scorer_cfg/settings.json"
+  # #1260 round 3 (measured): a FRESH config dir has no login state, and the CLI does NOT
+  # fall back to the default keychain identity from there -> "Not logged in". On macOS,
+  # derive the scorer credential EXPLICITLY from the CLI keychain item and hand it to the
+  # child as CLAUDE_CODE_OAUTH_TOKEN (same isolated-config+env-credential pattern the duo
+  # runner's auth block uses; measured to produce valid scorecards). The token is passed
+  # via the child env only — never printed, never written. A caller-provided
+  # CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_API_KEY still wins (first clause).
+  _scorer_tok="${CLAUDE_CODE_OAUTH_TOKEN:-}"
+  if [ -z "$_scorer_tok" ] && [ -z "${ANTHROPIC_API_KEY:-}" ] && [ "$(uname)" = "Darwin" ]; then
+    _scorer_tok="$(security find-generic-password -s 'Claude Code-credentials' -a "$USER" -w 2>/dev/null \
+      | python3 -c 'import json,sys;print(json.load(sys.stdin).get("claudeAiOauth",{}).get("accessToken",""))' 2>/dev/null || true)"
+  fi
   printf '%s' "$INPUT" | env -u ANTHROPIC_BASE_URL -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN \
     -u API_TIMEOUT_MS \
     -u CLAUDECODE -u CLAUDE_CODE_CHILD_SESSION -u CLAUDE_CODE_ENTRYPOINT \
     -u CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH -u CLAUDE_CODE_SDK_HAS_OAUTH_REFRESH \
     -u CLAUDE_CODE_SESSION_ID \
     CLAUDE_CONFIG_DIR="$_scorer_cfg" \
+    ${_scorer_tok:+CLAUDE_CODE_OAUTH_TOKEN="$_scorer_tok"} \
     timeout "${WORLDOS_SCORE_TIMEOUT:-600}" claude -p \
     --model "$SCORER_MODEL" --permission-mode bypassPermissions $EFFORT_ARG \
     --max-budget-usd "$BUDGET" \
