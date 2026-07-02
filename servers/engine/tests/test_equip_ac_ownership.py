@@ -173,3 +173,139 @@ def test_manual_ac_not_touched_by_unrelated_patch(hero):
     server.update_character(cid, h, patch={"max_hp": 30})       # unrelated
     assert _ch(cid, h).armor_ac_source == "manual"
     assert _ch(cid, h).armor_class == 18
+
+
+# ---------------------------------------------------------------------------
+# Gap 1 (review) — FULL-recompute write is order-independent + idempotent
+# ---------------------------------------------------------------------------
+
+def _equipment_owned(cid, h):
+    # Put the character into equipment-owned AC state with a clean recomputed base.
+    server.update_character(cid, h, patch={"rederive_ac": True})
+
+
+def test_armor_then_shield_and_shield_then_armor_converge(hero):
+    # Both equip orderings must land the SAME stored base — the incremental write
+    # dropped the shield bonus when armor was equipped after the shield.
+    cid, h = hero
+    server.update_character(cid, h, patch={"abilities": {"dexterity": 10}})  # +0
+    _equipment_owned(cid, h)
+    server.add_item(cid, h, item_name="Chain Mail")  # heavy 16
+    server.add_item(cid, h, item_name="Shield")      # +2
+
+    # order A: armor then shield
+    server.equip_item(cid, h, "Chain Mail")
+    server.equip_item(cid, h, "Shield")
+    ac_a = _ch(cid, h).armor_class
+    assert ac_a == 18  # 16 + 2
+
+    # reset to the same equipment-owned clean state, then order B: shield then armor
+    server.equip_item(cid, h, "Chain Mail", equipped=False)
+    server.equip_item(cid, h, "Shield", equipped=False)
+    server.equip_item(cid, h, "Shield")
+    server.equip_item(cid, h, "Chain Mail")
+    ac_b = _ch(cid, h).armor_class
+    assert ac_b == 18 == ac_a  # convergent regardless of order
+
+
+def test_double_equip_of_equipped_shield_is_idempotent(hero):
+    # Re-running the mechanics pass on an already-equipped shield must NOT drift +2/call
+    # — the full recompute reads actual equipped inventory, so it is stable.
+    cid, h = hero
+    server.update_character(cid, h, patch={"abilities": {"dexterity": 10}})
+    _equipment_owned(cid, h)  # base 10
+    server.add_item(cid, h, item_name="Shield")
+    server.equip_item(cid, h, "Shield")
+    assert _ch(cid, h).armor_class == 12
+    before = _ch(cid, h).armor_class
+    server._equip_mechanics(_ch(cid, h), "Shield", True)  # direct re-run of the pass
+    assert _ch(cid, h).armor_class == before  # no per-call drift
+
+
+def test_unequip_armor_with_shield_on_keeps_shield_bonus(hero):
+    # Unequip body armor while the shield stays equipped: base must fall to the
+    # unarmored baseline PLUS the still-worn shield, not lose the shield.
+    cid, h = hero
+    server.update_character(cid, h, patch={"abilities": {"dexterity": 10}})  # +0
+    _equipment_owned(cid, h)
+    server.add_item(cid, h, item_name="Chain Mail")
+    server.add_item(cid, h, item_name="Shield")
+    server.equip_item(cid, h, "Chain Mail")
+    server.equip_item(cid, h, "Shield")
+    assert _ch(cid, h).armor_class == 18  # 16 + 2
+
+    server.equip_item(cid, h, "Chain Mail", equipped=False)
+    # Shield still on -> 10 (unarmored) + 2 (shield) = 12, NOT 10.
+    assert _ch(cid, h).armor_class == 12
+    # And a subsequent shield unequip lands cleanly at the unarmored baseline.
+    server.equip_item(cid, h, "Shield", equipped=False)
+    assert _ch(cid, h).armor_class == 10
+
+
+# ---------------------------------------------------------------------------
+# Gap 2 (review) — Unarmored Defense preserved on re-derive (barb / monk)
+# ---------------------------------------------------------------------------
+
+def test_barbarian_rederive_no_armor_keeps_unarmored_defense(hero):
+    # Barbarian Unarmored Defense = 10 + DEX + CON (mirrors _finish_seat_sheet).
+    cid, h = hero
+    server.update_character(cid, h, patch={
+        "classes": [{"name": "Barbarian", "level": 3}],
+        "abilities": {"dexterity": 14, "constitution": 16},  # +2 DEX, +3 CON
+    })
+    out = server.update_character(cid, h, patch={"rederive_ac": True})
+    assert out["armor_class"] == 15  # 10 + 2 + 3
+    assert _ch(cid, h).armor_ac_source == "equipment"
+
+
+def test_barbarian_unarmored_defense_allows_shield(hero):
+    # SRD: a barbarian's Unarmored Defense still permits a shield's +2.
+    cid, h = hero
+    server.update_character(cid, h, patch={
+        "classes": [{"name": "Barbarian", "level": 3}],
+        "abilities": {"dexterity": 14, "constitution": 16},
+    })
+    server.add_item(cid, h, item_name="Shield")
+    server.update_character(cid, h, patch={"rederive_ac": True})
+    server.equip_item(cid, h, "Shield")
+    assert _ch(cid, h).armor_class == 17  # 15 + 2 shield
+
+
+def test_monk_rederive_no_armor_keeps_unarmored_defense(hero):
+    # Monk Unarmored Defense = 10 + DEX + WIS (mirrors _finish_seat_sheet).
+    cid, h = hero
+    server.update_character(cid, h, patch={
+        "classes": [{"name": "Monk", "level": 3}],
+        "abilities": {"dexterity": 16, "wisdom": 14},  # +3 DEX, +2 WIS
+    })
+    out = server.update_character(cid, h, patch={"rederive_ac": True})
+    assert out["armor_class"] == 15  # 10 + 3 + 2
+    assert _ch(cid, h).armor_ac_source == "equipment"
+
+
+def test_monk_unarmored_defense_voided_by_shield(hero):
+    # SRD: a monk's Unarmored Defense does not function with a shield equipped.
+    cid, h = hero
+    server.update_character(cid, h, patch={
+        "classes": [{"name": "Monk", "level": 3}],
+        "abilities": {"dexterity": 16, "wisdom": 14},
+    })
+    server.add_item(cid, h, item_name="Shield")
+    server.update_character(cid, h, patch={"rederive_ac": True})
+    server.equip_item(cid, h, "Shield")
+    # Monk Unarmored Defense VOID with a shield: the WIS term drops (plain 10 + DEX(+3)),
+    # but the monk may still wield the shield so its +2 applies -> 10 + 3 + 2 = 15.
+    assert _ch(cid, h).armor_class == 15
+
+
+def test_body_armor_overrides_unarmored_defense_for_barbarian(hero):
+    # Equipping body armor uses the normal armor rule, NOT Unarmored Defense.
+    cid, h = hero
+    server.update_character(cid, h, patch={
+        "classes": [{"name": "Barbarian", "level": 3}],
+        "abilities": {"dexterity": 14, "constitution": 16},
+    })
+    server.add_item(cid, h, item_name="Chain Mail")  # heavy 16, no DEX
+    server.update_character(cid, h, patch={"rederive_ac": True})
+    server.equip_item(cid, h, "Chain Mail")
+    assert _ch(cid, h).armor_class == 16  # normal heavy rule, not 10+DEX+CON
