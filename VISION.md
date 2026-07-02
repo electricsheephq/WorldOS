@@ -14,6 +14,9 @@ universe-system that generates worlds you play with any agent.
 
 It is a real game **and** an experiment — in whether an autonomous agent can build, harden, and
 steer a game system to a shippable bar, making its own decisions against this documented vision.
+The experiment's engine is the **measurement culture** (control-anchored art panels, story lenses,
+the behavioral gate, the FELT track): the instruments are what let autonomous agents build to a
+bar, and they are a product in their own right — WorldOS is the game AND the proof of the method.
 
 ## North star
 
@@ -113,14 +116,29 @@ Tier-0/1 result as a release verdict):
   OOMs). Log every scored run to the ledger (`qa/scores_db.py`).
 
 **Release ladder:** Engine Excellent → **Player-Ready Beta** (a real built `.app`; a no-prior-
-knowledge dogfood arc with no "broken" moment; honest felt session) → **1.0 Playable Combat Demo**
+knowledge dogfood arc with no "broken" moment; honest felt session — **scoped to the shipped 2D
+OpenWorlds surface**: the Unity demo renderer is deliberately NOT a Beta gate; render-in-app is
+the next rung's gate) → **1.0 Playable Combat Demo**
 (a PLAYABLE, MODULAR combat scene rendered in-app on the PoE2 painterly stack — 2D camera-pinned
 backdrop + real 3D actors on the frozen dimetric camera — running on PLACEHOLDERS, i.e. a demo cast +
 ~10 monsters with a default-on-miss registry, default VFX/sounds; the proof is that the *workflows*
 are repeatable and the **backdrop scorecard PASSES** for the demo room while actors/effects ride the
 placeholder-OK tier; see "Graphics North Star (PoE2)") → **1.0 GA** (the Demo's proven workflow
 applied to real, polished art + Beta's story/world bar + notarized + feature parity: companions felt,
-visual parity at the PoE2 bar, story at the bar).
+visual parity at the PoE2 bar, story at the bar — **plus the platform thesis at minimum viable
+scope: the bring-your-own-agent surface documented and ONE provider lane (Claude Code) verified
+end-to-end**; further agent lanes are post-GA platform work, epic #911).
+
+**The ladder executes as sprints S1–S10 with engine-version pins — sequencing source of truth:
+`docs/roadmap/PRODUCT-ROADMAP.md`** (charters, binding gates, lanes, the Owner Gate Register).
+Engine releases stay semver v1.0.x; product rungs are named releases pinned to an engine version
+(Beta ≈ v1.0.9 · Demo-1.0 ≈ v1.0.10 · GA = v1.1.0).
+
+**★ OPEN LOAD-BEARING DECISION (blocks demo assembly; decide at S2 entry per the roadmap):
+render delivery** — how the Unity render reaches the player's screen (embedded Unity build in the
+`.app` vs a render service streaming frames into OpenWorlds vs a standalone player). Today's path
+is one-way box→QA-frames only. First-principles decision doc required; no demo-integration code
+before it lands.
 
 ## Graphics North Star (PoE2)
 
