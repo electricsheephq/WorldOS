@@ -106,3 +106,8 @@ servers/*/.coverage
 /data/asset-registry/**
 !/data/asset-registry/
 !/data/asset-registry/registry.json
+
+# Local nested worktree checkouts (each is its own full git working tree with its own .git
+# file) — never repo content, and left unignored they get scanned as ordinary files by
+# tools like GitNexus, ballooning the node count past the embeddings cap.
+/WorldOS-worktrees/
