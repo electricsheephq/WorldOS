@@ -298,3 +298,200 @@ def line_cells(
         for w in range(-half, half + 1):
             cells.add((bx + px * w, by + py * w))
     return _clip(cells, grid_w, grid_h)
+
+
+# ── #1252 / PR-3: line-of-sight ray traversal + SRD cover ────────────────────────
+#
+# Pure geometry, no Campaign/lock/save — math over (x, y) cells + a set of BLOCKING
+# cells (the fight's grid_impassable: walls/props/obstacles). Two capabilities:
+#
+#   * `line_blockers(a, b, blocking)` — the supercover ray from cell `a` to cell `b`:
+#     every cell the straight segment between the two cell CENTRES passes through,
+#     EXCLUDING the two endpoints, intersected with `blocking`. This is the raw
+#     "what's between them" set that both LoS and cover read.
+#   * `has_line_of_effect(a, b, blocking)` — True iff that ray crosses NO blocking cell
+#     (an unobstructed straight shot). Used to cull AoE cells with no line of effect
+#     from the burst origin (#1257's deferred TODO) and to detect TOTAL cover.
+#   * `cover_between(a, b, blocking)` — the SRD 5.2 cover TIER a target at `b` has from
+#     an attacker at `a`, derived from the count of intervening blockers (below).
+#
+# RAY MODEL — supercover, permissive corner-graze tie-break:
+#   We march the exact segment between the two cell centres. When the segment passes
+#   through a cell FACE we enter that cell (it counts). When it passes exactly through a
+#   grid VERTEX (a "corner graze" — the ideal diagonal line of two aligned cells, or any
+#   line hitting a lattice point), the segment touches the four cells meeting at that
+#   corner only at a single point. SRD/tabletop LoS traces to a corner and treats a shot
+#   that merely grazes a blocker's corner as UNOBSTRUCTED. So the tie-break is:
+#
+#     A corner graze severs the ray ONLY IF BOTH cells on the ray's leading diagonal at
+#     that vertex are blockers (you cannot thread a line between two blockers that meet at
+#     a point). A single diagonal blocker (or a blocker touched only at its corner) does
+#     NOT block — the ray slips past its corner.
+#
+#   This is the standard permissive supercover rule and it makes LoS symmetric
+#   (`a`->`b` blocked iff `b`->`a` blocked) and additive (no blockers => never severed).
+
+
+def _supercover_cells(a: Cell, b: Cell) -> list[Cell]:
+    """The ordered list of cells the straight segment between the CENTRES of `a` and `b`
+    passes through, from `a` to `b` inclusive (a supercover line). A pure-diagonal or
+    axis-aligned segment yields the minimal staircase; an oblique segment yields every
+    cell whose interior the segment crosses. Deterministic; endpoints included (callers
+    strip them). This is the geometry both LoS and cover read."""
+    (x0, y0), (x1, y1) = a, b
+    if a == b:
+        return [a]
+    dx = x1 - x0
+    dy = y1 - y0
+    nx, ny = abs(dx), abs(dy)
+    sx = 1 if dx > 0 else -1
+    sy = 1 if dy > 0 else -1
+    cells: list[Cell] = [(x0, y0)]
+    x, y = x0, y0
+    # March by comparing the accumulated cross-products (ix/nx vs iy/ny as ix*ny vs iy*nx),
+    # stepping x, y, or BOTH (a diagonal step through a vertex). A simultaneous step is the
+    # corner-graze case — it visits the vertex without adding either shoulder cell.
+    ix = iy = 0
+    while ix < nx or iy < ny:
+        decision = (1 + 2 * ix) * ny - (1 + 2 * iy) * nx
+        if decision == 0:
+            # Exact corner graze: the segment passes through the lattice vertex. Step both
+            # axes diagonally — do NOT add the two shoulder cells (they are only touched at
+            # the corner point). The tie-break for blocking is applied by line_blockers.
+            x += sx
+            y += sy
+            ix += 1
+            iy += 1
+        elif decision < 0:
+            x += sx
+            ix += 1
+        else:
+            y += sy
+            iy += 1
+        cells.append((x, y))
+    return cells
+
+
+def _diagonal_corner_pairs(a: Cell, b: Cell) -> list[tuple[Cell, Cell]]:
+    """For each pure-diagonal step the supercover ray from `a` to `b` takes through a grid
+    VERTEX, the pair of SHOULDER cells that meet at that corner (the two cells the ray did
+    NOT enter, flanking the diagonal step). The corner-graze tie-break blocks the ray at a
+    step only when BOTH shoulders in a pair are blockers. Empty for a ray with no diagonal
+    vertex steps (axis-aligned or oblique face-crossing rays)."""
+    (x0, y0), (x1, y1) = a, b
+    if a == b:
+        return []
+    dx, dy = x1 - x0, y1 - y0
+    nx, ny = abs(dx), abs(dy)
+    sx = 1 if dx > 0 else -1
+    sy = 1 if dy > 0 else -1
+    pairs: list[tuple[Cell, Cell]] = []
+    x, y = x0, y0
+    ix = iy = 0
+    while ix < nx or iy < ny:
+        decision = (1 + 2 * ix) * ny - (1 + 2 * iy) * nx
+        if decision == 0:
+            # Diagonal step from (x,y) to (x+sx, y+sy): the two shoulders are the cells
+            # reached by stepping ONE axis only — (x+sx, y) and (x, y+sy).
+            pairs.append(((x + sx, y), (x, y + sy)))
+            x += sx
+            y += sy
+            ix += 1
+            iy += 1
+        elif decision < 0:
+            x += sx
+            ix += 1
+        else:
+            y += sy
+            iy += 1
+    return pairs
+
+
+def line_blockers(a: Cell, b: Cell, blocking: set[Cell]) -> set[Cell]:
+    """The BLOCKING cells strictly BETWEEN `a` and `b` on the supercover ray (endpoints
+    excluded). A cell the ray's interior crosses that is in `blocking` counts. A pure
+    corner graze contributes a blocker ONLY when both shoulder cells of that diagonal step
+    are blockers (the permissive tie-break above) — a lone diagonal blocker is slipped
+    past and is NOT included. Empty `blocking` (open floor) => always empty (additive)."""
+    if not blocking or a == b:
+        return set()
+    hit: set[Cell] = set()
+    interior = _supercover_cells(a, b)[1:-1]  # strip both endpoints
+    for cell in interior:
+        if cell in blocking:
+            hit.add(cell)
+    # Corner-graze severing: a diagonal vertex step is blocked only if BOTH shoulders are
+    # blockers. When it is, credit BOTH shoulder blockers (they jointly seal the corner);
+    # a half-open corner (one shoulder blocking) is NOT credited (the ray slips past).
+    for s1, s2 in _diagonal_corner_pairs(a, b):
+        if s1 in blocking and s2 in blocking:
+            if s1 != a and s1 != b:
+                hit.add(s1)
+            if s2 != a and s2 != b:
+                hit.add(s2)
+    return hit
+
+
+def has_line_of_effect(a: Cell, b: Cell, blocking: set[Cell]) -> bool:
+    """True iff the supercover ray from `a` to `b` crosses NO blocking cell — an
+    unobstructed straight shot (LoS / line-of-effect). Endpoints are never their own
+    blockers (a target standing in a doorway is still targetable). Open floor => always
+    True (additive: with no blockers nothing is ever culled)."""
+    return not line_blockers(a, b, blocking)
+
+
+# SRD 5.2 cover TIERS. The derivation is deliberately simple and documented: count the
+# DISTINCT blocking cells the attacker->target ray crosses (line_blockers), then:
+#   0 blockers  -> "none"            (clear shot; no AC/DEX bonus)
+#   1 blocker   -> "half"            (+2 AC / +2 DEX saves)
+#   >=2 blockers -> "three_quarters" (+5 AC / +5 DEX saves)
+#   ray fully severed (no line of effect at all, i.e. >=1 blocker) with the target
+#     UNREACHABLE by any traced corner -> "total" (can't be targeted directly).
+# A single ray can't distinguish "one thick wall" from "total" on its own, so total cover
+# is derived separately: a target has TOTAL cover when it has NO line of effect from ANY
+# of the traced corner rays (see cover_between). This mirrors the SRD "trace to a corner"
+# rule — half/three-quarters come from the best (least-obstructed) corner; total means no
+# corner has a clear line.
+_COVER_AC = {"none": 0, "half": 2, "three_quarters": 5, "total": 0}
+
+
+def cover_between(a: Cell, b: Cell, blocking: set[Cell]) -> str:
+    """The SRD 5.2 cover tier a target at cell `b` has from an attacker/origin at `a`,
+    given the fight's `blocking` cells. Derivation (documented, single-ray for PR-3's
+    1-cell tokens):
+
+      * count the distinct blockers on the centre-to-centre supercover ray (line_blockers);
+      * 0 -> "none", exactly 1 -> "half", 2+ -> "three_quarters";
+      * BUT if the ray has no line of effect AND no shoulder path threads past (total
+        occlusion — the blockers fully seal the corner between them), the tier is "total".
+
+    We approximate "total" as: the ray is severed by a corner-graze pair (both shoulders
+    blocking) AND every interior cell on the ray is a blocker with no open shoulder — i.e.
+    there is genuinely no gap. In practice, one blocker => half, two => three-quarters, and
+    a fully-walled ray (a solid line of blockers with no threadable corner) => total. Open
+    floor (`blocking` empty) or `a == b` => "none" (additive: no cover off the grid)."""
+    if not blocking or a == b:
+        return "none"
+    blockers = line_blockers(a, b, blocking)
+    n = len(blockers)
+    if n == 0:
+        return "none"
+    # TOTAL cover: no line of effect AND no threadable gap. A ray is TOTALLY severed when
+    # every step is sealed — the interior is a contiguous blocker wall AND any diagonal
+    # graze is a both-shoulders-blocked pair (no corner to slip through). For PR-3's
+    # single-cell tokens the practical rule: if the interior contains a blocker on EVERY
+    # cell the ray must cross (no open cell between attacker and target), the target is
+    # behind solid cover and can't be targeted directly => total.
+    interior = _supercover_cells(a, b)[1:-1]
+    if interior and all(cell in blocking for cell in interior):
+        return "total"
+    if n == 1:
+        return "half"
+    return "three_quarters"
+
+
+def cover_ac_bonus(tier: str) -> int:
+    """The AC / DEX-save bonus a cover `tier` grants (SRD 5.2): half=+2, three-quarters=+5,
+    none/total=0 (total cover isn't an AC bump — the target simply can't be targeted).
+    Unknown tier => 0 (defensive; additive)."""
+    return _COVER_AC.get(tier, 0)

@@ -5670,6 +5670,32 @@ def attack(
                     ranged_in_melee_grid = True
                     break
         dis = dis or ranged_in_melee_grid
+        # COVER (#1252 / PR-3): when on the grid AND both combatants are placed, derive the
+        # SRD 5.2 cover the target has from the attacker's line — half (+2 AC), three-quarters
+        # (+5 AC), or total (untargetable). Cover comes from intervening BLOCKING cells (the
+        # fight's grid_impassable walls/props) on the attacker->target ray; the tier is the
+        # count of blockers crossed (0=none, 1=half, 2+=three-quarters, a fully-walled ray =
+        # total). Total cover REFUSES the shot up front (before the roll) — SRD: a creature
+        # with total cover can't be targeted directly. ADDITIVE: off-grid or an unplaced end
+        # yields no cover (cover_ac_bonus 0, no key) == today's behaviour byte-for-byte.
+        cover_tier = "none"
+        cover_ac = 0
+        if c.combat.grid_enabled:
+            _acb = next((cb for cb in c.combat.order if cb.character_id == attacker_id), None)
+            _tcb = next((cb for cb in c.combat.order if cb.character_id == target_id), None)
+            _ac = _cell(_acb) if _acb is not None else None
+            _tc = _cell(_tcb) if _tcb is not None else None
+            if _ac is not None and _tc is not None:
+                blocking = {(int(bx), int(by)) for bx, by in (c.combat.grid_impassable or [])}
+                if blocking:
+                    cover_tier = combat_grid.cover_between(_ac, _tc, blocking)
+                    if cover_tier == "total":
+                        raise ValueError(
+                            f"{target.name} at {_tc} has TOTAL cover from {attacker.name} at "
+                            f"{_ac} (a wall fully blocks the line) and can't be targeted "
+                            f"directly — reposition for a clear shot. No attack was resolved."
+                        )
+                    cover_ac = combat_grid.cover_ac_bonus(cover_tier)
         # crit_min threads the attacker's expanded crit range (Champion Improved/Superior
         # Critical → 19/18; everyone else 20 = today's behavior) so a Champion's nat-19
         # actually flags atk.crit and crit_source() resolves "expanded_crit_range".
@@ -5688,6 +5714,9 @@ def attack(
         guided_bonus = atk_bonus_rider.amount if atk_bonus_rider is not None else 0
         atk_total = atk.total + rider_bonus + guided_bonus
         target_ac, target_ac_detail = _effective_armor_class(target)
+        # Fold grid cover (#1252) into the AC the attacker must beat — half=+2, three-quarters=+5
+        # (SRD 5.2). cover_ac is 0 off-grid / with no blocker between (additive: unchanged).
+        target_ac += cover_ac
         hit = atk.crit or (not atk.fumble and atk_total >= target_ac)
         # TEST-ONLY force_hit (Track 2b — DOUBLE-GUARDED): force the HIT BOOLEAN only so a
         # sandbox fight resolves to a terminal state without depending on the dice landing hits.
@@ -5754,6 +5783,17 @@ def attack(
             # disadvantage (folded into `dis` above), so the DM narrates it and the behavioral
             # gate / scorer see the rule actually fired on-grid (not announced-then-dropped).
             result["attack_roll"]["ranged_in_melee_disadvantage"] = True
+        if cover_ac > 0:
+            # #1252 grid (PR-3): surface the SRD cover the target enjoyed and the AC it added,
+            # so the DM narrates "the goblin ducks behind the pillar (+2 AC)" and the scorer /
+            # renderer see cover ACTUALLY applied to the hit math (not announced-then-dropped).
+            # `effective_ac` is the base AC the target beat WITH cover folded in. Free payload
+            # (no tool-schema param — derived from existing state). Absent when no cover (none).
+            result["cover"] = {
+                "tier": cover_tier,
+                "ac_bonus": cover_ac,
+                "effective_ac": target_ac,
+            }
         if rider_rolls:
             # The engine-rolled rider components (SYN-06), itemized so the DM narrates
             # "the blessing guides the blade (+3)" — and sees the buff actually counted.
@@ -6411,24 +6451,33 @@ def _aoe_template_cells(c: "Campaign", caster: "Character", srd, aim: tuple[int,
     a shape PR-2 doesn't map — cube/wall land in #1253+). Read-only geometry over
     combat_grid; the caller resolves occupants + damage. SRD sizes are in FEET; the grid's
     cell_size converts them. A sphere bursts AT `aim`; a cone/line is cast FROM the caster's
-    cell TOWARD `aim` (so the caster must be placed). Line-of-effect is DEFERRED (#1252)."""
+    cell TOWARD `aim` (so the caster must be placed).
+
+    Returns ``(cells, loe_origin)`` — `loe_origin` is the spell's SRD POINT OF ORIGIN, the
+    cell line-of-effect (#1252) is traced FROM when culling shielded cells: the AIM cell for
+    a sphere (the burst's own origin IS the aim), but the CASTER'S cell for a cone/line (their
+    origin is the emitter, not the target point — a cone aimed past a wall must not reach cells
+    the caster can't see). None (not a tuple) when there is no template."""
     shape = (srd or {}).get("shape_type")
     if not shape:
         return None
     w, h, cs = c.combat.grid_width, c.combat.grid_height, c.combat.grid_cell_size
     size = int((srd.get("shape_size") or 0))
     if shape == "sphere":
-        # A burst centred on the aim cell — origin-independent (no facing needed).
-        return combat_grid.sphere_cells(aim, size, w, h, cs)
+        # A burst centred on the aim cell — origin-independent (no facing needed); LoE is
+        # traced from the burst point itself (the aim cell).
+        return combat_grid.sphere_cells(aim, size, w, h, cs), aim
     cb = next((o for o in c.combat.order if o.character_id == caster.id), None)
     if cb is None or cb.x is None or cb.y is None:
         return None  # a cone/line needs a placed emitter to fix its facing
     src = (cb.x, cb.y)
     if shape == "cone":
-        return combat_grid.cone_cells(src, aim, size, w, h, cs)
+        # A cone emits FROM the caster: LoE is traced from `src`, not the aim cell.
+        return combat_grid.cone_cells(src, aim, size, w, h, cs), src
     if shape == "line":
         # SRD `line` shape_size is the WIDTH; length lives in prose -> use the default.
-        return combat_grid.line_cells(src, aim, _DEFAULT_LINE_LENGTH_FT, size, w, h, cs)
+        # The line emits FROM the caster: LoE is traced from `src`.
+        return combat_grid.line_cells(src, aim, _DEFAULT_LINE_LENGTH_FT, size, w, h, cs), src
     return None  # cube / other shapes: not a PR-2 template (deferred)
 
 
@@ -7557,8 +7606,24 @@ def cast_spell(
             if len(oc) != 2:
                 raise ValueError("cast_spell origin must be an [x, y] cell pair")
             aim = (int(oc[0]), int(oc[1]))
-            cells = _aoe_template_cells(c, ch, srd, aim)
-            if cells is not None:
+            template = _aoe_template_cells(c, ch, srd, aim)
+            if template is not None:
+                cells, loe_origin = template
+                # LINE-OF-EFFECT cull (#1252 / PR-3): trace LoE from the spell's SRD POINT OF
+                # ORIGIN (`loe_origin`) — the burst point (aim) for a sphere, the CASTER'S cell
+                # for a cone/line (their origin is the emitter, so a cone aimed past a wall must
+                # not reach cells the caster can't see). A cell with NO line of effect from that
+                # origin — a wall/prop between them severs the ray — is SHIELDED and drops out of
+                # the area (SRD 5.2: a point of origin can't extend around corners; a target with
+                # total cover can't be caught). ADDITIVE: with no impassable cells the ray is
+                # never severed, so `cells` is unchanged byte-for-byte (open-floor AoE == PR-2).
+                # The origin cell always has line of effect to itself and is retained.
+                blocking = {(int(bx), int(by)) for bx, by in (c.combat.grid_impassable or [])}
+                if blocking:
+                    cells = {
+                        cell for cell in cells
+                        if cell == loe_origin or combat_grid.has_line_of_effect(loe_origin, cell, blocking)
+                    }
                 affected_tile_coords = sorted([cx, cy] for (cx, cy) in cells)
                 # Every combatant standing in the template is caught — SRD 5.2: a creature in
                 # the area is affected, and the CASTER is not exempt (a Fireball centred on
