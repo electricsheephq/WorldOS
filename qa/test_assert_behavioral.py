@@ -1572,3 +1572,98 @@ def test_unresolved_spell_attack_not_fired_for_automated_spell(tmp_path):
     rc, out = _run_gate(tmp_path, events, {"leveling_mode": "milestone"})
     assert rc == 0, out
     assert "unresolved_spell_attack" not in out, out
+
+
+# ── ambush_ran_surprise_gate (WARN, #1271) ─────────────────────────────────────
+# The DM narrated an ambush but start_combat ran with no surprise evaluation (no
+# surpriser_ids, no `surprise` key in the return) — the passive-Perception-vs-Stealth
+# gate was skipped. WARN, never fatal. Fixtures run a COMPLETE clean fight (start →
+# attack → end_combat, foe dead) so only the ambush check is under test — every other
+# combat-integrity gate is satisfied and can't mask the result.
+
+def _assistant_text(text: str) -> dict:
+    return {"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}}
+
+
+def _clean_fight(sc_input: dict, sc_result: dict) -> list[dict]:
+    """A start_combat (with the given input/result) + a resolving attack + end_combat, so the
+    combat_resolved / combat_ended / xp gates all pass and only the ambush check is exercised."""
+    return [
+        _assistant_tool_use("s1", "mcp__engine__start_combat", sc_input),
+        _user_tool_result("s1", json.dumps(sc_result)),
+        _assistant_tool_use("a1", "mcp__engine__attack", {"attacker_id": "pc1", "target_id": "m1"}),
+        _user_tool_result("a1", json.dumps({"hit": True, "damage": {"total": 12}})),
+        _assistant_tool_use("e1", "mcp__engine__end_combat", {}),
+        _user_tool_result("e1", json.dumps({"ok": True, "xp_awarded": 50})),
+    ]
+
+
+_FIGHT_STATE = {
+    "leveling_mode": "milestone",
+    "combat": {"active": False},
+    "party": ["pc1"],
+    "characters": {
+        "pc1": {"name": "Dal", "kind": "player", "current_hp": 18, "max_hp": 18},
+        "m1": {"name": "Bandit", "kind": "monster", "current_hp": 0, "dead": True},
+    },
+    "events": [],
+}
+
+
+def test_ambush_narrated_but_no_surprise_eval_warns(tmp_path):
+    """Ambush prose + start_combat WITHOUT surpriser_ids and no `surprise` key ⇒ WARN."""
+    events = [
+        _assistant_text("The bandits lunge from the shadows before anyone can react!"),
+        *_clean_fight({"combatant_ids": ["pc1", "m1"]},
+                      {"active": True, "order": [{"id": "pc1"}, {"id": "m1"}]}),
+    ]
+    rc, out = _run_gate(tmp_path, events, dict(_FIGHT_STATE))
+    assert rc == 0, out  # WARN, not RED
+    assert "[WARN] ambush_ran_surprise_gate" in out, out
+
+
+def test_ambush_with_surpriser_ids_passes(tmp_path):
+    """Ambush prose + start_combat WITH surpriser_ids ⇒ the gate ran; check PASSES."""
+    events = [
+        _assistant_text("They spring the ambush from the shadows!"),
+        *_clean_fight({"combatant_ids": ["pc1", "m1"], "surpriser_ids": ["m1"]},
+                      {"active": True, "surprise": {"surprisers": ["m1"], "surprised": ["pc1"]}}),
+    ]
+    rc, out = _run_gate(tmp_path, events, dict(_FIGHT_STATE))
+    assert rc == 0, out
+    assert "[WARN] ambush_ran_surprise_gate" not in out, out
+    assert "[PASS] ambush_ran_surprise_gate" in out, out
+
+
+def test_ambush_with_surprise_key_in_return_passes(tmp_path):
+    """Even without surpriser_ids in the input, a `surprise` key in the return proves the gate
+    ran (belt-and-suspenders) ⇒ the check PASSES."""
+    events = [
+        _assistant_text("An ambush! They never saw it coming."),
+        *_clean_fight({"combatant_ids": ["pc1", "m1"]},
+                      {"active": True, "surprise": {"surprisers": ["pc1"], "surprised": ["m1"]}}),
+    ]
+    rc, out = _run_gate(tmp_path, events, dict(_FIGHT_STATE))
+    assert rc == 0, out
+    assert "[WARN] ambush_ran_surprise_gate" not in out, out
+
+
+def test_no_ambush_prose_does_not_fire(tmp_path):
+    """A clean pitched-battle start_combat with no ambush prose ⇒ check PASSES (no false-WARN)."""
+    events = [
+        _assistant_text("The two lines close and steel meets steel in the open square."),
+        *_clean_fight({"combatant_ids": ["pc1", "m1"]},
+                      {"active": True, "order": [{"id": "pc1"}, {"id": "m1"}]}),
+    ]
+    rc, out = _run_gate(tmp_path, events, dict(_FIGHT_STATE))
+    assert rc == 0, out
+    assert "[WARN] ambush_ran_surprise_gate" not in out, out
+
+
+def test_ambush_prose_but_no_start_combat_does_not_fire(tmp_path):
+    """Ambush prose but the fight never started (talked/sneaked past) ⇒ the check is not even
+    registered (start_combat==0), so no WARN — it only fires when a fight actually began."""
+    events = [_assistant_text("They lunge from the shadows — but you slip away before the trap closes.")]
+    rc, out = _run_gate(tmp_path, events, {"leveling_mode": "milestone"})
+    assert rc == 0, out
+    assert "ambush_ran_surprise_gate" not in out, out
