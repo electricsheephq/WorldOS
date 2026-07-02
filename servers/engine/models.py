@@ -1136,6 +1136,14 @@ class Quest(_StrictModel):
     # ADDITIVE: -1 (default / old snapshot) means "never stamped" -> the detector falls
     # back to the legacy Decision-text proxy, so old snapshots behave exactly as today.
     last_progress_day: int = -1
+    # #1286: the NarrativeArc.beats_in_act tally at the quest's last engine-progress (stamped
+    # everywhere last_progress_day is). The quest_stalled detector reads this so a quest that
+    # got ZERO progress calls across many beats surfaces EVEN WHEN THE IN-WORLD CLOCK IS STUCK
+    # (the measured rri-a1-duo2 defect: 22 beats, an active quest, no progress verb, day never
+    # advanced -> the day-only stall gate was structurally unreachable). Mirrors the camp/act
+    # beats-reach that fixed the identical stuck-clock blind spot. ADDITIVE: -1 (default / old
+    # snapshot) means "never stamped" -> the beats path stays silent and behavior == today.
+    last_progress_beat: int = -1
 
 
 class Location(_StrictModel):
