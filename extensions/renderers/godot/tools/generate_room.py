@@ -18,6 +18,11 @@ regeneratable on demand and the workflow is auditable.
   # inspect the resolved request without spending credits:
   python3 generate_room.py --room crypt --base-plate <png> --dry-run
 
+  # OPTIONAL 3-pass LAYERED pipeline (validated 2026-07-02, 7.6 median vs 6.0 single-pass;
+  # see room_recipes.json:layered_pipeline_2026_07_02). Default OFF — omitting --layered is
+  # byte-identical to the plain single-pass img2img above.
+  python3 generate_room.py --room crypt --base-plate <png> --layered --out <dir>
+
 Design notes:
 - The lever from L6 6.5 -> 8 is LIGHTING DRAMA (single warm key, deep blue-violet
   shadows, hard cast shadows), NOT more texture. Keep `strength` low (~0.30-0.45) so
@@ -59,6 +64,42 @@ def _load_recipe() -> dict:
         sys.exit("[generate_room] ERROR: recipe manifest not found: %s" % RECIPE_PATH)
     with open(RECIPE_PATH, "r") as f:
         return json.load(f)
+
+
+def _run_gemini_pass(headers: dict, pass_spec: dict, image_ref: str, out_dir: str, stem: str, timeout: int) -> tuple:
+    """Run one Gemini instruction-edit pass (detail/populate or staging) on `image_ref`.
+
+    Reuses the same proven Scenario helpers as the img2img pass (_post_json/_poll_job/
+    _download_job_assets) — the Gemini endpoint takes prompt+image+numSamples+resolution
+    (no strength knob; preservation is prompt-driven, see room_recipes.json).
+    Returns (job_id, [saved_asset_paths]).
+    """
+    model = pass_spec["model"]
+    endpoint = API_BASE + CONTROLNET_PATH.format(model_id=model)
+    body = {"prompt": pass_spec["prompt"], "image": image_ref, "numSamples": 1, "resolution": "2K"}
+    res = _post_json(endpoint, headers, body)
+    job_id = _job_id_from_create(res, "%s create" % stem)
+    print("[generate_room] --layered %s job submitted: %s (model=%s)" % (stem, job_id, model))
+    job = _poll_job(headers, job_id, stem, timeout)
+    saved = _download_job_assets(headers, job, out_dir, stem)
+    return job_id, saved
+
+
+def _downscale_to_plate(path: str, width: int, height: int) -> None:
+    """Downscale a pass output to the plate contract size (LANCZOS) if it came back larger.
+
+    The Gemini endpoint is asked for resolution=2K, which can exceed the 1344x768-class
+    plate contract; normalize in place so downstream renderer consumption is unaffected.
+    """
+    try:
+        from PIL import Image
+    except ImportError:
+        print("[generate_room] WARNING: Pillow not installed, skipping downscale of %s" % path)
+        return
+    im = Image.open(path).convert("RGB")
+    if im.size != (width, height):
+        im.resize((width, height), Image.LANCZOS).save(path)
+        print("[generate_room] --layered downscaled %s %s -> %dx%d" % (path, im.size, width, height))
 
 
 def _build_prompt(recipe: dict, room: str, lighting: str = "firelit") -> tuple:
@@ -108,6 +149,10 @@ def main(argv=None) -> None:
     ap.add_argument("--lighting", choices=["firelit", "daylight"], default="firelit",
                     help="day/night dimension: firelit (night, default) or daylight (cool sunlit, stained-glass shaft)")
     ap.add_argument("--timeout", type=int, default=600)
+    ap.add_argument("--layered", action="store_true",
+                    help="OPTIONAL 3-pass pipeline: after the img2img layout pass, chain a Gemini "
+                         "detail/populate pass then a Gemini staging-last pass (room_recipes.json:"
+                         "layered_pipeline_2026_07_02). Default OFF; no flag = identical single-pass behavior.")
     ap.add_argument("--dry-run", action="store_true", help="print the resolved request without calling the API")
     args = ap.parse_args(argv)
 
@@ -145,6 +190,14 @@ def main(argv=None) -> None:
         print(json.dumps(preview, indent=2))
         print("  endpoint  : %s" % endpoint)
         print("  recipe    : %s" % RECIPE_PATH)
+        if args.layered:
+            layered = recipe.get("layered_pipeline_2026_07_02", {})
+            print("[generate_room] DRY-RUN --layered: would additionally chain pass2 (detail/populate) "
+                  "then pass3 (staging-last) via %s" % layered.get("pass2_detail_populate", {}).get("model", "?"))
+            print("  pass2 prompt (verbatim, room_recipes.json:layered_pipeline_2026_07_02.pass2_detail_populate.prompt):")
+            print("    %s" % layered.get("pass2_detail_populate", {}).get("prompt", "<missing>")[:120] + " ...")
+            print("  pass3 prompt (template, room_recipes.json:layered_pipeline_2026_07_02.pass3_staging_last.prompt):")
+            print("    %s" % layered.get("pass3_staging_last", {}).get("prompt", "<missing>")[:120] + " ...")
         return
 
     out_dir = args.out or os.path.join(os.getcwd(), "room_gen_%s" % args.room)
@@ -165,13 +218,50 @@ def main(argv=None) -> None:
     print("[generate_room] %s img2img job submitted: %s (strength=%s)" % (args.room, job_id, args.strength))
     job = _poll_job(headers, job_id, "img2img", args.timeout)
     saved = _download_job_assets(headers, job, out_dir, "room_%s" % args.room)
-    _write_meta(out_dir, {
+    meta = {
         "room": args.room, "image_ref": image_ref, "strength": args.strength,
         "steps": args.steps, "guidance": args.guidance, "num_outputs": args.num_outputs,
         "model_id": recipe["base_model"], "lora": recipe["lora"], "lora_scale": recipe["lora_scale"],
         "prompt": positive, "negative_prompt": negative, "job_id": job_id,
         "assets": saved, "source": "generate_room-img2img",
-    })
+    }
+
+    if args.layered and saved:
+        # OPTIONAL 3-pass pipeline (room_recipes.json:layered_pipeline_2026_07_02). ORDER LAW:
+        # detail/populate MUST run before staging-last (the detail pass flattens lighting; the
+        # staging pass restores it without losing the detail gains). Sequential jobs only —
+        # concurrent Scenario paints collide/silently no-output.
+        layered = recipe.get("layered_pipeline_2026_07_02")
+        if not layered:
+            sys.exit("[generate_room] ERROR: --layered requested but recipe manifest has no "
+                      "layered_pipeline_2026_07_02 entry: %s" % RECIPE_PATH)
+        pass1_asset = os.path.abspath(saved[0])
+        pass1_ref = _upload_image(headers, pass1_asset)
+
+        pass2_job, pass2_saved = _run_gemini_pass(
+            headers, layered["pass2_detail_populate"], pass1_ref, out_dir,
+            "room_%s_pass2_detail" % args.room, args.timeout)
+        if not pass2_saved:
+            sys.exit("[generate_room] ERROR: --layered pass2 (detail/populate) produced no assets")
+        _downscale_to_plate(pass2_saved[0], args.width, args.height)
+        pass2_ref = _upload_image(headers, os.path.abspath(pass2_saved[0]))
+
+        pass3_job, pass3_saved = _run_gemini_pass(
+            headers, layered["pass3_staging_last"], pass2_ref, out_dir,
+            "room_%s_pass3_staging" % args.room, args.timeout)
+        if not pass3_saved:
+            sys.exit("[generate_room] ERROR: --layered pass3 (staging-last) produced no assets")
+        _downscale_to_plate(pass3_saved[0], args.width, args.height)
+
+        meta["layered"] = {
+            "pass2_job_id": pass2_job, "pass2_assets": pass2_saved,
+            "pass3_job_id": pass3_job, "pass3_assets": pass3_saved,
+            "final_plate": pass3_saved[0],
+            "recipe_entry": "layered_pipeline_2026_07_02",
+        }
+        print("[generate_room] --layered OK — final staged plate: %s" % pass3_saved[0])
+
+    _write_meta(out_dir, meta)
     print("[generate_room] OK — room=%s job=%s assets=%d -> %s" % (args.room, job_id, len(saved), out_dir))
 
 
