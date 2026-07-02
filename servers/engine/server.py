@@ -6399,6 +6399,39 @@ def _aoe_damage_spec(curated, srd, slot_level: int, caster_level: int, casting_m
     return None
 
 
+# #1251 / PR-2: default LINE length when the SRD record carries only a width. Lightning
+# Bolt (the one SRD `line` spell) encodes its 100ft length in prose, not a structured
+# field; shape_size there is the 5ft WIDTH. Fall back to this so a line still projects.
+_DEFAULT_LINE_LENGTH_FT = 100
+
+
+def _aoe_template_cells(c: "Campaign", caster: "Character", srd, aim: tuple[int, int]):
+    """#1251 / PR-2: the set of grid cells covered by `caster`'s spell area, aimed at cell
+    `aim`, or None when the spell has no engine-resolvable grid template (no SRD shape, or
+    a shape PR-2 doesn't map — cube/wall land in #1253+). Read-only geometry over
+    combat_grid; the caller resolves occupants + damage. SRD sizes are in FEET; the grid's
+    cell_size converts them. A sphere bursts AT `aim`; a cone/line is cast FROM the caster's
+    cell TOWARD `aim` (so the caster must be placed). Line-of-effect is DEFERRED (#1252)."""
+    shape = (srd or {}).get("shape_type")
+    if not shape:
+        return None
+    w, h, cs = c.combat.grid_width, c.combat.grid_height, c.combat.grid_cell_size
+    size = int((srd.get("shape_size") or 0))
+    if shape == "sphere":
+        # A burst centred on the aim cell — origin-independent (no facing needed).
+        return combat_grid.sphere_cells(aim, size, w, h, cs)
+    cb = next((o for o in c.combat.order if o.character_id == caster.id), None)
+    if cb is None or cb.x is None or cb.y is None:
+        return None  # a cone/line needs a placed emitter to fix its facing
+    src = (cb.x, cb.y)
+    if shape == "cone":
+        return combat_grid.cone_cells(src, aim, size, w, h, cs)
+    if shape == "line":
+        # SRD `line` shape_size is the WIDTH; length lives in prose -> use the default.
+        return combat_grid.line_cells(src, aim, _DEFAULT_LINE_LENGTH_FT, size, w, h, cs)
+    return None  # cube / other shapes: not a PR-2 template (deferred)
+
+
 @mcp.tool()
 def concentration_save(campaign_id: str, character_id: str, dc: int) -> dict:
     """Roll a concentration saving throw (CON save) at the given DC (usually
@@ -7432,6 +7465,7 @@ def cast_spell(
     as_ritual: bool = False,
     innate: bool = False,
     target_ids: ListArg = None,
+    origin: ListArg = None,
 ) -> dict:
     """Cast a spell — works for ANY of the ~339 SRD spells. Consumes a spell slot
     (cantrips use none); upcasts when slot_level exceeds the spell's level; sets
@@ -7442,7 +7476,8 @@ def cast_spell(
     target via ``target_id`` (canonical) or the aliases ``npc_id`` / ``id``. (``character_id``
     is the CASTER and is unchanged.) Canonical names win if more than one is given. Pass
     ``as_ritual=True`` (#813) to cast a ritual-tagged spell WITHOUT a slot (takes 10 extra
-    minutes; refused in combat)."""
+    minutes; refused in combat). On a grid (#1251), ``origin=[x,y]`` projects the spell's
+    SRD area (sphere/cone/line) onto the cells and auto-resolves the occupants caught."""
     # Coalesce intuitive arg-name aliases to the canonical params. `character_id` (the caster)
     # is canonical and untouched; the alias ids resolve only the explicit `target_id`.
     spell_name = spell_name or spell
@@ -7508,6 +7543,35 @@ def cast_spell(
                     )
                 seen_ids.add(tid)
                 aoe_targets.append(tgt)
+        # AoE GRID TEMPLATE (#1251 / PR-2): when an `origin` cell is given AND the fight is
+        # on the grid, project the spell's SRD area (sphere/cone/line) onto the cells and let
+        # the OCCUPANTS become the AoE targets — the engine resolves save-for-half over them
+        # via the same shared-roll loop as an explicit target_ids list. `affected_tile_coords`
+        # is surfaced for the DM/renderer. ADDITIVE: no `origin` (or off-grid) == unchanged —
+        # `aoe_targets` stays empty and no template keys are emitted. An explicit target_ids
+        # WINS (the caller named the victims by hand); a template only fills an empty list.
+        # Line-of-effect (walls between origin and a cell) is DEFERRED. TODO(#1251->#1252).
+        affected_tile_coords: list[list[int]] | None = None
+        if origin is not None and not target_ids and c.combat.grid_enabled:
+            oc = _coerce_list(origin)
+            if len(oc) != 2:
+                raise ValueError("cast_spell origin must be an [x, y] cell pair")
+            aim = (int(oc[0]), int(oc[1]))
+            cells = _aoe_template_cells(c, ch, srd, aim)
+            if cells is not None:
+                affected_tile_coords = sorted([cx, cy] for (cx, cy) in cells)
+                # Every combatant standing in the template is caught — SRD 5.2: a creature in
+                # the area is affected, and the CASTER is not exempt (a Fireball centred on
+                # yourself catches you). The caster rides the same save-for-half loop as anyone
+                # else; the DM narrates. Cone/line geometry already excludes the emitter cell,
+                # so a cone/line never catches its own caster. Order-stable by initiative.
+                for cb in c.combat.order:
+                    if cb.x is None or cb.y is None:
+                        continue
+                    if (cb.x, cb.y) in cells:
+                        tgt = c.characters.get(cb.character_id)
+                        if tgt is not None:
+                            aoe_targets.append(tgt)
         # SRD: an incapacitated creature can't take an action — and a spell's casting time is
         # (almost always) an action/bonus/reaction, so refuse the cast outright rather than
         # spend the caster's slot / set concentration. Mirrors the attack() guard. (extends #42)
@@ -7956,6 +8020,11 @@ def cast_spell(
         # (one shared damage roll, full/half per save). Present only when target_ids was passed.
         if aoe_result is not None:
             result["aoe"] = aoe_result
+        # AoE GRID TEMPLATE (#1251 / PR-2): the cells the projected area covered — for the DM
+        # to narrate and the renderer to draw (the /combat-surface `affected_tile_coords`
+        # contract). Present only when an `origin` template was resolved on the grid.
+        if affected_tile_coords is not None:
+            result["affected_tile_coords"] = affected_tile_coords
         # AREA SHAPE (F03-4): surface the spell's geometry (Cone/Sphere/Line + size) from the
         # srd524 record so the DM can describe the area and pick who's caught — 52 spells carry
         # it and it was previously never told. Additive; absent when the record has no shape.
