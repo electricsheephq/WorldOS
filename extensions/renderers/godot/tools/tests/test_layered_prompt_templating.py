@@ -15,6 +15,7 @@ to the prior hardcoded literals, so the adopted/scored crypt path is untouched b
 Run: python3 -m pytest extensions/renderers/godot/tools/tests/test_layered_prompt_templating.py -q
 (no network / credentials required — pure string-templating + JSON-schema checks)
 """
+import copy
 import os
 import sys
 import unittest

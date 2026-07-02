@@ -102,6 +102,11 @@ def _render_pass_prompt(recipe: dict, room: str, pass_spec: dict, slot_key: str,
             "[generate_room] ERROR: rooms.%s.%s.%s is missing slot %s required by the "
             "%s prompt template." % (room, slot_block, slot_key, e, slot_key)
         )
+    except (IndexError, ValueError) as e:
+        sys.exit(
+            "[generate_room] ERROR: rooms.%s.%s.%s has a malformed slot value for the "
+            "%s prompt template (%s)." % (room, slot_block, slot_key, slot_key, e)
+        )
 
 
 def _run_gemini_pass(headers: dict, pass_spec: dict, image_ref: str, out_dir: str, stem: str,

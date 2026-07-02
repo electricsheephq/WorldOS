@@ -173,7 +173,7 @@
           "room_setting_noun": "cathedral nave",
           "room_preserve_list": "stone flagstones, props, carved columns, the altar, the stained-glass shaft",
           "room_key_source": "the altar candles",
-          "room_fill_source": "the stained-glass light shaft",
+          "room_fill_source": "the stained-glass light shafts",
           "room_space_desc": "a hushed candlelit cathedral nave"
         }
       },
