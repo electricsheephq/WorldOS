@@ -25,6 +25,8 @@ from models import (
     CompanionDossier,
     CompanionQuestArc,
     Consequence,
+    Faction,
+    FactionArc,
     NarrativeArc,
     Quest,
 )
@@ -714,3 +716,157 @@ def test_arcless_default_campaign_yields_no_act_cues():
     assert _kinds(obligations) & _ACT_KINDS == set()
     # A healthy, companion-less, default-arc beat is still fully empty.
     assert obligations == []
+
+
+# --- quest_stalled BEATS-reach (#1286) --------------------------------------
+#
+# The measured rri-a1-duo2 defect: a 22-beat run kept an active quest alive while the DM never
+# called a progress verb AND never advanced the in-world clock, so the day-only quest_stalled gate
+# (day - last_progress_day >= 3) was structurally UNREACHABLE. The beats-reach mirrors camp_overdue
+# / act_one_stalled: a quest that got no progress across _QUEST_STALL_BEATS+ beats surfaces even at
+# day 1. Quest.last_progress_beat is the engine-mutated baseline (stamped wherever last_progress_day
+# is), so the cue reads engine state, never Decision prose (invariant 3).
+
+
+def _stuck_clock_campaign(beats_now: int, day: int = 1) -> Campaign:
+    """A campaign whose in-world clock never advanced (day fixed) but that has PLAYED beats_now
+    beats — the exact rri-a1-duo2 shape."""
+    c = Campaign(title="Stuck")
+    c.day = day
+    c.narrative_arc = NarrativeArc(act=1, beats_in_act=beats_now)
+    return c
+
+
+def test_quest_stalled_fires_by_beats_when_clock_is_stuck():
+    """22 beats in, an active quest last advanced at beat 0, day never moved -> stalled by beats
+    even though day - last_progress_day == 0 (the day gate can't see it)."""
+    c = _stuck_clock_campaign(beats_now=22, day=1)
+    q = Quest(title="Dresh's Lost Wagon", objectives=["find the wagon"],
+              last_progress_day=1, last_progress_beat=0)
+    c.quests[q.id] = q
+    obligations = server._compute_beat_obligations(c)
+    assert "quest_stalled" in _kinds(obligations)
+    stalled = next(o for o in obligations if o["kind"] == "quest_stalled")
+    assert stalled["title"] == "Dresh's Lost Wagon"
+    assert "beats" in stalled["detail"]  # beats phrasing when the day gate didn't drive
+
+
+def test_quest_stalled_not_fired_by_beats_below_threshold():
+    """Just under _QUEST_STALL_BEATS since last progress -> not yet stalled (no false-early cue)."""
+    c = _stuck_clock_campaign(beats_now=server._QUEST_STALL_BEATS - 1, day=1)
+    q = Quest(title="A fresh thread", objectives=["begin"],
+              last_progress_day=1, last_progress_beat=0)
+    c.quests[q.id] = q
+    assert "quest_stalled" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_quest_stalled_beats_silent_when_progress_is_recent():
+    """A quest advanced at the CURRENT beat is not stalled by beats even after a long run."""
+    c = _stuck_clock_campaign(beats_now=30, day=1)
+    q = Quest(title="Actively worked", objectives=["push"],
+              last_progress_day=1, last_progress_beat=30)  # advanced this beat
+    c.quests[q.id] = q
+    assert "quest_stalled" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_quest_stalled_day_reach_still_fires_and_reads_days():
+    """The original day-reach is preserved: a 3+ day-stale quest still fires with the DAYS phrasing
+    (the beats baseline is unset / -1 on an old snapshot, so only the day gate drives)."""
+    c = Campaign(title="Clock moves")
+    c.day = 8
+    q = Quest(title="The Long Road", objectives=["reach the keep"], last_progress_day=4)
+    c.quests[q.id] = q
+    obligations = server._compute_beat_obligations(c)
+    assert "quest_stalled" in _kinds(obligations)
+    stalled = next(o for o in obligations if o["kind"] == "quest_stalled")
+    assert "days" in stalled["detail"]
+
+
+def test_quest_stalled_beats_never_fires_on_unstamped_old_snapshot():
+    """ADDITIVE: a quest from an old snapshot (last_progress_beat == -1 default) never trips the
+    beats path — behavior is byte-identical to today for pre-#1286 state."""
+    c = _stuck_clock_campaign(beats_now=50, day=1)
+    q = Quest(title="Old snapshot quest", objectives=["x"], last_progress_day=1)  # beat unset (-1)
+    c.quests[q.id] = q
+    assert "quest_stalled" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_add_quest_stamps_last_progress_beat(tmp_path, monkeypatch):
+    """add_quest must seed last_progress_beat from the current beat tally so the stall-by-beats
+    clock starts at arrival, not at beat 0 (a late-added quest isn't instantly stale)."""
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    cid = server.start_adventure("cellar-rats")["campaign_id"]
+    c = store.load_campaign(cid)
+    c.narrative_arc.beats_in_act = 15
+    store.save_campaign(c)
+    qid = server.add_quest(cid, title="A late quest", objectives=["go"])["id"]
+    c = store.load_campaign(cid)
+    assert c.quests[qid].last_progress_beat == 15  # seeded from the live tally, not 0
+
+
+# --- faction_joinable_unjoined (#1286) --------------------------------------
+#
+# The rri-a1-duo2 defect also named a "seeded faction never joined". A Faction that carries an
+# AUTHORED questline (questline_arc_id set -> a deliberate join->grow->lead FactionArc) but is
+# still un-joined a stretch of beats in gets a cue to enlist. questline_arc_id is the false-
+# positive-resistant signal: a plain flavour faction (no arc) is NEVER a join obligation.
+
+
+def _campaign_with_faction_arc(joined: bool, beats: int = server._FACTION_JOIN_BEATS) -> Campaign:
+    c = Campaign(title="Factions")
+    c.narrative_arc = NarrativeArc(act=1, beats_in_act=beats)
+    fac = Faction(name="The Emberwardens", joined=joined)
+    arc = FactionArc(faction_id=fac.id, title="Rise of the Emberwardens")
+    fac.questline_arc_id = arc.id
+    c.factions[fac.id] = fac
+    c.faction_arcs[arc.id] = arc
+    return c
+
+
+def test_faction_joinable_unjoined_fires_for_seeded_unjoined_faction():
+    c = _campaign_with_faction_arc(joined=False)
+    obligations = server._compute_beat_obligations(c)
+    assert "faction_joinable_unjoined" in _kinds(obligations)
+    cue = next(o for o in obligations if o["kind"] == "faction_joinable_unjoined")
+    assert cue["name"] == "The Emberwardens"
+    assert "join_faction" in cue["detail"]
+
+
+def test_faction_joinable_unjoined_silent_once_joined():
+    c = _campaign_with_faction_arc(joined=True)
+    assert "faction_joinable_unjoined" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_faction_joinable_unjoined_silent_for_flavour_faction_without_arc():
+    """A faction with NO authored questline is not a join obligation (the party may never enlist)."""
+    c = Campaign(title="Factions")
+    c.narrative_arc = NarrativeArc(act=1, beats_in_act=20)
+    fac = Faction(name="Town Guard")  # no questline_arc_id
+    c.factions[fac.id] = fac
+    assert "faction_joinable_unjoined" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_faction_joinable_unjoined_silent_below_beats_threshold():
+    """Below _FACTION_JOIN_BEATS the cue is silent — authoring the arc doesn't nag same-beat."""
+    c = _campaign_with_faction_arc(joined=False, beats=server._FACTION_JOIN_BEATS - 1)
+    assert "faction_joinable_unjoined" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_faction_joinable_unjoined_silent_when_arc_id_dangles():
+    """A questline_arc_id pointing at a MISSING FactionArc (partial/older state) degrades to silent,
+    never raises — matches the defensive contract of every other cue."""
+    c = Campaign(title="Factions")
+    c.narrative_arc = NarrativeArc(act=1, beats_in_act=20)
+    fac = Faction(name="Ghost Order")
+    fac.questline_arc_id = "farc_missing"  # no matching arc in c.faction_arcs
+    c.factions[fac.id] = fac
+    assert "faction_joinable_unjoined" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_faction_cue_absent_on_factionless_campaign():
+    """ADDITIVE/EMPTY: a campaign with no factions never trips the faction cue (the block adds
+    nothing). (beats_in_act is high here only to clear the beats gate, so act_one_stalled may
+    fire — that's the arc cue, not ours; we assert only the faction kind is absent.)"""
+    c = Campaign(title="Empty")
+    c.narrative_arc = NarrativeArc(act=1, beats_in_act=20)
+    assert "faction_joinable_unjoined" not in _kinds(server._compute_beat_obligations(c))

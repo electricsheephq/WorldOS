@@ -354,6 +354,27 @@ _ACT1_STALL_BEATS = 8
 # from a duo A/B without touching the cue logic.
 _CAMP_OVERDUE_BEATS = 8
 
+# #1286: quest_stalled beats-reach. A quest that gets NO progress verb across this many beats
+# is stalled even when the in-world clock never advances (the day-only gate was unreachable on a
+# stuck clock — the measured rri-a1-duo2 defect). Mirrors _CAMP_OVERDUE_BEATS / _ACT1_STALL_BEATS.
+_QUEST_STALL_BEATS = 8
+
+# #1286: faction_joinable_unjoined beats-reach. A faction that carries an authored questline
+# (questline_arc_id set — a deliberate join->grow->lead arc) but is still un-joined this many
+# beats in gets a cue to enlist, so a seeded faction questline isn't left narrated-not-engined.
+_FACTION_JOIN_BEATS = 8
+
+
+def _quest_progress_beat(c: Campaign) -> int:
+    """The current NarrativeArc.beats_in_act tally, read defensively — the engine-mutated beat
+    cursor a quest stamps as its last-progress baseline (#1286). -1 when no arc exists so an
+    older/partial campaign stamps the same "never counted" sentinel the model defaults to."""
+    arc = getattr(c, "narrative_arc", None)
+    if arc is None:
+        return -1
+    b = getattr(arc, "beats_in_act", 0)
+    return b if isinstance(b, int) else -1
+
 
 def _validate_log_kind(kind: str) -> str:
     """Normalize + validate a DM-supplied beat kind against the whitelist (F07-6). Returns
@@ -11363,6 +11384,9 @@ def add_quest(
             # learned of the quest, NOT from day 1. A quest added late is therefore NOT
             # flaggable on the next beat (the stall clock starts now, under the lock).
             last_progress_day=c.day,
+            # #1286: same for the beats baseline — the stall-by-beats clock starts at the beat
+            # the engine learned of the quest, so a late-added quest isn't stale on the next beat.
+            last_progress_beat=_quest_progress_beat(c),
         )
         c.quests[q.id] = q
         save_campaign(c)
@@ -11430,6 +11454,7 @@ def complete_quest(
             raise ValueError(f"no quest {quest_id!r}")
         q.status = status  # type: ignore[assignment]
         q.last_progress_day = c.day  # F05-7: resolving a quest IS progress — reset the stall clock.
+        q.last_progress_beat = _quest_progress_beat(c)  # #1286: reset the beats stall clock too.
         # F05-1: make the skill-documented evolution seam reachable. Set the rule-of-three
         # fields from the kwargs ONLY when explicitly provided, so an empty kwarg never
         # clobbers a field content/questgen already authored on the quest. Assigned under
@@ -11516,6 +11541,7 @@ def complete_objective(campaign_id: str, quest_id: str, objective: str) -> dict:
         # F05-7: completing an objective IS progress — stamp the day so the quest_stalled
         # detector measures from the last engine-known advancement (not Decision prose).
         q.last_progress_day = c.day
+        q.last_progress_beat = _quest_progress_beat(c)  # #1286: reset the beats stall clock too.
         auto = None
         evolution = None
         remaining = [o for o in q.objectives if o not in q.completed_objectives]
@@ -12553,6 +12579,7 @@ def set_quest_status(campaign_id: str, hook_id: str, status: str) -> dict:
                 raise ValueError(f"quest status must be active|completed|failed (or resolved), got {status!r}")
             q.status = qs  # type: ignore[assignment]
             q.last_progress_day = c.day  # F05-7: advancing a quest IS progress — reset stall clock.
+            q.last_progress_beat = _quest_progress_beat(c)  # #1286: reset the beats stall clock too.
             # Mirror complete_quest: a tracked quest reaching "completed" auto-awards
             # milestone XP once (xp-mode) — set_quest_status is the DM's equivalent verb,
             # so both close-of-quest paths pay the same deterministic reward.
@@ -13012,16 +13039,40 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
                 ),
             })
             continue  # a resolvable quest isn't ALSO flagged as stalled
-        # last_progress_day stamped 3+ days ago -> the engine knows this thread has stalled.
+        # STALLED — the engine knows this thread hasn't been advanced by any progress verb. Two
+        # independent reaches, either sufficient:
+        #   (a) DAY-reach (the original): last_progress_day stamped 3+ in-world days ago.
+        #   (b) BEATS-reach (#1286): last_progress_beat is _QUEST_STALL_BEATS+ beats behind the
+        #       current tally. The DM rarely advances the in-world clock, so the day-only gate was
+        #       structurally UNREACHABLE on a stuck clock (rri-a1-duo2: 22 beats, an active quest,
+        #       ZERO progress calls, the day never moved). The beats reach mirrors camp/act_one and
+        #       fires on a normal-length run. Prefer the day phrasing when it drives; else beats.
         last_progress = getattr(q, "last_progress_day", -1)
-        if last_progress is not None and last_progress >= 0 and day - last_progress >= 3:
+        days_stalled = (
+            day - last_progress
+            if isinstance(last_progress, int) and last_progress >= 0 and day - last_progress >= 3
+            else 0
+        )
+        last_beat = getattr(q, "last_progress_beat", -1)
+        cur_beat = _quest_progress_beat(c)
+        beats_stalled = (
+            cur_beat - last_beat
+            if isinstance(last_beat, int) and last_beat >= 0 and cur_beat >= 0
+            and cur_beat - last_beat >= _QUEST_STALL_BEATS
+            else 0
+        )
+        if days_stalled or beats_stalled:
+            if days_stalled:
+                how = f"no progress in {days_stalled} days"
+            else:
+                how = f"no progress in {beats_stalled} beats"
             obligations.append({
                 "kind": "quest_stalled",
                 "quest_id": qid,
                 "title": title,
                 "severity": "low",
                 "detail": (
-                    f"Quest '{title}' has stalled (no progress in {day - last_progress} days) — "
+                    f"Quest '{title}' has stalled ({how}) — "
                     f"push an objective (complete_objective) or complete_quest it."
                 ),
             })
@@ -13060,6 +13111,40 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
                 f"so the thread lingers (rule of three)."
             ),
         })
+
+    # 4b. faction_joinable_unjoined (#1286) — a faction that carries an AUTHORED questline
+    #     (questline_arc_id set: someone deliberately built a join->grow->lead FactionArc for it)
+    #     but is still un-joined a stretch of beats in. join_faction is the membership latch that
+    #     ARMS the questline (a requires_joined arc stays `locked` until then), so a seeded faction
+    #     arc left un-joined is the faction analog of the narrated-not-engined defect (rri-a1-duo2:
+    #     "seeded faction never joined"). questline_arc_id is the false-positive-resistant signal —
+    #     a plain flavour faction with no arc is NOT a join obligation (the party may never enlist).
+    #     Beats-gated (mirrors camp/quest reaches) so authoring the arc doesn't nag on the same beat.
+    _arc_join = getattr(c, "narrative_arc", None)
+    _beats_join = (getattr(_arc_join, "beats_in_act", 0) or 0) if _arc_join is not None else 0
+    if _beats_join >= _FACTION_JOIN_BEATS:
+        factions = getattr(c, "factions", None) or {}
+        faction_arcs = getattr(c, "faction_arcs", None) or {}
+        for fac in factions.values():
+            arc_id = (getattr(fac, "questline_arc_id", "") or "").strip()
+            if not arc_id or arc_id not in faction_arcs:
+                continue  # no authored questline -> not a join obligation (plain flavour faction)
+            if getattr(fac, "joined", False):
+                continue  # already enlisted -> the questline is armed
+            name = getattr(fac, "name", None) or "the faction"
+            obligations.append({
+                "kind": "faction_joinable_unjoined",
+                "faction_id": getattr(fac, "id", None),
+                "name": name,
+                "questline_arc_id": arc_id,
+                "severity": "low",
+                "detail": (
+                    f"{name} has an authored questline but the party never enlisted, so its "
+                    f"join->grow->lead arc stays locked and narrated-not-engined. When the fiction "
+                    f"gives the party a way in, join_faction(faction_id) to arm the questline (a "
+                    f"requires_joined arc opens to available and gauge-ready stages unlock)."
+                ),
+            })
 
     # 5. companion_arc_gate_near — a not-yet-unlocked ArcGate within 20 points of unlocking;
     #    a small push (a values-moment, a camp beat) lands a real loyalty/romance/quest beat.
