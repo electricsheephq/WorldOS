@@ -298,8 +298,20 @@ def _lum_stats(png_path: str | Path) -> Optional[tuple[float, float]]:
         return None
 
 
-def _stdlib_png_lum(p: Path) -> tuple[float, float]:
-    """Minimal PNG decoder (8-bit RGB/RGBA, no interlace) -> coarse luminance stats. stdlib only."""
+# ---------------------------------------------------------------------------
+# Shared stdlib PNG decoder — chunk-parse + scanline-unfilter, used by every stdlib fallback
+# below (G1 _stdlib_png_lum, G5 _stdlib_png_lum_grid, G6 _stdlib_png_luma_stats). Previously each
+# had its own copy of this logic (triplicated); this is the single decode, callers each do their
+# own (cheap) luminance reduction / sampling on top of the returned raw pixel buffer.
+# ---------------------------------------------------------------------------
+def _decode_png_pixels(p: Path) -> tuple[bytearray, int, int, int]:
+    """Minimal PNG decoder: 8-bit greyscale/RGB/RGBA (color_type 0, 2, 6), no interlace, no palette.
+    Returns (pixels, width, height, channels) where ``pixels`` is the unfiltered scanline buffer
+    (row-major, ``channels`` bytes/pixel — 1 for greyscale, 3 for RGB, 4 for RGBA) and every caller
+    reduces it to luminance itself (greyscale: use the channel directly; RGB/RGBA: Rec.709 weights).
+    stdlib only (zlib + struct). Raises ValueError for anything unsupported (bit depth != 8,
+    interlaced, or palette-indexed color_type 3 — palette needs a PLTE lookup this decoder doesn't
+    do; Pillow handles those cases when installed)."""
     data = p.read_bytes()
     if data[:8] != b"\x89PNG\r\n\x1a\n":
         raise ValueError("not a PNG")
@@ -317,9 +329,9 @@ def _stdlib_png_lum(p: Path) -> tuple[float, float]:
         elif ctype == b"IEND":
             break
         off += 12 + ln
-    if bit_depth != 8 or color_type not in (2, 6):
+    if bit_depth != 8 or color_type not in (0, 2, 6):
         raise ValueError(f"unsupported PNG bit_depth={bit_depth} color_type={color_type}")
-    channels = 4 if color_type == 6 else 3
+    channels = {0: 1, 2: 3, 6: 4}[color_type]
     raw = zlib.decompress(bytes(idat))
     stride = width * channels
     # Un-filter scanlines (PNG filter types 0-4).
@@ -349,13 +361,28 @@ def _stdlib_png_lum(p: Path) -> tuple[float, float]:
                 line[i] = (x + pr) & 0xFF
         out += line
         prev = line
+    return out, width, height, channels
+
+
+def _pixel_luma(pixels: bytearray, base: int, channels: int) -> float:
+    """Rec.709 luma (0-255) of the pixel at byte offset ``base``. Greyscale (channels==1) is
+    already luma; RGB/RGBA (channels 3/4) use the standard weights (alpha ignored, matches G1/G5/G6
+    pre-refactor behavior which also dropped alpha)."""
+    if channels == 1:
+        return float(pixels[base])
+    return 0.2126 * pixels[base] + 0.7152 * pixels[base + 1] + 0.0722 * pixels[base + 2]
+
+
+def _stdlib_png_lum(p: Path) -> tuple[float, float]:
+    """Coarse luminance mean+variance via the shared decoder. stdlib only."""
+    out, width, height, channels = _decode_png_pixels(p)
+    stride = width * channels
     # Coarse luminance sample (every Nth pixel to stay cheap).
     step = max(1, (width * height) // 16384)
     vals = []
     for i in range(0, width * height, step):
         base = (i // width) * stride + (i % width) * channels
-        r, g, b = out[base], out[base + 1], out[base + 2]
-        vals.append((0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0)
+        vals.append(_pixel_luma(out, base, channels) / 255.0)
     n = len(vals) or 1
     mean = sum(vals) / n
     var = sum((v - mean) ** 2 for v in vals) / n
@@ -537,16 +564,28 @@ def gate_occupancy(scenegrid: SceneGrid, occupancy_tint: Optional[dict]) -> list
 # This gate adds a WARN band around the same PASS band (near_black 0.50-0.66 warns below the 0.66
 # PASS floor; lit 0.05-0.20 warns above the 0.05 PASS ceiling; median 15-40 warns above the 0-15
 # PASS ceiling) so a borderline candidate isn't hard-blocked but the stats must still be quoted.
+#
+# PERF: this gate's stats are FRACTIONS (near_black/lit pixel share) + a MEDIAN, not exact per-pixel
+# output — downsampling to a fixed grid before computing them is statistically safe (histogram shape
+# survives a representative sample) and avoids an O(width*height) full-res pass + sort (~2.1M px on a
+# 1920x1097 capture). G1 downsamples to a 128px thumbnail (mean/variance) and G5 to _G5_GRID=64
+# (inter-frame deltas); G6 uses a coarser _G6_GRID=256 grid (finer than G1/G5 since fraction/median
+# accuracy benefits from more samples than a mean does, but still ~65K px vs ~2.1M — >30x cheaper).
+_G6_GRID = 256
+
+
 def _luma_stats(png_path: str | Path) -> Optional[tuple[float, float, float]]:
-    """Return (near_black_frac, lit_frac, median_L) on a 0-255 Rec.709 greyscale, or None if the
-    PNG can't be decoded. Tries Pillow (matches atelier_luma_gate.py's math exactly), else falls
-    back to the stdlib PNG decoder (same graceful degradation as G1)."""
+    """Return (near_black_frac, lit_frac, median_L) on a 0-255 Rec.709 greyscale, sampled from a
+    <=_G6_GRID working-size downscale, or None if the PNG can't be decoded. Tries Pillow (thumbnail,
+    matches atelier_luma_gate.py's math up to the downsample), else falls back to the stdlib PNG
+    decoder (same graceful degradation as G1)."""
     p = Path(png_path)
     if not p.exists():
         return None
     try:
         from PIL import Image  # type: ignore
         im = Image.open(p).convert("RGB")
+        im.thumbnail((_G6_GRID, _G6_GRID))
         px = list(im.getdata())
         n = len(px) or 1
         lums = [0.2126 * r + 0.7152 * g + 0.0722 * b for r, g, b in px]
@@ -563,63 +602,22 @@ def _luma_stats(png_path: str | Path) -> Optional[tuple[float, float, float]]:
 
 
 def _stdlib_png_luma_stats(p: Path) -> tuple[float, float, float]:
-    """Minimal PNG decode (8-bit RGB/RGBA, no interlace) -> (near_black_frac, lit_frac, median_L)
-    on a 0-255 Rec.709 greyscale. stdlib only; reuses the same unfilter logic as _stdlib_png_lum."""
-    data = p.read_bytes()
-    if data[:8] != b"\x89PNG\r\n\x1a\n":
-        raise ValueError("not a PNG")
-    off = 8
-    width = height = bit_depth = color_type = 0
-    idat = bytearray()
-    while off < len(data):
-        ln = struct.unpack(">I", data[off:off + 4])[0]
-        ctype = data[off + 4:off + 8]
-        body = data[off + 8:off + 8 + ln]
-        if ctype == b"IHDR":
-            width, height, bit_depth, color_type = (*struct.unpack(">IIBB", body[:10]),)
-        elif ctype == b"IDAT":
-            idat += body
-        elif ctype == b"IEND":
-            break
-        off += 12 + ln
-    if bit_depth != 8 or color_type not in (2, 6):
-        raise ValueError(f"unsupported PNG bit_depth={bit_depth} color_type={color_type}")
-    channels = 4 if color_type == 6 else 3
-    raw = zlib.decompress(bytes(idat))
+    """(near_black_frac, lit_frac, median_L) on a 0-255 Rec.709 greyscale, sampled from a
+    <=_G6_GRID nearest-sample downscale via the shared decoder (see the PERF note above
+    gate_luma_staging_law — fractions/median tolerate downsampling, unlike G3/G4's exact geometry)."""
+    out, width, height, channels = _decode_png_pixels(p)
     stride = width * channels
-    out = bytearray()
-    prev = bytearray(stride)
-    pos = 0
-    for _ in range(height):
-        ftype = raw[pos]
-        pos += 1
-        line = bytearray(raw[pos:pos + stride])
-        pos += stride
-        for i in range(stride):
-            a = line[i - channels] if i >= channels else 0
-            b = prev[i]
-            c = prev[i - channels] if i >= channels else 0
-            x = line[i]
-            if ftype == 1:
-                line[i] = (x + a) & 0xFF
-            elif ftype == 2:
-                line[i] = (x + b) & 0xFF
-            elif ftype == 3:
-                line[i] = (x + ((a + b) >> 1)) & 0xFF
-            elif ftype == 4:
-                pp = a + b - c
-                pa, pb, pc = abs(pp - a), abs(pp - b), abs(pp - c)
-                pr = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
-                line[i] = (x + pr) & 0xFF
-        out += line
-        prev = line
+    # Nearest-sample downscale to <= _G6_GRID on the long edge (same scheme as _stdlib_png_lum_grid).
+    scale = max(1, max(width, height) // _G6_GRID)
+    gw = max(1, width // scale)
+    gh = max(1, height // scale)
     lums: list[float] = []
-    for py in range(height):
-        base_row = py * stride
-        for px_i in range(width):
-            base = base_row + px_i * channels
-            r, g, b = out[base], out[base + 1], out[base + 2]
-            lums.append(0.2126 * r + 0.7152 * g + 0.0722 * b)
+    for gy in range(gh):
+        sy = min(height - 1, gy * scale)
+        for gx in range(gw):
+            sx = min(width - 1, gx * scale)
+            base = sy * stride + sx * channels
+            lums.append(_pixel_luma(out, base, channels))
     n = len(lums) or 1
     near_black = sum(1 for v in lums if v < LUMA_NEAR_BLACK_L) / n
     lit = sum(1 for v in lums if v > LUMA_LIT_L) / n
@@ -726,56 +724,10 @@ def _lum_grid(png_path: str | Path) -> Optional[tuple[list[float], int, int]]:
 
 
 def _stdlib_png_lum_grid(p: Path, target: int) -> tuple[list[float], int, int]:
-    """Minimal PNG decode (8-bit RGB/RGBA, no interlace) -> a <=target luminance grid. stdlib only.
-    Nearest-sample downscale (cheap + deterministic); good enough for delta/centroid signals."""
-    data = p.read_bytes()
-    if data[:8] != b"\x89PNG\r\n\x1a\n":
-        raise ValueError("not a PNG")
-    off = 8
-    width = height = bit_depth = color_type = 0
-    idat = bytearray()
-    while off < len(data):
-        ln = struct.unpack(">I", data[off:off + 4])[0]
-        ctype = data[off + 4:off + 8]
-        body = data[off + 8:off + 8 + ln]
-        if ctype == b"IHDR":
-            width, height, bit_depth, color_type = (*struct.unpack(">IIBB", body[:10]),)
-        elif ctype == b"IDAT":
-            idat += body
-        elif ctype == b"IEND":
-            break
-        off += 12 + ln
-    if bit_depth != 8 or color_type not in (2, 6):
-        raise ValueError(f"unsupported PNG bit_depth={bit_depth} color_type={color_type}")
-    channels = 4 if color_type == 6 else 3
-    raw = zlib.decompress(bytes(idat))
+    """<=target luminance grid via the shared decoder. stdlib only. Nearest-sample downscale
+    (cheap + deterministic); good enough for delta/centroid signals."""
+    out, width, height, channels = _decode_png_pixels(p)
     stride = width * channels
-    out = bytearray()
-    prev = bytearray(stride)
-    pos = 0
-    for _ in range(height):
-        ftype = raw[pos]
-        pos += 1
-        line = bytearray(raw[pos:pos + stride])
-        pos += stride
-        for i in range(stride):
-            a = line[i - channels] if i >= channels else 0
-            b = prev[i]
-            c = prev[i - channels] if i >= channels else 0
-            x = line[i]
-            if ftype == 1:
-                line[i] = (x + a) & 0xFF
-            elif ftype == 2:
-                line[i] = (x + b) & 0xFF
-            elif ftype == 3:
-                line[i] = (x + ((a + b) >> 1)) & 0xFF
-            elif ftype == 4:
-                pp = a + b - c
-                pa, pb, pc = abs(pp - a), abs(pp - b), abs(pp - c)
-                pr = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
-                line[i] = (x + pr) & 0xFF
-        out += line
-        prev = line
     # Nearest-sample downscale to <= target on the long edge.
     scale = max(1, max(width, height) // target)
     gw = max(1, width // scale)
@@ -786,8 +738,7 @@ def _stdlib_png_lum_grid(p: Path, target: int) -> tuple[list[float], int, int]:
         for gx in range(gw):
             sx = min(width - 1, gx * scale)
             base = sy * stride + sx * channels
-            r, g, b = out[base], out[base + 1], out[base + 2]
-            vals.append((0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0)
+            vals.append(_pixel_luma(out, base, channels) / 255.0)
     return vals, gw, gh
 
 

@@ -489,7 +489,9 @@ class TestG4ScreenScale:
 # 0.02-0.05 (WARN 0.05-0.20), median_L PASS 0-15 (WARN 15-40). Outside WARN = FAIL -> HIGH.
 
 def _write_png_greyscale(tmp_path: Path, name: str, values: list[int], w: int, h: int) -> Path:
-    """Write an 8-bit RGB PNG (grey, r=g=b per pixel) from a flat list of w*h luma values."""
+    """Write an 8-bit RGB PNG (color_type 2, grey pixels: r=g=b) from a flat list of w*h luma
+    values. Named for the effect (a grey-looking image), NOT the PNG color_type — see
+    _write_png_true_greyscale below for an actual color_type-0 PNG (single channel/pixel)."""
     assert len(values) == w * h
     rows = bytearray()
     for y in range(h):
@@ -501,6 +503,26 @@ def _write_png_greyscale(tmp_path: Path, name: str, values: list[int], w: int, h
     p.write_bytes(
         b"\x89PNG\r\n\x1a\n"
         + _chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+        + _chunk(b"IDAT", zlib.compress(bytes(rows), 9))
+        + _chunk(b"IEND", b"")
+    )
+    return p
+
+
+def _write_png_true_greyscale(tmp_path: Path, name: str, values: list[int], w: int, h: int) -> Path:
+    """Write an 8-bit PNG color_type=0 (true single-channel greyscale, 1 byte/pixel) from a flat
+    list of w*h luma values. Exercises the shared decoder's greyscale support (robustness fix:
+    the stdlib fallback used to reject color_type 0/3 outright, silently SKIPping G6 on a common
+    capture output; now channels==1 decodes directly as luma, no RGB expansion needed)."""
+    assert len(values) == w * h
+    rows = bytearray()
+    for y in range(h):
+        rows.append(0)  # filter type 0 (None)
+        rows += bytes(values[y * w:(y + 1) * w])
+    p = tmp_path / name
+    p.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + _chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 0, 0, 0, 0))
         + _chunk(b"IDAT", zlib.compress(bytes(rows), 9))
         + _chunk(b"IEND", b"")
     )
@@ -557,6 +579,23 @@ class TestG6LumaStagingLaw:
         gates = vp.gate_luma_staging_law(tmp_path / "nofile.png")
         assert any(g["severity"] == "SKIPPED" for g in gates)
 
+    def test_true_greyscale_png_decodes(self, tmp_path):
+        """ROBUSTNESS: a real color_type=0 (single-channel greyscale) PNG — a common capture
+        output — must decode and score, not silently SKIP. Previously the stdlib fallback's
+        color_type allowlist was (2, 6) only, rejecting greyscale outright."""
+        n = 32 * 32
+        near_black_n = round(0.73 * n)
+        lit_n = round(0.03 * n)
+        mid_n = n - near_black_n - lit_n
+        values = [10] * near_black_n + [200] * lit_n + [40] * mid_n
+        p = _write_png_true_greyscale(tmp_path, "true_grey.png", values, w=32, h=32)
+        gates = vp.gate_luma_staging_law(p)
+        g = gates[0]
+        assert g["severity"] != "SKIPPED", f"a true greyscale PNG must decode, not SKIP; got {g}"
+        assert g["severity"] == "PASS", f"73%/3% true-greyscale staging plate should PASS G6; got {g}"
+        assert g["value"]["near_black_frac"] == pytest.approx(0.73, abs=0.01)
+        assert g["value"]["lit_frac"] == pytest.approx(0.03, abs=0.01)
+
     def test_run_pregates_wires_g6(self, tmp_path):
         """End-to-end: run_pregates includes a G6 result and a museum-wash frame FLAGs overall."""
         p = _staging_law_frame(tmp_path, "wash.png", near_black_frac=0.0, lit_frac=0.5)
@@ -564,6 +603,20 @@ class TestG6LumaStagingLaw:
         g6 = [g for g in res["gates"] if g["gate"] == "G6_luma_staging_law"]
         assert g6, "run_pregates should always run G6 (needs only the PNG)"
         assert res["verdict"] == "FLAG", f"a museum-wash plate should FLAG overall; got {res['verdict']}"
+
+    def test_run_pregates_g6_warn_does_not_flag(self, tmp_path):
+        """End-to-end: a G6 WARN (borderline near_black, MED severity) composes through
+        run_pregates WITHOUT flipping the overall verdict to FLAG — MED is visible but
+        non-blocking, unlike a G6 FAIL (-> HIGH, see test_run_pregates_wires_g6 above)."""
+        p = _staging_law_frame(tmp_path, "borderline.png", near_black_frac=0.58, lit_frac=0.03)
+        res = vp.run_pregates(str(p))
+        g6 = [g for g in res["gates"] if g["gate"] == "G6_luma_staging_law"]
+        assert g6, "run_pregates should always run G6 (needs only the PNG)"
+        assert g6[0]["severity"] == "MED", f"borderline near_black should WARN G6 (-> MED); got {g6}"
+        assert g6[0] not in res["blocking"], "a G6 WARN (MED) must not be in the blocking list"
+        assert res["verdict"] == "PASS", (
+            f"a G6 WARN alone should not FLAG the overall verdict (non-blocking); got {res['verdict']}"
+        )
 
 
 # ---------------------------------------------------------------------------
