@@ -72,7 +72,7 @@ def _run_gemini_pass(headers: dict, pass_spec: dict, image_ref: str, out_dir: st
     Reuses the same proven Scenario helpers as the img2img pass (_post_json/_poll_job/
     _download_job_assets) — the Gemini endpoint takes prompt+image+numSamples+resolution
     (no strength knob; preservation is prompt-driven, see room_recipes.json).
-    Returns (job_id, [saved_asset_paths]).
+    Returns (job_id, [asset metadata dicts: {asset_id, path, bytes}]).
     """
     model = pass_spec["model"]
     endpoint = API_BASE + CONTROLNET_PATH.format(model_id=model)
@@ -235,23 +235,25 @@ def main(argv=None) -> None:
         if not layered:
             sys.exit("[generate_room] ERROR: --layered requested but recipe manifest has no "
                       "layered_pipeline_2026_07_02 entry: %s" % RECIPE_PATH)
-        pass1_asset = os.path.abspath(saved[0])
-        pass1_ref = _upload_image(headers, pass1_asset)
+        # _download_job_assets returns metadata dicts ({asset_id, path, bytes}) — the pass-1
+        # output already LIVES on Scenario, so chain its asset id directly (no re-upload).
+        pass1_ref = saved[0]["asset_id"]
 
         pass2_job, pass2_saved = _run_gemini_pass(
             headers, layered["pass2_detail_populate"], pass1_ref, out_dir,
             "room_%s_pass2_detail" % args.room, args.timeout)
         if not pass2_saved:
             sys.exit("[generate_room] ERROR: --layered pass2 (detail/populate) produced no assets")
-        _downscale_to_plate(pass2_saved[0], args.width, args.height)
-        pass2_ref = _upload_image(headers, os.path.abspath(pass2_saved[0]))
+        # Feed pass3 the REMOTE 2K asset (full resolution, no re-upload, no lossy round-trip);
+        # only the FINAL pass output is downscaled to the plate contract below.
+        pass2_ref = pass2_saved[0]["asset_id"]
 
         pass3_job, pass3_saved = _run_gemini_pass(
             headers, layered["pass3_staging_last"], pass2_ref, out_dir,
             "room_%s_pass3_staging" % args.room, args.timeout)
         if not pass3_saved:
             sys.exit("[generate_room] ERROR: --layered pass3 (staging-last) produced no assets")
-        _downscale_to_plate(pass3_saved[0], args.width, args.height)
+        _downscale_to_plate(pass3_saved[0]["path"], args.width, args.height)
 
         meta["layered"] = {
             "pass2_job_id": pass2_job, "pass2_assets": pass2_saved,
