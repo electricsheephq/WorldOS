@@ -223,8 +223,11 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
 | GPU-box capacity/renewal | continuous | GEX44 lease + Unity seat |
 | Paid-alpha pricing | Phase B | business call (#712) |
 
-## 8. Standing gaps register (filed as issues alongside this doc)
-Render-delivery decision (S2 entry) · Action-Replay/Animator wiring · death-resolution visual ·
-L7 motion-reel first run · monster wave 2 + ghoul clips · demo dungeon authoring ·
-`time_of_day` on `/combat-surface` · run-level duo resume (constructive half of #1285) ·
-S3 confusion-bug taxonomy · sprint-charter convention (this doc + labels).
+## 8. Standing gaps register (ALL FILED — the numbers)
+**#1302** render-delivery DECISION (S2-entry blocker) · **#1303** Action-Replay→Animator/VFX
+wiring (incl. death topple/fade) · **#1304** L7 motion-reel first run · **#1305** monster wave 2 +
+ghoul clips · **#1306** demo dungeon authoring (room-unit graph) · **#1307** `time_of_day` on
+`/combat-surface` · **#1308** run-level duo resume (constructive half of #1285).
+**Charters live:** **#1309** (S2 — The Felt Demo Loop, incl. the FELT control-anchored gate) ·
+**#1310** (S3 — Combat Readability, incl. the confusion-bug taxonomy). Later charters (S4+) are
+authored from §4 when their predecessor's gate passes — same template.
