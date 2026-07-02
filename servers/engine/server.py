@@ -13311,7 +13311,7 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
             })
 
     # WS3a-2. combat_left_hanging (med) — combat is ACTIVE but NO living hostile remains. Mirror
-    #   end_combat's live-hostile detection (server.py:6467): a monster IN THE COMBAT ORDER at
+    #   end_combat's live-hostile detection (the live_hostiles comprehension in end_combat, ~server.py:7009): a monster IN THE COMBAT ORDER at
     #   current_hp > 0 and not dead is a live hostile; a fled monster was removed from the order, a
     #   killed one is dead. When none remain, the fight is over in fact but the engine still reads
     #   active — cue end_combat so HP/initiative reset and (xp-mode) XP auto-awards. PRECEDENCE: while
@@ -13364,12 +13364,12 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
                 "severity": "med",
                 "character_ids": [getattr(ch, "id", None) for ch in orphaned],
                 "detail": (
-                    f"Defeated monster(s) {names} still carry unawarded XP — progression silently "
-                    "lost. Resolve it through the engine path that CONSUMES the foes' xp_value: "
-                    "end_combat auto-awards defeated foes' XP and zeroes their ledger (idempotent). "
-                    "Do NOT hand-compensate with a bare award_xp — that grants character XP without "
-                    "consuming xp_value, so this cue re-fires and invites duplicate awards; award_xp "
-                    "is for STORY/milestone progress only."
+                    f"Defeated monster(s) {names} died with XP that never landed — the kill-time "
+                    "auto-award was missed on this death path. This cue fires OUT of combat, so "
+                    "there is no active fight to end_combat; grant the XP with award_xp(character_id, "
+                    "amount, reason) for the living party so the kill counts. (award_xp does not zero "
+                    "the monster's xp_value, so this advisory may re-surface — award once and move on; "
+                    "a proper engine reconcile of stranded kill-XP is a tracked follow-up.)"
                 ),
             })
 
