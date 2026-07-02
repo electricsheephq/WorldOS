@@ -57,6 +57,25 @@
     "sequencing_note": "Sequential jobs only (Scenario rule — concurrent paints collide/silently no-output). Each pass waits on the prior pass's terminal job status before submitting.",
     "_hallucination_note": "2026-07-02 church-run incident: the pass2 Gemini detail/populate pass HALLUCINATED a map inset + garbled legend text onto the church plate (3/5 panel scorers called it an unshippable production artifact). Root cause: Gemini instruction-edit models have no strength knob and will sometimes invent UI-chrome-like elements (insets, legends, labels) when asked to 'add environmental-storytelling detail'. Fix: both pass2_detail_populate.prompt and pass3_staging_last.prompt now end with an explicit hard negative sentence forbidding text/labels/legends/map-insets/UI-elements/frames/borders. Evidence: ~/worldos-session-notes/2026-07-02-lora-v4-eval/."
   },
+  "layered_pipeline_day_2026_07_03": {
+    "_doc": "DAY-STATE variant of layered_pipeline_2026_07_02, for issue #1291 day/night live integration (G5a — the GENERATION half; box wiring is a separate later unit). Same ORDER LAW (pass1 layout -> pass2 detail/populate -> pass3 STAGING-LAST). Pass1 uses generate_room.py --lighting daylight (daylight_positive_template/daylight_negative, already in this file) instead of the firelit template. pass2_detail_populate_day is a lighting-neutral rewrite of the night pass2 (the night pass2 text explicitly says 'do not brighten the scene' / 'deepen the black voids', which fights a day-lit pass1 base — so day gets its own pass2 prompt_template but reuses the SAME rooms.<room>.layered.pass2_slots values, since the craft/de-clone/populate targets themselves are lighting-agnostic). pass3_staging_last_day applies the DAY staging law. Wired via generate_room.py --layered --day (implies --lighting daylight for pass1; routes pass2 to pass2_detail_populate_day + rooms.<room>.layered.pass2_slots, and pass3 to pass3_staging_last_day + rooms.<room>.layered_day.pass3_slots).",
+    "pass2_detail_populate_day": {
+      "_doc": "Gemini instruction-edit detail/populate pass, DAY variant. Runs AFTER pass1 (daylit), on pass1's output asset. Same craft goals as the night pass2 but PRESERVES the bright daylit lighting instead of protecting dark chiaroscuro — reuses rooms.<room>.layered.pass2_slots (the same slot values as night; only the template text differs).",
+      "model": "model_google-gemini-3-1-flash",
+      "endpoint": "POST /v1/generate/custom/model_google-gemini-3-1-flash",
+      "body_template": {"prompt": "<PROMPT below, slots filled>", "image": "<asset id of pass1 output>", "numSamples": 1, "resolution": "2K"},
+      "prompt_template": "Edit this painterly isometric {room_setting_noun} plate. PRESERVE the exact composition, camera, room layout, and the bright DAYTIME lighting with its cool-neutral daylight key — do not darken the scene or add heavy chiaroscuro. IMPROVE only the craft: re-sculpt every {room_focal_features} so they read CRISPLY CHISELED with clean edge highlights; make every {room_repeat_elements} UNIQUE (remove cloned repeats); paint any flat gray or unfinished surfaces as weathered stone with clear daylit value modeling; add small environmental-storytelling clutter along walls and edges only ({room_clutter_vocab}) keeping the open floor areas clear. Keep the hand-painted oil-paint brushwork feel throughout. Do NOT add any text, letters, numbers, runic writing that reads as text, labels, legends, map insets, UI elements, frames, or borders — the plate must contain ONLY the diegetic painted scene.",
+      "prompt_template_note": "Reuses rooms.<room>.layered.pass2_slots (same slot values as the night pass2 — room_focal_features/room_repeat_elements/room_clutter_vocab are lighting-agnostic craft targets)."
+    },
+    "pass3_staging_last_day": {
+      "_doc": "Gemini instruction-edit DAY STAGING pass. Runs LAST, on pass2's output asset (pass2 is the SAME detail/populate pass as night — see pipeline doc above). DAY STAGING LAW (owner spec, G5a): bright directional daylight through windows/doorways as the PRIMARY light; interior ambient lifted but still painterly (not flat/museum-lit); hearth/braziers/candles still lit but SECONDARY accents; long soft shadows cast by the window/doorway light; palette shifts cool-neutral daylight vs the night plates' warm firelight. Day plates will NOT meet the night staging-law luma bands (near-black %, hot-pool %, median-L target) — that is EXPECTED and recorded as data, not a FAIL.",
+      "model": "model_google-gemini-3-1-flash",
+      "endpoint": "POST /v1/generate/custom/model_google-gemini-3-1-flash",
+      "body_template": {"prompt": "<PROMPT below, slots filled>", "image": "<asset id of pass2 output>", "numSamples": 1, "resolution": "2K"},
+      "prompt_template": "Edit this painterly isometric {room_setting_noun} plate. PRESERVE every detail exactly — the room layout, all {room_preserve_list} — change NOTHING about the content or composition. ONLY restage the LIGHTING into a DAYTIME scene: make {room_day_key_source} the dominant PRIMARY light source, bright directional daylight streaming through, with a cool-neutral daylight color temperature (not warm firelight). Lift the overall interior ambient so the room reads clearly and painterly (soft diffuse fill, NOT flat museum-lighting wash — keep gentle value modeling on every surface). Cast long SOFT directional shadows across the floor from the daylight direction. Keep {room_fill_source} still lit and glowing but now SECONDARY accents only, small warm pools that read as minor detail against the cool daylit scene, not the dominant light. The scene must read unmistakably as {room_space_desc} in daytime, keeping the hand-painted oil feel. Do NOT add any text, letters, numbers, runic writing that reads as text, labels, legends, map insets, UI elements, frames, or borders — the plate must contain ONLY the diegetic painted scene.",
+      "prompt_template_note": "slots: room_setting_noun, room_preserve_list (shared with night pass3), room_day_key_source (the daylight source noun phrase, e.g. 'the tall windows' daylight'), room_fill_source (shared with night pass3 — the secondary warm light, now demoted to accent), room_space_desc (shared with night pass3, day-appropriate phrasing implied by the prompt's own 'in daytime' clause)."
+    }
+  },
   "rooms": {
     "crypt": {
       "key_light": "brazier firelight",
@@ -124,6 +143,16 @@
           "room_fill_source": "the hanging iron lanterns",
           "room_space_desc": "a warm firelit tavern hall"
         }
+      },
+      "layered_day": {
+        "_doc": "G5a day-state variant (#1291). pass2 is shared with rooms.tavern.layered.pass2_slots; only pass3 (staging) differs — see layered_pipeline_day_2026_07_03.",
+        "pass3_slots": {
+          "room_setting_noun": "tavern",
+          "room_preserve_list": "wood floor planks, props, tankards, barrels, timber posts, the bar counter, the hearth",
+          "room_day_key_source": "bright daylight streaming in through the tavern's windows and open doorway",
+          "room_fill_source": "the hearth embers and the hanging iron lanterns",
+          "room_space_desc": "a sunlit tavern hall on a bright day"
+        }
       }
     },
     "church": {
@@ -146,6 +175,16 @@
           "room_key_source": "the altar candles",
           "room_fill_source": "the stained-glass light shaft",
           "room_space_desc": "a hushed candlelit cathedral nave"
+        }
+      },
+      "layered_day": {
+        "_doc": "G5a day-state variant (#1291). pass2 is shared with rooms.church.layered.pass2_slots; only pass3 (staging) differs — see layered_pipeline_day_2026_07_03.",
+        "pass3_slots": {
+          "room_setting_noun": "cathedral nave",
+          "room_preserve_list": "stone flagstones, props, carved columns, the altar, the stained-glass shaft",
+          "room_day_key_source": "bright daylight flooding through the tall stained-glass windows",
+          "room_fill_source": "the altar candles",
+          "room_space_desc": "a sunlit cathedral nave on a bright day"
         }
       }
     },
@@ -190,6 +229,16 @@
           "room_key_source": "the braziers flanking the dais",
           "room_fill_source": "the wall torches down the pillared hall",
           "room_space_desc": "a vast dark pillared throne hall"
+        }
+      },
+      "layered_day": {
+        "_doc": "G5a day-state variant (#1291). pass2 is shared with rooms.bosshall.layered.pass2_slots; only pass3 (staging) differs — see layered_pipeline_day_2026_07_03.",
+        "pass3_slots": {
+          "room_setting_noun": "throne hall",
+          "room_preserve_list": "carved reliefs, props, the throne, the dais, the banners, the pillars, the braziers",
+          "room_day_key_source": "bright daylight streaming in through tall clerestory windows high on the pillared hall's walls",
+          "room_fill_source": "the braziers flanking the dais and the wall torches down the hall",
+          "room_space_desc": "a vast sunlit pillared throne hall on a bright day"
         }
       }
     }
