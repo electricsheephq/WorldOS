@@ -1519,3 +1519,56 @@ def test_guiding_bolt_advantage_ignores_attack_on_other_target(tmp_path):
     rc, out = _run_gate(tmp_path, events, {"leveling_mode": "milestone"})
     assert rc == 0, out
     assert "[PASS] guiding_bolt_advantage_consumed" in out, out
+
+
+# ── #1270: unresolved_spell_attack (WARN) ────────────────────────────────────────
+
+def _cast_gb(uid: str, caster: str = "cleric", automated: bool = False):
+    """A cast_spell tool_use+result for Guiding Bolt (automated:false, attack_roll:true =
+    the DM must resolve the to-hit via attack())."""
+    return [
+        _assistant_tool_use(uid, "mcp__engine__cast_spell",
+                            {"character_id": caster, "spell_name": "Guiding Bolt", "target_id": "foe"}),
+        _user_tool_result(uid, json.dumps({
+            "spell": "Guiding Bolt", "automated": automated, "attack_roll": True,
+        })),
+    ]
+
+
+def test_unresolved_spell_attack_warns_when_no_followup_attack(tmp_path):
+    """The sprint defect: cast Guiding Bolt (automated:false) then next_turn with NO
+    resolving attack() — the slot was spent for zero damage. WARN (not fatal)."""
+    events = _cast_gb("c1") + [
+        _assistant_tool_use("n1", "mcp__engine__next_turn", {}),
+        _user_tool_result("n1", json.dumps({"current_turn": "foe"})),
+    ]
+    rc, out = _run_gate(tmp_path, events, {"leveling_mode": "milestone"})
+    assert rc == 0, out  # WARN-level: never reds the run
+    assert "[WARN] unresolved_spell_attack" in out, out
+
+
+def test_unresolved_spell_attack_clean_when_attack_resolves(tmp_path):
+    """cast Guiding Bolt then the SAME caster's attack() resolves it before next_turn —
+    the leg is resolved, so the check does not fire."""
+    events = _cast_gb("c1") + [
+        _assistant_tool_use("a1", "mcp__engine__attack",
+                            {"attacker_id": "cleric", "target_id": "foe"}),
+        _user_tool_result("a1", json.dumps({"attacker": "Maren", "target": "Goblin", "hit": True})),
+        _assistant_tool_use("n1", "mcp__engine__next_turn", {}),
+        _user_tool_result("n1", json.dumps({"current_turn": "foe"})),
+    ]
+    rc, out = _run_gate(tmp_path, events, {"leveling_mode": "milestone"})
+    assert rc == 0, out
+    assert "unresolved_spell_attack" not in out, out
+
+
+def test_unresolved_spell_attack_not_fired_for_automated_spell(tmp_path):
+    """An engine-automated attack spell (automated:true) needs no DM attack() — the check
+    must NOT fire even without a follow-up attack()."""
+    events = _cast_gb("c1", automated=True) + [
+        _assistant_tool_use("n1", "mcp__engine__next_turn", {}),
+        _user_tool_result("n1", json.dumps({"current_turn": "foe"})),
+    ]
+    rc, out = _run_gate(tmp_path, events, {"leveling_mode": "milestone"})
+    assert rc == 0, out
+    assert "unresolved_spell_attack" not in out, out

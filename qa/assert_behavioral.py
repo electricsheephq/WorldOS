@@ -1461,6 +1461,49 @@ def main() -> int:
     if double_conc:
         chk("concentration_dropped_cleanly", False, "; ".join(double_conc), fatal=False)
 
+    # UNRESOLVED_SPELL_ATTACK (#1270; WARN — graduate to FATAL after clean sweeps, mirroring
+    # caster_has_spellbook). A DM-resolved attack-roll spell (Guiding Bolt, Fire Bolt cast via
+    # cast_spell -> the result carries automated:false + attack_roll:true) leaves its to-hit for
+    # the DM to make via attack(). If the SAME caster never made a same-turn attack() before the
+    # next next_turn, the spell ate its slot and dealt ZERO — the exact sprint defect. Read the
+    # ordered result stream so we can see the automated flag and pair the caster to the follow-up.
+    # Conservative + NULL-GUARDED: only fires on an affirmatively-observed cast_spell result with
+    # automated:false + attack_roll:true and NO matching attack() before the caster's turn ended.
+    try:
+        pairs = _tool_events(events)
+    except Exception:  # defensive: never let the pairing break the gate
+        pairs = []
+    unresolved_spell_atk: list[str] = []
+    # Track, per pending cast, the caster whose attack() would resolve it. A next_turn closes the
+    # window (the leg is same-turn only, #1270); an attack() by that caster resolves it.
+    pending_spell_casters: list[tuple[str, str]] = []  # (caster_id, spell_name)
+    for short, inp, obj, is_err, _text in pairs:
+        if short == "cast_spell" and not is_err and isinstance(obj, dict):
+            if obj.get("automated") is False and obj.get("attack_roll") is True:
+                caster = str(inp.get("character_id") or inp.get("caster_id") or "")
+                pending_spell_casters.append((caster, str(obj.get("spell") or inp.get("spell_name") or "spell")))
+        elif short == "attack" and not is_err:
+            atk_by = str(inp.get("attacker_id") or inp.get("character_id") or "")
+            # Resolve the OLDEST pending leg for this caster (a same-turn attack pairs to it).
+            for i, (caster, _sp) in enumerate(pending_spell_casters):
+                if caster and caster == atk_by:
+                    pending_spell_casters.pop(i)
+                    break
+        elif short == "next_turn":
+            # The turn ended: any still-pending spell-attack leg went unresolved this turn.
+            for caster, sp in pending_spell_casters:
+                unresolved_spell_atk.append(
+                    f"{sp} cast by {caster or '?'} returned automated:false (DM must resolve the "
+                    f"attack roll via attack()) but no same-turn attack() resolved it before "
+                    f"next_turn — the spell ate its slot and dealt no damage")
+            pending_spell_casters = []
+    # Any legs still pending at end-of-run (no trailing next_turn) are also unresolved.
+    for caster, sp in pending_spell_casters:
+        unresolved_spell_atk.append(
+            f"{sp} cast by {caster or '?'} returned automated:false but no attack() resolved it")
+    if unresolved_spell_atk:
+        chk("unresolved_spell_attack", False, "; ".join(unresolved_spell_atk), fatal=False)
+
     fails = [c for c in checks if c[2] and not c[1]]
     warns = [c for c in checks if not c[2] and not c[1]]
     print("=== behavioral assertions ===")
