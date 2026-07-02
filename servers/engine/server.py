@@ -3357,6 +3357,15 @@ def update_character(campaign_id: str, character_id: str = "", patch: dict = Non
         # leave. Omitted -> membership untouched (byte-identical to today). The mutation is applied
         # AFTER the validated sheet is stored below, so a rejected patch never strands membership.
         in_party_intent = data.pop("in_party", None)
+        # #806 stage 2: `rederive_ac` is a computed INTENT (not a Character field) — pop it
+        # BEFORE model_validate (else extra="forbid" trips) and translate below into an
+        # equipment-owned AC recompute. Truthy -> hand AC ownership back to equipment and
+        # recompute armor_class from the equipped items; omitted/falsey -> untouched.
+        rederive_ac_intent = bool(data.pop("rederive_ac", None))
+        # #806 stage 2: did this patch write armor_class directly? That is a DM manual
+        # override — stamp source="manual" below so the equip path won't clobber it (unless
+        # the same call also asked to re-derive, in which case equipment wins).
+        patch_wrote_ac = "armor_class" in (patch or {})
         # F14-11: a genuine type/typo error inside the model is wrapped into ONE bounded, readable
         # line (no errors.pydantic.dev wall) so the DM can fix it in the next call instead of
         # freehanding. STILL raises a ValueError, so the strict typo-forbid guard stays load-bearing.
@@ -3416,6 +3425,16 @@ def update_character(campaign_id: str, character_id: str = "", patch: dict = Non
             hp_delta = con_delta * new_ch.total_level
             new_ch.max_hp = max(1, new_ch.max_hp + hp_delta)
             new_ch.current_hp = max(1, min(new_ch.current_hp, new_ch.max_hp))
+        # #806 stage 2: resolve AC ownership. Re-derive wins if requested — recompute the
+        # worn base from equipped items and hand ownership to equipment. Otherwise, a patch
+        # that wrote armor_class is a DM manual override (source="manual"), which the equip
+        # path must not clobber. A patch that touched neither leaves the source flag as-is
+        # (byte-identical to today for every non-AC patch).
+        if rederive_ac_intent:
+            new_ch.armor_class = _derive_worn_ac_from_equipped(new_ch)
+            new_ch.armor_ac_source = "equipment"
+        elif patch_wrote_ac:
+            new_ch.armor_ac_source = "manual"
         c.characters[character_id] = new_ch
         # F14-11 (#812): apply the translated party-membership intent AFTER the validated sheet is
         # stored (a rejected patch never reaches here). Mirrors recruit_companion / dismiss: a
@@ -8424,14 +8443,82 @@ def _catalog_item_stats(rec: dict | None) -> dict | None:
     }
 
 
+def _unarmored_defense_base(ch: Character, dex_mod: int) -> int:
+    """#806 stage 2 — the no-body-armor base AC, mirroring _finish_seat_sheet's
+    Unarmored Defense (server.py ~1479-1483): Barbarian = 10 + DEX + CON, Monk =
+    10 + DEX + WIS; everyone else = the plain 10 + DEX baseline. Class-derived, not a
+    flat table value — so a barb/monk that re-derives with no armor keeps its class AC
+    instead of silently dropping to 10 + DEX. Matches the seat path's SINGLE rule set
+    (it computes the ability formula only; the shield is added by the caller, per the
+    barb-allows-shield / monk-forbids-shield SRD split)."""
+    classes = {(cl.name or "").lower() for cl in ch.classes}
+    if "barbarian" in classes:
+        return 10 + dex_mod + ch.ability_modifier(Ability.CON)
+    if "monk" in classes:
+        return 10 + dex_mod + ch.ability_modifier(Ability.WIS)
+    return 10 + dex_mod
+
+
+def _derive_worn_ac_from_equipped(ch: Character) -> int:
+    """#806 stage 2 — recompute the worn-armor base AC purely from the character's
+    currently-equipped catalog armor + shields, using the same SRD DEX-mod rules as
+    _equip_mechanics (light = base+DEX, medium = base+min(DEX,cap), heavy = flat,
+    shield = +bonus). Effect-CLEAN: this is the base scalar only; Mage Armor / Shield
+    of Faith still layer on at read time via _effective_armor_class. This is the
+    re-derive path that hands AC ownership back to equipment (rederive_ac=true) AND the
+    equip-path recompute — computing the FULL base from current inventory (not an
+    incremental delta) so it is order-independent and idempotent.
+
+    No BODY armor == Unarmored Defense (Barbarian 10+DEX+CON, Monk 10+DEX+WIS, else
+    10+DEX); a worn body armor OVERRIDES Unarmored Defense per the normal armor rule.
+    A shield adds its +bonus on top — EXCEPT a monk's Unarmored Defense requires no
+    shield (SRD), so a shield is dropped only for a monk who is relying on Unarmored
+    Defense (no body armor); a barbarian keeps it, and any body-armored character keeps
+    it."""
+    dex_mod = ch.ability_modifier(Ability.DEX)
+    body_armor_base = None  # None == no body armor worn (fall back to Unarmored Defense)
+    shield_bonus = 0
+    for it in ch.inventory:
+        if not it.equipped:
+            continue
+        rec = itemcatalog.resolve(it.name)
+        if rec is None or rec.get("kind") != "armor":
+            continue
+        category = rec.get("armor_category")
+        if category == "shield" or (category is None and "shield" in rec["name"].lower()):
+            shield_bonus += int(rec.get("ac_bonus") or rec.get("ac") or 2)
+        elif rec.get("ac"):
+            armor_base = int(rec["ac"])
+            if category == "light":
+                body_armor_base = armor_base + dex_mod
+            elif category == "medium":
+                body_armor_base = armor_base + min(dex_mod, int(rec.get("ac_dex_cap") or 2))
+            elif category == "heavy":
+                body_armor_base = armor_base
+            else:
+                body_armor_base = armor_base  # unknown/homebrew flat AC
+    if body_armor_base is None:
+        # A monk's Unarmored Defense feature is VOID while using a shield (SRD) — the monk
+        # may still wield the shield (its +bonus applies), but loses the WIS term, dropping
+        # to the plain 10 + DEX baseline. A barbarian keeps Unarmored Defense WITH a shield.
+        monk_with_shield = shield_bonus and "monk" in {(cl.name or "").lower() for cl in ch.classes}
+        base = (10 + dex_mod) if monk_with_shield else _unarmored_defense_base(ch, dex_mod)
+        return base + shield_bonus
+    return body_armor_base + shield_bonus
+
+
 def _equip_mechanics(ch: Character, item_name: str, equipped: bool) -> Optional[dict]:
-    """F09-5 stage 1 — TELL, don't enforce: report the mechanical consequences of
-    an equip/unequip so the DM can apply them through the existing writer paths.
-    The engine deliberately does NOT auto-write armor_class here: AC effects (e.g.
-    Mage Armor) flow through update_character today, and a silent equip-side write
-    would fight that path (stage 2 / #806 owns the AC-ownership design). Returns
-    None for items with no catalog mechanics (free-text gear) so the response stays
-    exactly the pre-existing payload."""
+    """#806 stage 2 — equipment-owned AC. On armor/shield equip/unequip the engine
+    now WRITES ch.armor_class with the worn AC it computes (light/medium/heavy DEX
+    rule + shield ±bonus) — but ONLY when the base AC isn't a DM manual override
+    (ch.armor_ac_source != "manual") and not a legacy/unknown "" value. When the
+    engine writes, it stamps armor_ac_source="equipment" and returns applied=True;
+    when the DM owns the base ("manual") or it's a manual-safe legacy "", it leaves
+    armor_class untouched and keeps surfacing the delta advisorily (applied=False)
+    so the DM can reconcile — engine computes, DM disposes. AC effects (Mage Armor,
+    Shield of Faith) still layer on top at read time via _effective_armor_class; the
+    equip write only owns the WORN-ARMOR base scalar. Returns None for items with no
+    catalog mechanics (free-text gear) so that response stays the pre-existing payload."""
     rec = itemcatalog.resolve(item_name)
     if rec is None:
         return None
@@ -8439,6 +8526,12 @@ def _equip_mechanics(ch: Character, item_name: str, equipped: bool) -> Optional[
     if rec.get("kind") == "armor" and (rec.get("ac") or rec.get("ac_bonus")):
         dex_mod = ch.ability_modifier(Ability.DEX)
         category = rec.get("armor_category")
+        # #806 stage 2: `suggested`/`ac_delta` below are ADVISORY only (the numbers the DM
+        # sees). The engine-owned WRITE does NOT use them — it FULLY recomputes the base from
+        # the (already-updated) inventory via _derive_worn_ac_from_equipped, so the stored
+        # base is order-independent + idempotent (an incremental ±delta drifts across
+        # ordering: armor-then-shield, double-equip, unequip-with-shield-on). The recompute
+        # is also effect-clean, so Mage Armor / Shield of Faith never bake into the base.
         if category == "shield" or (category is None and "shield" in rec["name"].lower()):
             # F09-6: a shield is a +N BONUS on top of the wearer's AC, not a base AC.
             # The SRD smuggles the bonus in as ac_base=2; prefer the structured ac_bonus.
@@ -8467,6 +8560,25 @@ def _equip_mechanics(ch: Character, item_name: str, equipped: bool) -> Optional[
         else:
             suggested = 10 + dex_mod
             basis = "unarmored baseline 10 + DEX"
+        # #806 stage 2: WRITE the worn-armor base unless a DM manual override owns it, or
+        # a legacy/unknown "" value is present (treated manual-safe — never auto-clobbered).
+        # When we own it, FULL-recompute the base from current inventory (order-independent,
+        # idempotent) and report applied=True; otherwise stay advisory (applied=False) and
+        # keep surfacing the delta so the DM can reconcile.
+        engine_owns_base = ch.armor_ac_source == "equipment"
+        if engine_owns_base:
+            ch.armor_class = _derive_worn_ac_from_equipped(ch)
+            ch.armor_ac_source = "equipment"
+            return {
+                "applied": True,
+                "current_ac": current_ac,
+                "suggested_ac": suggested,
+                "ac_delta": suggested - current_ac,
+                "note": (
+                    f"AC updated to {ch.armor_class} ({basis}); equipment owns this "
+                    f"character's armor class"
+                ),
+            }
         return {
             "applied": False,
             "current_ac": current_ac,
@@ -8475,6 +8587,8 @@ def _equip_mechanics(ch: Character, item_name: str, equipped: bool) -> Optional[
             "note": (
                 f"AC does not change on its own ({basis}): call "
                 f"update_character(armor_class={suggested}) to apply it"
+                + (" — or update_character(rederive_ac=true) to hand AC ownership to "
+                   "equipment" if ch.armor_ac_source == "manual" else "")
             ),
         }
     if rec.get("damage"):
@@ -8619,21 +8733,29 @@ def remove_item(campaign_id: str, character_id: str, name: str, quantity: int = 
 
 @mcp.tool()
 def equip_item(campaign_id: str, character_id: str, name: str, equipped: bool = True) -> dict:
-    """Equip an item (or unequip with equipped=False). Equipping is ADVISORY for
-    mechanics: for catalog-recognized armor/shields/weapons the response carries a
-    `mechanics` block ({suggested_ac, ac_delta, note} or {damage, damage_type,
-    note}) — the engine does NOT change armor_class or attacks on its own, so
-    apply the AC via update_character(armor_class=...) and pass weapon stats to
-    attack()."""
+    """Equip an item (or unequip with equipped=False). For catalog-recognized
+    armor/shields the response carries a `mechanics` block ({suggested_ac, ac_delta,
+    applied, note}); weapons carry {damage, damage_type, note}.
+
+    AC ownership (#806 stage 2): when equipment owns the character's armor class
+    (armor_ac_source=="equipment", e.g. after update_character(rederive_ac=true)),
+    the engine WRITES armor_class from the worn armor's DEX rule + shield bonus and
+    reports applied=true. When a DM manual override owns it (armor_ac_source=="manual")
+    or it's a legacy/unknown "" base, the engine leaves armor_class untouched and stays
+    ADVISORY (applied=false) — apply it via update_character(armor_class=...), or hand
+    ownership to equipment with update_character(rederive_ac=true). Weapon stats are
+    never auto-applied: pass damage_dice/attack_bonus to attack()."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
         it = inventory.set_equipped(ch, name, equipped)
-        save_campaign(c)
         out = it.model_dump()
         mech = _equip_mechanics(ch, it.name, equipped)
         if mech is not None:
             out["mechanics"] = mech
+        # Persist AFTER _equip_mechanics: when equipment owns AC it writes ch.armor_class
+        # (#806 stage 2), so the save must follow the mechanics pass, not precede it.
+        save_campaign(c)
         return out
 
 
