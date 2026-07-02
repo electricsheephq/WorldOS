@@ -92,6 +92,12 @@
       "retest": "bash qa/run_combat_sprint.sh sprint-retest",
       "hint": ">=3 attacks but start_combat never called — a fight ran entirely outside initiative, so turn-order/action-economy gates were inert. The engine surfaces a combat_not_active nudge per out-of-combat attack; reinforce 'call start_combat at the top of any real encounter' in the DM prompt. WARN only."
     },
+    "ambush_ran_surprise_gate": {
+      "category": "DM_ADHERENCE",
+      "likely_code_locations": ["skills/dungeon-master/reference/combat.md", "servers/engine/server.py"],
+      "retest": "bash qa/run_combat_sprint.sh sprint-retest",
+      "hint": "DM narration staged an ambush (lunge from the shadows / sprung trap / 'never saw it coming') but start_combat ran with no surprise evaluation — no surpriser_ids and no `surprise` key in the return — so the passive-Perception-vs-Stealth gate was skipped and the ambush had no mechanical effect (#1271). Reinforce 'pass surpriser_ids=[attacker id(s)] for any narrated ambush' in the DM combat runbook; the engine rolls Stealth vs passive Perception and applies SRD-5.2 initiative disadvantage to the surprised set. WARN only."
+    },
     "party_location_coherence": {
       "category": "ENGINE_INVARIANT",
       "likely_code_locations": ["servers/engine/travel.py", "servers/engine/server.py", "servers/engine/models.py"],

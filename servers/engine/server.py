@@ -4015,7 +4015,9 @@ def start_combat(
 ) -> dict:
     """Begin combat: roll initiative (1d20 + initiative_bonus) for each combatant
     and build the turn order (desc, ties broken by DEX modifier then input order).
-    Pass the character ids of everyone in the fight."""
+    Pass the character ids of everyone in the fight. For an ambush pass
+    surpriser_ids=[attackers]: the engine rolls Stealth vs passive Perception; the
+    surprised roll initiative with Disadvantage (SRD 5.2). See `surprise` in the return."""
     if not combatant_ids:
         raise ValueError("combatant_ids must be non-empty")
     surpriser_ids = [sid for sid in (surpriser_ids or []) if sid in combatant_ids]
@@ -4024,10 +4026,36 @@ def start_combat(
         if c.combat.active:
             raise ValueError("combat already active; call end_combat first")
         c.last_combat_resolution = ""  # a fresh fight -> any prior disposition no longer applies
+        # #1271 surprise gate: when the DM passes the ambushers (surpriser_ids), the engine
+        # DETERMINES who is surprised — each non-surpriser whose passive Perception (10 +
+        # Perception skill mod) is beaten by the BEST surpriser's engine-rolled Stealth check
+        # (1d20 + stealth mod) failed to notice the ambush. Those defenders are surprised. Per
+        # SRD 5.2 (data/srd/srd524/Rule.json, Rule[19] "**Surprise.**": "that combatant has
+        # Disadvantage on their Initiative roll") the 5.2 model is initiative DISADVANTAGE — NOT
+        # the 2014 lost-turn — so the engine rolls the surprised set's initiative with
+        # disadvantage. Purely additive: no surpriser_ids -> empty surprised set -> byte-identical
+        # to today's roll. "Engine rolls; the DM is told" — the result surfaces in view["surprise"].
+        surprised_ids: list[str] = []
+        surprise_detail: dict = {}
+        if surpriser_ids:
+            best_stealth = None
+            for sid in surpriser_ids:
+                sr = dice_mod.roll(f"1d20+{_char(c, sid).skill_bonus('stealth')}").total
+                if best_stealth is None or sr > best_stealth:
+                    best_stealth = sr
+            for cid in combatant_ids:
+                if cid in surpriser_ids:
+                    continue
+                passive_perc = 10 + _char(c, cid).skill_bonus("perception")
+                if best_stealth is not None and best_stealth > passive_perc:
+                    surprised_ids.append(cid)
+            surprise_detail = {"stealth": best_stealth}
+        surprised_set = set(surprised_ids)
         rolled = []
         for cid in combatant_ids:
             ch = _char(c, cid)
-            r = dice_mod.roll(f"1d20+{ch.initiative_bonus}")
+            # SRD 5.2: a surprised combatant rolls Initiative with Disadvantage.
+            r = dice_mod.roll(f"1d20+{ch.initiative_bonus}", disadvantage=cid in surprised_set)
             rolled.append((cid, r.total, ch.ability_modifier(Ability.DEX)))
         indexed = sorted(enumerate(rolled), key=lambda t: (-t[1][1], -t[1][2], t[0]))
         # Surprise ordering: surprisers go first (in their relative rolled order),
@@ -4065,12 +4093,23 @@ def start_combat(
             surpriser_names = [
                 c.characters[sid].name for sid in surpriser_ids if sid in c.characters
             ]
+            # #1271: the engine-determined surprised set (defenders who failed passive
+            # Perception vs the surprisers' Stealth) rolled initiative with disadvantage per
+            # SRD 5.2; surface who they are so the DM narrates the ambush landing.
+            surprised_names = [
+                c.characters[sid].name for sid in surprised_ids if sid in c.characters
+            ]
             view["surprise"] = {
                 "surprisers": surpriser_ids,
                 "surpriser_names": surpriser_names,
+                "surprised": surprised_ids,
+                "surprised_names": surprised_names,
+                "stealth_check": surprise_detail.get("stealth"),
                 "note": (
                     "opening attack has advantage; the target's AC still applies — "
-                    "call attack(advantage=True) for the opener. NO auto-kill."
+                    "call attack(advantage=True) for the opener. NO auto-kill. Surprised "
+                    "defenders (Stealth beat their passive Perception) rolled Initiative "
+                    "with Disadvantage per SRD 5.2 — narrate the ambush catching them flat-footed."
                 ),
             }
         # Reminder: surface anyone with Extra Attack so the DM makes the right number of attacks

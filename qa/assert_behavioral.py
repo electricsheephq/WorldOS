@@ -112,6 +112,21 @@ _NARRATION_LEAK = [
 ]
 _NARRATION_LEAK_RE = [re.compile(p, re.I) for p in _NARRATION_LEAK]
 
+# AMBUSH SIGNALS (#1271) — DM narration that plainly stages a surprise attack. When these fire
+# but start_combat ran with NO surprise evaluation (no surpriser_ids passed, no `surprise` key
+# in any return), the fight skipped the passive-Perception-vs-Stealth gate entirely — the exact
+# "narrated an ambush but ran straight to initiative" omission #1271 was filed on. High-confidence,
+# ambush-only phrasings (a clean pitched-battle beat scores 0 and can never false-fire).
+_AMBUSH_SIGNAL = [
+    r"\b(?:lunge|lunges|leap|leaps|spring|springs|burst|bursts|strike|strikes) (?:out )?from the shadows\b",
+    r"\bfrom the shadows\b.{0,40}\b(?:attack|strike|lunge|pounce|ambush)\w*",
+    r"\bcatch(?:es)? (?:them|you|him|her|the \w+) (?:by surprise|off[- ]guard|unaware|flat[- ]footed)\b",
+    r"\bnever (?:saw|see|sees) (?:it|you|them|the \w+) coming\b",
+    r"\b(?:spring|springs|sprung|lay|laid|set|sets) (?:the |an |a )?(?:ambush|trap)\b",
+    r"\bambush(?:es|ed)?\b",
+]
+_AMBUSH_SIGNAL_RE = [re.compile(p, re.I) for p in _AMBUSH_SIGNAL]
+
 
 def _tool_events(events: list[dict]) -> list[tuple[str, dict, object, bool, str]]:
     """Ordered (short_name, input, result_obj_or_None, is_error, raw_text).
@@ -850,6 +865,32 @@ def main() -> int:
     evs = _tool_events(events)
     chars_all = state.get("characters", {}) or {}
     party_ids = state.get("party", []) or []
+
+    # AMBUSH-WITHOUT-SURPRISE-GATE (#1271, WARN). The DM narrated an ambush ("lunge from the
+    # shadows", a sprung trap, "never saw it coming") but start_combat ran with NO surprise
+    # evaluation — no surpriser_ids on any start_combat call AND no `surprise` key in any return —
+    # so the passive-Perception-vs-Stealth gate never ran and the ambush lost its mechanical teeth.
+    # Only meaningful when a fight actually STARTED (start_combat>0); a purely-narrative ambush the
+    # player talks/sneaks past never reaches combat and correctly does not fire. WARN, never fatal —
+    # an ambush-flavored word in prose is a soft signal, and the engine may legitimately find nobody
+    # was surprised (but then surpriser_ids WAS passed → `surprise` key present → this doesn't fire).
+    _sc_calls = [(inp, r) for (n, inp, r, err, _t) in evs if n == "start_combat" and not err]
+    if _sc_calls:
+        _ambush_narrated = any(
+            any(rx.search(t) for rx in _AMBUSH_SIGNAL_RE) for t in _dm_narration_texts(events)
+        )
+        _surprise_evaluated = any(
+            (inp.get("surpriser_ids") or (isinstance(r, dict) and r.get("surprise")))
+            for inp, r in _sc_calls
+        )
+        chk("ambush_ran_surprise_gate", not (_ambush_narrated and not _surprise_evaluated),
+            "DM narration staged an ambush but start_combat ran with no surprise evaluation "
+            "(no surpriser_ids, no `surprise` in the return) — the passive-Perception-vs-Stealth "
+            "gate was skipped, so the ambush had no mechanical effect. Pass "
+            "surpriser_ids=[the attacker id(s)] on start_combat for any narrated ambush; the engine "
+            "rolls Stealth vs passive Perception and applies SRD-5.2 initiative disadvantage to the "
+            "surprised set.",
+            fatal=False)
 
     def _quest_reward_already_awarded(q: dict) -> bool:
         return any(bool(q.get(k)) for k in ("milestone_awarded", "awarded", "rewarded", "xp_awarded"))
