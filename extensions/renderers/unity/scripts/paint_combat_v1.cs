@@ -31,11 +31,15 @@ string PLATE_PATH="Assets/painterly/backdrops/"+PLATE;
 { var _ti=AssetImporter.GetAtPath(PLATE_PATH) as TextureImporter; if(_ti!=null && _ti.npotScale!=TextureImporterNPOTScale.None){ _ti.npotScale=TextureImporterNPOTScale.None; _ti.maxTextureSize=2048; _ti.SaveAndReimport(); } }
 var sb=new System.Text.StringBuilder();
 // #1280 actor-integration levers (FELT gap: contact shadows weak, actors don't take scene light, stiff poses).
-// ALL params are ADDITIVE and DEFAULT to today's exact render: an absent/partial _actor_integration.json leaves
-// every value at the byte-identical baseline below, so the default frame is unchanged. Config file (optional):
+// ALL params are ADDITIVE. Baseline (no _actor_integration.json present) is BYTE-IDENTICAL to the pre-#1280 render —
+// aiCoreShadow stays 0 (core-shadow block skipped entirely, see line ~96) and every other knob reproduces the prior
+// values exactly. The moment the config file is present (opt-in), missing keys fall back to the box-validated v2
+// "when-enabled" defaults (PR #1282 evidence: shadow_scale 2.4 / shadow_intensity 1.3 / core_shadow 0.85 read
+// correctly at frame scale — the original v1 checklist values were too subtle to see).
+// Config file (optional):
 //   /home/unity/worldos-unity/Assets/painterly/backdrops/_actor_integration.json
-//   { "shadow_scale":2.0, "shadow_intensity":1.0, "shadow_softness":0.9,   // grounding contact shadow
-//     "core_shadow":0.0, "core_scale":0.55,                                // 2nd tighter core shadow (0=off)
+//   { "shadow_scale":2.4, "shadow_intensity":1.3, "shadow_softness":0.9,   // grounding contact shadow (v2-validated)
+//     "core_shadow":0.85, "core_scale":0.55,                               // 2nd tighter core shadow (v2-validated)
 //     "light_tint":0.0, "warmth":1.0,                                      // scene-light take on actor mats (0=off)
 //     "pose_yaw":0.0, "pose_time":0.0 }                                    // per-capture pose variety (0=today)
 float aiShadowScale=2.0f, aiShadowIntensity=1.0f, aiShadowSoftness=0.9f, aiCoreShadow=0.0f, aiCoreScale=0.55f;
@@ -44,10 +48,15 @@ try {
   var _aip="/home/unity/worldos-unity/Assets/painterly/backdrops/_actor_integration.json";
   if(System.IO.File.Exists(_aip)){ var _a=MiniJson.Parse(System.IO.File.ReadAllText(_aip)) as System.Collections.Generic.Dictionary<string,object>;
     if(_a!=null){ System.Func<string,float,float> gf=(k,d)=>{ if(_a.ContainsKey(k)&&_a[k]!=null){ try{ return (float)System.Convert.ToDouble(_a[k]); }catch{} } return d; };
-      aiShadowScale=gf("shadow_scale",aiShadowScale); aiShadowIntensity=gf("shadow_intensity",aiShadowIntensity); aiShadowSoftness=gf("shadow_softness",aiShadowSoftness);
-      aiCoreShadow=gf("core_shadow",aiCoreShadow); aiCoreScale=gf("core_scale",aiCoreScale);
-      aiLightTint=gf("light_tint",aiLightTint); aiWarmth=gf("warmth",aiWarmth);
-      aiPoseYaw=gf("pose_yaw",aiPoseYaw); aiPoseTime=gf("pose_time",aiPoseTime);
+      // Config file present -> opt-in: missing keys fall back to the v2-validated when-enabled defaults, not the
+      // byte-identical-baseline defaults declared above.
+      // P3 hardening (PR #1282 review): clamp operator-controlled knobs to a non-negative range so a malformed
+      // JSON value (e.g. a typo'd negative shadow_scale) fails safe to 0 instead of flipping a Quad's winding
+      // (negative localScale -> back-face cull) or feeding Pow() a negative exponent.
+      aiShadowScale=Mathf.Max(0f,gf("shadow_scale",2.4f)); aiShadowIntensity=Mathf.Max(0f,gf("shadow_intensity",1.3f)); aiShadowSoftness=Mathf.Max(0f,gf("shadow_softness",0.9f));
+      aiCoreShadow=Mathf.Max(0f,gf("core_shadow",0.85f)); aiCoreScale=Mathf.Max(0f,gf("core_scale",0.55f));
+      aiLightTint=Mathf.Clamp01(gf("light_tint",aiLightTint)); aiWarmth=Mathf.Max(0f,gf("warmth",aiWarmth));
+      aiPoseYaw=gf("pose_yaw",aiPoseYaw); aiPoseTime=Mathf.Clamp01(gf("pose_time",aiPoseTime));
       sb.AppendLine("actor-integration cfg: shadow(s="+aiShadowScale.ToString("F2")+",i="+aiShadowIntensity.ToString("F2")+",soft="+aiShadowSoftness.ToString("F2")+",core="+aiCoreShadow.ToString("F2")+") tint(t="+aiLightTint.ToString("F2")+",w="+aiWarmth.ToString("F2")+") pose(yaw="+aiPoseYaw.ToString("F1")+",t="+aiPoseTime.ToString("F2")+")");
     }
   }
