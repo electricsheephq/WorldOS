@@ -354,7 +354,7 @@ WORLDOS_PLAYER_MAX_ATTEMPTS="${WORLDOS_PLAYER_MAX_ATTEMPTS:-3}"
 PMSG=""
 _pintro_attempt=1
 while [ -z "$PMSG" ] && [ "$_pintro_attempt" -le "$WORLDOS_PLAYER_MAX_ATTEMPTS" ]; do
-  [ "$_pintro_attempt" -gt 1 ] && echo "[duo] player produced no intro — retry $_pintro_attempt/$WORLDOS_PLAYER_MAX_ATTEMPTS…" >&2
+  [ "$_pintro_attempt" -gt 1 ] && echo "[duo] player produced no intro — retry $_pintro_attempt/${WORLDOS_PLAYER_MAX_ATTEMPTS}…" >&2
   PMSG="$(player_move 1 "$PLAYER_INTRO_PROMPT")"
   _pintro_attempt=$((_pintro_attempt + 1))
 done
