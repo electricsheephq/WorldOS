@@ -272,6 +272,12 @@
       "retest": "bash qa/run_combat_sprint.sh sprint-retest",
       "hint": "A Guiding Bolt advantage rider LANDED on a target (attack -> on_hit_effect_applied: ['Guiding Bolt']) but the next attack against that same target did NOT carry advantage_source='Guiding Bolt' — the SRD 'next attack roll against it has Advantage' rider was dropped. The engine auto-grants + consumes it via combat.attack_modifiers + attack() (#194/#1033), so a miss means the engine attack() path was bypassed (the follow-up was narrated, not resolved through the tool) or the marker expired early. Check that the follow-up strike is resolved via attack() against the marked target within the caster's next-turn window. WARN only."
     },
+    "unresolved_spell_attack": {
+      "category": "DM_ADHERENCE",
+      "likely_code_locations": ["servers/engine/server.py", "skills/dungeon-master/SKILL.md", "qa/rubric_angry_dm.md"],
+      "retest": "bash qa/run_combat_sprint.sh sprint-retest",
+      "hint": "A DM-resolved attack-roll spell (Guiding Bolt, Fire Bolt cast via cast_spell -> the result carries automated:false + attack_roll:true) leaves its to-hit for the DM to make via attack(). The caster never made a same-turn attack() before the next next_turn, so the spell spent its slot and dealt ZERO (#1270). The engine now lets that resolution attack() through the cast+attack economy gate (Combat.pending_spell_attack), so a miss means the DM narrated the bolt instead of resolving it through attack(). Reinforce 'resolve an attack-roll spell's to-hit via attack(attacker=caster, target=the spell's target) the SAME turn' in the DM/angry-DM guidance. WARN only."
+    },
     "multiattack_budget_honored": {
       "category": "DM_ADHERENCE",
       "likely_code_locations": ["qa/rubric_angry_dm.md", "qa/play_prompt_combat_sprint.txt", "servers/engine/server.py"],

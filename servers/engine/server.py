@@ -94,6 +94,7 @@ from models import (
     PendingAttackBonus,
     PendingDamageBonus,
     PendingOnHitRider,
+    PendingSpellAttack,
     Quest,
     RepeatSave,
     SceneDebt,
@@ -3592,6 +3593,9 @@ def set_hp(
         combat.apply_hp_set_transition(ch, was_down)
         c.characters[character_id] = ch
         kx = _award_kill_xp(c, ch)
+        # #1270 (low): a set-to-0 that kills also scrubs pending riders / spell-attack leg.
+        if ch.dead:
+            _clear_riders_targeting(c, character_id)
         out = c.characters[character_id].model_dump(mode="json")
         if kx:
             out["kill_xp"] = kx
@@ -4977,6 +4981,10 @@ def next_turn(campaign_id: str) -> dict:
         # #778: clear WHAT spent the action so the new turn starts with a free action of any
         # purpose (a cast/skip stamp from last turn must not block this turn's attack/cast).
         c.combat.action_purpose = ""
+        # #1270: an unresolved spell-attack leg is a SAME-TURN concession (SRD 5.2: the attack
+        # roll is part of the casting action). It never carries across a turn boundary — clear
+        # it so it can't grant a stale bypass next turn (None == today's behaviour).
+        c.combat.pending_spell_attack = None
         # Reset the per-turn attack-action economy too: a new turn starts with one
         # Attack action's worth of strikes and no Action Surge spent yet.
         c.combat.action_attacks_made = 0
@@ -5284,6 +5292,11 @@ def remove_combatant(campaign_id: str, character_id: str) -> dict:
         if idx is None:
             raise ValueError(f"{character_id!r} is not in the combat order")
         order.pop(idx)
+        # #1270 (low): a combatant leaving the fight can't be the recipient of a pending on-hit
+        # rider or spell-attack leg — scrub any that name it before the fight-end check below
+        # (a full Combat() reset there also clears pending_spell_attack, but the riders live on
+        # the CASTER characters, so they must be swept regardless of whether combat ends).
+        _clear_riders_targeting(c, character_id)
         remaining_kinds = {
             c.characters[cb.character_id].kind for cb in order if cb.character_id in c.characters
         }
@@ -5641,8 +5654,25 @@ def attack(
                 # it would wrongly permit this). Reject unless an Action Surge action remains
                 # (surge_actions>0), the escape hatch. action_purpose=="" (the Attack-action /
                 # legacy path) is unaffected — this only fires on cast/skip.
+                # #1270: the resolution leg of a DM-resolved attack-roll spell (cast_spell
+                # returned automated:false and recorded pending_spell_attack) is part of the
+                # SAME casting action (SRD 5.2), not a second action — let it through ONCE.
+                # Keyed to that spell resolution: this must be the SAME caster striking a target
+                # the spell was aimed at. Consume the pending record so the gate re-arms — an
+                # independent second attack (or a strike at a different, un-cast target) is still
+                # refused below. (An Extra-Attack/legacy path — action_purpose "" — never reaches
+                # here, and a "skip" purpose has no pending spell leg, so both are unaffected.)
+                _psa = c.combat.pending_spell_attack
+                _spell_leg = (
+                    _psa is not None
+                    and _psa.source_id == attacker_id
+                    and target_id in _psa.target_ids
+                )
+                if _spell_leg:
+                    c.combat.pending_spell_attack = None
                 if (
-                    c.combat.action_purpose in ("cast", "skip")
+                    not _spell_leg
+                    and c.combat.action_purpose in ("cast", "skip")
                     and c.combat.action_attacks_made == 0
                     and c.combat.surge_actions <= 0
                 ):
@@ -6174,6 +6204,10 @@ def attack(
             kx = _award_kill_xp(c, target)
             if kx:
                 result["kill_xp"] = kx
+            # #1270 (low): a slain target can't be the recipient of a pending on-hit rider or
+            # spell-attack leg — scrub any that name it so no inert-but-corrupt state lingers.
+            if target.dead:
+                _clear_riders_targeting(c, target_id)
         elif man_bonus is not None:
             # The strike MISSED, so the maneuver die adds no damage — but it was already spent
             # at use_resource time (and consumed above), so report it as spent-not-applied
@@ -6461,6 +6495,9 @@ def apply_damage(
         kx = _award_kill_xp(c, target)
         if kx:
             out["kill_xp"] = kx
+        # #1270 (low): scrub pending on-hit riders / spell-attack leg naming a slain target.
+        if target.dead:
+            _clear_riders_targeting(c, target_id)
         dtype = f" {damage_type}" if damage_type else ""
         _log_combat_event(
             c,
@@ -6523,6 +6560,35 @@ def set_temp_hp(campaign_id: str, target_id: str = "", amount: int = 0,
         ch.temp_hp = max(ch.temp_hp, max(0, amount))
         save_campaign(c)
         return {"temp_hp": ch.temp_hp, "hp": f"{ch.current_hp}/{ch.max_hp}"}
+
+
+def _clear_riders_targeting(c, target_id: str) -> None:
+    """#1270 (low): scrub any pending combat state that names `target_id` as its TARGET
+    when that combatant leaves the fight (death or remove_combatant). Two kinds:
+
+      * `pending_on_hit_riders` — an attack-roll spell's not-yet-landed rider (Guiding
+        Bolt), carried on the CASTER keyed by target_id. If the target dies before the
+        caster ever resolves the spell attack, the record is inert-but-corrupt: it never
+        materializes (the target is gone) yet lingers forever and could mis-apply if the
+        id were ever reused. Drop every caster's riders aimed at this target.
+      * `pending_spell_attack` — the same-turn DM-resolved spell-attack leg (#1270). If
+        the (only) target it was aimed at is gone, the leg can never be resolved, so clear
+        it (drop the target from the aim set; clear the record when nothing remains).
+
+    Idempotent (list/None filter) and null-guarded, so every death path may call it
+    unconditionally. Additive: a fight with no pending riders/leg is a no-op."""
+    if not target_id:
+        return
+    for holder in c.characters.values():
+        if any(r.target_id == target_id for r in holder.pending_on_hit_riders):
+            holder.pending_on_hit_riders = [
+                r for r in holder.pending_on_hit_riders if r.target_id != target_id
+            ]
+    psa = c.combat.pending_spell_attack
+    if psa is not None and target_id in psa.target_ids:
+        psa.target_ids = [t for t in psa.target_ids if t != target_id]
+        if not psa.target_ids:
+            c.combat.pending_spell_attack = None
 
 
 def _release_held_targets(c, caster_id: str, spell_name: str) -> list[dict]:
@@ -8223,6 +8289,25 @@ def cast_spell(
                     c.combat.surge_actions -= 1
                 c.combat.action_used = True
                 c.combat.action_purpose = "cast"
+                # #1270: an attack-roll spell the engine can't auto-resolve (Guiding Bolt,
+                # Fire Bolt — `automated:false` below, `curated is None`) leaves the to-hit
+                # roll for the DM to make via attack(). That resolution attack() is part of
+                # THIS casting action (SRD 5.2), so record it as a pending spell-attack leg:
+                # the same-turn attack() by this caster against a target it was aimed at
+                # bypasses the cast+attack gate ONCE, then clears this (an independent second
+                # strike is still refused). Keyed to the spell resolution, not a blanket
+                # allowance. Auto-resolved spells (curated) never set this — Magic Missile /
+                # Fireball stay a fully-spent action, so cast→attack stays refused for them.
+                if is_attack_roll_spell and curated is None:
+                    _spell_targets = list(target_ids) if target_ids else []
+                    if target_id and target_id not in _spell_targets:
+                        _spell_targets.insert(0, target_id)
+                    c.combat.pending_spell_attack = PendingSpellAttack(
+                        source_id=character_id,
+                        target_ids=_spell_targets,
+                        spell=canonical,
+                        round=c.combat.round,
+                    )
         save_campaign(c)
         updated = c.characters[character_id]
         result = {

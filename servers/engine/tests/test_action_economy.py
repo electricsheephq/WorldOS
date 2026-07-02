@@ -244,3 +244,120 @@ def test_old_snapshot_without_action_purpose_defaults_empty():
     # Round-trips: the field serializes back and reloads to the same value.
     reloaded = Combat.model_validate(loaded.model_dump(mode="json"))
     assert reloaded.action_purpose == ""
+    # #1270: the pre-#1270 shape (no `pending_spell_attack`) loads to None and round-trips.
+    assert loaded.pending_spell_attack is None
+    assert reloaded.pending_spell_attack is None
+
+
+# ============ #1270: the attack-roll RESOLUTION leg of a cast spell ==========
+# A DM-resolved attack-roll spell (Guiding Bolt: cast_spell returns automated:false)
+# spends the action, but its to-hit attack() is part of the SAME casting action
+# (SRD 5.2) — it must bypass the cast+attack gate ONCE, then the gate re-arms.
+
+@pytest.fixture
+def bolt_caster(tmp_path, monkeypatch):
+    """A Cleric who always acts first, knows Guiding Bolt (an attack-roll spell the
+    engine can't auto-resolve -> automated:false), with L1 slots and TWO goblins so a
+    'different target' independent-attack case can be exercised."""
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("AE1270")["id"]
+    cleric = server.create_character(
+        cid, "Maren", kind="player", class_name="Cleric", apply_srd_defaults=True
+    )["id"]
+    server.update_character(cid, cleric, patch={"initiative_bonus": 100})
+    server.learn_spells(cid, cleric, ["Guiding Bolt"])
+    server.prepare_spells(cid, cleric, ["Guiding Bolt"])
+    server.update_character(
+        cid, cleric, patch={"spell_slots": {"1": {"maximum": 4, "used": 0}}}
+    )
+    gob = server.create_character(cid, "Goblin", kind="monster", max_hp=30, armor_class=5)["id"]
+    gob2 = server.create_character(cid, "Goblin2", kind="monster", max_hp=30, armor_class=5)["id"]
+    server.start_combat(cid, [cleric, gob, gob2])
+    assert server.get_state(cid)["current_turn"] == cleric
+    return cid, cleric, gob, gob2
+
+
+def _psa(cid):
+    """The Combat.pending_spell_attack record (or None), read from the raw campaign."""
+    return server._require(cid).combat.pending_spell_attack
+
+
+def test_guiding_bolt_then_attack_resolves_and_rearms(bolt_caster):
+    """The sprint's exact sequence: cast Guiding Bolt (automated:false) -> the same-turn
+    attack() that resolves it lands damage, the on-hit rider is consumed, and the gate
+    re-arms (a second independent strike is refused)."""
+    cid, cleric, gob, _gob2 = bolt_caster
+    cast = _cast(cid, cleric, "Guiding Bolt", target_id=gob)
+    assert cast["automated"] is False and cast["attack_roll"] is True
+    # The pending spell-attack leg was recorded (keyed to this caster + target).
+    psa = _psa(cid)
+    assert psa is not None and psa.source_id == cleric and gob in psa.target_ids
+    # The resolving attack() bypasses the cast+attack gate and deals damage (auto-hit nat-20
+    # not needed — a big bonus vs AC 5 hits): the bolt no longer "deals 0".
+    atk = server.attack(cid, cleric, gob, attack_bonus=20, damage_dice="4d6")
+    assert atk["hit"] is True and atk["damage"]["total"] > 0
+    assert atk["attacks_made_this_turn"] == 1
+    # The pending leg is consumed (gate re-armed) and the on-hit rider materialized on the target.
+    assert _psa(cid) is None, "the spell-attack leg is a one-shot bypass — consumed"
+    riders = server.get_character(cid, cleric)["pending_on_hit_riders"]
+    assert riders == [], "the on-hit rider was consumed by the resolving attack"
+    # A SECOND strike this turn is now refused — the bypass did not grant an extra action.
+    with pytest.raises(ValueError, match="cannot attack|already attacked"):
+        server.attack(cid, cleric, gob, attack_bonus=20, damage_dice="1d10")
+
+
+def test_guiding_bolt_then_independent_attack_still_refused(bolt_caster):
+    """The bypass is keyed to the spell resolution (the cast's target). An attack on a
+    DIFFERENT, un-cast target is a clearly-independent second action and STAYS refused."""
+    cid, cleric, gob, gob2 = bolt_caster
+    _cast(cid, cleric, "Guiding Bolt", target_id=gob)  # aimed at gob
+    with pytest.raises(ValueError, match="already cast a spell"):
+        server.attack(cid, cleric, gob2, attack_bonus=20, damage_dice="1d10")  # different target
+    # The pending leg for the ORIGINAL target is untouched by the refused strike.
+    psa = _psa(cid)
+    assert psa is not None and gob in psa.target_ids
+
+
+def test_guiding_bolt_double_cast_still_refused(bolt_caster):
+    """The recorded leg does NOT free a second cast — a 2nd action-cost cast is still
+    refused by the #778 gate (the action was already spent)."""
+    cid, cleric, gob, _gob2 = bolt_caster
+    _cast(cid, cleric, "Guiding Bolt", target_id=gob)
+    with pytest.raises(ValueError, match="already used its action"):
+        _cast(cid, cleric, "Guiding Bolt", target_id=gob)
+
+
+def test_guiding_bolt_leg_cleared_on_next_turn(bolt_caster):
+    """A spell-attack leg is a SAME-TURN concession; it must not survive a turn boundary."""
+    cid, cleric, gob, _gob2 = bolt_caster
+    _cast(cid, cleric, "Guiding Bolt", target_id=gob)
+    assert _psa(cid) is not None
+    server.next_turn(cid)  # -> a goblin's turn; the leg is stale and must be cleared
+    assert _psa(cid) is None
+
+
+def test_pending_riders_and_leg_cleared_on_target_death(bolt_caster):
+    """Rider cleanup (low): a slain target's pending on-hit rider (on the caster) and the
+    spell-attack leg are scrubbed on death — no inert-but-corrupt state lingers."""
+    cid, cleric, gob, _gob2 = bolt_caster
+    _cast(cid, cleric, "Guiding Bolt", target_id=gob)
+    # The bolt's rider is pending on the caster, and the leg names the target.
+    assert server.get_character(cid, cleric)["pending_on_hit_riders"], "rider recorded pre-death"
+    assert gob in _psa(cid).target_ids
+    # Kill the target outright (set_hp to 0 -> monster death).
+    server.set_hp(cid, gob, 0)
+    assert server.get_character(cid, gob)["dead"] is True
+    assert server.get_character(cid, cleric)["pending_on_hit_riders"] == [], \
+        "the dead target's pending rider was scrubbed from the caster"
+    assert _psa(cid) is None, "the spell-attack leg naming the dead target was cleared"
+
+
+def test_pending_riders_cleared_on_remove_combatant(bolt_caster):
+    """remove_combatant (a fled/removed target) also scrubs the caster's pending rider
+    and the spell-attack leg naming it."""
+    cid, cleric, gob, gob2 = bolt_caster
+    _cast(cid, cleric, "Guiding Bolt", target_id=gob)
+    assert server.get_character(cid, cleric)["pending_on_hit_riders"]
+    server.remove_combatant(cid, gob)  # fight continues (gob2 still hostile)
+    assert server.get_character(cid, cleric)["pending_on_hit_riders"] == []
+    assert _psa(cid) is None

@@ -1416,6 +1416,32 @@ class Zone(_StrictModel):
     adjacent: list[str] = Field(default_factory=list)  # names of directly-reachable zones
 
 
+class PendingSpellAttack(_StrictModel):
+    """The unresolved attack-roll leg of a spell just cast (#1270).
+
+    An attack-roll spell the engine can't auto-resolve (Guiding Bolt, Fire Bolt —
+    `cast_spell` returns `automated:false`) spends the caster's action at cast time
+    but leaves the to-hit roll for the DM to resolve via `attack()`. Per SRD 5.2 that
+    resolution `attack()` is part of the SAME casting action, not a second action — so
+    the #778/#1246 cast+attack economy gate must let it through ONCE.
+
+    `cast_spell` records this on `Combat` when it stamps `action_purpose="cast"` for
+    such a spell; the SAME-TURN `attack()` by `source_id` against a target in
+    `target_ids` bypasses the gate exactly once and CLEARS this record (the gate then
+    re-arms — an independent second strike is still refused). Keyed to the spell
+    resolution (caster + target set), NOT a blanket cast+attack allowance. Cleared on
+    `next_turn` (a stale leg can't cross turns) and when a target dies / is removed.
+
+    ADDITIVE: `Combat.pending_spell_attack` defaults to `None`, so a turn that never
+    casts a DM-resolved attack-roll spell behaves exactly as today and old snapshots
+    round-trip unchanged."""
+
+    source_id: str  # the caster (matched against attack()'s attacker)
+    target_ids: list[str] = Field(default_factory=list)  # who the spell was aimed at
+    spell: str = ""  # canonical spell name (for the bypass note / diagnostics)
+    round: int = 0  # the combat round the cast happened on (defensive staleness guard)
+
+
 class Combat(_StrictModel):
     active: bool = False
     round: int = 0
@@ -1435,6 +1461,14 @@ class Combat(_StrictModel):
     # this "" so Extra-Attack multi-strikes stay unaffected; attack() reads this only to reject
     # a strike AFTER a cast/skip already spent the action.
     action_purpose: Literal["", "cast", "skip"] = ""
+    # #1270: the unresolved attack-roll leg of a spell cast THIS turn whose to-hit the DM
+    # must resolve via attack() (cast_spell returned automated:false). action_purpose is
+    # "cast" (the action was spent), but that resolution attack() is part of the SAME casting
+    # action (SRD 5.2), so it must bypass the cast+attack gate ONCE. Set by cast_spell when it
+    # stamps action_purpose="cast" for such a spell; consumed+cleared by the matching same-turn
+    # attack(); cleared by next_turn and on a target's death/removal. None == today's behaviour
+    # (no DM-resolved spell attack pending); old snapshots deserialize to None and round-trip.
+    pending_spell_attack: Optional[PendingSpellAttack] = None
     # Attack-action economy for the CURRENT turn (additive; resets every next_turn):
     #  * action_attacks_made — how many attack() calls have resolved under the
     #    current combatant's Attack action(s) this turn. One Attack action grants
