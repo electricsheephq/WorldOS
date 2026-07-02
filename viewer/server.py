@@ -2802,30 +2802,22 @@ def _combat_action_bar(action_model: dict, combat_active: bool) -> list[dict]:
     if end_reason is None:
         end_turn["move"] = {"kind": "combat", "name": "End Turn"}
 
+    # #598: Move/Cast/Item were dead stubs (`available: False` no matter what). They now
+    # route through `from_model`, the SAME by_id lookup Attack/Bonus/Reaction already use —
+    # `build_action_model`'s "combat" group supplies the `move` payload + availability, this
+    # function only decorates icon/fallback. Cast/Item mirror Attack's free-text DM-resolved
+    # lane (kind+name, no target_id — `cast`/`use_item` are NOT in combat_loop's on-turn Intent
+    # branch, so they must ride the moves-file lane the DM agent resolves, exactly like the
+    # existing "Bonus"/"Reaction" tiles do today). Move mirrors the grid: `move_to_cell` (click
+    # a cell on the tactical board) is already live via CombatGridBoard/onCellMove; the Move
+    # TILE is the zone-mode equivalent and gates on the same action-economy reason so it greys
+    # out exactly when Attack does. No new fields, no engine writes — additive per #116.
     return [
-        {
-            "id": "move",
-            "label": "Move",
-            "icon": "↗",
-            "available": False,
-            "disabled_reason": "movement destinations not projected yet",
-        },
+        from_model("move", "Move", "↗", base_reason()),
         from_model("attack", "Attack", "⚔", base_reason()),
-        {
-            "id": "cast",
-            "label": "Cast",
-            "icon": "✦",
-            "available": False,
-            "disabled_reason": "spell choices not projected yet",
-        },
+        from_model("cast", "Cast", "✦", base_reason()),
         from_model("bonus-action", "Bonus", "◈", base_reason()),
-        {
-            "id": "item",
-            "label": "Item",
-            "icon": "◊",
-            "available": False,
-            "disabled_reason": "inventory combat actions not projected yet",
-        },
+        from_model("item", "Item", "◊", base_reason()),
         from_model("reaction", "Reaction", "✺", base_reason()),
         end_turn,
     ]
@@ -7311,8 +7303,25 @@ def build_action_model(snapshot: dict, *, live: bool, is_live_view: bool) -> dic
                 "id": "combat",
                 "label": "Combat",
                 "actions": [
+                    # #598: Move/Cast/Item wired to the SAME action-economy reasons Attack already
+                    # uses (turn_action_reason("action")) — all four spend the actor's action slot,
+                    # so they enable/disable together, exactly the way the "action spent" greying
+                    # already worked for Attack. Cast/Item ride the free-text DM-resolved lane
+                    # (kind+name, sanitize_move's "everything else needs text or name" branch —
+                    # see viewer/server.py:189) — the SAME lane Bonus/Reaction use today, not the
+                    # engine on-turn Intent branch (which only knows move_to_cell / on-turn attack /
+                    # end_turn). Move carries only `kind` (no `name`/`target`) because
+                    # `move_to_zone` is a _TARGET_ONLY_KIND — sanitize_move requires a `target`
+                    # zone name sanitize_move can't guess server-side; the client fills `target`
+                    # from the zone the player clicks (mirrors the CombatGridBoard cell-click
+                    # pattern) before POSTing, same as move_to_cell fills x/y client-side. This is
+                    # a WIRE of an already-whitelisted kind (_MOVE_KINDS has carried
+                    # "cast"/"use_item"/"move_to_zone" since before #598), not a new verb.
+                    _action_item("move", "Move", kind="move_to_zone", detail="Move to another zone", disabled_reason=turn_action_reason("action")),
                     _action_item("attack", "Attack", kind="attack", name="Attack", detail="Strike a foe", disabled_reason=turn_action_reason("action")),
+                    _action_item("cast", "Cast", kind="cast", name="Cast a Spell", detail="Channel magic", disabled_reason=turn_action_reason("action")),
                     _action_item("bonus-action", "Bonus", kind="combat", name="Bonus Action", detail="Quick extra move", disabled_reason=turn_action_reason("bonus")),
+                    _action_item("item", "Item", kind="use_item", name="Use an Item", detail="Use inventory item", disabled_reason=turn_action_reason("action")),
                     _action_item("reaction", "Reaction", kind="combat", name="Reaction", detail="Respond fast", disabled_reason=reaction_reason()),
                 ],
             },
