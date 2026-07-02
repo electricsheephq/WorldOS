@@ -155,6 +155,9 @@ function ScreenCombat({ onNavigate, state }) {
   const crossDoor = async (door) => {
     if (busyRef.current || !Array.isArray(door?.cell)) return;
     busyRef.current = true;
+    // #1250-parity: drive busyAction so the door affordance disables (and any sibling door / action
+    // tile greys out) while the cross is in flight, mirroring postMove's in-flight lockout.
+    setBusyAction("cross-door");
     try {
       const response = await fetch("/move", {
         method: "POST",
@@ -168,6 +171,7 @@ function ScreenCombat({ onNavigate, state }) {
       toast({ kind: "danger", title: "Could not cross", body: error?.message || "The viewer could not reach /move." });
     } finally {
       busyRef.current = false;
+      setBusyAction("");
     }
   };
 
@@ -355,12 +359,26 @@ function ScreenCombat({ onNavigate, state }) {
           ) : (
             <React.Fragment>
               {doors.length ? (
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-                  {doors.map((d, i) => (
-                    <BrassButton key={i} size="sm" onClick={() => crossDoor(d)}>
-                      Cross to {d.toName || "the next room"} →
-                    </BrassButton>
-                  ))}
+                <div data-worldos-testid="cross-door-bar" style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                  {doors.map((d, i) => {
+                    // #1250-parity gating: a door tile is only ever offered when combat is RESOLVED (this
+                    // `!encounter.active` branch), and disables while any cross/move is in flight so a
+                    // double-click can't fire two crossings. `multi` marks a door with an ambiguous
+                    // destination (the server took a best-effort first connection) — surfaced in the hint.
+                    const crossing = Boolean(busyAction);
+                    return (
+                      <BrassButton
+                        key={i}
+                        size="sm"
+                        testId="cross-door"
+                        disabled={crossing || !Array.isArray(d?.cell)}
+                        title={crossing ? "Crossing…" : d.multi ? "Multiple exits — takes the first connection" : `Cross to ${d.toName || "the next room"}`}
+                        onClick={() => crossDoor(d)}
+                      >
+                        Cross to {d.toName || "the next room"} →
+                      </BrassButton>
+                    );
+                  })}
                 </div>
               ) : null}
               <CombatEmptyState status={surfaceStatus} onNavigate={onNavigate} />
