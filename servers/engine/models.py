@@ -1383,6 +1383,12 @@ class Combatant(_StrictModel):
     # #461 grid (PR-1): took the Dash action this turn (doubles the movement budget).
     # Per-turn; reset with moved_cells_this_turn. Set via use_action(kind="dash").
     dashed: bool = False
+    # #461 grid (#1253/PR-5): SRD size category → grid FOOTPRINT. "medium" (default; also
+    # tiny/small) = a 1-cell token == PR-1 behaviour byte-for-byte. "large" = 2×2, "huge" =
+    # 3×3, "gargantuan" = 4×4, anchored at (x, y) (the MIN-corner cell). Drives occupancy
+    # for placement/movement and footprint-edge melee reach. Additive: old snapshots (and
+    # any all-Medium fight) deserialize with "medium" and behave identically.
+    size: str = "medium"
 
     @model_validator(mode="after")
     def _grid_coords_paired(self) -> "Combatant":
@@ -1456,6 +1462,12 @@ class Combat(_StrictModel):
     # open floor (PR-1 behaviour, byte-for-byte unchanged). `last_move_path` is the most-recent
     # routed path (incl. the from-cell) for the renderer to draw the detour — presentation only.
     grid_impassable: list[list[int]] = Field(default_factory=list)
+    # #461 grid (#1253/PR-4): DIFFICULT-TERRAIN cells (mud/rubble/undergrowth) — each costs
+    # DOUBLE movement to ENTER (SRD 5.2). Additive field, mirrors grid_impassable exactly;
+    # empty == open floor (PR-1 movement cost byte-for-byte unchanged). DM-set via set_grid
+    # (`difficult` arg). Distinct from grid_impassable: difficult cells are ENTERABLE (just
+    # costly); impassable cells are routed around entirely.
+    grid_difficult: list[list[int]] = Field(default_factory=list)
     last_move_path: list[list[int]] = Field(default_factory=list)
 
     @property

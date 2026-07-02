@@ -423,6 +423,12 @@ def _combat_view(c: Campaign) -> dict:
         if c.combat.grid_enabled and cb.x is not None and cb.y is not None:
             entry["x"] = cb.x
             entry["y"] = cb.y
+            # #1253: surface a >1-cell footprint side length only for Large+ tokens, so the
+            # renderer can draw the NxN token. Medium omits the key (byte-for-byte PR-1).
+            span = combat_grid.footprint_cells(_size(cb))
+            if span > 1:
+                entry["size"] = _size(cb)
+                entry["footprint"] = span
         order.append(entry)
     view = {
         "active": c.combat.active,
@@ -4370,31 +4376,72 @@ def _can_see(viewer: "Character") -> bool:
 
 
 def _cell(cb: "Combatant") -> tuple[int, int] | None:
-    """The (x, y) cell of a combatant, or None if it isn't placed on the grid."""
+    """The (x, y) anchor cell of a combatant, or None if it isn't placed on the grid."""
     if cb.x is None or cb.y is None:
         return None
     return (cb.x, cb.y)
 
 
+def _size(cb: "Combatant") -> str:
+    """A combatant's SRD size category (#1253). Defaults to "medium" (1-cell) for any
+    combatant / old snapshot without the field — the PR-1 behaviour byte-for-byte."""
+    return getattr(cb, "size", "medium") or "medium"
+
+
+def _footprint(cb: "Combatant") -> set[tuple[int, int]]:
+    """The set of cells a placed combatant OCCUPIES (its size footprint anchored at its
+    (x, y)), or an empty set if unplaced. Medium => a single {(x, y)} == PR-1 occupancy."""
+    anchor = _cell(cb)
+    if anchor is None:
+        return set()
+    return combat_grid.footprint(anchor, _size(cb))
+
+
+def _occupied_cells(c: "Campaign", exclude_id: str = "") -> set[tuple[int, int]]:
+    """Every grid cell occupied by a placed combatant's FOOTPRINT, excluding `exclude_id`
+    (the mover, who doesn't block itself). Medium tokens contribute their single cell —
+    byte-for-byte the PR-1 `{(o.x, o.y)}` set when all tokens are Medium."""
+    cells: set[tuple[int, int]] = set()
+    for o in c.combat.order:
+        if o.character_id == exclude_id:
+            continue
+        cells |= _footprint(o)
+    return cells
+
+
+def _difficult_set(c: "Campaign") -> set[tuple[int, int]]:
+    """The fight's DIFFICULT-TERRAIN cells (#1253) as a cell set. Empty == open floor
+    (PR-1 movement cost unchanged)."""
+    return {(int(dx), int(dy)) for dx, dy in (c.combat.grid_difficult or [])}
+
+
+def _coerce_cell_pairs(raw, label: str) -> list[list[int]]:
+    """Coerce a tool arg into a list of [x, y] int cell pairs (shared by set_grid's
+    `obstacles`/`difficult`). Raises on a malformed pair."""
+    out: list[list[int]] = []
+    for cellv in _coerce_list(raw):
+        if not isinstance(cellv, (list, tuple)) or len(cellv) != 2:
+            raise ValueError(f"set_grid {label} must be a list of [x, y] cell pairs")
+        out.append([int(cellv[0]), int(cellv[1])])
+    return out
+
+
 @mcp.tool()
 def set_grid(campaign_id: str, width: int, height: int, cell_size: int = 5,
-             diagonal_mode: str = "chebyshev", obstacles: ListArg = None) -> dict:
-    """#461 / P1: switch this fight to a coordinate grid (the only tool that sets grid mode).
+             diagonal_mode: str = "chebyshev", obstacles: ListArg = None,
+             difficult: ListArg = None) -> dict:
+    """#461: switch this fight to a coordinate grid (the only tool that sets grid mode).
     Optional; without it combat stays zone/theater. Sets extents (cells; cell_size ft);
-    idempotent; needs width/height>0. P1: `obstacles` is a list of [x,y] IMPASSABLE cells
-    (walls/props) that move_to_coords routes AROUND; omit == leave obstacles unchanged,
-    [] == clear them (open floor, PR-1 behaviour byte-for-byte unchanged)."""
+    idempotent; needs width/height>0. `obstacles` = [x,y] IMPASSABLE cells (walls/props)
+    move_to_coords routes AROUND; `difficult` (#1253) = [x,y] DIFFICULT-TERRAIN cells that
+    are enterable but cost DOUBLE movement. For each: omit == leave unchanged, [] == clear
+    (open floor, byte-for-byte unchanged)."""
     if width <= 0 or height <= 0:
         raise ValueError("set_grid needs width > 0 and height > 0")
     if diagonal_mode not in ("chebyshev", "five_ten_five"):
         raise ValueError("diagonal_mode must be 'chebyshev' or 'five_ten_five'")
-    imp: list[list[int]] | None = None
-    if obstacles is not None:
-        imp = []
-        for cellv in _coerce_list(obstacles):
-            if not isinstance(cellv, (list, tuple)) or len(cellv) != 2:
-                raise ValueError("set_grid obstacles must be a list of [x, y] cell pairs")
-            imp.append([int(cellv[0]), int(cellv[1])])
+    imp = _coerce_cell_pairs(obstacles, "obstacles") if obstacles is not None else None
+    dif = _coerce_cell_pairs(difficult, "difficult") if difficult is not None else None
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         c.combat.grid_enabled = True
@@ -4404,17 +4451,26 @@ def set_grid(campaign_id: str, width: int, height: int, cell_size: int = 5,
         c.combat.diagonal_mode = diagonal_mode  # type: ignore[assignment]
         if imp is not None:
             c.combat.grid_impassable = imp
+        if dif is not None:
+            c.combat.grid_difficult = dif
         save_campaign(c)
         return _combat_view(c)
 
 
 @mcp.tool()
-def place_combatant_at_coords(campaign_id: str, combatant_id: str, x: int, y: int) -> dict:
-    """#461: set a combatant's (x,y) cell — setup, NO opportunity-attack check (use
+def place_combatant_at_coords(campaign_id: str, combatant_id: str, x: int, y: int,
+                              size: str = "") -> dict:
+    """#461: set a combatant's (x,y) ANCHOR cell — setup, NO opportunity-attack check (use
     move_to_coords in combat). Needs set_grid first. Warns (never blocks) if out of
-    bounds/occupied."""
+    bounds/occupied. #1253: optional `size` (tiny/small/medium/large/huge/gargantuan) sets
+    the token's FOOTPRINT — Large=2×2, Huge=3×3, Gargantuan=4×4 anchored at (x,y); omit ==
+    keep the current size (default medium = a 1-cell token)."""
     if not combatant_id:
         raise ValueError("place_combatant_at_coords needs a combatant_id")
+    if size and size.strip().lower() not in combat_grid._SIZE_CELLS:
+        raise ValueError(
+            "size must be one of tiny/small/medium/large/huge/gargantuan (or omitted)"
+        )
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         if not c.combat.active:
@@ -4422,14 +4478,22 @@ def place_combatant_at_coords(campaign_id: str, combatant_id: str, x: int, y: in
         if not c.combat.grid_enabled:
             raise ValueError("this fight is not on a grid — call set_grid first (or use place_combatant for zones)")
         cb = _combatant(c, combatant_id)
+        if size:
+            cb.size = size.strip().lower()
         ch = c.characters.get(combatant_id)
         warnings: list[str] = []
-        if not (0 <= x < c.combat.grid_width and 0 <= y < c.combat.grid_height):
+        # #1253: a Large+ token occupies an NxN footprint anchored at (x, y), so bounds and
+        # occupancy check the WHOLE footprint. Medium (1-cell) reduces to the PR-1 checks.
+        my_fp = combat_grid.footprint((x, y), _size(cb))
+        span = combat_grid.footprint_cells(_size(cb))
+        if not (0 <= x and x + span <= c.combat.grid_width and 0 <= y and y + span <= c.combat.grid_height):
+            extent = f"{x}..{x + span - 1}, {y}..{y + span - 1}" if span > 1 else f"{x}, {y}"
             warnings.append(
-                f"({x}, {y}) is out of the {c.combat.grid_width}x{c.combat.grid_height} grid — placed anyway."
+                f"({extent}) is out of the {c.combat.grid_width}x{c.combat.grid_height} grid — placed anyway."
             )
         occupant = next(
-            (o for o in c.combat.order if o.character_id != combatant_id and (o.x, o.y) == (x, y)),
+            (o for o in c.combat.order
+             if o.character_id != combatant_id and (my_fp & _footprint(o))),
             None,
         )
         if occupant is not None:
@@ -4469,26 +4533,28 @@ def move_to_coords(campaign_id: str, combatant_id: str, x: int, y: int,
         mover = c.characters.get(combatant_id)
         from_cell = _cell(cb)
         cell_size = c.combat.grid_cell_size
+        mover_span = combat_grid.footprint_cells(_size(cb))
         warnings: list[str] = []
-        if not (0 <= x < c.combat.grid_width and 0 <= y < c.combat.grid_height):
+        if not (0 <= x and x + mover_span <= c.combat.grid_width
+                and 0 <= y and y + mover_span <= c.combat.grid_height):
             warnings.append(
                 f"({x}, {y}) is out of the {c.combat.grid_width}x{c.combat.grid_height} grid — moved anyway."
             )
 
         to_cell = (x, y)
-        # P1: route AROUND impassable terrain (walls/props) + other tokens. impassable/occupied
-        # empty == open floor (PR-1 behaviour byte-for-byte unchanged: straight-line Chebyshev).
+        # P1: route AROUND impassable terrain (walls/props) + other tokens; #1253: charge
+        # DOUBLE to enter difficult-terrain cells. impassable/occupied/difficult empty ==
+        # open floor (PR-1 behaviour byte-for-byte unchanged: straight-line Chebyshev).
         impassable = {(int(ix), int(iy)) for ix, iy in (c.combat.grid_impassable or [])}
-        occupied = {
-            (o.x, o.y) for o in c.combat.order
-            if o.character_id != combatant_id and o.x is not None and o.y is not None
-        }
+        occupied = _occupied_cells(c, exclude_id=combatant_id)
+        difficult = _difficult_set(c)
         if from_cell is None:
             cost = 0  # an unplaced combatant: this is effectively a placement, no cost
         else:
-            if path_cells is None and (impassable or occupied):
+            if path_cells is None and (impassable or occupied or difficult):
                 routed = combat_grid.shortest_path(
-                    from_cell, to_cell, occupied, c.combat.grid_width, c.combat.grid_height, impassable
+                    from_cell, to_cell, occupied, c.combat.grid_width, c.combat.grid_height,
+                    impassable, difficult,
                 )
                 if routed is None:
                     # P1: never walk onto/through a wall/prop (or into an occupied cell) — reject, stay put.
@@ -4507,7 +4573,13 @@ def move_to_coords(campaign_id: str, combatant_id: str, x: int, y: int,
                     return view
                 if routed:
                     path_cells = routed  # charge + draw the routed detour
-            cost = combat_grid.path_cost_cells(from_cell, to_cell, path_cells)
+            cost = combat_grid.path_cost_cells(from_cell, to_cell, path_cells, difficult)
+        # #1253: which difficult-terrain cells the move ENTERED (surfaced for the DM so the
+        # doubled cost is legible). The straight-diagonal step cells when no explicit path.
+        difficult_crossed: list[list[int]] = []
+        if from_cell is not None and difficult:
+            entered = path_cells if path_cells else combat_grid._supercover_cells(from_cell, to_cell)[1:]
+            difficult_crossed = [[int(sx), int(sy)] for (sx, sy) in entered if (sx, sy) in difficult]
         prior_used = cb.moved_cells_this_turn
         dashed = bool(dash) or bool(cb.dashed)
         budget = combat_grid.movement_budget_cells(mover.speed, cell_size, dashed) if mover else 0
@@ -4596,6 +4668,7 @@ def move_to_coords(campaign_id: str, combatant_id: str, x: int, y: int,
                 "provokers": provokers,
                 "disengaged": disengaged,
                 "movement_illegal": movement_illegal,
+                "difficult_crossed": difficult_crossed,
                 "warnings": list(warnings),
             },
             speaker=mover.name if mover else "",
@@ -4609,6 +4682,8 @@ def move_to_coords(campaign_id: str, combatant_id: str, x: int, y: int,
     view["opportunity_attack"] = bool(provokers)
     view["provokers"] = provokers
     view["warnings"] = warnings
+    if difficult_crossed:  # #1253: only when difficult terrain was actually entered
+        view["difficult_crossed"] = difficult_crossed
     if disengaged:
         view["disengaged"] = True
     if movement_illegal is not None:
@@ -5648,6 +5723,7 @@ def attack(
             acb = next((cb for cb in c.combat.order if cb.character_id == attacker_id), None)
             shooter_cell = _cell(acb) if acb is not None else None
             if shooter_cell is not None:
+                shooter_size = _size(acb)
                 ally_kinds = {"player", "companion"}
                 shooter_ally = attacker.kind in ally_kinds
                 for foe_cb in c.combat.order:
@@ -5661,8 +5737,11 @@ def attack(
                     foe_cell = _cell(foe_cb)
                     if foe_cell is None:
                         continue  # an unplaced foe threatens no cell
-                    if not combat_grid.in_melee_reach(shooter_cell, foe_cell):
-                        continue  # not within 5 ft (1 cell)
+                    # #1253: footprint-edge reach — a Large foe threatens from any of its cells.
+                    if not combat_grid.in_melee_reach_sized(
+                        shooter_cell, shooter_size, foe_cell, _size(foe_cb)
+                    ):
+                        continue  # not within 5 ft (1 cell edge-to-edge)
                     if combat.is_incapacitated(foe):
                         continue  # SRD: the enemy must NOT be Incapacitated
                     if not _can_see(foe):
@@ -5873,7 +5952,13 @@ def attack(
             ac = _cell(acb) if acb else None
             tc = _cell(tcb) if tcb else None
             if ac is not None and tc is not None:
-                feet = combat_grid.distance_ft(ac, tc, c.combat.grid_cell_size)
+                # #1253: measure FOOTPRINT-EDGE to footprint-edge so a Large attacker/target
+                # reaches from its nearest cell (a 2×2 ogre melees an adjacent target that is
+                # 2 anchor-cells away). Medium vs Medium == the PR-1 anchor Chebyshev.
+                edge_cells = combat_grid.footprint_distance_cells(
+                    ac, _size(acb), tc, _size(tcb)
+                )
+                feet = combat_grid.range_ft(edge_cells, c.combat.grid_cell_size)
                 if feet > 5:
                     result["range_warning"] = (
                         f"{attacker.name} at {ac} is {feet} ft from {target.name} at {tc} — "
@@ -7633,7 +7718,9 @@ def cast_spell(
                 for cb in c.combat.order:
                     if cb.x is None or cb.y is None:
                         continue
-                    if (cb.x, cb.y) in cells:
+                    # #1253: a Large+ token is caught if ANY of its footprint cells lies in
+                    # the template. Medium (1-cell) reduces to the PR-2 `(x, y) in cells`.
+                    if _footprint(cb) & cells:
                         tgt = c.characters.get(cb.character_id)
                         if tgt is not None:
                             aoe_targets.append(tgt)

@@ -6,14 +6,48 @@ persistence and surface their results. ADDITIVE: nothing here runs unless a figh
 flips Combat.grid_enabled (set_grid); zone/theater combat never touches this module.
 
 PR-1 SCOPE is the movement spine only: Chebyshev distance, a speed→cells budget, an
-open-floor reachability flood, and a reach-leave opportunity-attack predicate. AoE,
-cover, line-of-sight, terrain, creature size/reach, and ranged-range gating are all
-DEFERRED to later PRs — every combatant here is a single 1-cell, 5ft-reach token.
+open-floor reachability flood, and a reach-leave opportunity-attack predicate. AoE
+(#1257), cover / line-of-sight (#1261), difficult terrain + creature size/reach (#1253)
+land in later PRs; ranged-range gating is still DEFERRED. The PR-1 helpers stay valid
+for the default case — a single 1-cell, 5ft-reach token on open floor.
 """
 
 from __future__ import annotations
 
 Cell = tuple[int, int]
+
+# ── #1253 / PR-5: creature SIZE → grid footprint ─────────────────────────────────
+# SRD 5.2 space: Tiny/Small/Medium occupy a 5ft square (1 cell); Large a 10ft square
+# (2×2 cells), Huge a 15ft square (3×3), Gargantuan a 20ft+ square (4×4). The engine
+# models a token by its side length in CELLS (`footprint_cells`). The stored (x, y) is
+# the token's anchor = its MIN-corner cell; the footprint spans [x, x+n) × [y, y+n).
+# ADDITIVE: an unknown / absent / Medium size => 1 cell => PR-1 behaviour byte-for-byte.
+_SIZE_CELLS = {
+    "tiny": 1, "small": 1, "medium": 1,
+    "large": 2, "huge": 3, "gargantuan": 4,
+}
+
+
+def footprint_cells(size: str) -> int:
+    """The side length in CELLS of a creature of the given SRD size category (default 1
+    for Medium/Small/Tiny, 2 for Large, 3 for Huge, 4 for Gargantuan). Case-insensitive;
+    an unknown or empty size falls back to 1 cell (Medium) — the PR-1 default."""
+    return _SIZE_CELLS.get((size or "").strip().lower(), 1)
+
+
+def footprint(anchor: Cell, size: str) -> set[Cell]:
+    """The set of cells a token of the given `size` occupies, anchored at `anchor` (its
+    MIN-corner cell). Medium (1 cell) => just {anchor}; Large => a 2×2 block, etc. Pure;
+    not clipped to the grid (the caller flags out-of-bounds like a 1-cell placement)."""
+    n = footprint_cells(size)
+    ax, ay = anchor
+    return {(ax + i, ay + j) for i in range(n) for j in range(n)}
+
+
+def footprints_overlap(a_anchor: Cell, a_size: str, b_anchor: Cell, b_size: str) -> bool:
+    """True if two tokens' footprints share any cell (a placement/movement collision).
+    For two Medium tokens this reduces to `a_anchor == b_anchor` (PR-1 occupancy)."""
+    return bool(footprint(a_anchor, a_size) & footprint(b_anchor, b_size))
 
 
 def chebyshev_cells(a: Cell, b: Cell) -> int:
@@ -39,9 +73,38 @@ def distance_ft(a: Cell, b: Cell, cell_size: int = 5) -> int:
 
 def in_melee_reach(a: Cell, b: Cell) -> bool:
     """True if two cells are within 5ft melee reach: Chebyshev distance <= 1 (the same
-    cell or any of the 8 neighbours). PR-1 has no creature-size/reach model — every
-    token is 1 cell with 5ft reach."""
+    cell or any of the 8 neighbours). This is the 1-cell (Medium) reach test; for larger
+    tokens use `footprint_distance_cells` / `in_melee_reach_sized` which measure from the
+    FOOTPRINT EDGE."""
     return chebyshev_cells(a, b) <= 1
+
+
+def footprint_distance_cells(
+    a_anchor: Cell, a_size: str, b_anchor: Cell, b_size: str
+) -> int:
+    """Chebyshev distance in CELLS between the two tokens' FOOTPRINT EDGES — the minimum
+    Chebyshev distance over every pair of (a-cell, b-cell) in the two footprints. For two
+    Medium (1-cell) tokens this is exactly `chebyshev_cells(a_anchor, b_anchor)` (PR-1),
+    so it's additive. Overlapping footprints => 0. This is how a Large+ creature reaches
+    an adjacent target from its NEAREST occupied cell, not its anchor."""
+    an, bn = footprint_cells(a_size), footprint_cells(b_size)
+    if an == 1 and bn == 1:
+        return chebyshev_cells(a_anchor, b_anchor)
+    (ax, ay), (bx, by) = a_anchor, b_anchor
+    # Per-axis edge gap between the two [anchor, anchor+n-1] cell intervals; a negative
+    # gap (overlap) clamps to 0. Chebyshev distance is the larger of the two axis gaps.
+    dx = max(bx - (ax + an - 1), ax - (bx + bn - 1), 0)
+    dy = max(by - (ay + an - 1), ay - (by + bn - 1), 0)
+    return max(dx, dy)
+
+
+def in_melee_reach_sized(
+    a_anchor: Cell, a_size: str, b_anchor: Cell, b_size: str, reach_cells: int = 1
+) -> bool:
+    """True if a token at `a_anchor` (size `a_size`) can melee-reach a token at `b_anchor`
+    (size `b_size`) — footprint-edge Chebyshev distance <= `reach_cells` (default 1 = 5ft).
+    Additive: two Medium tokens with the default reach reduce to `in_melee_reach`."""
+    return footprint_distance_cells(a_anchor, a_size, b_anchor, b_size) <= reach_cells
 
 
 def movement_budget_cells(speed: int, cell_size: int = 5, dashed: bool = False) -> int:
@@ -60,47 +123,50 @@ def reachable(
     width: int,
     height: int,
     impassable: set[Cell] = frozenset(),
+    difficult: set[Cell] = frozenset(),
 ) -> set[Cell]:
-    """Open-floor reachability: every in-bounds cell reachable from `start` within
-    `budget_cells` of movement, flooding over the 8-neighbourhood at a flat cost of 1
-    cell per step (Chebyshev movement). A move may PASS THROUGH nothing-blocks (PR-1
-    has no terrain) but may NOT END on an occupied cell, so `occupied` cells are
-    dropped from the result (and the start itself is excluded — you stay put for free,
-    it's not a "move to"). PR-1: flat cost, no terrain, no size.
+    """Reachability: every in-bounds cell reachable from `start` within `budget_cells`
+    of movement over the 8-neighbourhood. Each step costs 1 cell, DOUBLED (2) when the
+    step ENTERS a `difficult` cell (SRD 5.2 difficult terrain). A move may NOT END on
+    an occupied cell, so `occupied` cells are dropped from the result (and the start
+    itself is excluded — you stay put for free, it's not a "move to").
 
-    `occupied` should NOT include `start` (the mover doesn't block itself). Returns a
-    set of (x, y) cells. Pure Dijkstra/BFS over uniform cost; deterministic.
+    `occupied` should NOT include `start` (the mover doesn't block itself). `difficult`
+    empty (no terrain) => flat cost 1 (PR-1 behaviour, byte-for-byte). Returns a set of
+    (x, y) cells. Pure Dijkstra over per-step cost; deterministic.
     """
     if budget_cells <= 0:
         return set()
-    # BFS by ring: uniform cost 1 means a plain breadth-first expansion gives the
-    # minimal step count to each cell. Occupied cells can't be entered at all (PR-1
-    # treats a creature's cell as impassable — no moving through allies in this PR).
+    import heapq
+
+    # Dijkstra: costs are 1 or 2, so a priority queue gives the minimal-cost distance to
+    # each cell. Occupied/impassable cells can't be entered (a creature/wall blocks). The
+    # cost to ENTER a difficult cell is 2; open cells cost 1.
     dist: dict[Cell, int] = {start: 0}
-    frontier = [start]
-    while frontier:
-        nxt: list[Cell] = []
-        for (cx, cy) in frontier:
-            d = dist[(cx, cy)]
-            if d >= budget_cells:
-                continue
-            for dx in (-1, 0, 1):
-                for dy in (-1, 0, 1):
-                    if dx == 0 and dy == 0:
-                        continue
-                    nx, ny = cx + dx, cy + dy
-                    if not (0 <= nx < width and 0 <= ny < height):
-                        continue
-                    cell = (nx, ny)
-                    if cell in occupied:
-                        continue  # can't enter (and so can't pass through) a token
-                    if cell in impassable:
-                        continue  # terrain/wall/prop — can't enter or pass through (P1)
-                    if cell in dist:
-                        continue
-                    dist[cell] = d + 1
-                    nxt.append(cell)
-        frontier = nxt
+    pq: list[tuple[int, Cell]] = [(0, start)]
+    while pq:
+        d, (cx, cy) = heapq.heappop(pq)
+        if d > dist.get((cx, cy), d) or d >= budget_cells:
+            continue
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+                nx, ny = cx + dx, cy + dy
+                if not (0 <= nx < width and 0 <= ny < height):
+                    continue
+                cell = (nx, ny)
+                if cell in occupied:
+                    continue  # can't enter (and so can't pass through) a token
+                if cell in impassable:
+                    continue  # terrain/wall/prop — can't enter or pass through
+                step = 2 if cell in difficult else 1
+                nd = d + step
+                if nd > budget_cells:
+                    continue
+                if nd < dist.get(cell, nd + 1):
+                    dist[cell] = nd
+                    heapq.heappush(pq, (nd, cell))
     # Exclude the start cell (it's where you already are, not a destination).
     return {c for c in dist if c != start}
 
@@ -112,29 +178,37 @@ def shortest_path(
     width: int,
     height: int,
     impassable: set[Cell] = frozenset(),
+    difficult: set[Cell] = frozenset(),
 ) -> list[Cell] | None:
-    """P1: BFS shortest route from `start` to `goal` over the 8-neighbourhood, routing
-    AROUND cells that cannot be entered (`occupied` tokens + `impassable` terrain/walls/
-    props). Returns the list of step cells EXCLUDING `start` (so `path_cost_cells` sums its
-    Chebyshev hops = the routed distance), `[]` if already at the goal, or None if the goal
-    is itself blocked / out of bounds / unreachable without crossing a blocked cell. Uniform
-    cost 1/step; deterministic (neighbour order fixed). On OPEN floor this returns a straight
-    diagonal whose cost equals the old straight-line Chebyshev — so behaviour is unchanged
-    when there are no obstacles (additive)."""
+    """Cheapest route from `start` to `goal` over the 8-neighbourhood, routing AROUND
+    cells that cannot be entered (`occupied` tokens + `impassable` terrain/walls/props)
+    and preferring cheaper ground: each step costs 1, DOUBLED (2) to ENTER a `difficult`
+    cell. Returns the list of step cells EXCLUDING `start` (so `path_cost_cells` re-derives
+    the routed cost), `[]` if already at the goal, or None if the goal is itself blocked /
+    out of bounds / unreachable without crossing a blocked cell. Deterministic (a fixed
+    tie-break on equal-cost cells via the neighbour order). On OPEN floor with no difficult
+    terrain this returns a straight diagonal whose cost equals the straight-line Chebyshev —
+    behaviour is unchanged when there are no obstacles/terrain (additive)."""
     if start == goal:
         return []
     if not (0 <= goal[0] < width and 0 <= goal[1] < height):
         return None
     if goal in occupied or goal in impassable:
         return None
-    from collections import deque
+    import heapq
 
+    # Dijkstra over per-step cost (1, or 2 into difficult terrain). `seq` is a monotonic
+    # counter making the heap ordering total + deterministic when two cells tie on cost.
     prev: dict[Cell, Cell] = {start: start}
-    q: deque[Cell] = deque([start])
-    while q:
-        cur = q.popleft()
+    dist: dict[Cell, int] = {start: 0}
+    seq = 0
+    pq: list[tuple[int, int, Cell]] = [(0, 0, start)]
+    while pq:
+        d, _, cur = heapq.heappop(pq)
         if cur == goal:
             break
+        if d > dist.get(cur, d):
+            continue
         cx, cy = cur
         for dx in (-1, 0, 1):
             for dy in (-1, 0, 1):
@@ -144,10 +218,14 @@ def shortest_path(
                 if not (0 <= nx < width and 0 <= ny < height):
                     continue
                 cell = (nx, ny)
-                if cell in prev or cell in occupied or cell in impassable:
+                if cell in occupied or cell in impassable:
                     continue
-                prev[cell] = cur
-                q.append(cell)
+                nd = d + (2 if cell in difficult else 1)
+                if nd < dist.get(cell, nd + 1):
+                    dist[cell] = nd
+                    prev[cell] = cur
+                    seq += 1
+                    heapq.heappush(pq, (nd, seq, cell))
     if goal not in prev:
         return None
     route: list[Cell] = []
@@ -159,21 +237,37 @@ def shortest_path(
     return route
 
 
-def path_cost_cells(from_cell: Cell, to_cell: Cell, path: list[Cell] | None = None) -> int:
+def path_cost_cells(
+    from_cell: Cell,
+    to_cell: Cell,
+    path: list[Cell] | None = None,
+    difficult: set[Cell] = frozenset(),
+) -> int:
     """Measured movement cost in CELLS from `from_cell` to `to_cell`.
 
     If an explicit `path` (a list of waypoint cells the mover steps through, EXCLUDING
     the start) is given, the cost is the sum of the Chebyshev step between consecutive
-    cells (so a hand-routed path around an obstacle costs what it walked). With no path,
-    PR-1 assumes open floor and charges the straight-line Chebyshev distance (the
-    minimal open-floor cost). Pure; no occupancy check (the caller flags illegal ends).
-    """
+    cells, with each STEP DOUBLED when it enters a `difficult` cell (SRD 5.2). With no
+    path, open floor is assumed and the straight-line Chebyshev is charged — then, if any
+    intervening cell of that straight diagonal is difficult, those entries are surcharged
+    too (so a straight walk across difficult terrain still costs double per difficult cell).
+    `difficult` empty => the plain Chebyshev cost (PR-1 behaviour, byte-for-byte). Pure; no
+    occupancy check (the caller flags illegal ends)."""
     if not path:
-        return chebyshev_cells(from_cell, to_cell)
+        base = chebyshev_cells(from_cell, to_cell)
+        if not difficult:
+            return base
+        # Surcharge each difficult cell the straight diagonal ENTERS (endpoints handled:
+        # the start is never "entered"; the destination is if it's difficult).
+        entered = _supercover_cells(from_cell, to_cell)[1:]  # drop the start
+        return base + sum(1 for cell in entered if cell in difficult)
     total = 0
     prev = from_cell
     for step in path:
-        total += chebyshev_cells(prev, step)
+        hop = chebyshev_cells(prev, step)
+        total += hop
+        if difficult and step in difficult:
+            total += 1  # entering a difficult cell costs double (one extra per entry)
         prev = step
     return total
 
@@ -469,7 +563,14 @@ def cover_between(a: Cell, b: Cell, blocking: set[Cell]) -> str:
     blocking) AND every interior cell on the ray is a blocker with no open shoulder — i.e.
     there is genuinely no gap. In practice, one blocker => half, two => three-quarters, and
     a fully-walled ray (a solid line of blockers with no threadable corner) => total. Open
-    floor (`blocking` empty) or `a == b` => "none" (additive: no cover off the grid)."""
+    floor (`blocking` empty) or `a == b` => "none" (additive: no cover off the grid).
+
+    SIZE NOTE (#1253/#1255): this is a SINGLE anchor-to-anchor ray. SRD "trace to a corner"
+    for a Large+ token would trace from each of the attacker's / target's footprint corners
+    and take the BEST (least-obstructed) line; the design doc does not require corner-tracing
+    for big tokens, so PR-5 keeps the single-ray approximation. A large token whose anchor
+    ray is walled may report more cover than a corner trace would — DEFERRED to #1255 (AI/
+    tactics), which can consume the footprint corners if it needs the finer tier."""
     if not blocking or a == b:
         return "none"
     blockers = line_blockers(a, b, blocking)
