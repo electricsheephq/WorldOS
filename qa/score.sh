@@ -118,8 +118,17 @@ while [ "$attempt" -lt 3 ]; do
   # with headroom; the fast lenses are unaffected (the bound only fires on a genuinely slow/stuck call).
   # run_duo.sh ALSO isolates the angrydm lens (scores it alone, not concurrent with the 2 light lenses)
   # so it gets full API throughput and lands near the ~400s baseline rather than slower under contention.
+  # #1260: ALSO scrub the SDK child-session markers. When a scorer runs inside a host-managed
+  # session (the Desktop app's Bash, an SDK harness), CLAUDECODE/CLAUDE_CODE_CHILD_SESSION +
+  # CLAUDE_CODE_SDK_HAS_{HOST_AUTH,OAUTH}_REFRESH tell the child CLI to expect auth from the
+  # HOST — which never arrives in a detached scorer call, so it hangs (measured rc=124) or
+  # 401s with a stale session token. Scrubbing the markers drops it to normal keychain auth
+  # (measured: same call succeeds in ~17s). Terminal contexts don't set them — no-op there.
   printf '%s' "$INPUT" | env -u ANTHROPIC_BASE_URL -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN \
-    -u API_TIMEOUT_MS -u CLAUDE_CONFIG_DIR timeout "${WORLDOS_SCORE_TIMEOUT:-600}" claude -p \
+    -u API_TIMEOUT_MS -u CLAUDE_CONFIG_DIR \
+    -u CLAUDECODE -u CLAUDE_CODE_CHILD_SESSION -u CLAUDE_CODE_ENTRYPOINT \
+    -u CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH -u CLAUDE_CODE_SDK_HAS_OAUTH_REFRESH \
+    timeout "${WORLDOS_SCORE_TIMEOUT:-600}" claude -p \
     --model "$SCORER_MODEL" --permission-mode bypassPermissions $EFFORT_ARG \
     --max-budget-usd "$BUDGET" \
     --output-format json > "$RAW" 2> "$ERR"
