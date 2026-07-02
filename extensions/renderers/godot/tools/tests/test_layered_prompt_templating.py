@@ -20,6 +20,8 @@ import os
 import sys
 import unittest
 
+import pytest
+
 _TOOLS_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 if _TOOLS_DIR not in sys.path:
     sys.path.insert(0, _TOOLS_DIR)
@@ -73,7 +75,7 @@ TAVERN_NOUNS_PASS3 = ["tavern", "hearth", "lantern"]
 
 class LayeredPromptTemplatingTest(unittest.TestCase):
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         cls.recipe = generate_room._load_recipe()
         cls.layered = cls.recipe["layered_pipeline_2026_07_02"]
 
@@ -99,7 +101,7 @@ class LayeredPromptTemplatingTest(unittest.TestCase):
         )
         lowered = rendered.lower()
         for noun in TAVERN_NOUNS_PASS2:
-            self.assertIn(noun, lowered, "tavern pass2 prompt missing expected noun %r" % noun)
+            self.assertIn(noun, lowered, f"tavern pass2 prompt missing expected noun {noun!r}")
 
     def test_tavern_pass3_prompt_contains_tavern_nouns(self):
         rendered = generate_room._render_pass_prompt(
@@ -107,7 +109,7 @@ class LayeredPromptTemplatingTest(unittest.TestCase):
         )
         lowered = rendered.lower()
         for noun in TAVERN_NOUNS_PASS3:
-            self.assertIn(noun, lowered, "tavern pass3 prompt missing expected noun %r" % noun)
+            self.assertIn(noun, lowered, f"tavern pass3 prompt missing expected noun {noun!r}")
 
     def test_tavern_pass2_prompt_contains_no_crypt_nouns(self):
         rendered = generate_room._render_pass_prompt(
@@ -115,7 +117,7 @@ class LayeredPromptTemplatingTest(unittest.TestCase):
         )
         lowered = rendered.lower()
         for noun in CRYPT_ONLY_NOUNS:
-            self.assertNotIn(noun, lowered, "tavern pass2 prompt leaked crypt noun %r" % noun)
+            self.assertNotIn(noun, lowered, f"tavern pass2 prompt leaked crypt noun {noun!r}")
 
     def test_tavern_pass3_prompt_contains_no_crypt_nouns(self):
         rendered = generate_room._render_pass_prompt(
@@ -123,7 +125,7 @@ class LayeredPromptTemplatingTest(unittest.TestCase):
         )
         lowered = rendered.lower()
         for noun in CRYPT_ONLY_NOUNS:
-            self.assertNotIn(noun, lowered, "tavern pass3 prompt leaked crypt noun %r" % noun)
+            self.assertNotIn(noun, lowered, f"tavern pass3 prompt leaked crypt noun {noun!r}")
 
     def test_tavern_pass2_and_pass3_prompts_differ_from_crypt(self):
         tavern_p2 = generate_room._render_pass_prompt(
@@ -143,7 +145,7 @@ class LayeredPromptTemplatingTest(unittest.TestCase):
         rc = rooms["bosshall"]
         for key in ("key_light", "shadow_casters", "room_detail_tokens"):
             self.assertIn(key, rc)
-            self.assertTrue(rc[key], "bosshall.%s must be non-empty" % key)
+            self.assertTrue(rc[key], f"bosshall.{key} must be non-empty")
 
     def test_bosshall_layered_slots_present_and_render_without_error(self):
         rc = self.recipe["rooms"]["bosshall"]
@@ -167,7 +169,7 @@ class LayeredPromptTemplatingTest(unittest.TestCase):
         # rooms (no room-specific pass1 duplication) — build_prompt should succeed cleanly and
         # carry bosshall's own key_light/shadow_casters/room_detail_tokens + the shared
         # staging-law language adopted in #1274 (no-two-columns-identical, wall clutter).
-        positive, negative = generate_room._build_prompt(self.recipe, "bosshall")
+        positive, _negative = generate_room._build_prompt(self.recipe, "bosshall")
         self.assertIn("bosshall", positive)
         self.assertIn("carved throne", positive)
         self.assertIn("no two columns identical", positive.lower())
@@ -194,11 +196,11 @@ class LayeredPromptTemplatingTest(unittest.TestCase):
         # crypt_stair intentionally omitted here would previously fall through silently to the
         # crypt prompt; now a room with NO layered block must sys.exit with a clear error rather
         # than silently reusing another room's content.
-        recipe_copy = dict(self.recipe)
-        rooms_copy = dict(recipe_copy["rooms"])
-        rooms_copy["_no_layered_room"] = {"key_light": "x", "shadow_casters": "y", "room_detail_tokens": "z"}
-        recipe_copy["rooms"] = rooms_copy
-        with self.assertRaises(SystemExit):
+        recipe_copy = copy.deepcopy(self.recipe)
+        recipe_copy["rooms"]["_no_layered_room"] = {
+            "key_light": "x", "shadow_casters": "y", "room_detail_tokens": "z",
+        }
+        with pytest.raises(SystemExit):
             generate_room._render_pass_prompt(
                 recipe_copy, "_no_layered_room", self.layered["pass2_detail_populate"], "pass2_slots"
             )

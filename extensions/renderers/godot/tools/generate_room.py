@@ -90,22 +90,21 @@ def _render_pass_prompt(recipe: dict, room: str, pass_spec: dict, slot_key: str,
     slots = block_rc.get(slot_key)
     if not slots:
         sys.exit(
-            "[generate_room] ERROR: --layered requested for room '%s' but room_recipes.json has "
-            "no rooms.%s.%s.%s slot values (needed to fill the %s prompt template). "
-            "Add a `%s` block for this room (see rooms.crypt.layered for the pattern)."
-            % (room, room, slot_block, slot_key, slot_key, slot_block)
+            f"[generate_room] ERROR: --layered requested for room '{room}' but room_recipes.json has "
+            f"no rooms.{room}.{slot_block}.{slot_key} slot values (needed to fill the {slot_key} prompt template). "
+            f"Add a `{slot_block}` block for this room (see rooms.crypt.layered for the pattern)."
         )
     try:
         return template.format(**slots)
     except KeyError as e:
         sys.exit(
-            "[generate_room] ERROR: rooms.%s.%s.%s is missing slot %s required by the "
-            "%s prompt template." % (room, slot_block, slot_key, e, slot_key)
+            f"[generate_room] ERROR: rooms.{room}.{slot_block}.{slot_key} is missing slot {e} required by the "
+            f"{slot_key} prompt template."
         )
     except (IndexError, ValueError) as e:
         sys.exit(
-            "[generate_room] ERROR: rooms.%s.%s.%s has a malformed slot value for the "
-            "%s prompt template (%s)." % (room, slot_block, slot_key, slot_key, e)
+            f"[generate_room] ERROR: rooms.{room}.{slot_block}.{slot_key} has a malformed slot value for the "
+            f"{slot_key} prompt template ({e})."
         )
 
 
@@ -272,6 +271,16 @@ def main(argv=None) -> None:
     src_count = (1 if args.base_plate else 0) + (1 if args.refine_from else 0)
     if src_count != 1:
         ap.error("provide EXACTLY ONE of --base-plate <png> or --refine-from <asset_id>")
+
+    # Fail fast on a missing --day recipe entry BEFORE the (expensive, billed) pass1 img2img job
+    # runs — --layered --day chains pass1 -> pass2 -> pass3, and pass3's day branch is the one
+    # that actually needs layered_pipeline_day_2026_07_03; checking only at that point would
+    # burn a pass1 job on a room that was never wired for the day variant.
+    if args.layered and args.day and not recipe.get("layered_pipeline_day_2026_07_03"):
+        sys.exit(
+            f"[generate_room] ERROR: --day requested but recipe manifest has no "
+            f"layered_pipeline_day_2026_07_03 entry: {RECIPE_PATH}"
+        )
 
     positive, negative = _build_prompt(recipe, args.room, args.lighting)
     # Standalone base models (model_z-image) run img2img via POST /generate/custom/{modelId}
