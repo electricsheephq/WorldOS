@@ -46,7 +46,7 @@ cfg["mcpServers"]["worldos-engine"]["env"]["WORLDOS_STATE_DIR"] = state_dir
 json.dump(cfg, open(out, "w"))
 PY
 
-echo "[qa] playing (claude --plugin-dir, $WORLDOS_DM_MODEL) prompt=$PROMPT_FILE…"
+echo "[qa] playing (claude --plugin-dir, $WORLDOS_DM_MODEL) prompt=${PROMPT_FILE}…"
 claude -p "$(cat "$PROMPT_FILE")" \
   --plugin-dir "$ROOT" \
   --mcp-config "$MCP_CONFIG" --strict-mcp-config \
