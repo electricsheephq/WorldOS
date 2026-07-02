@@ -232,6 +232,28 @@ Common preamble (prepend to every lens prompt):
 > the same world, minor tells; 5-6 = reads as a game but visibly below the bar; 3-4 = the illusion
 > is breaking on your axis; 0-2 = your axis is broken. Do NOT grade on a curve or soften.
 
+## ★★ CALIBRATION-CONTROL PROTOCOL (MANDATORY since 2026-07-02 — the positive-control finding)
+The panel's ABSOLUTE scale is **broken at the top and cannot be trusted**: measured 2026-07-02, blind on the
+then-standard instrument, REAL shipped Pillars of Eternity area plates scored **3.0-4.6** and real BG2EE **4.6-5.6**
+while our AI plates scored 5.0-6.7 — scorers even confabulated "diffusion-model CG" tells on hand-painted 1998 art.
+Two causes, both now banned: (1) the "default skeptical / almost nothing AI-made deserves ≥8" primer suppressed
+~0.7 pt and made ≥8 unattainable BY CONSTRUCTION for anything framed as "the candidate"; (2) no panel ever carried
+a positive control, so the ceiling was invisible. Rules:
+1. **NEVER use an AI-prior primer** ("almost nothing AI-made deserves 8", "default skeptical of AI"). Harshness
+   belongs in FLAW-FINDING, not in a scale-suppressing prior. Instruct "score what you SEE — judge the image on
+   its craft, not on assumptions about how it was made."
+2. **EVERY adoption/verdict panel embeds ≥1 DISGUISED REAL-ART CONTROL** (a shipped plate NOT among the refs,
+   presented at comparable resolution/crop/UI-free). The reportable metric is the **DELTA vs the control's
+   same-panel score** — "ours ≥ control" = the bar is met. An absolute number from this instrument is NEVER
+   citable as a quality verdict (only deltas and flaw lists are).
+3. Keep the blind mapping OUTSIDE the panel image directory (scorers Read adjacent files); ≥5 scorers per
+   candidate; report median with mean; within-panel comparisons only (cross-panel drift is real, ±1.2).
+4. The panel's real value is RELATIVE ranking + concrete flaw diagnosis (both repeatedly proven excellent).
+   Treat its flaw lists as the work queue; treat its absolute numbers as instrument-relative only.
+5. Complement with the FELT/product track: score the COMPOSED game frame (plate + actors + rings at viewport
+   scale) with a "would a player screenshot and share this?" lens — the story-side felt-vs-scores lesson applies
+   to graphics identically.
+
 The lenses (one subagent each):
 1. **L1 registration / cohesion** — does the painted floor register with the gameplay grid under
    the locked camera? Does the whole frame read as ONE coherent space (no double-perspective, no
