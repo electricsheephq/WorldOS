@@ -107,6 +107,53 @@ def in_melee_reach_sized(
     return footprint_distance_cells(a_anchor, a_size, b_anchor, b_size) <= reach_cells
 
 
+def _footprint_center2(anchor: Cell, size: str) -> tuple[int, int]:
+    """The token's footprint CENTRE, expressed in HALF-cell units (doubled) so it stays an
+    integer for odd- and even-sized footprints alike. A 1-cell token at (x, y) centres on
+    (2x+1, 2y+1); a 2×2 Large token at anchor (x, y) spans [x, x+2)×[y, y+2) and centres on
+    (2x+2, 2y+2). Doubling keeps the flanking geometry exact (a Large token's centre falls on
+    a cell corner, not a cell centre) without floats."""
+    n = footprint_cells(size)
+    ax, ay = anchor
+    return (2 * ax + n, 2 * ay + n)
+
+
+def flanking(
+    a_anchor: Cell, a_size: str,
+    ally_anchor: Cell, ally_size: str,
+    t_anchor: Cell, t_size: str,
+) -> bool:
+    """True if an attacker (at `a_anchor`) and an ALLY (at `ally_anchor`) FLANK the target
+    (at `t_anchor`) per the common DMG-style optional rule — they are on OPPOSITE SIDES of
+    the target's space.
+
+    CONVENTION (line-through-centres, footprint-aware): draw the vector from the target's
+    footprint centre to the attacker's centre and the vector to the ally's centre; the two
+    creatures flank when those vectors point in SUBSTANTIALLY OPPOSING directions — i.e. the
+    ally is across the target from the attacker. Formally: on each axis where the attacker is
+    off-centre from the target, the ally must be on the OPPOSITE side (or centred), and the
+    ally must be off-centre from the target on at least one such axis (otherwise it is beside,
+    not across). This admits the two standard flanking geometries — DIRECTLY opposite (same
+    row/column, target between) and DIAGONALLY opposite (opposite corners) — and rejects
+    same-side / adjacent-but-not-across allies. Reach is NOT checked here (the caller confirms
+    both threateners are within melee reach of the target); this is the pure OPPOSITE-SIDES
+    geometry. ADDITIVE / pure: all-Medium tokens reduce to opposite-cell adjacency about the
+    target cell."""
+    tcx, tcy = _footprint_center2(t_anchor, t_size)
+    acx, acy = _footprint_center2(a_anchor, a_size)
+    ecx, ecy = _footprint_center2(ally_anchor, ally_size)
+    dax, day = acx - tcx, acy - tcy        # attacker offset from target centre
+    dex, dey = ecx - tcx, ecy - tcy        # ally offset from target centre
+    # On every axis the attacker leans off-centre, the ally must not lean the SAME way
+    # (product > 0 == same side => not across). Centred (0) on an axis is neutral.
+    if dax * dex > 0 or day * dey > 0:
+        return False
+    # And the ally must actually be ACROSS on some axis where the attacker is off-centre —
+    # a purely perpendicular ally (beside the target) does not flank.
+    return (dax != 0 and dex != 0 and (dax > 0) != (dex > 0)) or \
+           (day != 0 and dey != 0 and (day > 0) != (dey > 0))
+
+
 def movement_budget_cells(speed: int, cell_size: int = 5, dashed: bool = False) -> int:
     """Movement budget in CELLS for a turn: floor(speed / cell_size), doubled if the
     creature Dashed. Speed 30 / 5ft cells -> 6 cells (12 with Dash)."""

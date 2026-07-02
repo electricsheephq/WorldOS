@@ -5749,6 +5749,67 @@ def attack(
                     ranged_in_melee_grid = True
                     break
         dis = dis or ranged_in_melee_grid
+        # FLANKING (#1254 / PR-7): the common DMG-style OPTIONAL rule (SRD 5.2 core has no
+        # flanking) — a MELEE attacker gains ADVANTAGE when a conscious ALLY threatens the
+        # target from the OPPOSITE SIDE. OFF by default: only fires when the house rule
+        # `flanking_advantage` is enabled AND the fight is on a grid; otherwise this whole
+        # block is skipped and behaviour is byte-identical. Engine sole-writer: computed
+        # purely from existing Combatant positions/sizes — no new state, no new tool param.
+        flanking_grid = False
+        if (
+            not is_ranged
+            and c.house_rules.flanking_advantage
+            and c.combat.grid_enabled
+        ):
+            f_acb = next(
+                (cb for cb in c.combat.order if cb.character_id == attacker_id), None
+            )
+            f_tcb = next(
+                (cb for cb in c.combat.order if cb.character_id == target_id), None
+            )
+            atk_cell = _cell(f_acb) if f_acb is not None else None
+            tgt_cell = _cell(f_tcb) if f_tcb is not None else None
+            if atk_cell is not None and tgt_cell is not None:
+                atk_size = _size(f_acb)
+                tgt_size = _size(f_tcb)
+                ally_kinds = {"player", "companion"}
+                attacker_ally = attacker.kind in ally_kinds
+                # The attacker must itself be in melee reach of the target (a flanker has to
+                # be threatening it). An out-of-reach attacker can't flank even with an ally
+                # across — mirrors the ranged-in-melee reach check above.
+                if combat_grid.in_melee_reach_sized(
+                    atk_cell, atk_size, tgt_cell, tgt_size
+                ):
+                    for mate_cb in c.combat.order:
+                        mate_id = mate_cb.character_id
+                        if mate_id in (attacker_id, target_id):
+                            continue
+                        mate = c.characters.get(mate_id)
+                        if mate is None or mate.dead or mate.current_hp <= 0:
+                            continue
+                        # Only a same-side ally flanks WITH the attacker.
+                        if (mate.kind in ally_kinds) != attacker_ally:
+                            continue
+                        # SRD-consistent: an Incapacitated ally isn't a threatening flanker
+                        # (the optional rule requires a conscious, threatening ally).
+                        if combat.is_incapacitated(mate):
+                            continue
+                        mate_cell = _cell(mate_cb)
+                        if mate_cell is None:
+                            continue  # an unplaced ally can't flank
+                        mate_size = _size(mate_cb)
+                        # The ally must also be in melee reach of the target...
+                        if not combat_grid.in_melee_reach_sized(
+                            mate_cell, mate_size, tgt_cell, tgt_size
+                        ):
+                            continue
+                        # ...and on the OPPOSITE side (footprint-aware geometry).
+                        if combat_grid.flanking(
+                            atk_cell, atk_size, mate_cell, mate_size, tgt_cell, tgt_size
+                        ):
+                            flanking_grid = True
+                            break
+        adv = adv or flanking_grid
         # COVER (#1252 / PR-3): when on the grid AND both combatants are placed, derive the
         # SRD 5.2 cover the target has from the attacker's line — half (+2 AC), three-quarters
         # (+5 AC), or total (untargetable). Cover comes from intervening BLOCKING cells (the
@@ -5862,6 +5923,13 @@ def attack(
             # disadvantage (folded into `dis` above), so the DM narrates it and the behavioral
             # gate / scorer see the rule actually fired on-grid (not announced-then-dropped).
             result["attack_roll"]["ranged_in_melee_disadvantage"] = True
+        if flanking_grid:
+            # #1254 grid (PR-7): surface that the engine AUTO-APPLIED the optional flanking
+            # ADVANTAGE (folded into `adv` above), so the DM narrates "you and your ally have
+            # the ogre pinned between you" and the behavioral gate / scorer see the rule
+            # actually fired on-grid. Free payload (no tool-schema param — derived from
+            # existing positions + the house-rule flag). Absent when flanking didn't apply.
+            result["attack_roll"]["flanking_advantage"] = True
         if cover_ac > 0:
             # #1252 grid (PR-3): surface the SRD cover the target enjoyed and the AC it added,
             # so the DM narrates "the goblin ducks behind the pillar (+2 AC)" and the scorer /
