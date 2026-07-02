@@ -66,17 +66,52 @@ def _load_recipe() -> dict:
         return json.load(f)
 
 
-def _run_gemini_pass(headers: dict, pass_spec: dict, image_ref: str, out_dir: str, stem: str, timeout: int) -> tuple:
+def _render_pass_prompt(recipe: dict, room: str, pass_spec: dict, slot_key: str) -> str:
+    """Fill a layered-pipeline pass2/pass3 prompt TEMPLATE with the active room's slot values.
+
+    Fixes the tavern-turned-crypt defect: pass2_detail_populate.prompt_template and
+    pass3_staging_last.prompt_template (room_recipes.json:layered_pipeline_2026_07_02) carry
+    {room_*} placeholders instead of hardcoded crypt nouns. Each room supplies its own values
+    under rooms.<room>.layered.<slot_key> (pass2_slots|pass3_slots). Falls back to the legacy
+    unrendered "prompt" key (pre-templatization schema) if present, for forward compatibility.
+    """
+    template = pass_spec.get("prompt_template")
+    if template is None:
+        # legacy fallback: an un-templatized recipe (shouldn't happen post-fix, but fail soft)
+        return pass_spec["prompt"]
+    rooms = recipe.get("rooms", {})
+    rc = rooms.get(room, {})
+    layered_rc = rc.get("layered", {})
+    slots = layered_rc.get(slot_key)
+    if not slots:
+        sys.exit(
+            "[generate_room] ERROR: --layered requested for room '%s' but room_recipes.json has "
+            "no rooms.%s.layered.%s slot values (needed to fill the %s prompt template). "
+            "Add a `layered` block for this room (see rooms.crypt.layered for the pattern)."
+            % (room, room, slot_key, slot_key)
+        )
+    try:
+        return template.format(**slots)
+    except KeyError as e:
+        sys.exit(
+            "[generate_room] ERROR: rooms.%s.layered.%s is missing slot %s required by the "
+            "%s prompt template." % (room, slot_key, e, slot_key)
+        )
+
+
+def _run_gemini_pass(headers: dict, pass_spec: dict, image_ref: str, out_dir: str, stem: str,
+                      timeout: int, prompt: str) -> tuple:
     """Run one Gemini instruction-edit pass (detail/populate or staging) on `image_ref`.
 
     Reuses the same proven Scenario helpers as the img2img pass (_post_json/_poll_job/
     _download_job_assets) — the Gemini endpoint takes prompt+image+numSamples+resolution
-    (no strength knob; preservation is prompt-driven, see room_recipes.json).
+    (no strength knob; preservation is prompt-driven, see room_recipes.json). `prompt` is the
+    already-rendered (slot-filled) prompt string for the active room — see _render_pass_prompt.
     Returns (job_id, [asset metadata dicts: {asset_id, path, bytes}]).
     """
     model = pass_spec["model"]
     endpoint = API_BASE + CONTROLNET_PATH.format(model_id=model)
-    body = {"prompt": pass_spec["prompt"], "image": image_ref, "numSamples": 1, "resolution": "2K"}
+    body = {"prompt": prompt, "image": image_ref, "numSamples": 1, "resolution": "2K"}
     res = _post_json(endpoint, headers, body)
     job_id = _job_id_from_create(res, "%s create" % stem)
     print("[generate_room] --layered %s job submitted: %s (model=%s)" % (stem, job_id, model))
@@ -250,10 +285,12 @@ def main(argv=None) -> None:
             layered = recipe.get("layered_pipeline_2026_07_02", {})
             print("[generate_room] DRY-RUN --layered: would additionally chain pass2 (detail/populate) "
                   "then pass3 (staging-last) via %s" % layered.get("pass2_detail_populate", {}).get("model", "?"))
-            print("  pass2 prompt (verbatim, room_recipes.json:layered_pipeline_2026_07_02.pass2_detail_populate.prompt):")
-            print("    %s" % layered.get("pass2_detail_populate", {}).get("prompt", "<missing>")[:120] + " ...")
-            print("  pass3 prompt (template, room_recipes.json:layered_pipeline_2026_07_02.pass3_staging_last.prompt):")
-            print("    %s" % layered.get("pass3_staging_last", {}).get("prompt", "<missing>")[:120] + " ...")
+            pass2_prompt = _render_pass_prompt(recipe, args.room, layered.get("pass2_detail_populate", {}), "pass2_slots")
+            pass3_prompt = _render_pass_prompt(recipe, args.room, layered.get("pass3_staging_last", {}), "pass3_slots")
+            print("  pass2 prompt (rendered for room=%s, room_recipes.json:layered_pipeline_2026_07_02.pass2_detail_populate):" % args.room)
+            print("    %s" % pass2_prompt[:160] + " ...")
+            print("  pass3 prompt (rendered for room=%s, room_recipes.json:layered_pipeline_2026_07_02.pass3_staging_last):" % args.room)
+            print("    %s" % pass3_prompt[:160] + " ...")
         return
 
     out_dir = args.out or os.path.join(os.getcwd(), "room_gen_%s" % args.room)
@@ -298,9 +335,15 @@ def main(argv=None) -> None:
         pass1_best = _pick_best_pass1_sample(saved)
         pass1_ref = pass1_best["asset_id"]
 
+        # Render each pass's prompt TEMPLATE with the active room's slot values (fixes the
+        # tavern-turned-crypt defect — pass2/pass3 previously ran the crypt-hardcoded prompt
+        # unconditionally regardless of --room). See _render_pass_prompt + rooms.<room>.layered.
+        pass2_prompt = _render_pass_prompt(recipe, args.room, layered["pass2_detail_populate"], "pass2_slots")
+        pass3_prompt = _render_pass_prompt(recipe, args.room, layered["pass3_staging_last"], "pass3_slots")
+
         pass2_job, pass2_saved = _run_gemini_pass(
             headers, layered["pass2_detail_populate"], pass1_ref, out_dir,
-            "room_%s_pass2_detail" % args.room, args.timeout)
+            "room_%s_pass2_detail" % args.room, args.timeout, pass2_prompt)
         if not pass2_saved:
             sys.exit("[generate_room] ERROR: --layered pass2 (detail/populate) produced no assets")
         # Feed pass3 the REMOTE 2K asset (full resolution, no re-upload, no lossy round-trip);
@@ -309,15 +352,15 @@ def main(argv=None) -> None:
 
         pass3_job, pass3_saved = _run_gemini_pass(
             headers, layered["pass3_staging_last"], pass2_ref, out_dir,
-            "room_%s_pass3_staging" % args.room, args.timeout)
+            "room_%s_pass3_staging" % args.room, args.timeout, pass3_prompt)
         if not pass3_saved:
             sys.exit("[generate_room] ERROR: --layered pass3 (staging-last) produced no assets")
         _downscale_to_plate(pass3_saved[0]["path"], args.width, args.height)
 
         meta["layered"] = {
             "pass1_selected": pass1_best,
-            "pass2_job_id": pass2_job, "pass2_assets": pass2_saved,
-            "pass3_job_id": pass3_job, "pass3_assets": pass3_saved,
+            "pass2_job_id": pass2_job, "pass2_assets": pass2_saved, "pass2_prompt": pass2_prompt,
+            "pass3_job_id": pass3_job, "pass3_assets": pass3_saved, "pass3_prompt": pass3_prompt,
             "final_plate": pass3_saved[0],
             "recipe_entry": "layered_pipeline_2026_07_02",
         }
