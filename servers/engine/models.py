@@ -1410,6 +1410,18 @@ class Combat(_StrictModel):
     order: list[Combatant] = Field(default_factory=list)  # sorted desc by initiative
     action_used: bool = False  # current turn's action economy
     bonus_action_used: bool = False
+    # #778: WHAT consumed the current turn's action (not just THAT one was consumed), so a
+    # cross-tool second act (cast→attack, attack→cast, cast→cast) is correctly rejected and a
+    # bonus-action spell (Healing Word) doesn't burn the action. "" == today's behaviour: no
+    # action taken, or an action taken by a pre-#778 path that didn't stamp a purpose. Old
+    # snapshots deserialize to "" and round-trip byte-for-byte. Resets every next_turn.
+    #  * ""     — action still available (or a legacy/unstamped action write)
+    #  * "cast" — the action was spent casting an action-cost spell
+    #  * "skip" — the turn was intentionally passed (use_action('skip'))
+    # The Attack action stamps action_used + action_attacks_made (its own budget) and leaves
+    # this "" so Extra-Attack multi-strikes stay unaffected; attack() reads this only to reject
+    # a strike AFTER a cast/skip already spent the action.
+    action_purpose: Literal["", "cast", "skip"] = ""
     # Attack-action economy for the CURRENT turn (additive; resets every next_turn):
     #  * action_attacks_made — how many attack() calls have resolved under the
     #    current combatant's Attack action(s) this turn. One Attack action grants

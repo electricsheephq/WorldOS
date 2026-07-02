@@ -4880,6 +4880,9 @@ def next_turn(campaign_id: str) -> dict:
         # recharges at the start of their turn.
         c.combat.action_used = False
         c.combat.bonus_action_used = False
+        # #778: clear WHAT spent the action so the new turn starts with a free action of any
+        # purpose (a cast/skip stamp from last turn must not block this turn's attack/cast).
+        c.combat.action_purpose = ""
         # Reset the per-turn attack-action economy too: a new turn starts with one
         # Attack action's worth of strikes and no Action Surge spent yet.
         c.combat.action_attacks_made = 0
@@ -5145,6 +5148,7 @@ def use_action(campaign_id: str, character_id: str, kind: str = "action") -> dic
                 ok, reason = False, "action already used this turn (already acted or skipped)"
             else:
                 c.combat.action_used = True
+                c.combat.action_purpose = "skip"  # #778: a strike/cast after a skip is rejected
         elif kind in ("action", "bonus"):
             if not is_current:
                 ok, reason = False, f"it is not {ch.name}'s turn (only a reaction acts off-turn)"
@@ -5537,6 +5541,24 @@ def attack(
                 # and Multiattack-aware for monsters with a stat-block entry). The
                 # named attack scopes the Multiattack budget to its composition
                 # (a Ghoul Claw is NOT part of its 'two Bite' Multiattack — cs F-3).
+                # #778: a strike after the action was already spent on a NON-attack purpose
+                # (a cast, or an intentional skip) is illegal — you get one action per turn,
+                # and check_action_attack only counts attacks (action_attacks_made==0 here, so
+                # it would wrongly permit this). Reject unless an Action Surge action remains
+                # (surge_actions>0), the escape hatch. action_purpose=="" (the Attack-action /
+                # legacy path) is unaffected — this only fires on cast/skip.
+                if (
+                    c.combat.action_purpose in ("cast", "skip")
+                    and c.combat.action_attacks_made == 0
+                    and c.combat.surge_actions <= 0
+                ):
+                    spent = "cast a spell" if c.combat.action_purpose == "cast" else "skipped"
+                    raise ValueError(
+                        f"{attacker.name} already {spent} this turn and cannot also attack — "
+                        f"one action per turn. Spend an Action Surge "
+                        f"(use_resource(resource='action_surge')) for a second action, or "
+                        f"advance with next_turn."
+                    )
                 ma = _attacker_multiattack_count(attacker, c, attack_name)
                 ok, reason = combat.check_action_attack(
                     is_current=True,
@@ -5736,6 +5758,18 @@ def attack(
                 attacker_cb.reaction_used = True
                 result["reaction_used"] = True
             else:
+                # #778: if this is the FIRST strike of an Attack action that FOLLOWS a prior
+                # cast/skip (the action was already spent, so this can only be legal via an
+                # Action Surge), consume that surge now — symmetrical with the cast path — so a
+                # later attack/cast can't reuse it. The purpose-guard above proved a surge was
+                # available. action_purpose=="" (a plain Attack action / legacy) never triggers
+                # this, leaving Extra-Attack multi-strike + Action-Surge behaviour byte-identical.
+                if (
+                    c.combat.action_purpose in ("cast", "skip")
+                    and c.combat.action_attacks_made == 0
+                    and c.combat.surge_actions > 0
+                ):
+                    c.combat.surge_actions -= 1
                 c.combat.action_used = True  # an Attack action consumes the turn's action
                 c.combat.action_attacks_made += 1
                 result["attacks_made_this_turn"] = c.combat.action_attacks_made
@@ -7494,6 +7528,47 @@ def cast_spell(
                         f"advance with next_turn so the order stays in sync."
                     )
                 cast_consumes_reaction = True
+        # ACTION ECONOMY BY CASTING TIME (#778). Resolve the spell's casting time into its
+        # action-economy bucket and gate the ON-TURN cast BEFORE any slot spend (a rejected
+        # cast changes nothing). Off-turn / reaction casts are governed by the reaction gate
+        # above and skip this (a reaction spell is not an action). Out of combat this is inert
+        # (caster_cb is None). Old snapshots: action_purpose defaults "" == today's behaviour.
+        #   * bonus    -> consumes bonus_action_used (NOT the action) — Healing Word then still
+        #                 leaves the action free (bonus-heal + action is a legal 5e turn);
+        #   * action   -> rejected if the action is already spent (cast/skip already stamped, an
+        #                 Attack action already begun, or action_used set) — UNLESS an Action
+        #                 Surge action is still available (surge_actions>0), the escape hatch;
+        #   * minute/hour -> refused in active combat (a 1-round is 6 seconds, not minutes).
+        # The reaction bucket needs no economy write here (handled by the reaction path).
+        cast_time_class = spells.casting_time_class(curated, srd)
+        if caster_cb is not None and not cast_consumes_reaction:
+            # is_current is True here (an off-turn cast set cast_consumes_reaction above).
+            if cast_time_class in ("minute", "hour"):
+                unit = "minutes" if cast_time_class == "minute" else "hours"
+                raise ValueError(
+                    f"cannot cast {canonical} during active combat — its casting time is "
+                    f"measured in {unit}, far longer than a 6-second combat round. Cast it "
+                    f"once combat ends."
+                )
+            if cast_time_class == "bonus":
+                if c.combat.bonus_action_used:
+                    raise ValueError(
+                        f"{ch.name} has already used its bonus action this turn and cannot "
+                        f"cast {canonical} (a bonus-action spell). Advance with next_turn."
+                    )
+            else:  # "action" (or an unrecognized string, defaulted strict)
+                action_spent = (
+                    c.combat.action_used
+                    or c.combat.action_purpose in ("cast", "skip")
+                    or c.combat.action_attacks_made > 0
+                )
+                if action_spent and c.combat.surge_actions <= 0:
+                    raise ValueError(
+                        f"{ch.name} has already used its action this turn and cannot cast "
+                        f"{canonical} (an action-cost spell). Only one action per turn — spend "
+                        f"an Action Surge (use_resource(resource='action_surge')) for a second, "
+                        f"or advance with next_turn."
+                    )
         # KNOWN / PREPARED GATE (F03-7 + F03-8). Compare CASE-INSENSITIVELY (F03-7): the
         # cast-side `canonical` is the proper-cased SRD name, but legacy snapshots may carry
         # raw-cased strings (learn_spells/prepare_spells now canonicalize on write, but old
@@ -7829,10 +7904,22 @@ def cast_spell(
         # is separate from the character, so the re-validation above didn't touch it).
         if cast_consumes_reaction and caster_cb is not None:
             caster_cb.reaction_used = True
-        # An on-turn cast consumes the combatant's action (mirrors attack()'s action_used
-        # bookkeeping). Required so next_turn's PC-skip guard recognises a spell as "acted".
+        # An on-turn cast spends the appropriate economy slot by casting time (#778). The
+        # gate above already proved it legal; record WHAT was spent so a cross-tool second act
+        # (cast→cast, cast→attack) is rejected and a bonus-action cast leaves the action free.
         elif caster_cb is not None and not cast_consumes_reaction:
-            c.combat.action_used = True
+            if cast_time_class == "bonus":
+                # A bonus-action spell consumes the bonus action ONLY — the action stays free
+                # (Healing Word then still allows use_action('action') / an action-cost cast).
+                c.combat.bonus_action_used = True
+            else:  # "action" (minute/hour were refused above)
+                # An action-cost cast spends the turn's action. If it used an Action Surge
+                # action (the action was already spent but a surge was available), consume that
+                # surge so the attack budget (attacks_allowed multiplies by 1+surge) drops back.
+                if c.combat.action_used and c.combat.surge_actions > 0:
+                    c.combat.surge_actions -= 1
+                c.combat.action_used = True
+                c.combat.action_purpose = "cast"
         save_campaign(c)
         updated = c.characters[character_id]
         result = {
