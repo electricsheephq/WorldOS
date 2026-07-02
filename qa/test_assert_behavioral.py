@@ -1709,6 +1709,24 @@ def test_detection_beat_with_reason_tagged_roll_passes(tmp_path):
     assert "[WARN] detection_beat_requires_check" not in out, out
 
 
+def test_detection_beat_multiple_text_blocks_same_turn_passes(tmp_path):
+    """A skill_check followed by TWO SEPARATE text blocks in the SAME assistant turn (a beat that
+    narrates in more than one text block) ⇒ the second block still counts as the same beat — no
+    false-split on intra-turn text boundaries."""
+    events = [{
+        "type": "assistant",
+        "message": {"content": [
+            {"type": "tool_use", "id": "p1", "name": "mcp__engine__skill_check",
+             "input": {"character_id": "npc1", "skill": "perception", "dc": 12}},
+            {"type": "text", "text": "The corridor is quiet for a long moment."},
+            {"type": "text", "text": "Then the guard's eyes snap toward you — he's noticed movement in the alley."},
+        ]},
+    }, _user_tool_result("p1", json.dumps({"total": 15, "success": True}))]
+    rc, out = _run_gate(tmp_path, events, {"leveling_mode": "milestone"})
+    assert rc == 0, out
+    assert "[WARN] detection_beat_requires_check" not in out, out
+
+
 def test_detection_beat_check_in_prior_beat_still_warns(tmp_path):
     """A skill_check in an EARLIER beat does not carry over — the gate is per-beat, not whole-run
     (the key behavioral difference from the ambush check, which #1287 explicitly promotes past)."""

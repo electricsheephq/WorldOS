@@ -209,16 +209,26 @@ def _tool_events(events: list[dict]) -> list[tuple[str, dict, object, bool, str]
 def _detection_beats_without_check(events: list[dict]) -> list[str]:
     """DM narration text blocks that read like a detection beat (#1287 — same family as the
     ambush/surprise WARN #1271) with NO qualifying Perception/Insight/Investigation tool call
-    in the SAME beat. A "beat" here is the run of events since the previous DM text block (i.e.
-    every tool_use/tool_result the DM issued while producing this reply) — a skill_check(skill=
-    perception|insight|investigation) or a bare roll(reason=~that family) ANYWHERE in that span
-    satisfies the gate; walking event order (not the whole run, unlike the ambush check) is what
-    makes this "same beat", not "anywhere in the transcript". Returns the offending text blocks."""
+    in the SAME beat. A "beat" here is ONE assistant turn (one `assistant`-type event) plus every
+    tool_use/tool_result it issued while producing its reply — a skill_check(skill=perception|
+    insight|investigation) or a bare roll(reason=~that family) ANYWHERE earlier in that turn (or
+    a preceding turn still in the same beat, before the NEXT assistant turn starts) satisfies the
+    gate. The span resets at the START of each new assistant event (not after every text block),
+    so multiple text blocks within one reply — or a tool call followed by narration later in the
+    SAME turn — never false-split a beat. Returns the offending text blocks."""
     offenders: list[str] = []
     span_has_check = False
+    prev_type = None
     for ev in events:
-        if ev.get("type") not in ("assistant", "user"):
+        ev_type = ev.get("type")
+        if ev_type not in ("assistant", "user"):
             continue
+        # A new beat starts at the first assistant event AFTER a text-terminated prior turn — i.e.
+        # the transition into a fresh assistant event resets the check-seen flag. Consecutive
+        # assistant events (a turn spanning several tool-call round-trips) and the interleaved
+        # user/tool_result events in between all stay part of the SAME beat.
+        if ev_type == "assistant" and prev_type == "assistant-with-text":
+            span_has_check = False
         for b in (ev.get("message", {}) or {}).get("content") or []:
             if not isinstance(b, dict):
                 continue
@@ -236,7 +246,12 @@ def _detection_beats_without_check(events: list[dict]) -> list[str]:
                 text = b["text"]
                 if any(rx.search(text) for rx in _DETECTION_SIGNAL_RE) and not span_has_check:
                     offenders.append(text)
-                span_has_check = False  # a new beat starts after each DM reply
+        if ev_type == "assistant":
+            has_text = any(isinstance(b, dict) and b.get("type") == "text" and (b.get("text") or "").strip()
+                            for b in (ev.get("message", {}) or {}).get("content") or [])
+            prev_type = "assistant-with-text" if has_text else "assistant"
+        else:
+            prev_type = ev_type
     return offenders
 
 
