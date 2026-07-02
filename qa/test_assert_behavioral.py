@@ -1667,3 +1667,223 @@ def test_ambush_prose_but_no_start_combat_does_not_fire(tmp_path):
     rc, out = _run_gate(tmp_path, events, {"leveling_mode": "milestone"})
     assert rc == 0, out
     assert "ambush_ran_surprise_gate" not in out, out
+
+
+# ── detection_beat_requires_check (WARN, #1287) ────────────────────────────────
+# DM narration that stages an NPC noticing/spotting/hearing the party without a preceding
+# Perception/Insight/Investigation skill_check (or reason-tagged roll) IN THE SAME BEAT is DM
+# fiat, not a gated roll. WARN, never fatal — same family as the ambush/surprise WARN above.
+
+def test_detection_beat_no_check_warns(tmp_path):
+    """Detection prose with NO skill_check anywhere in the beat ⇒ WARN."""
+    events = [_assistant_text("The guard's eyes snap toward you — he's noticed movement in the alley.")]
+    rc, out = _run_gate(tmp_path, events, {"leveling_mode": "milestone"})
+    assert rc == 0, out  # WARN, not RED
+    assert "[WARN] detection_beat_requires_check" in out, out
+
+
+def test_detection_beat_with_preceding_skill_check_passes(tmp_path):
+    """A skill_check(skill='perception') earlier in the SAME beat, then detection prose ⇒ PASS."""
+    events = [
+        _assistant_tool_use("p1", "mcp__engine__skill_check",
+                             {"character_id": "npc1", "skill": "perception", "dc": 12}),
+        _user_tool_result("p1", json.dumps({"total": 15, "success": True})),
+        _assistant_text("The guard's eyes snap toward you — he's noticed movement in the alley."),
+    ]
+    rc, out = _run_gate(tmp_path, events, {"leveling_mode": "milestone"})
+    assert rc == 0, out
+    assert "[WARN] detection_beat_requires_check" not in out, out
+    assert "[PASS] detection_beat_requires_check" in out, out
+
+
+def test_detection_beat_with_reason_tagged_roll_passes(tmp_path):
+    """A bare roll() with a perception-tagged reason also satisfies the gate (belt-and-suspenders,
+    mirrors the ambush check's `surprise`-key fallback)."""
+    events = [
+        _assistant_tool_use("p1", "mcp__engine__roll", {"expression": "1d20+3", "reason": "guard passive Perception"}),
+        _user_tool_result("p1", json.dumps({"total": 17})),
+        _assistant_text("The guard's eyes snap toward you — he's noticed movement in the alley."),
+    ]
+    rc, out = _run_gate(tmp_path, events, {"leveling_mode": "milestone"})
+    assert rc == 0, out
+    assert "[WARN] detection_beat_requires_check" not in out, out
+
+
+def test_detection_beat_multiple_text_blocks_same_turn_passes(tmp_path):
+    """A skill_check followed by TWO SEPARATE text blocks in the SAME assistant turn (a beat that
+    narrates in more than one text block) ⇒ the second block still counts as the same beat — no
+    false-split on intra-turn text boundaries."""
+    events = [{
+        "type": "assistant",
+        "message": {"content": [
+            {"type": "tool_use", "id": "p1", "name": "mcp__engine__skill_check",
+             "input": {"character_id": "npc1", "skill": "perception", "dc": 12}},
+            {"type": "text", "text": "The corridor is quiet for a long moment."},
+            {"type": "text", "text": "Then the guard's eyes snap toward you — he's noticed movement in the alley."},
+        ]},
+    }, _user_tool_result("p1", json.dumps({"total": 15, "success": True}))]
+    rc, out = _run_gate(tmp_path, events, {"leveling_mode": "milestone"})
+    assert rc == 0, out
+    assert "[WARN] detection_beat_requires_check" not in out, out
+
+
+def test_detection_beat_check_in_prior_beat_still_warns(tmp_path):
+    """A skill_check in an EARLIER beat does not carry over — the gate is per-beat, not whole-run
+    (the key behavioral difference from the ambush check, which #1287 explicitly promotes past)."""
+    events = [
+        _assistant_tool_use("p1", "mcp__engine__skill_check",
+                             {"character_id": "npc1", "skill": "perception", "dc": 12}),
+        _user_tool_result("p1", json.dumps({"total": 15, "success": True})),
+        _assistant_text("You press on down the corridor, torches guttering."),
+        _assistant_text("The guard's eyes snap toward you — he's noticed movement in the alley."),
+    ]
+    rc, out = _run_gate(tmp_path, events, {"leveling_mode": "milestone"})
+    assert rc == 0, out
+    assert "[WARN] detection_beat_requires_check" in out, out
+
+
+def test_no_detection_prose_does_not_fire(tmp_path):
+    """A clean beat with no detection language ⇒ the gate PASSES (no false-WARN)."""
+    events = [_assistant_text("The tavern is warm and loud, mugs clattering over old songs.")]
+    rc, out = _run_gate(tmp_path, events, {"leveling_mode": "milestone"})
+    assert rc == 0, out
+    assert "[WARN] detection_beat_requires_check" not in out, out
+    assert "[PASS] detection_beat_requires_check" in out, out
+
+
+def test_detection_beat_wrong_skill_check_still_warns(tmp_path):
+    """A skill_check for an UNRELATED skill (e.g. Athletics) in the same beat does not satisfy
+    the gate — only the Perception/Insight/Investigation family counts."""
+    events = [
+        _assistant_tool_use("p1", "mcp__engine__skill_check",
+                             {"character_id": "pc1", "skill": "athletics", "dc": 10}),
+        _user_tool_result("p1", json.dumps({"total": 14, "success": True})),
+        _assistant_text("The guard's eyes snap toward you — he's noticed movement in the alley."),
+    ]
+    rc, out = _run_gate(tmp_path, events, {"leveling_mode": "milestone"})
+    assert rc == 0, out
+    assert "[WARN] detection_beat_requires_check" in out, out
+
+
+# ── run_infra_valid (FATAL, #1285) ──────────────────────────────────────────────
+# The run-invalidation guard: qa/lib_beat_driver.sh stamps a sibling <run>.infra_invalid.json
+# sentinel when N consecutive DM beats fail mid-run (a quota window / host-session death —
+# rri-a1-duo/duo2). The gate must read it and flip FATAL so the run can never be scored clean.
+
+def _clean_events_with_dice():
+    return [_assistant_tool_use("__dice", "mcp__engine__roll", {}),
+            _user_tool_result("__dice", json.dumps({"total": 12}))]
+
+
+def test_run_infra_invalid_sentinel_flips_red(tmp_path):
+    """A stamped .infra_invalid.json sibling of run.jsonl ⇒ RED (FATAL), never a silent no-score."""
+    run = tmp_path / "run.jsonl"
+    run.write_text("\n".join(json.dumps(e) for e in _clean_events_with_dice()), encoding="utf-8")
+    st = tmp_path / "state.json"
+    st.write_text(json.dumps(_with_party({"leveling_mode": "milestone"})), encoding="utf-8")
+    sentinel = tmp_path / "run.infra_invalid.json"
+    sentinel.write_text(json.dumps({
+        "infra_invalid": True,
+        "reason": "5 consecutive DM beat failures (is_error/dead-beat) — likely a quota window",
+        "consecutive_failed_beats": 5,
+    }), encoding="utf-8")
+    proc = subprocess.run([sys.executable, SCRIPT, str(run), str(st)], capture_output=True, text=True)
+    out = proc.stdout + proc.stderr
+    assert proc.returncode == 1, out  # RED — a FATAL gate failed
+    assert "[FAIL] run_infra_valid" in out, out
+    assert "consecutive_failed_beats=5" in out, out
+
+
+def test_no_infra_invalid_sentinel_passes(tmp_path):
+    """No sentinel file present (the normal case) ⇒ the gate PASSES; never a false-RED."""
+    run = tmp_path / "run.jsonl"
+    run.write_text("\n".join(json.dumps(e) for e in _clean_events_with_dice()), encoding="utf-8")
+    st = tmp_path / "state.json"
+    st.write_text(json.dumps(_with_party({"leveling_mode": "milestone"})), encoding="utf-8")
+    proc = subprocess.run([sys.executable, SCRIPT, str(run), str(st)], capture_output=True, text=True)
+    out = proc.stdout + proc.stderr
+    assert proc.returncode == 0, out
+    assert "[PASS] run_infra_valid" in out, out
+
+
+def test_infra_invalid_sentinel_caps_no_other_gate_weakened(tmp_path):
+    """The sentinel gate is ADDITIVE: an otherwise-clean run with no sentinel still passes every
+    other check unaffected (regression guard — this new gate must never mask/replace existing
+    ones)."""
+    run = tmp_path / "run.jsonl"
+    run.write_text("\n".join(json.dumps(e) for e in _clean_events_with_dice()), encoding="utf-8")
+    st = tmp_path / "state.json"
+    st.write_text(json.dumps(_with_party({"leveling_mode": "milestone"})), encoding="utf-8")
+    proc = subprocess.run([sys.executable, SCRIPT, str(run), str(st)], capture_output=True, text=True)
+    out = proc.stdout + proc.stderr
+    assert proc.returncode == 0, out
+    assert "GREEN" in out, out
+
+
+# ── dm_beat_honesty_no_consecutive_collapse (FATAL, #1285) ─────────────────────
+# The chat-log-derived twin: N consecutive {"beat_failed":true} dm rows in $CHAT (in order) is
+# an infra collapse, not scattered product defects — catches runners that share
+# worldos_chatlog_dm_failed but predate/skip the sentinel-file wiring (e.g. run_party.sh).
+
+def _chat_rows(tmp_path, rows: list[dict]) -> str:
+    chat = tmp_path / "chat.jsonl"
+    chat.write_text("\n".join(json.dumps(r) for r in rows), encoding="utf-8")
+    return str(chat)
+
+
+def test_three_consecutive_failed_beats_flips_red(tmp_path):
+    run = tmp_path / "run.jsonl"
+    run.write_text("\n".join(json.dumps(e) for e in _clean_events_with_dice()), encoding="utf-8")
+    st = tmp_path / "state.json"
+    st.write_text(json.dumps(_with_party({"leveling_mode": "milestone"})), encoding="utf-8")
+    rows = [{"role": "player", "text": "[do] I press on."}]
+    for _ in range(3):
+        rows.append({
+            "role": "dm",
+            "text": "(The tale falters — the Dungeon Master could not resolve this beat. "
+                    "Your last action still stands; give it a moment and try again.)",
+            "beat_failed": True,
+        })
+    chat = _chat_rows(tmp_path, rows)
+    proc = subprocess.run([sys.executable, SCRIPT, str(run), str(st), chat], capture_output=True, text=True)
+    out = proc.stdout + proc.stderr
+    assert proc.returncode == 1, out
+    assert "[FAIL] dm_beat_honesty_no_consecutive_collapse" in out, out
+    assert "3 consecutive" in out, out
+
+
+def test_two_consecutive_failed_beats_stays_warn(tmp_path):
+    """Below the threshold (2 < 3) ⇒ the existing dm_beat_honesty WARN still fires, but the new
+    consecutive-collapse gate PASSES — an occasional failed beat is not an infra collapse."""
+    run = tmp_path / "run.jsonl"
+    run.write_text("\n".join(json.dumps(e) for e in _clean_events_with_dice()), encoding="utf-8")
+    st = tmp_path / "state.json"
+    st.write_text(json.dumps(_with_party({"leveling_mode": "milestone"})), encoding="utf-8")
+    rows = [{"role": "player", "text": "[do] I press on."}]
+    for _ in range(2):
+        rows.append({"role": "dm", "text": "(could not resolve this beat)", "beat_failed": True})
+    rows.append({"role": "dm", "text": 'The road bends. "Keep close," she says.'})
+    chat = _chat_rows(tmp_path, rows)
+    proc = subprocess.run([sys.executable, SCRIPT, str(run), str(st), chat], capture_output=True, text=True)
+    out = proc.stdout + proc.stderr
+    assert proc.returncode == 0, out
+    assert "[WARN] dm_beat_honesty" in out, out
+    assert "[PASS] dm_beat_honesty_no_consecutive_collapse" in out, out
+
+
+def test_non_consecutive_failed_beats_do_not_flip_red(tmp_path):
+    """3 TOTAL failed beats scattered across the run (with a genuine beat between each) ⇒ never
+    hits a consecutive run of 3 ⇒ the new gate PASSES (only a CONSECUTIVE run invalidates)."""
+    run = tmp_path / "run.jsonl"
+    run.write_text("\n".join(json.dumps(e) for e in _clean_events_with_dice()), encoding="utf-8")
+    st = tmp_path / "state.json"
+    st.write_text(json.dumps(_with_party({"leveling_mode": "milestone"})), encoding="utf-8")
+    rows = [{"role": "player", "text": "[do] I press on."}]
+    for _ in range(3):
+        rows.append({"role": "dm", "text": "(could not resolve this beat)", "beat_failed": True})
+        rows.append({"role": "dm", "text": 'The road bends. "Keep close," she says.'})
+    chat = _chat_rows(tmp_path, rows)
+    proc = subprocess.run([sys.executable, SCRIPT, str(run), str(st), chat], capture_output=True, text=True)
+    out = proc.stdout + proc.stderr
+    assert proc.returncode == 0, out
+    assert "[PASS] dm_beat_honesty_no_consecutive_collapse" in out, out
