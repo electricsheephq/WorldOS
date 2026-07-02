@@ -5670,6 +5670,32 @@ def attack(
                     ranged_in_melee_grid = True
                     break
         dis = dis or ranged_in_melee_grid
+        # COVER (#1252 / PR-3): when on the grid AND both combatants are placed, derive the
+        # SRD 5.2 cover the target has from the attacker's line — half (+2 AC), three-quarters
+        # (+5 AC), or total (untargetable). Cover comes from intervening BLOCKING cells (the
+        # fight's grid_impassable walls/props) on the attacker->target ray; the tier is the
+        # count of blockers crossed (0=none, 1=half, 2+=three-quarters, a fully-walled ray =
+        # total). Total cover REFUSES the shot up front (before the roll) — SRD: a creature
+        # with total cover can't be targeted directly. ADDITIVE: off-grid or an unplaced end
+        # yields no cover (cover_ac_bonus 0, no key) == today's behaviour byte-for-byte.
+        cover_tier = "none"
+        cover_ac = 0
+        if c.combat.grid_enabled:
+            _acb = next((cb for cb in c.combat.order if cb.character_id == attacker_id), None)
+            _tcb = next((cb for cb in c.combat.order if cb.character_id == target_id), None)
+            _ac = _cell(_acb) if _acb is not None else None
+            _tc = _cell(_tcb) if _tcb is not None else None
+            if _ac is not None and _tc is not None:
+                blocking = {(int(bx), int(by)) for bx, by in (c.combat.grid_impassable or [])}
+                if blocking:
+                    cover_tier = combat_grid.cover_between(_ac, _tc, blocking)
+                    if cover_tier == "total":
+                        raise ValueError(
+                            f"{target.name} at {_tc} has TOTAL cover from {attacker.name} at "
+                            f"{_ac} (a wall fully blocks the line) and can't be targeted "
+                            f"directly — reposition for a clear shot. No attack was resolved."
+                        )
+                    cover_ac = combat_grid.cover_ac_bonus(cover_tier)
         # crit_min threads the attacker's expanded crit range (Champion Improved/Superior
         # Critical → 19/18; everyone else 20 = today's behavior) so a Champion's nat-19
         # actually flags atk.crit and crit_source() resolves "expanded_crit_range".
@@ -5688,6 +5714,9 @@ def attack(
         guided_bonus = atk_bonus_rider.amount if atk_bonus_rider is not None else 0
         atk_total = atk.total + rider_bonus + guided_bonus
         target_ac, target_ac_detail = _effective_armor_class(target)
+        # Fold grid cover (#1252) into the AC the attacker must beat — half=+2, three-quarters=+5
+        # (SRD 5.2). cover_ac is 0 off-grid / with no blocker between (additive: unchanged).
+        target_ac += cover_ac
         hit = atk.crit or (not atk.fumble and atk_total >= target_ac)
         # TEST-ONLY force_hit (Track 2b — DOUBLE-GUARDED): force the HIT BOOLEAN only so a
         # sandbox fight resolves to a terminal state without depending on the dice landing hits.
@@ -5754,6 +5783,17 @@ def attack(
             # disadvantage (folded into `dis` above), so the DM narrates it and the behavioral
             # gate / scorer see the rule actually fired on-grid (not announced-then-dropped).
             result["attack_roll"]["ranged_in_melee_disadvantage"] = True
+        if cover_ac > 0:
+            # #1252 grid (PR-3): surface the SRD cover the target enjoyed and the AC it added,
+            # so the DM narrates "the goblin ducks behind the pillar (+2 AC)" and the scorer /
+            # renderer see cover ACTUALLY applied to the hit math (not announced-then-dropped).
+            # `effective_ac` is the base AC the target beat WITH cover folded in. Free payload
+            # (no tool-schema param — derived from existing state). Absent when no cover (none).
+            result["cover"] = {
+                "tier": cover_tier,
+                "ac_bonus": cover_ac,
+                "effective_ac": target_ac,
+            }
         if rider_rolls:
             # The engine-rolled rider components (SYN-06), itemized so the DM narrates
             # "the blessing guides the blade (+3)" — and sees the buff actually counted.
@@ -7559,6 +7599,20 @@ def cast_spell(
             aim = (int(oc[0]), int(oc[1]))
             cells = _aoe_template_cells(c, ch, srd, aim)
             if cells is not None:
+                # LINE-OF-EFFECT cull (#1252 / PR-3): the template origin `aim` is the burst
+                # point (sphere) or the emitter's aim (cone/line). A cell with NO line of
+                # effect from that origin — a wall/prop between them severs the ray — is
+                # SHIELDED and drops out of the area (SRD 5.2: "a target has total cover ...
+                # can't be targeted; likewise a point of origin can't extend around corners").
+                # ADDITIVE: with no impassable cells the ray is never severed, so `cells` is
+                # unchanged byte-for-byte (open-floor AoE == PR-2 behaviour). The origin cell
+                # always has line of effect to itself and is retained.
+                blocking = {(int(bx), int(by)) for bx, by in (c.combat.grid_impassable or [])}
+                if blocking:
+                    cells = {
+                        cell for cell in cells
+                        if cell == aim or combat_grid.has_line_of_effect(aim, cell, blocking)
+                    }
                 affected_tile_coords = sorted([cx, cy] for (cx, cy) in cells)
                 # Every combatant standing in the template is caught — SRD 5.2: a creature in
                 # the area is affected, and the CASTER is not exempt (a Fireball centred on
