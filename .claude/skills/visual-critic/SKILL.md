@@ -101,10 +101,12 @@ RENDER  (Unity CL pipeline: Tools/WorldOS/CL/0 → step-4 Scenario → step-5 as
          N frames (idle / locomotion / attack / hit-react / death) via qa/motion_reel.py.
   │
   ├─① PRE-GATES  qa/visual_pregate.py  (deterministic, <1s, no LLM)
-  │     frame-lit · floor-contact-Y · screen-scale · occupancy-mask · motion-liveness (G5, reel only)
-  │     → if verdict==FLAG (any CRITICAL/HIGH): DO NOT call the panel. Apply the named
-  │       deterministic fix (re-ground the actor / rescale / re-light / un-freeze the idle), RE-RENDER,
-  │       restart ①.
+  │     frame-lit · luma-staging-law (G6) · floor-contact-Y · screen-scale · occupancy-mask ·
+  │     motion-liveness (G5, reel only)
+  │     → if verdict==FLAG (any CRITICAL/HIGH, incl. a G6 FAIL): DO NOT call the panel. Apply the
+  │       named deterministic fix (re-ground the actor / rescale / re-light / re-stage for the
+  │       dark-pool law / un-freeze the idle), RE-RENDER, restart ①. A G6 WARN does not block —
+  │       carry its stats into ④ synthesis alongside the verdict.
   │
   ├─② REFERENCE PICK  choose 2-3 refs/ frames matching scene.kind, **PoE2-first** (PoE2 is the bar;
   │     a BG2 ref is added ONLY for the tactical-readability cross-check, a Disco ref ONLY for the
@@ -139,6 +141,17 @@ float 0.4 cells above the stone. The exact checks (thresholds are the module's t
   `mean < 0.06` → CRITICAL "effectively black" (guards the URP-decal / `-batchmode -nographics` /
   missing-plate black-render bug); `mean > 0.97` → CRITICAL "blown out"; `variance < 0.0015` →
   HIGH "flat / no content." Pillow if present, else a stdlib PNG decode. **Always runs.**
+- **G6 LUMA-STAGING-LAW** — greyscale histogram stats (Rec.709 luma) vs the measured real-PoE
+  staging-law bands (2026-07-01 campaign; same bands as `atelier_luma_gate.py` and
+  `generate_room.py`'s `_staging_law_distance` — the source of truth, not re-derived here):
+  `near_black` (frac of pixels `L<26`) PASS **0.66-0.85**, WARN 0.50-0.66; `lit` (frac `L>60`) PASS
+  **0.02-0.05**, WARN 0.05-0.20; `median_L` PASS **0-15**, WARN 15-40. Outside the WARN band on any
+  stat → **FAIL** (mapped to HIGH, short-circuits the panel like the other hard gates); inside WARN
+  but outside PASS → **WARN** (mapped to MED — the panel is allowed to run, but **quote the stats
+  alongside the verdict**, not just "staging looks off"). Run this on **every candidate BEFORE
+  staging a panel** — a FAIL means fix the staging (re-light / re-prompt for the dark-pool law)
+  before spending scorer tokens on it. Pillow if present, else a stdlib PNG decode, like G1.
+  **Always runs** (needs only the PNG).
 - **G3 FLOOR-CONTACT** — per actor, project its cell's floor plane (y=0) to screen-Y under the
   *locked dimetric camera* (orthoSize 18, pitch atan(0.5)=26.565°, pos (0,40.25,-55.5), aspect
   1344/756 — the `CameraSpec.LOCKED` mirror of `ClosedLoopBuilder.LockCamera`), compare to the
@@ -171,8 +184,12 @@ python qa/visual_pregate.py --render /tmp/scene-r2.png \
   --actors @/tmp/scene-r2.actors.json --json     # exit 2 == FLAG (CRITICAL/HIGH fired)
 ```
 
-**Hard gate:** any CRITICAL or HIGH result means RE-RENDER before calling the LLM panel.
-The pre-gate result is deterministic and reproducible; treat it as a CI-style gate, not a hint.
+**Hard gate:** any CRITICAL or HIGH result means RE-RENDER before calling the LLM panel — this
+includes a G6 FAIL (mapped to HIGH): fix staging first, do not spend scorer tokens on it. A G6 WARN
+(mapped to MED) does not block the panel, but the near_black/lit/median_L stats it printed must be
+quoted alongside whatever verdict the panel/synthesis produces (numbers, not vibes, all the way
+through — never just "staging looks a bit off"). The pre-gate result is deterministic and
+reproducible; treat it as a CI-style gate, not a hint.
 
 ## ② Reference anchoring (the bar made concrete) — PoE2-first
 The critic does NOT score against a remembered look. It scores the GAP to 2-3 SPECIFIC reference
