@@ -28,12 +28,20 @@ from __future__ import annotations
 import argparse
 import glob
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
 QA_DIR = Path(__file__).resolve().parent
 REPO = QA_DIR.parent
+sys.path.insert(0, str(QA_DIR))
+
+# The single source of truth for which payload keys are canonical-required per class (data/library/
+# artifact_schema.json's per-class definitions). Reused here so a control's required-but-empty fields
+# are kept (not stripped) — see _artifact() below.
+from artifact_score import _CANONICAL_PAYLOAD_REQUIRED  # noqa: E402
+
 DEFAULT_OUT = QA_DIR / "artifact_controls"
 # The identity map lives OUTSIDE the panel input dir so it can never be scored.
 IDENTITY_PATH = QA_DIR / "artifact_controls_identity.json"
@@ -61,12 +69,19 @@ def _canon_provenance(world: str, source: str) -> dict:
 
 
 def _artifact(cls: str, world: str, source_id: str, payload: dict, source: str) -> dict:
+    # Keep every CANONICAL required key (data/library/artifact_schema.json's {cls}_payload.required, the
+    # same list artifact_score._CANONICAL_PAYLOAD_REQUIRED validates against) even when its value is
+    # empty/null — dropping a required-but-empty field makes artifact_score.load_artifact()'s strict
+    # payload guard reject the very control fixtures the documented CLI path is supposed to score. Only
+    # NON-required descriptive extras (hook / dossier / terrain / …) are stripped when empty.
+    required = set(_CANONICAL_PAYLOAD_REQUIRED.get(cls, ()))
+    trimmed = {k: v for k, v in payload.items() if k in required or v not in (None, "", [], {})}
     return {
         "artifact_id": f"control:{cls}:{world}:{source_id}",
         "class": cls,
         "world": world,
         "provenance": _canon_provenance(world, source),
-        "payload": {k: v for k, v in payload.items() if v not in (None, "", [], {})},
+        "payload": trimmed,
         "scores": None,
     }
 

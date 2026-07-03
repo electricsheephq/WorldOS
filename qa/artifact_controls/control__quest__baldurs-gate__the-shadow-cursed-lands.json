@@ -12,7 +12,10 @@
   "payload": {
     "id": "the-shadow-cursed-lands",
     "name": "The State of the Shadow-Cursed Lands",
+    "objectives": [],
+    "completed_objectives": [],
     "resolution_status": "canon-variant",
+    "evolves_to": "",
     "consequences": [
       {
         "lore": "The Shadow Curse over Reithwin is breaking. Green creeps back across poisoned ground, the dead grow quiet, and a great healer has stayed behind to shepherd the land's slow recovery and the orphans resettling there."

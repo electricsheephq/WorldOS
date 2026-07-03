@@ -1,80 +1,8 @@
 # WorldOS Per-Artifact Scores Ledger
 
-> **Auto-generated from `qa/scores.db` (`artifacts` table) — do not hand-edit.** Regenerate with `python3 qa/scores_db.py --render-artifacts`. Append via `qa/scores_db.add_artifact(...)` (sole writer: `qa/artifact_score.py`). One row per scored content artifact (quest / npc / location / encounter). Overall is a 1.0–5.0 lens score.
-
+> **Auto-generated from `qa/scores.db` (`artifacts` table) — do not hand-edit.** Regenerate with `python3 qa/scores_db.py --render-artifacts`. Rows are appended via `qa/scores_db.add_artifact(...)`, called by both `qa/artifact_score.py` and `qa/artifact_calibration_panel.py`. One row per scored content artifact (quest / npc / location / encounter). Overall is a 1.0–5.0 lens score.
 > **Artifact ruler** = `ac_…` (its OWN hash family; the quest/npc/location/encounter rubrics + schemas). Rows under DIFFERENT ac_ rulers are NOT directly comparable. **Control** rows are disguised hand-authored canon (the panel-validity anchor); **Anchor** is the expected band midpoint for a control (the ±1.2 noise law bounds drift).
-
-> Rows: **70** · rendered 2026-07-03T06:46:24+00:00
+> Rows: **0** · rendered 2026-07-03T08:00:26+00:00
 
 | Artifact | Class | World | When | Overall | Panel | Scorer | Artifact ruler | Control | Anchor | Run | SHA | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| control:encounter:baldurs-gate:undercity-drain-ambush#cal-encounter-20260703T064217#s4 | encounter | baldurs-gate | 2026-07-03T06:45:15+00:00 | 4.1 | cal-encounter-20260703T064217 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:encounter:baldurs-gate:undercity-drain-ambush#cal-encounter-20260703T064217#s3 | encounter | baldurs-gate | 2026-07-03T06:44:56+00:00 | 4.1 | cal-encounter-20260703T064217 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:encounter:baldurs-gate:undercity-drain-ambush#cal-encounter-20260703T064217#s2 | encounter | baldurs-gate | 2026-07-03T06:44:38+00:00 | 4.1 | cal-encounter-20260703T064217 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:encounter:baldurs-gate:undercity-drain-ambush#cal-encounter-20260703T064217#s1 | encounter | baldurs-gate | 2026-07-03T06:44:20+00:00 | 4.1 | cal-encounter-20260703T064217 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:encounter:baldurs-gate:undercity-drain-ambush#cal-encounter-20260703T064217#s0 | encounter | baldurs-gate | 2026-07-03T06:44:06+00:00 | 4.1 | cal-encounter-20260703T064217 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:encounter:baldurs-gate:steel-watch-foundry-husks#cal-encounter-20260703T064217#s4 | encounter | baldurs-gate | 2026-07-03T06:43:46+00:00 | 4.1 | cal-encounter-20260703T064217 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:encounter:baldurs-gate:steel-watch-foundry-husks#cal-encounter-20260703T064217#s3 | encounter | baldurs-gate | 2026-07-03T06:43:25+00:00 | 4.1 | cal-encounter-20260703T064217 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:encounter:baldurs-gate:steel-watch-foundry-husks#cal-encounter-20260703T064217#s2 | encounter | baldurs-gate | 2026-07-03T06:43:07+00:00 | 4.1 | cal-encounter-20260703T064217 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:encounter:baldurs-gate:steel-watch-foundry-husks#cal-encounter-20260703T064217#s1 | encounter | baldurs-gate | 2026-07-03T06:42:50+00:00 | 4.1 | cal-encounter-20260703T064217 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:encounter:baldurs-gate:steel-watch-foundry-husks#cal-encounter-20260703T064217#s0 | encounter | baldurs-gate | 2026-07-03T06:42:34+00:00 | 4 | cal-encounter-20260703T064217 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:location:baldurs-gate:loc-counting-house#cal-location-20260703T062433#s4 | location | baldurs-gate | 2026-07-03T06:34:20+00:00 | 3.8 | cal-location-20260703T062433 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:location:baldurs-gate:loc-counting-house#cal-location-20260703T062433#s3 | location | baldurs-gate | 2026-07-03T06:34:03+00:00 | 3.7 | cal-location-20260703T062433 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:location:baldurs-gate:loc-counting-house#cal-location-20260703T062433#s2 | location | baldurs-gate | 2026-07-03T06:33:40+00:00 | 3.9 | cal-location-20260703T062433 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:location:baldurs-gate:loc-counting-house#cal-location-20260703T062433#s1 | location | baldurs-gate | 2026-07-03T06:33:23+00:00 | 3.4 | cal-location-20260703T062433 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:location:baldurs-gate:loc-counting-house#cal-location-20260703T062433#s0 | location | baldurs-gate | 2026-07-03T06:32:21+00:00 | 3.8 | cal-location-20260703T062433 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:location:baldurs-gate:loc-bloomridge-market#cal-location-20260703T062433#s4 | location | baldurs-gate | 2026-07-03T06:32:08+00:00 | 3 | cal-location-20260703T062433 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:location:baldurs-gate:loc-bloomridge-market#cal-location-20260703T062433#s3 | location | baldurs-gate | 2026-07-03T06:31:47+00:00 | 2.9 | cal-location-20260703T062433 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:location:baldurs-gate:loc-bloomridge-market#cal-location-20260703T062433#s2 | location | baldurs-gate | 2026-07-03T06:31:26+00:00 | 2.9 | cal-location-20260703T062433 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:location:baldurs-gate:loc-bloomridge-market#cal-location-20260703T062433#s1 | location | baldurs-gate | 2026-07-03T06:31:04+00:00 | 2.9 | cal-location-20260703T062433 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:location:baldurs-gate:loc-bloomridge-market#cal-location-20260703T062433#s0 | location | baldurs-gate | 2026-07-03T06:30:44+00:00 | 2.9 | cal-location-20260703T062433 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:location:baldurs-gate:loc-basilisk-gate#cal-location-20260703T062433#s4 | location | baldurs-gate | 2026-07-03T06:30:21+00:00 | 4.2 | cal-location-20260703T062433 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:location:baldurs-gate:loc-basilisk-gate#cal-location-20260703T062433#s3 | location | baldurs-gate | 2026-07-03T06:29:10+00:00 | 3.9 | cal-location-20260703T062433 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:location:baldurs-gate:loc-basilisk-gate#cal-location-20260703T062433#s2 | location | baldurs-gate | 2026-07-03T06:28:05+00:00 | 4.2 | cal-location-20260703T062433 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:location:baldurs-gate:loc-basilisk-gate#cal-location-20260703T062433#s1 | location | baldurs-gate | 2026-07-03T06:27:08+00:00 | 3.9 | cal-location-20260703T062433 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:location:baldurs-gate:loc-basilisk-gate#cal-location-20260703T062433#s0 | location | baldurs-gate | 2026-07-03T06:25:46+00:00 | 3.8 | cal-location-20260703T062433 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:npc:baldurs-gate:npc-minsc#cal-npc-20260703T060422#s4 | npc | baldurs-gate | 2026-07-03T06:24:33+00:00 | 4.1 | cal-npc-20260703T060422 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:npc:baldurs-gate:npc-minsc#cal-npc-20260703T060422#s3 | npc | baldurs-gate | 2026-07-03T06:23:42+00:00 | 4.1 | cal-npc-20260703T060422 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:npc:baldurs-gate:npc-minsc#cal-npc-20260703T060422#s2 | npc | baldurs-gate | 2026-07-03T06:22:44+00:00 | 4.3 | cal-npc-20260703T060422 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:npc:baldurs-gate:npc-minsc#cal-npc-20260703T060422#s1 | npc | baldurs-gate | 2026-07-03T06:21:49+00:00 | 4.2 | cal-npc-20260703T060422 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:npc:baldurs-gate:npc-minsc#cal-npc-20260703T060422#s0 | npc | baldurs-gate | 2026-07-03T06:20:36+00:00 | 4.2 | cal-npc-20260703T060422 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:npc:baldurs-gate:npc-jaheira#cal-npc-20260703T060422#s4 | npc | baldurs-gate | 2026-07-03T06:19:34+00:00 | 3.2 | cal-npc-20260703T060422 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:npc:baldurs-gate:npc-jaheira#cal-npc-20260703T060422#s3 | npc | baldurs-gate | 2026-07-03T06:18:16+00:00 | 3.1 | cal-npc-20260703T060422 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:npc:baldurs-gate:npc-jaheira#cal-npc-20260703T060422#s2 | npc | baldurs-gate | 2026-07-03T06:16:58+00:00 | 2.9 | cal-npc-20260703T060422 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:npc:baldurs-gate:npc-jaheira#cal-npc-20260703T060422#s1 | npc | baldurs-gate | 2026-07-03T06:15:40+00:00 | 3.1 | cal-npc-20260703T060422 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:npc:baldurs-gate:npc-jaheira#cal-npc-20260703T060422#s0 | npc | baldurs-gate | 2026-07-03T06:14:19+00:00 | 3.4 | cal-npc-20260703T060422 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:npc:baldurs-gate:npc-astarion#cal-npc-20260703T060422#s4 | npc | baldurs-gate | 2026-07-03T06:13:59+00:00 | 4.1 | cal-npc-20260703T060422 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:npc:baldurs-gate:npc-astarion#cal-npc-20260703T060422#s3 | npc | baldurs-gate | 2026-07-03T06:12:58+00:00 | 3.9 | cal-npc-20260703T060422 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:npc:baldurs-gate:npc-astarion#cal-npc-20260703T060422#s2 | npc | baldurs-gate | 2026-07-03T06:12:01+00:00 | 4.3 | cal-npc-20260703T060422 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:npc:baldurs-gate:npc-astarion#cal-npc-20260703T060422#s1 | npc | baldurs-gate | 2026-07-03T06:11:09+00:00 | 3.8 | cal-npc-20260703T060422 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:npc:baldurs-gate:npc-astarion#cal-npc-20260703T060422#s0 | npc | baldurs-gate | 2026-07-03T06:10:12+00:00 | 3.8 | cal-npc-20260703T060422 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| npc:baldurs-gate:npc-wyll#cal-npc-20260703T060422#s4 | npc | baldurs-gate | 2026-07-03T06:08:55+00:00 | 3 | cal-npc-20260703T060422 | sonnet | ac_986d87bf235a |  |  | ow-fixC-043416 | a7b232b |  |
-| npc:baldurs-gate:npc-wyll#cal-npc-20260703T060422#s3 | npc | baldurs-gate | 2026-07-03T06:08:33+00:00 | 3 | cal-npc-20260703T060422 | sonnet | ac_986d87bf235a |  |  | ow-fixC-043416 | a7b232b |  |
-| npc:baldurs-gate:npc-wyll#cal-npc-20260703T060422#s2 | npc | baldurs-gate | 2026-07-03T06:08:11+00:00 | 2.9 | cal-npc-20260703T060422 | sonnet | ac_986d87bf235a |  |  | ow-fixC-043416 | a7b232b |  |
-| npc:baldurs-gate:npc-wyll#cal-npc-20260703T060422#s1 | npc | baldurs-gate | 2026-07-03T06:07:45+00:00 | 3 | cal-npc-20260703T060422 | sonnet | ac_986d87bf235a |  |  | ow-fixC-043416 | a7b232b |  |
-| npc:baldurs-gate:npc-wyll#cal-npc-20260703T060422#s0 | npc | baldurs-gate | 2026-07-03T06:07:20+00:00 | 3 | cal-npc-20260703T060422 | sonnet | ac_986d87bf235a |  |  | ow-fixC-043416 | a7b232b |  |
-| npc:baldurs-gate:char_0cb67746b4b5#cal-npc-20260703T060422#s4 | npc | baldurs-gate | 2026-07-03T06:07:03+00:00 | 1.1 | cal-npc-20260703T060422 | sonnet | ac_986d87bf235a |  |  | ow-fixC-043416 | a7b232b |  |
-| npc:baldurs-gate:char_0cb67746b4b5#cal-npc-20260703T060422#s3 | npc | baldurs-gate | 2026-07-03T06:06:28+00:00 | 1.1 | cal-npc-20260703T060422 | sonnet | ac_986d87bf235a |  |  | ow-fixC-043416 | a7b232b |  |
-| npc:baldurs-gate:char_0cb67746b4b5#cal-npc-20260703T060422#s2 | npc | baldurs-gate | 2026-07-03T06:05:51+00:00 | 1 | cal-npc-20260703T060422 | sonnet | ac_986d87bf235a |  |  | ow-fixC-043416 | a7b232b |  |
-| npc:baldurs-gate:char_0cb67746b4b5#cal-npc-20260703T060422#s1 | npc | baldurs-gate | 2026-07-03T06:05:24+00:00 | 1 | cal-npc-20260703T060422 | sonnet | ac_986d87bf235a |  |  | ow-fixC-043416 | a7b232b |  |
-| npc:baldurs-gate:char_0cb67746b4b5#cal-npc-20260703T060422#s0 | npc | baldurs-gate | 2026-07-03T06:04:54+00:00 | 1.1 | cal-npc-20260703T060422 | sonnet | ac_986d87bf235a |  |  | ow-fixC-043416 | a7b232b |  |
-| control:quest:baldurs-gate:who-rules-the-gate#cal-quest-20260703T053711#s4 | quest | baldurs-gate | 2026-07-03T06:04:22+00:00 | 3.5 | cal-quest-20260703T053711 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:quest:baldurs-gate:who-rules-the-gate#cal-quest-20260703T053711#s3 | quest | baldurs-gate | 2026-07-03T06:02:56+00:00 | 3.6 | cal-quest-20260703T053711 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:quest:baldurs-gate:who-rules-the-gate#cal-quest-20260703T053711#s2 | quest | baldurs-gate | 2026-07-03T06:01:26+00:00 | 3.7 | cal-quest-20260703T053711 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:quest:baldurs-gate:who-rules-the-gate#cal-quest-20260703T053711#s1 | quest | baldurs-gate | 2026-07-03T05:59:57+00:00 | 3.5 | cal-quest-20260703T053711 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:quest:baldurs-gate:who-rules-the-gate#cal-quest-20260703T053711#s0 | quest | baldurs-gate | 2026-07-03T05:58:37+00:00 | 3.4 | cal-quest-20260703T053711 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:quest:baldurs-gate:the-shadow-cursed-lands#cal-quest-20260703T053711#s4 | quest | baldurs-gate | 2026-07-03T05:57:25+00:00 | 2.7 | cal-quest-20260703T053711 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:quest:baldurs-gate:the-shadow-cursed-lands#cal-quest-20260703T053711#s3 | quest | baldurs-gate | 2026-07-03T05:56:07+00:00 | 2.9 | cal-quest-20260703T053711 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:quest:baldurs-gate:the-shadow-cursed-lands#cal-quest-20260703T053711#s2 | quest | baldurs-gate | 2026-07-03T05:54:50+00:00 | 2.9 | cal-quest-20260703T053711 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:quest:baldurs-gate:the-shadow-cursed-lands#cal-quest-20260703T053711#s1 | quest | baldurs-gate | 2026-07-03T05:53:26+00:00 | 3.5 | cal-quest-20260703T053711 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:quest:baldurs-gate:the-shadow-cursed-lands#cal-quest-20260703T053711#s0 | quest | baldurs-gate | 2026-07-03T05:52:14+00:00 | 3 | cal-quest-20260703T053711 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:quest:baldurs-gate:the-emerald-grove#cal-quest-20260703T053711#s4 | quest | baldurs-gate | 2026-07-03T05:50:54+00:00 | 3 | cal-quest-20260703T053711 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:quest:baldurs-gate:the-emerald-grove#cal-quest-20260703T053711#s3 | quest | baldurs-gate | 2026-07-03T05:49:18+00:00 | 2.8 | cal-quest-20260703T053711 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:quest:baldurs-gate:the-emerald-grove#cal-quest-20260703T053711#s2 | quest | baldurs-gate | 2026-07-03T05:47:47+00:00 | 3.3 | cal-quest-20260703T053711 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:quest:baldurs-gate:the-emerald-grove#cal-quest-20260703T053711#s1 | quest | baldurs-gate | 2026-07-03T05:46:36+00:00 | 3 | cal-quest-20260703T053711 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| control:quest:baldurs-gate:the-emerald-grove#cal-quest-20260703T053711#s0 | quest | baldurs-gate | 2026-07-03T05:45:23+00:00 | 2.8 | cal-quest-20260703T053711 | sonnet | ac_986d87bf235a | control | 4 |  |  |  |
-| quest:baldurs-gate:quest_e4478d1f6b4d#cal-quest-20260703T053711#s4 | quest | baldurs-gate | 2026-07-03T05:43:43+00:00 | 3 | cal-quest-20260703T053711 | sonnet | ac_986d87bf235a |  |  | ow-fixC-043416 | a7b232b |  |
-| quest:baldurs-gate:quest_e4478d1f6b4d#cal-quest-20260703T053711#s3 | quest | baldurs-gate | 2026-07-03T05:42:29+00:00 | 3.1 | cal-quest-20260703T053711 | sonnet | ac_986d87bf235a |  |  | ow-fixC-043416 | a7b232b |  |
-| quest:baldurs-gate:quest_e4478d1f6b4d#cal-quest-20260703T053711#s2 | quest | baldurs-gate | 2026-07-03T05:41:14+00:00 | 3 | cal-quest-20260703T053711 | sonnet | ac_986d87bf235a |  |  | ow-fixC-043416 | a7b232b |  |
-| quest:baldurs-gate:quest_e4478d1f6b4d#cal-quest-20260703T053711#s1 | quest | baldurs-gate | 2026-07-03T05:39:45+00:00 | 3.2 | cal-quest-20260703T053711 | sonnet | ac_986d87bf235a |  |  | ow-fixC-043416 | a7b232b |  |
-| quest:baldurs-gate:quest_e4478d1f6b4d#cal-quest-20260703T053711#s0 | quest | baldurs-gate | 2026-07-03T05:38:37+00:00 | 2.9 | cal-quest-20260703T053711 | sonnet | ac_986d87bf235a |  |  | ow-fixC-043416 | a7b232b |  |

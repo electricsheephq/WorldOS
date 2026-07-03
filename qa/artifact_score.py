@@ -192,6 +192,9 @@ def score_artifact(
 
     card_path.write_text(build_card(artifact), encoding="utf-8")
     state_path.write_text(json.dumps({"artifact_class": cls}) + "\n", encoding="utf-8")
+    # Unlink any stale scorecard first: a reused --out/workdir must never let an early score.sh failure
+    # (e.g. exit 3 on an ungated WORLDOS_SCORER_MODEL override) silently surface a PREVIOUS run's score.
+    out.unlink(missing_ok=True)
 
     proc = subprocess.run(
         ["bash", str(SCORE_SH), str(card_path), str(state_path), str(rubric),
@@ -200,6 +203,11 @@ def score_artifact(
     )
     if not out.exists():
         raise RuntimeError(f"score.sh produced no output for {artifact['artifact_id']}: {proc.stderr[-500:]}")
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"score.sh exited {proc.returncode} for {artifact['artifact_id']} despite writing {out}: "
+            f"{proc.stderr[-500:]}"
+        )
     card = json.loads(out.read_text(encoding="utf-8"))
     if "scores" not in card or "overall" not in card:
         # sentinel ({error:scorer_failed} / {quota_exhausted}) — surface loudly.

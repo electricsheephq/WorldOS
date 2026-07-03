@@ -12,7 +12,10 @@
   "payload": {
     "id": "who-rules-the-gate",
     "name": "Who Rules Baldur's Gate",
+    "objectives": [],
+    "completed_objectives": [],
     "resolution_status": "canon-variant",
+    "evolves_to": "",
     "consequences": [
       {
         "lore": "The empty Archduke's seat sits under the restored Council of Four, who govern a grieving, rebuilding city by uneasy committee. No one tyrant holds the Gate; the patriars, the Fist, and the Guild jockey within the law, mostly."

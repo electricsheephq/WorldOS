@@ -12,7 +12,10 @@
   "payload": {
     "id": "the-emerald-grove",
     "name": "The Fate of the Emerald Grove",
+    "objectives": [],
+    "completed_objectives": [],
     "resolution_status": "canon-variant",
+    "evolves_to": "",
     "consequences": [
       {
         "lore": "The druid grove in the Western wilds still stands; the goblin warband that besieged it was broken and the tiefling refugees sheltering there lived to walk the road to the city. Grateful druids tend a sanctuary that held."

@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """artifact_calibration_panel.py — run ONE calibration panel per artifact class (HV1, #1323).
 
-A panel = N blind scorers (default 5, sonnet) scoring a SHUFFLED set of artifacts for one class, with
-the disguised hand-authored canon CONTROLS embedded among them. The panel is VALID only if the
+A panel = N blind scorers (default 5, sonnet) scoring a blind set of artifacts for one class — candidates
+followed by disguised hand-authored canon CONTROLS embedded among them (deterministic sorted-glob order;
+NOT shuffled — the scorer never sees is-control status either way, so blindness comes from build_card's
+payload-only disguise, not from pool order). The panel is VALID only if the
 controls land inside their expected band (the ±1.2 noise law, per qa/artifact_controls_identity.json).
 The scorer never sees which artifacts are controls (build_card is payload-only); the identity map is
 read here — AFTER scoring — to compute the control-band verdict.
@@ -36,7 +38,7 @@ import statistics
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 QA_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(QA_DIR))
@@ -56,9 +58,12 @@ def _load_identity() -> dict:
 
 
 def _controls_for_class(cls: str) -> list[dict]:
+    # Route through artifact_score.load_artifact() — the SAME strict envelope + canonical payload-shape
+    # guard the public `python3 qa/artifact_score.py <artifact.json>` CLI path enforces — so a control
+    # fixture that would fail the documented CLI can't silently produce panel_valid: true here instead.
     out = []
     for p in sorted(glob.glob(str(CONTROLS_DIR / f"control__{cls}__*.json"))):
-        out.append(json.loads(Path(p).read_text(encoding="utf-8")))
+        out.append(artifact_score.load_artifact(Path(p)))
     return out
 
 
@@ -67,9 +72,10 @@ def _candidates_for_class(candidates_dir: Optional[str], cls: str) -> list[dict]
         return []
     out = []
     for p in sorted(glob.glob(str(Path(candidates_dir) / "*.json"))):
-        obj = json.loads(Path(p).read_text(encoding="utf-8"))
-        if obj.get("class") == cls:
-            out.append(obj)
+        # Peek the class first (load_artifact would raise on a different class's payload shape), then
+        # route the matching file through the same strict guard _controls_for_class uses.
+        if json.loads(Path(p).read_text(encoding="utf-8")).get("class") == cls:
+            out.append(artifact_score.load_artifact(Path(p)))
     return out
 
 
@@ -178,6 +184,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--db", default=str(scores_db.DB_PATH))
     ap.add_argument("--no-db", action="store_true", help="do not write panel rows to scores.db")
     args = ap.parse_args(argv)
+    if args.panel_size < 1:
+        ap.error(f"--panel-size must be >= 1 (got {args.panel_size}); "
+                 "panel_size<=0 scores nothing and statistics.median([]) raises")
 
     report = run_panel(
         args.cls, candidates_dir=args.candidates_dir, controls_only=args.controls_only,

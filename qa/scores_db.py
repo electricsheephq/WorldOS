@@ -725,20 +725,23 @@ def render_artifacts_markdown(db_path: Path | str = DB_PATH,
     out: list[str] = []
     out.append("# WorldOS Per-Artifact Scores Ledger")
     out.append("")
+    # A SINGLE blockquote block (each line prefixed "> ", no blank line between them) — a blank line
+    # between "> " lines is markdownlint MD028 ("blank line inside blockquote"). Writers: artifact rows
+    # come from qa/artifact_score.py AND qa/artifact_calibration_panel.py (both call
+    # scores_db.add_artifact directly) — this file (scores_db.py) is the sole table/ledger writer.
     out.append(
         "> **Auto-generated from `qa/scores.db` (`artifacts` table) — do not hand-edit.** "
-        "Regenerate with `python3 qa/scores_db.py --render-artifacts`. Append via "
-        "`qa/scores_db.add_artifact(...)` (sole writer: `qa/artifact_score.py`). One row per scored "
-        "content artifact (quest / npc / location / encounter). Overall is a 1.0–5.0 lens score."
+        "Regenerate with `python3 qa/scores_db.py --render-artifacts`. Rows are appended via "
+        "`qa/scores_db.add_artifact(...)`, called by both `qa/artifact_score.py` and "
+        "`qa/artifact_calibration_panel.py`. One row per scored content artifact "
+        "(quest / npc / location / encounter). Overall is a 1.0–5.0 lens score."
     )
-    out.append("")
     out.append(
         "> **Artifact ruler** = `ac_…` (its OWN hash family; the quest/npc/location/encounter rubrics "
         "+ schemas). Rows under DIFFERENT ac_ rulers are NOT directly comparable. **Control** rows are "
         "disguised hand-authored canon (the panel-validity anchor); **Anchor** is the expected band "
         "midpoint for a control (the ±1.2 noise law bounds drift)."
     )
-    out.append("")
     out.append(f"> Rows: **{len(rows)}** · rendered {datetime.now(timezone.utc).isoformat(timespec='seconds')}")
     out.append("")
     header = "| " + " | ".join(label for _, label in _ARTIFACT_MD_COLS) + " |"
