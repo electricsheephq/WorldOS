@@ -721,23 +721,47 @@ def test_arcless_default_campaign_yields_no_act_cues():
     assert obligations == []
 
 
-# --- #1313 (cue-half iteration 2): the ENDGAME quest-resolution cue -----------------------------
+# --- #1313 (cue-half iteration 2b): the ENDGAME quest-resolution cue -----------------------------
 #
 # The measured residual RED after Option 3 (rri-a1-opt3, 25 clean beats): engagement rose broadly
-# but a quest stayed ACTIVE at session end (reads as a dropped thread). The wrap window is the ONE
-# honest engine gauge for "the story has passed its peak and is closing" — arc.climax_landed (set by
-# the DM's own mark_climax). In that window an active quest escalates to a single HIGH
-# quest_endgame_unresolved cue that REPLACES the generic resolvable/stalled/unresolved_late cues, so
-# next_action names quest CLOSURE as the imperative in the final beats. NO teeth (advisory only).
+# but a quest stayed ACTIVE at session end (reads as a dropped thread). Iteration 2 (#1317) opened
+# the wrap window on `act == 3 AND climax_landed`. Both halves are OPTIONAL DM calls (advance_act /
+# mark_climax): the rri-a1-gate run advanced neither, the window never opened, and the cue fired 0
+# times (behavioral AMBER — the same engagement-variance defect one level up).
+#
+# 2b re-derives the window from the ONE skip-proof gauge — `beats_in_act`, which persist_beat bumps
+# every mandatory beat — while keeping `climax_landed` as the semantically-precise fast path:
+#
+#     _in_wrap_window = climax_landed OR (act >= 2 AND beats_in_act >= _WRAP_WINDOW_BEATS)
+#
+# Threshold _WRAP_WINDOW_BEATS = 8, calibrated from the 4 real snapshots that reached session-wrap
+# (engine-authoritative narrative_arc; format act/beats_in_act/climax_landed):
+#   rri-a1-gate  2 /  8 / False  — the behavioral RED; MUST open via the counter floor (no climax) → 8 is the ceiling for T
+#   rri-a1-opt3  1 / 16 / True   — opens via climax_landed (act 1: the counter floor deliberately does NOT reach it → act>=2)
+#   rri-a1-duo3  2 / 10 / False  — opens via the counter floor (harmless: no quests)
+#   rri-a1-duo4  2 / 10 / True   — opens via climax_landed (harmless: the quest is completed)
+# T=8 is the unique maximal-yet-sufficient floor: the gate run at beats_in_act=8 with no climax pins
+# T<=8, and opt3 opens via the climax fast-path so lowering T buys nothing but a wider mid-act false-
+# open surface. The `act >= 2` guard keeps opt3's long act-1 slog (beats=16, act_one_stalled
+# territory) from being MIS-read as "wrapping" — in act 1 only the explicit climax flag opens it.
+# T=8 also sits +4 above act_climax_owed's own beats_in_act>=4 trigger, so in an act-3 climax
+# build-up act_climax_owed owns beats 4-7 alone and the endgame floor only joins from beat 8.
+#
+# In the window an active quest escalates to a single HIGH quest_endgame_unresolved cue that REPLACES
+# the generic resolvable/stalled/unresolved_late cues, so next_action names quest CLOSURE as the
+# imperative in the final beats. NO teeth (advisory only). Precedence with act_climax_owed (which
+# fires in a counter-opened act-3 window while climax is NOT landed): BOTH are legitimately owed —
+# land the climax FIRST, then close the thread — so both stay HIGH and neither is suppressed, with an
+# explicit intra-tier tiebreak (act_climax_owed sorts before quest_endgame_unresolved).
 
 
 def _wrap_window_campaign(active_all_objectives_done: bool = True) -> Campaign:
-    """Act 3 with the climax LANDED (the wrap window) plus one still-ACTIVE quest. The objectives
-    are all-done by default (the resolvable shape) so the pre-endgame code path would have fired
-    quest_resolvable — proving the endgame cue REPLACES it in the window."""
+    """The wrap window opened via the climax fast-path (act 3, climax LANDED, past the counter floor)
+    plus one still-ACTIVE quest. The objectives are all-done by default (the resolvable shape) so the
+    pre-endgame code path would have fired quest_resolvable — proving the endgame cue REPLACES it."""
     c = Campaign(title="Endgame")
     c.day = 6
-    c.narrative_arc = NarrativeArc(act=3, day_act_entered=5, beats_in_act=6,
+    c.narrative_arc = NarrativeArc(act=3, day_act_entered=5, beats_in_act=8,
                                    midpoint_reversal_landed=True, climax_landed=True)
     objectives = ["find the relic"]
     completed = ["find the relic"] if active_all_objectives_done else []
@@ -798,24 +822,65 @@ def test_quest_endgame_replaces_unresolved_late_when_nothing_progressed():
     assert "quest_stalled" not in kinds
 
 
-def test_quest_endgame_absent_outside_wrap_window_climax_not_landed():
-    """Same act-3, deep-in-act snapshot but the climax has NOT landed -> NOT the wrap window. The
-    endgame cue is silent; the generic quest cue path still owns the active quest."""
+def test_quest_endgame_absent_outside_wrap_window_climax_not_landed_below_counter():
+    """No climax landed AND below the counter floor (beats_in_act < _WRAP_WINDOW_BEATS) -> NOT the
+    wrap window. The endgame cue is silent; the generic quest cue path still owns the active quest.
+    This is a genuine mid-act-3 climax build-up, which act_climax_owed (not endgame) should own."""
     c = _wrap_window_campaign()
-    c.narrative_arc.climax_landed = False  # climax still owed -> not yet wrapping
+    c.narrative_arc.climax_landed = False  # climax still owed
+    c.narrative_arc.beats_in_act = server._WRAP_WINDOW_BEATS - 2  # below the counter floor
     kinds = _kinds(server._compute_beat_obligations(c))
     assert "quest_endgame_unresolved" not in kinds
     # The pre-endgame path still surfaces the ripe active quest (all objectives done -> resolvable).
     assert "quest_resolvable" in kinds
 
 
-def test_quest_endgame_absent_in_earlier_acts_even_with_climax_flag():
-    """The wrap window is act-3-AND-climax_landed. An act-2 arc (climax flag not applicable) never
-    trips the endgame cue."""
+def test_quest_endgame_opens_via_counter_without_climax_landed():
+    """2b CORE FIX (the rri-a1-gate shape): act 3, climax NOT landed, but beats_in_act has reached
+    the counter floor -> the wrap window OPENS on the skip-proof counter, so the endgame cue fires
+    even though the DM never called mark_climax."""
     c = _wrap_window_campaign()
-    c.narrative_arc.act = 2
+    c.narrative_arc.climax_landed = False           # DM never marked the climax (the gate defect)
+    c.narrative_arc.beats_in_act = server._WRAP_WINDOW_BEATS  # but the mandatory counter reached the floor
+    kinds = _kinds(server._compute_beat_obligations(c))
+    assert "quest_endgame_unresolved" in kinds
+
+
+def test_quest_endgame_counter_floor_calibrates_to_the_gate_run():
+    """The threshold is pinned by rri-a1-gate (act 2, beats_in_act=8, no climax, quest active) — the
+    behavioral RED that MUST open via the counter. Reproduce that exact snapshot shape."""
+    c = Campaign(title="Gate run")
+    c.day = 7
+    c.narrative_arc = NarrativeArc(act=2, day_act_entered=4, beats_in_act=8,
+                                   midpoint_reversal_landed=True, climax_landed=False)
+    q = Quest(title="The Price of Silence", objectives=["a", "b"],
+              completed_objectives=["a"], last_progress_day=7)
+    c.quests[q.id] = q
+    assert "quest_endgame_unresolved" in _kinds(server._compute_beat_obligations(c))
+
+
+def test_quest_endgame_counter_floor_does_not_open_in_act1_slog():
+    """The `act >= 2` guard: a long act-1 slog (the rri-a1-opt3 pre-climax shape — beats_in_act well
+    past the floor but STILL in act 1) is act_one_stalled territory, NOT wrapping. Without the climax
+    flag, the counter floor must NOT open the endgame cue in act 1."""
+    c = _wrap_window_campaign()
+    c.narrative_arc.act = 1
+    c.narrative_arc.climax_landed = False
+    c.narrative_arc.beats_in_act = 16  # opt3's act-1 beats — long, but NOT wrapping
     kinds = _kinds(server._compute_beat_obligations(c))
     assert "quest_endgame_unresolved" not in kinds
+
+
+def test_quest_endgame_climax_fastpath_opens_in_act2():
+    """The climax_landed FAST PATH is act-agnostic (>= act 2): the rri-a1-duo4 shape (act 2, climax
+    landed) opens the window via the flag regardless of the counter — climax landed IS "past the
+    peak, now closing"."""
+    c = _wrap_window_campaign()
+    c.narrative_arc.act = 2
+    c.narrative_arc.climax_landed = True
+    c.narrative_arc.beats_in_act = 3  # below the counter floor, but the climax flag opens it
+    kinds = _kinds(server._compute_beat_obligations(c))
+    assert "quest_endgame_unresolved" in kinds
 
 
 def test_quest_endgame_absent_when_all_quests_resolved_in_wrap_window():
@@ -851,6 +916,31 @@ def test_quest_endgame_silent_for_arcless_campaign():
     c.quests[q.id] = q
     kinds = _kinds(server._compute_beat_obligations(c))
     assert "quest_endgame_unresolved" not in kinds
+
+
+def test_quest_endgame_precedence_climax_owed_sorts_first_when_both_owed():
+    """PRECEDENCE (2b): in a counter-opened act-3 window where the climax is NOT landed, BOTH
+    act_climax_owed AND quest_endgame_unresolved are legitimately owed. Neither is suppressed; both
+    are HIGH; but act_climax_owed sorts FIRST (land the payoff, THEN close the thread) — so it, not
+    the endgame cue, becomes the next_action imperative."""
+    c = _wrap_window_campaign()
+    c.narrative_arc.climax_landed = False               # climax still owed
+    c.narrative_arc.beats_in_act = server._WRAP_WINDOW_BEATS  # counter floor reached -> window open
+    obligations = server._compute_beat_obligations(c)
+    kinds = _kinds(obligations)
+    # BOTH owed — neither suppressed.
+    assert "act_climax_owed" in kinds
+    assert "quest_endgame_unresolved" in kinds
+    # Both HIGH severity.
+    assert next(o for o in obligations if o["kind"] == "act_climax_owed")["severity"] == "high"
+    assert next(o for o in obligations if o["kind"] == "quest_endgame_unresolved")["severity"] == "high"
+    # act_climax_owed sorts strictly before quest_endgame_unresolved.
+    climax_i = next(i for i, o in enumerate(obligations) if o["kind"] == "act_climax_owed")
+    endgame_i = next(i for i, o in enumerate(obligations) if o["kind"] == "quest_endgame_unresolved")
+    assert climax_i < endgame_i
+    # The climax is the payoff -> it, not the closure cue, is THE next_action.
+    na = server._next_action(obligations)
+    assert na["kind"] == "act_climax_owed"
 
 
 # --- quest_stalled BEATS-reach (#1286) --------------------------------------

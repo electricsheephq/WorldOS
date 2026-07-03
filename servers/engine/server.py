@@ -371,17 +371,38 @@ _FACTION_JOIN_BEATS = 8
 # Keep this value byte-identical to that gate's constant so the cue and the gate agree by construction.
 _PARTY_STUCK_BEATS = 8
 
-# #1313 (cue-half iteration 2): the ENDGAME WRAP WINDOW. The measured residual RED after Option 3
+# #1313 (cue-half iteration 2b): the ENDGAME WRAP WINDOW. The measured residual RED after Option 3
 # (rri-a1-opt3) was a single thing — a quest left ACTIVE at session end (reads as a dropped thread).
-# The wrap window is defined by the ONE honest engine gauge for "the story has passed its peak and is
-# now closing": arc.climax_landed (set by the DM's own mark_climax call). That is a positive engine
-# flag, not a fiction read of the harness's "out of time" prose, and it is deliberately MUTUALLY
-# EXCLUSIVE with act_climax_owed (which only fires while climax_landed is False) — so the endgame cue
-# lives strictly in the DENOUEMENT, never competing with the climax cue. A beats-in-act fallback was
-# REJECTED: it would re-collide with act_climax_owed and reintroduce a fuzzy threshold; the landed
-# flag is both cleaner and the exact "payoff done, now wrap" semantic. In this window an active quest
-# escalates to a single HIGH quest_endgame_unresolved cue that REPLACES the generic resolvable/stalled/
-# unresolved_late cues (one imperative, not three) so next_action names quest closure as THE next act.
+# Iteration 2 (#1317) opened the window on `act == 3 AND climax_landed`. BOTH halves are OPTIONAL DM
+# calls (advance_act / mark_climax): the rri-a1-gate run advanced neither, the window never opened,
+# and the closure cue fired ZERO times (behavioral AMBER — the same engagement-variance defect one
+# level up). 2b re-derives the window from the ONE skip-proof gauge the DM cannot bypass —
+# arc.beats_in_act, which persist_beat bumps every mandatory beat — while KEEPING climax_landed as
+# the semantically-precise fast path:
+#
+#     _in_wrap_window = climax_landed OR (act >= 2 AND beats_in_act >= _WRAP_WINDOW_BEATS)
+#
+# Threshold calibrated from the 4 real snapshots that reached session-wrap (engine-authoritative
+# narrative_arc; act / beats_in_act / climax_landed):
+#   rri-a1-gate  2 /  8 / False  — the behavioral RED; MUST open via the counter floor (no climax)
+#   rri-a1-opt3  1 / 16 / True   — opens via climax_landed (act 1 — the counter floor deliberately does NOT reach it)
+#   rri-a1-duo3  2 / 10 / False  — opens via the counter floor (harmless: no quests)
+#   rri-a1-duo4  2 / 10 / True   — opens via climax_landed (harmless: the quest is completed)
+# The gate run at beats_in_act=8 with no climax pins _WRAP_WINDOW_BEATS <= 8 (a higher floor would
+# miss the exact run this fixes); opt3 opens via the climax fast-path, so a lower floor buys nothing
+# but a wider mid-act false-open surface — so 8 is the unique maximal-yet-sufficient floor. The
+# `act >= 2` guard keeps opt3's long ACT-1 slog (beats=16, act_one_stalled territory) from being
+# mis-read as "wrapping": in act 1 ONLY the explicit climax flag opens the window. 8 also sits +4
+# above act_climax_owed's own beats_in_act>=4 trigger, so in an act-3 climax build-up act_climax_owed
+# owns beats 4-7 alone and the endgame floor only joins from beat 8.
+#
+# In this window an active quest escalates to a single HIGH quest_endgame_unresolved cue that REPLACES
+# the generic resolvable/stalled/unresolved_late cues (one imperative, not three) so next_action names
+# quest closure as THE next act. PRECEDENCE with act_climax_owed (which fires in a counter-opened
+# act-3 window while climax_landed is still False — the window is NO LONGER mutually exclusive with
+# it): both are legitimately owed (land the climax, THEN close the thread), so NEITHER is suppressed —
+# both stay HIGH and an explicit intra-tier tiebreak (_KIND_PRECEDENCE) sorts act_climax_owed first.
+_WRAP_WINDOW_BEATS = 8
 
 
 def _quest_progress_beat(c: Campaign) -> int:
@@ -12975,13 +12996,16 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
     #    stretch of play with companions and no rest).
     _arc = getattr(c, "narrative_arc", None)
     _beats_in_act = (getattr(_arc, "beats_in_act", 0) or 0) if _arc is not None else 0
-    # #1313 endgame wrap window (see the _PARTY_STUCK_BEATS block comment): the story has passed its
-    # peak and is closing once the DM has marked the Act-3 climax landed. Defensive getattr, so an
-    # arc-less / older / partial NarrativeArc reads False (byte-identical empty digest, as before).
-    _in_wrap_window = (
-        _arc is not None
-        and getattr(_arc, "act", 1) == 3
-        and bool(getattr(_arc, "climax_landed", False))
+    # #1313 (2b) endgame wrap window (see the _WRAP_WINDOW_BEATS block comment): the story has passed
+    # its peak and is closing once EITHER the DM marked the Act-3 climax landed (the precise fast path)
+    # OR the skip-proof mandatory-beat counter has run deep in act 2+ (climax_landed OR (act >= 2 AND
+    # beats_in_act >= _WRAP_WINDOW_BEATS)). Defensive getattr throughout, so an arc-less / older /
+    # partial NarrativeArc reads False (byte-identical empty digest, as before). The `act >= 2` guard
+    # keeps a long act-1 slog out of the counter floor; the climax flag alone still opens it in act 1.
+    _act = getattr(_arc, "act", 1) if _arc is not None else 1
+    _in_wrap_window = _arc is not None and (
+        bool(getattr(_arc, "climax_landed", False))
+        or (_act >= 2 and _beats_in_act >= _WRAP_WINDOW_BEATS)
     )
     if party_companions and (day >= 3 or _beats_in_act >= _CAMP_OVERDUE_BEATS):
         # NB: a value of 0 is a VALID rest day (rested on day 0), so coalesce only None, not
@@ -13533,10 +13557,19 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
     # #1313 Option 3: severity-sort so the SINGLE most urgent obligation is first (high>med>low),
     # then lifted into `next_action` by the callers. STABLE (Python's sorted): within a severity
     # tier the authored append order above is preserved, so the scannable `obligations` list reads
-    # exactly as before within a tier — only the cross-tier ordering changes. ADDITIVE: an empty
-    # digest sorts to the same empty list (byte-identical when there is nothing to do). An unknown
-    # severity sorts LAST (defensive default) rather than raising.
-    obligations.sort(key=lambda o: _SEVERITY_RANK.get(o.get("severity"), _SEVERITY_RANK_UNKNOWN))
+    # exactly as before within a tier — EXCEPT for the explicit intra-tier precedence below.
+    # #1313 (2b): act_climax_owed and quest_endgame_unresolved can now BOTH be HIGH and owed in the
+    # same counter-opened act-3 window (they are no longer mutually exclusive). They append in a
+    # different order than the desired priority (quest_endgame_unresolved at the quest block appends
+    # BEFORE act_climax_owed at the act-shape block), so the append-order-preserving stable sort would
+    # wrongly put endgame first. A tiny secondary key (_KIND_PRECEDENCE, default 0 for every other
+    # kind) makes "land the climax, THEN close the thread" explicit instead of an append coincidence;
+    # all other cues keep 0 and therefore their existing within-tier append order. ADDITIVE: an empty
+    # digest sorts to the same empty list (byte-identical). An unknown severity sorts LAST.
+    obligations.sort(key=lambda o: (
+        _SEVERITY_RANK.get(o.get("severity"), _SEVERITY_RANK_UNKNOWN),
+        _KIND_PRECEDENCE.get(o.get("kind"), 0),
+    ))
     return obligations
 
 
@@ -13545,6 +13578,14 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
 # severity degrades to LAST rather than raising (mirrors the digest's defensive-getattr discipline).
 _SEVERITY_RANK = {"high": 0, "med": 1, "low": 2}
 _SEVERITY_RANK_UNKNOWN = 3
+
+# #1313 (2b) intra-tier precedence — the SECONDARY sort key, applied within a severity tier. Only the
+# act_climax_owed / quest_endgame_unresolved pair needs an explicit order: in a counter-opened act-3
+# wrap window with the climax NOT yet landed BOTH are HIGH and owed, and the payoff (land the climax)
+# must be named as next_action BEFORE the closure (close the thread). Every other kind defaults to 0
+# (via dict.get), so this is a no-op for the rest of the digest — their existing append order within a
+# tier is preserved by the stable sort. Lower = earlier.
+_KIND_PRECEDENCE = {"act_climax_owed": -1, "quest_endgame_unresolved": 0}
 
 
 def _top_obligation(obligations: list[dict]) -> dict | None:
