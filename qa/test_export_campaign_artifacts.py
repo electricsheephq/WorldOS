@@ -206,6 +206,7 @@ def test_golden_fixture_exact_expected_json(golden):
         "cell_default_walkable": True,
         "walls": [[0, 0]],
         "props": [{"kind": "table", "cells": [[2, 1]]}],
+        "impassable": [[0, 0], [2, 1]],
         "door_cells": [[0, 1]],
         "protected_lane_cells": [[1, 1]],
     }
@@ -412,3 +413,138 @@ def test_dialogue_snippets_capped_at_five():
 def test_dialogue_snippets_empty_when_name_never_mentioned():
     blocks = ["Nothing relevant happens here.", "Nor here."]
     assert eca._npc_dialogue_snippets("Corvin Dresh", blocks) == []
+
+
+def test_dialogue_snippets_skip_leading_article():
+    """An NPC named 'The Emperor' must match on 'Emperor', not the article 'The' (which would
+    otherwise contaminate almost every narration block)."""
+    blocks = ["The door creaks open.", "The Emperor regards you coldly."]
+    assert eca._npc_dialogue_snippets("The Emperor", blocks) == ["The Emperor regards you coldly."]
+
+
+def test_dialogue_snippets_word_boundary_no_substring_false_positive():
+    """First name 'Boo' must not match 'book' (word-boundary, not bare substring)."""
+    blocks = ["She opens a dusty book.", "Boo squeaks in Minsc's pocket."]
+    assert eca._npc_dialogue_snippets("Boo", blocks) == ["Boo squeaks in Minsc's pocket."]
+
+
+# ── combat scanner edge cases (dangling / consecutive / rejected / string-arg) ─────────────────
+def _tool_use(name: str, inp: dict, tid: str = "") -> dict:
+    block = {"type": "tool_use", "name": name, "input": inp}
+    if tid:
+        block["id"] = tid
+    return {"type": "assistant", "message": {"content": [block]}}
+
+
+def _tool_result(tid: str, *, is_error: bool = False) -> dict:
+    return {
+        "type": "user",
+        "message": {"content": [{"type": "tool_result", "tool_use_id": tid, "is_error": is_error, "content": "ok"}]},
+    }
+
+
+def test_consecutive_start_combat_flushes_earlier_as_dangling():
+    """Two start_combat with no end_combat between them: the first is emitted (outcome='')
+    rather than silently dropped, honoring 'every started encounter is accounted for'."""
+    lines = [
+        json.dumps(_tool_use("mcp__x__start_combat", {"combatant_ids": ["a"]})),
+        json.dumps(_tool_use("mcp__x__start_combat", {"combatant_ids": ["b"]})),
+        json.dumps(_tool_use("mcp__x__end_combat", {"resolution": "won"})),
+    ]
+    encs = eca._combat_encounters_from_transcript(lines, {})
+    assert [e["outcome"] for e in encs] == ["", "won"]
+    assert [c["name"] for e in encs for c in e["composition"]] == ["a", "b"]
+
+
+def test_start_combat_with_error_result_is_skipped():
+    """A rejected start_combat (tool_result is_error=true) yields no fake encounter."""
+    lines = [
+        json.dumps(_tool_use("mcp__x__start_combat", {"combatant_ids": ["a"]}, tid="tu-1")),
+        json.dumps(_tool_result("tu-1", is_error=True)),
+        json.dumps(_tool_use("mcp__x__end_combat", {"resolution": "won"})),
+    ]
+    assert eca._combat_encounters_from_transcript(lines, {}) == []
+
+
+def test_combatant_ids_bare_string_not_iterated_char_by_char():
+    """combatant_ids logged as a bare/comma-separated STRING is coerced to a list, not iterated
+    into single-character names (mirrors the engine's StrListArg coercion)."""
+    lines = [
+        json.dumps(_tool_use("mcp__x__start_combat", {"combatant_ids": "npc-a,npc-b"})),
+        json.dumps(_tool_use("mcp__x__end_combat", {"resolution": "done"})),
+    ]
+    encs = eca._combat_encounters_from_transcript(lines, {})
+    assert encs[0]["composition"] == [{"name": "npc-a"}, {"name": "npc-b"}]
+
+
+def test_golden_fixture_exercises_dangling_and_consecutive(golden):
+    """End-to-end on disk: a rejected start_combat (skipped), a consecutive start_combat that
+    flushes the prior as dangling (outcome=''), and a final ended combat (outcome='resolved')."""
+    lines = [
+        json.dumps(_tool_use("mcp__x__start_combat", {"combatant_ids": ["npc-dresh"]}, tid="tu-bad")),
+        json.dumps(_tool_result("tu-bad", is_error=True)),  # rejected -> no encounter
+        json.dumps(_tool_use("mcp__x__start_combat", {"combatant_ids": ["npc-dresh"]})),  # opens A
+        json.dumps(_tool_use("mcp__x__start_combat", {"combatant_ids": ["npc-dresh"]})),  # A dangles, opens B
+        json.dumps(_tool_use("mcp__x__end_combat", {"resolution": "resolved"})),  # closes B
+    ]
+    golden["transcript"].write_text("\n".join(lines) + "\n", encoding="utf-8")
+    eca.main([
+        golden["campaign_id"], "--out-dir", str(golden["out_dir"]),
+        "--transcript", str(golden["transcript"]), "--run-id", "golden-run",
+        "--extracted-at", "2026-01-01T00:00:00Z",
+    ])
+    enc_files = sorted((golden["out_dir"] / golden["campaign_id"] / "encounters").glob("*.json"))
+    outcomes = sorted(json.loads(p.read_text())["payload"]["outcome"] for p in enc_files)
+    assert outcomes == ["", "resolved"]  # dangling A + ended B; rejected start produced nothing
+
+
+# ── downed NPC status ─────────────────────────────────────────────────────────────────────────
+def test_npc_final_status_downed_when_hp_zero_and_not_dead_or_stable():
+    assert eca._npc_final_status({"current_hp": 0, "dead": False, "stable": False}) == "downed"
+    assert eca._npc_final_status({"current_hp": 0, "dead": True}) == "dead"
+    assert eca._npc_final_status({"current_hp": 0, "stable": True}) == "stable"
+    assert eca._npc_final_status({"current_hp": 5}) == "active"
+
+
+# ── explicit missing transcript raises ─────────────────────────────────────────────────────────
+def test_explicit_missing_transcript_raises(golden):
+    with pytest.raises(FileNotFoundError):
+        eca.main([
+            golden["campaign_id"], "--out-dir", str(golden["out_dir"]),
+            "--transcript", str(golden["transcript"].parent / "does-not-exist.jsonl"),
+            "--run-id", "golden-run", "--extracted-at", "2026-01-01T00:00:00Z",
+        ])
+
+
+def test_absent_inferred_transcript_falls_back_to_empty(golden):
+    """No --transcript and no inferrable file: extraction still succeeds with zero encounters."""
+    rc = eca.main([
+        golden["campaign_id"], "--out-dir", str(golden["out_dir"]),
+        "--run-id", "no-such-run", "--extracted-at", "2026-01-01T00:00:00Z",
+    ])
+    assert rc == 0
+    enc_files = list((golden["out_dir"] / golden["campaign_id"] / "encounters").glob("*.json"))
+    assert enc_files == []
+
+
+# ── stale-artifact cleanup on re-run ───────────────────────────────────────────────────────────
+def test_rerun_clears_stale_artifacts(golden):
+    """A quest removed from the snapshot between runs must not leave an orphaned JSON behind."""
+    args = [
+        golden["campaign_id"], "--out-dir", str(golden["out_dir"]),
+        "--transcript", str(golden["transcript"]), "--run-id", "golden-run",
+        "--extracted-at", "2026-01-01T00:00:00Z",
+    ]
+    campaign = store.load_campaign(golden["campaign_id"])
+    campaign.quests["quest-temp"] = Quest(id="quest-temp", title="Temp", objectives=["x"])
+    store.save_campaign(campaign)
+    eca.main(args)
+    quests_dir = golden["out_dir"] / golden["campaign_id"] / "quests"
+    assert len(list(quests_dir.glob("*.json"))) == 2
+
+    campaign = store.load_campaign(golden["campaign_id"])
+    del campaign.quests["quest-temp"]
+    store.save_campaign(campaign)
+    eca.main(args)
+    remaining = [json.loads(p.read_text())["payload"]["id"] for p in quests_dir.glob("*.json")]
+    assert remaining == ["quest-wagon"]  # orphaned quest-temp.json cleared

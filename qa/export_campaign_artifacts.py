@@ -25,15 +25,18 @@ script, so re-running with the same argument is byte-for-byte reproducible (test
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
 import sys
+import types
 from pathlib import Path
 from typing import Optional
 
 _ROOT = Path(__file__).resolve().parent.parent
 _MAX_DIALOGUE_SNIPPETS = 5
+_ARTICLES = {"the", "a", "an"}
 
 
 # ── engine + distill imports (read-only) ─────────────────────────────────────────────────────
@@ -86,8 +89,15 @@ def _envelope(artifact_id: str, cls: str, world: str, provenance: dict, payload:
 
 
 # ── transcript helpers ───────────────────────────────────────────────────────────────────────
-def _load_transcript_lines(transcript_path: Optional[Path]) -> list[str]:
-    if transcript_path is None or not transcript_path.exists():
+def _load_transcript_lines(transcript_path: Optional[Path], *, explicit: bool = False) -> list[str]:
+    """Read non-blank lines from a transcript. A missing/absent transcript falls back to []
+    (no encounters/dialogue) ONLY for the omitted/inferred case; an EXPLICIT --transcript path
+    that doesn't exist is a caller mistake and raises rather than silently harvesting nothing."""
+    if transcript_path is None:
+        return []
+    if not transcript_path.exists():
+        if explicit:
+            raise FileNotFoundError(f"--transcript path does not exist: {transcript_path}")
         return []
     return [ln for ln in transcript_path.read_text(encoding="utf-8").splitlines() if ln.strip()]
 
@@ -116,11 +126,15 @@ def _npc_dialogue_snippets(name: str, text_blocks: list[str], limit: int = _MAX_
     """Up to `limit` narration snippets that mention this NPC by name — a cheap, transcript-
     reading proxy for "moments this NPC appeared in the story" (no NLP, no engine dependency;
     a plain case-insensitive whole-word-ish substring match). First name only (e.g. "Jaheira"
-    out of "Jaheira" or "Minsc and Boo" -> "Minsc") so a two-word canon name still matches."""
+    out of "Jaheira" or "Minsc and Boo" -> "Minsc") so a two-word canon name still matches.
+    Leading articles are skipped ("The Emperor" -> "Emperor") so an NPC whose display name
+    starts with "The"/"A"/"An" doesn't match almost every narration block via the article."""
     if not name:
         return []
-    first = name.split()[0]
-    pat = re.compile(re.escape(first), re.IGNORECASE)
+    words = name.split()
+    first = next((w for w in words if w.lower() not in _ARTICLES), words[0])
+    # word-boundary match so "Boo" doesn't fire on "book" and a short/article name is exact
+    pat = re.compile(rf"\b{re.escape(first)}\b", re.IGNORECASE)
     out: list[str] = []
     for blk in text_blocks:
         if pat.search(blk):
@@ -130,16 +144,66 @@ def _npc_dialogue_snippets(name: str, text_blocks: list[str], limit: int = _MAX_
     return out
 
 
+def _coerce_id_list(raw) -> list[str]:
+    """Mirror the engine's StrListArg coercion (models._coerce_list) on a RAW transcript arg:
+    the transcript records the tool_use input BEFORE pydantic's BeforeValidator runs, so a DM
+    that passed combatant_ids as a bare or comma-separated string ("a" / "a,b") is logged as a
+    string, not a list. Iterating that string directly would yield single-character "names"."""
+    if isinstance(raw, str):
+        s = raw.strip()
+        if not s:
+            return []
+        return [t.strip() for t in s.split(",") if t.strip()] if "," in s else [s]
+    if isinstance(raw, list):
+        return [str(x) for x in raw]
+    return []
+
+
+def _errored_tool_use_ids(lines: list[str]) -> set[str]:
+    """tool_use_ids whose tool_result came back is_error=true — a rejected/failed engine call.
+    Its start_combat never actually opened an encounter, so it must not be harvested. The result
+    lives in a later `user` event, keyed by tool_use_id (distill._content_blocks tolerance)."""
+    errored: set[str] = set()
+    for raw in lines:
+        try:
+            ev = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if ev.get("type") != "user":
+            continue
+        content = ev.get("message", {}).get("content", [])
+        if not isinstance(content, list):
+            continue
+        for b in content:
+            if isinstance(b, dict) and b.get("type") == "tool_result" and b.get("is_error"):
+                tid = b.get("tool_use_id")
+                if tid:
+                    errored.add(tid)
+    return errored
+
+
 def _combat_encounters_from_transcript(lines: list[str], characters: dict) -> list[dict]:
     """Pairs each start_combat tool call with its matching end_combat (composition from
     start_combat's combatant_ids resolved to character names; outcome from end_combat's
     resolution text, which is the same string the engine stamps onto
     Campaign.last_combat_resolution). A start_combat with no later end_combat in this
     transcript yields outcome="" (combat still open / transcript truncated mid-fight) rather
-    than being dropped — every started encounter is accounted for."""
+    than being dropped — every started encounter is accounted for, including a consecutive
+    start_combat (no intervening end_combat): the earlier one is flushed as a dangling
+    outcome="" encounter before the new one overwrites `pending`. start_combat calls whose
+    tool_result came back is_error=true (rejected engine call) are skipped — no fake encounter."""
+    errored = _errored_tool_use_ids(lines)
     encounters: list[dict] = []
     pending: Optional[list[str]] = None
     idx = 0
+
+    def flush(names: list[str], outcome: str) -> None:
+        nonlocal idx
+        idx += 1
+        encounters.append(
+            {"id": f"encounter-{idx}", "composition": [{"name": n} for n in names], "outcome": outcome}
+        )
+
     for raw in lines:
         try:
             ev = json.loads(raw)
@@ -156,25 +220,35 @@ def _combat_encounters_from_transcript(lines: list[str], characters: dict) -> li
             name = b.get("name", "")
             args = b.get("input", {}) or {}
             if name.endswith("start_combat"):
-                ids = args.get("combatant_ids") or []
+                if b.get("id") in errored:
+                    continue  # rejected engine call — never actually opened an encounter
+                if pending is not None:
+                    flush(pending, "")  # dangling: previous combat never got an end_combat
+                ids = _coerce_id_list(args.get("combatant_ids"))
                 pending = [characters.get(i, {}).get("name", i) for i in ids]
             elif name.endswith("end_combat") and pending is not None:
-                idx += 1
-                encounters.append(
-                    {
-                        "id": f"encounter-{idx}",
-                        "composition": [{"name": n} for n in pending],
-                        "outcome": args.get("resolution", ""),
-                    }
-                )
+                flush(pending, args.get("resolution", ""))
                 pending = None
     if pending is not None:
-        idx += 1
-        encounters.append({"id": f"encounter-{idx}", "composition": [{"name": n} for n in pending], "outcome": ""})
+        flush(pending, "")
     return encounters
 
 
 # ── per-class extraction ─────────────────────────────────────────────────────────────────────
+def _npc_final_status(c: dict) -> str:
+    """dead > stable > downed > active. A creature at current_hp<=0 that is neither `dead`
+    nor `stable` is still unconscious/dying (Character.dead/stable are both False until it
+    finishes death saves) — reporting it as "active" would misrepresent a downed NPC."""
+    if c.get("dead"):
+        return "dead"
+    if c.get("stable"):
+        return "stable"
+    if c.get("current_hp", 1) <= 0:
+        return "downed"
+    return "active"
+
+
+
 def _quest_consequences(quest_id: str, quest_title: str, consequences: list) -> list[dict]:
     """Best-effort linkage: the engine's Consequence has no direct quest_id FK (it is keyed by
     world-sim thread_id, not per-quest — see Campaign.consequences / thread model), so a
@@ -235,7 +309,7 @@ def extract_npcs(campaign: dict, provenance_base, world: str, text_blocks: list[
             "voice_id": c.get("voice_id", ""),
             "personality": personality,
             "attitude_arc": {"start": start_val, "end": end_val},
-            "final_status": "dead" if c.get("dead") else ("stable" if c.get("stable") else "active"),
+            "final_status": _npc_final_status(c),
             "dialogue_snippets": _npc_dialogue_snippets(c.get("name", ""), text_blocks),
         }
         artifacts.append(_envelope(f"npc:{campaign['id']}:{cid}", "npc", world, provenance_base(), payload))
@@ -249,7 +323,7 @@ def extract_locations(campaign: dict, provenance_base, world: str, sg_module, ca
         grid_payload = None
         grid = loc.get("scene_grid")
         if grid is not None:
-            grid_payload = _scene_grid_payload(grid, loc)
+            grid_payload = _scene_grid_payload(grid, loc, sg_module)
         payload = {
             "id": loc.get("id", lid),
             "name": loc.get("name", ""),
@@ -263,10 +337,33 @@ def extract_locations(campaign: dict, provenance_base, world: str, sg_module, ca
     return artifacts
 
 
-def _scene_grid_payload(grid: dict, loc: dict) -> dict:
+class _GridShim:
+    """A thin attribute-access wrapper over the raw scene_grid dict so scene_grid.impassable_cells
+    (which reads attributes: .cell_default.walkable, .cells[].c/.r/.walkable, .props[].cells) can be
+    reused verbatim on a snapshot dict — the impassable projection is then IDENTICAL to what
+    export_scene_grid.py emits (same function, not a re-implementation), not merely "the same keys"."""
+
+    def __init__(self, grid: dict):
+        self.cell_default = types.SimpleNamespace(walkable=bool((grid.get("cell_default") or {}).get("walkable", True)))
+        self.cells = [
+            types.SimpleNamespace(c=cell.get("c"), r=cell.get("r"),
+                                  walkable=cell.get("walkable", True), type=cell.get("type", ""))
+            for cell in grid.get("cells", [])
+        ]
+        self.props = [types.SimpleNamespace(cells=[tuple(pair) for pair in p.get("cells", [])]) for p in grid.get("props", [])]
+
+
+def _scene_grid_payload(grid: dict, loc: dict, sg_module) -> dict:
     """Reuses export_scene_grid's field mapping directly on the raw dict snapshot (NOT a
-    fork/re-derivation — same keys, same walls/props/impassable projection) so a location's
-    scene_grid artifact is exactly what qa/export_scene_grid.py would emit for it."""
+    fork/re-derivation — same keys, same walls/props projection) plus the SAME impassable
+    derivation (scene_grid.impassable_cells via _GridShim), so a location's scene_grid artifact
+    carries the exact walls/props/impassable geometry qa/export_scene_grid.py would emit for it.
+
+    NOTE (deliberate divergence from export_scene_grid.py, which is a pre-GREYBOX write gate):
+    this is a read-only HARVEST of already-played state, so it does NOT run the pre-greybox
+    validation gate (sg.validate_scene_grid) — a played room's grid is a fait accompli, not an
+    about-to-be-rendered candidate to refuse. The greybox-only `material` hint and the location
+    `name` are likewise omitted here (the location artifact carries name at the envelope level)."""
     cols = grid["grid"]["cols"]
     rows = grid["grid"]["rows"]
     walls = [
@@ -275,12 +372,14 @@ def _scene_grid_payload(grid: dict, loc: dict) -> dict:
         if cell.get("type") == "wall" or not cell.get("walkable", True)
     ]
     props = [{"kind": p.get("kind", "prop"), "cells": [list(pair) for pair in p.get("cells", [])]} for p in grid.get("props", [])]
+    impassable = sg_module.impassable_cells(_GridShim(grid), cols, rows)
     return {
         "cols": cols,
         "rows": rows,
-        "cell_default_walkable": bool(grid.get("cell_default", {}).get("walkable", True)),
+        "cell_default_walkable": bool((grid.get("cell_default") or {}).get("walkable", True)),
         "walls": walls,
         "props": props,
+        "impassable": impassable,
         "door_cells": [list(pair) for pair in (grid.get("door_cells") or [])],
         "protected_lane_cells": [list(pair) for pair in (grid.get("protected_lane_cells") or [])],
     }
@@ -324,15 +423,33 @@ def build_artifacts(
     }
 
 
+def _artifact_filename(artifact_id: str) -> str:
+    """A stable, filesystem-safe filename derived from the artifact_id. The slug substitution
+    (`[^A-Za-z0-9_.-]+` -> `_`) is NOT injective, so two distinct ids could collide; a short
+    hash suffix of the RAW id keeps the filename 1:1 with the artifact_id (no silent overwrite)."""
+    slug = re.sub(r"[^A-Za-z0-9_.-]+", "_", artifact_id)
+    digest = hashlib.sha1(artifact_id.encode("utf-8")).hexdigest()[:8]
+    return f"{slug}.{digest}.json"
+
+
 def write_artifacts(out_dir: Path, campaign_id: str, artifacts_by_class: dict[str, list[dict]]) -> dict[str, int]:
     counts = {}
     campaign_out = out_dir / campaign_id
     for cls, artifacts in artifacts_by_class.items():
         cls_dir = campaign_out / cls
+        # Clear any prior extraction for this class so a re-run into the same out-dir never
+        # leaves orphaned JSONs from artifacts that no longer exist (removed quest/NPC/location).
+        if cls_dir.exists():
+            for stale in cls_dir.glob("*.json"):
+                stale.unlink()
         cls_dir.mkdir(parents=True, exist_ok=True)
+        seen: dict[str, str] = {}
         for art in artifacts:
-            # a stable, filesystem-safe filename derived from the artifact_id
-            fname = re.sub(r"[^A-Za-z0-9_.-]+", "_", art["artifact_id"]) + ".json"
+            fname = _artifact_filename(art["artifact_id"])
+            prior = seen.get(fname)
+            if prior is not None and prior != art["artifact_id"]:  # 1:1 guarantee tripped
+                raise ValueError(f"artifact filename collision: {fname!r} for {prior!r} and {art['artifact_id']!r}")
+            seen[fname] = art["artifact_id"]
             (cls_dir / fname).write_text(json.dumps(art, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         counts[cls] = len(artifacts)
     return counts
@@ -364,7 +481,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     state_dir = os.environ.get("WORLDOS_STATE_DIR")
     run_id = _derive_run_id(args.campaign_id, args.run_id, state_dir)
     transcript_path = _resolve_transcript_path(args.campaign_id, run_id, args.transcript)
-    transcript_lines = _load_transcript_lines(transcript_path)
+    transcript_lines = _load_transcript_lines(transcript_path, explicit=bool(args.transcript))
 
     artifacts_by_class = build_artifacts(
         campaign_dict, run_id=run_id, extracted_at=args.extracted_at, transcript_lines=transcript_lines, sg_module=sg
