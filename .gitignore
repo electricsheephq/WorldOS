@@ -28,6 +28,11 @@
 # committed; its output is not.
 /qa/findings.jsonl
 
+# HV2 harvest-loop extraction output (qa/export_campaign_artifacts.py) — regenerable per
+# campaign from snapshot.json + transcripts. The extractor script and the schema handshake
+# (data/library/artifact_schema.json) ARE committed; the extracted artifacts are not.
+/qa/artifacts_out/
+
 # Privately-imported, user-owned adventures — NEVER commit (may be copyrighted).
 # Only original / CC-licensed content belongs under content/campaigns/.
 /content/campaigns/_imported/
