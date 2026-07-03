@@ -144,19 +144,26 @@ def summarize(panel: dict) -> dict:
 
 def _log_frames(panel: dict, run_prefix: str, db_path: str | None) -> int:
     """Log each frame as a scores_db surface="visual" row. Control rows get a ":control" scene
-    suffix so the same-panel delta is queryable from the ledger, not only the panel report."""
+    suffix so the same-panel delta is queryable from the ledger, not only the panel report.
+
+    Uses each frame's OWN ``scene`` (falling back to the panel-level scene) so a combined panel
+    (tavern + church rows in one panel) logs each row under its real scene/control pair — matching
+    the per-scene grouping ``summarize()`` already does. The row index ``n`` is folded into
+    ``run_id`` so the required 5 blind scorers submitting scores for the SAME shuffled frame id
+    each get a distinct row instead of colliding on ``add_run``'s default replace-on-PK write."""
     from scores_db import add_run  # local import so --dry-run needs no db
 
-    scene = str(panel.get("scene", "rest:unknown"))
+    panel_scene = str(panel.get("scene", "rest:unknown"))
     backend = str(panel.get("backend", "unity-cl"))
     vround = int(panel.get("round", 1))
     pregate = str(panel.get("pregate", "SKIPPED")).upper()
     n = 0
     for f in panel.get("frames") or []:
+        scene = str(f.get("scene", panel_scene))
         fid = str(f.get("id", f"frame_{n}"))
         is_control = f.get("kind") == "control"
         dims = {k: f.get("dims", {}).get(k) for k in REST_LENSES if f.get("dims", {}).get(k) is not None}
-        run_id = f"{run_prefix}-{scene.replace(':', '_')}-r{vround}-{fid}"
+        run_id = f"{run_prefix}-{scene.replace(':', '_')}-r{vround}-{fid}-i{n}"
         kw: dict = dict(
             surface="visual",
             visual_scene=scene + (":control" if is_control else ""),

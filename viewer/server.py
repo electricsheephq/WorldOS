@@ -3373,6 +3373,16 @@ def _combat_occluders(snapshot: dict) -> list[dict]:
     return out
 
 
+def _is_dead_or_downed(ch: dict) -> bool:
+    """True for a character who must not stand upright in a rest projection: `dead`, or at 0 HP
+    (unconscious/dying, or stabilized-but-still-down — engine fields `stable`/`current_hp`, see
+    combat.py `_ensure_unconscious`). A rest scene only shows characters on their feet."""
+    if bool(ch.get("dead")):
+        return True
+    hp = _num(ch.get("current_hp"))
+    return hp is not None and hp <= 0
+
+
 def _scene_stage(snapshot: dict, combat_active: bool) -> dict:
     """W1 (#1318) SCENE-AT-REST projection: an additive ``stage`` block carrying ``mode`` +
     at-rest ``tokens`` so a location renders with its people in it BEFORE combat — the tavern
@@ -3445,11 +3455,13 @@ def _scene_stage(snapshot: dict, combat_active: bool) -> dict:
 
     chars = snapshot.get("characters") if isinstance(snapshot.get("characters"), dict) else {}
     party = snapshot.get("party") if isinstance(snapshot.get("party"), list) else []
-    # party_set holds the FULL roster party (incl. any dead) so a slain member is not re-projected
-    # via the present-NPC path below; party_ids drops the dead so a corpse never stands in the rest
-    # scene — the same rule the NPC path applies (combat handles the fallen).
+    # party_set holds the FULL roster party (incl. any dead/downed) so a fallen member is not
+    # re-projected via the present-NPC path below; party_ids drops anyone dead OR downed (0 HP,
+    # unconscious/dying/stable — the engine models these separately from `dead`, see combat.py
+    # `_ensure_unconscious`/`stable`) so neither a corpse nor an unconscious companion stands in
+    # the rest scene — the same rule the NPC path applies (combat handles the fallen).
     party_set = {cid for cid in party if isinstance(cid, str) and cid in chars}
-    party_ids = [cid for cid in party_set if not bool(chars[cid].get("dead"))]
+    party_ids = [cid for cid in party_set if not _is_dead_or_downed(chars[cid])]
     party_ids.sort(key=lambda cid: party.index(cid))  # keep authored party order, deterministic
 
     # Present non-party NPCs: characters anchored at the current location (npc/companion kind),
@@ -3462,9 +3474,10 @@ def _scene_stage(snapshot: dict, combat_active: bool) -> dict:
         and cid not in party_set
         and _text(ch.get("kind")).lower() in {"npc", "companion"}
         and _text(ch.get("location_id")) == loc_id and loc_id
-        # a DEAD character never stands in the rest scene — a corpse at the hearth breaks the
-        # inhabited read this projection exists to create (and combat handles the fallen).
-        and not bool(ch.get("dead"))
+        # a DEAD or DOWNED (0 HP, not yet dead) character never stands in the rest scene — a
+        # corpse or an unconscious companion casually standing at the hearth breaks the inhabited
+        # read this projection exists to create (and combat handles the fallen).
+        and not _is_dead_or_downed(ch)
     )
 
     tokens: list[dict] = []

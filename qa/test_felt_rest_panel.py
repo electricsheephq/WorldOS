@@ -117,14 +117,51 @@ class LogFramesAndMainTests(unittest.TestCase):
         finally:
             del _sys.modules["scores_db"]
         self.assertEqual(n, 2)
-        ours_row = next(v for k, v in captured.items() if k.endswith("-f1"))
+        ours_row = next(v for k, v in captured.items() if "-f1-" in k)
         # only the real, non-None rest lens survives; the bogus/None dims are dropped.
         self.assertEqual(ours_row["visual_dims_json"], {"placement_plausibility": 6})
         # the control row is scene-suffixed so the delta is queryable from the ledger.
-        ctl_row = next(v for k, v in captured.items() if k.endswith("-f2"))
+        ctl_row = next(v for k, v in captured.items() if "-f2-" in k)
         self.assertEqual(ctl_row["visual_scene"], "rest:tavern:control")
         # a frame with no surviving dims omits the visual_dims_json key entirely.
         self.assertNotIn("visual_dims_json", ctl_row)
+
+    def test_log_frames_uses_each_frames_own_scene_and_disambiguates_same_id_rows(self):
+        """Thread PRRT_...G9Xr: a combined panel (tavern + church rows in one panel) must log
+        each row under ITS OWN scene, not the panel-level scene — otherwise every row lands as
+        rest:combined and the ledger can no longer be queried per scene/control pair. Thread
+        PRRT_...G9Xx: when the required 5 blind scorers each submit a row for the SAME shuffled
+        frame id, run_id must stay unique per row so scores_db.add_run's replace-on-PK write
+        doesn't drop all but the last scorer's row."""
+        captured = {}
+
+        def _fake_add_run(run_id, **kw):
+            self.assertNotIn(run_id, captured, f"run_id collided: {run_id}")
+            captured[run_id] = kw
+
+        import sys as _sys
+        import types as _types
+        stub = _types.ModuleType("scores_db")
+        stub.add_run = _fake_add_run  # type: ignore[attr-defined]
+        _sys.modules["scores_db"] = stub
+        try:
+            panel = {
+                "scene": "rest:combined", "backend": "unity-cl", "round": 1, "pregate": "PASS",
+                "frames": [
+                    {"id": "shared", "scene": "rest:tavern", "kind": "ours", "overall": 6.0},
+                    {"id": "shared", "scene": "rest:tavern", "kind": "ours", "overall": 6.5},
+                    {"id": "shared", "scene": "rest:church", "kind": "ours", "overall": 5.0},
+                ],
+            }
+            n = frp._log_frames(panel, "felt-rest", None)
+        finally:
+            del _sys.modules["scores_db"]
+        # all 3 rows survive (no collision-induced overwrite) and carry their OWN scene, not the
+        # panel-level "rest:combined".
+        self.assertEqual(n, 3)
+        self.assertEqual(len(captured), 3)
+        scenes = sorted(v["visual_scene"] for v in captured.values())
+        self.assertEqual(scenes, ["rest:church", "rest:tavern", "rest:tavern"])
 
     def test_main_exit_code_is_zero_only_on_pass(self):
         """main() returns 0 ONLY on a binding PASS; INCONCLUSIVE / FAIL / NO_CONTROL are non-zero

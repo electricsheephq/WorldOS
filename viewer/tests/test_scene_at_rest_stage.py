@@ -164,6 +164,38 @@ class SceneAtRestProjectionTests(unittest.TestCase):
         self.assertNotIn("pc_slain", ids)
         self.assertIn("pc_hero", ids)
 
+    def test_downed_but_not_dead_party_member_is_not_stood_up_at_rest(self):
+        """Thread PRRT_...G9Xv: a party member at current_hp==0 who is NOT dead (the engine
+        models stable/unconscious separately from `dead` — combat.py `_ensure_unconscious`) must
+        not be placed as an idle standing rest token either. Covers both the dying (unstable, 0
+        HP) and the stabilized (0 HP, stable=True) cases."""
+        snap = _rest_snapshot()
+        snap["party"] = ["pc_hero", "pc_dying", "pc_stable"]
+        snap["characters"]["pc_dying"] = {
+            "id": "pc_dying", "name": "Dying Rook", "kind": "player",
+            "location_id": "loc1", "current_hp": 0, "dead": False, "stable": False,
+        }
+        snap["characters"]["pc_stable"] = {
+            "id": "pc_stable", "name": "Stabilized Finn", "kind": "player",
+            "location_id": "loc1", "current_hp": 0, "dead": False, "stable": True,
+        }
+        stage = _surface(snap)["stage"]
+        ids = {t["id"] for t in stage["tokens"]}
+        self.assertNotIn("pc_dying", ids)
+        self.assertNotIn("pc_stable", ids)
+        self.assertIn("pc_hero", ids)
+
+    def test_downed_but_not_dead_npc_is_not_stood_up_at_rest(self):
+        """Same rule for the NPC branch: a present NPC at 0 HP who is not `dead` is excluded."""
+        snap = _rest_snapshot()
+        snap["characters"]["npc_downed"] = {
+            "kind": "npc", "name": "Downed Guard", "location_id": snap["current_location_id"],
+            "current_hp": 0, "dead": False,
+        }
+        stage = _surface(snap)["stage"]
+        ids = {t["id"] for t in stage["tokens"]}
+        self.assertNotIn("npc_downed", ids)
+
     def test_fallback_anchor_on_a_blocked_cell_is_skipped(self):
         """Overflow actors fall back to zone_anchors; a zone anchor that sits on a blocking
         prop/wall (anchors are narration-authored, NOT walkable-validated) must be dropped so an
