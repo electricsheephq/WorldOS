@@ -13066,10 +13066,12 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
                 "severity": "high",
                 "detail": (
                     f"The session is wrapping and '{title}' is still ACTIVE — resolve it NOW: "
-                    f"complete_quest(quest_id, evolves_to='...') if the thread closed in fiction, "
-                    f"complete_objective(quest_id, objective) for the step just cleared, or "
-                    f"add_consequence to hand it off explicitly — a thread left ACTIVE at wrap reads "
-                    f"as dropped, not resolved."
+                    f"complete_quest(quest_id, evolves_to='...') if the thread closed in fiction "
+                    f"(complete_objective first for any step just cleared). To HAND IT OFF instead, "
+                    f"STILL complete_quest (that is what closes the status) and carry the open thread "
+                    f"forward with evolves_to plus add_consequence — a bare add_consequence leaves the "
+                    f"quest ACTIVE and this obligation standing. A thread left ACTIVE at wrap reads as "
+                    f"dropped, not resolved."
                 ),
             })
             continue  # the endgame cue owns this quest in the wrap window (not ALSO resolvable/stalled)
