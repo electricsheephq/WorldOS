@@ -16,7 +16,8 @@
    the live sprints. Each charter lists ORDERED issues with `lane:*` labels, the runnable gate,
    and the invariant checklist. Claim an unclaimed issue in your lane (comment on it), or if no
    charter is active, the roadmap's sequencing section says which sprint is next — author its
-   charter from the roadmap section using the existing charters as the template.
+   charter from the roadmap section using the existing charters as the template. Never claim an
+   issue outside an open sprint-charter's listed lanes, even if it matches your lane label.
 
 ## The loop (per issue)
 
