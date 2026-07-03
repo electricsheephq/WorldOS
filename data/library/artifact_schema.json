@@ -37,6 +37,10 @@
         "extracted_at": {
           "type": "string",
           "description": "Caller-supplied extraction timestamp (ISO 8601 or any stable string) — NEVER wall-clock-generated inside the extractor, so a re-run with the same --extracted-at argument is byte-identical (test determinism)."
+        },
+        "source": {
+          "type": ["string", "null"],
+          "description": "OPTIONAL origin tag (HV1 additive, #1323). Distinguishes how an artifact was produced — e.g. 'snapshot:quests' (live extraction) vs 'world.json:quest_variants' / 'canon-derived:set-pieces' (a hand-authored control pushed through the same envelope). HV1's calibration/control pipeline reads it; HV2's extractor does NOT emit it (so it is optional and defaults absent — never required)."
         }
       }
     },

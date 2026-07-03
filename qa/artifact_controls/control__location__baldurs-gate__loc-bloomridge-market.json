@@ -1,0 +1,31 @@
+{
+  "artifact_id": "control:location:baldurs-gate:loc-bloomridge-market",
+  "class": "location",
+  "world": "baldurs-gate",
+  "provenance": {
+    "campaign_id": "canon",
+    "run_id": null,
+    "sha": null,
+    "extracted_at": "canon",
+    "source": "areas/*.json"
+  },
+  "payload": {
+    "id": "loc-bloomridge-market",
+    "name": "Bloomridge Market",
+    "description": "A terraced bazaar climbing the slope just inside the old walls, where awnings of patched sailcloth shade stalls of river-fish, cut flowers, and salvaged charms. Since the crisis the market has swollen with refugees hawking whatever they carried out of the ruin, and the city watch keeps a wary post by the cistern at its center. At dusk the lamplighters work their way up the steps and the haggling gives way to quieter trade.",
+    "scene_grid": null,
+    "visited": true,
+    "region": "Baldur's Gate",
+    "connections": [
+      "Baldur's Gate — Lower City",
+      "the Siltwharf Steps",
+      "the Cloistered Quarter"
+    ],
+    "tags": [
+      "market",
+      "city",
+      "hub"
+    ]
+  },
+  "scores": null
+}

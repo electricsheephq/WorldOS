@@ -1,0 +1,32 @@
+{
+  "artifact_id": "control:location:baldurs-gate:loc-basilisk-gate",
+  "class": "location",
+  "world": "baldurs-gate",
+  "provenance": {
+    "campaign_id": "canon",
+    "run_id": null,
+    "sha": null,
+    "extracted_at": "canon",
+    "source": "areas/*.json"
+  },
+  "payload": {
+    "id": "loc-basilisk-gate",
+    "name": "the Basilisk Gate",
+    "description": "The great south-facing arch that divides the Upper City's marble composure from the Lower City's noise: a tunnel of ancient grey stone wide enough to drive three wagons abreast, its vault carved with the petrified basilisk the Flaming Fist killed here to prove a point about law. In ordinary years the passage is a toll-post and a social membrane — the gate-watch decides, with practised prejudice, who reads as Upper City and who does not. Since the Absolute's fall ordinary has left the building. The checkpoint has quintupled; Flaming Fist sergeants with hollow eyes run papers nobody printed against lists nobody agrees on, while tadpole-survivors — visibly, unmistakably — are turned away at the arch that once admitted them without remark. A camp of the refused has grown against the Lower City face of the wall: cloaks, cookfires, and a very specific quality of patience from people who have nowhere else to argue their case. The gate itself is undamaged, which the patriars consider evidence that the structure of authority held; the people camped in its shadow consider evidence that it chose sides.",
+    "scene_grid": null,
+    "visited": true,
+    "region": "Baldur's Gate",
+    "connections": [
+      "Baldur's Gate — Upper City",
+      "Baldur's Gate — Lower City",
+      "Bloomridge Market"
+    ],
+    "tags": [
+      "gate",
+      "city",
+      "power",
+      "intrigue"
+    ]
+  },
+  "scores": null
+}

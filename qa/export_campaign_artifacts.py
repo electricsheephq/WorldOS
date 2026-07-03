@@ -289,7 +289,10 @@ def extract_npcs(campaign: dict, provenance_base, world: str, text_blocks: list[
     artifacts = []
     characters = campaign.get("characters") or {}
     for cid, c in characters.items():
-        if c.get("kind") != "npc":
+        # A roster character the party recruits is promoted to kind="companion" (servers/engine/
+        # content.py:834) — still a met, harvestable NPC-shaped artifact, just no longer kind=="npc".
+        # Exclude only players/monsters, not the class of character that got recruited.
+        if c.get("kind") not in ("npc", "companion"):
             continue
         log = c.get("approval_log") or []
         if log:

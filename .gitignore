@@ -116,3 +116,6 @@ servers/*/.coverage
 # file) — never repo content, and left unignored they get scanned as ordinary files by
 # tools like GitNexus, ballooning the node count past the embeddings cap.
 /WorldOS-worktrees/
+
+# HV1 transient calibration db (final rows land in qa/scores.db artifacts table)
+qa/artifact_calibration.db
