@@ -149,6 +149,38 @@ class SceneAtRestProjectionTests(unittest.TestCase):
         ids = {t["id"] for t in stage["tokens"]}
         self.assertNotIn("npc_dead", ids)
 
+    def test_dead_party_member_is_never_placed_in_the_rest_scene(self):
+        """The corpse-at-the-hearth rule holds for the PARTY branch too: a party member whose
+        `dead` flag is set is excluded from the rest projection (the NPC branch already excludes
+        the dead; this pins the party branch)."""
+        snap = _rest_snapshot()
+        snap["party"] = ["pc_hero", "pc_slain"]
+        snap["characters"]["pc_slain"] = {
+            "id": "pc_slain", "name": "Fallen Kael", "kind": "player",
+            "location_id": "loc1", "dead": True,
+        }
+        stage = _surface(snap)["stage"]
+        ids = {t["id"] for t in stage["tokens"]}
+        self.assertNotIn("pc_slain", ids)
+        self.assertIn("pc_hero", ids)
+
+    def test_fallback_anchor_on_a_blocked_cell_is_skipped(self):
+        """Overflow actors fall back to zone_anchors; a zone anchor that sits on a blocking
+        prop/wall (anchors are narration-authored, NOT walkable-validated) must be dropped so an
+        actor never stands on a column."""
+        snap = _rest_snapshot()
+        sg = snap["locations"]["loc1"]["scene_grid"]
+        # One authored npc cell; two present NPCs -> the 2nd overflows to zone_anchors.
+        sg["spawns"]["npcs"] = [[5, 5]]
+        # "the bar" anchor (3,2) is a blocking prop cell; "the hearth" (11,2) is walkable floor.
+        sg["cells"] = [{"c": 3, "r": 2, "type": "prop", "walkable": False, "prop_ref": "bar"}]
+        snap["characters"]["npc_a"] = {"kind": "npc", "name": "Aleph", "location_id": "loc1"}
+        snap["characters"]["npc_b"] = {"kind": "npc", "name": "Bet", "location_id": "loc1"}
+        stage = _surface(snap)["stage"]
+        placed = {(t["x"], t["y"]) for t in stage["tokens"]}
+        # No token landed on the blocked bar anchor (3,2).
+        self.assertNotIn((3, 2), placed)
+
     def test_combat_mode_carries_no_stage_tokens(self):
         """No double-paint: under active combat the authoritative tokens are the top-level
         `tokens`; the stage block reports combat mode but places nothing."""

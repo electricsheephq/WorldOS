@@ -49,38 +49,96 @@ def _median(vals: list[float]) -> float | None:
     return round(statistics.median(vals), 3) if vals else None
 
 
-def summarize(panel: dict) -> dict:
-    """Aggregate a panel dict into the citable metric: our median vs the disguised control median.
+# Worst-to-best precedence: a combined panel's rolled-up verdict is the WORST of its per-scene
+# verdicts, so one below-control scene cannot be masked by a strong sibling (see _score_group).
+_VERDICT_RANK = {
+    "NO_CONTROL": 0,
+    "PREGATE_BLOCKED": 1,
+    "FAIL": 2,
+    "INCONCLUSIVE": 3,
+    "PASS": 4,
+}
+
+
+def _score_group(ours: list[dict], controls: list[dict], pregate: str) -> dict:
+    """The delta verdict for ONE scene/control pair (ours frames vs the disguised control frames).
 
     The absolute medians are reported for the ledger, but the VERDICT is delta-only: PASS iff
-    ours_median >= control_median (delta >= 0) AND no CRITICAL pre-gate short-circuited the panel.
+    ours_median >= control_median (delta >= 0) AND the deterministic pre-gate actually cleared
+    (pregate == "PASS"). A SKIPPED/missing/FLAG pre-gate never yields PASS — the W1 binding gate
+    requires "no open CRITICAL pre-gate", so an unrun pre-gate is INCONCLUSIVE, not a pass.
     """
-    frames = panel.get("frames") or []
-    ours = [f for f in frames if f.get("kind") == "ours"]
-    controls = [f for f in frames if f.get("kind") == "control"]
     ours_median = _median([f.get("overall") for f in ours])
     control_median = _median([f.get("overall") for f in controls])
-    pregate = str(panel.get("pregate", "SKIPPED")).upper()
     delta = None
     if ours_median is not None and control_median is not None:
         delta = round(ours_median - control_median, 3)
-    # The instrument's absolute scale is not citable; the verdict is delta-only + pre-gate clean.
     verdict = "INCONCLUSIVE"
     if not controls:
-        verdict = "NO_CONTROL"  # a panel without a disguised control violates the calibration law
+        verdict = "NO_CONTROL"  # a group without a disguised control violates the calibration law
     elif pregate == "FLAG":
         verdict = "PREGATE_BLOCKED"  # a CRITICAL/HIGH pre-gate short-circuits the panel
-    elif delta is not None:
-        verdict = "PASS" if delta >= 0 else "FAIL"
+    elif delta is not None and delta < 0:
+        verdict = "FAIL"
+    elif delta is not None and pregate == "PASS":
+        verdict = "PASS"  # delta >= 0 AND the pre-gate cleared — the only path to a binding PASS
+    # else: delta >= 0 but pre-gate not PASS (SKIPPED/missing) -> INCONCLUSIVE (not a real pass).
     return {
-        "scene": panel.get("scene", ""),
         "ours_median": ours_median,
         "control_median": control_median,
         "delta": delta,
-        "pregate": pregate,
         "n_ours": len(ours),
         "n_control": len(controls),
         "verdict": verdict,
+    }
+
+
+def summarize(panel: dict) -> dict:
+    """Aggregate a panel into the citable metric: our median vs the disguised control median.
+
+    Frames are grouped by scene (a per-frame ``scene`` overrides the panel ``scene``), and EACH
+    scene/control pair is scored on its own — so a combined panel (tavern + church in one panel)
+    cannot let a strong tavern offset a below-control church. The panel verdict is the WORST of
+    the per-scene verdicts; the top-level medians/delta describe the worst-scoring scene.
+    """
+    frames = panel.get("frames") or []
+    panel_scene = panel.get("scene", "")
+    pregate = str(panel.get("pregate", "SKIPPED")).upper()
+
+    # Group frames by scene (per-frame scene wins), preserving first-seen order for determinism.
+    order: list[str] = []
+    groups: dict[str, dict[str, list[dict]]] = {}
+    for f in frames:
+        scene = str(f.get("scene", panel_scene))
+        if scene not in groups:
+            groups[scene] = {"ours": [], "controls": []}
+            order.append(scene)
+        bucket = "controls" if f.get("kind") == "control" else "ours"
+        groups[scene][bucket].append(f)
+
+    if not groups:  # empty panel -> a single no-control group so the verdict is NO_CONTROL
+        groups[panel_scene] = {"ours": [], "controls": []}
+        order.append(panel_scene)
+
+    scenes = []
+    for scene in order:
+        g = _score_group(groups[scene]["ours"], groups[scene]["controls"], pregate)
+        g["scene"] = scene
+        scenes.append(g)
+
+    # The panel verdict rolls up to the WORST per-scene verdict; the reported medians/delta come
+    # from that worst scene so the citable metric never over-states a mixed panel.
+    worst = min(scenes, key=lambda g: (_VERDICT_RANK.get(g["verdict"], 0), g.get("delta") if g.get("delta") is not None else 0))
+    return {
+        "scene": worst["scene"] if len(scenes) == 1 else panel_scene,
+        "ours_median": worst["ours_median"],
+        "control_median": worst["control_median"],
+        "delta": worst["delta"],
+        "pregate": pregate,
+        "n_ours": sum(g["n_ours"] for g in scenes),
+        "n_control": sum(g["n_control"] for g in scenes),
+        "verdict": worst["verdict"],
+        "scenes": scenes,
     }
 
 
@@ -131,8 +189,11 @@ def main(argv: list[str] | None = None) -> int:
     if not args.dry_run:
         summary["logged_rows"] = _log_frames(panel, args.run_prefix, args.db_path)
     print(json.dumps(summary, indent=2))
-    # exit non-zero on a hard FAIL / missing control so a gate wrapper can react.
-    return 0 if summary["verdict"] in ("PASS", "INCONCLUSIVE") else 1
+    # Exit 0 ONLY on a real binding-gate pass. INCONCLUSIVE (ours frames missing/unscored, or the
+    # pre-gate never cleared) is NOT a pass of the W1 gate (ours_median >= control_median), so it
+    # exits non-zero alongside FAIL / NO_CONTROL / PREGATE_BLOCKED — a gate wrapper must not read
+    # an unscored panel as green.
+    return 0 if summary["verdict"] == "PASS" else 1
 
 
 if __name__ == "__main__":

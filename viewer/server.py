@@ -3421,18 +3421,36 @@ def _scene_stage(snapshot: dict, combat_active: bool) -> dict:
                     out.append(cell)
         return out
 
-    party_cells = _cells(spawns.get("party"))
-    npc_cells = _cells(spawns.get("npcs"))
+    # Blocked cells (walls/props) from the scene_grid cell map, so the fallback pool below never
+    # strands an overflow actor ON a blocking prop. zone_anchors are authored for narration ("the
+    # well") and are NOT validated walkable (unlike party/npc spawn cells, which the engine gate
+    # checks), so an anchor CAN sit on a prop — filter those out. Absent/malformed cells -> empty
+    # blocked set (today's behavior: no filtering).
+    blocked: set[tuple[int, int]] = set()
+    for c in (sg.get("cells") if isinstance(sg, dict) else None) or []:
+        if isinstance(c, dict) and c.get("walkable") is False:
+            cell = _cell([c.get("c"), c.get("r")])
+            if cell is not None:
+                blocked.add(cell)
+
+    party_cells = [c for c in _cells(spawns.get("party")) if c not in blocked]
+    npc_cells = [c for c in _cells(spawns.get("npcs")) if c not in blocked]
     # Deterministic fallback pool: the zone anchors (id-sorted) then the party cells, so a bucket
-    # that ran short still lands its actors on a walkable in-world spot rather than off-board.
+    # that ran short still lands its actors on a walkable in-world spot rather than off-board. Drop
+    # any anchor that lands on a blocking prop/wall — a fallback actor must not stand on a column.
     anchor_cells = [
-        cell for _, v in sorted(zone_anchors.items()) if (cell := _cell(v)) is not None
+        cell for _, v in sorted(zone_anchors.items())
+        if (cell := _cell(v)) is not None and cell not in blocked
     ]
 
     chars = snapshot.get("characters") if isinstance(snapshot.get("characters"), dict) else {}
     party = snapshot.get("party") if isinstance(snapshot.get("party"), list) else []
-    party_ids = [cid for cid in party if isinstance(cid, str) and cid in chars]
-    party_set = set(party_ids)
+    # party_set holds the FULL roster party (incl. any dead) so a slain member is not re-projected
+    # via the present-NPC path below; party_ids drops the dead so a corpse never stands in the rest
+    # scene — the same rule the NPC path applies (combat handles the fallen).
+    party_set = {cid for cid in party if isinstance(cid, str) and cid in chars}
+    party_ids = [cid for cid in party_set if not bool(chars[cid].get("dead"))]
+    party_ids.sort(key=lambda cid: party.index(cid))  # keep authored party order, deterministic
 
     # Present non-party NPCs: characters anchored at the current location (npc/companion kind),
     # id-sorted for a deterministic order. A companion travelling WITH the party is normally in
