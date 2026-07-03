@@ -137,6 +137,18 @@ class SceneAtRestProjectionTests(unittest.TestCase):
         ids = {t["id"] for t in stage["tokens"]}
         self.assertNotIn("npc_elsewhere", ids)
 
+    def test_dead_npc_is_never_placed_in_the_rest_scene(self):
+        """A corpse never stands at the hearth: a character at the current location whose
+        `dead` flag is set is excluded from the rest projection (combat handles the fallen)."""
+        snap = _rest_snapshot()
+        snap["characters"]["npc_dead"] = {
+            "kind": "npc", "name": "Slain Bandit", "location_id": snap["current_location_id"],
+            "dead": True,
+        }
+        stage = _surface(snap)["stage"]
+        ids = {t["id"] for t in stage["tokens"]}
+        self.assertNotIn("npc_dead", ids)
+
     def test_combat_mode_carries_no_stage_tokens(self):
         """No double-paint: under active combat the authoritative tokens are the top-level
         `tokens`; the stage block reports combat mode but places nothing."""

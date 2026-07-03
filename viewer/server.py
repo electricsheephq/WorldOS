@@ -3444,6 +3444,9 @@ def _scene_stage(snapshot: dict, combat_active: bool) -> dict:
         and cid not in party_set
         and _text(ch.get("kind")).lower() in {"npc", "companion"}
         and _text(ch.get("location_id")) == loc_id and loc_id
+        # a DEAD character never stands in the rest scene — a corpse at the hearth breaks the
+        # inhabited read this projection exists to create (and combat handles the fallen).
+        and not bool(ch.get("dead"))
     )
 
     tokens: list[dict] = []
