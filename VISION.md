@@ -12,6 +12,24 @@ or the WorldOS app — which acts as the Dungeon Master against the engine. The 
 rules; the AI DM brings an **epic, Baldur's-Gate-caliber story** to life. The long arc: a
 universe-system that generates worlds you play with any agent.
 
+**The destination (owner-ratified 2026-07-03): a FULL RENDERED GAME at Pillars-of-Eternity-2 /
+Pathfinder-Kingmaker quality.** Combat rendering is only the first step of the game system. The end
+state: the party WALKS around beautiful pre-rendered environments, TALKS to NPCs on-stage, explores
+with quests, and combat is one mode entered in place — the DM composes the game live by placing
+characters and pulling scored templates from a growing library. Two mechanisms carry the evolution:
+- **The TEMPLATE LIBRARY** (the Dragon-Age model): a curated library of pre-rendered environments
+  (~100 room-units: cities, towns, forests, crypts, dungeons) plus reusable scored content (quests,
+  NPCs, villains, encounters) — made by us, usable in ANY game the DM assembles.
+- **The HARVEST LOOP**: generated games get scored; high-scoring artifacts are eval-gated and
+  PROMOTED into the library; future games assemble from the library. The game improves as it is
+  played, and play shifts from pure AI generation toward library-assembled sessions needing less AI.
+
+**Feature tiers (one engine + one DM under all of them — permanent):**
+`T0` text-only adventure (CLI / any agent chat) · `T1` 2D OpenWorlds (today's app) · `T2` rendered
+combat (the demo) · `T3` walkable rendered world (the North Star). **The text tier is a full,
+forever-supported way to play** — treasure, towns, crypts, combat all work with the DM in text mode;
+graphics are a presentation upgrade, never a dependency. (Invariant below.)
+
 It is a real game **and** an experiment — in whether an autonomous agent can build, harden, and
 steer a game system to a shippable bar, making its own decisions against this documented vision.
 The experiment's engine is the **measurement culture** (control-anchored art panels, story lenses,
@@ -23,6 +41,21 @@ bar, and they are a product in their own right — WorldOS is the game AND the p
 **A no-prior-knowledge player launches the app, plays a complete 8-beat Baldur's-Gate-caliber arc,
 and never once feels "this is broken."** The felt player session is the product. RRI gates, test
 scores, and rubric numbers are *measurement*, never the target — no score-gaming.
+
+**The far north star** (what "done" ultimately looks like): that same player, in the T3 tier, walks
+their party through a rendered town at PoE2 quality, talks to an NPC standing by the hearth, picks
+up a quest the library already scored as excellent, and fights the battle that follows on the same
+screen — while a T0 player gets the identical adventure in pure text. Every intermediate release is
+a rung toward that, and every rung must be a real, playable product on its own.
+
+## Operating principle: DECISION-BY-EVAL
+
+When a load-bearing decision lacks an instrument, **building the instrument IS the first step** —
+never decide by vibes what can be decided by measurement. This is how the experiment self-drives:
+every sprint names its gate as a runnable eval; every library promotion is eval-gated
+(control-anchored panels for art, disguised hand-authored canon as controls for content); every
+"is it better?" is a same-instrument delta. `worldos-decide` anchors here; the noise laws
+(±1.2 panel variance, positive-control anchoring) are part of the ruler, not footnotes.
 
 ## The pillars (a good decision advances ≥1 without dulling another)
 
@@ -67,6 +100,14 @@ scores, and rubric numbers are *measurement*, never the target — no score-gami
   placeholder→real-art transition is a registry change, not a code change.
 - **Never break wire contracts** — additive, keyword-only, defaulted; never reorder/rename/retype an
   existing param.
+- **The text tier always plays.** Every rendered-tier feature (scene-at-rest, walking, on-stage NPC
+  talk, staged combat) is a PRESENTATION of engine surfaces the T0/T1 tiers already consume — never a
+  new gameplay dependency. Each W-series sprint ships a text-tier byte-identity test proving the
+  non-rendered path is unchanged. The DM can run the entire game in text mode, forever.
+- **Renderers are pure consumers on every tier** — the Unity game surface (T2/T3) talks to the engine
+  exactly like OpenWorlds: reads surfaces, posts move-intents through the same `/move` kinds. No
+  renderer-side game state, no client-side path prediction (the renderer animates only
+  engine-confirmed paths).
 - **QA is gateway-free and never touches Eva** (the owner's live agent) — no profile-sourcing, no
   gateway reconfig, no Eva infra. One live Mac/GUI harness at a time. CI/full suites on GitHub.
 
@@ -129,16 +170,20 @@ visual parity at the PoE2 bar, story at the bar — **plus the platform thesis a
 scope: the bring-your-own-agent surface documented and ONE provider lane (Claude Code) verified
 end-to-end**; further agent lanes are post-GA platform work, epic #911).
 
-**The ladder executes as sprints S1–S10 with engine-version pins — sequencing source of truth:
-`docs/roadmap/PRODUCT-ROADMAP.md`** (charters, binding gates, lanes, the Owner Gate Register).
-Engine releases stay semver v1.0.x; product rungs are named releases pinned to an engine version
-(Beta ≈ v1.0.9 · Demo-1.0 ≈ v1.0.10 · GA = v1.1.0).
+**The ladder executes in three ACTS — sequencing source of truth: `docs/roadmap/PRODUCT-ROADMAP.md`**
+(charters, binding gates, lanes, the Owner Gate Register). **Act I — The Demo**: sprints S1–S10 to
+GA as pinned (Beta ≈ v1.0.9 · Demo-1.0 ≈ v1.0.10 · GA = v1.1.0). **Act II — The Walkable World +
+The Harvest Loop**: the W-series (scene-at-rest → walk → talk → living stage → the Unity player
+tier) and HV-series (artifact evals → extract → promote → reuse → flywheel ops), interleaving with
+Act I where parallel-safe. **Act III — The Universe Platform**: template packs, remaining agent
+lanes, hosted runtime, creator, KOTOR-class universes, engine-as-platform.
 
-**★ OPEN LOAD-BEARING DECISION (blocks demo assembly; decide at S2 entry per the roadmap):
-render delivery** — how the Unity render reaches the player's screen (embedded Unity build in the
-`.app` vs a render service streaming frames into OpenWorlds vs a standalone player). Today's path
-is one-way box→QA-frames only. First-principles decision doc required; no demo-integration code
-before it lands.
+**★ RENDER DELIVERY — DECIDED (2026-07-03, owner-delegated; full rationale
+`docs/roadmap/RENDER-DELIVERY-DECISION.md`): Unity IS the interactive game surface for the rendered
+tiers.** A Unity player build (macOS first) consumes engine surfaces and posts move-intents exactly
+like OpenWorlds — frame-streaming was rejected (it cannot grow into walkable realtime play, the T3
+destination). Staged: demo era = Unity standalone launched beside the app; embed/unify later only
+if warranted. OpenWorlds remains the meta-UI, the T1 surface, and the QA harness surface.
 
 ## Graphics North Star (PoE2)
 

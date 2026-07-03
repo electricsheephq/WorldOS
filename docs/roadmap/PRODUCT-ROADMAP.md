@@ -1,12 +1,27 @@
 # WorldOS Product Roadmap — the ladder, the sprints, the versions
 
-> **The master navigation doc.** VISION.md says what the product IS and the bar it must clear;
-> this doc says the ORDER we build it in — every sprint from here to GA and beyond, with a
-> binding gate, an ordered issue list, and a version pin, so that ANY agent (Claude, Codex, GLM,
-> human) can open this file, find the active sprint, and execute a lane without needing this
-> repo's history in its head. Authored by the architect session 2026-07-03 (Fable), red-teamed
-> (deep-reasoner adversarial pass), amendments incorporated. Owner reviews via the PR that
-> introduced this file.
+> **The master navigation doc (v2 — the three Acts).** VISION.md says what the product IS and the
+> bar it must clear; this doc says the ORDER we build it in — every sprint from here to the
+> Walkable World and beyond, with a binding gate, an ordered issue list, and a version pin, so
+> that ANY agent (Claude, Codex, GLM, human) can open this file, find the active sprint, and
+> execute a lane without needing this repo's history in its head. (New here? Start at
+> `docs/OPERATIONS.md` — the one-page bootstrap.) v1 authored + red-teamed 2026-07-03; **v2 same
+> day after the owner expanded the North Star** (full walkable rendered games, the template
+> library, the harvest loop — see VISION "The destination"). Owner reviews via PR.
+
+## 0. THE THREE ACTS (the shape of everything below)
+
+- **ACT I — The Demo** (now → GA = v1.1.0): sprints **S1–S10** (§4), unchanged from v1 except that
+  the render-delivery decision is now RESOLVED (`RENDER-DELIVERY-DECISION.md`: Unity standalone =
+  the demo's delivery; the S2 entry gate is satisfied) and S8's delivery is the Unity standalone +
+  app handoff.
+- **ACT II — The Walkable World + The Harvest Loop**: the **W-series** (§4b: scene-at-rest → walk
+  → talk → living stage → the Unity player tier) and the **HV-series** (§4c: artifact evals →
+  extract → promote → reuse → flywheel ops). Interleaves with Act I where parallel-safe — W1, HV1,
+  HV2 start immediately. Act II's exit = **T3 is real**: a blind AI playtester completes a quest
+  loop IN the rendered surface, on a library-assembled game.
+- **ACT III — The Universe Platform** (§6): packs, remaining agent lanes, hosted runtime, creator,
+  KOTOR-class universes, the 2D tier, engine-as-platform.
 
 ---
 
@@ -194,6 +209,92 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
   end-to-end** (red-team amendment: GA-block ONE proven provider lane, not the 5-lane epic).
 - **Lane:** all.
 
+## 4b. THE W-SERIES — The Walkable World (Act II; each = 1–2 overnight bursts)
+
+> Every W sprint ships its EVAL FIRST (decision-by-eval) + a **text-tier byte-identity test**
+> (VISION invariant: the text tier always plays). Exploration ground truth: scene_grid already
+> carries walkable cells AND populated `spawns` (per-kind generators, scene_grid.py:254–660) —
+> only the READ side is missing; move_to_coords exists combat-gated; the viewer already paints
+> walkability. The gaps are ungatings + one new render mode.
+
+- **W1 — "Scene at Rest"** *(parallel-safe NOW)*. Additive `stage` block (`mode: rest|combat` +
+  rest tokens) in `build_combat_surface` (viewer/server.py:3376; optionally aliased as
+  /scene-surface) — party + present NPCs (`Character.location_id == current`) PROJECTED onto
+  `scene_grid.spawns` (add `npc:<id>` spawn keys in the generators). Projection only — zero new
+  persisted state. Renderer scene-at-rest mode (idle clips; assets exist). **EVAL (build first):**
+  FELT-style rest-scene panel — "does the tavern-with-innkeeper read as a game?" (disguised
+  real-game controls, same calibration law). Known risk: `spawns` sits inside `_layout_hash`
+  (scene_grid.py:158) → one-time Tier-2 art-cache invalidation, accepted.
+- **W2 — "Walk"** *(engine half parallel-safe NOW; glide depends on S2 #1303)*. New additive
+  `walk_to` verb BESIDE move_to_coords (server.py:4583 — the combat gate stays untouched), reusing
+  `combat_grid.shortest_path:221` via ONE shared blocked-set function (never fork pathing). Writes
+  additive `Character.stage_cell`. Emits Action-Replay walk beats via /events
+  (viewer/server.py:9181) so the Animator glides them. Walkmask click-to-move in rest mode
+  (screen-combat.jsx pattern exists); door-cell click → `cross_door` walk-through. **Rule:** the
+  renderer glides only engine-confirmed paths — no client prediction. **EVAL:** scripted
+  click-walk replay (path legality, glide renders, text-tier identity).
+- **W3 — "Talk"**. Parley surface (viewer/server.py:6315) gains additive stage metadata (NPC stage
+  cell, attitude); click-NPC → approach-to-talk (walk_to adjacent, then parley); dialogue rendered
+  at the actor (2D reuses screen-dialogue.jsx). **EVAL:** blind panel + a behavioral check that
+  the DM receives IDENTICAL parley moves as the text tier.
+- **W4 — "The Living Stage"** *(coordinate with S8)*. `start_combat:4039` additive param seeds
+  combatant cells from `stage_cell` (default = today); `end_combat:6976` writes survivors back;
+  day/night from the campaign clock (surfaced per #1307). **EVAL gate = NO TELEPORT:** combat
+  entry cells == last rest cells; exit cells == combat end cells. Full explore→talk→fight→loot→
+  move-on loop playable.
+- **W5 — "The Unity Player tier"** *(depends W1–W4; formalizes the render-delivery ruling)*.
+  macOS player build of extensions/renderers/unity, launched beside the app (mirror
+  native-bridge.js handoff); input = existing POST /move kinds ONLY. **EVAL = the T3 gate:** a
+  blind AI playtester completes a quest loop IN the rendered surface (extend the GUI harness).
+
+## 4c. THE HV-SERIES — The Harvest Loop (Act II; the flywheel)
+
+> The mechanism: every scored QA run is ALSO a harvest candidate — no new run types. Content flows
+> snapshot → extract → eval-gated promote → `library/` → reused by world-gen/questgen → measured
+> as a trend ("less AI dependence" becomes a number). All promotion is eval-gated; the content
+> analogue of the real-art-control law is **disguised hand-authored canon as panel controls**.
+
+- **HV1 — "Artifact Evals FIRST"** *(starts NOW)*. `qa/artifact_score.py` + per-class rubrics
+  (quest / npc-or-villain / location / encounter; plates already have visual-critic). Controls =
+  hand-authored canon (world.json quest_variants / npc_roster dossiers / wiki-canon areas) pushed
+  through the SAME artifact schema. Storage: additive `artifacts` TABLE in qa/scores.db — new
+  ruler family `ac_…` via a NEW file-list in scoring_config_version.py (NEVER append to
+  SCORING_CONFIG_FILES — that silently re-versions `sc_`). Ships a thin snapshot reader so it runs
+  on EXISTING finished campaigns immediately.
+- **HV2 — "Extract"** *(starts NOW; first commit = the schema handshake
+  `data/library/artifact_schema.json`)*. `qa/export_campaign_artifacts.py` (sibling of
+  export_scene_grid.py; reuses distill.py's transcript reader for dialogue snippets + attitude
+  arcs) → `qa/artifacts_out/<campaign>/{quests,npcs,locations,encounters}/*.json` with provenance
+  {campaign_id, run_id, world, sha, scores}. Strictly read-only on play-state.
+- **HV3 — "Promote"** *(needs HV1+HV2)*. `tools/library/promote.py`: nominations
+  (qa/nominations.jsonl) → artifact panels → threshold gate (overall ≥4.0, no dim <3.0,
+  control-valid → `stable`; `canonical` = human curation only) → **`library/`** (pack-shaped,
+  #644-forward-compatible: pack.json {name, version, license, provenance} +
+  quests/npcs/locations/encounters/rooms). Rooms UNIFY the proto-library: entries REFERENCE
+  room_recipes keys + registry asset_ids — promote.py NEVER edits either. promote.py = sole
+  writer of library/; a library-lint (no unscored stable entries; provenance+license required).
+- **HV4 — "Reuse"** *(needs HV3)*. questgen._derive_hooks gains a library candidate source
+  (tier-weighted, DEFAULT-OFF — default seed path stays byte-identical, guarded by the existing
+  test_seed_world_default_is_unchanged test); world.json additive `library_packs:[...]`; new
+  engine tool `lookup_library` (mirrors the wiki-first canon pattern); library rooms ship as
+  registry aliases (zero renderer edits by contract). **EVAL:** A/B duo library-first vs pure-gen
+  — lens parity-or-better + latency/token reduction + feature_engagement confirms library content
+  is ENGAGED, not decorative.
+- **HV5 — "Flywheel ops"** *(hooks after HV3)*. qa/closeout.py auto-NOMINATES artifacts from every
+  scored run (story ≥ threshold, quest completed, NPC ≥N turns) — artifact scoring runs in a
+  nightly batch, never inline (duo latency untouched). Weekly curation batch. **Backdrop cadence:
+  2 environments a night, panel-gated, weekly curation → ~100 environments in ~10 weeks** on the
+  proven GEX44 pipeline. `library_metrics` table (size by class/tier, Σreuse_count, promotion
+  pass-rate, %library-sourced beats) — the flywheel's own eval: the "less AI dependence" trend.
+
+**Act II additive-invariant register** (what a skeptic refutes per stage): HV1 `sc_`/`lc_` hashes
+unchanged · HV2 zero writes under play-state · HV3 room_recipes/registry byte-identical ·
+HV4 default seed path identical with library_packs absent · HV5 closeout append-only + duo
+wall-clock unchanged · every W sprint: text-tier byte-identity + no new writers.
+
+**Act II sequencing:** NOW: W1 ∥ W2-engine ∥ HV1 ∥ HV2 (schema handshake first) → HV3 →
+HV5-hooks + backdrop cadence → W3 → HV4 (+A/B) → W4 (with S8) → W5 → **T3 gate**.
+
 ## 5. The platform track (parallel, after S7)
 1. **#911 multi-agent plugin** — GA slice = docs + Claude lane verified (S10); Codex CLI lane
    next (the cheapest second runtime), then OpenClaw/Hermes post-GA.
@@ -204,13 +305,18 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
 3. **Milestone 26 creator + showcase** — post-GA; #711 licensing policy is an owner/legal gate.
 4. **#32 Discord / #31 multiplayer** — vNext after hosted runtime proves session economics.
 
-## 6. Beyond GA (the future, so the trajectory is legible)
-- **Phase A — "Any Agent, Anywhere":** all #911 lanes + hosted runtime + Discord distribution.
-- **Phase B — "The Universe System":** creator (#713), template packs (#644), licensed
-  universes v2.1–v2.4 (#330–#332), fan showcase policy (#711), paid-alpha original world (#712).
-- **Phase C — "The Rendered Game":** #645 north-star render pipeline (world → playable rendered
-  turn-based video game); #1045 Unreal fidelity tier stays deferred until the Unity path caps.
-- The pixel-art tier (#1145) remains a filed option, not a lane.
+## 6. ACT III — The Universe Platform (post-GA/post-Act-II trajectory)
+- **"Any Agent, Anywhere":** all #911 lanes + hosted runtime + Discord distribution.
+- **"The Universe System":** creator (#713), template packs (#644 — **the HV library IS the pack
+  content**: pack.json is the HV3 schema shipped externally), licensed universes v2.1–v2.4
+  (#330–#332: KOTOR-class recreations run on the same engine + a themed library), fan showcase
+  policy (#711), paid-alpha original world (#712).
+- **"Engine as Platform":** release the engine so others plug in their own renderers (the
+  pure-consumer surface contract makes Unity/RPG-Maker/2D plugs identical in shape); the 2D
+  pixel-art tier (#1145) graduates from filed option to the reference third-party-style renderer.
+- The old "Phase C — Rendered Game" (#645) is **DELIVERED BY the W-series** — #645 closes as
+  superseded when W5's T3 gate passes. #1045 Unreal fidelity tier stays deferred until the Unity
+  path caps.
 
 ## 7. Owner Gate Register (human-gated items — clear these AHEAD of need)
 | Item | Needed by | What the owner must do |
