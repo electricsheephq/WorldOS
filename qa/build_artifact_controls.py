@@ -50,10 +50,13 @@ def _now() -> str:
 
 
 def _canon_provenance(world: str, source: str) -> dict:
-    # A control is hand-authored canon, NOT extracted from a live run: campaign_id/run_id/sha are null.
-    # extracted_at is a DETERMINISTIC sentinel (not _now()) so a committed control fixture does not churn
-    # on every regeneration — controls are canon fixtures, not time-stamped extractions.
-    return {"campaign_id": None, "run_id": None, "sha": None,
+    # A control is hand-authored canon, NOT extracted from a live run. The CANONICAL envelope
+    # (data/library/artifact_schema.json, authored by HV2 #1329) requires provenance.campaign_id to be a
+    # NON-NULL string (minLength 1) under provenance additionalProperties:false — so a control uses the
+    # sentinel campaign_id "canon" (there is no live campaign) with null run_id/sha. `source` is the
+    # HV1-additive OPTIONAL provenance field. extracted_at is a DETERMINISTIC sentinel (not _now()) so a
+    # committed control fixture does not churn on every regeneration.
+    return {"campaign_id": "canon", "run_id": None, "sha": None,
             "extracted_at": "canon", "source": source}
 
 
@@ -68,15 +71,27 @@ def _artifact(cls: str, world: str, source_id: str, payload: dict, source: str) 
     }
 
 
+# The control payloads carry the CANONICAL per-class field names (data/library/artifact_schema.json
+# quest_payload / npc_payload / location_payload / encounter_payload), so a disguised control presents
+# the SAME shape to the scorer as a real HV2-extracted artifact of that class. They ALSO carry the extra
+# descriptive fields the HV1 rubric reads (hook / dossier / terrain / twist / stakes …) — the envelope's
+# `payload` is an open object (the per-class definitions are not yet if/then-bound; HV3 will), so extra
+# descriptive keys are schema-valid and give the rubric its texture.
 def quest_controls(world_json: dict, world: str, n: int = 3) -> list[dict]:
     out = []
     for qv in (world_json.get("quest_variants") or [])[:n]:
         outcomes = qv.get("outcomes") or []
         payload = {
-            "title": qv.get("name"),
+            # canonical quest_payload field names
+            "id": qv["id"],
+            "name": qv.get("name"),
+            "objectives": [],  # quest_variants describe outcomes, not a step spine
+            "completed_objectives": [],
+            "resolution_status": "canon-variant",
+            "evolves_to": "",
+            "consequences": [{"lore": o.get("lore")} for o in outcomes if o.get("lore")],
+            # richer descriptive fields the HV1 quest rubric reads
             "hook": (outcomes[0].get("hook") if outcomes else None) or qv.get("hook"),
-            "objectives": None,  # quest_variants describe outcomes, not step spines
-            "consequences": [o.get("lore") for o in outcomes if o.get("lore")],
             "outcomes": [{"id": o.get("id"), "hook": o.get("hook")} for o in outcomes if o.get("hook")],
         }
         out.append(_artifact("quest", world, qv["id"], payload, "world.json:quest_variants"))
@@ -87,12 +102,18 @@ def npc_controls(world_json: dict, world: str, n: int = 3) -> list[dict]:
     out = []
     for npc in (world_json.get("npc_roster") or [])[:n]:
         payload = {
+            # canonical npc_payload field names
+            "id": npc["id"],
             "name": npc.get("name"),
+            "voice_id": npc.get("voice_id"),
+            "personality": {"summary": npc.get("personality")},
+            "attitude_arc": {"start": 0, "end": 0},
+            "final_status": "canon-roster",
+            "dialogue_snippets": [],
+            # richer descriptive fields the HV1 npc rubric reads
             "role": npc.get("role"),
-            "personality": npc.get("personality"),
             "dossier": npc.get("dossier"),
             "want": npc.get("hook"),
-            "voice_id": npc.get("voice_id"),
         }
         out.append(_artifact("npc", world, npc["id"], payload, "world.json:npc_roster"))
     return out
@@ -103,9 +124,14 @@ def location_controls(world_dir: Path, world: str, n: int = 3) -> list[dict]:
     for area_path in sorted(glob.glob(str(world_dir / "areas" / "*.json")))[:n]:
         area = json.loads(Path(area_path).read_text(encoding="utf-8"))
         payload = {
+            # canonical location_payload field names
+            "id": area["id"],
             "name": area.get("name"),
-            "region": area.get("region"),
             "description": area.get("description"),
+            "scene_grid": None,
+            "visited": True,
+            # richer descriptive fields the HV1 location rubric reads
+            "region": area.get("region"),
             "connections": area.get("connections"),
             "tags": area.get("tags"),
         }
@@ -163,7 +189,16 @@ def encounter_controls(world: str, n: int = 2) -> list[dict]:
         # Read non-destructively: enc is an element of the module-level _ENCOUNTER_CANON singleton, so
         # a pop() would mutate it and make a second build() call in the same process raise KeyError.
         eid = enc["id"]
-        payload = {k: v for k, v in enc.items() if k != "id"}
+        payload = {
+            # canonical encounter_payload field names (composition = the combatant list; outcome is a
+            # sentinel — a control has no played outcome). The descriptive fields (situation / terrain /
+            # twist / stakes / objective) the HV1 encounter rubric reads ride alongside.
+            "id": eid,
+            "composition": [{"actor": c} for c in enc.get("combatants", [])],
+            "outcome": "canon-set-piece",
+            **{k: v for k, v in enc.items() if k not in ("id", "combatants")},
+            "combatants": enc.get("combatants", []),  # keep the readable list for the rubric card
+        }
         out.append(_artifact("encounter", world, eid, payload, "canon-derived:set-pieces"))
     return out
 

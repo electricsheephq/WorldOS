@@ -3,16 +3,25 @@
   "class": "npc",
   "world": "baldurs-gate",
   "provenance": {
-    "campaign_id": null,
+    "campaign_id": "canon",
     "run_id": null,
     "sha": null,
     "extracted_at": "canon",
     "source": "world.json:npc_roster"
   },
   "payload": {
+    "id": "npc-astarion",
     "name": "Astarion",
+    "voice_id": "npc-rogue",
+    "personality": {
+      "summary": "A high-elf rogue of razor wit and centuries of cruelty survived; charming, vain, wounded under the glamour. Two hundred years a slave to the vampire Cazador — now free, recalibrating what a person without a master even wants. Self-interest worn like couture, with unexpected loyalty beneath."
+    },
+    "attitude_arc": {
+      "start": 0,
+      "end": 0
+    },
+    "final_status": "canon-roster",
     "role": "freed vampire spawn, now his own master",
-    "personality": "A high-elf rogue of razor wit and centuries of cruelty survived; charming, vain, wounded under the glamour. Two hundred years a slave to the vampire Cazador — now free, recalibrating what a person without a master even wants. Self-interest worn like couture, with unexpected loyalty beneath.",
     "dossier": {
       "wound": "two centuries of Cazador's torments",
       "wants": [
@@ -52,8 +61,7 @@
         "a memory of the kennel cellar"
       ]
     },
-    "want": "Hunts the last of Cazador's old network in the Outer City — and the other spawn he left behind in the dark.",
-    "voice_id": "npc-rogue"
+    "want": "Hunts the last of Cazador's old network in the Outer City — and the other spawn he left behind in the dark."
   },
   "scores": null
 }

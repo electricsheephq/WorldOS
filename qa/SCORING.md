@@ -448,8 +448,16 @@ validation). Columns: per-dim JSON, overall, panel_id, class, world, `run_id` (n
 `runs.run_id`), `ac_ruler`, `is_control` + `control_anchor`. Render with
 `python3 qa/scores_db.py --render-artifacts` (→ `qa/artifacts_ledger.md`).
 
+**The envelope is HV2's (canonical).** The shared `data/library/artifact_schema.json` is authored by
+HV2 (`qa/export_campaign_artifacts.py`, #1329) and CONSUMED here — HV1 does not redefine it. HV1 added
+one ADDITIVE optional `provenance.source` tag (nullable; distinguishes disguised controls from live
+extractions). The envelope's `payload` is an open object today (the per-class definitions are not yet
+`if`/`then`-bound to `class` — flagged on #1329, HV3 will bind them), so `artifact_score.py` validates
+the class-payload shape EXPLICITLY (`validate_payload_shape`) until then. Controls carry the canonical
+per-class field names PLUS the richer descriptive fields the rubric reads.
+
 **Running it.** Extract quests/NPCs from an existing campaign with the thin read-only reader
-(`qa/artifact_snapshot_reader.py <snapshot.json>`); run one blind panel per class with
-`qa/artifact_calibration_panel.py --class <class> [--candidates-dir DIR] --panel-size 5` (5 sonnet
-scorers, controls embedded, exit 2 if the control band fails). `WORLDOS_ARTIFACT_PANEL_DRYRUN=1` runs a
-deterministic offline wiring proof (no `claude -p`, no cost).
+(`qa/artifact_snapshot_reader.py <snapshot.json>`, which DELEGATES to HV2's canonical extractor); run
+one blind panel per class with `qa/artifact_calibration_panel.py --class <class> [--candidates-dir DIR]
+--panel-size 5` (5 sonnet scorers, controls embedded, exit 2 if the control band fails).
+`WORLDOS_ARTIFACT_PANEL_DRYRUN=1` runs a deterministic offline wiring proof (no `claude -p`, no cost).

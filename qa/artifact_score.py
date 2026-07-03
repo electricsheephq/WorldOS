@@ -58,18 +58,58 @@ RUBRIC_FOR_CLASS: dict[str, tuple[str, str]] = {
     "encounter": ("rubric_artifact_encounter.md", "score_schema_artifact_encounter.json"),
 }
 
+# The CANONICAL per-class payload required fields (data/library/artifact_schema.json definitions,
+# authored by HV2 #1329). The envelope's `payload` is currently an open object — the per-class
+# definitions are NOT yet bound to `class` via an if/then (flagged on #1329; HV3 will bind them). Until
+# then, artifact_score VALIDATES the class-payload shape EXPLICITLY here, so a malformed / mis-classed
+# payload fails loudly at load time instead of being silently mis-scored.
+_CANONICAL_PAYLOAD_REQUIRED: dict[str, tuple[str, ...]] = {
+    "quest": ("id", "name", "objectives", "completed_objectives", "resolution_status",
+              "evolves_to", "consequences"),
+    "npc": ("id", "name", "voice_id", "personality", "attitude_arc", "final_status",
+            "dialogue_snippets"),
+    "location": ("id", "name", "description", "scene_grid", "visited"),
+    "encounter": ("id", "composition", "outcome"),
+}
+
 # The per-class payload fields a rubric reads, in a stable display order. Any extra payload keys are
 # appended after these so the card never silently drops context the extractor carried.
+# Ordered to lead with the CANONICAL per-class payload field names (data/library/artifact_schema.json
+# quest_payload / npc_payload / location_payload / encounter_payload, authored by HV2 #1329) so the card
+# reads a real HV2-extracted artifact cleanly; the extra HV1-descriptive fields (hook / dossier / terrain
+# / twist / stakes …) follow and are picked up when present (controls + richer artifacts carry them).
 _CARD_FIELDS: dict[str, list[str]] = {
-    "quest": ["title", "hook", "giver", "objectives", "stakes", "consequences", "outcomes"],
-    "npc": ["name", "role", "personality", "dossier", "want", "hook", "voice_id"],
-    "location": ["name", "region", "description", "connections", "tags"],
-    "encounter": ["name", "situation", "objective", "combatants", "terrain", "twist", "stakes"],
+    "quest": ["name", "objectives", "completed_objectives", "resolution_status", "evolves_to",
+              "consequences", "title", "hook", "giver", "stakes", "outcomes"],
+    "npc": ["name", "voice_id", "personality", "attitude_arc", "final_status", "dialogue_snippets",
+            "role", "dossier", "want", "hook"],
+    "location": ["name", "description", "scene_grid", "visited", "region", "connections", "tags"],
+    "encounter": ["composition", "outcome", "name", "situation", "objective", "combatants", "terrain",
+                  "twist", "stakes"],
 }
 
 
-def load_artifact(path: Path) -> dict:
-    """Load + minimally validate an artifact JSON against the shared envelope's load-bearing keys."""
+def validate_payload_shape(cls: str, payload: dict) -> None:
+    """Explicitly validate a class-payload shape against the CANONICAL required fields.
+
+    The shared envelope does not yet bind the per-class payload definitions to `class` via if/then
+    (flagged on #1329; HV3 will). Until it does, this is the HV1-side guard the coordinator asked for:
+    a payload missing its canonical required fields (or mis-classed) fails LOUDLY here instead of being
+    silently mis-scored. Raises ValueError listing the missing fields."""
+    required = _CANONICAL_PAYLOAD_REQUIRED.get(cls, ())
+    missing = [f for f in required if f not in payload]
+    if missing:
+        raise ValueError(
+            f"{cls} payload missing canonical required field(s) {missing}; "
+            f"expected {list(required)} (data/library/artifact_schema.json {cls}_payload)"
+        )
+
+
+def load_artifact(path: Path, *, strict_payload: bool = True) -> dict:
+    """Load + validate an artifact JSON against the shared envelope + its per-class payload shape.
+
+    strict_payload (default True) enforces the canonical per-class required fields via
+    validate_payload_shape — the explicit class-payload guard until the schema binds it (#1329/HV3)."""
     obj = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(obj, dict):
         raise ValueError(f"artifact {path} is not a JSON object")
@@ -80,6 +120,8 @@ def load_artifact(path: Path) -> dict:
         raise ValueError(f"artifact {path} class {obj['class']!r} not in {sorted(RUBRIC_FOR_CLASS)}")
     if not isinstance(obj.get("payload"), dict):
         raise ValueError(f"artifact {path} payload is not an object")
+    if strict_payload:
+        validate_payload_shape(obj["class"], obj["payload"])
     return obj
 
 

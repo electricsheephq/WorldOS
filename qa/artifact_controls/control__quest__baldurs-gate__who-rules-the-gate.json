@@ -3,22 +3,34 @@
   "class": "quest",
   "world": "baldurs-gate",
   "provenance": {
-    "campaign_id": null,
+    "campaign_id": "canon",
     "run_id": null,
     "sha": null,
     "extracted_at": "canon",
     "source": "world.json:quest_variants"
   },
   "payload": {
-    "title": "Who Rules Baldur's Gate",
-    "hook": "A council vote on the vacant Archduke's seat is coming, and every faction in the city wants a deniable pair of hands to tilt it. Someone has already approached the newcomer.",
+    "id": "who-rules-the-gate",
+    "name": "Who Rules Baldur's Gate",
+    "resolution_status": "canon-variant",
     "consequences": [
-      "The empty Archduke's seat sits under the restored Council of Four, who govern a grieving, rebuilding city by uneasy committee. No one tyrant holds the Gate; the patriars, the Fist, and the Guild jockey within the law, mostly.",
-      "The Archduke holds the Gate with an iron fist and a rebuilt watch of arcane constructs. The streets are orderly and afraid; dissent disappears quietly into the cells beneath Wyrm's Rock. Order, bought at the price of the city's throat.",
-      "No council sits in judgment but one. A crowned Chosen of Bhaal rules the Gate's terrorized nights from a seat slick with the city's blood, and its powers kneel, flee, or feed the altar. The Archduke's seat is filled at last - by the one thing no one prayed for.",
-      "The Council of Four still convenes, still votes, still believes it governs the Gate. It does not. An unseen illithid power holds the true reins from below, and every debate lands the way it has already decided. The seat is occupied - by something no patriar can see to name.",
-      "The seat stays empty and the city tears quietly at itself over it: the patriars, the Flaming Fist, the Guild, and the Zhentarim all maneuver for the throne by ballot, blade, and blackmail, and no one has won."
+      {
+        "lore": "The empty Archduke's seat sits under the restored Council of Four, who govern a grieving, rebuilding city by uneasy committee. No one tyrant holds the Gate; the patriars, the Fist, and the Guild jockey within the law, mostly."
+      },
+      {
+        "lore": "The Archduke holds the Gate with an iron fist and a rebuilt watch of arcane constructs. The streets are orderly and afraid; dissent disappears quietly into the cells beneath Wyrm's Rock. Order, bought at the price of the city's throat."
+      },
+      {
+        "lore": "No council sits in judgment but one. A crowned Chosen of Bhaal rules the Gate's terrorized nights from a seat slick with the city's blood, and its powers kneel, flee, or feed the altar. The Archduke's seat is filled at last - by the one thing no one prayed for."
+      },
+      {
+        "lore": "The Council of Four still convenes, still votes, still believes it governs the Gate. It does not. An unseen illithid power holds the true reins from below, and every debate lands the way it has already decided. The seat is occupied - by something no patriar can see to name."
+      },
+      {
+        "lore": "The seat stays empty and the city tears quietly at itself over it: the patriars, the Flaming Fist, the Guild, and the Zhentarim all maneuver for the throne by ballot, blade, and blackmail, and no one has won."
+      }
     ],
+    "hook": "A council vote on the vacant Archduke's seat is coming, and every faction in the city wants a deniable pair of hands to tilt it. Someone has already approached the newcomer.",
     "outcomes": [
       {
         "id": "council-restored",

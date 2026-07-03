@@ -204,11 +204,23 @@ def test_render_artifacts_markdown(tmp_path):
 # ---------------------------------------------------------------------------
 # Schema validation: the shared envelope + the per-class score schemas
 # ---------------------------------------------------------------------------
-def test_shared_artifact_schema_is_valid_json_and_shaped():
+def test_shared_artifact_schema_is_canonical_hv2_envelope_with_hv1_source():
+    # Post-#1329 reconciliation: main's HV2-authored schema is CANONICAL. Assert its shape + that HV1's
+    # ADDITIVE optional provenance.source was folded in (never made required).
     schema = json.loads((REPO / "data" / "library" / "artifact_schema.json").read_text())
     assert schema["type"] == "object"
     assert set(schema["required"]) == {"artifact_id", "class", "world", "provenance", "payload", "scores"}
     assert schema["properties"]["class"]["enum"] == ["quest", "npc", "location", "encounter"]
+    prov = schema["properties"]["provenance"]
+    assert prov["additionalProperties"] is False
+    assert set(prov["required"]) == {"campaign_id", "run_id", "sha", "extracted_at"}
+    # HV1's additive source: present, optional (NOT in provenance.required), nullable string.
+    assert "source" in prov["properties"], "HV1's additive provenance.source must be in the schema"
+    assert "source" not in prov["required"], "source must be OPTIONAL (HV2's extractor doesn't emit it)"
+    assert prov["properties"]["source"]["type"] == ["string", "null"]
+    # canonical per-class payload definitions exist (HV3 will bind them via if/then).
+    for cls in ("quest", "npc", "location", "encounter"):
+        assert f"{cls}_payload" in schema["definitions"]
 
 
 def test_each_class_score_schema_matches_its_rubric_dims():
@@ -252,17 +264,21 @@ def test_all_class_rubric_and_schema_files_exist():
 # The card builder: disguise-safe (payload only — no provenance / id / control marker)
 # ---------------------------------------------------------------------------
 def test_build_card_carries_only_payload():
+    # Canonical npc payload (personality is an object; the disguise must hide provenance + id + control).
     artifact = {
         "artifact_id": "control:npc:baldurs-gate:npc-jaheira",
         "class": "npc", "world": "baldurs-gate",
-        "provenance": {"campaign_id": "camp-secret", "run_id": "run-secret",
-                       "source": "world.json:npc_roster"},
-        "payload": {"name": "Jaheira", "role": "High Harper", "personality": "Dry, fierce."},
+        "provenance": {"campaign_id": "camp-secret", "run_id": "run-secret", "sha": None,
+                       "extracted_at": "canon", "source": "world.json:npc_roster"},
+        "payload": {"id": "npc-jaheira", "name": "Jaheira", "voice_id": "npc-elder",
+                    "personality": {"summary": "Dry, fierce."},
+                    "attitude_arc": {"start": 0, "end": 0}, "final_status": "canon-roster",
+                    "dialogue_snippets": [], "role": "High Harper"},
         "scores": None,
     }
     card = artifact_score.build_card(artifact)
     assert "Jaheira" in card
-    for leak in ("control", "provenance", "camp-secret", "run-secret", "artifact_id",
+    for leak in ("control:", "provenance", "camp-secret", "run-secret", "artifact_id",
                  "world.json", artifact["artifact_id"]):
         assert leak.lower() not in card.lower(), f"disguise leak: {leak!r}"
 
@@ -274,56 +290,75 @@ def test_load_artifact_validates_required_keys(tmp_path):
         artifact_score.load_artifact(bad)
 
 
+def test_load_artifact_validates_canonical_payload_shape(tmp_path):
+    # The explicit class-payload guard (until #1329/HV3 binds if/then): a quest payload missing a
+    # canonical required field fails LOUDLY; strict_payload=False disables it.
+    art = {"artifact_id": "quest:c:q", "class": "quest", "world": "w",
+           "provenance": {"campaign_id": "c", "run_id": None, "sha": None, "extracted_at": "x"},
+           "payload": {"id": "q", "name": "Q"},  # missing objectives/resolution_status/etc.
+           "scores": None}
+    p = tmp_path / "q.json"; p.write_text(json.dumps(art))
+    with pytest.raises(ValueError, match="canonical required field"):
+        artifact_score.load_artifact(p)
+    # non-strict load tolerates it (the card is field-tolerant)
+    obj = artifact_score.load_artifact(p, strict_payload=False)
+    assert obj["class"] == "quest"
+
+
 # ---------------------------------------------------------------------------
-# The thin snapshot reader: read-only extraction into the shared envelope
+# The thin snapshot reader: DELEGATES to HV2's canonical extractor (#1329)
 # ---------------------------------------------------------------------------
 def _mini_snapshot() -> dict:
+    # Shaped for HV2's extract_quests/extract_npcs (the canonical field names they read).
     return {
         "id": "camp_test", "world_id": "baldurs-gate", "engine_sha": "deadbeef",
-        "quests": {"q1": {"id": "q1", "title": "The Ledger", "description": "A hook.",
-                          "objectives": ["step one"], "giver_id": "npc-a", "status": "active"}},
+        "consequences": [],
+        "quests": {"q1": {"id": "q1", "title": "The Ledger",
+                          "objectives": ["step one"], "completed_objectives": [],
+                          "status": "active", "evolves_to": ""}},
         "characters": {
-            "npc-a": {"id": "npc-a", "kind": "npc", "name": "Rael", "role": "grain factor",
-                      "personality": "Kind face, clean hands.", "met": True, "voice_id": "v"},
-            "npc-unmet": {"id": "npc-unmet", "kind": "npc", "name": "Ghost", "met": False},
+            "npc-a": {"id": "npc-a", "kind": "npc", "name": "Rael",
+                      "personality": "Kind face, clean hands.", "attitude_value": 2, "voice_id": "v"},
             "pc-1": {"id": "pc-1", "kind": "pc", "name": "Hero"},
         },
     }
 
 
-def test_snapshot_reader_extracts_quests_into_envelope():
-    arts = snap_reader.extract_quests(_mini_snapshot(), world="baldurs-gate", run_id="run-1")
-    assert len(arts) == 1
-    a = arts[0]
-    assert a["class"] == "quest"
-    assert a["artifact_id"] == "quest:baldurs-gate:q1"
-    assert a["payload"]["title"] == "The Ledger"
-    assert a["provenance"]["run_id"] == "run-1"
-    assert a["provenance"]["campaign_id"] == "camp_test"
-    assert a["scores"] is None
+def test_snapshot_reader_delegates_to_hv2_canonical_envelope():
+    arts = snap_reader.extract(_mini_snapshot(), world="baldurs-gate", run_id="run-1",
+                               extracted_at="2026-07-03T00:00:00Z", classes=("quest", "npc"))
+    by_class = {a["class"] for a in arts}
+    assert by_class == {"quest", "npc"}
+    quest = next(a for a in arts if a["class"] == "quest")
+    # HV2 canonical: artifact_id keyed on campaign_id; canonical payload field names.
+    assert quest["artifact_id"] == "quest:camp_test:q1"
+    assert quest["payload"]["name"] == "The Ledger"
+    assert set(quest["payload"]) >= {"id", "name", "objectives", "completed_objectives",
+                                     "resolution_status", "evolves_to", "consequences"}
+    # canonical provenance: non-null campaign_id, caller-supplied extracted_at (deterministic).
+    assert quest["provenance"]["campaign_id"] == "camp_test"
+    assert quest["provenance"]["extracted_at"] == "2026-07-03T00:00:00Z"
+    assert quest["provenance"]["run_id"] == "run-1"
+    assert quest["scores"] is None
+    # excludes the PC (only kind==npc extracted)
+    npc_names = {a["payload"]["name"] for a in arts if a["class"] == "npc"}
+    assert npc_names == {"Rael"}
 
 
-def test_snapshot_reader_met_only_npcs():
-    met = snap_reader.extract_npcs(_mini_snapshot(), world="baldurs-gate", met_only=True)
-    assert [a["payload"]["name"] for a in met] == ["Rael"]  # unmet NPC + PC excluded
-    all_npcs = snap_reader.extract_npcs(_mini_snapshot(), world="baldurs-gate", met_only=False)
-    assert {a["payload"]["name"] for a in all_npcs} == {"Rael", "Ghost"}  # still excludes the PC
-
-
-def test_snapshot_reader_extract_combines_classes():
-    arts = snap_reader.extract(_mini_snapshot(), world="baldurs-gate", classes=("quest", "npc"))
-    classes = {a["class"] for a in arts}
-    assert classes == {"quest", "npc"}
+def test_snapshot_reader_extracted_at_is_deterministic():
+    a1 = snap_reader.extract(_mini_snapshot(), world="w", extracted_at="FIXED", classes=("quest",))
+    a2 = snap_reader.extract(_mini_snapshot(), world="w", extracted_at="FIXED", classes=("quest",))
+    assert a1 == a2  # byte-identical when extracted_at is pinned (no wall-clock inside)
 
 
 def test_snapshot_reader_extracted_artifacts_conform_to_schema():
-    # Every extracted artifact must satisfy the shared envelope's required keys + class enum.
     schema = json.loads((REPO / "data" / "library" / "artifact_schema.json").read_text())
     req = set(schema["required"])
     enum = set(schema["properties"]["class"]["enum"])
-    for a in snap_reader.extract(_mini_snapshot(), world="baldurs-gate"):
+    for a in snap_reader.extract(_mini_snapshot(), world="baldurs-gate", extracted_at="x"):
         assert req <= set(a), f"missing envelope keys: {req - set(a)}"
         assert a["class"] in enum
+        assert isinstance(a["provenance"]["campaign_id"], str) and a["provenance"]["campaign_id"]
 
 
 # ---------------------------------------------------------------------------
@@ -335,6 +370,35 @@ def test_committed_controls_cover_every_class():
     for cls in scores_db.ARTIFACT_CLASSES:
         matches = list(cdir.glob(f"control__{cls}__*.json"))
         assert len(matches) >= 2, f"need >=2 {cls} controls, found {len(matches)}"
+
+
+def test_committed_controls_satisfy_canonical_envelope():
+    # Every committed control must validate against the CANONICAL (HV2-authored) envelope — non-null
+    # campaign_id, provenance additionalProperties:false (so HV1's `source` must be a schema-known key).
+    schema = json.loads((REPO / "data" / "library" / "artifact_schema.json").read_text())
+    prov_req = set(schema["properties"]["provenance"]["required"])
+    prov_props = set(schema["properties"]["provenance"]["properties"])
+    for p in (QA_DIR / "artifact_controls").glob("control__*.json"):
+        a = json.loads(p.read_text())
+        assert set(schema["required"]) <= set(a)
+        prov = a["provenance"]
+        assert prov_req <= set(prov)
+        assert isinstance(prov["campaign_id"], str) and prov["campaign_id"]  # non-null, minLength 1
+        assert set(prov) <= prov_props, f"{p.name}: provenance key not in schema (addlProps:false)"
+
+
+def test_controls_and_extracted_validate_with_jsonschema_when_available():
+    # Bonus strict validation (mirrors HV2's importorskip pattern): full jsonschema.validate on every
+    # committed control AND a snapshot-reader extraction, against the canonical envelope.
+    jsonschema = pytest.importorskip("jsonschema")
+    schema = json.loads((REPO / "data" / "library" / "artifact_schema.json").read_text())
+    validator = jsonschema.Draft7Validator(schema)
+    for p in (QA_DIR / "artifact_controls").glob("control__*.json"):
+        errs = sorted(e.message for e in validator.iter_errors(json.loads(p.read_text())))
+        assert not errs, f"{p.name}: {errs}"
+    for a in snap_reader.extract(_mini_snapshot(), world="baldurs-gate", extracted_at="x"):
+        errs = sorted(e.message for e in validator.iter_errors(a))
+        assert not errs, f"extracted {a['artifact_id']}: {errs}"
 
 
 def test_control_payloads_carry_no_provenance_leak_into_cards():

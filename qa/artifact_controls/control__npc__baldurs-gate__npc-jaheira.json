@@ -3,18 +3,26 @@
   "class": "npc",
   "world": "baldurs-gate",
   "provenance": {
-    "campaign_id": null,
+    "campaign_id": "canon",
     "run_id": null,
     "sha": null,
     "extracted_at": "canon",
     "source": "world.json:npc_roster"
   },
   "payload": {
+    "id": "npc-jaheira",
     "name": "Jaheira",
+    "voice_id": "npc-elder",
+    "personality": {
+      "summary": "A half-elf druid-warrior and Harper leader who has buried more friends than most people meet. Dry, fierce, maternal in a way that bites; she has saved the Coast before and is too tired and too stubborn to stop now. The player's likeliest mentor and door into the Harpers."
+    },
+    "attitude_arc": {
+      "start": 0,
+      "end": 0
+    },
+    "final_status": "canon-roster",
     "role": "High Harper, veteran of a hundred years",
-    "personality": "A half-elf druid-warrior and Harper leader who has buried more friends than most people meet. Dry, fierce, maternal in a way that bites; she has saved the Coast before and is too tired and too stubborn to stop now. The player's likeliest mentor and door into the Harpers.",
-    "want": "Suspects someone is gathering the Absolute's loose ends — and that the new powers circling the dukedom are not all what they claim.",
-    "voice_id": "npc-elder"
+    "want": "Suspects someone is gathering the Absolute's loose ends — and that the new powers circling the dukedom are not all what they claim."
   },
   "scores": null
 }

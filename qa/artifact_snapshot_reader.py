@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
-"""artifact_snapshot_reader.py — THIN, read-only extraction of scoreable artifacts from a campaign
-play-state snapshot (HV1 calibration, #1323).
+"""artifact_snapshot_reader.py — THIN read-only adapter that hands HV1's calibration the artifacts it
+needs, by CONSUMING HV2's canonical extractor (qa/export_campaign_artifacts.py, #1329/#1324).
 
-SCOPE (deliberately minimal): this is NOT the full harvest extractor — that is HV2's job
-(export_campaign_artifacts.py, #1324). This ships only enough extraction for HV1's CALIBRATION panel:
-pull the QUESTS and the (met) NPCs directly out of an existing finished campaign's snapshot.json,
-serialize each into the shared data/library/artifact_schema.json envelope, and hand them to
-qa/artifact_score.py. Locations/encounters for calibration come from hand-authored canon controls
-(qa/artifact_controls/), so the snapshot reader only needs quests + NPCs.
+RECONCILED (post-#1329 merge): HV2 now owns the real extractor and the canonical envelope
+(data/library/artifact_schema.json). This module no longer duplicates extraction logic — it DELEGATES
+to HV2's pure `build_artifacts(campaign_dict, ...)` and simply selects the class(es) HV1's calibration
+panel wants (quests + NPCs from an existing finished campaign). Locations/encounters for calibration
+come from the hand-authored canon controls (qa/artifact_controls/), so this reader only needs quest+npc.
 
-READ-ONLY: imports nothing from the engine writer path, never writes play state. It reads the JSON
-snapshot directly (same discipline as qa/snapshot_world_state.py) using the engine's real field names,
-defensively (a missing field → today's-behavior default), so an old snapshot round-trips.
+Why keep a thin HV1-side reader at all (vs calling export_campaign_artifacts directly)? Convenience +
+isolation for the calibration flow: it fills in the caller-supplied `extracted_at` (deterministic),
+tolerates a snapshot with no transcript (quests/NPCs don't need one), and returns an in-memory list the
+panel runner consumes — without HV1 having to reproduce HV2's CLI contract. If HV2 is unavailable it
+falls back to nothing (raises), rather than forking a second extractor.
+
+READ-ONLY: never writes play state. Writing to --out-dir (QA output) is optional.
 
 CLI:
     python3 qa/artifact_snapshot_reader.py <snapshot.json> [--world W] [--run-id R] [--out-dir DIR]
-                                           [--class quest|npc] [--met-only]
+                                           [--class quest,npc] [--extracted-at STR]
 Prints the artifacts as a JSON array (and writes one file per artifact to --out-dir if given).
 """
 from __future__ import annotations
@@ -25,102 +28,53 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
+
+QA_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(QA_DIR))
+
+# HV2's canonical extractor (the schema-owning lane). We consume its pure per-class functions.
+import export_campaign_artifacts as hv2  # noqa: E402
+
+# Classes HV1's calibration reads from a live snapshot. HV2's extract_quests/extract_npcs are pure and
+# do NOT require the transcript (NPC dialogue_snippets simply come back empty with no text blocks) —
+# exactly what a thin calibration read needs.
+_SNAPSHOT_CLASSES = ("quest", "npc")
 
 
-def _now() -> str:
+def _default_extracted_at() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def _provenance(snapshot: dict, run_id: Optional[str], source: str) -> dict:
-    return {
-        "campaign_id": snapshot.get("id"),
-        "run_id": run_id,
-        "sha": snapshot.get("engine_sha"),
-        "extracted_at": _now(),
-        "source": source,
-    }
+def extract(
+    snapshot: dict,
+    *,
+    world: Optional[str] = None,
+    run_id: Optional[str] = None,
+    extracted_at: Optional[str] = None,
+    classes: tuple[str, ...] = _SNAPSHOT_CLASSES,
+) -> list[dict]:
+    """Return the requested classes' canonical artifacts from a campaign snapshot dict, via HV2.
 
-
-def _artifact_id(cls: str, world: str, source_id: str) -> str:
-    return f"{cls}:{world}:{source_id}"
-
-
-def extract_quests(snapshot: dict, *, world: str, run_id: Optional[str] = None) -> list[dict]:
-    """Serialize every quest in the snapshot into the shared envelope (quest class)."""
-    out: list[dict] = []
-    quests = snapshot.get("quests") or {}
-    # quests is a dict {quest_id: quest}; tolerate a list too.
-    items = quests.values() if isinstance(quests, dict) else quests
-    for q in items:
-        if not isinstance(q, dict):
-            continue
-        qid = q.get("id") or q.get("title") or "unknown-quest"
-        payload = {
-            "title": q.get("title"),
-            "hook": q.get("description"),   # the snapshot's quest.description carries the hook/premise
-            "objectives": q.get("objectives") or [],
-            "giver": q.get("giver_id"),
-            "status": q.get("status"),
-            # `evolves_to` is the closest snapshot signal for consequence/branching.
-            "consequences": q.get("evolves_to"),
-        }
-        out.append({
-            "artifact_id": _artifact_id("quest", world, qid),
-            "class": "quest",
-            "world": world,
-            "provenance": _provenance(snapshot, run_id, "snapshot:quests"),
-            "payload": {k: v for k, v in payload.items() if v not in (None, "", [], {})},
-            "scores": None,
-        })
-    return out
-
-
-def extract_npcs(snapshot: dict, *, world: str, run_id: Optional[str] = None,
-                 met_only: bool = True) -> list[dict]:
-    """Serialize NPCs (kind == 'npc') from the snapshot into the shared envelope (npc class).
-
-    met_only (default): only NPCs the party actually MET this campaign — those are the ones the
-    campaign realized, the meaningful calibration set. Set met_only=False to include the full roster.
+    Delegates to HV2's pure per-class extractors so every artifact is byte-for-byte the canonical
+    envelope (non-null provenance.campaign_id, canonical payload shape). `extracted_at` is
+    caller-supplied (deterministic re-runs) — defaults to now() only when omitted.
     """
+    campaign_id = snapshot["id"]
+    world = world or snapshot.get("world_id", "")
+    sha = snapshot.get("engine_sha") or None
+    ea = extracted_at or _default_extracted_at()
+
+    def provenance_base():
+        return hv2._make_provenance(campaign_id, run_id, sha, ea)
+
     out: list[dict] = []
-    chars = snapshot.get("characters") or {}
-    items = chars.values() if isinstance(chars, dict) else chars
-    for c in items:
-        if not isinstance(c, dict):
-            continue
-        if c.get("kind") != "npc":
-            continue
-        if met_only and not c.get("met"):
-            continue
-        cid = c.get("id") or c.get("name") or "unknown-npc"
-        payload = {
-            "name": c.get("name"),
-            "role": c.get("role"),
-            "personality": c.get("personality"),
-            "dossier": c.get("companion_dossier") or c.get("backstory"),
-            "want": c.get("arc"),
-            "voice_id": c.get("voice_id"),
-        }
-        out.append({
-            "artifact_id": _artifact_id("npc", world, cid),
-            "class": "npc",
-            "world": world,
-            "provenance": _provenance(snapshot, run_id, "snapshot:characters"),
-            "payload": {k: v for k, v in payload.items() if v not in (None, "", [], {})},
-            "scores": None,
-        })
-    return out
-
-
-def extract(snapshot: dict, *, world: str, run_id: Optional[str] = None,
-            classes: tuple[str, ...] = ("quest", "npc"), met_only: bool = True) -> list[dict]:
-    arts: list[dict] = []
     if "quest" in classes:
-        arts += extract_quests(snapshot, world=world, run_id=run_id)
+        out += hv2.extract_quests(snapshot, provenance_base, world)
     if "npc" in classes:
-        arts += extract_npcs(snapshot, world=world, run_id=run_id, met_only=met_only)
-    return arts
+        # No transcript in a thin calibration read → empty text blocks (dialogue_snippets come back []).
+        out += hv2.extract_npcs(snapshot, provenance_base, world, [])
+    return out
 
 
 def main(argv: Optional[list[str]] = None) -> int:
@@ -128,17 +82,17 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("snapshot", help="path to a campaign snapshot.json (or a *.state.json)")
     ap.add_argument("--world", default=None, help="world id (default: snapshot.world_id)")
     ap.add_argument("--run-id", default=None, help="QA run id to stamp into provenance (FK to runs.run_id)")
+    ap.add_argument("--extracted-at", default=None,
+                    help="caller-supplied extraction timestamp (deterministic; default now())")
     ap.add_argument("--out-dir", default=None, help="write one <artifact_id>.json per artifact here")
     ap.add_argument("--class", dest="classes", default="quest,npc",
                     help="comma-separated classes to extract (quest,npc)")
-    ap.add_argument("--all-npcs", action="store_true", help="include the full roster, not just met NPCs")
     args = ap.parse_args(argv)
 
     snapshot = json.loads(Path(args.snapshot).read_text(encoding="utf-8"))
-    world = args.world or snapshot.get("world_id") or "unknown-world"
     classes = tuple(s.strip() for s in args.classes.split(",") if s.strip())
-    arts = extract(snapshot, world=world, run_id=args.run_id, classes=classes,
-                   met_only=not args.all_npcs)
+    arts = extract(snapshot, world=args.world, run_id=args.run_id,
+                   extracted_at=args.extracted_at, classes=classes)
 
     if args.out_dir:
         d = Path(args.out_dir)

@@ -3,16 +3,25 @@
   "class": "npc",
   "world": "baldurs-gate",
   "provenance": {
-    "campaign_id": null,
+    "campaign_id": "canon",
     "run_id": null,
     "sha": null,
     "extracted_at": "canon",
     "source": "world.json:npc_roster"
   },
   "payload": {
+    "id": "npc-minsc",
     "name": "Minsc and Boo",
+    "voice_id": "companion-default",
+    "personality": {
+      "summary": "Booming, bighearted, gloriously simple-seeming and far shrewder than he sounds; speaks to and for Boo, the 'miniature giant space hamster.' A hero of ages past, lately unfrozen and itching to 'go for the eyes.' Loyal unto death; grieves the friends time took from him."
+    },
+    "attitude_arc": {
+      "start": 0,
+      "end": 0
+    },
+    "final_status": "canon-roster",
     "role": "ranger of legend (and his miniature giant space hamster) — candidate COMPANION",
-    "personality": "Booming, bighearted, gloriously simple-seeming and far shrewder than he sounds; speaks to and for Boo, the 'miniature giant space hamster.' A hero of ages past, lately unfrozen and itching to 'go for the eyes.' Loyal unto death; grieves the friends time took from him.",
     "dossier": {
       "wound": "outlived the friends time took from him",
       "wants": [
@@ -47,8 +56,7 @@
         "npc-jaheira": "old comrade-in-arms"
       }
     },
-    "want": "Available as a companion; his old griefs (Dynaheir, the centuries he lost) surface whenever loss or duty is in play.",
-    "voice_id": "companion-default"
+    "want": "Available as a companion; his old griefs (Dynaheir, the centuries he lost) surface whenever loss or duty is in play."
   },
   "scores": null
 }
