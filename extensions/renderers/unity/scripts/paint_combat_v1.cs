@@ -164,7 +164,17 @@ string surfJson="";
 try { surfJson=new System.Net.WebClient().DownloadString("http://127.0.0.1:8765/combat-surface?campaign="+CID); } catch (System.Exception e) { return "surface GET failed: "+e.Message; }
 var root=MiniJson.Parse(surfJson) as System.Collections.Generic.Dictionary<string,object>;
 if(root==null) return "surface parse failed";
+// W1 (#1318) SCENE-AT-REST: when the surface's additive `stage` block says mode:"rest" and carries
+// tokens, this renderer paints the room AT REST — party + present NPCs at their spawn cells in idle
+// poses — instead of a combat board. In combat mode stage.tokens is [] (the engine guarantees no
+// double-paint), so we fall through to the authoritative top-level `tokens`. `restMode` gates the
+// idle-pose default below. Absent `stage` (an old surface) -> combat path, today's behavior.
+bool restMode=false;
 var toks=root.ContainsKey("tokens")?(root["tokens"] as System.Collections.Generic.List<object>):null;
+{ var stage=root.ContainsKey("stage")?(root["stage"] as System.Collections.Generic.Dictionary<string,object>):null;
+  if(stage!=null){ string smode=stage.ContainsKey("mode")?stage["mode"] as string:null;
+    var stoks=stage.ContainsKey("tokens")?(stage["tokens"] as System.Collections.Generic.List<object>):null;
+    if(smode=="rest" && stoks!=null && stoks.Count>0){ toks=stoks; restMode=true; } } }
 if(toks==null||toks.Count==0) return "no tokens on surface";
 // sweep prior actors/overlays so a moved/removed token never leaves a stale instance (deterministic rerun).
 // COLLECT then destroy with null-checks: destroying an actor root also destroys its children still in the
@@ -202,7 +212,9 @@ foreach(var o in toks){ var t=o as System.Collections.Generic.Dictionary<string,
   // Meshy placeholder cast whose idle/bind clips are non-neutral (crouch/lean) + inflate the height-normalized scale;
   // the bind pose is the most PROPORTIONATE placeholder here. A properly-rigged demo-cast actor (owner-greenlit) with
   // a clean idle should pass its fbx/clip so this poses it standing. (Grounding via BakeMesh is correct either way.)
-  var pos=spawn(fbx,alb,null,cx,cy,h,ring,"Actor_"+tid);
+  // W1 (#1318): AT REST, feed the fbx as the pose clip so the imported 9-clip moveset's 'idle' settles each actor into
+  // a relaxed standing pose (the scene-at-rest read) rather than the combat bind pose.
+  var pos=spawn(fbx,alb,restMode?fbx:null,cx,cy,h,ring,"Actor_"+tid);
   if(nm!=null) posByName[nm]=pos; spawned++; celldbg+=" "+nm+"("+team+")@"+cx+","+cy;
 }
 if(missingActor){ sb.AppendLine("ABORT capture — a required actor prefab was missing (no PNG written)"); return sb.ToString(); }
@@ -248,7 +260,9 @@ sb.AppendLine("LIVE "+CID+": spawned "+spawned+" actors:"+celldbg);
   sb.AppendLine("occluders: "+occN+" depth-proxy boxes");
 }
 // latest damage from the battleLog -> floating "-N" + impact burst over the struck token (skip if no recent hit).
-string dmgTarget=""; int dmgN=0; var blog=root.ContainsKey("battleLog")?(root["battleLog"] as System.Collections.Generic.List<object>):null;
+// W1 (#1318): AT REST there is no combat, so skip the damage-VFX pass entirely (blog left null) — a rest
+// scene never shows an impact burst / "-N" over a peaceful innkeeper.
+string dmgTarget=""; int dmgN=0; var blog=restMode?null:(root.ContainsKey("battleLog")?(root["battleLog"] as System.Collections.Generic.List<object>):null);
 if(blog!=null){ foreach(var e in blog){ string tx=null; var ed=e as System.Collections.Generic.Dictionary<string,object>; if(ed!=null&&ed.ContainsKey("text")) tx=ed["text"] as string; else tx=e as string;
   if(tx!=null&&tx.Contains(" hits ")&&tx.Contains(" for ")&&tx.Contains("damage")){ int hi=tx.IndexOf(" hits "); int fi=tx.IndexOf(" for ",hi); if(hi>=0&&fi>hi){ dmgTarget=tx.Substring(hi+6,fi-(hi+6)).Trim(); var aft=tx.Substring(fi+5).TrimStart().Split(' '); if(aft.Length>0) int.TryParse(aft[0],out dmgN); } } } }
 
