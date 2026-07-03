@@ -214,8 +214,9 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
 > Every W sprint ships its EVAL FIRST (decision-by-eval) + a **text-tier byte-identity test**
 > (VISION invariant: the text tier always plays). Exploration ground truth: scene_grid already
 > carries walkable cells AND populated `spawns` (per-kind generators, scene_grid.py:254–660) —
-> only the READ side is missing; move_to_coords exists combat-gated; the viewer already paints
-> walkability. The gaps are ungatings + one new render mode.
+> spawns is read today only by the layout-validator (scene_grid.py:974, spawn cells vs blocked
+> cells), no CONSUMER reads it for rendering/projection yet; move_to_coords exists combat-gated;
+> the viewer already paints walkability. The gaps are ungatings + one new render mode.
 
 - **W1 — "Scene at Rest"** *(parallel-safe NOW)*. Additive `stage` block (`mode: rest|combat` +
   rest tokens) in `build_combat_surface` (viewer/server.py:3376; optionally aliased as
@@ -226,8 +227,9 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
   real-game controls, same calibration law). Known risk: `spawns` sits inside `_layout_hash`
   (scene_grid.py:158) → one-time Tier-2 art-cache invalidation, accepted.
 - **W2 — "Walk"** *(engine half parallel-safe NOW; glide depends on S2 #1303)*. New additive
-  `walk_to` verb BESIDE move_to_coords (server.py:4583 — the combat gate stays untouched), reusing
-  `combat_grid.shortest_path:221` via ONE shared blocked-set function (never fork pathing). Writes
+  `walk_to` verb BESIDE move_to_coords (servers/engine/server.py:4583 — the combat gate stays
+  untouched), reusing `combat_grid.shortest_path:221` via ONE shared blocked-set function (never
+  fork pathing). Writes
   additive `Character.stage_cell`. Emits Action-Replay walk beats via /events
   (viewer/server.py:9181) so the Animator glides them. Walkmask click-to-move in rest mode
   (screen-combat.jsx pattern exists); door-cell click → `cross_door` walk-through. **Rule:** the
@@ -237,9 +239,10 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
   cell, attitude); click-NPC → approach-to-talk (walk_to adjacent, then parley); dialogue rendered
   at the actor (2D reuses screen-dialogue.jsx). **EVAL:** blind panel + a behavioral check that
   the DM receives IDENTICAL parley moves as the text tier.
-- **W4 — "The Living Stage"** *(coordinate with S8)*. `start_combat:4039` additive param seeds
-  combatant cells from `stage_cell` (default = today); `end_combat:6976` writes survivors back;
-  day/night from the campaign clock (surfaced per #1307). **EVAL gate = NO TELEPORT:** combat
+- **W4 — "The Living Stage"** *(coordinate with S8)*. `servers/engine/server.py:4039`
+  (`start_combat`) additive param seeds combatant cells from `stage_cell` (default = today);
+  `servers/engine/server.py:6976` (`end_combat`) writes survivors back; day/night from the
+  campaign clock (surfaced per #1307). **EVAL gate = NO TELEPORT:** combat
   entry cells == last rest cells; exit cells == combat end cells. Full explore→talk→fight→loot→
   move-on loop playable.
 - **W5 — "The Unity Player tier"** *(depends W1–W4; formalizes the render-delivery ruling)*.
@@ -281,7 +284,8 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
   — lens parity-or-better + latency/token reduction + feature_engagement confirms library content
   is ENGAGED, not decorative.
 - **HV5 — "Flywheel ops"** *(hooks after HV3)*. qa/closeout.py auto-NOMINATES artifacts from every
-  scored run (story ≥ threshold, quest completed, NPC ≥N turns) — artifact scoring runs in a
+  scored run (story threshold = STORY_BAR, qa/closeout.py, currently 4.3; quest completed; NPC
+  turn floor N=3) — artifact scoring runs in a
   nightly batch, never inline (duo latency untouched). Weekly curation batch. **Backdrop cadence:
   2 environments a night, panel-gated, weekly curation → ~100 environments in ~10 weeks** on the
   proven GEX44 pipeline. `library_metrics` table (size by class/tier, Σreuse_count, promotion
