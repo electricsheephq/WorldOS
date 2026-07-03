@@ -214,8 +214,10 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
 > Every W sprint ships its EVAL FIRST (decision-by-eval) + a **text-tier byte-identity test**
 > (VISION invariant: the text tier always plays). Exploration ground truth: scene_grid already
 > carries walkable cells AND populated `spawns` (per-kind generators, scene_grid.py:254–660) —
-> spawns is read today only by the layout-validator (scene_grid.py:974, spawn cells vs blocked
-> cells), no CONSUMER reads it for rendering/projection yet; move_to_coords exists combat-gated;
+> spawns is read today by the layout-validator (scene_grid.py:974, spawn cells vs blocked
+> cells) and by the Unity closed-loop renderer (ClosedLoopBuilder.cs:126-129, party/foe cell
+> placement); no CONSUMER reads it for rendering/projection in the live viewer/product surface
+> yet; move_to_coords exists combat-gated;
 > the viewer already paints walkability. The gaps are ungatings + one new render mode.
 
 - **W1 — "Scene at Rest"** *(parallel-safe NOW)*. Additive `stage` block (`mode: rest|combat` +
