@@ -1189,3 +1189,116 @@ def test_fully_progressed_snapshot_yields_no_obligations():
     arc = CompanionQuestArc(companion_id=comp.id, title="Wyll's personal thread")
     c.companion_quest_arcs[arc.id] = arc
     assert server._compute_beat_obligations(c) == []
+
+
+# --- #1313 Option 3: severity-sort + `next_action` + persist_beat `owed` -----------------------
+#
+# The engagement machinery was surfaced every beat (the full `obligations` list) and the DM
+# scanned past it (rri-a1-duo3: ZERO engagement tools across 25 clean beats). Option 3 lifts the
+# SINGLE top-severity obligation into a named, imperative `next_action` on BOTH seams, and echoes
+# the still-owed kinds back on the persist_beat return. Pure read, additive: no obligations ->
+# byte-identical to today (no next_action / owed keys).
+
+
+def _multi_severity_campaign() -> Campaign:
+    """A snapshot that fires several obligations spanning ALL severity tiers, so the sort +
+    top-lift are observable. Act 3 climax-owed = the lone `high`; a frozen gauged companion +
+    an all-objectives-done quest = `med`; a resolved-no-echo quest = `low`."""
+    comp = _companion(name="Shadowheart", attitude=0, likes=["mercy"], last_long_rest_day=4)
+    pc = Character(name="Hero", kind="player")
+    c = _campaign_with(comp, pc, day=5)
+    # Act 3 with the climax still owed -> act_climax_owed (severity "high").
+    c.narrative_arc = NarrativeArc(act=3, day_act_entered=3, beats_in_act=6,
+                                   midpoint_reversal_landed=True, climax_landed=False)
+    # med: companion_approval_frozen (gauged companion still at 0 on day 5).
+    # med: quest_resolvable (all objectives done).
+    resolvable = Quest(title="The ripe thread", objectives=["x"], completed_objectives=["x"])
+    c.quests[resolvable.id] = resolvable
+    # low: quest_no_echo (a resolved quest with empty evolves_to and no consequence).
+    stale = Quest(title="A quiet win", status="completed", objectives=["y"],
+                  completed_objectives=["y"], evolves_to="")
+    c.quests[stale.id] = stale
+    return c
+
+
+def test_obligations_are_severity_sorted_high_first():
+    """The digest is returned high>med>low so the caller can lift the top one."""
+    c = _multi_severity_campaign()
+    obligations = server._compute_beat_obligations(c)
+    severities = [o["severity"] for o in obligations]
+    # At least one of each tier is present, and they are non-increasing in urgency.
+    assert "high" in severities and "med" in severities and "low" in severities
+    rank = {"high": 0, "med": 1, "low": 2}
+    ranks = [rank[s] for s in severities]
+    assert ranks == sorted(ranks), f"obligations not severity-sorted: {severities}"
+
+
+def test_next_action_is_the_top_severity_obligation():
+    """`_next_action` lifts the single highest-priority obligation, reusing its own detail text
+    as the imperative (no invented copy)."""
+    c = _multi_severity_campaign()
+    obligations = server._compute_beat_obligations(c)
+    na = server._next_action(obligations)
+    assert na is not None
+    top = obligations[0]
+    assert na["kind"] == top["kind"] == "act_climax_owed"
+    assert na["severity"] == "high"
+    # The imperative is the obligation's existing detail verbatim (reused, not invented).
+    assert na["imperative"] == top["detail"]
+
+
+def test_next_action_is_none_when_no_obligations():
+    """No obligations -> no next_action (the additive default; empty digest -> no key)."""
+    assert server._next_action([]) is None
+
+
+def test_top_obligation_none_on_empty():
+    assert server._top_obligation([]) is None
+
+
+def test_scene_context_surfaces_next_action_when_actionable(cid):
+    _make_frozen_run(cid)
+    sc = server.scene_context(cid)
+    durable = sc["durable"]
+    assert "obligations" in durable
+    na = durable["next_action"]
+    # The lifted directive is the FIRST (top-severity) obligation, and its imperative is that
+    # obligation's own detail.
+    top = durable["obligations"][0]
+    assert na["kind"] == top["kind"]
+    assert na["imperative"] == top["detail"]
+
+
+def test_scene_context_omits_next_action_on_healthy_fixture(cid):
+    """Additive: a healthy fixture has no obligations -> no next_action key (today's shape)."""
+    _author_quest_arcs_for_party_companions(cid)
+    sc = server.scene_context(cid)
+    assert "obligations" not in sc["durable"]
+    assert "next_action" not in sc["durable"]
+
+
+def test_persist_beat_surfaces_next_action_and_owed_when_actionable(cid):
+    _make_frozen_run(cid)
+    out = server.persist_beat(cid, events=[{"kind": "narration", "text": "The beat lands."}])
+    assert "obligations" in out
+    # next_action = the top obligation, echoing its own detail as the imperative.
+    top = out["obligations"][0]
+    assert out["next_action"]["kind"] == top["kind"]
+    assert out["next_action"]["imperative"] == top["detail"]
+    # `owed` echoes back every still-unmet obligation kind (consequence-of-inaction carried
+    # forward), in the same severity-sorted order as the digest.
+    assert out["owed"] == [o["kind"] for o in out["obligations"]]
+    assert "companion_approval_frozen" in out["owed"]
+    assert "quest_resolvable" in out["owed"]
+
+
+def test_persist_beat_omits_next_action_and_owed_on_healthy_fixture(cid):
+    """The ADDITIVE / byte-identical-when-empty invariant on the persist_beat return: a healthy
+    beat carries NEITHER the obligations digest NOR the Option-3 keys — the return is exactly
+    today's four-key shape (plus optional approval_results)."""
+    _author_quest_arcs_for_party_companions(cid)
+    out = server.persist_beat(cid, events=[{"kind": "narration", "text": "A quiet beat."}])
+    assert "obligations" not in out
+    assert "next_action" not in out
+    assert "owed" not in out
+    assert set(out) <= {"logged", "remembered", "decision", "time", "approval_results"}

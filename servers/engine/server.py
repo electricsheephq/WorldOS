@@ -13484,7 +13484,48 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
                 ),
             })
 
+    # #1313 Option 3: severity-sort so the SINGLE most urgent obligation is first (high>med>low),
+    # then lifted into `next_action` by the callers. STABLE (Python's sorted): within a severity
+    # tier the authored append order above is preserved, so the scannable `obligations` list reads
+    # exactly as before within a tier — only the cross-tier ordering changes. ADDITIVE: an empty
+    # digest sorts to the same empty list (byte-identical when there is nothing to do). An unknown
+    # severity sorts LAST (defensive default) rather than raising.
+    obligations.sort(key=lambda o: _SEVERITY_RANK.get(o.get("severity"), _SEVERITY_RANK_UNKNOWN))
     return obligations
+
+
+# #1313 Option 3 — severity ordering for the per-beat obligations digest. high is the load-bearing
+# payoff (act_climax_owed / companion_betrayal deep-red), so it sorts first; an unrecognized
+# severity degrades to LAST rather than raising (mirrors the digest's defensive-getattr discipline).
+_SEVERITY_RANK = {"high": 0, "med": 1, "low": 2}
+_SEVERITY_RANK_UNKNOWN = 3
+
+
+def _top_obligation(obligations: list[dict]) -> dict | None:
+    """The SINGLE highest-priority obligation this beat (the first of the severity-sorted digest),
+    or None when the digest is empty. PURE read — the list is already sorted by
+    _compute_beat_obligations; this just names 'the one thing this beat owes'."""
+    return obligations[0] if obligations else None
+
+
+def _next_action(obligations: list[dict]) -> dict | None:
+    """#1313 Option 3: lift the top obligation into an imperative single-directive `next_action`.
+
+    ADDITIVE + PURE read: derived from the already-computed obligations each beat, reusing the
+    obligation's own `detail`/`kind` text (no new copy invented). Returns None when there is no
+    obligation, so the caller omits the key and the return is byte-identical to today's shape.
+    NEVER errors — a malformed obligation degrades to the kind alone."""
+    top = _top_obligation(obligations)
+    if top is None:
+        return None
+    return {
+        "kind": top.get("kind"),
+        "severity": top.get("severity"),
+        # The imperative is the obligation's existing detail — the cue text is ALREADY imperative
+        # and single-directive; surfacing it as a named next_action (not one row of a scanned list)
+        # is the whole lever. Fall back to a minimal directive if a detail is somehow absent.
+        "imperative": top.get("detail") or f"Act on the {top.get('kind')} obligation this beat.",
+    }
 
 
 def _scene_durable_threads(c: Campaign) -> dict:
@@ -13696,6 +13737,11 @@ def _scene_durable_threads(c: Campaign) -> dict:
     obligations = _compute_beat_obligations(c)
     if obligations:
         out["obligations"] = obligations
+        # #1313 Option 3: lift the single top obligation into an imperative `next_action` so the DM
+        # acts on ONE named directive instead of scanning the list. ADDITIVE: absent when empty.
+        next_action = _next_action(obligations)
+        if next_action is not None:
+            out["next_action"] = next_action
     return out
 
 
@@ -14197,6 +14243,14 @@ def persist_beat(
                 obligations = _compute_beat_obligations(c_read)
                 if obligations:
                     out["obligations"] = obligations
+                    # #1313 Option 3: the one imperative directive this beat owes (top severity),
+                    # PLUS a lightweight `owed` list of the kinds that remain unmet after this beat
+                    # persisted — the DM sees the consequence-of-inaction carried forward. READ-ONLY
+                    # (derived from the just-loaded snapshot; no new state, no clean:false teeth).
+                    next_action = _next_action(obligations)
+                    if next_action is not None:
+                        out["next_action"] = next_action
+                    out["owed"] = [o.get("kind") for o in obligations]
         except Exception:
             pass
     return out
