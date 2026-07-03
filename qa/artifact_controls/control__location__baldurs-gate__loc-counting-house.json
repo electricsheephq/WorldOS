@@ -1,0 +1,28 @@
+{
+  "artifact_id": "control:location:baldurs-gate:loc-counting-house",
+  "class": "location",
+  "world": "baldurs-gate",
+  "provenance": {
+    "campaign_id": null,
+    "run_id": null,
+    "sha": null,
+    "extracted_at": "canon",
+    "source": "areas/*.json"
+  },
+  "payload": {
+    "name": "the Counting House",
+    "region": "Baldur's Gate",
+    "description": "A basalt-faced hall that straddles the boundary between the Upper and Lower cities, its vaulted interior always smelling of ink, candle-wax, and old money. Above ground the patriars' coin-clerks argue over ledgers behind iron grilles; below ground the Guild has long kept its own set of books. The Absolute crisis scarcely touched the facade — the sums still balance, the fees are still collected — but the personnel have changed, and the trapdoor to the lower vaults opens a fraction more freely than it used to.",
+    "connections": [
+      "Baldur's Gate — Upper City",
+      "Baldur's Gate — Lower City"
+    ],
+    "tags": [
+      "finance",
+      "city",
+      "underworld",
+      "intrigue"
+    ]
+  },
+  "scores": null
+}

@@ -1,0 +1,36 @@
+{
+  "artifact_id": "control:quest:baldurs-gate:the-shadow-cursed-lands",
+  "class": "quest",
+  "world": "baldurs-gate",
+  "provenance": {
+    "campaign_id": null,
+    "run_id": null,
+    "sha": null,
+    "extracted_at": "canon",
+    "source": "world.json:quest_variants"
+  },
+  "payload": {
+    "title": "The State of the Shadow-Cursed Lands",
+    "hook": "The healing land keeps turning up things the curse had swallowed — a buried hamlet, a sealed crypt, a name on a gravestone someone in the city has been searching for. The warden of Reithwin needs hands he can trust.",
+    "consequences": [
+      "The Shadow Curse over Reithwin is breaking. Green creeps back across poisoned ground, the dead grow quiet, and a great healer has stayed behind to shepherd the land's slow recovery and the orphans resettling there.",
+      "The curse never lifted. Reithwin and the lands around Moonrise stay drowned in unnatural dark; the things that hunt there still hunt, and a single grim warden holds a line that cannot be won, only held.",
+      "The dark was contained but not cured: the Flaming Fist threw a cordon around the Shadow-Cursed Lands and call it a quarantine. Smugglers run the line, deserters hide past it, and the curse waits behind the wire."
+    ],
+    "outcomes": [
+      {
+        "id": "curse-lifted",
+        "hook": "The healing land keeps turning up things the curse had swallowed — a buried hamlet, a sealed crypt, a name on a gravestone someone in the city has been searching for. The warden of Reithwin needs hands he can trust."
+      },
+      {
+        "id": "curse-festers",
+        "hook": "The lone warden of the cursed lands has gone silent. The last traveler back from the dark says his lantern still burns at Last Light — but no one answers the door."
+      },
+      {
+        "id": "curse-quarantined",
+        "hook": "Something valuable was left behind the quarantine line when it went up, and more than one party is quietly hiring runners willing to cross into the dark to fetch it."
+      }
+    ]
+  },
+  "scores": null
+}

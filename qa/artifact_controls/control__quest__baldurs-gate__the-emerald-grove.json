@@ -1,0 +1,36 @@
+{
+  "artifact_id": "control:quest:baldurs-gate:the-emerald-grove",
+  "class": "quest",
+  "world": "baldurs-gate",
+  "provenance": {
+    "campaign_id": null,
+    "run_id": null,
+    "sha": null,
+    "extracted_at": "canon",
+    "source": "world.json:quest_variants"
+  },
+  "payload": {
+    "title": "The Fate of the Emerald Grove",
+    "hook": "A druid who survived the siege now travels the Risen Road looking for the scattered refugees they once sheltered — and would pay for word of where the survivors settled.",
+    "consequences": [
+      "The druid grove in the Western wilds still stands; the goblin warband that besieged it was broken and the tiefling refugees sheltering there lived to walk the road to the city. Grateful druids tend a sanctuary that held.",
+      "The grove fell. The warband poured through the gate and the refugees were slaughtered among the standing stones; the place is a burned shrine no one tends, its carvings black with old fire.",
+      "The shadow-touched faction among the druids won the grove's inner quarrel: the refugees were driven out unprotected and most never reached safety. The circle sealed itself off, turned inward, and admits no outsider now."
+    ],
+    "outcomes": [
+      {
+        "id": "grove-saved",
+        "hook": "A druid who survived the siege now travels the Risen Road looking for the scattered refugees they once sheltered — and would pay for word of where the survivors settled."
+      },
+      {
+        "id": "grove-massacred",
+        "hook": "A lone tiefling who crawled out of the grove's ashes has been seen in the Outer City, nursing a grudge and asking after anyone who profited from the massacre."
+      },
+      {
+        "id": "grove-druids-locked",
+        "hook": "The sealed grove has stopped answering the rangers who used to trade with it; a worried warden wants someone to learn what the isolationist druids are hiding behind their thorns."
+      }
+    ]
+  },
+  "scores": null
+}

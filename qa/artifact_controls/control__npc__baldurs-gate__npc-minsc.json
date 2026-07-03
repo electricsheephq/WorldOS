@@ -1,0 +1,54 @@
+{
+  "artifact_id": "control:npc:baldurs-gate:npc-minsc",
+  "class": "npc",
+  "world": "baldurs-gate",
+  "provenance": {
+    "campaign_id": null,
+    "run_id": null,
+    "sha": null,
+    "extracted_at": "canon",
+    "source": "world.json:npc_roster"
+  },
+  "payload": {
+    "name": "Minsc and Boo",
+    "role": "ranger of legend (and his miniature giant space hamster) — candidate COMPANION",
+    "personality": "Booming, bighearted, gloriously simple-seeming and far shrewder than he sounds; speaks to and for Boo, the 'miniature giant space hamster.' A hero of ages past, lately unfrozen and itching to 'go for the eyes.' Loyal unto death; grieves the friends time took from him.",
+    "dossier": {
+      "wound": "outlived the friends time took from him",
+      "wants": [
+        "a righteous cause to swing for",
+        "to honor the fallen by protecting the living"
+      ],
+      "fears": [
+        "failing those under his guard, as he feels he once did"
+      ],
+      "values": [
+        "courage",
+        "loyalty",
+        "the small and the innocent"
+      ],
+      "approval_likes": [
+        "standing up for the helpless",
+        "boldness in a good cause"
+      ],
+      "approval_dislikes": [
+        "preying on the weak",
+        "cowardice dressed as caution"
+      ],
+      "banter_tags": [
+        "go_for_the_eyes",
+        "grief_of_long_years",
+        "boo_knows_best"
+      ],
+      "camp_prompts": [
+        "asks Boo what the stars looked like before the years he lost"
+      ],
+      "relationships": {
+        "npc-jaheira": "old comrade-in-arms"
+      }
+    },
+    "want": "Available as a companion; his old griefs (Dynaheir, the centuries he lost) surface whenever loss or duty is in play.",
+    "voice_id": "companion-default"
+  },
+  "scores": null
+}

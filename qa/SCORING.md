@@ -404,3 +404,52 @@ turns the guard RED). **Use this pattern when leaning any lossy context knob** (
 the leaner derivation still clears `critical_loss=False` — the regression the 1–5 lens cannot see.
 **NOT** a per-run scored dimension: each fresh emergent run has no reference to diff against, so
 fact-fidelity is an opt-in regression guard (compression/lean A/Bs, recap continuity), never a lens.
+
+## 9. Per-ARTIFACT evals — the harvest-loop instrument (HV1, #1323)
+`qa/artifact_score.py` · rubrics `qa/rubric_artifact_<class>.md` · schemas `qa/score_schema_artifact_<class>.json`
+
+**The gap this closes.** §2's three lenses grade a whole PLAYTEST. The Act-II harvest loop needs to
+grade a single reusable CONTENT artifact — is THIS quest / NPC / location / encounter a harvestable
+asset worth lifting into another campaign? That is a different measurement, so it gets its own
+instrument and its own ruler family, kept entirely separate from the engine-duo rulers above.
+
+**The four rubrics (one-decimal dims, same discipline as §2).** Each class has a rubric + a plain-number
+schema (a plain `number` in `[1,5]`, no `multipleOf` — the same IEEE-754 reasoning as the story lens):
+- **quest** — hook_strength, objective_clarity, consequence_weight, stakes_escalation, reusability
+- **npc** — voice_distinctiveness, motivation_coherence, arc_potential, reusability
+- **location** — identity, affordances, atmosphere, reusability
+- **encounter** — composition_interest, tactical_texture, stakes, reusability
+
+`reusability` (world-agnosticism) is the harvest-loop lever on every class: could the artifact be lifted
+out of its home campaign with only cosmetic renaming? `artifact_score.py` REUSES `qa/score.sh` verbatim
+(pinned-sonnet, the fresh-config + keychain-auth path) — it does NOT fork the auth logic — and serializes
+each artifact into a payload-ONLY "card" (no provenance / id / control marker reaches the scorer).
+
+**The ARTIFACT ruler (`ac_…`) — a SEPARATE family.** `qa/scoring_config_version.py` gains
+`ARTIFACT_CONFIG_FILES` (the 4 rubrics + 4 schemas) and `artifact_config_version()` → `ac_…`. This is
+**deliberately NOT** folded into `SCORING_CONFIG_FILES`: appending an artifact rubric there would
+silently re-version the `sc_`/`lc_` engine-duo rulers and break the comparability of every historical
+story/mech/angry number. The two families share no files; an artifact-rubric edit re-versions `ac_` and
+leaves `sc_`/`lc_` byte-identical (pinned by `qa/test_artifact_evals.py`).
+
+**Control anchoring — the ±1.2 noise law, adopted for content.** A per-artifact panel is only valid if
+disguised hand-authored CANON lands in-band (the content analogue of the real-art-control law, memory
+`feedback_visual_panel_scoring_variance`). `qa/build_artifact_controls.py` serializes real ship-quality
+canon — quests from `world.json` quest_variants, NPCs from npc_roster dossiers, locations from
+wiki-canon areas, encounters canon-derived from the world's set-pieces — through the IDENTICAL envelope
+into `qa/artifact_controls/`, with the identity mapping written OUTSIDE the panel input dir
+(`qa/artifact_controls_identity.json`) so a scorer can never read it. **We adopt the ±1.2 noise law:** a
+control whose median lands more than ±1.2 from its anchor invalidates the panel for that class. Absolute
+artifact numbers are only citable relative to where the controls landed in the same panel.
+
+**Storage — the additive `artifacts` table.** `qa/scores.db` gains a SECOND table `artifacts` (the
+`runs` table is untouched), sole writer `artifact_score.py` via `add_artifact()` (mirrors `add_run()`'s
+validation). Columns: per-dim JSON, overall, panel_id, class, world, `run_id` (nullable FK to
+`runs.run_id`), `ac_ruler`, `is_control` + `control_anchor`. Render with
+`python3 qa/scores_db.py --render-artifacts` (→ `qa/artifacts_ledger.md`).
+
+**Running it.** Extract quests/NPCs from an existing campaign with the thin read-only reader
+(`qa/artifact_snapshot_reader.py <snapshot.json>`); run one blind panel per class with
+`qa/artifact_calibration_panel.py --class <class> [--candidates-dir DIR] --panel-size 5` (5 sonnet
+scorers, controls embedded, exit 2 if the control band fails). `WORLDOS_ARTIFACT_PANEL_DRYRUN=1` runs a
+deterministic offline wiring proof (no `claude -p`, no cost).
