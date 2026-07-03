@@ -46,10 +46,6 @@ CUE_ENGAGEMENT_TOOLS: dict[str, tuple[str, ...]] = {
     "act_midpoint_owed": ("mark_reversal", "record_decision"),
 }
 
-# The engagement tools whose SUCCESSFUL call actually MOVES quest state (used to phrase the
-# tally; the ground-truth "did state move" check reads the engine snapshot, not this).
-_QUEST_MOVING_TOOLS = ("complete_quest", "complete_objective")
-
 
 def _bare_tool_name(name: str) -> str:
     """Strip the MCP server prefix so an engine tool called as

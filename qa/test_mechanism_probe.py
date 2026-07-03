@@ -133,7 +133,7 @@ def _write_transcript(path: Path, tool_uses: list[tuple[str, dict]], texts: list
 
 
 def test_tool_tally_counts_all_tool_uses(tmp_path):
-    t = _write_transcript(tmp_path / "t.jsonl", [
+    _write_transcript(tmp_path / "t.jsonl", [
         ("scene_context", {}), ("complete_objective", {"objective": "x"}),
         ("complete_quest", {"quest_id": "q"}), ("complete_objective", {"objective": "y"}),
     ], texts=["a scene"])
@@ -144,7 +144,7 @@ def test_tool_tally_counts_all_tool_uses(tmp_path):
 
 
 def test_engagement_tally_filters_to_cue_tools(tmp_path):
-    t = _write_transcript(tmp_path / "t.jsonl", [
+    _write_transcript(tmp_path / "t.jsonl", [
         ("scene_context", {}), ("say", {}), ("complete_quest", {"quest_id": "q"}),
         ("add_consequence", {"text": "echo"}),
     ])
@@ -163,9 +163,9 @@ def test_tool_names_are_mcp_prefix_stripped(tmp_path):
         ("mcp__worldos-engine__complete_objective", {"objective": "x"}),
         ("mcp__worldos-engine__scene_context", {}),
     ])
-    tally = probe_verdict.tool_tally(tmp_path / "t.jsonl")
+    tally = probe_verdict.tool_tally(t)
     assert tally["complete_quest"] == 1 and tally["scene_context"] == 1
-    eng = probe_verdict.engagement_tally(tmp_path / "t.jsonl", "quest_endgame_unresolved")
+    eng = probe_verdict.engagement_tally(t, "quest_endgame_unresolved")
     assert dict(eng) == {"complete_quest": 1, "complete_objective": 1}
 
 
@@ -241,7 +241,7 @@ def test_verdict_cue_absent_only_when_cue_missing_at_start():
 
 def test_build_report_end_to_end_acted(tmp_path):
     """A full synthetic ACTED case: cue held both beats, DM called complete_quest, engine moved."""
-    t = _write_transcript(tmp_path / "t.jsonl", [
+    _write_transcript(tmp_path / "t.jsonl", [
         ("scene_context", {}), ("complete_objective", {"objective": "Find the haunt"}),
         ("complete_quest", {"quest_id": "q1", "evolves_to": "the stone speaks again"}),
     ])
@@ -258,7 +258,7 @@ def test_build_report_acted_when_dm_acts_immediately_and_cue_clears(tmp_path):
     """The case the FIRST real probe run exposed: the DM resolves the quest on beat 1, which CLEARS
     the wrap-window cue on beats 2–3. That cue-clearing is the SUCCESS signal (ACTED) — not
     CUE_ABSENT. Tool names arrive MCP-prefixed (as in a real transcript)."""
-    t = _write_transcript(tmp_path / "t.jsonl", [
+    _write_transcript(tmp_path / "t.jsonl", [
         ("mcp__worldos-engine__scene_context", {}),
         ("mcp__worldos-engine__complete_objective", {"objective": "Find the haunt"}),
         ("mcp__worldos-engine__complete_quest", {"quest_id": "q1", "evolves_to": "echo"}),
@@ -276,8 +276,8 @@ def test_build_report_acted_when_dm_acts_immediately_and_cue_clears(tmp_path):
 def test_build_report_end_to_end_ignored(tmp_path):
     """The IGNORED case the probe exists to catch: cue fired every beat, DM only narrated (no
     engagement tool), engine state never moved."""
-    t = _write_transcript(tmp_path / "t.jsonl", [("say", {}), ("scene_context", {})],
-                          texts=["The stone flickers... the party wonders who silenced it."])
+    _write_transcript(tmp_path / "t.jsonl", [("say", {}), ("scene_context", {})],
+                       texts=["The stone flickers... the party wonders who silenced it."])
     before = {"quests": {"q1": {"id": "q1", "status": "active", "completed_objectives": []}}}
     after = json.loads(json.dumps(before))
     report = probe_verdict.build_report("quest_endgame_unresolved", [True, True, True], tmp_path / "t.jsonl", before, after)
