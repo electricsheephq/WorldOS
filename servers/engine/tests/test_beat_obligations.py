@@ -721,6 +721,138 @@ def test_arcless_default_campaign_yields_no_act_cues():
     assert obligations == []
 
 
+# --- #1313 (cue-half iteration 2): the ENDGAME quest-resolution cue -----------------------------
+#
+# The measured residual RED after Option 3 (rri-a1-opt3, 25 clean beats): engagement rose broadly
+# but a quest stayed ACTIVE at session end (reads as a dropped thread). The wrap window is the ONE
+# honest engine gauge for "the story has passed its peak and is closing" — arc.climax_landed (set by
+# the DM's own mark_climax). In that window an active quest escalates to a single HIGH
+# quest_endgame_unresolved cue that REPLACES the generic resolvable/stalled/unresolved_late cues, so
+# next_action names quest CLOSURE as the imperative in the final beats. NO teeth (advisory only).
+
+
+def _wrap_window_campaign(active_all_objectives_done: bool = True) -> Campaign:
+    """Act 3 with the climax LANDED (the wrap window) plus one still-ACTIVE quest. The objectives
+    are all-done by default (the resolvable shape) so the pre-endgame code path would have fired
+    quest_resolvable — proving the endgame cue REPLACES it in the window."""
+    c = Campaign(title="Endgame")
+    c.day = 6
+    c.narrative_arc = NarrativeArc(act=3, day_act_entered=5, beats_in_act=6,
+                                   midpoint_reversal_landed=True, climax_landed=True)
+    objectives = ["find the relic"]
+    completed = ["find the relic"] if active_all_objectives_done else []
+    q = Quest(title="The Debt of Bresser Oln", objectives=objectives,
+              completed_objectives=completed, last_progress_day=6)
+    c.quests[q.id] = q
+    return c
+
+
+def test_quest_endgame_unresolved_fires_in_wrap_window_for_active_quest():
+    """Wrap window (act 3, climax landed) + an active quest -> a single HIGH quest_endgame_unresolved
+    cue naming the quest, with the resolution imperative."""
+    c = _wrap_window_campaign()
+    obligations = server._compute_beat_obligations(c)
+    kinds = _kinds(obligations)
+    assert "quest_endgame_unresolved" in kinds
+    cue = next(o for o in obligations if o["kind"] == "quest_endgame_unresolved")
+    assert cue["severity"] == "high"
+    assert cue["title"] == "The Debt of Bresser Oln"
+    assert "The Debt of Bresser Oln" in cue["detail"]
+    assert "wrapping" in cue["detail"]
+    # The resolution imperative names all three sanctioned closures.
+    assert "complete_quest" in cue["detail"]
+    assert "complete_objective" in cue["detail"]
+    assert "add_consequence" in cue["detail"]
+
+
+def test_quest_endgame_unresolved_becomes_the_next_action_imperative():
+    """Because it is HIGH and obligations are severity-sorted, the endgame cue is lifted into
+    next_action as THE imperative in the final beats."""
+    c = _wrap_window_campaign()
+    obligations = server._compute_beat_obligations(c)
+    na = server._next_action(obligations)
+    assert na is not None
+    assert na["kind"] == "quest_endgame_unresolved"
+    assert na["severity"] == "high"
+    assert na["imperative"] == obligations[0]["detail"]
+
+
+def test_quest_endgame_replaces_resolvable_no_double_fire():
+    """PRECEDENCE: the wrap-window cue REPLACES quest_resolvable/quest_stalled for the same quest —
+    one cue, not two/three — so next_action is a single resolution directive."""
+    c = _wrap_window_campaign(active_all_objectives_done=True)
+    kinds = _kinds(server._compute_beat_obligations(c))
+    assert "quest_endgame_unresolved" in kinds
+    assert "quest_resolvable" not in kinds
+    assert "quest_stalled" not in kinds
+    assert "quest_unresolved_late" not in kinds
+
+
+def test_quest_endgame_replaces_unresolved_late_when_nothing_progressed():
+    """Even when NO objective was ever recorded done (the quest_unresolved_late shape), the wrap-
+    window cue owns the quest — quest_unresolved_late stays silent (no double-fire)."""
+    c = _wrap_window_campaign(active_all_objectives_done=False)
+    kinds = _kinds(server._compute_beat_obligations(c))
+    assert "quest_endgame_unresolved" in kinds
+    assert "quest_unresolved_late" not in kinds
+    assert "quest_stalled" not in kinds
+
+
+def test_quest_endgame_absent_outside_wrap_window_climax_not_landed():
+    """Same act-3, deep-in-act snapshot but the climax has NOT landed -> NOT the wrap window. The
+    endgame cue is silent; the generic quest cue path still owns the active quest."""
+    c = _wrap_window_campaign()
+    c.narrative_arc.climax_landed = False  # climax still owed -> not yet wrapping
+    kinds = _kinds(server._compute_beat_obligations(c))
+    assert "quest_endgame_unresolved" not in kinds
+    # The pre-endgame path still surfaces the ripe active quest (all objectives done -> resolvable).
+    assert "quest_resolvable" in kinds
+
+
+def test_quest_endgame_absent_in_earlier_acts_even_with_climax_flag():
+    """The wrap window is act-3-AND-climax_landed. An act-2 arc (climax flag not applicable) never
+    trips the endgame cue."""
+    c = _wrap_window_campaign()
+    c.narrative_arc.act = 2
+    kinds = _kinds(server._compute_beat_obligations(c))
+    assert "quest_endgame_unresolved" not in kinds
+
+
+def test_quest_endgame_absent_when_all_quests_resolved_in_wrap_window():
+    """In the wrap window with NO active quest (the only quest is completed) -> nothing owed. The
+    endgame cue is absent (it fires only on an ACTIVE thread left open at wrap)."""
+    c = Campaign(title="Endgame clean")
+    c.day = 6
+    c.narrative_arc = NarrativeArc(act=3, day_act_entered=5, beats_in_act=6,
+                                   midpoint_reversal_landed=True, climax_landed=True)
+    done = Quest(title="A resolved thread", status="completed", objectives=["x"],
+                 completed_objectives=["x"], evolves_to="a lingering echo")
+    c.quests[done.id] = done
+    assert "quest_endgame_unresolved" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_quest_endgame_byte_identical_empty_digest_in_wrap_window_with_no_quests():
+    """The ADDITIVE contract holds in the wrap window: a healthy act-3 climax-landed beat with no
+    quests and no other owed cue yields the byte-identical empty digest (no obligations key)."""
+    c = Campaign(title="Endgame empty")
+    c.day = 6
+    c.narrative_arc = NarrativeArc(act=3, day_act_entered=5, beats_in_act=6,
+                                   midpoint_reversal_landed=True, climax_landed=True)
+    assert server._compute_beat_obligations(c) == []
+
+
+def test_quest_endgame_silent_for_arcless_campaign():
+    """Defensive: an arc-less campaign (no narrative_arc attribute path) reads _in_wrap_window False
+    and never trips the endgame cue, even with an active all-done quest."""
+    c = Campaign(title="No arc")
+    c.day = 6
+    c.narrative_arc = None
+    q = Quest(title="Loose thread", objectives=["x"], completed_objectives=["x"])
+    c.quests[q.id] = q
+    kinds = _kinds(server._compute_beat_obligations(c))
+    assert "quest_endgame_unresolved" not in kinds
+
+
 # --- quest_stalled BEATS-reach (#1286) --------------------------------------
 #
 # The measured rri-a1-duo2 defect: a 22-beat run kept an active quest alive while the DM never
@@ -1178,13 +1310,15 @@ def test_fully_progressed_snapshot_yields_no_obligations():
     rat = Character(name="Cellar Rat", kind="monster", dead=True, current_hp=0, max_hp=7,
                     xp_value=0)
     c.characters[rat.id] = rat
-    # a completed quest with progress recorded; an ongoing one with fresh progress (no stall)
+    # Two completed quests with echoes — at WRAP (act 3, climax landed) a fully-progressed snapshot
+    # has CLOSED its threads; an ongoing quest left active here would be #1313 quest_endgame_unresolved
+    # (correct: a thread left ACTIVE at wrap is owed), so "fully progressed" means resolved-not-dangling.
     done = Quest(title="A resolved thread", status="completed", objectives=["x"],
                  completed_objectives=["x"], evolves_to="a lingering echo")
-    ongoing = Quest(title="An ongoing thread", objectives=["keep going"],
-                    completed_objectives=[], last_progress_day=5)
+    done2 = Quest(title="Another resolved thread", status="completed", objectives=["y"],
+                  completed_objectives=["y"], evolves_to="another lingering echo")
     c.quests[done.id] = done
-    c.quests[ongoing.id] = ongoing
+    c.quests[done2.id] = done2
     # the gauged companion owns a personal quest arc (WS-A/WS-C healthy fixture)
     arc = CompanionQuestArc(companion_id=comp.id, title="Wyll's personal thread")
     c.companion_quest_arcs[arc.id] = arc
@@ -1302,3 +1436,25 @@ def test_persist_beat_omits_next_action_and_owed_on_healthy_fixture(cid):
     assert "next_action" not in out
     assert "owed" not in out
     assert set(out) <= {"logged", "remembered", "decision", "time", "approval_results"}
+
+
+def test_quest_endgame_unresolved_fans_out_per_active_quest():
+    """MULTI-quest wrap window: each still-ACTIVE quest gets its OWN quest_endgame_unresolved cue
+    (the append lives inside the per-quest loop — this pins that fan-out so a refactor that hoists
+    the append out of the loop, or dedups by kind, fails loudly). A resolved quest in the same
+    window gets none."""
+    c = _wrap_window_campaign()
+    q2 = Quest(title="The Second Debt", objectives=["pay it"], completed_objectives=[],
+               last_progress_day=6)
+    c.quests[q2.id] = q2
+    q3 = Quest(title="Already Done", objectives=["done"], completed_objectives=["done"],
+               last_progress_day=6, status="completed")
+    c.quests[q3.id] = q3
+    obligations = server._compute_beat_obligations(c)
+    endgame = [o for o in obligations if o["kind"] == "quest_endgame_unresolved"]
+    assert len(endgame) == 2, f"one cue per ACTIVE quest, got {len(endgame)}"
+    titles = {o["title"] for o in endgame}
+    assert titles == {"The Debt of Bresser Oln", "The Second Debt"}
+    assert all(o["severity"] == "high" for o in endgame)
+    # the resolved quest is untouched by the endgame escalation
+    assert "Already Done" not in titles

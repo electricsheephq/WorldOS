@@ -371,6 +371,18 @@ _FACTION_JOIN_BEATS = 8
 # Keep this value byte-identical to that gate's constant so the cue and the gate agree by construction.
 _PARTY_STUCK_BEATS = 8
 
+# #1313 (cue-half iteration 2): the ENDGAME WRAP WINDOW. The measured residual RED after Option 3
+# (rri-a1-opt3) was a single thing — a quest left ACTIVE at session end (reads as a dropped thread).
+# The wrap window is defined by the ONE honest engine gauge for "the story has passed its peak and is
+# now closing": arc.climax_landed (set by the DM's own mark_climax call). That is a positive engine
+# flag, not a fiction read of the harness's "out of time" prose, and it is deliberately MUTUALLY
+# EXCLUSIVE with act_climax_owed (which only fires while climax_landed is False) — so the endgame cue
+# lives strictly in the DENOUEMENT, never competing with the climax cue. A beats-in-act fallback was
+# REJECTED: it would re-collide with act_climax_owed and reintroduce a fuzzy threshold; the landed
+# flag is both cleaner and the exact "payoff done, now wrap" semantic. In this window an active quest
+# escalates to a single HIGH quest_endgame_unresolved cue that REPLACES the generic resolvable/stalled/
+# unresolved_late cues (one imperative, not three) so next_action names quest closure as THE next act.
+
 
 def _quest_progress_beat(c: Campaign) -> int:
     """The current NarrativeArc.beats_in_act tally, read defensively — the engine-mutated beat
@@ -12963,6 +12975,14 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
     #    stretch of play with companions and no rest).
     _arc = getattr(c, "narrative_arc", None)
     _beats_in_act = (getattr(_arc, "beats_in_act", 0) or 0) if _arc is not None else 0
+    # #1313 endgame wrap window (see the _PARTY_STUCK_BEATS block comment): the story has passed its
+    # peak and is closing once the DM has marked the Act-3 climax landed. Defensive getattr, so an
+    # arc-less / older / partial NarrativeArc reads False (byte-identical empty digest, as before).
+    _in_wrap_window = (
+        _arc is not None
+        and getattr(_arc, "act", 1) == 3
+        and bool(getattr(_arc, "climax_landed", False))
+    )
     if party_companions and (day >= 3 or _beats_in_act >= _CAMP_OVERDUE_BEATS):
         # NB: a value of 0 is a VALID rest day (rested on day 0), so coalesce only None, not
         # falsy-0 — `or -1` would wrongly read a day-0 rest as "never rested".
@@ -13032,6 +13052,29 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
         qid = getattr(q, "id", None)
         objectives = list(getattr(q, "objectives", []) or [])
         completed = list(getattr(q, "completed_objectives", []) or [])
+        # #1313 endgame escalation — in the wrap window (climax landed, act 3), an active quest is
+        # the measured residual RED: a thread left ACTIVE at wrap reads as dropped. Escalate to ONE
+        # HIGH quest_endgame_unresolved cue that REPLACES resolvable/stalled for this quest (severity-
+        # sorted, so it becomes THE next_action imperative in the final beats) — a single resolution
+        # directive, not three overlapping ones. Precedence: this owns the quest cue in the window, so
+        # neither the resolvable/stalled branches below NOR quest_unresolved_late (3b) also fire.
+        if _in_wrap_window:
+            obligations.append({
+                "kind": "quest_endgame_unresolved",
+                "quest_id": qid,
+                "title": title,
+                "severity": "high",
+                "detail": (
+                    f"The session is wrapping and '{title}' is still ACTIVE — resolve it NOW: "
+                    f"complete_quest(quest_id, evolves_to='...') if the thread closed in fiction "
+                    f"(complete_objective first for any step just cleared). To HAND IT OFF instead, "
+                    f"STILL complete_quest (that is what closes the status) and carry the open thread "
+                    f"forward with evolves_to plus add_consequence — a bare add_consequence leaves the "
+                    f"quest ACTIVE and this obligation standing. A thread left ACTIVE at wrap reads as "
+                    f"dropped, not resolved."
+                ),
+            })
+            continue  # the endgame cue owns this quest in the wrap window (not ALSO resolvable/stalled)
         # ALL objectives done -> the quest is mechanically resolvable; the DM should close
         # it AND give it an echo (evolves_to) so a win isn't one-and-done (rule of three).
         if objectives and all(o in completed for o in objectives):
@@ -13094,8 +13137,11 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
     #     already flagged quest_resolvable / quest_stalled this beat (those already name a concrete
     #     quest the DM must act on; this campaign-level "nothing has moved" cue would be redundant
     #     noise on top). Pure read of engine-mutated status / completed_objectives — never prose.
+    #     In the #1313 wrap window the endgame cue (quest_endgame_unresolved) already names concrete
+    #     active quests to close, so this campaign-level "nothing has moved" cue is redundant there too.
     _already_flagged_quest = any(
-        o.get("kind") in ("quest_resolvable", "quest_stalled") for o in obligations
+        o.get("kind") in ("quest_resolvable", "quest_stalled", "quest_endgame_unresolved")
+        for o in obligations
     )
     if _beats_in_act >= _PARTY_STUCK_BEATS and quests and not _already_flagged_quest:
         any_quest_completed = any(
