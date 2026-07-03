@@ -13,6 +13,9 @@ AssetDatabase.Refresh();
 // _active_combat.txt -> today's single-room behavior (back-compat, additive). The per-location fetch is as
 // reliable as the token fetch below (same endpoint).
 string PLATE="crypt_firelit_v2.png"; string _locPlate="";
+// grid extents for cellToWorld below: default to the 14x11-era origin (cols=14,rows=11) so an
+// absent/malformed grid block reproduces today's fixed (cx-6.5,5.0-cy) transform byte-for-byte.
+float _gridCols=14f, _gridRows=11f;
 try {
   var _cidF="/home/unity/worldos-unity/Assets/painterly/backdrops/_active_campaign.txt";
   string _cid="camp_gfxdemo01"; if(System.IO.File.Exists(_cidF)){ var _c=System.IO.File.ReadAllText(_cidF).Trim(); if(_c.Length>0) _cid=_c; }
@@ -22,6 +25,11 @@ try {
   var _lid=(_loc!=null && _loc.ContainsKey("id"))?_loc["id"] as string:null;
   var _mapF="/home/unity/worldos-unity/Assets/painterly/backdrops/_location_plates.json";
   if(!string.IsNullOrEmpty(_lid) && System.IO.File.Exists(_mapF)){ var _m=MiniJson.Parse(System.IO.File.ReadAllText(_mapF)) as System.Collections.Generic.Dictionary<string,object>; if(_m!=null && _m.ContainsKey(_lid)) _locPlate=_m[_lid] as string; }
+  // #1318 rest-mode grids can be a non-14x11 size (e.g. forest/town at 16-19 cols x 12-15 rows);
+  // read the surface's own grid block so cellToWorld places tokens on their real spawn cells
+  // instead of the fixed legacy origin. Any parse miss silently keeps the 14x11 default above.
+  var _grid=(_r!=null && _r.ContainsKey("grid"))?_r["grid"] as System.Collections.Generic.Dictionary<string,object>:null;
+  if(_grid!=null){ if(_grid.ContainsKey("cols")) _gridCols=System.Convert.ToSingle(_grid["cols"]); if(_grid.ContainsKey("rows")) _gridRows=System.Convert.ToSingle(_grid["rows"]); }
 } catch {}
 if(!string.IsNullOrEmpty(_locPlate)) PLATE=_locPlate;
 else { var _abs="/home/unity/worldos-unity/Assets/painterly/backdrops/_active_combat.txt"; if(System.IO.File.Exists(_abs)){ var _n=System.IO.File.ReadAllText(_abs).Trim(); if(_n.Length>0) PLATE=_n; } }
@@ -75,7 +83,10 @@ bd.transform.SetParent(cam.transform,false); float texAsp=(float)bdTex.width/bdT
 bd.transform.localPosition=new Vector3(0,0,160f); bd.transform.localScale=new Vector3(ow,oh,1f);
 var bm=new Material(Shader.Find("Unlit/Texture")); bm.mainTexture=bdTex; bm.renderQueue=1900; var bdr=bd.GetComponent<Renderer>(); bdr.sharedMaterial=bm; bdr.enabled=true; bdr.shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off; bdr.receiveShadows=false;
 
-System.Func<int,int,Vector3> cellToWorld=(cx,cy)=> new Vector3((cx-6.5f)*2.0f,0f,(5.0f-cy)*2.0f);
+// Origin derived from the surface's own grid extents (fetched above): (_gridCols-1)/2 and
+// (_gridRows-1)/2 reproduce the prior hardcoded 6.5/5.0 EXACTLY at 14x11 (13/2=6.5, 10/2=5.0), so
+// this is byte-identical on today's rooms and only shifts the origin for a differently-sized grid.
+System.Func<int,int,Vector3> cellToWorld=(cx,cy)=> new Vector3((cx-(_gridCols-1f)/2f)*2.0f,0f,((_gridRows-1f)/2f-cy)*2.0f);
 
 // PoE2 lighting rig (from spike)
 foreach(var ln in new[]{"KeyLight","FillLight","BrazierL","BrazierR"}){ var o=GameObject.Find(ln); if(o!=null) UnityEngine.Object.DestroyImmediate(o); }
@@ -164,7 +175,17 @@ string surfJson="";
 try { surfJson=new System.Net.WebClient().DownloadString("http://127.0.0.1:8765/combat-surface?campaign="+CID); } catch (System.Exception e) { return "surface GET failed: "+e.Message; }
 var root=MiniJson.Parse(surfJson) as System.Collections.Generic.Dictionary<string,object>;
 if(root==null) return "surface parse failed";
+// W1 (#1318) SCENE-AT-REST: when the surface's additive `stage` block says mode:"rest" and carries
+// tokens, this renderer paints the room AT REST — party + present NPCs at their spawn cells in idle
+// poses — instead of a combat board. In combat mode stage.tokens is [] (the engine guarantees no
+// double-paint), so we fall through to the authoritative top-level `tokens`. `restMode` gates the
+// idle-pose default below. Absent `stage` (an old surface) -> combat path, today's behavior.
+bool restMode=false;
 var toks=root.ContainsKey("tokens")?(root["tokens"] as System.Collections.Generic.List<object>):null;
+{ var stage=root.ContainsKey("stage")?(root["stage"] as System.Collections.Generic.Dictionary<string,object>):null;
+  if(stage!=null){ string smode=stage.ContainsKey("mode")?stage["mode"] as string:null;
+    var stoks=stage.ContainsKey("tokens")?(stage["tokens"] as System.Collections.Generic.List<object>):null;
+    if(smode=="rest" && stoks!=null && stoks.Count>0){ toks=stoks; restMode=true; } } }
 if(toks==null||toks.Count==0) return "no tokens on surface";
 // sweep prior actors/overlays so a moved/removed token never leaves a stale instance (deterministic rerun).
 // COLLECT then destroy with null-checks: destroying an actor root also destroys its children still in the
@@ -181,28 +202,36 @@ var posByName=new System.Collections.Generic.Dictionary<string,Vector3>(); int s
 System.Collections.Generic.Dictionary<string,object> regAssets=null, regDefaults=null, regAliases=null;
 { var _rp="/home/unity/worldos-unity/registry.json"; if(System.IO.File.Exists(_rp)){ var _rr=MiniJson.Parse(System.IO.File.ReadAllText(_rp)) as System.Collections.Generic.Dictionary<string,object>; if(_rr!=null){ regAssets=_rr.ContainsKey("assets")?_rr["assets"] as System.Collections.Generic.Dictionary<string,object>:null; regDefaults=_rr.ContainsKey("defaults")?_rr["defaults"] as System.Collections.Generic.Dictionary<string,object>:null; regAliases=_rr.ContainsKey("aliases")?_rr["aliases"] as System.Collections.Generic.Dictionary<string,object>:null; } } }
 System.Func<string,string> slugify=(s)=>{ if(string.IsNullOrEmpty(s)) return ""; var _b=new System.Text.StringBuilder(); foreach(char c in s.ToLower()){ if(char.IsLetterOrDigit(c)) _b.Append(c); else if(_b.Length>0 && _b[_b.Length-1]!='-') _b.Append('-'); } return _b.ToString().Trim('-'); };
+// Returns [model_ref, albedo_ref, anim_ref] — anim_ref is the registry's OWN idle/moveset clip
+// (e.g. hero@moveset.fbx), separate from the mesh (#1318 thread: rest mode must sample idle from
+// anim_ref, not from the mesh fbx itself). "" (not null) when the registry has no anim_ref for
+// this asset (e.g. the static hero.fbx entry, which documents no clips) so the caller can fall
+// back to the prior mesh-as-poseClip behavior for those assets.
 System.Func<string,string,string[]> resolveAsset=(slug,kind)=>{
   string fbxDef=kind=="monster"?"Assets/chars_v2/goblin/goblin.fbx":"Assets/painterly/models/hero.fbx";
   string albDef=kind=="monster"?"Assets/chars_v2/goblin/albedo.png":"Assets/painterly/models/hero_albedo.png";
-  if(regAssets==null) return new string[]{fbxDef,albDef};
+  if(regAssets==null) return new string[]{fbxDef,albDef,""};
   string id=slug;
   if(!regAssets.ContainsKey(id) && regAliases!=null && regAliases.ContainsKey(id)) id=regAliases[id] as string;
   if((id==null||!regAssets.ContainsKey(id)) && regDefaults!=null){ if(regDefaults.ContainsKey(kind)) id=regDefaults[kind] as string; else if(regDefaults.ContainsKey("__any__")) id=regDefaults["__any__"] as string; }
-  if(id!=null && regAssets.ContainsKey(id)){ var a=regAssets[id] as System.Collections.Generic.Dictionary<string,object>; if(a!=null){ string m=a.ContainsKey("model_ref")?a["model_ref"] as string:null; string al=a.ContainsKey("albedo_ref")?a["albedo_ref"] as string:null; return new string[]{ string.IsNullOrEmpty(m)?fbxDef:m, string.IsNullOrEmpty(al)?albDef:al }; } }
-  return new string[]{fbxDef,albDef};
+  if(id!=null && regAssets.ContainsKey(id)){ var a=regAssets[id] as System.Collections.Generic.Dictionary<string,object>; if(a!=null){ string m=a.ContainsKey("model_ref")?a["model_ref"] as string:null; string al=a.ContainsKey("albedo_ref")?a["albedo_ref"] as string:null; string an=a.ContainsKey("anim_ref")?a["anim_ref"] as string:null; return new string[]{ string.IsNullOrEmpty(m)?fbxDef:m, string.IsNullOrEmpty(al)?albDef:al, an??"" }; } }
+  return new string[]{fbxDef,albDef,""};
 };
 foreach(var o in toks){ var t=o as System.Collections.Generic.Dictionary<string,object>; if(t==null||!t.ContainsKey("x")||t["x"]==null) continue;
   int cx=System.Convert.ToInt32(t["x"]); int cy=System.Convert.ToInt32(t["y"]); string team=t["team"] as string; string nm=t["name"] as string;
   string tid=t.ContainsKey("id")?(t["id"] as string):null; if(string.IsNullOrEmpty(tid)) tid=nm;
   bool foe=(team=="foe");
   string kind=foe?"monster":"character";
-  var aref=resolveAsset(slugify(nm),kind); string fbx=aref[0]; string alb=aref[1];
+  var aref=resolveAsset(slugify(nm),kind); string fbx=aref[0]; string alb=aref[1]; string anim=aref.Length>2?aref[2]:"";
   float h=foe?4.2f:5.0f; Color ring=foe?new Color(1f,0.13f,0.10f,1f):new Color(0.4f,0.95f,1f,1f);
   // poseClip: pass the fbx to auto-pose to a NEUTRAL IDLE (spawn prefers an 'idle' clip). Left null for the current
   // Meshy placeholder cast whose idle/bind clips are non-neutral (crouch/lean) + inflate the height-normalized scale;
   // the bind pose is the most PROPORTIONATE placeholder here. A properly-rigged demo-cast actor (owner-greenlit) with
   // a clean idle should pass its fbx/clip so this poses it standing. (Grounding via BakeMesh is correct either way.)
-  var pos=spawn(fbx,alb,null,cx,cy,h,ring,"Actor_"+tid);
+  // W1 (#1318): AT REST, sample idle from the registry's OWN anim_ref (e.g. hero@moveset.fbx) when the asset has
+  // one, so a rigged demo-cast actor settles into its real idle clip instead of the combat bind pose. Assets with
+  // no registry anim_ref (the static hero.fbx entry documents none) fall back to the prior fbx-as-poseClip.
+  var pos=spawn(fbx,alb,restMode?(string.IsNullOrEmpty(anim)?fbx:anim):null,cx,cy,h,ring,"Actor_"+tid);
   if(nm!=null) posByName[nm]=pos; spawned++; celldbg+=" "+nm+"("+team+")@"+cx+","+cy;
 }
 if(missingActor){ sb.AppendLine("ABORT capture — a required actor prefab was missing (no PNG written)"); return sb.ToString(); }
@@ -248,7 +277,9 @@ sb.AppendLine("LIVE "+CID+": spawned "+spawned+" actors:"+celldbg);
   sb.AppendLine("occluders: "+occN+" depth-proxy boxes");
 }
 // latest damage from the battleLog -> floating "-N" + impact burst over the struck token (skip if no recent hit).
-string dmgTarget=""; int dmgN=0; var blog=root.ContainsKey("battleLog")?(root["battleLog"] as System.Collections.Generic.List<object>):null;
+// W1 (#1318): AT REST there is no combat, so skip the damage-VFX pass entirely (blog left null) — a rest
+// scene never shows an impact burst / "-N" over a peaceful innkeeper.
+string dmgTarget=""; int dmgN=0; var blog=restMode?null:(root.ContainsKey("battleLog")?(root["battleLog"] as System.Collections.Generic.List<object>):null);
 if(blog!=null){ foreach(var e in blog){ string tx=null; var ed=e as System.Collections.Generic.Dictionary<string,object>; if(ed!=null&&ed.ContainsKey("text")) tx=ed["text"] as string; else tx=e as string;
   if(tx!=null&&tx.Contains(" hits ")&&tx.Contains(" for ")&&tx.Contains("damage")){ int hi=tx.IndexOf(" hits "); int fi=tx.IndexOf(" for ",hi); if(hi>=0&&fi>hi){ dmgTarget=tx.Substring(hi+6,fi-(hi+6)).Trim(); var aft=tx.Substring(fi+5).TrimStart().Split(' '); if(aft.Length>0) int.TryParse(aft[0],out dmgN); } } } }
 
