@@ -1436,3 +1436,25 @@ def test_persist_beat_omits_next_action_and_owed_on_healthy_fixture(cid):
     assert "next_action" not in out
     assert "owed" not in out
     assert set(out) <= {"logged", "remembered", "decision", "time", "approval_results"}
+
+
+def test_quest_endgame_unresolved_fans_out_per_active_quest():
+    """MULTI-quest wrap window: each still-ACTIVE quest gets its OWN quest_endgame_unresolved cue
+    (the append lives inside the per-quest loop — this pins that fan-out so a refactor that hoists
+    the append out of the loop, or dedups by kind, fails loudly). A resolved quest in the same
+    window gets none."""
+    c = _wrap_window_campaign()
+    q2 = Quest(title="The Second Debt", objectives=["pay it"], completed_objectives=[],
+               last_progress_day=6)
+    c.quests[q2.id] = q2
+    q3 = Quest(title="Already Done", objectives=["done"], completed_objectives=["done"],
+               last_progress_day=6, status="completed")
+    c.quests[q3.id] = q3
+    obligations = server._compute_beat_obligations(c)
+    endgame = [o for o in obligations if o["kind"] == "quest_endgame_unresolved"]
+    assert len(endgame) == 2, f"one cue per ACTIVE quest, got {len(endgame)}"
+    titles = {o["title"] for o in endgame}
+    assert titles == {"The Debt of Bresser Oln", "The Second Debt"}
+    assert all(o["severity"] == "high" for o in endgame)
+    # the resolved quest is untouched by the endgame escalation
+    assert "Already Done" not in titles
