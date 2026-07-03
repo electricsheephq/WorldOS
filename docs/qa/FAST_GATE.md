@@ -48,8 +48,21 @@ the bug classes that have actually shipped.
 | Tier | What | Cost | Owns |
 |---|---|---|---|
 | **0 — Deterministic (CI/pytest, $0, ~60s)** | seat-path skill correctness · rest-restores · travel-moves · combat-through-engine · model normalizers | **~60s, $0** | the structural + **seat-path** + engine-transition classes — *including the skill-case crit* |
+| **1.5 — Mechanism probe (`qa/mechanism_probe.sh`, ~$1, ~10 min)** | a **seeded trigger state** (`qa/probe_fixtures/<fixture>.py`, deterministic, engine=sole-writer) + **2–3 REAL DM beats**, then a **deterministic** verdict (no LLM lens): *did the DM ACT on obligation cue X (engine state moved) or only narrate it?* | **~10 min** | the **cue-mechanism** iteration question that used to cost a 24-beat Opus duo (~$5–8) to reach the trigger state naturally |
 | **1 — Fast LLM loop (~13 min, ~$2.5)** | **rotated** persona `[iter % 5]` from a **short cold-open** (catches seating + free-play reachability + variance over 5 loops) · **≥6-beat** duo (floors stay armed) · a "free-play *reached* combat" check distinct from the sprint | **~13 min** | the satisfaction/quality *iteration* signal (honestly, not a verdict) |
 | **2 — Milestone sweep (unchanged)** | full 5-persona `.app` + RRI + native part-A, **+ correlation tracking** | ~90 min | the release verdict |
+
+> **⚠ Tier 1.5 is ITERATION SIGNAL ONLY — never a release verdict.** It answers the cheap
+> cue-mechanism question ("does obligation cue X fire, and does the DM act on it?") from a SEEDED
+> mid-arc state — which is EXACTLY the false-confidence trap above: the seed skips the cold-open,
+> seat-path, and free-play-reachability surfaces where our real bugs live. A probe verdict is a
+> tripwire that a cue mechanism is (or isn't) wired end-to-end; it says nothing about whether a
+> free-play persona ever REACHES that state, or about story/mech quality. Its `scores.db` row is
+> `surface=engine-duo`, `methodology=mechanism-probe`, notes stamped `ITERATION-ONLY`, and it never
+> writes `pass=1`. Usage: `qa/mechanism_probe.sh <probe-name> <fixture> [beats=3] [budget=1.00]`
+> (first fixture: `wrap_window_active_quest` — the #1334 endgame wrap window with an active quest).
+> The live corroborator for a probe hit is a **GLM 12-beat duo** (off-budget), never a Sonnet DM;
+> see `docs/OPERATIONS.md` § "Run economics".
 
 **The biggest lever isn't a new harness — it's moving deterministic signal into pytest/CI.** The
 seat-path skill test alone (Tier 0) would have caught the optimizer's #1 crit in CI for $0, with zero
