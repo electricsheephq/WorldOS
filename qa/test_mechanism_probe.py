@@ -154,6 +154,21 @@ def test_engagement_tally_filters_to_cue_tools(tmp_path):
     assert "scene_context" not in eng
 
 
+def test_tool_names_are_mcp_prefix_stripped(tmp_path):
+    """Claude reports fully-qualified MCP tool names (mcp__worldos-engine__complete_quest); the
+    tally must match the cue's bare-name table. (Regression from the first real probe run, where
+    the un-stripped matcher tallied nothing despite the DM calling complete_quest.)"""
+    t = _write_transcript(tmp_path / "t.jsonl", [
+        ("mcp__worldos-engine__complete_quest", {"quest_id": "q"}),
+        ("mcp__worldos-engine__complete_objective", {"objective": "x"}),
+        ("mcp__worldos-engine__scene_context", {}),
+    ])
+    tally = probe_verdict.tool_tally(tmp_path / "t.jsonl")
+    assert tally["complete_quest"] == 1 and tally["scene_context"] == 1
+    eng = probe_verdict.engagement_tally(tmp_path / "t.jsonl", "quest_endgame_unresolved")
+    assert dict(eng) == {"complete_quest": 1, "complete_objective": 1}
+
+
 def test_iter_tool_uses_tolerates_bad_and_non_assistant_lines(tmp_path):
     p = tmp_path / "t.jsonl"
     p.write_text(
@@ -190,7 +205,7 @@ def test_quest_moved_false_when_unchanged():
 
 def test_verdict_acted_when_tool_called_and_state_moved():
     v = probe_verdict.compute_verdict(
-        "quest_endgame_unresolved", cue_present_each_beat=True,
+        "quest_endgame_unresolved", cue_present_at_start=True,
         engagement=Counter({"complete_quest": 1}), state_moved=True,
     )
     assert v == "ACTED"
@@ -198,7 +213,7 @@ def test_verdict_acted_when_tool_called_and_state_moved():
 
 def test_verdict_ignored_when_cue_fired_but_state_never_moved():
     v = probe_verdict.compute_verdict(
-        "quest_endgame_unresolved", cue_present_each_beat=True,
+        "quest_endgame_unresolved", cue_present_at_start=True,
         engagement=Counter(), state_moved=False,
     )
     assert v == "IGNORED"
@@ -208,15 +223,17 @@ def test_verdict_ignored_when_tool_called_but_state_did_not_move():
     # A complete_quest that failed/aborted (state didn't move) is still IGNORED — ground truth is
     # engine movement, not the attempt.
     v = probe_verdict.compute_verdict(
-        "quest_endgame_unresolved", cue_present_each_beat=True,
+        "quest_endgame_unresolved", cue_present_at_start=True,
         engagement=Counter({"complete_quest": 1}), state_moved=False,
     )
     assert v == "IGNORED"
 
 
-def test_verdict_cue_absent_when_cue_did_not_hold_every_beat():
+def test_verdict_cue_absent_only_when_cue_missing_at_start():
+    """CUE_ABSENT means the fixture never held the question (cue not present at beat 1) — NOT a cue
+    that fired at start and then CLEARED because the DM acted (that is ACTED)."""
     v = probe_verdict.compute_verdict(
-        "quest_endgame_unresolved", cue_present_each_beat=False,
+        "quest_endgame_unresolved", cue_present_at_start=False,
         engagement=Counter({"complete_quest": 1}), state_moved=True,
     )
     assert v == "CUE_ABSENT"
@@ -232,8 +249,27 @@ def test_build_report_end_to_end_acted(tmp_path):
     after = {"quests": {"q1": {"id": "q1", "status": "completed", "completed_objectives": ["Find the haunt"]}}}
     report = probe_verdict.build_report("quest_endgame_unresolved", [True, True], tmp_path / "t.jsonl", before, after)
     assert report["verdict"] == "ACTED"
-    assert report["cue_present_each_beat"] is True
+    assert report["cue_present_at_start"] is True
     assert report["quest_resolved_or_progressed"] is True
+    assert report["dm_engagement_tools_called"] == {"complete_objective": 1, "complete_quest": 1}
+
+
+def test_build_report_acted_when_dm_acts_immediately_and_cue_clears(tmp_path):
+    """The case the FIRST real probe run exposed: the DM resolves the quest on beat 1, which CLEARS
+    the wrap-window cue on beats 2–3. That cue-clearing is the SUCCESS signal (ACTED) — not
+    CUE_ABSENT. Tool names arrive MCP-prefixed (as in a real transcript)."""
+    t = _write_transcript(tmp_path / "t.jsonl", [
+        ("mcp__worldos-engine__scene_context", {}),
+        ("mcp__worldos-engine__complete_objective", {"objective": "Find the haunt"}),
+        ("mcp__worldos-engine__complete_quest", {"quest_id": "q1", "evolves_to": "echo"}),
+    ])
+    before = {"quests": {"q1": {"id": "q1", "status": "active", "completed_objectives": []}}}
+    after = {"quests": {"q1": {"id": "q1", "status": "completed", "completed_objectives": ["Find the haunt"]}}}
+    report = probe_verdict.build_report("quest_endgame_unresolved", [True, False, False], tmp_path / "t.jsonl", before, after)
+    assert report["verdict"] == "ACTED"
+    assert report["cue_present_at_start"] is True
+    assert report["cue_present_each_beat"] is False
+    assert report["cue_cleared_after_action"] is True
     assert report["dm_engagement_tools_called"] == {"complete_objective": 1, "complete_quest": 1}
 
 

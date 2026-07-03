@@ -51,10 +51,25 @@ CUE_ENGAGEMENT_TOOLS: dict[str, tuple[str, ...]] = {
 _QUEST_MOVING_TOOLS = ("complete_quest", "complete_objective")
 
 
+def _bare_tool_name(name: str) -> str:
+    """Strip the MCP server prefix so an engine tool called as
+    ``mcp__worldos-engine__complete_quest`` matches the bare ``complete_quest`` the cue names.
+    Claude's stream-json reports the FULLY-QUALIFIED MCP tool name; the CUE_ENGAGEMENT_TOOLS
+    table keys on the engine's own bare tool names, so the match must be prefix-insensitive
+    (measured on the first real probe run — the bare-name matcher tallied nothing)."""
+    if not isinstance(name, str):
+        return "?"
+    # mcp__<server>__<tool> → <tool>; anything else passes through unchanged.
+    if name.startswith("mcp__") and "__" in name[len("mcp__"):]:
+        return name.rsplit("__", 1)[-1]
+    return name
+
+
 def iter_tool_uses(transcript_path: Path) -> Iterable[dict]:
     """Yield each assistant `tool_use` block from a stream-json transcript, tolerant of the
     same event-shape drift qa/distill.py handles (dispatch on "type"; a bad line is skipped).
-    Each yielded dict is ``{"name": str, "input": dict}``."""
+    Each yielded dict is ``{"name": str, "input": dict}`` — ``name`` is the BARE tool name (the
+    ``mcp__<server>__`` prefix stripped) so it matches the cue's engagement-tool table."""
     text = transcript_path.read_text(encoding="utf-8")
     for raw in text.splitlines():
         raw = raw.strip()
@@ -71,7 +86,7 @@ def iter_tool_uses(transcript_path: Path) -> Iterable[dict]:
             continue
         for b in content:
             if isinstance(b, dict) and b.get("type") == "tool_use":
-                yield {"name": b.get("name", "?"), "input": b.get("input", {}) or {}}
+                yield {"name": _bare_tool_name(b.get("name", "?")), "input": b.get("input", {}) or {}}
 
 
 def tool_tally(transcript_path: Path) -> Counter:
@@ -147,21 +162,25 @@ def quest_moved(before: dict, after: dict) -> bool:
 
 def compute_verdict(
     cue: str,
-    cue_present_each_beat: bool,
+    cue_present_at_start: bool,
     engagement: Counter,
     state_moved: bool,
 ) -> str:
-    """Fold the three facts into one verdict string.
+    """Fold the facts into one verdict string.
 
-      CUE_ABSENT  — the cue didn't hold for every beat: the probe never asked its question
-                    cleanly, so a DM verdict would be unfair (inconclusive, not a fail).
-      ACTED       — the DM called a cue engagement tool AND the engine state moved.
-      IGNORED     — the cue fired every beat but the engine never moved (narrated, not engined).
+      CUE_ABSENT  — the cue was NOT present when the probe began (the seeded fixture never held
+                    the question) — inconclusive setup, not a DM fail.
+      ACTED       — the cue was present at the start, the DM called a cue engagement tool, AND the
+                    engine state moved. (The cue CLEARING on a later beat is the SUCCESS signal —
+                    the DM resolved the thread — NOT an "absent cue"; that was the false-negative
+                    the first real run exposed when the DM acted on beat 1.)
+      IGNORED     — the cue was present at the start but the engine never moved (or the DM never
+                    called an engagement tool) — the cue was narrated, never engined.
 
     A tool called but state UNMOVED (a failed/aborted complete_quest) is still IGNORED — the
     ground truth is engine movement, not the attempt.
     """
-    if not cue_present_each_beat:
+    if not cue_present_at_start:
         return "CUE_ABSENT"
     if state_moved and sum(engagement.values()) > 0:
         return "ACTED"
@@ -193,14 +212,21 @@ def build_report(
 ) -> dict:
     """The bounded, deterministic verdict report a probe run prints + logs. All fields are
     derived from the transcript + the two engine snapshots — no LLM, no lens."""
-    cue_present_each_beat = bool(per_beat_cue_present) and all(per_beat_cue_present)
+    per_beat = list(per_beat_cue_present)
+    cue_present_at_start = bool(per_beat) and bool(per_beat[0])
+    cue_present_each_beat = bool(per_beat) and all(per_beat)
+    # The cue CLEARING after beat 1 (present at start, absent later) is the success signal that the
+    # DM resolved the thread — surfaced for observability alongside the each-beat fact.
+    cue_cleared_after_action = cue_present_at_start and not cue_present_each_beat
     engagement = engagement_tally(transcript_path, cue)
     state_moved = quest_moved(state_before, state_after)
-    verdict = compute_verdict(cue, cue_present_each_beat, engagement, state_moved)
+    verdict = compute_verdict(cue, cue_present_at_start, engagement, state_moved)
     return {
         "cue": cue,
+        "cue_present_at_start": cue_present_at_start,
         "cue_present_each_beat": cue_present_each_beat,
-        "per_beat_cue_present": list(per_beat_cue_present),
+        "cue_cleared_after_action": cue_cleared_after_action,
+        "per_beat_cue_present": per_beat,
         "dm_engagement_tools_called": dict(engagement),
         "quest_resolved_or_progressed": state_moved,
         "verdict": verdict,
