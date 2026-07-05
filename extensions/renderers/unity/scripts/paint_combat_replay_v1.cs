@@ -89,6 +89,13 @@ if(combatCtrl==null) sb.AppendLine("WARN no CombatActor.controller — actors wi
 string MOVESET_DIR="Assets/painterly/models/moveset/";
 System.Func<string,AnimationClip> clipByName=(m)=>{ var pas=AssetDatabase.LoadAllAssetsAtPath(MOVESET_DIR+"anim_"+m+".fbx"); foreach(var a in pas){ var ac=a as AnimationClip; if(ac!=null && !ac.name.StartsWith("__")) return ac; } return null; };
 
+// Which spawned actors are SKINNED Meshy/Generic rigs (goblin cast) whose moveset clips bake a Y-up
+// bind pose -> sampling a clip FLATTENS them (owner-observed, and why paint_combat_v1.cs deliberately
+// leaves poseClip null for the goblin). For these we drive the beat with TRANSFORM motion (lunge /
+// knockback+tilt / topple, the CombatBeatDriver-proven approach) instead of clip-posing, so the actor
+// stays upright + still READS AS MOTION. Static meshes (hero.fbx, no skinned rig) clip-pose cleanly.
+var actorSkinned=new System.Collections.Generic.Dictionary<string,bool>();
+
 // ---- actor spawner (spawn geometry IDENTICAL to paint_combat_v1.cs, PLUS an Animator so the actor
 //      can play verb clips). Returns the actor root GO so the beat player can pose/glide/flinch it.
 bool missingActor=false;
@@ -158,7 +165,8 @@ foreach(var o in toks){ var t=o as System.Collections.Generic.Dictionary<string,
   var aref=resolveAsset(slugify(nm),kind); string fbx=aref[0]; string alb=aref[1];
   float h=foe?4.2f:5.0f; Color ring=foe?new Color(1f,0.13f,0.10f,1f):new Color(0.4f,0.95f,1f,1f);
   var go=spawn(fbx,alb,cx,cy,h,ring,"Actor_"+tid);
-  if(go!=null){ actorGo[tid]=go; actorCell[tid]=new int[]{cx,cy}; actorFoe[tid]=foe; }
+  if(go!=null){ actorGo[tid]=go; actorCell[tid]=new int[]{cx,cy}; actorFoe[tid]=foe;
+    bool skinned=false; foreach(var r in go.GetComponentsInChildren<Renderer>()){ if(r is SkinnedMeshRenderer){ skinned=true; break; } } actorSkinned[tid]=skinned; }
   if(t.ContainsKey("hpMax") && t["hpMax"]!=null){ try { _actorMaxHp[tid]=System.Convert.ToInt32(t["hpMax"]); } catch {} }
   spawned++; celldbg+=" "+nm+"("+team+")@"+cx+","+cy;
 }
@@ -209,9 +217,31 @@ System.Action<string> capture=(label)=>{
 // stood-up -90 X. The base facing is cam.yaw+180; add the yaw delta from base-forward to the target.
 System.Action<GameObject,Vector3> faceAt=(go,targetPos)=>{ if(go==null) return; Vector3 d=targetPos-go.transform.position; d.y=0f; if(d.sqrMagnitude<0.0001f) return; float yaw=Mathf.Atan2(d.x,d.z)*Mathf.Rad2Deg; go.transform.rotation=Quaternion.Euler(-90f, yaw, 0f); };
 
+// TRANSFORM-motion beats (CombatBeatDriver-proven) for SKINNED actors whose clips would flatten them.
+// These read as motion without touching the skin pose: a forward LUNGE (attack), a knockback+tilt
+// (flinch). Presentation-only, applied to the actor + its AO/ring rig; restored to the cell each beat.
+System.Action<GameObject,Vector3,float> lungeToward=(go,targetPos,frac)=>{ if(go==null) return; Vector3 d=targetPos-go.transform.position; d.y=0f; if(d.sqrMagnitude<0.0001f) return; d=d.normalized; float keepYaw=go.transform.eulerAngles.y; go.transform.position+=d*frac; go.transform.rotation=Quaternion.Euler(-90f,keepYaw,0f); };
+System.Action<GameObject,GameObject,float> knockTilt=(go,fromGo,dist)=>{ if(go==null) return; Vector3 dir=(fromGo!=null)?(go.transform.position-fromGo.transform.position):Vector3.back; dir.y=0f; if(dir.sqrMagnitude<0.0001f) dir=Vector3.back; dir=dir.normalized; float keepYaw=go.transform.eulerAngles.y; go.transform.position+=dir*dist; go.transform.rotation=Quaternion.Euler(-90f,keepYaw,18f); };
+
 // pose an actor's Animator to a clip (by verb) at a normalized time — the deterministic editor
-// sampling AnimFrameCapture.cs uses (Play + Update(0), NO Play mode).
-System.Action<GameObject,string,float> poseClip=(go,clipName,nt)=>{ if(go==null) return; var anim=go.GetComponentInChildren<Animator>(); if(anim!=null && anim.runtimeAnimatorController!=null){ anim.Play(clipName,-1,Mathf.Clamp01(nt)); anim.Update(0f); return; } var clip=clipByName(clipName); if(clip!=null) clip.SampleAnimation(go, Mathf.Clamp01(nt)*clip.length); };
+// sampling AnimFrameCapture.cs uses (Play + Update(0), NO Play mode). CRITICAL: the Meshy/Generic
+// moveset clips bake ROOT curves (the FBX Y-up->Z-up stand-up lives in the root), so a raw
+// Play+Update REWRITES the actor root and topples/flattens the stood-up -90 actor (owner-observed
+// "goblin lying on its side"). We SNAPSHOT the root's stood-up rotation + grounded XZ BEFORE sampling
+// and RESTORE them AFTER Update(0): the clip still poses the CHILD bones (the real animation), but the
+// body stays upright + on its cell. Y is re-grounded from the posed bounds so the feet stay on 0.
+System.Action<GameObject,string,float> poseClip=(go,clipName,nt)=>{ if(go==null) return; var anim=go.GetComponentInChildren<Animator>();
+  // Restore to the CANONICAL stand-up (Euler(-90, yaw, 0)), NOT to "whatever the root was before this
+  // pose" — a prior beat's clip may have already flattened the root, and snapshotting that flat state
+  // would keep it flat forever (owner-observed: the goblin stayed on its side across the whole reel).
+  // We keep only the actor's current YAW (its facing) and force the -90 X + 0 Z stand-up back.
+  float keepYaw=go.transform.eulerAngles.y; Vector3 keepPos=go.transform.position;
+  if(anim!=null && anim.runtimeAnimatorController!=null){ anim.Play(clipName,-1,Mathf.Clamp01(nt)); anim.Update(0f); }
+  else { var clip=clipByName(clipName); if(clip!=null) clip.SampleAnimation(go, Mathf.Clamp01(nt)*clip.length); }
+  // restore the stood-up root transform (canonical -90 X + kept yaw + XZ); re-ground Y from posed bounds.
+  go.transform.rotation=Quaternion.Euler(-90f,keepYaw,0f); go.transform.position=new Vector3(keepPos.x,go.transform.position.y,keepPos.z);
+  var rends=go.GetComponentsInChildren<Renderer>(); if(rends.Length>0){ Bounds b=new Bounds(go.transform.position,Vector3.zero); bool a=false; foreach(var r in rends){ var smr=r as SkinnedMeshRenderer; Bounds rb; if(smr!=null){ var bk=new Mesh(); smr.BakeMesh(bk); var vs=bk.vertices; if(vs.Length>0){ var m=smr.transform.localToWorldMatrix; rb=new Bounds(m.MultiplyPoint3x4(vs[0]),Vector3.zero); for(int i=1;i<vs.Length;i++) rb.Encapsulate(m.MultiplyPoint3x4(vs[i])); } else rb=r.bounds; UnityEngine.Object.DestroyImmediate(bk); } else rb=r.bounds; if(!a){b=rb;a=true;} else b.Encapsulate(rb); } go.transform.position+=new Vector3(0f,-b.min.y,0f); }
+};
 
 // verb -> clip name on CombatActor.controller (no walk clip exists -> move uses idle + glide).
 System.Func<string,string,string> verbToClip=(verb,hint)=>{
@@ -235,8 +265,14 @@ System.Action<string,GameObject,float> hpBar=(tid,go,frac)=>{ if(go==null) retur
 // remember each actor's live HP fraction so a bar persists across frames until the next damage beat.
 var hpFrac=new System.Collections.Generic.Dictionary<string,float>();
 
-// spawn a VFX burst at a world cell (the STRUCK actor's engine cell), camera-facing.
-System.Action<Vector3,float> vfxAt=(atPos,scale)=>{ var fx=GameObject.CreatePrimitive(PrimitiveType.Quad); fx.name="ImpactFX"; UnityEngine.Object.DestroyImmediate(fx.GetComponent<Collider>()); fx.transform.position=atPos+new Vector3(0f,2.0f,0f); fx.transform.rotation=cam.transform.rotation; fx.transform.localScale=new Vector3(scale,scale,1f); var fxm=new Material(Shader.Find("Unlit/Transparent")); fxm.mainTexture=fxTex; fxm.color=new Color(1f,1f,1f,0.92f); fxm.renderQueue=3000; fx.GetComponent<Renderer>().sharedMaterial=fxm; fx.GetComponent<Renderer>().shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off; };
+// spawn a VFX burst at a world cell (the STRUCK actor's engine cell), camera-facing. ADDITIVE blend:
+// the registry slash PNG (fx_default_slash) is authored on an OPAQUE-BLACK bg with no alpha, which an
+// Unlit/Transparent material rendered as a black square (owner-observed). Under ADDITIVE blending
+// (SrcAlpha One) black adds nothing -> only the bright slash reads, so the effect is correct for both
+// the registry PNG and the procedural fallback. This is a one-material-per-run additive shader.
+Shader _addShader=null;
+{ string addSrc="Shader \"WorldOS/VfxAdditive\" {\n Properties { _MainTex(\"T\",2D)=\"white\"{} _Tint(\"Tint\",Color)=(1,1,1,1) }\n SubShader {\n Tags{ \"Queue\"=\"Transparent\" \"RenderType\"=\"Transparent\" }\n Blend SrcAlpha One\n ZWrite Off Cull Off\n Pass {\n CGPROGRAM\n #pragma vertex vert\n #pragma fragment frag\n #include \"UnityCG.cginc\"\n sampler2D _MainTex; float4 _MainTex_ST; fixed4 _Tint;\n struct v2f { float4 pos:SV_POSITION; float2 uv:TEXCOORD0; };\n v2f vert(appdata_base v){ v2f o; o.pos=UnityObjectToClipPos(v.vertex); o.uv=TRANSFORM_TEX(v.texcoord,_MainTex); return o; }\n fixed4 frag(v2f i):SV_Target { fixed4 c=tex2D(_MainTex,i.uv)*_Tint; return c; }\n ENDCG\n }\n }\n}\n"; _addShader=UnityEditor.ShaderUtil.CreateShaderAsset(addSrc); }
+System.Action<Vector3,float> vfxAt=(atPos,scale)=>{ var fx=GameObject.CreatePrimitive(PrimitiveType.Quad); fx.name="ImpactFX"; UnityEngine.Object.DestroyImmediate(fx.GetComponent<Collider>()); fx.transform.position=atPos+new Vector3(0f,2.0f,0f); fx.transform.rotation=cam.transform.rotation; fx.transform.localScale=new Vector3(scale,scale,1f); var fxm=new Material(_addShader); fxm.mainTexture=fxTex; fxm.SetColor("_Tint",new Color(1f,0.85f,0.55f,1f)); fxm.renderQueue=3000; fx.GetComponent<Renderer>().sharedMaterial=fxm; fx.GetComponent<Renderer>().shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off; };
 System.Action clearOverlays=()=>{ foreach(var g in UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None)){ if(g==null) continue; if(g.name.StartsWith("ImpactFX")||g.name.StartsWith("DmgNum")) UnityEngine.Object.DestroyImmediate(g); } };
 
 // result helpers (pure reads of engine-decided values).
@@ -244,8 +280,9 @@ System.Func<System.Collections.Generic.Dictionary<string,object>,int> dmgOf=(res
 System.Func<System.Collections.Generic.Dictionary<string,object>,string,int> intOf=(result,key)=>{ if(result==null||!result.ContainsKey(key)||result[key]==null) return -1; try { return System.Convert.ToInt32(result[key]); } catch { return -1; } };
 System.Func<System.Collections.Generic.Dictionary<string,object>,string> outcomeOf=(result)=>{ if(result==null||!result.ContainsKey("outcome")) return ""; return result["outcome"] as string ?? ""; };
 
-// initial idle pose + resting HP bars, then the opening frame.
-foreach(var kv in actorGo){ poseClip(kv.Value,"idle",0.25f); hpFrac[kv.Key]=1f; hpBar(kv.Key,kv.Value,1f); }
+// initial resting HP bars, then the opening frame. Static (non-skinned) actors settle into a clean
+// idle pose; SKINNED actors stay in their bind stand-up (any clip sample flattens them).
+foreach(var kv in actorGo){ if(!(actorSkinned.ContainsKey(kv.Key)&&actorSkinned[kv.Key])) poseClip(kv.Value,"idle",0.25f); hpFrac[kv.Key]=1f; hpBar(kv.Key,kv.Value,1f); }
 capture("00_open");
 
 // ---- DRAIN the envelope in seq order, one beat at a time, capturing peaks -> the animated reel ----
@@ -273,26 +310,28 @@ if(beats.Count==0){
       if(aGo==null) continue;
       if(tGo!=null){ faceAt(aGo,tGo.transform.position); faceAt(tGo,aGo.transform.position); }
       // a miss still swings — VFX default-on-miss (the slash reads even when the roll whiffs).
-      poseClip(aGo,"attack",0.45f);
+      // Skinned Meshy attackers LUNGE (their clips flatten); the static hero clip-poses the swing.
+      if(actorSkinned.ContainsKey(actor)&&actorSkinned[actor] && tGo!=null){ lungeToward(aGo,tGo.transform.position,0.9f); }
+      else poseClip(aGo,"attack",0.45f);
       if(tGo!=null){
         vfxAt(tGo.transform.position,3.2f);
         // The LIVE engine often FOLDS damage into the attack beat's result (result.damage/hp_after),
         // rather than emitting a separate `damage` beat (the fixture's shape). When it does, flinch the
         // target + float the G1 number + drop its HP bar in this same beat (pure reads of engine truth).
         int dmg=dmgOf(result); int hpa=intOf(result,"hp_after"); int hpm=intOf(result,"hp_max");
-        if(dmg>0){ poseClip(tGo,"hit",0.35f); floatNum(tGo.transform.position,"-"+dmg,new Color(1f,0.95f,0.45f,1f)); }
+        if(dmg>0){ if(actorSkinned.ContainsKey(target)&&actorSkinned[target]) knockTilt(tGo,aGo,0.5f); else poseClip(tGo,"hit",0.35f); floatNum(tGo.transform.position,"-"+dmg,new Color(1f,0.95f,0.45f,1f)); }
         if(hpa>=0){ int max=(hpm>0)?hpm:_actorMaxHp.ContainsKey(target)?_actorMaxHp[target]:0; if(max>0){ hpFrac[target]=Mathf.Clamp01((float)hpa/max); hpBar(target,tGo,hpFrac[target]); } }
       }
       capture("attack_s"+seq);
     } else if(verb=="cast"){
       if(aGo==null) continue;
       if(tGo!=null) faceAt(aGo,tGo.transform.position);
-      poseClip(aGo,"cast",0.5f);
+      if(!(actorSkinned.ContainsKey(actor)&&actorSkinned[actor])) poseClip(aGo,"cast",0.5f);  // skinned casters stay upright (clip flattens); the pulse+number carry the read
       if((hint=="heal_pulse"||outcomeOf(result)=="heal") && tGo!=null){ int amt=intOf(result,"amount"); if(amt<0) amt=intOf(result,"heal"); int hpa=intOf(result,"hp_after"); int hpm=intOf(result,"hp_max"); if(hpa>=0&&hpm>0){ hpFrac[target]=(float)hpa/hpm; hpBar(target,tGo,hpFrac[target]); } floatNum(tGo.transform.position, amt>0?("+"+amt):"heal", new Color(0.5f,1f,0.55f,1f)); }
       capture("cast_s"+seq);
     } else if(verb=="damage"){
       if(tGo==null) continue;
-      poseClip(tGo,"hit",0.35f);                        // flinch = the hit clip on the STRUCK actor
+      if(actorSkinned.ContainsKey(target)&&actorSkinned[target]) knockTilt(tGo,aGo,0.5f); else poseClip(tGo,"hit",0.35f);  // flinch on the STRUCK actor
       int dmg=dmgOf(result); Vector3 tp=tGo.transform.position;
       vfxAt(tp,3.4f);                                   // impact VFX at the struck engine cell
       if(dmg>0) floatNum(tp,"-"+dmg,new Color(1f,0.95f,0.45f,1f));
@@ -300,8 +339,8 @@ if(beats.Count==0){
       capture("damage_s"+seq);
     } else if(verb=="condition"){
       if(tGo==null) continue;
-      poseClip(tGo,"hit",0.25f);
-      int hpa=intOf(result,"hp_after"); int hpm=intOf(result,"hp_max"); if(hpa>=0&&hpm>0){ hpFrac[target]=(float)hpa/hpm; hpBar(target,tGo,hpFrac[target]); }
+      if(actorSkinned.ContainsKey(target)&&actorSkinned[target]) knockTilt(tGo,aGo,0.25f); else poseClip(tGo,"hit",0.25f);
+      int hpa=intOf(result,"hp_after"); int hpm=intOf(result,"hp_max"); int cmax=(hpm>0)?hpm:(_actorMaxHp.ContainsKey(target)?_actorMaxHp[target]:0); if(hpa>=0&&cmax>0){ hpFrac[target]=Mathf.Clamp01((float)hpa/cmax); hpBar(target,tGo,hpFrac[target]); }
       capture("condition_s"+seq);
     } else if(verb=="death"){
       // topple + fade the dier (envelope's death beat). actor_fk is usually the dier; else target_fk.
@@ -317,7 +356,8 @@ if(beats.Count==0){
       // DOTween-style GLIDE along the engine-confirmed lastPath (presentation-only; the renderer never
       // predicts a route — pathCells IS the engine's committed last_move_path). We evaluate the glide at
       // a couple of normalized t along the polyline and capture, so the reel reads as a WALK, not a pop.
-      if(aGo==null || pathCells.Length<2){ if(aGo!=null){ poseClip(aGo,"idle",0.25f); } capture("move_s"+seq); }
+      bool aSkin=actor!=null&&actorSkinned.ContainsKey(actor)&&actorSkinned[actor];
+      if(aGo==null || pathCells.Length<2){ if(aGo!=null && !aSkin){ poseClip(aGo,"idle",0.25f); } capture("move_s"+seq); }
       else {
         // move the actor's whole AO/ring rig with it: helper to place actor + its overlays at a world pos.
         System.Action<Vector3> placeActor=(wp)=>{ var d0=aGo.transform.position; aGo.transform.position=new Vector3(wp.x,aGo.transform.position.y,wp.z); var aoG=GameObject.Find(aGo.name+"_AO"); if(aoG!=null) aoG.transform.position=new Vector3(wp.x,0.04f,wp.z); var rgG=GameObject.Find(aGo.name+"_Ring"); if(rgG!=null) rgG.transform.position=new Vector3(wp.x,0.06f,wp.z); };
@@ -325,7 +365,7 @@ if(beats.Count==0){
         System.Func<float,Vector3> along=(tt)=>{ int segs=pathCells.Length-1; float f=Mathf.Clamp01(tt)*segs; int si=Mathf.Min((int)f,segs-1); float sf=f-si; var a0=pathCells[si]; var a1=pathCells[si+1]; return Vector3.Lerp(cellToWorldF(a0[0],a0[1]),cellToWorldF(a1[0],a1[1]),sf); };
         // face along the heading (start->end) + idle-glide (no walk clip exists in the moveset).
         var startW=cellToWorldF(pathCells[0][0],pathCells[0][1]); var endW=cellToWorldF(pathCells[pathCells.Length-1][0],pathCells[pathCells.Length-1][1]);
-        faceAt(aGo,endW); poseClip(aGo,"idle",0.3f);
+        faceAt(aGo,endW); if(!aSkin) poseClip(aGo,"idle",0.3f);
         placeActor(startW); capture("move_s"+seq+"a");           // depart
         placeActor(along(0.5f)); faceAt(aGo,endW); capture("move_s"+seq+"b"); // mid-glide
         placeActor(endW); capture("move_s"+seq+"c");             // arrive (engine cell)
