@@ -146,6 +146,9 @@ System.Func<string,string,string[]> resolveAsset=(slug,kind)=>{
 var actorGo=new System.Collections.Generic.Dictionary<string,GameObject>();
 var actorCell=new System.Collections.Generic.Dictionary<string,int[]>();
 var actorFoe=new System.Collections.Generic.Dictionary<string,bool>();
+// token id -> engine hpMax (from the surface), so an attack/damage beat carrying only hp_after (the
+// live engine's common shape) can still compute the HP-bar fraction. Pure read of engine truth.
+var _actorMaxHp=new System.Collections.Generic.Dictionary<string,int>();
 int spawned=0; string celldbg="";
 foreach(var o in toks){ var t=o as System.Collections.Generic.Dictionary<string,object>; if(t==null||!t.ContainsKey("x")||t["x"]==null) continue;
   int cx=System.Convert.ToInt32(t["x"]); int cy=System.Convert.ToInt32(t["y"]); string team=t["team"] as string; string nm=t["name"] as string;
@@ -156,6 +159,7 @@ foreach(var o in toks){ var t=o as System.Collections.Generic.Dictionary<string,
   float h=foe?4.2f:5.0f; Color ring=foe?new Color(1f,0.13f,0.10f,1f):new Color(0.4f,0.95f,1f,1f);
   var go=spawn(fbx,alb,cx,cy,h,ring,"Actor_"+tid);
   if(go!=null){ actorGo[tid]=go; actorCell[tid]=new int[]{cx,cy}; actorFoe[tid]=foe; }
+  if(t.ContainsKey("hpMax") && t["hpMax"]!=null){ try { _actorMaxHp[tid]=System.Convert.ToInt32(t["hpMax"]); } catch {} }
   spawned++; celldbg+=" "+nm+"("+team+")@"+cx+","+cy;
 }
 if(missingActor){ sb.AppendLine("ABORT — a required actor prefab was missing (no reel written)"); return sb.ToString(); }
@@ -270,7 +274,15 @@ if(beats.Count==0){
       if(tGo!=null){ faceAt(aGo,tGo.transform.position); faceAt(tGo,aGo.transform.position); }
       // a miss still swings — VFX default-on-miss (the slash reads even when the roll whiffs).
       poseClip(aGo,"attack",0.45f);
-      if(tGo!=null){ vfxAt(tGo.transform.position,3.2f); }
+      if(tGo!=null){
+        vfxAt(tGo.transform.position,3.2f);
+        // The LIVE engine often FOLDS damage into the attack beat's result (result.damage/hp_after),
+        // rather than emitting a separate `damage` beat (the fixture's shape). When it does, flinch the
+        // target + float the G1 number + drop its HP bar in this same beat (pure reads of engine truth).
+        int dmg=dmgOf(result); int hpa=intOf(result,"hp_after"); int hpm=intOf(result,"hp_max");
+        if(dmg>0){ poseClip(tGo,"hit",0.35f); floatNum(tGo.transform.position,"-"+dmg,new Color(1f,0.95f,0.45f,1f)); }
+        if(hpa>=0){ int max=(hpm>0)?hpm:_actorMaxHp.ContainsKey(target)?_actorMaxHp[target]:0; if(max>0){ hpFrac[target]=Mathf.Clamp01((float)hpa/max); hpBar(target,tGo,hpFrac[target]); } }
+      }
       capture("attack_s"+seq);
     } else if(verb=="cast"){
       if(aGo==null) continue;
@@ -284,7 +296,7 @@ if(beats.Count==0){
       int dmg=dmgOf(result); Vector3 tp=tGo.transform.position;
       vfxAt(tp,3.4f);                                   // impact VFX at the struck engine cell
       if(dmg>0) floatNum(tp,"-"+dmg,new Color(1f,0.95f,0.45f,1f));
-      int hpa=intOf(result,"hp_after"); int hpm=intOf(result,"hp_max"); if(hpa>=0&&hpm>0){ hpFrac[target]=(float)hpa/hpm; } hpBar(target,tGo,hpFrac.ContainsKey(target)?hpFrac[target]:1f);
+      int hpa=intOf(result,"hp_after"); int hpm=intOf(result,"hp_max"); int max=(hpm>0)?hpm:(_actorMaxHp.ContainsKey(target)?_actorMaxHp[target]:0); if(hpa>=0&&max>0){ hpFrac[target]=Mathf.Clamp01((float)hpa/max); } hpBar(target,tGo,hpFrac.ContainsKey(target)?hpFrac[target]:1f);
       capture("damage_s"+seq);
     } else if(verb=="condition"){
       if(tGo==null) continue;
@@ -301,6 +313,23 @@ if(beats.Count==0){
       foreach(var r in dGo.GetComponentsInChildren<Renderer>()){ var m=r.sharedMaterial; if(m!=null && m.HasProperty("_Color")){ var c2=m.color; c2.a=0.35f; m.color=c2; } }
       if(dId!=null){ var hb=GameObject.Find("HP_"+dId); if(hb!=null) UnityEngine.Object.DestroyImmediate(hb); }
       capture("death_s"+seq);
+    } else if(verb=="move_to_zone"){
+      // DOTween-style GLIDE along the engine-confirmed lastPath (presentation-only; the renderer never
+      // predicts a route — pathCells IS the engine's committed last_move_path). We evaluate the glide at
+      // a couple of normalized t along the polyline and capture, so the reel reads as a WALK, not a pop.
+      if(aGo==null || pathCells.Length<2){ if(aGo!=null){ poseClip(aGo,"idle",0.25f); } capture("move_s"+seq); }
+      else {
+        // move the actor's whole AO/ring rig with it: helper to place actor + its overlays at a world pos.
+        System.Action<Vector3> placeActor=(wp)=>{ var d0=aGo.transform.position; aGo.transform.position=new Vector3(wp.x,aGo.transform.position.y,wp.z); var aoG=GameObject.Find(aGo.name+"_AO"); if(aoG!=null) aoG.transform.position=new Vector3(wp.x,0.04f,wp.z); var rgG=GameObject.Find(aGo.name+"_Ring"); if(rgG!=null) rgG.transform.position=new Vector3(wp.x,0.06f,wp.z); };
+        // total polyline length (in cell-steps) for even-speed sampling.
+        System.Func<float,Vector3> along=(tt)=>{ int segs=pathCells.Length-1; float f=Mathf.Clamp01(tt)*segs; int si=Mathf.Min((int)f,segs-1); float sf=f-si; var a0=pathCells[si]; var a1=pathCells[si+1]; return Vector3.Lerp(cellToWorldF(a0[0],a0[1]),cellToWorldF(a1[0],a1[1]),sf); };
+        // face along the heading (start->end) + idle-glide (no walk clip exists in the moveset).
+        var startW=cellToWorldF(pathCells[0][0],pathCells[0][1]); var endW=cellToWorldF(pathCells[pathCells.Length-1][0],pathCells[pathCells.Length-1][1]);
+        faceAt(aGo,endW); poseClip(aGo,"idle",0.3f);
+        placeActor(startW); capture("move_s"+seq+"a");           // depart
+        placeActor(along(0.5f)); faceAt(aGo,endW); capture("move_s"+seq+"b"); // mid-glide
+        placeActor(endW); capture("move_s"+seq+"c");             // arrive (engine cell)
+      }
     } else {
       // save/check/travel/narrate/unknown -> accept-and-ignore (no beat), per the envelope contract.
       continue;
