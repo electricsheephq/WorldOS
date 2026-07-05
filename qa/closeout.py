@@ -45,6 +45,18 @@ import scores_db  # noqa: E402
 STORY_BAR = 4.3
 MECH_BAR = 4.5
 
+# HV5 auto-nomination heuristics (docs/roadmap/PRODUCT-ROADMAP.md §4c HV5, epic #1327). These live
+# next to STORY_BAR/MECH_BAR per the epic's takeover-review ruling so the nomination heuristic is
+# never re-derived inline at the call site. A scored run whose story lens clears NOMINATION_STORY_BAR
+# makes its extracted artifacts (qa/artifacts_out/<campaign>/**/*.json) harvest candidates; per-class
+# signals then decide which ones. NOMINATION_STORY_BAR is deliberately STORY_BAR (the closeout story
+# bar, currently 4.3) — NOT HV3's artifact-panel gate (overall>=4.0 / no dim<3.0, #1325), which is a
+# different, non-comparable ac_ ruler family. NOMINATION_TURN_MIN is the NPC dialogue floor: an NPC
+# artifact is nominated only with at least this many extracted dialogue snippets (the extractor's
+# per-NPC snippet proxy for "dialogue turns", capped at _MAX_DIALOGUE_SNIPPETS=5).
+NOMINATION_STORY_BAR = STORY_BAR
+NOMINATION_TURN_MIN = 3
+
 # The ruler-fence: the axes a number must share to be DIRECTLY comparable. This is intentionally
 # STRICTER than scores_db's canonical-baseline key (which keys on methodology + lens) — the
 # closeout Δ must never cross a SURFACE (engine-duo vs GUI), a DM MODEL (opus vs sonnet under-drive),
@@ -280,14 +292,38 @@ def render_block(run: dict, prior: Optional[dict]) -> str:
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
-def build_closeout(run_id: str, db_path: Path | str = scores_db.DB_PATH) -> str:
-    """Return the closeout block for ``run_id``, or raise KeyError if it's absent."""
+def build_closeout(run_id: str, db_path: Path | str = scores_db.DB_PATH,
+                   *, nominate: bool = True) -> str:
+    """Return the closeout block for ``run_id``, or raise KeyError if it's absent.
+
+    HV5 auto-nomination hook (epic #1327): when ``nominate`` is True (the default) the closeout tail
+    appends any qualifying extracted artifacts for this run to qa/nominations.jsonl. The hook is
+    ADDITIVE and NON-FATAL — a nomination failure (or simply nothing extracted / nothing qualifying)
+    never affects the closeout block. Set ``nominate=False`` to render the block only (the pure-reader
+    path the block's own tests exercise).
+    """
     rows = scores_db.fetch_rows(db_path)
     run = find_run(rows, run_id)
     if run is None:
         raise KeyError(run_id)
     prior = last_comparable(rows, run)
-    return render_block(run, prior)
+    block = render_block(run, prior)
+    if nominate:
+        _run_nomination_hook(run_id, db_path)
+    return block
+
+
+def _run_nomination_hook(run_id: str, db_path: Path | str) -> None:
+    """Fire the HV5 auto-nominator for ``run_id`` (append-only, best-effort).
+
+    Isolated + swallow-all so the closeout block never breaks if the nominator or the artifacts_out
+    tree is unavailable. The nominator is itself an additive no-op when nothing qualifies.
+    """
+    try:
+        import nominate as _nominate  # noqa: PLC0415 — local sibling, imported lazily
+        _nominate.nominate(run_id, db_path=db_path)
+    except Exception:  # noqa: BLE001 — closeout must never fail on a harvest-side hiccup
+        pass
 
 
 def _recent_ids(db_path: Path | str, n: int = 20) -> list[str]:

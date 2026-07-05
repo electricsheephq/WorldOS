@@ -33,6 +33,11 @@
 # (data/library/artifact_schema.json) ARE committed; the extracted artifacts are not.
 /qa/artifacts_out/
 
+# HV5 auto-nomination queue (qa/closeout.py -> qa/nominate.py appends per scored run; consumed by
+# HV3's tools/library/promote.py --batch). Runtime harvest state, regenerable from scored runs +
+# qa/artifacts_out — never committed (mirrors artifacts_out above; also gitignored in PR #1338).
+/qa/nominations.jsonl
+
 # Privately-imported, user-owned adventures — NEVER commit (may be copyrighted).
 # Only original / CC-licensed content belongs under content/campaigns/.
 /content/campaigns/_imported/
