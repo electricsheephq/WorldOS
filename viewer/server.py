@@ -6455,6 +6455,50 @@ def _live_parley_event(snapshot: dict) -> dict | None:
     return None
 
 
+def _cell_pair(raw: object) -> tuple[int, int] | None:
+    """A single (x, y) integer cell from a [x, y]/(x, y) pair, or None. Shared by the parley
+    stage-metadata projection (mirrors the local `_cell` helper in the rest-token builder)."""
+    if isinstance(raw, (list, tuple)) and len(raw) == 2:
+        ci, ri = _num(raw[0]), _num(raw[1])
+        if ci is not None and ri is not None:
+            return (int(ci), int(ri))
+    return None
+
+
+def _stage_cell_for(snapshot: dict, ch: dict, npc_id: str) -> tuple[int, int] | None:
+    """Where a character STANDS in the current location's rest scene, read-only — the
+    authoritative ``Character.stage_cell`` (W2 #1319) if present, else the ``npc:<id>`` spawn
+    anchor W1 (#1318) writes into ``scene_grid.spawns`` (the same forward-compat occupancy source
+    `rest_blocked_cells` folds in). None when neither is known (un-walked, no anchor) — the caller
+    then omits stage keys, so a pre-W1/W2 snapshot projects byte-identically."""
+    sc = _cell_pair(ch.get("stage_cell"))
+    if sc is not None:
+        return sc
+    # W1 forward-compat: the per-NPC spawn anchor in the current location's scene grid.
+    loc_id = _text(snapshot.get("current_location_id"))
+    locs = snapshot.get("locations") if isinstance(snapshot.get("locations"), dict) else {}
+    loc = locs.get(loc_id) if isinstance(locs, dict) and loc_id else None
+    sg = loc.get("scene_grid") if isinstance(loc, dict) else None
+    spawns = sg.get("spawns") if isinstance(sg, dict) else None
+    anchor = spawns.get(f"npc:{npc_id}") if isinstance(spawns, dict) and npc_id else None
+    if isinstance(anchor, list):
+        for c in anchor:
+            cell = _cell_pair(c)
+            if cell is not None:
+                return cell  # first anchor cell (a single-cell NPC footprint)
+    return None
+
+
+def _party_relative_facing(dx: int, dy: int) -> str:
+    """A compass-ish facing string ("e"/"w"/"n"/"s"/"ne"/… or "" when co-located) for a delta
+    from the SPEAKING NPC toward the party's lead PC — so the renderer can turn the NPC to face
+    whoever it's talking to. Grid is cols->x (east +), rows->y (south +): dy>0 is south. Purely
+    a projection of two stage cells; nothing is persisted."""
+    ns = "s" if dy > 0 else "n" if dy < 0 else ""
+    ew = "e" if dx > 0 else "w" if dx < 0 else ""
+    return ns + ew
+
+
 def _parley_npc_block(snapshot: dict, npc_id: str, live_event: dict | None) -> dict | None:
     """The conversation TARGET for a parley, projected read-only from the snapshot — or None.
 
@@ -6478,7 +6522,7 @@ def _parley_npc_block(snapshot: dict, npc_id: str, live_event: dict | None) -> d
     if not isinstance(ch, dict):
         return None  # unknown id -> freeform parley (graceful degrade, like a bad event_id)
     av = _num(ch.get("attitude_value"))
-    return {
+    block = {
         "id": _text(ch.get("id"), target_id),
         "name": _text(ch.get("name"), target_id),
         "attitude": _text(ch.get("attitude")),
@@ -6486,6 +6530,22 @@ def _parley_npc_block(snapshot: dict, npc_id: str, live_event: dict | None) -> d
         "met": bool(ch.get("met")),
         "disposition": _attitude_disposition(ch),
     }
+    # W3 (#1320): additive STAGE metadata so the renderer can stage the speaking NPC AT its cell
+    # (the disembodied-portrait dialogue becomes spatial). Projection-only: reads W2's
+    # `Character.stage_cell` (else W1's `npc:<id>` spawn anchor) — the engine stays sole writer,
+    # nothing is persisted. When the NPC has no known cell (un-walked, no anchor, or a pre-W1/W2
+    # snapshot) NO stage key is emitted, so the block is byte-identical to #751/#615's shape.
+    stage = _stage_cell_for(snapshot, ch, target_id)
+    if stage is not None:
+        block["stage_cell"] = [stage[0], stage[1]]
+        # Party-relative facing: turn the NPC toward the lead PC when BOTH stand on the grid.
+        _lead_id, lead = _lead_pc(snapshot)
+        lead_cell = _stage_cell_for(snapshot, lead, _lead_id) if isinstance(lead, dict) else None
+        if lead_cell is not None:
+            facing = _party_relative_facing(lead_cell[0] - stage[0], lead_cell[1] - stage[1])
+            if facing:  # co-located (same cell) -> no facing key
+                block["facing"] = facing
+    return block
 
 
 def build_parley_surface(
