@@ -29,6 +29,28 @@ Full detail: the `worldos-dev` skill / `WorldOS-RUNBOOK.md`. Heavy QA runs on th
 (`WorldOS-GUI-RUNBOOK.md`); box/Unity work follows `extensions/renderers/unity/CANONICAL.md`
 (read it FIRST — canonical state lives there) + the GUI runbook's box discipline.
 
+## Run economics — match the instrument to the question
+
+Spend the cheapest instrument that answers the question (tier table + honest signal accounting:
+`docs/qa/FAST_GATE.md`):
+- **MECHANISM iterations** ("does obligation cue X fire? does the DM act on it?") → the **Tier-1.5
+  mechanism probe** FIRST (`qa/mechanism_probe.sh <name> <fixture>`; ~$1 / ~10 min, deterministic
+  verdict) — that probe verdict is the answer for most iteration loops. Reach for a **GLM 12-beat
+  duo** as a live corroborator ONLY when the probe result is surprising or you need a richer live
+  transcript than the probe's deterministic tally gives you — off-budget z.ai via the glm profile
+  (`WORLDOS_DM_MODEL=glm-5.2 qa/run_duo.sh … 12`); it is CONDITIONAL, not a mandatory second step
+  after every probe (that would erase the cost/time savings the tier exists for). Never burn a
+  scored Opus duo to answer a wiring question.
+- **RULER measurements** (story ≥ 4.3, mech ≥ 4.5, release evidence) → a **24-beat Opus duo ONLY**.
+  The mechanism tiers are tripwires, never the quality verdict.
+- **Sonnet is NEVER the DM** (measured: story 2.9 vs Opus 4.1, AND slower) — it is the scorer /
+  worker / AI-playtester model. Opus drives scored DM runs; GLM is the off-budget batch/corroborator DM.
+- **Stamp provider + methodology on every `scores_db` row** (`dm_model`, `methodology`, and a
+  provider note when GLM/z.ai drove it) so a GLM/probe row is never mistaken for a clean Opus ruler
+  run. A Tier-1.5 probe row specifically stamps `surface="engine-duo"` + `scorer_model="derived"`
+  (deterministic verdict, no LLM lens) alongside `methodology="mechanism-probe"` — the full
+  identity `qa/mechanism_probe.sh` writes — so it can never be confused with an ordinary scored duo.
+
 ## The traps that cost real time (measured; do not relearn)
 
 - New behavioral-gate `chk()` → MUST update `qa/BEHAVIORAL_GATE_TAXONOMY.json` + (FATAL) the
