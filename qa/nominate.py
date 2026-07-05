@@ -48,7 +48,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Iterable, Optional
 
 QA_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(QA_DIR))
