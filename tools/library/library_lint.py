@@ -37,7 +37,6 @@ _REQUIRED_ENTRY_KEYS = ("artifact_id", "class", "provenance", "scores", "tier",
 _REQUIRED_PACK_KEYS = ("name", "version", "license", "provenance")
 _CLASS_FOR_SUBDIR = {"quests": "quest", "npcs": "npc", "locations": "location",
                      "encounters": "encounter", "rooms": "room"}
-_PROCESSED_LOG = ".promoted.jsonl"
 
 
 def _is_nonempty(v) -> bool:
