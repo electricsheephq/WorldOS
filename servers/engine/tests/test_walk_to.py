@@ -29,7 +29,6 @@ from pathlib import Path
 import pytest
 
 import server  # imported FIRST: resolves the models<->scene_grid import cycle in the right order
-import combat_grid  # noqa: F401  (referenced by name in assertions/comments)
 import store
 from models import Character
 from scene_grid import (
