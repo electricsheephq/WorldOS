@@ -1048,6 +1048,29 @@ class Character(_StrictModel):
     # bestiary.creature_slug. "" == not a bestiary spawn (today's behavior); old snapshots
     # round-trip unchanged.
     creature_slug: str = ""
+    # W2 (#1319): where this character STANDS in the current location's rest-mode scene grid
+    # (an (x, y) = (col, row) cell), written by the `walk_to` verb outside combat. It is the
+    # authoritative, sole-writer occupancy source `rest_blocked_cells` reads so a rest walk
+    # routes around where people actually stand. None == today's behavior EXACTLY: no character
+    # has ever carried a stage cell, so an old snapshot round-trips (see the wrap serializer
+    # below, which OMITS the key when None — the same byte-identity discipline Location uses for
+    # `scene_grid`). Distinct from Combatant.x/y (that is COMBAT placement); this is rest mode.
+    stage_cell: Optional[tuple[int, int]] = None
+
+    @model_serializer(mode="wrap")
+    def _ser_omit_none_stage_cell(self, handler):
+        """OMIT ``stage_cell`` from the dump when it is None so a character who has never
+        walked in rest mode serializes BYTE-IDENTICALLY to a pre-W2 snapshot (which never
+        carried the key). Narrowly scoped to ONE key (NOT a blanket ``exclude_none``) for the
+        SAME reason Location._ser_omit_none_scene_grid is: the store's dirty-skip byte-compares
+        the candidate dump to disk, so emitting ``"stage_cell": null`` for every un-walked
+        character (a key old snapshots lack) would defeat the no-op-save guard and silently
+        rewrite files on a pure load->save. A character WITH a stage_cell serializes it
+        normally; all other keys/order/Optional=None fields are preserved exactly."""
+        data = handler(self)
+        if self.stage_cell is None:
+            data.pop("stage_cell", None)
+        return data
 
     @model_validator(mode="after")
     def _clamp_vitals(self) -> "Character":
