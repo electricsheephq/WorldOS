@@ -47,6 +47,15 @@ Full detail: the `worldos-dev` skill / `WorldOS-RUNBOOK.md`. Heavy QA runs on th
 - **Harvest flywheel (once HV3+ lands):** every scored run auto-nominates artifacts; nightly
   artifact-scoring batch; weekly curation; backdrop cadence = 2 environments a night, panel-gated
   (roadmap §4c/HV5).
+- **HV3 promotion (`tools/library/promote.py --batch`):** reads `qa/nominations.jsonl` → threshold
+  gate (overall ≥4.0, no dim <3.0, control-valid → `stable`; `canonical` = human-only) → writes the
+  pack-shaped `library/`. It is the SOLE writer of `library/` and never edits room_recipes.json or
+  the asset registry. **Bootstrap (until HV5's auto-nominator exists):** hand-author the queue — one
+  JSON line per `artifact_id` (optional `source_path`/`license`/`curation_note`), sourced from HV2's
+  `qa/artifacts_out/<campaign>/**/*.json`. promote.py invents no nomination heuristic. Idempotent
+  (`library/.promoted.jsonl` marker); exits 0 with zero promotions. Offline (scorer down / unscored
+  noms): `--dry-run` (gate preview, writes nothing) or `--skip-unscored` (promote only already-scored
+  rows). Validate with `python3 tools/library/library_lint.py`.
 - **Release trains:** cut per the roadmap's version map when a sprint's gate passes; CHANGELOG per
   merge batch; GitNexus re-index once per merge batch.
 - **When you need a decision** and the answer isn't in VISION/roadmap: run the `worldos-decide`

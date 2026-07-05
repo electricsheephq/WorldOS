@@ -251,6 +251,33 @@ def record_artifact_score(
     )
 
 
+def score_artifact_panel(
+    artifact: dict,
+    *,
+    budget: str = "1.50",
+    panel_id: Optional[str] = None,
+    is_control: bool = False,
+    control_anchor: Optional[float] = None,
+    source_path: Optional[str] = None,
+    db_path: Path | str = scores_db.DB_PATH,
+) -> dict:
+    """Plain CALLABLE panel entrypoint (HV3 addendum #1325 [MED]): score ONE loaded artifact and
+    record the row to the `artifacts` table, returning the parsed scorecard.
+
+    HV3's promote.py invokes THIS (not an agent sub-task) for its score-if-unscored step, so the
+    unattended promotion path has a stable function to call. Any agent fan-out for a full multi-scorer
+    panel lives upstream (qa/artifact_calibration_panel.run_panel); this is the single-scorer instrument
+    call promote.py needs. It is a thin composition of score_artifact + record_artifact_score — no new
+    scoring logic — so the scorer discipline (score.sh auth/model pinning) is unchanged.
+    """
+    card = score_artifact(artifact, budget=budget)
+    record_artifact_score(
+        artifact, card, panel_id=panel_id, is_control=is_control, control_anchor=control_anchor,
+        source_path=source_path, db_path=db_path,
+    )
+    return card
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("artifact", help="path to an artifact JSON (data/library/artifact_schema.json shape)")
