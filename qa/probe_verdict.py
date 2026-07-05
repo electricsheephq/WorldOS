@@ -14,10 +14,16 @@ This module reads those and answers three yes/no facts + one verdict, with NO LL
                              quest_endgame cue: complete_quest / complete_objective / add_consequence)
   * quest_resolved_or_progressed — did the engine's quest state actually MOVE (a quest went
                              completed, or an objective got marked done) between before/after?
-  * verdict — ACTED   : the DM called a real engagement tool AND the engine state moved;
-              IGNORED : the cue fired every beat but the engine state never moved;
-              CUE_ABSENT : the cue was not present at every beat (the probe didn't hold the
-                           question steady — an inconclusive setup, not a DM verdict).
+  * verdict — ACTED   : the cue was present at the START, the DM called a real engagement tool,
+                           AND the engine state moved (the cue may legitimately CLEAR on a later
+                           beat — that's the success signal, not a failed cue);
+              IGNORED : the cue was present at the START but the engine state never moved (or no
+                           engagement tool was called) — narrated, never engined;
+              CUE_ABSENT : the cue was NOT present at the START (the seeded fixture never held
+                           the question) — an inconclusive setup, not a DM verdict;
+              INCONCLUSIVE : one or more DM beats FAILED (timeout/401/429/empty reply) — the run
+                           produced no reliable ACTED-vs-IGNORED signal either way. Checked
+                           BEFORE cue-presence, since a failed beat pre-empts any other verdict.
 
 ⚠ ITERATION SIGNAL ONLY — a seeded mid-arc probe skips the cold-open / seat-path / free-play
 surfaces where our real bugs live (docs/qa/FAST_GATE.md). NEVER cite it as release evidence.
@@ -161,9 +167,15 @@ def compute_verdict(
     cue_present_at_start: bool,
     engagement: Counter,
     state_moved: bool,
+    any_beat_failed: bool = False,
 ) -> str:
     """Fold the facts into one verdict string.
 
+      INCONCLUSIVE — one or more DM beats FAILED (timeout/401/429/empty reply, per
+                    qa/lib_beat_driver.sh:worldos_resolve_dm_reply's WORLDOS_DM_BEAT_FAILED
+                    classification). Checked FIRST: a failed beat means the run never gave the
+                    DM a fair chance to act, so neither ACTED nor IGNORED would be an honest
+                    signal — surfacing it as IGNORED would be a false negative on the DM.
       CUE_ABSENT  — the cue was NOT present when the probe began (the seeded fixture never held
                     the question) — inconclusive setup, not a DM fail.
       ACTED       — the cue was present at the start, the DM called a cue engagement tool, AND the
@@ -176,6 +188,8 @@ def compute_verdict(
     A tool called but state UNMOVED (a failed/aborted complete_quest) is still IGNORED — the
     ground truth is engine movement, not the attempt.
     """
+    if any_beat_failed:
+        return "INCONCLUSIVE"
     if not cue_present_at_start:
         return "CUE_ABSENT"
     if state_moved and sum(engagement.values()) > 0:
@@ -188,15 +202,28 @@ def current_next_action_kind(state_dir: str, campaign_id: str) -> str:
     ``campaign_id`` (empty string when there is no obligation). Reuses the engine's OWN
     _compute_beat_obligations / _next_action (never a re-implementation) so the probe's per-beat
     cue-present check reads exactly what the DM's persist_beat / scene_context would surface.
-    READ-ONLY: only _require + the two pure derivations run — no mutation."""
-    os.environ["WORLDOS_STATE_DIR"] = state_dir
-    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "servers", "engine"))
-    import server  # noqa: PLC0415
+    READ-ONLY: only _require + the two pure derivations run — no mutation.
 
-    c = server._require(campaign_id)
-    obligations = server._compute_beat_obligations(c)
-    na = server._next_action(obligations)
-    return (na or {}).get("kind") or ""
+    qa/mechanism_probe.sh invokes this as a fresh `uv run` subprocess per beat, where mutating
+    os.environ is harmless (the process exits right after). But the function is importable and
+    this module sits on sys.path in qa/test_mechanism_probe.py, so any future IN-PROCESS caller
+    must not see WORLDOS_STATE_DIR permanently clobbered by a "read-only" helper — restore the
+    prior value (or absence) on the way out."""
+    prior = os.environ.get("WORLDOS_STATE_DIR")
+    os.environ["WORLDOS_STATE_DIR"] = state_dir
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "servers", "engine"))
+        import server  # noqa: PLC0415
+
+        c = server._require(campaign_id)
+        obligations = server._compute_beat_obligations(c)
+        na = server._next_action(obligations)
+        return (na or {}).get("kind") or ""
+    finally:
+        if prior is None:
+            os.environ.pop("WORLDOS_STATE_DIR", None)
+        else:
+            os.environ["WORLDOS_STATE_DIR"] = prior
 
 
 def build_report(
@@ -205,9 +232,16 @@ def build_report(
     transcript_path: Path,
     state_before: dict,
     state_after: dict,
+    any_beat_failed: bool = False,
 ) -> dict:
     """The bounded, deterministic verdict report a probe run prints + logs. All fields are
-    derived from the transcript + the two engine snapshots — no LLM, no lens."""
+    derived from the transcript + the two engine snapshots — no LLM, no lens.
+
+    ``any_beat_failed`` — True iff the SHELL driver (qa/mechanism_probe.sh) classified one or
+    more DM beats as FAILED via qa/lib_beat_driver.sh:worldos_resolve_dm_reply's
+    WORLDOS_DM_BEAT_FAILED (timeout/401/429/empty reply) — that classification lives in the
+    shell driver (it owns the live `claude -p` attempt), so it is passed in rather than
+    re-derived here from the transcript alone."""
     per_beat = list(per_beat_cue_present)
     cue_present_at_start = bool(per_beat) and bool(per_beat[0])
     cue_present_each_beat = bool(per_beat) and all(per_beat)
@@ -216,7 +250,7 @@ def build_report(
     cue_cleared_after_action = cue_present_at_start and not cue_present_each_beat
     engagement = engagement_tally(transcript_path, cue)
     state_moved = quest_moved(state_before, state_after)
-    verdict = compute_verdict(cue, cue_present_at_start, engagement, state_moved)
+    verdict = compute_verdict(cue, cue_present_at_start, engagement, state_moved, any_beat_failed)
     return {
         "cue": cue,
         "cue_present_at_start": cue_present_at_start,
@@ -225,6 +259,7 @@ def build_report(
         "per_beat_cue_present": per_beat,
         "dm_engagement_tools_called": dict(engagement),
         "quest_resolved_or_progressed": state_moved,
+        "any_beat_failed": any_beat_failed,
         "verdict": verdict,
     }
 
@@ -235,7 +270,7 @@ def _usage() -> int:
         "  probe_verdict.py cue-check <state_dir> <campaign_id>\n"
         "      → prints the CURRENT next_action.kind (empty line if none)\n"
         "  probe_verdict.py report <cue> <transcript.jsonl> <state_before.json> <state_after.json> "
-        "<per_beat_cue_present_csv>\n"
+        "<per_beat_cue_present_csv> [any_beat_failed(0/1)]\n"
         "      → prints the deterministic verdict report as one JSON line",
         file=sys.stderr,
     )
@@ -255,11 +290,14 @@ def main(argv: list[str]) -> int:
         if len(argv) < 7:
             return _usage()
         cue, tpath, before_path, after_path, csv = argv[2], argv[3], argv[4], argv[5], argv[6]
+        # any_beat_failed (optional, default "0"): "1" iff the shell driver classified any DM
+        # beat as FAILED (WORLDOS_DM_BEAT_FAILED) — forces the INCONCLUSIVE verdict.
+        any_beat_failed = len(argv) > 7 and argv[7].strip() == "1"
         # per_beat_cue_present is a CSV of 1/0 (one per beat the probe drove).
         per_beat = [tok.strip() == "1" for tok in csv.split(",") if tok.strip() != ""]
         before = json.loads(Path(before_path).read_text(encoding="utf-8"))
         after = json.loads(Path(after_path).read_text(encoding="utf-8"))
-        report = build_report(cue, per_beat, Path(tpath), before, after)
+        report = build_report(cue, per_beat, Path(tpath), before, after, any_beat_failed)
         print(json.dumps(report))
         return 0
     return _usage()

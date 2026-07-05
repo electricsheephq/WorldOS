@@ -45,6 +45,15 @@ _VOLATILE_KEYS = {"created_at", "updated_at", "engine_sha", "scene_grid", "seed"
 # construction. They appear as VALUES, as list ENTRIES (party = [char ids]), AND as dict KEYS
 # (quests/characters are keyed by id). Normalize all three so the structural comparison ignores
 # them; a genuine structure change (an extra party member, a changed objective) still trips.
+#
+# The third alternative (``camp_[0-9a-z_]+``) is NOT a general engine-id shape — it exists
+# specifically to match THIS fixture's pinned, human-readable campaign id
+# (``wrap_window_active_quest.CID = "camp_probe_wrapwindow"``, deliberately NOT a random
+# ``camp_<12 hex>`` so the fixture is reproducible by name). If a future fixture pins a
+# DIFFERENT non-hex campaign id, or this CID is renamed to something the pattern no longer
+# matches, that id would leak through un-normalized as a dict KEY and break this structural-
+# equality assertion with a confusing diff rather than a clear "the id changed" failure — so
+# keep this arm's pattern (or add a new one) in sync with every fixture's pinned CID constant.
 _ID_RE = __import__("re").compile(r"^(?:[a-z]+_[0-9a-f]{12}|session-[0-9a-f]{8}|camp_[0-9a-z_]+)$")
 
 

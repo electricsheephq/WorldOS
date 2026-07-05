@@ -49,6 +49,14 @@ if [ "$(id -u)" = "0" ] && [ -z "${IS_SANDBOX:-}" ]; then
   exit 2
 fi
 
+# Validate BUDGET is a plain non-negative number BEFORE it is spliced into the awk program text
+# below — a non-numeric/empty value (a fat-fingered 4th arg, or a stray space) would otherwise
+# make awk emit a syntax error to stderr and skip the opus floor SILENTLY, running the per-turn
+# cap un-floored on an Opus DM (the exact budget-trip the floor exists to prevent).
+case "$BUDGET" in
+  *[!0-9.]*|'') echo "[probe] FATAL: budget '$BUDGET' is not a plain number (e.g. 1.00)" >&2; exit 2 ;;
+esac
+
 WORLDOS_DM_MODEL="$(worldos_env DM_MODEL opus)"
 # Floor the per-turn cap for an Opus DM so a heavier beat is never budget-tripped (mirrors run_duo.sh's
 # opus floor, scaled to the probe's lighter default — the probe never does a cold-open world-build).
@@ -57,6 +65,14 @@ case "$WORLDOS_DM_MODEL" in
 esac
 # GLM-only settings profile — a TOTAL no-op on a Claude run (byte-identical), raises timeouts/retries
 # on a GLM run. Sourced + applied exactly as run_duo.sh does.
+#
+# The probe has NO actor turn (no AI player role), so an ambient WORLDOS_ACTOR_MODEL naming GLM
+# (leaked from an interactive shell that ran a GLM duo earlier) would otherwise trip
+# worldos_apply_glm_profile's MIXED-MODEL GUARD against a DM-only run and coerce WORLDOS_DM_MODEL
+# to GLM even though the operator only meant to isolate the actor role for a duo elsewhere.
+# Unset it for the probe's own process env before sourcing the profile — the probe only ever has
+# a DM role, so WORLDOS_ACTOR_MODEL is never load-bearing here.
+unset WORLDOS_ACTOR_MODEL
 # shellcheck source=glm_profile.sh
 . "$ROOT/qa/glm_profile.sh"
 worldos_apply_glm_profile
@@ -141,6 +157,9 @@ probe_dm_turn() {
 #       cue is caught (→ CUE_ABSENT). The DM prompt names the seeded cue's imperative so the probe
 #       actually EXERCISES the mechanism — then the verdict measures whether the DM engined it.
 PER_BEAT_CUE=""   # CSV of 1/0 — was the seeded cue the next_action at the start of each beat?
+ANY_BEAT_FAILED=0 # 1 iff worldos_resolve_dm_reply classified ANY beat as WORLDOS_DM_BEAT_FAILED
+                   # (timeout/401/429/empty reply) — forces the verdict to INCONCLUSIVE rather
+                   # than letting a failed turn masquerade as a false IGNORED.
 DMSG=""
 for b in $(seq 1 "$BEATS"); do
   CUR_CUE="$(WORLDOS_STATE_DIR="$STATE_DIR" uv run --directory servers/engine python "$ROOT/qa/probe_verdict.py" cue-check "$STATE_DIR" "$CAMPAIGN_ID" 2>/dev/null | tail -n1)"
@@ -150,17 +169,29 @@ for b in $(seq 1 "$BEATS"); do
   if [ "$b" = "1" ]; then
     # Beat 1 grounds the DM in the seeded mid-arc state + hands it the moment. The DM re-grounds from
     # the engine's persisted truth (scene_context / get_state) — NOT a cold open (there is no
-    # world-build here; the fixture already seated the party, quest, and arc).
+    # world-build here; the fixture already seated the party, quest, and arc). Name CAMPAIGN_ID
+    # explicitly (mirrors run_duo.sh treating campaign_id as load-bearing beat context via
+    # worldos_dm_lean_args) — scene_context's empty-campaign_id path falls back to the engine's
+    # active_campaign_id() "most-recently-updated" resolution, which happens to be unambiguous in
+    # a fresh single-campaign STATE_DIR, but an explicit id removes the model-slip class of bug
+    # persist_beat's own empty-campaign_id fallback comment documents ("a recurring DM model-slip").
     PROMPT="$DM_BRIEF
 
-You are resuming an IN-PROGRESS session (campaign already seeded: party, an active quest, an arc mid-story). Do NOT start_world or re-seat anyone. FIRST call scene_context (or get_state) to re-ground on the current party, the OPEN quest and its objectives, and where the arc stands. Then play THIS beat as a full lived scene: the party is at the Harper safehouse and the session is heading for a close. Resolve what the moment calls for THROUGH THE ENGINE (the quest is still open — if the thread closes in fiction, complete_objective / complete_quest it; carry any hand-off with add_consequence). End by handing the moment to the party. OUTPUT DISCIPLINE — your reply IS the scene: 2nd-person in-fiction prose + quoted dialogue only, never a status line."
+You are resuming an IN-PROGRESS session (campaign_id=\"$CAMPAIGN_ID\" — already seeded: party, an active quest, an arc mid-story). Do NOT start_world or re-seat anyone. FIRST call scene_context(campaign_id=\"$CAMPAIGN_ID\") (or get_state(campaign_id=\"$CAMPAIGN_ID\")) to re-ground on the current party, the OPEN quest and its objectives, and where the arc stands. Then play THIS beat as a full lived scene: the party is at the Harper safehouse and the session is heading for a close. Resolve what the moment calls for THROUGH THE ENGINE (the quest is still open — if the thread closes in fiction, complete_objective / complete_quest it; carry any hand-off with add_consequence). End by handing the moment to the party. OUTPUT DISCIPLINE — your reply IS the scene: 2nd-person in-fiction prose + quoted dialogue only, never a status line."
   else
     PROMPT="The party presses on toward closing this out. Play the next beat: keep driving the OPEN thread to a real resolution and record it THROUGH THE ENGINE (complete_objective as a step clears; complete_quest with evolves_to when it resolves; add_consequence to carry a hand-off). Any NPC or companion in the scene speaks at least one quoted line. End by handing the moment back to the party — never a bare 'What do you do?'."
   fi
 
   DMSG="$(probe_dm_turn "$DSID" "$([ "$b" = "1" ] && echo 1 || echo 0)" "$PROMPT")"
   # #357 recovery: if the turn ended on a tool call but logged real prose, recover it (shared helper).
+  # Also classifies the beat: WORLDOS_DM_BEAT_FAILED=1 iff the final result was ERROR-class
+  # (timeout/401/429) or only recycled pre-beat prose was recoverable — an empty DMSG alone is
+  # NOT sufficient to infer failure (a DM can legitimately end on a bare tool call with no prose).
   worldos_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$WORLDOS_DM_REPLY"
+  if [ "${WORLDOS_DM_BEAT_FAILED:-0}" = "1" ]; then
+    ANY_BEAT_FAILED=1
+    echo "[probe] beat $b: DM turn FAILED (error-class result or no recoverable prose) — the run will report INCONCLUSIVE, not a false IGNORED" >&2
+  fi
   echo "[probe] beat $b DM: ${DMSG:0:100}…"
   [ -z "$DMSG" ] && echo "[probe] beat $b: DM produced no reply (see $COMBINED) — continuing; the verdict reads engine state, not prose." >&2
 done
@@ -169,7 +200,17 @@ done
 STATE_AFTER="$T/$PROBE.state_after.json"
 if [ -f "$SNAP_SRC" ]; then cp "$SNAP_SRC" "$STATE_AFTER"; else echo '{"warning":"no state"}' > "$STATE_AFTER"; fi
 
-REPORT="$(python3 "$ROOT/qa/probe_verdict.py" report "$CUE" "$COMBINED" "$STATE_BEFORE" "$STATE_AFTER" "$PER_BEAT_CUE")"
+# Explicit crash check: this script runs under `set -uo pipefail` WITHOUT `-e` (an `-e` here
+# would abort the whole probe on the FIRST non-zero exit from anything upstream, including
+# benign ones like a `grep` no-match), so a crashed/empty-output `probe_verdict.py report` would
+# otherwise leave REPORT empty, `jq -r '.verdict'` would print `null`/error, and the VERDICT case
+# statement's fallthrough (`*`) would silently report CUE_ABSENT (exit 4) for what was actually a
+# verdict-computation CRASH — indistinguishable from a real inconclusive-setup result. Surface a
+# crash as its own FATAL exit instead of a false verdict.
+if ! REPORT="$(python3 "$ROOT/qa/probe_verdict.py" report "$CUE" "$COMBINED" "$STATE_BEFORE" "$STATE_AFTER" "$PER_BEAT_CUE" "$ANY_BEAT_FAILED")" || [ -z "$REPORT" ] || ! printf '%s' "$REPORT" | jq -e . >/dev/null 2>&1; then
+  echo "[probe] FATAL: probe_verdict.py report crashed or produced no valid JSON — see stderr above; NOT reporting a verdict." >&2
+  exit 1
+fi
 VERDICT="$(printf '%s' "$REPORT" | jq -r '.verdict')"
 
 # ── 5. Bounded report + a scores_db row (surface=engine-duo, methodology=mechanism-probe, notes
@@ -183,7 +224,7 @@ echo "────────────────────────�
 
 BUILD_SHA="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 ENG_TALLY="$(printf '%s' "$REPORT" | jq -c '.dm_engagement_tools_called')"
-NOTES="ITERATION-ONLY — Tier-1.5 mechanism probe (seeded ${FIXTURE} fixture, ${BEATS} live beats). NOT release evidence: the seeded mid-arc state skips cold-open/seat-path/free-play surfaces (see docs/qa/FAST_GATE.md). cue=${CUE} verdict=${VERDICT} engagement=${ENG_TALLY} cue_each_beat=$(printf '%s' "$REPORT" | jq -r '.cue_present_each_beat') state_moved=$(printf '%s' "$REPORT" | jq -r '.quest_resolved_or_progressed')."
+NOTES="ITERATION-ONLY — Tier-1.5 mechanism probe (seeded ${FIXTURE} fixture, ${BEATS} live beats). NOT release evidence: the seeded mid-arc state skips cold-open/seat-path/free-play surfaces (see docs/qa/FAST_GATE.md). cue=${CUE} verdict=${VERDICT} engagement=${ENG_TALLY} cue_each_beat=$(printf '%s' "$REPORT" | jq -r '.cue_present_each_beat') state_moved=$(printf '%s' "$REPORT" | jq -r '.quest_resolved_or_progressed') any_beat_failed=${ANY_BEAT_FAILED}."
 python3 - "$ROOT" "$PROBE-$(date +%s)" "$WORLDOS_DM_MODEL" "$BUILD_SHA" "$COMBINED" "$NOTES" <<'PY' || echo "[probe] WARN: scores_db row not written (non-fatal)" >&2
 import sys
 root, run_id, dm_model, sha, source_path, notes = sys.argv[1:7]
@@ -204,10 +245,14 @@ scores_db.add_run(
 print("[probe] scores_db row appended (surface=engine-duo, methodology=mechanism-probe).")
 PY
 
-# Exit code: 0 for ACTED, 3 for IGNORED, 4 for CUE_ABSENT — a machine-readable outcome for a
-# harness, WITHOUT ever implying a release pass (this is an iteration tripwire, not a gate).
+# Exit code: 0 for ACTED, 3 for IGNORED, 4 for CUE_ABSENT, 5 for INCONCLUSIVE (a failed DM beat —
+# distinct from CUE_ABSENT so a harness can tell "the fixture never held the cue" apart from "the
+# DM never got a fair shot") — a machine-readable outcome for a harness, WITHOUT ever implying a
+# release pass (this is an iteration tripwire, not a gate).
 case "$VERDICT" in
   ACTED) exit 0 ;;
   IGNORED) exit 3 ;;
+  CUE_ABSENT) exit 4 ;;
+  INCONCLUSIVE) exit 5 ;;
   *) exit 4 ;;
 esac
