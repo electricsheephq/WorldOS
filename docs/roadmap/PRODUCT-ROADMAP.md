@@ -278,6 +278,11 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
   quests/npcs/locations/encounters/rooms). Rooms UNIFY the proto-library: entries REFERENCE
   room_recipes keys + registry asset_ids — promote.py NEVER edits either. promote.py = sole
   writer of library/; a library-lint (no unscored stable entries; provenance+license required).
+  **Bootstrap ruling (nomination-queue circular dep):** nothing upstream of HV3 produces
+  `qa/nominations.jsonl` — HV5 (#1327, `qa/closeout.py` auto-nominator) does, and it depends ON
+  HV3. For the FIRST batch the queue is hand-authored (one JSON line per `artifact_id`, sourced
+  from HV2's `qa/artifacts_out/<campaign>/**/*.json`); promote.py invents NO nomination heuristic —
+  that logic lives solely in HV5's closeout auto-nominator. See docs/OPERATIONS.md "HV3 promotion".
 - **HV4 — "Reuse"** *(needs HV3)*. questgen._derive_hooks gains a library candidate source
   (tier-weighted, DEFAULT-OFF — default seed path stays byte-identical, guarded by the existing
   test_seed_world_default_is_unchanged test); world.json additive `library_packs:[...]`; new
