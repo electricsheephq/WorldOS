@@ -252,6 +252,46 @@ def _artifact_coltype(col: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# The `library_metrics` table (HV5 slice 2, #1327): the flywheel's OWN eval.
+# ---------------------------------------------------------------------------
+# ADDITIVE and SEPARATE from both `runs` and `artifacts`: this table tracks the HEALTH of the
+# harvest loop itself (library size, reuse, promotion pass-rate), not any single scored run or
+# artifact. Sole writer is qa/library_metrics.py's snapshot_library() (mirrors "add_run is the sole
+# writer of runs" / "add_artifact is the sole writer of artifacts"). One row per SNAPSHOT — taken
+# whenever the owner/cadence wants a reading (nightly, weekly curation, or ad hoc); trend the size/
+# reuse/pass-rate/library-sourced numbers across snapshots exactly like trends_json does for runs.
+# No ruler stamp (ac_/sc_/lc_): this table doesn't SCORE anything — it measures the library's own
+# state, which needs no rubric-version fence.
+LIBRARY_METRICS_COLUMNS: tuple[str, ...] = (
+    "ts",                      # ISO8601 timestamp the snapshot was taken (UTC where known)
+    "library_sha",             # short git SHA of the repo state the snapshot was read at (NULL if unknown)
+    "size_total",              # total entry count across every class/tier in library/
+    "size_by_class_json",      # JSON {quest: N, npc: N, location: N, encounter: N, room: N}
+    "size_by_tier_json",       # JSON {experimental: N, stable: N, canonical: N}
+    "reuse_count_sum",         # Σ reuse_count over every entry (HV4's "less AI dependence" numerator)
+    "promotion_pass_rate",     # promoted / (promoted + rejected) over promote.py's processed-log,
+                               # 0.0-1.0, NULL if the log is absent/empty (no batch run yet)
+    "promoted_total",          # count of "promoted" lines in library/.promoted.jsonl
+    "rejected_total",          # count of "rejected" lines in library/.promoted.jsonl
+    "pct_library_sourced",     # % of a run's beats sourced from library/ vs freshly AI-generated,
+                               # 0.0-1.0, NULL if not measured this snapshot (HV4 wiring; additive)
+    "source_path",             # where the snapshot's evidence lives (library dir path read)
+    "notes",                   # free-text context / caveats
+)
+
+_LIBRARY_METRICS_REAL_COLS = {"promotion_pass_rate", "pct_library_sourced"}
+_LIBRARY_METRICS_INT_COLS = {"size_total", "reuse_count_sum", "promoted_total", "rejected_total"}
+
+
+def _library_metrics_coltype(col: str) -> str:
+    if col in _LIBRARY_METRICS_REAL_COLS:
+        return "REAL"
+    if col in _LIBRARY_METRICS_INT_COLS:
+        return "INTEGER"
+    return "TEXT"
+
+
+# ---------------------------------------------------------------------------
 # Schema
 # ---------------------------------------------------------------------------
 def connect(db_path: Path | str = DB_PATH) -> sqlite3.Connection:
@@ -275,6 +315,7 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
         if col not in existing:
             conn.execute(f'ALTER TABLE runs ADD COLUMN "{col}" {_coltype(col)}')
     _ensure_artifacts_schema(conn)
+    _ensure_library_metrics_schema(conn)
     conn.commit()
 
 
@@ -293,6 +334,26 @@ def _ensure_artifacts_schema(conn: sqlite3.Connection) -> None:
         for col in ARTIFACT_COLUMNS:
             if col not in existing:
                 conn.execute(f'ALTER TABLE artifacts ADD COLUMN "{col}" {_artifact_coltype(col)}')
+
+
+def _ensure_library_metrics_schema(conn: sqlite3.Connection) -> None:
+    """Create the `library_metrics` table if missing; additively ALTER in any new
+    LIBRARY_METRICS_COLUMNS. Purely additive: on an existing db this ONLY creates a new table (and
+    back-fills any new column) — it never alters `runs` or `artifacts`. Unlike those two tables,
+    snapshots have no natural single-column key (a library can be snapshotted many times), so the
+    row id is a plain autoincrementing integer, not a caller-supplied PK."""
+    cols_ddl = ",\n  ".join(f'"{c}" {_library_metrics_coltype(c)}' for c in LIBRARY_METRICS_COLUMNS)
+    conn.execute(
+        f'CREATE TABLE IF NOT EXISTS library_metrics (\n'
+        f'  "id" INTEGER PRIMARY KEY AUTOINCREMENT,\n  {cols_ddl}\n)'
+    )
+    existing = {r["name"] for r in conn.execute('PRAGMA table_info(library_metrics)')}
+    if existing:  # table already existed → back-fill any newly-added columns
+        for col in LIBRARY_METRICS_COLUMNS:
+            if col not in existing:
+                conn.execute(
+                    f'ALTER TABLE library_metrics ADD COLUMN "{col}" {_library_metrics_coltype(col)}'
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -468,6 +529,66 @@ def fetch_artifacts(db_path: Path | str = DB_PATH) -> list[dict]:
     try:
         rows = conn.execute(
             "SELECT * FROM artifacts ORDER BY ts DESC, artifact_id DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# The one append helper every future LIBRARY_METRICS snapshot should call (HV5 slice 2, #1327)
+# ---------------------------------------------------------------------------
+def add_library_metrics(
+    *,
+    db_path: Path | str = DB_PATH,
+    **fields: Any,
+) -> int:
+    """Append ONE library-health snapshot row to the additive `library_metrics` table.
+
+    Mirrors :func:`add_run` / :func:`add_artifact`'s validation discipline, but writes the SEPARATE
+    `library_metrics` table and NEVER touches `runs` or `artifacts`. Pass any subset of
+    :data:`LIBRARY_METRICS_COLUMNS` as keyword args. Unknown keys raise (a typo is caught, not
+    silently dropped). ``size_by_class_json`` / ``size_by_tier_json`` may be passed as dicts and are
+    JSON-encoded automatically. ``ts`` defaults to now (UTC, ISO8601) if omitted. Unlike ``runs``/
+    ``artifacts``, there is no caller-supplied id — every call INSERTS a new row (a snapshot never
+    replaces a prior one; the row id is autoincrement). Returns the new row's integer id.
+    """
+    unknown = set(fields) - set(LIBRARY_METRICS_COLUMNS)
+    if unknown:
+        raise ValueError(
+            f"unknown field(s) {sorted(unknown)}; valid: {sorted(LIBRARY_METRICS_COLUMNS)}"
+        )
+
+    if fields.get("ts") is None:
+        fields["ts"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+    for _jcol in ("size_by_class_json", "size_by_tier_json"):
+        _jv = fields.get(_jcol)
+        if _jv is not None and not isinstance(_jv, str):
+            fields[_jcol] = json.dumps(_jv, ensure_ascii=False, sort_keys=True)
+
+    cols = [c for c in LIBRARY_METRICS_COLUMNS if c in fields]
+    vals = [fields[c] for c in cols]
+    placeholders = ", ".join("?" for _ in cols)
+    quoted = ", ".join(f'"{c}"' for c in cols)
+
+    own = isinstance(db_path, (str, os.PathLike))
+    conn = connect(db_path) if own else db_path  # type: ignore[arg-type]
+    try:
+        cur = conn.execute(f"INSERT INTO library_metrics ({quoted}) VALUES ({placeholders})", vals)
+        conn.commit()
+        return int(cur.lastrowid)
+    finally:
+        if own:
+            conn.close()
+
+
+def fetch_library_metrics(db_path: Path | str = DB_PATH) -> list[dict]:
+    """Return all `library_metrics` snapshot rows as dicts, newest-first (ts desc, then id desc)."""
+    conn = connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT * FROM library_metrics ORDER BY ts DESC, id DESC"
         ).fetchall()
         return [dict(r) for r in rows]
     finally:
@@ -754,6 +875,69 @@ def render_artifacts_markdown(db_path: Path | str = DB_PATH,
             v = r.get(key)
             if key == "is_control" and v is not None:
                 v = "control" if int(v) else ""
+            cells.append(_fmt(v))
+        out.append("| " + " | ".join(cells) + " |")
+    out.append("")
+    text = "\n".join(out)
+    Path(md_path).write_text(text, encoding="utf-8")
+    return text
+
+
+LIBRARY_METRICS_MD_PATH = QA_DIR / "library_metrics_ledger.md"
+
+_LIBRARY_METRICS_MD_COLS = [
+    ("ts", "When"),
+    ("library_sha", "SHA"),
+    ("size_total", "Size"),
+    ("size_by_class_json", "By class"),
+    ("size_by_tier_json", "By tier"),
+    ("reuse_count_sum", "Σreuse"),
+    ("promotion_pass_rate", "Promo pass%"),
+    ("promoted_total", "Promoted"),
+    ("rejected_total", "Rejected"),
+    ("pct_library_sourced", "Lib-sourced%"),
+    ("source_path", "Source"),
+    ("notes", "Notes"),
+]
+
+
+def render_library_metrics_markdown(db_path: Path | str = DB_PATH,
+                                    md_path: Path | str = LIBRARY_METRICS_MD_PATH) -> str:
+    """Deterministic Markdown mirror of the `library_metrics` table (HV5 slice 2, #1327). Separate
+    from both the runs ledger and the artifacts ledger — THE FLYWHEEL'S OWN EVAL: how big the library
+    is, how much it's reused, how often promotion passes, and (once HV4 wires it) what fraction of a
+    run's beats came from the library instead of fresh AI generation — the "less AI dependence" trend
+    the epic names, read as a number over time instead of eyeballed."""
+    rows = fetch_library_metrics(db_path)
+    out: list[str] = []
+    out.append("# WorldOS Library Metrics Ledger — the flywheel's own eval")
+    out.append("")
+    out.append(
+        "> **Auto-generated from `qa/scores.db` (`library_metrics` table) — do not hand-edit.** "
+        "Regenerate with `python3 qa/scores_db.py --render-library-metrics`. Rows are appended via "
+        "`qa/scores_db.add_library_metrics(...)`, called by `qa/library_metrics.py`'s "
+        "`snapshot_library()` (its sole writer). One row per SNAPSHOT of the harvest loop's own "
+        "health — library size, Σreuse_count, promotion pass-rate, and (once HV4 wires it) "
+        "%library-sourced beats per run."
+    )
+    out.append(
+        "> **Promo pass%** = promoted / (promoted + rejected) over "
+        "`library/.promoted.jsonl` (promote.py's processed-log); blank when no batch has run yet. "
+        "**Lib-sourced%** stays blank until HV4 wires per-run library-vs-fresh-gen attribution — "
+        "an unset column here is today's expected state, not a bug."
+    )
+    out.append(f"> Rows: **{len(rows)}** · rendered {datetime.now(timezone.utc).isoformat(timespec='seconds')}")
+    out.append("")
+    header = "| " + " | ".join(label for _, label in _LIBRARY_METRICS_MD_COLS) + " |"
+    sep = "|" + "|".join("---" for _ in _LIBRARY_METRICS_MD_COLS) + "|"
+    out.append(header)
+    out.append(sep)
+    for r in rows:
+        cells = []
+        for key, _ in _LIBRARY_METRICS_MD_COLS:
+            v = r.get(key)
+            if key in ("promotion_pass_rate", "pct_library_sourced") and v is not None:
+                v = f"{float(v) * 100:.0f}%"
             cells.append(_fmt(v))
         out.append("| " + " | ".join(cells) + " |")
     out.append("")
@@ -1202,6 +1386,15 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--artifact-id", dest="artifact_id", default=None)
     for col in ARTIFACT_COLUMNS:
         p.add_argument(f"--artifact-{col.replace('_', '-')}", dest=f"artifact__{col}", default=None)
+    # --- HV5 library_metrics table (separate; --libmetric-<col> flags) ---
+    p.add_argument("--add-library-metrics", action="store_true",
+                   help="append one library-health snapshot from the --libmetric-* flags below")
+    p.add_argument("--list-library-metrics", action="store_true",
+                   help="print library_metrics rows (newest first) as JSON")
+    p.add_argument("--render-library-metrics", action="store_true",
+                   help="regenerate qa/library_metrics_ledger.md from the library_metrics table")
+    for col in LIBRARY_METRICS_COLUMNS:
+        p.add_argument(f"--libmetric-{col.replace('_', '-')}", dest=f"libmetric__{col}", default=None)
     return p
 
 
@@ -1247,6 +1440,21 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.list_artifacts:
         print(json.dumps(fetch_artifacts(db), indent=2, ensure_ascii=False))
 
+    if args.add_library_metrics:
+        lfields = {c: getattr(args, f"libmetric__{c}") for c in LIBRARY_METRICS_COLUMNS
+                  if getattr(args, f"libmetric__{c}") is not None}
+        for c in _LIBRARY_METRICS_REAL_COLS:
+            if c in lfields:
+                lfields[c] = float(lfields[c])
+        for c in _LIBRARY_METRICS_INT_COLS:
+            if c in lfields:
+                lfields[c] = int(lfields[c])
+        new_id = add_library_metrics(db_path=db, **lfields)
+        print(f"added library_metrics snapshot id={new_id}")
+
+    if args.list_library_metrics:
+        print(json.dumps(fetch_library_metrics(db), indent=2, ensure_ascii=False))
+
     if args.render:
         render_markdown(db)
         print(f"rendered {MD_PATH} ({len(fetch_rows(db))} rows)")
@@ -1254,6 +1462,10 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.render_artifacts:
         render_artifacts_markdown(db)
         print(f"rendered {ARTIFACTS_MD_PATH} ({len(fetch_artifacts(db))} rows)")
+
+    if args.render_library_metrics:
+        render_library_metrics_markdown(db)
+        print(f"rendered {LIBRARY_METRICS_MD_PATH} ({len(fetch_library_metrics(db))} rows)")
 
     if args.compare:
         print(compare_rc(db, rc=args.rc, include_rc_surface=args.compare_rc_surface))
@@ -1281,7 +1493,9 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     if not any([args.init, args.add, args.list, args.render, args.compare,
                 args.trends_json, args.reconcile, args.release_verdict_rri,
-                args.add_artifact, args.list_artifacts, args.render_artifacts]):
+                args.add_artifact, args.list_artifacts, args.render_artifacts,
+                args.add_library_metrics, args.list_library_metrics,
+                args.render_library_metrics]):
         _build_parser().print_help()
     return 0
 
