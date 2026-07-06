@@ -1035,6 +1035,22 @@ _CLEAN_NEARMISS = [
 ]
 
 
+# #1360 — the DM-craft mechanic-leak class the clean v1.0.5 gate (rri-a1-gate3b) caught: a raw DC,
+# an attitude/gauge transition arrow, a roll verdict, and an INTERNAL EVENT ID leaking into the
+# fiction the player reads. Each must trip narration_no_ooc_leak; the near-misses must not.
+_LEAK_DC = "You feel his manner shift (DC 14; wary → indifferent) as the coin changes hands."
+_LEAK_EVENT_ID = "The player is making a free-form gambit that tangles with `event-fist-checkpoint`."
+_LEAK_VERDICT = "The bluff lands hollow. DC 13 — FAIL."
+_LEAK_CHECK_NAME = "The player is reading the rat-faced man — a perception/insight read on whether he's about to bolt."
+_LEAK_1360_ALL = [_LEAK_DC, _LEAK_EVENT_ID, _LEAK_VERDICT, _LEAK_CHECK_NAME]
+# clean fiction that brushes the new patterns without leaking (false-positive guard)
+_CLEAN_1360 = [
+    "The flag-bearer stumbled at the ford, and the quest-giver waited by the well.",  # hyphenates, not slug ids
+    "She stayed wary as the stranger approached; his mood was indifferent, cold.",    # gauge words, no arrow
+    "A perception of dread settled over the room as you read the tension in it.",     # 'perception' as fiction, not a check
+]
+
+
 def _dm_leak(text: str) -> dict:
     return {"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}}
 
@@ -1082,6 +1098,37 @@ def test_narration_leak_three_in_short_run_is_only_warn(tmp_path):
 def test_narration_leak_clean_run_passes(tmp_path):
     # A clean session (even with near-miss fiction) PASSES the leak gate.
     events = _dm_text_turns(4) + [_dm_leak(t) for t in _CLEAN_NEARMISS]
+    rc, out = _run_gate(tmp_path, events, _with_party({"leveling_mode": "milestone"}))
+    assert "[PASS] narration_no_ooc_leak" in out, out
+
+
+# ── #1360: DC / attitude-transition / roll-verdict / internal-id mechanic leaks ──
+def test_narration_leak_1360_mechanic_classes_each_match():
+    # Every #1360 leak sample (raw DC, attitude arrow, roll verdict, internal event id, check-name-
+    # as-mechanic) must trip the pattern set — a per-class guard so a future edit can't silently
+    # drop one class.
+    for line in _LEAK_1360_ALL:
+        assert any(rx.search(line) for rx in ab._NARRATION_LEAK_RE), f"missed #1360 leak: {line!r}"
+
+
+def test_narration_leak_1360_clean_fiction_not_flagged():
+    # Near-miss clean fiction (hyphenates, bare gauge words, 'perception' as prose) must NOT match.
+    for line in _CLEAN_1360:
+        hit = [rx.pattern for rx in ab._NARRATION_LEAK_RE if rx.search(line)]
+        assert not hit, f"false positive on clean #1360 line {line!r}: {hit}"
+
+
+def test_narration_leak_1360_internal_id_and_dc_beat_is_red(tmp_path):
+    # A substantial run leaking the worst #1360 samples (an internal event id + a DC/attitude beat +
+    # a roll verdict) in player-facing prose -> RED (>=3 leaks, dm_text >= MIN_BEATS).
+    events = [_dm_leak(_LEAK_EVENT_ID), _dm_leak(_LEAK_DC), _dm_leak(_LEAK_VERDICT)] + _dm_text_turns(6)
+    rc, out = _run_gate(tmp_path, events, _with_party({"leveling_mode": "milestone"}))
+    assert "[FAIL] narration_no_ooc_leak" in out, out
+
+
+def test_narration_leak_1360_clean_run_passes(tmp_path):
+    # The clean #1360 near-miss fiction across a substantial run PASSES the leak gate.
+    events = _dm_text_turns(4) + [_dm_leak(t) for t in _CLEAN_1360]
     rc, out = _run_gate(tmp_path, events, _with_party({"leveling_mode": "milestone"}))
     assert "[PASS] narration_no_ooc_leak" in out, out
 
