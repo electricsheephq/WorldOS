@@ -115,7 +115,11 @@ _TARGET_ONLY_KINDS = {"travel", "inspect", "examine", "move_to_zone"}
 # Grid-combat player-turn kinds (move_to_cell / on-turn attack / end_turn) are resolved by the
 # ENGINE in-process (not the DM agent): carried by x/y and/or target_id, with the per-kind checks
 # below relaxing the "needs text or name" guard for them.
-_MOVE_FIELDS = ("text", "name", "skill", "target", "weapon", "dc", "x", "y", "target_id", "end_turn", "turn_token")
+# `character_id` (W2 #1319) rides the walk_to_cell rest-mode intent: WHICH party member walks to
+# the clicked cell (the engine's walk_to takes an explicit character_id). It is a plain id string
+# carried alongside x/y — added to the allowlist so the field survives sanitize (the anti-injection
+# allowlist only WIDENS; every existing field is untouched).
+_MOVE_FIELDS = ("text", "name", "skill", "target", "weapon", "dc", "x", "y", "target_id", "character_id", "end_turn", "turn_token")
 _MOVE_MAXLEN = 2000
 
 
@@ -179,6 +183,15 @@ def sanitize_move(raw: object) -> tuple[Optional[dict], str]:
     if kind == "cross_door":
         if not (isinstance(move.get("x"), int) and isinstance(move.get("y"), int)):
             return None, "'cross_door' needs integer 'x' and 'y' (the doorway cell)"
+        return move, ""
+    # `walk_to_cell` (W2 #1319) is the ENGINE-resolved rest-mode click-to-walk intent: it needs a
+    # numeric x AND y target cell (carried alongside, never text) plus the character_id of the party
+    # member who walks. Validated here so a malformed cell/actor rejects before the engine bridge.
+    if kind == "walk_to_cell":
+        if not (isinstance(move.get("x"), int) and isinstance(move.get("y"), int)):
+            return None, "'walk_to_cell' needs integer 'x' and 'y' grid coordinates"
+        if not move.get("character_id"):
+            return None, "'walk_to_cell' needs a 'character_id' (who walks)"
         return move, ""
     # The graphical intents (travel/inspect/examine/move_to_zone) are carried by `target`;
     # everything else needs a `text` or `name` so the DM has something to act on. An `attack`
@@ -1458,6 +1471,47 @@ def _resolve_cross_door(campaign_id: str, move: dict) -> dict:
     except Exception as exc:  # noqa: BLE001 — surface any engine error as a clean rejection
         return {"ok": False, "reason": f"cross failed: {exc}"}
     return {"ok": True, "crossed": result.get("crossed_door")}
+
+
+def _resolve_walk_to(campaign_id: str, move: dict) -> dict:
+    """Resolve a `walk_to_cell` intent (W2 #1319 rest-mode click-to-walk): walk the party member
+    ``character_id`` to rest-grid cell (x, y) via the engine's ``walk_to`` verb (which paths around
+    walls/props/standers, writes Character.stage_cell, and emits the ``rest_walk`` glide beat — all
+    under the engine lock, so the engine stays the SOLE WRITER). Gated on combat being RESOLVED (the
+    grid twin during a fight is move_to_cell). Returns the engine's CONFIRMED ``{ok, walked, path, to,
+    from}`` so the read-only renderer glides the actor along exactly the route the engine routed — the
+    viewer NEVER predicts a client-side path (a second-writer / VISION violation). Rejections (active
+    combat / no scene grid / off-grid / blocked / unreachable) leave NOTHING mutated and return
+    ``{ok:False, reason}``. Mirrors _resolve_cross_door's in-process bridge."""
+    engine = _load_engine_server()
+    if engine is None:
+        return {"ok": False, "reason": "engine unavailable"}
+    try:
+        snap = engine._require(campaign_id)
+    except Exception as exc:  # noqa: BLE001 — surface any engine read error as a clean rejection
+        return {"ok": False, "reason": f"could not read rest state: {exc}"}
+    if snap.combat.active:
+        return {"ok": False, "reason": "combat is active — use move_to_cell (walk_to is the rest-mode verb)"}
+    try:
+        result = engine.walk_to(campaign_id, str(move["character_id"]), int(move["x"]), int(move["y"]))
+    except (KeyError, ValueError, TypeError) as exc:
+        return {"ok": False, "reason": str(exc)}
+    except Exception as exc:  # noqa: BLE001 — surface any engine error as a clean rejection
+        return {"ok": False, "reason": f"walk failed: {exc}"}
+    # walk_to signals a routing refusal (off-grid / blocked / unreachable) via walked:False + a
+    # move_blocked block — surface it as a clean {ok:False} so the client toasts the reason and does
+    # NOT glide. A successful walk carries the engine-confirmed envelope path (incl. the start cell).
+    if not result.get("walked"):
+        reason = (result.get("move_blocked") or {}).get("reason") or "walk rejected"
+        return {"ok": False, "reason": reason, "walked": False}
+    return {
+        "ok": True,
+        "walked": True,
+        "character_id": result.get("character_id"),
+        "from": result.get("from"),
+        "to": result.get("to"),
+        "path": result.get("path") or [],
+    }
 
 
 def _resolve_player_combat_turn(campaign_id: str, move: dict, *, live: bool) -> dict:
@@ -3506,13 +3560,21 @@ def _scene_stage(snapshot: dict, combat_active: bool) -> dict:
         ch = ch if isinstance(ch, dict) else {}
         name = _text(ch.get("name"), cid)
         kind = _text(ch.get("kind"))
-        cell = None
-        if slot < len(cells):
-            cell = cells[slot]
-        elif anchor_cells:
-            cell = anchor_cells[fallback_slot % len(anchor_cells)]
-        elif party_cells:
-            cell = party_cells[fallback_slot % len(party_cells)]
+        # W2 (#1319): a character who has WALKED in rest mode carries an engine-authoritative
+        # Character.stage_cell (walk_to's sole-writer field) — render the token WHERE IT STANDS, not
+        # at its authored spawn cell, so a click-to-move glide lands the token at the confirmed
+        # destination on the next surface reload. ADDITIVE: stage_cell is None until a first walk, so
+        # an un-walked character falls straight through to today's spawn/anchor projection below
+        # (byte-identical). Still a pure PROJECTION of engine-owned state (positionAuthority stays
+        # "derived"); the viewer never writes it.
+        cell = _cell(ch.get("stage_cell"))
+        if cell is None:
+            if slot < len(cells):
+                cell = cells[slot]
+            elif anchor_cells:
+                cell = anchor_cells[fallback_slot % len(anchor_cells)]
+            elif party_cells:
+                cell = party_cells[fallback_slot % len(party_cells)]
         if cell is None:
             return
         tokens.append({
@@ -9487,6 +9549,13 @@ class _Handler(BaseHTTPRequestHandler):
         # travel_to under the engine lock), NOT appended for the DM. Gated on combat being resolved.
         if move.get("kind") == "cross_door":
             self._json(_resolve_cross_door(self.campaign_id, move))
+            return
+        # W2 REST-WALK LANE (#1319): a `walk_to_cell` is engine-resolved in-process (engine.walk_to
+        # paths + writes stage_cell + emits the rest_walk glide beat under the engine lock), NOT
+        # appended for the DM. Gated on combat being resolved (see _resolve_walk_to). Returns the
+        # engine-confirmed path so the browser glides only the routed cells.
+        if move.get("kind") == "walk_to_cell":
+            self._json(_resolve_walk_to(self.campaign_id, move))
             return
         is_combat_cell = move.get("kind") in ("move_to_cell", "end_turn") or (
             move.get("kind") == "attack" and "target_id" in move

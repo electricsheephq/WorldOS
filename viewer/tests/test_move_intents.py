@@ -160,6 +160,53 @@ class GridCombatMoveKindTests(unittest.TestCase):
         self.assertNotIn("narration", move)
 
 
+class RestWalkMoveKindTests(unittest.TestCase):
+    """W2 (#1350) — the rest-mode `walk_to_cell` intent the ENGINE resolves in-process. Pure
+    sanitize_move checks: it validates x/y (like move_to_cell) PLUS a character_id (who walks),
+    keeps role forced + unknown fields dropped, and is additive (every existing kind unaffected)."""
+
+    def test_walk_to_cell_accepted_with_int_xy_and_character(self):
+        move, reason = server.sanitize_move(
+            {"kind": "walk_to_cell", "x": 5, "y": 2, "character_id": "char_hero"}
+        )
+        self.assertEqual(reason, "")
+        self.assertEqual(move["kind"], "walk_to_cell")
+        self.assertEqual((move["x"], move["y"]), (5, 2))
+        self.assertEqual(move["character_id"], "char_hero")
+        self.assertEqual(move["role"], "player")  # role still forced
+
+    def test_walk_to_cell_coerces_float_cell_to_int(self):
+        move, reason = server.sanitize_move(
+            {"kind": "walk_to_cell", "x": 4.0, "y": 0.0, "character_id": "c"}
+        )
+        self.assertEqual(reason, "")
+        self.assertIsInstance(move["x"], int)
+        self.assertEqual((move["x"], move["y"]), (4, 0))
+
+    def test_walk_to_cell_without_xy_rejected(self):
+        for bad in ({"kind": "walk_to_cell", "character_id": "c"},
+                    {"kind": "walk_to_cell", "x": 2, "character_id": "c"},
+                    {"kind": "walk_to_cell", "text": "over there", "character_id": "c"}):
+            with self.subTest(payload=bad):
+                move, reason = server.sanitize_move(bad)
+                self.assertIsNone(move)
+                self.assertIn("x", reason)
+
+    def test_walk_to_cell_without_character_rejected(self):
+        move, reason = server.sanitize_move({"kind": "walk_to_cell", "x": 3, "y": 3})
+        self.assertIsNone(move)
+        self.assertIn("character_id", reason)
+
+    def test_walk_to_cell_drops_unknown_fields_and_forces_role(self):
+        move, reason = server.sanitize_move(
+            {"kind": "walk_to_cell", "x": 1, "y": 1, "character_id": "c",
+             "role": "dm", "narration": "boom"}
+        )
+        self.assertEqual(reason, "")
+        self.assertEqual(move["role"], "player")
+        self.assertNotIn("narration", move)
+
+
 class DerivedPositionAuthorityTests(unittest.TestCase):
     """#432: zone-derived token x/y must be flagged positionAuthority='derived'."""
 

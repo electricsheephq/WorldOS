@@ -100,6 +100,10 @@ function ScreenCombat({ onNavigate, state }) {
   }, [loadSurface]);
 
   const tokens = Array.isArray(surface?.tokens) ? surface.tokens : [];
+  // W2 (#1319): the rest-mode stage projection — the party (+ present NPCs) standing on the scene
+  // grid at their engine stage_cell/spawn cell. Empty during combat (the authoritative tokens are
+  // the top-level `tokens`), so the rest board only lights up outside a fight.
+  const restTokens = Array.isArray(surface?.stage?.tokens) ? surface.stage.tokens : [];
   const initiative = Array.isArray(surface?.initiative) ? surface.initiative : [];
   const actions = Array.isArray(surface?.actionBar) ? surface.actionBar : [];
   const zones = Array.isArray(surface?.zones) ? surface.zones : [];
@@ -121,18 +125,26 @@ function ScreenCombat({ onNavigate, state }) {
   const commandCenter = surface?.commandCenter || {};
   const economy = surface?.actionEconomy || {};
   const canAct = Boolean(surface?.can_act);
+  // W2 (#1319): outside combat, selection resolves against the REST tokens (the walkable party on
+  // the stage); inside combat it resolves against the tactical `tokens` exactly as before. The
+  // selectable pool is combat tokens during a fight, rest tokens at rest — so a click-to-walk always
+  // has a valid mover to send to walk_to.
+  const selectablePool = encounter.active ? tokens : (restTokens.length ? restTokens : tokens);
   const selected =
-    tokens.find((t) => t.id === selectedToken) ||
-    tokens.find((t) => t.id === surface?.selectedTokenId) ||
-    tokens[0] ||
+    selectablePool.find((t) => t.id === selectedToken) ||
+    selectablePool.find((t) => t.id === surface?.selectedTokenId) ||
+    selectablePool[0] ||
     null;
   const visibleLog = [...battleLog, ...localLog];
 
   React.useEffect(() => {
-    if (!selectedToken || !tokens.some((t) => t.id === selectedToken)) {
-      setSelectedToken(surface?.selectedTokenId || tokens[0]?.id || "");
+    // Keep a valid selection as the surface refreshes: if the current pick vanished from the
+    // selectable pool (combat tokens in a fight, rest tokens at rest), fall back to the engine's
+    // hint or the first token so a click-to-walk always has a mover.
+    if (!selectedToken || !selectablePool.some((t) => t.id === selectedToken)) {
+      setSelectedToken(surface?.selectedTokenId || selectablePool[0]?.id || "");
     }
-  }, [surface?.selectedTokenId, selectedToken, tokens]);
+  }, [surface?.selectedTokenId, selectedToken, selectablePool]);
 
   // #598: disarm the Move tile's "pick a zone" mode the instant the surface says the actor can no
   // longer act (turn advanced, action spent, surface went read-only) — otherwise a stale refresh
@@ -305,6 +317,52 @@ function ScreenCombat({ onNavigate, state }) {
   const onCellMove = (x, y) => postCombatIntent({ kind: "move_to_cell", x, y }, "move");
   const onAttackToken = (targetId) => postCombatIntent({ kind: "attack", target_id: targetId }, "attack");
 
+  // W2 (#1319) REST-MODE click-to-walk: post a `walk_to_cell` intent for the SELECTED rest token.
+  // The engine (walk_to) paths around walls/props/standers, writes stage_cell, and returns the
+  // CONFIRMED path — the viewer stays a pure consumer: it never predicts a route, it re-fetches the
+  // surface so the token re-renders at the engine's stage_cell (a CSS transition glides it there).
+  // Same /move lane + busyRef double-submit guard as the combat intents. Only ever called outside
+  // combat (the rest board only renders when !encounter.active).
+  const postRestWalk = async (characterId, x, y, label) => {
+    if (!characterId) {
+      toast({ kind: "danger", eyebrow: "Rest", title: "Pick who walks", body: "Select a party member first, then click where to walk." });
+      return;
+    }
+    if (busyRef.current) return; // synchronous double-click guard
+    busyRef.current = true;
+    setBusyAction(label || "walk");
+    try {
+      const response = await fetch("/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "walk_to_cell", character_id: characterId, x, y, campaign: surface?.campaign_id || campaignId }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) throw new Error(payload.reason || `walk ${response.status}`);
+      setLocalLog((rows) => [
+        ...rows,
+        { event: "player-intent", title: "Player walk", text: `→ cell (${x}, ${y})`, meta: [{ label: "lane", value: "/move" }] },
+      ]);
+      await loadSurface();
+      return payload;
+    } catch (error) {
+      toast({ kind: "danger", title: "Walk not sent", body: error?.message || "The viewer could not reach /move." });
+      return { ok: false };
+    } finally {
+      busyRef.current = false;
+      setBusyAction("");
+    }
+  };
+  const onRestWalk = (x, y) => postRestWalk(selected?.id, x, y, "walk");
+  // Door click: WALK the selected member onto the doorway cell first (engine paths there), then
+  // cross into the linked room. If the walk is refused (already on the cell / no route) we still
+  // attempt the cross — cross_door is engine-gated and rejects cleanly if it isn't a real doorway.
+  const onRestDoorWalk = async (door) => {
+    if (!Array.isArray(door?.cell)) return;
+    if (selected?.id) await postRestWalk(selected.id, door.cell[0], door.cell[1], "walk-to-door");
+    await crossDoor(door);
+  };
+
   const actionTile = (id, fallbackIcon, fallbackLabel) => {
     const action = actionById(id);
     // #598: the Move tile stays visually "active" while armed (pickingZone), even though no
@@ -356,6 +414,23 @@ function ScreenCombat({ onNavigate, state }) {
 
           {encounter.active ? (
             <CombatMap tokens={tokens} zones={zones} grid={surface?.grid} selected={selected?.id} onSelect={setSelectedToken} onCellMove={onCellMove} onAttack={onAttackToken} canAct={canAct} sceneScope={sceneScope} pickingZone={pickingZone} onZoneMoveTarget={postZoneMove} />
+          ) : restTokens.length && surface?.grid ? (
+            // W2 (#1319) REST-MODE BOARD: outside combat, render the walkable scene grid with the
+            // party standing on it. A walkable-cell click walks the SELECTED member there (engine
+            // walk_to); a door cell walks-then-crosses into the linked room. Only shown when the
+            // scene has an authored grid + rest tokens; otherwise fall back to the door bar + empty
+            // state (byte-identical to today for a gridless location).
+            <RestGridBoard
+              tokens={restTokens}
+              grid={surface?.grid}
+              doors={doors}
+              selected={selected?.id}
+              onSelect={setSelectedToken}
+              onWalk={onRestWalk}
+              onDoorWalk={onRestDoorWalk}
+              busy={Boolean(busyAction)}
+              sceneScope={sceneScope}
+            />
           ) : (
             <React.Fragment>
               {doors.length ? (
@@ -709,6 +784,110 @@ function GridCellToken({ t, selected, isCurrent }) {
       }}>{t.initial || (t.name || "?").slice(0, 1)}</div>
       <div style={{ width: "72%", height: 3, background: "rgba(0,0,0,0.5)", boxShadow: "inset 0 0 0 0.5px rgba(0,0,0,0.6)" }}>
         <div style={{ width: `${Math.round(ratio * 100)}%`, height: "100%", background: hpBarFill(t, isFoe) }} />
+      </div>
+    </div>
+  );
+}
+
+/* W2 (#1319) REST-MODE walk board: the out-of-combat twin of CombatGridBoard. Renders the location's
+   walkable scene grid (grid.cols×rows + per-cell walkability) with the party standing on it at their
+   engine stage_cell (surface.stage.tokens). Clicking a WALKABLE empty cell walks the SELECTED party
+   member there (posts walk_to_cell → engine walk_to paths + writes stage_cell); a DOOR cell walks
+   to the doorway then crosses into the linked room; a TOKEN selects who walks next. The engine is the
+   sole writer + router — this board only POSTS an intent and re-renders the surface that comes back
+   (no client path prediction; the token glides to the engine-confirmed stage_cell via a CSS
+   transition on the next reload). Mirrors CombatGridBoard's walkability derivation exactly. */
+function RestGridBoard({ tokens, grid, doors, selected, onSelect, onWalk, onDoorWalk, busy, sceneScope }) {
+  const cols = Math.max(1, Number(grid && grid.cols) || 16);
+  const rows = Math.max(1, Number(grid && grid.rows) || 10);
+  const at = {};
+  (tokens || []).forEach((t) => {
+    const x = Number(t.x), y = Number(t.y);
+    if (Number.isInteger(x) && Number.isInteger(y)) at[`${x},${y}`] = t;
+  });
+  // Per-cell walkability override + cellDefault fallback — IDENTICAL derivation to CombatGridBoard,
+  // so a wall/prop reads the same blocked in rest as it does in combat (one honest walkability map).
+  const walkability = {};
+  ((grid && Array.isArray(grid.cells)) ? grid.cells : []).forEach((c) => {
+    if (c && Number.isInteger(c.c) && Number.isInteger(c.r) && typeof c.walkable === "boolean") {
+      walkability[`${c.c},${c.r}`] = c.walkable;
+    }
+  });
+  const defaultWalkable = !(grid && grid.cellDefault && grid.cellDefault.walkable === false);
+  const isWalkable = (x, y) => {
+    const key = `${x},${y}`;
+    return Object.prototype.hasOwnProperty.call(walkability, key) ? walkability[key] : defaultWalkable;
+  };
+  // Door cells (the authored doorways) → a door click walks-then-crosses. Keyed by "x,y".
+  const doorAt = {};
+  (doors || []).forEach((d) => {
+    if (Array.isArray(d?.cell) && d.cell.length === 2) doorAt[`${d.cell[0]},${d.cell[1]}`] = d;
+  });
+  const cells = [];
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) cells.push({ x, y, t: at[`${x},${y}`] });
+  return (
+    <div style={{
+      position: "relative", width: "100%", height: "calc(100% - 50px)", overflow: "hidden",
+      background:
+        `radial-gradient(ellipse at 50% 40%, rgba(60,30,10,0.2), transparent 70%),
+         linear-gradient(135deg, #3a2418 0%, #25160e 100%)`,
+      boxShadow: "inset 0 0 0 1px var(--w-500), inset 0 0 60px rgba(0,0,0,0.6)",
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 12,
+    }}>
+      {sceneScope ? (
+        <Img scope={sceneScope} label="scene · rest" w="100%" h="100%" fit="cover"
+          style={{ position: "absolute", inset: 0, zIndex: 0, opacity: 0.9 }} />
+      ) : null}
+      <div data-worldos-testid="rest-board" style={{
+        position: "relative", zIndex: 1,
+        display: "grid",
+        gridTemplateColumns: `repeat(${cols}, 1fr)`, gridTemplateRows: `repeat(${rows}, 1fr)`,
+        gap: 1, aspectRatio: `${cols} / ${rows}`, height: "100%", maxWidth: "100%", width: "auto",
+        boxShadow: "inset 0 0 0 1px rgba(176,141,87,0.25)",
+      }}>
+        {cells.map(({ x, y, t }) => {
+          const walkable = isWalkable(x, y);
+          const door = doorAt[`${x},${y}`];
+          // A token selects; a door cell walks-then-crosses; a walkable empty cell walks. Disabled
+          // while a POST is in flight (busy) so a double-click can't fire two walks/crossings.
+          const onActivate = t
+            ? () => onSelect(t.id)
+            : door
+              ? () => { if (!busy) onDoorWalk(door); }
+              : () => { if (!busy && walkable) onWalk(x, y); };
+          const actionable = Boolean(t) || (!busy && (door ? true : walkable));
+          const title = t
+            ? `${t.name}${selected === t.id ? " (selected)" : " — select to walk"}`
+            : door
+              ? `Cross to ${door.toName || "the next room"} →`
+              : (walkable ? `walk → (${x}, ${y})` : "blocked");
+          const restBox = door
+            ? "inset 0 0 0 1px var(--gold-glow, rgba(244,210,123,0.6))"
+            : (walkable ? "inset 0 0 0 0.5px rgba(176,141,87,0.10)" : "inset 0 0 0 0.5px rgba(80,40,30,0.5)");
+          const hoverBg = door ? "rgba(244,210,123,0.18)" : "rgba(244,210,123,0.12)";
+          return (
+            <div key={`${x},${y}`}
+              title={title} aria-label={title}
+              role={actionable ? "button" : undefined}
+              tabIndex={actionable ? 0 : -1}
+              data-worldos-door={door ? "1" : undefined}
+              onClick={onActivate}
+              onKeyDown={(e) => { if (actionable && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onActivate(); } }}
+              onMouseEnter={(e) => { if (actionable && !t) e.currentTarget.style.background = hoverBg; }}
+              onMouseLeave={(e) => { if (!t) e.currentTarget.style.background = door ? "rgba(244,210,123,0.06)" : "transparent"; }}
+              style={{
+                position: "relative", boxShadow: restBox,
+                background: door ? "rgba(244,210,123,0.06)" : (walkable ? "transparent" : "rgba(20,10,6,0.45)"),
+                cursor: actionable ? "pointer" : "default", outline: "none",
+                transition: "background 0.08s, box-shadow 0.08s",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+              {t ? <GridCellToken t={t} selected={selected === t.id} isCurrent={false} /> : (door ? (
+                <span aria-hidden="true" style={{ fontSize: "min(2.6vmin, 18px)", color: "var(--gold-glow, #f4d27b)", opacity: 0.85 }}>⇲</span>
+              ) : null)}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -1082,6 +1261,7 @@ function BattleLogLine({ l }) {
 Object.assign(window, {
   ScreenCombat,
   CombatMap,
+  RestGridBoard,
   CombatToken,
   CommandCenterPanel,
   ActionTile,
