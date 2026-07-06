@@ -124,6 +124,13 @@ class SceneGrid(_StrictModel):
     zone_anchors: dict[str, Cell] = Field(default_factory=dict)
     exits: list[dict] = Field(default_factory=list)
     spawns: dict[str, list[Cell]] = Field(default_factory=dict)
+    # PROTECTED-PATHING discipline (additive; empty == today): door_cells are first-class doorway cells
+    # (every exit cell is also a door cell, plus any authored interior archway); protected_lane_cells are a
+    # connectivity-critical path the prop pass must keep CLEAR. A prop may NEVER occupy a door-zone cell
+    # (door + Chebyshev-1) or a protected-lane cell (see validate_scene_grid). See
+    # docs/roadmap/ROOM-OCCLUSION-PATHING-SPRINTS.md.
+    door_cells: list[Cell] = Field(default_factory=list)
+    protected_lane_cells: list[Cell] = Field(default_factory=list)
     lighting: SceneLighting = Field(default_factory=SceneLighting)
     art: SceneArt = Field(default_factory=SceneArt)
 
@@ -242,11 +249,16 @@ def _gen_tavern(scene_id: str, location_id: str, seed: int, rng: random.Random) 
         "center floor": (mid_c, rows // 2),
     }
 
-    # The door + party/foe spawns near the entrance (front), foes a couple cells inside.
+    # The door + party/foe spawns near the entrance (front), foes a couple cells inside. `npcs`
+    # (W1 #1318, additive) = the AT-REST placement anchors for present NPCs — where PEOPLE stand
+    # in a tavern (behind the bar, by the hearth) rather than the foe firing-line — so a rest scene
+    # reads as inhabited. The viewer's rest projection fills these deterministically (id-sorted);
+    # unread by combat. Cells stay clear of the door zone / props.
     exits = [{"cell": [mid_c, rows - 1], "to_location_id": "", "label": "the door to the street"}]
     spawns = {
         "party": [(mid_c - 1, rows - 2), (mid_c, rows - 2), (mid_c + 1, rows - 2)],
         "foes": [(mid_c - 1, 2), (mid_c + 1, 3)],
+        "npcs": [(3, 3), (cols - 4, 3), (mid_c + 2, rows - 3)],
     }
 
     lighting = SceneLighting(
@@ -340,6 +352,9 @@ def _gen_default(scene_id: str, location_id: str, kind: str, seed: int,
     spawns = {
         "party": [(mid_c - 1, rows - 2), (mid_c, rows - 2), (mid_c + 1, rows - 2)],
         "foes": [(mid_c - 1, 2), (mid_c + 1, 2)],
+        # W1 #1318 (additive): at-rest NPC placement anchors — present NPCs stand back near the
+        # interior, not on the foe line. Filled deterministically by the viewer rest projection.
+        "npcs": [(3, 2), (cols - 4, 2)],
     }
 
     # Warm-neutral interior key — NOT #ffffff/0. A muted amber lantern-light from the left.
@@ -451,6 +466,9 @@ def _gen_dungeon(scene_id: str, location_id: str, seed: int, rng: random.Random)
     spawns = {
         "party": [(mid_c - 1, rows - 3), (mid_c, rows - 3), (mid_c + 1, rows - 3)],
         "foes": [(mid_c - 1, 3), (mid_c + 1, 3)],
+        # W1 #1318 (additive): at-rest NPC anchors, off the sarcophagus + foe line — flanking the
+        # mid-floor. Filled deterministically by the viewer rest projection; unread by combat.
+        "npcs": [(mid_c - 2, rows // 2), (mid_c + 2, rows // 2)],
     }
 
     # Warm brazier key, cold-blue ambient — classic dungeon contrast.
@@ -546,6 +564,9 @@ def _gen_forest(scene_id: str, location_id: str, seed: int, rng: random.Random) 
     spawns = {
         "party": [(mid_c - 1, rows - 3), (mid_c, rows - 3), (mid_c + 1, rows - 3)],
         "foes": [(mid_c - 1, 3), (mid_c + 1, 3)],
+        # W1 #1318 (additive): at-rest NPC anchors near the clearing centre, off the tree-line foe
+        # cells. Filled deterministically by the viewer rest projection; unread by combat.
+        "npcs": [(mid_c - 2, rows // 2), (mid_c + 2, rows // 2)],
     }
 
     # Daylight — cool-neutral key from upper-left (sun), pale blue ambient (open sky).
@@ -653,6 +674,10 @@ def _gen_town(scene_id: str, location_id: str, seed: int, rng: random.Random) ->
     spawns = {
         "party": [(mid_c - 1, rows - 3), (mid_c, rows - 3), (mid_c + 1, rows - 3)],
         "foes": [(mid_c - 2, well_r - 2), (mid_c + 2, well_r - 2)],
+        # W1 #1318 (additive): at-rest NPC anchors — a townsperson at each market stall (just in
+        # front of it) where people stand in a plaza. Filled deterministically by the viewer rest
+        # projection; off the well footprint + foe cells; unread by combat.
+        "npcs": [(mid_c - 4, stall_r + 1), (mid_c + 3, stall_r + 1)],
     }
 
     # Daylight — bright overhead sun from upper-right, pale-blue sky ambient.
@@ -813,3 +838,165 @@ def ensure_scene_grid(world_id: str, location) -> bool:
         kind=explicit_kind,
     )
     return True
+
+
+# ── SceneGrid → combat-grid obstacle derivation (gfx M-B) ─────────────────────────────
+
+
+def impassable_cells(
+    grid: "SceneGrid",
+    width: int,
+    height: int,
+    *,
+    occupied: set[Cell] = frozenset(),
+) -> list[list[int]]:
+    """Derive the IMPASSABLE combat-grid cells (walls + prop footprints) from a SceneGrid,
+    so a fight bound to a painted room routes movement around its geometry.
+
+    Returns a sorted list of ``[x, y]`` pairs in the exact shape ``Combat.grid_impassable``
+    expects (the same shape ``set_grid(obstacles=...)`` produces), ready to assign directly.
+
+    Coordinate mapping (the alignment care-point): a SceneGrid cell is ``(c, r)`` = (col, row),
+    cols along +x and rows along +y (see the ``_gen_*`` generators), and the combat grid is
+    ``(x, y)`` with ``grid_width == cols`` and ``grid_height == rows``. So the mapping is the
+    identity ``c -> x``, ``r -> y`` — both are 0-indexed and ``cell_size_ft`` matches the combat
+    ``grid_cell_size`` default of 5. We still CLIP every derived cell to ``0 <= x < width`` and
+    ``0 <= y < height`` so a grid sized smaller than the scene (or vice-versa) never emits an
+    out-of-bounds obstacle.
+
+    A cell is impassable if EITHER:
+      * an explicit ``SceneCell`` lists it with ``walkable=False`` (walls/props/water/void), OR
+      * it falls inside any ``SceneProp.cells`` footprint (belt-and-suspenders: props already
+        emit ``walkable=False`` cells, but a footprint cell missing from ``cells`` is still a
+        solid object), OR
+      * ``cell_default.walkable`` is False (a fully-solid default — every UNLISTED in-bounds
+        cell is then a wall; rare, but honored).
+
+    ``occupied`` cells (where a combatant already stands at fight-start) are EXCLUDED from the
+    result so nobody is trapped on a cell the router would treat as a wall — a placement on a
+    prop cell stays legal and movable. Pure: no I/O, no mutation, deterministic order.
+    """
+    if width <= 0 or height <= 0:
+        return []
+
+    blocked: set[Cell] = set()
+
+    # A fully-solid default makes every in-bounds cell a wall unless an explicit cell overrides
+    # it to walkable below. (Default is walkable=True for every authored generator, so this
+    # branch is inert in practice — empty == today — but it keeps the derivation total.)
+    default_walkable = True
+    cd = getattr(grid, "cell_default", None)
+    if cd is not None:
+        default_walkable = bool(getattr(cd, "walkable", True))
+    if not default_walkable:
+        for x in range(width):
+            for y in range(height):
+                blocked.add((x, y))
+
+    # Explicit cells: a walkable cell CLEARS the default-solid fill; a non-walkable cell BLOCKS.
+    for sc in getattr(grid, "cells", None) or []:
+        cell = (int(sc.c), int(sc.r))
+        if not (0 <= cell[0] < width and 0 <= cell[1] < height):
+            continue
+        if getattr(sc, "walkable", True):
+            blocked.discard(cell)
+        else:
+            blocked.add(cell)
+
+    # Prop footprints: every cell a prop sits on is solid (occluder or not). Props already emit
+    # walkable=False cells, but honor the footprint directly in case a cell was elided.
+    for prop in getattr(grid, "props", None) or []:
+        for (c, r) in getattr(prop, "cells", None) or []:
+            cell = (int(c), int(r))
+            if 0 <= cell[0] < width and 0 <= cell[1] < height:
+                blocked.add(cell)
+
+    # Never trap a combatant: a cell someone already stands on is walkable for this fight.
+    blocked -= set(occupied)
+
+    return [[x, y] for (x, y) in sorted(blocked)]
+
+
+# ── Protected-pathing discipline: door zones + a pre-greybox validator (gfx occlusion/pathing Sprint 2) ──
+
+
+def door_zone_cells(grid: "SceneGrid", width: int, height: int) -> set[Cell]:
+    """The cells props must keep CLEAR around every doorway: each ``door_cell`` plus its Chebyshev-1 ring
+    (clipped to bounds), so a doorway always has a free landing on both sides (the D&D 2-square-doorway /
+    PoE2 'no furniture behind the door' convention). Pure, deterministic."""
+    zone: set[Cell] = set()
+    for (c, r) in getattr(grid, "door_cells", None) or []:
+        for dc in (-1, 0, 1):
+            for dr in (-1, 0, 1):
+                x, y = int(c) + dc, int(r) + dr
+                if 0 <= x < width and 0 <= y < height:
+                    zone.add((x, y))
+    return zone
+
+
+def validate_scene_grid(grid: "SceneGrid", width: int, height: int) -> list[str]:
+    """Pre-greybox GATE (run before any art is generated — Diablo's 'topology decided before dressing').
+    Returns a list of human-readable violation strings (``[]`` == valid). Enforces the protected-pathing
+    discipline so a generated room can never (a) place a prop in a door zone or a protected lane, (b) wall
+    off a pocket of floor with a prop, or (c) be too crunched for actors to move. Pure: no I/O, no mutation,
+    deterministic order. See docs/roadmap/ROOM-OCCLUSION-PATHING-SPRINTS.md."""
+    issues: list[str] = []
+    if width <= 0 or height <= 0:
+        return ["grid has non-positive dimensions"]
+
+    dz = door_zone_cells(grid, width, height)
+    lanes: set[Cell] = {(int(c), int(r)) for (c, r) in (getattr(grid, "protected_lane_cells", None) or [])}
+
+    # (1)+(2) prop placement: no prop footprint may sit in a door zone or a protected lane.
+    for prop in getattr(grid, "props", None) or []:
+        pid = getattr(prop, "id", "?")
+        for (c, r) in getattr(prop, "cells", None) or []:
+            cell = (int(c), int(r))
+            if cell in dz:
+                issues.append(f"prop '{pid}' at {list(cell)} blocks a DOOR ZONE (door + 1-cell landing)")
+            if cell in lanes:
+                issues.append(f"prop '{pid}' at {list(cell)} blocks a PROTECTED LANE")
+
+    blocked: set[Cell] = {(x, y) for (x, y) in (tuple(p) for p in impassable_cells(grid, width, height))}
+    walkable: list[Cell] = [(x, y) for x in range(width) for y in range(height) if (x, y) not in blocked]
+
+    # (3) connectivity: every walkable cell must be in ONE region (a prop must never wall off a pocket —
+    # this is exactly the 'sarcophagus jammed next to the staircase' failure the owner named).
+    if walkable:
+        from collections import deque  # noqa: PLC0415
+
+        start = walkable[0]
+        seen: set[Cell] = {start}
+        q: deque[Cell] = deque([start])
+        while q:
+            cx, cy = q.popleft()
+            for dc in (-1, 0, 1):
+                for dr in (-1, 0, 1):
+                    if dc == 0 and dr == 0:
+                        continue
+                    nb = (cx + dc, cy + dr)
+                    if nb not in blocked and nb not in seen and 0 <= nb[0] < width and 0 <= nb[1] < height:
+                        seen.add(nb)
+                        q.append(nb)
+        unreached = [c for c in walkable if c not in seen]
+        if unreached:
+            issues.append(
+                f"{len(unreached)} walkable cells are a DISCONNECTED pocket (a prop/wall walls them off), "
+                f"e.g. {list(unreached[0])} — pathing would be broken"
+            )
+
+    # (4) every door cell + spawn cell must itself be walkable (you can't enter/spawn on a wall or prop).
+    for (c, r) in getattr(grid, "door_cells", None) or []:
+        if (int(c), int(r)) in blocked:
+            issues.append(f"door cell {[int(c), int(r)]} is BLOCKED (wall/prop) — unusable doorway")
+    for cells in (getattr(grid, "spawns", None) or {}).values():
+        for (c, r) in cells:
+            if (int(c), int(r)) in blocked:
+                issues.append(f"spawn cell {[int(c), int(r)]} is BLOCKED (wall/prop)")
+
+    # (5) enough clear combat floor (outside door zones/lanes) for actors to actually maneuver.
+    clear = sum(1 for cell in walkable if cell not in dz and cell not in lanes)
+    if clear < 12:
+        issues.append(f"only {clear} clear combat-floor cells (< 12) — too crunched for actor movement")
+
+    return issues

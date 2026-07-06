@@ -36,11 +36,13 @@ import binascii
 import hashlib
 import importlib.util
 import json
+import math
 import mimetypes
 import os
 import re
 import subprocess
 import sys
+import threading
 import time
 import types
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -91,14 +93,28 @@ _OPENWORLDS_MIME_TYPES = {
 # world-assertions): the renderer emits them on click; the DM reads them from the moves
 # file and resolves them through the engine, exactly like say/do. They reuse the existing
 # `target` field — no new field, so the anti-injection field-allowlist is untouched.
+#
+# GRID-COMBAT player-turn intents (S1 keystone — the player-turn combat arbiter): `move_to_cell`
+# (step the PC's token to grid cell x,y on its initiative turn). These are PLAYER intents that
+# the ENGINE resolves DETERMINISTICALLY (not the DM agent): do_POST routes them straight to
+# combat_loop.resolve_player_turn via the in-process engine bridge (the SAME sole-writer-
+# preserving path /save-slot uses), which validates turn-ownership, charges the movement
+# budget, runs opportunity attacks, advances initiative, then re-emits build_combat_surface.
+# `attack` (already a kind) gains the same on-turn lane when it carries a `target_id`. They add
+# x/y/target_id to the field-allowlist (keyword, defaulted; the existing fields are untouched,
+# so the anti-injection allowlist only WIDENS).
 _MOVE_KINDS = {
     "say", "do", "check", "save", "combat", "attack", "cast", "use_item", "clarify",
-    "travel", "inspect", "examine", "move_to_zone",
+    "travel", "inspect", "examine", "move_to_zone", "move_to_cell", "end_turn",
+    "cross_door",  # M-E: cross an authored doorway to the linked room-unit (engine-resolved)
 }
 # Kinds whose payload is carried by `target` alone (no free `text`/`name`) — the graphical
 # intents. Used to relax the "needs text or name" guard below for these click-driven moves.
 _TARGET_ONLY_KINDS = {"travel", "inspect", "examine", "move_to_zone"}
-_MOVE_FIELDS = ("text", "name", "skill", "target", "weapon", "dc")
+# Grid-combat player-turn kinds (move_to_cell / on-turn attack / end_turn) are resolved by the
+# ENGINE in-process (not the DM agent): carried by x/y and/or target_id, with the per-kind checks
+# below relaxing the "needs text or name" guard for them.
+_MOVE_FIELDS = ("text", "name", "skill", "target", "weapon", "dc", "x", "y", "target_id", "end_turn", "turn_token")
 _MOVE_MAXLEN = 2000
 
 
@@ -116,15 +132,62 @@ def sanitize_move(raw: object) -> tuple[Optional[dict], str]:
     move: dict = {"role": "player", "kind": kind}
     for f in _MOVE_FIELDS:
         v = raw.get(f)
-        if isinstance(v, str) and v.strip():
+        if f == "turn_token":
+            # The surface emits the idempotency token as `turnToken` (camelCase). Accept the field
+            # the client actually received (turnToken) OR the snake_case name, normalized to
+            # turn_token. WITHOUT this, a client echoing `turnToken` loses the token ->
+            # expected_turn_token="" -> the dedup guard never fires (a stale/double submit could
+            # advance again after initiative wraps).
+            tok = raw.get("turn_token")
+            if not (isinstance(tok, str) and tok.strip()):
+                tok = raw.get("turnToken")
+            if isinstance(tok, str) and tok.strip():
+                move[f] = tok.strip()[:_MOVE_MAXLEN]
+        elif f == "end_turn":
+            # `end_turn` is the only boolean field — preserved verbatim (ends a move-only turn).
+            if isinstance(v, bool):
+                move[f] = v
+        elif f in ("x", "y"):
+            # Grid coordinates: accept an int, or a FINITE INTEGRAL float (a UI may send 3.0).
+            # REJECT NaN/Inf (a blind int() raises on those) and a fractional float like 3.9
+            # (a blind int() would silently truncate to 3 -> the wrong cell). A bad value is
+            # left UNSET so the move_to_cell guard below rejects with a clear reason. (bool is
+            # an int subclass -> excluded explicitly so True/False is never read as cell 1/0.)
+            if isinstance(v, bool):
+                continue
+            if isinstance(v, int):
+                move[f] = v
+            elif isinstance(v, float) and math.isfinite(v) and v.is_integer():
+                move[f] = int(v)
+        elif isinstance(v, str) and v.strip():
             move[f] = v.strip()[:_MOVE_MAXLEN]
         elif isinstance(v, (int, float)) and not isinstance(v, bool):
             move[f] = v
+    # A bare `end_turn` passes the turn — no other field required.
+    if kind == "end_turn":
+        move["end_turn"] = True
+        return move, ""
+    # `move_to_cell` is the grid-combat player-turn intent the ENGINE resolves: it needs a
+    # numeric x AND y cell (carried alongside, never text). Validated here so a malformed
+    # cell rejects before it reaches the engine bridge.
+    if kind == "move_to_cell":
+        if not (isinstance(move.get("x"), int) and isinstance(move.get("y"), int)):
+            return None, "'move_to_cell' needs integer 'x' and 'y' grid coordinates"
+        return move, ""
+    # `cross_door` is the engine-resolved M-E room-transition intent: carry the doorway cell (x,y).
+    if kind == "cross_door":
+        if not (isinstance(move.get("x"), int) and isinstance(move.get("y"), int)):
+            return None, "'cross_door' needs integer 'x' and 'y' (the doorway cell)"
+        return move, ""
     # The graphical intents (travel/inspect/examine/move_to_zone) are carried by `target`;
-    # everything else needs a `text` or `name` so the DM has something to act on.
+    # everything else needs a `text` or `name` so the DM has something to act on. An `attack`
+    # that carries a `target_id` is the on-turn engine-resolved lane (no text/name required);
+    # an `attack` with text/name stays the existing DM-resolved free-text lane.
     if kind in _TARGET_ONLY_KINDS:
         if "target" not in move:
             return None, f"{kind!r} move needs a 'target'"
+    elif kind == "attack" and "target_id" in move:
+        pass  # on-turn engine attack: target_id is enough
     elif "text" not in move and "name" not in move:
         return None, "move needs a 'text' or 'name'"
     return move, ""
@@ -720,35 +783,98 @@ def _install_fastmcp_shim() -> None:
     sys.modules["mcp.server.fastmcp"] = fastmcp_mod
 
 
+_ENGINE_SERVER_LOAD_LOCK = threading.Lock()
+
+
 def _load_engine_server():
     global _ENGINE_SERVER, _ENGINE_IMPORT_ERROR
     if _ENGINE_SERVER is not None:
         return _ENGINE_SERVER
-    engine_dir = (_HERE.parent / "servers" / "engine").resolve()
-    try:
+    with _ENGINE_SERVER_LOAD_LOCK:
+        if _ENGINE_SERVER is not None:  # double-check: another thread loaded it while we waited
+            return _ENGINE_SERVER
+        engine_dir = (_HERE.parent / "servers" / "engine").resolve()
         try:
-            from mcp.server.fastmcp import FastMCP as _FastMCP  # noqa: F401
-        except ModuleNotFoundError:
-            _install_fastmcp_shim()
-        if str(engine_dir) not in sys.path:
-            sys.path.insert(0, str(engine_dir))
-        spec = importlib.util.spec_from_file_location("_worldos_engine_server_for_viewer", engine_dir / "server.py")
-        if spec is None or spec.loader is None:
-            raise RuntimeError("could not load engine server module")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[spec.name] = module
-        spec.loader.exec_module(module)
-        _ENGINE_SERVER = module
-        _ENGINE_IMPORT_ERROR = ""
-        return module
-    except Exception as exc:  # import/dependency failures become explicit JSON degradation
-        _ENGINE_IMPORT_ERROR = str(exc)
-        return None
+            try:
+                from mcp.server.fastmcp import FastMCP as _FastMCP  # noqa: F401
+            except ModuleNotFoundError:
+                _install_fastmcp_shim()
+            if str(engine_dir) not in sys.path:
+                sys.path.insert(0, str(engine_dir))
+            spec = importlib.util.spec_from_file_location("_worldos_engine_server_for_viewer", engine_dir / "server.py")
+            if spec is None or spec.loader is None:
+                raise RuntimeError("could not load engine server module")
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[spec.name] = module
+            try:
+                spec.loader.exec_module(module)
+            except Exception:
+                sys.modules.pop(spec.name, None)  # don't leave a half-initialized module published
+                raise
+            _ENGINE_SERVER = module
+            _ENGINE_IMPORT_ERROR = ""
+            return module
+        except Exception as exc:  # import/dependency failures become explicit JSON degradation
+            _ENGINE_IMPORT_ERROR = str(exc)
+            return None
 
 
 def _engine_server():
     """Test-visible accessor for the engine-owned planner module."""
     return _load_engine_server()
+
+
+_COMBAT_LOOP_MOD = None
+_COMBAT_LOOP_IMPORT_ERROR = ""
+
+
+def _load_combat_loop():
+    """Load the engine's combat_loop module in-process (the player-turn arbiter lives there).
+
+    Same in-process bridge contract as _load_engine_server: the viewer NEVER writes campaign
+    state itself — combat_loop.resolve_player_turn delegates to the engine's locked verbs
+    (move_to_coords / attack / next_turn), each of which takes its own campaign_lock +
+    save_campaign, so the engine stays the SOLE WRITER. Loading the engine server first puts
+    servers/engine on sys.path so `combat_loop` (and its `import server`) resolve."""
+    global _COMBAT_LOOP_MOD, _COMBAT_LOOP_IMPORT_ERROR
+    if _COMBAT_LOOP_MOD is not None:
+        return _COMBAT_LOOP_MOD
+    # Loading the engine server registers servers/engine on sys.path + installs the FastMCP shim.
+    engine = _load_engine_server()
+    if engine is None:
+        _COMBAT_LOOP_IMPORT_ERROR = _ENGINE_IMPORT_ERROR or "engine server unavailable"
+        return None
+    engine_dir = (_HERE.parent / "servers" / "engine").resolve()
+    try:
+        if str(engine_dir) not in sys.path:
+            sys.path.insert(0, str(engine_dir))
+        # combat_loop.resolve_player_turn does a lazy `import server`. The bridge loaded the
+        # engine under an aliased module name (_worldos_engine_server_for_viewer), so a bare
+        # `import server` would load a SECOND copy of the ~10k-line engine module with its own
+        # globals. State stays correct EITHER WAY (every verb is file-backed: _require ->
+        # load_campaign re-reads snapshot.json under a cross-process flock; there is NO in-memory
+        # campaign cache — verified), but a redundant second instance is wasteful and makes the
+        # correctness depend implicitly on "no module ever adds a cache". Bind `import server` to
+        # the SAME engine instance the bridge already loaded by registering it under the canonical
+        # name `server` — UNLESS something already owns that name (don't clobber a real engine
+        # process's own `server`). This makes the single-instance guarantee EXPLICIT.
+        existing = sys.modules.get("server")
+        if existing is None:
+            sys.modules["server"] = engine
+        spec = importlib.util.spec_from_file_location(
+            "_worldos_combat_loop_for_viewer", engine_dir / "combat_loop.py"
+        )
+        if spec is None or spec.loader is None:
+            raise RuntimeError("could not load combat_loop module")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        _COMBAT_LOOP_MOD = module
+        _COMBAT_LOOP_IMPORT_ERROR = ""
+        return module
+    except Exception as exc:
+        _COMBAT_LOOP_IMPORT_ERROR = str(exc)
+        return None
 
 
 def _clean_character_id(character_id: Optional[str]) -> Optional[str]:
@@ -1277,6 +1403,176 @@ def _save_load_slot_response(action: str, campaign_id: Optional[str], slot: Opti
     return {"ok": True, "campaign_id": safe_campaign, "slot": safe_slot}
 
 
+# Per-campaign in-process serialization for the grid-combat player-turn lane. The arbiter reads
+# current_combatant_id, validates, then drives the locked verbs — but the engine's campaign_lock
+# is PER-VERB (it does not span the read->validate->advance sequence) and is NOT re-entrant (a
+# nested flock on a new fd in the same process DEADLOCKS), so we cannot wrap the arbiter in it.
+# Two concurrent POSTs on the ThreadingHTTPServer (a double-click / client retry) would otherwise
+# both pass the turn-ownership gate before either advances, double-advancing initiative and
+# silently consuming an enemy turn (a TOCTOU caught by adversarial-invariant-verify). This
+# in-process lock serializes the player-turn lane PER CAMPAIGN within the viewer process — the
+# only place concurrent player-turn POSTs originate. It does NOT touch the engine's sole-writer
+# campaign_lock (the cross-process DM-vs-viewer case is already handled by that flock); it only
+# closes the same-process double-POST window.
+_PLAYER_TURN_LOCKS: dict[str, threading.Lock] = {}
+_PLAYER_TURN_LOCKS_GUARD = threading.Lock()
+# Process-wide lock guarding the brief `sys.modules["server"]` swap in
+# _resolve_player_combat_turn_locked. combat_loop does a lazy `import server` that MUST resolve to
+# the ENGINE module, but the viewer process also legitimately owns the name `server` (so the
+# load-time "bind only if unowned" can't win). We bind it to the engine for the duration of the
+# arbiter call and restore after; this lock serializes the swap so a concurrent different-campaign
+# call can never observe `server` mid-swap. Acquired ONLY inside the per-campaign lock (one order).
+_ENGINE_SERVER_BIND_LOCK = threading.Lock()
+
+
+def _player_turn_lock(campaign_id: str) -> threading.Lock:
+    with _PLAYER_TURN_LOCKS_GUARD:
+        lock = _PLAYER_TURN_LOCKS.get(campaign_id)
+        if lock is None:
+            lock = threading.Lock()
+            _PLAYER_TURN_LOCKS[campaign_id] = lock
+        return lock
+
+
+def _resolve_cross_door(campaign_id: str, move: dict) -> dict:
+    """Resolve a `cross_door` intent (M-E room transition): cross an authored doorway to the linked
+    room-unit via the engine's ``cross_door`` verb (which delegates to ``travel_to`` under the engine
+    lock — the engine stays the SOLE WRITER). Gated on combat being RESOLVED (finish the fight before
+    leaving the room). Returns ``{ok:True, crossed:[x,y]}`` so the client re-fetches /combat-surface and
+    swaps to the new room's plate; rejections (active combat / not a doorway / no connection) leave
+    NOTHING mutated and return ``{ok:False, reason}``. Mirrors the move_to_cell engine-resolved lane."""
+    engine = _load_engine_server()
+    if engine is None:
+        return {"ok": False, "reason": "engine unavailable"}
+    try:
+        snap = engine._require(campaign_id)
+    except Exception as exc:
+        return {"ok": False, "reason": f"could not read combat state: {exc}"}
+    if snap.combat.active:
+        return {"ok": False, "reason": "finish the fight before crossing the doorway"}
+    try:
+        result = engine.cross_door(campaign_id, int(move["x"]), int(move["y"]))
+    except ValueError as exc:
+        return {"ok": False, "reason": str(exc)}
+    except Exception as exc:  # noqa: BLE001 — surface any engine error as a clean rejection
+        return {"ok": False, "reason": f"cross failed: {exc}"}
+    return {"ok": True, "crossed": result.get("crossed_door")}
+
+
+def _resolve_player_combat_turn(campaign_id: str, move: dict, *, live: bool) -> dict:
+    """Resolve a grid-combat player-turn move (`move_to_cell` / on-turn `attack`) DETERMINISTICALLY
+    through the engine's player-turn arbiter, then re-emit the combat surface (S1 keystone).
+
+    Mirrors /save-slot's in-process bridge EXACTLY: the viewer never writes campaign state; it
+    builds the engine's Intent and calls combat_loop.resolve_player_turn, which validates
+    turn-ownership and delegates to the engine's locked verbs (move_to_coords / attack /
+    next_turn) under the engine's own campaign_lock + save_campaign — so the engine stays the
+    SOLE WRITER. On success returns the arbiter verdict PLUS a freshly-read build_combat_surface
+    so the client (browser / Unity) re-renders from authoritative state without a second GET.
+
+    The whole read->validate->resolve->advance->re-emit sequence runs under a PER-CAMPAIGN
+    in-process lock so two concurrent POSTs can't double-advance initiative (the engine's
+    per-verb campaign_lock does not span this sequence and is not re-entrant — see
+    _player_turn_lock). The engine remains the sole WRITER; this lock only serializes the lane.
+
+    Rejections (wrong turn, no combat, bad cell) return {ok:False, reason} with NOTHING mutated."""
+    with _player_turn_lock(campaign_id):
+        return _resolve_player_combat_turn_locked(campaign_id, move, live=live)
+
+
+def _resolve_player_combat_turn_locked(campaign_id: str, move: dict, *, live: bool) -> dict:
+    loop = _load_combat_loop()
+    if loop is None:
+        return {"ok": False, "reason": f"combat arbiter unavailable: {_COMBAT_LOOP_IMPORT_ERROR}"}
+    # The actor is the live PC/companion whose turn it is. The arbiter is the authority on
+    # turn-ownership; the viewer does not pre-resolve "who" — it reads current_combatant_id
+    # from the engine snapshot and lets the arbiter reject a non-current actor.
+    try:
+        engine = _load_engine_server()
+        snap = engine._require(campaign_id) if engine is not None else None
+        actor_id = snap.combat.current_combatant_id if snap is not None and snap.combat.active else None
+    except Exception as exc:
+        return {"ok": False, "reason": f"could not read combat state: {exc}"}
+    if not actor_id:
+        return {"ok": False, "reason": "no active combat / no current combatant"}
+
+    kind = str(move.get("kind") or "")
+    # `end_turn` (optional bool on a move_to_cell, or a bare end_turn kind) ends a move-only turn.
+    end_turn = bool(move.get("end_turn"))
+    # Optional idempotency token the client echoed off the surface (turnToken). When present, a
+    # double-click / stale retry rejects (the slot advanced). Absent == no check (back-compat).
+    expected_turn_token = str(move.get("turn_token") or "")
+    try:
+        Intent = loop.Intent
+        if kind == "move_to_cell":
+            x, y = int(move["x"]), int(move["y"])
+            intent = Intent(kind="move", to_cell=(x, y), note="player move (UI)")
+        elif kind == "attack":
+            target_id = str(move.get("target_id") or "")
+            if not target_id:
+                return {"ok": False, "reason": "an on-turn attack needs a target_id"}
+            intent = Intent(kind="attack", target_id=target_id, note="player attack (UI)")
+        elif kind == "end_turn":
+            # Pass the turn without moving/acting: a skip Intent, force the advance.
+            intent = Intent(kind="skip", note="player end-turn (UI)")
+            end_turn = True
+        else:
+            return {"ok": False, "reason": f"{kind!r} is not a grid-combat player-turn move"}
+    except (KeyError, ValueError, TypeError) as exc:
+        return {"ok": False, "reason": f"malformed combat move: {exc}"}
+
+    # combat_loop.resolve_player_turn (and the run_combat_round it auto-runs) do a lazy
+    # `import server` that must resolve to the ENGINE — but the viewer process also owns the name
+    # `server`. Bind it to the engine module for the duration of the arbiter call (serialized
+    # process-wide so a concurrent different-campaign call can't observe the swap mid-flight),
+    # then restore. State stays sole-writer-correct regardless (every verb is file-backed); this
+    # only fixes WHICH module object the lazy import resolves to.
+    _engine_mod = _load_engine_server()
+    with _ENGINE_SERVER_BIND_LOCK:
+        _saved_server_mod = sys.modules.get("server")
+        if _engine_mod is not None:
+            sys.modules["server"] = _engine_mod
+        try:
+            try:
+                verdict = loop.resolve_player_turn(
+                    campaign_id, actor_id, intent, end_turn=end_turn,
+                    expected_turn_token=expected_turn_token,
+                )
+            except Exception:
+                # The arbiter may have MUTATED combat (via _apply_intent) before a later step (the
+                # enemy auto-resolution) raised. Don't return a bare {ok:false} that hides the
+                # already-advanced board + invites blind retries — return the REFRESHED surface so
+                # the client renders the real post-mutation state. (The outer finally still restores
+                # sys.modules; build_combat_surface does not `import server`.)
+                _raw = _read_snapshot(campaign_id)
+                if not isinstance(_raw, dict):
+                    _raw = {}
+                return {
+                    "ok": False,
+                    "reason": "combat arbiter failed; state may have changed",
+                    "combat": build_combat_surface(
+                        _raw, campaign_id=campaign_id, live=bool(live), is_live_view=bool(live)
+                    ),
+                }
+        finally:
+            if _saved_server_mod is not None:
+                sys.modules["server"] = _saved_server_mod
+            else:
+                sys.modules.pop("server", None)
+    if not isinstance(verdict, dict) or not verdict.get("ok"):
+        return verdict if isinstance(verdict, dict) else {"ok": False, "reason": "arbiter error"}
+
+    # Re-emit the authoritative surface from the freshly-written snapshot so the client renders
+    # the moved token / new initiative without a follow-up read. Read-only projection.
+    raw_snap = _read_snapshot(campaign_id)
+    if not isinstance(raw_snap, dict):
+        raw_snap = {}
+    surface = build_combat_surface(
+        raw_snap, campaign_id=campaign_id, live=bool(live), is_live_view=bool(live)
+    )
+    return {"ok": True, "arbiter": verdict, "combat": surface}
+
+
 def _display_location(snapshot: dict) -> str:
     loc_id = snapshot.get("current_location_id")
     locs = snapshot.get("locations")
@@ -1729,26 +2025,34 @@ def _scene_grid_block(snapshot: dict, mode: str) -> dict:
     locs = snapshot.get("locations")
     loc = locs.get(loc_id) if isinstance(locs, dict) and loc_id else None
     sg = loc.get("scene_grid") if isinstance(loc, dict) else None
-    if not isinstance(sg, dict):
-        return block
-    grid = sg.get("grid")
-    if not isinstance(grid, dict):
-        return block
-    cols = grid.get("cols")
-    rows = grid.get("rows")
-    if not (isinstance(cols, int) and isinstance(rows, int) and cols > 0 and rows > 0):
-        return block  # degrade to the default extents on a malformed grid
-    block["cols"] = cols
-    block["rows"] = rows
-    sid = sg.get("scene_id")
-    if isinstance(sid, str) and sid:
-        block["sceneId"] = sid
-    cells = sg.get("cells")
-    if isinstance(cells, list):
-        block["cells"] = cells
-    cell_default = sg.get("cell_default")
-    if isinstance(cell_default, dict):
-        block["cellDefault"] = cell_default
+    grid = sg.get("grid") if isinstance(sg, dict) else None
+    if isinstance(grid, dict):
+        cols = grid.get("cols")
+        rows = grid.get("rows")
+        if isinstance(cols, int) and isinstance(rows, int) and cols > 0 and rows > 0:
+            block["cols"] = cols
+            block["rows"] = rows
+        sid = sg.get("scene_id")
+        if isinstance(sid, str) and sid:
+            block["sceneId"] = sid
+        cells = sg.get("cells")
+        if isinstance(cells, list):
+            block["cells"] = cells
+        cell_default = sg.get("cell_default")
+        if isinstance(cell_default, dict):
+            block["cellDefault"] = cell_default
+    # #10 — the combat TACTICAL grid is the authority for the board EXTENT: combatant tokens are
+    # placed at its grid_width/grid_height coords (see _combat_tokens), so the rendered board MUST
+    # contain them or a token lands off-board (a 20x20 fight reported a 16x10 board pre-fix). Override
+    # cols/rows when combat declares an explicit grid; any scene_grid cells/sceneId set above stay.
+    # Additive: no explicit combat grid ⇒ unchanged (empty == today).
+    combat = snapshot.get("combat")
+    if isinstance(combat, dict):
+        cgw = combat.get("grid_width")
+        cgh = combat.get("grid_height")
+        if isinstance(cgw, int) and isinstance(cgh, int) and cgw > 0 and cgh > 0:
+            block["cols"] = cgw
+            block["rows"] = cgh
     return block
 
 
@@ -2322,10 +2626,30 @@ def _combat_display_position(
     idx: int,
     zones: list[dict],
     zone_offsets: dict[str, int],
+    grid_extents: tuple[int, int] | None = None,
 ) -> tuple[int, int, str]:
-    x = _num(row.get("x") or row.get("col") or row.get("grid_x"))
-    y = _num(row.get("y") or row.get("row") or row.get("grid_y"))
+    # Read the engine's authoritative grid coords. Use a None-coalesce (NOT `or`): a cell of 0
+    # is a VALID coordinate (origin column/row), and `x or col` would treat 0 as missing and
+    # silently fall through to the synthesized zone layout — corrupting the board for any token
+    # on row/column 0 (the S1 grid-combat arbiter surfaces real engine cells, incl. 0).
+    def _first_coord(*keys):
+        for k in keys:
+            v = _num(row.get(k))
+            if v is not None:
+                return v
+        return None
+    x = _first_coord("x", "col", "grid_x")
+    y = _first_coord("y", "row", "grid_y")
     if x is not None and y is not None:
+        # Clamp to the ENGINE grid extents (not the fixed 16x10 zone-display grid), preserving
+        # cell 0 — the surface must report the true engine cell so the client renders the moved
+        # token where the engine actually placed it. Fall back to the legacy 16x10 clamp only
+        # when the engine grid extents are unknown (keeps old grid-source snapshots stable).
+        if grid_extents is not None:
+            gw, gh = grid_extents
+            cx = max(0, min(gw - 1, int(x))) if gw > 0 else int(x)
+            cy = max(0, min(gh - 1, int(y))) if gh > 0 else int(y)
+            return cx, cy, "grid"
         return max(1, min(16, int(x))), max(1, min(10, int(y))), "grid"
     zone_name = _text(row.get("zone"))
     zone_index = next((i for i, z in enumerate(zones) if z.get("name") == zone_name), idx)
@@ -2343,6 +2667,16 @@ def _combat_tokens(snapshot: dict, combat_view: dict) -> tuple[list[dict], list[
     zones = [dict(z) for z in combat_view.get("zones", []) if isinstance(z, dict)]
     zone_occupants: dict[str, list[str]] = {z.get("name", ""): [] for z in zones}
     zone_offsets: dict[str, int] = {}
+    # Engine grid extents (S1): when the fight is on a grid the token clamp must respect the
+    # ENGINE grid size (e.g. 20x20), not the fixed 16x10 zone-display grid, and must preserve
+    # cell 0. None when there's no engine grid -> the zone-display fallback clamp applies.
+    _combat_blk = snapshot.get("combat") if isinstance(snapshot, dict) else None
+    grid_extents: tuple[int, int] | None = None
+    if isinstance(_combat_blk, dict) and _combat_blk.get("grid_enabled"):
+        gw = _num(_combat_blk.get("grid_width"))
+        gh = _num(_combat_blk.get("grid_height"))
+        if isinstance(gw, int) and isinstance(gh, int) and gw > 0 and gh > 0:
+            grid_extents = (gw, gh)
     tokens: list[dict] = []
     initiative: list[dict] = []
     position_sources: set[str] = set()
@@ -2373,7 +2707,9 @@ def _combat_tokens(snapshot: dict, combat_view: dict) -> tuple[list[dict], list[
             token["zone"] = zone
             if zone in zone_occupants:
                 zone_occupants[zone].append(cid)
-        x, y, source = _combat_display_position(raw, idx=idx, zones=zones, zone_offsets=zone_offsets)
+        x, y, source = _combat_display_position(
+            raw, idx=idx, zones=zones, zone_offsets=zone_offsets, grid_extents=grid_extents
+        )
         token["x"] = x
         token["y"] = y
         # #432 (graphics M0): x/y here are a DERIVED render-hint, never authoritative state.
@@ -2466,30 +2802,22 @@ def _combat_action_bar(action_model: dict, combat_active: bool) -> list[dict]:
     if end_reason is None:
         end_turn["move"] = {"kind": "combat", "name": "End Turn"}
 
+    # #598: Move/Cast/Item were dead stubs (`available: False` no matter what). They now
+    # route through `from_model`, the SAME by_id lookup Attack/Bonus/Reaction already use —
+    # `build_action_model`'s "combat" group supplies the `move` payload + availability, this
+    # function only decorates icon/fallback. Cast/Item mirror Attack's free-text DM-resolved
+    # lane (kind+name, no target_id — `cast`/`use_item` are NOT in combat_loop's on-turn Intent
+    # branch, so they must ride the moves-file lane the DM agent resolves, exactly like the
+    # existing "Bonus"/"Reaction" tiles do today). Move mirrors the grid: `move_to_cell` (click
+    # a cell on the tactical board) is already live via CombatGridBoard/onCellMove; the Move
+    # TILE is the zone-mode equivalent and gates on the same action-economy reason so it greys
+    # out exactly when Attack does. No new fields, no engine writes — additive per #116.
     return [
-        {
-            "id": "move",
-            "label": "Move",
-            "icon": "↗",
-            "available": False,
-            "disabled_reason": "movement destinations not projected yet",
-        },
+        from_model("move", "Move", "↗", base_reason()),
         from_model("attack", "Attack", "⚔", base_reason()),
-        {
-            "id": "cast",
-            "label": "Cast",
-            "icon": "✦",
-            "available": False,
-            "disabled_reason": "spell choices not projected yet",
-        },
+        from_model("cast", "Cast", "✦", base_reason()),
         from_model("bonus-action", "Bonus", "◈", base_reason()),
-        {
-            "id": "item",
-            "label": "Item",
-            "icon": "◊",
-            "available": False,
-            "disabled_reason": "inventory combat actions not projected yet",
-        },
+        from_model("item", "Item", "◊", base_reason()),
         from_model("reaction", "Reaction", "✺", base_reason()),
         end_turn,
     ]
@@ -2954,6 +3282,246 @@ def _combat_command_center(
     }
 
 
+def _combat_turn_token(snapshot: dict) -> str:
+    """The current turn-slot token (round:turn_index:current_combatant_id), mirroring the engine's
+    combat_loop.turn_token so the surface and the arbiter agree byte-for-byte. The client echoes
+    this on its next player-turn POST; the arbiter rejects a stale token (a double-click / retry),
+    deduplicating the player turn. "" when there's no active combat."""
+    combat = snapshot.get("combat") if isinstance(snapshot, dict) else None
+    if not isinstance(combat, dict) or not combat.get("active"):
+        return ""
+    order = combat.get("order")
+    if not isinstance(order, list) or not order:
+        return ""
+    rnd = combat.get("round")
+    ti = combat.get("turn_index")
+    rnd = rnd if isinstance(rnd, int) and not isinstance(rnd, bool) else 0
+    ti = ti if isinstance(ti, int) and not isinstance(ti, bool) else 0
+    # Mirror models.Combat.current_combatant_id EXACTLY (it indexes order[turn_index % len]) so
+    # the surface token equals combat_loop.turn_token byte-for-byte.
+    row = order[ti % len(order)]
+    cur = _text(row.get("character_id")) if isinstance(row, dict) else ""
+    return f"{rnd}:{ti}:{cur}"
+
+
+def _combat_doors(snapshot: dict) -> list[dict]:
+    """The current location's authored DOORWAY cells + their destination room-unit, so the renderer/UI
+    can mark a doorway and offer to cross into the linked room (the player-triggered room transition).
+
+    ADDITIVE / presentation-only: READS engine-owned ``scene_grid.door_cells`` (the #1214 schema) +
+    ``Location.connections`` (the engine is the sole writer); never mutates. ``[]`` when the location has
+    no door cells or no connections (== today). Each entry: ``{cell:[c,r], to:<loc_id>, toName, multi}``.
+    For a single-connection room-unit (the common case) every door cell leads to the one neighbour; a
+    multi-connection room would need an authored door->destination map, so ``multi=true`` flags the
+    ambiguity and the FIRST connection is surfaced as a best-effort default."""
+    loc_id = _text(snapshot.get("current_location_id"))
+    locs = snapshot.get("locations")
+    loc = locs.get(loc_id) if isinstance(locs, dict) and loc_id else None
+    if not isinstance(loc, dict):
+        return []
+    sg = loc.get("scene_grid")
+    door_cells = sg.get("door_cells") if isinstance(sg, dict) else None
+    if not isinstance(door_cells, list) or not door_cells:
+        return []
+    conns = [cid for cid in (loc.get("connections") or []) if isinstance(cid, str)]
+    if not conns:
+        return []
+    dest_id = conns[0]
+    dest = locs.get(dest_id) if isinstance(locs, dict) else None
+    dest_name = _text(dest.get("name")) if isinstance(dest, dict) else ""
+    out: list[dict] = []
+    for cell in door_cells:
+        if isinstance(cell, (list, tuple)) and len(cell) == 2:
+            out.append({"cell": [int(cell[0]), int(cell[1])], "to": dest_id,
+                        "toName": dest_name, "multi": len(conns) > 1})
+    return out
+
+
+def _combat_occluders(snapshot: dict) -> list[dict]:
+    """The current location's OCCLUDER props (columns / statues / a sarcophagus) with their footprint
+    cells + height band, so the read-only renderer can place invisible depth-only occluder proxies —
+    a 3D actor that moves BEHIND a painted column is then correctly HIDDEN by it (the owner's "can they
+    move behind columns / behind items?"). Without this the actor always draws on top of the flat plate.
+
+    ADDITIVE / presentation-only: READS engine-owned ``scene_grid.props`` where ``occluder`` is true
+    (the engine is the sole writer of scene_grid; ``SceneProp`` carries ``cells``/``occluder``/
+    ``height_band``); never mutates. ``[]`` when the location has no occluder props (== today's shape).
+    Each entry: ``{cells:[[c,r],...], band:"low"|"mid"|"tall"}``."""
+    loc_id = _text(snapshot.get("current_location_id"))
+    locs = snapshot.get("locations")
+    loc = locs.get(loc_id) if isinstance(locs, dict) and loc_id else None
+    if not isinstance(loc, dict):
+        return []
+    sg = loc.get("scene_grid")
+    props = sg.get("props") if isinstance(sg, dict) else None
+    if not isinstance(props, list) or not props:
+        return []
+    out: list[dict] = []
+    for p in props:
+        if not isinstance(p, dict) or not p.get("occluder"):
+            continue
+        cells = p.get("cells")
+        if not isinstance(cells, list) or not cells:
+            continue
+        norm = [[int(c[0]), int(c[1])] for c in cells
+                if isinstance(c, (list, tuple)) and len(c) == 2]
+        if not norm:
+            continue
+        band = p.get("height_band")
+        band = band if band in ("low", "mid", "tall") else "mid"
+        out.append({"cells": norm, "band": band})
+    return out
+
+
+def _is_dead_or_downed(ch: dict) -> bool:
+    """True for a character who must not stand upright in a rest projection: `dead`, or at 0 HP
+    (unconscious/dying, or stabilized-but-still-down — engine fields `stable`/`current_hp`, see
+    combat.py `_ensure_unconscious`). A rest scene only shows characters on their feet."""
+    if bool(ch.get("dead")):
+        return True
+    hp = _num(ch.get("current_hp"))
+    return hp is not None and hp <= 0
+
+
+def _scene_stage(snapshot: dict, combat_active: bool) -> dict:
+    """W1 (#1318) SCENE-AT-REST projection: an additive ``stage`` block carrying ``mode`` +
+    at-rest ``tokens`` so a location renders with its people in it BEFORE combat — the tavern
+    shows its innkeeper before anyone draws a sword.
+
+    PURE PRESENTATION / engine sole-writer: this READS the engine-owned snapshot (party +
+    characters + scene_grid) and PROJECTS it onto ``scene_grid.spawns`` cells; it never mutates
+    and persists nothing. Deterministic (id-sorted assignment, fixed fallback order) so a re-emit
+    on the same snapshot is byte-identical.
+
+    Rest tokens = the party (``snapshot.party``) on the ``party`` spawn cells, plus present NPCs
+    (characters whose ``location_id`` == the current location and whose kind is npc/companion, and
+    who are NOT already party) on the ``npcs`` spawn cells. Cells fall back to ``zone_anchors``
+    values, then the party cells, when a bucket is short.
+
+    NO DOUBLE-PAINT: during active combat the authoritative tokens live in the top-level
+    ``tokens`` (the tactical board); ``stage.tokens`` is therefore EMPTY in combat mode so a
+    rest token can never leak onto the combat board. ``mode`` still reports "combat" so a
+    consumer can branch, but only rest mode carries placements."""
+    mode = "combat" if combat_active else "rest"
+    if combat_active:
+        return {"mode": mode, "tokens": []}
+
+    loc_id = _text(snapshot.get("current_location_id"))
+    locs = snapshot.get("locations") if isinstance(snapshot.get("locations"), dict) else {}
+    loc = locs.get(loc_id) if isinstance(locs, dict) and loc_id else None
+    sg = loc.get("scene_grid") if isinstance(loc, dict) else None
+    spawns = sg.get("spawns") if isinstance(sg, dict) else None
+    spawns = spawns if isinstance(spawns, dict) else {}
+    zone_anchors = sg.get("zone_anchors") if isinstance(sg, dict) else None
+    zone_anchors = zone_anchors if isinstance(zone_anchors, dict) else {}
+
+    def _cell(raw: object) -> tuple[int, int] | None:
+        if isinstance(raw, (list, tuple)) and len(raw) == 2:
+            ci, ri = _num(raw[0]), _num(raw[1])
+            if ci is not None and ri is not None:
+                return (int(ci), int(ri))
+        return None
+
+    def _cells(raw: object) -> list[tuple[int, int]]:
+        out: list[tuple[int, int]] = []
+        if isinstance(raw, list):
+            for c in raw:
+                cell = _cell(c)
+                if cell is not None:
+                    out.append(cell)
+        return out
+
+    # Blocked cells (walls/props) from the scene_grid cell map, so the fallback pool below never
+    # strands an overflow actor ON a blocking prop. zone_anchors are authored for narration ("the
+    # well") and are NOT validated walkable (unlike party/npc spawn cells, which the engine gate
+    # checks), so an anchor CAN sit on a prop — filter those out. Absent/malformed cells -> empty
+    # blocked set (today's behavior: no filtering).
+    blocked: set[tuple[int, int]] = set()
+    for c in (sg.get("cells") if isinstance(sg, dict) else None) or []:
+        if isinstance(c, dict) and c.get("walkable") is False:
+            cell = _cell([c.get("c"), c.get("r")])
+            if cell is not None:
+                blocked.add(cell)
+
+    party_cells = [c for c in _cells(spawns.get("party")) if c not in blocked]
+    npc_cells = [c for c in _cells(spawns.get("npcs")) if c not in blocked]
+    # Deterministic fallback pool: the zone anchors (id-sorted) then the party cells, so a bucket
+    # that ran short still lands its actors on a walkable in-world spot rather than off-board. Drop
+    # any anchor that lands on a blocking prop/wall — a fallback actor must not stand on a column.
+    anchor_cells = [
+        cell for _, v in sorted(zone_anchors.items())
+        if (cell := _cell(v)) is not None and cell not in blocked
+    ]
+
+    chars = snapshot.get("characters") if isinstance(snapshot.get("characters"), dict) else {}
+    party = snapshot.get("party") if isinstance(snapshot.get("party"), list) else []
+    # party_set holds the FULL roster party (incl. any dead/downed) so a fallen member is not
+    # re-projected via the present-NPC path below; party_ids drops anyone dead OR downed (0 HP,
+    # unconscious/dying/stable — the engine models these separately from `dead`, see combat.py
+    # `_ensure_unconscious`/`stable`) so neither a corpse nor an unconscious companion stands in
+    # the rest scene — the same rule the NPC path applies (combat handles the fallen).
+    party_set = {cid for cid in party if isinstance(cid, str) and cid in chars}
+    party_ids = [cid for cid in party_set if not _is_dead_or_downed(chars[cid])]
+    party_ids.sort(key=lambda cid: party.index(cid))  # keep authored party order, deterministic
+
+    # Present non-party NPCs: characters anchored at the current location (npc/companion kind),
+    # id-sorted for a deterministic order. A companion travelling WITH the party is normally in
+    # `party`; one who is merely present at the location (not yet recruited) is placed too.
+    present_npcs = sorted(
+        cid
+        for cid, ch in chars.items()
+        if isinstance(cid, str) and isinstance(ch, dict)
+        and cid not in party_set
+        and _text(ch.get("kind")).lower() in {"npc", "companion"}
+        and _text(ch.get("location_id")) == loc_id and loc_id
+        # a DEAD or DOWNED (0 HP, not yet dead) character never stands in the rest scene — a
+        # corpse or an unconscious companion casually standing at the hearth breaks the inhabited
+        # read this projection exists to create (and combat handles the fallen).
+        and not _is_dead_or_downed(ch)
+    )
+
+    tokens: list[dict] = []
+
+    def _emit(cid: str, cells: list[tuple[int, int]], slot: int, fallback_slot: int) -> None:
+        ch = chars.get(cid)
+        ch = ch if isinstance(ch, dict) else {}
+        name = _text(ch.get("name"), cid)
+        kind = _text(ch.get("kind"))
+        cell = None
+        if slot < len(cells):
+            cell = cells[slot]
+        elif anchor_cells:
+            cell = anchor_cells[fallback_slot % len(anchor_cells)]
+        elif party_cells:
+            cell = party_cells[fallback_slot % len(party_cells)]
+        if cell is None:
+            return
+        tokens.append({
+            "id": cid,
+            "name": name,
+            "initial": _combat_initial(name, cid),
+            "short": f"{_combat_initial(name, cid)} portrait",
+            "team": _combat_team(kind),
+            "kind": kind,
+            "x": int(cell[0]),
+            "y": int(cell[1]),
+            # x/y are a DERIVED render hint (a projection of spawn cells), never authoritative
+            # state — same discipline as the combat tokens (#432). The engine stays sole writer.
+            "positionAuthority": "derived",
+            "pose": "idle",
+        })
+
+    fb = 0
+    for i, cid in enumerate(party_ids):
+        _emit(cid, party_cells, i, fb)
+        fb += 1
+    for j, cid in enumerate(present_npcs):
+        _emit(cid, npc_cells, j, fb)
+        fb += 1
+
+    return {"mode": mode, "tokens": tokens}
+
+
 def build_combat_surface(
     snapshot: dict,
     *,
@@ -2998,6 +3566,16 @@ def build_combat_surface(
 
     return {
         "campaign_id": campaign_id,
+        # The current turn-slot token (round:turn_index:current) — the client echoes it on its
+        # next player-turn POST so a double-click / stale retry rejects (idempotency). Mirrors
+        # combat_loop.turn_token; "" when no active combat. (Placed first for stable key order.)
+        "turnToken": _combat_turn_token(snapshot) if combat_active else "",
+        # M-D: per-turn render-hint scope for the box-rendered 3D-on-2D combat frame. The box driver scp's the
+        # rendered PNG into <state_dir>/images/<safe-scope>/; the viewer's <Img> backdrop polls /image?scope=this
+        # and cache-busts on change. Turn-suffixed so a not-yet-rendered turn 404s to a placeholder rather than a
+        # stale frame. "" when no active combat -> the board falls back to the static location plate. Purely
+        # additive (a derived render hint; engine stays sole writer; no existing field altered).
+        "combatFrameScope": (("combat-frame:" + (campaign_id or "") + ":" + (_combat_turn_token(snapshot) or "").replace(":", "_")) if combat_active else ""),
         "title": _text(snapshot.get("title"), campaign_id or "Open Worlds"),
         "world": _text(snapshot.get("world_id"), "unknown"),
         "dayLabel": _openworlds_day_label(snapshot),
@@ -3010,6 +3588,25 @@ def build_combat_surface(
             "warnings": combat_view.get("warnings", []),
         },
         "grid": _scene_grid_block(snapshot, mode),
+        # P1: the most-recent routed move path (incl. the from-cell) + the impassable cells, so the
+        # read-only renderer can draw the detour around walls/props. Presentation-only; [] == none.
+        "lastPath": (snapshot.get("combat") or {}).get("last_move_path") or [],
+        "impassable": (snapshot.get("combat") or {}).get("grid_impassable") or [],
+        # M-E room transition: the authored doorway cells + their destination room-unit, so the renderer
+        # can mark the doorway and the UI can offer to cross. [] == no doors/connections (today's shape).
+        "doors": _combat_doors(snapshot),
+        # Occlusion: OCCLUDER props (columns/statues) with footprint cells + height band, so the read-only
+        # renderer can place invisible depth-only proxies -> a 3D actor moving BEHIND a painted column is
+        # correctly hidden by it. READS engine-owned scene_grid.props (occluder=true); [] == none (today).
+        "occluders": _combat_occluders(snapshot),
+        # W1 (#1318) SCENE-AT-REST: additive `stage` block — {mode: "rest"|"combat", tokens:[...]}.
+        # In REST mode (no active combat) tokens are a pure deterministic projection of the party +
+        # present NPCs onto scene_grid.spawns cells, so the room renders inhabited before combat. In
+        # COMBAT mode tokens is [] (the authoritative combat tokens are the top-level `tokens`; a
+        # rest token must never leak onto the tactical board). Engine stays sole writer; new key
+        # only — every existing key above/below is byte-unchanged, so combat-mode consumers are
+        # unaffected. See _scene_stage.
+        "stage": _scene_stage(snapshot, combat_active),
         "tokens": tokens,
         "initiative": initiative,
         "zones": zones,
@@ -6863,8 +7460,25 @@ def build_action_model(snapshot: dict, *, live: bool, is_live_view: bool) -> dic
                 "id": "combat",
                 "label": "Combat",
                 "actions": [
+                    # #598: Move/Cast/Item wired to the SAME action-economy reasons Attack already
+                    # uses (turn_action_reason("action")) — all four spend the actor's action slot,
+                    # so they enable/disable together, exactly the way the "action spent" greying
+                    # already worked for Attack. Cast/Item ride the free-text DM-resolved lane
+                    # (kind+name, sanitize_move's "everything else needs text or name" branch —
+                    # see viewer/server.py:189) — the SAME lane Bonus/Reaction use today, not the
+                    # engine on-turn Intent branch (which only knows move_to_cell / on-turn attack /
+                    # end_turn). Move carries only `kind` (no `name`/`target`) because
+                    # `move_to_zone` is a _TARGET_ONLY_KIND — sanitize_move requires a `target`
+                    # zone name sanitize_move can't guess server-side; the client fills `target`
+                    # from the zone the player clicks (mirrors the CombatGridBoard cell-click
+                    # pattern) before POSTing, same as move_to_cell fills x/y client-side. This is
+                    # a WIRE of an already-whitelisted kind (_MOVE_KINDS has carried
+                    # "cast"/"use_item"/"move_to_zone" since before #598), not a new verb.
+                    _action_item("move", "Move", kind="move_to_zone", detail="Move to another zone", disabled_reason=turn_action_reason("action")),
                     _action_item("attack", "Attack", kind="attack", name="Attack", detail="Strike a foe", disabled_reason=turn_action_reason("action")),
+                    _action_item("cast", "Cast", kind="cast", name="Cast a Spell", detail="Channel magic", disabled_reason=turn_action_reason("action")),
                     _action_item("bonus-action", "Bonus", kind="combat", name="Bonus Action", detail="Quick extra move", disabled_reason=turn_action_reason("bonus")),
+                    _action_item("item", "Item", kind="use_item", name="Use an Item", detail="Use inventory item", disabled_reason=turn_action_reason("action")),
                     _action_item("reaction", "Reaction", kind="combat", name="Reaction", detail="Respond fast", disabled_reason=reaction_reason()),
                 ],
             },
@@ -8842,6 +9456,24 @@ class _Handler(BaseHTTPRequestHandler):
         move, why = sanitize_move(payload)
         if move is None:
             self._json({"ok": False, "reason": why})
+            return
+        # GRID-COMBAT PLAYER-TURN LANE (S1 keystone): a `move_to_cell` (or an on-turn `attack`
+        # carrying a target_id) is resolved DETERMINISTICALLY by the engine's player-turn arbiter
+        # in-process (the SAME sole-writer-preserving bridge /save-slot uses), NOT appended for
+        # the DM agent to narrate. The arbiter validates turn-ownership, charges the budget, runs
+        # OAs, advances initiative, and we re-emit build_combat_surface. The campaign is bound to
+        # the live run (the cross-campaign refusal above already ran). Every OTHER kind keeps the
+        # append-only intent-log behavior (byte-identical to today).
+        # M-E ROOM-TRANSITION LANE: a `cross_door` is engine-resolved in-process (engine.cross_door ->
+        # travel_to under the engine lock), NOT appended for the DM. Gated on combat being resolved.
+        if move.get("kind") == "cross_door":
+            self._json(_resolve_cross_door(self.campaign_id, move))
+            return
+        is_combat_cell = move.get("kind") in ("move_to_cell", "end_turn") or (
+            move.get("kind") == "attack" and "target_id" in move
+        )
+        if is_combat_cell:
+            self._json(_resolve_player_combat_turn(self.campaign_id, move, live=True))
             return
         try:
             dest.parent.mkdir(parents=True, exist_ok=True)
