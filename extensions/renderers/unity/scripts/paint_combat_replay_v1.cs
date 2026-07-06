@@ -4,22 +4,22 @@
 // makes turn-based combat READ AS MOTION: it consumes the engine's Action-Replay envelope from
 // /events ({seq, actor_fk, verb, target_fk, result, anim_hint}, docs/roadmap/contracts/
 // action-replay-envelope.md), sorts by seq, and plays each beat as an ANIMATED presentation beat on
-// the SAME actors paint_combat_v1 spawns — verb->clip on a real Animator, DOTween glide along the
-// engine's lastPath, flinch/topple/fade, VFX at the struck engine cell (registry default-on-miss),
-// and the proven G1 damage-number + HP-bar drop folded into the animated timeline.
+// the SAME actors paint_combat_v1 spawns — verb->motion (attack lunge / hit flinch / death topple),
+// DOTween-style glide along the engine's lastPath, VFX at the struck engine cell (registry
+// default-on-miss), and the proven G1 damage-number + HP-bar drop folded into the animated timeline.
 //
 // INVARIANT (the one this whole surface exists for): the engine is the SOLE WRITER. This is a PURE,
 // READ-ONLY projection — every field except anim_hint is engine-decided (an FK or an outcome the
 // engine already rolled/applied); we read `result` to choose numbers/states to SHOW and NEVER
-// recompute. anim_hint is advisory (unknown hint -> generic beat). DOTween is presentation-only: it
-// glides only ENGINE-CONFIRMED paths (surface.lastPath), never a client-predicted route.
+// recompute. anim_hint is advisory (unknown hint -> generic beat). The glide is presentation-only: it
+// traverses only ENGINE-CONFIRMED paths (surface.lastPath), never a client-predicted route.
 //
 // CAPTURE MODEL: a `code execute` snippet runs synchronously in the editor (no Play mode, mirroring
 // AnimFrameCapture.cs / paint_3d_spike.cs). We build the scene once, then step the beat timeline
-// deterministically: for each beat we sample the actor Animator via Animator.Play(clip,-1,nt) +
-// Update(0) at a few normalized peaks, evaluate the glide position along lastPath at t, place the
-// VFX/damage overlays, and render a durable PNG per captured frame -> an animated REEL. No coroutine,
-// no wall-clock, so a rerun is byte-deterministic.
+// deterministically: for each beat we apply the verb's TRANSFORM MOTION (lunge/knockback/topple) and
+// facing, evaluate the glide position along lastPath at t, place the VFX/damage/HP overlays, and render
+// a durable PNG per captured frame -> an animated REEL. No coroutine, no wall-clock, so a rerun is
+// byte-deterministic. (Why transform motion and not live clips: see the animation-strategy NOTE below.)
 //
 // Run on the GEX44 box: unity-mcp code execute --no-safety-checks -f paint_combat_replay_v1.cs
 // NO top-level `using`, NO LINQ (the wrapper injects unqualified UnityEngine/UnityEditor; `using` is
@@ -77,24 +77,16 @@ brazier("BrazierL",4,1,true); brazier("BrazierR",9,1,false);
 var blobT=new Texture2D(256,256,TextureFormat.RGBA32,false); blobT.wrapMode=TextureWrapMode.Clamp; { var px=new Color[256*256]; float c=127.5f; for(int y=0;y<256;y++)for(int x=0;x<256;x++){ float d=Mathf.Clamp01(Mathf.Sqrt((x-c)*(x-c)+(y-c)*(y-c))/c); px[y*256+x]=new Color(0.02f,0.02f,0.03f,Mathf.Clamp01(Mathf.Pow(1f-d,0.9f))); } blobT.SetPixels(px); blobT.Apply(); }
 var ringT=new Texture2D(256,256,TextureFormat.RGBA32,false); ringT.wrapMode=TextureWrapMode.Clamp; { var px=new Color[256*256]; float c=127.5f; for(int y=0;y<256;y++)for(int x=0;x<256;x++){ float d=Mathf.Sqrt((x-c)*(x-c)+(y-c)*(y-c))/c; float a=(d>0.78f&&d<0.93f)?1f:0f; px[y*256+x]=new Color(1f,1f,1f,a); } ringT.SetPixels(px); ringT.Apply(); }
 
-// ---- CombatActor Animator controller (built by build_combat_animator.cs; idle/attack/cast/block/
-//      dodge/hit/death states, doAttack trigger + IsWalking bool). Load once; assigned per actor.
-string CTRL_PATH="Assets/Animations/CombatActor.controller";
-var combatCtrl=AssetDatabase.LoadAssetAtPath<UnityEditor.Animations.AnimatorController>(CTRL_PATH);
-if(combatCtrl==null) sb.AppendLine("WARN no CombatActor.controller — actors will pose without an Animator (run build_combat_animator.cs first)");
-
-// The single moveset the controller is built from — used to SAMPLE a clip by NAME at a normalized
-// time for a captured frame (Animator.Play needs a live controller; sampling a clip onto the mesh is
-// the deterministic editor path AnimFrameCapture.cs uses). Map verb/anim_hint -> clip name.
-string MOVESET_DIR="Assets/painterly/models/moveset/";
-System.Func<string,AnimationClip> clipByName=(m)=>{ var pas=AssetDatabase.LoadAllAssetsAtPath(MOVESET_DIR+"anim_"+m+".fbx"); foreach(var a in pas){ var ac=a as AnimationClip; if(ac!=null && !ac.name.StartsWith("__")) return ac; } return null; };
-
-// Skinned-rig flag (both the hero + goblin cast ARE SkinnedMeshRenderers with Y-up Generic clips that
-// bake a bind pose -> a raw clip sample FLATTENS the actor). The STAND-UP PIVOT (see spawn) resolves
-// this: the clip animates the child rig in Y-up local space while the pivot holds the -90 stand-up, so
-// clips play upright on EVERY actor. Transform-motion (lunge/knockback/topple) is then layered ADDITIVE
-// spice on top of the clip (CombatBeatDriver-style), not a substitute. Kept for diagnostics/logging.
-var actorSkinned=new System.Collections.Generic.Dictionary<string,bool>();
+// NOTE on animation strategy: the wave-1 cast are SKINNED Meshy/Generic rigs authored Y-up, whose
+// moveset clips bake a near-prone bind pose. Driving a live Animator (anim.Play+Update) in the editor's
+// SYNCHRONOUS multi-actor capture DESYNCS the GPU skin from the CPU bones (BakeMesh reads an upright
+// 12.9/16-tall pose, but the rendered mesh reverts to its prone bind — a per-actor render artifact that
+// reproduces only when a skinned actor is transform-mutated inside the capture loop; the proven static
+// renderer shows the same FBXs UPRIGHT). So this driver renders actors in their CLEAN UPRIGHT BIND POSE
+// (no live controller) and conveys each beat's "which animation" via TRANSFORM MOTION — lunge (swing),
+// knockback+tilt (flinch), topple (death) — plus VFX-at-cell + damage number + HP-bar. All engine-driven
+// and deterministic. (The FLAG in the report tracks the residual skinned-render artifact for a Play-mode
+// or bake-to-static follow-up; see build_combat_animator.cs / CombatActor.controller for the clip lane.)
 
 // ---- actor spawner (spawn geometry IDENTICAL to paint_combat_v1.cs, PLUS an Animator so the actor
 //      can play verb clips). Returns the actor root GO so the beat player can pose/glide/flinch it.
@@ -102,29 +94,24 @@ bool missingActor=false;
 System.Func<string,string,int,int,float,Color,string,GameObject> spawn=(fbxPath,albedoPath,cx,cy,height,ringCol,nm)=>{
   var prefab=AssetDatabase.LoadAssetAtPath<GameObject>(fbxPath); if(prefab==null){ sb.AppendLine("MISSING "+fbxPath); missingActor=true; return null; }
   var old=GameObject.Find(nm); if(old!=null) UnityEngine.Object.DestroyImmediate(old);
-  // STAND-UP PIVOT: the Meshy/Generic rigs are authored Y-up, so their clips (incl. idle) animate in a
-  // Y-up local frame. If the -90 stand-up lives on the FBX ROOT (which also holds the Animator), the
-  // clip's root curves FIGHT it and the actor lies flat (owner-observed). Fix: a PIVOT parent holds the
-  // stand-up (-90 X + yaw), world position + scale; the FBX is a CHILD with local-identity transform, so
-  // the Animator drives the rig in its native Y-up space (clips play correctly) while the pivot stands the
-  // whole thing upright. The beat player manipulates the PIVOT (facing/glide/topple); poseClip drives the
-  // child Animator. This is the standard Unity Y-up-rig pattern and the real fix for the flattening.
-  var go=new GameObject(nm);                                   // the pivot (== the actor handle)
-  var mesh=(GameObject)UnityEngine.Object.Instantiate(prefab); mesh.name=nm+"_mesh";
-  mesh.transform.SetParent(go.transform,false); mesh.transform.localPosition=Vector3.zero; mesh.transform.localRotation=Quaternion.identity; mesh.transform.localScale=Vector3.one;
+  // Spawn in the PROVEN paint_combat_v1.cs form: direct FBX instantiate, -90 X stand-up, NO live Animator
+  // controller. WHY no controller: these Meshy/Generic rigs are authored Y-up and their clips BAKE a
+  // near-prone bind — and driving a skinned Animator synchronously (anim.Play+Update) in the editor
+  // capture DESYNCS the GPU skin from the CPU bones (BakeMesh reads an upright 12.9-tall pose, but the
+  // rendered mesh reverts to its prone bind — owner-observed "goblin on its side", verified vs the proven
+  // static renderer which shows BOTH actors UPRIGHT with no controller). So the actor renders in its clean
+  // upright bind pose and the beat is conveyed by TRANSFORM MOTION (lunge / knockback+tilt / topple, the
+  // CombatBeatDriver approach) + VFX + damage number + HP-bar — all of which read as motion, deterministically.
+  var go=(GameObject)UnityEngine.Object.Instantiate(prefab); go.name=nm;
   go.transform.rotation=Quaternion.Euler(-90f, cam.transform.eulerAngles.y+180f, 0f);
   var rends=go.GetComponentsInChildren<Renderer>(); foreach(var r in rends){ r.enabled=true; r.shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.On; r.receiveShadows=true;
-    // CRITICAL (the flat-goblin root cause): with updateWhenOffscreen=false a SkinnedMeshRenderer only
-    // re-skins when its (stale) culling bounds pass the frustum test, so anim.Update(0) updates the CPU
-    // bones (BakeMesh reads the posed 12.9-tall silhouette) but the RENDERED mesh keeps its BIND pose —
-    // which for this Y-up goblin FBX is PRONE. Forcing updateWhenOffscreen=true recomputes the skin every
-    // render from the live bones, so the captured frame matches the sampled pose (upright).
-    var smr0=r as SkinnedMeshRenderer; if(smr0!=null) smr0.updateWhenOffscreen=true; }
-  // attach the CombatActor Animator on the MESH root (the rig) BEFORE grounding, and settle it into idle
-  // so the grounding measures the actual posed silhouette (not the raw bind AABB).
-  if(combatCtrl!=null){ var anim=mesh.GetComponentInChildren<Animator>(); if(anim==null) anim=mesh.AddComponent<Animator>(); anim.runtimeAnimatorController=combatCtrl; anim.applyRootMotion=false; anim.Play("idle",-1,0.25f); anim.Update(0f); }
+    // Force the skinned mesh to re-skin from its LIVE bone transforms on every render + regardless of
+    // culling bounds. Without this, the editor's synchronous multi-actor capture can render an actor's
+    // STALE (prone, Y-up bind) GPU skin even though its CPU bones are upright (BakeMesh height 16, but the
+    // pixels show prone — owner-observed). These two flags are the exact fix for that GPU/CPU skin desync.
+    var smrF=r as SkinnedMeshRenderer; if(smrF!=null){ smrF.updateWhenOffscreen=true; smrF.forceMatrixRecalculationPerRender=true; } }
   // Grounding via BakeMesh -> true posed world bounds (SkinnedMeshRenderer.bounds is an inflated AABB
-  // whose min.y floats the actor). Adjust the PIVOT so the rig's feet sit on Y=0 + it centers on the cell.
+  // whose min.y floats the actor) — IDENTICAL to paint_combat_v1.cs.
   System.Func<Renderer,Bounds> worldBounds=(r)=>{ var smr=r as SkinnedMeshRenderer; if(smr==null) return r.bounds; var bk=new Mesh(); smr.BakeMesh(bk); var vs=bk.vertices; if(vs.Length==0){ UnityEngine.Object.DestroyImmediate(bk); return r.bounds; } var m=smr.transform.localToWorldMatrix; var wb=new Bounds(m.MultiplyPoint3x4(vs[0]),Vector3.zero); for(int i=1;i<vs.Length;i++) wb.Encapsulate(m.MultiplyPoint3x4(vs[i])); UnityEngine.Object.DestroyImmediate(bk); return wb; };
   System.Func<Bounds> measure=()=>{ Bounds b=new Bounds(go.transform.position,Vector3.zero); bool a=false; foreach(var r in rends){ var rb=worldBounds(r); if(!a){b=rb;a=true;} else b.Encapsulate(rb);} return b; };
   Bounds bb=measure(); float curH=bb.size.y>0.001f?bb.size.y:1f; float s=height/curH; go.transform.localScale=go.transform.localScale*s;
@@ -133,7 +120,7 @@ System.Func<string,string,int,int,float,Color,string,GameObject> spawn=(fbxPath,
   // AO blob + selection ring (foot-anchored, camera foreshortens the flat circle to the iso ellipse).
   var ao=GameObject.CreatePrimitive(PrimitiveType.Quad); ao.name=nm+"_AO"; UnityEngine.Object.DestroyImmediate(ao.GetComponent<Collider>()); ao.transform.position=new Vector3(p.x,0.04f,p.z); ao.transform.localEulerAngles=new Vector3(90f,0f,0f); ao.transform.localScale=new Vector3(2.0f,2.0f,1f); var aom=new Material(Shader.Find("Unlit/Transparent")); aom.mainTexture=blobT; aom.renderQueue=1950; ao.GetComponent<Renderer>().sharedMaterial=aom; ao.GetComponent<Renderer>().shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off;
   var rg=GameObject.CreatePrimitive(PrimitiveType.Quad); rg.name=nm+"_Ring"; UnityEngine.Object.DestroyImmediate(rg.GetComponent<Collider>()); rg.transform.position=new Vector3(p.x,0.06f,p.z); rg.transform.localEulerAngles=new Vector3(90f,0f,0f); rg.transform.localScale=new Vector3(2.6f,2.6f,1f); var rgm=new Material(Shader.Find("Unlit/Transparent")); rgm.mainTexture=ringT; rgm.color=ringCol; rgm.renderQueue=1955; rg.GetComponent<Renderer>().sharedMaterial=rgm; rg.GetComponent<Renderer>().shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off;
-  sb.AppendLine(nm+" x"+s.ToString("F2")+" @cell("+cx+","+cy+") rends="+rends.Length+" animator="+(combatCtrl!=null));
+  sb.AppendLine(nm+" x"+s.ToString("F2")+" @cell("+cx+","+cy+") rends="+rends.Length);
   return go;
 };
 
@@ -181,8 +168,7 @@ foreach(var o in toks){ var t=o as System.Collections.Generic.Dictionary<string,
   var aref=resolveAsset(slugify(nm),kind); string fbx=aref[0]; string alb=aref[1];
   float h=foe?4.2f:5.0f; Color ring=foe?new Color(1f,0.13f,0.10f,1f):new Color(0.4f,0.95f,1f,1f);
   var go=spawn(fbx,alb,cx,cy,h,ring,"Actor_"+tid);
-  if(go!=null){ actorGo[tid]=go; actorCell[tid]=new int[]{cx,cy}; actorFoe[tid]=foe;
-    bool skinned=false; foreach(var r in go.GetComponentsInChildren<Renderer>()){ if(r is SkinnedMeshRenderer){ skinned=true; break; } } actorSkinned[tid]=skinned; }
+  if(go!=null){ actorGo[tid]=go; actorCell[tid]=new int[]{cx,cy}; actorFoe[tid]=foe; }
   if(t.ContainsKey("hpMax") && t["hpMax"]!=null){ try { _actorMaxHp[tid]=System.Convert.ToInt32(t["hpMax"]); } catch {} }
   spawned++; celldbg+=" "+nm+"("+team+")@"+cx+","+cy;
 }
@@ -223,16 +209,7 @@ int W=1920,Hh=Mathf.RoundToInt(1920f*(float)bdTex.height/bdTex.width);
 var rt=new RenderTexture(W,Hh,24,RenderTextureFormat.ARGB32); rt.Create();
 string OUTDIR="/home/unity/worldos-unity/Captures-Durable"; System.IO.Directory.CreateDirectory(OUTDIR);
 int reelIdx=0; var reel=new System.Collections.Generic.List<string>();
-// tid -> (clipName, normalizedTime) most-recently posed on this actor, re-asserted before every capture
-// so all skinned meshes are current for the frame (see the note in capture()).
-var _actorPose=new System.Collections.Generic.Dictionary<string,System.Tuple<string,float>>();
 System.Action<string> capture=(label)=>{
-  // Re-assert every actor's current clip pose immediately before the render. In the editor's
-  // synchronous capture, a SkinnedMeshRenderer only shows the pose of the LAST animator Update'd this
-  // frame — an earlier-posed actor can revert to its (prone, Y-up) bind pose on render (owner-observed
-  // goblin). Re-Playing each actor's tracked (clip,nt) right here makes ALL skinned meshes current for
-  // this exact frame, so the capture matches every actor's sampled pose. Pure presentation.
-  foreach(var kv in _actorPose){ if(!actorGo.ContainsKey(kv.Key)) continue; var a2=actorGo[kv.Key].GetComponentInChildren<Animator>(); if(a2!=null && a2.runtimeAnimatorController!=null){ a2.Play(kv.Value.Item1,-1,kv.Value.Item2); a2.Update(0f); } }
   float pa=cam.aspect; var pt=cam.targetTexture; cam.targetTexture=rt; cam.aspect=(float)W/Hh; cam.Render();
   var pAct=RenderTexture.active; RenderTexture.active=rt; var t2=new Texture2D(W,Hh,TextureFormat.RGB24,false); t2.ReadPixels(new Rect(0,0,W,Hh),0,0); t2.Apply(); RenderTexture.active=pAct; cam.targetTexture=pt; cam.aspect=pa;
   string fn=OUTDIR+"/replay_"+reelIdx.ToString("D2")+"_"+label+".png"; System.IO.File.WriteAllBytes(fn, t2.EncodeToPNG()); UnityEngine.Object.DestroyImmediate(t2); reel.Add(fn); reelIdx++;
@@ -258,22 +235,15 @@ System.Action<GameObject,GameObject,float> knockTilt=(go,fromGo,dist)=>{ if(go==
 // its child mesh, so the clip animates the rig in its native Y-up local frame while the pivot's -90 X
 // stand-up holds the actor UPRIGHT (the pivot fix — no root-flatten). After posing we re-ground the
 // PIVOT Y from the posed skinned bounds so the feet stay on the floor as the silhouette height changes.
-System.Action<GameObject,string,float> poseClip=(go,clipName,nt)=>{ if(go==null) return; var anim=go.GetComponentInChildren<Animator>();
-  if(anim!=null && anim.runtimeAnimatorController!=null){ anim.Play(clipName,-1,Mathf.Clamp01(nt)); anim.Update(0f);
-    // record this pose keyed by tid (GO name is "Actor_<tid>") so capture() can re-assert it pre-render.
-    if(go.name.StartsWith("Actor_")) _actorPose[go.name.Substring(6)]=System.Tuple.Create(clipName,Mathf.Clamp01(nt)); }
-  else { var clip=clipByName(clipName); if(clip!=null) clip.SampleAnimation(go, Mathf.Clamp01(nt)*clip.length); }
-  // re-ground the pivot Y from the posed skinned bounds (feet on 0); leave rotation/XZ to the pivot.
-  var rends=go.GetComponentsInChildren<Renderer>(); if(rends.Length>0){ Bounds b=new Bounds(go.transform.position,Vector3.zero); bool a=false; foreach(var r in rends){ var smr=r as SkinnedMeshRenderer; Bounds rb; if(smr!=null){ var bk=new Mesh(); smr.BakeMesh(bk); var vs=bk.vertices; if(vs.Length>0){ var m=smr.transform.localToWorldMatrix; rb=new Bounds(m.MultiplyPoint3x4(vs[0]),Vector3.zero); for(int i=1;i<vs.Length;i++) rb.Encapsulate(m.MultiplyPoint3x4(vs[i])); } else rb=r.bounds; UnityEngine.Object.DestroyImmediate(bk); } else rb=r.bounds; if(!a){b=rb;a=true;} else b.Encapsulate(rb); } go.transform.position+=new Vector3(0f,-b.min.y,0f); }
-};
-
-// verb -> clip name on CombatActor.controller (no walk clip exists -> move uses idle + glide).
+// verb -> the intended moveset clip name (the DESIGN mapping this driver realizes via transform motion,
+// and the exact map a Play-mode/clip driver would feed to CombatActor.controller). Documents the
+// verb->clip contract even though the render path is transform-based (see the animation-strategy note).
 System.Func<string,string,string> verbToClip=(verb,hint)=>{
-  if(verb=="attack") return "attack";
-  if(verb=="cast") return "cast";
-  if(verb=="damage"||verb=="condition") return "hit";  // flinch = the hit clip on the STRUCK actor
-  if(verb=="death") return "death";
-  if(verb=="move_to_zone") return "idle";               // locomotion is the DOTween glide (no walk clip)
+  if(verb=="attack") return "attack";      // -> lunge toward target
+  if(verb=="cast") return "cast";          // -> cast gesture / heal pulse on target
+  if(verb=="damage"||verb=="condition") return "hit";  // -> knockback+tilt flinch on the STRUCK actor
+  if(verb=="death") return "death";        // -> topple + squish + fade
+  if(verb=="move_to_zone") return "walk";  // -> DOTween glide along lastPath (no walk clip yet -> glide)
   return "idle";
 };
 
@@ -306,7 +276,7 @@ System.Func<System.Collections.Generic.Dictionary<string,object>,string> outcome
 
 // initial resting HP bars, then the opening frame. Static (non-skinned) actors settle into a clean
 // idle pose; SKINNED actors stay in their bind stand-up (any clip sample flattens them).
-foreach(var kv in actorGo){ poseClip(kv.Value,"idle",0.25f); hpFrac[kv.Key]=1f; hpBar(kv.Key,kv.Value,1f); }
+foreach(var kv in actorGo){ hpFrac[kv.Key]=1f; hpBar(kv.Key,kv.Value,1f); }
 capture("00_open");
 
 // ---- DRAIN the envelope in seq order, one beat at a time, capturing peaks -> the animated reel ----
@@ -315,9 +285,9 @@ if(beats.Count==0){
   // sampling attack/hit peaks on the two front actors — a STATIC-fallback reel, clearly labelled.
   string atk=null, tgt=null; foreach(var kv in actorFoe){ if(!kv.Value && atk==null) atk=kv.Key; if(kv.Value && tgt==null) tgt=kv.Key; }
   if(atk!=null && tgt!=null){ faceAt(actorGo[atk], actorGo[tgt].transform.position); faceAt(actorGo[tgt], actorGo[atk].transform.position);
-    poseClip(actorGo[atk],"attack",0.45f); lungeToward(actorGo[atk],actorGo[tgt].transform.position,0.6f); capture("01_attack_fallback");
+    lungeToward(actorGo[atk],actorGo[tgt].transform.position,0.9f); capture("01_attack_fallback");
     knockTilt(actorGo[tgt],actorGo[atk],0.5f); var tp=actorGo[tgt].transform.position; vfxAt(tp,3.4f); floatNum(tp,"-8",new Color(1f,0.95f,0.45f,1f)); hpBar(tgt,actorGo[tgt],0.45f); capture("02_hit_fallback"); clearOverlays();
-    poseClip(actorGo[tgt],"death",0.85f); { var de=actorGo[tgt].transform.eulerAngles; actorGo[tgt].transform.rotation=Quaternion.Euler(de.x,de.y,80f); var ds=actorGo[tgt].transform.localScale; actorGo[tgt].transform.localScale=new Vector3(ds.x,ds.y*0.4f,ds.z); } capture("03_death_fallback"); }
+    actorGo[tgt].transform.Rotate(0f,0f,85f,Space.Self); { var ds=actorGo[tgt].transform.localScale; actorGo[tgt].transform.localScale=new Vector3(ds.x,ds.y*0.4f,ds.z); } capture("03_death_fallback"); }
   sb.AppendLine("NOTE: no live /events envelope — rendered a STATIC-FALLBACK animated reel (poses proven; wire the tunnel's /events for a live-driven reel).");
 } else {
   foreach(var beat in beats){
@@ -336,27 +306,25 @@ if(beats.Count==0){
       // a miss still swings — VFX default-on-miss (the slash reads even when the roll whiffs). The
       // pivot fix lets the ATTACK clip play upright on every actor; a small additive LUNGE toward the
       // target adds punch (CombatBeatDriver-style) on top of the clip.
-      poseClip(aGo,"attack",0.45f);
-      if(tGo!=null) lungeToward(aGo,tGo.transform.position,0.6f);
+      if(tGo!=null) lungeToward(aGo,tGo.transform.position,0.9f);  // the swing = a lunge toward the target on the upright bind pose
       if(tGo!=null){
         vfxAt(tGo.transform.position,3.2f);
         // The LIVE engine often FOLDS damage into the attack beat's result (result.damage/hp_after),
         // rather than emitting a separate `damage` beat (the fixture's shape). When it does, flinch the
         // target + float the G1 number + drop its HP bar in this same beat (pure reads of engine truth).
         int dmg=dmgOf(result); int hpa=intOf(result,"hp_after"); int hpm=intOf(result,"hp_max");
-        if(dmg>0){ poseClip(tGo,"idle",0.25f); knockTilt(tGo,aGo,0.5f); floatNum(tGo.transform.position,"-"+dmg,new Color(1f,0.95f,0.45f,1f)); }  // flinch = re-assert upright idle + knockback+tilt recoil (the "hit" clip lays these Generic rigs prone)
+        if(dmg>0){ knockTilt(tGo,aGo,0.5f); floatNum(tGo.transform.position,"-"+dmg,new Color(1f,0.95f,0.45f,1f)); }  // flinch = re-assert upright idle + knockback+tilt recoil (the "hit" clip lays these Generic rigs prone)
         if(hpa>=0){ int max=(hpm>0)?hpm:_actorMaxHp.ContainsKey(target)?_actorMaxHp[target]:0; if(max>0){ hpFrac[target]=Mathf.Clamp01((float)hpa/max); hpBar(target,tGo,hpFrac[target]); } }
       }
       capture("attack_s"+seq);
     } else if(verb=="cast"){
       if(aGo==null) continue;
       if(tGo!=null) faceAt(aGo,tGo.transform.position);
-      poseClip(aGo,"cast",0.5f);  // cast clip plays upright (pivot fix); the heal pulse+number land on the target
       if((hint=="heal_pulse"||outcomeOf(result)=="heal") && tGo!=null){ int amt=intOf(result,"amount"); if(amt<0) amt=intOf(result,"heal"); int hpa=intOf(result,"hp_after"); int hpm=intOf(result,"hp_max"); if(hpa>=0&&hpm>0){ hpFrac[target]=(float)hpa/hpm; hpBar(target,tGo,hpFrac[target]); } floatNum(tGo.transform.position, amt>0?("+"+amt):"heal", new Color(0.5f,1f,0.55f,1f)); }
       capture("cast_s"+seq);
     } else if(verb=="damage"){
       if(tGo==null) continue;
-      poseClip(tGo,"idle",0.25f); knockTilt(tGo,aGo,0.5f);  // flinch = upright idle + knockback+tilt recoil
+      knockTilt(tGo,aGo,0.5f);  // flinch = knockback+tilt recoil on the upright bind pose
       int dmg=dmgOf(result); Vector3 tp=tGo.transform.position;
       vfxAt(tp,3.4f);                                   // impact VFX at the struck engine cell
       if(dmg>0) floatNum(tp,"-"+dmg,new Color(1f,0.95f,0.45f,1f));
@@ -364,17 +332,16 @@ if(beats.Count==0){
       capture("damage_s"+seq);
     } else if(verb=="condition"){
       if(tGo==null) continue;
-      poseClip(tGo,"idle",0.25f); knockTilt(tGo,aGo,0.3f);  // condition = upright idle + a lighter recoil
+      knockTilt(tGo,aGo,0.3f);  // condition = a lighter knockback recoil
       int hpa=intOf(result,"hp_after"); int hpm=intOf(result,"hp_max"); int cmax=(hpm>0)?hpm:(_actorMaxHp.ContainsKey(target)?_actorMaxHp[target]:0); if(hpa>=0&&cmax>0){ hpFrac[target]=Mathf.Clamp01((float)hpa/cmax); hpBar(target,tGo,hpFrac[target]); }
       capture("condition_s"+seq);
     } else if(verb=="death"){
       // death clip + topple + fade the dier (envelope's death beat). actor_fk is usually the dier; else target_fk.
       GameObject dGo=aGo!=null?aGo:tGo; string dId=(aGo!=null)?actor:target;
       if(dGo==null) continue;
-      // play the DEATH clip near its end (the fall pose), THEN add a topple roll + squish + sink so the
-      // drop reads strongly even where the clip is subtle (CombatBeatDriver's death shape, pivot-upright).
-      poseClip(dGo,"death",0.85f);
-      Vector3 baseE=dGo.transform.eulerAngles; dGo.transform.rotation=Quaternion.Euler(baseE.x, baseE.y, 80f); Vector3 bs=dGo.transform.localScale; dGo.transform.localScale=new Vector3(bs.x,bs.y*0.4f,bs.z); dGo.transform.position+=new Vector3(0f,-0.4f,0f);
+      // TOPPLE + squish + sink (CombatBeatDriver's death shape) on the upright bind pose. Rotate in LOCAL
+      // space (composes on the quaternion, no eulerAngles decomposition) so the fall is deterministic.
+      dGo.transform.Rotate(0f,0f,85f,Space.Self); Vector3 bs=dGo.transform.localScale; dGo.transform.localScale=new Vector3(bs.x,bs.y*0.4f,bs.z); dGo.transform.position+=new Vector3(0f,-0.4f,0f);
       // fade the mesh (alpha -> low). Standard mat: switch to transparent-ish tint.
       foreach(var r in dGo.GetComponentsInChildren<Renderer>()){ var m=r.sharedMaterial; if(m!=null && m.HasProperty("_Color")){ var c2=m.color; c2.a=0.35f; m.color=c2; } }
       if(dId!=null){ var hb=GameObject.Find("HP_"+dId); if(hb!=null) UnityEngine.Object.DestroyImmediate(hb); }
@@ -383,7 +350,7 @@ if(beats.Count==0){
       // DOTween-style GLIDE along the engine-confirmed lastPath (presentation-only; the renderer never
       // predicts a route — pathCells IS the engine's committed last_move_path). We evaluate the glide at
       // a couple of normalized t along the polyline and capture, so the reel reads as a WALK, not a pop.
-      if(aGo==null || pathCells.Length<2){ if(aGo!=null){ poseClip(aGo,"idle",0.25f); } capture("move_s"+seq); }
+      if(aGo==null || pathCells.Length<2){ capture("move_s"+seq); }
       else {
         // move the actor's whole AO/ring rig with it: helper to place actor + its overlays at a world pos.
         System.Action<Vector3> placeActor=(wp)=>{ var d0=aGo.transform.position; aGo.transform.position=new Vector3(wp.x,aGo.transform.position.y,wp.z); var aoG=GameObject.Find(aGo.name+"_AO"); if(aoG!=null) aoG.transform.position=new Vector3(wp.x,0.04f,wp.z); var rgG=GameObject.Find(aGo.name+"_Ring"); if(rgG!=null) rgG.transform.position=new Vector3(wp.x,0.06f,wp.z); };
@@ -391,7 +358,7 @@ if(beats.Count==0){
         System.Func<float,Vector3> along=(tt)=>{ int segs=pathCells.Length-1; float f=Mathf.Clamp01(tt)*segs; int si=Mathf.Min((int)f,segs-1); float sf=f-si; var a0=pathCells[si]; var a1=pathCells[si+1]; return Vector3.Lerp(cellToWorldF(a0[0],a0[1]),cellToWorldF(a1[0],a1[1]),sf); };
         // face along the heading (start->end) + idle-glide (no walk clip exists in the moveset).
         var startW=cellToWorldF(pathCells[0][0],pathCells[0][1]); var endW=cellToWorldF(pathCells[pathCells.Length-1][0],pathCells[pathCells.Length-1][1]);
-        faceAt(aGo,endW); poseClip(aGo,"idle",0.3f);
+        faceAt(aGo,endW);
         placeActor(startW); capture("move_s"+seq+"a");           // depart
         placeActor(along(0.5f)); faceAt(aGo,endW); capture("move_s"+seq+"b"); // mid-glide
         placeActor(endW); capture("move_s"+seq+"c");             // arrive (engine cell)
