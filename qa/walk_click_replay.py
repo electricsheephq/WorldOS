@@ -23,6 +23,10 @@ ASSERTS (the acceptance bundle for #1350):
       surface reload glides the token to the confirmed destination (no client prediction).
   A4  DOOR WALK-THROUGH — clicking a door cell (walk_to_cell onto the doorway, then cross_door)
       ends in the LINKED room: /combat-surface reports the new current location + its own grid.
+  A5  CLICK-TO-TALK (W3 #1363) — a present NPC renders as a rest token tagged rest_role "npc";
+      posting `parley_approach` walks the lead PC ADJACENT (engine generate_parley_options
+      approach=True → walk_to), lands a rest_walk glide beat, and the Dialogue screen's
+      /parley-surface?npc=<id> opens the parley AT the actor with the NPC's stage_cell echoed.
 
 Engine = SOLE WRITER: this script only SEEDS (via server.* under the engine lock) and then drives
 the viewer over HTTP; it never writes campaign state directly during the replay.
@@ -109,11 +113,22 @@ def seed(state_dir: str) -> dict:
         campaign_id=CID, name="Aldric", kind="player", race="human", class_name="fighter", level=3,
         apply_srd_defaults=True, add_to_party=True,
     )
-    # place the hero on a known start cell (no combat — a pure rest scene).
+    # W3 (#1363): a present NON-party NPC staged in room A — the click-to-TALK interlocutor. Anchored
+    # at the current location so _scene_stage projects it as a rest token (rest_role "npc").
+    npc = server.create_character(
+        campaign_id=CID, name="Innkeeper Bram", kind="npc", max_hp=12,
+    )
+    server.set_attitude(CID, npc["id"], attitude="indifferent", value=0)
+    # place the hero + NPC on known start cells (no combat — a pure rest scene). The NPC sits at
+    # (6,1) across the room; the hero at (1,4). approach-to-talk must walk the hero adjacent. (6,1)
+    # is clear of A1's walk target (6,4) so the two beats don't collide.
     c = server._require(CID)
     c.characters[hero["id"]].stage_cell = (1, 4)
+    c.characters[npc["id"]].stage_cell = (6, 1)
+    c.characters[npc["id"]].location_id = room_a["id"]
+    c.characters[npc["id"]].met = True
     server.save_campaign(c)
-    return {"room_a": room_a["id"], "room_b": room_b["id"], "hero_id": hero["id"]}
+    return {"room_a": room_a["id"], "room_b": room_b["id"], "hero_id": hero["id"], "npc_id": npc["id"]}
 
 
 # ── HTTP helpers against the REAL viewer ───────────────────────────────────────────────────────
@@ -159,6 +174,17 @@ def _rest_token(surface: dict, cid: str) -> dict | None:
         if t.get("id") == cid:
             return t
     return None
+
+
+def _parley_surface(base: str, npc_id: str) -> dict:
+    """The read-model the Dialogue screen fetches after a click-to-talk approach: /parley-surface
+    bound to the clicked NPC (the ?npc=<id> the JSX appends). Carries the actor's sheet-correct
+    skill slots + the npc block with the engine's stage_cell echo (dialogue-at-actor metadata)."""
+    return _get(base, f"/parley-surface?campaign={CID}&npc={npc_id}")
+
+
+def _chebyshev(a: tuple[int, int], b: tuple[int, int]) -> int:
+    return max(abs(a[0] - b[0]), abs(a[1] - b[1]))
 
 
 # ── the assertions ─────────────────────────────────────────────────────────────────────────────
@@ -226,6 +252,50 @@ def run(base: str, ids: dict) -> None:
     _check(tok1 is not None and (tok1["x"], tok1["y"]) == target,
            "A3 rendered rest token == engine stage_cell after the walk",
            detail=f"got {tok1 and (tok1.get('x'), tok1.get('y'))}, want {target}")
+
+    # A5 (W3 #1363): CLICK-TO-TALK — clicking a present NPC on the rest board APPROACHES it. Posting
+    # a `parley_approach` intent walks the lead PC adjacent to the NPC (the engine's
+    # generate_parley_options(approach=True) reuses walk_to), then the Dialogue screen fetches
+    # /parley-surface?npc=<id> — which opens the parley AT the actor with the NPC's stage metadata.
+    npc = ids["npc_id"]
+    npc_cell = (6, 1)
+    # the NPC renders as a rest token tagged rest_role "npc" (a click-to-talk target, not a mover).
+    npc_tok = _rest_token(surf1, npc)
+    _check(npc_tok is not None and npc_tok.get("rest_role") == "npc"
+           and (npc_tok["x"], npc_tok["y"]) == npc_cell,
+           "A5 the present NPC renders as a rest token (rest_role 'npc') at its stage cell",
+           detail=f"got {npc_tok}")
+    ev_before_talk = len(_get(base, f"/events?campaign={CID}&since=0").get("entries", []))
+    approached = _post_move(base, {"kind": "parley_approach", "target_id": npc, "character_id": hero})
+    _check(approached.get("ok") is True and approached.get("walked") is True,
+           "A5 parley_approach is accepted and the engine walked the PC adjacent",
+           detail=json.dumps(approached))
+    dest = tuple(approached.get("to") or ())
+    _check(len(dest) == 2 and _chebyshev(dest, npc_cell) == 1,
+           "A5 the PC ended up ADJACENT (Chebyshev 1) to the NPC", detail=f"to={dest} npc={npc_cell}")
+    # the walk landed a rest_walk 'walk'/'glide' beat, exactly like a click-to-move (engine path).
+    evs2 = _get(base, f"/events?campaign={CID}&since=0").get("entries", [])
+    _check(len(evs2) > ev_before_talk, "A5 the approach landed a new engine beat",
+           detail=f"{ev_before_talk}→{len(evs2)}")
+    talk_walk = [e for e in evs2 if e.get("verb") == "walk"]
+    _check(bool(talk_walk) and (talk_walk[-1].get("result") or {}).get("path"),
+           "A5 the approach beat is a rest_walk carrying the engine path (glide)")
+    # engine sole-writer: the mover's rendered rest token now sits at the confirmed adjacent cell.
+    surf_talk = _get(base, f"/combat-surface?campaign={CID}")
+    hero_tok = _rest_token(surf_talk, hero)
+    _check(hero_tok is not None and (hero_tok["x"], hero_tok["y"]) == dest,
+           "A5 the mover's rest token == engine stage_cell after the approach",
+           detail=f"got {hero_tok and (hero_tok.get('x'), hero_tok.get('y'))}, want {dest}")
+    # the Dialogue screen's read-model opens AT the actor: the parley binds THIS NPC and echoes its
+    # stage cell (dialogue-at-actor), and the actor's skill slots are present (a real parley menu).
+    parley = _parley_surface(base, npc)
+    _check((parley.get("npc") or {}).get("id") == npc,
+           "A5 the parley surface binds the clicked NPC", detail=json.dumps(parley.get("npc")))
+    _check((parley.get("npc") or {}).get("stage_cell") == list(npc_cell),
+           "A5 the parley echoes the NPC stage_cell (dialogue-at-actor)",
+           detail=str((parley.get("npc") or {}).get("stage_cell")))
+    _check(bool(parley.get("skills")),
+           "A5 the parley opens with the actor's sheet-correct skill options")
 
     # A4: DOOR WALK-THROUGH — walk onto the doorway, then cross into the linked room.
     door_walk = _post_move(base, {"kind": "walk_to_cell", "character_id": hero, "x": DOOR[0], "y": DOOR[1]})

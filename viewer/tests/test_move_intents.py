@@ -207,6 +207,40 @@ class RestWalkMoveKindTests(unittest.TestCase):
         self.assertNotIn("narration", move)
 
 
+class ParleyApproachMoveKindTests(unittest.TestCase):
+    """W3 (#1363) — the rest-mode `parley_approach` (click-to-talk) intent the ENGINE resolves
+    in-process (generate_parley_options approach=True). Pure sanitize_move checks: it needs a
+    `target_id` (the NPC to talk to), keeps role forced + unknown fields dropped, and is additive."""
+
+    def test_parley_approach_accepted_with_target_id(self):
+        move, reason = server.sanitize_move(
+            {"kind": "parley_approach", "target_id": "npc_bram", "character_id": "char_hero"}
+        )
+        self.assertEqual(reason, "")
+        self.assertEqual(move["kind"], "parley_approach")
+        self.assertEqual(move["target_id"], "npc_bram")
+        self.assertEqual(move["character_id"], "char_hero")  # optional mover rides through
+        self.assertEqual(move["role"], "player")  # role still forced
+
+    def test_parley_approach_character_id_is_optional(self):
+        move, reason = server.sanitize_move({"kind": "parley_approach", "target_id": "npc_bram"})
+        self.assertEqual(reason, "")
+        self.assertEqual(move["target_id"], "npc_bram")
+
+    def test_parley_approach_without_target_rejected(self):
+        move, reason = server.sanitize_move({"kind": "parley_approach", "character_id": "c"})
+        self.assertIsNone(move)
+        self.assertIn("target_id", reason)
+
+    def test_parley_approach_drops_unknown_fields_and_forces_role(self):
+        move, reason = server.sanitize_move(
+            {"kind": "parley_approach", "target_id": "npc_bram", "role": "dm", "narration": "boom"}
+        )
+        self.assertEqual(reason, "")
+        self.assertEqual(move["role"], "player")
+        self.assertNotIn("narration", move)
+
+
 class DerivedPositionAuthorityTests(unittest.TestCase):
     """#432: zone-derived token x/y must be flagged positionAuthority='derived'."""
 

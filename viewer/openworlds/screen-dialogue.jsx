@@ -30,6 +30,10 @@ function ScreenDialogue({ onNavigate, state, setState }) {
         state,
       )
     : "";
+  // W3 (#1320): the interlocutor the player clicked-to-talk on the rest board (stashed by
+  // ScreenCombat's approach). Binds /parley-surface to THAT NPC so the header names it and the
+  // speaker is staged at its cell (npc.stage_cell/facing). Absent -> today's freeform/anchor parley.
+  const parleyNpc = state?.activeParleyNpc || "";
   const [surface, setSurface] = React.useState(null);
   const [difficulty, setDifficulty] = React.useState("medium");
   const [history, setHistory] = React.useState([]);
@@ -38,7 +42,8 @@ function ScreenDialogue({ onNavigate, state, setState }) {
 
   const loadSurface = React.useCallback(async (isCancelled = () => false) => {
     const sep = surfaceQuery ? "&" : "?";
-    const url = `/parley-surface${surfaceQuery}${sep}difficulty=${encodeURIComponent(difficulty)}`;
+    const npcParam = parleyNpc ? `&npc=${encodeURIComponent(parleyNpc)}` : "";
+    const url = `/parley-surface${surfaceQuery}${sep}difficulty=${encodeURIComponent(difficulty)}${npcParam}`;
     try {
       const response = await fetch(url, { cache: "no-store" });
       if (!response.ok) throw new Error(`parley surface ${response.status}`);
@@ -50,7 +55,7 @@ function ScreenDialogue({ onNavigate, state, setState }) {
       if (isCancelled()) return;
       setStatus(error?.message || "unavailable");
     }
-  }, [surfaceQuery, difficulty]);
+  }, [surfaceQuery, difficulty, parleyNpc]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -225,6 +230,27 @@ function ParleyMenu({ surface, slots, difficulty, setDifficulty, history, setHis
                     {npc.attitude_value > 0 ? "+" : ""}{npc.attitude_value}
                   </span>
                 )}
+              </div>
+            )}
+            {/* W3 (#1320): dialogue-AT-the-actor readout. When the parley bound an on-stage NPC
+                (approach-to-talk staged it at its rest cell), echo the engine's stage_cell (+ the
+                party-relative facing) so the conversation reads as spatial — the speaker stands
+                WHERE the player walked up to, not a disembodied portrait. Present only when the
+                engine attached stage metadata (a click-to-talk approach); absent for a freeform
+                parley, so the header is byte-identical to today otherwise. Pure projection. */}
+            {Array.isArray(npc?.stage_cell) && npc.stage_cell.length === 2 && (
+              <div style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "4px 12px",
+                background: "linear-gradient(180deg, var(--w-100), var(--w-300))",
+                boxShadow: "inset 0 0 0 1px var(--w-500)",
+              }}>
+                <span className="eyebrow" style={{ color: "var(--b-300)", letterSpacing: "0.16em", fontSize: 9 }}>
+                  On stage
+                </span>
+                <span style={{ fontFamily: "var(--f-mono)", fontSize: 10, color: "var(--ink-600)" }}>
+                  ({npc.stage_cell[0]}, {npc.stage_cell[1]}){npc.facing ? ` · ${npc.facing}` : ""}
+                </span>
               </div>
             )}
           </div>

@@ -131,6 +131,11 @@ class SceneAtRestProjectionTests(unittest.TestCase):
         # Rest tokens are idle-posed derived hints, never authoritative.
         self.assertEqual(by_id["npc_keeper"]["pose"], "idle")
         self.assertEqual(by_id["npc_keeper"]["positionAuthority"], "derived")
+        # W3 (#1363): each rest token carries a rest_role so the board tells a walkable party mover
+        # from a click-to-talk NPC target (both are team "ally"). The party PC is "party"; a
+        # present non-party NPC is "npc".
+        self.assertEqual(by_id["pc_hero"]["rest_role"], "party")
+        self.assertEqual(by_id["npc_keeper"]["rest_role"], "npc")
 
     def test_npc_at_another_location_is_not_placed(self):
         stage = _surface(_rest_snapshot())["stage"]

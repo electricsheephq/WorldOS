@@ -108,6 +108,7 @@ _MOVE_KINDS = {
     "travel", "inspect", "examine", "move_to_zone", "move_to_cell", "end_turn",
     "cross_door",  # M-E: cross an authored doorway to the linked room-unit (engine-resolved)
     "walk_to_cell",  # W2 #1319: rest-mode click-to-walk (engine walk_to; carried by x/y)
+    "parley_approach",  # W3 #1320: rest-mode click-to-talk (engine generate_parley_options approach)
 }
 # Kinds whose payload is carried by `target` alone (no free `text`/`name`) — the graphical
 # intents. Used to relax the "needs text or name" guard below for these click-driven moves.
@@ -192,6 +193,15 @@ def sanitize_move(raw: object) -> tuple[Optional[dict], str]:
             return None, "'walk_to_cell' needs integer 'x' and 'y' grid coordinates"
         if not move.get("character_id"):
             return None, "'walk_to_cell' needs a 'character_id' (who walks)"
+        return move, ""
+    # `parley_approach` (W3 #1320) is the ENGINE-resolved rest-mode click-to-TALK intent: it names
+    # the interlocutor NPC via `target_id` (the tracked NPC the player clicked). The engine's
+    # generate_parley_options(approach=True) walks the lead PC adjacent (via walk_to) then opens the
+    # parley — so the only required field is WHO to talk to. `character_id` (the mover) is optional:
+    # the engine defaults to the lead PC. Neither is text, so validate here before the engine bridge.
+    if kind == "parley_approach":
+        if not move.get("target_id"):
+            return None, "'parley_approach' needs a 'target_id' (the NPC to talk to)"
         return move, ""
     # The graphical intents (travel/inspect/examine/move_to_zone) are carried by `target`;
     # everything else needs a `text` or `name` so the DM has something to act on. An `attack`
@@ -1511,6 +1521,62 @@ def _resolve_walk_to(campaign_id: str, move: dict) -> dict:
         "from": result.get("from"),
         "to": result.get("to"),
         "path": result.get("path") or [],
+    }
+
+
+def _resolve_parley_approach(campaign_id: str, move: dict) -> dict:
+    """Resolve a `parley_approach` intent (W3 #1320 rest-mode click-to-TALK): the player clicked a
+    present NPC on the rest board — WALK the lead PC adjacent to that NPC, THEN open the parley AT
+    the actor. The whole approach is the engine's ``generate_parley_options(approach=True)`` (which
+    internally reuses ``walk_to`` — the SOLE writer of ``stage_cell`` — under the engine lock, then
+    projects the post-walk options), so the viewer stays a pure CONSUMER: it never routes a path or
+    positions a token itself; it just re-fetches ``/parley-surface?npc=<id>`` afterwards, which
+    reads the moved cells the engine wrote. Mirrors _resolve_walk_to's in-process bridge.
+
+    Returns ``{ok, npc_id, walked, to, path}`` — ``walked`` echoes whether the engine actually took
+    a walk beat (False when already adjacent, or when the approach degraded to a freeform parley:
+    no stage cell / no scene grid / combat / unreachable — the engine's own MED-addendum fallback).
+    ``ok`` stays True in every non-error case (the parley always opens, positioned or not); an
+    unknown NPC or a hard engine error is a clean ``{ok:False, reason}``. Gated on combat being
+    RESOLVED — an approach during a fight would only ever degrade to freeform, so reject early with
+    a clear reason rather than silently no-op."""
+    engine = _load_engine_server()
+    if engine is None:
+        return {"ok": False, "reason": "engine unavailable"}
+    try:
+        snap = engine._require(campaign_id)
+    except Exception as exc:  # noqa: BLE001 — surface any engine read error as a clean rejection
+        return {"ok": False, "reason": f"could not read rest state: {exc}"}
+    if snap.combat.active:
+        return {"ok": False, "reason": "combat is active — talk after the fight"}
+    npc_id = str(move["target_id"])
+    if npc_id not in snap.characters:
+        return {"ok": False, "reason": f"unknown NPC {npc_id!r}"}
+    # `character_id` (the mover) is optional — the engine defaults to the lead PC; pass it through
+    # only when the client named one so an actor with no PC still degrades cleanly.
+    actor_id = str(move.get("character_id") or "")
+    try:
+        # approach=True walks the actor adjacent (via walk_to, under the engine lock) then returns
+        # the post-walk parley snapshot. We consume only the approach echo — the browser re-fetches
+        # the full /parley-surface for the dialogue render (single source of truth).
+        result = engine.generate_parley_options(
+            campaign_id, actor_id=actor_id, npc_id=npc_id, approach=True,
+        )
+    except (KeyError, ValueError, TypeError) as exc:
+        return {"ok": False, "reason": str(exc)}
+    except Exception as exc:  # noqa: BLE001 — surface any engine error as a clean rejection
+        return {"ok": False, "reason": f"approach failed: {exc}"}
+    # `approach` is present only when the engine actually walked (or found the party already
+    # adjacent); absent means it degraded to a freeform parley — the dialogue still opens, just not
+    # repositioned. Echo the walk result so the client can log/animate the glide.
+    approach = result.get("approach") if isinstance(result, dict) else None
+    walked = bool(approach.get("walked")) if isinstance(approach, dict) else False
+    return {
+        "ok": True,
+        "npc_id": npc_id,
+        "walked": walked,
+        "to": approach.get("to") if isinstance(approach, dict) else None,
+        "path": (approach.get("path") if isinstance(approach, dict) else None) or [],
     }
 
 
@@ -3555,7 +3621,7 @@ def _scene_stage(snapshot: dict, combat_active: bool) -> dict:
 
     tokens: list[dict] = []
 
-    def _emit(cid: str, cells: list[tuple[int, int]], slot: int, fallback_slot: int) -> None:
+    def _emit(cid: str, cells: list[tuple[int, int]], slot: int, fallback_slot: int, rest_role: str) -> None:
         ch = chars.get(cid)
         ch = ch if isinstance(ch, dict) else {}
         name = _text(ch.get("name"), cid)
@@ -3590,14 +3656,21 @@ def _scene_stage(snapshot: dict, combat_active: bool) -> dict:
             # state — same discipline as the combat tokens (#432). The engine stays sole writer.
             "positionAuthority": "derived",
             "pose": "idle",
+            # W3 (#1320): which lane a rest token belongs to — "party" (a walkable mover the
+            # click-to-walk board sends to walk_to) vs "npc" (a present, non-party interlocutor the
+            # board opens a click-to-TALK approach on). Both are team "ally" (npc/companion kind ->
+            # ally), so `team` alone can't tell a talk target from a walkable party member; this
+            # additive marker does. ADDITIVE: a consumer that ignores it reads the token exactly as
+            # before.
+            "rest_role": rest_role,
         })
 
     fb = 0
     for i, cid in enumerate(party_ids):
-        _emit(cid, party_cells, i, fb)
+        _emit(cid, party_cells, i, fb, "party")
         fb += 1
     for j, cid in enumerate(present_npcs):
-        _emit(cid, npc_cells, j, fb)
+        _emit(cid, npc_cells, j, fb, "npc")
         fb += 1
 
     return {"mode": mode, "tokens": tokens}
@@ -9616,6 +9689,13 @@ class _Handler(BaseHTTPRequestHandler):
         # engine-confirmed path so the browser glides only the routed cells.
         if move.get("kind") == "walk_to_cell":
             self._json(_resolve_walk_to(self.campaign_id, move))
+            return
+        # W3 CLICK-TO-TALK LANE (#1320): a `parley_approach` is engine-resolved in-process —
+        # generate_parley_options(approach=True) walks the lead PC adjacent (via walk_to, under the
+        # engine lock) then opens the parley AT the actor. NOT appended for the DM; gated on combat
+        # being resolved (see _resolve_parley_approach). The browser then re-fetches /parley-surface.
+        if move.get("kind") == "parley_approach":
+            self._json(_resolve_parley_approach(self.campaign_id, move))
             return
         is_combat_cell = move.get("kind") in ("move_to_cell", "end_turn") or (
             move.get("kind") == "attack" and "target_id" in move
