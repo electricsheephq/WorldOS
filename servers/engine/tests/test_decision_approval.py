@@ -23,6 +23,8 @@ ADDITIVE invariants: approval_tags is keyword-only + defaulted; an old snapshot 
 from prose — the DM supplies it and the delta is fixed/explicit.
 """
 
+import asyncio
+
 import pytest
 
 import content
@@ -31,7 +33,28 @@ import store
 from models import Campaign, Decision
 
 
-# --- helpers ----------------------------------------------------------------
+# --- helpers ------------------------------------------------------------
+
+def _call_tool(name: str, args: dict):
+    """Invoke a registered MCP tool through the tool manager — the path the DM agent uses,
+    which builds + validates the auto-generated pydantic args model (mirrors
+    test_list_arg_coercion.py's ``_call``). This is the layer persist_beat's #1359
+    BeforeValidators run on; a direct ``server.persist_beat(...)`` kwargs call bypasses
+    them entirely (they never fire), so the stringified-arg tests below MUST go through
+    this, not a direct call."""
+    return asyncio.run(server.mcp._tool_manager.call_tool(name, args))
+
+
+def _struct(res):
+    """The tool manager returns a ``(content, structured)`` shape across mcp versions; pull
+    the structured result dict the tool actually returns (mirrors test_list_arg_coercion.py)."""
+    if isinstance(res, tuple):
+        for part in res:
+            if isinstance(part, dict):
+                return part.get("result", part)
+        return res[-1]
+    return res
+
 
 def _new_campaign(monkeypatch, tmp_path, title="Approval"):
     monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
@@ -323,6 +346,132 @@ def test_persist_beat_explicit_delta_through_decision(tmp_path, monkeypatch):
     })
     assert _attitude(cid, comp) == 15
     assert out["approval_results"][0]["delta"] == 15
+
+
+# --- #1359: tolerate a stringified-dict/list arg (a recurring DM model-slip) --
+# The DM (Opus) sometimes emits `decision`/`events` as a JSON *string* instead of the
+# object. THE REAL REJECTION SURFACE IS THE MCP/PYDANTIC BOUNDARY (evaos "Release
+# regression" finding): FastMCP validates a tool's args against the function type hints
+# with Pydantic BEFORE persist_beat's body runs, and its transport layer JSON-pre-parses
+# any string-shaped arg first. A direct ``server.persist_beat(...)`` kwargs call bypasses
+# that boundary entirely (a plain Python str reaches the body untouched, which the
+# function's own str-handling would coerce regardless of whether the MCP-layer
+# BeforeValidators exist) — so EVERY test below goes through ``_call_tool``, the tool
+# manager path the DM agent actually uses, mirroring test_list_arg_coercion.py's proven
+# pattern for the same class of MCP-boundary bug. Confirmed against source: without the
+# persist_beat BeforeValidators (_PersistBeatListArg/_PersistBeatDictArg), a wrong-type
+# or unparseable stringified arg raises a ToolError AT THE BOUNDARY, before persist_beat's
+# body (and its `_dropped_args` logic) ever runs — these tests would RED pre-fix.
+
+def test_persist_beat_stringified_decision_moves_approval_identically(tmp_path, monkeypatch):
+    cid = _new_campaign(monkeypatch, tmp_path)
+    comp = _add_companion(cid, "Wyll", likes=["heroism"], dislikes=["cowardice"])
+    # decision arrives as a JSON STRING (the model-slip) — must behave exactly like the dict
+    # form. FastMCP's own transport-layer JSON pre-parse turns this into a dict before
+    # Pydantic validates it (the ORIGINAL #1359 happy path — fixed upstream of persist_beat).
+    out = _struct(_call_tool("persist_beat", {
+        "campaign_id": cid,
+        "decision": '{"summary":"stood his ground against the devil","approval_tags":["heroism"]}',
+    }))
+    assert _attitude(cid, comp) == 10
+    assert out["approval_results"][0]["id"] == comp
+    assert out["approval_results"][0]["delta"] == 10
+    assert out["decision"]["summary"] == "stood his ground against the devil"
+
+
+def test_persist_beat_unparseable_decision_is_skipped_not_raised(tmp_path, monkeypatch):
+    cid = _new_campaign(monkeypatch, tmp_path)
+    comp = _add_companion(cid, "Wyll", likes=["heroism"])
+    server.set_companion_quest_arc(cid, comp, {"title": "Wyll's personal thread"})
+    # A non-JSON string for decision is DROPPED (no ToolError at the MCP boundary, no raise
+    # in the body); the events leg still persists.
+    out = _struct(_call_tool("persist_beat", {
+        "campaign_id": cid,
+        "decision": "not json",
+        "events": [{"kind": "narration", "text": "the beat still lands"}],
+    }))
+    assert out["decision"] is None          # malformed decision skipped, not applied
+    assert len(out["logged"]) == 1          # the beat still persisted its event
+    assert _attitude(cid, comp) == 0        # no approval moved
+    assert out["dropped_args"] == ["decision"]  # the slip is named, not silently absorbed
+
+
+def test_persist_beat_stringified_events_list_logs_the_event(tmp_path, monkeypatch):
+    cid = _new_campaign(monkeypatch, tmp_path)
+    # events arrives as a JSON STRING of a list — coerced and logged like the list form.
+    out = _struct(_call_tool("persist_beat", {
+        "campaign_id": cid, "events": '[{"kind":"narration","text":"y"}]',
+    }))
+    assert len(out["logged"]) == 1
+    assert out["logged"][0]["text"] == "y"
+
+
+def test_persist_beat_stringified_memories_list_is_remembered(tmp_path, monkeypatch):
+    cid = _new_campaign(monkeypatch, tmp_path)
+    comp = _add_companion(cid, "Wyll", likes=["heroism"])
+    # memories arrives as a JSON STRING of a list — coerced and remembered like the list form.
+    out = _struct(_call_tool("persist_beat", {
+        "campaign_id": cid,
+        "memories": f'[{{"character_id":"{comp}","fact":"the party spared the goblin"}}]',
+    }))
+    assert len(out["remembered"]) == 1
+    assert out["remembered"][0]["fact"] == "the party spared the goblin"
+
+
+def test_persist_beat_stringified_advance_dict_advances_clock(tmp_path, monkeypatch):
+    cid = _new_campaign(monkeypatch, tmp_path)
+    # advance arrives as a JSON STRING of a dict — coerced and applied like the dict form.
+    out = _struct(_call_tool("persist_beat", {"campaign_id": cid, "advance": '{"phases":1}'}))
+    assert out["time"]["phases_advanced"] == 1
+
+
+def test_persist_beat_wrong_type_json_arg_is_dropped_not_raised(tmp_path, monkeypatch):
+    """A string that json.loads to a VALID JSON value of the WRONG type (decision='[1,2,3]'
+    parses to a list, not the expected dict) is DROPPED like unparseable JSON — no ToolError
+    at the MCP boundary, no raise in the body, no approval move — while the rest of the beat
+    still persists. Confirmed against source: FastMCP's transport layer pre-parses the
+    string into an actual Python list BEFORE Pydantic sees it, so the persist_beat
+    BeforeValidator must handle an ALREADY-WRONG-TYPE object, not just a raw string."""
+    cid = _new_campaign(monkeypatch, tmp_path)
+    comp = _add_companion(cid, "Wyll", likes=["heroism"])
+    server.set_companion_quest_arc(cid, comp, {"title": "Wyll's personal thread"})
+    out = _struct(_call_tool("persist_beat", {
+        "campaign_id": cid,
+        "decision": '[1,2,3]',  # valid JSON, but a list where a dict is expected
+        "events": [{"kind": "narration", "text": "the beat still lands"}],
+    }))
+    assert out["decision"] is None          # wrong-type decision dropped, not applied
+    assert len(out["logged"]) == 1          # the rest of the beat still persisted
+    assert _attitude(cid, comp) == 0        # no approval moved
+    assert out["dropped_args"] == ["decision"]  # the slip is named, not silently absorbed
+
+
+def test_persist_beat_dropped_args_names_every_dropped_arg(tmp_path, monkeypatch):
+    """Multiple simultaneously-dropped stringified args are ALL named, in call order —
+    the observability fix must not just report the first one."""
+    cid = _new_campaign(monkeypatch, tmp_path)
+    out = _struct(_call_tool("persist_beat", {
+        "campaign_id": cid,
+        "events": '[{"kind":"narration","text":"fine"}]',  # coerces OK, not dropped
+        "memories": "not json",                             # dropped: unparseable
+        "decision": '[1,2,3]',                               # dropped: wrong type (list, not dict)
+        "advance": "also not json",                          # dropped: unparseable
+    }))
+    assert out["dropped_args"] == ["memories", "decision", "advance"]
+    assert len(out["logged"]) == 1  # the one healthy arg still persisted
+
+
+def test_persist_beat_dropped_args_absent_on_a_healthy_beat(tmp_path, monkeypatch):
+    """ADDITIVE: dropped_args is ABSENT (not an empty list) when nothing was dropped — a
+    healthy beat's return stays byte-for-byte today's shape. Direct-call here (not
+    _call_tool) is fine — this asserts the FUNCTION BODY's own additive-key contract for
+    a real (already-correct-type) dict/list arg, not the MCP-boundary coercion."""
+    cid = _new_campaign(monkeypatch, tmp_path)
+    out = server.persist_beat(cid, events=[{"kind": "narration", "text": "a clean beat"}])
+    assert "dropped_args" not in out
+    # and the already-documented byte-identical shape (no decision leg) still holds
+    out2 = server.persist_beat(cid, decision={"summary": "a quiet choice"})
+    assert "dropped_args" not in out2
 
 
 # --- scene_context surfaces the values at stake -----------------------------
