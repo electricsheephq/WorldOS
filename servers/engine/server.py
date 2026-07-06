@@ -20,7 +20,7 @@ import random
 import re
 import sys
 import time
-from typing import Optional
+from typing import Annotated, Optional
 
 from mcp.server.fastmcp import FastMCP
 
@@ -57,7 +57,7 @@ import wander
 import worldsim
 import wrapper_progress as _wrapper_progress_mod
 import _env
-from pydantic import ValidationError
+from pydantic import BeforeValidator, ValidationError
 from models import (
     ListArg,
     OptStrListArg,
@@ -14436,26 +14436,94 @@ def scene_context(
     return out
 
 
+class _PersistBeatArgDropped:
+    """Sentinel (#1359 fix + evaos "Release regression" follow-up): a persist_beat
+    structured arg that arrived as a stringified value the target type can't accept —
+    unparseable JSON, or valid JSON of the WRONG type (``decision='[1,2,3]'`` parses to a
+    list, not a dict). Distinguishes "dropped, saw a signal" from a genuine ``None``
+    (the arg simply wasn't passed), so persist_beat can report it under ``dropped_args``
+    without a second reject-vs-omitted round-trip. Never constructed outside this module;
+    invisible to Pydantic's ``json_schema()`` (verified: the wire schema is unchanged from
+    the pre-#1359 ``Optional[dict]``/``Optional[list]`` shape — test_tool_schema_budget)."""
+    __slots__ = ()
+
+
+_PERSIST_BEAT_ARG_DROPPED = _PersistBeatArgDropped()
+
+
+def _mk_persist_beat_json_coercer(want: type):
+    """Build a Pydantic BEFORE-validator for one persist_beat structured arg (#1359 +
+    evaos "Release regression" fix). FastMCP validates tool args against the function type
+    hints with Pydantic BEFORE the function body runs, and — critically — FastMCP's
+    transport layer JSON-pre-parses any string-shaped arg BEFORE Pydantic sees it. So this
+    validator may receive: the correct type (untouched), ``None`` (untouched), a raw str
+    that failed FastMCP's pre-parse (still a str here — try json.loads ourselves), or an
+    ALREADY-WRONG-TYPE object (FastMCP's own pre-parse succeeded but produced the wrong
+    JSON type, e.g. a list where this arg wants a dict). All three "bad" cases return the
+    ``_PERSIST_BEAT_ARG_DROPPED`` sentinel instead of raising — the FATAL
+    ``no_rejected_tool_calls`` behavioral-gate rejection #1359 exists to prevent. Wire-
+    NEUTRAL: a BeforeValidator does not alter ``json_schema()`` (mirrors models._coerce_list
+    / ListArg's proven pattern), so this costs zero pinned-schema budget."""
+    def _coerce(v):
+        if v is None or isinstance(v, want):
+            return v  # unset, or already the right shape — untouched
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+            except (ValueError, TypeError):
+                return _PERSIST_BEAT_ARG_DROPPED  # not JSON — drop, don't reject the beat
+            return parsed if isinstance(parsed, want) else _PERSIST_BEAT_ARG_DROPPED
+        return _PERSIST_BEAT_ARG_DROPPED  # FastMCP pre-parsed to a JSON value of the wrong type
+    return _coerce
+
+
+_PersistBeatListArg = Annotated[
+    Optional[list] | _PersistBeatArgDropped, BeforeValidator(_mk_persist_beat_json_coercer(list))
+]
+_PersistBeatDictArg = Annotated[
+    Optional[dict] | _PersistBeatArgDropped, BeforeValidator(_mk_persist_beat_json_coercer(dict))
+]
+
+
 @mcp.tool()
 def persist_beat(
     campaign_id: str = "",
-    events: Optional[list] = None,
-    memories: Optional[list] = None,
-    decision: Optional[dict] = None,
-    advance: Optional[dict] = None,
+    events: _PersistBeatListArg = None,
+    memories: _PersistBeatListArg = None,
+    decision: _PersistBeatDictArg = None,
+    advance: _PersistBeatDictArg = None,
 ) -> dict:
-    """ONE-CALL end-of-beat persistence — batches the whole save cluster (SKILL.md
-    step 7) into a single round-trip AND a single disk write (latency collapse;
-    additive — log_event / remember / record_decision / advance_time all still
-    exist for one-off use). Pass any subset of:
-    ``events`` (log rows ``{"kind","text","speaker"?,"payload"?}``; leave empty for prose
-    you already streamed live via log_event — re-passing double-logs it),
-    ``memories`` (``[{"character_id","fact"}]``; character_id accepts ``id``/``npc_id``
-    aliases, resolved tolerantly), ``decision`` (one ``{"summary","options"?,"chosen"?,
-    "rationale"?,"actor_ids"?,"sets_flag"?,"approval_tags"?}`` — ``approval_tags`` MOVES party
-    companion approval exactly like the standalone ``record_decision`` (flat cause-keys or
-    ``{key,delta}``; reported under ``approval_results`` when a companion moves), and
-    ``advance`` (``{"phases"?,"to"?,"note"?}`` to move the clock; skipped during combat)."""
+    """ONE-CALL end-of-beat persistence — batches the whole save cluster (SKILL.md step 7)
+    into a single round-trip + disk write (additive; log_event/remember/record_decision/
+    advance_time still exist for one-off use). Any subset of:
+    ``events`` (log rows ``{"kind","text","speaker"?,"payload"?}``; skip if already streamed
+    live via log_event), ``memories`` (``[{"character_id","fact"}]``; id/npc_id aliases OK),
+    ``decision`` (``{"summary","options"?,"chosen"?,"rationale"?,"actor_ids"?,"sets_flag"?,
+    "approval_tags"?}`` — tags MOVE party companion approval like ``record_decision``,
+    reported under ``approval_results``), ``advance`` (``{"phases"?,"to"?,"note"?}``; skipped
+    during combat)."""
+    # dropped_args (evaos P3, proof-gap): a dropped arg and an omitted arg otherwise look
+    # byte-identical on the return — silently absorbing the slip with no signal would make
+    # it invisible to ops (can't tell "getting better/worse", can't catch a regression that
+    # makes the DM model-slip fire MORE). The BeforeValidators above (#1359 — tolerate a
+    # STRINGIFIED events/memories/decision/advance arg the DM emits instead of the object,
+    # coercing at the Pydantic layer so a bad one is DROPPED not REJECTED) hand back the
+    # ``_PERSIST_BEAT_ARG_DROPPED`` sentinel for anything they couldn't coerce; unwrap each
+    # arg here and name it, surfaced as an ADDITIVE ``dropped_args`` key below.
+    _dropped_args: list[str] = []
+    if events is _PERSIST_BEAT_ARG_DROPPED:
+        _dropped_args.append("events")
+        events = None
+    if memories is _PERSIST_BEAT_ARG_DROPPED:
+        _dropped_args.append("memories")
+        memories = None
+    if decision is _PERSIST_BEAT_ARG_DROPPED:
+        _dropped_args.append("decision")
+        decision = None
+    if advance is _PERSIST_BEAT_ARG_DROPPED:
+        _dropped_args.append("advance")
+        advance = None
+
     # Tolerate a bare/empty campaign_id (a recurring DM model-slip). SKILL.md step 7 says
     # "never emit a bare persist_beat()", but the model occasionally emits {} anyway — and a
     # hard "Field required" rejection RED-caps the WHOLE behavioral gate (the FATAL
@@ -14469,31 +14537,6 @@ def persist_beat(
         campaign_id = _active_campaign_id() or ""
     if (events or memories or decision or advance is not None) and not campaign_id:
         return {"error": "persist_beat: no campaign_id provided and no active campaign to resolve — pass campaign_id"}
-
-    # Tolerate a STRINGIFIED structured arg (#1359 — the same class of recurring DM
-    # model-slip as the bare campaign_id above). The DM (Opus) sometimes emits a
-    # structured param as a JSON *string* — decision='{"summary":...}' or
-    # events='[{"kind":...}]' — instead of the object. FastMCP's Pydantic layer then
-    # dict_type/list_type-rejects it, and one such reject RED-caps the WHOLE behavioral
-    # gate (the FATAL no_rejected_tool_calls assertion), losing a beat's real canon (a
-    # genuine approval-moving decision). Coerce here: a str that json.loads to the
-    # EXPECTED type is used; a str that doesn't parse (or parses to the wrong type) is
-    # DROPPED (treated as unset) — never raised, so the rest of the beat still persists.
-    # ADDITIVE: only isinstance(x, str) fires this; an already-well-typed dict/list arg
-    # is byte-identical to today (untouched). Mirrors the bare-campaign_id tolerance and
-    # the _coerce_list defensive-shorthand spirit.
-    def _coerce_json_arg(v, want):
-        if not isinstance(v, str):
-            return v  # already the right shape (or None) — untouched
-        try:
-            parsed = json.loads(v)
-        except (ValueError, TypeError):
-            return None  # not JSON — drop the sub-field, don't reject the beat
-        return parsed if isinstance(parsed, want) else None  # wrong type -> drop
-    events = _coerce_json_arg(events, list)
-    memories = _coerce_json_arg(memories, list)
-    decision = _coerce_json_arg(decision, dict)
-    advance = _coerce_json_arg(advance, dict)
 
     logged: list[dict] = []
     remembered: list[dict] = []
@@ -14656,6 +14699,12 @@ def persist_beat(
     # (today's default) returns the exact four-key shape it always has.
     if approval_results:
         out["approval_results"] = approval_results
+    # ADDITIVE (evaos P3, #1359 proof-gap): only surface dropped_args when a stringified arg
+    # was actually dropped (unparseable, or valid JSON of the wrong type) — a healthy beat's
+    # return is byte-for-byte today's shape. Named so ops can tell WHICH arg(s) the DM
+    # model-slipped on, keeping the slip observable instead of silently absorbed.
+    if _dropped_args:
+        out["dropped_args"] = _dropped_args
     # The EVERY-BEAT obligations digest (relationship-cues): persist_beat is the one tool
     # the DM hits every beat, so it's the vehicle that folds the relationship/quest
     # obligations into the DM's reliable flow (the proven fix for "surfacing info != the DM
