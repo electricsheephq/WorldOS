@@ -545,6 +545,16 @@ def _move_party_to(c: Campaign, location_id: str) -> list[str]:
         if travels and member.location_id != location_id:
             member.location_id = location_id
             moved.append(cid)
+            # W2 review fix: stage_cell (walk_to's rest-position sole-writer field) is
+            # scoped to the room it was set in. Without clearing it here, a member who
+            # walked in the OLD room keeps its coordinates after travel, and
+            # rest_blocked_cells (the occupancy reader keyed on location_id == this
+            # location) folds those stale coordinates into the NEW room's blocked set —
+            # phantom occupancy the member never actually stood in. Clearing on every
+            # travel (not just when it happens to be set) keeps the party's rest
+            # position always re-derived per-room, matching stage_cell's contract as a
+            # single-room stander position, not a persistent world coordinate.
+            member.stage_cell = None
     return moved
 
 
@@ -4881,6 +4891,21 @@ def walk_to(campaign_id: str, character_id: str, x: int, y: int) -> dict:
             raise ValueError("this location has no scene grid to walk on")
         mover = _char(c, character_id)  # tolerant id resolution; raises a "did you mean" on a miss
         character_id = mover.id  # canonicalize so the exclude/occupancy match is exact
+        # W2 review fix: reject walking a character who is anchored at a DIFFERENT,
+        # explicitly-known location. stage_cell is the sole-writer source
+        # rest_blocked_cells reads back keyed on location_id == this location; writing
+        # a stage_cell here for a mover whose location_id genuinely points elsewhere
+        # would produce a position that location's own occupancy read never counts (it
+        # skips non-matching location_id) — a silent split-brain stander. This is
+        # intentionally a conservative check: it only fires on a real non-empty
+        # mismatch, and leaves None/"" (the party's own not-yet-travelled sentinel,
+        # per #1349) untouched, so it never collides with that unplaced case.
+        if mover.location_id and mover.location_id != loc.id:
+            raise ValueError(
+                f"{mover.name} is anchored at location {mover.location_id!r}, not the "
+                f"current location {loc.id!r} — walk_to only moves a character within "
+                f"the room they're already in."
+            )
         width, height, blocked = rest_blocked_cells(c, loc, exclude_id=character_id)
         if width <= 0 or height <= 0:
             raise ValueError("this location's scene grid has no walkable extent")

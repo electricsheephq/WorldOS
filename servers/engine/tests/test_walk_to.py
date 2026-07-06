@@ -187,6 +187,61 @@ def test_walk_to_rejects_unreachable(room):
     assert "unreachable" in out["move_blocked"]["reason"]
 
 
+# ── walk -> travel -> walk: stage_cell must not bleed across rooms (review thread) ────
+
+
+def test_stage_cell_cleared_on_travel_does_not_bleed_into_new_room(room):
+    """Regression pin for the CodeRabbit P1 finding: walk_to writes stage_cell but
+    _move_party_to (the party-relocate helper travel_to calls) never touched it, so a
+    party member's OLD-room cell kept counting as occupancy in the NEW room. Walk Hero
+    in room A, travel the party to room B, and assert (a) stage_cell is cleared by the
+    relocate and (b) room B's rest occupancy carries none of room A's stale cell."""
+    cid, hero, ally, loc_a_id = room
+
+    # Walk Hero to a real cell in room A first (through the gap so it's a genuine walk,
+    # not just the fixture's direct stage_cell seed). Fetch `c` AFTER the mutating call —
+    # walk_to loads/mutates/saves its own Campaign instance internally, so a `c` handle
+    # taken beforehand would not observe the write.
+    out = server.walk_to(cid, hero, 4, 0)
+    assert out["walked"] is True
+    c = server._require(cid)
+    assert tuple(c.characters[hero].stage_cell) == (4, 0)
+
+    # A second room, same shape family, with its own scene_grid — (4, 0) is a plain
+    # floor cell here too, so if room A's stale cell bled in it would show up blocked.
+    loc_b_id = server.add_location(cid, "The Second Room")["id"]
+    c = server._require(cid)
+    c.locations[loc_b_id].scene_grid = _wall_column_room()
+    c.locations[loc_b_id].scene_grid.location_id = loc_b_id
+    server.save_campaign(c)
+
+    # Travel: the party-relocate helper travel_to itself calls (mirrors the real path
+    # without needing a connected map graph, which is orthogonal to this regression).
+    c = server._require(cid)
+    server._move_party_to(c, loc_b_id)
+    server.save_campaign(c)
+
+    c = server._require(cid)
+    assert c.characters[hero].location_id == loc_b_id
+    assert c.characters[hero].stage_cell is None, (
+        "stage_cell must be cleared on travel — otherwise it stays pinned to room A's "
+        "coordinates while location_id now says room B"
+    )
+
+    # Room B's occupancy must NOT carry Hero's stale room-A cell (4, 0): only the Ally's
+    # (1, 0) stage_cell was seeded by the fixture and Ally never travelled with Hero
+    # here (still location_id == room A), so room B should show ONLY its own
+    # walls/props impassable — no phantom stander cell.
+    loc_b = c.locations[loc_b_id]
+    _w, _h, blocked_b = server.rest_blocked_cells(c, loc_b)
+    assert (4, 0) not in blocked_b, "room A's stale stage_cell bled into room B's occupancy"
+
+    # And a subsequent walk in room B lands cleanly on that same cell — proof the stale
+    # occupancy isn't silently blocking the room the party actually walked into.
+    out_b = server.walk_to(cid, hero, 4, 0)
+    assert out_b["walked"] is True
+
+
 # ── combat-gate PIN: the two lanes never overlap, and move_to_coords is untouched ─────
 
 
