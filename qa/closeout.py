@@ -317,13 +317,15 @@ def _run_nomination_hook(run_id: str, db_path: Path | str) -> None:
     """Fire the HV5 auto-nominator for ``run_id`` (append-only, best-effort).
 
     Isolated + swallow-all so the closeout block never breaks if the nominator or the artifacts_out
-    tree is unavailable. The nominator is itself an additive no-op when nothing qualifies.
+    tree is unavailable. The nominator is itself an additive no-op when nothing qualifies. A swallowed
+    exception is still surfaced as a one-line stderr warning (not raised) — total silence would mean a
+    real regression in nominate.py (a broken import, a typo) produces zero signal at all.
     """
     try:
         import nominate as _nominate  # noqa: PLC0415 — local sibling, imported lazily
         _nominate.nominate(run_id, db_path=db_path)
-    except Exception:  # noqa: BLE001 — closeout must never fail on a harvest-side hiccup
-        pass
+    except Exception as e:  # noqa: BLE001 — closeout must never fail on a harvest-side hiccup
+        print(f"[closeout] nomination hook for {run_id!r} failed (non-fatal): {e}", file=sys.stderr)
 
 
 def _recent_ids(db_path: Path | str, n: int = 20) -> list[str]:

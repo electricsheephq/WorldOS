@@ -45,6 +45,7 @@ campaign whose artifacts carry provenance.run_id == run-id).
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import sys
 from pathlib import Path
@@ -89,7 +90,13 @@ def _qualifies(art: dict) -> Optional[str]:
 # run gate (pure reader over scores_db)
 # ---------------------------------------------------------------------------
 def _run_clears_story_bar(run_id: str, db_path: Path | str) -> bool:
-    """True when the run's story_overall >= NOMINATION_STORY_BAR. Missing run/score -> False."""
+    """True when the run's story_overall >= NOMINATION_STORY_BAR. Missing run/score -> False.
+
+    Returns on the FIRST row matching run_id — correct only because run_id is the runs table's
+    PRIMARY KEY (scores_db.py add_run uses INSERT OR REPLACE on it), so at most one row can ever
+    match. If that ever changes (e.g. a future per-lens split table), this first-match short-circuit
+    would need to become an explicit "fetch by run_id" lookup instead.
+    """
     for row in scores_db.fetch_rows(db_path):
         if row.get("run_id") == run_id:
             story = row.get("story_overall")
@@ -167,12 +174,11 @@ def collect_nominations(
 # ---------------------------------------------------------------------------
 # append-only writer
 # ---------------------------------------------------------------------------
-def _existing_ids(nominations_path: Path) -> set[str]:
-    """artifact_ids already in the queue (for idempotent append). Tolerant of malformed lines."""
-    if not nominations_path.exists():
-        return set()
+def _parse_existing_ids(text: str) -> set[str]:
+    """artifact_ids already in the queue, parsed from already-read text. Tolerant of malformed
+    lines (shared by both the unlocked dry-run preview and the locked read-modify-write path)."""
     ids: set[str] = set()
-    for line in nominations_path.read_text(encoding="utf-8").splitlines():
+    for line in text.splitlines():
         line = line.strip()
         if not line:
             continue
@@ -183,6 +189,13 @@ def _existing_ids(nominations_path: Path) -> set[str]:
         if isinstance(obj, dict) and "artifact_id" in obj:
             ids.add(obj["artifact_id"])
     return ids
+
+
+def _existing_ids(nominations_path: Path) -> set[str]:
+    """artifact_ids already in the queue (for an unlocked, read-only preview e.g. --dry-run)."""
+    if not nominations_path.exists():
+        return set()
+    return _parse_existing_ids(nominations_path.read_text(encoding="utf-8"))
 
 
 def nominate(
@@ -201,6 +214,11 @@ def nominate(
 
     ``artifacts_dir`` / ``nominations_path`` default to the LIVE module constants when None (resolved
     at call time, so the closeout hook and tests can override them via the module attributes).
+
+    The idempotency-read (``_existing_ids``) + append are done under an exclusive advisory lock
+    (``fcntl.flock``) on the nominations file so two concurrent writers (two closeouts, or a
+    closeout + a manual CLI run) can never both read the same "already queued" set and append the
+    same fresh record twice, nor interleave partial JSON lines mid-write.
     """
     nominations_path = Path(nominations_path if nominations_path is not None else DEFAULT_NOMINATIONS)
     candidates = collect_nominations(
@@ -208,14 +226,23 @@ def nominate(
     )
     if not candidates:
         return []
-    already = _existing_ids(nominations_path)
-    fresh = [c for c in candidates if c["artifact_id"] not in already]
-    if not fresh or dry_run:
-        return fresh
+    if dry_run:
+        already = _existing_ids(nominations_path)
+        return [c for c in candidates if c["artifact_id"] not in already]
+
     nominations_path.parent.mkdir(parents=True, exist_ok=True)
-    with nominations_path.open("a", encoding="utf-8") as fh:
-        for rec in fresh:
-            fh.write(json.dumps(rec, sort_keys=True) + "\n")
+    # Open in append mode (creates the file if absent) and hold an exclusive lock for the entire
+    # read-dedup-then-append critical section — released automatically when the `with` exits.
+    with nominations_path.open("a+", encoding="utf-8") as fh:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        fh.seek(0)
+        already = _parse_existing_ids(fh.read())
+        fresh = [c for c in candidates if c["artifact_id"] not in already]
+        if fresh:
+            fh.seek(0, 2)  # back to EOF (a+ position is unspecified after reading)
+            for rec in fresh:
+                fh.write(json.dumps(rec, sort_keys=True) + "\n")
+        # lock released on context exit
     return fresh
 
 
