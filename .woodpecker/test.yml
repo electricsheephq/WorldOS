@@ -1,0 +1,31 @@
+when:
+  - event: [push, pull_request, manual]
+
+steps:
+  - name: test
+    image: ghcr.io/astral-sh/uv:python3.12-bookworm
+    commands:
+      - bash -lc 'set -euo pipefail; apt-get update; apt-get install -y --no-install-recommends git jq; rm -rf /var/lib/apt/lists/*'
+      - >-
+        bash -lc 'set -euo pipefail;
+        if [ "${CI_PIPELINE_EVENT:-}" = "pull_request" ]; then
+          _ref="${CI_COMMIT_REF:-}";
+          if [ -z "$_ref" ] && [ -n "${CI_COMMIT_PULL_REQUEST:-}" ]; then _ref="refs/pull/${CI_COMMIT_PULL_REQUEST}/merge"; fi;
+          case "$_ref" in
+            refs/pull/*/merge) git fetch --no-tags --depth=1 origin "$_ref"; git checkout --force FETCH_HEAD; echo "checked out $_ref at $(git rev-parse HEAD)" ;;
+            *) echo "pull_request event without merge ref: ${_ref:-empty}"; exit 1 ;;
+          esac;
+        fi'
+      - bash -lc 'set -euo pipefail; uv run --directory servers/engine --group dev pytest -q --cov=. --cov-report=term-missing'
+      - bash -lc 'set -euo pipefail; WORLDOS_RULES_OFFLINE=1 uv run --directory servers/rules --group dev pytest -q --cov=. --cov-report=term-missing'
+      - bash -lc 'set -euo pipefail; uv run --directory servers/voice --group dev pytest -q --cov=. --cov-report=term-missing'
+      - bash -lc 'set -euo pipefail; bash qa/test_play_party_single_flight.sh'
+      - bash -lc 'set -euo pipefail; bash qa/test_velocity_gates.sh'
+      - bash -lc 'set -euo pipefail; bash qa/test_dry_run_gate_fix.sh'
+      - bash -lc 'set -euo pipefail; bash qa/test_run_duo_retry_robustness.sh'
+      - bash -lc 'set -euo pipefail; bash qa/test_play_party_actor_timeout.sh'
+      - bash -lc 'set -euo pipefail; bash qa/test_provider_status_claude_lanes.sh'
+      - bash -lc 'set -euo pipefail; bash qa/test_run_duo_dm_timeout.sh'
+      - bash -lc 'set -euo pipefail; bash qa/test_stream_tailer_lifecycle.sh'
+      - bash -lc 'set -euo pipefail; bash qa/test_ui_playtest_heartbeat.sh'
+      - bash -lc 'set -euo pipefail; uv run --directory servers/engine --group dev python ../../qa/smoke_pre_seed_combat.py'

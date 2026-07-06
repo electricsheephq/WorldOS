@@ -28,9 +28,10 @@ cross-cutting findings (`#272–320`) + creation/atlas/portrait audit (`#375–3
 "Graphics" name this is the **GUI/dashboard** track — distinct from the pixel renderer below.
 
 ### Renderer (north-star R&D) — `Graphics — Renderer Roadmap (GT1–GT3)` (~8)
-The pixel-renderer roadmap: GT1 SNES MVP (`#441`) → GT2 isometric / Godot (`#456`/`#457`) →
+The pixel-renderer roadmap: GT1 SNES MVP (`#441`) → GT2 isometric / Unity-current renderer (`#456`/`#457`) →
 GT3 hex (`#585`/`#586`) → RPG-Maker BYOL (`#458`/`#460`) → measured-grid tactics (`#461`). Mostly
-post-1.0 / the video-game north-star. **Detailed M0–M6 breakdown: `docs/roadmap/WORLDOS-GRAPHICS-ROADMAP.md`.**
+post-1.0 / the video-game north-star. Godot GT2 is archived as reference/extension material under
+`extensions/renderers/godot/`. **Detailed M0–M6 breakdown: `docs/roadmap/WORLDOS-GRAPHICS-ROADMAP.md`.**
 
 ### Release gate / infra — `Agent-Grade App Testability` (~2)
 The RRI release verdict (`#466`) + the UX-first release-readiness sprint (`#467`). Feeds the v1.0.4

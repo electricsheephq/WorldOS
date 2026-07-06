@@ -43,6 +43,25 @@ except Exception:  # pragma: no cover - defensive
     engagement_coverage = None
 
 
+def _run_infra_invalid_sentinel(run_jsonl_path: str) -> dict | None:
+    """#1285 — the run-invalidation guard's scorer-side reader. qa/lib_beat_driver.sh's
+    worldos_mark_run_infra_invalid stamps a sibling ``<run>.infra_invalid.json`` file (derived
+    from the run.jsonl path exactly like ``<run>.state.json`` / ``<run>.chat.jsonl`` already are)
+    when N consecutive DM beats fail — a quota window or host/session death mid-run (rri-a1-duo/
+    duo2), not a product defect. Returns the parsed sentinel dict when present + valid, else None
+    (no new CLI arg needed; this stays back-compat with every existing caller). Mirrors
+    worldos_validate_lens_file's sentinel discipline for the bash side."""
+    p = Path(run_jsonl_path)
+    marker = p.with_name(p.name[: -len(p.suffix)] + ".infra_invalid.json") if p.suffix else p.with_suffix(".infra_invalid.json")
+    if not marker.exists() or not marker.stat().st_size:
+        return None
+    try:
+        d = json.loads(marker.read_text(encoding="utf-8"))
+    except Exception:
+        return {"infra_invalid": True, "reason": "sentinel file present but unparseable"}
+    return d if isinstance(d, dict) else {"infra_invalid": True, "reason": "sentinel file malformed"}
+
+
 def _load_jsonl(p: str) -> list[dict]:
     out: list[dict] = []
     if not p or not Path(p).exists():
@@ -112,6 +131,39 @@ _NARRATION_LEAK = [
 ]
 _NARRATION_LEAK_RE = [re.compile(p, re.I) for p in _NARRATION_LEAK]
 
+# AMBUSH SIGNALS (#1271) — DM narration that plainly stages a surprise attack. When these fire
+# but start_combat ran with NO surprise evaluation (no surpriser_ids passed, no `surprise` key
+# in any return), the fight skipped the passive-Perception-vs-Stealth gate entirely — the exact
+# "narrated an ambush but ran straight to initiative" omission #1271 was filed on. High-confidence,
+# ambush-only phrasings (a clean pitched-battle beat scores 0 and can never false-fire).
+_AMBUSH_SIGNAL = [
+    r"\b(?:lunge|lunges|leap|leaps|spring|springs|burst|bursts|strike|strikes) (?:out )?from the shadows\b",
+    r"\bfrom the shadows\b.{0,40}\b(?:attack|strike|lunge|pounce|ambush)\w*",
+    r"\bcatch(?:es)? (?:them|you|him|her|the \w+) (?:by surprise|off[- ]guard|unaware|flat[- ]footed)\b",
+    r"\bnever (?:saw|see|sees) (?:it|you|them|the \w+) coming\b",
+    r"\b(?:spring|springs|sprung|lay|laid|set|sets) (?:the |an |a )?(?:ambush|trap)\b",
+    r"\bambush(?:es|ed)?\b",
+]
+_AMBUSH_SIGNAL_RE = [re.compile(p, re.I) for p in _AMBUSH_SIGNAL]
+
+# DETECTION SIGNALS (#1287, WARN — same family as the ambush/surprise WARN #1271). DM narration
+# that plainly stages an NPC "noticing" or "spotting" the party — a passive-Perception/Insight
+# beat the rules gate behind a roll, not DM fiat. High-confidence, detection-only phrasings (a
+# clean beat with no detection language scores 0 and can never false-fire).
+_DETECTION_SIGNAL = [
+    r"\b(?:notices?|spots?|catches? sight of|glimpses?) (?:you|them|the party|movement|a shape)\b",
+    r"\b(?:hears?|catches?) (?:you|them|the party|a sound|footsteps|a noise)\b",
+    r"\b(?:eyes?|gaze) (?:snaps?|flicks?|turns?) (?:to|toward|on) (?:you|them|the party)\b",
+    r"\b(?:doesn'?t|does not|fails? to) notice (?:you|them|the party)\b",
+    r"\bpasses? (?:you|them|the party) by, unaware\b",
+    r"\bstiffens?,? sensing\b",
+]
+_DETECTION_SIGNAL_RE = [re.compile(p, re.I) for p in _DETECTION_SIGNAL]
+# Skills that gate a detection beat mechanically (skill_check(skill=…)) plus a bare `roll` whose
+# `reason` names the same family — so a DM that rolled raw dice for "perception" still counts.
+_DETECTION_SKILLS = ("perception", "insight", "investigation")
+_DETECTION_ROLL_REASON_RE = re.compile(r"\b(?:perception|insight|investigation)\b", re.I)
+
 
 def _tool_events(events: list[dict]) -> list[tuple[str, dict, object, bool, str]]:
     """Ordered (short_name, input, result_obj_or_None, is_error, raw_text).
@@ -154,6 +206,55 @@ def _tool_events(events: list[dict]) -> list[tuple[str, dict, object, bool, str]
     return out
 
 
+def _detection_beats_without_check(events: list[dict]) -> list[str]:
+    """DM narration text blocks that read like a detection beat (#1287 — same family as the
+    ambush/surprise WARN #1271) with NO qualifying Perception/Insight/Investigation tool call
+    in the SAME beat. A "beat" here is ONE assistant turn (one `assistant`-type event) plus every
+    tool_use/tool_result it issued while producing its reply — a skill_check(skill=perception|
+    insight|investigation) or a bare roll(reason=~that family) ANYWHERE earlier in that turn (or
+    a preceding turn still in the same beat, before the NEXT assistant turn starts) satisfies the
+    gate. The span resets at the START of each new assistant event (not after every text block),
+    so multiple text blocks within one reply — or a tool call followed by narration later in the
+    SAME turn — never false-split a beat. Returns the offending text blocks."""
+    offenders: list[str] = []
+    span_has_check = False
+    prev_type = None
+    for ev in events:
+        ev_type = ev.get("type")
+        if ev_type not in ("assistant", "user"):
+            continue
+        # A new beat starts at the first assistant event AFTER a text-terminated prior turn — i.e.
+        # the transition into a fresh assistant event resets the check-seen flag. Consecutive
+        # assistant events (a turn spanning several tool-call round-trips) and the interleaved
+        # user/tool_result events in between all stay part of the SAME beat.
+        if ev_type == "assistant" and prev_type == "assistant-with-text":
+            span_has_check = False
+        for b in (ev.get("message", {}) or {}).get("content") or []:
+            if not isinstance(b, dict):
+                continue
+            if b.get("type") == "tool_use":
+                short = (b.get("name") or "").split("__")[-1]
+                inp = b.get("input") or {}
+                if short == "skill_check":
+                    skill = str(inp.get("skill") or inp.get("ability") or inp.get("skill_name")
+                                or inp.get("check") or "").strip().lower()
+                    if skill in _DETECTION_SKILLS:
+                        span_has_check = True
+                elif short == "roll" and _DETECTION_ROLL_REASON_RE.search(str(inp.get("reason") or "")):
+                    span_has_check = True
+            elif b.get("type") == "text" and (b.get("text") or "").strip():
+                text = b["text"]
+                if any(rx.search(text) for rx in _DETECTION_SIGNAL_RE) and not span_has_check:
+                    offenders.append(text)
+        if ev_type == "assistant":
+            has_text = any(isinstance(b, dict) and b.get("type") == "text" and (b.get("text") or "").strip()
+                            for b in (ev.get("message", {}) or {}).get("content") or [])
+            prev_type = "assistant-with-text" if has_text else "assistant"
+        else:
+            prev_type = ev_type
+    return offenders
+
+
 # A player turn that reads like DM narration or asserts an outcome (the dice's/DM's
 # call). Heuristic only -> a WARNING, not a hard fail (It.1's constrained tool surface
 # is the real, structural fix; this just surfaces drift until then).
@@ -194,6 +295,20 @@ def main() -> int:
 
     def chk(name: str, ok: bool, detail: str = "", fatal: bool = True) -> None:
         checks.append((name, bool(ok), fatal, detail))
+
+    # 0) RUN-INVALIDATION GUARD (#1285, FATAL). A stamped .infra_invalid.json sentinel means the
+    # beat driver detected N consecutive DM beat failures mid-run (a quota window / host-session
+    # death — rri-a1-duo/duo2: 5 straight is_error beats, narrated 'could not resolve this beat'
+    # at peak dramatic tension, then scored to a 3.8 that was actually the infra failure). FATAL,
+    # not WARN: this run's transcript is contaminated and must never be cited as a clean product
+    # measurement — run_duo.sh's existing gate-RED path (worldos_cap_score_red) already caps every
+    # scorecard to ≤2.5/INVALID on any FATAL failure, so this reuses that machinery for free.
+    _infra = _run_infra_invalid_sentinel(sys.argv[1])
+    chk("run_infra_valid", _infra is None,
+        f"run stamped INFRA-INVALID: {(_infra or {}).get('reason', '(no reason recorded)')} "
+        f"(consecutive_failed_beats={(_infra or {}).get('consecutive_failed_beats', '?')}) — "
+        f"this measures infra collapse, not the product; the run must be re-run, not cited.",
+        fatal=True)
 
     # 1) the run produced real DM output (catches the dead/blank run)
     chk("dm_produced_output", dm_text > 0 or sum(tools.values()) > 0,
@@ -271,6 +386,33 @@ def main() -> int:
             f"surfaced as visible failure rows (dead/error-class DM turns); recovered rows used "
             f"the #357 engine-log fallback. Reported only; gate policy stays #757's call.",
             fatal=False)
+
+        # #1285: promote an 'N consecutive error beats' VARIANT of dm_beat_honesty to a
+        # run-invalidating (FATAL) marker — the chat-log-derived twin of the run_infra_valid
+        # sentinel check above. This is the SAME rri-a1-duo/duo2 defect class (a quota window or
+        # host/session death that fails several beats in a row, not scattered across the run) but
+        # derived independently from $CHAT's beat_failed rows in order, so a run whose runner
+        # predates the #1285 sentinel (or a non-run_duo caller: run_party.sh / ui_playtest.sh,
+        # which share worldos_chatlog_dm_failed but not yet the abort-and-stamp wiring) still gets
+        # caught here rather than reading as a merely-WARNed, cite-able run. Threshold matches the
+        # beat driver's default (qa/lib_beat_driver.sh WORLDOS_INFRA_INVALID_STREAK=3).
+        _CONSECUTIVE_INVALID_THRESHOLD = 3
+        _max_consecutive_failed = 0
+        _run_len = 0
+        for r in chat:
+            if r.get("role") != "dm":
+                continue
+            if r.get("beat_failed") is True:
+                _run_len += 1
+                _max_consecutive_failed = max(_max_consecutive_failed, _run_len)
+            else:
+                _run_len = 0
+        chk("dm_beat_honesty_no_consecutive_collapse", _max_consecutive_failed < _CONSECUTIVE_INVALID_THRESHOLD,
+            f"{_max_consecutive_failed} consecutive DM beat failure(s) in $CHAT (threshold="
+            f"{_CONSECUTIVE_INVALID_THRESHOLD}) — a run of back-to-back failed beats is an infra "
+            f"collapse (quota window / host-session death mid-run), not scattered product defects; "
+            f"this transcript is contaminated and must not be cited as a clean product measurement.",
+            fatal=True)
 
     # 3.5) constrained-player (It.1 facade): the player must actually ACT through its
     # tools. An empty moves log means the facade was blocked/unused (e.g. a missing
@@ -851,23 +993,111 @@ def main() -> int:
     chars_all = state.get("characters", {}) or {}
     party_ids = state.get("party", []) or []
 
+    # AMBUSH-WITHOUT-SURPRISE-GATE (#1271, WARN). The DM narrated an ambush ("lunge from the
+    # shadows", a sprung trap, "never saw it coming") but start_combat ran with NO surprise
+    # evaluation — no surpriser_ids on any start_combat call AND no `surprise` key in any return —
+    # so the passive-Perception-vs-Stealth gate never ran and the ambush lost its mechanical teeth.
+    # Only meaningful when a fight actually STARTED (start_combat>0); a purely-narrative ambush the
+    # player talks/sneaks past never reaches combat and correctly does not fire. WARN, never fatal —
+    # an ambush-flavored word in prose is a soft signal, and the engine may legitimately find nobody
+    # was surprised (but then surpriser_ids WAS passed → `surprise` key present → this doesn't fire).
+    _sc_calls = [(inp, r) for (n, inp, r, err, _t) in evs if n == "start_combat" and not err]
+    if _sc_calls:
+        _ambush_narrated = any(
+            any(rx.search(t) for rx in _AMBUSH_SIGNAL_RE) for t in _dm_narration_texts(events)
+        )
+        _surprise_evaluated = any(
+            (inp.get("surpriser_ids") or (isinstance(r, dict) and r.get("surprise")))
+            for inp, r in _sc_calls
+        )
+        chk("ambush_ran_surprise_gate", not (_ambush_narrated and not _surprise_evaluated),
+            "DM narration staged an ambush but start_combat ran with no surprise evaluation "
+            "(no surpriser_ids, no `surprise` in the return) — the passive-Perception-vs-Stealth "
+            "gate was skipped, so the ambush had no mechanical effect. Pass "
+            "surpriser_ids=[the attacker id(s)] on start_combat for any narrated ambush; the engine "
+            "rolls Stealth vs passive Perception and applies SRD-5.2 initiative disadvantage to the "
+            "surprised set.",
+            fatal=False)
+
+    # DETECTION-BEAT-REQUIRES-CHECK GATE (#1287, WARN — same family as #1271 above). DM narration
+    # that plainly stages an NPC noticing/spotting/hearing the party ("the guard's eyes snap
+    # toward you", "she catches a sound") without a preceding Perception/Insight/Investigation
+    # skill_check (or a reason-tagged roll) in the SAME beat is DM fiat, not a gated roll — the
+    # rri-a1-duo defect this promotes from the scorer's suggested_fix. WARN, never fatal: prose
+    # alone is a soft signal and a false-fire here should never cap an otherwise-clean run.
+    _detection_offenders = _detection_beats_without_check(events)
+    chk("detection_beat_requires_check", not _detection_offenders,
+        f"{len(_detection_offenders)} DM narration beat(s) staged an NPC detecting/noticing the "
+        f"party with no preceding Perception/Insight/Investigation skill_check (or reason-tagged "
+        f"roll) in the same beat — DM fiat, not a gated roll — e.g. "
+        f"{_detection_offenders[0][:90]!r}" if _detection_offenders else "",
+        fatal=False)
+
     def _quest_reward_already_awarded(q: dict) -> bool:
         return any(bool(q.get(k)) for k in ("milestone_awarded", "awarded", "rewarded", "xp_awarded"))
 
-    # A8 (FATAL) — any tool call REJECTED with a schema/validation error (extra_forbidden ⇒
-    # version-skew or a wrong field). The DM's intent silently did not take effect; this is the
-    # class of failure that has produced 2 RED-capped runs historically. Benign engine guards
-    # the DM is EXPECTED to hit and recover from (travel-graph rejections etc.) are split off to
-    # a WARN so healthy recovery never false-REDs.
+    # A8 — a tool call REJECTED with a schema/validation error (extra_forbidden ⇒ version-skew
+    # or a wrong field). The DM's intent for that call silently did not take effect.
+    #
+    # DE-FLAKE (#897, mirrors #1030's discriminator-aware severity). Behavioral is computed from
+    # ONE stochastic duo; the bare "ANY schema rejection ⇒ FATAL" rule made a SINGLE recovered
+    # transient (the DM emits one malformed call, immediately retries the SAME tool correctly, the
+    # session completes cleanly — invisible to the player) RED-cap EVERY lens to 2.5 and swing the
+    # headline RRI by ~1.0 (observed twice). That is a precision bug, not a real integrity signal.
+    #
+    # A rejection now counts toward the FATAL set only when it is a PATTERN, not a recovered blip:
+    #   • UNRECOVERED — the offending tool was NEVER successfully called (is_error=False) anywhere
+    #     in the run, so the DM's intent for that tool silently never took effect (the genuine
+    #     version-skew defect: a stale signature the DM could not get right). [corpus fixture]
+    #   • REPEATED — the SAME tool was rejected with a schema/validation error >=2x across the run
+    #     = a systematic skew (the DM keeps re-using a stale/wrong signature). Repetition is the
+    #     real-skew signal, so this stays FATAL EVEN IF a later call eventually succeeds.
+    # A SINGLE rejection of a tool the DM then successfully retried (recovered transient) ⇒ WARN,
+    # never RED. This is a PRECISION improvement (distinguish player-felt skew from invisible
+    # recovered transients), NOT a leniency hack — the unrecovered + repeated classes the gate was
+    # built for still flip RED; the corpus fixture (an unrecovered update_character) still REDs.
     errors = [(n, text) for (n, inp, r, err, text) in evs if err]
     if errors:
-        fatal_errs = [(n, t) for (n, t) in errors
-                      if "extra_forbidden" in t or "validation error" in t.lower()]
-        benign = [(n, t) for (n, t) in errors if (n, t) not in fatal_errs]
-        chk("no_rejected_tool_calls", not fatal_errs,
-            f"{len(fatal_errs)} tool call(s) rejected with a schema/validation error "
-            f"(extra_forbidden ⇒ version skew or wrong field): {[n for n, _ in fatal_errs]}; "
-            f"first: {fatal_errs[0][1][:160] if fatal_errs else ''}", fatal=True)
+        schema_errs = [(n, t) for (n, t) in errors
+                       if "extra_forbidden" in t or "validation error" in t.lower()]
+        benign = [(n, t) for (n, t) in errors if (n, t) not in schema_errs]
+        # Which tools were EVER called successfully (is_error=False) anywhere in the run? A schema
+        # rejection of tool X is "recovered" iff X also appears with a clean result somewhere —
+        # the DM got the call right (order-independent: a clean call before or after a flub both
+        # prove the DM CAN issue that tool; the rejected intent itself is what we score).
+        succeeded_tools = {n for (n, inp, r, err, _) in evs if not err}
+        # How many times was each tool rejected with a schema/validation error?
+        schema_reject_counts: Counter = Counter(n for (n, _t) in schema_errs)
+        # FATAL set: a rejection is fatal if its tool was NEVER successfully called (unrecovered)
+        # OR its tool was rejected >=2x (repeated = systematic skew). De-dup by tool for the
+        # message (the per-tool classification is what matters, not the raw rejection count).
+        fatal_tools = sorted({
+            n for (n, _t) in schema_errs
+            if n not in succeeded_tools or schema_reject_counts[n] >= 2
+        })
+        # Recovered transients: a tool rejected exactly once that was later (or earlier) called
+        # cleanly — surfaced as a WARN so the flub is never silently dropped.
+        recovered_tools = sorted({
+            n for (n, _t) in schema_errs
+            if n in succeeded_tools and schema_reject_counts[n] < 2
+        })
+        if fatal_tools:
+            # Detail names which fatal class each tool fell into, so a RED is diagnosable.
+            why = ", ".join(
+                f"{n}(" + ("repeated x%d" % schema_reject_counts[n]
+                           if schema_reject_counts[n] >= 2 else "unrecovered") + ")"
+                for n in fatal_tools)
+            first = next((t for (n, t) in schema_errs if n in set(fatal_tools)), "")
+            chk("no_rejected_tool_calls", False,
+                f"{len(fatal_tools)} tool(s) with a SYSTEMATIC schema/validation rejection "
+                f"(extra_forbidden ⇒ version skew / wrong field): {why}; first: {first[:160]}",
+                fatal=True)
+        elif recovered_tools:
+            # All schema rejections were single + recovered ⇒ GREEN, but WARN so it's visible.
+            chk("no_rejected_tool_calls", False,
+                f"{len(recovered_tools)} RECOVERED transient schema rejection(s) "
+                f"(flubbed once, retried the same tool successfully ⇒ invisible to the player): "
+                f"{recovered_tools} — surfaced, not RED-capped (#897)", fatal=False)
         if benign:
             chk("engine_guards_hit", False,
                 f"{len(benign)} engine guard rejection(s) (recoverable, DM expected to retry): "
@@ -1412,6 +1642,49 @@ def main() -> int:
                 f"concentration spell should have dropped the first (drop_concentration)")
     if double_conc:
         chk("concentration_dropped_cleanly", False, "; ".join(double_conc), fatal=False)
+
+    # UNRESOLVED_SPELL_ATTACK (#1270; WARN — graduate to FATAL after clean sweeps, mirroring
+    # caster_has_spellbook). A DM-resolved attack-roll spell (Guiding Bolt, Fire Bolt cast via
+    # cast_spell -> the result carries automated:false + attack_roll:true) leaves its to-hit for
+    # the DM to make via attack(). If the SAME caster never made a same-turn attack() before the
+    # next next_turn, the spell ate its slot and dealt ZERO — the exact sprint defect. Read the
+    # ordered result stream so we can see the automated flag and pair the caster to the follow-up.
+    # Conservative + NULL-GUARDED: only fires on an affirmatively-observed cast_spell result with
+    # automated:false + attack_roll:true and NO matching attack() before the caster's turn ended.
+    try:
+        pairs = _tool_events(events)
+    except Exception:  # defensive: never let the pairing break the gate
+        pairs = []
+    unresolved_spell_atk: list[str] = []
+    # Track, per pending cast, the caster whose attack() would resolve it. A next_turn closes the
+    # window (the leg is same-turn only, #1270); an attack() by that caster resolves it.
+    pending_spell_casters: list[tuple[str, str]] = []  # (caster_id, spell_name)
+    for short, inp, obj, is_err, _text in pairs:
+        if short == "cast_spell" and not is_err and isinstance(obj, dict):
+            if obj.get("automated") is False and obj.get("attack_roll") is True:
+                caster = str(inp.get("character_id") or inp.get("caster_id") or "")
+                pending_spell_casters.append((caster, str(obj.get("spell") or inp.get("spell_name") or "spell")))
+        elif short == "attack" and not is_err:
+            atk_by = str(inp.get("attacker_id") or inp.get("character_id") or "")
+            # Resolve the OLDEST pending leg for this caster (a same-turn attack pairs to it).
+            for i, (caster, _sp) in enumerate(pending_spell_casters):
+                if caster and caster == atk_by:
+                    pending_spell_casters.pop(i)
+                    break
+        elif short == "next_turn":
+            # The turn ended: any still-pending spell-attack leg went unresolved this turn.
+            for caster, sp in pending_spell_casters:
+                unresolved_spell_atk.append(
+                    f"{sp} cast by {caster or '?'} returned automated:false (DM must resolve the "
+                    f"attack roll via attack()) but no same-turn attack() resolved it before "
+                    f"next_turn — the spell ate its slot and dealt no damage")
+            pending_spell_casters = []
+    # Any legs still pending at end-of-run (no trailing next_turn) are also unresolved.
+    for caster, sp in pending_spell_casters:
+        unresolved_spell_atk.append(
+            f"{sp} cast by {caster or '?'} returned automated:false but no attack() resolved it")
+    if unresolved_spell_atk:
+        chk("unresolved_spell_attack", False, "; ".join(unresolved_spell_atk), fatal=False)
 
     fails = [c for c in checks if c[2] and not c[1]]
     warns = [c for c in checks if not c[2] and not c[1]]

@@ -34,7 +34,7 @@ for _wos_rmvol_k in $(env | awk -F= '$2 ~ /^\/Volumes\// {print $1}'); do
   # awk emit a bogus "key", and `unset` on a non-identifier errors — which would abort a future
   # sourcer that runs `set -e`. (Today's sourcers use `set -uo pipefail` only, so this is belt-and-
   # suspenders to keep the shared lib safe regardless of the caller's shell options.)
-  case "$_wos_rmvol_k" in WORLDOS_*|WORLDOS_*|""|[0-9]*|*[!A-Za-z0-9_]*) continue ;; esac
+  case "$_wos_rmvol_k" in PATH|WORLDOS_*|WORLDOS_*|""|[0-9]*|*[!A-Za-z0-9_]*) continue ;; esac
   unset "$_wos_rmvol_k"
 done
 unset _wos_rmvol_k
@@ -346,6 +346,8 @@ record_dm_reply() {
     chatlog dm "$text" "$plain_extra"
   fi
   WORLDOS_FALLBACK_RECOVERED=0
+  # #1285: a genuine beat resets the consecutive-failure streak (mirrors worldos_chatlog_dm).
+  WORLDOS_DM_BEATS_FAILED_STREAK=0
 }
 
 # worldos_chatlog_dm TEXT — `chatlog dm TEXT` for the runners that write the dm row directly
@@ -359,6 +361,9 @@ worldos_chatlog_dm() {
     chatlog dm "$1"
   fi
   WORLDOS_FALLBACK_RECOVERED=0
+  # #1285: a genuine beat (this function is only called with a NON-empty resolved reply) resets
+  # the consecutive-failure streak — see worldos_chatlog_dm_failed below.
+  WORLDOS_DM_BEATS_FAILED_STREAK=0
 }
 
 # ── SYN-01 (#757/#745): dead-beat failure classification — the honesty layer ────────────────
@@ -468,12 +473,57 @@ worldos_dm_logged_new_prose() {
 # row text is WORLDOS_DM_FAILED_BEAT_TEXT — never an error string, never recycled prose, never
 # blank, never hidden (no engine_logged stamp — see the constant's comment). Consume-once on
 # the resolve flags, mirroring worldos_chatlog_dm. Reads ambient $CHAT exactly as chatlog does.
+#
+# #1285: also tracks the CONSECUTIVE-failure streak (WORLDOS_DM_BEATS_FAILED_STREAK; reset to 0
+# by any genuine beat in worldos_chatlog_dm / record_dm_reply above) — the rri-a1-duo/duo2 class
+# where the account session limit hit MID-RUN, 5 beats failed back-to-back, and the run STILL
+# continued to a scored end (the cumulative WORLDOS_DM_BEATS_FAILED counter never distinguished
+# "1 failure scattered across 24 beats" from "5 in a row" — a real product defect vs an infra
+# collapse). At/above WORLDOS_INFRA_INVALID_STREAK consecutive failures, stamp the run
+# infra-invalid via worldos_mark_run_infra_invalid so a later scorer can never cite it as clean.
+WORLDOS_INFRA_INVALID_STREAK="${WORLDOS_INFRA_INVALID_STREAK:-3}"
 worldos_chatlog_dm_failed() {
   WORLDOS_DM_BEATS_FAILED=$((${WORLDOS_DM_BEATS_FAILED:-0} + 1))
-  echo "[worldos] beat FAILED — visible failure beat recorded (beats_failed=$WORLDOS_DM_BEATS_FAILED this run)" >&2
+  WORLDOS_DM_BEATS_FAILED_STREAK=$((${WORLDOS_DM_BEATS_FAILED_STREAK:-0} + 1))
+  echo "[worldos] beat FAILED — visible failure beat recorded (beats_failed=$WORLDOS_DM_BEATS_FAILED this run, streak=$WORLDOS_DM_BEATS_FAILED_STREAK consecutive)" >&2
   chatlog dm "$WORLDOS_DM_FAILED_BEAT_TEXT" '{"beat_failed":true}'
   WORLDOS_FALLBACK_RECOVERED=0
   WORLDOS_DM_BEAT_FAILED=0
+  if [ "$WORLDOS_DM_BEATS_FAILED_STREAK" -ge "$WORLDOS_INFRA_INVALID_STREAK" ] && [ -n "${STATE_DIR:-}" ]; then
+    worldos_mark_run_infra_invalid "$STATE_DIR" \
+      "$WORLDOS_DM_BEATS_FAILED_STREAK consecutive DM beat failures (is_error/dead-beat) — likely a quota window or host/session death mid-run, not a product defect"
+  fi
+}
+
+# worldos_mark_run_infra_invalid STATE_DIR REASON — stamp $STATE_DIR/.run_infra_invalid.json
+# (once; the FIRST trip wins — a later, unrelated call never overwrites the original reason/beat
+# count). This is the run-level sentinel qa/assert_behavioral.py's run_infra_valid gate reads (by
+# deriving the sibling path from its run.jsonl argv) to flip a mid-run-contaminated transcript
+# FATAL — so a quota-crippled run can never silently read as a clean, scored product measurement
+# (the exact rri-a1-duo/duo2 defect: 5 consecutive is_error beats, narrated 'could not resolve
+# this beat' at peak tension, then scored to the end with a 3.8 that was actually the infra
+# failure). Mirrors worldos_validate_lens_file's sentinel discipline for the scorer side.
+worldos_mark_run_infra_invalid() {
+  local state_dir="$1" reason="$2" marker="$1/.run_infra_invalid.json"
+  [ -n "$state_dir" ] || return 0
+  if [ -s "$marker" ]; then
+    return 0  # already stamped this run — first trip wins
+  fi
+  echo "[worldos] RUN INFRA-INVALID — $reason" >&2
+  python3 - "$marker" "$reason" "${WORLDOS_DM_BEATS_FAILED_STREAK:-0}" <<'PY'
+import json
+import sys
+import time
+
+path, reason, streak = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump({
+        "infra_invalid": True,
+        "reason": reason,
+        "consecutive_failed_beats": int(streak or 0),
+        "stamped_at": time.time(),
+    }, fh, indent=2)
+PY
 }
 
 # LIVE-PROGRESS + WRAPPER HEARTBEAT (#623 — the ONE shared implementation of the perceived-latency fix).
@@ -1396,6 +1446,65 @@ else:
     d["defects"] = [defect]
 json.dump(d, open(path, "w"), indent=2)
 PY
+}
+
+# SCORER-INTEGRITY (WS0a) — validate ONE lens scorecard file. A scorer FAILURE must never read
+# as a valid no-score: when qa/score.sh exhausts its retries it now writes an {error:scorer_failed}
+# sentinel (or, on a 429, {quota_exhausted}); a hard process kill could still leave the file
+# missing/empty. This helper is the single source of truth for "is this lens file a TRUSTWORTHY
+# numeric scorecard?" so run_duo.sh and the test agree by construction.
+# Echoes exactly ONE token on stdout:
+#   ok        — file exists, non-empty, valid JSON, has a NUMERIC .overall (a real scorecard)
+#   missing   — file absent or empty (claude wrote nothing / no sentinel was reachable)
+#   invalid   — present + non-empty but NOT parseable JSON
+#   sentinel  — valid JSON carrying a failure sentinel (.error=="scorer_failed" or .quota_exhausted)
+#   nonnumeric— valid JSON but .overall is absent/non-numeric (a malformed card, not a score)
+# Returns rc=0 ONLY for 'ok'; rc=1 for every NON-ok status so callers can `if worldos_validate_lens_file …`.
+worldos_validate_lens_file() {
+  local path="$1" status
+  if [ ! -s "$path" ]; then
+    echo missing
+    return 1
+  fi
+  # python via `-c` (single-quoted, no heredoc) so the verdict logic can be captured into a var
+  # with $(...) cleanly (a heredoc INSIDE $(...) is fragile across bash versions). $0 is unused;
+  # the lens path is $1.
+  status="$(python3 -c '
+import json, numbers, sys
+try:
+    with open(sys.argv[1]) as fh:
+        d = json.load(fh)
+except Exception:
+    print("invalid"); sys.exit(0)
+if not isinstance(d, dict):
+    print("invalid"); sys.exit(0)
+# A failure sentinel (scorer exhausted retries, or a 429 quota trip) is NOT a score.
+if d.get("error") == "scorer_failed" or d.get("quota_exhausted") is True:
+    print("sentinel"); sys.exit(0)
+ov = d.get("overall")
+# bool is a subclass of int — exclude it; a scorecard overall is a real number.
+if isinstance(ov, bool) or not isinstance(ov, numbers.Number):
+    print("nonnumeric"); sys.exit(0)
+print("ok")
+' "$path" 2>/dev/null)"
+  # A python crash / empty stdout (e.g. python3 missing) → treat as invalid, never silently 'ok'.
+  [ -n "$status" ] || status="invalid"
+  echo "$status"
+  [ "$status" = "ok" ]
+}
+
+# WS0a — render ONE lens's value for the human-facing result line. For a valid scorecard, echo the
+# numeric .overall; for ANYTHING else echo FAILED:<status> so a scorer failure can never print as a
+# BLANK that misreads as a valid no-score (the bug this whole change fixes). Single source of truth
+# for the print so it can't drift from worldos_validate_lens_file's verdict.
+worldos_lens_display() {
+  local path="$1" status
+  status="$(worldos_validate_lens_file "$path")"
+  if [ "$status" = "ok" ]; then
+    jq -r '.overall' "$path" 2>/dev/null
+  else
+    echo "FAILED:${status}"
+  fi
 }
 
 # Campaign Director advisory (#72): at the START of a beat, surface what the campaign OWES — an

@@ -27,6 +27,8 @@ CLI:
   python3 qa/scoring_config_version.py --lens     # print the current LENS ruler hash
   python3 qa/scoring_config_version.py --label    # print a human label + the hash
   python3 qa/scoring_config_version.py --files     # list the files that define the full ruler
+  python3 qa/scoring_config_version.py --artifact  # print the ARTIFACT ruler hash (ac_…, HV1 #1323)
+  python3 qa/scoring_config_version.py --artifact-files  # list the artifact-ruler files
 """
 from __future__ import annotations
 
@@ -57,6 +59,26 @@ SCORING_CONFIG_FILES: list[str] = [
 # number MEANS, so an RRI-only edit must not re-fence the engine-duo quality trend.
 LENS_CONFIG_FILES: list[str] = [n for n in SCORING_CONFIG_FILES if n != "release_readiness.py"]
 
+# The ARTIFACT ruler (HV1, #1323): a SEPARATE hash family (``ac_…``) for the per-artifact eval
+# instrument — the quest / npc / location / encounter rubrics + their plain-number schemas. This is a
+# DELIBERATELY DISTINCT list: it MUST NOT be folded into SCORING_CONFIG_FILES. Appending an artifact
+# rubric there would silently re-version the ``sc_``/``lc_`` engine-duo rulers, breaking the ledger's
+# comparability of every existing story/mech/angry number (the exact trap this whole module exists to
+# prevent). The artifact ruler fences the harvest loop's per-artifact scores (scores.db
+# ``artifacts.ac_ruler``) on their OWN axis: edit an artifact rubric/schema and every FUTURE artifact
+# score re-versions, while the engine-duo ``sc_``/``lc_`` trend stays byte-identical. Absent files
+# hash as a sentinel (same as the other families) so a rename/delete also re-versions.
+ARTIFACT_CONFIG_FILES: list[str] = [
+    "rubric_artifact_quest.md",
+    "rubric_artifact_npc.md",
+    "rubric_artifact_location.md",
+    "rubric_artifact_encounter.md",
+    "score_schema_artifact_quest.json",
+    "score_schema_artifact_npc.json",
+    "score_schema_artifact_location.json",
+    "score_schema_artifact_encounter.json",
+]
+
 
 def _content_hash(files: list[str], prefix: str, qa_dir: Path | None = None) -> str:
     """Order-stable sha256 over (name, content) pairs; absent files hash as a sentinel."""
@@ -85,6 +107,16 @@ def lens_config_version(qa_dir: Path | None = None) -> str:
     return _content_hash(LENS_CONFIG_FILES, "lc_", qa_dir)
 
 
+def artifact_config_version(qa_dir: Path | None = None) -> str:
+    """Return a stable short hash (``ac_xxxxxxxxxxxx``) of the ARTIFACT ruler's contents (HV1, #1323).
+
+    Distinct ``ac_`` prefix so an artifact-ruler hash can never be mistaken for (or checked against) a
+    full-ruler ``sc_`` or lens ``lc_`` hash. Fences the harvest loop's per-artifact scores on their
+    own axis, entirely independent of the engine-duo rulers.
+    """
+    return _content_hash(ARTIFACT_CONFIG_FILES, "ac_", qa_dir)
+
+
 def scoring_config_label(qa_dir: Path | None = None) -> str:
     """A human-readable label + the hash, e.g. ``ruler@sc_a1b2c3d4e5f6 (9 files)``."""
     root = qa_dir or _QA_DIR
@@ -96,9 +128,14 @@ if __name__ == "__main__":
     if "--files" in sys.argv:
         for n in sorted(SCORING_CONFIG_FILES):
             print(n)
+    elif "--artifact-files" in sys.argv:
+        for n in sorted(ARTIFACT_CONFIG_FILES):
+            print(n)
     elif "--label" in sys.argv:
         print(scoring_config_label())
     elif "--lens" in sys.argv:
         print(lens_config_version())
+    elif "--artifact" in sys.argv:
+        print(artifact_config_version())
     else:
         print(scoring_config_version())

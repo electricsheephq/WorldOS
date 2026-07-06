@@ -4,6 +4,8 @@
 
 WorldOS turns a persistent world into a playable campaign: an AI Dungeon Master narrates the scene, the deterministic SRD 5.2 engine resolves rolls and state, and OpenWorlds gives the player a real app surface for actions, maps, party state, journals, and live narration. The provider is configurable: use Anthropic through Claude Code, Codex/OpenAI through Codex CLI, or future OpenClaw lanes without changing the engine contract.
 
+> **Agents/contributors:** start at [`docs/OPERATIONS.md`](docs/OPERATIONS.md) — the one-page bootstrap (vision → roadmap → active sprint → the loop). The product vision lives in [`VISION.md`](VISION.md); the sequencing source of truth is [`docs/roadmap/PRODUCT-ROADMAP.md`](docs/roadmap/PRODUCT-ROADMAP.md).
+
 ![OpenWorlds table view](docs/images/openworlds-table-public.png)
 
 | Scene | Chronicle | Actions |
@@ -102,7 +104,7 @@ servers/engine/      deterministic campaign state, rolls, combat, travel, memory
 servers/rules/       bundled SRD 5.2 rules lookup
 servers/voice/       local/null voice backend boundary
 viewer/openworlds/   browser OpenWorlds UI
-godot/               experimental Godot isometric (GT2) renderer — see godot/HANDOFF.md
+extensions/renderers/godot/  archived Godot isometric (GT2) reference extension
 macos/WorldOSApp/    native macOS app shell
 scripts/             provider and play wrappers
 qa/                  app, provider, scoring, and release gates

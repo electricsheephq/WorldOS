@@ -915,6 +915,150 @@ def test_start_combat_unknown_surpriser_id_is_skipped_gracefully(tmp_path, monke
     assert "surprise" not in view
 
 
+# =========================================================================
+# #1271: surprise GATE — engine rolls Stealth vs passive Perception and applies
+# the SRD-5.2 effect (Disadvantage on the surprised set's Initiative roll).
+# SRD source: data/srd/srd524/Rule.json, Rule[19] "**Surprise.**": "If a combatant
+# is surprised by combat starting, that combatant has Disadvantage on their Initiative
+# roll." (5.2 = initiative disadvantage, NOT the 2014 lost-turn model.)
+# =========================================================================
+
+
+def _rig_surprise_rolls(monkeypatch, server, stealth_total):
+    """Deterministic-roll harness for the surprise gate. start_combat rolls Stealth for each
+    surpriser FIRST (before the initiative loop), so the first N `1d20` rolls are the surprisers'
+    Stealth checks (forced to `stealth_total`) and the rest are initiative rolls. Records every
+    (expression, disadvantage) pair so a test can assert which initiative rolls carried
+    Disadvantage. One surpriser per fixture below ⇒ the FIRST roll is the Stealth check."""
+    calls: list[tuple[str, bool]] = []
+    state = {"stealth_rolls_left": 1}  # fixtures use exactly one surpriser
+    _orig = server.dice_mod.roll
+
+    def _rigged(expression, **kwargs):
+        calls.append((expression, bool(kwargs.get("disadvantage"))))
+        if state["stealth_rolls_left"] > 0:
+            state["stealth_rolls_left"] -= 1
+            return DiceRoll(expression=expression, total=stealth_total,
+                            rolls=[stealth_total], is_d20=True, natural=20)
+        return _orig(expression, **kwargs)
+
+    monkeypatch.setattr(server.dice_mod, "roll", _rigged)
+    return calls
+
+
+def _init_calls(calls):
+    """The initiative rolls = every recorded 1d20 roll AFTER the leading Stealth roll(s)."""
+    return calls[1:]  # one surpriser ⇒ drop the single leading Stealth check
+
+
+def test_start_combat_surprised_set_from_stealth_vs_passive_perception(tmp_path, monkeypatch):
+    """The engine determines the surprised set: a defender whose passive Perception is beaten
+    by the surpriser's Stealth check is surprised; a keen-eyed defender is NOT."""
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("Surprise Gate Test")["id"]
+    attacker = server.create_character(cid, "Ambusher", kind="player", max_hp=10)["id"]
+    # Oblivious: WIS 10 → passive Perception 10 < 25 (the forced Stealth) ⇒ surprised.
+    oblivious = server.create_character(
+        cid, "Oblivious", kind="monster", max_hp=10,
+        abilities={"str": 10, "dex": 10, "con": 10, "int": 10, "wis": 10, "cha": 10},
+    )["id"]
+    # Keen-eyed: WIS 40 (mod +15) → passive Perception 25; 25 is NOT > 25 ⇒ NOT surprised
+    # (the surpriser must strictly BEAT passive Perception).
+    keen = server.create_character(
+        cid, "Keen", kind="monster", max_hp=10,
+        abilities={"str": 10, "dex": 10, "con": 10, "int": 10, "wis": 40, "cha": 10},
+    )["id"]
+
+    _rig_surprise_rolls(monkeypatch, server, stealth_total=25)
+
+    view = server.start_combat(cid, [attacker, oblivious, keen], surpriser_ids=[attacker])
+
+    assert "surprise" in view
+    surprised = set(view["surprise"]["surprised"])
+    assert oblivious in surprised, "low-passive-Perception defender must be surprised"
+    assert keen not in surprised, "keen-eyed defender (passive Perception >= Stealth) is NOT surprised"
+    assert attacker not in surprised, "the surpriser is never in the surprised set"
+    assert view["surprise"]["stealth_check"] == 25
+
+
+def test_start_combat_surprised_rolls_initiative_with_disadvantage_srd52(tmp_path, monkeypatch):
+    """SRD 5.2 effect: the surprised combatant's Initiative is rolled with Disadvantage; the
+    surpriser's roll is NOT.
+
+    Cite: data/srd/srd524/Rule.json Rule[19] '**Surprise.** ... that combatant has Disadvantage
+    on their Initiative roll.' (This asserts the 5.2 model the repo data encodes — initiative
+    disadvantage — NOT a 2014-style lost turn.)"""
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("Surprise Disadv Test")["id"]
+    attacker = server.create_character(cid, "Ambusher", kind="player", max_hp=10)["id"]
+    oblivious = server.create_character(
+        cid, "Oblivious", kind="monster", max_hp=10,
+        abilities={"str": 10, "dex": 10, "con": 10, "int": 10, "wis": 10, "cha": 10},
+    )["id"]
+
+    calls = _rig_surprise_rolls(monkeypatch, server, stealth_total=25)
+
+    server.start_combat(cid, [attacker, oblivious], surpriser_ids=[attacker])
+
+    init = _init_calls(calls)
+    disadvantaged = [e for (e, dis) in init if dis]
+    not_disadvantaged = [e for (e, dis) in init if not dis]
+    assert len(disadvantaged) == 1, f"exactly the surprised set rolls with disadvantage: {init}"
+    assert len(not_disadvantaged) == 1, "the surpriser rolls initiative normally (no disadvantage)"
+
+
+def test_start_combat_surpriser_ids_but_nobody_surprised(tmp_path, monkeypatch):
+    """surpriser_ids passed but the Stealth check fails to beat every defender's passive
+    Perception ⇒ empty surprised set, no initiative rolled with disadvantage, but the
+    `surprise` key is still present (surprisers were declared)."""
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("Nobody Surprised Test")["id"]
+    attacker = server.create_character(cid, "Ambusher", kind="player", max_hp=10)["id"]
+    keen = server.create_character(
+        cid, "Keen", kind="monster", max_hp=10,
+        abilities={"str": 10, "dex": 10, "con": 10, "int": 10, "wis": 40, "cha": 10},
+    )["id"]
+
+    calls = _rig_surprise_rolls(monkeypatch, server, stealth_total=5)  # a whiffed Stealth check
+
+    view = server.start_combat(cid, [attacker, keen], surpriser_ids=[attacker])
+
+    assert view["surprise"]["surprised"] == [], "no defender beaten ⇒ empty surprised set"
+    assert not any(dis for (_e, dis) in _init_calls(calls)), \
+        "nobody surprised ⇒ no disadvantaged initiative roll"
+
+
+def test_start_combat_no_surpriser_ids_no_disadvantage_byte_identical(tmp_path, monkeypatch):
+    """The default (no surpriser_ids) path rolls ZERO initiative with disadvantage and surfaces
+    no `surprise` key — byte-identical to today's behaviour."""
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    import server
+
+    cid = server.create_campaign("No Surprise Byte-Identical")["id"]
+    a = server.create_character(cid, "A", kind="player", max_hp=10)["id"]
+    b = server.create_character(cid, "B", kind="monster", max_hp=10)["id"]
+
+    calls: list[tuple[str, bool]] = []
+    _orig = server.dice_mod.roll
+
+    def _rec(expression, **kwargs):
+        calls.append((expression, bool(kwargs.get("disadvantage"))))
+        return _orig(expression, **kwargs)
+
+    monkeypatch.setattr(server.dice_mod, "roll", _rec)
+
+    view = server.start_combat(cid, [a, b])
+
+    assert "surprise" not in view
+    assert not any(dis for (_e, dis) in calls), "no surpriser_ids ⇒ no disadvantaged roll (unchanged)"
+
+
 # --- monster_combat surfacing (issue #157: Bandit Captain Multiattack) ---------
 
 

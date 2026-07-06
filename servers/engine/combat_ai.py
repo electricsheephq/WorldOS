@@ -152,6 +152,26 @@ class AbilityOption:
 
 
 @dataclass(frozen=True)
+class AoeSpellOption:
+    """A castable AREA spell the actor can aim at a burst ORIGIN (tactical-v2, #1255). The loop
+    surfaces it ONLY for the tactics policy (empty on the view == today's greedy-v1, byte-identical).
+    PR-D only reasons about the SPHERE family (Fireball et al.) — the bounded origin-search + the
+    catch-≥2-foes-zero-allies rule are cleanest for a radial burst; cones/lines (origin-anchored,
+    facing-dependent) are DEFERRED. `radius_ft` sizes the sphere; `value` is avg damage at this cast
+    (save-for-half weighted like a single-target save spell); `save_ability`/`on_save` drive the
+    per-target EV exactly as SpellOption. Pure data — the AI evaluates candidate origins, the loop's
+    cast_spell(origin=...) resolves the real occupants + saves (sole writer, no new path)."""
+    name: str
+    radius_ft: int = 20
+    value: float = 0.0            # avg damage per caught target at this slot (full, pre-save)
+    range_ft: int = 150          # how far the burst origin can be placed from the caster
+    save_ability: str = ""       # the save the area forces (e.g. "dexterity"); "" => no save (auto)
+    on_save: str = "half"        # "half" (save-for-half) else save-or-nothing
+    slot_level: int = 0          # the slot this cast spends (0 == a cantrip AoE, rare)
+    concentration: bool = False  # don't start one that breaks a >= -value active concentration
+
+
+@dataclass(frozen=True)
 class SneakAttackOption:
     """The actor's Sneak Attack rider (rogue, v2.0c). `dice` is the sheet's Sneak-Attack dice (e.g.
     "3d6"); the AI TAGS an eligible attack with it as a damage_rolls component, and the existing
@@ -232,6 +252,15 @@ class CombatView:
     # (heal-triage OR offence). False/default == no leveled bonus spell this turn (today's behavior): the
     # main action is unconstrained. A cantrip / Second Wind / Rage bonus does NOT set this (no slot spent).
     bonus_spell_used: bool = False
+    # ── Positioning depth for the tactical-v2 policy (#1255 / grid-461 PR-D) ──────────────
+    # The fight's grid_impassable (walls/props) and grid_difficult (terrain) cells, surfaced so the
+    # tactics layer can read cover (line_blockers/cover_between) + route around difficult terrain via
+    # the SAME combat_grid helpers the engine uses. Empty == open floor (greedy-v1 behavior unchanged).
+    blocking: tuple[tuple[int, int], ...] = ()   # grid_impassable — walls/props for cover + LoS + routing
+    difficult: tuple[tuple[int, int], ...] = ()  # grid_difficult — double-cost cells the router avoids
+    # The actor's castable AREA spells (spheres), surfaced ONLY for policy="tactical-v2". Empty for a
+    # non-caster / non-tactics turn == today (greedy-v1 never sees these and cannot cast an AoE).
+    aoe_spells: tuple[AoeSpellOption, ...] = ()
 
 
 # ── Pure EV helpers ──────────────────────────────────────────────────────────────────
@@ -389,20 +418,53 @@ def _nearest_foe(view: CombatView) -> Optional[CombatantView]:
 def _step_toward(view: CombatView, target: CombatantView, reach_ft: int) -> Optional[tuple[int, int]]:
     """Pick the reachable cell (within this turn's movement budget) that gets the actor as
     close as possible to `target` — ideally into reach. Returns a cell or None (can't improve
-    / off-grid). Pure: combat_grid.reachable + Chebyshev distance, no state."""
+    / off-grid). Pure: combat_grid.reachable + Chebyshev distance, no state.
+
+    Terrain-aware (#1269): the fight's `blocking` (walls/props) and `difficult` cells are threaded
+    into the SAME terrain-aware Dijkstra the engine uses, so a greedy-v1 monster ROUTES AROUND walls
+    (impassable cells are never reachable) and, among equally-close cells, prefers a CHEAP clear route
+    over one through difficult ground (the routed-cost tie-break). On OPEN FLOOR (no walls / no
+    difficult — both sets empty) `reachable` degenerates to the flat-cost Dijkstra and the tie-break
+    stays `(distance, cell)` exactly as before — byte-identical to the pre-#1269 behaviour."""
     if not view.grid_enabled or view.actor_cell is None or target.cell is None:
         return None
     budget = combat_grid.movement_budget_cells(view.speed, view.cell_size, view.dashed)
     if budget <= 0:
         return None
     occupied = _occupied_cells(view) - {view.actor_cell}
-    reach = combat_grid.reachable(view.actor_cell, budget, occupied, view.grid_width, view.grid_height)
+    blocking = _blocking_set(view)
+    difficult = _difficult_set(view)
+    reach = combat_grid.reachable(
+        view.actor_cell, budget, occupied, view.grid_width, view.grid_height,
+        impassable=blocking, difficult=difficult,
+    )
     if not reach:
         return None
-    best = min(
-        reach,
-        key=lambda cell: (combat_grid.distance_ft(cell, target.cell, view.cell_size), cell),
-    )
+    if not blocking and not difficult:
+        # Open floor: the flat-cost path — key stays (distance, cell), byte-identical to pre-#1269.
+        best = min(
+            reach,
+            key=lambda cell: (combat_grid.distance_ft(cell, target.cell, view.cell_size), cell),
+        )
+    else:
+        # Walls/difficult terrain present: break distance ties by the terrain-aware ROUTED move cost
+        # (a same-distance CLEAR route beats one through difficult ground) — the same tie-break the
+        # tactical-v2 _terrain_step_toward uses, so v1-fallback routing matches the engine's picture.
+        def _routed_cost(cell: tuple[int, int]) -> int:
+            route = combat_grid.shortest_path(
+                view.actor_cell, cell, occupied, view.grid_width, view.grid_height,
+                impassable=blocking, difficult=difficult,
+            )
+            return combat_grid.path_cost_cells(view.actor_cell, cell, route, difficult=difficult)
+
+        best = min(
+            reach,
+            key=lambda cell: (
+                combat_grid.distance_ft(cell, target.cell, view.cell_size),
+                _routed_cost(cell),
+                cell,
+            ),
+        )
     cur = combat_grid.distance_ft(view.actor_cell, target.cell, view.cell_size)
     new = combat_grid.distance_ft(best, target.cell, view.cell_size)
     return best if new < cur else None
@@ -711,6 +773,354 @@ def pick_bonus_action(actor: "Character", combat_state: CombatView) -> Optional[
     return None
 
 
+# ── Tactical-v2 positioning layer (#1255 / grid-461 PR-D) ────────────────────────────
+#
+# A pluggable, GRID-ONLY tactics pass that upgrades the greedy pick where #461 positioning
+# depth pays off — AoE placement, cover-aware target choice, flank-seeking movement, and
+# terrain-aware routing. It reads the SAME combat_grid primitives the engine's own attack()/
+# cast_spell() use (cover_between / flanking / reachable / shortest_path), so the AI's picture
+# matches what the verbs will resolve. It NEVER short-circuits the fallback: anything it can't
+# improve (no grid, off-grid actor, no clumped foes, no flank) returns None and pick_action
+# runs the unchanged greedy-v1+v2.0 path. Pure + deterministic — every tie-break is a stable
+# key; no unseeded randomness. DOCUMENTED TIE-BREAK ORDER is stated at each decision below.
+
+def _blocking_set(view: CombatView) -> set:
+    """The fight's impassable (wall/prop) cells as a set, for cover + LoS. Empty == open floor."""
+    return {(int(x), int(y)) for x, y in view.blocking}
+
+
+def _difficult_set(view: CombatView) -> set:
+    """The fight's difficult-terrain cells as a set, for terrain-aware routing. Empty == flat."""
+    return {(int(x), int(y)) for x, y in view.difficult}
+
+
+def _cover_of(view: CombatView, target: CombatantView, blocking: set) -> str:
+    """The SRD cover tier the actor's attack ray grants `target` (none/half/three_quarters/total),
+    from the actor's cell. 'none' when off-grid or no walls (byte-identical open-floor behavior)."""
+    if view.actor_cell is None or target.cell is None or not blocking:
+        return "none"
+    return combat_grid.cover_between(view.actor_cell, target.cell, blocking)
+
+
+def _attack_ev_with_cover(opt: AttackOption, target: CombatantView, cover: str) -> float:
+    """EV of striking `target` with `opt`, DISCOUNTED by the target's cover: cover raises the
+    effective AC (+2 half / +5 three-quarters), lowering P(hit). 'total' cover => the target can't
+    be targeted directly, EV 0 (the tactics layer skips it). Pure — reuses cover_ac_bonus."""
+    if cover == "total":
+        return 0.0
+    eff_ac = int(target.armor_class) + combat_grid.cover_ac_bonus(cover)
+    return p_hit(opt.to_hit, eff_ac) * _expected_damage(opt)
+
+
+def _aoe_origin_candidates(view: CombatView) -> list[tuple[int, int]]:
+    """The BOUNDED set of candidate burst origins the AoE search evaluates: every FOE cell plus its
+    8 neighbours, deduped + clipped to the grid. This is O(enemies × 9) origins — NEVER O(grid²):
+    a good Fireball centre is on or one cell off a foe (to catch a cluster), so we never scan the
+    whole board. Deterministic (sorted). Empty off-grid / no foes."""
+    if not view.grid_enabled:
+        return []
+    w, h = view.grid_width, view.grid_height
+    origins: set[tuple[int, int]] = set()
+    for foe in view.foes:
+        if foe.cell is None:
+            continue
+        fx, fy = foe.cell
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                ox, oy = fx + dx, fy + dy
+                if 0 <= ox < w and 0 <= oy < h:
+                    origins.add((ox, oy))
+    return sorted(origins)
+
+
+def _aoe_ev_at(view: CombatView, sp: AoeSpellOption, origin: tuple[int, int],
+               blocking: set) -> tuple[int, int, float]:
+    """Evaluate an AoE `sp` burst at `origin`: (#foes caught, #allies caught, total EV). A cell is
+    caught only if it has LINE OF EFFECT from the burst origin (a wall shields it — SRD 5.2, the same
+    cull cast_spell(origin=...) applies), so cover is respected. EV sums each caught FOE's expected
+    HP removed (save-for-half weighted via the real save DC vs that foe's save bonus). The ACTOR
+    itself is never friendly-fire counted here (it's not in foes/allies); an ally in the burst is
+    counted so the caller can REJECT any origin that catches ≥1 ally. Pure geometry + EV."""
+    reach = max(0, sp.radius_ft // view.cell_size) if view.cell_size > 0 else 0
+    ox, oy = origin
+    foes_caught = 0
+    allies_caught = 0
+    total_ev = 0.0
+    full = float(sp.value)
+    for foe in view.foes:
+        if foe.cell is None:
+            continue
+        if combat_grid.chebyshev_cells(origin, foe.cell) > reach:
+            continue
+        if blocking and foe.cell != origin and not combat_grid.has_line_of_effect(
+            origin, foe.cell, blocking
+        ):
+            continue  # a wall between the burst point and the foe shields it
+        foes_caught += 1
+        if full > 0:
+            if sp.save_ability:
+                sb = int(foe.save_bonuses.get(sp.save_ability, 0))
+                p_fail = _p_save_fail(view.spell_save_dc, sb)
+                total_ev += p_fail * full + (1.0 - p_fail) * (
+                    full / 2.0 if sp.on_save == "half" else 0.0
+                )
+            else:
+                total_ev += full  # auto-hit area (rare)
+    for ally in view.allies:
+        if ally.cell is None:
+            continue
+        if combat_grid.chebyshev_cells(origin, ally.cell) > reach:
+            continue
+        if blocking and ally.cell != origin and not combat_grid.has_line_of_effect(
+            origin, ally.cell, blocking
+        ):
+            continue
+        allies_caught += 1
+    return foes_caught, allies_caught, total_ev
+
+
+def _best_aoe(view: CombatView, blocking: set) -> Optional[tuple[AoeSpellOption, tuple[int, int], float]]:
+    """The best (AoE spell, origin, EV) the actor should cast this turn, or None. RULE (the brief):
+    an AoE is only chosen when it catches ≥2 FOES and ZERO allies (never friendly-fire). Among
+    those, TIE-BREAK ORDER: (1) most foes caught, (2) highest total EV, (3) lower slot level (cheaper),
+    (4) stable spell name, (5) stable origin. The origin must be within the spell's range of the actor
+    (the burst has to be placeable). A #1106 leveled-bonus-spell turn forbids a leveled AoE; a
+    concentration AoE never breaks a >= active one. Bounded: O(foes × neighbours × combatants)."""
+    if not view.aoe_spells or not view.grid_enabled or view.actor_cell is None:
+        return None
+    origins = _aoe_origin_candidates(view)
+    if not origins:
+        return None
+    best: Optional[tuple] = None  # (foes, ev, -slot, name, origin, sp)
+    for sp in view.aoe_spells:
+        if view.bonus_spell_used and sp.slot_level > 0:
+            continue  # #1106: only a cantrip may follow a leveled bonus-action spell
+        if sp.concentration and view.active_concentration and sp.name != view.active_concentration:
+            continue  # don't break a better active concentration
+        range_cells = max(0, sp.range_ft // view.cell_size) if view.cell_size > 0 else 0
+        for origin in origins:
+            if combat_grid.chebyshev_cells(view.actor_cell, origin) > range_cells:
+                continue  # burst can't be placed that far
+            foes_caught, allies_caught, ev = _aoe_ev_at(view, sp, origin, blocking)
+            if foes_caught < 2 or allies_caught > 0:
+                continue  # the rule: catch ≥2 foes AND zero allies
+            key = (foes_caught, ev, -sp.slot_level, sp.name, origin)
+            if best is None or key > best[:5]:
+                best = (*key, sp)
+    if best is None:
+        return None
+    return best[5], best[4], best[1]
+
+
+def _flank_move_cell(view: CombatView, opt: AttackOption, target: CombatantView,
+                     occupied: set, blocking: set, difficult: set) -> Optional[tuple[int, int]]:
+    """A reachable cell that completes a FLANK on `target` with a living ally already in melee reach
+    of it — or None. When two threateners are on opposite sides of the target, a melee attacker gains
+    advantage (the #1254 rule the engine auto-applies), so moving INTO a flank is worth more than a
+    plain adjacent step. TIE-BREAK ORDER among flanking cells: (1) lowest ROUTED move cost (terrain-
+    aware, via shortest_path — a same-cost clear route beats a difficult one), (2) stable cell. Only
+    Medium (1-cell) geometry (PR-D); reach is Chebyshev vs the target. Pure + deterministic."""
+    if not view.grid_enabled or view.actor_cell is None or target.cell is None:
+        return None
+    budget = combat_grid.movement_budget_cells(view.speed, view.cell_size, view.dashed)
+    if budget <= 0:
+        return None
+    reach = combat_grid.reachable(
+        view.actor_cell, budget, occupied, view.grid_width, view.grid_height,
+        impassable=blocking, difficult=difficult,
+    )
+    if not reach:
+        return None
+    reach_cells = max(1, opt.reach_ft // view.cell_size) if view.cell_size > 0 else 1
+    # Allies who ALREADY threaten the target in melee — a flank needs a second threatener across.
+    threatening_allies = [
+        a for a in view.allies
+        if a.cell is not None and _alive_for_flank(a)
+        and combat_grid.chebyshev_cells(a.cell, target.cell) <= reach_cells
+    ]
+    if not threatening_allies:
+        return None
+    candidates: list[tuple[int, tuple[int, int]]] = []
+    for cell in reach:
+        if combat_grid.chebyshev_cells(cell, target.cell) > reach_cells:
+            continue  # must be in melee reach of the target from the new cell
+        if any(
+            combat_grid.flanking(cell, "medium", a.cell, "medium", target.cell, "medium")
+            for a in threatening_allies
+        ):
+            route = combat_grid.shortest_path(
+                view.actor_cell, cell, occupied, view.grid_width, view.grid_height,
+                impassable=blocking, difficult=difficult,
+            )
+            cost = combat_grid.path_cost_cells(view.actor_cell, cell, route, difficult=difficult)
+            candidates.append((cost, cell))
+    if not candidates:
+        return None
+    candidates.sort()  # (routed cost, cell) — cheapest terrain-aware route, then stable cell
+    return candidates[0][1]
+
+
+def _pick_action_tactical(actor: "Character", view: CombatView) -> Optional[Intent]:
+    """The tactical-v2 positioning pass (grid-only). Returns an Intent when tactics IMPROVE on the
+    greedy pick, else None (pick_action then runs the unchanged greedy path). Decision-priority order:
+
+      T1. AoE cast — the best sphere catching ≥2 foes and ZERO allies (bounded origin search), when
+          its EV beats the best single-target attack. (Retreat-if-low + heal-triage run BEFORE this in
+          pick_action, so a hurt healer still saves an ally first — tactics only upgrades OFFENCE.)
+      T2. Cover-aware melee/ranged: among IN-REACH foes, pick the best COVER-DISCOUNTED attack EV,
+          SKIPPING any total-cover foe; if that changes which foe/attack greedy would pick, act on it.
+      T3. Flank-seek move: when NO attack lands from here, prefer a reachable cell that COMPLETES a
+          flank with an ally (advantage) over a plain step — terrain-aware routed cost as the tie-break.
+
+    Runs only when grid_enabled; off-grid returns None (greedy handles zone/theater). Pure."""
+    if not view.grid_enabled or not view.foes:
+        return None
+    blocking = _blocking_set(view)
+    difficult = _difficult_set(view)
+
+    # T1 — AoE placement. Compare the best legal AoE (≥2 foes, 0 allies) to the best single-target
+    # attack EV; cast the area only when it's strictly better (a tie prefers the free swing / cheaper
+    # slot). This is an ACTION, so it doesn't fire when a leveled bonus spell already used the action's
+    # leveled budget (#1106) — enforced inside _best_aoe.
+    best_single_ev = 0.0
+    for opt in view.attacks:
+        for foe in view.foes:
+            if not _in_reach(view, foe, opt.reach_ft):
+                continue
+            cover = _cover_of(view, foe, blocking)
+            best_single_ev = max(best_single_ev, _attack_ev_with_cover(opt, foe, cover))
+    aoe = _best_aoe(view, blocking)
+    if aoe is not None:
+        sp, origin, aoe_ev = aoe
+        if aoe_ev > best_single_ev:
+            return Intent(
+                kind="cast",
+                spell_name=sp.name,
+                to_cell=origin,
+                note=(
+                    f"tactical-v2 AoE {sp.name} at {origin} (EV {aoe_ev:.1f} > best attack "
+                    f"{best_single_ev:.1f}; catches ≥2 foes, no allies)"
+                ),
+            )
+
+    # T2 — Cover-aware attack. Score every in-reach (attack, foe) by cover-DISCOUNTED EV, skipping a
+    # total-cover foe (can't be targeted). TIE-BREAK ORDER: (1) higher discounted EV, (2) lower foe HP
+    # (focus-fire), (3) stable foe id, (4) stable attack name. Fall through to greedy when nothing is
+    # in reach (greedy will move / dodge). The enriched martial riders still apply via the shared path.
+    best: Optional[tuple] = None  # (ev, -hp, foe_id, atk_name, opt, foe)
+    for opt in view.attacks:
+        for foe in view.foes:
+            if not _in_reach(view, foe, opt.reach_ft):
+                continue
+            cover = _cover_of(view, foe, blocking)
+            if cover == "total":
+                continue  # can't target a totally-covered foe — prefer a reachable alternative
+            ev = _attack_ev_with_cover(opt, foe, cover)
+            if ev <= 0:
+                continue
+            key = (ev, -foe.current_hp, foe.id, opt.name)
+            if best is None or key > best[:4]:
+                best = (*key, opt, foe)
+    if best is not None:
+        # Only OVERRIDE greedy when cover actually changed the pick — otherwise let greedy (which also
+        # runs the offensive-spell comparison) own the choice. We detect a change by re-scoring greedy's
+        # cover-BLIND best and comparing the chosen foe/attack; a mismatch means a total/discounted-cover
+        # foe was avoided, so the tactics pick is the correct one to act on.
+        opt, foe = best[4], best[5]
+        blind_best: Optional[tuple] = None
+        for o in view.attacks:
+            for f in view.foes:
+                if not _in_reach(view, f, o.reach_ft):
+                    continue
+                ev = _attack_ev(o, f)
+                if ev <= 0:
+                    continue
+                k = (ev, -f.current_hp, f.id, o.name)
+                if blind_best is None or k > blind_best[:4]:
+                    blind_best = (*k, o, f)
+        if blind_best is not None and (blind_best[5].id != foe.id or blind_best[4].name != opt.name):
+            return _enrich_attack_intent(view, opt, foe, best[0])
+        # cover didn't change the pick — defer to greedy (which also weighs offensive spells).
+        return None
+
+    # T3 — Flank-seek move. No attack lands from here: try to move into a cell that completes a flank
+    # with an ally (advantage next turn) rather than a plain close-the-distance step.
+    occupied = _occupied_cells(view) - {view.actor_cell}
+    target = _nearest_foe(view)
+    if target is not None:
+        for opt in view.attacks:
+            if opt.is_ranged:
+                continue  # flanking is a melee advantage rule
+            cell = _flank_move_cell(view, opt, target, occupied, blocking, difficult)
+            if cell is not None:
+                return Intent(
+                    kind="move",
+                    target_id=target.id,
+                    to_cell=cell,
+                    note=f"tactical-v2 flank move to {cell} on {target.name} (completes a flank)",
+                )
+
+    # T4 — Terrain-aware close-the-distance. When walls/difficult terrain are present, greedy's
+    # _step_toward (which routes on OPEN floor only) can pick a cell it must cross a wall/difficult
+    # ground to reach. Here we route with the SAME impassable/difficult Dijkstra the engine uses:
+    # among reachable cells, minimize (distance-to-target, ROUTED move cost, cell) — so a same-distance
+    # CLEAR route beats one through difficult terrain, and no wall is crossed. We only OVERRIDE greedy
+    # when terrain actually exists (blocking or difficult non-empty); on open floor we return None and
+    # greedy's identical open-floor step-toward runs (byte-identical). Bounded: O(reachable cells).
+    if (blocking or difficult) and target is not None and (view.attacks or view.spells):
+        best_reach_ft = max(
+            [a.reach_ft for a in view.attacks] + [s.range_ft for s in view.spells] + [5]
+        )
+        cell = _terrain_step_toward(view, target, best_reach_ft, occupied, blocking, difficult)
+        if cell is not None:
+            return Intent(
+                kind="move",
+                target_id=target.id,
+                to_cell=cell,
+                note=f"tactical-v2 terrain-routed move to {cell} toward {target.name}",
+            )
+    return None
+
+
+def _terrain_step_toward(view: CombatView, target: CombatantView, reach_ft: int,
+                         occupied: set, blocking: set, difficult: set) -> Optional[tuple[int, int]]:
+    """The reachable cell that best closes on `target` while ROUTING around walls + difficult terrain
+    (tactical-v2). Reachability is the terrain-aware Dijkstra (impassable walls can't be entered;
+    difficult cells cost double). TIE-BREAK ORDER: (1) closest to the target (Chebyshev), (2) lowest
+    ROUTED move cost (a same-distance CLEAR route beats one through difficult ground), (3) stable cell.
+    Returns None when nothing gets strictly closer than staying put (matches _step_toward's contract)."""
+    if not view.grid_enabled or view.actor_cell is None or target.cell is None:
+        return None
+    budget = combat_grid.movement_budget_cells(view.speed, view.cell_size, view.dashed)
+    if budget <= 0:
+        return None
+    reach = combat_grid.reachable(
+        view.actor_cell, budget, occupied, view.grid_width, view.grid_height,
+        impassable=blocking, difficult=difficult,
+    )
+    if not reach:
+        return None
+
+    def _routed_cost(cell: tuple[int, int]) -> int:
+        route = combat_grid.shortest_path(
+            view.actor_cell, cell, occupied, view.grid_width, view.grid_height,
+            impassable=blocking, difficult=difficult,
+        )
+        return combat_grid.path_cost_cells(view.actor_cell, cell, route, difficult=difficult)
+
+    best = min(
+        reach,
+        key=lambda cell: (
+            combat_grid.distance_ft(cell, target.cell, view.cell_size),
+            _routed_cost(cell),
+            cell,
+        ),
+    )
+    cur = combat_grid.distance_ft(view.actor_cell, target.cell, view.cell_size)
+    new = combat_grid.distance_ft(best, target.cell, view.cell_size)
+    return best if new < cur else None
+
+
 # ── The greedy-v1 policy ─────────────────────────────────────────────────────────────
 
 def pick_action(
@@ -745,13 +1155,29 @@ def pick_action(
 
     PURE + deterministic: reads only `actor` (read-only Character) and `combat_state` (a
     read-only CombatView). Returns an Intent; the loop is the sole writer that applies it.
-    `policy` is a seam for a future BG3-tactical-v2 (additive; unknown policy falls back to v1).
+
+    `policy` selects the decision layer (additive; an unknown policy falls back to greedy-v1):
+      * "greedy-v1" (default) — the EV policy above, byte-identical to today.
+      * "tactical-v2" (#1255 / grid-461 PR-D) — when the fight is ON THE GRID, a positioning pass
+        (_pick_action_tactical) runs FIRST for OFFENCE only: prefer an AoE catching ≥2 foes and no
+        allies; respect cover (skip total-cover, discount partial); seek a flank when moving to melee;
+        route around difficult terrain. It returns None (and this falls through to the identical greedy
+        path) whenever tactics can't improve the pick — and OFF the grid it is a no-op. The retreat +
+        heal-triage steps below still run first, so a hurt monster/healer behaves as in v1; tactics
+        only upgrades how it ATTACKS/MOVES on a battlefield.
     """
     view = combat_state
 
     # No foes left -> nothing to do (the loop ends the fight; the AI just skips).
     if not view.foes:
         return Intent(kind="skip", note="no living foes")
+
+    # tactical-v2 (#1255): the grid positioning pass runs AFTER retreat/heal (below share the same
+    # priority as v1) but BEFORE the greedy attack/spell/move steps. It is consulted only for
+    # OFFENCE + movement, so we first run the retreat + heal gates (identical to greedy-v1), then
+    # let tactics improve the attack; if tactics returns None we fall through to the greedy pick.
+    # Off-grid or an unknown policy => `_tactical` is None throughout == today (byte-identical).
+    use_tactical = policy == "tactical-v2" and view.grid_enabled
 
     # 1. Retreat-if-low (morale hook; OFF by default — RETREAT_FRACTION 0.0 == fight to the death).
     if RETREAT_FRACTION > 0.0:
@@ -762,8 +1188,12 @@ def pick_action(
             if threat is not None and view.grid_enabled and view.actor_cell is not None:
                 budget = combat_grid.movement_budget_cells(view.speed, view.cell_size, view.dashed)
                 occupied = _occupied_cells(view) - {view.actor_cell}
+                # Terrain-aware retreat (#1269): route the flee AROUND walls + difficult terrain via the
+                # SAME Dijkstra — a fleeing monster can't disengage THROUGH a wall. Empty sets (open floor)
+                # degenerate to the flat-cost reachable + the (distance, cell) flee key == byte-identical.
                 reach = combat_grid.reachable(
-                    view.actor_cell, budget, occupied, view.grid_width, view.grid_height
+                    view.actor_cell, budget, occupied, view.grid_width, view.grid_height,
+                    impassable=_blocking_set(view), difficult=_difficult_set(view),
                 )
                 if reach and threat.cell is not None:
                     flee_cell = max(
@@ -808,6 +1238,15 @@ def pick_action(
                 f"{', bonus action' if sp.is_bonus_action else ''})"
             ),
         )
+
+    # 1.75 tactical-v2 OFFENCE/MOVE (#1255): after retreat + heal (which match greedy-v1), let the
+    #     grid positioning pass improve the ATTACK/MOVE — AoE placement, cover-aware targeting, and
+    #     flank-seeking. It returns None whenever it can't beat the greedy pick, so we fall straight
+    #     through to steps 2-5 unchanged. Off-grid / greedy-v1 policy: use_tactical is False == today.
+    if use_tactical:
+        tactical = _pick_action_tactical(actor, view)
+        if tactical is not None:
+            return tactical
 
     # 2. Best in-reach WEAPON attack. EV = P(hit)*E[damage]; ties -> lowest-HP target (focus-fire),
     #    then stable target id, then stable attack name (full determinism). This is a FREE action
