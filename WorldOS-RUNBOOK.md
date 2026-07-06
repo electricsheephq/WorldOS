@@ -222,10 +222,12 @@ push → `gh pr create` (no `tail` in an `&&` chain) → merge after checks pass
 ## THE QA LOOP
 
 **Pick the TIER — don't run the 90-min sweep to iterate.** Tier 0 `qa/fast_gate.sh` ($0 / ~2s, every
-change) → Tier 1 `qa/fast_probe.sh` (~$2–3 / ~20 min, DM-craft/UX/satisfaction) → Tier 2 the milestone
-5-persona `.app` sweep (~$10 / ~90 min, only before a version bump). Strategy + the adversarial-validated
-signal accounting: `docs/qa/FAST_GATE.md` and the `worldos-dev` skill's "QA STRATEGY" table. The runners
-below are what each tier composes.
+change) → Tier 1.5 `qa/mechanism_probe.sh` (~$1 / ~10 min, a seeded-fixture + 2–3 real DM beats
+yielding a deterministic ACTED / IGNORED / INCONCLUSIVE / CUE_ABSENT verdict — no LLM lens; iteration
+signal only, never a release verdict) → Tier 1 `qa/fast_probe.sh` (~$2–3 / ~20 min, DM-craft/UX/
+satisfaction) → Tier 2 the milestone 5-persona `.app` sweep (~$10 / ~90 min, only before a version
+bump). Strategy + the adversarial-validated signal accounting: `docs/qa/FAST_GATE.md` and the
+`worldos-dev` skill's "QA STRATEGY" table. The runners below are what each tier composes.
 
 The fitness function = **1 hard behavioral gate** + **3 LLM lenses**. Spec: `qa/SCORING.md`.
 **Log every scored run to the ledger: `qa/scores_db.py` → SQLite `scores.db` → rendered to
@@ -342,6 +344,9 @@ Opus-comparable story/mechanical scores.
 ---
 
 ## AGENT DELEGATION
+
+> Absolute `/Users/lume/...` paths below and elsewhere in this section reflect the primary dev
+> machine — substitute your own checkout root.
 
 Orchestrate via subagents; verify from the top.
 
