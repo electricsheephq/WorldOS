@@ -138,11 +138,18 @@ _NARRATION_LEAK = [
     # only in the multi-segment slug form (>=2 hyphens, e.g. event-fist-checkpoint) tool ids take.
     r"`(?:event|flag|quest|npc)-[a-z0-9][a-z0-9-]*`",           # backticked internal id
     r"\b(?:event|flag|quest|npc)-[a-z0-9]+-[a-z0-9][a-z0-9-]*", # bare multi-segment slug id
-    r"\b(?:hostile|wary|indifferent|neutral|friendly|helpful|suspicious|cold|warm)\b"
-    r"\s*(?:→|-->|->)\s*"
-    r"\b(?:hostile|wary|indifferent|neutral|friendly|helpful|suspicious|cold|warm)\b",  # attitude/gauge transition
-    r"\ba\s+(?:perception|insight|investigation|persuasion|deception|intimidation|"
-    r"perception/insight|insight/perception)\s+(?:read|check)\b",  # check-name AS a mechanic in prose
+    (  # attitude/gauge transition — one pattern, deliberately split across 3 literals for
+       # readability; parenthesized so the concatenation reads as ONE list element, not three
+       # (avoids the "implicit string concat — missing comma?" lint false-positive).
+        r"\b(?:hostile|wary|indifferent|neutral|friendly|helpful|suspicious|cold|warm)\b"
+        r"\s*(?:→|-->|->)\s*"
+        r"\b(?:hostile|wary|indifferent|neutral|friendly|helpful|suspicious|cold|warm)\b"
+    ),
+    (  # check-name AS a mechanic in prose — same deliberate multi-literal concat, parenthesized
+       # for the same reason.
+        r"\ba\s+(?:perception|insight|investigation|persuasion|deception|intimidation|"
+        r"perception/insight|insight/perception)\s+(?:read|check)\b"
+    ),
 ]
 _NARRATION_LEAK_RE = [re.compile(p, re.I) for p in _NARRATION_LEAK]
 
