@@ -187,12 +187,37 @@
         "state.json"
       ],
       "real_red_provenance": ""
+    },
+    {
+      "case_dir": "dm_beat_honesty_no_consecutive_collapse",
+      "expected_red_check": "dm_beat_honesty_no_consecutive_collapse",
+      "artifacts": [
+        "run.jsonl",
+        "state.json",
+        "chat.jsonl"
+      ],
+      "real_red_provenance": ""
+    },
+    {
+      "case_dir": "TODO__run_infra_valid",
+      "expected_red_check": "run_infra_valid",
+      "todo": true,
+      "reason": "infra-sentinel guard: RED requires a .infra_invalid.json sidecar next to run.jsonl (stamped by qa/lib_beat_driver.sh worldos_mark_run_infra_invalid), not a fiction bundle the builder synthesizes via _write_case's 4 positional artifacts \u2014 covered by qa/test_assert_behavioral.py::test_run_infra_invalid_sentinel_flips_red (+ 2 sibling tests) and qa/test_run_invalidation_guard.sh"
     }
   ],
   "green_cases": [
     {
       "case_dir": "structural_completeness_authored_warn",
       "warn_check": "structural_completeness",
+      "artifacts": [
+        "run.jsonl",
+        "state.json"
+      ],
+      "note": "must exit GREEN (rc 0) with warn_check as a [WARN] \u2014 locks a deliberate FATAL->WARN scope guard so a re-promotion to FATAL is caught (#1036)."
+    },
+    {
+      "case_dir": "no_rejected_tool_calls_recovered_warn",
+      "warn_check": "no_rejected_tool_calls",
       "artifacts": [
         "run.jsonl",
         "state.json"

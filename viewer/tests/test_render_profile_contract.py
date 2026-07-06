@@ -89,9 +89,18 @@ def test_full_jsonschema_validation_when_available():
     jsonschema.validate(ex, schema)
 
 
-# --- GT2 Godot renderer block (#1051) -------------------------------------------------------
-_GODOT_EXAMPLE = _REPO / "viewer" / "openworlds" / "render" / "render-profile.godot.example.json"
+# --- GT2 Godot reference/extension renderer block (#1051/#1165) -----------------------------
+_GODOT_EXAMPLE = _REPO / "docs" / "roadmap" / "contracts" / "examples" / "render-profile.godot.reference.json"
+_GODOT_BUNDLED_FIXTURE = _REPO / "extensions" / "renderers" / "godot" / "fixtures" / "render-profile.json"
 _FACING_KEYS = {"facing", "direction", "orientation", "heading"}
+_LOCKED_DIMETRIC_FACING_ORDER = ["S", "SE", "E", "NE", "N", "NW", "W", "SW"]
+
+
+def test_godot_reference_fixture_matches_bundled_runtime_copy():
+    bundled = _load(_GODOT_BUNDLED_FIXTURE)
+    bundled_payload = {k: v for k, v in bundled.items() if k != "_comment"}
+    assert set(bundled) - set(_load(_GODOT_EXAMPLE)) <= {"_comment"}
+    assert bundled_payload == _load(_GODOT_EXAMPLE)
 
 
 def test_schema_exposes_optional_godot_renderer_block():
@@ -119,10 +128,10 @@ def test_core_has_no_engine_facing_field():
     assert _FACING_KEYS.isdisjoint(loc_props), f"engine facing leaked into core.locations: {loc_props & _FACING_KEYS}"
 
 
-def test_godot_example_is_strict_and_valid():
-    """The godot example profile (core + a godot renderer block) satisfies the same strict core
-    rules as every instance AND carries a well-formed godot block with the LOCKED projection +
-    a directional sprite-sheet layout keyed by engine_actor_id (the FK join)."""
+def test_godot_reference_example_is_strict_and_valid():
+    """The Godot reference profile (core + a godot renderer block) satisfies the same strict core
+    rules as every instance AND carries a well-formed archived extension block with the LOCKED
+    projection + a directional sprite-sheet layout keyed by engine_actor_id (the FK join)."""
     ex = _load(_GODOT_EXAMPLE)
     assert ex.get("schema_version") == 1
     core = ex["core"]
@@ -144,8 +153,9 @@ def test_godot_example_is_strict_and_valid():
     for actor_id, sheet in (godot.get("actor_sheets") or {}).items():
         assert actor_id in known_ids, f"actor_sheets key {actor_id} is not a core engine_actor_id"
         assert sheet["facings"] == len(sheet["facing_order"]), "facings count must match facing_order length"
+        assert sheet["facing_order"] == _LOCKED_DIMETRIC_FACING_ORDER
 
 
-def test_godot_example_full_jsonschema_validation_when_available():
+def test_godot_reference_example_full_jsonschema_validation_when_available():
     jsonschema = pytest.importorskip("jsonschema")
     jsonschema.validate(_load(_GODOT_EXAMPLE), _load(_SCHEMA))

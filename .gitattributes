@@ -1,0 +1,58 @@
+# Git LFS tracking for large Unity renderer artifacts.
+#
+# Keep text-mergeable Unity files such as .unity, .prefab, .asset, .mat,
+# .anim, .controller, and .meta in normal Git unless a migration proves
+# they need LFS.
+
+extensions/renderers/unity/**/*.fbx filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.glb filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.obj filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.dae filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.blend filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.abc filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.usd filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.usdz filter=lfs diff=lfs merge=lfs -text
+
+extensions/renderers/unity/**/*.png filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.jpg filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.jpeg filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.tga filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.tif filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.tiff filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.psd filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.exr filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.hdr filter=lfs diff=lfs merge=lfs -text
+
+extensions/renderers/unity/**/*.wav filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.mp3 filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.ogg filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.flac filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.aif filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.aiff filter=lfs diff=lfs merge=lfs -text
+
+extensions/renderers/unity/**/*.mp4 filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.mov filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.webm filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.avi filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.mkv filter=lfs diff=lfs merge=lfs -text
+
+extensions/renderers/unity/**/*.dll filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.mdb filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.so filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.dylib filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.bundle filter=lfs diff=lfs merge=lfs -text
+
+extensions/renderers/unity/**/*.unitypackage filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.zip filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.tar filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.tgz filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.gz filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.7z filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.rar filter=lfs diff=lfs merge=lfs -text
+
+extensions/renderers/unity/**/*.onnx filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.pt filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.pth filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.safetensors filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.ckpt filter=lfs diff=lfs merge=lfs -text
+extensions/renderers/unity/**/*.gguf filter=lfs diff=lfs merge=lfs -text

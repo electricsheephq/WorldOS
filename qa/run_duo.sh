@@ -354,7 +354,7 @@ WORLDOS_PLAYER_MAX_ATTEMPTS="${WORLDOS_PLAYER_MAX_ATTEMPTS:-3}"
 PMSG=""
 _pintro_attempt=1
 while [ -z "$PMSG" ] && [ "$_pintro_attempt" -le "$WORLDOS_PLAYER_MAX_ATTEMPTS" ]; do
-  [ "$_pintro_attempt" -gt 1 ] && echo "[duo] player produced no intro — retry $_pintro_attempt/$WORLDOS_PLAYER_MAX_ATTEMPTS…" >&2
+  [ "$_pintro_attempt" -gt 1 ] && echo "[duo] player produced no intro — retry $_pintro_attempt/${WORLDOS_PLAYER_MAX_ATTEMPTS}…" >&2
   PMSG="$(player_move 1 "$PLAYER_INTRO_PROMPT")"
   _pintro_attempt=$((_pintro_attempt + 1))
 done
@@ -482,6 +482,17 @@ $EVENT_ADV")"
   # by assert_behavioral's dm_beat_honesty) instead of masking with error text/recycled prose.
   if [ -z "$DMSG" ]; then
     worldos_chatlog_dm_failed
+    # #1285: worldos_chatlog_dm_failed stamps $STATE_DIR/.run_infra_invalid.json once the
+    # CONSECUTIVE failure streak crosses WORLDOS_INFRA_INVALID_STREAK — a quota window / host
+    # death mid-run (rri-a1-duo/duo2), not a product defect. Abort NOW (same rc=2 INFRA ABORT
+    # contract as the cold-open quota check above) instead of letting the loop grind on and the
+    # scorer measure a contaminated transcript. A single/occasional failed beat (below the
+    # streak) still just breaks the loop as before — unchanged behavior.
+    if [ -s "$STATE_DIR/.run_infra_invalid.json" ]; then
+      cp "$STATE_DIR/.run_infra_invalid.json" "$T/$RUN.infra_invalid.json" 2>/dev/null || true
+      echo "[duo] INFRA ABORT — $WORLDOS_DM_BEATS_FAILED_STREAK consecutive DM beat failures at beat $b (see $T/$RUN.infra_invalid.json). Skipping scoring; this is an INFRA collapse, NOT a product measurement." >&2
+      exit 2
+    fi
     echo "[duo] DM went silent at beat $b; stopping early"
     break
   fi
@@ -491,6 +502,13 @@ $EVENT_ADV")"
   # phase via the engine (sole writer). Defers to the DM when it advanced time in-fiction.
   worldos_soft_tick "$ROOT" "$STATE_DIR" "$PREV_DAY" "$PREV_TOD"
 done
+
+# #1285 defense-in-depth: if the streak was stamped but a caller path didn't already exit 2 above
+# (e.g. the threshold was crossed on the LAST beat and the loop simply ended rather than hitting
+# the in-loop abort), copy the sentinel alongside the run artifacts now — BEFORE scoring — so
+# worldos_run_infra_valid / assert_behavioral.py's run_infra_valid gate can still find it and
+# flip the run FATAL instead of letting a contaminated transcript reach a scored end silently.
+[ -s "$STATE_DIR/.run_infra_invalid.json" ] && cp "$STATE_DIR/.run_infra_invalid.json" "$T/$RUN.infra_invalid.json" 2>/dev/null
 
 # Wrap + score the DM transcript (it carries the narration + all tool calls).
 turn dm "$DSID" 0 "We are out of time. Bring this beat to a clean stopping point and call end_session with a one-line summary." >/dev/null
@@ -533,6 +551,29 @@ for _scf in "$T/$RUN.tolkien.json" "$T/$RUN.score.json" "$T/$RUN.angrydm.json"; 
     exit 2
   fi
 done
+# SCORER-INTEGRITY (WS0a) — a scorer FAILURE must NOT read as GREEN/passing or as a blank no-score.
+# score.sh used to exit rc=1 on GENERIC retry-exhaustion WITHOUT writing anything, leaving the lens
+# file missing/empty → the line-~560 `jq -r '.overall//"?"'` printed BLANK with no failure marker, so
+# a failed scoring masqueraded as a silent valid no-score (observed live: 'story-craft= mechanical=
+# angry-dm= behavioral=GREEN'). score.sh now ALWAYS leaves a valid JSON lens file (an {error:scorer_failed}
+# sentinel on exhaustion; {quota_exhausted} on a 429 — the latter already short-circuited above). Here we
+# VALIDATE each of the 3 lens files (exists + non-empty + valid JSON + NUMERIC .overall, not a sentinel)
+# via the shared worldos_validate_lens_file helper, and mark the run a DISTINCT 'unscorable' status if
+# any lens is not a trustworthy numeric scorecard. 'unscorable' is NEITHER green nor a blank no-score.
+UNSCORABLE=0
+UNSCORABLE_DETAIL=""
+for _lens in "tolkien:$T/$RUN.tolkien.json" "mechanical:$T/$RUN.score.json" "angry-dm:$T/$RUN.angrydm.json"; do
+  _lname="${_lens%%:*}"; _lpath="${_lens#*:}"
+  _lstatus="$(worldos_validate_lens_file "$_lpath")"
+  if [ "$_lstatus" != "ok" ]; then
+    UNSCORABLE=1
+    UNSCORABLE_DETAIL="${UNSCORABLE_DETAIL}${UNSCORABLE_DETAIL:+, }${_lname}=${_lstatus}"
+    echo "[duo] SCORER FAILURE — lens '${_lname}' is NOT a valid scorecard (${_lstatus}): $(basename "$_lpath"). This run is UNSCORABLE (a scorer failure, NOT a valid no-score)." >&2
+  fi
+done
+if [ "$UNSCORABLE" = "1" ]; then
+  echo "[duo] RUN STATUS: unscorable — one or more lenses failed to score (${UNSCORABLE_DETAIL}). A blank/sentinel lens value is a scorer FAILURE, not a passing or no-score run." >&2
+fi
 # Behavioral gate — flip RED on a structurally broken run (treat it like software).
 python3 qa/assert_behavioral.py "$COMBINED" "$T/$RUN.state.json" "$T/$RUN.chat.jsonl" "$MOVES" | tee "$T/$RUN.gate.txt"; GATE=${PIPESTATUS[0]}
 # Honest scoring: a gate-RED (non-progressing/structurally broken) run must NOT display as 4.1.
@@ -557,5 +598,9 @@ if python3 qa/latency_rollup.py --dir "$T" --run "$RUN" --tooltiming "$TOOLTIMIN
 else
   LAT_SUMMARY="latency=unavailable"
 fi
-echo "[duo] done. story-craft=$(jq -r '.overall//"?"' "$T/$RUN.tolkien.json" 2>/dev/null) mechanical=$(jq -r '.overall//"?"' "$T/$RUN.score.json" 2>/dev/null) angry-dm=$(jq -r '.overall//"?"' "$T/$RUN.angrydm.json" 2>/dev/null) behavioral=$([ "$GATE" = 0 ] && echo GREEN || echo RED) ${LAT_SUMMARY:-}"
+# WS0a: print each lens via the shared validator so a scorer FAILURE shows as FAILED (not a blank
+# that misreads as a valid no-score). `worldos_lens_display` echoes the numeric .overall for a valid
+# card, else FAILED:<status> (missing|invalid|sentinel|nonnumeric). When ANY lens failed, the line
+# carries an explicit status=unscorable so a downstream reader / a human can never mistake it for GREEN.
+echo "[duo] done. story-craft=$(worldos_lens_display "$T/$RUN.tolkien.json") mechanical=$(worldos_lens_display "$T/$RUN.score.json") angry-dm=$(worldos_lens_display "$T/$RUN.angrydm.json") behavioral=$([ "$GATE" = 0 ] && echo GREEN || echo RED)$([ "$UNSCORABLE" = 1 ] && echo ' status=unscorable') ${LAT_SUMMARY:-}"
 exit $GATE

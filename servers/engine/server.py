@@ -51,6 +51,7 @@ import spells
 import srd_tables
 import director
 import scene_debt as _scene_debt_mod
+import scene_grid as scene_grid_mod
 import travel
 import wander
 import worldsim
@@ -93,6 +94,7 @@ from models import (
     PendingAttackBonus,
     PendingDamageBonus,
     PendingOnHitRider,
+    PendingSpellAttack,
     Quest,
     RepeatSave,
     SceneDebt,
@@ -352,6 +354,67 @@ _ACT1_STALL_BEATS = 8
 # from a duo A/B without touching the cue logic.
 _CAMP_OVERDUE_BEATS = 8
 
+# #1286: quest_stalled beats-reach. A quest that gets NO progress verb across this many beats
+# is stalled even when the in-world clock never advances (the day-only gate was unreachable on a
+# stuck clock — the measured rri-a1-duo2 defect). Mirrors _CAMP_OVERDUE_BEATS / _ACT1_STALL_BEATS.
+_QUEST_STALL_BEATS = 8
+
+# #1286: faction_joinable_unjoined beats-reach. A faction that carries an authored questline
+# (questline_arc_id set — a deliberate join->grow->lead arc) but is still un-joined this many
+# beats in gets a cue to enlist, so a seeded faction questline isn't left narrated-not-engined.
+_FACTION_JOIN_BEATS = 8
+
+# WS3a party_stuck_one_location beats-reach. PINNED to assert_behavioral's SINGLE_SCENE_MIN_BEATS —
+# the FATAL party_traveled boundary (qa/assert_behavioral.py:676): a substantial run (>= 8 act-local
+# beats) that never left the opening scene AND never progressed in place is a stuck DM. The proactive
+# per-beat cue here fires on the SAME boundary so the DM is told BEFORE the run-end gate RED-caps it.
+# Keep this value byte-identical to that gate's constant so the cue and the gate agree by construction.
+_PARTY_STUCK_BEATS = 8
+
+# #1313 (cue-half iteration 2b): the ENDGAME WRAP WINDOW. The measured residual RED after Option 3
+# (rri-a1-opt3) was a single thing — a quest left ACTIVE at session end (reads as a dropped thread).
+# Iteration 2 (#1317) opened the window on `act == 3 AND climax_landed`. BOTH halves are OPTIONAL DM
+# calls (advance_act / mark_climax): the rri-a1-gate run advanced neither, the window never opened,
+# and the closure cue fired ZERO times (behavioral AMBER — the same engagement-variance defect one
+# level up). 2b re-derives the window from the ONE skip-proof gauge the DM cannot bypass —
+# arc.beats_in_act, which persist_beat bumps every mandatory beat — while KEEPING climax_landed as
+# the semantically-precise fast path:
+#
+#     _in_wrap_window = climax_landed OR (act >= 2 AND beats_in_act >= _WRAP_WINDOW_BEATS)
+#
+# Threshold calibrated from the 4 real snapshots that reached session-wrap (engine-authoritative
+# narrative_arc; act / beats_in_act / climax_landed):
+#   rri-a1-gate  2 /  8 / False  — the behavioral RED; MUST open via the counter floor (no climax)
+#   rri-a1-opt3  1 / 16 / True   — opens via climax_landed (act 1 — the counter floor deliberately does NOT reach it)
+#   rri-a1-duo3  2 / 10 / False  — opens via the counter floor (harmless: no quests)
+#   rri-a1-duo4  2 / 10 / True   — opens via climax_landed (harmless: the quest is completed)
+# The gate run at beats_in_act=8 with no climax pins _WRAP_WINDOW_BEATS <= 8 (a higher floor would
+# miss the exact run this fixes); opt3 opens via the climax fast-path, so a lower floor buys nothing
+# but a wider mid-act false-open surface — so 8 is the unique maximal-yet-sufficient floor. The
+# `act >= 2` guard keeps opt3's long ACT-1 slog (beats=16, act_one_stalled territory) from being
+# mis-read as "wrapping": in act 1 ONLY the explicit climax flag opens the window. 8 also sits +4
+# above act_climax_owed's own beats_in_act>=4 trigger, so in an act-3 climax build-up act_climax_owed
+# owns beats 4-7 alone and the endgame floor only joins from beat 8.
+#
+# In this window an active quest escalates to a single HIGH quest_endgame_unresolved cue that REPLACES
+# the generic resolvable/stalled/unresolved_late cues (one imperative, not three) so next_action names
+# quest closure as THE next act. PRECEDENCE with act_climax_owed (which fires in a counter-opened
+# act-3 window while climax_landed is still False — the window is NO LONGER mutually exclusive with
+# it): both are legitimately owed (land the climax, THEN close the thread), so NEITHER is suppressed —
+# both stay HIGH and an explicit intra-tier tiebreak (_KIND_PRECEDENCE) sorts act_climax_owed first.
+_WRAP_WINDOW_BEATS = 8
+
+
+def _quest_progress_beat(c: Campaign) -> int:
+    """The current NarrativeArc.beats_in_act tally, read defensively — the engine-mutated beat
+    cursor a quest stamps as its last-progress baseline (#1286). -1 when no arc exists so an
+    older/partial campaign stamps the same "never counted" sentinel the model defaults to."""
+    arc = getattr(c, "narrative_arc", None)
+    if arc is None:
+        return -1
+    b = getattr(arc, "beats_in_act", 0)
+    return b if isinstance(b, int) else -1
+
 
 def _validate_log_kind(kind: str) -> str:
     """Normalize + validate a DM-supplied beat kind against the whitelist (F07-6). Returns
@@ -422,6 +485,12 @@ def _combat_view(c: Campaign) -> dict:
         if c.combat.grid_enabled and cb.x is not None and cb.y is not None:
             entry["x"] = cb.x
             entry["y"] = cb.y
+            # #1253: surface a >1-cell footprint side length only for Large+ tokens, so the
+            # renderer can draw the NxN token. Medium omits the key (byte-for-byte PR-1).
+            span = combat_grid.footprint_cells(_size(cb))
+            if span > 1:
+                entry["size"] = _size(cb)
+                entry["footprint"] = span
         order.append(entry)
     view = {
         "active": c.combat.active,
@@ -1172,6 +1241,13 @@ def add_location(
                 f"location {loc.id!r} has NO connections — it is unreachable; call add_location "
                 f"again with connections=[an existing location id] to wire it into the map"
             )
+        # A1 — the SceneGrid emitter (engine sole-writer): a newly added/live-gen location
+        # gets a deterministic Tier-1 spatial layout to render. GUARDED (no-op when the
+        # location already carries a scene_grid — an update-existing add_location never
+        # re-rolls) + deterministic (seeded off (world_id, location_id), isolated from the
+        # combat dice stream). Additive: an old snapshot round-trips to None. Runs BEFORE
+        # save so the emitted grid is persisted in the same atomic write.
+        scene_grid_mod.ensure_scene_grid(c.world_id, loc)
         save_campaign(c)
     result = {
         "id": loc.id,
@@ -1255,6 +1331,37 @@ def travel_to(campaign_id: str, destination_id: str = "", advance_time: bool = F
                     result["wandering_encounter"] = staged
         save_campaign(c)
         return result
+
+
+def cross_door(campaign_id: str, x: int, y: int) -> dict:
+    """Cross an authored DOORWAY to the linked room-unit (M-E room transition).
+
+    ``(x, y)`` must be a ``door_cell`` of the current location's ``scene_grid`` (the #1214 schema);
+    the party then travels to the location's connected room-unit. A thin gameplay primitive over
+    ``travel_to`` (which holds the campaign lock + co-locates the whole party). For a single-connection
+    room-unit (the common case) the door leads to the one neighbour; a multi-connection room needs an
+    authored door->destination map, so the FIRST connection is taken as a best-effort default and
+    surfaced via ``multi_connection``.
+
+    The gameplay GATE (party is at the door, the room is resolved) is the caller's responsibility —
+    this verb does NOT force-end an active combat. Raises if (x,y) is not a doorway or there is no
+    connected room. Additive INTERNAL verb (NOT an MCP tool — protects the tool-schema budget), called
+    by the renderer/driver, mirroring ``place_combatant_at_coords``. Engine stays sole writer."""
+    c = _require(campaign_id)
+    loc = c.locations.get(c.current_location_id) if c.current_location_id else None
+    sg = getattr(loc, "scene_grid", None) if loc is not None else None
+    if sg is None:
+        raise ValueError("no current location with a scene_grid to cross from")
+    door_cells = {(int(a), int(b)) for (a, b) in (getattr(sg, "door_cells", None) or [])}
+    if (int(x), int(y)) not in door_cells:
+        raise ValueError(f"({x},{y}) is not a doorway cell of {getattr(loc, 'name', '')!r}")
+    conns = [cid for cid in (getattr(loc, "connections", None) or []) if isinstance(cid, str)]
+    if not conns:
+        raise ValueError(f"{getattr(loc, 'name', '')!r} has no connected room to cross to")
+    result = travel_to(campaign_id, conns[0])
+    result["crossed_door"] = [int(x), int(y)]
+    result["multi_connection"] = len(conns) > 1
+    return result
 
 
 # Class -> the 5e ability PRIORITY order (highest stat first) for the standard array.
@@ -2358,10 +2465,10 @@ def reroll_character(
     level: Optional[int] = None,
 ) -> dict:
     """Re-roll a NEW player character after a PC dies, and continue the same quest — the
-    D&D-table answer to "no save states". Death is one-way (the engine never resurrects
-    the fallen); this is *forward* motion: a new hero, at the dead PC's level, joins the
-    ongoing campaign. The world-state — quests, day, locations, lore, factions, surviving
-    companions and their memories — is untouched (it lives on the Campaign, not the PC)."""
+    D&D-table answer to "no save states". Death is one-way (no resurrection); this is forward
+    motion: a new hero, at the dead PC's level, joins the ongoing campaign. World-state
+    (quests, day, locations, lore, factions, surviving companions + memories) is untouched —
+    it lives on the Campaign, not the PC."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         dead = _char(c, dead_id)  # raises if the id isn't in the campaign
@@ -3318,6 +3425,15 @@ def update_character(campaign_id: str, character_id: str = "", patch: dict = Non
         # leave. Omitted -> membership untouched (byte-identical to today). The mutation is applied
         # AFTER the validated sheet is stored below, so a rejected patch never strands membership.
         in_party_intent = data.pop("in_party", None)
+        # #806 stage 2: `rederive_ac` is a computed INTENT (not a Character field) — pop it
+        # BEFORE model_validate (else extra="forbid" trips) and translate below into an
+        # equipment-owned AC recompute. Truthy -> hand AC ownership back to equipment and
+        # recompute armor_class from the equipped items; omitted/falsey -> untouched.
+        rederive_ac_intent = bool(data.pop("rederive_ac", None))
+        # #806 stage 2: did this patch write armor_class directly? That is a DM manual
+        # override — stamp source="manual" below so the equip path won't clobber it (unless
+        # the same call also asked to re-derive, in which case equipment wins).
+        patch_wrote_ac = "armor_class" in (patch or {})
         # F14-11: a genuine type/typo error inside the model is wrapped into ONE bounded, readable
         # line (no errors.pydantic.dev wall) so the DM can fix it in the next call instead of
         # freehanding. STILL raises a ValueError, so the strict typo-forbid guard stays load-bearing.
@@ -3377,6 +3493,16 @@ def update_character(campaign_id: str, character_id: str = "", patch: dict = Non
             hp_delta = con_delta * new_ch.total_level
             new_ch.max_hp = max(1, new_ch.max_hp + hp_delta)
             new_ch.current_hp = max(1, min(new_ch.current_hp, new_ch.max_hp))
+        # #806 stage 2: resolve AC ownership. Re-derive wins if requested — recompute the
+        # worn base from equipped items and hand ownership to equipment. Otherwise, a patch
+        # that wrote armor_class is a DM manual override (source="manual"), which the equip
+        # path must not clobber. A patch that touched neither leaves the source flag as-is
+        # (byte-identical to today for every non-AC patch).
+        if rederive_ac_intent:
+            new_ch.armor_class = _derive_worn_ac_from_equipped(new_ch)
+            new_ch.armor_ac_source = "equipment"
+        elif patch_wrote_ac:
+            new_ch.armor_ac_source = "manual"
         c.characters[character_id] = new_ch
         # F14-11 (#812): apply the translated party-membership intent AFTER the validated sheet is
         # stored (a rejected patch never reaches here). Mirrors recruit_companion / dismiss: a
@@ -3528,6 +3654,9 @@ def set_hp(
         combat.apply_hp_set_transition(ch, was_down)
         c.characters[character_id] = ch
         kx = _award_kill_xp(c, ch)
+        # #1270 (low): a set-to-0 that kills also scrubs pending riders / spell-attack leg.
+        if ch.dead:
+            _clear_riders_targeting(c, character_id)
         out = c.characters[character_id].model_dump(mode="json")
         if kx:
             out["kill_xp"] = kx
@@ -3903,6 +4032,42 @@ def _gate_combat_verb(c: "Campaign", actor: "Character", *, verb: str, consumes:
         )
 
 
+def _derive_grid_from_scene(c: Campaign) -> None:
+    """gfx M-B (#1194): if the campaign's CURRENT location carries a SceneGrid, switch the
+    just-started fight onto that grid and auto-derive its impassable cells (walls + prop
+    footprints) — so movement routes around the painted geometry with no manual set_grid call.
+
+    SOLE-WRITER-safe: this IS the engine writing its own combat state from its own scene data.
+    ADDITIVE: a no-op when there's no current location or it has no scene_grid (grid_enabled
+    stays False → zone/theater combat unchanged, byte-for-byte). Mutates ``c.combat`` in place
+    via the SAME fields ``set_grid`` writes (grid_enabled / extents / grid_impassable); the caller
+    persists. It NEVER clobbers a grid the DM already set up — if the fight is already grid-enabled
+    (an explicit set_grid ran first), we leave it alone."""
+    if c.combat.grid_enabled:
+        return  # the DM/engine already configured this fight's grid — don't override it
+    loc = c.locations.get(c.current_location_id) if c.current_location_id else None
+    grid = getattr(loc, "scene_grid", None) if loc is not None else None
+    if grid is None:
+        return  # no painted room → today's zone/theater combat, unchanged
+    width = int(grid.grid.cols)
+    height = int(grid.grid.rows)
+    if width <= 0 or height <= 0:
+        return
+    # Exclude any cell a combatant already stands on (defensive: combatants are unplaced at
+    # start_combat, but a fixture may carry x/y) so a placement is never trapped on a prop.
+    occupied = {
+        (cb.x, cb.y)
+        for cb in c.combat.order
+        if getattr(cb, "x", None) is not None and getattr(cb, "y", None) is not None
+    }
+    imp = scene_grid_mod.impassable_cells(grid, width, height, occupied=occupied)
+    c.combat.grid_enabled = True
+    c.combat.grid_width = width
+    c.combat.grid_height = height
+    c.combat.grid_cell_size = int(grid.grid.cell_size_ft) or 5
+    c.combat.grid_impassable = imp
+
+
 @mcp.tool()
 def start_combat(
     campaign_id: str,
@@ -3911,7 +4076,9 @@ def start_combat(
 ) -> dict:
     """Begin combat: roll initiative (1d20 + initiative_bonus) for each combatant
     and build the turn order (desc, ties broken by DEX modifier then input order).
-    Pass the character ids of everyone in the fight."""
+    Pass the character ids of everyone in the fight. For an ambush pass
+    surpriser_ids=[attackers]: the engine rolls Stealth vs passive Perception; the
+    surprised roll initiative with Disadvantage (SRD 5.2). See `surprise` in the return."""
     if not combatant_ids:
         raise ValueError("combatant_ids must be non-empty")
     surpriser_ids = [sid for sid in (surpriser_ids or []) if sid in combatant_ids]
@@ -3920,10 +4087,36 @@ def start_combat(
         if c.combat.active:
             raise ValueError("combat already active; call end_combat first")
         c.last_combat_resolution = ""  # a fresh fight -> any prior disposition no longer applies
+        # #1271 surprise gate: when the DM passes the ambushers (surpriser_ids), the engine
+        # DETERMINES who is surprised — each non-surpriser whose passive Perception (10 +
+        # Perception skill mod) is beaten by the BEST surpriser's engine-rolled Stealth check
+        # (1d20 + stealth mod) failed to notice the ambush. Those defenders are surprised. Per
+        # SRD 5.2 (data/srd/srd524/Rule.json, Rule[19] "**Surprise.**": "that combatant has
+        # Disadvantage on their Initiative roll") the 5.2 model is initiative DISADVANTAGE — NOT
+        # the 2014 lost-turn — so the engine rolls the surprised set's initiative with
+        # disadvantage. Purely additive: no surpriser_ids -> empty surprised set -> byte-identical
+        # to today's roll. "Engine rolls; the DM is told" — the result surfaces in view["surprise"].
+        surprised_ids: list[str] = []
+        surprise_detail: dict = {}
+        if surpriser_ids:
+            best_stealth = None
+            for sid in surpriser_ids:
+                sr = dice_mod.roll(f"1d20+{_char(c, sid).skill_bonus('stealth')}").total
+                if best_stealth is None or sr > best_stealth:
+                    best_stealth = sr
+            for cid in combatant_ids:
+                if cid in surpriser_ids:
+                    continue
+                passive_perc = 10 + _char(c, cid).skill_bonus("perception")
+                if best_stealth is not None and best_stealth > passive_perc:
+                    surprised_ids.append(cid)
+            surprise_detail = {"stealth": best_stealth}
+        surprised_set = set(surprised_ids)
         rolled = []
         for cid in combatant_ids:
             ch = _char(c, cid)
-            r = dice_mod.roll(f"1d20+{ch.initiative_bonus}")
+            # SRD 5.2: a surprised combatant rolls Initiative with Disadvantage.
+            r = dice_mod.roll(f"1d20+{ch.initiative_bonus}", disadvantage=cid in surprised_set)
             rolled.append((cid, r.total, ch.ability_modifier(Ability.DEX)))
         indexed = sorted(enumerate(rolled), key=lambda t: (-t[1][1], -t[1][2], t[0]))
         # Surprise ordering: surprisers go first (in their relative rolled order),
@@ -3945,6 +4138,14 @@ def start_combat(
             ch = c.characters.get(cid)
             if ch is not None and getattr(ch, "kind", "") == "monster":
                 _bump_intel(c, getattr(ch, "creature_slug", ""), 2)
+        # gfx M-B (#1194): a fight bound to a painted room AUTO-derives its combat obstacles
+        # from the location's SceneGrid (walls + prop footprints), so movement routes around
+        # the painted geometry without anyone hand-calling set_grid(obstacles=...). Reuses the
+        # EXISTING grid plumbing internally (flips grid_enabled + sets extents + grid_impassable,
+        # exactly what set_grid does) — NO new tool/param on the public surface. Purely additive:
+        # absent when the current location has no scene_grid (grid_enabled stays False == today's
+        # zone/theater combat, byte-for-byte unchanged).
+        _derive_grid_from_scene(c)
         save_campaign(c)
         view = _combat_view(c)
         # Surface the surprise edge in the runtime view so the DM resolves the opener
@@ -3953,12 +4154,23 @@ def start_combat(
             surpriser_names = [
                 c.characters[sid].name for sid in surpriser_ids if sid in c.characters
             ]
+            # #1271: the engine-determined surprised set (defenders who failed passive
+            # Perception vs the surprisers' Stealth) rolled initiative with disadvantage per
+            # SRD 5.2; surface who they are so the DM narrates the ambush landing.
+            surprised_names = [
+                c.characters[sid].name for sid in surprised_ids if sid in c.characters
+            ]
             view["surprise"] = {
                 "surprisers": surpriser_ids,
                 "surpriser_names": surpriser_names,
+                "surprised": surprised_ids,
+                "surprised_names": surprised_names,
+                "stealth_check": surprise_detail.get("stealth"),
                 "note": (
                     "opening attack has advantage; the target's AC still applies — "
-                    "call attack(advantage=True) for the opener. NO auto-kill."
+                    "call attack(advantage=True) for the opener. NO auto-kill. Surprised "
+                    "defenders (Stealth beat their passive Perception) rolled Initiative "
+                    "with Disadvantage per SRD 5.2 — narrate the ambush catching them flat-footed."
                 ),
             }
         # Reminder: surface anyone with Extra Attack so the DM makes the right number of attacks
@@ -4268,22 +4480,72 @@ def _can_see(viewer: "Character") -> bool:
 
 
 def _cell(cb: "Combatant") -> tuple[int, int] | None:
-    """The (x, y) cell of a combatant, or None if it isn't placed on the grid."""
+    """The (x, y) anchor cell of a combatant, or None if it isn't placed on the grid."""
     if cb.x is None or cb.y is None:
         return None
     return (cb.x, cb.y)
 
 
+def _size(cb: "Combatant") -> str:
+    """A combatant's SRD size category (#1253). Defaults to "medium" (1-cell) for any
+    combatant / old snapshot without the field — the PR-1 behaviour byte-for-byte."""
+    return getattr(cb, "size", "medium") or "medium"
+
+
+def _footprint(cb: "Combatant") -> set[tuple[int, int]]:
+    """The set of cells a placed combatant OCCUPIES (its size footprint anchored at its
+    (x, y)), or an empty set if unplaced. Medium => a single {(x, y)} == PR-1 occupancy."""
+    anchor = _cell(cb)
+    if anchor is None:
+        return set()
+    return combat_grid.footprint(anchor, _size(cb))
+
+
+def _occupied_cells(c: "Campaign", exclude_id: str = "") -> set[tuple[int, int]]:
+    """Every grid cell occupied by a placed combatant's FOOTPRINT, excluding `exclude_id`
+    (the mover, who doesn't block itself). Medium tokens contribute their single cell —
+    byte-for-byte the PR-1 `{(o.x, o.y)}` set when all tokens are Medium."""
+    cells: set[tuple[int, int]] = set()
+    for o in c.combat.order:
+        if o.character_id == exclude_id:
+            continue
+        cells |= _footprint(o)
+    return cells
+
+
+def _difficult_set(c: "Campaign") -> set[tuple[int, int]]:
+    """The fight's DIFFICULT-TERRAIN cells (#1253) as a cell set. Empty == open floor
+    (PR-1 movement cost unchanged)."""
+    return {(int(dx), int(dy)) for dx, dy in (c.combat.grid_difficult or [])}
+
+
+def _coerce_cell_pairs(raw, label: str) -> list[list[int]]:
+    """Coerce a tool arg into a list of [x, y] int cell pairs (shared by set_grid's
+    `obstacles`/`difficult`). Raises on a malformed pair."""
+    out: list[list[int]] = []
+    for cellv in _coerce_list(raw):
+        if not isinstance(cellv, (list, tuple)) or len(cellv) != 2:
+            raise ValueError(f"set_grid {label} must be a list of [x, y] cell pairs")
+        out.append([int(cellv[0]), int(cellv[1])])
+    return out
+
+
 @mcp.tool()
 def set_grid(campaign_id: str, width: int, height: int, cell_size: int = 5,
-             diagonal_mode: str = "chebyshev") -> dict:
+             diagonal_mode: str = "chebyshev", obstacles: ListArg = None,
+             difficult: ListArg = None) -> dict:
     """#461: switch this fight to a coordinate grid (the only tool that sets grid mode).
     Optional; without it combat stays zone/theater. Sets extents (cells; cell_size ft);
-    idempotent; needs width/height>0."""
+    idempotent; needs width/height>0. `obstacles` = [x,y] IMPASSABLE cells (walls/props)
+    move_to_coords routes AROUND; `difficult` (#1253) = [x,y] DIFFICULT-TERRAIN cells that
+    are enterable but cost DOUBLE movement. For each: omit == leave unchanged, [] == clear
+    (open floor, byte-for-byte unchanged)."""
     if width <= 0 or height <= 0:
         raise ValueError("set_grid needs width > 0 and height > 0")
     if diagonal_mode not in ("chebyshev", "five_ten_five"):
         raise ValueError("diagonal_mode must be 'chebyshev' or 'five_ten_five'")
+    imp = _coerce_cell_pairs(obstacles, "obstacles") if obstacles is not None else None
+    dif = _coerce_cell_pairs(difficult, "difficult") if difficult is not None else None
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         c.combat.grid_enabled = True
@@ -4291,17 +4553,28 @@ def set_grid(campaign_id: str, width: int, height: int, cell_size: int = 5,
         c.combat.grid_height = height
         c.combat.grid_cell_size = cell_size
         c.combat.diagonal_mode = diagonal_mode  # type: ignore[assignment]
+        if imp is not None:
+            c.combat.grid_impassable = imp
+        if dif is not None:
+            c.combat.grid_difficult = dif
         save_campaign(c)
         return _combat_view(c)
 
 
 @mcp.tool()
-def place_combatant_at_coords(campaign_id: str, combatant_id: str, x: int, y: int) -> dict:
-    """#461: set a combatant's (x,y) cell — setup, NO opportunity-attack check (use
+def place_combatant_at_coords(campaign_id: str, combatant_id: str, x: int, y: int,
+                              size: str = "") -> dict:
+    """#461: set a combatant's (x,y) ANCHOR cell — setup, NO opportunity-attack check (use
     move_to_coords in combat). Needs set_grid first. Warns (never blocks) if out of
-    bounds/occupied."""
+    bounds/occupied. #1253: optional `size` (tiny/small/medium/large/huge/gargantuan) sets
+    the token's FOOTPRINT — Large=2×2, Huge=3×3, Gargantuan=4×4 anchored at (x,y); omit ==
+    keep the current size (default medium = a 1-cell token)."""
     if not combatant_id:
         raise ValueError("place_combatant_at_coords needs a combatant_id")
+    if size and size.strip().lower() not in combat_grid._SIZE_CELLS:
+        raise ValueError(
+            "size must be one of tiny/small/medium/large/huge/gargantuan (or omitted)"
+        )
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         if not c.combat.active:
@@ -4309,14 +4582,22 @@ def place_combatant_at_coords(campaign_id: str, combatant_id: str, x: int, y: in
         if not c.combat.grid_enabled:
             raise ValueError("this fight is not on a grid — call set_grid first (or use place_combatant for zones)")
         cb = _combatant(c, combatant_id)
+        if size:
+            cb.size = size.strip().lower()
         ch = c.characters.get(combatant_id)
         warnings: list[str] = []
-        if not (0 <= x < c.combat.grid_width and 0 <= y < c.combat.grid_height):
+        # #1253: a Large+ token occupies an NxN footprint anchored at (x, y), so bounds and
+        # occupancy check the WHOLE footprint. Medium (1-cell) reduces to the PR-1 checks.
+        my_fp = combat_grid.footprint((x, y), _size(cb))
+        span = combat_grid.footprint_cells(_size(cb))
+        if not (0 <= x and x + span <= c.combat.grid_width and 0 <= y and y + span <= c.combat.grid_height):
+            extent = f"{x}..{x + span - 1}, {y}..{y + span - 1}" if span > 1 else f"{x}, {y}"
             warnings.append(
-                f"({x}, {y}) is out of the {c.combat.grid_width}x{c.combat.grid_height} grid — placed anyway."
+                f"({extent}) is out of the {c.combat.grid_width}x{c.combat.grid_height} grid — placed anyway."
             )
         occupant = next(
-            (o for o in c.combat.order if o.character_id != combatant_id and (o.x, o.y) == (x, y)),
+            (o for o in c.combat.order
+             if o.character_id != combatant_id and (my_fp & _footprint(o))),
             None,
         )
         if occupant is not None:
@@ -4356,19 +4637,53 @@ def move_to_coords(campaign_id: str, combatant_id: str, x: int, y: int,
         mover = c.characters.get(combatant_id)
         from_cell = _cell(cb)
         cell_size = c.combat.grid_cell_size
+        mover_span = combat_grid.footprint_cells(_size(cb))
         warnings: list[str] = []
-        if not (0 <= x < c.combat.grid_width and 0 <= y < c.combat.grid_height):
+        if not (0 <= x and x + mover_span <= c.combat.grid_width
+                and 0 <= y and y + mover_span <= c.combat.grid_height):
             warnings.append(
                 f"({x}, {y}) is out of the {c.combat.grid_width}x{c.combat.grid_height} grid — moved anyway."
             )
 
         to_cell = (x, y)
-        # Measured movement cost (PR-1: open floor — straight Chebyshev, or the summed
-        # explicit path). Accumulates across a broken-up move this turn.
+        # P1: route AROUND impassable terrain (walls/props) + other tokens; #1253: charge
+        # DOUBLE to enter difficult-terrain cells. impassable/occupied/difficult empty ==
+        # open floor (PR-1 behaviour byte-for-byte unchanged: straight-line Chebyshev).
+        impassable = {(int(ix), int(iy)) for ix, iy in (c.combat.grid_impassable or [])}
+        occupied = _occupied_cells(c, exclude_id=combatant_id)
+        difficult = _difficult_set(c)
         if from_cell is None:
             cost = 0  # an unplaced combatant: this is effectively a placement, no cost
         else:
-            cost = combat_grid.path_cost_cells(from_cell, to_cell, path_cells)
+            if path_cells is None and (impassable or occupied or difficult):
+                routed = combat_grid.shortest_path(
+                    from_cell, to_cell, occupied, c.combat.grid_width, c.combat.grid_height,
+                    impassable, difficult,
+                )
+                if routed is None:
+                    # P1: never walk onto/through a wall/prop (or into an occupied cell) — reject, stay put.
+                    c.combat.last_move_path = []
+                    save_campaign(c)
+                    view = _combat_view(c)
+                    view["from"] = list(from_cell)
+                    view["to"] = list(from_cell)
+                    view["cost_cells"] = 0
+                    view["path"] = []
+                    view["move_blocked"] = {
+                        "target": [x, y],
+                        "reason": f"({x}, {y}) is impassable (wall/prop/occupied) or unreachable — move rejected; stayed at {list(from_cell)}.",
+                    }
+                    view["warnings"] = warnings + [f"({x}, {y}) blocked/unreachable — stayed at {list(from_cell)}."]
+                    return view
+                if routed:
+                    path_cells = routed  # charge + draw the routed detour
+            cost = combat_grid.path_cost_cells(from_cell, to_cell, path_cells, difficult)
+        # #1253: which difficult-terrain cells the move ENTERED (surfaced for the DM so the
+        # doubled cost is legible). The straight-diagonal step cells when no explicit path.
+        difficult_crossed: list[list[int]] = []
+        if from_cell is not None and difficult:
+            entered = path_cells if path_cells else combat_grid._supercover_cells(from_cell, to_cell)[1:]
+            difficult_crossed = [[int(sx), int(sy)] for (sx, sy) in entered if (sx, sy) in difficult]
         prior_used = cb.moved_cells_this_turn
         dashed = bool(dash) or bool(cb.dashed)
         budget = combat_grid.movement_budget_cells(mover.speed, cell_size, dashed) if mover else 0
@@ -4438,6 +4753,12 @@ def move_to_coords(campaign_id: str, combatant_id: str, x: int, y: int,
         cb.x = x
         cb.y = y
         cb.moved_cells_this_turn = prior_used + cost
+        # P1: record the routed path (incl. the from-cell) for the renderer to draw the detour.
+        if from_cell is not None:
+            steps = path_cells if path_cells else [to_cell]
+            c.combat.last_move_path = [list(from_cell)] + [list(pc) for pc in steps]
+        else:
+            c.combat.last_move_path = []
         _log_combat_event(
             c,
             f"{mover.name if mover else combatant_id} moves to ({x}, {y}).",
@@ -4451,6 +4772,7 @@ def move_to_coords(campaign_id: str, combatant_id: str, x: int, y: int,
                 "provokers": provokers,
                 "disengaged": disengaged,
                 "movement_illegal": movement_illegal,
+                "difficult_crossed": difficult_crossed,
                 "warnings": list(warnings),
             },
             speaker=mover.name if mover else "",
@@ -4460,9 +4782,12 @@ def move_to_coords(campaign_id: str, combatant_id: str, x: int, y: int,
     view["from"] = list(from_cell) if from_cell else None
     view["to"] = [x, y]
     view["cost_cells"] = cost
+    view["path"] = c.combat.last_move_path
     view["opportunity_attack"] = bool(provokers)
     view["provokers"] = provokers
     view["warnings"] = warnings
+    if difficult_crossed:  # #1253: only when difficult terrain was actually entered
+        view["difficult_crossed"] = difficult_crossed
     if disengaged:
         view["disengaged"] = True
     if movement_illegal is not None:
@@ -4753,6 +5078,13 @@ def next_turn(campaign_id: str) -> dict:
         # recharges at the start of their turn.
         c.combat.action_used = False
         c.combat.bonus_action_used = False
+        # #778: clear WHAT spent the action so the new turn starts with a free action of any
+        # purpose (a cast/skip stamp from last turn must not block this turn's attack/cast).
+        c.combat.action_purpose = ""
+        # #1270: an unresolved spell-attack leg is a SAME-TURN concession (SRD 5.2: the attack
+        # roll is part of the casting action). It never carries across a turn boundary — clear
+        # it so it can't grant a stale bypass next turn (None == today's behaviour).
+        c.combat.pending_spell_attack = None
         # Reset the per-turn attack-action economy too: a new turn starts with one
         # Attack action's worth of strikes and no Action Surge spent yet.
         c.combat.action_attacks_made = 0
@@ -5018,6 +5350,7 @@ def use_action(campaign_id: str, character_id: str, kind: str = "action") -> dic
                 ok, reason = False, "action already used this turn (already acted or skipped)"
             else:
                 c.combat.action_used = True
+                c.combat.action_purpose = "skip"  # #778: a strike/cast after a skip is rejected
         elif kind in ("action", "bonus"):
             if not is_current:
                 ok, reason = False, f"it is not {ch.name}'s turn (only a reaction acts off-turn)"
@@ -5059,6 +5392,11 @@ def remove_combatant(campaign_id: str, character_id: str) -> dict:
         if idx is None:
             raise ValueError(f"{character_id!r} is not in the combat order")
         order.pop(idx)
+        # #1270 (low): a combatant leaving the fight can't be the recipient of a pending on-hit
+        # rider or spell-attack leg — scrub any that name it before the fight-end check below
+        # (a full Combat() reset there also clears pending_spell_attack, but the riders live on
+        # the CASTER characters, so they must be swept regardless of whether combat ends).
+        _clear_riders_targeting(c, character_id)
         remaining_kinds = {
             c.characters[cb.character_id].kind for cb in order if cb.character_id in c.characters
         }
@@ -5410,6 +5748,41 @@ def attack(
                 # and Multiattack-aware for monsters with a stat-block entry). The
                 # named attack scopes the Multiattack budget to its composition
                 # (a Ghoul Claw is NOT part of its 'two Bite' Multiattack — cs F-3).
+                # #778: a strike after the action was already spent on a NON-attack purpose
+                # (a cast, or an intentional skip) is illegal — you get one action per turn,
+                # and check_action_attack only counts attacks (action_attacks_made==0 here, so
+                # it would wrongly permit this). Reject unless an Action Surge action remains
+                # (surge_actions>0), the escape hatch. action_purpose=="" (the Attack-action /
+                # legacy path) is unaffected — this only fires on cast/skip.
+                # #1270: the resolution leg of a DM-resolved attack-roll spell (cast_spell
+                # returned automated:false and recorded pending_spell_attack) is part of the
+                # SAME casting action (SRD 5.2), not a second action — let it through ONCE.
+                # Keyed to that spell resolution: this must be the SAME caster striking a target
+                # the spell was aimed at. Consume the pending record so the gate re-arms — an
+                # independent second attack (or a strike at a different, un-cast target) is still
+                # refused below. (An Extra-Attack/legacy path — action_purpose "" — never reaches
+                # here, and a "skip" purpose has no pending spell leg, so both are unaffected.)
+                _psa = c.combat.pending_spell_attack
+                _spell_leg = (
+                    _psa is not None
+                    and _psa.source_id == attacker_id
+                    and target_id in _psa.target_ids
+                )
+                if _spell_leg:
+                    c.combat.pending_spell_attack = None
+                if (
+                    not _spell_leg
+                    and c.combat.action_purpose in ("cast", "skip")
+                    and c.combat.action_attacks_made == 0
+                    and c.combat.surge_actions <= 0
+                ):
+                    spent = "cast a spell" if c.combat.action_purpose == "cast" else "skipped"
+                    raise ValueError(
+                        f"{attacker.name} already {spent} this turn and cannot also attack — "
+                        f"one action per turn. Spend an Action Surge "
+                        f"(use_resource(resource='action_surge')) for a second action, or "
+                        f"advance with next_turn."
+                    )
                 ma = _attacker_multiattack_count(attacker, c, attack_name)
                 ok, reason = combat.check_action_attack(
                     is_current=True,
@@ -5480,6 +5853,7 @@ def attack(
             acb = next((cb for cb in c.combat.order if cb.character_id == attacker_id), None)
             shooter_cell = _cell(acb) if acb is not None else None
             if shooter_cell is not None:
+                shooter_size = _size(acb)
                 ally_kinds = {"player", "companion"}
                 shooter_ally = attacker.kind in ally_kinds
                 for foe_cb in c.combat.order:
@@ -5493,8 +5867,11 @@ def attack(
                     foe_cell = _cell(foe_cb)
                     if foe_cell is None:
                         continue  # an unplaced foe threatens no cell
-                    if not combat_grid.in_melee_reach(shooter_cell, foe_cell):
-                        continue  # not within 5 ft (1 cell)
+                    # #1253: footprint-edge reach — a Large foe threatens from any of its cells.
+                    if not combat_grid.in_melee_reach_sized(
+                        shooter_cell, shooter_size, foe_cell, _size(foe_cb)
+                    ):
+                        continue  # not within 5 ft (1 cell edge-to-edge)
                     if combat.is_incapacitated(foe):
                         continue  # SRD: the enemy must NOT be Incapacitated
                     if not _can_see(foe):
@@ -5502,6 +5879,93 @@ def attack(
                     ranged_in_melee_grid = True
                     break
         dis = dis or ranged_in_melee_grid
+        # FLANKING (#1254 / PR-7): the common DMG-style OPTIONAL rule (SRD 5.2 core has no
+        # flanking) — a MELEE attacker gains ADVANTAGE when a conscious ALLY threatens the
+        # target from the OPPOSITE SIDE. OFF by default: only fires when the house rule
+        # `flanking_advantage` is enabled AND the fight is on a grid; otherwise this whole
+        # block is skipped and behaviour is byte-identical. Engine sole-writer: computed
+        # purely from existing Combatant positions/sizes — no new state, no new tool param.
+        flanking_grid = False
+        if (
+            not is_ranged
+            and c.house_rules.flanking_advantage
+            and c.combat.grid_enabled
+        ):
+            f_acb = next(
+                (cb for cb in c.combat.order if cb.character_id == attacker_id), None
+            )
+            f_tcb = next(
+                (cb for cb in c.combat.order if cb.character_id == target_id), None
+            )
+            atk_cell = _cell(f_acb) if f_acb is not None else None
+            tgt_cell = _cell(f_tcb) if f_tcb is not None else None
+            if atk_cell is not None and tgt_cell is not None:
+                atk_size = _size(f_acb)
+                tgt_size = _size(f_tcb)
+                ally_kinds = {"player", "companion"}
+                attacker_ally = attacker.kind in ally_kinds
+                # The attacker must itself be in melee reach of the target (a flanker has to
+                # be threatening it). An out-of-reach attacker can't flank even with an ally
+                # across — mirrors the ranged-in-melee reach check above.
+                if combat_grid.in_melee_reach_sized(
+                    atk_cell, atk_size, tgt_cell, tgt_size
+                ):
+                    for mate_cb in c.combat.order:
+                        mate_id = mate_cb.character_id
+                        if mate_id in (attacker_id, target_id):
+                            continue
+                        mate = c.characters.get(mate_id)
+                        if mate is None or mate.dead or mate.current_hp <= 0:
+                            continue
+                        # Only a same-side ally flanks WITH the attacker.
+                        if (mate.kind in ally_kinds) != attacker_ally:
+                            continue
+                        # SRD-consistent: an Incapacitated ally isn't a threatening flanker
+                        # (the optional rule requires a conscious, threatening ally).
+                        if combat.is_incapacitated(mate):
+                            continue
+                        mate_cell = _cell(mate_cb)
+                        if mate_cell is None:
+                            continue  # an unplaced ally can't flank
+                        mate_size = _size(mate_cb)
+                        # The ally must also be in melee reach of the target...
+                        if not combat_grid.in_melee_reach_sized(
+                            mate_cell, mate_size, tgt_cell, tgt_size
+                        ):
+                            continue
+                        # ...and on the OPPOSITE side (footprint-aware geometry).
+                        if combat_grid.flanking(
+                            atk_cell, atk_size, mate_cell, mate_size, tgt_cell, tgt_size
+                        ):
+                            flanking_grid = True
+                            break
+        adv = adv or flanking_grid
+        # COVER (#1252 / PR-3): when on the grid AND both combatants are placed, derive the
+        # SRD 5.2 cover the target has from the attacker's line — half (+2 AC), three-quarters
+        # (+5 AC), or total (untargetable). Cover comes from intervening BLOCKING cells (the
+        # fight's grid_impassable walls/props) on the attacker->target ray; the tier is the
+        # count of blockers crossed (0=none, 1=half, 2+=three-quarters, a fully-walled ray =
+        # total). Total cover REFUSES the shot up front (before the roll) — SRD: a creature
+        # with total cover can't be targeted directly. ADDITIVE: off-grid or an unplaced end
+        # yields no cover (cover_ac_bonus 0, no key) == today's behaviour byte-for-byte.
+        cover_tier = "none"
+        cover_ac = 0
+        if c.combat.grid_enabled:
+            _acb = next((cb for cb in c.combat.order if cb.character_id == attacker_id), None)
+            _tcb = next((cb for cb in c.combat.order if cb.character_id == target_id), None)
+            _ac = _cell(_acb) if _acb is not None else None
+            _tc = _cell(_tcb) if _tcb is not None else None
+            if _ac is not None and _tc is not None:
+                blocking = {(int(bx), int(by)) for bx, by in (c.combat.grid_impassable or [])}
+                if blocking:
+                    cover_tier = combat_grid.cover_between(_ac, _tc, blocking)
+                    if cover_tier == "total":
+                        raise ValueError(
+                            f"{target.name} at {_tc} has TOTAL cover from {attacker.name} at "
+                            f"{_ac} (a wall fully blocks the line) and can't be targeted "
+                            f"directly — reposition for a clear shot. No attack was resolved."
+                        )
+                    cover_ac = combat_grid.cover_ac_bonus(cover_tier)
         # crit_min threads the attacker's expanded crit range (Champion Improved/Superior
         # Critical → 19/18; everyone else 20 = today's behavior) so a Champion's nat-19
         # actually flags atk.crit and crit_source() resolves "expanded_crit_range".
@@ -5520,6 +5984,9 @@ def attack(
         guided_bonus = atk_bonus_rider.amount if atk_bonus_rider is not None else 0
         atk_total = atk.total + rider_bonus + guided_bonus
         target_ac, target_ac_detail = _effective_armor_class(target)
+        # Fold grid cover (#1252) into the AC the attacker must beat — half=+2, three-quarters=+5
+        # (SRD 5.2). cover_ac is 0 off-grid / with no blocker between (additive: unchanged).
+        target_ac += cover_ac
         hit = atk.crit or (not atk.fumble and atk_total >= target_ac)
         # TEST-ONLY force_hit (Track 2b — DOUBLE-GUARDED): force the HIT BOOLEAN only so a
         # sandbox fight resolves to a terminal state without depending on the dice landing hits.
@@ -5586,6 +6053,24 @@ def attack(
             # disadvantage (folded into `dis` above), so the DM narrates it and the behavioral
             # gate / scorer see the rule actually fired on-grid (not announced-then-dropped).
             result["attack_roll"]["ranged_in_melee_disadvantage"] = True
+        if flanking_grid:
+            # #1254 grid (PR-7): surface that the engine AUTO-APPLIED the optional flanking
+            # ADVANTAGE (folded into `adv` above), so the DM narrates "you and your ally have
+            # the ogre pinned between you" and the behavioral gate / scorer see the rule
+            # actually fired on-grid. Free payload (no tool-schema param — derived from
+            # existing positions + the house-rule flag). Absent when flanking didn't apply.
+            result["attack_roll"]["flanking_advantage"] = True
+        if cover_ac > 0:
+            # #1252 grid (PR-3): surface the SRD cover the target enjoyed and the AC it added,
+            # so the DM narrates "the goblin ducks behind the pillar (+2 AC)" and the scorer /
+            # renderer see cover ACTUALLY applied to the hit math (not announced-then-dropped).
+            # `effective_ac` is the base AC the target beat WITH cover folded in. Free payload
+            # (no tool-schema param — derived from existing state). Absent when no cover (none).
+            result["cover"] = {
+                "tier": cover_tier,
+                "ac_bonus": cover_ac,
+                "effective_ac": target_ac,
+            }
         if rider_rolls:
             # The engine-rolled rider components (SYN-06), itemized so the DM narrates
             # "the blessing guides the blade (+3)" — and sees the buff actually counted.
@@ -5609,6 +6094,18 @@ def attack(
                 attacker_cb.reaction_used = True
                 result["reaction_used"] = True
             else:
+                # #778: if this is the FIRST strike of an Attack action that FOLLOWS a prior
+                # cast/skip (the action was already spent, so this can only be legal via an
+                # Action Surge), consume that surge now — symmetrical with the cast path — so a
+                # later attack/cast can't reuse it. The purpose-guard above proved a surge was
+                # available. action_purpose=="" (a plain Attack action / legacy) never triggers
+                # this, leaving Extra-Attack multi-strike + Action-Surge behaviour byte-identical.
+                if (
+                    c.combat.action_purpose in ("cast", "skip")
+                    and c.combat.action_attacks_made == 0
+                    and c.combat.surge_actions > 0
+                ):
+                    c.combat.surge_actions -= 1
                 c.combat.action_used = True  # an Attack action consumes the turn's action
                 c.combat.action_attacks_made += 1
                 result["attacks_made_this_turn"] = c.combat.action_attacks_made
@@ -5653,7 +6150,13 @@ def attack(
             ac = _cell(acb) if acb else None
             tc = _cell(tcb) if tcb else None
             if ac is not None and tc is not None:
-                feet = combat_grid.distance_ft(ac, tc, c.combat.grid_cell_size)
+                # #1253: measure FOOTPRINT-EDGE to footprint-edge so a Large attacker/target
+                # reaches from its nearest cell (a 2×2 ogre melees an adjacent target that is
+                # 2 anchor-cells away). Medium vs Medium == the PR-1 anchor Chebyshev.
+                edge_cells = combat_grid.footprint_distance_cells(
+                    ac, _size(acb), tc, _size(tcb)
+                )
+                feet = combat_grid.range_ft(edge_cells, c.combat.grid_cell_size)
                 if feet > 5:
                     result["range_warning"] = (
                         f"{attacker.name} at {ac} is {feet} ft from {target.name} at {tc} — "
@@ -5801,6 +6304,10 @@ def attack(
             kx = _award_kill_xp(c, target)
             if kx:
                 result["kill_xp"] = kx
+            # #1270 (low): a slain target can't be the recipient of a pending on-hit rider or
+            # spell-attack leg — scrub any that name it so no inert-but-corrupt state lingers.
+            if target.dead:
+                _clear_riders_targeting(c, target_id)
         elif man_bonus is not None:
             # The strike MISSED, so the maneuver die adds no damage — but it was already spent
             # at use_resource time (and consumed above), so report it as spent-not-applied
@@ -6088,6 +6595,9 @@ def apply_damage(
         kx = _award_kill_xp(c, target)
         if kx:
             out["kill_xp"] = kx
+        # #1270 (low): scrub pending on-hit riders / spell-attack leg naming a slain target.
+        if target.dead:
+            _clear_riders_targeting(c, target_id)
         dtype = f" {damage_type}" if damage_type else ""
         _log_combat_event(
             c,
@@ -6150,6 +6660,35 @@ def set_temp_hp(campaign_id: str, target_id: str = "", amount: int = 0,
         ch.temp_hp = max(ch.temp_hp, max(0, amount))
         save_campaign(c)
         return {"temp_hp": ch.temp_hp, "hp": f"{ch.current_hp}/{ch.max_hp}"}
+
+
+def _clear_riders_targeting(c, target_id: str) -> None:
+    """#1270 (low): scrub any pending combat state that names `target_id` as its TARGET
+    when that combatant leaves the fight (death or remove_combatant). Two kinds:
+
+      * `pending_on_hit_riders` — an attack-roll spell's not-yet-landed rider (Guiding
+        Bolt), carried on the CASTER keyed by target_id. If the target dies before the
+        caster ever resolves the spell attack, the record is inert-but-corrupt: it never
+        materializes (the target is gone) yet lingers forever and could mis-apply if the
+        id were ever reused. Drop every caster's riders aimed at this target.
+      * `pending_spell_attack` — the same-turn DM-resolved spell-attack leg (#1270). If
+        the (only) target it was aimed at is gone, the leg can never be resolved, so clear
+        it (drop the target from the aim set; clear the record when nothing remains).
+
+    Idempotent (list/None filter) and null-guarded, so every death path may call it
+    unconditionally. Additive: a fight with no pending riders/leg is a no-op."""
+    if not target_id:
+        return
+    for holder in c.characters.values():
+        if any(r.target_id == target_id for r in holder.pending_on_hit_riders):
+            holder.pending_on_hit_riders = [
+                r for r in holder.pending_on_hit_riders if r.target_id != target_id
+            ]
+    psa = c.combat.pending_spell_attack
+    if psa is not None and target_id in psa.target_ids:
+        psa.target_ids = [t for t in psa.target_ids if t != target_id]
+        if not psa.target_ids:
+            c.combat.pending_spell_attack = None
 
 
 def _release_held_targets(c, caster_id: str, spell_name: str) -> list[dict]:
@@ -6217,6 +6756,48 @@ def _aoe_damage_spec(curated, srd, slot_level: int, caster_level: int, casting_m
             "damage_type": (types[0] if types else ""),
         }
     return None
+
+
+# #1251 / PR-2: default LINE length when the SRD record carries only a width. Lightning
+# Bolt (the one SRD `line` spell) encodes its 100ft length in prose, not a structured
+# field; shape_size there is the 5ft WIDTH. Fall back to this so a line still projects.
+_DEFAULT_LINE_LENGTH_FT = 100
+
+
+def _aoe_template_cells(c: "Campaign", caster: "Character", srd, aim: tuple[int, int]):
+    """#1251 / PR-2: the set of grid cells covered by `caster`'s spell area, aimed at cell
+    `aim`, or None when the spell has no engine-resolvable grid template (no SRD shape, or
+    a shape PR-2 doesn't map — cube/wall land in #1253+). Read-only geometry over
+    combat_grid; the caller resolves occupants + damage. SRD sizes are in FEET; the grid's
+    cell_size converts them. A sphere bursts AT `aim`; a cone/line is cast FROM the caster's
+    cell TOWARD `aim` (so the caster must be placed).
+
+    Returns ``(cells, loe_origin)`` — `loe_origin` is the spell's SRD POINT OF ORIGIN, the
+    cell line-of-effect (#1252) is traced FROM when culling shielded cells: the AIM cell for
+    a sphere (the burst's own origin IS the aim), but the CASTER'S cell for a cone/line (their
+    origin is the emitter, not the target point — a cone aimed past a wall must not reach cells
+    the caster can't see). None (not a tuple) when there is no template."""
+    shape = (srd or {}).get("shape_type")
+    if not shape:
+        return None
+    w, h, cs = c.combat.grid_width, c.combat.grid_height, c.combat.grid_cell_size
+    size = int((srd.get("shape_size") or 0))
+    if shape == "sphere":
+        # A burst centred on the aim cell — origin-independent (no facing needed); LoE is
+        # traced from the burst point itself (the aim cell).
+        return combat_grid.sphere_cells(aim, size, w, h, cs), aim
+    cb = next((o for o in c.combat.order if o.character_id == caster.id), None)
+    if cb is None or cb.x is None or cb.y is None:
+        return None  # a cone/line needs a placed emitter to fix its facing
+    src = (cb.x, cb.y)
+    if shape == "cone":
+        # A cone emits FROM the caster: LoE is traced from `src`, not the aim cell.
+        return combat_grid.cone_cells(src, aim, size, w, h, cs), src
+    if shape == "line":
+        # SRD `line` shape_size is the WIDTH; length lives in prose -> use the default.
+        # The line emits FROM the caster: LoE is traced from `src`.
+        return combat_grid.line_cells(src, aim, _DEFAULT_LINE_LENGTH_FT, size, w, h, cs), src
+    return None  # cube / other shapes: not a PR-2 template (deferred)
 
 
 @mcp.tool()
@@ -7120,15 +7701,12 @@ def build_options(campaign_id: str, character_id: str) -> dict:
 
 @mcp.tool()
 def level_roadmap(campaign_id: str, character_id: str, through_level: int = 20) -> dict:
-    """A READ-ONLY projection of what a character GAINS at each level from its current
-    level + 1 through ``through_level`` (≤20) — the "see your path to 20" planning view
-    (build_options only shows the single next level). Projects the PC's PRIMARY class (most
-    levels) along the SRD tables: features gained, subclass-feature deltas, ASI/feat levels,
-    the proficiency bonus, class-resource changes, and a caster's spell-slot note. Returns
-    ``{character_id, character_name, primary_class, subclass, from, through_level,
-    multiclass, roadmap:[…]}``. Pure projection — never writes state, never fabricates; an
-    empty ``roadmap`` when the PC is already at ``through_level``, has no class (a stat-block
-    NPC/monster), or the primary class is unknown to the tables."""
+    """READ-ONLY projection of what a character GAINS at each level from current+1 through
+    ``through_level`` (≤20) — the "see your path to 20" planning view (build_options shows
+    only the next level). Projects the PC's PRIMARY class (most levels) along the SRD tables:
+    features, subclass-feature deltas, ASI/feat levels, proficiency bonus, class-resource
+    changes, caster spell-slot note. Never writes; empty ``roadmap`` when already at
+    ``through_level``, classless (stat-block NPC/monster), or class unknown to the tables."""
     c = _require(campaign_id)
     ch = _char(c, character_id)
     base = {
@@ -7255,6 +7833,7 @@ def cast_spell(
     as_ritual: bool = False,
     innate: bool = False,
     target_ids: ListArg = None,
+    origin: ListArg = None,
 ) -> dict:
     """Cast a spell — works for ANY of the ~339 SRD spells. Consumes a spell slot
     (cantrips use none); upcasts when slot_level exceeds the spell's level; sets
@@ -7265,7 +7844,8 @@ def cast_spell(
     target via ``target_id`` (canonical) or the aliases ``npc_id`` / ``id``. (``character_id``
     is the CASTER and is unchanged.) Canonical names win if more than one is given. Pass
     ``as_ritual=True`` (#813) to cast a ritual-tagged spell WITHOUT a slot (takes 10 extra
-    minutes; refused in combat)."""
+    minutes; refused in combat). On a grid (#1251), ``origin=[x,y]`` projects the spell's
+    SRD area (sphere/cone/line) onto the cells and auto-resolves the occupants caught."""
     # Coalesce intuitive arg-name aliases to the canonical params. `character_id` (the caster)
     # is canonical and untouched; the alias ids resolve only the explicit `target_id`.
     spell_name = spell_name or spell
@@ -7331,6 +7911,53 @@ def cast_spell(
                     )
                 seen_ids.add(tid)
                 aoe_targets.append(tgt)
+        # AoE GRID TEMPLATE (#1251 / PR-2): when an `origin` cell is given AND the fight is
+        # on the grid, project the spell's SRD area (sphere/cone/line) onto the cells and let
+        # the OCCUPANTS become the AoE targets — the engine resolves save-for-half over them
+        # via the same shared-roll loop as an explicit target_ids list. `affected_tile_coords`
+        # is surfaced for the DM/renderer. ADDITIVE: no `origin` (or off-grid) == unchanged —
+        # `aoe_targets` stays empty and no template keys are emitted. An explicit target_ids
+        # WINS (the caller named the victims by hand); a template only fills an empty list.
+        # Line-of-effect (walls between origin and a cell) is DEFERRED. TODO(#1251->#1252).
+        affected_tile_coords: list[list[int]] | None = None
+        if origin is not None and not target_ids and c.combat.grid_enabled:
+            oc = _coerce_list(origin)
+            if len(oc) != 2:
+                raise ValueError("cast_spell origin must be an [x, y] cell pair")
+            aim = (int(oc[0]), int(oc[1]))
+            template = _aoe_template_cells(c, ch, srd, aim)
+            if template is not None:
+                cells, loe_origin = template
+                # LINE-OF-EFFECT cull (#1252 / PR-3): trace LoE from the spell's SRD POINT OF
+                # ORIGIN (`loe_origin`) — the burst point (aim) for a sphere, the CASTER'S cell
+                # for a cone/line (their origin is the emitter, so a cone aimed past a wall must
+                # not reach cells the caster can't see). A cell with NO line of effect from that
+                # origin — a wall/prop between them severs the ray — is SHIELDED and drops out of
+                # the area (SRD 5.2: a point of origin can't extend around corners; a target with
+                # total cover can't be caught). ADDITIVE: with no impassable cells the ray is
+                # never severed, so `cells` is unchanged byte-for-byte (open-floor AoE == PR-2).
+                # The origin cell always has line of effect to itself and is retained.
+                blocking = {(int(bx), int(by)) for bx, by in (c.combat.grid_impassable or [])}
+                if blocking:
+                    cells = {
+                        cell for cell in cells
+                        if cell == loe_origin or combat_grid.has_line_of_effect(loe_origin, cell, blocking)
+                    }
+                affected_tile_coords = sorted([cx, cy] for (cx, cy) in cells)
+                # Every combatant standing in the template is caught — SRD 5.2: a creature in
+                # the area is affected, and the CASTER is not exempt (a Fireball centred on
+                # yourself catches you). The caster rides the same save-for-half loop as anyone
+                # else; the DM narrates. Cone/line geometry already excludes the emitter cell,
+                # so a cone/line never catches its own caster. Order-stable by initiative.
+                for cb in c.combat.order:
+                    if cb.x is None or cb.y is None:
+                        continue
+                    # #1253: a Large+ token is caught if ANY of its footprint cells lies in
+                    # the template. Medium (1-cell) reduces to the PR-2 `(x, y) in cells`.
+                    if _footprint(cb) & cells:
+                        tgt = c.characters.get(cb.character_id)
+                        if tgt is not None:
+                            aoe_targets.append(tgt)
         # SRD: an incapacitated creature can't take an action — and a spell's casting time is
         # (almost always) an action/bonus/reaction, so refuse the cast outright rather than
         # spend the caster's slot / set concentration. Mirrors the attack() guard. (extends #42)
@@ -7370,6 +7997,47 @@ def cast_spell(
                         f"advance with next_turn so the order stays in sync."
                     )
                 cast_consumes_reaction = True
+        # ACTION ECONOMY BY CASTING TIME (#778). Resolve the spell's casting time into its
+        # action-economy bucket and gate the ON-TURN cast BEFORE any slot spend (a rejected
+        # cast changes nothing). Off-turn / reaction casts are governed by the reaction gate
+        # above and skip this (a reaction spell is not an action). Out of combat this is inert
+        # (caster_cb is None). Old snapshots: action_purpose defaults "" == today's behaviour.
+        #   * bonus    -> consumes bonus_action_used (NOT the action) — Healing Word then still
+        #                 leaves the action free (bonus-heal + action is a legal 5e turn);
+        #   * action   -> rejected if the action is already spent (cast/skip already stamped, an
+        #                 Attack action already begun, or action_used set) — UNLESS an Action
+        #                 Surge action is still available (surge_actions>0), the escape hatch;
+        #   * minute/hour -> refused in active combat (a 1-round is 6 seconds, not minutes).
+        # The reaction bucket needs no economy write here (handled by the reaction path).
+        cast_time_class = spells.casting_time_class(curated, srd)
+        if caster_cb is not None and not cast_consumes_reaction:
+            # is_current is True here (an off-turn cast set cast_consumes_reaction above).
+            if cast_time_class in ("minute", "hour"):
+                unit = "minutes" if cast_time_class == "minute" else "hours"
+                raise ValueError(
+                    f"cannot cast {canonical} during active combat — its casting time is "
+                    f"measured in {unit}, far longer than a 6-second combat round. Cast it "
+                    f"once combat ends."
+                )
+            if cast_time_class == "bonus":
+                if c.combat.bonus_action_used:
+                    raise ValueError(
+                        f"{ch.name} has already used its bonus action this turn and cannot "
+                        f"cast {canonical} (a bonus-action spell). Advance with next_turn."
+                    )
+            else:  # "action" (or an unrecognized string, defaulted strict)
+                action_spent = (
+                    c.combat.action_used
+                    or c.combat.action_purpose in ("cast", "skip")
+                    or c.combat.action_attacks_made > 0
+                )
+                if action_spent and c.combat.surge_actions <= 0:
+                    raise ValueError(
+                        f"{ch.name} has already used its action this turn and cannot cast "
+                        f"{canonical} (an action-cost spell). Only one action per turn — spend "
+                        f"an Action Surge (use_resource(resource='action_surge')) for a second, "
+                        f"or advance with next_turn."
+                    )
         # KNOWN / PREPARED GATE (F03-7 + F03-8). Compare CASE-INSENSITIVELY (F03-7): the
         # cast-side `canonical` is the proper-cased SRD name, but legacy snapshots may carry
         # raw-cased strings (learn_spells/prepare_spells now canonicalize on write, but old
@@ -7705,10 +8373,41 @@ def cast_spell(
         # is separate from the character, so the re-validation above didn't touch it).
         if cast_consumes_reaction and caster_cb is not None:
             caster_cb.reaction_used = True
-        # An on-turn cast consumes the combatant's action (mirrors attack()'s action_used
-        # bookkeeping). Required so next_turn's PC-skip guard recognises a spell as "acted".
+        # An on-turn cast spends the appropriate economy slot by casting time (#778). The
+        # gate above already proved it legal; record WHAT was spent so a cross-tool second act
+        # (cast→cast, cast→attack) is rejected and a bonus-action cast leaves the action free.
         elif caster_cb is not None and not cast_consumes_reaction:
-            c.combat.action_used = True
+            if cast_time_class == "bonus":
+                # A bonus-action spell consumes the bonus action ONLY — the action stays free
+                # (Healing Word then still allows use_action('action') / an action-cost cast).
+                c.combat.bonus_action_used = True
+            else:  # "action" (minute/hour were refused above)
+                # An action-cost cast spends the turn's action. If it used an Action Surge
+                # action (the action was already spent but a surge was available), consume that
+                # surge so the attack budget (attacks_allowed multiplies by 1+surge) drops back.
+                if c.combat.action_used and c.combat.surge_actions > 0:
+                    c.combat.surge_actions -= 1
+                c.combat.action_used = True
+                c.combat.action_purpose = "cast"
+                # #1270: an attack-roll spell the engine can't auto-resolve (Guiding Bolt,
+                # Fire Bolt — `automated:false` below, `curated is None`) leaves the to-hit
+                # roll for the DM to make via attack(). That resolution attack() is part of
+                # THIS casting action (SRD 5.2), so record it as a pending spell-attack leg:
+                # the same-turn attack() by this caster against a target it was aimed at
+                # bypasses the cast+attack gate ONCE, then clears this (an independent second
+                # strike is still refused). Keyed to the spell resolution, not a blanket
+                # allowance. Auto-resolved spells (curated) never set this — Magic Missile /
+                # Fireball stay a fully-spent action, so cast→attack stays refused for them.
+                if is_attack_roll_spell and curated is None:
+                    _spell_targets = list(target_ids) if target_ids else []
+                    if target_id and target_id not in _spell_targets:
+                        _spell_targets.insert(0, target_id)
+                    c.combat.pending_spell_attack = PendingSpellAttack(
+                        source_id=character_id,
+                        target_ids=_spell_targets,
+                        spell=canonical,
+                        round=c.combat.round,
+                    )
         save_campaign(c)
         updated = c.characters[character_id]
         result = {
@@ -7726,6 +8425,11 @@ def cast_spell(
         # (one shared damage roll, full/half per save). Present only when target_ids was passed.
         if aoe_result is not None:
             result["aoe"] = aoe_result
+        # AoE GRID TEMPLATE (#1251 / PR-2): the cells the projected area covered — for the DM
+        # to narrate and the renderer to draw (the /combat-surface `affected_tile_coords`
+        # contract). Present only when an `origin` template was resolved on the grid.
+        if affected_tile_coords is not None:
+            result["affected_tile_coords"] = affected_tile_coords
         # AREA SHAPE (F03-4): surface the spell's geometry (Cone/Sphere/Line + size) from the
         # srd524 record so the DM can describe the area and pick who's caught — 52 spells carry
         # it and it was previously never told. Additive; absent when the record has no shape.
@@ -8213,14 +8917,82 @@ def _catalog_item_stats(rec: dict | None) -> dict | None:
     }
 
 
+def _unarmored_defense_base(ch: Character, dex_mod: int) -> int:
+    """#806 stage 2 — the no-body-armor base AC, mirroring _finish_seat_sheet's
+    Unarmored Defense (server.py ~1479-1483): Barbarian = 10 + DEX + CON, Monk =
+    10 + DEX + WIS; everyone else = the plain 10 + DEX baseline. Class-derived, not a
+    flat table value — so a barb/monk that re-derives with no armor keeps its class AC
+    instead of silently dropping to 10 + DEX. Matches the seat path's SINGLE rule set
+    (it computes the ability formula only; the shield is added by the caller, per the
+    barb-allows-shield / monk-forbids-shield SRD split)."""
+    classes = {(cl.name or "").lower() for cl in ch.classes}
+    if "barbarian" in classes:
+        return 10 + dex_mod + ch.ability_modifier(Ability.CON)
+    if "monk" in classes:
+        return 10 + dex_mod + ch.ability_modifier(Ability.WIS)
+    return 10 + dex_mod
+
+
+def _derive_worn_ac_from_equipped(ch: Character) -> int:
+    """#806 stage 2 — recompute the worn-armor base AC purely from the character's
+    currently-equipped catalog armor + shields, using the same SRD DEX-mod rules as
+    _equip_mechanics (light = base+DEX, medium = base+min(DEX,cap), heavy = flat,
+    shield = +bonus). Effect-CLEAN: this is the base scalar only; Mage Armor / Shield
+    of Faith still layer on at read time via _effective_armor_class. This is the
+    re-derive path that hands AC ownership back to equipment (rederive_ac=true) AND the
+    equip-path recompute — computing the FULL base from current inventory (not an
+    incremental delta) so it is order-independent and idempotent.
+
+    No BODY armor == Unarmored Defense (Barbarian 10+DEX+CON, Monk 10+DEX+WIS, else
+    10+DEX); a worn body armor OVERRIDES Unarmored Defense per the normal armor rule.
+    A shield adds its +bonus on top — EXCEPT a monk's Unarmored Defense requires no
+    shield (SRD), so a shield is dropped only for a monk who is relying on Unarmored
+    Defense (no body armor); a barbarian keeps it, and any body-armored character keeps
+    it."""
+    dex_mod = ch.ability_modifier(Ability.DEX)
+    body_armor_base = None  # None == no body armor worn (fall back to Unarmored Defense)
+    shield_bonus = 0
+    for it in ch.inventory:
+        if not it.equipped:
+            continue
+        rec = itemcatalog.resolve(it.name)
+        if rec is None or rec.get("kind") != "armor":
+            continue
+        category = rec.get("armor_category")
+        if category == "shield" or (category is None and "shield" in rec["name"].lower()):
+            shield_bonus += int(rec.get("ac_bonus") or rec.get("ac") or 2)
+        elif rec.get("ac"):
+            armor_base = int(rec["ac"])
+            if category == "light":
+                body_armor_base = armor_base + dex_mod
+            elif category == "medium":
+                body_armor_base = armor_base + min(dex_mod, int(rec.get("ac_dex_cap") or 2))
+            elif category == "heavy":
+                body_armor_base = armor_base
+            else:
+                body_armor_base = armor_base  # unknown/homebrew flat AC
+    if body_armor_base is None:
+        # A monk's Unarmored Defense feature is VOID while using a shield (SRD) — the monk
+        # may still wield the shield (its +bonus applies), but loses the WIS term, dropping
+        # to the plain 10 + DEX baseline. A barbarian keeps Unarmored Defense WITH a shield.
+        monk_with_shield = shield_bonus and "monk" in {(cl.name or "").lower() for cl in ch.classes}
+        base = (10 + dex_mod) if monk_with_shield else _unarmored_defense_base(ch, dex_mod)
+        return base + shield_bonus
+    return body_armor_base + shield_bonus
+
+
 def _equip_mechanics(ch: Character, item_name: str, equipped: bool) -> Optional[dict]:
-    """F09-5 stage 1 — TELL, don't enforce: report the mechanical consequences of
-    an equip/unequip so the DM can apply them through the existing writer paths.
-    The engine deliberately does NOT auto-write armor_class here: AC effects (e.g.
-    Mage Armor) flow through update_character today, and a silent equip-side write
-    would fight that path (stage 2 / #806 owns the AC-ownership design). Returns
-    None for items with no catalog mechanics (free-text gear) so the response stays
-    exactly the pre-existing payload."""
+    """#806 stage 2 — equipment-owned AC. On armor/shield equip/unequip the engine
+    now WRITES ch.armor_class with the worn AC it computes (light/medium/heavy DEX
+    rule + shield ±bonus) — but ONLY when the base AC isn't a DM manual override
+    (ch.armor_ac_source != "manual") and not a legacy/unknown "" value. When the
+    engine writes, it stamps armor_ac_source="equipment" and returns applied=True;
+    when the DM owns the base ("manual") or it's a manual-safe legacy "", it leaves
+    armor_class untouched and keeps surfacing the delta advisorily (applied=False)
+    so the DM can reconcile — engine computes, DM disposes. AC effects (Mage Armor,
+    Shield of Faith) still layer on top at read time via _effective_armor_class; the
+    equip write only owns the WORN-ARMOR base scalar. Returns None for items with no
+    catalog mechanics (free-text gear) so that response stays the pre-existing payload."""
     rec = itemcatalog.resolve(item_name)
     if rec is None:
         return None
@@ -8228,6 +9000,12 @@ def _equip_mechanics(ch: Character, item_name: str, equipped: bool) -> Optional[
     if rec.get("kind") == "armor" and (rec.get("ac") or rec.get("ac_bonus")):
         dex_mod = ch.ability_modifier(Ability.DEX)
         category = rec.get("armor_category")
+        # #806 stage 2: `suggested`/`ac_delta` below are ADVISORY only (the numbers the DM
+        # sees). The engine-owned WRITE does NOT use them — it FULLY recomputes the base from
+        # the (already-updated) inventory via _derive_worn_ac_from_equipped, so the stored
+        # base is order-independent + idempotent (an incremental ±delta drifts across
+        # ordering: armor-then-shield, double-equip, unequip-with-shield-on). The recompute
+        # is also effect-clean, so Mage Armor / Shield of Faith never bake into the base.
         if category == "shield" or (category is None and "shield" in rec["name"].lower()):
             # F09-6: a shield is a +N BONUS on top of the wearer's AC, not a base AC.
             # The SRD smuggles the bonus in as ac_base=2; prefer the structured ac_bonus.
@@ -8256,6 +9034,25 @@ def _equip_mechanics(ch: Character, item_name: str, equipped: bool) -> Optional[
         else:
             suggested = 10 + dex_mod
             basis = "unarmored baseline 10 + DEX"
+        # #806 stage 2: WRITE the worn-armor base unless a DM manual override owns it, or
+        # a legacy/unknown "" value is present (treated manual-safe — never auto-clobbered).
+        # When we own it, FULL-recompute the base from current inventory (order-independent,
+        # idempotent) and report applied=True; otherwise stay advisory (applied=False) and
+        # keep surfacing the delta so the DM can reconcile.
+        engine_owns_base = ch.armor_ac_source == "equipment"
+        if engine_owns_base:
+            ch.armor_class = _derive_worn_ac_from_equipped(ch)
+            ch.armor_ac_source = "equipment"
+            return {
+                "applied": True,
+                "current_ac": current_ac,
+                "suggested_ac": suggested,
+                "ac_delta": suggested - current_ac,
+                "note": (
+                    f"AC updated to {ch.armor_class} ({basis}); equipment owns this "
+                    f"character's armor class"
+                ),
+            }
         return {
             "applied": False,
             "current_ac": current_ac,
@@ -8264,6 +9061,8 @@ def _equip_mechanics(ch: Character, item_name: str, equipped: bool) -> Optional[
             "note": (
                 f"AC does not change on its own ({basis}): call "
                 f"update_character(armor_class={suggested}) to apply it"
+                + (" — or update_character(rederive_ac=true) to hand AC ownership to "
+                   "equipment" if ch.armor_ac_source == "manual" else "")
             ),
         }
     if rec.get("damage"):
@@ -8282,14 +9081,12 @@ def _equip_mechanics(ch: Character, item_name: str, equipped: bool) -> Optional[
 
 @mcp.tool()
 def lookup_item(name: str) -> dict:
-    """Look up a single SRD item by name (case-insensitive) in the bundled
-    ~960-item catalog (magic items, weapons, armor, gear, potions, etc.). Returns
-    the flattened record — {name, kind, rarity, requires_attunement, weight, cost,
-    description, properties} plus damage/damage_type for weapons and ac for armor —
-    or {"error", "suggestions"} on a miss. `cost` is the listed price in gp, or
-    null when the SRD lists no price (every magic item) — null means the DM sets
-    the price, NOT that it is free. Use this (then add_item with item_name=...)
-    to grant a REAL item instead of free-texting it."""
+    """Look up a single SRD item by name (case-insensitive) in the bundled ~960-item catalog
+    (magic items, weapons, armor, gear, potions, …). Returns the flattened record — {name,
+    kind, rarity, requires_attunement, weight, cost, description, properties} plus
+    damage/damage_type (weapons) and ac (armor) — or {"error", "suggestions"} on a miss.
+    `cost` is null when the SRD lists no price (means the DM sets it, NOT free). Use this then
+    add_item(item_name=...) to grant a REAL item instead of free-texting it."""
     rec = itemcatalog.resolve(name)
     if rec is None:
         return {"error": f"no item named {name!r} in the SRD catalog",
@@ -8320,14 +9117,11 @@ def feats(query: str = "") -> dict:
 
 @mcp.tool()
 def lookup_feature(name: str, class_name: str = "") -> dict:
-    """Look up a class/subclass feature's FULL SRD 5.2 rules text by name (#756-family,
-    from the RRI-25e55fa optimizer sweep — "every feature is static text with no
-    click-through to full rules text").
-
-    `class_name` (a class OR subclass name, e.g. "Fighter" or "Champion") disambiguates a
-    feature whose name is shared across classes ("Extra Attack", "Spellcasting") and lets a
-    subclass feature fall back to its parent class's feature. Returns {name, desc, owner}
-    with the complete rules text, or {"error"} on a miss. Read-only; mirrors lookup_item."""
+    """Look up a class/subclass feature's FULL SRD 5.2 rules text by name. `class_name` (a class
+    OR subclass name, e.g. "Fighter" or "Champion") disambiguates a name shared across classes
+    ("Extra Attack", "Spellcasting") and lets a subclass feature fall back to its parent class.
+    Returns {name, desc, owner} with the complete rules text, or {"error"} on a miss.
+    Read-only; mirrors lookup_item."""
     rec = (
         feature_catalog_mod.lookup(class_name, name)
         if class_name
@@ -8350,12 +9144,11 @@ def feature_catalog(owner: str) -> dict:
 
 @mcp.tool()
 def character_feature_rules(campaign_id: str, character_id: str) -> dict:
-    """The FULL SRD rules text for each feature a character actually has — resolved against
-    the PC's own class(es)/subclass(es) so a shared name ("Extra Attack", "Spellcasting")
-    reads the RIGHT class's rules. Returns {features: [{name, desc, owner}]} for the
-    sheet's feature click-through (the optimizer's "class-feature inspector absent"). A
-    feature whose rules text the SRD dump doesn't carry is returned with an empty desc
-    (HONEST — the curated short desc still renders inline); never a fabrication. Read-only."""
+    """The FULL SRD rules text for each feature a character actually has — resolved against the
+    PC's own class(es)/subclass(es) so a shared name ("Extra Attack", "Spellcasting") reads the
+    RIGHT class's rules. Returns {features: [{name, desc, owner}]} for the sheet's feature
+    click-through. A feature the SRD dump lacks is returned with an empty desc (never a
+    fabrication). Read-only."""
     c = _require(campaign_id)
     ch = _char(c, character_id)
     # The PC's class + subclass names are the disambiguation hints (subclass first so a
@@ -8414,21 +9207,29 @@ def remove_item(campaign_id: str, character_id: str, name: str, quantity: int = 
 
 @mcp.tool()
 def equip_item(campaign_id: str, character_id: str, name: str, equipped: bool = True) -> dict:
-    """Equip an item (or unequip with equipped=False). Equipping is ADVISORY for
-    mechanics: for catalog-recognized armor/shields/weapons the response carries a
-    `mechanics` block ({suggested_ac, ac_delta, note} or {damage, damage_type,
-    note}) — the engine does NOT change armor_class or attacks on its own, so
-    apply the AC via update_character(armor_class=...) and pass weapon stats to
-    attack()."""
+    """Equip an item (or unequip with equipped=False). For catalog-recognized
+    armor/shields the response carries a `mechanics` block ({suggested_ac, ac_delta,
+    applied, note}); weapons carry {damage, damage_type, note}.
+
+    AC ownership (#806 stage 2): when equipment owns the character's armor class
+    (armor_ac_source=="equipment", e.g. after update_character(rederive_ac=true)),
+    the engine WRITES armor_class from the worn armor's DEX rule + shield bonus and
+    reports applied=true. When a DM manual override owns it (armor_ac_source=="manual")
+    or it's a legacy/unknown "" base, the engine leaves armor_class untouched and stays
+    ADVISORY (applied=false) — apply it via update_character(armor_class=...), or hand
+    ownership to equipment with update_character(rederive_ac=true). Weapon stats are
+    never auto-applied: pass damage_dice/attack_bonus to attack()."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
         it = inventory.set_equipped(ch, name, equipped)
-        save_campaign(c)
         out = it.model_dump()
         mech = _equip_mechanics(ch, it.name, equipped)
         if mech is not None:
             out["mechanics"] = mech
+        # Persist AFTER _equip_mechanics: when equipment owns AC it writes ch.armor_class
+        # (#806 stage 2), so the save must follow the mechanics pass, not precede it.
+        save_campaign(c)
         return out
 
 
@@ -8905,12 +9706,11 @@ def set_class_resource(
     used: int = 0,
 ) -> dict:
     """Register (or update) a CUSTOM depletable pool the SRD class tables don't seed — a
-    SUBCLASS, feat, or homebrew resource. The SRD tables only know base-class pools (Rage,
-    Ki, Second Wind, Action Surge, Sorcery Points, …), so a Battle Master's **Superiority
-    Dice**, a Psi Warrior's **Energy Dice**, an Arcane Archer's **Arcane Shots**, etc. are
-    invisible to the engine until you register them here. The engine supplies the *mechanism*
-    (a tracked pool `use_resource` spends and rests recharge); YOU supply the subclass numbers
-    (the engine stays SRD-only and ships no non-SRD subclass tables)."""
+    SUBCLASS, feat, or homebrew resource. The SRD tables know only base-class pools (Rage, Ki,
+    Action Surge, …), so a Battle Master's Superiority Dice, a Psi Warrior's Energy Dice, etc.
+    are invisible until registered here. The engine supplies the mechanism (a tracked pool
+    `use_resource` spends and rests recharge); YOU supply the subclass numbers (engine is
+    SRD-only and ships no non-SRD subclass tables)."""
     if int(max) < 0:
         raise ValueError("max must be >= 0")
     rech = recharge if recharge in ("short", "long", "none") else "short"
@@ -8986,12 +9786,10 @@ def _canonicalize_spell_list(spells_list: list, existing: list, mode: str) -> li
 def learn_spells(campaign_id: str, character_id: str, spells_list: ReqListArg,
                  mode: str = "replace") -> dict:
     """Set a character's KNOWN spells. Each name is VALIDATED + CANONICALIZED (F03-7): an
-    unknown spell (typo, non-SRD) is rejected listing the offenders, and any casing you pass
-    ("fire bolt") is stored proper-cased ("Fire Bolt") so the case-sensitive cast gate accepts
-    a later cast. `mode='replace'` (default) substitutes the whole list; `mode='add'` appends
-    the new spells to the existing known list (de-duped) — so you can teach one spell without
-    re-listing the whole spellbook. Rejection happens BEFORE any change (nothing is stored on
-    an unknown name)."""
+    unknown spell (typo, non-SRD) is rejected listing the offenders, and casing is normalized
+    ("fire bolt" -> "Fire Bolt") so the case-sensitive cast gate accepts a later cast.
+    `mode='replace'` (default) substitutes the whole list; `mode='add'` appends (de-duped) so
+    you teach one spell without re-listing the spellbook. Rejection happens BEFORE any change."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
@@ -9004,11 +9802,10 @@ def learn_spells(campaign_id: str, character_id: str, spells_list: ReqListArg,
 def prepare_spells(campaign_id: str, character_id: str, spells_list: ReqListArg,
                    mode: str = "replace") -> dict:
     """Set a character's PREPARED spells. Each name is VALIDATED + CANONICALIZED (F03-7) like
-    learn_spells. With a non-empty prepared list, cast_spell now enforces preparation for
-    LEVELED spells (F03-8): a prepared caster (cleric/wizard/druid) casts only what it has
-    prepared, while cantrips stay always-castable once known. `mode='replace'` (default)
-    substitutes the list (your daily preparation); `mode='add'` appends. An unknown spell is
-    rejected before any change."""
+    learn_spells. With a non-empty prepared list, cast_spell enforces preparation for LEVELED
+    spells (F03-8): a prepared caster casts only what it has prepared; cantrips stay
+    always-castable once known. `mode='replace'` (default) substitutes the daily preparation;
+    `mode='add'` appends. An unknown spell is rejected before any change."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         ch = _char(c, character_id)
@@ -9517,12 +10314,11 @@ def encounter_outlook(
     monster_xps: Optional[list[int]] = None,
     monster_ids: OptStrListArg = None,
 ) -> dict:
-    """Call this BEFORE staging a fight to see how over-matched it is against the LIVING
-    party: it makes the SRD over-match math legible so the balancing doctrine is followable.
-    The engine NEVER alters combat — the dragon stays a dragon. Returns the SRD difficulty
-    band PLUS an `overmatch_ratio` (the band alone caps at 'deadly' and can't tell a
-    winnable 1.12x troll from a guaranteed-wipe 6.25x dragon) and a `must_offer_out` flag
-    that fires only in the unwinnable low-level zone."""
+    """Call BEFORE staging a fight to see how over-matched it is against the LIVING party — it
+    makes the SRD over-match math legible. The engine NEVER alters combat. Returns the SRD
+    difficulty band PLUS an `overmatch_ratio` (the band caps at 'deadly' and can't tell a
+    winnable 1.12x troll from a wipe-6.25x dragon) and a `must_offer_out` flag that fires only
+    in the unwinnable low-level zone."""
     c = _require(campaign_id)
     xps = _resolve_monster_xps(c, monster_xps, monster_ids)
     if not xps:
@@ -9684,13 +10480,11 @@ def _camp_beat_view(c: Campaign, beat: CampBeatCandidate) -> dict:
 @mcp.tool()
 def camp_scene(campaign_id: str, setting: str = "") -> dict:
     """Gather the party for a CAMP scene — the hub where companions breathe between adventures
-    (around the campfire, at the tavern bar, in a safe house). It returns deterministic
-    scheduled frames for living companions: `voice_id`/participants, current standing
-    (`attitude` + `attitude_value` for solo beats), player-facing prompts, and read-only
-    relationship `arc` summaries. Run it at a long rest / downtime / on reaching a safe hub:
-    voice the returned frames, let the player talk to any of them, and play any arc beat that's
-    ripe — then `check_companion_arc` to fire/mark it and `record_camp_beat` to persist that the
-    camp beat happened. Read-only (advice + state; it changes nothing)."""
+    (campfire, tavern bar, safe house). Returns deterministic scheduled frames for living
+    companions: `voice_id`/participants, current standing (`attitude`/`attitude_value`),
+    player-facing prompts, read-only `arc` summaries. Run at a long rest / downtime / safe hub:
+    voice the frames, let the player talk, play any ripe arc beat — then `check_companion_arc`
+    to fire/mark it and `record_camp_beat` to persist it. Read-only (changes nothing)."""
     c = _require(campaign_id)
     # F06-5: gather EVERY living companion (incl. de-facto companions not in c.party) via the
     # shared scheduler helper — camp was the one seam that gated on c.party while relocate/XP
@@ -10287,15 +11081,13 @@ def check_companion_arc(campaign_id: str, companion_id: str = "") -> dict:
 @mcp.tool()
 def set_companion_arc(campaign_id: str, companion_id: str = "", arc: dict = None,
                       companion: str = "", character_id: str = "") -> dict:
-    """Attach (or REPLACE) a companion's relationship arc + sealed agenda, so the DM —
-    or the ending-seed loader — can author what a bond grows into and what a saboteur is
-    planning. `arc` is `{arc_gates: [{kind, threshold, note?}], agenda: {trigger, value?,
-    note?}}` where gate `kind` is personal_quest|romance|loyalty|betrayal and agenda
-    `trigger` is attitude_below|day_reached|party_vulnerable|prize_seized. The companion
-    must exist and be a companion. `check_companion_arc` then evaluates it each beat.
-
-    Identify the companion via ``companion_id`` (canonical) or the aliases ``companion`` /
-    ``character_id`` — equivalent; canonical ``companion_id`` wins if more than one is given."""
+    """Attach (or REPLACE) a companion's relationship arc + sealed agenda — what a bond grows
+    into and what a saboteur is planning. `arc` is `{arc_gates: [{kind, threshold, note?}],
+    agenda: {trigger, value?, note?}}` where gate `kind` is
+    personal_quest|romance|loyalty|betrayal and agenda `trigger` is
+    attitude_below|day_reached|party_vulnerable|prize_seized. `check_companion_arc` evaluates
+    it each beat. Identify via ``companion_id`` (canonical) or aliases ``companion`` /
+    ``character_id``."""
     companion_id = companion_id or companion or character_id  # accept intuitive aliases
     if not companion_id:
         raise ValueError("set_companion_arc needs a companion id (pass `companion_id` or an alias: `companion`/`character_id`)")
@@ -10472,11 +11264,9 @@ def _approval_ledger_view(ch: "Character", limit: int) -> dict:
 def companion_approval_ledger(campaign_id: str, companion_id: str = "", limit: int = 8) -> dict:
     """Read the legible APPROVAL LEDGER — the "why does Ondine distrust me?" answer. For each
     party companion returns its current attitude_value, the most-recent approval moves
-    (newest-first, capped at `limit`), and the net positive / net negative cause totals
-    aggregated from its rolling approval_log. LOCK-FREE read-only snapshot (no evaluate, no
-    mutation) — the engine stays sole writer; this is a pure projection of engine-mutated
-    state. `companion_id` optional => all party companions; a companion with no logged moves
-    returns empty `recent`/nets."""
+    (newest-first, capped at `limit`), and net positive / net negative cause totals from its
+    rolling approval_log. Read-only snapshot (no mutation). `companion_id` optional => all
+    party companions; one with no logged moves returns empty `recent`/nets."""
     c = _require(campaign_id)
     if companion_id:
         ch = _require_companion(c, companion_id)
@@ -10634,6 +11424,9 @@ def add_quest(
             # learned of the quest, NOT from day 1. A quest added late is therefore NOT
             # flaggable on the next beat (the stall clock starts now, under the lock).
             last_progress_day=c.day,
+            # #1286: same for the beats baseline — the stall-by-beats clock starts at the beat
+            # the engine learned of the quest, so a late-added quest isn't stale on the next beat.
+            last_progress_beat=_quest_progress_beat(c),
         )
         c.quests[q.id] = q
         save_campaign(c)
@@ -10701,6 +11494,7 @@ def complete_quest(
             raise ValueError(f"no quest {quest_id!r}")
         q.status = status  # type: ignore[assignment]
         q.last_progress_day = c.day  # F05-7: resolving a quest IS progress — reset the stall clock.
+        q.last_progress_beat = _quest_progress_beat(c)  # #1286: reset the beats stall clock too.
         # F05-1: make the skill-documented evolution seam reachable. Set the rule-of-three
         # fields from the kwargs ONLY when explicitly provided, so an empty kwarg never
         # clobbers a field content/questgen already authored on the quest. Assigned under
@@ -10787,6 +11581,7 @@ def complete_objective(campaign_id: str, quest_id: str, objective: str) -> dict:
         # F05-7: completing an objective IS progress — stamp the day so the quest_stalled
         # detector measures from the last engine-known advancement (not Decision prose).
         q.last_progress_day = c.day
+        q.last_progress_beat = _quest_progress_beat(c)  # #1286: reset the beats stall clock too.
         auto = None
         evolution = None
         remaining = [o for o in q.objectives if o not in q.completed_objectives]
@@ -11052,12 +11847,10 @@ def _validate_faction_arc_links(c: Campaign, arc: FactionArc) -> None:
 @mcp.tool()
 def grant_standing(campaign_id: str, faction_id: str, amount: int, reason: str = "") -> dict:
     """Raise (or lower) a faction's MONOTONIC membership `standing` by `amount` — the Skyrim-style
-    "rank progress" gauge, distinct from `reputation` (how the faction FEELS about you). Use it
-    when the party performs SERVICE that advances them inside a faction (completing a faction
-    job, proving themselves) — standing is what unlocks the next stage of a faction questline
-    gated on `gauge="standing"`. Floored at 0 (it never goes negative — you don't un-rise through
-    service; `reputation` is the gauge that can be burned). The faction must already exist (join
-    it / earn reputation first). Returns the faction's new standing."""
+    "rank progress" gauge, distinct from `reputation` (how the faction FEELS about you). Use when
+    the party performs SERVICE that advances them inside a faction; standing unlocks the next
+    stage of a questline gated on `gauge="standing"`. Floored at 0 (never negative — `reputation`
+    is the gauge that can be burned). The faction must already exist. Returns the new standing."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         fac = c.factions.get(faction_id)
@@ -11085,10 +11878,10 @@ def set_faction_arc(campaign_id: str, arc: dict) -> dict:
 @mcp.tool()
 def join_faction(campaign_id: str, faction_id: str, rank: int = 1) -> dict:
     """JOIN a faction — the membership latch that ARMS its questline (the Skyrim/Kingmaker
-    join->grow->lead loop). Sets the faction `joined=True` and its starting `rank` (default 1 —
-    the lowest membership tier), then ARMS any linked FactionArc: a `requires_joined` arc that was
-    `locked` opens to `available`, and any stage whose gauge gate ALREADY holds unlocks. Use it
-    when the party formally enlists with / is inducted into a group."""
+    join->grow->lead loop). Sets `joined=True` and the starting `rank` (default 1, lowest tier),
+    then ARMS any linked FactionArc: a `requires_joined` arc that was `locked` opens to
+    `available`, and any stage whose gauge gate ALREADY holds unlocks. Use when the party
+    formally enlists with a group."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         fac = c.factions.get(faction_id)
@@ -11118,10 +11911,10 @@ def join_faction(campaign_id: str, faction_id: str, rank: int = 1) -> dict:
 @mcp.tool()
 def get_faction_arcs(campaign_id: str, faction_id: str = "", status: str = "") -> dict:
     """Read faction questlines (the join->grow->lead arcs), optionally filtered by faction and
-    lifecycle status. Read-only; does NOT evaluate gates or advance anything (use
-    `check_faction_arcs` to advance locked->available, `advance_faction_arc` to take a stage). Each
-    arc view resolves the faction's name + current reputation/standing/joined/rank so the DM can
-    see how close each locked stage sits to its `unlock_at`."""
+    status. Read-only; does NOT evaluate gates or advance (use `check_faction_arcs` to advance
+    locked->available, `advance_faction_arc` to take a stage). Each view resolves the faction's
+    name + current reputation/standing/joined/rank so the DM sees how close each locked stage
+    sits to its `unlock_at`."""
     c = _require(campaign_id)
     wanted = _companion_quest_status(status, "status") if status else ""
     arcs = list(c.faction_arcs.values())
@@ -11711,13 +12504,11 @@ def scaffold_adventure(title: str, premise: str = "", min_level: int = 1, max_le
 def generate_campaign(
     title: str, premise: str = "", num_acts: int = 3, min_level: int = 1, max_level: int = 5
 ) -> dict:
-    """Generate a MULTI-ACT campaign skeleton (not just a one-shot scaffold): a
-    hidden antagonist, `num_acts` arcs each with hook/challenge/climax beats across
-    escalating level bands, and a home-base hub connected to one site per act. The
-    campaign-author fills in original prose, the NPC roster + companion, and
-    CR-balanced encounters per act, then validates with validate_adventure before
-    saving under content/campaigns/<id>/. Use for a full campaign rather than a
-    single dungeon."""
+    """Generate a MULTI-ACT campaign skeleton (not just a one-shot scaffold): a hidden
+    antagonist, `num_acts` arcs each with hook/challenge/climax beats across escalating level
+    bands, and a home-base hub connected to one site per act. The campaign-author fills in
+    prose, the NPC roster + companion, and CR-balanced encounters per act, then validates with
+    validate_adventure before saving under content/campaigns/<id>/."""
     return generator.generate_campaign(title, premise, num_acts, (min_level, max_level))
 
 
@@ -11729,13 +12520,11 @@ def get_house_rules(campaign_id: str) -> dict:
 
 @mcp.tool()
 def get_quest_outcomes(campaign_id: str) -> dict:
-    """Return the campaign's resolved MAJOR-quest outcomes (the replayability layer) —
-    a `{quest_id: outcome_id}` map picked once at world-gen (ending-tied to the chosen
-    ending's world-state, else a seeded random roll) plus a `count`. Each resolved
-    outcome's narrative + any follow-up hook is ALSO in recallable lore as
-    `[Outcome] …` / `[Hook] …` lines (surfaced under the canon header by recall /
-    lookup_lore) — so this tool is the structured index, recall is the prose. Empty
-    `{}` for a world that ships no quest_variants. Read-only."""
+    """Return the campaign's resolved MAJOR-quest outcomes (the replayability layer) — a
+    `{quest_id: outcome_id}` map picked once at world-gen (ending-tied, else a seeded roll)
+    plus a `count`. Each outcome's narrative + follow-up hook is ALSO recallable lore
+    (`[Outcome]`/`[Hook]` lines via recall / lookup_lore) — this tool is the structured index,
+    recall is the prose. Empty `{}` when the world ships no quest_variants. Read-only."""
     c = _require(campaign_id)
     return {"quest_outcomes": dict(c.quest_outcomes), "count": len(c.quest_outcomes)}
 
@@ -11830,6 +12619,7 @@ def set_quest_status(campaign_id: str, hook_id: str, status: str) -> dict:
                 raise ValueError(f"quest status must be active|completed|failed (or resolved), got {status!r}")
             q.status = qs  # type: ignore[assignment]
             q.last_progress_day = c.day  # F05-7: advancing a quest IS progress — reset stall clock.
+            q.last_progress_beat = _quest_progress_beat(c)  # #1286: reset the beats stall clock too.
             # Mirror complete_quest: a tracked quest reaching "completed" auto-awards
             # milestone XP once (xp-mode) — set_quest_status is the DM's equivalent verb,
             # so both close-of-quest paths pay the same deterministic reward.
@@ -12206,6 +12996,17 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
     #    stretch of play with companions and no rest).
     _arc = getattr(c, "narrative_arc", None)
     _beats_in_act = (getattr(_arc, "beats_in_act", 0) or 0) if _arc is not None else 0
+    # #1313 (2b) endgame wrap window (see the _WRAP_WINDOW_BEATS block comment): the story has passed
+    # its peak and is closing once EITHER the DM marked the Act-3 climax landed (the precise fast path)
+    # OR the skip-proof mandatory-beat counter has run deep in act 2+ (climax_landed OR (act >= 2 AND
+    # beats_in_act >= _WRAP_WINDOW_BEATS)). Defensive getattr throughout, so an arc-less / older /
+    # partial NarrativeArc reads False (byte-identical empty digest, as before). The `act >= 2` guard
+    # keeps a long act-1 slog out of the counter floor; the climax flag alone still opens it in act 1.
+    _act = getattr(_arc, "act", 1) if _arc is not None else 1
+    _in_wrap_window = _arc is not None and (
+        bool(getattr(_arc, "climax_landed", False))
+        or (_act >= 2 and _beats_in_act >= _WRAP_WINDOW_BEATS)
+    )
     if party_companions and (day >= 3 or _beats_in_act >= _CAMP_OVERDUE_BEATS):
         # NB: a value of 0 is a VALID rest day (rested on day 0), so coalesce only None, not
         # falsy-0 — `or -1` would wrongly read a day-0 rest as "never rested".
@@ -12275,6 +13076,29 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
         qid = getattr(q, "id", None)
         objectives = list(getattr(q, "objectives", []) or [])
         completed = list(getattr(q, "completed_objectives", []) or [])
+        # #1313 endgame escalation — in the wrap window (climax landed, act 3), an active quest is
+        # the measured residual RED: a thread left ACTIVE at wrap reads as dropped. Escalate to ONE
+        # HIGH quest_endgame_unresolved cue that REPLACES resolvable/stalled for this quest (severity-
+        # sorted, so it becomes THE next_action imperative in the final beats) — a single resolution
+        # directive, not three overlapping ones. Precedence: this owns the quest cue in the window, so
+        # neither the resolvable/stalled branches below NOR quest_unresolved_late (3b) also fire.
+        if _in_wrap_window:
+            obligations.append({
+                "kind": "quest_endgame_unresolved",
+                "quest_id": qid,
+                "title": title,
+                "severity": "high",
+                "detail": (
+                    f"The session is wrapping and '{title}' is still ACTIVE — resolve it NOW: "
+                    f"complete_quest(quest_id, evolves_to='...') if the thread closed in fiction "
+                    f"(complete_objective first for any step just cleared). To HAND IT OFF instead, "
+                    f"STILL complete_quest (that is what closes the status) and carry the open thread "
+                    f"forward with evolves_to plus add_consequence — a bare add_consequence leaves the "
+                    f"quest ACTIVE and this obligation standing. A thread left ACTIVE at wrap reads as "
+                    f"dropped, not resolved."
+                ),
+            })
+            continue  # the endgame cue owns this quest in the wrap window (not ALSO resolvable/stalled)
         # ALL objectives done -> the quest is mechanically resolvable; the DM should close
         # it AND give it an echo (evolves_to) so a win isn't one-and-done (rule of three).
         if objectives and all(o in completed for o in objectives):
@@ -12289,17 +13113,78 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
                 ),
             })
             continue  # a resolvable quest isn't ALSO flagged as stalled
-        # last_progress_day stamped 3+ days ago -> the engine knows this thread has stalled.
+        # STALLED — the engine knows this thread hasn't been advanced by any progress verb. Two
+        # independent reaches, either sufficient:
+        #   (a) DAY-reach (the original): last_progress_day stamped 3+ in-world days ago.
+        #   (b) BEATS-reach (#1286): last_progress_beat is _QUEST_STALL_BEATS+ beats behind the
+        #       current tally. The DM rarely advances the in-world clock, so the day-only gate was
+        #       structurally UNREACHABLE on a stuck clock (rri-a1-duo2: 22 beats, an active quest,
+        #       ZERO progress calls, the day never moved). The beats reach mirrors camp/act_one and
+        #       fires on a normal-length run. Prefer the day phrasing when it drives; else beats.
         last_progress = getattr(q, "last_progress_day", -1)
-        if last_progress is not None and last_progress >= 0 and day - last_progress >= 3:
+        days_stalled = (
+            day - last_progress
+            if isinstance(last_progress, int) and last_progress >= 0 and day - last_progress >= 3
+            else 0
+        )
+        last_beat = getattr(q, "last_progress_beat", -1)
+        cur_beat = _quest_progress_beat(c)
+        beats_stalled = (
+            cur_beat - last_beat
+            if isinstance(last_beat, int) and last_beat >= 0 and cur_beat >= 0
+            and cur_beat - last_beat >= _QUEST_STALL_BEATS
+            else 0
+        )
+        if days_stalled or beats_stalled:
+            if days_stalled:
+                how = f"no progress in {days_stalled} days"
+            else:
+                how = f"no progress in {beats_stalled} beats"
             obligations.append({
                 "kind": "quest_stalled",
                 "quest_id": qid,
                 "title": title,
                 "severity": "low",
                 "detail": (
-                    f"Quest '{title}' has stalled (no progress in {day - last_progress} days) — "
+                    f"Quest '{title}' has stalled ({how}) — "
                     f"push an objective (complete_objective) or complete_quest it."
+                ),
+            })
+
+    # 3b. quest_unresolved_late (WS3a) — a SUBSTANTIAL run that owns quest(s) but has NEVER
+    #     resolved one: ZERO quests are completed AND not a single objective was ever marked done.
+    #     A run can go 8+ beats with an open quest the DM only narrates progress toward (never
+    #     calling complete_objective / complete_quest), so the quest superstructure sits inert with
+    #     no engine-visible movement at all. This is the proactive twin of assert_behavioral's
+    #     unresolved_arc run-end FATAL — cue the DM to record SOME quest progress THIS beat before
+    #     the run ends with a dropped thread. ANTI-SPAM precedence: it stays silent if ANY quest is
+    #     already flagged quest_resolvable / quest_stalled this beat (those already name a concrete
+    #     quest the DM must act on; this campaign-level "nothing has moved" cue would be redundant
+    #     noise on top). Pure read of engine-mutated status / completed_objectives — never prose.
+    #     In the #1313 wrap window the endgame cue (quest_endgame_unresolved) already names concrete
+    #     active quests to close, so this campaign-level "nothing has moved" cue is redundant there too.
+    _already_flagged_quest = any(
+        o.get("kind") in ("quest_resolvable", "quest_stalled", "quest_endgame_unresolved")
+        for o in obligations
+    )
+    if _beats_in_act >= _PARTY_STUCK_BEATS and quests and not _already_flagged_quest:
+        any_quest_completed = any(
+            getattr(q, "status", "active") == "completed" for q in quests.values()
+        )
+        any_objective_completed = any(
+            list(getattr(q, "completed_objectives", []) or []) for q in quests.values()
+        )
+        if not any_quest_completed and not any_objective_completed:
+            obligations.append({
+                "kind": "quest_unresolved_late",
+                "severity": "med",
+                "detail": (
+                    f"{_beats_in_act} beats in and not one quest objective has been recorded done — "
+                    "the quest thread is narrated, never engined. Record the progress that has "
+                    "actually happened: complete_objective(quest_id, objective) as the party clears "
+                    "a step, or complete_quest(quest_id, evolves_to='...') when a thread resolves "
+                    "(give it an echo). A run that ends with every quest still untouched reads as a "
+                    "dropped thread, not a story."
                 ),
             })
 
@@ -12337,6 +13222,40 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
                 f"so the thread lingers (rule of three)."
             ),
         })
+
+    # 4b. faction_joinable_unjoined (#1286) — a faction that carries an AUTHORED questline
+    #     (questline_arc_id set: someone deliberately built a join->grow->lead FactionArc for it)
+    #     but is still un-joined a stretch of beats in. join_faction is the membership latch that
+    #     ARMS the questline (a requires_joined arc stays `locked` until then), so a seeded faction
+    #     arc left un-joined is the faction analog of the narrated-not-engined defect (rri-a1-duo2:
+    #     "seeded faction never joined"). questline_arc_id is the false-positive-resistant signal —
+    #     a plain flavour faction with no arc is NOT a join obligation (the party may never enlist).
+    #     Beats-gated (mirrors camp/quest reaches) so authoring the arc doesn't nag on the same beat.
+    _arc_join = getattr(c, "narrative_arc", None)
+    _beats_join = (getattr(_arc_join, "beats_in_act", 0) or 0) if _arc_join is not None else 0
+    if _beats_join >= _FACTION_JOIN_BEATS:
+        factions = getattr(c, "factions", None) or {}
+        faction_arcs = getattr(c, "faction_arcs", None) or {}
+        for fac in factions.values():
+            arc_id = (getattr(fac, "questline_arc_id", "") or "").strip()
+            if not arc_id or arc_id not in faction_arcs:
+                continue  # no authored questline -> not a join obligation (plain flavour faction)
+            if getattr(fac, "joined", False):
+                continue  # already enlisted -> the questline is armed
+            name = getattr(fac, "name", None) or "the faction"
+            obligations.append({
+                "kind": "faction_joinable_unjoined",
+                "faction_id": getattr(fac, "id", None),
+                "name": name,
+                "questline_arc_id": arc_id,
+                "severity": "low",
+                "detail": (
+                    f"{name} has an authored questline but the party never enlisted, so its "
+                    f"join->grow->lead arc stays locked and narrated-not-engined. When the fiction "
+                    f"gives the party a way in, join_faction(faction_id) to arm the questline (a "
+                    f"requires_joined arc opens to available and gauge-ready stages unlock)."
+                ),
+            })
 
     # 5. companion_arc_gate_near — a not-yet-unlocked ArcGate within 20 points of unlocking;
     #    a small push (a values-moment, a camp beat) lands a real loyalty/romance/quest beat.
@@ -12410,6 +13329,142 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
             "severity": "high" if deep else "med",
             "detail": detail,
         })
+
+    # ── WS3a: DM-unavoidable PER-BEAT PROGRESSION / CLOSURE cues ─────────────────────────────────
+    # The relationship/quest cues above keep the SOFT story-superstructure engaged; these four keep
+    # the HARD mechanical loop from quietly stalling — the party stuck in one scene, a fight left
+    # hanging, XP that never landed, a frozen clock. Each is a PURE read of an ENGINE-MUTATED gauge
+    # (locations[].visited, combat.active, characters[].dead/current_hp/xp_value, day/time_of_day) —
+    # never a tool-count, beat-history, or Decision prose — with defensive getattr so an older /
+    # partial snapshot DEGRADES a cue to skipped rather than raising. CUE-ONLY (Option A): the engine
+    # takes NO auto-action; the DM calls the named verb. PRECEDENCE gates collapse the worst case to a
+    # couple of cues. ADDITIVE: a fully-progressed snapshot trips NONE of them (empty digest preserved).
+    locations = getattr(c, "locations", None) or {}
+    visited_count = sum(
+        1 for loc in locations.values() if getattr(loc, "visited", False)
+    )
+    combat = getattr(c, "combat", None)
+    combat_active = bool(getattr(combat, "active", False)) if combat is not None else False
+
+    # WS3a-1. party_stuck_one_location (med) — a SUBSTANTIAL run (>= _PARTY_STUCK_BEATS act-local
+    #   beats) where the party has visited < 2 locations, UNLESS the in-place-progression exception
+    #   holds. The exception is BYTE-IDENTICAL to assert_behavioral's party_traveled exception
+    #   (qa/assert_behavioral.py:677): visited >= 1 AND the clock advanced AND a quest actually
+    #   completed AND >= SINGLE_SCENE_MIN_BEATS — a complete single-scene drama, not a frozen stall.
+    #   Proactive twin of the party_traveled run-end FATAL: tell the DM to move (or progress in place)
+    #   BEFORE the gate RED-caps the run.
+    if _beats_in_act >= _PARTY_STUCK_BEATS and visited_count < 2:
+        tod = (getattr(c, "time_of_day", "") or "").strip().lower()
+        clock_advanced = day > 1 or (tod not in ("", "morning"))
+        arc_resolved = any(
+            getattr(q, "status", "active") == "completed" for q in quests.values()
+        )
+        # Byte-identical to assert_behavioral's in_place_progression (beats>=8 already implied by the
+        # outer _beats_in_act >= _PARTY_STUCK_BEATS guard, but spelled out so the parity is explicit).
+        in_place_progression = (
+            visited_count >= 1 and clock_advanced and arc_resolved
+            and _beats_in_act >= _PARTY_STUCK_BEATS
+        )
+        if not in_place_progression:
+            obligations.append({
+                "kind": "party_stuck_one_location",
+                "severity": "med",
+                "beats_in_act": _beats_in_act,
+                "visited": visited_count,
+                "detail": (
+                    f"{_beats_in_act} beats in and the party has visited {visited_count} location(s) "
+                    "— it never left the opening scene. Move the story to a new place: "
+                    "travel_to(destination_id, advance_time=True), or add_location(make_current=True) "
+                    "if there's no edge yet, then open the new place's tone in prose. A substantial "
+                    "run that stays in one room reads as a frozen stall."
+                ),
+            })
+
+    # WS3a-2. combat_left_hanging (med) — combat is ACTIVE but NO living hostile remains. Mirror
+    #   end_combat's live-hostile detection (the live_hostiles comprehension in end_combat, ~server.py:7009): a monster IN THE COMBAT ORDER at
+    #   current_hp > 0 and not dead is a live hostile; a fled monster was removed from the order, a
+    #   killed one is dead. When none remain, the fight is over in fact but the engine still reads
+    #   active — cue end_combat so HP/initiative reset and (xp-mode) XP auto-awards. PRECEDENCE: while
+    #   combat is active this cue OWNS the beat over xp_unawarded (end_combat resolves both).
+    if combat_active:
+        order = getattr(combat, "order", None) or []
+        living_hostile = False
+        for cb in order:
+            ch = characters.get(getattr(cb, "character_id", None))
+            if ch is None:
+                continue
+            if (getattr(ch, "kind", "") == "monster"
+                    and not getattr(ch, "dead", False)
+                    and getattr(ch, "current_hp", 0) > 0):
+                living_hostile = True
+                break
+        if not living_hostile:
+            obligations.append({
+                "kind": "combat_left_hanging",
+                "severity": "med",
+                "detail": (
+                    "Combat is still active but no living hostile remains — the fight is over in "
+                    "fact. Close it now: end_combat(resolution='...') resets initiative/HP and (in "
+                    "xp mode) auto-awards the defeated foes' XP. A fight left active leaks into the "
+                    "next beat as a phantom encounter."
+                ),
+            })
+
+    # WS3a-3. xp_unawarded (med) — leveling_mode=='xp', NOT in combat, a living party member, and a
+    #   defeated monster still carries xp_value > 0 (the kill-time award never fired / was bypassed).
+    #   Proactive twin of assert_behavioral's xp_not_orphaned run-end FATAL (qa/assert_behavioral.py:578)
+    #   — mirrors its guards (xp-mode, party_alive, non-combat) so the cue and the gate agree. Gated
+    #   NON-combat ONLY: mid-fight a kept xp_value is normal (it's awarded at end_combat); combat_left_
+    #   hanging owns the active-combat case, so this fires only once the fight is genuinely closed.
+    if not combat_active and getattr(c, "leveling_mode", "xp") == "xp":
+        party_alive = any(
+            characters.get(pid) is not None and not getattr(characters.get(pid), "dead", False)
+            for pid in party_ids
+        )
+        orphaned = [
+            ch for ch in characters.values()
+            if getattr(ch, "kind", "") == "monster"
+            and getattr(ch, "dead", False)
+            and (getattr(ch, "xp_value", 0) or 0) > 0
+        ]
+        if party_alive and orphaned:
+            names = ", ".join((getattr(ch, "name", None) or "?") for ch in orphaned)
+            obligations.append({
+                "kind": "xp_unawarded",
+                "severity": "med",
+                "character_ids": [getattr(ch, "id", None) for ch in orphaned],
+                "detail": (
+                    f"Defeated monster(s) {names} died with XP that never landed — the kill-time "
+                    "auto-award was missed on this death path. This cue fires OUT of combat, so "
+                    "there is no active fight to end_combat; grant the XP with award_xp(character_id, "
+                    "amount, reason) for the living party so the kill counts. (award_xp does not zero "
+                    "the monster's xp_value, so this advisory may re-surface — award once and move on; "
+                    "a proper engine reconcile of stranded kill-XP is a tracked follow-up.)"
+                ),
+            })
+
+    # WS3a-4. clock_dm_frozen (LOW) — a SUBSTANTIAL run where the in-world clock has never moved off
+    #   its day-1 opening (day == 1 AND time_of_day in ('','morning')) and we're not mid-fight. An
+    #   HONEST snapshot proxy (no soft-tick flag added to the snapshot — that would mask the very
+    #   thing we want to see): if the persisted clock still reads day-1 morning after a real stretch
+    #   of play, the DM never advanced time itself. PRECEDENCE: party_stuck owns the clock when BOTH
+    #   fire (a stuck party in one scene also has a frozen clock — naming both is noise), so this
+    #   fires only once the party HAS moved (visited >= 2) but the clock is STILL frozen.
+    if (_beats_in_act >= _PARTY_STUCK_BEATS and not combat_active
+            and visited_count >= 2):
+        tod_now = (getattr(c, "time_of_day", "") or "").strip().lower()
+        if day == 1 and tod_now in ("", "morning"):
+            obligations.append({
+                "kind": "clock_dm_frozen",
+                "severity": "low",
+                "beats_in_act": _beats_in_act,
+                "detail": (
+                    f"{_beats_in_act} beats in and the clock still reads day 1, morning — the DM "
+                    "never advanced time, so companion regard / camp / every day-gated system stays "
+                    "starved. advance_time(phases=N) as scenes pass, long_rest at a safe stop, or "
+                    "downtime for a longer skip."
+                ),
+            })
 
     # 7. ACT-TRANSITION cues — fold the 3-act-shape mandate (setup -> midpoint reversal ->
     #    climax) into the every-beat digest by reading the engine-owned NarrativeArc cursor
@@ -12499,7 +13554,65 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
                 ),
             })
 
+    # #1313 Option 3: severity-sort so the SINGLE most urgent obligation is first (high>med>low),
+    # then lifted into `next_action` by the callers. STABLE (Python's sorted): within a severity
+    # tier the authored append order above is preserved, so the scannable `obligations` list reads
+    # exactly as before within a tier — EXCEPT for the explicit intra-tier precedence below.
+    # #1313 (2b): act_climax_owed and quest_endgame_unresolved can now BOTH be HIGH and owed in the
+    # same counter-opened act-3 window (they are no longer mutually exclusive). They append in a
+    # different order than the desired priority (quest_endgame_unresolved at the quest block appends
+    # BEFORE act_climax_owed at the act-shape block), so the append-order-preserving stable sort would
+    # wrongly put endgame first. A tiny secondary key (_KIND_PRECEDENCE, default 0 for every other
+    # kind) makes "land the climax, THEN close the thread" explicit instead of an append coincidence;
+    # all other cues keep 0 and therefore their existing within-tier append order. ADDITIVE: an empty
+    # digest sorts to the same empty list (byte-identical). An unknown severity sorts LAST.
+    obligations.sort(key=lambda o: (
+        _SEVERITY_RANK.get(o.get("severity"), _SEVERITY_RANK_UNKNOWN),
+        _KIND_PRECEDENCE.get(o.get("kind"), 0),
+    ))
     return obligations
+
+
+# #1313 Option 3 — severity ordering for the per-beat obligations digest. high is the load-bearing
+# payoff (act_climax_owed / companion_betrayal deep-red), so it sorts first; an unrecognized
+# severity degrades to LAST rather than raising (mirrors the digest's defensive-getattr discipline).
+_SEVERITY_RANK = {"high": 0, "med": 1, "low": 2}
+_SEVERITY_RANK_UNKNOWN = 3
+
+# #1313 (2b) intra-tier precedence — the SECONDARY sort key, applied within a severity tier. Only the
+# act_climax_owed / quest_endgame_unresolved pair needs an explicit order: in a counter-opened act-3
+# wrap window with the climax NOT yet landed BOTH are HIGH and owed, and the payoff (land the climax)
+# must be named as next_action BEFORE the closure (close the thread). Every other kind defaults to 0
+# (via dict.get), so this is a no-op for the rest of the digest — their existing append order within a
+# tier is preserved by the stable sort. Lower = earlier.
+_KIND_PRECEDENCE = {"act_climax_owed": -1, "quest_endgame_unresolved": 0}
+
+
+def _top_obligation(obligations: list[dict]) -> dict | None:
+    """The SINGLE highest-priority obligation this beat (the first of the severity-sorted digest),
+    or None when the digest is empty. PURE read — the list is already sorted by
+    _compute_beat_obligations; this just names 'the one thing this beat owes'."""
+    return obligations[0] if obligations else None
+
+
+def _next_action(obligations: list[dict]) -> dict | None:
+    """#1313 Option 3: lift the top obligation into an imperative single-directive `next_action`.
+
+    ADDITIVE + PURE read: derived from the already-computed obligations each beat, reusing the
+    obligation's own `detail`/`kind` text (no new copy invented). Returns None when there is no
+    obligation, so the caller omits the key and the return is byte-identical to today's shape.
+    NEVER errors — a malformed obligation degrades to the kind alone."""
+    top = _top_obligation(obligations)
+    if top is None:
+        return None
+    return {
+        "kind": top.get("kind"),
+        "severity": top.get("severity"),
+        # The imperative is the obligation's existing detail — the cue text is ALREADY imperative
+        # and single-directive; surfacing it as a named next_action (not one row of a scanned list)
+        # is the whole lever. Fall back to a minimal directive if a detail is somehow absent.
+        "imperative": top.get("detail") or f"Act on the {top.get('kind')} obligation this beat.",
+    }
 
 
 def _scene_durable_threads(c: Campaign) -> dict:
@@ -12711,6 +13824,11 @@ def _scene_durable_threads(c: Campaign) -> dict:
     obligations = _compute_beat_obligations(c)
     if obligations:
         out["obligations"] = obligations
+        # #1313 Option 3: lift the single top obligation into an imperative `next_action` so the DM
+        # acts on ONE named directive instead of scanning the list. ADDITIVE: absent when empty.
+        next_action = _next_action(obligations)
+        if next_action is not None:
+            out["next_action"] = next_action
     return out
 
 
@@ -13212,6 +14330,14 @@ def persist_beat(
                 obligations = _compute_beat_obligations(c_read)
                 if obligations:
                     out["obligations"] = obligations
+                    # #1313 Option 3: the one imperative directive this beat owes (top severity),
+                    # PLUS a lightweight `owed` list of the kinds that remain unmet after this beat
+                    # persisted — the DM sees the consequence-of-inaction carried forward. READ-ONLY
+                    # (derived from the just-loaded snapshot; no new state, no clean:false teeth).
+                    next_action = _next_action(obligations)
+                    if next_action is not None:
+                        out["next_action"] = next_action
+                    out["owed"] = [o.get("kind") for o in obligations]
         except Exception:
             pass
     return out
@@ -13220,11 +14346,9 @@ def persist_beat(
 @mcp.tool()
 def advance_act(campaign_id: str, to_act: int, note: str = "") -> dict:
     """Advance the engine-owned 3-act cursor when the FICTION crosses an act threshold — the
-    DM-driven boundary verb the act-shape cues lean on (act_one_stalled cues the 1→2 push,
-    act_climax_owed the converge). Sets the act, stamps day_act_entered = the current in-world
-    day, and resets the act-local beat tally. CONTIGUOUS ONLY: the cursor advances by exactly +1
-    (1→2→3); a non-contiguous jump (e.g. 1→3) or a rewind is REJECTED (the cursor never skips an
-    act or runs backward). Engine = sole writer (campaign_lock + save_campaign)."""
+    DM-driven boundary verb the act-shape cues lean on. Sets the act, stamps day_act_entered =
+    the current in-world day, and resets the act-local beat tally. CONTIGUOUS ONLY: advances by
+    exactly +1 (1→2→3); a jump (1→3) or rewind is REJECTED. Engine = sole writer."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         arc = c.narrative_arc

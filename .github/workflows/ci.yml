@@ -67,7 +67,7 @@ jobs:
         # Babel is vendored and the harness only requires node built-ins (fs, vm), so
         # NO `npm install` is needed — just a node binary on PATH. Without node these
         # tests `skipIf` themselves; we install it so they actually RUN in CI.
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: "20"
       - name: Create + activate a venv with the viewer test deps

@@ -1,0 +1,246 @@
+{
+  "_doc": "Committed recipe for the REPEATABLE painterly backdrop workflow (generate_room.py). The renderer/registry consume the GENERATED plate; this file is the source of truth for HOW a plate is generated, so any room is regeneratable on demand. Proven 2026-06-30: the crypt base plate (flat museum-lit, lighting 5/10, L6 6) re-lit via this img2img recipe into firelit chiaroscuro. Pipeline = Scenario img2img on model_z-image + our painterly LoRA. The lever from 6.5->8 is LIGHTING DRAMA, not more texture (drop ambient, single warm key, deep blue-violet shadows, hard cast shadows). Composition is camera-pinned and must NOT drift: strength stays low (~0.45) so the dimetric layout (pillars/sarcophagus/brazier/walls) holds while diffusion re-lights.",
+  "pipeline": "scenario-img2img",
+  "base_model": "model_z-image",
+  "lora": "model_MB22WaRCBLtfhi5R2CRpHoEL",
+  "lora_scale": 0.78,
+  "defaults": {
+    "strength": 0.45,
+    "num_inference_steps": 40,
+    "guidance": 7.5,
+    "num_outputs": 4,
+    "width": 1344,
+    "height": 768
+  },
+  "firelit_positive_template": "painterly isometric dimetric {room} interior background plate, Pillars of Eternity II Deadfire pre-rendered background quality, loose confident visible oil-paint brushstrokes, SINGLE warm {key_light} as the sole dramatic key light, dramatic chiaroscuro tenebrism, steep warm-to-cool value falloff from a hot amber lit pool to near-black corners, DEEP saturated blue-violet shadows (not neutral grey) in the far corners and along the back and side walls, HARD-EDGED directional cast shadows thrown from {shadow_casters} across the floor, strong warm-key-to-cool-shadow contrast, warm amber rim on edges facing the flame, cool blue-violet bounce on shadow-side stone, low-key moody candlelit interior, varied unique pillar carvings, no two columns identical, crisply chiseled stone relief, {room_detail_tokens}, environmental storytelling clutter along the walls, tactile hand-painted texture, rich oil-painted detail, atmospheric depth, fixed camera composition, cinematic torchlit interior",
+  "daylight_positive_template": "painterly isometric dimetric {room} interior background plate, Pillars of Eternity II Deadfire pre-rendered background quality, bright DAYLIGHT flooding in through tall windows, a vivid colored stained-glass light shaft and shafts of cool sunlit air, soft diffuse daylight gently illuminating the carved stone, cool blue-white daylight key with warm sunlit accents on the {shadow_casters}, long soft daylight cast shadows across the floor, airy luminous atmosphere, motes of dust drifting in the sunbeams, {room_detail_tokens}, tactile hand-painted texture, rich oil-painted detail, atmospheric depth, fixed camera composition, serene daylit interior",
+  "daylight_negative": "torchlight, candlelight, firelight, brazier glow, near-black corners, crushed shadows, low-key, tenebrism, nighttime, washed out, blown highlights, clipped white hotspot, pure white, overexposed, hazy, milky, foggy bloom, pale watercolor wash, mushy smeared detail, flat shading, characters, people, figures, text, watermark, blurry, low detail",
+  "multipass_note": "Best result = base plate -> pass1 relight (strength 0.45) -> pass2 deep-shadow refine (strength 0.30, same prompt). Each pass low-strength to protect the camera-pinned composition (L1). generate_room.py --refine-from <asset_id> chains a pass.",
+  "ceiling_2026_06_30": "This pipeline tops out ~7.4/10 backdrop (crypt: lighting/registration/detail/washout all solved, L1=8). The L6>=8 BINDING gate is NOT cleared: PoE2-grade CARVED-STONE micro-craft (fluted pillars, chiseled relief, masonry coursing, sculpted sarcophagus) is beyond what this painterly LoRA + img2img renders from a SMOOTH-PRIMITIVE greybox. THE LEVER TO >=8: a greybox with carved geometry (so img2img has carved structure to preserve), or a crisper architectural model/LoRA. Tracked as the M-A->>=8 follow-up; the 7.4 firelit plate is adopted for the demo (the plate is swappable later with zero renderer/actor rework).",
+  "textured_greybox_result_2026_07_01": "The carved-GEOMETRY greybox lever (build_room_greybox.cs) was driven to its empirical ceiling via a SCORED loop (qa/scores_db surface=visual, harsh PoE2 panel). A flat gray greybox img2img's to ~4.75. Adding, in order: (1) a procedural STONE ALBEDO+NORMAL (textured base, not flat grey) -> 5.75; (2) LIT walls (strong cool fill so the carved walls don't crush to black) -> 6.5; (3) GEOMETRIC masonry coursing on the wall faces (the floor painted into flagstones because it has geometric grout boxes; the walls needed the same) -> 7.07. DENSER coursing yielded NO gain (~6.8, within variance). CONCLUSION (confirms the line above): geometry tops out ~7.07 — the LoRA paints FOCAL craft (floor flagstones, statue niches, fluted columns, figural relief panels) at genuine PoE2-grade but SMOOTHS the broad wall FIELDS into 'value-pass', regardless of coursing density. >=8 is LoRA-BOUND, not geometry-bound: needs a crisper architectural/stone LoRA (or a dedicated detail pass on the broad wall fields). KEY WIN: this 7.07 is reached at LOW img2img strength (0.5-0.52) which PRESERVES the camera-pin -> the painted props stay on the authored-pathing cells (the firelit 7.4 plate had hand-tuned obstacles; this is authored-pathing-aligned AND repeatable from any scene_grid). Plate: renders/crypt14_walledcourse_v1.png; live combat: m1_combat_textured.png; progression: LEVER_progression_6up.png.",
+  "washout_negative": "flat even ambient light, overcast lighting, museum lighting, uniform gray floor, washed out, blown highlights, clipped white hotspot, pure white, overexposed, low contrast, hazy, milky, foggy bloom, pale watercolor wash, mushy smeared detail, neutral gray shadows, desaturated shadows, evenly lit, no shadows, flat shading, soft diffuse fill light, second light source, multiple key lights, daylight, identical cloned columns, repeating tiled pattern, characters, people, figures, text, watermark, blurry, low detail",
+  "stray_item_negative": "floating objects, items floating in mid-air, a lantern resting on top of a column, props balanced on top of pillars, objects stacked on columns, objects perched on top of furniture, duplicated furniture, repeated identical props, cloned objects, extra clutter, random scattered debris, misplaced objects, props merged into or clipping through walls, objects embedded in stone, nonsensical out-of-place objects, levitating props",
+  "_stray_item_note": "stray_item_negative (occlusion/pathing Sprint 4): suppresses img2img inventing physically-impossible/duplicated props (the owner's 'random lantern on top of a pillar' artifact). Appended to whichever negative _build_prompt selects (firelit/daylight). Pipeline-agnostic — works in our img2img path (no controlnet). The heavier regional prop-occupancy conditioning is the Sprint-4 follow-up (#1218).",
+  "seedream_model": "model_bytedance-seedream-4-5-editing",
+  "seedream_v2_2026_07_01": "TESTED + SCORED, NOT ADOPTED (an earlier version of this note over-claimed a '≥8 BREAKTHROUGH' off ONE eyeballed crypt render — that claim is REFUTED). Seedream 4.5 (seedream_model) is a modern structure-preserving img2img EDITOR: swap it in for model_z-image+painterly-LoRA and it holds the camera-pin well (aspectRatio:auto; solid obstacles stay on their pathing cells; ambiguous props like a lava-box may be reinterpreted). Fast ~30s / ~6 CU. BUT the rigorous visual-critic panel (3 independent harsh PoE2-anchored scorers/image) scored: crypt (renders/seedream_crypt_v2.png) = 4.0, hell (renders/seedream_hell_test.png) = 5.0 — BOTH below-bar, and NOT better than the OLD LoRA firelit crypt which scores 4.7 on the SAME panel (its '7.4' was also inflated). So Seedream is NOT a ≥8 unlock and is NOT adopted; the pipeline default stays model_z-image+LoRA. ≥8 remains OPEN. REPRODUCED blockers across ALL current pipelines (the real levers): (a) WASHOUT/flat value — floor sits in a narrow value band, shadows are a flat uniform tint not integrated painted light, no deep-shadow anchors/dramatic chiaroscuro; (b) REPETITION — cloned wall tiles + cloned props; (c) SPARSE/generic asset-kit composition — few props, dead floor, no environmental storytelling. Call kept for reference: model_run(seedream_model, referenceImages=[<uploaded greybox asset_id>], prompt=<biome sentence> + ' ' + poe2_refined_prompt_suffix, size='2K', aspectRatio='auto'). LESSON: SCORE every candidate with the ≥2-run panel BEFORE claiming a bar or swapping a workflow.",
+  "gemini_polish_populate_pass_2026_07_01": "★ BEST REPEATABLE ≥8-DIRECTION LEVER FOUND (4 anchored scored panels; still a ~6.0-6.5 ceiling, NOT >=8, but a ROBUST +0.4-0.9 gain). After a painterly base plate exists (img2img OR the G-buffer relight pipeline), run ONE Gemini-3.1 instruction-edit 'polish + POPULATE' pass. It is an instruction editor (model_google-gemini-3-1-flash, referenceImages=[<base asset_id>], resolution '2K', thinkingLevel 'HIGH', aspectRatio 'auto', numOutputs 2 — NO strength knob, so preservation is prompt-driven). ONE pass does five things: (1) re-carve the FOCAL sculpture (e.g. sarcophagus effigy) into crisp readable detail (fixes 'melted mush'); (2) DE-CLONE repeated props — 'make the two columns DISTINCT, each a unique capital + relief' (fixes the diffusion repetition tell); (3) PAINT any flat-gray greybox faces the strict-preserve pass left unpainted (e.g. column top-caps); (4) ADD pathing-safe environmental-storytelling clutter ONLY along walls/corners/edges keeping the central combat floor CLEAR (bones/skull, fallen sword+shield, cobwebs, a wall torch-bracket, toppled urn+coins, leaves, moss) — this is the biggest lever, it lifts the COMPOSITION lens ~4.5->6.2 (attacks the 'empty asset-showcase diorama' flaw the panel weights hardest); (5) deepen the void openings toward true-black. SCORED (anchored panel, 5 harsh PoE2 scorers, a FIXED in-panel anchor per feedback_visual_panel_scoring_variance): density crypt = 6.2 vs anchor 5.3 (+0.9) vs pre-polish baseline 5.8 (+0.4). Best crypt plate to date -> box Assets/painterly/backdrops/crypt_dense_v1.png. REMAINING gap to >=8 (measured, consistent): (a) monochromatic warm palette, NO cool counter-light (~95% hues in orange bins — an in-engine relight cool-fill is the Phase-C fix); (b) carved detail still slightly 'mushy up close' (LoRA/model-bound); (c) 'flat illustration vs lit-3D-render' medium gap. ADOPT this pass; the real >=8 bet beyond it is a CLEAN char-free architectural LoRA. Full campaign log: ~/worldos-session-notes/2026-07-01-ge8-diffuse-campaign/implementation-notes.md.",
+  "poe2_refined_prompt_suffix": "Keep the EXACT same layout, geometry, props, and camera angle. Crisp chiseled carved-stone detail, sharp architectural relief and clean mortar lines. Warm firelit key light with deep cool blue-violet shadows, dramatic atmospheric chiaroscuro, Pillars of Eternity 2 pre-rendered isometric game background. Clean REFINED digital matte painting, game-ready background art — NOT thick impasto oil paint, NO visible canvas texture, NO painting border or frame, full-bleed edge to edge. No characters, no text.",
+  "_prompt_ab_2026_07_03": "ADOPTED. Prompt A/B (panel9, 5 scorers, control-anchored, same incumbent LoRA + same crypt greybox @ strength 0.55): the STAGING-LAW prompt variant beat the prior firelit_positive_template 5/5 scorers, +0.7 median (5.5 vs 4.8) — unanimous direction at the noise threshold, zero-cost reversible string swap. Delta folded into firelit_positive_template above: 'loose confident visible oil-paint brushstrokes', 'varied unique pillar carvings, no two columns identical', 'crisply chiseled stone relief', 'environmental storytelling clutter along the walls'; washout_negative gained 'identical cloned columns, repeating tiled pattern'. Tested on the crypt room but the added language is room-agnostic (no crypt-specific nouns) and applies to every room via the shared template. Both arms of the A/B confirm composition/craft comes from the LAYERED passes (see layered_pipeline_2026_07_02), not pass-1 alone — this is a pass-1 quality-of-base-plate improvement, not a substitute for layering. Evidence: ~/worldos-session-notes/2026-07-03-prompt-ab/ (panel9).",
+  "layered_pipeline_2026_07_02": {
+    "_doc": "ADOPTION-GRADE 3-pass LAYERED recipe, validated 2026-07-02 on a full multi-room plate (2-panel evidence, 5 scorers, control-anchored). ORDER LAW (do not reorder): pass1 LAYOUT (macro img2img) -> pass2 DETAIL/POPULATE (Gemini instruction-edit) -> pass3 STAGING LAST (Gemini instruction-edit). The detail/populate pass flattens lighting while it re-carves/de-clones/populates; the staging pass restores dramatic chiaroscuro lighting WITHOUT losing the detail pass's gains — running staging before detail loses the order-law benefit. Scored progression: pass1 base v4-LoRA img2img 6.0 -> +pass2 detail/populate 6.3-7.2 -> +pass3 staging 7.6 median. Production anchor (same panel) = 8.4. Evidence: ~/worldos-session-notes/2026-07-02-lora-v4-eval/ (panel4 = pre-staging delta, panel5 = full 3-pass delta; panel23_results.json + mapping4/5_DO_NOT_STAGE.txt carry the per-scorer numbers). Wired via generate_room.py --layered (default OFF; no flag = byte-identical single-pass behavior).",
+    "pass1_layout": {
+      "_doc": "Existing img2img macro pass — UNCHANGED from the single-pass recipe above (base_model + lora + defaults). LoRA choice is the existing recipe's default, not a layered-pipeline-specific change.",
+      "pipeline": "scenario-img2img",
+      "base_model": "model_z-image",
+      "lora_default_incumbent": "model_MB22WaRCBLtfhi5R2CRpHoEL",
+      "lora_dark_staging_alternative": "model_ng6MSaWtyvwKbZyDBMtzv7tA",
+      "_lora_note": "The incumbent painterly LoRA (model_MB22WaRCBLtfhi5R2CRpHoEL, room_recipes.json top-level `lora`) remains the generate_room.py DEFAULT — it beat worldos-poe2-clean-env-v4 head-to-head (see CANONICAL.md ≥8 row, 2026-07-02 RESOLVED). worldos-poe2-clean-env-v4 (model_ng6MSaWtyvwKbZyDBMtzv7tA) is kept ONLY as an optional dark-staging txt2img/img2img alternative lane (it natively generates the PoE staging-law near-black value structure) — not a default swap.",
+      "strength_contract": "strength stays the camera-pin knob: 0.5-0.6 for the standard authored-pathing contract, 0.75 for a hero/supersampled macro pass. Low strength protects the camera-pinned composition; this knob is UNCHANGED by layering the two detail passes on top."
+    },
+    "pass2_detail_populate": {
+      "_doc": "Gemini instruction-edit detail/populate pass. Runs AFTER pass1, on pass1's output asset. TEMPLATIZED 2026-07-03 (fix for the tavern-turned-crypt defect: this prompt was previously hardcoded with crypt nouns and applied unconditionally to every room by generate_room.py --layered, silently repainting a tavern base plate into a crypt). Slots are filled per-room from room_recipes.json:rooms.<room>.layered.pass2_slots. The crypt slot values were chosen so the RENDERED template is byte-identical to the prior hardcoded crypt prompt (regression-guarded by a unit test).",
+      "model": "model_google-gemini-3-1-flash",
+      "endpoint": "POST /v1/generate/custom/model_google-gemini-3-1-flash",
+      "body_template": {"prompt": "<PROMPT below, slots filled>", "image": "<asset id of pass1 output>", "numSamples": 1, "resolution": "2K"},
+      "prompt_template": "Edit this painterly isometric {room_setting_noun} plate. PRESERVE the exact composition, camera, room layout, and the dark dramatic lighting with its warm fire pools and deep shadows — do not brighten the scene. IMPROVE only the craft: re-sculpt every {room_focal_features} so they read CRISPLY CHISELED with clean edge highlights; make every {room_repeat_elements} UNIQUE (remove cloned repeats); paint any flat gray or unfinished surfaces as weathered stone; add small environmental-storytelling clutter along walls and edges only ({room_clutter_vocab}) keeping the open floor areas clear; deepen the black voids at the openings. Keep the hand-painted oil-paint brushwork feel throughout. Do NOT add any text, letters, numbers, runic writing that reads as text, labels, legends, map insets, UI elements, frames, or borders — the plate must contain ONLY the diegetic painted scene.",
+      "prompt_template_note": "slots: room_setting_noun (e.g. 'dungeon'/'tavern'/'cathedral'), room_focal_features (the crisp-carve target nouns), room_repeat_elements (the de-clone target nouns), room_clutter_vocab (comma list of wall/edge clutter items). Filled per-room from rooms.<room>.layered.pass2_slots by generate_room.py; crypt's slot values reproduce the prior hardcoded prompt byte-for-byte."
+    },
+    "pass3_staging_last": {
+      "_doc": "Gemini instruction-edit STAGING pass. Runs LAST, on pass2's output asset — this order is the load-bearing finding: staging must come after detail/populate, not before, because the detail pass flattens lighting and the staging pass restores it without erasing the detail gains. TEMPLATIZED 2026-07-03 (fix for the tavern-turned-crypt defect: this prompt was previously hardcoded with crypt light-source/space nouns and applied unconditionally to every room). Slots filled per-room from rooms.<room>.layered.pass3_slots; the crypt slot values reproduce the prior hardcoded crypt prompt byte-for-byte (regression-guarded by a unit test).",
+      "model": "model_google-gemini-3-1-flash",
+      "endpoint": "POST /v1/generate/custom/model_google-gemini-3-1-flash",
+      "body_template": {"prompt": "<PROMPT below, slots filled>", "image": "<asset id of pass2 output>", "numSamples": 1, "resolution": "2K"},
+      "prompt_template": "Edit this painterly isometric {room_setting_noun} plate. PRESERVE every detail exactly — the room layout, all {room_preserve_list} — change NOTHING about the content or composition. ONLY restage the LIGHTING into dramatic chiaroscuro: make {room_key_source} the dominant warm key light with a bright hot pool around it, let {room_fill_source} each cast a small local warm pool with HARD directional cast shadows from the pillars and props, and sink everything between the pools into deep cool blue-violet shadow — corners, far rooms, and floors away from lights should fall near-black. Steep warm-to-cool falloff, warm rim light on edges facing flames, cool bounce on shadow-side stone. The scene must read as small pools of firelight in {room_space_desc}, keeping the hand-painted oil feel. Do NOT add any text, letters, numbers, runic writing that reads as text, labels, legends, map insets, UI elements, frames, or borders — the plate must contain ONLY the diegetic painted scene.",
+      "prompt_template_note": "slots: room_setting_noun, room_preserve_list (comma list of props/features to hold fixed), room_key_source (the dominant warm light noun phrase), room_fill_source (the secondary local-pool light noun phrase), room_space_desc (e.g. 'a vast dark crypt'). Filled per-room from rooms.<room>.layered.pass3_slots by generate_room.py."
+    },
+    "downscale_note": "If the Gemini 2K output exceeds the plate size (1344x768 contract), downscale with PIL LANCZOS to match — see generate_room.py --layered.",
+    "sequencing_note": "Sequential jobs only (Scenario rule — concurrent paints collide/silently no-output). Each pass waits on the prior pass's terminal job status before submitting.",
+    "_hallucination_note": "2026-07-02 church-run incident: the pass2 Gemini detail/populate pass HALLUCINATED a map inset + garbled legend text onto the church plate (3/5 panel scorers called it an unshippable production artifact). Root cause: Gemini instruction-edit models have no strength knob and will sometimes invent UI-chrome-like elements (insets, legends, labels) when asked to 'add environmental-storytelling detail'. Fix: both pass2_detail_populate.prompt and pass3_staging_last.prompt now end with an explicit hard negative sentence forbidding text/labels/legends/map-insets/UI-elements/frames/borders. Evidence: ~/worldos-session-notes/2026-07-02-lora-v4-eval/."
+  },
+  "layered_pipeline_day_2026_07_03": {
+    "_doc": "DAY-STATE variant of layered_pipeline_2026_07_02, for issue #1291 day/night live integration (G5a — the GENERATION half; box wiring is a separate later unit). Same ORDER LAW (pass1 layout -> pass2 detail/populate -> pass3 STAGING-LAST). Pass1 uses generate_room.py --lighting daylight (daylight_positive_template/daylight_negative, already in this file) instead of the firelit template. pass2_detail_populate_day is a lighting-neutral rewrite of the night pass2 (the night pass2 text explicitly says 'do not brighten the scene' / 'deepen the black voids', which fights a day-lit pass1 base — so day gets its own pass2 prompt_template but reuses the SAME rooms.<room>.layered.pass2_slots values, since the craft/de-clone/populate targets themselves are lighting-agnostic). pass3_staging_last_day applies the DAY staging law. Wired via generate_room.py --layered --day (implies --lighting daylight for pass1; routes pass2 to pass2_detail_populate_day + rooms.<room>.layered.pass2_slots, and pass3 to pass3_staging_last_day + rooms.<room>.layered_day.pass3_slots).",
+    "pass2_detail_populate_day": {
+      "_doc": "Gemini instruction-edit detail/populate pass, DAY variant. Runs AFTER pass1 (daylit), on pass1's output asset. Same craft goals as the night pass2 but PRESERVES the bright daylit lighting instead of protecting dark chiaroscuro — reuses rooms.<room>.layered.pass2_slots (the same slot values as night; only the template text differs).",
+      "model": "model_google-gemini-3-1-flash",
+      "endpoint": "POST /v1/generate/custom/model_google-gemini-3-1-flash",
+      "body_template": {"prompt": "<PROMPT below, slots filled>", "image": "<asset id of pass1 output>", "numSamples": 1, "resolution": "2K"},
+      "prompt_template": "Edit this painterly isometric {room_setting_noun} plate. PRESERVE the exact composition, camera, room layout, and the bright DAYTIME lighting with its cool-neutral daylight key — do not darken the scene or add heavy chiaroscuro. IMPROVE only the craft: re-sculpt every {room_focal_features} so they read CRISPLY CHISELED with clean edge highlights; make every {room_repeat_elements} UNIQUE (remove cloned repeats); paint any flat gray or unfinished surfaces as weathered stone with clear daylit value modeling; add small environmental-storytelling clutter along walls and edges only ({room_clutter_vocab}) keeping the open floor areas clear. Keep the hand-painted oil-paint brushwork feel throughout. Do NOT add any text, letters, numbers, runic writing that reads as text, labels, legends, map insets, UI elements, frames, or borders — the plate must contain ONLY the diegetic painted scene.",
+      "prompt_template_note": "Reuses rooms.<room>.layered.pass2_slots (same slot values as the night pass2 — room_focal_features/room_repeat_elements/room_clutter_vocab are lighting-agnostic craft targets)."
+    },
+    "pass3_staging_last_day": {
+      "_doc": "Gemini instruction-edit DAY STAGING pass. Runs LAST, on pass2's output asset (pass2 is the SAME detail/populate pass as night — see pipeline doc above). DAY STAGING LAW (owner spec, G5a): bright directional daylight through windows/doorways as the PRIMARY light; interior ambient lifted but still painterly (not flat/museum-lit); hearth/braziers/candles still lit but SECONDARY accents; long soft shadows cast by the window/doorway light; palette shifts cool-neutral daylight vs the night plates' warm firelight. Day plates will NOT meet the night staging-law luma bands (near-black %, hot-pool %, median-L target) — that is EXPECTED and recorded as data, not a FAIL.",
+      "model": "model_google-gemini-3-1-flash",
+      "endpoint": "POST /v1/generate/custom/model_google-gemini-3-1-flash",
+      "body_template": {"prompt": "<PROMPT below, slots filled>", "image": "<asset id of pass2 output>", "numSamples": 1, "resolution": "2K"},
+      "prompt_template": "Edit this painterly isometric {room_setting_noun} plate. PRESERVE every detail exactly — the room layout, all {room_preserve_list} — change NOTHING about the content or composition. ONLY restage the LIGHTING into a DAYTIME scene: make {room_day_key_source} the dominant PRIMARY light source, bright directional daylight streaming through, with a cool-neutral daylight color temperature (not warm firelight). Lift the overall interior ambient so the room reads clearly and painterly (soft diffuse fill, NOT flat museum-lighting wash — keep gentle value modeling on every surface). Cast long SOFT directional shadows across the floor from the daylight direction. Keep {room_fill_source} still lit and glowing but now SECONDARY accents only, small warm pools that read as minor detail against the cool daylit scene, not the dominant light. The scene must read unmistakably as {room_space_desc} in daytime, keeping the hand-painted oil feel. Do NOT add any text, letters, numbers, runic writing that reads as text, labels, legends, map insets, UI elements, frames, or borders — the plate must contain ONLY the diegetic painted scene.",
+      "prompt_template_note": "slots: room_setting_noun, room_preserve_list (shared with night pass3), room_day_key_source (the daylight source noun phrase, e.g. 'the tall windows' daylight'), room_fill_source (shared with night pass3 — the secondary warm light, now demoted to accent), room_space_desc (shared with night pass3, day-appropriate phrasing implied by the prompt's own 'in daytime' clause)."
+    }
+  },
+  "rooms": {
+    "crypt": {
+      "key_light": "brazier firelight",
+      "shadow_casters": "the pillars, the sarcophagus, and the brazier legs",
+      "room_detail_tokens": "crisp painterly flagstone mortar lines, weathered cracked stone relief, grime moss and water-staining in the cracks, fluted pillar detail, carved sarcophagus relief",
+      "base_plate": "crypt_plate_v2_s50.png",
+      "canonical_plate": "crypt_firelit_v2.png",
+      "backdrop_score": 7.4,
+      "status": "CURRENT BEST = crypt_dense_v1.png (2026-07-01, active on box) — produced by the gemini_polish_populate_pass on a painterly base; scored ~6.2 (robust +0.4 over the pre-polish baseline on an anchored 5-scorer panel). Supersedes the earlier eyeballed '7.4' claim (that number was inflated vs the harsh panel). Prior plate crypt_firelit_v2.png kept for reference. >=8 remains OPEN (see gemini_polish_populate_pass_2026_07_01 for the measured remaining gap + the clean-LoRA bet).",
+      "layered": {
+        "_doc": "Slot values reproduce the pre-2026-07-03 hardcoded pass2/pass3 prompts byte-for-byte (regression-guarded).",
+        "pass2_slots": {
+          "room_setting_noun": "dungeon",
+          "room_focal_features": "carved relief, capital, and the sarcophagus effigy",
+          "room_repeat_elements": "pillar and wall panel",
+          "room_clutter_vocab": "bones, fallen weapons, cobwebs, toppled urns, scattered coins, moss"
+        },
+        "pass3_slots": {
+          "room_setting_noun": "dungeon",
+          "room_preserve_list": "carved reliefs, props, bones, coins, cobwebs, pillars, the sarcophagus",
+          "room_key_source": "the central fire pit",
+          "room_fill_source": "the wall torches",
+          "room_space_desc": "a vast dark crypt"
+        }
+      }
+    },
+    "crypt_stair": {
+      "key_light": "brazier firelight",
+      "shadow_casters": "the broad descending staircase and the pillar",
+      "room_detail_tokens": "a broad descending stone staircase with worn carved steps leading down into shadow at the rear, crisp painterly flagstone mortar lines, weathered cracked stone relief, fluted pillar detail, an arched stone doorway in the back wall",
+      "_note": "a crypt STAIR-HALL room-unit (Sprint 3 composition): same firelit crypt look but the focal feature is a descending staircase (not a sarcophagus). Paired with the tomb unit via seed_gfx_crypt_2room.py.",
+      "layered": {
+        "pass2_slots": {
+          "room_setting_noun": "dungeon",
+          "room_focal_features": "carved relief, capital, and the descending staircase's worn steps",
+          "room_repeat_elements": "pillar and wall panel",
+          "room_clutter_vocab": "bones, fallen weapons, cobwebs, toppled urns, scattered coins, moss"
+        },
+        "pass3_slots": {
+          "room_setting_noun": "dungeon",
+          "room_preserve_list": "carved reliefs, props, bones, coins, cobwebs, pillars, the descending staircase",
+          "room_key_source": "the central fire pit",
+          "room_fill_source": "the wall torches",
+          "room_space_desc": "a vast dark crypt stair-hall"
+        }
+      }
+    },
+    "tavern": {
+      "key_light": "hearth fire and hanging iron lanterns",
+      "shadow_casters": "the timber posts, the bar counter, and the tables",
+      "room_detail_tokens": "worn wooden plank floor, heavy timber roof beams, ale barrels and tankards, a stone hearth with glowing embers, candlelit tables, hanging dried herbs",
+      "base_plate": null,
+      "status": "TODO — needs a camera-pinned greybox/base plate (Unity render or txt2img at contract aspect)",
+      "layered": {
+        "pass2_slots": {
+          "room_setting_noun": "tavern",
+          "room_focal_features": "timber beam joint, the bar counter's carved edge, and the hearth's stonework",
+          "room_repeat_elements": "timber post and wall plank",
+          "room_clutter_vocab": "tankards, ale barrels, hanging dried herbs, a coiled rope, spilled straw, cobwebs in the rafters"
+        },
+        "pass3_slots": {
+          "room_setting_noun": "tavern",
+          "room_preserve_list": "wood floor planks, props, tankards, barrels, timber posts, the bar counter, the hearth",
+          "room_key_source": "the stone hearth's glowing embers",
+          "room_fill_source": "the hanging iron lanterns",
+          "room_space_desc": "a warm firelit tavern hall"
+        }
+      },
+      "layered_day": {
+        "_doc": "G5a day-state variant (#1291). pass2 is shared with rooms.tavern.layered.pass2_slots; only pass3 (staging) differs — see layered_pipeline_day_2026_07_03.",
+        "pass3_slots": {
+          "room_setting_noun": "tavern",
+          "room_preserve_list": "wood floor planks, props, tankards, barrels, timber posts, the bar counter, the hearth",
+          "room_day_key_source": "bright daylight streaming in through the tavern's windows and open doorway",
+          "room_fill_source": "the hearth embers and the hanging iron lanterns",
+          "room_space_desc": "a sunlit tavern hall on a bright day"
+        }
+      }
+    },
+    "church": {
+      "key_light": "altar candles and a shaft of stained-glass light",
+      "_prop_note": "shadow_casters/detail-tokens name ONLY props that exist as SceneProp footprints in the authored church scene_grid (qa/seed_gfx_church.py) — so every painted solid is also a combat obstacle (authored-pathing). Re-add pews here ONLY together with pew footprints in the seed.",
+      "shadow_casters": "the carved columns and the altar",
+      "room_detail_tokens": "stone nave flagstones, fluted carved columns, a stone altar, gothic pointed arches, dust motes suspended in the light shaft",
+      "base_plate": null,
+      "status": "TODO — needs a camera-pinned greybox/base plate",
+      "layered": {
+        "pass2_slots": {
+          "room_setting_noun": "cathedral nave",
+          "room_focal_features": "carved column capital, the stone altar's relief, and the gothic arch tracery",
+          "room_repeat_elements": "fluted column and pointed arch",
+          "room_clutter_vocab": "guttered candle stubs, fallen prayer beads, dust and cobwebs in the corners, a toppled candle stand, scattered hymnal pages"
+        },
+        "pass3_slots": {
+          "room_setting_noun": "cathedral nave",
+          "room_preserve_list": "stone flagstones, props, carved columns, the altar, the stained-glass shaft",
+          "room_key_source": "the altar candles",
+          "room_fill_source": "the stained-glass light shafts",
+          "room_space_desc": "a hushed candlelit cathedral nave"
+        }
+      },
+      "layered_day": {
+        "_doc": "G5a day-state variant (#1291). pass2 is shared with rooms.church.layered.pass2_slots; only pass3 (staging) differs — see layered_pipeline_day_2026_07_03.",
+        "pass3_slots": {
+          "room_setting_noun": "cathedral nave",
+          "room_preserve_list": "stone flagstones, props, carved columns, the altar, the stained-glass shaft",
+          "room_day_key_source": "bright daylight flooding through the tall stained-glass windows",
+          "room_fill_source": "the altar candles",
+          "room_space_desc": "a sunlit cathedral nave on a bright day"
+        }
+      }
+    },
+    "hell": {
+      "key_light": "molten lava glow and gouts of flame",
+      "shadow_casters": "the jagged obsidian spires and the bone piles",
+      "room_detail_tokens": "rivers of molten orange lava casting hot light across the floor, jagged black volcanic obsidian rock, glowing cracks and drifting embers, sulfurous haze, charred bone piles, hanging rusted iron chains, ash falling",
+      "_note": "the depths of hell (owner north-star example) — a dramatic hellish cavern. Extreme warm lava key vs cool ash-grey shadows; tests the pipeline on an EXTREME biome beyond the proven cool-stone interiors.",
+      "layered": {
+        "pass2_slots": {
+          "room_setting_noun": "hellish cavern",
+          "room_focal_features": "jagged obsidian spire, glowing lava crack, and charred bone pile",
+          "room_repeat_elements": "obsidian spire and rusted chain",
+          "room_clutter_vocab": "charred bones, drifting embers, rusted chains, ash drifts, cracked volcanic rubble"
+        },
+        "pass3_slots": {
+          "room_setting_noun": "hellish cavern",
+          "room_preserve_list": "obsidian rock, props, bone piles, chains, glowing cracks, the lava rivers",
+          "room_key_source": "the molten lava rivers",
+          "room_fill_source": "the gouts of flame",
+          "room_space_desc": "a vast smoldering hellscape"
+        }
+      }
+    },
+    "bosshall": {
+      "key_light": "brazier firelight flanking the dais",
+      "shadow_casters": "the long pillared hall's columns, the throne, and the raised dais",
+      "room_detail_tokens": "a raised stone dais with a carved throne, tattered hanging banners along the pillared hall, tall braziers flanking the dais, worn flagstone floor, crisp painterly mortar lines, fluted pillar detail",
+      "base_plate": null,
+      "status": "greybox reference: bosshall_greybox_textured.png; incumbent render: bosshall_textured_v1.png (see ~/worldos-session-notes/). Authored 2026-07-03 for the G4 retry — mirrors the tavern/church entry structure; the staging-law pass-1 prompt language (loose oil brushstrokes, no-two-columns-identical, environmental clutter along walls) is shared via firelit_positive_template (#1274 adoption), not room-specific.",
+      "_note": "a throne hall / boss encounter room — dais + throne + banners + braziers + long pillared hall, distinct focal geometry from the crypt sarcophagus room.",
+      "layered": {
+        "pass2_slots": {
+          "room_setting_noun": "throne hall",
+          "room_focal_features": "carved relief, capital, and the throne's dais steps",
+          "room_repeat_elements": "pillar and hanging banner",
+          "room_clutter_vocab": "tattered banner tears, brazier ash, scattered coins, a discarded weapon at the dais foot, cobwebs, cracked flagstones"
+        },
+        "pass3_slots": {
+          "room_setting_noun": "throne hall",
+          "room_preserve_list": "carved reliefs, props, the throne, the dais, the banners, the pillars, the braziers",
+          "room_key_source": "the braziers flanking the dais",
+          "room_fill_source": "the wall torches down the pillared hall",
+          "room_space_desc": "a vast dark pillared throne hall"
+        }
+      },
+      "layered_day": {
+        "_doc": "G5a day-state variant (#1291). pass2 is shared with rooms.bosshall.layered.pass2_slots; only pass3 (staging) differs — see layered_pipeline_day_2026_07_03.",
+        "pass3_slots": {
+          "room_setting_noun": "throne hall",
+          "room_preserve_list": "carved reliefs, props, the throne, the dais, the banners, the pillars, the braziers",
+          "room_day_key_source": "bright daylight streaming in through tall clerestory windows high on the pillared hall's walls",
+          "room_fill_source": "the braziers flanking the dais and the wall torches down the hall",
+          "room_space_desc": "a vast sunlit pillared throne hall on a bright day"
+        }
+      }
+    }
+  }
+}

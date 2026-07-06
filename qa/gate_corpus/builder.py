@@ -47,6 +47,28 @@ REAL_RED_PROVENANCE = {
     "narration_no_ooc_leak": "2026-06-17 craft audit (#972): 5+ first-person OOC authoring preambles in a 4.6-prose run, un-gated, inflated the LLM story score to 4.8",
 }
 
+# Explicit TODO reasons for FATAL checks the coverage audit below finds uncovered, where the
+# generic auto-flagged reason isn't the truthful story. A check listed here is INTENTIONALLY
+# left out of _CASES_SPEC (not just "not gotten to yet") — the reason explains why a corpus
+# fixture doesn't fit and points at the alternate coverage that closes the gap.
+TODO_REASONS = {
+    # #1285: run_infra_valid trips on a SIDECAR <run>.infra_invalid.json sentinel file next to
+    # run.jsonl (qa/lib_beat_driver.sh worldos_mark_run_infra_invalid), not on the content of
+    # run.jsonl/state.json/chat.jsonl/moves.jsonl the corpus's _write_case + _argv_for model —
+    # those four are the gate's only POSITIONAL argv artifacts; a 5th sidecar file has no slot in
+    # that model. Not a fiction-content bundle the builder can synthesize; covered instead by
+    # qa/test_assert_behavioral.py::test_run_infra_invalid_sentinel_flips_red +
+    # test_no_infra_invalid_sentinel_passes + test_infra_invalid_sentinel_caps_no_other_gate_weakened,
+    # and by qa/test_run_invalidation_guard.sh (exercises the real bash stamping helper end-to-end).
+    "run_infra_valid": (
+        "infra-sentinel guard: RED requires a .infra_invalid.json sidecar next to run.jsonl "
+        "(stamped by qa/lib_beat_driver.sh worldos_mark_run_infra_invalid), not a fiction bundle "
+        "the builder synthesizes via _write_case's 4 positional artifacts — covered by "
+        "qa/test_assert_behavioral.py::test_run_infra_invalid_sentinel_flips_red (+ 2 sibling "
+        "tests) and qa/test_run_invalidation_guard.sh"
+    ),
+}
+
 
 # ── event / artifact builders ─────────────────────────────────────────────────
 
@@ -325,12 +347,38 @@ def case_no_duplicate_companion():
 def case_no_rejected_tool_calls():
     # chk A8: a tool call REJECTED with an extra_forbidden schema/validation error (version skew /
     # wrong field). Modeled on ow-swB-123842's update_character rejection that RED-capped the run.
+    # NOTE (#897 de-flake): this fixture is deliberately UNRECOVERED — update_character is rejected
+    # and NEVER successfully retried, so it is the genuine version-skew defect that must STAY FATAL.
+    # (A recovered-transient variant lives in the GREEN corpus as
+    # case_no_rejected_tool_calls_recovered_warn.) Do NOT add a clean update_character call here or
+    # this case would correctly demote to a WARN and stop RED-ing.
     err = ("Error executing tool update_character: 1 validation error for Character\n"
            "skills\n  Extra inputs are not permitted "
            "[type=extra_forbidden, input_value=['Arcana'], input_type=list]")
     events = _roll() + [
         _assistant_tool_use("t_uc", "mcp__engine__update_character", {"skills": ["Arcana"]}),
         _user_tool_result("t_uc", err, is_error=True),
+    ]
+    return events, _clean_player_state(), None, None
+
+
+def case_no_rejected_tool_calls_recovered_warn():
+    # GREEN fixture (#897) — the A8 de-flake scope guard. A SINGLE malformed update_character
+    # (extra_forbidden) that the DM immediately RETRIES correctly (the same tool, is_error=False)
+    # is a recovered transient — invisible to the player. Under the #897 de-flake A8 is demoted to
+    # a WARN (recovered transient), so the gate must exit GREEN with no_rejected_tool_calls as a
+    # [WARN] line — NOT a RED cap. A future edit that re-promotes recovered transients to FATAL
+    # (re-introducing the high-variance false-RED) flips this case RED and the green test fails.
+    err = ("Error executing tool update_character: 1 validation error for Character\n"
+           "skills\n  Extra inputs are not permitted "
+           "[type=extra_forbidden, input_value=['Arcana'], input_type=list]")
+    events = _roll() + [
+        _assistant_tool_use("t_uc_bad", "mcp__engine__update_character", {"skills": ["Arcana"]}),
+        _user_tool_result("t_uc_bad", err, is_error=True),
+        # the DM retries the SAME tool correctly -> recovered.
+        _assistant_tool_use("t_uc_ok", "mcp__engine__update_character",
+                            {"skill_proficiencies": ["Arcana"]}),
+        _user_tool_result("t_uc_ok", json.dumps({"ok": True})),
     ]
     return events, _clean_player_state(), None, None
 
@@ -417,6 +465,28 @@ def case_structural_completeness_authored_warn():
     return events, state, None, None
 
 
+def case_dm_beat_honesty_no_consecutive_collapse():
+    # chk (#1285/#1287 chat-log twin of run_infra_valid): 3+ CONSECUTIVE dm chat rows stamped
+    # beat_failed=True (qa/lib_beat_driver.sh worldos_chatlog_dm_failed) is a run-invalidating
+    # infra collapse (quota window / host-session death mid-run), not scattered product defects —
+    # the rri-a1-duo/duo2 defect class. Threshold matches _CONSECUTIVE_INVALID_THRESHOLD=3. A
+    # leading clean dm/player exchange keeps both_sides_acted + dm_voices_characters satisfied so
+    # this stays the SOLE fatal fail; the 3 failed rows carry no quoted dialogue.
+    def _failed_beat_row() -> dict:
+        row = _dm_chat_row("(beat failed — no reply)")
+        row["beat_failed"] = True
+        return row
+
+    chat = [
+        _player_chat_row("[say] hello"),
+        _dm_chat_row('"Welcome," she says.'),
+        _failed_beat_row(),
+        _failed_beat_row(),
+        _failed_beat_row(),
+    ]
+    return _roll(), _clean_player_state(), chat, None
+
+
 def case_xp_awarded_on_progression():
     # chk A5: xp mode, session advanced (day>1 AND visited>=2 so the world floors pass), a
     # reward-worthy seam (a COMPLETED quest — NOT a dead monster, so xp_not_orphaned stays inert),
@@ -462,6 +532,8 @@ _CASES_SPEC: list[tuple] = [
     ("xp_not_orphaned", case_xp_not_orphaned, "xp_not_orphaned"),
     ("xp_awarded_on_progression", case_xp_awarded_on_progression, "xp_awarded_on_progression"),
     ("structural_completeness", case_structural_completeness, "structural_completeness"),
+    ("dm_beat_honesty_no_consecutive_collapse", case_dm_beat_honesty_no_consecutive_collapse,
+     "dm_beat_honesty_no_consecutive_collapse"),
 ]
 
 # GREEN cases — the inverse guard. These fixtures must NOT trip their named check (the gate must
@@ -472,6 +544,8 @@ _CASES_SPEC: list[tuple] = [
 _GREEN_CASES_SPEC: list[tuple] = [
     ("structural_completeness_authored_warn", case_structural_completeness_authored_warn,
      "structural_completeness"),
+    ("no_rejected_tool_calls_recovered_warn", case_no_rejected_tool_calls_recovered_warn,
+     "no_rejected_tool_calls"),
 ]
 
 
@@ -533,7 +607,8 @@ def build() -> dict:
             "case_dir": f"TODO__{missing}",
             "expected_red_check": missing,
             "todo": True,
-            "reason": "no faithful minimal fixture constructed yet (auto-flagged by builder)",
+            "reason": TODO_REASONS.get(
+                missing, "no faithful minimal fixture constructed yet (auto-flagged by builder)"),
         })
 
     # GREEN cases — known-GREEN bundles that lock a deliberate FATAL->WARN scope guard (the inverse

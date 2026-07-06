@@ -10,7 +10,8 @@ star: **epic Baldur's-Gate-caliber STORY on a deterministic SRD 5.2 engine**; go
 universe-system that generates worlds. Source-available commercial product, BG-focused. **Read `WorldOS-RUNBOOK.md`
 (repo root) for the full project/architecture/state.** This skill is the operational loop.
 
-**Graphics:** the **Godot GT2 isometric renderer** → `godot/HANDOFF.md` + the `godot-dev` skill.
+**Graphics:** the **Unity/current-renderer lane** + deterministic SceneGrid/visual-critic checks.
+Godot GT2 is archived as reference/extension material under `extensions/renderers/godot/`.
 **AI asset generation** (3D chars, rigging, painterly backdrops, sprites) → the `asset-gen` skill.
 
 > **⚠ HEAVY QA SWEEPS (5-persona / RRI) → USE THE SUPPORT VM, NOT LOCAL.** The 16 GB Mac OOMs mid-sweep
@@ -179,14 +180,15 @@ Keep Python tests single-process unless the lane explicitly supports parallel ex
 - **Secret-scan the diff before every commit** — `git diff --cached | grep -iE '<key-prefixes>'` must
   be empty. Keys live in `~/.worldos/*.key` (mode 600), never the tree.
 - **CI-only-validatable changes:** let `--auto` hold the merge until CI concludes (or `gh run watch`).
-  `godot/`-only PRs skip CodeQL (the deterministic lanes + the `godot.yml` lane gate them) — they still
-  merge through the protected `--auto` path once the 5 required checks are green.
-- **New-subsystem skills:** **`godot-dev`** (GT2 Godot renderer), **`asset-gen`** (Meshy/Tripo/Scenario/
-  PixelLab art), **`wire-external-api-service`** (integrate a new API/MCP), **`sprint-handoff-doc`** (hand off a sprint).
+  Godot extension/archive-only PRs are optional/manual proof only and are not branch-protection gates;
+  the protected path still waits for the 5 required Woodpecker checks.
+- **New-subsystem skills:** **`asset-gen`** (Meshy/Tripo/Scenario/PixelLab art),
+  **`wire-external-api-service`** (integrate a new API/MCP), **`sprint-handoff-doc`** (hand off a sprint).
 
 ## THE MERGE GATE — CI + CodeRabbit (don't push-and-abandon)
 **Shepherd every PR to merge; never open-and-walk-away.** Stay engaged (or hand to a report-only
-watcher) until it lands. Merge only when ALL hold:
+watcher) until it lands. **Orphaned PRs** (whose driving agent died/abandoned them) surface daily in
+the open **`stuck-pr-report`** issue — when idle or resuming, check it and adopt one. Merge only when ALL hold:
 1. **CI green AND present** — all 5 required `ci.yml` contexts (`test`, `viewer-tests`,
    `qa-release-gate-tests`, `server-contracts`, `license-check`) have a check-run on THIS head and
    are SUCCESS. A *missing* context reads as no-status, not pass (strict=false + a job added to
@@ -231,6 +233,7 @@ in the post-fix state and skips the seat-path/cold-open/free-play surfaces our b
 | Tier | Run | Cost | When |
 |---|---|---|---|
 | **0 — deterministic** | `qa/fast_gate.sh` | **$0, ~2s** | EVERY engine/content/data/viewer change (and in CI). 186 engine tests + the end-to-end seat-path skill guard → the structural / seat-path / rest / travel / combat-resolution regression classes, caught free + instant. |
+| **1.5 — mechanism probe** | `qa/mechanism_probe.sh <name> <fixture> [beats=3] [budget=1.00]` | ~$1, ~10 min | A CUE-mechanism question ("does obligation cue X fire + does the DM ACT on it?"). Seeds a deterministic trigger fixture (`qa/probe_fixtures/<fixture>.py`) + drives 2–3 REAL DM beats, then a DETERMINISTIC verdict (ACTED/IGNORED/CUE_ABSENT — no LLM lens). First fixture: `wrap_window_active_quest`. **ITERATION-ONLY** — the seed skips cold-open/seat-path/free-play surfaces; never a release verdict. |
 | **1 — fast LLM loop** | `qa/fast_probe.sh [persona]` | ~$2–3, ~20 min | DM-craft / UX / satisfaction changes. ONE persona ROTATED by iteration (`newbie→…→optimizer`) + a 6-beat duo (≥6 keeps the behavioral floors armed). Iteration signal ONLY. |
 | **2 — milestone sweep** | the `## VM GATE SWEEP` procedure above (VM part-B + Mac part-A) | ~$10, ~90 min | ONLY when 0+1 pass + before a version bump → RRI → #466. Also the periodic recalibration of the cheap tiers vs the full RRI. |
 

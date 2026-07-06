@@ -2834,6 +2834,175 @@ class ReleaseReadinessContractTests(unittest.TestCase):
                 self.assertNotIn(gate, payload["failed_gates"])
             self.assertEqual(payload["deterministic_failed_gates"], [])
 
+    # ---- #843: --waive-image-render (VM-only sweep RED-by-construction escape) ----
+    # On the VM lane the UI requests minted-scope ids that 404 by construction (the
+    # resolver exact-matches only canonical ingested keys, 0 location_* dirs ingested,
+    # no imagegen gateway). When those 404s are recorded as UNEXPECTED (the viewer
+    # cannot distinguish minted-scope-unanswerable from a real render failure), the
+    # #762 mac-handoff escape can NEVER fire — image_render is RED-by-construction.
+    # --waive-image-render lets a VM-only sweep be HONEST: image_render = waived-with-
+    # reason, NOT a silent fail. It NEVER papers over GENUINE failure evidence.
+
+    def _waive_release_args(self, tmp, runs, personas):
+        story, mech, behavioral, audit, palette = self.write_release_inputs(tmp)
+        return [
+            "--runs", ",".join(str(r) for r in runs),
+            "--expected-personas", ",".join(personas),
+            "--story", str(story), "--mech", str(mech),
+            "--behavioral", "GREEN", "--behavioral-path", str(behavioral),
+            "--ui-audit", "PASS", "--ui-audit-log", str(audit),
+            "--palette-live", "true", "--palette-source", str(palette),
+            "--build-sha", "deadbee",
+        ]
+
+    def test_waive_image_render_lets_vm_only_sweep_be_release_ready(self):
+        # A VM-only sweep that recorded zero image traffic (the gitignored _private
+        # art / minted-scope case) → image_render_source is "none" → RED-by-construction.
+        # --waive-image-render with a reason waives it WITH an evidence annotation, so the
+        # gate passes and a five-persona VM-only RRI can be release_ready.
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            personas = ("newbie", "veteran", "adversarial", "narrative", "optimizer")
+            runs = [
+                self.write_persona_run(tmp, persona, include_image_traffic=False)
+                for persona in personas
+            ]
+            rc, _text, payload = self.run_rri(
+                tmp,
+                *self._waive_release_args(tmp, runs, personas),
+                "--waive-image-render",
+                "--waive-image-render-reason",
+                "VM-only sweep: minted-scope 404s by construction (#843); render proven separately",
+            )
+
+            self.assertEqual(rc, 0)
+            self.assertTrue(payload["release_ready"])
+            self.assertNotIn("image_render", payload["failed_gates"])
+            self.assertEqual(payload["signals"]["image_render_source"], "waived")
+            self.assertTrue(payload["signals"]["image_render_waived"])
+            self.assertIn("#843", payload["signals"]["image_render_waive_reason"])
+            # The waive is HONEST: an evidence_gap annotation records waived=True + reason,
+            # so the RRI carries the waiver in its evidence trail (not a silent pass).
+            waive_gaps = [g for g in payload["evidence_gaps"] if g["gate"] == "image_render"]
+            self.assertTrue(waive_gaps, "expected a waived image_render evidence annotation")
+            self.assertTrue(all(g.get("waived") is True for g in waive_gaps))
+            self.assertIn("waived", payload["gate_detail"]["image_render"])
+
+    def test_waive_image_render_does_not_paper_over_genuine_unexpected_404s(self):
+        # The #762 invariant: a waive must NEVER paper over RECORDED unexpected image
+        # 404s (real render-failure evidence). Even WITH --waive-image-render, a sweep
+        # that recorded known unexpected 404s still FAILS image_render.
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            personas = ("newbie", "veteran", "adversarial", "narrative", "optimizer")
+            runs = [
+                self.write_persona_run(
+                    tmp,
+                    persona,
+                    include_image_traffic=False,
+                    extra_score_fields={
+                        "image_404s": 3,
+                        "image_404s_designed": 1,
+                        "image_404s_unexpected": 2,
+                    },
+                )
+                for persona in personas
+            ]
+            rc, _text, payload = self.run_rri(
+                tmp,
+                *self._waive_release_args(tmp, runs, personas),
+                "--waive-image-render",
+                "--waive-image-render-reason",
+                "trying to waive a genuine failure (must be refused)",
+            )
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(payload["release_ready"])
+            self.assertIn("image_render", payload["failed_gates"])
+            self.assertNotEqual(payload["signals"]["image_render_source"], "waived")
+            self.assertFalse(payload["signals"]["image_render_waived"])
+            gap_details = [
+                g["detail"] for g in payload["evidence_gaps"] if g["gate"] == "image_render"
+            ]
+            self.assertTrue(
+                any("unexpected image 404s" in d for d in gap_details),
+                f"expected an unexpected-404 evidence gap, got: {gap_details}",
+            )
+
+    def test_waive_image_render_with_vm_network_failures_is_refused(self):
+        # A waive must NOT paper over a real vm-network render rate below threshold —
+        # the VM DID record /image traffic with unexpected 404s, so image_render_source
+        # is "vm-network" and the real rate is authoritative even with the waive flag.
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            personas = ("newbie", "veteran", "adversarial", "narrative", "optimizer")
+            runs = [
+                self.write_persona_run(tmp, persona, image_status=404)
+                for persona in personas
+            ]
+            rc, _text, payload = self.run_rri(
+                tmp,
+                *self._waive_release_args(tmp, runs, personas),
+                "--waive-image-render",
+                "--waive-image-render-reason",
+                "should not paper over recorded vm-network failures",
+            )
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(payload["release_ready"])
+            self.assertIn("image_render", payload["failed_gates"])
+            self.assertEqual(payload["signals"]["image_render_source"], "vm-network")
+            self.assertFalse(payload["signals"]["image_render_waived"])
+
+    def test_waive_image_render_requires_a_reason(self):
+        # A bare --waive-image-render with no reason is not a valid honest waiver: the
+        # gate stays failed with a clear "reason required" evidence gap.
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            personas = ("newbie", "veteran", "adversarial", "narrative", "optimizer")
+            runs = [
+                self.write_persona_run(tmp, persona, include_image_traffic=False)
+                for persona in personas
+            ]
+            rc, _text, payload = self.run_rri(
+                tmp,
+                *self._waive_release_args(tmp, runs, personas),
+                "--waive-image-render",
+            )
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(payload["release_ready"])
+            self.assertIn("image_render", payload["failed_gates"])
+            self.assertFalse(payload["signals"]["image_render_waived"])
+            gap_details = [
+                g["detail"] for g in payload["evidence_gaps"] if g["gate"] == "image_render"
+            ]
+            self.assertTrue(
+                any("reason" in d.lower() for d in gap_details),
+                f"expected a 'reason required' evidence gap, got: {gap_details}",
+            )
+
+    def test_no_waive_flag_keeps_vm_only_sweep_red_by_construction(self):
+        # Control: WITHOUT the waive flag a VM-only sweep with no image evidence stays a
+        # hard image_render fail (the RED-by-construction status quo is byte-identical).
+        with tempfile.TemporaryDirectory() as td:
+            tmp = Path(td)
+            personas = ("newbie", "veteran", "adversarial", "narrative", "optimizer")
+            runs = [
+                self.write_persona_run(tmp, persona, include_image_traffic=False)
+                for persona in personas
+            ]
+            rc, _text, payload = self.run_rri(
+                tmp,
+                *self._waive_release_args(tmp, runs, personas),
+            )
+
+            self.assertEqual(rc, 1)
+            self.assertFalse(payload["release_ready"])
+            self.assertIn("image_render", payload["failed_gates"])
+            self.assertEqual(payload["signals"]["image_render_source"], "none")
+            self.assertFalse(payload["signals"]["image_render_waived"])
+
 
 if __name__ == "__main__":
     unittest.main()

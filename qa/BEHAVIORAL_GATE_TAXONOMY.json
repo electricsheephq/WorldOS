@@ -2,6 +2,12 @@
   "_README": "Maps every behavioral-gate CHECK emitted by qa/assert_behavioral.py to a root-cause CATEGORY, candidate code locations, an exact retest command, and a one-line hint. Consumed by qa/root_cause_analyzer.py to turn a RED gate into actionable locations. PURE METADATA — no code reads/writes product state from here. Categories: ENGINE_INVARIANT (a state-integrity fact the engine, the sole writer, must hold), DM_ADHERENCE (the DM agent's play behavior — what it narrated / resolved / which features it used), HARNESS_WIRING (the QA plumbing itself — the player facade, the moves/chat logs, honesty stamps, version-skew tool rejections). Keep this in sync when a chk() name is added/removed in assert_behavioral.py. An UNKNOWN check (not listed here) degrades gracefully in the analyzer to category UNKNOWN with a generic hint.",
   "_retest_note": "Retest commands re-run the relevant QA lane; they DO NOT write committed artifacts. run_duo.sh / run_combat_sprint.sh write only under qa/transcripts/ + qa/state/<RUN>/ (gitignored run scratch). Re-run the SAME run id to re-score the same artifacts, or a fresh id for a new playtest.",
   "checks": {
+    "run_infra_valid": {
+      "category": "HARNESS_WIRING",
+      "likely_code_locations": ["qa/assert_behavioral.py:307", "qa/lib_beat_driver.sh", "qa/run_duo.sh"],
+      "retest": "bash qa/run_duo.sh duo-retest",
+      "hint": "A stamped <run>.infra_invalid.json sentinel sits next to run.jsonl (qa/lib_beat_driver.sh worldos_mark_run_infra_invalid, #1285) — the beat driver detected N consecutive DM beat failures mid-run (a quota window / host-session death, the rri-a1-duo/duo2 defect class), which invalidates the run: it measures infra collapse, not the product. FATAL — never cite this transcript as a clean product measurement; re-run instead. Check the sentinel's `reason` / `consecutive_failed_beats` fields, then investigate WHY the DM beats died (auth/timeout/quota) in the beat driver."
+    },
     "dm_produced_output": {
       "category": "HARNESS_WIRING",
       "likely_code_locations": ["qa/run_duo.sh", "qa/lib_beat_driver.sh", "servers/engine/server.py"],
@@ -43,6 +49,12 @@
       "likely_code_locations": ["qa/lib_beat_driver.sh", "qa/run_duo.sh", "qa/dm_narration_fallback.py"],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "Beats were stamped beat_failed / fallback_recovered (a dead or error-class DM turn whose prose was recovered from the engine log via the #357 fallback). Report-only; investigate WHY the DM turn died (timeout / auth / tool error) in the beat driver."
+    },
+    "dm_beat_honesty_no_consecutive_collapse": {
+      "category": "HARNESS_WIRING",
+      "likely_code_locations": ["qa/assert_behavioral.py:410", "qa/lib_beat_driver.sh", "qa/run_duo.sh", "qa/dm_narration_fallback.py"],
+      "retest": "bash qa/run_duo.sh duo-retest",
+      "hint": "N consecutive DM beat-failures (beat_failed=True rows, in order, in $CHAT) crossed the threshold (3) — a run of back-to-back failed beats means the run COLLAPSED ON INFRA (a quota window / host-session death mid-run, the rri-a1-duo/duo2 defect class), not scattered product defects. The chat-log-derived twin of run_infra_valid below; catches runs whose runner predates the #1285 sentinel or doesn't yet wire the abort-and-stamp path (run_party.sh / ui_playtest.sh). FATAL: this transcript is contaminated and must be re-run, not cited as a clean product measurement. Investigate WHY the DM turns died (timeout / auth / quota / tool error) in the beat driver, same as dm_beat_honesty above."
     },
     "player_used_facade": {
       "category": "HARNESS_WIRING",
@@ -91,6 +103,18 @@
       "likely_code_locations": ["qa/play_dm_duo.txt", "servers/engine/combat.py", "servers/engine/server.py"],
       "retest": "bash qa/run_combat_sprint.sh sprint-retest",
       "hint": ">=3 attacks but start_combat never called — a fight ran entirely outside initiative, so turn-order/action-economy gates were inert. The engine surfaces a combat_not_active nudge per out-of-combat attack; reinforce 'call start_combat at the top of any real encounter' in the DM prompt. WARN only."
+    },
+    "ambush_ran_surprise_gate": {
+      "category": "DM_ADHERENCE",
+      "likely_code_locations": ["skills/dungeon-master/reference/combat.md", "servers/engine/server.py"],
+      "retest": "bash qa/run_combat_sprint.sh sprint-retest",
+      "hint": "DM narration staged an ambush (lunge from the shadows / sprung trap / 'never saw it coming') but start_combat ran with no surprise evaluation — no surpriser_ids and no `surprise` key in the return — so the passive-Perception-vs-Stealth gate was skipped and the ambush had no mechanical effect (#1271). Reinforce 'pass surpriser_ids=[attacker id(s)] for any narrated ambush' in the DM combat runbook; the engine rolls Stealth vs passive Perception and applies SRD-5.2 initiative disadvantage to the surprised set. WARN only."
+    },
+    "detection_beat_requires_check": {
+      "category": "DM_ADHERENCE",
+      "likely_code_locations": ["qa/assert_behavioral.py:1029", "skills/dungeon-master/reference/combat.md"],
+      "retest": "bash qa/run_duo.sh duo-retest",
+      "hint": "DM narration plainly staged an NPC noticing/spotting/hearing the party ('the guard's eyes snap toward you', 'she catches a sound') with no preceding Perception/Insight/Investigation skill_check (or a reason-tagged roll) in the SAME beat — DM fiat, not a gated roll (#1287, promoted from the scorer's suggested_fix; same family as ambush_ran_surprise_gate above). Reinforce 'call skill_check before narrating a detection/notice beat' in the DM combat runbook. WARN only — prose alone is a soft signal and a false-fire here should never cap an otherwise-clean run."
     },
     "party_location_coherence": {
       "category": "ENGINE_INVARIANT",
@@ -198,7 +222,7 @@
       "category": "HARNESS_WIRING",
       "likely_code_locations": ["servers/engine/server.py", "servers/engine/models.py", "qa/run_duo.sh"],
       "retest": "bash qa/run_duo.sh duo-retest",
-      "hint": "A tool call was REJECTED with a schema/validation error (extra_forbidden => version skew or a wrong field). The DM's intent silently did not take effect — classic version-skew between the DM's expected tool schema and the engine's models. Check the tool param schema in server.py / models.py vs what the DM sent. FATAL."
+      "hint": "A tool was REJECTED with a schema/validation error (extra_forbidden => version skew or a wrong field) in a SYSTEMATIC pattern — classic version-skew between the DM's expected tool schema and the engine's models. De-flaked (#897): FATAL only when the rejection is UNRECOVERED (the same tool was NEVER successfully called) OR REPEATED (the same tool rejected >=2x = real skew). A SINGLE rejection the DM immediately retried correctly is a recovered transient => WARN, not RED (it was false-RED-capping whole runs on one invisible flub). Check the tool param schema in server.py / models.py vs what the DM sent for the named tool(s). FATAL (systematic) / WARN (recovered transient)."
     },
     "engine_guards_hit": {
       "category": "DM_ADHERENCE",
@@ -271,6 +295,12 @@
       "likely_code_locations": ["servers/engine/server.py", "servers/engine/combat.py", "skills/dungeon-master/SKILL.md"],
       "retest": "bash qa/run_combat_sprint.sh sprint-retest",
       "hint": "A Guiding Bolt advantage rider LANDED on a target (attack -> on_hit_effect_applied: ['Guiding Bolt']) but the next attack against that same target did NOT carry advantage_source='Guiding Bolt' — the SRD 'next attack roll against it has Advantage' rider was dropped. The engine auto-grants + consumes it via combat.attack_modifiers + attack() (#194/#1033), so a miss means the engine attack() path was bypassed (the follow-up was narrated, not resolved through the tool) or the marker expired early. Check that the follow-up strike is resolved via attack() against the marked target within the caster's next-turn window. WARN only."
+    },
+    "unresolved_spell_attack": {
+      "category": "DM_ADHERENCE",
+      "likely_code_locations": ["servers/engine/server.py", "skills/dungeon-master/SKILL.md", "qa/rubric_angry_dm.md"],
+      "retest": "bash qa/run_combat_sprint.sh sprint-retest",
+      "hint": "A DM-resolved attack-roll spell (Guiding Bolt, Fire Bolt cast via cast_spell -> the result carries automated:false + attack_roll:true) leaves its to-hit for the DM to make via attack(). The caster never made a same-turn attack() before the next next_turn, so the spell spent its slot and dealt ZERO (#1270). The engine now lets that resolution attack() through the cast+attack economy gate (Combat.pending_spell_attack), so a miss means the DM narrated the bolt instead of resolving it through attack(). Reinforce 'resolve an attack-roll spell's to-hit via attack(attacker=caster, target=the spell's target) the SAME turn' in the DM/angry-DM guidance. WARN only."
     },
     "multiattack_budget_honored": {
       "category": "DM_ADHERENCE",
