@@ -220,7 +220,16 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
 > yet; move_to_coords exists combat-gated;
 > the viewer already paints walkability. The gaps are ungatings + one new render mode.
 
-- **W1 — "Scene at Rest"** *(parallel-safe NOW)*. Additive `stage` block (`mode: rest|combat` +
+> **Act II execution state (living; last trued 2026-07-06):**
+> **Sprint 1 (charter #1328, CLOSED)** — W1 #1330 ✅ · HV1 #1331 ✅ · HV2 #1329 ✅ · Tier-1.5 probe
+> harness #1336 ✅. QA-economics v2 doctrine merged (#1340, docs/OPERATIONS.md).
+> **Sprint 2 (charter #1337, ACTIVE)** — HV3 #1338 ✅ · HV5-slice-1 auto-nomination #1342 ✅ ·
+> W2-engine #1341 (landing) · W3-engine #1344 (staged on #1341) · S2 #1303 Animator/VFX reel
+> #1345 (landing) · W2-UI split → #1350.
+> Wrap-window/teeth: instrument verdict ACTED (#1313, 2026-07-06) — teeth PARKED pending owner
+> sign-off; the v1.0.5 gate = ONE batched ruler duo at the current push's batch head.
+
+- **W1 — "Scene at Rest"** *(✅ SHIPPED — PR #1330, incl. the felt_rest_panel instrument)*. Additive `stage` block (`mode: rest|combat` +
   rest tokens) in `build_combat_surface` (viewer/server.py:3376; optionally aliased as
   /scene-surface) — party + present NPCs (`Character.location_id == current`) PROJECTED onto
   `scene_grid.spawns` (add `npc:<id>` spawn keys in the generators). Projection only — zero new
@@ -228,7 +237,8 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
   FELT-style rest-scene panel — "does the tavern-with-innkeeper read as a game?" (disguised
   real-game controls, same calibration law). Known risk: `spawns` sits inside `_layout_hash`
   (scene_grid.py:158) → one-time Tier-2 art-cache invalidation, accepted.
-- **W2 — "Walk"** *(engine half parallel-safe NOW; glide depends on S2 #1303)*. New additive
+- **W2 — "Walk"** *(engine half ✅ SHIPPED — PR #1341; UI half split → #1350, unblocked by #1303's
+  glide PR #1345)*. New additive
   `walk_to` verb BESIDE move_to_coords (servers/engine/server.py:4583 — the combat gate stays
   untouched), reusing `combat_grid.shortest_path:221` via ONE shared blocked-set function (never
   fork pathing). Writes
@@ -237,7 +247,9 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
   (screen-combat.jsx pattern exists); door-cell click → `cross_door` walk-through. **Rule:** the
   renderer glides only engine-confirmed paths — no client prediction. **EVAL:** scripted
   click-walk replay (path legality, glide renders, text-tier identity).
-- **W3 — "Talk"**. Parley surface (viewer/server.py:6315) gains additive stage metadata (NPC stage
+- **W3 — "Talk"** *(engine+surface half ✅ SHIPPED — PR #1344; real seams: viewer read-model
+  `build_parley_surface` ~viewer/server.py:6472 + engine `generate_parley_options(approach=)`;
+  UI/staging half remains)*. Parley surface gains additive stage metadata (NPC stage
   cell, attitude); click-NPC → approach-to-talk (walk_to adjacent, then parley); dialogue rendered
   at the actor (2D reuses screen-dialogue.jsx). **EVAL:** blind panel + a behavioral check that
   the DM receives IDENTICAL parley moves as the text tier.
@@ -259,19 +271,21 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
 > as a trend ("less AI dependence" becomes a number). All promotion is eval-gated; the content
 > analogue of the real-art-control law is **disguised hand-authored canon as panel controls**.
 
-- **HV1 — "Artifact Evals FIRST"** *(starts NOW)*. `qa/artifact_score.py` + per-class rubrics
+- **HV1 — "Artifact Evals FIRST"** *(✅ SHIPPED — PR #1331; instrument DISCRIMINATES: canon controls
+  2.9–4.2 vs thin extract 2.05)*. `qa/artifact_score.py` + per-class rubrics
   (quest / npc-or-villain / location / encounter; plates already have visual-critic). Controls =
   hand-authored canon (world.json quest_variants / npc_roster dossiers / wiki-canon areas) pushed
   through the SAME artifact schema. Storage: additive `artifacts` TABLE in qa/scores.db — new
   ruler family `ac_…` via a NEW file-list in scoring_config_version.py (NEVER append to
   SCORING_CONFIG_FILES — that silently re-versions `sc_`). Ships a thin snapshot reader so it runs
   on EXISTING finished campaigns immediately.
-- **HV2 — "Extract"** *(starts NOW; first commit = the schema handshake
+- **HV2 — "Extract"** *(✅ SHIPPED — PR #1329; 165 artifacts extracted from 4 campaigns; its merged
+  schema is canonical)*. *(original spec: first commit = the schema handshake
   `data/library/artifact_schema.json`)*. `qa/export_campaign_artifacts.py` (sibling of
   export_scene_grid.py; reuses distill.py's transcript reader for dialogue snippets + attitude
   arcs) → `qa/artifacts_out/<campaign>/{quests,npcs,locations,encounters}/*.json` with provenance
   {campaign_id, run_id, world, sha, scores}. Strictly read-only on play-state.
-- **HV3 — "Promote"** *(needs HV1+HV2)*. `tools/library/promote.py`: nominations
+- **HV3 — "Promote"** *(✅ SHIPPED — PR #1338; first live promotion batch in flight)*. `tools/library/promote.py`: nominations
   (qa/nominations.jsonl) → artifact panels → threshold gate (overall ≥4.0, no dim <3.0,
   control-valid → `stable`; `canonical` = human curation only) → **`library/`** (pack-shaped,
   #644-forward-compatible: pack.json {name, version, license, provenance} +
@@ -290,7 +304,9 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
   registry aliases (zero renderer edits by contract). **EVAL:** A/B duo library-first vs pure-gen
   — lens parity-or-better + latency/token reduction + feature_engagement confirms library content
   is ENGAGED, not decorative.
-- **HV5 — "Flywheel ops"** *(hooks after HV3)*. qa/closeout.py auto-NOMINATES artifacts from every
+- **HV5 — "Flywheel ops"** *(slice 1 ✅ SHIPPED — PR #1342: closeout auto-nomination via
+  qa/nominate.py; nightly batch scoring, weekly curation, library_metrics + backdrop cadence
+  remain)*. qa/closeout.py auto-NOMINATES artifacts from every
   scored run (story threshold = STORY_BAR, qa/closeout.py, currently 4.3; quest completed; NPC
   turn floor N=3) — artifact scoring runs in a
   nightly batch, never inline (duo latency untouched). Weekly curation batch. **Backdrop cadence:
