@@ -31,6 +31,19 @@ Full detail: the `worldos-dev` skill / `WorldOS-RUNBOOK.md`. Heavy QA runs on th
 
 ## Run economics — match the instrument to the question
 
+**★ QA-economics v2 (owner-ratified 2026-07-06) — playtests are BATCH evidence, never PR gates:**
+- **An hour-scale playtest duo is NEVER a per-PR validation step.** The 24-beat Opus ruler duo runs
+  ONCE per merged BATCH (e.g. at the end of a sprint/push), as release evidence — not per PR, not per
+  iteration. If you are about to launch a long duo to check one PR's effect, stop: that question has a
+  cheaper instrument.
+- **Default PR validation ladder** (stop at the first rung that answers): Tier-0 `qa/fast_gate.sh`
+  (free, seconds, EVERY change) → Tier-1.5 `qa/mechanism_probe.sh` (~$1, cue/mechanism questions) →
+  `qa/run_combat_sprint.sh` (~2 min) when the change is combat-adjacent. LLM story lenses are NOT run
+  per-PR.
+- **Story-quality iteration runs in the BACKGROUND on GLM** (off-budget z.ai; batch-read the results at
+  the next natural checkpoint) and never blocks the build critical path. Story polish is a later-pass
+  concern once the system is feature-complete; the engine/renderer/pipeline lanes keep moving.
+
 Spend the cheapest instrument that answers the question (tier table + honest signal accounting:
 `docs/qa/FAST_GATE.md`):
 - **MECHANISM iterations** ("does obligation cue X fire? does the DM act on it?") → the **Tier-1.5
@@ -69,6 +82,15 @@ Spend the cheapest instrument that answers the question (tier table + honest sig
 - **Harvest flywheel (once HV3+ lands):** every scored run auto-nominates artifacts; nightly
   artifact-scoring batch; weekly curation; backdrop cadence = 2 environments a night, panel-gated
   (roadmap §4c/HV5).
+- **HV3 promotion (`tools/library/promote.py --batch`):** reads `qa/nominations.jsonl` → threshold
+  gate (overall ≥4.0, no dim <3.0, control-valid → `stable`; `canonical` = human-only) → writes the
+  pack-shaped `library/`. It is the SOLE writer of `library/` and never edits room_recipes.json or
+  the asset registry. **Bootstrap (until HV5's auto-nominator exists):** hand-author the queue — one
+  JSON line per `artifact_id` (optional `source_path`/`license`/`curation_note`), sourced from HV2's
+  `qa/artifacts_out/<campaign>/**/*.json`. promote.py invents no nomination heuristic. Idempotent
+  (`library/.promoted.jsonl` marker); exits 0 with zero promotions. Offline (scorer down / unscored
+  noms): `--dry-run` (gate preview, writes nothing) or `--skip-unscored` (promote only already-scored
+  rows). Validate with `python3 tools/library/library_lint.py`.
 - **Release trains:** cut per the roadmap's version map when a sprint's gate passes; CHANGELOG per
   merge batch; GitNexus re-index once per merge batch.
 - **When you need a decision** and the answer isn't in VISION/roadmap: run the `worldos-decide`

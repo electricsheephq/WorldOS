@@ -33,10 +33,14 @@
 # (data/library/artifact_schema.json) ARE committed; the extracted artifacts are not.
 /qa/artifacts_out/
 
-# HV5 auto-nomination queue (qa/closeout.py -> qa/nominate.py appends per scored run; consumed by
-# HV3's tools/library/promote.py --batch). Runtime harvest state, regenerable from scored runs +
-# qa/artifacts_out — never committed (mirrors artifacts_out above; also gitignored in PR #1338).
+# HV3/HV5 promotion + auto-nomination runtime state. /qa/nominations.jsonl is the nomination queue —
+# hand-bootstrapped for HV3's first batch (PR #1338), now appended to per scored run by HV5's
+# qa/closeout.py -> qa/nominate.py (this PR) and consumed by HV3's tools/library/promote.py --batch.
+# /library/.promoted.jsonl is promote.py's per-library idempotency marker log. Both are regenerable
+# runtime state (from scored runs + qa/artifacts_out), never committed. The promote.py / nominate.py /
+# closeout.py / library_lint.py scripts AND the promoted library/ pack itself ARE committed.
 /qa/nominations.jsonl
+/library/.promoted.jsonl
 
 # Privately-imported, user-owned adventures — NEVER commit (may be copyrighted).
 # Only original / CC-licensed content belongs under content/campaigns/.
