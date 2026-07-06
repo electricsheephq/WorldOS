@@ -10,6 +10,25 @@ WorldOS is source-available commercial software; world seeds are licensed separa
 
 ## [Unreleased]
 
+- **HV1 — per-artifact eval instruments (#1323, epic Act II Harvest Loop).** The harvest loop's
+  INSTRUMENT ships first: a per-artifact scorer for the four harvestable content classes
+  (quest / npc / location / encounter). New `qa/rubric_artifact_<class>.md` + plain-number
+  `qa/score_schema_artifact_<class>.json` pairs (one-decimal dims, same discipline as the story lens);
+  `qa/artifact_score.py` scores one artifact by REUSING `qa/score.sh`'s pinned-sonnet + isolated-config
+  + keychain-auth path (no forked auth). A NEW additive `artifacts` TABLE in `qa/scores.db` (sole writer
+  `artifact_score.py`; `add_artifact()` mirrors `add_run()`) records per-dim JSON + overall + panel_id,
+  stamped with a NEW ruler family **`ac_…`** (`qa/scoring_config_version.py` `ARTIFACT_CONFIG_FILES` —
+  DELIBERATELY separate from `SCORING_CONFIG_FILES`; the engine-duo `sc_`/`lc_` rulers are
+  **byte-unchanged**, pinned by a test). Disguised hand-authored canon **controls**
+  (`qa/artifact_controls/`, identity map OUTSIDE the panel dir) anchor each blind panel under the
+  **±1.2 noise law**. Thin read-only snapshot reader (`qa/artifact_snapshot_reader.py`) CONSUMES HV2's
+  canonical extractor to feed the calibration; `qa/artifact_calibration_panel.py` runs one blind panel
+  per class. Artifact ruler `ac_986d87bf235a`; engine-duo `sc_be859353df20` / `lc_c603a22aac3d`
+  unchanged. **Envelope reconciliation (post-#1329):** the shared envelope
+  `data/library/artifact_schema.json` is HV2's canonical version (merged first); HV1 adds one ADDITIVE
+  optional `provenance.source` tag (nullable string; distinguishes disguised controls from live
+  extractions) and validates each class-payload shape explicitly in `artifact_score.py` until #1329/HV3
+  binds the per-class definitions via `if`/`then`.
 - Gameplay toward the RRI bar (story ≥4.3, mechanical ≥4.5) — the GA work, on the honest,
   un-gamed measurement that 1.0.5-rc1 established.
 - The post-rc5 plan: engine-AI competence **v2.1** (off-turn reactions — Shield / Counterspell /

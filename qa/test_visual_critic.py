@@ -28,6 +28,8 @@ import sys
 import zlib
 from pathlib import Path
 
+import pytest
+
 # ---------------------------------------------------------------------------
 # Path fixup so imports work from the worktree root
 # ---------------------------------------------------------------------------
@@ -479,6 +481,145 @@ class TestG4ScreenScale:
 
 
 # ---------------------------------------------------------------------------
+# 4b. G6 LUMA-STAGING-LAW — near-black/lit histogram verdicts on synthetic PNGs
+# ---------------------------------------------------------------------------
+# Bands mirror the measured real-PoE staging law (2026-07-01), same source as
+# extensions/renderers/unity/scripts/atelier_luma_gate.py and generate_room.py's
+# _staging_law_distance: near_black_frac PASS 0.66-0.85 (WARN 0.50-0.66), lit_frac PASS
+# 0.02-0.05 (WARN 0.05-0.20), median_L PASS 0-15 (WARN 15-40). Outside WARN = FAIL -> HIGH.
+
+def _write_png_greyscale(tmp_path: Path, name: str, values: list[int], w: int, h: int) -> Path:
+    """Write an 8-bit RGB PNG (color_type 2, grey pixels: r=g=b) from a flat list of w*h luma
+    values. Named for the effect (a grey-looking image), NOT the PNG color_type — see
+    _write_png_true_greyscale below for an actual color_type-0 PNG (single channel/pixel)."""
+    assert len(values) == w * h
+    rows = bytearray()
+    for y in range(h):
+        rows.append(0)  # filter type 0 (None)
+        for x in range(w):
+            v = values[y * w + x]
+            rows += bytes([v, v, v])
+    p = tmp_path / name
+    p.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + _chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+        + _chunk(b"IDAT", zlib.compress(bytes(rows), 9))
+        + _chunk(b"IEND", b"")
+    )
+    return p
+
+
+def _write_png_true_greyscale(tmp_path: Path, name: str, values: list[int], w: int, h: int) -> Path:
+    """Write an 8-bit PNG color_type=0 (true single-channel greyscale, 1 byte/pixel) from a flat
+    list of w*h luma values. Exercises the shared decoder's greyscale support (robustness fix:
+    the stdlib fallback used to reject color_type 0/3 outright, silently SKIPping G6 on a common
+    capture output; now channels==1 decodes directly as luma, no RGB expansion needed)."""
+    assert len(values) == w * h
+    rows = bytearray()
+    for y in range(h):
+        rows.append(0)  # filter type 0 (None)
+        rows += bytes(values[y * w:(y + 1) * w])
+    p = tmp_path / name
+    p.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + _chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 0, 0, 0, 0))
+        + _chunk(b"IDAT", zlib.compress(bytes(rows), 9))
+        + _chunk(b"IEND", b"")
+    )
+    return p
+
+
+def _staging_law_frame(tmp_path: Path, name: str, near_black_frac: float, lit_frac: float,
+                        w: int = 32, h: int = 32) -> Path:
+    """Build a synthetic w*h greyscale PNG with an EXACT near_black/lit pixel-count split (the
+    remainder mid-toned at L=40, which also keeps G1's variance check happy). near_black uses
+    L=10 (< LUMA_NEAR_BLACK_L=26); lit uses L=200 (> LUMA_LIT_L=60)."""
+    n = w * h
+    near_black_n = round(near_black_frac * n)
+    lit_n = round(lit_frac * n)
+    mid_n = n - near_black_n - lit_n
+    assert mid_n >= 0, "near_black_frac + lit_frac must be <= 1.0"
+    values = [10] * near_black_n + [200] * lit_n + [40] * mid_n
+    return _write_png_greyscale(tmp_path, name, values, w, h)
+
+
+class TestG6LumaStagingLaw:
+    def test_dark_chiaroscuro_frame_pass(self, tmp_path):
+        """Near-black 73% / lit 3% (both mid-band) → PASS — the staging-law bar itself."""
+        p = _staging_law_frame(tmp_path, "chiaroscuro.png", near_black_frac=0.73, lit_frac=0.03)
+        gates = vp.gate_luma_staging_law(p)
+        assert len(gates) == 1
+        g = gates[0]
+        assert g["gate"] == "G6_luma_staging_law"
+        assert g["severity"] == "PASS", f"73%/3% staging plate should PASS G6; got {g}"
+        assert g["value"]["near_black_frac"] == pytest.approx(0.73, abs=0.01)
+        assert g["value"]["lit_frac"] == pytest.approx(0.03, abs=0.01)
+        assert "near_black=" in g["detail"] and "lit=" in g["detail"] and "median_L=" in g["detail"]
+
+    def test_bright_museum_wash_frame_fail(self, tmp_path):
+        """An evenly-lit "museum wash" (near-black ~0%, lit ~50%) → FAIL, mapped to HIGH (blocks
+        the panel like the module's other hard pre-gates)."""
+        p = _staging_law_frame(tmp_path, "wash.png", near_black_frac=0.0, lit_frac=0.5)
+        gates = vp.gate_luma_staging_law(p)
+        g = gates[0]
+        assert g["severity"] == "HIGH", f"bright wash should FAIL G6 (-> HIGH); got {g}"
+        assert "FAIL" in g["detail"]
+
+    def test_borderline_frame_warn(self, tmp_path):
+        """near_black at 0.58 (inside the 0.50-0.66 WARN band, below the 0.66 PASS floor) with
+        lit/median otherwise in-band → WARN, mapped to MED (panel allowed, stats must be quoted)."""
+        p = _staging_law_frame(tmp_path, "borderline.png", near_black_frac=0.58, lit_frac=0.03)
+        gates = vp.gate_luma_staging_law(p)
+        g = gates[0]
+        assert g["severity"] == "MED", f"borderline near_black should WARN G6 (-> MED); got {g}"
+        assert "WARN" in g["detail"]
+
+    def test_missing_file_skipped(self, tmp_path):
+        """A non-existent file should return SKIPPED (graceful degradation, matches G1)."""
+        gates = vp.gate_luma_staging_law(tmp_path / "nofile.png")
+        assert any(g["severity"] == "SKIPPED" for g in gates)
+
+    def test_true_greyscale_png_decodes(self, tmp_path):
+        """ROBUSTNESS: a real color_type=0 (single-channel greyscale) PNG — a common capture
+        output — must decode and score, not silently SKIP. Previously the stdlib fallback's
+        color_type allowlist was (2, 6) only, rejecting greyscale outright."""
+        n = 32 * 32
+        near_black_n = round(0.73 * n)
+        lit_n = round(0.03 * n)
+        mid_n = n - near_black_n - lit_n
+        values = [10] * near_black_n + [200] * lit_n + [40] * mid_n
+        p = _write_png_true_greyscale(tmp_path, "true_grey.png", values, w=32, h=32)
+        gates = vp.gate_luma_staging_law(p)
+        g = gates[0]
+        assert g["severity"] != "SKIPPED", f"a true greyscale PNG must decode, not SKIP; got {g}"
+        assert g["severity"] == "PASS", f"73%/3% true-greyscale staging plate should PASS G6; got {g}"
+        assert g["value"]["near_black_frac"] == pytest.approx(0.73, abs=0.01)
+        assert g["value"]["lit_frac"] == pytest.approx(0.03, abs=0.01)
+
+    def test_run_pregates_wires_g6(self, tmp_path):
+        """End-to-end: run_pregates includes a G6 result and a museum-wash frame FLAGs overall."""
+        p = _staging_law_frame(tmp_path, "wash.png", near_black_frac=0.0, lit_frac=0.5)
+        res = vp.run_pregates(str(p))
+        g6 = [g for g in res["gates"] if g["gate"] == "G6_luma_staging_law"]
+        assert g6, "run_pregates should always run G6 (needs only the PNG)"
+        assert res["verdict"] == "FLAG", f"a museum-wash plate should FLAG overall; got {res['verdict']}"
+
+    def test_run_pregates_g6_warn_does_not_flag(self, tmp_path):
+        """End-to-end: a G6 WARN (borderline near_black, MED severity) composes through
+        run_pregates WITHOUT flipping the overall verdict to FLAG — MED is visible but
+        non-blocking, unlike a G6 FAIL (-> HIGH, see test_run_pregates_wires_g6 above)."""
+        p = _staging_law_frame(tmp_path, "borderline.png", near_black_frac=0.58, lit_frac=0.03)
+        res = vp.run_pregates(str(p))
+        g6 = [g for g in res["gates"] if g["gate"] == "G6_luma_staging_law"]
+        assert g6, "run_pregates should always run G6 (needs only the PNG)"
+        assert g6[0]["severity"] == "MED", f"borderline near_black should WARN G6 (-> MED); got {g6}"
+        assert g6[0] not in res["blocking"], "a G6 WARN (MED) must not be in the blocking list"
+        assert res["verdict"] == "PASS", (
+            f"a G6 WARN alone should not FLAG the overall verdict (non-blocking); got {res['verdict']}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # 5. run_pregates — orchestrator verdict
 # ---------------------------------------------------------------------------
 
@@ -497,27 +638,17 @@ class TestRunPregates:
 
     def test_no_reel_g5_skips_still_only_round_unchanged(self, tmp_path):
         """ADDITIVITY: a still-only round (no reel) leaves G5 SKIPPED — empty == today."""
-        # A lit, varied frame so G1 PASSes; no scenegrid, no reel.
-        p = tmp_path / "lit.png"
-        rows = bytearray()
-        for row_i in range(16):
-            rows.append(0)
-            val = 60 if (row_i % 2) == 0 else 200
-            for _ in range(16):
-                rows += bytes([val, val, val])
-        p.write_bytes(
-            b"\x89PNG\r\n\x1a\n"
-            + _chunk(b"IHDR", struct.pack(">IIBBBBB", 16, 16, 8, 2, 0, 0, 0))
-            + _chunk(b"IDAT", zlib.compress(bytes(rows), 9))
-            + _chunk(b"IEND", b"")
-        )
+        # A frame that PASSes both G1 (lit + varied) and G6 (in-band staging-law histogram);
+        # no scenegrid, no reel.
+        p = _staging_law_frame(tmp_path, "lit.png", near_black_frac=0.73, lit_frac=0.03)
         res = vp.run_pregates(str(p))  # no reel kwarg
         g5 = [g for g in res["gates"] if g["gate"] == "G5_motion_liveness"]
         assert g5 and g5[0]["severity"] == "SKIPPED", f"G5 must SKIP with no reel; got {g5}"
-        # G1 PASSes on this lit/varied frame, so the overall verdict is deterministically PASS — the
+        # G1 and G6 both PASS on this frame, so the overall verdict is deterministically PASS — the
         # still round is unchanged by G5 being SKIPPED (additivity: empty reel == today's behavior).
         assert res["verdict"] == "PASS", f"a lit still-only round should PASS; got {res['verdict']}"
         assert any(g["gate"] == "G1_frame_lit" and g["severity"] == "PASS" for g in res["gates"])
+        assert any(g["gate"] == "G6_luma_staging_law" and g["severity"] == "PASS" for g in res["gates"])
 
 
 # ---------------------------------------------------------------------------

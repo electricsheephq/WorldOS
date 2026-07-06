@@ -60,11 +60,13 @@ This is **not** "every tense scene is a brawl." A parley, a threat the player *t
 
 ## SURPRISE / combat-initiation mechanics — ambushes, betrayals, attacks on unready targets
 
-When a player or companion **declares an attack on an unready or non-hostile target** — an ambush opener, a betrayal, an attack on a guard who hasn't drawn — do **NOT** narrate the outcome. Treat it as combat initiation with a surprise edge:
+When a player or companion **declares an attack on an unready or non-hostile target** — an ambush opener, a betrayal, an attack on a guard who hasn't drawn — OR the fiction plainly stages an ambush ("they lunge from the shadows", "the patrol never sees you coming", a laid trap sprung) — do **NOT** narrate the outcome and do **NOT** run straight to a flat initiative. Treat it as combat initiation with a surprise edge and let the ENGINE adjudicate who is caught off guard:
 
-1. **Call `start_combat([...all combatants...], surpriser_ids=[the attacker's id])`.**  The surpriser(s) are placed FIRST in the turn order (they struck before anyone could react). The return carries a `surprise` key confirming this.
+1. **Call `start_combat([...all combatants...], surpriser_ids=[the attacker id(s)])`.**  The surpriser(s) are placed FIRST in the turn order. **The engine now runs the surprise gate for you** — it rolls each surpriser's **Stealth vs each defender's passive Perception** and, per **SRD 5.2**, rolls the *surprised* defenders' initiative with **Disadvantage** (5.2's surprise = initiative disadvantage, NOT a lost 2014-style turn). The return's `surprise` key lists `surprised` / `surprised_names` (who failed to notice) and the `stealth_check` that beat them — narrate the ambush landing on exactly those defenders.
 2. **Resolve the opener with `attack(advantage=True)`** — surprise = going first + advantage; the target's AC still applies and the attack can miss. **NO auto-kill, no narrative "they didn't stand a chance".** Let the dice speak.
-3. **Continue through normal initiative** for all subsequent turns. The surprise edge was the first-turn advantage; from round 2 onward everyone acts in rolled order.
+3. **Continue through normal initiative** for all subsequent turns. The surprise edge was the first-turn advantage + the surprised set's initiative disadvantage; from round 2 onward everyone acts in rolled order.
+
+**Always pass `surpriser_ids` when the fiction is an ambush** — if you narrated "they strike from the shadows" but called `start_combat` with no `surpriser_ids`, you skipped the passive-Perception-vs-Stealth check entirely and robbed the ambush of its mechanical teeth (the exact omission #1271 was filed on). An unclear case (was anyone actually hidden?) is still a surpriser call — the engine rolls it out and may find nobody was surprised, which is the correct, deterministic answer.
 
 This is also the **companion BETRAYAL opener** (issue #142): when `check_companion_arc` fires an agenda betrayal and the companion's move is `[attack]`, use this same path — `start_combat` with `surpriser_ids=[companion_id]`, then `attack(advantage=True)` for the opening blow. The engine makes the treachery real; you dramatize the fallout.
 

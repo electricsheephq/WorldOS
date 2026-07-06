@@ -1,0 +1,115 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://worldos/data/library/artifact_schema.json",
+  "title": "WorldOS harvest-loop artifact envelope",
+  "description": "The common envelope for every harvested artifact (Act II §4c, the HV-series). AUTHORED by HV2 (qa/export_campaign_artifacts.py, the schema handshake commit) and CONSUMED by HV1 (qa/artifact_score.py) and HV3 (tools/library/promote.py) without redefinition. Every artifact — extracted from a played campaign OR a hand-authored control pushed through the same envelope — is one JSON object matching this schema. `class` selects which `payload` shape applies (see definitions). `scores` is populated later by HV1's eval pass; an unscored (freshly-extracted) artifact always carries `scores: null`.",
+  "type": "object",
+  "required": ["artifact_id", "class", "world", "provenance", "payload", "scores"],
+  "additionalProperties": false,
+  "properties": {
+    "artifact_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable id for this artifact, e.g. 'quest:<campaign_id>:<quest_id>'. Deterministic from (class, campaign_id, source id) so re-extraction is idempotent."
+    },
+    "class": {
+      "type": "string",
+      "enum": ["quest", "npc", "location", "encounter"]
+    },
+    "world": {
+      "type": "string",
+      "description": "The world_id the source campaign was seeded from (e.g. 'baldurs-gate')."
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["campaign_id", "run_id", "sha", "extracted_at"],
+      "additionalProperties": false,
+      "properties": {
+        "campaign_id": {"type": "string", "minLength": 1},
+        "run_id": {
+          "type": ["string", "null"],
+          "description": "The qa/state/<run_id> directory this campaign was played under, when derivable from the harness naming convention; null for a hand-authored control or an ungrouped campaign."
+        },
+        "sha": {
+          "type": ["string", "null"],
+          "description": "The engine build that produced this snapshot (Campaign.engine_sha); null when unknown (e.g. a pre-engine_sha snapshot or a hand-authored control with no engine run)."
+        },
+        "extracted_at": {
+          "type": "string",
+          "description": "Caller-supplied extraction timestamp (ISO 8601 or any stable string) — NEVER wall-clock-generated inside the extractor, so a re-run with the same --extracted-at argument is byte-identical (test determinism)."
+        },
+        "source": {
+          "type": ["string", "null"],
+          "description": "OPTIONAL origin tag (HV1 additive, #1323). Distinguishes how an artifact was produced — e.g. 'snapshot:quests' (live extraction) vs 'world.json:quest_variants' / 'canon-derived:set-pieces' (a hand-authored control pushed through the same envelope). HV1's calibration/control pipeline reads it; HV2's extractor does NOT emit it (so it is optional and defaults absent — never required)."
+        }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "description": "Class-specific body. See quest_payload / npc_payload / location_payload / encounter_payload definitions."
+    },
+    "scores": {
+      "type": ["object", "null"],
+      "description": "Populated by HV1's artifact_score.py. Always null on fresh extraction (HV2 never scores)."
+    }
+  },
+  "definitions": {
+    "quest_payload": {
+      "type": "object",
+      "required": ["id", "name", "objectives", "completed_objectives", "resolution_status", "evolves_to", "consequences"],
+      "properties": {
+        "id": {"type": "string"},
+        "name": {"type": "string"},
+        "objectives": {"type": "array", "items": {"type": "string"}},
+        "completed_objectives": {"type": "array", "items": {"type": "string"}},
+        "resolution_status": {"type": "string"},
+        "evolves_to": {"type": "string"},
+        "consequences": {"type": "array", "items": {"type": "object"}}
+      }
+    },
+    "npc_payload": {
+      "type": "object",
+      "required": ["id", "name", "voice_id", "personality", "attitude_arc", "final_status", "dialogue_snippets"],
+      "properties": {
+        "id": {"type": "string"},
+        "name": {"type": "string"},
+        "voice_id": {"type": "string"},
+        "personality": {"type": "object"},
+        "attitude_arc": {
+          "type": "object",
+          "required": ["start", "end"],
+          "properties": {
+            "start": {"type": "integer"},
+            "end": {"type": "integer"}
+          }
+        },
+        "final_status": {"type": "string"},
+        "dialogue_snippets": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "location_payload": {
+      "type": "object",
+      "required": ["id", "name", "description", "scene_grid", "visited"],
+      "properties": {
+        "id": {"type": "string"},
+        "name": {"type": "string"},
+        "description": {"type": "string"},
+        "scene_grid": {"type": ["object", "null"]},
+        "visited": {"type": "boolean"}
+      }
+    },
+    "encounter_payload": {
+      "type": "object",
+      "required": ["id", "composition", "outcome"],
+      "properties": {
+        "id": {"type": "string"},
+        "composition": {"type": "array", "items": {"type": "object"}},
+        "outcome": {"type": "string"}
+      }
+    }
+  }
+}

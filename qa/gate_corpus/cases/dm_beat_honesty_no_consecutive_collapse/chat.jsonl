@@ -1,0 +1,5 @@
+{"role": "player", "text": "[say] hello"}
+{"role": "dm", "text": "\"Welcome,\" she says."}
+{"role": "dm", "text": "(beat failed \u2014 no reply)", "beat_failed": true}
+{"role": "dm", "text": "(beat failed \u2014 no reply)", "beat_failed": true}
+{"role": "dm", "text": "(beat failed \u2014 no reply)", "beat_failed": true}
