@@ -420,6 +420,37 @@ SSH key, or the VNC password in this tracked doc (same convention as the Support
      actors + occluder depth-boxes, captures → `Captures-Durable/m1_combat_v1.png`); `scp` that back + gate non-black.
      Full copy-paste recipe: memory `reference_worldos_box_unity_render_pipeline` + skill `gex44-unity-host`.
 
+   **Box connectivity: ControlMaster + the 8765 reverse tunnel (recovery)** (verified 2026-07-03, all commands
+   proven live tonight):
+   1. ALL box access multiplexes over an SSH ControlMaster socket at `/tmp/gex44-cm.sock`. If ssh/scp fails with
+      "Control socket ... No such file or directory" or a raw ssh gives "Permission denied (publickey)", the
+      master has DIED — do not create ad-hoc tunnels; re-establish the master:
+      ```bash
+      ssh -i ~/.openclaw/secrets/evaos-gpu-gex44-1-key -o BatchMode=yes -o StrictHostKeyChecking=yes \
+        -o UserKnownHostsFile=~/.openclaw/support/known_hosts -o ConnectTimeout=15 -o ServerAliveInterval=30 \
+        -o ServerAliveCountMax=3 -M -S /tmp/gex44-cm.sock -f -N root@46.4.26.123
+      ```
+   2. The box's `127.0.0.1:8765` (the combat-surface endpoint `paint_combat_v1.cs` GETs) is a REVERSE TUNNEL to
+      the Mac-side viewer on `127.0.0.1:8770` — it dies WITH the master and must be re-added to the NEW master:
+      ```bash
+      ssh -S /tmp/gex44-cm.sock -O forward -R 8765:127.0.0.1:8770 root@46.4.26.123
+      ```
+      Verify from the box: `ssh -o ControlPath=/tmp/gex44-cm.sock root@46.4.26.123 'curl -s -o /dev/null -w
+      "%{http_code}" http://127.0.0.1:8765/combat-surface'` → expect 200. If the Mac side has nothing on 8770,
+      the viewer server must be started first (check: `lsof -nP -iTCP:8770 -sTCP:LISTEN`).
+   3. NEVER touch the PROCESSES listening on box ports 8080 (Unity MCP bridge) or 8765; read-only curl checks
+      are fine. NEVER touch Mac:8765 (Eva's bridge — WorldOS uses 8770).
+   4. Plate-selection precedence for renders (bit an agent tonight): `_location_plates.json` (per-location map,
+      keyed by the campaign's CURRENT location) WINS over `_active_combat.txt` (fallback only). A
+      freshly-deployed plate also needs `AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate)` before
+      `LoadAssetAtPath` serves the new pixels.
+
+   **ComfyUI detail-finisher lane (installed 2026-07-02, box `/root/comfyui`, README-WORLDOS.md on box):**
+   SDXL + xinsir tile-ControlNet, headless API on `127.0.0.1:8188`. Driver:
+   `/root/comfyui/tile_detail.sh <in.png> <out.png> <denoise≈0.28-0.35>` (~52s @1344×768, ~2:44 @2760×1504,
+   12.4GB VRAM peak — coexists with the Unity editor). Structure-locked detail pass for DENSE surface fields.
+   ⚠ It MUSHES hero-prop relief under a key light (measured panel8) — never run it across the focal object.
+
 **Enhancing the MCP's capabilities → our fork + upstream (standing practice).** The Unity MCP
 (`com.coplaydev.unity-mcp`, by Coplay) is our **external-AI → Unity Editor bridge** and the SOLE writer-into-editor
 path for the renderer + all Unity work — enhancing it (new tools / fixes / behaviors) is recurring, core work, not

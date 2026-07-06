@@ -50,6 +50,37 @@
       "default_used": false
     },
 
+    "skeleton_archer": {
+      "kind": "monster",
+      "model_ref": "Assets/chars_v2/skeleton_archer/rigged.fbx",
+      "albedo_ref": "Assets/chars_v2/skeleton_archer/albedo.jpg",
+      "anim_ref": "Assets/chars_v2/skeleton_archer/anim_idle.fbx",
+      "gen_recipe": "meshy:humanoid moveset (9-clip: idle/walk/run/attack/cast/block/dodge/hit/death), rigged.fbx imported animationType=Generic; albedo from model.glb embedded PBR (wave-1 #1290)",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "cultist": {
+      "kind": "monster",
+      "model_ref": "Assets/chars_v2/cultist/rigged.fbx",
+      "albedo_ref": "Assets/chars_v2/cultist/albedo.jpg",
+      "anim_ref": "Assets/chars_v2/cultist/anim_idle.fbx",
+      "gen_recipe": "meshy:humanoid moveset (9-clip), animationType=Generic; deliberately bright/pale ivory-robe albedo (#1282 light_tint probe body) (wave-1 #1290)",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "ghoul": {
+      "kind": "monster",
+      "model_ref": "Assets/chars_v2/ghoul/rigged.fbx",
+      "albedo_ref": "Assets/chars_v2/ghoul/albedo.jpg",
+      "anim_ref": "Assets/chars_v2/ghoul/anim_idle.fbx",
+      "gen_recipe": "tripo:text-to-model -> rig(biped, spec=mixamo) -> retarget idle+walk only (creatures support fewer biped presets); rigged.fbx imported animationType=Generic (wave-1 #1290)",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+
     "template_human": {
       "kind": "character",
       "model_ref": "Assets/painterly/models/hero.fbx",

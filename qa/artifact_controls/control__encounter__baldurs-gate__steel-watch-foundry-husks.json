@@ -1,0 +1,39 @@
+{
+  "artifact_id": "control:encounter:baldurs-gate:steel-watch-foundry-husks",
+  "class": "encounter",
+  "world": "baldurs-gate",
+  "provenance": {
+    "campaign_id": "canon",
+    "run_id": null,
+    "sha": null,
+    "extracted_at": "canon",
+    "source": "canon-derived:set-pieces"
+  },
+  "payload": {
+    "id": "steel-watch-foundry-husks",
+    "composition": [
+      {
+        "actor": "2 half-finished Steel Watchers (bruisers, wake in sequence)"
+      },
+      {
+        "actor": "a swarm of forge-drones (skirmishers)"
+      },
+      {
+        "actor": "an overseer-construct that buffs the line (controller)"
+      }
+    ],
+    "outcome": "canon-set-piece",
+    "name": "The Half-Finished Watchers",
+    "situation": "In the detonated Steel Watch assembly halls beneath Wyrm's Rock, the party must reach the central control cradle while dormant war-constructs wake in waves as the arcane current is disturbed.",
+    "objective": "Reach and shut down the master cradle before all three husk-lines finish powering up.",
+    "terrain": "Vaulted hall with assembly-cradles (hard cover + verticality), pools of burnt forge-oil (a hazard the party can ignite), and a central catwalk.",
+    "twist": "Shutting the cradle early drops power to the husks mid-fight — a risk/reward lever: rush the objective and skip the fight, or clear the room first.",
+    "stakes": "If the overseer finishes the line, the constructs march on the refugee camp at the Basilisk Gate.",
+    "combatants": [
+      "2 half-finished Steel Watchers (bruisers, wake in sequence)",
+      "a swarm of forge-drones (skirmishers)",
+      "an overseer-construct that buffs the line (controller)"
+    ]
+  },
+  "scores": null
+}

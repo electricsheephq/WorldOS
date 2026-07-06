@@ -1,0 +1,68 @@
+{
+  "artifact_id": "control:npc:baldurs-gate:npc-astarion",
+  "class": "npc",
+  "world": "baldurs-gate",
+  "provenance": {
+    "campaign_id": "canon",
+    "run_id": null,
+    "sha": null,
+    "extracted_at": "canon",
+    "source": "world.json:npc_roster"
+  },
+  "payload": {
+    "id": "npc-astarion",
+    "name": "Astarion",
+    "voice_id": "npc-rogue",
+    "personality": {
+      "summary": "A high-elf rogue of razor wit and centuries of cruelty survived; charming, vain, wounded under the glamour. Two hundred years a slave to the vampire Cazador — now free, recalibrating what a person without a master even wants. Self-interest worn like couture, with unexpected loyalty beneath."
+    },
+    "attitude_arc": {
+      "start": 0,
+      "end": 0
+    },
+    "final_status": "canon-roster",
+    "dialogue_snippets": [],
+    "role": "freed vampire spawn, now his own master",
+    "dossier": {
+      "wound": "two centuries of Cazador's torments",
+      "wants": [
+        "freedom",
+        "control of his own ending",
+        "a life of his choosing"
+      ],
+      "fears": [
+        "being owned again",
+        "Cazador's reach",
+        "the sun, on bad days"
+      ],
+      "values": [
+        "freedom",
+        "self-determination",
+        "loyalty to those who earned it"
+      ],
+      "approval_likes": [
+        "cunning",
+        "freedom",
+        "power",
+        "ruthlessness"
+      ],
+      "approval_dislikes": [
+        "naive_altruism",
+        "weakness",
+        "self_righteousness"
+      ],
+      "banter_tags": [
+        "cazador",
+        "vampire spawn",
+        "tieflings of the gur",
+        "petty cruelty earned"
+      ],
+      "camp_prompts": [
+        "a wound that won't take the sun",
+        "a memory of the kennel cellar"
+      ]
+    },
+    "want": "Hunts the last of Cazador's old network in the Outer City — and the other spawn he left behind in the dark."
+  },
+  "scores": null
+}
