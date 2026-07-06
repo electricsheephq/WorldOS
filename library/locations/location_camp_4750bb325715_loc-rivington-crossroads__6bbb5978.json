@@ -1,0 +1,26 @@
+{
+  "artifact_id": "location:camp_4750bb325715:loc-rivington-crossroads",
+  "class": "location",
+  "curation_note": "starter batch 2026-07-06",
+  "license": "proprietary",
+  "promoted_at": "2026-07-06T07:10:11+00:00",
+  "provenance": {
+    "run_id": "rri-a1-gate2",
+    "sha": "99594802",
+    "source_path": "location:camp_4750bb325715:loc-rivington-crossroads",
+    "world": "baldurs-gate"
+  },
+  "reuse_count": 0,
+  "scores": {
+    "ac_ruler": "ac_986d87bf235a",
+    "dims": {
+      "affordances": 4.2,
+      "atmosphere": 4.0,
+      "identity": 4.5,
+      "reusability": 3.8
+    },
+    "overall": 4.1,
+    "panel_id": "cal-location-20260706T070223"
+  },
+  "tier": "stable"
+}
