@@ -4569,7 +4569,11 @@ def rest_blocked_cells(
             if key == f"npc:{exclude_id}":
                 continue
             for cell in cells or []:
-                occupied.add((int(cell[0]), int(cell[1])))
+                # Defensive: SceneGrid.spawns is dict[str, list[Cell]] (Cell=tuple[int,int]) and
+                # pydantic enforces this shape on load — but skip rather than IndexError on a
+                # malformed in-memory-constructed entry that bypassed the model validator.
+                if isinstance(cell, (list, tuple)) and len(cell) == 2:
+                    occupied.add((int(cell[0]), int(cell[1])))
 
     # (1) walls + prop footprints, minus any cell someone stands on (never trap a stander on a
     # prop) — the SAME impassable_cells derivation a painted fight uses.
