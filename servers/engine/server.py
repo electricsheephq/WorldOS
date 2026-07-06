@@ -14469,6 +14469,32 @@ def persist_beat(
         campaign_id = _active_campaign_id() or ""
     if (events or memories or decision or advance is not None) and not campaign_id:
         return {"error": "persist_beat: no campaign_id provided and no active campaign to resolve — pass campaign_id"}
+
+    # Tolerate a STRINGIFIED structured arg (#1359 — the same class of recurring DM
+    # model-slip as the bare campaign_id above). The DM (Opus) sometimes emits a
+    # structured param as a JSON *string* — decision='{"summary":...}' or
+    # events='[{"kind":...}]' — instead of the object. FastMCP's Pydantic layer then
+    # dict_type/list_type-rejects it, and one such reject RED-caps the WHOLE behavioral
+    # gate (the FATAL no_rejected_tool_calls assertion), losing a beat's real canon (a
+    # genuine approval-moving decision). Coerce here: a str that json.loads to the
+    # EXPECTED type is used; a str that doesn't parse (or parses to the wrong type) is
+    # DROPPED (treated as unset) — never raised, so the rest of the beat still persists.
+    # ADDITIVE: only isinstance(x, str) fires this; an already-well-typed dict/list arg
+    # is byte-identical to today (untouched). Mirrors the bare-campaign_id tolerance and
+    # the _coerce_list defensive-shorthand spirit.
+    def _coerce_json_arg(v, want):
+        if not isinstance(v, str):
+            return v  # already the right shape (or None) — untouched
+        try:
+            parsed = json.loads(v)
+        except (ValueError, TypeError):
+            return None  # not JSON — drop the sub-field, don't reject the beat
+        return parsed if isinstance(parsed, want) else None  # wrong type -> drop
+    events = _coerce_json_arg(events, list)
+    memories = _coerce_json_arg(memories, list)
+    decision = _coerce_json_arg(decision, dict)
+    advance = _coerce_json_arg(advance, dict)
+
     logged: list[dict] = []
     remembered: list[dict] = []
     decision_out: Optional[dict] = None

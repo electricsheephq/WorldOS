@@ -325,6 +325,46 @@ def test_persist_beat_explicit_delta_through_decision(tmp_path, monkeypatch):
     assert out["approval_results"][0]["delta"] == 15
 
 
+# --- #1359: tolerate a stringified-dict/list arg (a recurring DM model-slip) --
+# The DM (Opus) sometimes emits `decision`/`events` as a JSON *string* instead of the
+# object; Pydantic then dict_type/list_type-rejects it and one reject RED-caps the whole
+# behavioral gate, losing a beat's real canon. persist_beat coerces a str that json.loads
+# to the expected type, and DROPS (never raises on) a str that doesn't parse.
+
+def test_persist_beat_stringified_decision_moves_approval_identically(tmp_path, monkeypatch):
+    cid = _new_campaign(monkeypatch, tmp_path)
+    comp = _add_companion(cid, "Wyll", likes=["heroism"], dislikes=["cowardice"])
+    # decision arrives as a JSON STRING (the model-slip) — must behave exactly like the dict form.
+    out = server.persist_beat(cid, decision='{"summary":"stood his ground against the devil","approval_tags":["heroism"]}')
+    assert _attitude(cid, comp) == 10
+    assert out["approval_results"][0]["id"] == comp
+    assert out["approval_results"][0]["delta"] == 10
+    assert out["decision"]["summary"] == "stood his ground against the devil"
+
+
+def test_persist_beat_unparseable_decision_is_skipped_not_raised(tmp_path, monkeypatch):
+    cid = _new_campaign(monkeypatch, tmp_path)
+    comp = _add_companion(cid, "Wyll", likes=["heroism"])
+    server.set_companion_quest_arc(cid, comp, {"title": "Wyll's personal thread"})
+    # A non-JSON string for decision is DROPPED (no raise); the events leg still persists.
+    out = server.persist_beat(
+        cid,
+        decision="not json",
+        events=[{"kind": "narration", "text": "the beat still lands"}],
+    )
+    assert out["decision"] is None          # malformed decision skipped, not applied
+    assert len(out["logged"]) == 1          # the beat still persisted its event
+    assert _attitude(cid, comp) == 0        # no approval moved
+
+
+def test_persist_beat_stringified_events_list_logs_the_event(tmp_path, monkeypatch):
+    cid = _new_campaign(monkeypatch, tmp_path)
+    # events arrives as a JSON STRING of a list — coerced and logged like the list form.
+    out = server.persist_beat(cid, events='[{"kind":"narration","text":"y"}]')
+    assert len(out["logged"]) == 1
+    assert out["logged"][0]["text"] == "y"
+
+
 # --- scene_context surfaces the values at stake -----------------------------
 
 def test_scene_context_surfaces_likes_and_dislikes(tmp_path, monkeypatch):
