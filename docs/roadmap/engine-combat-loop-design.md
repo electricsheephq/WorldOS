@@ -358,22 +358,26 @@ use it at all).
 
 ---
 
-## 7. Open questions for the owner
+## 7. Decisions (resolved 2026-07-02 — recorded in #1100)
 
-1. **LIVE companion turns.** Companions are `kind == "companion"`. The owner said "PCs stay
-   player/DM-driven live." Should **companions** be auto-sequenced by the engine in LIVE (they are
-   NPCs the engine could run, freeing the DM), or DM-driven like PCs (they have approval/loyalty
-   arcs that may want DM agency)? Default proposed: **auto-run companions in LIVE** (they are not
-   the player), but make it a per-fight flag.
-2. **Digest granularity in LIVE.** One felt line per monster turn, or a per-round rollup? A swarm
-   of 8 mooks is 8 lines/round. Proposed: compact per-turn line, collapsible per-round.
-3. **`fast_resolve` semantics.** Average damage is the simplest "predictable rounds" knob. Is
-   average enough, or does the owner want a `force_damage=N` fixed-value variant too? Proposed:
-   average only for v1.
-4. **Sandbox flag plumbing.** `Campaign.is_sandbox` is the cleanest structural guard, but it is a
-   new top-level Campaign field (touches `store.py`'s tolerant-load). Acceptable, or prefer an
-   env-only guard (simpler, but one fewer belt)? Proposed: the field — defense in depth on the
-   force_hit risk is worth the one field.
-5. **Retreat policy.** Should monsters ever flee (morale), or always fight to the death (simpler,
-   and what most SRD stat blocks imply)? Proposed: a `RETREAT_FRACTION` that defaults to **fight to
-   the death** (no retreat) in v1, with the hook present for a later morale policy.
+1. **LIVE companion turns.** Companions are `kind == "companion"`. The question was whether
+   **companions** should be auto-sequenced by the engine in LIVE (they are NPCs the engine could
+   run, freeing the DM), or DM-driven like PCs (they have approval/loyalty arcs that may want DM
+   agency). **Decision: companions stay DM/agent-driven in LIVE, same as PCs** — the engine
+   auto-runs only **hostile monsters/NPCs**. Companions are party-side and keep their
+   approval/loyalty agency; only **TEST** mode auto-runs everyone.
+2. **Digest granularity in LIVE.** The question was one felt line per monster turn vs. a
+   per-round rollup — a swarm of 8 mooks is 8 lines/round either way. **Decision: per-round LIVE
+   digest.**
+3. **`fast_resolve` semantics.** The question was whether average damage is enough, or whether
+   the owner wants a `force_damage=N` fixed-value variant too. **Decision: average-only** for v1;
+   `fast_resolve` always uses the expected average of the damage expression, no fixed-value knob.
+4. **Sandbox flag plumbing.** The question was whether `Campaign.is_sandbox` (a new top-level
+   Campaign field touching `store.py`'s tolerant-load) is worth it, or whether an env-only guard
+   is simpler. **Decision: the double guard** — `WORLDOS_COMBAT_TEST=1` **AND**
+   `Campaign.is_sandbox` (the field). Defense-in-depth on the `force_hit` risk is worth the one
+   field; both must hold for the TEST-ONLY toggles to be reachable at all.
+5. **Retreat policy.** The question was whether monsters should ever flee (morale) or always
+   fight to the death. **Decision: monster v1 = greedy retreat-if-low** — a `RETREAT_FRACTION`
+   threshold triggers a retreat-if-low policy (not fight-to-the-death), with the hook present for
+   a later, richer morale policy.

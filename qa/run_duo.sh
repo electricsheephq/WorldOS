@@ -354,7 +354,7 @@ WORLDOS_PLAYER_MAX_ATTEMPTS="${WORLDOS_PLAYER_MAX_ATTEMPTS:-3}"
 PMSG=""
 _pintro_attempt=1
 while [ -z "$PMSG" ] && [ "$_pintro_attempt" -le "$WORLDOS_PLAYER_MAX_ATTEMPTS" ]; do
-  [ "$_pintro_attempt" -gt 1 ] && echo "[duo] player produced no intro — retry $_pintro_attempt/$WORLDOS_PLAYER_MAX_ATTEMPTS…" >&2
+  [ "$_pintro_attempt" -gt 1 ] && echo "[duo] player produced no intro — retry $_pintro_attempt/${WORLDOS_PLAYER_MAX_ATTEMPTS}…" >&2
   PMSG="$(player_move 1 "$PLAYER_INTRO_PROMPT")"
   _pintro_attempt=$((_pintro_attempt + 1))
 done
@@ -482,6 +482,17 @@ $EVENT_ADV")"
   # by assert_behavioral's dm_beat_honesty) instead of masking with error text/recycled prose.
   if [ -z "$DMSG" ]; then
     worldos_chatlog_dm_failed
+    # #1285: worldos_chatlog_dm_failed stamps $STATE_DIR/.run_infra_invalid.json once the
+    # CONSECUTIVE failure streak crosses WORLDOS_INFRA_INVALID_STREAK — a quota window / host
+    # death mid-run (rri-a1-duo/duo2), not a product defect. Abort NOW (same rc=2 INFRA ABORT
+    # contract as the cold-open quota check above) instead of letting the loop grind on and the
+    # scorer measure a contaminated transcript. A single/occasional failed beat (below the
+    # streak) still just breaks the loop as before — unchanged behavior.
+    if [ -s "$STATE_DIR/.run_infra_invalid.json" ]; then
+      cp "$STATE_DIR/.run_infra_invalid.json" "$T/$RUN.infra_invalid.json" 2>/dev/null || true
+      echo "[duo] INFRA ABORT — $WORLDOS_DM_BEATS_FAILED_STREAK consecutive DM beat failures at beat $b (see $T/$RUN.infra_invalid.json). Skipping scoring; this is an INFRA collapse, NOT a product measurement." >&2
+      exit 2
+    fi
     echo "[duo] DM went silent at beat $b; stopping early"
     break
   fi
@@ -491,6 +502,13 @@ $EVENT_ADV")"
   # phase via the engine (sole writer). Defers to the DM when it advanced time in-fiction.
   worldos_soft_tick "$ROOT" "$STATE_DIR" "$PREV_DAY" "$PREV_TOD"
 done
+
+# #1285 defense-in-depth: if the streak was stamped but a caller path didn't already exit 2 above
+# (e.g. the threshold was crossed on the LAST beat and the loop simply ended rather than hitting
+# the in-loop abort), copy the sentinel alongside the run artifacts now — BEFORE scoring — so
+# worldos_run_infra_valid / assert_behavioral.py's run_infra_valid gate can still find it and
+# flip the run FATAL instead of letting a contaminated transcript reach a scored end silently.
+[ -s "$STATE_DIR/.run_infra_invalid.json" ] && cp "$STATE_DIR/.run_infra_invalid.json" "$T/$RUN.infra_invalid.json" 2>/dev/null
 
 # Wrap + score the DM transcript (it carries the narration + all tool calls).
 turn dm "$DSID" 0 "We are out of time. Bring this beat to a clean stopping point and call end_session with a one-line summary." >/dev/null

@@ -1,0 +1,97 @@
+{
+  "panel_id": "cal-npc-20260703T060422",
+  "class": "npc",
+  "ac_ruler": "ac_986d87bf235a",
+  "panel_size": 5,
+  "dryrun": false,
+  "n_candidates": 2,
+  "n_controls": 3,
+  "candidate_median_overall": 2.05,
+  "control_medians": [
+    {
+      "artifact_id": "control:npc:baldurs-gate:npc-astarion",
+      "median": 3.9,
+      "anchor": 4.0
+    },
+    {
+      "artifact_id": "control:npc:baldurs-gate:npc-jaheira",
+      "median": 3.1,
+      "anchor": 4.0
+    },
+    {
+      "artifact_id": "control:npc:baldurs-gate:npc-minsc",
+      "median": 4.2,
+      "anchor": 4.0
+    }
+  ],
+  "controls_in_band": true,
+  "out_of_band": [],
+  "panel_valid": true,
+  "results": [
+    {
+      "artifact_id": "npc:baldurs-gate:char_0cb67746b4b5",
+      "is_control": false,
+      "anchor": null,
+      "median_overall": 1.1,
+      "overalls": [
+        1.1,
+        1.0,
+        1.0,
+        1.1,
+        1.1
+      ]
+    },
+    {
+      "artifact_id": "npc:baldurs-gate:npc-wyll",
+      "is_control": false,
+      "anchor": null,
+      "median_overall": 3.0,
+      "overalls": [
+        3.0,
+        3.0,
+        2.9,
+        3.0,
+        3.0
+      ]
+    },
+    {
+      "artifact_id": "control:npc:baldurs-gate:npc-astarion",
+      "is_control": true,
+      "anchor": 4.0,
+      "median_overall": 3.9,
+      "overalls": [
+        3.8,
+        3.8,
+        4.3,
+        3.9,
+        4.1
+      ]
+    },
+    {
+      "artifact_id": "control:npc:baldurs-gate:npc-jaheira",
+      "is_control": true,
+      "anchor": 4.0,
+      "median_overall": 3.1,
+      "overalls": [
+        3.4,
+        3.1,
+        2.9,
+        3.1,
+        3.2
+      ]
+    },
+    {
+      "artifact_id": "control:npc:baldurs-gate:npc-minsc",
+      "is_control": true,
+      "anchor": 4.0,
+      "median_overall": 4.2,
+      "overalls": [
+        4.2,
+        4.2,
+        4.3,
+        4.1,
+        4.1
+      ]
+    }
+  ]
+}
