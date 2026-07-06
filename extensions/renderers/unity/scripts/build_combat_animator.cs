@@ -30,7 +30,7 @@ System.IO.Directory.CreateDirectory("Assets/Animations");
 var ctrl = UnityEditor.AssetDatabase.LoadAssetAtPath<UnityEditor.Animations.AnimatorController>(CTRL);
 if (ctrl == null) ctrl = UnityEditor.Animations.AnimatorController.CreateAnimatorControllerAtPath(CTRL);
 var paramsCopy = ctrl.parameters;
-foreach (var p in paramsCopy) ctrl.RemoveParameter(p.name);
+foreach (var p in paramsCopy) ctrl.RemoveParameter(p);  // pass the parameter object (the string-name overload doesn't exist in this Unity)
 var sm = ctrl.layers[0].stateMachine;
 var statesCopy = sm.states;
 foreach (var cs in statesCopy) sm.RemoveState(cs.state);
