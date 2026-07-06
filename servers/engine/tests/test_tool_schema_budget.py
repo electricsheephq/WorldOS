@@ -26,7 +26,12 @@ import server
 # normal tool additions don't trip it, but a wholesale verbose-prose re-add (the
 # regression we're guarding — it silently re-taxes every pinned DM request) does.
 # Re-measure with qa/schema_mass.py and only raise this number with a justification.
-SCHEMA_JSON_BUDGET_BYTES = 120_000
+#
+# HV4 (#1326, 2026-07-07): raised 120_000 -> 122_000. The prior budget had only ~6 B of
+# headroom, so the ONE new reuse tool `lookup_library` (a terse ~730 B schema — the read-only
+# assembly mirror of lookup_lore) needed a deliberate, justified bump. 122_000 restores ~1.3 KB
+# of headroom above the post-HV4 size (120,724 B) without re-opening the door to a verbose re-add.
+SCHEMA_JSON_BUDGET_BYTES = 122_000
 
 # Core "reach-for" tools whose first descriptive sentence the DM relies on to disambiguate.
 # Each must keep a non-trivial leading sentence after the diet.

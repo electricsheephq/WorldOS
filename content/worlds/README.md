@@ -37,12 +37,37 @@ content/worlds/_private/<id>/   # gitignored — personal seeds (e.g. third-part
 | `npc_roster` | object[] | `{id, name, voice_id, role, personality, hook, dossier?}` → seeded as **NPC Characters** (the `hook` becomes a memory fact; "pullable" — the DM brings them in or invents freely). The optional `dossier` is a **companion dossier** (see below). |
 | `story_seeds` | string[] | emergent hooks the player can stumble into (returned by `start_world`, not auto-created as quests) |
 | `quest_variants` | object[]? | the replayability layer — each MAJOR quest's outcome, resolved once at world-gen. `{id, name, outcomes[{id, when?:{facts-subset} OR random:<weight>, lore, hook?}]}`. An outcome with a `when` dict that is a subset of the world-state (the chosen ending's `facts` + the `world_tenor` dial) is ENDING-TIED (first match wins); otherwise a seeded weighted roll picks among the `random` outcomes. The resolved outcome lands on `Campaign.quest_outcomes[id]` and its `lore`/`hook` are appended to recallable lore as `[Outcome] …` / `[Hook] …` lines. Absent -> no resolution (today's behavior). Read via `get_quest_outcomes`. |
+| `library_packs` | string[]? | **HV4 (#1326) the REUSE opt-in** — the promoted `library/` packs (by pack name) this world may ASSEMBLE quests from. **DEFAULT-OFF**: absent / empty -> the seed path is byte-identical to today (no library candidate ever reaches questgen). When set, promoted library quests join `_derive_hooks` as ADDITIONAL candidates (tier tie-break only; a native `quest_variants` id always wins a collision). Read-only over `library/` (`tools/library/promote.py` stays its sole writer). The DM pulls scored templates via the `lookup_library` tool before improvising. See "Library reuse (HV4)" below. |
 | `strategic` | object? | optional strategy-board seed — setting-agnostic regions/assets/clocks/projects copied into `Campaign.strategic_state`. Missing -> empty state. Malformed entries or unknown faction/location refs are skipped with diagnostics. See Strategic state below. |
 | `starting_options` | object[] | `{location_id, framing}` — where the DM can drop the party |
 | `dm_guidance` | string | how to run this world as a living sandbox |
 | `license`, `attribution` | string? | for non-original seeds (see Licensing) |
 
 The engine **never computes on** prose fields — they're DM-facing guidance, like map coords. `seed_world` (in `servers/engine/content.py`) consumes this; `start_world` (server.py) returns the bible; `lorebook.py` indexes the `lore/` corpus.
+
+## Library reuse (HV4, #1326) — the assembly surface
+
+The harvest flywheel closes here: a world can ASSEMBLE from the promoted `library/` pack (written by
+`tools/library/promote.py`, HV3) instead of always fresh-generating. It is **opt-in + additive**:
+
+- **Opt in** by listing pack names in `world.json` → `library_packs: ["worldos-harvest"]`. A world
+  with **no** `library_packs` behaves exactly as today (the byte-identical default-off contract,
+  guarded by `test_seed_world_default_is_unchanged_base_state` + `test_library_reuse.py`).
+- **Quests** — promoted library quests enter `questgen._derive_hooks` as ADDITIONAL candidates. Tier
+  (`canonical` > `stable` > `fresh-gen`) is a **tie-break only**: a native `quest_variants` candidate
+  with strictly higher overlap always wins, and a library entry whose `artifact_id` collides with a
+  native quest id is **excluded** (library is additive, never overriding). A library-sourced hook
+  carries `source: "library"` + its `tier` so the engagement scorer can tell it from a fresh one.
+- **`lookup_library(campaign_id, query, cls="quest", limit=5)`** — the DM's read-only reuse mirror of
+  `lookup_lore`: it returns scored templates (ranked by query overlap, tier tie-break) BEFORE
+  improvising a freeform `add_quest`. Returns `[]` when the world didn't opt in, and `[]` on no
+  match (fall through to `add_quest`) — never an error, mirroring `find_npcs`.
+- **Rooms** ship as **registry aliases with ZERO engine work by contract**: a promoted room entry
+  (`library/rooms/*.json`) REFERENCES a `room_ref` (recipe_key + asset_ids by value) that the
+  renderer/registry already resolves. A library room-alias **miss falls back to the existing
+  procedural room generation unchanged**. ⚠️ This is a DISTINCT contract from `VISION.md`'s
+  "default-on-miss" registry (that one is the Unity placeholder-actor/asset defaults) — do not
+  conflate them; library content reuse and the Unity asset registry are separate subsystems.
 
 ## The lore corpus (`lore/`)
 
