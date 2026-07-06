@@ -1,0 +1,53 @@
+{
+  "panel_id": "cal-encounter-20260703T064217",
+  "class": "encounter",
+  "ac_ruler": "ac_986d87bf235a",
+  "panel_size": 5,
+  "dryrun": false,
+  "n_candidates": 0,
+  "n_controls": 2,
+  "candidate_median_overall": null,
+  "control_medians": [
+    {
+      "artifact_id": "control:encounter:baldurs-gate:steel-watch-foundry-husks",
+      "median": 4.1,
+      "anchor": 4.0
+    },
+    {
+      "artifact_id": "control:encounter:baldurs-gate:undercity-drain-ambush",
+      "median": 4.1,
+      "anchor": 4.0
+    }
+  ],
+  "controls_in_band": true,
+  "out_of_band": [],
+  "panel_valid": true,
+  "results": [
+    {
+      "artifact_id": "control:encounter:baldurs-gate:steel-watch-foundry-husks",
+      "is_control": true,
+      "anchor": 4.0,
+      "median_overall": 4.1,
+      "overalls": [
+        4.0,
+        4.1,
+        4.1,
+        4.1,
+        4.1
+      ]
+    },
+    {
+      "artifact_id": "control:encounter:baldurs-gate:undercity-drain-ambush",
+      "is_control": true,
+      "anchor": 4.0,
+      "median_overall": 4.1,
+      "overalls": [
+        4.1,
+        4.1,
+        4.1,
+        4.1,
+        4.1
+      ]
+    }
+  ]
+}

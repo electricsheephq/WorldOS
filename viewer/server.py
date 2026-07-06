@@ -3373,6 +3373,155 @@ def _combat_occluders(snapshot: dict) -> list[dict]:
     return out
 
 
+def _is_dead_or_downed(ch: dict) -> bool:
+    """True for a character who must not stand upright in a rest projection: `dead`, or at 0 HP
+    (unconscious/dying, or stabilized-but-still-down — engine fields `stable`/`current_hp`, see
+    combat.py `_ensure_unconscious`). A rest scene only shows characters on their feet."""
+    if bool(ch.get("dead")):
+        return True
+    hp = _num(ch.get("current_hp"))
+    return hp is not None and hp <= 0
+
+
+def _scene_stage(snapshot: dict, combat_active: bool) -> dict:
+    """W1 (#1318) SCENE-AT-REST projection: an additive ``stage`` block carrying ``mode`` +
+    at-rest ``tokens`` so a location renders with its people in it BEFORE combat — the tavern
+    shows its innkeeper before anyone draws a sword.
+
+    PURE PRESENTATION / engine sole-writer: this READS the engine-owned snapshot (party +
+    characters + scene_grid) and PROJECTS it onto ``scene_grid.spawns`` cells; it never mutates
+    and persists nothing. Deterministic (id-sorted assignment, fixed fallback order) so a re-emit
+    on the same snapshot is byte-identical.
+
+    Rest tokens = the party (``snapshot.party``) on the ``party`` spawn cells, plus present NPCs
+    (characters whose ``location_id`` == the current location and whose kind is npc/companion, and
+    who are NOT already party) on the ``npcs`` spawn cells. Cells fall back to ``zone_anchors``
+    values, then the party cells, when a bucket is short.
+
+    NO DOUBLE-PAINT: during active combat the authoritative tokens live in the top-level
+    ``tokens`` (the tactical board); ``stage.tokens`` is therefore EMPTY in combat mode so a
+    rest token can never leak onto the combat board. ``mode`` still reports "combat" so a
+    consumer can branch, but only rest mode carries placements."""
+    mode = "combat" if combat_active else "rest"
+    if combat_active:
+        return {"mode": mode, "tokens": []}
+
+    loc_id = _text(snapshot.get("current_location_id"))
+    locs = snapshot.get("locations") if isinstance(snapshot.get("locations"), dict) else {}
+    loc = locs.get(loc_id) if isinstance(locs, dict) and loc_id else None
+    sg = loc.get("scene_grid") if isinstance(loc, dict) else None
+    spawns = sg.get("spawns") if isinstance(sg, dict) else None
+    spawns = spawns if isinstance(spawns, dict) else {}
+    zone_anchors = sg.get("zone_anchors") if isinstance(sg, dict) else None
+    zone_anchors = zone_anchors if isinstance(zone_anchors, dict) else {}
+
+    def _cell(raw: object) -> tuple[int, int] | None:
+        if isinstance(raw, (list, tuple)) and len(raw) == 2:
+            ci, ri = _num(raw[0]), _num(raw[1])
+            if ci is not None and ri is not None:
+                return (int(ci), int(ri))
+        return None
+
+    def _cells(raw: object) -> list[tuple[int, int]]:
+        out: list[tuple[int, int]] = []
+        if isinstance(raw, list):
+            for c in raw:
+                cell = _cell(c)
+                if cell is not None:
+                    out.append(cell)
+        return out
+
+    # Blocked cells (walls/props) from the scene_grid cell map, so the fallback pool below never
+    # strands an overflow actor ON a blocking prop. zone_anchors are authored for narration ("the
+    # well") and are NOT validated walkable (unlike party/npc spawn cells, which the engine gate
+    # checks), so an anchor CAN sit on a prop — filter those out. Absent/malformed cells -> empty
+    # blocked set (today's behavior: no filtering).
+    blocked: set[tuple[int, int]] = set()
+    for c in (sg.get("cells") if isinstance(sg, dict) else None) or []:
+        if isinstance(c, dict) and c.get("walkable") is False:
+            cell = _cell([c.get("c"), c.get("r")])
+            if cell is not None:
+                blocked.add(cell)
+
+    party_cells = [c for c in _cells(spawns.get("party")) if c not in blocked]
+    npc_cells = [c for c in _cells(spawns.get("npcs")) if c not in blocked]
+    # Deterministic fallback pool: the zone anchors (id-sorted) then the party cells, so a bucket
+    # that ran short still lands its actors on a walkable in-world spot rather than off-board. Drop
+    # any anchor that lands on a blocking prop/wall — a fallback actor must not stand on a column.
+    anchor_cells = [
+        cell for _, v in sorted(zone_anchors.items())
+        if (cell := _cell(v)) is not None and cell not in blocked
+    ]
+
+    chars = snapshot.get("characters") if isinstance(snapshot.get("characters"), dict) else {}
+    party = snapshot.get("party") if isinstance(snapshot.get("party"), list) else []
+    # party_set holds the FULL roster party (incl. any dead/downed) so a fallen member is not
+    # re-projected via the present-NPC path below; party_ids drops anyone dead OR downed (0 HP,
+    # unconscious/dying/stable — the engine models these separately from `dead`, see combat.py
+    # `_ensure_unconscious`/`stable`) so neither a corpse nor an unconscious companion stands in
+    # the rest scene — the same rule the NPC path applies (combat handles the fallen).
+    party_set = {cid for cid in party if isinstance(cid, str) and cid in chars}
+    party_ids = [cid for cid in party_set if not _is_dead_or_downed(chars[cid])]
+    party_ids.sort(key=lambda cid: party.index(cid))  # keep authored party order, deterministic
+
+    # Present non-party NPCs: characters anchored at the current location (npc/companion kind),
+    # id-sorted for a deterministic order. A companion travelling WITH the party is normally in
+    # `party`; one who is merely present at the location (not yet recruited) is placed too.
+    present_npcs = sorted(
+        cid
+        for cid, ch in chars.items()
+        if isinstance(cid, str) and isinstance(ch, dict)
+        and cid not in party_set
+        and _text(ch.get("kind")).lower() in {"npc", "companion"}
+        and _text(ch.get("location_id")) == loc_id and loc_id
+        # a DEAD or DOWNED (0 HP, not yet dead) character never stands in the rest scene — a
+        # corpse or an unconscious companion casually standing at the hearth breaks the inhabited
+        # read this projection exists to create (and combat handles the fallen).
+        and not _is_dead_or_downed(ch)
+    )
+
+    tokens: list[dict] = []
+
+    def _emit(cid: str, cells: list[tuple[int, int]], slot: int, fallback_slot: int) -> None:
+        ch = chars.get(cid)
+        ch = ch if isinstance(ch, dict) else {}
+        name = _text(ch.get("name"), cid)
+        kind = _text(ch.get("kind"))
+        cell = None
+        if slot < len(cells):
+            cell = cells[slot]
+        elif anchor_cells:
+            cell = anchor_cells[fallback_slot % len(anchor_cells)]
+        elif party_cells:
+            cell = party_cells[fallback_slot % len(party_cells)]
+        if cell is None:
+            return
+        tokens.append({
+            "id": cid,
+            "name": name,
+            "initial": _combat_initial(name, cid),
+            "short": f"{_combat_initial(name, cid)} portrait",
+            "team": _combat_team(kind),
+            "kind": kind,
+            "x": int(cell[0]),
+            "y": int(cell[1]),
+            # x/y are a DERIVED render hint (a projection of spawn cells), never authoritative
+            # state — same discipline as the combat tokens (#432). The engine stays sole writer.
+            "positionAuthority": "derived",
+            "pose": "idle",
+        })
+
+    fb = 0
+    for i, cid in enumerate(party_ids):
+        _emit(cid, party_cells, i, fb)
+        fb += 1
+    for j, cid in enumerate(present_npcs):
+        _emit(cid, npc_cells, j, fb)
+        fb += 1
+
+    return {"mode": mode, "tokens": tokens}
+
+
 def build_combat_surface(
     snapshot: dict,
     *,
@@ -3450,6 +3599,14 @@ def build_combat_surface(
         # renderer can place invisible depth-only proxies -> a 3D actor moving BEHIND a painted column is
         # correctly hidden by it. READS engine-owned scene_grid.props (occluder=true); [] == none (today).
         "occluders": _combat_occluders(snapshot),
+        # W1 (#1318) SCENE-AT-REST: additive `stage` block — {mode: "rest"|"combat", tokens:[...]}.
+        # In REST mode (no active combat) tokens are a pure deterministic projection of the party +
+        # present NPCs onto scene_grid.spawns cells, so the room renders inhabited before combat. In
+        # COMBAT mode tokens is [] (the authoritative combat tokens are the top-level `tokens`; a
+        # rest token must never leak onto the tactical board). Engine stays sole writer; new key
+        # only — every existing key above/below is byte-unchanged, so combat-mode consumers are
+        # unaffected. See _scene_stage.
+        "stage": _scene_stage(snapshot, combat_active),
         "tokens": tokens,
         "initiative": initiative,
         "zones": zones,

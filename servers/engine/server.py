@@ -354,6 +354,67 @@ _ACT1_STALL_BEATS = 8
 # from a duo A/B without touching the cue logic.
 _CAMP_OVERDUE_BEATS = 8
 
+# #1286: quest_stalled beats-reach. A quest that gets NO progress verb across this many beats
+# is stalled even when the in-world clock never advances (the day-only gate was unreachable on a
+# stuck clock — the measured rri-a1-duo2 defect). Mirrors _CAMP_OVERDUE_BEATS / _ACT1_STALL_BEATS.
+_QUEST_STALL_BEATS = 8
+
+# #1286: faction_joinable_unjoined beats-reach. A faction that carries an authored questline
+# (questline_arc_id set — a deliberate join->grow->lead arc) but is still un-joined this many
+# beats in gets a cue to enlist, so a seeded faction questline isn't left narrated-not-engined.
+_FACTION_JOIN_BEATS = 8
+
+# WS3a party_stuck_one_location beats-reach. PINNED to assert_behavioral's SINGLE_SCENE_MIN_BEATS —
+# the FATAL party_traveled boundary (qa/assert_behavioral.py:676): a substantial run (>= 8 act-local
+# beats) that never left the opening scene AND never progressed in place is a stuck DM. The proactive
+# per-beat cue here fires on the SAME boundary so the DM is told BEFORE the run-end gate RED-caps it.
+# Keep this value byte-identical to that gate's constant so the cue and the gate agree by construction.
+_PARTY_STUCK_BEATS = 8
+
+# #1313 (cue-half iteration 2b): the ENDGAME WRAP WINDOW. The measured residual RED after Option 3
+# (rri-a1-opt3) was a single thing — a quest left ACTIVE at session end (reads as a dropped thread).
+# Iteration 2 (#1317) opened the window on `act == 3 AND climax_landed`. BOTH halves are OPTIONAL DM
+# calls (advance_act / mark_climax): the rri-a1-gate run advanced neither, the window never opened,
+# and the closure cue fired ZERO times (behavioral AMBER — the same engagement-variance defect one
+# level up). 2b re-derives the window from the ONE skip-proof gauge the DM cannot bypass —
+# arc.beats_in_act, which persist_beat bumps every mandatory beat — while KEEPING climax_landed as
+# the semantically-precise fast path:
+#
+#     _in_wrap_window = climax_landed OR (act >= 2 AND beats_in_act >= _WRAP_WINDOW_BEATS)
+#
+# Threshold calibrated from the 4 real snapshots that reached session-wrap (engine-authoritative
+# narrative_arc; act / beats_in_act / climax_landed):
+#   rri-a1-gate  2 /  8 / False  — the behavioral RED; MUST open via the counter floor (no climax)
+#   rri-a1-opt3  1 / 16 / True   — opens via climax_landed (act 1 — the counter floor deliberately does NOT reach it)
+#   rri-a1-duo3  2 / 10 / False  — opens via the counter floor (harmless: no quests)
+#   rri-a1-duo4  2 / 10 / True   — opens via climax_landed (harmless: the quest is completed)
+# The gate run at beats_in_act=8 with no climax pins _WRAP_WINDOW_BEATS <= 8 (a higher floor would
+# miss the exact run this fixes); opt3 opens via the climax fast-path, so a lower floor buys nothing
+# but a wider mid-act false-open surface — so 8 is the unique maximal-yet-sufficient floor. The
+# `act >= 2` guard keeps opt3's long ACT-1 slog (beats=16, act_one_stalled territory) from being
+# mis-read as "wrapping": in act 1 ONLY the explicit climax flag opens the window. 8 also sits +4
+# above act_climax_owed's own beats_in_act>=4 trigger, so in an act-3 climax build-up act_climax_owed
+# owns beats 4-7 alone and the endgame floor only joins from beat 8.
+#
+# In this window an active quest escalates to a single HIGH quest_endgame_unresolved cue that REPLACES
+# the generic resolvable/stalled/unresolved_late cues (one imperative, not three) so next_action names
+# quest closure as THE next act. PRECEDENCE with act_climax_owed (which fires in a counter-opened
+# act-3 window while climax_landed is still False — the window is NO LONGER mutually exclusive with
+# it): both are legitimately owed (land the climax, THEN close the thread), so NEITHER is suppressed —
+# both stay HIGH and an explicit intra-tier tiebreak (_KIND_PRECEDENCE) sorts act_climax_owed first.
+_WRAP_WINDOW_BEATS = 8
+
+
+def _quest_progress_beat(c: Campaign) -> int:
+    """The current NarrativeArc.beats_in_act tally, read defensively — the engine-mutated beat
+    cursor a quest stamps as its last-progress baseline (#1286). -1 when no arc exists so an
+    older/partial campaign stamps the same "never counted" sentinel the model defaults to."""
+    arc = getattr(c, "narrative_arc", None)
+    if arc is None:
+        return -1
+    b = getattr(arc, "beats_in_act", 0)
+    return b if isinstance(b, int) else -1
+
 
 def _validate_log_kind(kind: str) -> str:
     """Normalize + validate a DM-supplied beat kind against the whitelist (F07-6). Returns
@@ -11363,6 +11424,9 @@ def add_quest(
             # learned of the quest, NOT from day 1. A quest added late is therefore NOT
             # flaggable on the next beat (the stall clock starts now, under the lock).
             last_progress_day=c.day,
+            # #1286: same for the beats baseline — the stall-by-beats clock starts at the beat
+            # the engine learned of the quest, so a late-added quest isn't stale on the next beat.
+            last_progress_beat=_quest_progress_beat(c),
         )
         c.quests[q.id] = q
         save_campaign(c)
@@ -11430,6 +11494,7 @@ def complete_quest(
             raise ValueError(f"no quest {quest_id!r}")
         q.status = status  # type: ignore[assignment]
         q.last_progress_day = c.day  # F05-7: resolving a quest IS progress — reset the stall clock.
+        q.last_progress_beat = _quest_progress_beat(c)  # #1286: reset the beats stall clock too.
         # F05-1: make the skill-documented evolution seam reachable. Set the rule-of-three
         # fields from the kwargs ONLY when explicitly provided, so an empty kwarg never
         # clobbers a field content/questgen already authored on the quest. Assigned under
@@ -11516,6 +11581,7 @@ def complete_objective(campaign_id: str, quest_id: str, objective: str) -> dict:
         # F05-7: completing an objective IS progress — stamp the day so the quest_stalled
         # detector measures from the last engine-known advancement (not Decision prose).
         q.last_progress_day = c.day
+        q.last_progress_beat = _quest_progress_beat(c)  # #1286: reset the beats stall clock too.
         auto = None
         evolution = None
         remaining = [o for o in q.objectives if o not in q.completed_objectives]
@@ -12553,6 +12619,7 @@ def set_quest_status(campaign_id: str, hook_id: str, status: str) -> dict:
                 raise ValueError(f"quest status must be active|completed|failed (or resolved), got {status!r}")
             q.status = qs  # type: ignore[assignment]
             q.last_progress_day = c.day  # F05-7: advancing a quest IS progress — reset stall clock.
+            q.last_progress_beat = _quest_progress_beat(c)  # #1286: reset the beats stall clock too.
             # Mirror complete_quest: a tracked quest reaching "completed" auto-awards
             # milestone XP once (xp-mode) — set_quest_status is the DM's equivalent verb,
             # so both close-of-quest paths pay the same deterministic reward.
@@ -12929,6 +12996,17 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
     #    stretch of play with companions and no rest).
     _arc = getattr(c, "narrative_arc", None)
     _beats_in_act = (getattr(_arc, "beats_in_act", 0) or 0) if _arc is not None else 0
+    # #1313 (2b) endgame wrap window (see the _WRAP_WINDOW_BEATS block comment): the story has passed
+    # its peak and is closing once EITHER the DM marked the Act-3 climax landed (the precise fast path)
+    # OR the skip-proof mandatory-beat counter has run deep in act 2+ (climax_landed OR (act >= 2 AND
+    # beats_in_act >= _WRAP_WINDOW_BEATS)). Defensive getattr throughout, so an arc-less / older /
+    # partial NarrativeArc reads False (byte-identical empty digest, as before). The `act >= 2` guard
+    # keeps a long act-1 slog out of the counter floor; the climax flag alone still opens it in act 1.
+    _act = getattr(_arc, "act", 1) if _arc is not None else 1
+    _in_wrap_window = _arc is not None and (
+        bool(getattr(_arc, "climax_landed", False))
+        or (_act >= 2 and _beats_in_act >= _WRAP_WINDOW_BEATS)
+    )
     if party_companions and (day >= 3 or _beats_in_act >= _CAMP_OVERDUE_BEATS):
         # NB: a value of 0 is a VALID rest day (rested on day 0), so coalesce only None, not
         # falsy-0 — `or -1` would wrongly read a day-0 rest as "never rested".
@@ -12998,6 +13076,29 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
         qid = getattr(q, "id", None)
         objectives = list(getattr(q, "objectives", []) or [])
         completed = list(getattr(q, "completed_objectives", []) or [])
+        # #1313 endgame escalation — in the wrap window (climax landed, act 3), an active quest is
+        # the measured residual RED: a thread left ACTIVE at wrap reads as dropped. Escalate to ONE
+        # HIGH quest_endgame_unresolved cue that REPLACES resolvable/stalled for this quest (severity-
+        # sorted, so it becomes THE next_action imperative in the final beats) — a single resolution
+        # directive, not three overlapping ones. Precedence: this owns the quest cue in the window, so
+        # neither the resolvable/stalled branches below NOR quest_unresolved_late (3b) also fire.
+        if _in_wrap_window:
+            obligations.append({
+                "kind": "quest_endgame_unresolved",
+                "quest_id": qid,
+                "title": title,
+                "severity": "high",
+                "detail": (
+                    f"The session is wrapping and '{title}' is still ACTIVE — resolve it NOW: "
+                    f"complete_quest(quest_id, evolves_to='...') if the thread closed in fiction "
+                    f"(complete_objective first for any step just cleared). To HAND IT OFF instead, "
+                    f"STILL complete_quest (that is what closes the status) and carry the open thread "
+                    f"forward with evolves_to plus add_consequence — a bare add_consequence leaves the "
+                    f"quest ACTIVE and this obligation standing. A thread left ACTIVE at wrap reads as "
+                    f"dropped, not resolved."
+                ),
+            })
+            continue  # the endgame cue owns this quest in the wrap window (not ALSO resolvable/stalled)
         # ALL objectives done -> the quest is mechanically resolvable; the DM should close
         # it AND give it an echo (evolves_to) so a win isn't one-and-done (rule of three).
         if objectives and all(o in completed for o in objectives):
@@ -13012,17 +13113,78 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
                 ),
             })
             continue  # a resolvable quest isn't ALSO flagged as stalled
-        # last_progress_day stamped 3+ days ago -> the engine knows this thread has stalled.
+        # STALLED — the engine knows this thread hasn't been advanced by any progress verb. Two
+        # independent reaches, either sufficient:
+        #   (a) DAY-reach (the original): last_progress_day stamped 3+ in-world days ago.
+        #   (b) BEATS-reach (#1286): last_progress_beat is _QUEST_STALL_BEATS+ beats behind the
+        #       current tally. The DM rarely advances the in-world clock, so the day-only gate was
+        #       structurally UNREACHABLE on a stuck clock (rri-a1-duo2: 22 beats, an active quest,
+        #       ZERO progress calls, the day never moved). The beats reach mirrors camp/act_one and
+        #       fires on a normal-length run. Prefer the day phrasing when it drives; else beats.
         last_progress = getattr(q, "last_progress_day", -1)
-        if last_progress is not None and last_progress >= 0 and day - last_progress >= 3:
+        days_stalled = (
+            day - last_progress
+            if isinstance(last_progress, int) and last_progress >= 0 and day - last_progress >= 3
+            else 0
+        )
+        last_beat = getattr(q, "last_progress_beat", -1)
+        cur_beat = _quest_progress_beat(c)
+        beats_stalled = (
+            cur_beat - last_beat
+            if isinstance(last_beat, int) and last_beat >= 0 and cur_beat >= 0
+            and cur_beat - last_beat >= _QUEST_STALL_BEATS
+            else 0
+        )
+        if days_stalled or beats_stalled:
+            if days_stalled:
+                how = f"no progress in {days_stalled} days"
+            else:
+                how = f"no progress in {beats_stalled} beats"
             obligations.append({
                 "kind": "quest_stalled",
                 "quest_id": qid,
                 "title": title,
                 "severity": "low",
                 "detail": (
-                    f"Quest '{title}' has stalled (no progress in {day - last_progress} days) — "
+                    f"Quest '{title}' has stalled ({how}) — "
                     f"push an objective (complete_objective) or complete_quest it."
+                ),
+            })
+
+    # 3b. quest_unresolved_late (WS3a) — a SUBSTANTIAL run that owns quest(s) but has NEVER
+    #     resolved one: ZERO quests are completed AND not a single objective was ever marked done.
+    #     A run can go 8+ beats with an open quest the DM only narrates progress toward (never
+    #     calling complete_objective / complete_quest), so the quest superstructure sits inert with
+    #     no engine-visible movement at all. This is the proactive twin of assert_behavioral's
+    #     unresolved_arc run-end FATAL — cue the DM to record SOME quest progress THIS beat before
+    #     the run ends with a dropped thread. ANTI-SPAM precedence: it stays silent if ANY quest is
+    #     already flagged quest_resolvable / quest_stalled this beat (those already name a concrete
+    #     quest the DM must act on; this campaign-level "nothing has moved" cue would be redundant
+    #     noise on top). Pure read of engine-mutated status / completed_objectives — never prose.
+    #     In the #1313 wrap window the endgame cue (quest_endgame_unresolved) already names concrete
+    #     active quests to close, so this campaign-level "nothing has moved" cue is redundant there too.
+    _already_flagged_quest = any(
+        o.get("kind") in ("quest_resolvable", "quest_stalled", "quest_endgame_unresolved")
+        for o in obligations
+    )
+    if _beats_in_act >= _PARTY_STUCK_BEATS and quests and not _already_flagged_quest:
+        any_quest_completed = any(
+            getattr(q, "status", "active") == "completed" for q in quests.values()
+        )
+        any_objective_completed = any(
+            list(getattr(q, "completed_objectives", []) or []) for q in quests.values()
+        )
+        if not any_quest_completed and not any_objective_completed:
+            obligations.append({
+                "kind": "quest_unresolved_late",
+                "severity": "med",
+                "detail": (
+                    f"{_beats_in_act} beats in and not one quest objective has been recorded done — "
+                    "the quest thread is narrated, never engined. Record the progress that has "
+                    "actually happened: complete_objective(quest_id, objective) as the party clears "
+                    "a step, or complete_quest(quest_id, evolves_to='...') when a thread resolves "
+                    "(give it an echo). A run that ends with every quest still untouched reads as a "
+                    "dropped thread, not a story."
                 ),
             })
 
@@ -13060,6 +13222,40 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
                 f"so the thread lingers (rule of three)."
             ),
         })
+
+    # 4b. faction_joinable_unjoined (#1286) — a faction that carries an AUTHORED questline
+    #     (questline_arc_id set: someone deliberately built a join->grow->lead FactionArc for it)
+    #     but is still un-joined a stretch of beats in. join_faction is the membership latch that
+    #     ARMS the questline (a requires_joined arc stays `locked` until then), so a seeded faction
+    #     arc left un-joined is the faction analog of the narrated-not-engined defect (rri-a1-duo2:
+    #     "seeded faction never joined"). questline_arc_id is the false-positive-resistant signal —
+    #     a plain flavour faction with no arc is NOT a join obligation (the party may never enlist).
+    #     Beats-gated (mirrors camp/quest reaches) so authoring the arc doesn't nag on the same beat.
+    _arc_join = getattr(c, "narrative_arc", None)
+    _beats_join = (getattr(_arc_join, "beats_in_act", 0) or 0) if _arc_join is not None else 0
+    if _beats_join >= _FACTION_JOIN_BEATS:
+        factions = getattr(c, "factions", None) or {}
+        faction_arcs = getattr(c, "faction_arcs", None) or {}
+        for fac in factions.values():
+            arc_id = (getattr(fac, "questline_arc_id", "") or "").strip()
+            if not arc_id or arc_id not in faction_arcs:
+                continue  # no authored questline -> not a join obligation (plain flavour faction)
+            if getattr(fac, "joined", False):
+                continue  # already enlisted -> the questline is armed
+            name = getattr(fac, "name", None) or "the faction"
+            obligations.append({
+                "kind": "faction_joinable_unjoined",
+                "faction_id": getattr(fac, "id", None),
+                "name": name,
+                "questline_arc_id": arc_id,
+                "severity": "low",
+                "detail": (
+                    f"{name} has an authored questline but the party never enlisted, so its "
+                    f"join->grow->lead arc stays locked and narrated-not-engined. When the fiction "
+                    f"gives the party a way in, join_faction(faction_id) to arm the questline (a "
+                    f"requires_joined arc opens to available and gauge-ready stages unlock)."
+                ),
+            })
 
     # 5. companion_arc_gate_near — a not-yet-unlocked ArcGate within 20 points of unlocking;
     #    a small push (a values-moment, a camp beat) lands a real loyalty/romance/quest beat.
@@ -13133,6 +13329,142 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
             "severity": "high" if deep else "med",
             "detail": detail,
         })
+
+    # ── WS3a: DM-unavoidable PER-BEAT PROGRESSION / CLOSURE cues ─────────────────────────────────
+    # The relationship/quest cues above keep the SOFT story-superstructure engaged; these four keep
+    # the HARD mechanical loop from quietly stalling — the party stuck in one scene, a fight left
+    # hanging, XP that never landed, a frozen clock. Each is a PURE read of an ENGINE-MUTATED gauge
+    # (locations[].visited, combat.active, characters[].dead/current_hp/xp_value, day/time_of_day) —
+    # never a tool-count, beat-history, or Decision prose — with defensive getattr so an older /
+    # partial snapshot DEGRADES a cue to skipped rather than raising. CUE-ONLY (Option A): the engine
+    # takes NO auto-action; the DM calls the named verb. PRECEDENCE gates collapse the worst case to a
+    # couple of cues. ADDITIVE: a fully-progressed snapshot trips NONE of them (empty digest preserved).
+    locations = getattr(c, "locations", None) or {}
+    visited_count = sum(
+        1 for loc in locations.values() if getattr(loc, "visited", False)
+    )
+    combat = getattr(c, "combat", None)
+    combat_active = bool(getattr(combat, "active", False)) if combat is not None else False
+
+    # WS3a-1. party_stuck_one_location (med) — a SUBSTANTIAL run (>= _PARTY_STUCK_BEATS act-local
+    #   beats) where the party has visited < 2 locations, UNLESS the in-place-progression exception
+    #   holds. The exception is BYTE-IDENTICAL to assert_behavioral's party_traveled exception
+    #   (qa/assert_behavioral.py:677): visited >= 1 AND the clock advanced AND a quest actually
+    #   completed AND >= SINGLE_SCENE_MIN_BEATS — a complete single-scene drama, not a frozen stall.
+    #   Proactive twin of the party_traveled run-end FATAL: tell the DM to move (or progress in place)
+    #   BEFORE the gate RED-caps the run.
+    if _beats_in_act >= _PARTY_STUCK_BEATS and visited_count < 2:
+        tod = (getattr(c, "time_of_day", "") or "").strip().lower()
+        clock_advanced = day > 1 or (tod not in ("", "morning"))
+        arc_resolved = any(
+            getattr(q, "status", "active") == "completed" for q in quests.values()
+        )
+        # Byte-identical to assert_behavioral's in_place_progression (beats>=8 already implied by the
+        # outer _beats_in_act >= _PARTY_STUCK_BEATS guard, but spelled out so the parity is explicit).
+        in_place_progression = (
+            visited_count >= 1 and clock_advanced and arc_resolved
+            and _beats_in_act >= _PARTY_STUCK_BEATS
+        )
+        if not in_place_progression:
+            obligations.append({
+                "kind": "party_stuck_one_location",
+                "severity": "med",
+                "beats_in_act": _beats_in_act,
+                "visited": visited_count,
+                "detail": (
+                    f"{_beats_in_act} beats in and the party has visited {visited_count} location(s) "
+                    "— it never left the opening scene. Move the story to a new place: "
+                    "travel_to(destination_id, advance_time=True), or add_location(make_current=True) "
+                    "if there's no edge yet, then open the new place's tone in prose. A substantial "
+                    "run that stays in one room reads as a frozen stall."
+                ),
+            })
+
+    # WS3a-2. combat_left_hanging (med) — combat is ACTIVE but NO living hostile remains. Mirror
+    #   end_combat's live-hostile detection (the live_hostiles comprehension in end_combat, ~server.py:7009): a monster IN THE COMBAT ORDER at
+    #   current_hp > 0 and not dead is a live hostile; a fled monster was removed from the order, a
+    #   killed one is dead. When none remain, the fight is over in fact but the engine still reads
+    #   active — cue end_combat so HP/initiative reset and (xp-mode) XP auto-awards. PRECEDENCE: while
+    #   combat is active this cue OWNS the beat over xp_unawarded (end_combat resolves both).
+    if combat_active:
+        order = getattr(combat, "order", None) or []
+        living_hostile = False
+        for cb in order:
+            ch = characters.get(getattr(cb, "character_id", None))
+            if ch is None:
+                continue
+            if (getattr(ch, "kind", "") == "monster"
+                    and not getattr(ch, "dead", False)
+                    and getattr(ch, "current_hp", 0) > 0):
+                living_hostile = True
+                break
+        if not living_hostile:
+            obligations.append({
+                "kind": "combat_left_hanging",
+                "severity": "med",
+                "detail": (
+                    "Combat is still active but no living hostile remains — the fight is over in "
+                    "fact. Close it now: end_combat(resolution='...') resets initiative/HP and (in "
+                    "xp mode) auto-awards the defeated foes' XP. A fight left active leaks into the "
+                    "next beat as a phantom encounter."
+                ),
+            })
+
+    # WS3a-3. xp_unawarded (med) — leveling_mode=='xp', NOT in combat, a living party member, and a
+    #   defeated monster still carries xp_value > 0 (the kill-time award never fired / was bypassed).
+    #   Proactive twin of assert_behavioral's xp_not_orphaned run-end FATAL (qa/assert_behavioral.py:578)
+    #   — mirrors its guards (xp-mode, party_alive, non-combat) so the cue and the gate agree. Gated
+    #   NON-combat ONLY: mid-fight a kept xp_value is normal (it's awarded at end_combat); combat_left_
+    #   hanging owns the active-combat case, so this fires only once the fight is genuinely closed.
+    if not combat_active and getattr(c, "leveling_mode", "xp") == "xp":
+        party_alive = any(
+            characters.get(pid) is not None and not getattr(characters.get(pid), "dead", False)
+            for pid in party_ids
+        )
+        orphaned = [
+            ch for ch in characters.values()
+            if getattr(ch, "kind", "") == "monster"
+            and getattr(ch, "dead", False)
+            and (getattr(ch, "xp_value", 0) or 0) > 0
+        ]
+        if party_alive and orphaned:
+            names = ", ".join((getattr(ch, "name", None) or "?") for ch in orphaned)
+            obligations.append({
+                "kind": "xp_unawarded",
+                "severity": "med",
+                "character_ids": [getattr(ch, "id", None) for ch in orphaned],
+                "detail": (
+                    f"Defeated monster(s) {names} died with XP that never landed — the kill-time "
+                    "auto-award was missed on this death path. This cue fires OUT of combat, so "
+                    "there is no active fight to end_combat; grant the XP with award_xp(character_id, "
+                    "amount, reason) for the living party so the kill counts. (award_xp does not zero "
+                    "the monster's xp_value, so this advisory may re-surface — award once and move on; "
+                    "a proper engine reconcile of stranded kill-XP is a tracked follow-up.)"
+                ),
+            })
+
+    # WS3a-4. clock_dm_frozen (LOW) — a SUBSTANTIAL run where the in-world clock has never moved off
+    #   its day-1 opening (day == 1 AND time_of_day in ('','morning')) and we're not mid-fight. An
+    #   HONEST snapshot proxy (no soft-tick flag added to the snapshot — that would mask the very
+    #   thing we want to see): if the persisted clock still reads day-1 morning after a real stretch
+    #   of play, the DM never advanced time itself. PRECEDENCE: party_stuck owns the clock when BOTH
+    #   fire (a stuck party in one scene also has a frozen clock — naming both is noise), so this
+    #   fires only once the party HAS moved (visited >= 2) but the clock is STILL frozen.
+    if (_beats_in_act >= _PARTY_STUCK_BEATS and not combat_active
+            and visited_count >= 2):
+        tod_now = (getattr(c, "time_of_day", "") or "").strip().lower()
+        if day == 1 and tod_now in ("", "morning"):
+            obligations.append({
+                "kind": "clock_dm_frozen",
+                "severity": "low",
+                "beats_in_act": _beats_in_act,
+                "detail": (
+                    f"{_beats_in_act} beats in and the clock still reads day 1, morning — the DM "
+                    "never advanced time, so companion regard / camp / every day-gated system stays "
+                    "starved. advance_time(phases=N) as scenes pass, long_rest at a safe stop, or "
+                    "downtime for a longer skip."
+                ),
+            })
 
     # 7. ACT-TRANSITION cues — fold the 3-act-shape mandate (setup -> midpoint reversal ->
     #    climax) into the every-beat digest by reading the engine-owned NarrativeArc cursor
@@ -13222,7 +13554,65 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
                 ),
             })
 
+    # #1313 Option 3: severity-sort so the SINGLE most urgent obligation is first (high>med>low),
+    # then lifted into `next_action` by the callers. STABLE (Python's sorted): within a severity
+    # tier the authored append order above is preserved, so the scannable `obligations` list reads
+    # exactly as before within a tier — EXCEPT for the explicit intra-tier precedence below.
+    # #1313 (2b): act_climax_owed and quest_endgame_unresolved can now BOTH be HIGH and owed in the
+    # same counter-opened act-3 window (they are no longer mutually exclusive). They append in a
+    # different order than the desired priority (quest_endgame_unresolved at the quest block appends
+    # BEFORE act_climax_owed at the act-shape block), so the append-order-preserving stable sort would
+    # wrongly put endgame first. A tiny secondary key (_KIND_PRECEDENCE, default 0 for every other
+    # kind) makes "land the climax, THEN close the thread" explicit instead of an append coincidence;
+    # all other cues keep 0 and therefore their existing within-tier append order. ADDITIVE: an empty
+    # digest sorts to the same empty list (byte-identical). An unknown severity sorts LAST.
+    obligations.sort(key=lambda o: (
+        _SEVERITY_RANK.get(o.get("severity"), _SEVERITY_RANK_UNKNOWN),
+        _KIND_PRECEDENCE.get(o.get("kind"), 0),
+    ))
     return obligations
+
+
+# #1313 Option 3 — severity ordering for the per-beat obligations digest. high is the load-bearing
+# payoff (act_climax_owed / companion_betrayal deep-red), so it sorts first; an unrecognized
+# severity degrades to LAST rather than raising (mirrors the digest's defensive-getattr discipline).
+_SEVERITY_RANK = {"high": 0, "med": 1, "low": 2}
+_SEVERITY_RANK_UNKNOWN = 3
+
+# #1313 (2b) intra-tier precedence — the SECONDARY sort key, applied within a severity tier. Only the
+# act_climax_owed / quest_endgame_unresolved pair needs an explicit order: in a counter-opened act-3
+# wrap window with the climax NOT yet landed BOTH are HIGH and owed, and the payoff (land the climax)
+# must be named as next_action BEFORE the closure (close the thread). Every other kind defaults to 0
+# (via dict.get), so this is a no-op for the rest of the digest — their existing append order within a
+# tier is preserved by the stable sort. Lower = earlier.
+_KIND_PRECEDENCE = {"act_climax_owed": -1, "quest_endgame_unresolved": 0}
+
+
+def _top_obligation(obligations: list[dict]) -> dict | None:
+    """The SINGLE highest-priority obligation this beat (the first of the severity-sorted digest),
+    or None when the digest is empty. PURE read — the list is already sorted by
+    _compute_beat_obligations; this just names 'the one thing this beat owes'."""
+    return obligations[0] if obligations else None
+
+
+def _next_action(obligations: list[dict]) -> dict | None:
+    """#1313 Option 3: lift the top obligation into an imperative single-directive `next_action`.
+
+    ADDITIVE + PURE read: derived from the already-computed obligations each beat, reusing the
+    obligation's own `detail`/`kind` text (no new copy invented). Returns None when there is no
+    obligation, so the caller omits the key and the return is byte-identical to today's shape.
+    NEVER errors — a malformed obligation degrades to the kind alone."""
+    top = _top_obligation(obligations)
+    if top is None:
+        return None
+    return {
+        "kind": top.get("kind"),
+        "severity": top.get("severity"),
+        # The imperative is the obligation's existing detail — the cue text is ALREADY imperative
+        # and single-directive; surfacing it as a named next_action (not one row of a scanned list)
+        # is the whole lever. Fall back to a minimal directive if a detail is somehow absent.
+        "imperative": top.get("detail") or f"Act on the {top.get('kind')} obligation this beat.",
+    }
 
 
 def _scene_durable_threads(c: Campaign) -> dict:
@@ -13434,6 +13824,11 @@ def _scene_durable_threads(c: Campaign) -> dict:
     obligations = _compute_beat_obligations(c)
     if obligations:
         out["obligations"] = obligations
+        # #1313 Option 3: lift the single top obligation into an imperative `next_action` so the DM
+        # acts on ONE named directive instead of scanning the list. ADDITIVE: absent when empty.
+        next_action = _next_action(obligations)
+        if next_action is not None:
+            out["next_action"] = next_action
     return out
 
 
@@ -13935,6 +14330,14 @@ def persist_beat(
                 obligations = _compute_beat_obligations(c_read)
                 if obligations:
                     out["obligations"] = obligations
+                    # #1313 Option 3: the one imperative directive this beat owes (top severity),
+                    # PLUS a lightweight `owed` list of the kinds that remain unmet after this beat
+                    # persisted — the DM sees the consequence-of-inaction carried forward. READ-ONLY
+                    # (derived from the just-loaded snapshot; no new state, no clean:false teeth).
+                    next_action = _next_action(obligations)
+                    if next_action is not None:
+                        out["next_action"] = next_action
+                    out["owed"] = [o.get("kind") for o in obligations]
         except Exception:
             pass
     return out
