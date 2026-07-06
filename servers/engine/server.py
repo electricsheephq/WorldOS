@@ -10361,6 +10361,111 @@ def _parley_npc_difficulty(ch) -> str:
     return _ATTITUDE_DEFAULT_DIFFICULTY.get(band, "medium")
 
 
+def _nearest_walkable_adjacent(
+    goal: tuple[int, int],
+    start: "tuple[int, int] | None",
+    blocked: set[tuple[int, int]],
+    width: int,
+    height: int,
+) -> "tuple[int, int] | None":
+    """W3 (#1320): the ADJACENT-to-``goal`` cell (Chebyshev distance <=1 — the SAME 5ft-reach
+    definition as ``combat_grid.in_melee_reach``, combat_grid.py) that is walkable AND reachable,
+    closest to ``start``. This is the cell the party walks TO so it stands beside the speaking NPC
+    (never onto it). Reuses ``combat_grid.shortest_path`` for reachability — pathing is never
+    forked. Returns None when every one of the 8 neighbours is blocked/off-grid/unreachable (the
+    caller then falls back to today's freeform parley — the MED-addendum fallback for #1320)."""
+    candidates: list[tuple[int, int]] = []
+    for dx in (-1, 0, 1):
+        for dy in (-1, 0, 1):
+            if dx == 0 and dy == 0:
+                continue  # the NPC's own cell — never stand on the interlocutor
+            cell = (goal[0] + dx, goal[1] + dy)
+            if not (0 <= cell[0] < width and 0 <= cell[1] < height):
+                continue
+            if cell in blocked:
+                continue
+            # cell is always within combat_grid.in_melee_reach (Chebyshev<=1) of goal here:
+            # dx,dy range over {-1,0,1} excluding (0,0) above, so this holds by construction
+            # and isn't re-verified at runtime (an assert here would be stripped under -O and
+            # adds no real guard — the invariant is the loop bounds, not a check on cell).
+            candidates.append(cell)
+    if not candidates:
+        return None
+    if start is None:
+        # An unplaced mover: any free adjacent cell is a legal placement; pick the deterministic
+        # first (reading order) so a re-approach on the same board is stable.
+        return sorted(candidates)[0]
+    if start in candidates:
+        return start  # already standing adjacent — no walk needed
+    # Reachable candidates only, ranked by the routed step count (then reading order) so the party
+    # takes the shortest legal approach. `blocked` doubles as `occupied` (same as walk_to's call).
+    reachable: list[tuple[int, tuple[int, int]]] = []
+    for cell in candidates:
+        routed = combat_grid.shortest_path(start, cell, blocked, width, height)
+        if routed is not None:
+            reachable.append((len(routed), cell))
+    if not reachable:
+        return None
+    reachable.sort(key=lambda t: (t[0], t[1]))
+    return reachable[0][1]
+
+
+def _approach_to_talk(campaign_id: str, mover_id: str, npc) -> "dict | None":
+    """W3 (#1320) approach-to-talk: walk ``mover_id`` to a cell ADJACENT to the tracked ``npc``'s
+    stage cell, THEN return an approach descriptor — so a click-NPC parley opens AT the actor
+    instead of via a disembodied portrait. Reuses W2's ``rest_blocked_cells`` + ``walk_to`` (the
+    sole writer of ``stage_cell``); pathing is never forked.
+
+    Returns ``{walked, from, to, npc_cell, path}`` on a successful approach (or when the mover is
+    already adjacent — walked False, empty path), or ``None`` to DEGRADE to today's freeform
+    parley when there is nothing to approach: the NPC has no known stage cell, no scene grid /
+    combat is active (walk_to would refuse), or no legal adjacent cell is reachable (blocked
+    pathing — the MED-addendum fallback). Never raises: approach is best-effort positioning."""
+    c = _require(campaign_id)
+    if c.combat.active:
+        return None  # combat lane owns positioning — walk_to would refuse; freeform parley
+    loc = c.locations.get(c.current_location_id) if c.current_location_id else None
+    if loc is None or getattr(loc, "scene_grid", None) is None:
+        return None  # no painted room to approach across (additive: today's behavior)
+    npc_cell = getattr(npc, "stage_cell", None)
+    if npc_cell is None:
+        return None  # the NPC isn't staged anywhere — nothing to approach; freeform parley
+    npc_cell = (int(npc_cell[0]), int(npc_cell[1]))
+    mover = c.characters.get(mover_id)
+    if mover is None:
+        return None
+    # walk_to (W2 review fix) rejects a mover anchored at a location_id different from the
+    # current one — mirror that guard here so we degrade to freeform instead of ever reaching
+    # walk_to's raise (this is the one walk_to precondition _approach_to_talk didn't already
+    # pre-check; None/"" — the party's own not-yet-travelled sentinel, #1349 — is left alone,
+    # matching walk_to's own carve-out).
+    if mover.location_id and mover.location_id != loc.id:
+        return None
+    # The mover never blocks itself; the NPC's own cell stays blocked (we stand BESIDE it).
+    width, height, blocked = rest_blocked_cells(c, loc, exclude_id=mover_id)
+    if width <= 0 or height <= 0:
+        return None
+    start = getattr(mover, "stage_cell", None)
+    start = (int(start[0]), int(start[1])) if start is not None else None
+    dest = _nearest_walkable_adjacent(npc_cell, start, blocked, width, height)
+    if dest is None:
+        return None  # no legal adjacent cell reachable → freeform parley (MED-addendum fallback)
+    if start is not None and start == dest:
+        return {"walked": False, "from": list(start), "to": list(start), "npc_cell": list(npc_cell), "path": [list(start)]}
+    # Reuse walk_to — the SOLE writer of stage_cell (takes its own lock + save + rest_walk beat).
+    # Belt-and-suspenders on the docstring's absolute "Never raises" contract: every precondition
+    # walk_to checks is already mirrored above, but a TOCTOU race (state changing between our
+    # planning read and walk_to's own re-check under its lock) could still surface one of walk_to's
+    # ValueErrors here — catch and degrade to freeform rather than ever propagating.
+    try:
+        res = walk_to(campaign_id, mover_id, dest[0], dest[1])
+    except ValueError:
+        return None  # lost a race between planning and the walk → freeform parley
+    if not res.get("walked"):
+        return None  # a race lost the cell between planning and the walk → freeform parley
+    return {"walked": True, "from": res.get("from"), "to": res.get("to"), "npc_cell": list(npc_cell), "path": res.get("path", [])}
+
+
 @mcp.tool()
 def generate_parley_options(
     campaign_id: str,
@@ -10374,27 +10479,37 @@ def generate_parley_options(
     target_id: str = "",
     character_id: str = "",
     id: str = "",
+    approach: bool = False,
 ) -> dict:
     """Call this BEFORE narrating a social encounter or any choice point: it lays out the
-    PLAYER'S available options with sheet-correct DCs so you author a real Parley menu
-    instead of railroading to one narrated path. This is NOT `companion_advise` (the
-    companion's in-character take) or `get_scene` (the authored scene beats) — it returns
-    the lead PC's own alignment + the actual skill modifiers off their sheet + a suggested
-    DC per skill, so you write 2-4 tagged choices WITHOUT hand-computing anything.
+    PLAYER'S available options with sheet-correct DCs so you author a real Parley menu instead
+    of railroading (NOT `companion_advise`/`get_scene`). It returns the lead PC's alignment +
+    sheet-correct skill modifiers + a suggested DC per skill, so you write tagged choices without
+    hand-computing.
     Bind to a TRACKED NPC via ``npc_id`` (aliases ``target_id`` / ``character_id`` / ``id``)
-    so the surface carries an ``npc`` block and the default ``difficulty`` is derived from the
-    target's attitude (hostile=HARD, friendly=EASY, indifferent=MEDIUM); an explicit
-    ``difficulty`` always wins, an unknown npc_id degrades to a freeform parley."""
+    so the surface carries an ``npc`` block and the default ``difficulty`` derives from the
+    target's attitude; an explicit ``difficulty`` always wins, an unknown npc_id degrades to a
+    freeform parley.
+    ``approach=True`` walks the PC adjacent to the NPC first (W2 walk_to); parley opens AT the
+    actor, else freeform."""
+    # W3: approach-to-talk WRITES stage_cell (via walk_to) and must run BEFORE the read-only
+    # projection below so the npc/approach blocks reflect the post-walk board. Resolve the actor +
+    # NPC ids first (a pure read), walk, then re-load fresh objects for the options snapshot.
     c = _require(campaign_id)
     aid = actor_id or _lead_pc_id(c)
     if not aid:
         raise ValueError("campaign has no characters to parley with; create the PC first")
-    actor = _char(c, aid)
-
     # F10-2/SYN-07: bind to a tracked NPC (additive). Accept the id the DM reaches for; an
     # unknown id DEGRADES to a freeform parley (no npc block) — like event_id, it never
     # raises mid-scene. The binding is a pure READ: nothing on the NPC is mutated here.
     npc_id = npc_id or target_id or character_id or id
+    approach_info: dict | None = None
+    if approach and npc_id and npc_id in c.characters:
+        # Best-effort positioning; None -> freeform parley (no `approach` key). walk_to re-saves,
+        # so re-load below to project the moved stage cells.
+        approach_info = _approach_to_talk(campaign_id, aid, c.characters[npc_id])
+        c = _require(campaign_id)
+    actor = _char(c, aid)
     the_npc = c.characters.get(npc_id) if npc_id else None
 
     # Default skill set: the actor's own proficient/expertise skills UNION the four core
@@ -10455,6 +10570,17 @@ def generate_parley_options(
             "met": the_npc.met,
             "difficulty": effective_difficulty or "medium",
         }
+        # W3 (#1320): where the SPEAKING NPC stands, so the DM/renderer can open the dialogue AT
+        # the actor. Read-only echo of the NPC's stage cell (walk_to is the sole writer). Only
+        # when the NPC is actually staged — absent -> no key (byte-identical to today's block).
+        if the_npc.stage_cell is not None:
+            out["npc"]["stage_cell"] = [int(the_npc.stage_cell[0]), int(the_npc.stage_cell[1])]
+    # W3 (#1320): the approach-to-talk result — present ONLY when approach=True actually walked (or
+    # found the party already adjacent). Absent when approach was not requested OR degraded to a
+    # freeform parley (no stage cell / no grid / combat / unreachable) — so the default payload is
+    # byte-identical to before. `walked` distinguishes a real walk from an already-adjacent no-op.
+    if approach_info is not None:
+        out["approach"] = approach_info
     # Quest & Arc engine, Layer 3: when a live Event is named, attach its authored options as
     # the menu slots (the free-form path above stays). A resolved/unknown Event omits the block,
     # degrading to today's freeform parley. resolve_event applies a picked option's ripple.

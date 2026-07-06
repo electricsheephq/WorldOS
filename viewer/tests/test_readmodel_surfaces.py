@@ -356,6 +356,68 @@ class ReadModelSurfaceTests(unittest.TestCase):
         self.assertEqual(surface["diagnostics"][0]["message"], "unknown beat ref: missing")
         self.assert_no_private_keys(surface)
 
+    # ── parley: W3 (#1320) additive STAGE metadata (npc stage_cell + party-relative facing) ──
+
+    def _staged_talk_snapshot(self):
+        """A snapshot where the bound NPC (mira, moved to an npc kind in the current location) and
+        the lead PC both carry a rest-mode ``stage_cell``, plus a scene grid to face across."""
+        snap = copy.deepcopy(_SNAPSHOT)
+        snap["locations"]["lanternrest"]["scene_grid"] = {
+            "grid": {"cols": 6, "rows": 4},
+            "spawns": {"npc:barkeep": [[5, 2]]},
+        }
+        snap["characters"]["cassian"]["stage_cell"] = [1, 1]
+        # A tracked NPC in the CURRENT location, staged at (4,1) east of the PC at (1,1).
+        snap["characters"]["barkeep"] = {
+            "id": "barkeep", "name": "The Barkeep", "kind": "npc", "met": True,
+            "location_id": "lanternrest", "attitude": "warm", "attitude_value": 30,
+            "stage_cell": [4, 1],
+        }
+        return snap
+
+    def test_parley_surface_npc_carries_stage_cell(self):
+        # W3: the bound NPC block echoes its stage cell so the renderer stages the speaker AT its
+        # cell (the disembodied-portrait dialogue becomes spatial).
+        self._write("camp_marches", self._staged_talk_snapshot())
+        _status, surface = self._get_json("/parley-surface?campaign=camp_marches&npc=barkeep")
+        self.assertEqual(surface["npc"]["stage_cell"], [4, 1])
+        self.assert_no_private_keys(surface)
+
+    def test_parley_surface_npc_facing_is_party_relative(self):
+        # Facing turns the NPC toward the lead PC: PC at (1,1) is WEST of the NPC at (4,1) -> "w".
+        self._write("camp_marches", self._staged_talk_snapshot())
+        _status, surface = self._get_json("/parley-surface?campaign=camp_marches&npc=barkeep")
+        self.assertEqual(surface["npc"]["facing"], "w")
+
+    def test_parley_surface_npc_stage_cell_falls_back_to_w1_spawn_anchor(self):
+        # No Character.stage_cell yet, but W1 wrote an npc:<id> spawn anchor -> project THAT cell.
+        snap = self._staged_talk_snapshot()
+        del snap["characters"]["barkeep"]["stage_cell"]  # un-walked
+        self._write("camp_marches", snap)
+        _status, surface = self._get_json("/parley-surface?campaign=camp_marches&npc=barkeep")
+        self.assertEqual(surface["npc"]["stage_cell"], [5, 2])  # the npc:barkeep anchor
+
+    def test_parley_surface_unstaged_npc_omits_stage_keys_byte_identical(self):
+        # W3 is additive: an NPC with no stage_cell and no spawn anchor gets NO stage/facing key —
+        # the block is byte-identical to #751/#615's shape (guards the round-trip invariant).
+        snap = copy.deepcopy(_SNAPSHOT)  # olwen: no scene grid, no stage cell, no anchor
+        self._write("camp_marches", snap)
+        _status, surface = self._get_json("/parley-surface?campaign=camp_marches&npc=olwen")
+        npc = surface["npc"]
+        self.assertNotIn("stage_cell", npc)
+        self.assertNotIn("facing", npc)
+        self.assertEqual(set(npc.keys()), {"id", "name", "attitude", "attitude_value", "met", "disposition"})
+
+    def test_parley_surface_facing_omitted_when_pc_unplaced(self):
+        # The NPC is staged but the lead PC has no stage cell -> stage_cell present, facing absent
+        # (there is no PC position to face toward). Never a raise.
+        snap = self._staged_talk_snapshot()
+        del snap["characters"]["cassian"]["stage_cell"]
+        self._write("camp_marches", snap)
+        _status, surface = self._get_json("/parley-surface?campaign=camp_marches&npc=barkeep")
+        self.assertEqual(surface["npc"]["stage_cell"], [4, 1])
+        self.assertNotIn("facing", surface["npc"])
+
     # ── character ───────────────────────────────────────────────────────────────
 
     def test_character_surface_projects_full_party_sheets(self):
