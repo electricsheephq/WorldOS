@@ -894,6 +894,31 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertNotIn("TOKENS.map", source)
         self.assertNotIn("setTokens", source)
 
+    def test_openworlds_combat_screen_offers_cross_door_affordance(self):
+        # #1292: when the combat surface carries `doors` (the #1224 door_cells x connections payload,
+        # surfaced by _combat_doors), the resolved-encounter view renders a per-door "Cross to …" tile
+        # that POSTs the engine-resolved `cross_door` intent to the /move lane (the #1225 verb). The
+        # affordance mirrors #1250's action-tile gating: it lives only in the combat-RESOLVED branch and
+        # disables while a cross is in flight (busyAction) so a double-click can't fire two crossings.
+        status, ctype, body = self._get("/openworlds/screen-combat.jsx")
+
+        self.assertEqual(status, 200)
+        self.assertIn("text/babel", ctype)
+        source = body.decode("utf-8")
+        # Reads the server-surfaced doors payload (empty array default -> no affordance == today's shape).
+        self.assertIn("const doors = Array.isArray(surface?.doors) ? surface.doors : [];", source)
+        # The cross handler posts the exact engine-resolved payload the existing /move lane expects
+        # (kind:"cross_door" + the doorway cell x/y from door.cell) — no new engine tool / MCP param.
+        self.assertIn('kind: "cross_door", x: door.cell[0], y: door.cell[1]', source)
+        # The affordance renders per-door in the resolved-combat branch with a stable agent hook.
+        self.assertIn("doors.map(", source)
+        self.assertIn('data-worldos-testid="cross-door-bar"', source)
+        self.assertIn('testId="cross-door"', source)
+        self.assertIn("onClick={() => crossDoor(d)}", source)
+        # #1250-parity gating: busy lockout drives the disabled state so a double-click can't double-cross.
+        self.assertIn('setBusyAction("cross-door")', source)
+        self.assertIn("disabled={crossing || !Array.isArray(d?.cell)}", source)
+
     def test_openworlds_map_screen_binds_viewer_atlas_surface(self):
         status, ctype, body = self._get("/openworlds/screen-map.jsx")
 

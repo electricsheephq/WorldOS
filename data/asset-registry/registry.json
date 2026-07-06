@@ -1,0 +1,140 @@
+{
+  "_doc": "WorldOS asset registry (gfx milestone M-C, issue #1195). The renderer NEVER names a literal asset path; it names a SLOT (asset_id + kind) and asks the registry, which ALWAYS returns a guaranteed-non-null ref dict — the real asset OR a default template. This is the asset analogue of engine=sole-writer: swapping/regenerating ANY asset is ZERO renderer edits. Resolution rule: exact -> alias -> defaults[kind] -> defaults['__any__']. The Python twin is viewer/asset_registry.py; the Unity twin is extensions/renderers/unity/scripts/AssetRegistry.cs. Binary assets (.fbx/.png/...) referenced here are gitignored under the box's Unity Assets/ tree; only this manifest is committed. kind in {character, monster, room, effect, sound}.",
+  "version": 1,
+  "schema": {
+    "asset_row": ["kind", "model_ref", "albedo_ref", "anim_ref", "gen_recipe", "version", "critic_score", "default_used"]
+  },
+  "defaults": {
+    "character": "template_human",
+    "monster": "template_demon",
+    "room": "template_room_crypt",
+    "effect": "fx_default_slash",
+    "sound": "snd_default_hit",
+    "__any__": "template_human"
+  },
+  "aliases": {
+    "hero": "fighter",
+    "pc": "fighter",
+    "wizard": "mage",
+    "goblin_grunt": "goblin"
+  },
+  "assets": {
+    "fighter": {
+      "kind": "character",
+      "model_ref": "Assets/painterly/models/hero.fbx",
+      "albedo_ref": "Assets/painterly/models/hero_albedo.png",
+      "anim_ref": "Assets/painterly/models/hero@moveset.fbx",
+      "gen_recipe": "meshy:humanoid moveset (9-clip) + scenario painterly albedo",
+      "version": "1.0.0",
+      "critic_score": 7.4,
+      "default_used": false
+    },
+    "mage": {
+      "kind": "character",
+      "model_ref": "Assets/painterly/models/hero.fbx",
+      "albedo_ref": "Assets/painterly/models/hero_albedo.png",
+      "anim_ref": "Assets/painterly/models/hero@moveset.fbx",
+      "gen_recipe": "meshy:humanoid moveset (9-clip) + scenario painterly albedo (mage robe tint pending)",
+      "version": "0.9.0",
+      "critic_score": 7.0,
+      "default_used": false
+    },
+    "goblin": {
+      "kind": "monster",
+      "model_ref": "Assets/chars_v2/goblin/goblin.fbx",
+      "albedo_ref": "Assets/chars_v2/goblin/albedo.png",
+      "anim_ref": "Assets/chars_v2/goblin/goblin@moveset.fbx",
+      "gen_recipe": "meshy:humanoid moveset (9-clip) + baked albedo",
+      "version": "1.0.0",
+      "critic_score": 7.1,
+      "default_used": false
+    },
+
+    "skeleton_archer": {
+      "kind": "monster",
+      "model_ref": "Assets/chars_v2/skeleton_archer/rigged.fbx",
+      "albedo_ref": "Assets/chars_v2/skeleton_archer/albedo.jpg",
+      "anim_ref": "Assets/chars_v2/skeleton_archer/anim_idle.fbx",
+      "gen_recipe": "meshy:humanoid moveset (9-clip: idle/walk/run/attack/cast/block/dodge/hit/death), rigged.fbx imported animationType=Generic; albedo from model.glb embedded PBR (wave-1 #1290)",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "cultist": {
+      "kind": "monster",
+      "model_ref": "Assets/chars_v2/cultist/rigged.fbx",
+      "albedo_ref": "Assets/chars_v2/cultist/albedo.jpg",
+      "anim_ref": "Assets/chars_v2/cultist/anim_idle.fbx",
+      "gen_recipe": "meshy:humanoid moveset (9-clip), animationType=Generic; deliberately bright/pale ivory-robe albedo (#1282 light_tint probe body) (wave-1 #1290)",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "ghoul": {
+      "kind": "monster",
+      "model_ref": "Assets/chars_v2/ghoul/rigged.fbx",
+      "albedo_ref": "Assets/chars_v2/ghoul/albedo.jpg",
+      "anim_ref": "Assets/chars_v2/ghoul/anim_idle.fbx",
+      "gen_recipe": "tripo:text-to-model -> rig(biped, spec=mixamo) -> retarget idle+walk only (creatures support fewer biped presets); rigged.fbx imported animationType=Generic (wave-1 #1290)",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+
+    "template_human": {
+      "kind": "character",
+      "model_ref": "Assets/painterly/models/hero.fbx",
+      "albedo_ref": "Assets/painterly/models/hero_albedo.png",
+      "anim_ref": "Assets/painterly/models/hero@moveset.fbx",
+      "gen_recipe": "DEFAULT TEMPLATE: any character without a model resolves here.",
+      "version": "1.0.0",
+      "critic_score": 7.4,
+      "default_used": false,
+      "is_template": true
+    },
+    "template_demon": {
+      "kind": "monster",
+      "model_ref": "Assets/chars_v2/goblin/goblin.fbx",
+      "albedo_ref": "Assets/chars_v2/goblin/albedo.png",
+      "anim_ref": "Assets/chars_v2/goblin/goblin@moveset.fbx",
+      "gen_recipe": "DEFAULT TEMPLATE: any monster without a model resolves here (demon template; goblin mesh stands in until a dedicated demon model is generated).",
+      "version": "1.0.0",
+      "critic_score": 7.1,
+      "default_used": false,
+      "is_template": true
+    },
+    "template_room_crypt": {
+      "kind": "room",
+      "model_ref": "Assets/painterly/backdrops/crypt_pinned_v1.png",
+      "albedo_ref": "Assets/painterly/backdrops/crypt_pinned_v1.png",
+      "anim_ref": null,
+      "gen_recipe": "DEFAULT TEMPLATE: any room without a backdrop resolves here (crypt_firelit recipe, critic 7.4).",
+      "version": "2.0.0",
+      "critic_score": 7.4,
+      "default_used": false,
+      "is_template": true
+    },
+    "fx_default_slash": {
+      "kind": "effect",
+      "model_ref": "Assets/painterly/vfx/vfx_slash.png",
+      "albedo_ref": "Assets/painterly/vfx/vfx_slash.png",
+      "anim_ref": null,
+      "gen_recipe": "DEFAULT TEMPLATE: any effect without an asset resolves here (generic slash impact).",
+      "version": "1.0.0",
+      "critic_score": 6.5,
+      "default_used": false,
+      "is_template": true
+    },
+    "snd_default_hit": {
+      "kind": "sound",
+      "model_ref": null,
+      "albedo_ref": null,
+      "anim_ref": "Assets/audio/sfx/hit_default.wav",
+      "gen_recipe": "DEFAULT TEMPLATE: any sound without an asset resolves here (generic hit).",
+      "version": "1.0.0",
+      "critic_score": 6.0,
+      "default_used": false,
+      "is_template": true
+    }
+  }
+}

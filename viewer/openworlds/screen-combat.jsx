@@ -40,6 +40,12 @@ function ScreenCombat({ onNavigate, state }) {
   const [selectedToken, setSelectedToken] = React.useState("");
   const [localLog, setLocalLog] = React.useState([]);
   const [busyAction, setBusyAction] = React.useState("");
+  // #598: the Move tile posts `move_to_zone`, a _TARGET_ONLY_KIND (viewer/server.py sanitize_move)
+  // whose `target` is a zone NAME the server can't supply statically (unlike Attack/Cast/Item,
+  // which are one static payload). Clicking Move arms "pick a destination zone"; the next zone
+  // click (existing CombatMap zone-band affordance, extended below) completes the POST. Mirrors
+  // move_to_cell's client-fills-the-coordinate pattern, just for zone mode instead of grid mode.
+  const [pickingZone, setPickingZone] = React.useState(false);
   // #robustness: synchronous in-flight lock. setBusyAction is async (state read at the disabled
   // check is stale), so two rapid clicks before re-render both pass — the adversarial's "Attack
   // dies on double-click" / double-submit vector. busyRef gates synchronously.
@@ -99,11 +105,18 @@ function ScreenCombat({ onNavigate, state }) {
   const zones = Array.isArray(surface?.zones) ? surface.zones : [];
   const battleLog = Array.isArray(surface?.battleLog) ? surface.battleLog : [];
   const encounter = surface?.encounter || { active: false, name: "No active encounter" };
+  // M-E room transition: authored doorways to linked room-units (door_cells x connections, server-surfaced).
+  const doors = Array.isArray(surface?.doors) ? surface.doors : [];
   // FIX A (combat scene backdrop): the servable scene scope the server projects on
   // the location block (`location:<id>`). Mirror the dialogue screen's sceneScope
   // fallback so an older surface without imageScope still resolves via location.id;
   // empty string -> CombatMap renders no backdrop (graceful, transparent).
-  const sceneScope = surface?.location?.imageScope ||
+  // M-D: prefer the box-rendered PoE2 3D-on-2D combat FRAME (combatFrameScope, turn-suffixed for cache-bust)
+  // as the backdrop when present; fall back to the static location plate (imageScope) so a fight with no box
+  // frame yet still shows a backdrop (the <Img> 404→placeholder covers the pending-frame window). The grid/
+  // zone input overlay (zIndex 1) is untouched — only the backdrop image swaps.
+  const sceneScope = surface?.combatFrameScope ||
+    surface?.location?.imageScope ||
     (surface?.location?.id ? `location:${surface.location.id}` : "");
   const commandCenter = surface?.commandCenter || {};
   const economy = surface?.actionEconomy || {};
@@ -121,6 +134,13 @@ function ScreenCombat({ onNavigate, state }) {
     }
   }, [surface?.selectedTokenId, selectedToken, tokens]);
 
+  // #598: disarm the Move tile's "pick a zone" mode the instant the surface says the actor can no
+  // longer act (turn advanced, action spent, surface went read-only) — otherwise a stale refresh
+  // could leave a zone band armed after a POST already ended the turn.
+  React.useEffect(() => {
+    if (!canAct && pickingZone) setPickingZone(false);
+  }, [canAct, pickingZone]);
+
   const actionById = (id) => actions.find((a) => a.id === id) || {};
   const actionHint = (action) => {
     if (!action) return "unavailable";
@@ -128,6 +148,31 @@ function ScreenCombat({ onNavigate, state }) {
     if (action.move?.name) return action.move.name;
     if (action.move?.kind) return action.move.kind;
     return action.available ? "ready" : "unavailable";
+  };
+
+  // M-E: cross an authored doorway to the linked room-unit. POSTs a cross_door intent (engine-resolved;
+  // the server gates on combat being RESOLVED). NOT gated on canAct — the cross happens AFTER the fight.
+  const crossDoor = async (door) => {
+    if (busyRef.current || !Array.isArray(door?.cell)) return;
+    busyRef.current = true;
+    // #1250-parity: drive busyAction so the door affordance disables (and any sibling door / action
+    // tile greys out) while the cross is in flight, mirroring postMove's in-flight lockout.
+    setBusyAction("cross-door");
+    try {
+      const response = await fetch("/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "cross_door", x: door.cell[0], y: door.cell[1], campaign: surface?.campaign_id || campaignId }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) throw new Error(payload.reason || `cross ${response.status}`);
+      await loadSurface();
+    } catch (error) {
+      toast({ kind: "danger", title: "Could not cross", body: error?.message || "The viewer could not reach /move." });
+    } finally {
+      busyRef.current = false;
+      setBusyAction("");
+    }
   };
 
   const postMove = async (action) => {
@@ -138,6 +183,14 @@ function ScreenCombat({ onNavigate, state }) {
         title: action?.label ? `${action.label} unavailable` : "Action unavailable",
         body: action?.disabled_reason || "This surface is read-only.",
       });
+      return;
+    }
+    // #598: `move_to_zone` (the Move tile) has no static target — the server can't guess which
+    // zone the player wants. Arm "pick a destination zone" instead of posting immediately; the
+    // zone-band click below (onZoneMoveTarget) fills `target` and completes the POST. Re-clicking
+    // Move while armed disarms it (an escape hatch if the player changes their mind).
+    if (action.move.kind === "move_to_zone") {
+      setPickingZone((was) => !was);
       return;
     }
     if (busyRef.current) return; // already submitting — drop the rapid double-click / double-Enter
@@ -171,15 +224,99 @@ function ScreenCombat({ onNavigate, state }) {
     }
   };
 
+  // #598: completes the Move tile's armed "pick a destination zone" — posts move_to_zone with the
+  // clicked zone as `target` (sanitize_move's _TARGET_ONLY_KINDS requirement). Same /move lane +
+  // busyRef double-submit guard as postMove; disarms picking mode whether it lands or fails.
+  const postZoneMove = async (targetZone) => {
+    const action = actionById("move");
+    if (!pickingZone || !action?.available || !canAct || !targetZone) return;
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusyAction("move");
+    try {
+      const response = await fetch("/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "move_to_zone", target: targetZone, campaign: surface?.campaign_id || campaignId }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.reason || `move ${response.status}`);
+      }
+      setLocalLog((rows) => [
+        ...rows,
+        {
+          event: "player-intent",
+          title: "Player intent sent",
+          text: `move → ${targetZone}`,
+          meta: [{ label: "lane", value: "/move" }],
+        },
+      ]);
+      await loadSurface();
+    } catch (error) {
+      toast({ kind: "danger", title: "Move not sent", body: error?.message || "The viewer could not reach /move." });
+    } finally {
+      busyRef.current = false;
+      setBusyAction("");
+      setPickingZone(false);
+    }
+  };
+
+  // Grid-combat player-turn intents (move_to_cell / on-turn attack). POST /move with the turnToken
+  // echoed for idempotency; the grid lane returns the REFRESHED surface in {ok,arbiter,combat}, so we
+  // apply it directly (no extra GET). The engine stays the sole writer — this only posts an intent.
+  const postCombatIntent = async (move, label) => {
+    if (!canAct) {
+      toast({ kind: "danger", eyebrow: "Combat", title: `${label} unavailable`, body: "Not your turn, or read-only surface." });
+      return;
+    }
+    if (busyRef.current) return; // synchronous double-click guard
+    busyRef.current = true;
+    setBusyAction(label);
+    try {
+      const body = { ...move, turn_token: surface?.turnToken || "", campaign: surface?.campaign_id || campaignId };
+      const response = await fetch("/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.reason || `move ${response.status}`);
+      }
+      setLocalLog((rows) => [
+        ...rows,
+        {
+          event: "player-intent",
+          title: `Player ${label}`,
+          text: move.kind === "move_to_cell" ? `→ cell (${move.x}, ${move.y})` : "attack",
+          meta: [{ label: "lane", value: "/move" }],
+        },
+      ]);
+      if (payload.combat) { setSurface(payload.combat); setSurfaceStatus("ready"); }
+      else await loadSurface();
+    } catch (error) {
+      toast({ kind: "danger", title: `${label} not sent`, body: error?.message || "The viewer could not reach /move." });
+    } finally {
+      busyRef.current = false;
+      setBusyAction("");
+    }
+  };
+  const onCellMove = (x, y) => postCombatIntent({ kind: "move_to_cell", x, y }, "move");
+  const onAttackToken = (targetId) => postCombatIntent({ kind: "attack", target_id: targetId }, "attack");
+
   const actionTile = (id, fallbackIcon, fallbackLabel) => {
     const action = actionById(id);
+    // #598: the Move tile stays visually "active" while armed (pickingZone), even though no
+    // request is in flight — it's waiting on a zone click, not a busyAction id match.
+    const isMoveArmed = id === "move" && pickingZone;
     return (
       <ActionTile
         key={id}
         icon={action.icon || fallbackIcon}
         label={action.label || fallbackLabel}
-        hint={actionHint(action)}
-        active={busyAction === id}
+        hint={isMoveArmed ? "Pick a zone" : actionHint(action)}
+        active={busyAction === id || isMoveArmed}
         disabled={!action.available || !action.move || !canAct || Boolean(busyAction)}
         onClick={() => postMove(action)}
       />
@@ -218,9 +355,34 @@ function ScreenCombat({ onNavigate, state }) {
           </div>
 
           {encounter.active ? (
-            <CombatMap tokens={tokens} zones={zones} selected={selected?.id} onSelect={setSelectedToken} sceneScope={sceneScope} />
+            <CombatMap tokens={tokens} zones={zones} grid={surface?.grid} selected={selected?.id} onSelect={setSelectedToken} onCellMove={onCellMove} onAttack={onAttackToken} canAct={canAct} sceneScope={sceneScope} pickingZone={pickingZone} onZoneMoveTarget={postZoneMove} />
           ) : (
-            <CombatEmptyState status={surfaceStatus} onNavigate={onNavigate} />
+            <React.Fragment>
+              {doors.length ? (
+                <div data-worldos-testid="cross-door-bar" style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                  {doors.map((d, i) => {
+                    // #1250-parity gating: a door tile is only ever offered when combat is RESOLVED (this
+                    // `!encounter.active` branch), and disables while any cross/move is in flight so a
+                    // double-click can't fire two crossings. `multi` marks a door with an ambiguous
+                    // destination (the server took a best-effort first connection) — surfaced in the hint.
+                    const crossing = Boolean(busyAction);
+                    return (
+                      <BrassButton
+                        key={i}
+                        size="sm"
+                        testId="cross-door"
+                        disabled={crossing || !Array.isArray(d?.cell)}
+                        title={crossing ? "Crossing…" : d.multi ? "Multiple exits — takes the first connection" : `Cross to ${d.toName || "the next room"}`}
+                        onClick={() => crossDoor(d)}
+                      >
+                        Cross to {d.toName || "the next room"} →
+                      </BrassButton>
+                    );
+                  })}
+                </div>
+              ) : null}
+              <CombatEmptyState status={surfaceStatus} onNavigate={onNavigate} />
+            </React.Fragment>
           )}
         </Panel>
 
@@ -439,6 +601,119 @@ function CombatEmptyState({ status, onNavigate }) {
   );
 }
 
+/* Grid combat board (#10/#461): when the engine sends authoritative cell coordinates
+   (grid.mode==="grid", tokens positionAuthority:"engine"), render a real cols×rows tactical board.
+   Tokens sit at their (x,y) cell; an EMPTY-cell click posts move_to_cell, a FOE click posts attack,
+   an ALLY click selects. The engine validates reach/budget/OA and re-emits the surface (it is the
+   sole writer) — this board only POSTS intents and renders what comes back. */
+function CombatGridBoard({ tokens, grid, selected, onSelect, onCellMove, onAttack, canAct, sceneScope }) {
+  const cols = Math.max(1, Number(grid && grid.cols) || 16);
+  const rows = Math.max(1, Number(grid && grid.rows) || 10);
+  const at = {};
+  (tokens || []).forEach((t) => {
+    const x = Number(t.x), y = Number(t.y);
+    if (Number.isInteger(x) && Number.isInteger(y)) at[`${x},${y}`] = t;
+  });
+  // #10 terrain: honor the engine's per-cell walkability override (`{c,r,walkable:bool}`) — record BOTH
+  // true and false, so a cellDefault.walkable=false scene with explicit walkable floors works too. Any
+  // in-bounds cell NOT listed in grid.cells falls back to cellDefault (walkable unless it says otherwise).
+  const walkability = {};
+  ((grid && Array.isArray(grid.cells)) ? grid.cells : []).forEach((c) => {
+    if (c && Number.isInteger(c.c) && Number.isInteger(c.r) && typeof c.walkable === "boolean") {
+      walkability[`${c.c},${c.r}`] = c.walkable;
+    }
+  });
+  const defaultWalkable = !(grid && grid.cellDefault && grid.cellDefault.walkable === false);
+  const isWalkable = (x, y) => {
+    const key = `${x},${y}`;
+    return Object.prototype.hasOwnProperty.call(walkability, key) ? walkability[key] : defaultWalkable;
+  };
+  const curId = ((tokens || []).find((t) => t.isCurrent) || {}).id || "";
+  const cells = [];
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) cells.push({ x, y, t: at[`${x},${y}`] });
+  return (
+    <div style={{
+      position: "relative", width: "100%", height: "calc(100% - 50px)", overflow: "hidden",
+      background:
+        `radial-gradient(ellipse at 50% 40%, rgba(60,30,10,0.2), transparent 70%),
+         linear-gradient(135deg, #3a2418 0%, #25160e 100%)`,
+      boxShadow: "inset 0 0 0 1px var(--w-500), inset 0 0 60px rgba(0,0,0,0.6)",
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 12,
+    }}>
+      {sceneScope ? (
+        <Img scope={sceneScope} label="scene · battlefield" w="100%" h="100%" fit="cover"
+          style={{ position: "absolute", inset: 0, zIndex: 0, opacity: 0.9 }} />
+      ) : null}
+      <div style={{
+        position: "relative", zIndex: 1,
+        display: "grid",
+        gridTemplateColumns: `repeat(${cols}, 1fr)`, gridTemplateRows: `repeat(${rows}, 1fr)`,
+        gap: 1, aspectRatio: `${cols} / ${rows}`, height: "100%", maxWidth: "100%", width: "auto",
+        boxShadow: "inset 0 0 0 1px rgba(176,141,87,0.25)",
+      }}>
+        {cells.map(({ x, y, t }) => {
+          const isFoe = t && t.team === "foe";
+          const walkable = isWalkable(x, y);
+          // Selecting a token is ALWAYS allowed (inspect on any turn); move/attack gate on can_act.
+          const onActivate = t
+            ? () => { if (isFoe && canAct) onAttack(t.id); else onSelect(t.id); }
+            : () => { if (canAct && walkable) onCellMove(x, y); };
+          const actionable = t ? true : (canAct && walkable);   // gets button semantics + keyboard
+          const hoverBg = t ? (isFoe && canAct ? "rgba(197,64,64,0.22)" : "rgba(244,210,123,0.10)") : "rgba(244,210,123,0.12)";
+          const title = t ? `${t.name}${isFoe && canAct ? " — attack" : ""}` : (walkable ? `move → (${x}, ${y})` : "blocked");
+          const restBox = walkable ? "inset 0 0 0 0.5px rgba(176,141,87,0.10)" : "inset 0 0 0 0.5px rgba(80,40,30,0.5)";
+          return (
+            <div key={`${x},${y}`}
+              title={title} aria-label={title}
+              role={actionable ? "button" : undefined}
+              tabIndex={actionable ? 0 : -1}
+              onClick={onActivate}
+              onKeyDown={(e) => { if (actionable && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); onActivate(); } }}
+              onMouseEnter={(e) => { if (actionable) e.currentTarget.style.background = hoverBg; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+              onFocus={(e) => { if (actionable) e.currentTarget.style.boxShadow = "inset 0 0 0 1.5px var(--gold-glow)"; }}
+              onBlur={(e) => { e.currentTarget.style.boxShadow = restBox; }}
+              style={{
+                position: "relative", boxShadow: restBox,
+                background: walkable ? "transparent" : "rgba(20,10,6,0.45)",
+                cursor: actionable ? "pointer" : "default", outline: "none",
+                transition: "background 0.08s, box-shadow 0.08s",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+              {t ? <GridCellToken t={t} selected={selected === t.id} isCurrent={t.id === curId} /> : null}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* A token sized to its grid cell: circle + team tint + isCurrent ring + tiny HP pip. */
+function GridCellToken({ t, selected, isCurrent }) {
+  const isFoe = t.team === "foe";
+  const ratio = healthRatio(t);
+  const ring = isCurrent
+    ? "0 0 0 2px var(--gold-glow), 0 0 16px rgba(244,210,123,0.7)"
+    : (selected ? "0 0 0 2px rgba(244,210,123,0.6)" : "none");
+  return (
+    <div style={{ width: "84%", height: "84%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2 }}>
+      <div style={{
+        width: "72%", aspectRatio: "1", borderRadius: "50%",
+        background: isFoe
+          ? "radial-gradient(circle at 35% 30%, #d35a5a, #7a1414 70%, #3a0a0a)"
+          : "radial-gradient(circle at 35% 30%, var(--p-100, #e8d6a8), var(--p-300, #b08d57) 70%, #4a3618)",
+        boxShadow: `${ring}, inset 0 -2px 4px rgba(0,0,0,0.4)`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        color: isFoe ? "#fff" : "#2a1c08", fontFamily: "var(--f-display)", fontWeight: 700, fontSize: "min(2.4vmin, 17px)",
+      }}>{t.initial || (t.name || "?").slice(0, 1)}</div>
+      <div style={{ width: "72%", height: 3, background: "rgba(0,0,0,0.5)", boxShadow: "inset 0 0 0 0.5px rgba(0,0,0,0.6)" }}>
+        <div style={{ width: `${Math.round(ratio * 100)}%`, height: "100%", background: hpBarFill(t, isFoe) }} />
+      </div>
+    </div>
+  );
+}
+
 /* HONEST RENDERING (graphics #432 / #438): the engine's combat is GRIDLESS / named-zone. A
    token's x/y are DERIVED render-hints (positionAuthority:"derived"), never authoritative — so
    we must NOT draw a measured VTT grid and place tokens by x/y. The previous board did exactly
@@ -450,7 +725,17 @@ function CombatEmptyState({ status, onNavigate }) {
    A real measured-tile grid (range/LoS/flanking) is the evidence-gated #461 future: it requires
    the engine to gain authoritative coordinates (positionAuthority:"engine" + grid.mode==="grid").
    When that lands, a grid board plugs in here behind that flag; until then, zones are the truth. */
-function CombatMap({ tokens, zones, selected, onSelect, sceneScope }) {
+function CombatMap({ tokens, zones, grid, selected, onSelect, onCellMove, onAttack, canAct, sceneScope, pickingZone, onZoneMoveTarget }) {
+  // #10/#461: when the engine sends authoritative cell coords (grid.mode==="grid"), render a real
+  // tactical board (the slot this comment-block reserved). Otherwise fall back to the zone bands.
+  if (grid && grid.mode === "grid" && Number(grid.cols) > 0 && Number(grid.rows) > 0) {
+    return (
+      <CombatGridBoard
+        tokens={tokens} grid={grid} selected={selected} onSelect={onSelect}
+        onCellMove={onCellMove} onAttack={onAttack} canAct={canAct} sceneScope={sceneScope}
+      />
+    );
+  }
   const named = (zones || []).map((z) => (typeof z === "string" ? z : z && z.name)).filter(Boolean);
   const FIELD = "The Field";
   let zoneNames = named.slice();
@@ -498,22 +783,35 @@ function CombatMap({ tokens, zones, selected, onSelect, sceneScope }) {
           pointerEvents: "none",
         }} />
       ) : null}
-      {zoneNames.map((zn) => (
+      {zoneNames.map((zn) => {
+        // #598: while the Move tile is armed (pickingZone), the zone header becomes the
+        // "pick a destination" affordance — click a zone band to POST move_to_zone with that
+        // zone as `target`. Mirrors CombatGridBoard's walkable-cell-click pattern, just for
+        // zone mode. Disabled/inert otherwise (existing zone-label behavior is unchanged).
+        const armed = Boolean(pickingZone && canAct);
+        return (
         <div key={zn} style={{
           flex: 1, minWidth: 0,
           // FIX A: sit the zone bands above the absolute backdrop + scrim (zIndex 0).
           position: "relative", zIndex: 1,
           display: "flex", flexDirection: "column",
           background: "rgba(30,18,10,0.30)",
-          boxShadow: "inset 0 0 0 1px rgba(176,141,87,0.18)",
+          boxShadow: armed ? "inset 0 0 0 1px var(--gold-glow, rgba(244,210,123,0.6))" : "inset 0 0 0 1px rgba(176,141,87,0.18)",
         }}>
-          <div title={zn} style={{
-            padding: "5px 8px",
-            fontFamily: "var(--f-display)", fontSize: 9, letterSpacing: "0.12em",
-            textTransform: "uppercase", color: "rgba(244, 210, 123, 0.75)",
-            borderBottom: "1px solid rgba(176,141,87,0.18)",
-            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-          }}>{zn}</div>
+          <div
+            title={armed ? `Move here (${zn})` : zn}
+            role={armed ? "button" : undefined}
+            tabIndex={armed ? 0 : -1}
+            onClick={armed ? () => onZoneMoveTarget(zn) : undefined}
+            onKeyDown={armed ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onZoneMoveTarget(zn); } } : undefined}
+            style={{
+              padding: "5px 8px",
+              fontFamily: "var(--f-display)", fontSize: 9, letterSpacing: "0.12em",
+              textTransform: "uppercase", color: armed ? "var(--gold-glow, #f4d27b)" : "rgba(244, 210, 123, 0.75)",
+              borderBottom: "1px solid rgba(176,141,87,0.18)",
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+              cursor: armed ? "pointer" : "default",
+            }}>{zn}{armed ? " →" : ""}</div>
           <div style={{
             flex: 1, display: "flex", flexWrap: "wrap", gap: 12,
             alignContent: "flex-start", justifyContent: "center",
@@ -526,7 +824,8 @@ function CombatMap({ tokens, zones, selected, onSelect, sceneScope }) {
               : <div className="body-sm" style={{ color: "rgba(212,185,122,0.35)", alignSelf: "center" }}>empty</div>}
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

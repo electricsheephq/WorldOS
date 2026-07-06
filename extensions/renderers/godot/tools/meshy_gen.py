@@ -21,10 +21,20 @@ Flow (per the verified Meshy v2 text-to-3d contract):
 The API key is read from ~/.worldos/meshy.key or $MESHY_API_KEY. It is NEVER printed and
 NEVER written into any repo file.
 
+Rig + animate (HUMANOID only — Meshy cannot rig creatures; use tripo_gen.py for those):
+  6. POST /openapi/v1/rigging {input_task_id, height_meters} -> rigged fbx+glb + FREE walk/run clips
+  7. POST /openapi/v1/animations {rig_task_id, action_id}    -> one library clip (3 cr each)
+  Import the rigged FBX into Unity as animationType=GENERIC (not Humanoid — the Meshy bone names
+  don't auto-map to Unity's Humanoid avatar, which silently drops the clips). Verified 2026-06-28.
+
 Usage:
     python3 meshy_gen.py --prompt "a stylized fantasy human ranger ..." --out <dir>
     python3 meshy_gen.py --prompt "..." --out <dir> --no-refine   # geometry only (no texture)
     python3 meshy_gen.py --prompt "..." --out <dir> --force        # re-generate even if model.glb exists
+    python3 meshy_gen.py --prompt "..." --out <dir> --rig          # gen -> rig (+ free walk/run)
+    python3 meshy_gen.py --prompt "..." --out <dir> --rig --animate 0 4   # + Idle(0) + Attack(4)
+    python3 meshy_gen.py --prompt "..." --out <dir> --moveset             # FULL WorldOS combat moveset, one command
+    python3 meshy_gen.py --rig-from-task <meshy_model_task_id> --out <dir> --moveset  # moveset onto an existing model
 """
 
 from __future__ import annotations
@@ -40,6 +50,19 @@ import urllib.request
 API_BASE = "https://api.meshy.ai"
 CREATE_PATH = "/openapi/v2/text-to-3d"
 POLL_TEMPLATE = "/openapi/v2/text-to-3d/{task_id}"
+# Rigging + animation live on /openapi/v1 (the version split is a Meshy footgun).
+RIGGING_PATH = "/openapi/v1/rigging"
+RIGGING_POLL = "/openapi/v1/rigging/{task_id}"
+ANIM_PATH = "/openapi/v1/animations"
+
+# ★ The canonical WorldOS combat moveset → Meshy animation-library action_ids (ALL live-verified
+# 2026-06-28: each id generated a real clip on a rigged elf). walk + run come FREE with the rig
+# (basic_animations), so `--moveset` only spends 3 cr/clip on these 7 library actions.
+# Source of ids: Meshy's animation library (no REST list endpoint — cache from the docs).
+WORLDOS_MOVESET = {
+    "idle": 0, "attack": 4, "cast": 125, "block": 138, "dodge": 156, "hit": 178, "death": 8,
+}
+ANIM_POLL = "/openapi/v1/animations/{task_id}"
 
 # Polling cadence + ceilings.
 POLL_INTERVAL_SEC = 8
@@ -183,9 +206,14 @@ def _create_refine(headers: dict, preview_task_id: str) -> str:
     return task_id
 
 
-def _poll(headers: dict, task_id: str, label: str, timeout_sec: int) -> dict:
-    """Poll a task until SUCCEEDED. Exits on FAILED / timeout. Returns the final task dict."""
-    url = API_BASE + POLL_TEMPLATE.format(task_id=task_id)
+def _poll(headers: dict, task_id: str, label: str, timeout_sec: int,
+          poll_template: str = POLL_TEMPLATE) -> dict:
+    """Poll a task until SUCCEEDED. Exits on FAILED / timeout. Returns the final task dict.
+
+    poll_template selects the endpoint family: v2 text-to-3d (default), or the v1 rigging /
+    animation templates. All share the same SUCCEEDED/FAILED/progress status model.
+    """
+    url = API_BASE + poll_template.format(task_id=task_id)
     deadline = time.time() + timeout_sec
     last_progress = -1
     while True:
@@ -219,6 +247,85 @@ def _glb_url(task: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Rigging + animation (HUMANOID only). Mirrors tripo_gen.py's rig pipeline shape.
+# ---------------------------------------------------------------------------
+def _create_rigging(headers: dict, model_task_id: str, height_meters: float) -> str:
+    # input_task_id = a prior SUCCEEDED Meshy text-to-3d/image-to-3d task. Humanoid only (else 422).
+    body = {"input_task_id": model_task_id, "height_meters": height_meters}
+    res = _post_json(API_BASE + RIGGING_PATH, headers, body)
+    task_id = res.get("result")
+    if not task_id:
+        sys.exit("[meshy_gen] ERROR: rigging create returned no task id: %s" % json.dumps(res))
+    print("[meshy_gen] rigging task submitted: %s" % task_id)
+    return task_id
+
+
+def _create_animation(headers: dict, rig_task_id: str, action_id: int) -> str:
+    # action_id is an integer from the Meshy animation library (0=Idle, 4=Attack, 14=Run_02, ...).
+    body = {"rig_task_id": rig_task_id, "action_id": int(action_id)}
+    res = _post_json(API_BASE + ANIM_PATH, headers, body)
+    task_id = res.get("result")
+    if not task_id:
+        sys.exit("[meshy_gen] ERROR: animation create returned no task id: %s" % json.dumps(res))
+    print("[meshy_gen] animation task submitted: %s (action_id=%d)" % (task_id, int(action_id)))
+    return task_id
+
+
+def _download_pairs(result: dict, out_dir: str, pairs: list) -> dict:
+    """Download a set of (result-key, dest-filename) URLs that are present; return {name: bytes}.
+
+    Prefers FBX for Unity (Mecanim). Missing keys are skipped (e.g. armature-only variants).
+    """
+    saved: dict = {}
+    for key, fname in pairs:
+        url = result.get(key)
+        if isinstance(url, str) and url:
+            size = _download(url, os.path.join(out_dir, fname))
+            saved[fname] = size
+            print("[meshy_gen] downloaded %s (%d bytes)" % (fname, size))
+    return saved
+
+
+def _run_rig_and_animate(headers: dict, model_task_id: str, out_dir: str, height: float,
+                         action_ids: list, timeout: int, meta: dict, clip_names: dict = None) -> None:
+    """rig the model (humanoid) -> download rigged FBX/GLB + free walk/run -> optional library clips.
+
+    clip_names maps action_id -> friendly name (e.g. {4: "attack"}); when present, clips are saved as
+    anim_<name>.fbx (not anim_action_<id>.fbx) so the moveset lands as named, agent-readable files.
+    """
+    names = clip_names or {}
+    rig_id = _create_rigging(headers, model_task_id, height)
+    rig_task = _poll(headers, rig_id, "rigging", timeout, poll_template=RIGGING_POLL)
+    result = rig_task.get("result", {}) or {}
+    rig_files = _download_pairs(result, out_dir, [
+        ("rigged_character_fbx_url", "rigged.fbx"),
+        ("rigged_character_glb_url", "rigged.glb"),
+    ])
+    basic = result.get("basic_animations", {}) or {}
+    basic_files = _download_pairs(basic, out_dir, [
+        ("walking_fbx_url", "anim_walk.fbx"),    # the rig's FREE locomotion clips, named for the moveset
+        ("running_fbx_url", "anim_run.fbx"),
+    ])
+    meta["rig_task_id"] = rig_id
+    meta["rig_files"] = rig_files
+    meta["basic_animation_files"] = basic_files
+
+    anim_files: dict = {}
+    for aid in action_ids or []:
+        label = names.get(int(aid), "action_%d" % int(aid))
+        an_id = _create_animation(headers, rig_id, aid)
+        an_task = _poll(headers, an_id, "animation:%s" % label, timeout, poll_template=ANIM_POLL)
+        an_result = an_task.get("result", {}) or {}
+        files = _download_pairs(an_result, out_dir, [
+            ("animation_fbx_url", "anim_%s.fbx" % label),
+            ("animation_glb_url", "anim_%s.glb" % label),
+        ])
+        anim_files[label] = dict(action_id=int(aid), task_id=an_id, **files)
+    if action_ids:
+        meta["animation_files"] = anim_files
+
+
+# ---------------------------------------------------------------------------
 # --test-key (cheap auth probe) and --dry-run (no API call).
 # ---------------------------------------------------------------------------
 # Rough per-stage credit estimates (for --dry-run only; the API is the source of truth).
@@ -249,16 +356,27 @@ def _cmd_test_key() -> None:
 def _cmd_dry_run(args) -> None:
     """Print the generation plan + estimated credits and exit — NO API call, NO key needed."""
     out_dir = os.path.abspath(args.out)
-    print("[meshy_gen] DRY-RUN text-to-3d (NO API call)")
-    print("  prompt     : %s" % args.prompt)
+    print("[meshy_gen] DRY-RUN (NO API call)")
     print("  out dir    : %s" % out_dir)
-    if args.no_refine:
+    if args.rig_from_task:
+        print("  plan       : rig existing model task %s (no generation)" % args.rig_from_task)
+    elif args.no_refine:
+        print("  prompt     : %s" % args.prompt)
         print("  plan       : preview only (untextured geometry; --no-refine)")
         print("  est credits: preview %s" % CREDIT_EST["preview"])
     else:
+        print("  prompt     : %s" % args.prompt)
         print("  plan       : preview -> refine (PBR-textured)")
         print("  est credits: preview %s + refine %s (API is source of truth)" % (
             CREDIT_EST["preview"], CREDIT_EST["refine"]))
+    if args.rig or args.rig_from_task or args.action_ids:
+        print("  rig        : YES (HUMANOID only) height=%.2fm -> rigged fbx/glb + free walk/run (~5 cr)"
+              % args.rig_height)
+        if args.moveset:
+            print("  moveset    : WorldOS combat set %s (~%d cr) -> named anim_<name>.fbx"
+                  % (",".join(WORLDOS_MOVESET), 3 * len(WORLDOS_MOVESET)))
+        elif args.action_ids:
+            print("  animate    : action_ids %s (~3 cr each)" % " ".join(str(a) for a in args.action_ids))
 
 
 # ---------------------------------------------------------------------------
@@ -277,6 +395,17 @@ def main() -> None:
                     help="stop after preview (untextured geometry only)")
     ap.add_argument("--force", action="store_true",
                     help="regenerate even if <out>/model.glb already exists")
+    ap.add_argument("--rig", action="store_true",
+                    help="after generation, auto-rig the model (HUMANOID only) + download free walk/run")
+    ap.add_argument("--rig-from-task", dest="rig_from_task",
+                    help="skip generation; rig an EXISTING Meshy model task id (implies --rig)")
+    ap.add_argument("--rig-height", dest="rig_height", type=float, default=1.7,
+                    help="character height in meters for rigging (default 1.7)")
+    ap.add_argument("--animate", dest="action_ids", nargs="+", type=int, metavar="ACTION_ID",
+                    help="library action_id(s) to apply after rigging (e.g. 0=Idle 4=Attack); implies --rig")
+    ap.add_argument("--moveset", action="store_true",
+                    help="apply the full WorldOS combat moveset (rig + walk/run free + %s); "
+                         "clips land as named anim_<name>.fbx" % "/".join(WORLDOS_MOVESET))
     ap.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SEC,
                     help="per-stage poll timeout in seconds (default %d)" % DEFAULT_TIMEOUT_SEC)
     args = ap.parse_args()
@@ -285,8 +414,27 @@ def main() -> None:
         _cmd_test_key()
         return
 
-    if not args.prompt or not args.out:
-        ap.error("--prompt and --out are required (unless --test-key).")
+    # --moveset = the canonical combat set, saved under friendly names.
+    clip_names = None
+    if args.moveset:
+        if args.action_ids:
+            ap.error("--moveset and --animate are mutually exclusive.")
+        args.action_ids = list(WORLDOS_MOVESET.values())
+        clip_names = {v: k for k, v in WORLDOS_MOVESET.items()}
+
+    do_rig = bool(args.rig or args.rig_from_task or args.action_ids)
+
+    # --rig-from-task operates on an existing model; otherwise --prompt is required to generate.
+    if not args.out:
+        ap.error("--out is required (unless --test-key).")
+    if not args.rig_from_task and not args.prompt:
+        ap.error("--prompt is required (unless --test-key or --rig-from-task).")
+    if args.action_ids:
+        # Reject duplicate ids: each clip writes anim_action_<id>.* + meta["animation_files"][id],
+        # so a repeat would bill twice and silently clobber the earlier output.
+        deduped = list(dict.fromkeys(args.action_ids))
+        if len(deduped) != len(args.action_ids):
+            ap.error("--animate action IDs must be unique.")
 
     if args.dry_run:
         _cmd_dry_run(args)
@@ -298,62 +446,81 @@ def main() -> None:
     thumb_path = os.path.join(out_dir, "thumbnail.png")
     meta_path = os.path.join(out_dir, "meshy_meta.json")
 
-    if os.path.exists(model_path) and not args.force:
+    # Only the no-rig generation path short-circuits on an existing model.glb; rig paths must proceed
+    # (they need a live task id, which --rig-from-task supplies and a fresh gen produces).
+    if os.path.exists(model_path) and not args.force and not do_rig:
         print("[meshy_gen] %s already exists; skipping (use --force to regenerate)." % model_path)
         return
 
     key = _load_api_key()
     headers = _auth_headers(key)
+    # Provenance is set per-branch — don't stamp text-to-3d defaults onto a reused task.
+    meta: dict = {}
 
-    # ---- preview ----
-    preview_id = _create_preview(headers, args.prompt)
-    preview_task = _poll(headers, preview_id, "preview", args.timeout)
-
-    final_task = preview_task
-    refine_id = None
-    if args.no_refine:
-        print("[meshy_gen] --no-refine: keeping the untextured preview model.")
+    if args.rig_from_task:
+        # Rig an EXISTING Meshy model task — skip generation entirely. Its origin (which model /
+        # whether image-to-3d) is unknown here, so record only the rigging-reuse provenance.
+        model_task_id = args.rig_from_task
+        meta["model_task_id"] = model_task_id
+        meta["source"] = "meshy-rigging-existing-task"
+        print("[meshy_gen] rigging existing model task %s (generation skipped)." % model_task_id)
     else:
-        # ---- refine (adds PBR texture) ----
-        refine_id = _create_refine(headers, preview_id)
-        final_task = _poll(headers, refine_id, "refine", args.timeout)
+        # ---- preview ----
+        preview_id = _create_preview(headers, args.prompt)
+        preview_task = _poll(headers, preview_id, "preview", args.timeout)
+        final_task = preview_task
+        refine_id = None
+        if args.no_refine:
+            print("[meshy_gen] --no-refine: keeping the untextured preview model.")
+        else:
+            # ---- refine (adds PBR texture) ----
+            refine_id = _create_refine(headers, preview_id)
+            final_task = _poll(headers, refine_id, "refine", args.timeout)
 
-    # ---- download ----
-    glb_url = _glb_url(final_task)
-    size = _download(glb_url, model_path)
-    print("[meshy_gen] downloaded model.glb (%d bytes) -> %s" % (size, model_path))
+        # ---- download base model ----
+        glb_url = _glb_url(final_task)
+        size = _download(glb_url, model_path)
+        print("[meshy_gen] downloaded model.glb (%d bytes) -> %s" % (size, model_path))
 
-    thumb_url = final_task.get("thumbnail_url")
-    if thumb_url:
-        try:
-            tsize = _download(thumb_url, thumb_path)
-            print("[meshy_gen] downloaded thumbnail.png (%d bytes)" % tsize)
-        except SystemExit:
-            print("[meshy_gen] (thumbnail download failed; continuing — non-fatal)")
+        thumb_url = final_task.get("thumbnail_url")
+        if thumb_url:
+            try:
+                tsize = _download(thumb_url, thumb_path)
+                print("[meshy_gen] downloaded thumbnail.png (%d bytes)" % tsize)
+            except SystemExit:
+                print("[meshy_gen] (thumbnail download failed; continuing — non-fatal)")
 
-    # consumed-credits: Meshy reports per-task usage on some plans.
-    consumed = (
-        final_task.get("consumed_credits")
-        or final_task.get("credits")
-        or preview_task.get("consumed_credits")
-    )
+        consumed = (
+            final_task.get("consumed_credits")
+            or final_task.get("credits")
+            or preview_task.get("consumed_credits")
+        )
+        # Rigging consumes the textured model (refine) when present, else the preview geometry.
+        model_task_id = refine_id or preview_id
+        meta.update({
+            "ai_model": "meshy-5",
+            "source": "meshy-text-to-3d-v2",
+            "prompt": args.prompt,
+            "preview_task_id": preview_id,
+            "refine_task_id": refine_id,
+            "model_task_id": model_task_id,
+            "refined": not args.no_refine,
+            "glb_bytes": size,
+            "consumed_credits": consumed,
+        })
 
-    meta = {
-        "prompt": args.prompt,
-        "preview_task_id": preview_id,
-        "refine_task_id": refine_id,
-        "refined": not args.no_refine,
-        "glb_bytes": size,
-        "consumed_credits": consumed,
-        "ai_model": "meshy-5",
-        "source": "meshy-text-to-3d-v2",
-    }
+    # ---- rig + animate (HUMANOID only) ----
+    if do_rig:
+        _run_rig_and_animate(headers, model_task_id, out_dir, args.rig_height,
+                             args.action_ids, args.timeout, meta, clip_names=clip_names)
+
     with open(meta_path, "w") as f:
         json.dump(meta, f, indent=2)
         f.write("\n")
-
-    print("[meshy_gen] OK — preview=%s refine=%s glb_bytes=%d consumed_credits=%s" % (
-        preview_id, refine_id, size, consumed))
+    summary = {k: meta[k] for k in
+               ("preview_task_id", "refine_task_id", "model_task_id", "rig_task_id")
+               if meta.get(k)}
+    print("[meshy_gen] OK — %s" % json.dumps(summary))
     print("[meshy_gen] meta -> %s" % meta_path)
 
 

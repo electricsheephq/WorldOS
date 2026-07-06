@@ -19,6 +19,12 @@
 
 ## Fresh GUI Agent Quick Start
 
+> **Doing anything with the Unity RENDERER (combat frames, plate previews, scene builds)?** Jump to
+> **`## GPU-VM lane` → "★★ DRIVING THE BOX UNITY EDITOR"** FIRST. You drive the box editor via the mcp-for-unity
+> `:8080` bridge — either the `mcp__UnityMCP__*` tools if your session has them, or the self-sufficient box-side
+> `execute_code` client if it doesn't (a spawned subagent/headless session WILL NOT have the tools; do NOT report
+> "Unity unavailable" without trying the box-side path).
+
 Before a main implementation agent spends time on long persona runs, run the hybrid handoff gate on
 the current commit. It catches stale tabs, dead launchers, missing private art, missing actor/actions,
 failed `/move`, no narration, console/network errors, provider trace failures, and evidence gaps.
@@ -367,15 +373,94 @@ SSH key, or the VNC password in this tracked doc (same convention as the Support
    skill → "VM GATE SWEEP — exact procedure"). Drop `qa/vm/sweep_v2.sh` → `/root/worldos-qa/sweep_v2.sh` and
    run it; results roll up into the RRI exactly as the Support VM lane does. Private art is rsynced to
    `content/worlds/_private` (NOT top-level `_private`).
-2. **Unity 6 + Unity-MCP host** — Unity `6000.5.0f1` + the project at `/home/unity/worldos-unity`, run as the
-   **`unity` user** (NOT root — Electron/Hub refuses root). Renders on **GPU display `:0` with real GL** — launch
-   the Editor WITHOUT `-nographics` or captures come back blank. Bring up the Editor + MCP server with
-   `sudo -u unity /usr/local/bin/unity-mcp-up.sh`, then reach the MCP HTTP endpoint (8080) from the Mac over an
-   SSH tunnel and register it:
+2. **Unity 6 + Unity-MCP renderer (PROVEN end-to-end)** — Unity `6000.5.1f1` + the project at
+   `/home/unity/worldos-unity`, run as the **`unity` user** (NOT root — Electron/Hub refuses root). Renders on
+   **GPU display `:0` with real GL** (OpenGL 4.5) — launch the Editor WITHOUT `-nographics` or captures come back
+   blank. The standalone `mcp-for-unity --transport http` server OWNS **:8080** (run it from a clean cwd —
+   pydantic reads `./.env` and 500s if the cwd is unreadable); the editor's **MCP For Unity** panel
+   (Transport=HTTP Local → **Start Server**) bridges to it → "Session Active". Reach it from the Mac over an SSH
+   tunnel and register it:
    ```bash
    ssh -N -L 8080:127.0.0.1:8080 root@<gex44>   # host in gex44.env (8080 is localhost-only on the box)
-   claude mcp add --transport http unity http://127.0.0.1:8080/mcp
+   claude mcp add --scope user --transport http unity http://127.0.0.1:8080/mcp
    ```
+   43 tools (manage_camera / manage_scene / execute_code / …). **HIGH-QUALITY captures (agents MUST do this):**
+   `manage_camera action=screenshot screenshot_super_size=2` (→ 5120×2880; use 3–4 for the visual-critic) —
+   default super_size=1 reads soft. Frames land in `<proj>/Assets/Screenshots/`.
+
+   **★★ DRIVING THE BOX UNITY EDITOR — READ THIS BEFORE ANY UNITY / RENDER WORK (spawned subagents INCLUDED).**
+   Rendering is NOT a session tool call you can assume exists — the box editor is driven through the mcp-for-unity
+   `:8080` bridge, and there are TWO ways in. Use whichever your session has; **never conclude "Unity is
+   down/unavailable" without trying Path B.**
+   - **Path A — your session HAS the Unity MCP tools** (`mcp__UnityMCP__*`: `execute_code`, `execute_menu_item`,
+     `manage_camera`, `manage_scene`, `read_console`, …): use them directly. If they're absent, register once via
+     the tunnel above (`ssh -N -L 8080:127.0.0.1:8080 …` + `claude mcp add --scope user --transport http unity
+     http://127.0.0.1:8080/mcp`).
+   - **Path B — SELF-SUFFICIENT box-side client, when you CANNOT add the MCP** (a spawned subagent, a headless /
+     non-interactive session, or the MCP disconnected mid-run). SSH to the box and speak MCP-over-HTTP to
+     `127.0.0.1:8080/mcp` yourself — a ready client lives on the box at **`/tmp/mcprun.py`** (recreate it from memory
+     `reference_worldos_box_unity_render_pipeline` if `/tmp` was cleared by a reboot). Protocol: POST JSON-RPC with
+     headers `Content-Type: application/json` + `Accept: application/json, text/event-stream`; `initialize` → capture
+     the **`Mcp-Session-Id` RESPONSE header** and send it on every later call → `notifications/initialized` →
+     `tools/call`. Responses are **SSE** — parse the `data:` line as JSON.
+     **Run arbitrary C#:** `tools/call execute_code {"action":"execute","code":"<C#>","safety_checks":false}` —
+     `action` is REQUIRED; `safety_checks:false` allows `WebClient` (the combat-surface GET) + `File.WriteAllBytes`
+     (the capture); the code runs as a roslyn body that may `return` a value. (`execute_code` was NON-obvious and cost
+     a full reconstruction once when a session lost its Unity MCP — that is why this is written down here.)
+   - **Editor preflight (the trap that made a running editor look "down"):** `pgrep -af "Editor/Unity -project"` —
+     do **NOT** `grep -v hub`: the editor path is `/home/unity/Unity/`**`Hub`**`/Editor/6000.5.1f1/Editor/Unity`, so
+     filtering `hub` HIDES the running editor. Exactly ONE editor; kill a stray duplicate by its **specific pid**
+     (`kill -TERM <pid>` as root), never `pkill -9`. Launch only if genuinely none: `sudo -u unity
+     /home/unity/launch_editor.sh` (DISPLAY=:0). Sanity-check the bridge: `curl -s -m5 http://127.0.0.1:8080/health`
+     = 200, and Path B's `tools/list` returns ~42 tools when the editor plugin is connected.
+   - **Render live combat (the proven flow):** write the plate filename → `Assets/painterly/backdrops/_active_combat.txt`
+     (+ `_active_campaign.txt`=cid; `rm _location_plates.json` for single-room) and deploy the plate PNG into
+     `Assets/painterly/backdrops/`; `scp extensions/renderers/unity/scripts/paint_combat_v1.cs` to the box; `execute_code`
+     it (reads the plate + the surface `http://127.0.0.1:8765/combat-surface?campaign=<cid>`, spawns/grounds/lights the
+     actors + occluder depth-boxes, captures → `Captures-Durable/m1_combat_v1.png`); `scp` that back + gate non-black.
+     Full copy-paste recipe: memory `reference_worldos_box_unity_render_pipeline` + skill `gex44-unity-host`.
+
+   **Box connectivity: ControlMaster + the 8765 reverse tunnel (recovery)** (verified 2026-07-03, all commands
+   proven live tonight):
+   1. ALL box access multiplexes over an SSH ControlMaster socket at `/tmp/gex44-cm.sock`. If ssh/scp fails with
+      "Control socket ... No such file or directory" or a raw ssh gives "Permission denied (publickey)", the
+      master has DIED — do not create ad-hoc tunnels; re-establish the master:
+      ```bash
+      ssh -i ~/.openclaw/secrets/evaos-gpu-gex44-1-key -o BatchMode=yes -o StrictHostKeyChecking=yes \
+        -o UserKnownHostsFile=~/.openclaw/support/known_hosts -o ConnectTimeout=15 -o ServerAliveInterval=30 \
+        -o ServerAliveCountMax=3 -M -S /tmp/gex44-cm.sock -f -N root@46.4.26.123
+      ```
+   2. The box's `127.0.0.1:8765` (the combat-surface endpoint `paint_combat_v1.cs` GETs) is a REVERSE TUNNEL to
+      the Mac-side viewer on `127.0.0.1:8770` — it dies WITH the master and must be re-added to the NEW master:
+      ```bash
+      ssh -S /tmp/gex44-cm.sock -O forward -R 8765:127.0.0.1:8770 root@46.4.26.123
+      ```
+      Verify from the box: `ssh -o ControlPath=/tmp/gex44-cm.sock root@46.4.26.123 'curl -s -o /dev/null -w
+      "%{http_code}" http://127.0.0.1:8765/combat-surface'` → expect 200. If the Mac side has nothing on 8770,
+      the viewer server must be started first (check: `lsof -nP -iTCP:8770 -sTCP:LISTEN`).
+   3. NEVER touch the PROCESSES listening on box ports 8080 (Unity MCP bridge) or 8765; read-only curl checks
+      are fine. NEVER touch Mac:8765 (Eva's bridge — WorldOS uses 8770).
+   4. Plate-selection precedence for renders (bit an agent tonight): `_location_plates.json` (per-location map,
+      keyed by the campaign's CURRENT location) WINS over `_active_combat.txt` (fallback only). A
+      freshly-deployed plate also needs `AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate)` before
+      `LoadAssetAtPath` serves the new pixels.
+
+   **ComfyUI detail-finisher lane (installed 2026-07-02, box `/root/comfyui`, README-WORLDOS.md on box):**
+   SDXL + xinsir tile-ControlNet, headless API on `127.0.0.1:8188`. Driver:
+   `/root/comfyui/tile_detail.sh <in.png> <out.png> <denoise≈0.28-0.35>` (~52s @1344×768, ~2:44 @2760×1504,
+   12.4GB VRAM peak — coexists with the Unity editor). Structure-locked detail pass for DENSE surface fields.
+   ⚠ It MUSHES hero-prop relief under a key light (measured panel8) — never run it across the focal object.
+
+**Enhancing the MCP's capabilities → our fork + upstream (standing practice).** The Unity MCP
+(`com.coplaydev.unity-mcp`, by Coplay) is our **external-AI → Unity Editor bridge** and the SOLE writer-into-editor
+path for the renderer + all Unity work — enhancing it (new tools / fixes / behaviors) is recurring, core work, not
+a one-off. When you add or fix MCP tools/behaviors, commit them to **our fork → https://github.com/100yenadmin/unity-mcp**
+(a fork of upstream `CoplayDev/unity-mcp`, default branch `beta`); for clean/general fixes also open an **issue +
+PR upstream to `CoplayDev/unity-mcp`** so others benefit (same fork-and-upstream pattern as `electricsheephq/GitNexus`).
+Develop in a clone of the fork (branch off `beta`) → push to the fork → deploy the built `MCPForUnity` Editor
+package to the box (its `/home/unity/unity-mcp/MCPForUnity` is a **loose copy, not a git clone**; the `:8080` server is the standalone `mcp-for-unity --transport http` process (run via `uvx --from mcpforunityserver` -- one service, package name vs CLI name). Separate, unrelated product — keep Unity's first-party `com.unity.ai.assistant` (AI
+Assistant) **OUT** of the project manifest: it livelocks the AssetDatabase on import (the editor spins forever in
+`GuidDB::ValidateChangedGUIDs` and never opens; removal is the only reliable fix).
 
 **RRI rollup is unchanged** — this box supplies the **part-B** persona/behavior/score evidence; the **Mac still
 owns native Part-A** (the built `dist/WorldOS.app` handoff) at the **SAME SHA**, because Linux cannot build the
@@ -391,10 +476,17 @@ Support VM lane's RRI rollup rule above).
   auto-refresh → re-copy on the first 401** (the standing Keychain-copy method is in the `worldos-dev` notes).
 - **Personas stay sequential** — parallel runs trip the 4× quota 429.
 - **The GPU does NOT speed the sweep** — it is LLM-bound; the GPU is for the Unity / visual-critic lanes only.
-- **Unity 6 Personal is hardware-bound** → the one human-gated step: a **one-time interactive Hub login on the
-  box** via a tunneled VNC (`ssh -N -L 5900:127.0.0.1:5900 root@<gex44>` → VNC `localhost:5900`, sign in,
-  activate Personal, open the project once). After that the MCP render loop works headlessly. The VNC host +
-  password are in `gex44.env`.
+- **Unity setup is human-gated ONCE (via the Hub):** Personal license is hardware-bound (one-time Hub sign-in on
+  the box) AND the per-version **Software-Terms EULA must be accepted in the Hub** — a headless CLI editor launch
+  HANGS forever on the unaccepted EULA modal (`Selected window backend: (null)` is a RED HERRING, NOT a
+  window-backend bug). Once accepted for the version, launches proceed. Open the Hub via the remote desktop, add
+  the project from disk, open it, accept the terms.
+- **Human remote VIEW = NoMachine (port 4000), NOT macOS Screen Sharing / x11vnc:5900** — RFB over the WAN is
+  dog-slow (the box sits idle; it is the transport, not the box). `ssh -N -L 4000:127.0.0.1:4000 root@<gex44>` →
+  NoMachine client → `localhost:4000` (login `unity`). The agent drives Unity via the MCP (no display needed); the
+  desktop is only for occasional human inspection. VNC/NoMachine hosts + passwords are in `gex44.env`.
+- **Supabase source of truth for this host = `fleet_nodes` (`role = gpu_compute`)** — do NOT create/use a
+  `gpu_vms` inventory table. Internal GPU compute node, not a customer VM.
 
 ## Release (when RRI = 10/10 on a fresh .app build)
 Bump `.claude-plugin/plugin.json` → 1.0.4, tag `v1.0.4`, GitHub release + CHANGELOG. Then MAINTAIN:

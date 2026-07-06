@@ -1,0 +1,39 @@
+{
+  "artifact_id": "control:encounter:baldurs-gate:undercity-drain-ambush",
+  "class": "encounter",
+  "world": "baldurs-gate",
+  "provenance": {
+    "campaign_id": "canon",
+    "run_id": null,
+    "sha": null,
+    "extracted_at": "canon",
+    "source": "canon-derived:set-pieces"
+  },
+  "payload": {
+    "id": "undercity-drain-ambush",
+    "composition": [
+      {
+        "actor": "3 Guild wardens (skirmishers on the walkways)"
+      },
+      {
+        "actor": "a hexer channeling from the far platform (controller — must be reached)"
+      },
+      {
+        "actor": "a caged construct that activates if the conduit is left running"
+      }
+    ],
+    "outcome": "canon-set-piece",
+    "name": "Ambush at the Drain Center-Point",
+    "situation": "In the flooded Undercity sewers, Rael's wardens spring an ambush as the party closes on the arcane drain that samples signatures.",
+    "objective": "Protect the witness Mavar Crispin and disable the drain conduit.",
+    "terrain": "Narrow walkways over rising sewer-water (fall = swept away), a chokepoint grate, and the conduit itself as an interactable objective.",
+    "twist": "The water rises each round — the longer the fight, the more the walkways flood, forcing the party toward the objective.",
+    "stakes": "If Mavar falls or the conduit runs a full survey, the Registry Engine completes its Lower City phase.",
+    "combatants": [
+      "3 Guild wardens (skirmishers on the walkways)",
+      "a hexer channeling from the far platform (controller — must be reached)",
+      "a caged construct that activates if the conduit is left running"
+    ]
+  },
+  "scores": null
+}
