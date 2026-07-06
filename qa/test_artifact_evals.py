@@ -34,8 +34,11 @@ import artifact_calibration_panel as panel  # noqa: E402
 # would silently re-version every historical engine-duo score. These pin the exact current hashes
 # (origin/main @ the HV1 branch point). If a future edit changes them, this test goes RED and forces a
 # conscious re-baseline (the same discipline test_scores_db_comparability enforces for content edits).
-EXPECTED_SC = "sc_be859353df20"
-EXPECTED_LC = "lc_c603a22aac3d"
+EXPECTED_SC = "sc_5c35d1ec2d86"  # re-baselined #1360: assert_behavioral.py parenthesization fix —
+EXPECTED_LC = "lc_b031bd9f47e1"  # the ruler hashes FILE BYTES (scoring_config_version._content_hash
+# reads p.read_bytes()), so this edit re-versions it even though re.compile(...).pattern is
+# unchanged (verified via git-stash before/after diff, not by this hash) — the file's bytes
+# are what changed, not the runtime regex behavior.
 
 
 def test_engine_duo_rulers_are_byte_unchanged():
