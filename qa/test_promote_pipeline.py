@@ -30,6 +30,7 @@ sys.path.insert(0, str(_REPO_ROOT / "tools" / "library"))
 import scores_db  # noqa: E402
 import promote  # noqa: E402  (tools/library/promote.py)
 import library_lint  # noqa: E402
+import artifact_calibration_panel as panel  # noqa: E402  (#1355)
 
 ROOM_RECIPES = _REPO_ROOT / "extensions" / "renderers" / "shared" / "room_recipes.json"
 REGISTRY = _REPO_ROOT / "data" / "asset-registry" / "registry.json"
@@ -326,3 +327,82 @@ def test_nominations_malformed_line_fails_loud(env):
     noms.write_text('{"artifact_id": "ok"}\nnot json\n', encoding="utf-8")
     with pytest.raises(ValueError):
         promote.read_nominations(noms)
+
+
+# ── #1355: panel↔promote row-key connection (NO manual bridge) ───────────────────────────────────
+def test_promotion_batch_finds_panel_scored_artifact_by_bare_id_no_manual_bridge(env, monkeypatch):
+    """HV1's run_panel writes per-scorer rows keyed `{artifact_id}#{panel_id}#s{n}` (bookkeeping for
+    N blind scorers); promote.py's nomination lookup exact-matches the bare artifact_id. Before the
+    fix, the two never connected — the first live promotion batch (PR #1354) needed a manual bridge
+    (hand-inserted bare-id rows) to get panel-scored artifacts through the gate at all. This proves a
+    fresh panel run's aggregate row is found by promote_batch with ZERO manual bridging: no hand-written
+    bare-id row, no monkeypatched lookup — just run_panel then promote_batch."""
+    monkeypatch.setenv("WORLDOS_ARTIFACT_PANEL_DRYRUN", "1")
+    db, lib, noms = env["db"], env["lib"], env["noms"]
+
+    report = panel.run_panel("quest", controls_only=True, panel_size=5, db_path=db)
+    assert report["panel_valid"] is True  # the dryrun stub scores every control at its anchor
+
+    # Promote one of the just-scored controls' underlying artifact_ids — nothing here writes a
+    # bare-id row by hand; it must already exist from run_panel itself.
+    control_aid = report["control_medians"][0]["artifact_id"]
+    rows_by_bare_id = {r["artifact_id"] for r in scores_db.fetch_artifacts(db)}
+    assert control_aid in rows_by_bare_id, (
+        "run_panel must write a bare-artifact_id aggregate row, not just the "
+        "{artifact_id}#{panel_id}#s{n} per-scorer rows"
+    )
+
+    # A control itself is never promotable (evaluate_gate rejects is_control rows) — nominate a
+    # plain candidate instead, scored through the SAME run_panel path, to prove the full batch path.
+    cand_dir = _write_candidate_dir(env["db"].parent, "quest", "quest:bg:panel-live", overall=4.4)
+    cand_report = panel.run_panel("quest", candidates_dir=str(cand_dir), controls_only=False,
+                                  panel_size=3, db_path=db)
+    assert cand_report["panel_valid"] is True
+    cand_aid = next(r["artifact_id"] for r in cand_report["results"] if not r["is_control"])
+    assert cand_aid == "quest:bg:panel-live"
+
+    _write_noms(noms, [{"artifact_id": cand_aid}])
+    rep = promote.promote_batch(library_dir=lib, nominations_path=noms, db_path=db)
+    assert rep["promoted"] == 1 and rep["rejected"] == 0
+    entry = json.loads((lib / "quests" / next((lib / "quests").glob("*.json")).name).read_text())
+    assert entry["artifact_id"] == cand_aid
+
+
+def test_panel_aggregate_row_dims_are_median_of_scorer_rows(env, monkeypatch):
+    """The aggregate bare-id row's dims_json/overall must be the MEDIAN across the N `#s{n}` scorer
+    rows — matching run_panel's own control-band aggregation — not e.g. the last scorer's card."""
+    monkeypatch.setenv("WORLDOS_ARTIFACT_PANEL_DRYRUN", "1")
+    db = env["db"]
+    report = panel.run_panel("quest", controls_only=True, panel_size=5, db_path=db)
+    aid = report["control_medians"][0]["artifact_id"]
+    expected_overall = report["control_medians"][0]["median"]
+
+    rows = scores_db.fetch_artifacts(db)
+    aggregate = next(r for r in rows if r["artifact_id"] == aid)
+    scorer_rows = [r for r in rows if r["artifact_id"].startswith(f"{aid}#{report['panel_id']}#s")]
+    assert len(scorer_rows) == 5
+    assert aggregate["overall"] == expected_overall
+    assert aggregate["panel_id"] == report["panel_id"]
+    assert aggregate["is_control"] == 1
+    # The dryrun stub scores every dim at the anchor for every scorer, so the median dims equal
+    # the per-scorer dims exactly — a real (non-dryrun) panel would show genuine per-scorer variance.
+    scorer_dims = json.loads(scorer_rows[0]["dims_json"])
+    aggregate_dims = json.loads(aggregate["dims_json"])
+    assert aggregate_dims.keys() == scorer_dims.keys()
+
+
+def _write_candidate_dir(tmp_root: Path, cls: str, artifact_id: str, *, overall: float) -> Path:
+    """A minimal candidates dir run_panel._candidates_for_class can load: one artifact JSON in the
+    canonical schema shape (matches a committed control's payload shape closely enough for
+    artifact_score.load_artifact's strict envelope guard, since DRYRUN never calls the live scorer that
+    would otherwise read the payload content)."""
+    import artifact_score
+    control_files = sorted((Path(__file__).resolve().parent / "artifact_controls").glob(f"control__{cls}__*.json"))
+    template = artifact_score.load_artifact(control_files[0])
+    payload = json.loads(control_files[0].read_text(encoding="utf-8"))
+    payload["artifact_id"] = artifact_id
+    payload.setdefault("provenance", {})["run_id"] = "run_test_panel_live"
+    cand_dir = tmp_root / "cand"
+    cand_dir.mkdir(exist_ok=True)
+    (cand_dir / "candidate.json").write_text(json.dumps(payload), encoding="utf-8")
+    return cand_dir
