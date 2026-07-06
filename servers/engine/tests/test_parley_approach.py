@@ -25,7 +25,6 @@ import pytest
 
 import server  # imported FIRST: resolves the models<->scene_grid import cycle in the right order
 import combat_grid  # noqa: F401  (referenced by name in assertions/comments)
-import store
 from scene_grid import (
     SceneGrid,
     SceneGridSpec,
@@ -129,7 +128,6 @@ def test_approach_already_adjacent_is_a_noop_walk(talk_room):
 def test_approach_unreachable_npc_degrades_to_freeform(talk_room):
     cid, hero, npc, loc_id = talk_room
     # Wall off every neighbour of the NPC by staging blockers there so no adjacent cell is free.
-    c = server._require(cid)
     b1 = server.create_character(cid, "Guard A", kind="npc")["id"]
     b2 = server.create_character(cid, "Guard B", kind="npc")["id"]
     b3 = server.create_character(cid, "Guard C", kind="npc")["id"]
@@ -162,6 +160,22 @@ def test_approach_during_combat_degrades_to_freeform(talk_room):
     out = server.generate_parley_options(cid, npc_id=npc, approach=True)
     assert "approach" not in out
     assert out["npc"]["id"] == npc  # options still open
+
+
+def test_approach_location_mismatch_degrades_to_freeform_never_raises(talk_room):
+    # Regression for the "Never raises" contract: walk_to (W2 review fix) rejects a mover
+    # anchored at a location_id different from the current one. _approach_to_talk must degrade
+    # to freeform BEFORE ever reaching that raise, not propagate a ValueError mid-parley.
+    cid, hero, npc, loc_id = talk_room
+    c = server._require(cid)
+    c.characters[hero].location_id = "some-other-location"  # anchored elsewhere, not loc_id
+    server.save_campaign(c)
+    out = server.generate_parley_options(cid, npc_id=npc, approach=True)  # must not raise
+    assert "approach" not in out           # degraded to freeform parley
+    assert out["npc"]["id"] == npc         # the parley STILL opens (never blocked)
+    # the hero never moved (walk_to was never reached) and location_id is untouched
+    assert tuple(server._require(cid).characters[hero].stage_cell) == (0, 0)
+    assert server._require(cid).characters[hero].location_id == "some-other-location"
 
 
 # ── byte-identity: the default (no-approach) payload is unchanged ─────────────────────

@@ -10384,7 +10384,10 @@ def _nearest_walkable_adjacent(
                 continue
             if cell in blocked:
                 continue
-            assert combat_grid.in_melee_reach(cell, goal)  # Chebyshev<=1 by construction
+            # cell is always within combat_grid.in_melee_reach (Chebyshev<=1) of goal here:
+            # dx,dy range over {-1,0,1} excluding (0,0) above, so this holds by construction
+            # and isn't re-verified at runtime (an assert here would be stripped under -O and
+            # adds no real guard — the invariant is the loop bounds, not a check on cell).
             candidates.append(cell)
     if not candidates:
         return None
@@ -10431,6 +10434,13 @@ def _approach_to_talk(campaign_id: str, mover_id: str, npc) -> "dict | None":
     mover = c.characters.get(mover_id)
     if mover is None:
         return None
+    # walk_to (W2 review fix) rejects a mover anchored at a location_id different from the
+    # current one — mirror that guard here so we degrade to freeform instead of ever reaching
+    # walk_to's raise (this is the one walk_to precondition _approach_to_talk didn't already
+    # pre-check; None/"" — the party's own not-yet-travelled sentinel, #1349 — is left alone,
+    # matching walk_to's own carve-out).
+    if mover.location_id and mover.location_id != loc.id:
+        return None
     # The mover never blocks itself; the NPC's own cell stays blocked (we stand BESIDE it).
     width, height, blocked = rest_blocked_cells(c, loc, exclude_id=mover_id)
     if width <= 0 or height <= 0:
@@ -10443,7 +10453,14 @@ def _approach_to_talk(campaign_id: str, mover_id: str, npc) -> "dict | None":
     if start is not None and start == dest:
         return {"walked": False, "from": list(start), "to": list(start), "npc_cell": list(npc_cell), "path": [list(start)]}
     # Reuse walk_to — the SOLE writer of stage_cell (takes its own lock + save + rest_walk beat).
-    res = walk_to(campaign_id, mover_id, dest[0], dest[1])
+    # Belt-and-suspenders on the docstring's absolute "Never raises" contract: every precondition
+    # walk_to checks is already mirrored above, but a TOCTOU race (state changing between our
+    # planning read and walk_to's own re-check under its lock) could still surface one of walk_to's
+    # ValueErrors here — catch and degrade to freeform rather than ever propagating.
+    try:
+        res = walk_to(campaign_id, mover_id, dest[0], dest[1])
+    except ValueError:
+        return None  # lost a race between planning and the walk → freeform parley
     if not res.get("walked"):
         return None  # a race lost the cell between planning and the walk → freeform parley
     return {"walked": True, "from": res.get("from"), "to": res.get("to"), "npc_cell": list(npc_cell), "path": res.get("path", [])}
