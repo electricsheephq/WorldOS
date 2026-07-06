@@ -15,6 +15,7 @@ import difflib
 import fcntl
 import functools
 import json
+import logging
 import os
 import random
 import re
@@ -4042,6 +4043,59 @@ def _gate_combat_verb(c: "Campaign", actor: "Character", *, verb: str, consumes:
         )
 
 
+def _seed_combat_cells_from_stage(c: Campaign) -> list[str]:
+    """W4 (#1321) NO-TELEPORT: seed each combatant's grid cell (``Combatant.x/y``) from its
+    ``Character.stage_cell`` so a fight STARTS from where everyone was standing at rest — no
+    actor jumps between the rest board and the tactical board.
+
+    Called by ``start_combat`` only when its ``seed_from_stage`` param is True (default False ⇒
+    this never runs ⇒ today's placement, byte-for-byte). Gates-read-gauges holds: combat READS
+    stage at entry; the write-back to stage_cell happens at ``end_combat``.
+
+    Guards (all additive; any miss ⇒ leave that combatant unplaced, exactly as today):
+      * grid must be enabled AND its extents must MATCH the location's scene_grid
+        (the epic's grid-mismatch ruling — legacy campaigns degrade gracefully, WARN-logged);
+      * only combatants WITH a stage_cell are seeded (foes lacking one stay unplaced ⇒ the
+        renderer/DM places them as today — never fails the combat start over placement);
+      * a stage_cell out of the grid extents, or already claimed by an earlier-seeded
+        combatant, is skipped (never traps two tokens on one cell).
+
+    SOLE-WRITER-safe: the engine writes its own combat state from its own stage data. Returns
+    the ids actually seeded (for surfacing). Caller holds the lock + persists."""
+    if not c.combat.grid_enabled:
+        return []
+    loc = c.locations.get(c.current_location_id) if c.current_location_id else None
+    grid = getattr(loc, "scene_grid", None) if loc is not None else None
+    if grid is None:
+        return []
+    # Grid-mismatch ruling (#1321 addendum, HIGH): seed ONLY when the combat grid extents equal
+    # the scene_grid extents — otherwise the stage cells index a different coordinate space and a
+    # seed WOULD teleport. Degrade to today's spawn behavior (unplaced) + a WARN line.
+    if (c.combat.grid_width, c.combat.grid_height) != (int(grid.grid.cols), int(grid.grid.rows)):
+        logging.getLogger(__name__).warning(
+            "start_combat(seed_from_stage): combat grid %sx%s != scene_grid %sx%s at %r — "
+            "skipping stage seeding (legacy/degraded placement).",
+            c.combat.grid_width, c.combat.grid_height,
+            int(grid.grid.cols), int(grid.grid.rows), c.current_location_id,
+        )
+        return []
+    w, h = c.combat.grid_width, c.combat.grid_height
+    claimed: set[tuple[int, int]] = set()
+    seeded: list[str] = []
+    for cb in c.combat.order:
+        ch = c.characters.get(cb.character_id)
+        sc = getattr(ch, "stage_cell", None) if ch is not None else None
+        if sc is None:
+            continue  # foes / never-walked members stay unplaced (today's behavior)
+        x, y = int(sc[0]), int(sc[1])
+        if not (0 <= x < w and 0 <= y < h) or (x, y) in claimed:
+            continue  # out of extents or already taken — don't teleport/stack
+        cb.x, cb.y = x, y
+        claimed.add((x, y))
+        seeded.append(cb.character_id)
+    return seeded
+
+
 def _derive_grid_from_scene(c: Campaign) -> None:
     """gfx M-B (#1194): if the campaign's CURRENT location carries a SceneGrid, switch the
     just-started fight onto that grid and auto-derive its impassable cells (walls + prop
@@ -4083,12 +4137,9 @@ def start_combat(
     campaign_id: str,
     combatant_ids: StrListArg,
     surpriser_ids: OptStrListArg = None,
+    seed_from_stage: bool = False,
 ) -> dict:
-    """Begin combat: roll initiative (1d20 + initiative_bonus) for each combatant
-    and build the turn order (desc, ties broken by DEX modifier then input order).
-    Pass the character ids of everyone in the fight. For an ambush pass
-    surpriser_ids=[attackers]: the engine rolls Stealth vs passive Perception; the
-    surprised roll initiative with Disadvantage (SRD 5.2). See `surprise` in the return."""
+    """Begin combat: roll initiative (1d20 + initiative_bonus) per combatant; build the turn order (desc, DEX-mod then input tiebreaks). Pass every fighter's id. For an ambush, pass surpriser_ids=[attackers]; the surprised roll Initiative with Disadvantage (in `surprise`). seed_from_stage=True opens combat where each combatant rested."""
     if not combatant_ids:
         raise ValueError("combatant_ids must be non-empty")
     surpriser_ids = [sid for sid in (surpriser_ids or []) if sid in combatant_ids]
@@ -4156,6 +4207,13 @@ def start_combat(
         # absent when the current location has no scene_grid (grid_enabled stays False == today's
         # zone/theater combat, byte-for-byte unchanged).
         _derive_grid_from_scene(c)
+        # W4 (#1321) NO-TELEPORT: when asked, seed combatant grid cells from each character's
+        # rest position (stage_cell) so the fight opens where everyone stood. Additive: default
+        # seed_from_stage=False ⇒ this is skipped ⇒ placement is byte-for-byte today's. Runs AFTER
+        # _derive_grid_from_scene so grid_enabled/extents are set for the guard to read.
+        seeded_from_stage: list[str] = []
+        if seed_from_stage:
+            seeded_from_stage = _seed_combat_cells_from_stage(c)
         save_campaign(c)
         view = _combat_view(c)
         # Surface the surprise edge in the runtime view so the DM resolves the opener
@@ -4266,6 +4324,11 @@ def start_combat(
                 outlook = _outlook_for_xps(_party_levels(c), monster_xps)
                 if outlook.get("must_offer_out") or outlook.get("band") == "deadly":
                     view["outlook"] = outlook
+        # W4 NO-TELEPORT: surface who was seeded onto their rest cell so the DM knows the
+        # opener is IN PLACE (and the renderer trusts the engine cells over a fresh placement).
+        # Additive — absent unless seed_from_stage seeded at least one combatant.
+        if seeded_from_stage:
+            view["seeded_from_stage"] = seeded_from_stage
         # Surface whose turn it is at combat-start and make clear they must act BEFORE
         # calling next_turn (the root cause of Round-1 skips: DM reads start_combat.current
         # as already-done and immediately calls next_turn).
@@ -7271,6 +7334,21 @@ def end_combat(campaign_id: str, resolution: str = "") -> dict:
                 # fight ended with foes alive (resolves the continuity-break behavioral gate).
                 payload["resolution"] = res
             _log_combat_event(c, end_text, payload)
+        # W4 (#1321) NO-TELEPORT (exit half): write each SURVIVING combatant's final grid cell
+        # back to its Character.stage_cell so the party stays where the fight ENDED — the next
+        # rest board opens on the combat-end positions, no snap back to a spawn. Computed from
+        # the order BEFORE the reset. Additive: only combatants actually placed on the grid
+        # (x/y set — i.e. a grid fight, typically one that was seed_from_stage-seeded or moved on
+        # the grid) get a write-back; a zone/theater fight leaves x/y None ⇒ NO stage_cell write,
+        # byte-for-byte today's behavior. The dead are skipped (a corpse has no rest position).
+        # This IS the engine writing its own sole-writer field from its own combat state.
+        for cb in c.combat.order:
+            if cb.x is None or cb.y is None:
+                continue
+            ch = c.characters.get(cb.character_id)
+            if ch is None or ch.dead or ch.current_hp <= 0:
+                continue
+            ch.stage_cell = (int(cb.x), int(cb.y))
         c.combat = Combat()
         save_campaign(c)
         return result
