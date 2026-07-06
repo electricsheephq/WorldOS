@@ -2,6 +2,9 @@
 // gold/red selection rings, contact AO, an impact VFX burst + a floating "-8" damage number.
 // Built off the PROVEN paint_3d_spike.cs (same unqualified UnityEngine/UnityEditor style the wrapper injects).
 // NO AnimatorController (its assembly isn't referenced by code-execute); actors are placed (pose-sampling = v2).
+// #1281 (FELT): OPT-IN active-room viewport framing (frameActiveRoom, default OFF -> byte-identical). ON crops the
+//   camera to the active room's grid bounds (ortho + view-axis pan ONLY; the Euler rotation contract is inviolable)
+//   so multi-room plates read as a played moment, not a level-select diorama. Toggle via _frame_active_room.txt.
 // Run: unity-mcp code execute --no-safety-checks -f paint_combat_v1.cs
 AssetDatabase.Refresh();
 // Room-agnostic plate: read the active room's plate filename from a box config (written by the seed/driver);
@@ -236,6 +239,73 @@ foreach(var o in toks){ var t=o as System.Collections.Generic.Dictionary<string,
 }
 if(missingActor){ sb.AppendLine("ABORT capture — a required actor prefab was missing (no PNG written)"); return sb.ToString(); }
 sb.AppendLine("LIVE "+CID+": spawned "+spawned+" actors:"+celldbg);
+
+// ACTIVE-ROOM VIEWPORT FRAMING (#1281, FELT gap). Multi-room plates read as a "level-select diorama" — the
+// whole painted layout floats in void because the fixed contract camera (ortho 13) frames the ENTIRE plate,
+// not the room the fight is in. ADDITIVE + flag-gated (frameActiveRoom): DEFAULT OFF -> byte-identical to the
+// current render (the plate stays a camera-child billboard, camera contract untouched). When ON: crop the
+// camera to the ACTIVE room's grid bounds (from the surface `grid` block: the party's current room-unit) so the
+// room fills the frame like a game camera. The camera CONTRACT is INVIOLABLE — we change ONLY orthographicSize
+// and the camera POSITION along its fixed view axis; the Euler(30,45,0) rotation is NEVER touched (zooming, not
+// re-angling). Mechanism: the plate (a camera-child billboard sized to fill the frame at ortho 13) is DETACHED
+// to a WORLD anchor baked from the DEFAULT camera pose, so it projects to identical pixels at zoom=1 but stays
+// put as the camera zooms/pans — the crop then rides into the painted image instead of re-filling the frame.
+// Soft edge: the framed rect is CLAMPED to the plate's world rect (ortho never exceeds 13, pan never runs past
+// the plate) so a tight room prefers a slightly wider view over showing plate-void at the margins.
+bool frameActiveRoom=false; // #1281: default OFF (byte-identical). Flip via _frame_active_room.txt (see below).
+{ var _ff="/home/unity/worldos-unity/Assets/painterly/backdrops/_frame_active_room.txt";
+  if(System.IO.File.Exists(_ff)){ var _v=System.IO.File.ReadAllText(_ff).Trim().ToLower(); if(_v=="1"||_v=="true"||_v=="on") frameActiveRoom=true; } }
+if(frameActiveRoom){
+  // 1) active-room grid extents from the surface `grid` block (engine-authored current room-unit); fall back to
+  //    the 14x11 contract grid -> a full-grid room needs no crop (reqOrtho ~= 13), keeping the render unchanged.
+  int gCols=14, gRows=11;
+  { var _g=root.ContainsKey("grid")?root["grid"] as System.Collections.Generic.Dictionary<string,object>:null;
+    if(_g!=null){ if(_g.ContainsKey("cols")&&_g["cols"]!=null) gCols=System.Convert.ToInt32(_g["cols"]); if(_g.ContainsKey("rows")&&_g["rows"]!=null) gRows=System.Convert.ToInt32(_g["rows"]); }
+    if(gCols<1) gCols=14; if(gRows<1) gRows=11; }
+  // 2) world-space room bounds = cellToWorld of the 4 grid corners + a ~1.5-cell (3.0u) margin. cellToWorld is
+  //    affine, so the axis-aligned world AABB of the four corners is the full cell span.
+  Vector3 c00=cellToWorld(0,0), c10=cellToWorld(gCols-1,0), c01=cellToWorld(0,gRows-1), c11=cellToWorld(gCols-1,gRows-1);
+  float MARGIN=3.0f;
+  float wMinX=Mathf.Min(Mathf.Min(c00.x,c10.x),Mathf.Min(c01.x,c11.x))-MARGIN;
+  float wMaxX=Mathf.Max(Mathf.Max(c00.x,c10.x),Mathf.Max(c01.x,c11.x))+MARGIN;
+  float wMinZ=Mathf.Min(Mathf.Min(c00.z,c10.z),Mathf.Min(c01.z,c11.z))-MARGIN;
+  float wMaxZ=Mathf.Max(Mathf.Max(c00.z,c10.z),Mathf.Max(c01.z,c11.z))+MARGIN;
+  Vector3 roomCtr=new Vector3((wMinX+wMaxX)*0.5f,0f,(wMinZ+wMaxZ)*0.5f);
+  // 3) project the room AABB corners onto the camera's RIGHT/UP axes to get the required half-extents in view
+  //    space (rotation fixed -> right/up are constants). newOrtho covers the taller of the vertical need and the
+  //    horizontal need / aspect (capture aspect = plate W/H, computed the same way as the render below).
+  Vector3 camR=cam.transform.right, camU=cam.transform.up;
+  float capAsp=(float)bdTex.width/bdTex.height;
+  float halfH=0f, halfW=0f;
+  foreach(var wp in new[]{ new Vector3(wMinX,0,wMinZ), new Vector3(wMaxX,0,wMinZ), new Vector3(wMinX,0,wMaxZ), new Vector3(wMaxX,0,wMaxZ) }){
+    Vector3 d=wp-roomCtr; halfW=Mathf.Max(halfW,Mathf.Abs(Vector3.Dot(d,camR))); halfH=Mathf.Max(halfH,Mathf.Abs(Vector3.Dot(d,camU))); }
+  float reqOrtho=Mathf.Max(halfH, halfW/capAsp);
+  // 4) CLAMP: never wider than the full plate (ortho 13 already frames the whole plate -> the crop never reveals
+  //    void beyond it), and a floor so a tiny room isn't zoomed to absurdity. reqOrtho>=13 (grid ~ full frame)
+  //    -> newOrtho=13 == today's framing (belt-and-braces byte-identity for a full-grid room).
+  float MIN_ORTHO=6.0f, MAX_ORTHO=13.0f;
+  float newOrtho=Mathf.Clamp(reqOrtho, MIN_ORTHO, MAX_ORTHO);
+  // 5) DETACH the plate to a WORLD anchor baked from the DEFAULT (pre-zoom) camera pose so it projects to the
+  //    SAME pixels at zoom=1 but stays fixed as we zoom/pan (the camera then crops INTO the painting). Capture
+  //    the plate's current world transform (it is still the camera-child billboard) and re-anchor in world.
+  Vector3 plateWPos=bd.transform.position; Quaternion plateWRot=bd.transform.rotation; Vector3 plateWScale=bd.transform.lossyScale;
+  bd.transform.SetParent(null,true); bd.transform.position=plateWPos; bd.transform.rotation=plateWRot; bd.transform.localScale=plateWScale;
+  // plate world rect (view-space half-extents about its own center) for the pan clamp: the billboard was oh=26
+  // tall (ortho13*2), ow=26*texAsp wide, centered on the default forward ray at dist 160.
+  Vector3 plateCtr=plateWPos; float plateHalfH=13.0f, plateHalfW=13.0f*capAsp;
+  // 6) SHIFT the camera along its FIXED view axis to recenter on the room, then CLAMP the pan so the framed rect
+  //    (half-extents newOrtho x newOrtho*capAsp about the pan target) stays inside the plate rect -> never void.
+  Vector3 defCamPos=cam.transform.position; // contract pos (unchanged so far)
+  float panU=Vector3.Dot(roomCtr-plateCtr,camU); float panR=Vector3.Dot(roomCtr-plateCtr,camR);
+  float frH=newOrtho, frW=newOrtho*capAsp;
+  float limU=Mathf.Max(0f, plateHalfH-frH); float limR=Mathf.Max(0f, plateHalfW-frW);
+  panU=Mathf.Clamp(panU,-limU,limU); panR=Mathf.Clamp(panR,-limR,limR);
+  // new camera position = default pos shifted by the clamped view-space pan (NEVER along forward -> no rotation,
+  // no dolly through the scene; a pure in-view-plane recenter, exactly like sliding an ortho viewport rect).
+  cam.transform.position=defCamPos + camU*panU + camR*panR;
+  cam.orthographicSize=newOrtho;
+  sb.AppendLine("frameActiveRoom ON: grid "+gCols+"x"+gRows+" reqOrtho="+reqOrtho.ToString("F2")+" -> ortho="+newOrtho.ToString("F2")+" panR="+panR.ToString("F2")+" panU="+panU.ToString("F2"));
+}
 
 // OCCLUSION (owner: "can they move BEHIND columns / behind items?"). The surface `occluders` field carries the
 // engine-authored OCCLUDER props (footprint cells + height band). Place an INVISIBLE depth-only box at each

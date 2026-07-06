@@ -24,6 +24,10 @@ Camera sits at the **−x,−z near corner** → the near occluders are the **�
 - **DEFERRED Phase-2:** a per-prop "see-through on approach" alpha-clip fade, for any near-side PROP that
   still occludes after the above (the owner's "sometimes the walls have transparency when you walk around
   them"). Not built — only needed if a near interior prop is observed occluding despite the back-half rule.
+- **Active-room framing (#1281, opt-in):** `paint_combat_v1.cs` `frameActiveRoom` (default OFF → byte-identical)
+  crops the camera to the active room's grid bounds — ortho + view-axis pan ONLY, the Euler(30,45,0) rotation
+  contract is inviolable — so a multi-room plate reads as a played moment, not a level-select diorama; toggle
+  via `_frame_active_room.txt` (`1`/`true`/`on`).
 
 ## Room composition + LIVE TRANSITION (M-E — PROVEN 2026-07-01)
 Bigger spaces = several camera-sized **room-units** linked at a shared door cell, NOT a widened grid
