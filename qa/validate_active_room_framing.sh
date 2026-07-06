@@ -16,10 +16,28 @@ FLAG="$BOX_ASSETS/_frame_active_room.txt"
 CAP="/home/unity/worldos-unity/Captures-Durable/m1_combat_v1.png"
 SCRIPT="paint_combat_v1.cs"   # run via: unity-mcp code execute --no-safety-checks -f $SCRIPT
 
+# MANUAL RUNBOOK, not a CI gate (not referenced by any .github/workflows/*.yml): the two
+# `unity-mcp code execute` calls below are commented out because this environment has no live
+# Unity/GEX44 session to drive. Without them this script asserts NOTHING — it only re-hashes
+# whatever PNG is already sitting at $CAP from some earlier render. Refuse to print misleading
+# PASS/inspect lines unless a human running this FROM THE BOX (live unity-mcp session) opts in.
+if [ "${WORLDOS_LIVE_UNITY_SESSION:-0}" != "1" ]; then
+  echo "== #1281 active-room framing validation: SKIPPED (manual-only) =="
+  echo "This script requires a live Unity/GEX44 session (unity-mcp code execute) and cannot"
+  echo "run unattended here. Uncomment the three '# unity-mcp code execute' calls below,"
+  echo "then re-run FROM THE BOX with WORLDOS_LIVE_UNITY_SESSION=1 to actually execute the checks."
+  exit 0
+fi
+
 echo "== #1281 active-room framing validation =="
 
 # --- CHECK 1: flag OFF == byte-identical to current render (no _frame_active_room.txt, or it says 0) ---
 echo "[1] flag OFF -> byte-identical baseline"
+if grep -q '^# unity-mcp code execute' "$0"; then
+  echo "    FAIL: the 'unity-mcp code execute' calls below are still commented out — uncomment"
+  echo "    them (this file, CHECK 1/CHECK 2) before running with WORLDOS_LIVE_UNITY_SESSION=1."
+  exit 1
+fi
 rm -f "$FLAG"                                   # absent flag == OFF (default)
 # render (baseline), hash it
 # unity-mcp code execute --no-safety-checks -f "$SCRIPT"
