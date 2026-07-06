@@ -237,5 +237,35 @@ class SceneAtRestProjectionTests(unittest.TestCase):
         self.assertIn("comp_shade", ids)
 
 
+class SceneAtRestStageCellTests(unittest.TestCase):
+    """W2 (#1350): the rest projection RENDERS a character at its engine-authoritative
+    ``Character.stage_cell`` (walk_to's sole-writer field) when set, so a click-to-move walk lands
+    the token at the confirmed destination on the next surface reload — instead of snapping it back
+    to the authored spawn cell. ADDITIVE: stage_cell is None until a first walk, so an un-walked
+    character projects at its spawn cell exactly as before (byte-identical)."""
+
+    def test_walked_pc_renders_at_stage_cell_not_spawn(self):
+        snap = _rest_snapshot()
+        # pc_hero has WALKED: its engine stage_cell is (2, 3), NOT the party spawn cell (6, 8).
+        snap["characters"]["pc_hero"]["stage_cell"] = [2, 3]
+        by_id = {t["id"]: t for t in _surface(snap)["stage"]["tokens"]}
+        self.assertIn("pc_hero", by_id)
+        self.assertEqual((by_id["pc_hero"]["x"], by_id["pc_hero"]["y"]), (2, 3))
+
+    def test_unwalked_pc_still_renders_at_spawn_cell(self):
+        """No stage_cell == today: the character falls straight through to the spawn projection."""
+        snap = _rest_snapshot()  # pc_hero carries no stage_cell
+        by_id = {t["id"]: t for t in _surface(snap)["stage"]["tokens"]}
+        self.assertEqual((by_id["pc_hero"]["x"], by_id["pc_hero"]["y"]), (6, 8))
+
+    def test_stage_cell_token_stays_a_derived_hint(self):
+        """The engine remains the sole writer: a stage_cell-placed token is still a derived render
+        hint, never authoritative — same discipline as the spawn projection."""
+        snap = _rest_snapshot()
+        snap["characters"]["pc_hero"]["stage_cell"] = [4, 4]
+        by_id = {t["id"]: t for t in _surface(snap)["stage"]["tokens"]}
+        self.assertEqual(by_id["pc_hero"]["positionAuthority"], "derived")
+
+
 if __name__ == "__main__":
     unittest.main()
