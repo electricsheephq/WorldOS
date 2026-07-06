@@ -63,11 +63,17 @@ from typing import Any, Optional
 # produce the lens numbers; ``lc_…``, #725). Stamped on every scored run so a number is always
 # tagged with which ruler produced it — the fix for "we used to hit 4.5, now 3.6".
 try:
-    from scoring_config_version import scoring_config_version, scoring_config_label, lens_config_version
+    from scoring_config_version import (
+        scoring_config_version, scoring_config_label, lens_config_version,
+        artifact_config_version,
+    )
 except ImportError:  # imported from a different cwd / as a package
     import sys as _sys
     _sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from scoring_config_version import scoring_config_version, scoring_config_label, lens_config_version
+    from scoring_config_version import (
+        scoring_config_version, scoring_config_label, lens_config_version,
+        artifact_config_version,
+    )
 
 # ---------------------------------------------------------------------------
 # Locations
@@ -163,6 +169,16 @@ COLUMNS: tuple[str, ...] = (
     "visual_backend",     # render backend: "unity-cl" | "godot" | "still" (the SKILL's render source)
     "visual_pregate",     # the deterministic pre-gate verdict for this frame: PASS|FLAG|SKIPPED
     "visual_blocking",    # comma-joined CRITICAL/HIGH defect ids still open at this round (NULL = none)
+    # --- L7 MOTION lens (the "PoE2 + motion" recalibration; scored from a render REEL, not a still).
+    # The still-frame quality stays in visual_* above; the MOTION quality lives here so a frozen-but-
+    # pretty render and a moving-but-ugly render are distinguishable. NULL on every still-only row and
+    # on every non-visual row (additive, migration-free; empty == today). ---
+    "motion_overall",     # 0-10 holistic L7 motion score (idle life + locomotion weight + attack arc
+                          # + hit-react + death + timing-sync + turn-to-face), NULL if no reel scored
+    "motion_dims_json",   # JSON {idle_life, locomotion_weight, attack_arc, hit_react, death,
+                          #       timing_sync, turn_to_face} — the L7 sub-scores (auto-JSON-encoded)
+    "motion_reel_ref",    # path/id of the scored motion reel (the qa/motion_reel.py contact-sheet)
+    "milestone",          # coarse art-milestone tag, e.g. "M1.0" | "M1.2" (groups rounds by milestone)
 )
 
 # Numeric columns get REAL; pass is an INTEGER bool; the rest TEXT.
@@ -178,6 +194,8 @@ _REAL_COLS = {
     "engagement_pct",
     # visual-critic loop (0-10 gap-to-reference score → REAL)
     "visual_overall",
+    # L7 motion lens (0-10 holistic motion score → REAL)
+    "motion_overall",
 }
 _INT_COLS = {"critical_bugs", "pass", "is_canonical_baseline", "acts_reached", "visual_round"}
 
@@ -186,6 +204,49 @@ def _coltype(col: str) -> str:
     if col in _REAL_COLS:
         return "REAL"
     if col in _INT_COLS:
+        return "INTEGER"
+    return "TEXT"
+
+
+# ---------------------------------------------------------------------------
+# The `artifacts` table (HV1, #1323): per-ARTIFACT eval scores (quest/npc/location/encounter)
+# ---------------------------------------------------------------------------
+# ADDITIVE and SEPARATE from `runs`: the harvest loop scores individual CONTENT artifacts (a single
+# quest / NPC / location / encounter), not whole playtests. Those scores live in their own table so
+# they never touch the runs-table schema or its comparability stamps. Their sole writer is
+# qa/artifact_score.py (mirrors "add_run is the sole writer of runs"). run_id is a NULLABLE FK to
+# runs.run_id (an artifact extracted from a live campaign links back to the run that produced the
+# snapshot; a canon-authored control has no run). The per-dim scores are a JSON blob (each class has a
+# different dim set) rather than fixed columns, so adding a class/dim never migrates the table.
+# The ruler stamp is the ARTIFACT ruler (``ac_…``) — its OWN hash family (see scoring_config_version.py
+# ARTIFACT_CONFIG_FILES), NEVER the sc_/lc_ engine-duo rulers.
+ARTIFACT_CLASSES: tuple[str, ...] = ("quest", "npc", "location", "encounter")
+
+ARTIFACT_COLUMNS: tuple[str, ...] = (
+    "class",          # one of ARTIFACT_CLASSES — selects the rubric that scored it
+    "run_id",         # NULLABLE FK to runs.run_id (the run that produced the source snapshot); NULL for canon
+    "world",          # world id the artifact belongs to (e.g. "baldurs-gate"; "canon" for a control)
+    "sha",            # short git SHA of the build the artifact was extracted under (NULL for canon)
+    "ts",             # ISO8601 timestamp the score was recorded (UTC where known)
+    "dims_json",      # JSON {dim: score, ...} — the per-class dimension scores (class-dependent keys)
+    "overall",        # holistic 1.0-5.0 artifact score
+    "panel_id",       # id grouping the N scorers of ONE calibration panel (e.g. "cal-quest-20260703")
+    "scorer_model",   # model that produced this score (e.g. "sonnet")
+    "ac_ruler",       # ARTIFACT ruler content hash (ac_…) — fences artifact-score comparability
+    "is_control",     # 1 = a disguised hand-authored canon CONTROL row; 0/NULL = a scored artifact
+    "control_anchor", # for a control: the expected anchor band midpoint (REAL), NULL otherwise
+    "source_path",    # where the artifact JSON / evidence lives (repo-relative or LEXAR)
+    "notes",          # free-text context / caveats
+)
+
+_ARTIFACT_REAL_COLS = {"overall", "control_anchor"}
+_ARTIFACT_INT_COLS = {"is_control"}
+
+
+def _artifact_coltype(col: str) -> str:
+    if col in _ARTIFACT_REAL_COLS:
+        return "REAL"
+    if col in _ARTIFACT_INT_COLS:
         return "INTEGER"
     return "TEXT"
 
@@ -201,7 +262,8 @@ def connect(db_path: Path | str = DB_PATH) -> sqlite3.Connection:
 
 
 def _ensure_schema(conn: sqlite3.Connection) -> None:
-    """Create the runs table if missing; additively ALTER in any new COLUMNS."""
+    """Create the runs table if missing; additively ALTER in any new COLUMNS. Also ensures the
+    additive `artifacts` table (HV1) exists — a SEPARATE table that never touches runs."""
     cols_ddl = ",\n  ".join(f'"{c}" {_coltype(c)}' for c in COLUMNS)
     conn.execute(
         f'CREATE TABLE IF NOT EXISTS runs (\n'
@@ -212,7 +274,25 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     for col in COLUMNS:
         if col not in existing:
             conn.execute(f'ALTER TABLE runs ADD COLUMN "{col}" {_coltype(col)}')
+    _ensure_artifacts_schema(conn)
     conn.commit()
+
+
+def _ensure_artifacts_schema(conn: sqlite3.Connection) -> None:
+    """Create the `artifacts` table if missing; additively ALTER in any new ARTIFACT_COLUMNS.
+
+    Purely additive: on an existing db this ONLY creates a new table (and back-fills any new artifact
+    column) — it never alters `runs`. `artifact_id` is the PRIMARY KEY (created separately)."""
+    cols_ddl = ",\n  ".join(f'"{c}" {_artifact_coltype(c)}' for c in ARTIFACT_COLUMNS)
+    conn.execute(
+        f'CREATE TABLE IF NOT EXISTS artifacts (\n'
+        f'  "artifact_id" TEXT PRIMARY KEY,\n  {cols_ddl}\n)'
+    )
+    existing = {r["name"] for r in conn.execute('PRAGMA table_info(artifacts)')}
+    if existing:  # table already existed → back-fill any newly-added columns
+        for col in ARTIFACT_COLUMNS:
+            if col not in existing:
+                conn.execute(f'ALTER TABLE artifacts ADD COLUMN "{col}" {_artifact_coltype(col)}')
 
 
 # ---------------------------------------------------------------------------
@@ -228,9 +308,9 @@ def add_run(
     """Append (or replace) ONE run row in the canonical ledger.
 
     Pass ``run_id`` plus any subset of :data:`COLUMNS` as keyword args. Unknown keys raise
-    (so a typo is caught, not silently dropped). ``per_persona_json`` and ``visual_dims_json``
-    may be passed as dicts and are JSON-encoded automatically. ``surface`` is validated against
-    :data:`SURFACES`. ``ts`` defaults to now (UTC, ISO8601) if omitted.
+    (so a typo is caught, not silently dropped). ``per_persona_json``, ``visual_dims_json``, and
+    ``motion_dims_json`` may be passed as dicts and are JSON-encoded automatically. ``surface`` is
+    validated against :data:`SURFACES`. ``ts`` defaults to now (UTC, ISO8601) if omitted.
     """
     unknown = set(fields) - set(COLUMNS)
     if unknown:
@@ -279,9 +359,9 @@ def add_run(
                     f"another run's ruler, cite its run_id, not its hash)"
                 )
 
-    # JSON-encode structured payloads (per_persona_json and visual_dims_json may be passed as
-    # dicts and are auto-encoded to avoid sqlite3.ProgrammingError on non-string values).
-    for _jcol in ("per_persona_json", "visual_dims_json"):
+    # JSON-encode structured payloads (per_persona_json, visual_dims_json, and motion_dims_json may
+    # be passed as dicts and are auto-encoded to avoid sqlite3.ProgrammingError on non-string values).
+    for _jcol in ("per_persona_json", "visual_dims_json", "motion_dims_json"):
         _jv = fields.get(_jcol)
         if _jv is not None and not isinstance(_jv, str):
             fields[_jcol] = json.dumps(_jv, ensure_ascii=False, sort_keys=True)
@@ -306,6 +386,92 @@ def add_run(
     finally:
         if own:
             conn.close()
+
+
+# ---------------------------------------------------------------------------
+# The one append helper every future ARTIFACT score should call (HV1, #1323)
+# ---------------------------------------------------------------------------
+def add_artifact(
+    artifact_id: str,
+    *,
+    db_path: Path | str = DB_PATH,
+    replace: bool = True,
+    **fields: Any,
+) -> None:
+    """Append (or replace) ONE per-artifact score row in the additive `artifacts` table.
+
+    Mirrors :func:`add_run`'s validation discipline, but writes the SEPARATE `artifacts` table and
+    NEVER touches `runs`. Pass ``artifact_id`` plus any subset of :data:`ARTIFACT_COLUMNS` as keyword
+    args. Unknown keys raise (a typo is caught, not silently dropped). ``dims_json`` may be passed as a
+    dict and is JSON-encoded automatically. ``class`` is validated against :data:`ARTIFACT_CLASSES`.
+    ``ts`` defaults to now (UTC, ISO8601) if omitted, and ``ac_ruler`` auto-stamps the current ARTIFACT
+    ruler hash unless the caller pinned it (so no artifact score is ever recorded without the ruler that
+    produced it — the same comparability guarantee the runs table gets for sc_/lc_). ``is_control``
+    coerces a bool to int.
+    """
+    unknown = set(fields) - set(ARTIFACT_COLUMNS)
+    if unknown:
+        raise ValueError(
+            f"unknown field(s) {sorted(unknown)}; valid: {sorted(ARTIFACT_COLUMNS)}"
+        )
+
+    cls = fields.get("class")
+    if cls is not None and cls not in ARTIFACT_CLASSES:
+        raise ValueError(f"class {cls!r} not in {ARTIFACT_CLASSES}")
+
+    if fields.get("ts") is None:
+        fields["ts"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+    # Auto-stamp the ARTIFACT ruler unless pinned (mirrors add_run's sc_/lc_ auto-stamp). Pinning is
+    # for a backfill of an artifact scored under an older artifact ruler.
+    if fields.get("ac_ruler") is None:
+        fields["ac_ruler"] = artifact_config_version()
+
+    # Notes/stamp consistency guard (mirrors add_run): an ac_ ruler hash CITED in notes must equal the
+    # ac_ruler STAMPED on the row (reference another artifact's ruler by its id, not by pasting a hash).
+    notes = fields.get("notes")
+    if notes:
+        mismatched = sorted({h for h in re.findall(r"\bac_[0-9a-f]{12}\b", notes)
+                             if h != fields.get("ac_ruler")})
+        if mismatched:
+            raise ValueError(
+                f"notes cite artifact-ruler hash(es) {mismatched} but the row's ac_ruler is "
+                f"{fields.get('ac_ruler')!r} — a notes claim must match the stamp"
+            )
+
+    _jv = fields.get("dims_json")
+    if _jv is not None and not isinstance(_jv, str):
+        fields["dims_json"] = json.dumps(_jv, ensure_ascii=False, sort_keys=True)
+
+    if isinstance(fields.get("is_control"), bool):
+        fields["is_control"] = int(fields["is_control"])
+
+    cols = ["artifact_id"] + [c for c in ARTIFACT_COLUMNS if c in fields]
+    vals = [artifact_id] + [fields[c] for c in ARTIFACT_COLUMNS if c in fields]
+    placeholders = ", ".join("?" for _ in cols)
+    verb = "INSERT OR REPLACE" if replace else "INSERT"
+    quoted = ", ".join(f'"{c}"' for c in cols)
+
+    own = isinstance(db_path, (str, os.PathLike))
+    conn = connect(db_path) if own else db_path  # type: ignore[arg-type]
+    try:
+        conn.execute(f"{verb} INTO artifacts ({quoted}) VALUES ({placeholders})", vals)
+        conn.commit()
+    finally:
+        if own:
+            conn.close()
+
+
+def fetch_artifacts(db_path: Path | str = DB_PATH) -> list[dict]:
+    """Return all `artifacts` rows as dicts, newest-first (ts desc, then artifact_id)."""
+    conn = connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT * FROM artifacts ORDER BY ts DESC, artifact_id DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
 
 
 def fetch_rows(db_path: Path | str = DB_PATH) -> list[dict]:
@@ -525,6 +691,69 @@ def render_markdown(db_path: Path | str = DB_PATH, md_path: Path | str = MD_PATH
                 v = f"{float(v) * 100:.0f}%"
             elif key == "pass" and v is not None:
                 v = "PASS" if int(v) else "FAIL"
+            cells.append(_fmt(v))
+        out.append("| " + " | ".join(cells) + " |")
+    out.append("")
+    text = "\n".join(out)
+    Path(md_path).write_text(text, encoding="utf-8")
+    return text
+
+
+ARTIFACTS_MD_PATH = QA_DIR / "artifacts_ledger.md"
+
+_ARTIFACT_MD_COLS = [
+    ("artifact_id", "Artifact"),
+    ("class", "Class"),
+    ("world", "World"),
+    ("ts", "When"),
+    ("overall", "Overall"),
+    ("panel_id", "Panel"),
+    ("scorer_model", "Scorer"),
+    ("ac_ruler", "Artifact ruler"),
+    ("is_control", "Control"),
+    ("control_anchor", "Anchor"),
+    ("run_id", "Run"),
+    ("sha", "SHA"),
+    ("notes", "Notes"),
+]
+
+
+def render_artifacts_markdown(db_path: Path | str = DB_PATH,
+                              md_path: Path | str = ARTIFACTS_MD_PATH) -> str:
+    """Deterministic Markdown mirror of the `artifacts` table (HV1). Separate from the runs ledger."""
+    rows = fetch_artifacts(db_path)
+    out: list[str] = []
+    out.append("# WorldOS Per-Artifact Scores Ledger")
+    out.append("")
+    # A SINGLE blockquote block (each line prefixed "> ", no blank line between them) — a blank line
+    # between "> " lines is markdownlint MD028 ("blank line inside blockquote"). Writers: artifact rows
+    # come from qa/artifact_score.py AND qa/artifact_calibration_panel.py (both call
+    # scores_db.add_artifact directly) — this file (scores_db.py) is the sole table/ledger writer.
+    out.append(
+        "> **Auto-generated from `qa/scores.db` (`artifacts` table) — do not hand-edit.** "
+        "Regenerate with `python3 qa/scores_db.py --render-artifacts`. Rows are appended via "
+        "`qa/scores_db.add_artifact(...)`, called by both `qa/artifact_score.py` and "
+        "`qa/artifact_calibration_panel.py`. One row per scored content artifact "
+        "(quest / npc / location / encounter). Overall is a 1.0–5.0 lens score."
+    )
+    out.append(
+        "> **Artifact ruler** = `ac_…` (its OWN hash family; the quest/npc/location/encounter rubrics "
+        "+ schemas). Rows under DIFFERENT ac_ rulers are NOT directly comparable. **Control** rows are "
+        "disguised hand-authored canon (the panel-validity anchor); **Anchor** is the expected band "
+        "midpoint for a control (the ±1.2 noise law bounds drift)."
+    )
+    out.append(f"> Rows: **{len(rows)}** · rendered {datetime.now(timezone.utc).isoformat(timespec='seconds')}")
+    out.append("")
+    header = "| " + " | ".join(label for _, label in _ARTIFACT_MD_COLS) + " |"
+    sep = "|" + "|".join("---" for _ in _ARTIFACT_MD_COLS) + "|"
+    out.append(header)
+    out.append(sep)
+    for r in rows:
+        cells = []
+        for key, _ in _ARTIFACT_MD_COLS:
+            v = r.get(key)
+            if key == "is_control" and v is not None:
+                v = "control" if int(v) else ""
             cells.append(_fmt(v))
         out.append("| " + " | ".join(cells) + " |")
     out.append("")
@@ -964,6 +1193,15 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--run-id")
     for col in COLUMNS:
         p.add_argument(f"--{col.replace('_', '-')}", dest=col, default=None)
+    # --- HV1 artifacts table (separate; --artifact-<col> flags to avoid colliding with runs cols) ---
+    p.add_argument("--add-artifact", action="store_true",
+                   help="append one artifact score from the --artifact-* flags below")
+    p.add_argument("--list-artifacts", action="store_true", help="print artifact rows (newest first) as JSON")
+    p.add_argument("--render-artifacts", action="store_true",
+                   help="regenerate qa/artifacts_ledger.md from the artifacts table")
+    p.add_argument("--artifact-id", dest="artifact_id", default=None)
+    for col in ARTIFACT_COLUMNS:
+        p.add_argument(f"--artifact-{col.replace('_', '-')}", dest=f"artifact__{col}", default=None)
     return p
 
 
@@ -992,9 +1230,30 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.list:
         print(json.dumps(fetch_rows(db), indent=2, ensure_ascii=False))
 
+    if args.add_artifact:
+        if not args.artifact_id:
+            raise SystemExit("--add-artifact requires --artifact-id")
+        afields = {c: getattr(args, f"artifact__{c}") for c in ARTIFACT_COLUMNS
+                   if getattr(args, f"artifact__{c}") is not None}
+        for c in _ARTIFACT_REAL_COLS:
+            if c in afields:
+                afields[c] = float(afields[c])
+        for c in _ARTIFACT_INT_COLS:
+            if c in afields:
+                afields[c] = int(afields[c])
+        add_artifact(args.artifact_id, db_path=db, **afields)
+        print(f"added artifact {args.artifact_id}")
+
+    if args.list_artifacts:
+        print(json.dumps(fetch_artifacts(db), indent=2, ensure_ascii=False))
+
     if args.render:
         render_markdown(db)
         print(f"rendered {MD_PATH} ({len(fetch_rows(db))} rows)")
+
+    if args.render_artifacts:
+        render_artifacts_markdown(db)
+        print(f"rendered {ARTIFACTS_MD_PATH} ({len(fetch_artifacts(db))} rows)")
 
     if args.compare:
         print(compare_rc(db, rc=args.rc, include_rc_surface=args.compare_rc_surface))
@@ -1021,7 +1280,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             print(f"wrote {args.release_verdict_out}", file=sys.stderr)
 
     if not any([args.init, args.add, args.list, args.render, args.compare,
-                args.trends_json, args.reconcile, args.release_verdict_rri]):
+                args.trends_json, args.reconcile, args.release_verdict_rri,
+                args.add_artifact, args.list_artifacts, args.render_artifacts]):
         _build_parser().print_help()
     return 0
 

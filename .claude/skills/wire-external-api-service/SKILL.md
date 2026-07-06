@@ -25,7 +25,7 @@ non-obvious facts up front — each one saved or would have saved real time:
 2. **Store the key** — `printf %s '<key>' > ~/.worldos/<svc>.key && chmod 600 ~/.worldos/<svc>.key`
    (+ a `.secret` file if the service needs two). Confirm mode 600. Never echo the key into a
    committed file or a log.
-3. **CLI wrapper** — mirror an existing one (`godot/tools/meshy_gen.py`): urllib (no `requests`
+3. **CLI wrapper** — mirror an existing one (`extensions/renderers/godot/tools/meshy_gen.py`): urllib (no `requests`
    dependency), key from `~/.worldos/` or `WORLDOS_<SVC>_API_KEY`, async create → poll → download,
    atomic write to a **gitignored** output dir. MUST have `--test-key` (live auth probe → "Auth OK")
    and `--dry-run` (plan + est. cost, no call).

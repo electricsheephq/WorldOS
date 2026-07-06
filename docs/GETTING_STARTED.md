@@ -61,7 +61,9 @@ dist/WorldOS.app
 
 Use the native app when you need to prove the release surface: provider settings, app launch, private/public art loading, native window behavior, and provider process startup.
 
-To develop the Godot isometric renderer or generate art, see `godot/HANDOFF.md` and the `godot-dev` / `asset-gen` skills.
+For current visual renderer work, use the Unity 6 / Unity-MCP GPU-VM lane described in
+`WorldOS-GUI-RUNBOOK.md`. `extensions/renderers/godot/HANDOFF.md` is historical/reference
+extension material only.
 
 ## Pick A Provider
 

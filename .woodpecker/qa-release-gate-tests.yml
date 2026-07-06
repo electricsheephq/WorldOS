@@ -1,0 +1,69 @@
+when:
+  - event: [push, pull_request, manual]
+
+steps:
+  - name: qa-release-gate-tests
+    image: ghcr.io/astral-sh/uv:python3.12-bookworm
+    environment:
+      WORLDOS_RULES_OFFLINE: "1"
+    commands:
+      - bash -lc 'set -euo pipefail; apt-get update; apt-get install -y --no-install-recommends git jq; rm -rf /var/lib/apt/lists/*'
+      - >-
+        bash -lc 'set -euo pipefail;
+        if [ "${CI_PIPELINE_EVENT:-}" = "pull_request" ]; then
+          _ref="${CI_COMMIT_REF:-}";
+          if [ -z "$_ref" ] && [ -n "${CI_COMMIT_PULL_REQUEST:-}" ]; then _ref="refs/pull/${CI_COMMIT_PULL_REQUEST}/merge"; fi;
+          case "$_ref" in
+            refs/pull/*/merge) git fetch --no-tags --depth=1 origin "$_ref"; git checkout --force FETCH_HEAD; echo "checked out $_ref at $(git rev-parse HEAD)" ;;
+            *) echo "pull_request event without merge ref: ${_ref:-empty}"; exit 1 ;;
+          esac;
+        fi'
+      # Intentionally adds deterministic current-renderer coverage to the parity set.
+      - >-
+        bash -lc 'set -euo pipefail;
+        uv run --directory servers/engine --group dev python -m pytest -q -p no:xdist
+        ../../qa/test_release_readiness.py
+        ../../qa/test_release_readiness_scope.py
+        ../../qa/test_scores_db_comparability.py
+        ../../qa/test_scores_db.py
+        ../../qa/test_artifact_evals.py
+        ../../qa/test_closeout.py
+        ../../qa/test_release_gate_static.py
+        ../../qa/test_ui_playtest_score_image_outcomes.py
+        ../../qa/test_claude_auth_isolation.py
+        ../../qa/test_snapshot_world_state.py
+        ../../qa/test_score_determinism.py
+        ../../qa/test_lens_variance.py
+        ../../qa/test_detect_regression.py
+        ../../qa/test_root_cause_analyzer.py
+        ../../qa/test_evidence_audit.py
+        ../../qa/test_triage_failure.py
+        ../../qa/test_behavioral_gate_corpus.py
+        ../../qa/test_deterministic_rri_gate.py
+        ../../qa/test_orchestrate_split_rri.py
+        ../../qa/test_visual_regression_check.py
+        ../../qa/test_visual_critic.py
+        ../../qa/test_structural_coverage.py
+        ../../qa/test_story_readout_approval.py
+        ../../qa/test_feature_engagement.py
+        ../../qa/test_fact_fidelity.py
+        ../../qa/test_recap_fidelity.py
+        ../../qa/test_assert_behavioral.py
+        ../../qa/test_distill.py
+        ../../qa/test_story_readout_coverage.py
+        ../../qa/test_story_readout_outcome.py
+        ../../qa/test_story_readout_timing.py
+        ../../qa/test_latency_rollup.py
+        ../../qa/test_stream_tailer.py
+        ../../qa/test_collect_findings.py
+        ../../qa/test_dm_beat_mark.py
+        ../../qa/test_export_app_evidence.py
+        ../../qa/test_macos_app_static.py
+        ../../qa/test_ui_playtest_app_buckets.py
+        ../../qa/test_app_failure_buckets.py
+        ../../qa/test_app_handoff_gate.py
+        ../../qa/test_app_smoke_scripted.py
+        ../../qa/test_support_vm_preflight.py
+        ../../qa/test_version_consistency.py
+        ../../qa/test_generate_release_notes.py
+        ../../qa/test_combat_smoke.py'

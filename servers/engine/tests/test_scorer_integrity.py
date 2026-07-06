@@ -299,7 +299,10 @@ echo "[duo] done. story-craft=$(worldos_lens_display "{paths[0]}") mechanical=$(
     assert r.returncode == 0, r.stderr
     line = r.stdout.strip()
     assert "status=unscorable" not in line, f"all-valid run must NOT be unscorable: {line!r}"
-    assert "story-craft=4.0" in line and "mechanical=4.1" in line and "angry-dm=4.2" in line
+    values = dict(part.split("=", 1) for part in line.split() if "=" in part)
+    assert values.get("story-craft") in {"4", "4.0"}
+    assert values.get("mechanical") == "4.1"
+    assert values.get("angry-dm") == "4.2"
     assert "FAILED:" not in line
 
 

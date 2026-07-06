@@ -20,9 +20,12 @@ NOISE FLOOR (visual scores are 0-10, panel-synthesized; coarser than the engine 
   overall : +/-0.7  (an LLM panel re-scores a fixed frame within ~0.5; 0.7 is a safe floor)
   per-dim : +/-1.0  (single-lens scores are noisier; only a >=1.0 drop is a real per-dim regression)
 
-VERDICT: REGRESSED if overall drops below -0.7 OR any dim drops >=1.0 OR a new CRITICAL/HIGH
-defect appears that the baseline did not have; IMPROVED if overall rises >+0.7 and nothing
-regressed; WITHIN_NOISE otherwise; NO_BASELINE when the scene has no canonical baseline yet.
+VERDICT: REGRESSED if (still) overall drops below -0.7 OR motion_overall drops below -0.7 OR any
+dim drops >=1.0 OR a new CRITICAL/HIGH defect appears that the baseline did not have; IMPROVED if
+overall (or motion_overall) rises >+0.7 and nothing regressed; WITHIN_NOISE otherwise; NO_BASELINE
+when the scene has no canonical baseline yet. The motion arm only participates when BOTH the
+candidate and the baseline carry a motion_overall (a still-only round leaves it NO_DATA — additive,
+never falsely flags).
 
 USAGE
 -----
@@ -55,6 +58,9 @@ import scores_db  # noqa: E402
 
 OVERALL_FLOOR = 0.7
 DIM_FLOOR = 1.0
+# Motion (L7) regression floor — mirrors the still-overall floor; a >0.7 motion_overall drop
+# vs the scene baseline is a real motion regression (the panel re-scores a fixed reel within ~0.5).
+MOTION_OVERALL_FLOOR = 0.7
 # Comparability key: a scene's baseline is keyed on (visual_scene, visual_backend).
 # Cross-scene comparison is intentionally refused (a tavern frame is not a baseline for a dungeon).
 _EXIT = {"IMPROVED": 0, "WITHIN_NOISE": 0, "REGRESSED": 2, "NO_BASELINE": 3, "NO_DATA": 3}
@@ -107,6 +113,9 @@ def detect_visual_regression(candidate: dict, db_path: Path | str = scores_db.DB
         "overall": {"candidate": candidate.get("visual_overall"),
                     "baseline": baseline.get("visual_overall") if baseline else None,
                     "delta": None, "floor": OVERALL_FLOOR, "classification": "NO_DATA"},
+        "motion_overall": {"candidate": candidate.get("motion_overall"),
+                           "baseline": baseline.get("motion_overall") if baseline else None,
+                           "delta": None, "floor": MOTION_OVERALL_FLOOR, "classification": "NO_DATA"},
         "per_dim": [],
         "new_blocking": [],
     }
@@ -120,7 +129,7 @@ def detect_visual_regression(candidate: dict, db_path: Path | str = scores_db.DB
         )
         return result
 
-    # Overall.
+    # Overall (still — the L1-L6 visual_overall).
     cv, bv = candidate.get("visual_overall"), baseline.get("visual_overall")
     regressed = False
     improved = False
@@ -130,6 +139,17 @@ def detect_visual_regression(candidate: dict, db_path: Path | str = scores_db.DB
         result["overall"].update(delta=d, classification=cls)
         regressed |= cls == "REGRESSED"
         improved |= cls == "IMPROVED"
+
+    # Motion overall (L7 — mirrors the still arm, only when BOTH rows carry a motion_overall; a
+    # still-only baseline or candidate leaves this NO_DATA and never falsely flags).
+    mcv, mbv = candidate.get("motion_overall"), baseline.get("motion_overall")
+    if mcv is not None and mbv is not None:
+        md = round(float(mcv) - float(mbv), 3)
+        mcls = ("REGRESSED" if md < -MOTION_OVERALL_FLOOR
+                else ("IMPROVED" if md > MOTION_OVERALL_FLOOR else "WITHIN_NOISE"))
+        result["motion_overall"].update(delta=md, classification=mcls)
+        regressed |= mcls == "REGRESSED"
+        improved |= mcls == "IMPROVED"
 
     # Per-dim.
     cd, bd = _dims(candidate), _dims(baseline)
@@ -166,6 +186,10 @@ def _summary(r: dict) -> str:
     if o["delta"] is not None:
         sign = "+" if o["delta"] >= 0 else ""
         lines.append(f"  overall {o['baseline']} -> {o['candidate']} ({sign}{o['delta']}, floor +/-{o['floor']}) {o['classification']}")
+    mo = r.get("motion_overall") or {}
+    if mo.get("delta") is not None:
+        msign = "+" if mo["delta"] >= 0 else ""
+        lines.append(f"  motion  {mo['baseline']} -> {mo['candidate']} ({msign}{mo['delta']}, floor +/-{mo['floor']}) {mo['classification']}")
     for p in r["per_dim"]:
         if p["delta"] is None:
             lines.append(f"  {p['dim']:24s} no-data")

@@ -34,7 +34,7 @@ for _wos_rmvol_k in $(env | awk -F= '$2 ~ /^\/Volumes\// {print $1}'); do
   # awk emit a bogus "key", and `unset` on a non-identifier errors — which would abort a future
   # sourcer that runs `set -e`. (Today's sourcers use `set -uo pipefail` only, so this is belt-and-
   # suspenders to keep the shared lib safe regardless of the caller's shell options.)
-  case "$_wos_rmvol_k" in WORLDOS_*|WORLDOS_*|""|[0-9]*|*[!A-Za-z0-9_]*) continue ;; esac
+  case "$_wos_rmvol_k" in PATH|WORLDOS_*|WORLDOS_*|""|[0-9]*|*[!A-Za-z0-9_]*) continue ;; esac
   unset "$_wos_rmvol_k"
 done
 unset _wos_rmvol_k
@@ -346,6 +346,8 @@ record_dm_reply() {
     chatlog dm "$text" "$plain_extra"
   fi
   WORLDOS_FALLBACK_RECOVERED=0
+  # #1285: a genuine beat resets the consecutive-failure streak (mirrors worldos_chatlog_dm).
+  WORLDOS_DM_BEATS_FAILED_STREAK=0
 }
 
 # worldos_chatlog_dm TEXT — `chatlog dm TEXT` for the runners that write the dm row directly
@@ -359,6 +361,9 @@ worldos_chatlog_dm() {
     chatlog dm "$1"
   fi
   WORLDOS_FALLBACK_RECOVERED=0
+  # #1285: a genuine beat (this function is only called with a NON-empty resolved reply) resets
+  # the consecutive-failure streak — see worldos_chatlog_dm_failed below.
+  WORLDOS_DM_BEATS_FAILED_STREAK=0
 }
 
 # ── SYN-01 (#757/#745): dead-beat failure classification — the honesty layer ────────────────
@@ -468,12 +473,57 @@ worldos_dm_logged_new_prose() {
 # row text is WORLDOS_DM_FAILED_BEAT_TEXT — never an error string, never recycled prose, never
 # blank, never hidden (no engine_logged stamp — see the constant's comment). Consume-once on
 # the resolve flags, mirroring worldos_chatlog_dm. Reads ambient $CHAT exactly as chatlog does.
+#
+# #1285: also tracks the CONSECUTIVE-failure streak (WORLDOS_DM_BEATS_FAILED_STREAK; reset to 0
+# by any genuine beat in worldos_chatlog_dm / record_dm_reply above) — the rri-a1-duo/duo2 class
+# where the account session limit hit MID-RUN, 5 beats failed back-to-back, and the run STILL
+# continued to a scored end (the cumulative WORLDOS_DM_BEATS_FAILED counter never distinguished
+# "1 failure scattered across 24 beats" from "5 in a row" — a real product defect vs an infra
+# collapse). At/above WORLDOS_INFRA_INVALID_STREAK consecutive failures, stamp the run
+# infra-invalid via worldos_mark_run_infra_invalid so a later scorer can never cite it as clean.
+WORLDOS_INFRA_INVALID_STREAK="${WORLDOS_INFRA_INVALID_STREAK:-3}"
 worldos_chatlog_dm_failed() {
   WORLDOS_DM_BEATS_FAILED=$((${WORLDOS_DM_BEATS_FAILED:-0} + 1))
-  echo "[worldos] beat FAILED — visible failure beat recorded (beats_failed=$WORLDOS_DM_BEATS_FAILED this run)" >&2
+  WORLDOS_DM_BEATS_FAILED_STREAK=$((${WORLDOS_DM_BEATS_FAILED_STREAK:-0} + 1))
+  echo "[worldos] beat FAILED — visible failure beat recorded (beats_failed=$WORLDOS_DM_BEATS_FAILED this run, streak=$WORLDOS_DM_BEATS_FAILED_STREAK consecutive)" >&2
   chatlog dm "$WORLDOS_DM_FAILED_BEAT_TEXT" '{"beat_failed":true}'
   WORLDOS_FALLBACK_RECOVERED=0
   WORLDOS_DM_BEAT_FAILED=0
+  if [ "$WORLDOS_DM_BEATS_FAILED_STREAK" -ge "$WORLDOS_INFRA_INVALID_STREAK" ] && [ -n "${STATE_DIR:-}" ]; then
+    worldos_mark_run_infra_invalid "$STATE_DIR" \
+      "$WORLDOS_DM_BEATS_FAILED_STREAK consecutive DM beat failures (is_error/dead-beat) — likely a quota window or host/session death mid-run, not a product defect"
+  fi
+}
+
+# worldos_mark_run_infra_invalid STATE_DIR REASON — stamp $STATE_DIR/.run_infra_invalid.json
+# (once; the FIRST trip wins — a later, unrelated call never overwrites the original reason/beat
+# count). This is the run-level sentinel qa/assert_behavioral.py's run_infra_valid gate reads (by
+# deriving the sibling path from its run.jsonl argv) to flip a mid-run-contaminated transcript
+# FATAL — so a quota-crippled run can never silently read as a clean, scored product measurement
+# (the exact rri-a1-duo/duo2 defect: 5 consecutive is_error beats, narrated 'could not resolve
+# this beat' at peak tension, then scored to the end with a 3.8 that was actually the infra
+# failure). Mirrors worldos_validate_lens_file's sentinel discipline for the scorer side.
+worldos_mark_run_infra_invalid() {
+  local state_dir="$1" reason="$2" marker="$1/.run_infra_invalid.json"
+  [ -n "$state_dir" ] || return 0
+  if [ -s "$marker" ]; then
+    return 0  # already stamped this run — first trip wins
+  fi
+  echo "[worldos] RUN INFRA-INVALID — $reason" >&2
+  python3 - "$marker" "$reason" "${WORLDOS_DM_BEATS_FAILED_STREAK:-0}" <<'PY'
+import json
+import sys
+import time
+
+path, reason, streak = sys.argv[1], sys.argv[2], sys.argv[3]
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump({
+        "infra_invalid": True,
+        "reason": reason,
+        "consecutive_failed_beats": int(streak or 0),
+        "stamped_at": time.time(),
+    }, fh, indent=2)
+PY
 }
 
 # LIVE-PROGRESS + WRAPPER HEARTBEAT (#623 — the ONE shared implementation of the perceived-latency fix).
