@@ -43,6 +43,7 @@ import imagegen
 import inventory
 import itemcatalog
 import ledger as ledger_mod
+import library as library_mod
 import lorebook
 import npc as npc_mod
 import recap
@@ -3084,6 +3085,23 @@ def find_npcs(
         limit=limit,
     )
     return {"world_id": c.world_id, "count": len(matches), "matches": matches}
+
+
+@mcp.tool()
+def lookup_library(campaign_id: str, query: str, cls: str = "quest", limit: int = 5) -> dict:
+    """Pull scored REUSABLE templates from the promoted library BEFORE improvising from scratch —
+    the reuse mirror of lookup_lore/find_npcs. READ-ONLY. Returns [] unless this world opts in
+    (world.json `library_packs`); [] on no match (fall through to freeform add_quest). `cls`:
+    quest|npc|location|encounter|room. Ranked by query overlap, tier tie-break."""
+    c = _require(campaign_id)
+    if not c.world_id:
+        return {"world_id": "", "count": 0, "matches": []}
+    try:
+        world = content_mod.load_world_data(c.world_id)
+    except ValueError:
+        return {"world_id": c.world_id, "count": 0, "matches": []}
+    matches = library_mod.lookup(world, cls, query, limit=limit)
+    return {"world_id": c.world_id, "cls": cls, "count": len(matches), "matches": matches}
 
 
 @mcp.tool()

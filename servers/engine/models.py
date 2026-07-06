@@ -2072,6 +2072,13 @@ class QuestHook(_StrictModel):
     spine: bool = False                   # a main-arc hook (vs a rib / side thread)
     status: Literal["open", "active", "resolved"] = "open"  # DM-set off its own narration
     note: str = ""                        # the DM-facing seed detail (the prose seed)
+    # HV4 (#1326) — reuse provenance. "" == a fresh-generated (native quest_variants) hook, today's
+    # behavior byte-for-byte; "library" == assembled from a promoted library/ pack entry. `tier`
+    # carries the promoted entry's tier (canonical|stable|fresh-gen) so the engagement scorer can
+    # tell an ENGAGED library hook from a decorative one. Additive: both default empty, and an old
+    # snapshot lacking the keys round-trips to these defaults.
+    source: str = ""                      # ""|"library" — provenance of this seed
+    tier: str = ""                        # the promoted tier when source=="library" (else "")
 
 
 class PreludeBeat(_StrictModel):

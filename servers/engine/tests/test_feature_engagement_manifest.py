@@ -34,11 +34,12 @@ def test_manifest_matches_reviewed_ids():
     )
 
 
-def test_reviewed_ids_are_exactly_ten():
-    """WS0 ships the 10 reviewed systems. The count is pinned so a careless drop/add is loud
-    (raise this only with a justification, like the schema-budget guard)."""
-    assert len(fe.REVIEWED_SYSTEM_IDS) == 10, sorted(fe.REVIEWED_SYSTEM_IDS)
-    assert len(fe.SYSTEMS) == 10
+def test_reviewed_ids_are_exactly_eleven():
+    """WS0 shipped 10 reviewed systems; HV4 (#1326) adds `library_reuse` -> 11. The count is pinned
+    so a careless drop/add is loud (raise this only with a justification, like the schema-budget
+    guard)."""
+    assert len(fe.REVIEWED_SYSTEM_IDS) == 11, sorted(fe.REVIEWED_SYSTEM_IDS)
+    assert len(fe.SYSTEMS) == 11
 
 
 def test_every_severity_is_warn_or_fatal():
