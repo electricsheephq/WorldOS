@@ -249,17 +249,40 @@ def main() -> int:
         Path(state_dir).mkdir(parents=True, exist_ok=True)
         ids = seed(state_dir)
 
-        port = _free_port()
-        base = f"http://127.0.0.1:{port}"
         env = dict(os.environ)
         env["WORLDOS_STATE_DIR"] = state_dir
         env["WORLDOS_PLAYER_MOVES"] = moves  # enables the /move write path (the live-game gate)
-        proc = subprocess.Popen(
-            [sys.executable, str(VIEWER), CID, str(port)],
-            env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
+        # Boot with output CAPTURED (not DEVNULL — a silent import/bind/seed failure would
+        # otherwise hide behind a generic _wait_ready timeout) and ONE fresh-port retry:
+        # _free_port() is inherently TOCTOU (close->launch window), so a lost bind race gets a
+        # second freshly-probed port instead of a 20s stall.
+        boot_log = Path(td) / "viewer-boot.log"
+        proc = None
+        base = ""
+        for attempt in (1, 2):
+            port = _free_port()
+            base = f"http://127.0.0.1:{port}"
+            with open(boot_log, "wb") as lf:
+                proc = subprocess.Popen(
+                    [sys.executable, str(VIEWER), CID, str(port)],
+                    env=env, stdout=lf, stderr=subprocess.STDOUT,
+                )
+            try:
+                _wait_ready(base)
+                break
+            except ReplayFail:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                tail = boot_log.read_bytes()[-2000:].decode(errors="replace")
+                if attempt == 2:
+                    print(f"\nviewer never came up; boot log tail:\n{tail}", file=sys.stderr)
+                    return 1
+                print(f"boot attempt {attempt} failed (bind race or slow boot) — retrying on a "
+                      f"fresh port; log tail:\n{tail}", file=sys.stderr)
         try:
-            _wait_ready(base)
             print(f"viewer up on {base} (campaign {CID})")
             run(base, ids)
         except ReplayFail as exc:
