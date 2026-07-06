@@ -107,6 +107,7 @@ _MOVE_KINDS = {
     "say", "do", "check", "save", "combat", "attack", "cast", "use_item", "clarify",
     "travel", "inspect", "examine", "move_to_zone", "move_to_cell", "end_turn",
     "cross_door",  # M-E: cross an authored doorway to the linked room-unit (engine-resolved)
+    "walk_to_cell",  # W2 #1319: rest-mode click-to-walk (engine walk_to; carried by x/y)
 }
 # Kinds whose payload is carried by `target` alone (no free `text`/`name`) — the graphical
 # intents. Used to relax the "needs text or name" guard below for these click-driven moves.
@@ -2927,6 +2928,7 @@ _COMBAT_EVENT_VERB = {
     "combat_start": "narrate",
     "combat_end": "narrate",
     "turn_advanced": "narrate",
+    "rest_walk": "walk",  # W2 #1319: out-of-combat walk_to → an animated glide beat
     # death_save is mapped contextually below (death vs save) off the result state.
 }
 
@@ -2940,6 +2942,7 @@ _VERB_ANIM_HINT = {
     "condition": "status_apply",
     "death": "death_fall",
     "move_to_zone": "zone_move",
+    "walk": "glide",  # W2 #1319: rest-mode walk glides the actor along the engine path
     "narrate": "none",
 }
 
@@ -3032,6 +3035,22 @@ def _combat_event_envelope_fields(payload: dict) -> dict | None:
             # The destination zone IS the target for a move beat (the contract's
             # `target_fk` carries the zone name for move_to_zone).
             target_fk = target_fk or to_zone
+
+    # W2 #1319: a rest_walk beat carries the engine-CONFIRMED path cells (incl. the start
+    # cell) so #1303's Animator glides the actor along exactly the route the engine routed —
+    # the renderer NEVER predicts a client-side path (a second-writer violation). We surface
+    # the engine's cells verbatim under result.path (a list of [x, y] pairs).
+    if event == "rest_walk":
+        raw_path = payload.get("path")
+        if isinstance(raw_path, list):
+            cells = [
+                [int(cell[0]), int(cell[1])]
+                for cell in raw_path
+                if isinstance(cell, (list, tuple)) and len(cell) == 2
+            ]
+            if cells:
+                result["path"] = cells
+                result.setdefault("outcome", "moved")
 
     if verb == "death" or bool(inner.get("dead")):
         # A death beat always carries its outcome so the renderer plays the death state.

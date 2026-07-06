@@ -545,6 +545,16 @@ def _move_party_to(c: Campaign, location_id: str) -> list[str]:
         if travels and member.location_id != location_id:
             member.location_id = location_id
             moved.append(cid)
+            # W2 review fix: stage_cell (walk_to's rest-position sole-writer field) is
+            # scoped to the room it was set in. Without clearing it here, a member who
+            # walked in the OLD room keeps its coordinates after travel, and
+            # rest_blocked_cells (the occupancy reader keyed on location_id == this
+            # location) folds those stale coordinates into the NEW room's blocked set —
+            # phantom occupancy the member never actually stood in. Clearing on every
+            # travel (not just when it happens to be set) keeps the party's rest
+            # position always re-derived per-room, matching stage_cell's contract as a
+            # single-room stander position, not a persistent world coordinate.
+            member.stage_cell = None
     return moved
 
 
@@ -4519,6 +4529,71 @@ def _difficult_set(c: "Campaign") -> set[tuple[int, int]]:
     return {(int(dx), int(dy)) for dx, dy in (c.combat.grid_difficult or [])}
 
 
+def rest_blocked_cells(
+    c: "Campaign", location: "Location", exclude_id: str = ""
+) -> tuple[int, int, set[tuple[int, int]]]:
+    """W2 (#1319): the ONE shared REST-MODE geometry + blocked-set builder — the out-of-combat
+    sibling of ``_occupied_cells`` (which is combat-only: it reads ``c.combat.order``, and no
+    Combat object exists in rest mode). Both ``walk_to`` and future combat-seed code that needs
+    a rest-mode picture call THIS (never fork the pathing input).
+
+    Returns ``(width, height, blocked)`` where:
+      * geometry — ``width``/``height`` come from the location's ``scene_grid.grid.cols``/``rows``
+        (scene_grid.py), which SUBSTITUTE for ``c.combat.grid_width``/``height`` when combat is
+        inactive. Mirrors ``_derive_grid_from_scene`` (cols->x, rows->y, identity mapping).
+      * blocked — the union of (1) the scene's IMPASSABLE cells (walls + prop footprints) via
+        ``scene_grid.impassable_cells`` — the same derivation a painted fight uses — and (2) rest
+        OCCUPANCY: every character's ``stage_cell`` in this location PLUS any ``npc:<id>`` spawn
+        anchors W1 writes into ``scene_grid.spawns`` (both are where PEOPLE stand at rest). The
+        mover's own ``exclude_id`` cell is removed (you never block yourself).
+
+    Pure read of engine-owned state; no mutation, no I/O. If the location has no scene_grid, or a
+    non-positive grid, returns ``(0, 0, set())`` (the caller treats that as "not walkable here" —
+    ADDITIVE: no scene_grid == today, walk is simply unavailable)."""
+    grid = getattr(location, "scene_grid", None)
+    if grid is None:
+        return 0, 0, set()
+    width = int(grid.grid.cols)
+    height = int(grid.grid.rows)
+    if width <= 0 or height <= 0:
+        return 0, 0, set()
+
+    # (2) rest occupancy: where PEOPLE stand. Authoritative source is Character.stage_cell (this
+    # PR's sole-writer field); the npc:<id> spawn anchors (W1 #1318) are folded in when present so
+    # a walk routes around seated NPCs even before any of them has been walked. Only characters in
+    # THIS location count (an NPC anchored elsewhere doesn't block this room).
+    occupied: set[tuple[int, int]] = set()
+    for ch in c.characters.values():
+        if ch.id == exclude_id:
+            continue
+        if ch.location_id and ch.location_id != location.id:
+            continue
+        sc = getattr(ch, "stage_cell", None)
+        if sc is not None:
+            occupied.add((int(sc[0]), int(sc[1])))
+    spawns = getattr(grid, "spawns", None) or {}
+    if isinstance(spawns, dict):
+        for key, cells in spawns.items():
+            if not (isinstance(key, str) and key.startswith("npc:")):
+                continue  # party/foes/npcs positional lists are NOT per-id occupancy — skip
+            if key == f"npc:{exclude_id}":
+                continue
+            for cell in cells or []:
+                # Defensive: SceneGrid.spawns is dict[str, list[Cell]] (Cell=tuple[int,int]) and
+                # pydantic enforces this shape on load — but skip rather than IndexError on a
+                # malformed in-memory-constructed entry that bypassed the model validator.
+                if isinstance(cell, (list, tuple)) and len(cell) == 2:
+                    occupied.add((int(cell[0]), int(cell[1])))
+
+    # (1) walls + prop footprints, minus any cell someone stands on (never trap a stander on a
+    # prop) — the SAME impassable_cells derivation a painted fight uses.
+    impassable = {
+        (x, y)
+        for x, y in scene_grid_mod.impassable_cells(grid, width, height, occupied=occupied)
+    }
+    return width, height, impassable | occupied
+
+
 def _coerce_cell_pairs(raw, label: str) -> list[list[int]]:
     """Coerce a tool arg into a list of [x, y] int cell pairs (shared by set_grid's
     `obstacles`/`difficult`). Raises on a malformed pair."""
@@ -4793,6 +4868,119 @@ def move_to_coords(campaign_id: str, combatant_id: str, x: int, y: int,
     if movement_illegal is not None:
         view["movement_illegal"] = movement_illegal
     return view
+
+
+@mcp.tool()
+def walk_to(campaign_id: str, character_id: str, x: int, y: int) -> dict:
+    """W2 (#1319): walk a party member to rest-grid cell (x, y) — the out-of-combat twin of
+    move_to_coords (additive; does NOT un-gate combat). Paths around walls/props/standers, writes
+    stage_cell, emits a `rest_walk` glide beat. Rejects when combat is active, no scene grid, or the
+    target is blocked/unreachable/off-grid."""
+    if not character_id:
+        raise ValueError("walk_to needs a character_id")
+    with campaign_lock(campaign_id):
+        c = _require(campaign_id)
+        # Combat gate MIRROR (not reuse): walk_to is the REST verb. When a fight is active the
+        # grid twin is move_to_coords — refuse here so the two lanes never overlap.
+        if c.combat.active:
+            raise ValueError("combat is active — use move_to_coords (walk_to is the rest-mode verb)")
+        loc = c.locations.get(c.current_location_id) if c.current_location_id else None
+        if loc is None:
+            raise ValueError("no current location to walk in")
+        if getattr(loc, "scene_grid", None) is None:
+            raise ValueError("this location has no scene grid to walk on")
+        mover = _char(c, character_id)  # tolerant id resolution; raises a "did you mean" on a miss
+        character_id = mover.id  # canonicalize so the exclude/occupancy match is exact
+        # W2 review fix: reject walking a character who is anchored at a DIFFERENT,
+        # explicitly-known location. stage_cell is the sole-writer source
+        # rest_blocked_cells reads back keyed on location_id == this location; writing
+        # a stage_cell here for a mover whose location_id genuinely points elsewhere
+        # would produce a position that location's own occupancy read never counts (it
+        # skips non-matching location_id) — a silent split-brain stander. This is
+        # intentionally a conservative check: it only fires on a real non-empty
+        # mismatch, and leaves None/"" (the party's own not-yet-travelled sentinel,
+        # per #1349) untouched, so it never collides with that unplaced case.
+        if mover.location_id and mover.location_id != loc.id:
+            raise ValueError(
+                f"{mover.name} is anchored at location {mover.location_id!r}, not the "
+                f"current location {loc.id!r} — walk_to only moves a character within "
+                f"the room they're already in."
+            )
+        width, height, blocked = rest_blocked_cells(c, loc, exclude_id=character_id)
+        if width <= 0 or height <= 0:
+            raise ValueError("this location's scene grid has no walkable extent")
+        to_cell = (int(x), int(y))
+        from_cell = getattr(mover, "stage_cell", None)
+        from_cell = (int(from_cell[0]), int(from_cell[1])) if from_cell is not None else None
+        warnings: list[str] = []
+        if not (0 <= x < width and 0 <= y < height):
+            # Out of bounds is a hard reject (unlike combat's advisory) — a rest walk must land on
+            # a real cell of the painted room; nothing off-grid is walkable.
+            return {
+                "walked": False,
+                "from": list(from_cell) if from_cell else None,
+                "to": list(from_cell) if from_cell else None,
+                "path": [],
+                "move_blocked": {
+                    "target": [x, y],
+                    "reason": f"({x}, {y}) is outside the {width}x{height} scene grid — walk rejected.",
+                },
+            }
+        if from_cell is None:
+            # An unplaced mover: this is effectively a placement. Only legal onto a free cell.
+            if to_cell in blocked:
+                return {
+                    "walked": False, "from": None, "to": None, "path": [],
+                    "move_blocked": {
+                        "target": [x, y],
+                        "reason": f"({x}, {y}) is impassable (wall/prop/occupied) — placement rejected.",
+                    },
+                }
+            path_cells: list[tuple[int, int]] = []
+        else:
+            routed = combat_grid.shortest_path(from_cell, to_cell, blocked, width, height)
+            if routed is None:
+                return {
+                    "walked": False,
+                    "from": list(from_cell),
+                    "to": list(from_cell),
+                    "path": [],
+                    "move_blocked": {
+                        "target": [x, y],
+                        "reason": f"({x}, {y}) is impassable (wall/prop/occupied) or unreachable — "
+                                  f"walk rejected; stayed at {list(from_cell)}.",
+                    },
+                }
+            path_cells = routed  # step cells EXCLUDING the start (empty if already there)
+        # The full envelope path INCLUDES the start cell so the Animator glides from where the
+        # character stands (mirrors combat's last_move_path shape).
+        envelope_path = ([list(from_cell)] if from_cell is not None else []) + [list(pc) for pc in path_cells]
+        if from_cell is None:
+            envelope_path = [[x, y]]  # a placement: a single-cell path at the destination
+        mover.stage_cell = to_cell
+        _log_combat_event(
+            c,
+            f"{mover.name} walks to ({x}, {y}).",
+            {
+                "event": "rest_walk",
+                "actor": _combatant_ref(mover),
+                "from": list(from_cell) if from_cell else None,
+                "to": [x, y],
+                "path": envelope_path,
+                "location_id": loc.id,
+                "warnings": list(warnings),
+            },
+            speaker=mover.name,
+        )
+        save_campaign(c)
+    return {
+        "walked": True,
+        "character_id": character_id,
+        "from": list(from_cell) if from_cell else None,
+        "to": [x, y],
+        "path": envelope_path,
+        "warnings": warnings,
+    }
 
 
 def range_helper(cells: int, cell_size: int) -> int:
