@@ -284,6 +284,23 @@ scoring read as a passing run (observed live: `story-craft= mechanical= angry-dm
   NOT record it in `scores_db`, do NOT read its (failed) lenses as quality signal. Re-run the
   scoring (or the whole duo); inspect `$RUN.<lens>.json` for the `error`/`last_api_error` field.
 
+### Oversize transcripts — the GLM-verbosity scorer-limit caveat (#1343, open)
+A verbose long-form duo — observed on **GLM 24-beat runs**, which run noticeably wordier per beat
+than an Opus duo of the same length — can produce a transcript that **exceeds the scorer prompt
+limit**. All three lenses fail identically with `'Prompt is too long'` (retried 3× each, still
+fails) — this is a **prompt-size ceiling**, not a scorer bug or a quality signal, and it is distinct
+from the `unscorable` infra-failure case above (that's a scorer crash; this is a request the scorer
+never gets to attempt). Behavioral gating on the full untruncated transcript is unaffected.
+
+**Until #1343 lands** (candidate fixes: tail-window the transcript for lens scoring only, chunk-and-
+merge, or distill via `distill.py` before scoring — none implemented yet), an oversize run gets
+**tally + behavioral only**, never a fabricated or partial lens score. Record the run-row per the
+existing convention: stamp `scorer_model='none'` and add a note (e.g. `note="oversize transcript,
+#1343, lenses unscorable"`) rather than leaving the lens columns blank or guessing a number. This is
+an iteration-grade lane (GLM corroborator duos), so it does not block the Opus release ruler — but
+do not read a bare `behavioral=GREEN` on one of these rows as carrying story/mech quality signal;
+it carries only the gate verdict.
+
 ## 6. Variance & noise floor
 The three LLM lenses are **stochastic graders**: re-scoring the *same comparable run* yields
 a slightly different `overall` each time. You cannot read a score without knowing this

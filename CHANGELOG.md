@@ -10,7 +10,31 @@ WorldOS is source-available commercial software; world seeds are licensed separa
 
 ## [Unreleased]
 
-- **HV1 — per-artifact eval instruments (#1323, epic Act II Harvest Loop).** The harvest loop's
+### Combat — the tactical layer (epic #1100, engine side complete)
+- AoE templates on the combat grid — sphere/cone/line, Chebyshev (#1257/#1251)
+- Cover + line-of-sight — supercover LoS, half/three-quarters/total cover tiers (#1261/#1252)
+- Difficult terrain + creature size/reach — Dijkstra costs, NxN footprints (#1265/#1253)
+- Flanking advantage — line-through-centres (#1267/#1254)
+- Tactics-aware monster AI v2 — improvement-only overlay (#1268/#1255)
+- Fixes: cast-spell attack-roll leg through the economy gate (#1273/#1270); greedy movement
+  respects impassable/difficult (#1275/#1269); surprise/ambush gate (#1277/#1271)
+- Equipment-owned AC with provenance flag (#1248/#806 Stage 2)
+- Combat-UI: Cast/Item/Move ActionTiles wired to move-kinds (#1250)
+
+### Story & engagement
+- Every-beat quest/relationship/camp obligation cues + momentum guidance (#1299/#1286/#1288)
+- WS3a DM-unavoidable per-beat progression/closure cues (#1160)
+- Adopt the staging-law pass-1 room prompt (#1274)
+- **Cue-stack chain (#1313 series) — closing the loop from "cue exists" to "cue enforced" to
+  "cue can't be skipped."** Surface the top per-beat obligation as an imperative `next_action`
+  enforcement lever, the cue half of the #1313 Option 3 decision (#1314). Endgame quest-resolution
+  cue — the closure-half iteration for a satisfying finish, not just mid-arc momentum (#1317). The
+  wrap-window now opens on a **skip-proof beat counter**: closure cues no longer gate on the optional
+  `mark_climax` call, closing the loophole where a DM that never marks a climax never sees the
+  wrap-window cue either (#1334).
+
+### Act II — Harvest Loop + Living World (epic-series HV1/HV2/W1, charter #1328)
+- **HV1 — per-artifact eval instruments (#1323, merged via #1331).** The harvest loop's
   INSTRUMENT ships first: a per-artifact scorer for the four harvestable content classes
   (quest / npc / location / encounter). New `qa/rubric_artifact_<class>.md` + plain-number
   `qa/score_schema_artifact_<class>.json` pairs (one-decimal dims, same discipline as the story lens);
@@ -24,17 +48,67 @@ WorldOS is source-available commercial software; world seeds are licensed separa
   **±1.2 noise law**. Thin read-only snapshot reader (`qa/artifact_snapshot_reader.py`) CONSUMES HV2's
   canonical extractor to feed the calibration; `qa/artifact_calibration_panel.py` runs one blind panel
   per class. Artifact ruler `ac_986d87bf235a`; engine-duo `sc_be859353df20` / `lc_c603a22aac3d`
-  unchanged. **Envelope reconciliation (post-#1329):** the shared envelope
-  `data/library/artifact_schema.json` is HV2's canonical version (merged first); HV1 adds one ADDITIVE
-  optional `provenance.source` tag (nullable string; distinguishes disguised controls from live
-  extractions) and validates each class-payload shape explicitly in `artifact_score.py` until #1329/HV3
-  binds the per-class definitions via `if`/`then`.
-- Gameplay toward the RRI bar (story ≥4.3, mechanical ≥4.5) — the GA work, on the honest,
-  un-gamed measurement that 1.0.5-rc1 established.
-- The post-rc5 plan: engine-AI competence **v2.1** (off-turn reactions — Shield / Counterspell /
-  opportunity attacks; AoE cluster targeting; difficulty tiers dumb/normal/smart; multi-turn memory),
-  the combat-control **QA-driver integration**, and the **iso combat tiles** (#1061) — see
-  `docs/roadmap/combat-control-policy.md`.
+  unchanged.
+- **HV2 — export_campaign_artifacts extractor (#1324, merged via #1329).** Snapshot+transcript →
+  structured artifact JSONs; authors the shared envelope `data/library/artifact_schema.json` that HV1
+  consumes. **Envelope reconciliation:** HV1 adds one ADDITIVE optional `provenance.source` tag
+  (nullable string; distinguishes disguised controls from live extractions) and validates each
+  class-payload shape explicitly in `artifact_score.py` until HV3 binds the per-class definitions via
+  `if`/`then`.
+- **W1 — scene-at-rest (#1318, merged via #1330).** Stage block + NPC spawns + a renderer rest mode —
+  the living-world foundation for a room that keeps breathing between player actions.
+- **Tier-1.5 mechanism probe (#1336).** A new deterministic QA instrument: seeded-fixture + short
+  live-beats cue-iteration harness (~$1 vs a $6+ full duo) — see the QA-economics entry below.
+
+### Act II Sprint 2 (charter #1337)
+- **HV3 — Promote (epic #1325, merged via #1338).** The harvest loop's eval-gated PROMOTION gate:
+  scored artifacts → `library/`. `tools/library/promote.py` is the SOLE writer of `library/`
+  (`--batch`, idempotent via `library/.promoted.jsonl`); gate = `overall ≥4.0 AND every dim ≥3.0 AND
+  control-valid → stable` (`canonical` stays human-only, never automatic). `tools/library/library_lint.py`
+  validates provenance/license + pack metadata + class↔subdir + room_ref integrity. New library layout:
+  `library/pack.json` + `library/{quests,npcs,locations,encounters,rooms}/`; room entries reference
+  `room_recipes.json` + the asset registry rather than copying.
+- **HV5 slice 1 — closeout auto-nomination (epic #1327, merged via #1342).** Every scored run now
+  auto-nominates its promising HV2-extracted artifacts into `qa/nominations.jsonl` — the queue HV3's
+  `promote.py --batch` consumes — via an additive, non-fatal tail hook on `qa/closeout.py`'s
+  `build_closeout` (fired from a sibling `qa/nominate.py`, independently CLI-invokable; no change to the
+  duo hot path). Gate: `story_overall >= 4.3` for a quest/npc-class run; scoring stays a deferred nightly
+  batch (later HV5 slices — nightly batch scoring, weekly curation, `library_metrics`, backdrop cadence —
+  are not built here).
+- **QA-economics v2 (#1340, owner-ratified 2026-07-06).** Playtests are BATCH evidence, never PR
+  gates: an hour-scale duo runs once per merged batch, not per PR or per iteration. Default PR
+  validation ladder: Tier-0 `fast_gate.sh` → Tier-1.5 `mechanism_probe.sh` → `run_combat_sprint.sh`
+  when combat-adjacent; LLM story lenses are not run per-PR. Story-quality iteration moves to the
+  background on GLM (off-budget), never blocking the build critical path.
+
+### Renderer & art pipeline (PoE2 painterly)
+- Actor-integration levers — contact shadows, scene-light take, pose variety (#1282/#1280)
+- Layered 3-pass room-gen recipe: macro→detail/populate→staging-last (#1258) + hardening
+  (anti-text/UI negatives, deterministic best-of-N, asset-dict chaining) (#1259/#1263)
+- Templatized layered pass2/3 prompts per-room + bosshall recipe (#1294) — tavern + bosshall
+  plates ADOPTED (2-panel control-anchored evidence)
+- Cross-door UI affordance gating + tests (#1293/#1292); wave-1 monster registry (#1295/#1290)
+- Day/night plate selection (#1298) [PENDING rebase]; CANONICAL.md plate/actor rows (#1297)
+
+### QA instruments & infra
+- Luma staging-law pre-gate + visual-critic calibration-control protocol (#1276/#1242)
+- Scorer-auth hardening chain: SDK marker scrub, config-dir isolation, keychain fallback,
+  Linux fallback (#1262/#1264/#1266/#1279/#1260)
+- Run-invalidation guard + passive-perception WARN (#1300/#1285/#1287)
+- bash 5.3 multibyte-identifier crash fix (#1249)
+
+### Docs
+- Product roadmap: S1–S10 ladder→sprint→version map + VISION amendments (#1301)
+- Combat-loop ADR sync (#1256); box tunnel-recovery runbook (#1272); LoRA v4 verdict (#1247)
+
+The post-rc5 plan: engine-AI competence **v2.1** (off-turn reactions — Shield / Counterspell /
+opportunity attacks; AoE cluster targeting; difficulty tiers dumb/normal/smart; multi-turn memory),
+the combat-control **QA-driver integration**, and the **iso combat tiles** (#1061) — see
+`docs/roadmap/combat-control-policy.md`.
+
+> **Not yet in this batch (still OPEN as of this entry):** #1341 (W2-engine `walk_to` + rest-mode
+> pathing) and #1345 (Animator/VFX reel wiring) — both awaiting merge; append on landing rather than
+> pre-claiming.
 
 ---
 
