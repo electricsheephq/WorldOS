@@ -27,7 +27,7 @@ function tokenScope(t) {
   return t.id ? "portrait-" + t.id : "";
 }
 
-function ScreenCombat({ onNavigate, state }) {
+function ScreenCombat({ onNavigate, state, setState }) {
   const campaigns = Array.isArray(state?.campaigns) ? state.campaigns : [];
   const activeCampaign =
     campaigns.find((c) => c.id === state?.activeCampaign) ||
@@ -363,6 +363,42 @@ function ScreenCombat({ onNavigate, state }) {
     await crossDoor(door);
   };
 
+  // W3 (#1320) REST-MODE click-to-TALK: clicking a present NPC on the rest board APPROACHES it —
+  // POST a `parley_approach` intent, which the engine resolves in-process (generate_parley_options
+  // approach=True walks the lead PC adjacent via walk_to, then opens the parley AT the actor). The
+  // viewer is a pure consumer: it posts the intent + re-loads the surface (so the walked tokens
+  // glide to the engine-confirmed cells), then stashes the NPC id and navigates to the Dialogue
+  // screen — which fetches /parley-surface?npc=<id> and stages the speaker at its cell. Same /move
+  // lane + busyRef double-submit guard as the rest walk. Only ever called outside combat.
+  const postParleyApproach = async (npcId) => {
+    if (!npcId) return;
+    if (busyRef.current) return; // synchronous double-click guard
+    busyRef.current = true;
+    setBusyAction("approach");
+    try {
+      const response = await fetch("/move", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: "parley_approach", target_id: npcId, character_id: selected?.id || "", campaign: surface?.campaign_id || campaignId }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) throw new Error(payload.reason || `approach ${response.status}`);
+      await loadSurface();
+      // Stash the interlocutor so the Dialogue screen binds /parley-surface to THIS NPC (header +
+      // stage_cell/facing). A plain state slot — no persisted state; the engine already wrote the walk.
+      if (typeof setState === "function") setState((s) => ({ ...s, activeParleyNpc: npcId }));
+      onNavigate("dialogue");
+      return payload;
+    } catch (error) {
+      toast({ kind: "danger", title: "Could not approach", body: error?.message || "The viewer could not reach /move." });
+      return { ok: false };
+    } finally {
+      busyRef.current = false;
+      setBusyAction("");
+    }
+  };
+  const onApproachNpc = (npcId) => postParleyApproach(npcId);
+
   const actionTile = (id, fallbackIcon, fallbackLabel) => {
     const action = actionById(id);
     // #598: the Move tile stays visually "active" while armed (pickingZone), even though no
@@ -428,6 +464,7 @@ function ScreenCombat({ onNavigate, state }) {
               onSelect={setSelectedToken}
               onWalk={onRestWalk}
               onDoorWalk={onRestDoorWalk}
+              onApproachNpc={onApproachNpc}
               busy={Boolean(busyAction)}
               sceneScope={sceneScope}
             />
@@ -797,7 +834,7 @@ function GridCellToken({ t, selected, isCurrent }) {
    sole writer + router — this board only POSTS an intent and re-renders the surface that comes back
    (no client path prediction; the token glides to the engine-confirmed stage_cell via a CSS
    transition on the next reload). Mirrors CombatGridBoard's walkability derivation exactly. */
-function RestGridBoard({ tokens, grid, doors, selected, onSelect, onWalk, onDoorWalk, busy, sceneScope }) {
+function RestGridBoard({ tokens, grid, doors, selected, onSelect, onWalk, onDoorWalk, onApproachNpc, busy, sceneScope }) {
   const cols = Math.max(1, Number(grid && grid.cols) || 16);
   const rows = Math.max(1, Number(grid && grid.rows) || 10);
   const at = {};
@@ -848,16 +885,25 @@ function RestGridBoard({ tokens, grid, doors, selected, onSelect, onWalk, onDoor
         {cells.map(({ x, y, t }) => {
           const walkable = isWalkable(x, y);
           const door = doorAt[`${x},${y}`];
-          // A token selects; a door cell walks-then-crosses; a walkable empty cell walks. Disabled
-          // while a POST is in flight (busy) so a double-click can't fire two walks/crossings.
+          // W3 (#1320): a present-NPC token (rest_role "npc") is a click-to-TALK target — clicking
+          // it APPROACHES (the engine walks the lead PC adjacent, then opens the parley), NOT a
+          // select. A party token (rest_role "party", or an un-marked pre-W3 token) still selects
+          // who walks next. Both are team "ally", so the engine's rest_role marker is what tells
+          // them apart.
+          const isNpc = Boolean(t) && t.rest_role === "npc";
+          // A party token selects; an NPC token approaches-to-talk; a door cell walks-then-crosses;
+          // a walkable empty cell walks. Disabled while a POST is in flight (busy) so a double-click
+          // can't fire two approaches/walks/crossings.
           const onActivate = t
-            ? () => onSelect(t.id)
+            ? (isNpc ? () => { if (!busy) onApproachNpc(t.id); } : () => onSelect(t.id))
             : door
               ? () => { if (!busy) onDoorWalk(door); }
               : () => { if (!busy && walkable) onWalk(x, y); };
           const actionable = Boolean(t) || (!busy && (door ? true : walkable));
           const title = t
-            ? `${t.name}${selected === t.id ? " (selected)" : " — select to walk"}`
+            ? (isNpc
+                ? `Talk to ${t.name} →`
+                : `${t.name}${selected === t.id ? " (selected)" : " — select to walk"}`)
             : door
               ? `Cross to ${door.toName || "the next room"} →`
               : (walkable ? `walk → (${x}, ${y})` : "blocked");
