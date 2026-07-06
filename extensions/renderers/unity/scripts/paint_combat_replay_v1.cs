@@ -84,7 +84,7 @@ var ringT=new Texture2D(256,256,TextureFormat.RGBA32,false); ringT.wrapMode=Text
 // reproduces only when a skinned actor is transform-mutated inside the capture loop; the proven static
 // renderer shows the same FBXs UPRIGHT). So this driver renders actors in their CLEAN UPRIGHT BIND POSE
 // (no live controller) and conveys each beat's "which animation" via TRANSFORM MOTION — lunge (swing),
-// knockback+tilt (flinch), topple (death) — plus VFX-at-cell + damage number + HP-bar. All engine-driven
+// knockback (flinch), topple (death) — plus VFX-at-cell + damage number + HP-bar. All engine-driven
 // and deterministic. (The FLAG in the report tracks the residual skinned-render artifact for a Play-mode
 // or bake-to-static follow-up; see build_combat_animator.cs / CombatActor.controller for the clip lane.)
 
@@ -100,7 +100,7 @@ System.Func<string,string,int,int,float,Color,string,GameObject> spawn=(fbxPath,
   // capture DESYNCS the GPU skin from the CPU bones (BakeMesh reads an upright 12.9-tall pose, but the
   // rendered mesh reverts to its prone bind — owner-observed "goblin on its side", verified vs the proven
   // static renderer which shows BOTH actors UPRIGHT with no controller). So the actor renders in its clean
-  // upright bind pose and the beat is conveyed by TRANSFORM MOTION (lunge / knockback+tilt / topple, the
+  // upright bind pose and the beat is conveyed by TRANSFORM MOTION (lunge / knockback / topple, the
   // CombatBeatDriver approach) + VFX + damage number + HP-bar — all of which read as motion, deterministically.
   var go=(GameObject)UnityEngine.Object.Instantiate(prefab); go.name=nm;
   go.transform.rotation=Quaternion.Euler(-90f, cam.transform.eulerAngles.y+180f, 0f);
@@ -156,6 +156,16 @@ System.Func<string,string,string[]> resolveAsset=(slug,kind)=>{
 var actorGo=new System.Collections.Generic.Dictionary<string,GameObject>();
 var actorCell=new System.Collections.Generic.Dictionary<string,int[]>();
 var actorFoe=new System.Collections.Generic.Dictionary<string,bool>();
+// per-beat baseline (CodeRabbit #1/#2 fix): the spawn-time position/rotation/scale, so each beat can
+// RESET-then-mutate instead of accumulating lunge/knockback deltas onto an already-displaced actor.
+// deadActors gates re-toppling a corpse (death beat is applied once, then later beats naming the same
+// actor/target are skipped — makes death idempotent without changing the transform-motion approach).
+var actorBase=new System.Collections.Generic.Dictionary<string,Vector3[]>(); // [0]=pos [1]=scale
+var actorBaseYaw=new System.Collections.Generic.Dictionary<string,float>();
+var deadActors=new System.Collections.Generic.HashSet<string>();
+// Reset position/scale/yaw to the spawn baseline before a beat mutates them (never restores the
+// pitch/roll — the -90 X stand-up pivot is a gimbal singularity; see the knockBack note below (translation only, no rotation)).
+System.Action<string,GameObject> resetToBaseline=(tid,go)=>{ if(go==null||!actorBase.ContainsKey(tid)) return; var b=actorBase[tid]; go.transform.position=b[0]; go.transform.localScale=b[1]; go.transform.rotation=Quaternion.Euler(-90f, actorBaseYaw.ContainsKey(tid)?actorBaseYaw[tid]:go.transform.eulerAngles.y, 0f); };
 // token id -> engine hpMax (from the surface), so an attack/damage beat carrying only hp_after (the
 // live engine's common shape) can still compute the HP-bar fraction. Pure read of engine truth.
 var _actorMaxHp=new System.Collections.Generic.Dictionary<string,int>();
@@ -168,7 +178,7 @@ foreach(var o in toks){ var t=o as System.Collections.Generic.Dictionary<string,
   var aref=resolveAsset(slugify(nm),kind); string fbx=aref[0]; string alb=aref[1];
   float h=foe?4.2f:5.0f; Color ring=foe?new Color(1f,0.13f,0.10f,1f):new Color(0.4f,0.95f,1f,1f);
   var go=spawn(fbx,alb,cx,cy,h,ring,"Actor_"+tid);
-  if(go!=null){ actorGo[tid]=go; actorCell[tid]=new int[]{cx,cy}; actorFoe[tid]=foe; }
+  if(go!=null){ actorGo[tid]=go; actorCell[tid]=new int[]{cx,cy}; actorFoe[tid]=foe; actorBase[tid]=new Vector3[]{go.transform.position,go.transform.localScale}; actorBaseYaw[tid]=go.transform.eulerAngles.y; }
   if(t.ContainsKey("hpMax") && t["hpMax"]!=null){ try { _actorMaxHp[tid]=System.Convert.ToInt32(t["hpMax"]); } catch {} }
   spawned++; celldbg+=" "+nm+"("+team+")@"+cx+","+cy;
 }
@@ -191,6 +201,10 @@ if(fxTex==null){ fxTex=new Texture2D(128,128,TextureFormat.RGBA32,false); var px
 // ---- the Action-Replay envelope from /events (SORT BY seq; idempotent; pure projection) ----------
 var beats=new System.Collections.Generic.List<System.Collections.Generic.Dictionary<string,object>>();
 try {
+  // since=0 replays the FULL cumulative campaign history on every run (unbounded beat count / disk /
+  // capture time on a long campaign). This capture is a synchronous one-shot with no persisted cursor
+  // between runs, so the minimal fix is a client-side cap to the most recent turn's beats (below) —
+  // NOT a `since` cursor redesign, which would need engine-side cursor storage this driver doesn't have.
   var evJson=new System.Net.WebClient().DownloadString("http://127.0.0.1:8765/events?campaign="+CID+"&since=0");
   var evRoot=MiniJson.Parse(evJson) as System.Collections.Generic.Dictionary<string,object>;
   var entries=(evRoot!=null && evRoot.ContainsKey("entries"))?evRoot["entries"] as System.Collections.Generic.List<object>:null;
@@ -202,7 +216,11 @@ try {
 } catch (System.Exception e) { sb.AppendLine("events GET failed: "+e.Message+" (falling back to STATIC frame)"); }
 // stable sort by seq (envelope's total-order guarantee); records with no seq keep arrival order.
 beats.Sort((a,b)=>{ int sa=a.ContainsKey("seq")?System.Convert.ToInt32(a["seq"]):-1; int sb2=b.ContainsKey("seq")?System.Convert.ToInt32(b["seq"]):-1; return sa.CompareTo(sb2); });
-sb.AppendLine("envelope: "+beats.Count+" animated beats (verb-bearing), lastPath cells="+pathCells.Length);
+// bound to the most recent turn's window (cap: last 40 beats) so a long campaign's cumulative history
+// doesn't balloon the reel — this is the current-turn action-replay, not a full-campaign scrub.
+const int MAX_REPLAY_BEATS=40;
+if(beats.Count>MAX_REPLAY_BEATS) beats=beats.GetRange(beats.Count-MAX_REPLAY_BEATS,MAX_REPLAY_BEATS);
+sb.AppendLine("envelope: "+beats.Count+" animated beats (verb-bearing, capped at "+MAX_REPLAY_BEATS+"), lastPath cells="+pathCells.Length);
 
 // ---- capture rig ---------------------------------------------------------------------------------
 int W=1920,Hh=Mathf.RoundToInt(1920f*(float)bdTex.height/bdTex.width);
@@ -220,7 +238,7 @@ System.Action<string> capture=(label)=>{
 System.Action<GameObject,Vector3> faceAt=(go,targetPos)=>{ if(go==null) return; Vector3 d=targetPos-go.transform.position; d.y=0f; if(d.sqrMagnitude<0.0001f) return; float yaw=Mathf.Atan2(d.x,d.z)*Mathf.Rad2Deg; go.transform.rotation=Quaternion.Euler(-90f, yaw, 0f); };
 
 // TRANSFORM-motion beats (CombatBeatDriver-proven) for SKINNED actors whose clips would flatten them.
-// These read as motion without touching the skin pose: a forward LUNGE (attack), a knockback+tilt
+// These read as motion without touching the skin pose: a forward LUNGE (attack), a knockback
 // (flinch). Presentation-only, applied to the actor + its AO/ring rig; restored to the cell each beat.
 // POSITION-ONLY translations — CRITICAL: never round-trip the pivot rotation through eulerAngles.y.
 // The pivot sits at the X=-90 pitch, which is a gimbal-lock SINGULARITY; reading eulerAngles.y and
@@ -228,7 +246,7 @@ System.Action<GameObject,Vector3> faceAt=(go,targetPos)=>{ if(go==null) return; 
 // the goblin went prone on knockback). We only translate (+optionally roll IN LOCAL SPACE via Rotate,
 // which composes on the quaternion without decomposition), so the stand-up is never corrupted.
 System.Action<GameObject,Vector3,float> lungeToward=(go,targetPos,frac)=>{ if(go==null) return; Vector3 d=targetPos-go.transform.position; d.y=0f; if(d.sqrMagnitude<0.0001f) return; go.transform.position+=d.normalized*frac; };
-System.Action<GameObject,GameObject,float> knockTilt=(go,fromGo,dist)=>{ if(go==null) return; Vector3 dir=(fromGo!=null)?(go.transform.position-fromGo.transform.position):Vector3.back; dir.y=0f; if(dir.sqrMagnitude<0.0001f) dir=Vector3.back; go.transform.position+=dir.normalized*dist; };
+System.Action<GameObject,GameObject,float> knockBack=(go,fromGo,dist)=>{ if(go==null) return; Vector3 dir=(fromGo!=null)?(go.transform.position-fromGo.transform.position):Vector3.back; dir.y=0f; if(dir.sqrMagnitude<0.0001f) dir=Vector3.back; go.transform.position+=dir.normalized*dist; };
 
 // pose an actor's clip (by verb) at a normalized time — the deterministic editor sampling
 // AnimFrameCapture.cs uses (Play + Update(0), NO Play mode). `go` is the PIVOT; the Animator lives on
@@ -241,7 +259,7 @@ System.Action<GameObject,GameObject,float> knockTilt=(go,fromGo,dist)=>{ if(go==
 System.Func<string,string,string> verbToClip=(verb,hint)=>{
   if(verb=="attack") return "attack";      // -> lunge toward target
   if(verb=="cast") return "cast";          // -> cast gesture / heal pulse on target
-  if(verb=="damage"||verb=="condition") return "hit";  // -> knockback+tilt flinch on the STRUCK actor
+  if(verb=="damage"||verb=="condition") return "hit";  // -> knockback flinch on the STRUCK actor
   if(verb=="death") return "death";        // -> topple + squish + fade
   if(verb=="move_to_zone") return "walk";  // -> DOTween glide along lastPath (no walk clip yet -> glide)
   return "idle";
@@ -286,7 +304,7 @@ if(beats.Count==0){
   string atk=null, tgt=null; foreach(var kv in actorFoe){ if(!kv.Value && atk==null) atk=kv.Key; if(kv.Value && tgt==null) tgt=kv.Key; }
   if(atk!=null && tgt!=null){ faceAt(actorGo[atk], actorGo[tgt].transform.position); faceAt(actorGo[tgt], actorGo[atk].transform.position);
     lungeToward(actorGo[atk],actorGo[tgt].transform.position,0.9f); capture("01_attack_fallback");
-    knockTilt(actorGo[tgt],actorGo[atk],0.5f); var tp=actorGo[tgt].transform.position; vfxAt(tp,3.4f); floatNum(tp,"-8",new Color(1f,0.95f,0.45f,1f)); hpBar(tgt,actorGo[tgt],0.45f); capture("02_hit_fallback"); clearOverlays();
+    knockBack(actorGo[tgt],actorGo[atk],0.5f); var tp=actorGo[tgt].transform.position; vfxAt(tp,3.4f); floatNum(tp,"-8",new Color(1f,0.95f,0.45f,1f)); hpBar(tgt,actorGo[tgt],0.45f); capture("02_hit_fallback"); clearOverlays();
     actorGo[tgt].transform.Rotate(0f,0f,85f,Space.Self); { var ds=actorGo[tgt].transform.localScale; actorGo[tgt].transform.localScale=new Vector3(ds.x,ds.y*0.4f,ds.z); } capture("03_death_fallback"); }
   sb.AppendLine("NOTE: no live /events envelope — rendered a STATIC-FALLBACK animated reel (poses proven; wire the tunnel's /events for a live-driven reel).");
 } else {
@@ -297,8 +315,16 @@ if(beats.Count==0){
     var result=beat.ContainsKey("result")?(beat["result"] as System.Collections.Generic.Dictionary<string,object>):null;
     int seq=beat.ContainsKey("seq")?System.Convert.ToInt32(beat["seq"]):-1;
     clearOverlays();
+    // dead-actor guard (#2 fix): a toppled/faded corpse is terminal — don't let a later beat naming the
+    // same actor/target re-lunge, re-knockback, or re-topple it (keeps the death mutation idempotent).
+    if((actor!=null && deadActors.Contains(actor)) || (target!=null && deadActors.Contains(target))) continue;
     GameObject aGo=(actor!=null && actorGo.ContainsKey(actor))?actorGo[actor]:null;
     GameObject tGo=(target!=null && actorGo.ContainsKey(target))?actorGo[target]:null;
+    // reset-then-mutate (#1 fix): restore each touched actor to its spawn baseline BEFORE this beat's
+    // lunge/knockback is applied, so deltas never compound across beats (actorCell/actorBase read here,
+    // not just written at spawn — closes the "no per-beat restore" gap CodeRabbit flagged).
+    if(aGo!=null) resetToBaseline(actor,aGo);
+    if(tGo!=null) resetToBaseline(target,tGo);
 
     if(verb=="attack"){
       if(aGo==null) continue;
@@ -313,7 +339,7 @@ if(beats.Count==0){
         // rather than emitting a separate `damage` beat (the fixture's shape). When it does, flinch the
         // target + float the G1 number + drop its HP bar in this same beat (pure reads of engine truth).
         int dmg=dmgOf(result); int hpa=intOf(result,"hp_after"); int hpm=intOf(result,"hp_max");
-        if(dmg>0){ knockTilt(tGo,aGo,0.5f); floatNum(tGo.transform.position,"-"+dmg,new Color(1f,0.95f,0.45f,1f)); }  // flinch = re-assert upright idle + knockback+tilt recoil (the "hit" clip lays these Generic rigs prone)
+        if(dmg>0){ knockBack(tGo,aGo,0.5f); floatNum(tGo.transform.position,"-"+dmg,new Color(1f,0.95f,0.45f,1f)); }  // flinch = re-assert upright idle + knockback recoil (the "hit" clip lays these Generic rigs prone)
         if(hpa>=0){ int max=(hpm>0)?hpm:_actorMaxHp.ContainsKey(target)?_actorMaxHp[target]:0; if(max>0){ hpFrac[target]=Mathf.Clamp01((float)hpa/max); hpBar(target,tGo,hpFrac[target]); } }
       }
       capture("attack_s"+seq);
@@ -324,7 +350,7 @@ if(beats.Count==0){
       capture("cast_s"+seq);
     } else if(verb=="damage"){
       if(tGo==null) continue;
-      knockTilt(tGo,aGo,0.5f);  // flinch = knockback+tilt recoil on the upright bind pose
+      knockBack(tGo,aGo,0.5f);  // flinch = knockback recoil on the upright bind pose
       int dmg=dmgOf(result); Vector3 tp=tGo.transform.position;
       vfxAt(tp,3.4f);                                   // impact VFX at the struck engine cell
       if(dmg>0) floatNum(tp,"-"+dmg,new Color(1f,0.95f,0.45f,1f));
@@ -332,7 +358,7 @@ if(beats.Count==0){
       capture("damage_s"+seq);
     } else if(verb=="condition"){
       if(tGo==null) continue;
-      knockTilt(tGo,aGo,0.3f);  // condition = a lighter knockback recoil
+      knockBack(tGo,aGo,0.3f);  // condition = a lighter knockback recoil
       int hpa=intOf(result,"hp_after"); int hpm=intOf(result,"hp_max"); int cmax=(hpm>0)?hpm:(_actorMaxHp.ContainsKey(target)?_actorMaxHp[target]:0); if(hpa>=0&&cmax>0){ hpFrac[target]=Mathf.Clamp01((float)hpa/cmax); hpBar(target,tGo,hpFrac[target]); }
       capture("condition_s"+seq);
     } else if(verb=="death"){
@@ -344,7 +370,7 @@ if(beats.Count==0){
       dGo.transform.Rotate(0f,0f,85f,Space.Self); Vector3 bs=dGo.transform.localScale; dGo.transform.localScale=new Vector3(bs.x,bs.y*0.4f,bs.z); dGo.transform.position+=new Vector3(0f,-0.4f,0f);
       // fade the mesh (alpha -> low). Standard mat: switch to transparent-ish tint.
       foreach(var r in dGo.GetComponentsInChildren<Renderer>()){ var m=r.sharedMaterial; if(m!=null && m.HasProperty("_Color")){ var c2=m.color; c2.a=0.35f; m.color=c2; } }
-      if(dId!=null){ var hb=GameObject.Find("HP_"+dId); if(hb!=null) UnityEngine.Object.DestroyImmediate(hb); }
+      if(dId!=null){ var hb=GameObject.Find("HP_"+dId); if(hb!=null) UnityEngine.Object.DestroyImmediate(hb); if(!deadActors.Contains(dId)) deadActors.Add(dId); } // terminal — no later beat re-topples this actor
       capture("death_s"+seq);
     } else if(verb=="move_to_zone"){
       // DOTween-style GLIDE along the engine-confirmed lastPath (presentation-only; the renderer never
@@ -362,6 +388,10 @@ if(beats.Count==0){
         placeActor(startW); capture("move_s"+seq+"a");           // depart
         placeActor(along(0.5f)); faceAt(aGo,endW); capture("move_s"+seq+"b"); // mid-glide
         placeActor(endW); capture("move_s"+seq+"c");             // arrive (engine cell)
+        // re-anchor the baseline to the new engine cell so the NEXT beat's reset-to-baseline (the
+        // #1 drift fix above) restores here, not back at the original spawn cell — a real move must
+        // stick; only the transient lunge/knockback flinches should be reset away each beat.
+        if(actorBase.ContainsKey(actor)) actorBase[actor]=new Vector3[]{aGo.transform.position,actorBase[actor][1]};
       }
     } else {
       // save/check/travel/narrate/unknown -> accept-and-ignore (no beat), per the envelope contract.
