@@ -34,7 +34,7 @@ import library_lint  # noqa: E402
 ROOM_RECIPES = _REPO_ROOT / "extensions" / "renderers" / "shared" / "room_recipes.json"
 REGISTRY = _REPO_ROOT / "data" / "asset-registry" / "registry.json"
 
-_NOISE = 1.2  # matches qa/artifact_controls_identity.json noise_law default
+_NOISE = promote._control_noise_law()  # source of truth: qa/artifact_controls_identity.json noise_law
 
 
 # ── fixtures ────────────────────────────────────────────────────────────────────────────────────
@@ -148,20 +148,52 @@ def test_room_recipes_and_registry_byte_identical_after_batch(env):
         assert _sha(p) == h, f"{p} changed after a promotion batch — promote.py must not edit it"
 
 
-def test_room_entry_references_recipe_not_inlines_it(env):
+def test_room_entry_references_recipe_not_inlines_it():
+    """HARD INVARIANT (build_entry is the code unit that owns it): a room entry carries room_ref
+    {recipe_key, asset_ids} BY VALUE and never inlines the recipe/registry payload itself.
+
+    NOTE on scope: scores_db.ARTIFACT_CLASSES (HV1, qa/scores_db.py) does not include "room" today —
+    only HV1's rubric+committed-control-fixture epic can add it (a class needs a rubric, a schema, and
+    >=2 committed control fixtures per test_all_class_rubric_and_schema_files_exist /
+    test_committed_controls_cover_every_class in qa/test_artifact_evals.py). So a DB row can never carry
+    class="room" yet, and promote_batch's `cls = row["class"]` (promote.py) can never reach
+    build_entry's cls=="room" branch end-to-end. That reachability gap is a separate, larger fix
+    (flagged upstream, out of scope for this PR) — but build_entry's OWN contract is fully unit-testable
+    today and is exactly what this test must pin, rather than asserting a rejected/promoted count that
+    says nothing about room_ref."""
+    gate = promote.GateResult(True, "stable", [], 4.2, {"mood": 4}, True)
+    score_row = {"run_id": "r1", "world": "baldurs-gate", "sha": "abc123", "source_path": None,
+                "panel_id": "cal-p", "ac_ruler": "ac_1"}
+    room_ref = {"recipe_key": "crypt", "asset_ids": ["skeleton_archer"]}
+
+    entry = promote.build_entry("room:bg:crypt", "room", score_row, gate, license="proprietary",
+                                promoted_at="2026-07-06T00:00:00+00:00", room_ref=room_ref)
+
+    assert entry["room_ref"] == {"recipe_key": "crypt", "asset_ids": ["skeleton_archer"]}
+    # references BY VALUE only — never inlines actual recipe/registry payload content.
+    assert set(entry) >= {"artifact_id", "class", "provenance", "scores", "tier", "room_ref"}
+    assert "recipe" not in entry and "registry" not in entry and "payload" not in entry
+
+
+def test_room_ref_dropped_when_class_is_not_room(env):
+    """Documents the CURRENT reachability gap precisely (see test above): a room_ref supplied on a
+    nomination whose scored row is class="location" (the only way a room-style artifact can be scored
+    today, since ARTIFACT_CLASSES has no "room") is silently dropped by build_entry — the entry is
+    promoted as a plain location, with NO room_ref. This is expected given today's schema, not a
+    regression; it exists so a future fix that adds "room" to ARTIFACT_CLASSES has a failing test to
+    flip green, instead of this gap staying invisible."""
     db, lib, noms = env["db"], env["lib"], env["noms"]
     _seed_control(db, cls="location")
-    _seed_scored(db, "room:bg:crypt", "location", overall=4.2, dims={"mood": 4})
+    _seed_scored(db, "room:bg:crypt", "location", overall=4.2, dims={"mood": 4}, panel_id="cal-p")
     _write_noms(noms, [{
         "artifact_id": "room:bg:crypt",
         "room_ref": {"recipe_key": "crypt", "asset_ids": ["skeleton_archer"]},
     }])
-    # class is 'location' in the row; but room_ref makes it a room-style entry only when class==room.
-    # Force a room class via a room-classed nomination row:
-    scores_db.add_artifact("room:only:1", db_path=db, **{"class": "location"}, overall=4.2,
-                           dims_json={"mood": 4}, panel_id="cal-p", is_control=0)
     rep = promote.promote_batch(library_dir=lib, nominations_path=noms, db_path=db)
-    assert rep["promoted"] >= 1
+    assert rep["promoted"] == 1
+    entry = json.loads((lib / "locations" / next((lib / "locations").glob("*.json")).name).read_text())
+    assert entry["class"] == "location"
+    assert "room_ref" not in entry  # the gap: room_ref was supplied but never attached
 
 
 def test_empty_nominations_is_additive_noop(env):

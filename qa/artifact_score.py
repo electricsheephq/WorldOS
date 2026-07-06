@@ -256,6 +256,7 @@ def score_artifact_panel(
     *,
     budget: str = "1.50",
     panel_id: Optional[str] = None,
+    scorer_model: str = "sonnet",
     is_control: bool = False,
     control_anchor: Optional[float] = None,
     source_path: Optional[str] = None,
@@ -269,11 +270,17 @@ def score_artifact_panel(
     panel lives upstream (qa/artifact_calibration_panel.run_panel); this is the single-scorer instrument
     call promote.py needs. It is a thin composition of score_artifact + record_artifact_score — no new
     scoring logic — so the scorer discipline (score.sh auth/model pinning) is unchanged.
+
+    Forwards ``panel_id``/``scorer_model`` to record_artifact_score (both default to the same values
+    record_artifact_score itself defaults to) so a caller — e.g. promote.py's score-if-unscored step —
+    can stamp a real panel_id; a row recorded with panel_id=None is NEVER control-valid
+    (control_valid_for_panel fails closed on a missing panel_id), so without this a live-scored
+    nomination could never pass the promotion gate on a later batch.
     """
     card = score_artifact(artifact, budget=budget)
     record_artifact_score(
-        artifact, card, panel_id=panel_id, is_control=is_control, control_anchor=control_anchor,
-        source_path=source_path, db_path=db_path,
+        artifact, card, panel_id=panel_id, scorer_model=scorer_model, is_control=is_control,
+        control_anchor=control_anchor, source_path=source_path, db_path=db_path,
     )
     return card
 

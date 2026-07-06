@@ -110,6 +110,8 @@ def lint_library(library_dir: Path | str) -> list[str]:
                 ref = entry.get("room_ref") or {}
                 if not _is_nonempty(ref.get("recipe_key")):
                     problems.append(f"{rel}: room entry missing room_ref.recipe_key")
+                if not _is_nonempty(ref.get("asset_ids")):
+                    problems.append(f"{rel}: room entry missing room_ref.asset_ids")
 
     return problems
 

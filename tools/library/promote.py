@@ -242,6 +242,9 @@ def evaluate_gate(score_row: dict, *, control_valid: bool) -> GateResult:
     if not control_valid:
         reasons.append("panel not control-valid")
 
+    if score_row.get("is_control"):
+        reasons.append("row is a disguised canon control, not a promotable candidate")
+
     passed = not reasons
     return GateResult(passed, "stable" if passed else None, reasons, overall, dims, control_valid)
 
@@ -333,15 +336,27 @@ def score_if_unscored(nomination: dict, *, budget: str = "1.50",
     Cleanly separated so the promotion PATH is fully testable without a live scorer: --dry-run and
     --skip-unscored both bypass this. It imports artifact_score lazily and calls its plain
     ``score_artifact_panel`` entrypoint (no agent fan-out here — that lives upstream in artifact_score).
-    Requires the nomination to carry ``source_path`` (the artifact JSON to score)."""
+    Requires the nomination to carry ``source_path`` (the artifact JSON to score). Fails fast if the
+    loaded artifact's ``artifact_id`` does not match the nomination's (source_path drift/typo) rather
+    than silently scoring the wrong artifact. Forwards ``panel_id``/``scorer_model`` from the
+    nomination when present so a live-scored row can still land in a control-valid panel and pass the
+    gate on a later batch (an un-panel'd row is otherwise permanently unpromotable — panel_id=None is
+    never control-valid, see control_valid_for_panel)."""
+    aid = nomination["artifact_id"]
     src = nomination.get("source_path")
     if not src:
-        raise ValueError(
-            f"cannot score unscored nomination {nomination['artifact_id']!r}: no 'source_path'")
+        raise ValueError(f"cannot score unscored nomination {aid!r}: no 'source_path'")
     import artifact_score  # lazy: keeps the offline promotion path import-clean
     artifact = artifact_score.load_artifact(Path(src))
-    artifact_score.score_artifact_panel(artifact, budget=budget, db_path=db_path)
-    return _artifacts_by_id(db_path).get(nomination["artifact_id"])
+    if artifact.get("artifact_id") != aid:
+        raise ValueError(
+            f"source_path {src!r} loaded artifact_id {artifact.get('artifact_id')!r}, "
+            f"expected {aid!r} from the nomination — refusing to score a mismatched artifact")
+    artifact_score.score_artifact_panel(
+        artifact, budget=budget, db_path=db_path,
+        panel_id=nomination.get("panel_id"), scorer_model=nomination.get("scorer_model"),
+    )
+    return _artifacts_by_id(db_path).get(aid)
 
 
 # ── The batch driver ────────────────────────────────────────────────────────────────────────────
@@ -381,6 +396,10 @@ def promote_batch(
         if aid in processed:
             report["already_processed"] += 1
             continue
+        # Mark this artifact_id handled for the REST of this batch, not just future batches — a
+        # nominations.jsonl with a duplicate artifact_id in the same file must not be scored/promoted
+        # twice within one run (the on-disk processed-log only guards the NEXT run).
+        processed.add(aid)
 
         row = rows_by_id.get(aid)
         if row is None or row.get("overall") is None:
@@ -391,7 +410,15 @@ def promote_batch(
                 if not dry_run:
                     _append_processed(library_dir, aid, "skipped-unscored", None)
                 continue
-            row = score_if_unscored(nom, budget=budget, db_path=db_path)
+            try:
+                row = score_if_unscored(nom, budget=budget, db_path=db_path)
+            except Exception as e:  # noqa: BLE001 — score-if-unscored must never abort the --batch run
+                report["skipped"] += 1
+                report["details"].append(
+                    {"artifact_id": aid, "verdict": "score-failed", "error": str(e)})
+                if not dry_run:
+                    _append_processed(library_dir, aid, "score-failed", None)
+                continue
             if row is None or row.get("overall") is None:
                 report["skipped"] += 1
                 report["details"].append({"artifact_id": aid, "verdict": "score-failed"})
