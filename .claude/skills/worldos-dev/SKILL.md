@@ -233,6 +233,7 @@ in the post-fix state and skips the seat-path/cold-open/free-play surfaces our b
 | Tier | Run | Cost | When |
 |---|---|---|---|
 | **0 — deterministic** | `qa/fast_gate.sh` | **$0, ~2s** | EVERY engine/content/data/viewer change (and in CI). 186 engine tests + the end-to-end seat-path skill guard → the structural / seat-path / rest / travel / combat-resolution regression classes, caught free + instant. |
+| **1.5 — mechanism probe** | `qa/mechanism_probe.sh <name> <fixture> [beats=3] [budget=1.00]` | ~$1, ~10 min | A CUE-mechanism question ("does obligation cue X fire + does the DM ACT on it?"). Seeds a deterministic trigger fixture (`qa/probe_fixtures/<fixture>.py`) + drives 2–3 REAL DM beats, then a DETERMINISTIC verdict (ACTED/IGNORED/CUE_ABSENT — no LLM lens). First fixture: `wrap_window_active_quest`. **ITERATION-ONLY** — the seed skips cold-open/seat-path/free-play surfaces; never a release verdict. |
 | **1 — fast LLM loop** | `qa/fast_probe.sh [persona]` | ~$2–3, ~20 min | DM-craft / UX / satisfaction changes. ONE persona ROTATED by iteration (`newbie→…→optimizer`) + a 6-beat duo (≥6 keeps the behavioral floors armed). Iteration signal ONLY. |
 | **2 — milestone sweep** | the `## VM GATE SWEEP` procedure above (VM part-B + Mac part-A) | ~$10, ~90 min | ONLY when 0+1 pass + before a version bump → RRI → #466. Also the periodic recalibration of the cheap tiers vs the full RRI. |
 

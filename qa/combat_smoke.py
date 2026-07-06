@@ -423,6 +423,12 @@ def _make_current(server, store_mod, cid, who):
     idx = next((i for i, cb in enumerate(c.combat.order) if cb.character_id == who), 0)
     c.combat.turn_index = idx
     c.combat.action_used = False
+    # #778: the action economy is now cross-tool (attack/cast/skip share the one action, keyed
+    # by casting time). Give each swept cast a genuinely fresh turn so the coverage sweep isn't
+    # rejected as a same-turn double-act — clear the full per-turn economy, not just action_used.
+    c.combat.action_purpose = ""
+    c.combat.bonus_action_used = False
+    c.combat.action_attacks_made = 0
     store_mod.save_campaign(c)
 
 

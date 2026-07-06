@@ -1,0 +1,71 @@
+{
+  "panel_id": "cal-location-20260703T062433",
+  "class": "location",
+  "ac_ruler": "ac_986d87bf235a",
+  "panel_size": 5,
+  "dryrun": false,
+  "n_candidates": 0,
+  "n_controls": 3,
+  "candidate_median_overall": null,
+  "control_medians": [
+    {
+      "artifact_id": "control:location:baldurs-gate:loc-basilisk-gate",
+      "median": 3.9,
+      "anchor": 4.0
+    },
+    {
+      "artifact_id": "control:location:baldurs-gate:loc-bloomridge-market",
+      "median": 2.9,
+      "anchor": 4.0
+    },
+    {
+      "artifact_id": "control:location:baldurs-gate:loc-counting-house",
+      "median": 3.8,
+      "anchor": 4.0
+    }
+  ],
+  "controls_in_band": true,
+  "out_of_band": [],
+  "panel_valid": true,
+  "results": [
+    {
+      "artifact_id": "control:location:baldurs-gate:loc-basilisk-gate",
+      "is_control": true,
+      "anchor": 4.0,
+      "median_overall": 3.9,
+      "overalls": [
+        3.8,
+        3.9,
+        4.2,
+        3.9,
+        4.2
+      ]
+    },
+    {
+      "artifact_id": "control:location:baldurs-gate:loc-bloomridge-market",
+      "is_control": true,
+      "anchor": 4.0,
+      "median_overall": 2.9,
+      "overalls": [
+        2.9,
+        2.9,
+        2.9,
+        2.9,
+        3.0
+      ]
+    },
+    {
+      "artifact_id": "control:location:baldurs-gate:loc-counting-house",
+      "is_control": true,
+      "anchor": 4.0,
+      "median_overall": 3.8,
+      "overalls": [
+        3.8,
+        3.4,
+        3.9,
+        3.7,
+        3.8
+      ]
+    }
+  ]
+}

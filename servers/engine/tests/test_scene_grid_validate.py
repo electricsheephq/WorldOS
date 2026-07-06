@@ -91,3 +91,15 @@ def test_too_crunched_room_is_caught():
     g = _grid(4, 4, _perimeter(4, 4))
     issues = validate_scene_grid(g, 4, 4)
     assert any("crunched" in v for v in issues), issues
+
+
+def test_npcs_spawn_bucket_on_a_blocked_cell_is_caught():
+    # W1 (#1318): the new `npcs` at-rest spawn bucket must pass the SAME blocked-cell gate as
+    # party/foe spawns — validate's generic spawns.values() loop covers it (pin it so a future
+    # bucket that forks the loop can't slip an npc anchor onto a wall/prop).
+    cells = _perimeter(14, 11) + [SceneCell(c=5, r=5, type="prop", walkable=False, prop_ref="p")]
+    g = _grid(14, 11, cells,
+              props=[SceneProp(id="p", kind="table", cells=[(5, 5)])],
+              spawns={"npcs": [(5, 5)]})  # an npc anchor placed ON the prop
+    issues = validate_scene_grid(g, 14, 11)
+    assert any("spawn cell [5, 5] is BLOCKED" in v for v in issues), issues

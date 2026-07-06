@@ -26,10 +26,12 @@ from typing import Optional
 from dataclasses import replace
 
 import combat_ai
+import combat_grid
 import dice as dice_mod
 import spells as spells_mod
 from combat_ai import (
     AbilityOption,
+    AoeSpellOption,
     AttackOption,
     CombatantView,
     CombatView,
@@ -37,6 +39,12 @@ from combat_ai import (
     SneakAttackOption,
     SpellOption,
 )
+
+# The monster-AI policy the LIVE/TEST loop drives non-PC turns with. "tactical-v2" (#1255 /
+# grid-461 PR-D) engages the grid positioning pass (AoE / cover / flanking / terrain routing)
+# when the fight is ON the grid, and is byte-identical to greedy-v1 off the grid. Set to
+# "greedy-v1" to pin the simpler policy. A single home so the smoke + tests read the same value.
+_MONSTER_POLICY = "tactical-v2"
 
 # The two "sides". Party = the player-aligned team (PCs + companions); Enemy = monsters/NPCs.
 _PARTY_KINDS = ("player", "companion")
@@ -184,6 +192,54 @@ def _spell_options(server, ch, caster_level: int, casting_mod: int) -> tuple[Spe
                 is_bonus_action=is_bonus,
             ))
     return tuple(opts)
+
+
+def _aoe_spell_options(server, ch, caster_level: int, casting_mod: int) -> tuple[AoeSpellOption, ...]:
+    """Discover the actor's castable SPHERE AoE spells as AoeSpellOptions (#1255 / PR-D), for the
+    tactical-v2 policy. For each known/prepared spell with an available slot whose SRD record is a
+    SPHERE shape and that deals damage, surface its radius + avg damage + save fields. Cones/lines are
+    DEFERRED (their origin-anchored facing needs a different search than the radial burst PR-D does).
+    Empty for a non-caster / no-AoE actor == today (greedy-v1 never sees these). PURE read — the sheet
+    + the SRD shape registry; never casts. Mirrors _spell_options' slot-availability discipline."""
+    names = list(getattr(ch, "spells_prepared", None) or getattr(ch, "spells_known", None) or ())
+    if not names:
+        return ()
+    slots = getattr(ch, "spell_slots", {}) or {}
+    avail = sorted(lvl for lvl, s in slots.items() if int(s.maximum) - int(s.used) > 0)
+    out: list[AoeSpellOption] = []
+    seen: set[str] = set()
+    for name in names:
+        key = str(name).strip().lower()
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        srd = spells_mod.srd_spell(name)
+        if srd is None or str(srd.get("shape_type") or "").lower() != "sphere":
+            continue  # PR-D reasons about spheres only
+        try:
+            rec = spells_mod.spell_data(name)  # curated record: damage automation for the EV
+        except ValueError:
+            continue  # no curated mechanics to score the EV
+        level = int(rec.get("level", 0) or 0)
+        is_cantrip = level == 0
+        slot_level = 0 if is_cantrip else next((lvl for lvl in avail if lvl >= level), None)
+        if not is_cantrip and slot_level is None:
+            continue  # no slot can pay for it this turn
+        eff = spells_mod.resolve_effect(rec, int(slot_level or level), caster_level, casting_mod)
+        if str(eff.get("kind", "") or "") not in ("save", "auto", "attack"):
+            continue  # non-damage sphere (utility) — not an offensive AoE
+        dmg = eff.get("damage", "")
+        value = float(dice_mod.average_total(dmg)) if dmg else 0.0
+        if value <= 0:
+            continue
+        radius = int(srd.get("shape_size") or 20)
+        out.append(AoeSpellOption(
+            name=str(rec.get("name", name)), radius_ft=radius, value=value,
+            range_ft=_spell_range_ft(rec), save_ability=str(eff.get("save_ability", "") or ""),
+            on_save=str(eff.get("on_save", "") or "half"), slot_level=int(slot_level or 0),
+            concentration=bool(rec.get("concentration", False)),
+        ))
+    return tuple(out)
 
 
 def _spell_range_ft(rec: dict) -> int:
@@ -353,6 +409,14 @@ def _build_view(server, c, actor) -> CombatView:
     # Martial abilities + Sneak Attack (v2.0c). Empty/None for a non-martial actor == today.
     abilities = _ability_options(server, actor)
     sneak = _sneak_attack_option(actor)
+
+    # tactical-v2 positioning inputs (#1255 / PR-D). The fight's impassable + difficult cells (for
+    # cover / LoS / terrain routing) as tuples of int pairs, and the actor's castable sphere AoEs.
+    # All are ADDITIVE: an open-floor fight has empty blocking/difficult, and a non-caster has no
+    # AoEs — so the tactical layer degrades to the greedy behavior and the view is byte-compatible.
+    blocking = tuple(sorted((int(bx), int(by)) for bx, by in (c.combat.grid_impassable or [])))
+    difficult = tuple(sorted((int(dx), int(dy)) for dx, dy in (c.combat.grid_difficult or [])))
+    aoe_spells = _aoe_spell_options(server, actor, caster_level, casting_mod)
     # The action economy this turn — meaningful only when `actor` is the CURRENT combatant (the
     # engine tracks action_used / bonus_action_used on c.combat for the current turn). When the
     # actor isn't current, default both to available (the AI's bonus channel only fires on the
@@ -392,6 +456,11 @@ def _build_view(server, c, actor) -> CombatView:
         action_available=action_available,
         bonus_action_available=bonus_action_available,
         is_raging=actor.id in _raged_this_fight,
+        # tactical-v2 positioning inputs (#1255 / PR-D). Empty/() off the grid or for a non-caster
+        # == greedy-v1 behavior (the tactics pass is a no-op).
+        blocking=blocking,
+        difficult=difficult,
+        aoe_spells=aoe_spells,
     )
 
 
@@ -461,11 +530,30 @@ def _apply_intent(server, campaign_id: str, actor_id: str, intent: Intent) -> di
             if intent.maneuver:
                 entry["result"]["maneuver"] = res.get("maneuver_damage") or intent.maneuver
         elif intent.kind == "cast":
-            res = server.cast_spell(
-                campaign_id=campaign_id, character_id=actor_id,
-                spell_name=intent.spell_name, target_id=intent.target_id,
-            )
+            # AREA cast (tactical-v2 / #1255): an AoE Intent carries a burst ORIGIN in `to_cell`
+            # (no single target_id). Route it through cast_spell(origin=[x,y]) — the SAME PR-2 path
+            # that projects the SRD template onto the occupants and resolves save-for-half over them
+            # (sole writer preserved: cast_spell, no new path). A single-target cast (target_id set,
+            # to_cell None) is byte-identical to today. When BOTH are absent it's a self/utility cast.
+            is_aoe = (intent.to_cell is not None and not intent.target_id)
+            if is_aoe:
+                res = server.cast_spell(
+                    campaign_id=campaign_id, character_id=actor_id,
+                    spell_name=intent.spell_name,
+                    origin=[int(intent.to_cell[0]), int(intent.to_cell[1])],
+                )
+            else:
+                res = server.cast_spell(
+                    campaign_id=campaign_id, character_id=actor_id,
+                    spell_name=intent.spell_name, target_id=intent.target_id,
+                )
             entry["result"] = {"spell": intent.spell_name, "target_id": intent.target_id}
+            if is_aoe:
+                # The PR-2 origin path auto-resolves the AoE occupants + saves inside cast_spell, so
+                # there's no single-target damage to apply below. Surface the template for the digest.
+                entry["result"]["origin"] = list(intent.to_cell)
+                entry["result"]["affected_tiles"] = res.get("affected_tile_coords") if isinstance(res, dict) else None
+                return entry
             # HEAL APPLY (v2.0a): cast_spell spends the slot + resolves the heal EXPRESSION but does
             # NOT auto-bump HP (in real play the DM applies it via apply_healing — see the cast_spell
             # note). To make the engine-run loop's heal actually raise the ally's HP, roll the
@@ -722,7 +810,7 @@ def run_combat_round(campaign_id: str, mode: str = "live", max_turns: int = 60) 
                     acted = True
                     continue
                 break  # no surge — the actor's attacks are done
-            intent = combat_ai.pick_action(actor, view)
+            intent = combat_ai.pick_action(actor, view, policy=_MONSTER_POLICY)
             entry = _apply_intent(server, campaign_id, actor.id, intent)
             digest.append(entry)
             acted = True

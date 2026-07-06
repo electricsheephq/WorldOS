@@ -857,6 +857,13 @@ class Character(_StrictModel):
 
     # vitals
     armor_class: int = 10
+    # #806 stage 2 — AC ownership provenance. Records WHO last wrote armor_class so
+    # the equip path knows whether it may recompute it: "equipment" (engine wrote it
+    # from worn armor/shield on equip), "manual" (a DM update_character(armor_class=...)
+    # override — equip must NOT clobber it), "" (legacy/unknown — treated manual-safe, so
+    # equip never silently overwrites an AC baked into an old snapshot). Empty == today's
+    # behavior; old snapshots round-trip (additive, default "").
+    armor_ac_source: str = ""
     max_hp: int = 1
     current_hp: int = 1
     temp_hp: int = 0
@@ -1129,6 +1136,14 @@ class Quest(_StrictModel):
     # ADDITIVE: -1 (default / old snapshot) means "never stamped" -> the detector falls
     # back to the legacy Decision-text proxy, so old snapshots behave exactly as today.
     last_progress_day: int = -1
+    # #1286: the NarrativeArc.beats_in_act tally at the quest's last engine-progress (stamped
+    # everywhere last_progress_day is). The quest_stalled detector reads this so a quest that
+    # got ZERO progress calls across many beats surfaces EVEN WHEN THE IN-WORLD CLOCK IS STUCK
+    # (the measured rri-a1-duo2 defect: 22 beats, an active quest, no progress verb, day never
+    # advanced -> the day-only stall gate was structurally unreachable). Mirrors the camp/act
+    # beats-reach that fixed the identical stuck-clock blind spot. ADDITIVE: -1 (default / old
+    # snapshot) means "never stamped" -> the beats path stays silent and behavior == today.
+    last_progress_beat: int = -1
 
 
 class Location(_StrictModel):
@@ -1376,6 +1391,12 @@ class Combatant(_StrictModel):
     # #461 grid (PR-1): took the Dash action this turn (doubles the movement budget).
     # Per-turn; reset with moved_cells_this_turn. Set via use_action(kind="dash").
     dashed: bool = False
+    # #461 grid (#1253/PR-5): SRD size category → grid FOOTPRINT. "medium" (default; also
+    # tiny/small) = a 1-cell token == PR-1 behaviour byte-for-byte. "large" = 2×2, "huge" =
+    # 3×3, "gargantuan" = 4×4, anchored at (x, y) (the MIN-corner cell). Drives occupancy
+    # for placement/movement and footprint-edge melee reach. Additive: old snapshots (and
+    # any all-Medium fight) deserialize with "medium" and behave identically.
+    size: str = "medium"
 
     @model_validator(mode="after")
     def _grid_coords_paired(self) -> "Combatant":
@@ -1403,6 +1424,32 @@ class Zone(_StrictModel):
     adjacent: list[str] = Field(default_factory=list)  # names of directly-reachable zones
 
 
+class PendingSpellAttack(_StrictModel):
+    """The unresolved attack-roll leg of a spell just cast (#1270).
+
+    An attack-roll spell the engine can't auto-resolve (Guiding Bolt, Fire Bolt —
+    `cast_spell` returns `automated:false`) spends the caster's action at cast time
+    but leaves the to-hit roll for the DM to resolve via `attack()`. Per SRD 5.2 that
+    resolution `attack()` is part of the SAME casting action, not a second action — so
+    the #778/#1246 cast+attack economy gate must let it through ONCE.
+
+    `cast_spell` records this on `Combat` when it stamps `action_purpose="cast"` for
+    such a spell; the SAME-TURN `attack()` by `source_id` against a target in
+    `target_ids` bypasses the gate exactly once and CLEARS this record (the gate then
+    re-arms — an independent second strike is still refused). Keyed to the spell
+    resolution (caster + target set), NOT a blanket cast+attack allowance. Cleared on
+    `next_turn` (a stale leg can't cross turns) and when a target dies / is removed.
+
+    ADDITIVE: `Combat.pending_spell_attack` defaults to `None`, so a turn that never
+    casts a DM-resolved attack-roll spell behaves exactly as today and old snapshots
+    round-trip unchanged."""
+
+    source_id: str  # the caster (matched against attack()'s attacker)
+    target_ids: list[str] = Field(default_factory=list)  # who the spell was aimed at
+    spell: str = ""  # canonical spell name (for the bypass note / diagnostics)
+    round: int = 0  # the combat round the cast happened on (defensive staleness guard)
+
+
 class Combat(_StrictModel):
     active: bool = False
     round: int = 0
@@ -1410,6 +1457,26 @@ class Combat(_StrictModel):
     order: list[Combatant] = Field(default_factory=list)  # sorted desc by initiative
     action_used: bool = False  # current turn's action economy
     bonus_action_used: bool = False
+    # #778: WHAT consumed the current turn's action (not just THAT one was consumed), so a
+    # cross-tool second act (cast→attack, attack→cast, cast→cast) is correctly rejected and a
+    # bonus-action spell (Healing Word) doesn't burn the action. "" == today's behaviour: no
+    # action taken, or an action taken by a pre-#778 path that didn't stamp a purpose. Old
+    # snapshots deserialize to "" and round-trip byte-for-byte. Resets every next_turn.
+    #  * ""     — action still available (or a legacy/unstamped action write)
+    #  * "cast" — the action was spent casting an action-cost spell
+    #  * "skip" — the turn was intentionally passed (use_action('skip'))
+    # The Attack action stamps action_used + action_attacks_made (its own budget) and leaves
+    # this "" so Extra-Attack multi-strikes stay unaffected; attack() reads this only to reject
+    # a strike AFTER a cast/skip already spent the action.
+    action_purpose: Literal["", "cast", "skip"] = ""
+    # #1270: the unresolved attack-roll leg of a spell cast THIS turn whose to-hit the DM
+    # must resolve via attack() (cast_spell returned automated:false). action_purpose is
+    # "cast" (the action was spent), but that resolution attack() is part of the SAME casting
+    # action (SRD 5.2), so it must bypass the cast+attack gate ONCE. Set by cast_spell when it
+    # stamps action_purpose="cast" for such a spell; consumed+cleared by the matching same-turn
+    # attack(); cleared by next_turn and on a target's death/removal. None == today's behaviour
+    # (no DM-resolved spell attack pending); old snapshots deserialize to None and round-trip.
+    pending_spell_attack: Optional[PendingSpellAttack] = None
     # Attack-action economy for the CURRENT turn (additive; resets every next_turn):
     #  * action_attacks_made — how many attack() calls have resolved under the
     #    current combatant's Attack action(s) this turn. One Attack action grants
@@ -1437,6 +1504,12 @@ class Combat(_StrictModel):
     # open floor (PR-1 behaviour, byte-for-byte unchanged). `last_move_path` is the most-recent
     # routed path (incl. the from-cell) for the renderer to draw the detour — presentation only.
     grid_impassable: list[list[int]] = Field(default_factory=list)
+    # #461 grid (#1253/PR-4): DIFFICULT-TERRAIN cells (mud/rubble/undergrowth) — each costs
+    # DOUBLE movement to ENTER (SRD 5.2). Additive field, mirrors grid_impassable exactly;
+    # empty == open floor (PR-1 movement cost byte-for-byte unchanged). DM-set via set_grid
+    # (`difficult` arg). Distinct from grid_impassable: difficult cells are ENTERABLE (just
+    # costly); impassable cells are routed around entirely.
+    grid_difficult: list[list[int]] = Field(default_factory=list)
     last_move_path: list[list[int]] = Field(default_factory=list)
 
     @property

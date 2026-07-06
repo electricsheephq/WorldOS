@@ -1,0 +1,84 @@
+{
+  "panel_id": "cal-quest-20260703T053711",
+  "class": "quest",
+  "ac_ruler": "ac_986d87bf235a",
+  "panel_size": 5,
+  "dryrun": false,
+  "n_candidates": 1,
+  "n_controls": 3,
+  "candidate_median_overall": 3.0,
+  "control_medians": [
+    {
+      "artifact_id": "control:quest:baldurs-gate:the-emerald-grove",
+      "median": 3.0,
+      "anchor": 4.0
+    },
+    {
+      "artifact_id": "control:quest:baldurs-gate:the-shadow-cursed-lands",
+      "median": 2.9,
+      "anchor": 4.0
+    },
+    {
+      "artifact_id": "control:quest:baldurs-gate:who-rules-the-gate",
+      "median": 3.5,
+      "anchor": 4.0
+    }
+  ],
+  "controls_in_band": true,
+  "out_of_band": [],
+  "panel_valid": true,
+  "results": [
+    {
+      "artifact_id": "quest:baldurs-gate:quest_e4478d1f6b4d",
+      "is_control": false,
+      "anchor": null,
+      "median_overall": 3.0,
+      "overalls": [
+        2.9,
+        3.2,
+        3.0,
+        3.1,
+        3.0
+      ]
+    },
+    {
+      "artifact_id": "control:quest:baldurs-gate:the-emerald-grove",
+      "is_control": true,
+      "anchor": 4.0,
+      "median_overall": 3.0,
+      "overalls": [
+        2.8,
+        3.0,
+        3.3,
+        2.8,
+        3.0
+      ]
+    },
+    {
+      "artifact_id": "control:quest:baldurs-gate:the-shadow-cursed-lands",
+      "is_control": true,
+      "anchor": 4.0,
+      "median_overall": 2.9,
+      "overalls": [
+        3.0,
+        3.5,
+        2.9,
+        2.9,
+        2.7
+      ]
+    },
+    {
+      "artifact_id": "control:quest:baldurs-gate:who-rules-the-gate",
+      "is_control": true,
+      "anchor": 4.0,
+      "median_overall": 3.5,
+      "overalls": [
+        3.4,
+        3.5,
+        3.7,
+        3.6,
+        3.5
+      ]
+    }
+  ]
+}
