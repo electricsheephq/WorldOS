@@ -249,11 +249,16 @@ def _gen_tavern(scene_id: str, location_id: str, seed: int, rng: random.Random) 
         "center floor": (mid_c, rows // 2),
     }
 
-    # The door + party/foe spawns near the entrance (front), foes a couple cells inside.
+    # The door + party/foe spawns near the entrance (front), foes a couple cells inside. `npcs`
+    # (W1 #1318, additive) = the AT-REST placement anchors for present NPCs — where PEOPLE stand
+    # in a tavern (behind the bar, by the hearth) rather than the foe firing-line — so a rest scene
+    # reads as inhabited. The viewer's rest projection fills these deterministically (id-sorted);
+    # unread by combat. Cells stay clear of the door zone / props.
     exits = [{"cell": [mid_c, rows - 1], "to_location_id": "", "label": "the door to the street"}]
     spawns = {
         "party": [(mid_c - 1, rows - 2), (mid_c, rows - 2), (mid_c + 1, rows - 2)],
         "foes": [(mid_c - 1, 2), (mid_c + 1, 3)],
+        "npcs": [(3, 3), (cols - 4, 3), (mid_c + 2, rows - 3)],
     }
 
     lighting = SceneLighting(
@@ -347,6 +352,9 @@ def _gen_default(scene_id: str, location_id: str, kind: str, seed: int,
     spawns = {
         "party": [(mid_c - 1, rows - 2), (mid_c, rows - 2), (mid_c + 1, rows - 2)],
         "foes": [(mid_c - 1, 2), (mid_c + 1, 2)],
+        # W1 #1318 (additive): at-rest NPC placement anchors — present NPCs stand back near the
+        # interior, not on the foe line. Filled deterministically by the viewer rest projection.
+        "npcs": [(3, 2), (cols - 4, 2)],
     }
 
     # Warm-neutral interior key — NOT #ffffff/0. A muted amber lantern-light from the left.
@@ -458,6 +466,9 @@ def _gen_dungeon(scene_id: str, location_id: str, seed: int, rng: random.Random)
     spawns = {
         "party": [(mid_c - 1, rows - 3), (mid_c, rows - 3), (mid_c + 1, rows - 3)],
         "foes": [(mid_c - 1, 3), (mid_c + 1, 3)],
+        # W1 #1318 (additive): at-rest NPC anchors, off the sarcophagus + foe line — flanking the
+        # mid-floor. Filled deterministically by the viewer rest projection; unread by combat.
+        "npcs": [(mid_c - 2, rows // 2), (mid_c + 2, rows // 2)],
     }
 
     # Warm brazier key, cold-blue ambient — classic dungeon contrast.
@@ -553,6 +564,9 @@ def _gen_forest(scene_id: str, location_id: str, seed: int, rng: random.Random) 
     spawns = {
         "party": [(mid_c - 1, rows - 3), (mid_c, rows - 3), (mid_c + 1, rows - 3)],
         "foes": [(mid_c - 1, 3), (mid_c + 1, 3)],
+        # W1 #1318 (additive): at-rest NPC anchors near the clearing centre, off the tree-line foe
+        # cells. Filled deterministically by the viewer rest projection; unread by combat.
+        "npcs": [(mid_c - 2, rows // 2), (mid_c + 2, rows // 2)],
     }
 
     # Daylight — cool-neutral key from upper-left (sun), pale blue ambient (open sky).
@@ -660,6 +674,10 @@ def _gen_town(scene_id: str, location_id: str, seed: int, rng: random.Random) ->
     spawns = {
         "party": [(mid_c - 1, rows - 3), (mid_c, rows - 3), (mid_c + 1, rows - 3)],
         "foes": [(mid_c - 2, well_r - 2), (mid_c + 2, well_r - 2)],
+        # W1 #1318 (additive): at-rest NPC anchors — a townsperson at each market stall (just in
+        # front of it) where people stand in a plaza. Filled deterministically by the viewer rest
+        # projection; off the well footprint + foe cells; unread by combat.
+        "npcs": [(mid_c - 4, stall_r + 1), (mid_c + 3, stall_r + 1)],
     }
 
     # Daylight — bright overhead sun from upper-right, pale-blue sky ambient.

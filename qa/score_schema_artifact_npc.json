@@ -1,0 +1,40 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["scores", "overall", "defects", "highlights", "verdict"],
+  "properties": {
+    "scores": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "voice_distinctiveness",
+        "motivation_coherence",
+        "arc_potential",
+        "reusability"
+      ],
+      "properties": {
+        "voice_distinctiveness": { "type": "number", "minimum": 1, "maximum": 5 },
+        "motivation_coherence": { "type": "number", "minimum": 1, "maximum": 5 },
+        "arc_potential": { "type": "number", "minimum": 1, "maximum": 5 },
+        "reusability": { "type": "number", "minimum": 1, "maximum": 5 }
+      }
+    },
+    "overall": { "type": "number", "minimum": 1, "maximum": 5 },
+    "defects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "area", "evidence", "suggested_fix"],
+        "properties": {
+          "severity": { "type": "string", "enum": ["critical", "high", "medium", "low"] },
+          "area": { "type": "string" },
+          "evidence": { "type": "string" },
+          "suggested_fix": { "type": "string" }
+        }
+      }
+    },
+    "highlights": { "type": "array", "items": { "type": "string" } },
+    "verdict": { "type": "string" }
+  }
+}

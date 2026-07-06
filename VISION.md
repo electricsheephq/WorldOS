@@ -12,14 +12,50 @@ or the WorldOS app — which acts as the Dungeon Master against the engine. The 
 rules; the AI DM brings an **epic, Baldur's-Gate-caliber story** to life. The long arc: a
 universe-system that generates worlds you play with any agent.
 
+**The destination (owner-ratified 2026-07-03): a FULL RENDERED GAME at Pillars-of-Eternity-2 /
+Pathfinder-Kingmaker quality.** Combat rendering is only the first step of the game system. The end
+state: the party WALKS around beautiful pre-rendered environments, TALKS to NPCs on-stage, explores
+with quests, and combat is one mode entered in place — the DM composes the game live by placing
+characters and pulling scored templates from a growing library. Two mechanisms carry the evolution:
+- **The TEMPLATE LIBRARY** (the Dragon-Age model): a curated library of pre-rendered environments
+  (~100 room-units: cities, towns, forests, crypts, dungeons) plus reusable scored content (quests,
+  NPCs, villains, encounters) — made by us, usable in ANY game the DM assembles.
+- **The HARVEST LOOP**: generated games get scored; high-scoring artifacts are eval-gated and
+  PROMOTED into the library; future games assemble from the library. The game improves as it is
+  played, and play shifts from pure AI generation toward library-assembled sessions needing less AI.
+
+**Feature tiers (one engine + one DM under all of them — permanent):**
+`T0` text-only adventure (CLI / any agent chat) · `T1` 2D OpenWorlds (today's app) · `T2` rendered
+combat (the demo) · `T3` walkable rendered world (the North Star). **The text tier is a full,
+forever-supported way to play** — treasure, towns, crypts, combat all work with the DM in text mode;
+graphics are a presentation upgrade, never a dependency. (Invariant below.)
+
 It is a real game **and** an experiment — in whether an autonomous agent can build, harden, and
 steer a game system to a shippable bar, making its own decisions against this documented vision.
+The experiment's engine is the **measurement culture** (control-anchored art panels, story lenses,
+the behavioral gate, the FELT track): the instruments are what let autonomous agents build to a
+bar, and they are a product in their own right — WorldOS is the game AND the proof of the method.
 
 ## North star
 
 **A no-prior-knowledge player launches the app, plays a complete 8-beat Baldur's-Gate-caliber arc,
 and never once feels "this is broken."** The felt player session is the product. RRI gates, test
 scores, and rubric numbers are *measurement*, never the target — no score-gaming.
+
+**The far north star** (what "done" ultimately looks like): that same player, in the T3 tier, walks
+their party through a rendered town at PoE2 quality, talks to an NPC standing by the hearth, picks
+up a quest the library already scored as excellent, and fights the battle that follows on the same
+screen — while a T0 player gets the identical adventure in pure text. Every intermediate release is
+a rung toward that, and every rung must be a real, playable product on its own.
+
+## Operating principle: DECISION-BY-EVAL
+
+When a load-bearing decision lacks an instrument, **building the instrument IS the first step** —
+never decide by vibes what can be decided by measurement. This is how the experiment self-drives:
+every sprint names its gate as a runnable eval; every library promotion is eval-gated
+(control-anchored panels for art, disguised hand-authored canon as controls for content); every
+"is it better?" is a same-instrument delta. `worldos-decide` anchors here; the noise laws
+(±1.2 panel variance, positive-control anchoring) are part of the ruler, not footnotes.
 
 ## The pillars (a good decision advances ≥1 without dulling another)
 
@@ -64,6 +100,14 @@ scores, and rubric numbers are *measurement*, never the target — no score-gami
   placeholder→real-art transition is a registry change, not a code change.
 - **Never break wire contracts** — additive, keyword-only, defaulted; never reorder/rename/retype an
   existing param.
+- **The text tier always plays.** Every rendered-tier feature (scene-at-rest, walking, on-stage NPC
+  talk, staged combat) is a PRESENTATION of engine surfaces the T0/T1 tiers already consume — never a
+  new gameplay dependency. Each W-series sprint ships a text-tier byte-identity test proving the
+  non-rendered path is unchanged. The DM can run the entire game in text mode, forever.
+- **Renderers are pure consumers on every tier** — the Unity game surface (T2/T3) talks to the engine
+  exactly like OpenWorlds: reads surfaces, posts move-intents through the same `/move` kinds. No
+  renderer-side game state, no client-side path prediction (the renderer animates only
+  engine-confirmed paths).
 - **QA is gateway-free and never touches Eva** (the owner's live agent) — no profile-sourcing, no
   gateway reconfig, no Eva infra. One live Mac/GUI harness at a time. CI/full suites on GitHub.
 
@@ -113,14 +157,33 @@ Tier-0/1 result as a release verdict):
   OOMs). Log every scored run to the ledger (`qa/scores_db.py`).
 
 **Release ladder:** Engine Excellent → **Player-Ready Beta** (a real built `.app`; a no-prior-
-knowledge dogfood arc with no "broken" moment; honest felt session) → **1.0 Playable Combat Demo**
+knowledge dogfood arc with no "broken" moment; honest felt session — **scoped to the shipped 2D
+OpenWorlds surface**: the Unity demo renderer is deliberately NOT a Beta gate; render-in-app is
+the next rung's gate) → **1.0 Playable Combat Demo**
 (a PLAYABLE, MODULAR combat scene rendered in-app on the PoE2 painterly stack — 2D camera-pinned
 backdrop + real 3D actors on the frozen dimetric camera — running on PLACEHOLDERS, i.e. a demo cast +
 ~10 monsters with a default-on-miss registry, default VFX/sounds; the proof is that the *workflows*
 are repeatable and the **backdrop scorecard PASSES** for the demo room while actors/effects ride the
 placeholder-OK tier; see "Graphics North Star (PoE2)") → **1.0 GA** (the Demo's proven workflow
 applied to real, polished art + Beta's story/world bar + notarized + feature parity: companions felt,
-visual parity at the PoE2 bar, story at the bar).
+visual parity at the PoE2 bar, story at the bar — **plus the platform thesis at minimum viable
+scope: the bring-your-own-agent surface documented and ONE provider lane (Claude Code) verified
+end-to-end**; further agent lanes are post-GA platform work, epic #911).
+
+**The ladder executes in three ACTS — sequencing source of truth: `docs/roadmap/PRODUCT-ROADMAP.md`**
+(charters, binding gates, lanes, the Owner Gate Register). **Act I — The Demo**: sprints S1–S10 to
+GA as pinned (Beta ≈ v1.0.9 · Demo-1.0 ≈ v1.0.10 · GA = v1.1.0). **Act II — The Walkable World +
+The Harvest Loop**: the W-series (scene-at-rest → walk → talk → living stage → the Unity player
+tier) and HV-series (artifact evals → extract → promote → reuse → flywheel ops), interleaving with
+Act I where parallel-safe. **Act III — The Universe Platform**: template packs, remaining agent
+lanes, hosted runtime, creator, KOTOR-class universes, engine-as-platform.
+
+**★ RENDER DELIVERY — DECIDED (2026-07-03, owner-delegated; full rationale
+`docs/roadmap/RENDER-DELIVERY-DECISION.md`): Unity IS the interactive game surface for the rendered
+tiers.** A Unity player build (macOS first) consumes engine surfaces and posts move-intents exactly
+like OpenWorlds — frame-streaming was rejected (it cannot grow into walkable realtime play, the T3
+destination). Staged: demo era = Unity standalone launched beside the app; embed/unify later only
+if warranted. OpenWorlds remains the meta-UI, the T1 surface, and the QA harness surface.
 
 ## Graphics North Star (PoE2)
 
@@ -163,16 +226,30 @@ until the polish phase. Lens names (`L1`–`L7`) are the `visual-critic` panel l
 `qa/scores_db.py` (`surface="visual"`); the deterministic checks are `qa/visual_pregate.py`.
 
 - **TIER-1 — BACKDROP (binding; the foundation; ALL must hold):**
-  - **L6 painterly-plate craft ≥ 8** (brush economy, atmospheric depth, PoE2-caliber art direction)
-    **AND**
-  - **L1 registration/cohesion ≥ 8** (the painted floor registers with the gameplay grid; actors
-    will plant on the same plane the engine reasons about) **AND**
-  - **detail ≥ 7** (no muddy / under-detailed plate) **AND**
+  > **★ GATE RECALIBRATED 2026-07-02 (the positive-control finding).** Absolute panel scores were
+  > proven un-citable: blind on our own instrument, REAL shipped PoE plates scored 3.0–4.6 and real
+  > BG2EE 4.6–5.6 while our plates scored 5.0–6.7 — the old "≥ 8 absolute" was unattainable BY
+  > CONSTRUCTION. The craft gates below are therefore **CONTROL-ANCHORED**: every verdict panel
+  > embeds a disguised REAL-ART CONTROL (a shipped plate not among the refs, fair presentation)
+  > and a gate passes when the candidate's same-panel score **meets or beats the control's**
+  > (protocol: `.claude/skills/visual-critic` "CALIBRATION-CONTROL PROTOCOL"). Deterministic gates
+  > (washout, pathing) are unchanged. Status: the crypt plate MEETS the recalibrated craft bar
+  > (6.72/median-7 vs real controls 3.0–5.6, clean instrument); remaining named craft work =
+  > brushstroke looseness, wall-repetition, relief crispness.
+  - **L6 painterly-plate craft ≥ the real-art control** (brush economy, atmospheric depth,
+    PoE2-caliber art direction — judged as same-panel delta vs the embedded control) **AND**
+  - **L1 registration/cohesion ≥ the real-art control** (the painted floor registers with the
+    gameplay grid; actors will plant on the same plane the engine reasons about) **AND**
+  - **detail ≥ the real-art control** (no muddy / under-detailed plate vs what real shipped plates
+    score on the same panel) **AND**
   - **0 / 3 washout** (the three deterministic illusion-breakers in `visual_pregate.py` — none may
     trip; a washed-out plate is an automatic fail) **AND**
   - **pathing-map-correct** (the walkmask / pathing map the renderer derives matches the painted
     geometry — walkable floor is walkable, painted obstacles block, destinations resolve to engine
-    zones). A backdrop is not "done" until pathing reads correctly off it.
+    zones). A backdrop is not "done" until pathing reads correctly off it. **AND**
+  - **FELT track** (new): the composed game frame (plate + actors + rings at viewport scale)
+    passes the "would a player screenshot and share this?" lens — the story side's felt-vs-scores
+    lesson applies to graphics identically; forensic deltas alone don't ship a game.
 - **TIER-2 — ACTOR / EFFECT (placeholder-OK now; polished much later):** the deterministic
   **pre-gates PASS** (frame-lit · floor-contact · screen-scale · occupancy · motion-liveness —
   numbers, not vibes) **AND** the integration lenses clear a **soft ≥ 5.0**:

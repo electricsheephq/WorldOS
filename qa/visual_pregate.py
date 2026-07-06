@@ -20,6 +20,11 @@ deterministic checks that run in <1s with stdlib (+ optional Pillow / NumPy):
                        the #1 "pasted-on" tell.)
   G4  SCREEN-SCALE   — each actor's rendered pixel-height vs the spec-expected height at its cell
                        depth: too big/small = a pasted-on scale break. (cohesion, numerically.)
+  G6  LUMA-STAGING   — greyscale histogram stats (near-black / lit fractions + median L) vs the
+                       measured PoE staging-law bands: is the plate a dramatic chiaroscuro (small
+                       hot pools of light in a mostly-dark scene), or an evenly-lit "museum wash"?
+                       (staging, numerically — runs BEFORE the panel so scorer tokens are never
+                       spent on a mis-staged candidate.)
 
 A pre-gate is CRITICAL/HIGH/MED with an objective delta. A CRITICAL pre-gate SHORT-CIRCUITS the
 LLM panel: there is no point asking five subagents to admire brushwork when the hero's feet float
@@ -95,6 +100,21 @@ SCALE_REL_HIGH = 0.32         # ... over this => HIGH (clearly a different scale
 # G2 occupancy
 OCC_MISMATCH_MED = 0.10       # >10% of cells whose rendered tint disagrees with the mask => MED
 OCC_MISMATCH_HIGH = 0.22      # >22% => HIGH (tactical space is unreadable)
+# G6 luma staging-law (Rec.709 luma L on a 0-255 greyscale; L<26 = near-black, L>60 = lit).
+# Bands are the MEASURED real-PoE staging law (2026-07-01 staging-law campaign; see
+# extensions/renderers/unity/scripts/atelier_luma_gate.py and generate_room.py's
+# _staging_law_distance — this module must not invent new bands, only cite/apply them).
+# near_black_frac: PASS 0.66-0.85, WARN 0.50-0.66 (below 0.50 or above 0.85 => FAIL).
+# lit_frac:        PASS 0.02-0.05, WARN 0.05-0.20 (above 0.20 or below 0.02 => FAIL).
+# median_L:        PASS 0-15,      WARN 15-40      (above 40 => FAIL; a wash, not chiaroscuro).
+LUMA_NEAR_BLACK_L = 26         # Rec.709 luma threshold for "near-black" (matches atelier_luma_gate.py)
+LUMA_LIT_L = 60                # Rec.709 luma threshold for "lit"        (matches atelier_luma_gate.py)
+LUMA_NEAR_BLACK_PASS = (0.66, 0.85)
+LUMA_NEAR_BLACK_WARN = (0.50, 0.66)
+LUMA_LIT_PASS = (0.02, 0.05)
+LUMA_LIT_WARN = (0.05, 0.20)
+LUMA_MEDIAN_PASS = (0, 15)
+LUMA_MEDIAN_WARN = (15, 40)
 # G5 motion-liveness (objective inter-frame deltas over a render REEL; 0..1 normalized luminance).
 # A FROZEN idle (no inter-frame change across the idle frames) is the #1 "static billboard, not a
 # living 3D actor" tell — now a number. A MOVE that produces no walk-centroid displacement is an
@@ -278,8 +298,20 @@ def _lum_stats(png_path: str | Path) -> Optional[tuple[float, float]]:
         return None
 
 
-def _stdlib_png_lum(p: Path) -> tuple[float, float]:
-    """Minimal PNG decoder (8-bit RGB/RGBA, no interlace) -> coarse luminance stats. stdlib only."""
+# ---------------------------------------------------------------------------
+# Shared stdlib PNG decoder — chunk-parse + scanline-unfilter, used by every stdlib fallback
+# below (G1 _stdlib_png_lum, G5 _stdlib_png_lum_grid, G6 _stdlib_png_luma_stats). Previously each
+# had its own copy of this logic (triplicated); this is the single decode, callers each do their
+# own (cheap) luminance reduction / sampling on top of the returned raw pixel buffer.
+# ---------------------------------------------------------------------------
+def _decode_png_pixels(p: Path) -> tuple[bytearray, int, int, int]:
+    """Minimal PNG decoder: 8-bit greyscale/RGB/RGBA (color_type 0, 2, 6), no interlace, no palette.
+    Returns (pixels, width, height, channels) where ``pixels`` is the unfiltered scanline buffer
+    (row-major, ``channels`` bytes/pixel — 1 for greyscale, 3 for RGB, 4 for RGBA) and every caller
+    reduces it to luminance itself (greyscale: use the channel directly; RGB/RGBA: Rec.709 weights).
+    stdlib only (zlib + struct). Raises ValueError for anything unsupported (bit depth != 8,
+    interlaced, or palette-indexed color_type 3 — palette needs a PLTE lookup this decoder doesn't
+    do; Pillow handles those cases when installed)."""
     data = p.read_bytes()
     if data[:8] != b"\x89PNG\r\n\x1a\n":
         raise ValueError("not a PNG")
@@ -297,9 +329,9 @@ def _stdlib_png_lum(p: Path) -> tuple[float, float]:
         elif ctype == b"IEND":
             break
         off += 12 + ln
-    if bit_depth != 8 or color_type not in (2, 6):
+    if bit_depth != 8 or color_type not in (0, 2, 6):
         raise ValueError(f"unsupported PNG bit_depth={bit_depth} color_type={color_type}")
-    channels = 4 if color_type == 6 else 3
+    channels = {0: 1, 2: 3, 6: 4}[color_type]
     raw = zlib.decompress(bytes(idat))
     stride = width * channels
     # Un-filter scanlines (PNG filter types 0-4).
@@ -329,13 +361,28 @@ def _stdlib_png_lum(p: Path) -> tuple[float, float]:
                 line[i] = (x + pr) & 0xFF
         out += line
         prev = line
+    return out, width, height, channels
+
+
+def _pixel_luma(pixels: bytearray, base: int, channels: int) -> float:
+    """Rec.709 luma (0-255) of the pixel at byte offset ``base``. Greyscale (channels==1) is
+    already luma; RGB/RGBA (channels 3/4) use the standard weights (alpha ignored, matches G1/G5/G6
+    pre-refactor behavior which also dropped alpha)."""
+    if channels == 1:
+        return float(pixels[base])
+    return 0.2126 * pixels[base] + 0.7152 * pixels[base + 1] + 0.0722 * pixels[base + 2]
+
+
+def _stdlib_png_lum(p: Path) -> tuple[float, float]:
+    """Coarse luminance mean+variance via the shared decoder. stdlib only."""
+    out, width, height, channels = _decode_png_pixels(p)
+    stride = width * channels
     # Coarse luminance sample (every Nth pixel to stay cheap).
     step = max(1, (width * height) // 16384)
     vals = []
     for i in range(0, width * height, step):
         base = (i // width) * stride + (i % width) * channels
-        r, g, b = out[base], out[base + 1], out[base + 2]
-        vals.append((0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0)
+        vals.append(_pixel_luma(out, base, channels) / 255.0)
     n = len(vals) or 1
     mean = sum(vals) / n
     var = sum((v - mean) ** 2 for v in vals) / n
@@ -503,6 +550,143 @@ def gate_occupancy(scenegrid: SceneGrid, occupancy_tint: Optional[dict]) -> list
 
 
 # ---------------------------------------------------------------------------
+# G6 luma staging-law — greyscale histogram stats vs the measured PoE staging-law bands.
+# ---------------------------------------------------------------------------
+# PRE-GATE, run BEFORE staging a panel: a candidate whose luma histogram sits outside the WARN
+# band is a "museum wash," not a dramatic chiaroscuro plate — no point spending scorer tokens on
+# it. Bands are the MEASURED real-PoE staging law (2026-07-01 staging-law campaign); this is a
+# straight port of the same math already proven in two places — do NOT invent new bands here:
+#   - extensions/renderers/unity/scripts/atelier_luma_gate.py (the beauty-pass CLI gate: dark_ok =
+#     60-85% of pixels L<26, lit_ok = 2-5% L>60, Rec.709 luma)
+#   - extensions/renderers/godot/tools/generate_room.py's _staging_law_distance (the pass-1 sample
+#     selector: target_near_black=0.73, target_lit=0.03, target_median=8, called by
+#     _pick_best_pass1_sample)
+# This gate adds a WARN band around the same PASS band (near_black 0.50-0.66 warns below the 0.66
+# PASS floor; lit 0.05-0.20 warns above the 0.05 PASS ceiling; median 15-40 warns above the 0-15
+# PASS ceiling) so a borderline candidate isn't hard-blocked but the stats must still be quoted.
+#
+# PERF: this gate's stats are FRACTIONS (near_black/lit pixel share) + a MEDIAN, not exact per-pixel
+# output — downsampling to a fixed grid before computing them is statistically safe (histogram shape
+# survives a representative sample) and avoids an O(width*height) full-res pass + sort (~2.1M px on a
+# 1920x1097 capture). G1 downsamples to a 128px thumbnail (mean/variance) and G5 to _G5_GRID=64
+# (inter-frame deltas); G6 uses a coarser _G6_GRID=256 grid (finer than G1/G5 since fraction/median
+# accuracy benefits from more samples than a mean does, but still ~65K px vs ~2.1M — >30x cheaper).
+_G6_GRID = 256
+
+
+def _luma_stats(png_path: str | Path) -> Optional[tuple[float, float, float]]:
+    """Return (near_black_frac, lit_frac, median_L) on a 0-255 Rec.709 greyscale, sampled from a
+    <=_G6_GRID working-size downscale, or None if the PNG can't be decoded. Tries Pillow (thumbnail,
+    matches atelier_luma_gate.py's math up to the downsample), else falls back to the stdlib PNG
+    decoder (same graceful degradation as G1)."""
+    p = Path(png_path)
+    if not p.exists():
+        return None
+    try:
+        from PIL import Image  # type: ignore
+        im = Image.open(p).convert("RGB")
+        im.thumbnail((_G6_GRID, _G6_GRID))
+        px = list(im.getdata())
+        n = len(px) or 1
+        lums = [0.2126 * r + 0.7152 * g + 0.0722 * b for r, g, b in px]
+        near_black = sum(1 for v in lums if v < LUMA_NEAR_BLACK_L) / n
+        lit = sum(1 for v in lums if v > LUMA_LIT_L) / n
+        median_L = sorted(lums)[n // 2]
+        return near_black, lit, median_L
+    except Exception:
+        pass
+    try:
+        return _stdlib_png_luma_stats(p)
+    except Exception:
+        return None
+
+
+def _stdlib_png_luma_stats(p: Path) -> tuple[float, float, float]:
+    """(near_black_frac, lit_frac, median_L) on a 0-255 Rec.709 greyscale, sampled from a
+    <=_G6_GRID nearest-sample downscale via the shared decoder (see the PERF note above
+    gate_luma_staging_law — fractions/median tolerate downsampling, unlike G3/G4's exact geometry)."""
+    out, width, height, channels = _decode_png_pixels(p)
+    stride = width * channels
+    # Nearest-sample downscale to <= _G6_GRID on the long edge (same scheme as _stdlib_png_lum_grid).
+    scale = max(1, max(width, height) // _G6_GRID)
+    gw = max(1, width // scale)
+    gh = max(1, height // scale)
+    lums: list[float] = []
+    for gy in range(gh):
+        sy = min(height - 1, gy * scale)
+        for gx in range(gw):
+            sx = min(width - 1, gx * scale)
+            base = sy * stride + sx * channels
+            lums.append(_pixel_luma(out, base, channels))
+    n = len(lums) or 1
+    near_black = sum(1 for v in lums if v < LUMA_NEAR_BLACK_L) / n
+    lit = sum(1 for v in lums if v > LUMA_LIT_L) / n
+    median_L = sorted(lums)[n // 2]
+    return near_black, lit, median_L
+
+
+def _band_label(value: float, pass_band: tuple[float, float], warn_band: tuple[float, float]) -> str:
+    """Classify a stat as PASS / WARN / FAIL against its (pass_band, warn_band) — used only for the
+    human-readable per-stat label in the detail string. warn_band is one-sided per stat (see the
+    callers below); outside both bands is FAIL. The gate's actual pre-gate SEVERITY (returned by
+    gate_luma_staging_law) maps this into the module's shared CRITICAL/HIGH/MED/PASS vocabulary so
+    it composes correctly with run_pregates' blocking/verdict logic (_SEV_RANK)."""
+    lo, hi = pass_band
+    if lo <= value <= hi:
+        return "PASS"
+    wlo, whi = warn_band
+    if wlo <= value <= whi:
+        return "WARN"
+    return "FAIL"
+
+
+def gate_luma_staging_law(png_path: str | Path) -> list[dict]:
+    """G6: greyscale histogram stats (near-black / lit fractions + median L) vs the measured PoE
+    staging-law bands. FAIL = do not spend scorer tokens (fix staging first) -> mapped to HIGH so it
+    blocks the panel like the other pre-gates; WARN = the panel is allowed but the stats must be
+    quoted alongside the verdict -> mapped to MED (visible, non-blocking); PASS = solidly in-band."""
+    stats = _luma_stats(png_path)
+    if stats is None:
+        return [{"gate": "G6_luma_staging_law", "severity": "SKIPPED", "metric": "decode",
+                 "value": None, "threshold": None,
+                 "detail": "could not decode PNG (no Pillow + non-trivial PNG); G6 skipped"}]
+    near_black, lit, median_L = stats
+
+    # near_black: WARN band is below the PASS floor only (0.50-0.66); above 0.85 is a straight FAIL
+    # (an over-dark/near-black plate has no WARN band above PASS — it just fails).
+    nb_label = _band_label(near_black, LUMA_NEAR_BLACK_PASS, LUMA_NEAR_BLACK_WARN)
+    # lit: WARN band is above the PASS ceiling only (0.05-0.20); below 0.02 is a straight FAIL
+    # (too little light at all reads as underlit / no key, not "too washy" — no WARN band below PASS).
+    lit_label = _band_label(lit, LUMA_LIT_PASS, LUMA_LIT_WARN)
+    # median_L: WARN band is above the PASS ceiling only (15-40); above 40 (outside WARN) is FAIL.
+    med_label = _band_label(median_L, LUMA_MEDIAN_PASS, LUMA_MEDIAN_WARN)
+
+    worst_label = max((nb_label, lit_label, med_label), key=lambda s: {"PASS": 0, "WARN": 1, "FAIL": 2}[s])
+    severity = {"PASS": "PASS", "WARN": "MED", "FAIL": "HIGH"}[worst_label]
+
+    # G6 stats are ALWAYS emitted in the detail (numbers not vibes), regardless of verdict.
+    stat_str = (f"near_black={near_black*100:.1f}% (band {LUMA_NEAR_BLACK_PASS[0]*100:.0f}-"
+                f"{LUMA_NEAR_BLACK_PASS[1]*100:.0f}% PASS / {LUMA_NEAR_BLACK_WARN[0]*100:.0f}-"
+                f"{LUMA_NEAR_BLACK_PASS[0]*100:.0f}% WARN) [{nb_label}], "
+                f"lit={lit*100:.1f}% (band {LUMA_LIT_PASS[0]*100:.0f}-{LUMA_LIT_PASS[1]*100:.0f}% PASS / "
+                f"{LUMA_LIT_PASS[1]*100:.0f}-{LUMA_LIT_WARN[1]*100:.0f}% WARN) [{lit_label}], "
+                f"median_L={median_L:.1f} (band {LUMA_MEDIAN_PASS[0]}-{LUMA_MEDIAN_PASS[1]} PASS / "
+                f"{LUMA_MEDIAN_PASS[1]}-{LUMA_MEDIAN_WARN[1]} WARN) [{med_label}]")
+    if worst_label == "FAIL":
+        detail = f"FAIL: plate is outside the PoE staging-law band — {stat_str}"
+    elif worst_label == "WARN":
+        detail = f"WARN: plate is borderline vs the PoE staging-law band — {stat_str}"
+    else:
+        detail = f"PASS: plate matches the PoE staging-law band — {stat_str}"
+    return [{"gate": "G6_luma_staging_law", "severity": severity, "metric": "staging_law_stats",
+             "value": {"near_black_frac": round(near_black, 4), "lit_frac": round(lit, 4),
+                        "median_L": round(median_L, 2)},
+             "threshold": {"near_black_pass": LUMA_NEAR_BLACK_PASS, "lit_pass": LUMA_LIT_PASS,
+                           "median_pass": LUMA_MEDIAN_PASS},
+             "detail": detail}]
+
+
+# ---------------------------------------------------------------------------
 # G5 motion-liveness — objective inter-frame deltas over a render REEL.
 # ---------------------------------------------------------------------------
 # G5 is the motion analogue of G1: instead of "is ONE frame lit?", it asks "does the REEL actually
@@ -540,56 +724,10 @@ def _lum_grid(png_path: str | Path) -> Optional[tuple[list[float], int, int]]:
 
 
 def _stdlib_png_lum_grid(p: Path, target: int) -> tuple[list[float], int, int]:
-    """Minimal PNG decode (8-bit RGB/RGBA, no interlace) -> a <=target luminance grid. stdlib only.
-    Nearest-sample downscale (cheap + deterministic); good enough for delta/centroid signals."""
-    data = p.read_bytes()
-    if data[:8] != b"\x89PNG\r\n\x1a\n":
-        raise ValueError("not a PNG")
-    off = 8
-    width = height = bit_depth = color_type = 0
-    idat = bytearray()
-    while off < len(data):
-        ln = struct.unpack(">I", data[off:off + 4])[0]
-        ctype = data[off + 4:off + 8]
-        body = data[off + 8:off + 8 + ln]
-        if ctype == b"IHDR":
-            width, height, bit_depth, color_type = (*struct.unpack(">IIBB", body[:10]),)
-        elif ctype == b"IDAT":
-            idat += body
-        elif ctype == b"IEND":
-            break
-        off += 12 + ln
-    if bit_depth != 8 or color_type not in (2, 6):
-        raise ValueError(f"unsupported PNG bit_depth={bit_depth} color_type={color_type}")
-    channels = 4 if color_type == 6 else 3
-    raw = zlib.decompress(bytes(idat))
+    """<=target luminance grid via the shared decoder. stdlib only. Nearest-sample downscale
+    (cheap + deterministic); good enough for delta/centroid signals."""
+    out, width, height, channels = _decode_png_pixels(p)
     stride = width * channels
-    out = bytearray()
-    prev = bytearray(stride)
-    pos = 0
-    for _ in range(height):
-        ftype = raw[pos]
-        pos += 1
-        line = bytearray(raw[pos:pos + stride])
-        pos += stride
-        for i in range(stride):
-            a = line[i - channels] if i >= channels else 0
-            b = prev[i]
-            c = prev[i - channels] if i >= channels else 0
-            x = line[i]
-            if ftype == 1:
-                line[i] = (x + a) & 0xFF
-            elif ftype == 2:
-                line[i] = (x + b) & 0xFF
-            elif ftype == 3:
-                line[i] = (x + ((a + b) >> 1)) & 0xFF
-            elif ftype == 4:
-                pp = a + b - c
-                pa, pb, pc = abs(pp - a), abs(pp - b), abs(pp - c)
-                pr = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
-                line[i] = (x + pr) & 0xFF
-        out += line
-        prev = line
     # Nearest-sample downscale to <= target on the long edge.
     scale = max(1, max(width, height) // target)
     gw = max(1, width // scale)
@@ -600,8 +738,7 @@ def _stdlib_png_lum_grid(p: Path, target: int) -> tuple[list[float], int, int]:
         for gx in range(gw):
             sx = min(width - 1, gx * scale)
             base = sy * stride + sx * channels
-            r, g, b = out[base], out[base + 1], out[base + 2]
-            vals.append((0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0)
+            vals.append(_pixel_luma(out, base, channels) / 255.0)
     return vals, gw, gh
 
 
@@ -748,11 +885,16 @@ def run_pregates(
     verdict = FLAG if any CRITICAL/HIGH fired (the loop must fix the deterministic defect and
     re-render BEFORE the LLM panel); else PASS; SKIPPED only if literally nothing could run.
 
+    G1 frame-lit and G6 luma-staging-law always run (need only the PNG). G6 FAIL maps to HIGH
+    (blocks the panel, same as the other hard pre-gates) and WARN maps to MED (visible in the
+    result, non-blocking) — see gate_luma_staging_law.
+
     ``reel`` (optional) is the ordered list of motion-reel frame dicts (qa/motion_reel.py's sidecar
     ``frames``); when supplied, G5 motion-liveness also runs. Omitting it == today's behavior (G5
     SKIPS) — additive, no still-only round changes."""
     gates: list[dict] = []
     gates += gate_frame_lit(render_png)
+    gates += gate_luma_staging_law(render_png)
     if scenegrid is not None:
         gates += gate_floor_contact_and_scale(scenegrid, camera, actors or [])
         gates += gate_occupancy(scenegrid, occupancy_tint)

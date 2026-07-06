@@ -63,7 +63,12 @@ _fastgate_run_inner() {
   #                             spell-resolution sweep (every category). A TRUSTWORTHY mechanical signal
   #                             independent of the LLM scorer; deterministic, ~1-2s. (Path is relative to
   #                             servers/engine, like the qa-release-gate-tests CI job.)
-  local TESTS="tests/test_canon_abilities.py tests/test_character_skill_normalization.py tests/test_rests.py tests/test_travel.py tests/test_combat.py ../../qa/test_combat_smoke.py"
+  #   - test_ws3a_progression_invariants : WS3a per-beat progression/closure cues — each cue's named
+  #                             verb (travel_to/end_combat/award_xp/advance_time/complete_quest) actually
+  #                             MOVES the engine gauge it reads, and the cue fires-then-clears. Locks the
+  #                             DM-drive loop (party-stuck/combat-hanging/xp-unawarded/frozen-clock/quest-
+  #                             unresolved) deterministically, $0.
+  local TESTS="tests/test_canon_abilities.py tests/test_character_skill_normalization.py tests/test_rests.py tests/test_travel.py tests/test_combat.py ../../qa/test_combat_smoke.py ../../qa/test_ws3a_progression_invariants.py"
   if uv run --directory servers/engine python -m pytest -q -p no:xdist $TESTS >"$LOG" 2>&1; then
     echo "  ✓ deterministic engine tier: $(grep -oE '[0-9]+ passed' "$LOG" | tail -1)"
     return 0

@@ -1,0 +1,116 @@
+{
+  "anchor": 4.0,
+  "noise_law": 1.2,
+  "controls": {
+    "control:quest:baldurs-gate:the-emerald-grove": {
+      "class": "quest",
+      "world": "baldurs-gate",
+      "anchor": 4.0,
+      "band": [
+        2.8,
+        5.0
+      ],
+      "file": "control__quest__baldurs-gate__the-emerald-grove.json"
+    },
+    "control:quest:baldurs-gate:the-shadow-cursed-lands": {
+      "class": "quest",
+      "world": "baldurs-gate",
+      "anchor": 4.0,
+      "band": [
+        2.8,
+        5.0
+      ],
+      "file": "control__quest__baldurs-gate__the-shadow-cursed-lands.json"
+    },
+    "control:quest:baldurs-gate:who-rules-the-gate": {
+      "class": "quest",
+      "world": "baldurs-gate",
+      "anchor": 4.0,
+      "band": [
+        2.8,
+        5.0
+      ],
+      "file": "control__quest__baldurs-gate__who-rules-the-gate.json"
+    },
+    "control:npc:baldurs-gate:npc-jaheira": {
+      "class": "npc",
+      "world": "baldurs-gate",
+      "anchor": 4.0,
+      "band": [
+        2.8,
+        5.0
+      ],
+      "file": "control__npc__baldurs-gate__npc-jaheira.json"
+    },
+    "control:npc:baldurs-gate:npc-minsc": {
+      "class": "npc",
+      "world": "baldurs-gate",
+      "anchor": 4.0,
+      "band": [
+        2.8,
+        5.0
+      ],
+      "file": "control__npc__baldurs-gate__npc-minsc.json"
+    },
+    "control:npc:baldurs-gate:npc-astarion": {
+      "class": "npc",
+      "world": "baldurs-gate",
+      "anchor": 4.0,
+      "band": [
+        2.8,
+        5.0
+      ],
+      "file": "control__npc__baldurs-gate__npc-astarion.json"
+    },
+    "control:location:baldurs-gate:loc-basilisk-gate": {
+      "class": "location",
+      "world": "baldurs-gate",
+      "anchor": 4.0,
+      "band": [
+        2.8,
+        5.0
+      ],
+      "file": "control__location__baldurs-gate__loc-basilisk-gate.json"
+    },
+    "control:location:baldurs-gate:loc-bloomridge-market": {
+      "class": "location",
+      "world": "baldurs-gate",
+      "anchor": 4.0,
+      "band": [
+        2.8,
+        5.0
+      ],
+      "file": "control__location__baldurs-gate__loc-bloomridge-market.json"
+    },
+    "control:location:baldurs-gate:loc-counting-house": {
+      "class": "location",
+      "world": "baldurs-gate",
+      "anchor": 4.0,
+      "band": [
+        2.8,
+        5.0
+      ],
+      "file": "control__location__baldurs-gate__loc-counting-house.json"
+    },
+    "control:encounter:baldurs-gate:steel-watch-foundry-husks": {
+      "class": "encounter",
+      "world": "baldurs-gate",
+      "anchor": 4.0,
+      "band": [
+        2.8,
+        5.0
+      ],
+      "file": "control__encounter__baldurs-gate__steel-watch-foundry-husks.json"
+    },
+    "control:encounter:baldurs-gate:undercity-drain-ambush": {
+      "class": "encounter",
+      "world": "baldurs-gate",
+      "anchor": 4.0,
+      "band": [
+        2.8,
+        5.0
+      ],
+      "file": "control__encounter__baldurs-gate__undercity-drain-ambush.json"
+    }
+  }
+}
