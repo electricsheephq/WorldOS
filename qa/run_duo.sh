@@ -92,6 +92,7 @@ T="qa/transcripts"; STATE_DIR="$ROOT/qa/state/$RUN"
 CHECKPOINT="$STATE_DIR/.duo_checkpoint.json"
 CHECKPOINT_MANIFEST="$STATE_DIR/.duo_checkpoint_offsets.json"
 CHECKPOINT_SLOT="duo_checkpoint"
+LOCKDIR="$STATE_DIR/.duo_run.lock"
 mkdir -p "$T" "$STATE_DIR"
 
 RESUME_MODE=0
@@ -101,8 +102,38 @@ DSID=""
 PSID=""
 CAMPAIGN_ID=""
 
-duo_quota_seen() {
+duo_quota_protocol_seen() {
+  grep -qiE 'api_error_status"[[:space:]]*:[[:space:]]*429|session limit|HTTP 429|hit your (session|usage) limit' "$@" 2>/dev/null
+}
+
+duo_quota_error_seen() {
   grep -qiE 'api_error_status"[[:space:]]*:[[:space:]]*429|session limit|HTTP 429|hit your (session|usage) limit|rate[_ -]?limit|too many requests' "$@" 2>/dev/null
+}
+
+duo_release_lock() {
+  rm -rf "$LOCKDIR" 2>/dev/null || true
+}
+
+duo_acquire_lock() {
+  if mkdir "$LOCKDIR" 2>/dev/null; then
+    printf '%s\n' "$$" > "$LOCKDIR/pid"
+    trap duo_release_lock EXIT
+    return 0
+  fi
+  local oldpid=""
+  oldpid="$(cat "$LOCKDIR/pid" 2>/dev/null || true)"
+  if [ -n "$oldpid" ] && kill -0 "$oldpid" 2>/dev/null; then
+    echo "[duo] another qa/run_duo.sh process is already using $STATE_DIR (pid $oldpid); use a different run id or wait for it to finish" >&2
+    exit 2
+  fi
+  echo "[duo] removing stale run lock at $LOCKDIR" >&2
+  rm -rf "$LOCKDIR" 2>/dev/null || true
+  if ! mkdir "$LOCKDIR" 2>/dev/null; then
+    echo "[duo] could not acquire run lock at $LOCKDIR" >&2
+    exit 2
+  fi
+  printf '%s\n' "$$" > "$LOCKDIR/pid"
+  trap duo_release_lock EXIT
 }
 
 duo_engine_slot() {
@@ -260,6 +291,8 @@ if path.exists():
 print(last)
 PY
 }
+
+duo_acquire_lock
 
 if [ -s "$CHECKPOINT" ]; then
   if ! jq -e . "$CHECKPOINT" >/dev/null 2>&1; then
@@ -613,7 +646,7 @@ echo "[duo] DM opened: ${DMSG:0:120}…"
 # failure — it is an INFRA abort. Detect it BEFORE scoring so we never burn the 3-lens scorer on a
 # quota corpse (or, worse, cap-RED a quota'd run as a 2.5 product score). Log a marker the VM sweep
 # greps for and exit rc=75 / EX_TEMPFAIL (distinct from the rc=1 genuine-no-opening abort below).
-if duo_quota_seen "$COMBINED" "$T/$RUN.dm.err"; then
+if duo_quota_protocol_seen "$COMBINED" "$T/$RUN.dm.err" || duo_quota_error_seen "$T/$RUN.dm.err" "$STATE_DIR/.dm_last_result"; then
   echo "[duo] QUOTA ABORT — DM cold-open hit the account session limit (HTTP 429). Skipping scoring; this is an INFRA abort, NOT a product measurement." >&2
   echo "[duo] throttled at beat 0 — re-invoke the same command in a fresh window to resume" >&2
   exit "$EX_TEMPFAIL"
@@ -719,7 +752,7 @@ $EVENT_ADV")"
   # by assert_behavioral's dm_beat_honesty) instead of masking with error text/recycled prose.
   if [ -z "$DMSG" ]; then
     worldos_chatlog_dm_failed
-    if duo_quota_seen "$STATE_DIR/.dm_last_result" "$COMBINED" "$T/$RUN.dm.err"; then
+    if duo_quota_protocol_seen "$STATE_DIR/.dm_last_result" "$COMBINED" "$T/$RUN.dm.err" || duo_quota_error_seen "$STATE_DIR/.dm_last_result" "$T/$RUN.dm.err"; then
       echo "[duo] QUOTA ABORT — DM beat $b hit the account session limit / rate limit. Skipping scoring; this is an INFRA abort, NOT a product measurement." >&2
       echo "[duo] throttled at beat $b — re-invoke the same command in a fresh window to resume" >&2
       exit "$EX_TEMPFAIL"
@@ -756,7 +789,7 @@ fi
 
 # Wrap + score the DM transcript (it carries the narration + all tool calls).
 turn dm "$DSID" 0 "We are out of time. Bring this beat to a clean stopping point and call end_session with a one-line summary." >/dev/null
-if duo_quota_seen "$STATE_DIR/.dm_last_result" "$COMBINED" "$T/$RUN.dm.err"; then
+if duo_quota_protocol_seen "$STATE_DIR/.dm_last_result" "$COMBINED" "$T/$RUN.dm.err" || duo_quota_error_seen "$STATE_DIR/.dm_last_result" "$T/$RUN.dm.err"; then
   echo "[duo] QUOTA ABORT — throttled after beat $LAST_COMPLETED_BEAT during session wrap-up. Skipping scoring; this is an INFRA abort, NOT a product measurement." >&2
   echo "[duo] throttled at beat $LAST_COMPLETED_BEAT — re-invoke the same command in a fresh window to resume" >&2
   exit "$EX_TEMPFAIL"
