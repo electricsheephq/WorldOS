@@ -391,6 +391,38 @@ def test_panel_aggregate_row_dims_are_median_of_scorer_rows(env, monkeypatch):
     assert aggregate_dims.keys() == scorer_dims.keys()
 
 
+def test_panel_aggregate_row_dims_are_true_median_when_scorers_differ(env, monkeypatch):
+    """Unlike the dryrun-identical-anchor case above (where every scorer returns the same card, so
+    keys()-equality is all that's checkable), this monkeypatches the dryrun card to vary per scorer
+    so the aggregate row's per-dim MEDIAN is actually exercised against real variance — pinning that
+    a 3-scorer [3.0, 4.0, 5.0] panel yields 4.0 (the median), not 5.0 (the last scorer's card) or any
+    other single card's value."""
+    monkeypatch.setenv("WORLDOS_ARTIFACT_PANEL_DRYRUN", "1")
+    db = env["db"]
+
+    original_card = panel._dryrun_card
+    calls = {"i": 0}
+
+    def _varying_card(artifact, anchor):
+        card = original_card(artifact, anchor)
+        value = (3.0, 4.0, 5.0)[calls["i"] % 3]
+        calls["i"] += 1
+        card["scores"] = {k: value for k in card["scores"]}
+        card["overall"] = value
+        return card
+
+    monkeypatch.setattr(panel, "_dryrun_card", _varying_card)
+
+    report = panel.run_panel("quest", controls_only=True, panel_size=3, db_path=db)
+    aid = report["control_medians"][0]["artifact_id"]
+
+    rows = scores_db.fetch_artifacts(db)
+    aggregate = next(r for r in rows if r["artifact_id"] == aid)
+    aggregate_dims = json.loads(aggregate["dims_json"])
+    assert aggregate["overall"] == 4.0
+    assert aggregate_dims and all(v == 4.0 for v in aggregate_dims.values()), aggregate_dims
+
+
 def _write_candidate_dir(tmp_root: Path, cls: str, artifact_id: str, *, overall: float) -> Path:
     """A minimal candidates dir run_panel._candidates_for_class can load: one artifact JSON in the
     canonical schema shape (matches a committed control's payload shape closely enough for
@@ -398,7 +430,7 @@ def _write_candidate_dir(tmp_root: Path, cls: str, artifact_id: str, *, overall:
     would otherwise read the payload content)."""
     import artifact_score
     control_files = sorted((Path(__file__).resolve().parent / "artifact_controls").glob(f"control__{cls}__*.json"))
-    template = artifact_score.load_artifact(control_files[0])
+    artifact_score.load_artifact(control_files[0])  # validation guard only; return value unused
     payload = json.loads(control_files[0].read_text(encoding="utf-8"))
     payload["artifact_id"] = artifact_id
     payload.setdefault("provenance", {})["run_id"] = "run_test_panel_live"
