@@ -31,6 +31,19 @@ Full detail: the `worldos-dev` skill / `WorldOS-RUNBOOK.md`. Heavy QA runs on th
 
 ## Run economics — match the instrument to the question
 
+**★ Self-processing watchers (the no-babysitting contract, 2026-07-08):** any long QA lane (duo / sweep /
+probe batch) is launched WITH a watcher script that runs the ENTIRE verdict pipeline itself — infra-health
+(rate-limit threshold, beat-count completeness, quota sentinels, `.run_infra_invalid`) → deterministic
+behavioral gate → engagement tally → a decision-ready digest — and wakes the orchestrator ONCE.
+- **Infra-fail ⇒ NO citable row.** A watcher that detects contamination writes a `*CONTAMINATED/needs-rerun`
+  marker (never lens numbers) and says so in its digest. The 'contaminated run cited as clean' failure class
+  dies here, mechanically.
+- **The watcher IS the wake.** When a self-processing watcher owns the wait, the orchestrator arms NO
+  keepalive ticks and deletes any keepalive sentinel — one cold start on the wake is cheaper than a night of
+  tick-wakes. Orchestrator wakes are for DECISIONS, not beat-counting.
+- **Ruler runs are SOLO-TENANT:** no concurrent sweeps/agent fan-outs on the same Anthropic pool while a
+  ruler duo runs (measured: co-tenancy contaminated 2 of 3 gate runs, 2026-07-06/07).
+
 **★ QA-economics v2 (owner-ratified 2026-07-06) — playtests are BATCH evidence, never PR gates:**
 - **An hour-scale playtest duo is NEVER a per-PR validation step.** The 24-beat Opus ruler duo runs
   ONCE per merged BATCH (e.g. at the end of a sprint/push), as release evidence — not per PR, not per
