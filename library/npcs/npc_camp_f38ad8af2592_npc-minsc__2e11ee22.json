@@ -1,0 +1,26 @@
+{
+  "artifact_id": "npc:camp_f38ad8af2592:npc-minsc",
+  "class": "npc",
+  "curation_note": null,
+  "license": "proprietary",
+  "promoted_at": "2026-07-07T22:15:42+00:00",
+  "provenance": {
+    "run_id": "rri-a1-gate",
+    "sha": "e91ea5e1",
+    "source_path": "npc:camp_f38ad8af2592:npc-minsc",
+    "world": "baldurs-gate"
+  },
+  "reuse_count": 0,
+  "scores": {
+    "ac_ruler": "ac_986d87bf235a",
+    "dims": {
+      "arc_potential": 3.8,
+      "motivation_coherence": 4.0,
+      "reusability": 4.2,
+      "voice_distinctiveness": 4.5
+    },
+    "overall": 4.1,
+    "panel_id": "cal-npc-20260707T212734"
+  },
+  "tier": "stable"
+}
