@@ -190,15 +190,28 @@ def harvest_batch(
     load or scoring failure is caught, logged, and does not stop the rest of the batch.
     """
     noms = read_nominations(nominations_path)
-    already_scored = _scored_ids(db_path)
+    if dry_run and not Path(db_path).exists():
+        # A --dry-run preview against a not-yet-existing db has nothing scored yet — skip opening
+        # (and thereby schema-initializing) a file dry-run promises to leave untouched on disk.
+        # (An existing db_path — the real nightly-cron case — is always opened so would_score
+        # stays accurate against real scoring history.)
+        already_scored: set[str] = set()
+    else:
+        already_scored = _scored_ids(db_path)
 
     # De-dup by artifact_id within this batch's candidate list (a nominations.jsonl may carry the
     # same artifact_id more than once across separate nominate.py runs) — score it at most once.
+    # already_scored_count is tracked SEPARATELY from the seen-based intra-batch dedup below, so a
+    # same-batch duplicate of an UNSCORED artifact_id is never misreported as "already scored".
     seen: set[str] = set()
     candidates: list[dict] = []
+    already_scored_count = 0
     for nom in noms:
         aid = nom["artifact_id"]
-        if aid in already_scored or aid in seen:
+        if aid in already_scored:
+            already_scored_count += 1
+            continue
+        if aid in seen:
             continue
         seen.add(aid)
         candidates.append(nom)
@@ -208,7 +221,7 @@ def harvest_batch(
 
     report: dict[str, Any] = {
         "nominations_total": len(noms),
-        "already_scored": len(noms) - len(candidates) if noms else 0,
+        "already_scored": already_scored_count,
         "candidates_unscored": len(candidates),
         "scored": 0,
         "load_failed": 0,

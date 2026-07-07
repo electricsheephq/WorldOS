@@ -567,6 +567,11 @@ def add_library_metrics(
         if _jv is not None and not isinstance(_jv, str):
             fields[_jcol] = json.dumps(_jv, ensure_ascii=False, sort_keys=True)
 
+    for _pcol in ("promotion_pass_rate", "pct_library_sourced"):
+        _pv = fields.get(_pcol)
+        if _pv is not None and not (0.0 <= float(_pv) <= 1.0):
+            raise ValueError(f"{_pcol} must be in [0.0, 1.0], got {_pv!r}")
+
     cols = [c for c in LIBRARY_METRICS_COLUMNS if c in fields]
     vals = [fields[c] for c in cols]
     placeholders = ", ".join("?" for _ in cols)

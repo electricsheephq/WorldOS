@@ -205,6 +205,7 @@ def test_duplicate_artifact_id_in_queue_scored_once(env, fake_panel):
     report = _run(env)
 
     assert report["scored"] == 1
+    assert report["already_scored"] == 0  # a de-duped nomination is NOT "already scored"
     assert fake_panel == ["quest:bg:q1"]
 
 
@@ -336,6 +337,10 @@ def test_dry_run_reports_would_score_and_writes_nothing(env, fake_panel):
     assert report["dry_run"] is True
     assert report["would_score"] == ["quest:bg:q1"]
     assert fake_panel == []  # the scorer is NEVER invoked under --dry-run
+    # Check db-file existence BEFORE the fetch_artifacts call below, which itself opens (and would
+    # schema-create) the db — this must observe harvest_batch's own side effects, not the test
+    # helper's.
+    assert not env["db"].exists()  # a fresh db_path stays untouched — no schema-init side effect
     assert len(scores_db.fetch_artifacts(env["db"])) == 0
     assert not env["log"].exists()
 
