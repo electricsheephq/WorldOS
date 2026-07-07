@@ -79,8 +79,12 @@ _CANONICAL_PAYLOAD_REQUIRED: dict[str, tuple[str, ...]] = {
 # reads a real HV2-extracted artifact cleanly; the extra HV1-descriptive fields (hook / dossier / terrain
 # / twist / stakes …) follow and are picked up when present (controls + richer artifacts carry them).
 _CARD_FIELDS: dict[str, list[str]] = {
-    "quest": ["name", "objectives", "completed_objectives", "resolution_status", "evolves_to",
-              "consequences", "title", "hook", "giver", "stakes", "outcomes"],
+    # `description` + `resolution` are the HV2 v2-extractor fields (#1368): present them in a natural
+    # reading order (premise first, resolution near consequences) so both real extracts and the
+    # v2-aware controls (#1380) render the same shape instead of dumping the new fields at the tail.
+    "quest": ["name", "description", "objectives", "completed_objectives", "resolution_status",
+              "evolves_to", "resolution", "consequences", "title", "hook", "giver", "stakes",
+              "outcomes"],
     "npc": ["name", "voice_id", "personality", "attitude_arc", "final_status", "dialogue_snippets",
             "role", "dossier", "want", "hook"],
     "location": ["name", "description", "scene_grid", "visited", "region", "connections", "tags"],
@@ -163,6 +167,21 @@ def build_card(artifact: dict) -> str:
             lines.append(_fmt_value(v))
             lines.append("")
     return "\n".join(lines).rstrip() + "\n"
+
+
+def prompt_construction_hash(artifact: dict) -> str:
+    """Short content hash (``ph_…``) over the EXACT prompt text the scorer reads for this artifact —
+    i.e. build_card(artifact). A control's expected band (qa/artifact_controls_identity.json) is
+    DERIVED under one specific prompt construction; if build_card, _CARD_FIELDS, or the control's own
+    payload field surface changes (e.g. the v2 extractor adding `description`/`resolution` while the
+    control lagged — the #1380 drift), this hash changes and the stamped band is STALE. The
+    calibration panel compares it and names the drift ('band derived under a different prompt
+    construction') instead of emitting a bare, unexplained below-band failure. Deliberately does NOT
+    fold in the ac_ ruler: ruler drift is stamped/compared separately so the guard can name WHICH
+    axis moved."""
+    import hashlib
+
+    return "ph_" + hashlib.sha256(build_card(artifact).encode("utf-8")).hexdigest()[:12]
 
 
 def score_artifact(

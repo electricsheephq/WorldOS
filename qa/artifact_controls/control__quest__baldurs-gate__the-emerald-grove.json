@@ -12,9 +12,20 @@
   "payload": {
     "id": "the-emerald-grove",
     "name": "The Fate of the Emerald Grove",
+    "description": "The Fate of the Emerald Grove — a live world-thread whose outcome is genuinely in the balance: the party's choices decide which of 3 canon resolutions the world settles into, and each leaves a materially different world behind.",
     "objectives": [],
     "completed_objectives": [],
     "resolution_status": "canon-variant",
+    "resolution": {
+      "status": "canon-variant",
+      "evolves_to": "",
+      "callback_in_days": 0,
+      "wrap_up": [
+        "The druid grove in the Western wilds still stands; the goblin warband that besieged it was broken and the tiefling refugees sheltering there lived to walk the road to the city. Grateful druids tend a sanctuary that held.",
+        "The grove fell. The warband poured through the gate and the refugees were slaughtered among the standing stones; the place is a burned shrine no one tends, its carvings black with old fire.",
+        "The shadow-touched faction among the druids won the grove's inner quarrel: the refugees were driven out unprotected and most never reached safety. The circle sealed itself off, turned inward, and admits no outsider now."
+      ]
+    },
     "evolves_to": "",
     "consequences": [
       {
