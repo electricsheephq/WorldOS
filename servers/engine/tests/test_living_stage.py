@@ -233,7 +233,6 @@ def test_grid_mismatch_degrades_to_unplaced(staged, monkeypatch):
     ruling), seed_from_stage does NOT seed — it degrades to today's (unplaced) placement rather
     than teleporting onto a mismatched coordinate space."""
     cid, hero, ally, goblin, loc_id = staged
-    c = server._require(cid)
 
     # Force the derived grid to disagree with the scene_grid by shrinking the combat extents
     # after derivation (simulating a legacy/degraded grid). We patch _derive_grid_from_scene to
