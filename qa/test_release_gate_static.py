@@ -276,12 +276,13 @@ class QuotaCircuitBreakerStaticContractTests(unittest.TestCase):
 
     def test_run_duo_checks_for_quota_abort_before_scoring(self):
         # Fix E + Fix F (caller half): run_duo.sh must (1) detect a DM cold-open 429 and emit the
-        # "[duo] QUOTA ABORT" marker + exit rc=2 BEFORE the empty-reply abort, and (2) treat the
+        # "[duo] QUOTA ABORT" marker + exit EX_TEMPFAIL BEFORE the empty-reply abort, and (2) treat the
         # score.sh quota sentinel as a quota abort (not a valid scorecard) before the behavioral gate.
         source = (ROOT / "qa" / "run_duo.sh").read_text(encoding="utf-8")
         self.assertIn("[duo] QUOTA ABORT", source)
         self.assertIn("session limit|HTTP 429|hit your (session|usage) limit", source)
         self.assertIn(".quota_exhausted == true", source)
+        self.assertIn('ASSERT_BEHAVIORAL_SCRIPT="$(worldos_env ASSERT_BEHAVIORAL_SCRIPT qa/assert_behavioral.py)"', source)
         # the cold-open quota check must precede the empty-reply abort (DM produced no opening).
         self.assertLess(
             source.index("[duo] QUOTA ABORT"),
@@ -290,7 +291,7 @@ class QuotaCircuitBreakerStaticContractTests(unittest.TestCase):
         # the scorer-sentinel quota check must precede the behavioral gate (no gating a quota corpse).
         self.assertLess(
             source.index(".quota_exhausted == true"),
-            source.index("python3 qa/assert_behavioral.py"),
+            source.index('python3 "$ASSERT_BEHAVIORAL_SCRIPT"'),
         )
 
 

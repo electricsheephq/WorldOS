@@ -31,6 +31,8 @@ BEATS="${4:-6}"
 ADVENTURE_ID="${WORLDOS_ADVENTURE_ID:-}"
 [ -n "$ADVENTURE_ID" ] && echo "[duo] AUTHORED-ADVENTURE mode: start_adventure(\"$ADVENTURE_ID\") at BEATS=$BEATS"
 BUDGET="${5:-0.80}"
+EX_TEMPFAIL=75
+CURRENT_SHA="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
 
 # ── Root + IS_SANDBOX preflight (the real beat-0 blocker, 2026-06-03) ─────────────────
 # claude refuses `--dangerously-skip-permissions` (which `--permission-mode bypassPermissions`
@@ -51,6 +53,7 @@ WORLDOS_DM_MODEL="$(worldos_env DM_MODEL opus)"
 # so behavior is unchanged) kept consistent with the party harness's WORLDOS_ACTOR_MODEL.
 WORLDOS_ACTOR_MODEL="$(worldos_env ACTOR_MODEL sonnet)"
 SCORE_SCRIPT="$(worldos_env SCORE_SCRIPT qa/score.sh)"
+ASSERT_BEHAVIORAL_SCRIPT="$(worldos_env ASSERT_BEHAVIORAL_SCRIPT qa/assert_behavioral.py)"
 # Opus's high-effort cold-open world-build costs ~$2.4 on its first turn (measured 2026-06-06); a low
 # caller per-turn budget (sweep $2.00, fast_probe $0.80) would trip error_max_budget_usd on the duo
 # cold-open the same way the .app backend did. Floor the per-turn cap for an Opus DM so the cold-open
@@ -86,7 +89,206 @@ worldos_apply_glm_profile
 WORLDOS_LEAN_BEATS="${WORLDOS_LEAN_BEATS:-1}"
 WORLDOS_LEAN_TAIL="${WORLDOS_LEAN_TAIL:-8}"
 T="qa/transcripts"; STATE_DIR="$ROOT/qa/state/$RUN"
-mkdir -p "$T" "$STATE_DIR"; rm -rf "$STATE_DIR/campaigns" 2>/dev/null
+CHECKPOINT="$STATE_DIR/.duo_checkpoint.json"
+CHECKPOINT_MANIFEST="$STATE_DIR/.duo_checkpoint_offsets.json"
+CHECKPOINT_SLOT="duo_checkpoint"
+mkdir -p "$T" "$STATE_DIR"
+
+RESUME_MODE=0
+LAST_COMPLETED_BEAT=-1
+START_BEAT=1
+DSID=""
+PSID=""
+CAMPAIGN_ID=""
+
+duo_quota_seen() {
+  grep -qiE 'api_error_status"[[:space:]]*:[[:space:]]*429|session limit|HTTP 429|hit your (session|usage) limit|rate[_ -]?limit|too many requests' "$@" 2>/dev/null
+}
+
+duo_engine_slot() {
+  local action="$1" campaign_id="$2"
+  [ -n "$campaign_id" ] || return 1
+  WORLDOS_STATE_DIR="$STATE_DIR" uv run --directory "$ROOT/servers/engine" python - "$action" "$campaign_id" "$CHECKPOINT_SLOT" <<'PY' >/dev/null
+import sys
+import server
+
+action, campaign_id, slot = sys.argv[1], sys.argv[2], sys.argv[3]
+if action == "save":
+    server.save_slot(campaign_id, slot)
+elif action == "load":
+    server.load_slot(campaign_id, slot)
+else:
+    raise SystemExit(f"unknown checkpoint slot action: {action}")
+PY
+}
+
+duo_write_manifest() {
+  python3 - "$CHECKPOINT_MANIFEST" "$ROOT" "$COMBINED" "$CHAT" "$MOVES" "$TOOLTIMING_PATH" "$T/$RUN.dm.err" "$T/$RUN.player.err" "$T" "$RUN" "$1" <<'PY'
+import glob
+import json
+import os
+import sys
+from pathlib import Path
+
+manifest, root, *rest = sys.argv[1:]
+combined, chat, moves, tooltiming, dm_err, player_err, tdir, run, beat = rest
+root_path = Path(root)
+
+def rel(p: str) -> str:
+    try:
+        return str(Path(p).resolve().relative_to(root_path.resolve()))
+    except ValueError:
+        return str(Path(p))
+
+files = {}
+for raw in [combined, chat, moves, tooltiming, dm_err, player_err]:
+    p = Path(raw)
+    files[rel(raw)] = p.stat().st_size if p.exists() else 0
+
+dm_files = []
+for raw in sorted(glob.glob(str(Path(tdir) / f"{run}.dm.*.jsonl"))):
+    dm_files.append(rel(raw))
+
+payload = {
+    "last_completed_beat": int(beat),
+    "files": files,
+    "dm_files": dm_files,
+}
+path = Path(manifest)
+tmp = path.with_suffix(path.suffix + ".tmp")
+tmp.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+os.replace(tmp, path)
+PY
+}
+
+duo_restore_manifest() {
+  [ -s "$CHECKPOINT_MANIFEST" ] || return 0
+  python3 - "$CHECKPOINT_MANIFEST" "$ROOT" "$T" "$RUN" <<'PY'
+import glob
+import json
+import os
+import sys
+from pathlib import Path
+
+manifest, root, tdir, run = sys.argv[1:]
+root_path = Path(root)
+data = json.loads(Path(manifest).read_text(encoding="utf-8"))
+files = data.get("files") or {}
+for rel, size in files.items():
+    path = root_path / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    keep = int(size)
+    if not path.exists():
+        if keep == 0:
+            path.write_bytes(b"")
+        continue
+    with path.open("r+b") as handle:
+        handle.truncate(keep)
+
+kept = {str((root_path / rel).resolve()) for rel in (data.get("dm_files") or [])}
+for raw in glob.glob(str(Path(tdir) / f"{run}.dm.*.jsonl")):
+    if str(Path(raw).resolve()) not in kept:
+        try:
+            os.remove(raw)
+        except FileNotFoundError:
+            pass
+PY
+}
+
+duo_write_checkpoint() {
+  local beat="$1"
+  [ -n "$CAMPAIGN_ID" ] || return 0
+  if ! duo_engine_slot save "$CAMPAIGN_ID"; then
+    echo "[duo] checkpoint write failed: could not save checkpoint slot for campaign $CAMPAIGN_ID" >&2
+    exit 2
+  fi
+  if ! duo_write_manifest "$beat"; then
+    echo "[duo] checkpoint write failed: could not write checkpoint manifest for beat $beat" >&2
+    exit 2
+  fi
+  if ! python3 - "$CHECKPOINT" "$beat" "$PSID" "$DSID" "$CAMPAIGN_ID" "$WORLD" "$PLAYER_PROMPT_FILE" "$BEATS" "$BUDGET" "$CURRENT_SHA" <<'PY'
+import json
+import os
+import sys
+from pathlib import Path
+
+path, beat, player_sid, dm_sid, campaign_id, world, persona, total_beats, budget, sha = sys.argv[1:]
+payload = {
+    "last_completed_beat": int(beat),
+    "player_session_id": player_sid,
+    "dm_session_id": dm_sid,
+    "campaign_id": campaign_id,
+    "world": world,
+    "persona": persona,
+    "total_beats": int(total_beats),
+    "budget": budget,
+    "sha": sha,
+}
+p = Path(path)
+tmp = p.with_suffix(p.suffix + ".tmp")
+tmp.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+os.replace(tmp, p)
+PY
+  then
+    echo "[duo] checkpoint write failed: could not write $CHECKPOINT" >&2
+    exit 2
+  fi
+  LAST_COMPLETED_BEAT="$beat"
+  START_BEAT=$((LAST_COMPLETED_BEAT + 1))
+}
+
+duo_delete_checkpoint() {
+  rm -f "$CHECKPOINT" "$CHECKPOINT.tmp" "$CHECKPOINT_MANIFEST" "$CHECKPOINT_MANIFEST.tmp" 2>/dev/null || true
+}
+
+duo_last_dm_chat() {
+  python3 - "$CHAT" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+last = ""
+if path.exists():
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if row.get("role") == "dm" and row.get("text") and not row.get("beat_failed"):
+            last = row.get("text") or ""
+print(last)
+PY
+}
+
+if [ -s "$CHECKPOINT" ]; then
+  if ! jq -e . "$CHECKPOINT" >/dev/null 2>&1; then
+    echo "[duo] checkpoint at $CHECKPOINT is invalid JSON; delete the checkpoint to restart" >&2
+    exit 2
+  fi
+  ck_sha="$(jq -r '.sha // ""' "$CHECKPOINT")"
+  if [ "$ck_sha" != "$CURRENT_SHA" ]; then
+    echo "[duo] checkpoint sha $ck_sha != current $CURRENT_SHA — a resume across code changes is invalid; delete the checkpoint to restart" >&2
+    exit 2
+  fi
+  ck_world="$(jq -r '.world // ""' "$CHECKPOINT")"
+  ck_persona="$(jq -r '.persona // ""' "$CHECKPOINT")"
+  ck_beats="$(jq -r '.total_beats // ""' "$CHECKPOINT")"
+  if [ "$ck_world" != "$WORLD" ] || [ "$ck_persona" != "$PLAYER_PROMPT_FILE" ] || [ "$ck_beats" != "$BEATS" ]; then
+    echo "[duo] checkpoint invocation mismatch (checkpoint world=$ck_world persona=$ck_persona total_beats=$ck_beats; current world=$WORLD persona=$PLAYER_PROMPT_FILE total_beats=$BEATS); delete the checkpoint to restart" >&2
+    exit 2
+  fi
+  RESUME_MODE=1
+  LAST_COMPLETED_BEAT="$(jq -r '.last_completed_beat' "$CHECKPOINT")"
+  PSID="$(jq -r '.player_session_id' "$CHECKPOINT")"
+  DSID="$(jq -r '.dm_session_id' "$CHECKPOINT")"
+  CAMPAIGN_ID="$(jq -r '.campaign_id' "$CHECKPOINT")"
+  START_BEAT=$((LAST_COMPLETED_BEAT + 1))
+fi
+
+if [ "$RESUME_MODE" != "1" ]; then
+  rm -rf "$STATE_DIR/campaigns" 2>/dev/null
+fi
 # #892 follow-up: keep the cold-open `claude -p` (the DM) off the macOS keychain + off any /Volumes
 # TCC prompt so the duo QA harness runs headless. GATED no-op without an env/file credential (so the
 # Terminal/keychain path is byte-unchanged). Called ONCE here, after STATE_DIR, before the first DM
@@ -95,13 +297,15 @@ worldos_isolate_claude_auth
 
 # DM gets the engine (state dir patched in); the player gets an EMPTY strict config.
 DM_CFG="$STATE_DIR/dm.mcp.json"; PLAYER_CFG="$STATE_DIR/player.mcp.json"
-MOVES="$STATE_DIR/player_moves.jsonl"; : > "$MOVES"  # the player's structured moves (It.1)
+MOVES="$STATE_DIR/player_moves.jsonl"
+[ "$RESUME_MODE" = "1" ] || : > "$MOVES"  # the player's structured moves (It.1)
 # Wave-1 per-tool timing sidecar (Round-2 wiring): the engine appends one {ts,tool,wall_ms,ok,
 # campaign_id} line per tool call to this ABSOLUTE path — but only because we set
 # WORLDOS_TOOLTIMING_PATH in the engine MCP env below (it is a no-op when that var is unset, so
 # production play pays nothing). latency_rollup.py reads it via --tooltiming to split tool-exec vs
 # generation. Truncate at run start so a re-run never appends to a stale sidecar.
-TOOLTIMING_PATH="$ROOT/$T/$RUN.tooltiming.jsonl"; : > "$TOOLTIMING_PATH"
+TOOLTIMING_PATH="$ROOT/$T/$RUN.tooltiming.jsonl"
+[ "$RESUME_MODE" = "1" ] || : > "$TOOLTIMING_PATH"
 python3 - "$ROOT/qa/qa.mcp.example.json" "$STATE_DIR" "$DM_CFG" "$ROOT" "$TOOLTIMING_PATH" <<'PY'
 import json, sys, os
 cfg_path, state, out, root, tooltiming = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5]
@@ -148,24 +352,39 @@ json.dump({"mcpServers": {"worldos-player": {"command": "uv",
   "env": {"WORLDOS_STATE_DIR": state, "WORLDOS_PLAYER_MOVES": moves}}}}, open(out, "w"))
 PY
 
-DSID="$(python3 -c 'import uuid;print(uuid.uuid4())')"
-PSID="$(python3 -c 'import uuid;print(uuid.uuid4())')"
+if [ "$RESUME_MODE" = "1" ]; then
+  if ! duo_engine_slot load "$CAMPAIGN_ID"; then
+    echo "[duo] checkpoint could not restore campaign $CAMPAIGN_ID from slot $CHECKPOINT_SLOT; delete the checkpoint to restart" >&2
+    exit 2
+  fi
+  if ! duo_restore_manifest; then
+    echo "[duo] checkpoint could not restore transcript offsets from $CHECKPOINT_MANIFEST; delete the checkpoint to restart" >&2
+    exit 2
+  fi
+else
+  DSID="$(python3 -c 'import uuid;print(uuid.uuid4())')"
+  PSID="$(python3 -c 'import uuid;print(uuid.uuid4())')"
+fi
 # The DM's campaign id (for the lean re-ground). Resolved AFTER the cold-open D1 mints the
 # world (start_world writes $STATE_DIR/campaigns/<id>/). Declared here (empty) so the DM
 # turn()'s lean branch can reference it safely under `set -u` even during the cold open —
 # when it's empty, worldos_dm_lean_args no-ops and the normal --resume path is used.
-CAMPAIGN_ID=""
+[ "$RESUME_MODE" = "1" ] || CAMPAIGN_ID=""
 DM_BRIEF="$(cat qa/play_dm_duo.txt)"; PLAYER_BRIEF="$(cat "$PLAYER_PROMPT_FILE")"
-COMBINED="$T/$RUN.jsonl"; : > "$COMBINED"
+COMBINED="$T/$RUN.jsonl"; [ "$RESUME_MODE" = "1" ] || : > "$COMBINED"
 # A clean two-sided conversation log (the player agent's turns AND the DM's), so the
 # dashboard can show the PROTAGONIST acting — not just the DM narrating. The DM's own
 # stream (COMBINED) doesn't echo the player's turns, so we capture both sides here.
-CHAT="$T/$RUN.chat.jsonl"; : > "$CHAT"
+CHAT="$T/$RUN.chat.jsonl"; [ "$RESUME_MODE" = "1" ] || : > "$CHAT"
 # chatlog is the SHARED lib implementation (qa/lib_beat_driver.sh, reads ambient $CHAT at call
 # time). SYN-01/F12-7: a local 2-arg override here used to shadow it AFTER sourcing the lib,
 # silently discarding worldos_chatlog_dm's {"fallback_recovered":true} honesty stamp — never
 # re-define chatlog in a runner.
-echo "[duo] run=$RUN world=$WORLD beats=$BEATS dm=$DSID player=$PSID"
+if [ "$RESUME_MODE" = "1" ]; then
+  echo "[duo] resume checkpoint: run=$RUN last_completed=$LAST_COMPLETED_BEAT next_beat=$START_BEAT campaign=$CAMPAIGN_ID dm=$DSID player=$PSID"
+else
+  echo "[duo] run=$RUN world=$WORLD beats=$BEATS dm=$DSID player=$PSID"
+fi
 
 # $1=role(player|dm) $2=session-id $3=first?(1/0) $4=message ; echoes the agent's reply text
 turn() {
@@ -307,7 +526,13 @@ turn_retry() {
 # subshell), so a `MCURSOR=…` assignment is LOST on return — the cursor would stay 0 and
 # every beat would re-relay the ENTIRE move history to the DM (stale, ballooning input).
 # A file persists across the subshell, so each beat relays only the NEW moves.
-MCURSOR_FILE="$STATE_DIR/.mcursor"; echo 0 > "$MCURSOR_FILE"
+MCURSOR_FILE="$STATE_DIR/.mcursor"
+if [ "$RESUME_MODE" = "1" ]; then
+  _move_count="$(wc -l < "$MOVES" 2>/dev/null | tr -d ' ')"; _move_count="${_move_count:-0}"
+  echo "$_move_count" > "$MCURSOR_FILE"
+else
+  echo 0 > "$MCURSOR_FILE"
+fi
 # A player turn via the constrained facade: the player acts ONLY through tools, which
 # append structured moves to $MOVES. Relay ONLY the structured moves it made THIS turn —
 # NEVER its raw reply text (relaying free-text would re-open the over-writing hole the
@@ -347,6 +572,7 @@ player_move() {
 # move through player_move (NOT raw prose) so the behavioral gate
 # `player_turns_structured` still sees a structured first turn (a raw-text intro caps
 # all G5 lenses ≤2.5 — see the say()-vs-prose note below).
+if [ "$RESUME_MODE" != "1" ]; then
 PLAYER_INTRO_PROMPT="$PLAYER_BRIEF
 
 This is the very start — the world isn't built and the scene isn't set yet. Introduce your character with a SINGLE say(\"…\"): who they are and what they want. Do NOT do()/attack/cast yet — wait for the DM to open the scene. One say(), nothing else."
@@ -386,10 +612,11 @@ echo "[duo] DM opened: ${DMSG:0:120}…"
 # "session limit" / "HTTP 429" marker. An empty/recovered reply on top of a 429 is NOT a product
 # failure — it is an INFRA abort. Detect it BEFORE scoring so we never burn the 3-lens scorer on a
 # quota corpse (or, worse, cap-RED a quota'd run as a 2.5 product score). Log a marker the VM sweep
-# greps for and exit rc=2 (distinct from the rc=1 genuine-no-opening abort below).
-if grep -qiE "session limit|HTTP 429|hit your (session|usage) limit" "$COMBINED" "$T/$RUN.dm.err" 2>/dev/null; then
+# greps for and exit rc=75 / EX_TEMPFAIL (distinct from the rc=1 genuine-no-opening abort below).
+if duo_quota_seen "$COMBINED" "$T/$RUN.dm.err"; then
   echo "[duo] QUOTA ABORT — DM cold-open hit the account session limit (HTTP 429). Skipping scoring; this is an INFRA abort, NOT a product measurement." >&2
-  exit 2
+  echo "[duo] throttled at beat 0 — re-invoke the same command in a fresh window to resume" >&2
+  exit "$EX_TEMPFAIL"
 fi
 # SYN-01: an empty resolved reply is a FAILED beat (error-class result, recycled-only prose, or
 # nothing recovered). Record the wrapper-authored VISIBLE failure row — never the error text,
@@ -428,13 +655,23 @@ if [ "$WORLDOS_LEAN_BEATS" = "1" ]; then
     echo "[duo] lean-beats ON but campaign id not found under $STATE_DIR/campaigns — beats use the normal resume path" >&2
   fi
 fi
+duo_write_checkpoint 0
+else
+  DMSG="$(duo_last_dm_chat)"
+  if [ -z "$DMSG" ]; then
+    echo "[duo] checkpoint has no prior DM chat row to continue from; delete the checkpoint to restart" >&2
+    exit 2
+  fi
+  echo "[duo] resumed after beat $LAST_COMPLETED_BEAT; continuing with prior DM context: ${DMSG:0:100}…"
+fi
 
 # Alternate player <-> DM for BEATS rounds. Each beat is now BEAT-AWARE (decision §A):
 # read the clock + location at the START of the beat, pick the ONE moment-specific runbook
 # for this beat (scene-intro / reversal / climax / travel-peopling / rising-action) instead
 # of the old constant "keep the world moving" paragraph, then after the DM beat run the soft
 # clock-tick backstop (decision §C) so a frozen clock advances ONE phase via the engine.
-for b in $(seq 1 "$BEATS"); do
+if [ "$START_BEAT" -le "$BEATS" ]; then
+for b in $(seq "$START_BEAT" "$BEATS"); do
   # Progression snapshot at the START of this beat (drives both the runbook + the tick).
   PROG_PRE="$(worldos_read_progress "$STATE_DIR")"
   PREV_DAY="$(printf '%s' "$PROG_PRE" | cut -f1)"; PREV_DAY="${PREV_DAY:-1}"
@@ -482,6 +719,11 @@ $EVENT_ADV")"
   # by assert_behavioral's dm_beat_honesty) instead of masking with error text/recycled prose.
   if [ -z "$DMSG" ]; then
     worldos_chatlog_dm_failed
+    if duo_quota_seen "$STATE_DIR/.dm_last_result" "$COMBINED" "$T/$RUN.dm.err"; then
+      echo "[duo] QUOTA ABORT — DM beat $b hit the account session limit / rate limit. Skipping scoring; this is an INFRA abort, NOT a product measurement." >&2
+      echo "[duo] throttled at beat $b — re-invoke the same command in a fresh window to resume" >&2
+      exit "$EX_TEMPFAIL"
+    fi
     # #1285: worldos_chatlog_dm_failed stamps $STATE_DIR/.run_infra_invalid.json once the
     # CONSECUTIVE failure streak crosses WORLDOS_INFRA_INVALID_STREAK — a quota window / host
     # death mid-run (rri-a1-duo/duo2), not a product defect. Abort NOW (same rc=2 INFRA ABORT
@@ -501,7 +743,9 @@ $EVENT_ADV")"
   # C — soft clock-tick backstop: if the DM didn't move the clock this beat, advance one
   # phase via the engine (sole writer). Defers to the DM when it advanced time in-fiction.
   worldos_soft_tick "$ROOT" "$STATE_DIR" "$PREV_DAY" "$PREV_TOD"
+  duo_write_checkpoint "$b"
 done
+fi
 
 # #1285 defense-in-depth: if the streak was stamped but a caller path didn't already exit 2 above
 # (e.g. the threshold was crossed on the LAST beat and the loop simply ended rather than hitting
@@ -512,6 +756,11 @@ done
 
 # Wrap + score the DM transcript (it carries the narration + all tool calls).
 turn dm "$DSID" 0 "We are out of time. Bring this beat to a clean stopping point and call end_session with a one-line summary." >/dev/null
+if duo_quota_seen "$STATE_DIR/.dm_last_result" "$COMBINED" "$T/$RUN.dm.err"; then
+  echo "[duo] QUOTA ABORT — throttled after beat $LAST_COMPLETED_BEAT during session wrap-up. Skipping scoring; this is an INFRA abort, NOT a product measurement." >&2
+  echo "[duo] throttled at beat $LAST_COMPLETED_BEAT — re-invoke the same command in a fresh window to resume" >&2
+  exit "$EX_TEMPFAIL"
+fi
 echo "[duo] distilling + scoring…"
 python3 qa/distill.py "$COMBINED" 2>/dev/null
 # The PLAYED exchange (both sides) for the STORY scorer: scene_craft/playability must be
@@ -544,11 +793,12 @@ wait
 # sentinel into its OUT and exiting rc=2 — so the scorer can quota-trip even when the DM cold-open
 # itself didn't (e.g. the account hits the limit AFTER the play, during scoring). Any lens carrying
 # that sentinel is NOT a valid scorecard — short-circuit to the same QUOTA ABORT path Fix E uses
-# (log the marker the VM sweep greps + exit rc=2) instead of scoring/gating on a quota corpse.
+# (log the marker the VM sweep greps + exit rc=75 / EX_TEMPFAIL) instead of scoring/gating on a quota corpse.
 for _scf in "$T/$RUN.tolkien.json" "$T/$RUN.score.json" "$T/$RUN.angrydm.json"; do
   if [ -f "$_scf" ] && jq -e '.quota_exhausted == true' "$_scf" >/dev/null 2>&1; then
     echo "[duo] QUOTA ABORT — the scorer hit the account session limit (HTTP 429) on $(basename "$_scf"). Skipping the gate + scorecards; INFRA abort, NOT a product measurement." >&2
-    exit 2
+    echo "[duo] throttled at beat $LAST_COMPLETED_BEAT — re-invoke the same command in a fresh window to resume" >&2
+    exit "$EX_TEMPFAIL"
   fi
 done
 # SCORER-INTEGRITY (WS0a) — a scorer FAILURE must NOT read as GREEN/passing or as a blank no-score.
@@ -575,7 +825,7 @@ if [ "$UNSCORABLE" = "1" ]; then
   echo "[duo] RUN STATUS: unscorable — one or more lenses failed to score (${UNSCORABLE_DETAIL}). A blank/sentinel lens value is a scorer FAILURE, not a passing or no-score run." >&2
 fi
 # Behavioral gate — flip RED on a structurally broken run (treat it like software).
-python3 qa/assert_behavioral.py "$COMBINED" "$T/$RUN.state.json" "$T/$RUN.chat.jsonl" "$MOVES" | tee "$T/$RUN.gate.txt"; GATE=${PIPESTATUS[0]}
+python3 "$ASSERT_BEHAVIORAL_SCRIPT" "$COMBINED" "$T/$RUN.state.json" "$T/$RUN.chat.jsonl" "$MOVES" | tee "$T/$RUN.gate.txt"; GATE=${PIPESTATUS[0]}
 # Honest scoring: a gate-RED (non-progressing/structurally broken) run must NOT display as 4.1.
 # CAP both recorded scorecards to ≤2.5 / INVALID and annotate WHY (the failed checks), so a dead
 # scene can't masquerade as prestige play. Engine/scoring untouched on a GREEN run.
@@ -603,4 +853,5 @@ fi
 # card, else FAILED:<status> (missing|invalid|sentinel|nonnumeric). When ANY lens failed, the line
 # carries an explicit status=unscorable so a downstream reader / a human can never mistake it for GREEN.
 echo "[duo] done. story-craft=$(worldos_lens_display "$T/$RUN.tolkien.json") mechanical=$(worldos_lens_display "$T/$RUN.score.json") angry-dm=$(worldos_lens_display "$T/$RUN.angrydm.json") behavioral=$([ "$GATE" = 0 ] && echo GREEN || echo RED)$([ "$UNSCORABLE" = 1 ] && echo ' status=unscorable') ${LAT_SUMMARY:-}"
+duo_delete_checkpoint
 exit $GATE
