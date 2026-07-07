@@ -79,6 +79,36 @@ def _candidates_for_class(candidates_dir: Optional[str], cls: str) -> list[dict]
     return out
 
 
+def _band_staleness(artifact: dict, entry: dict) -> Optional[str]:
+    """Return a NAMED reason if this control's stamped band was derived under a different prompt
+    construction / scoring ruler than the current one, else None (#1380 guard).
+
+    The expected band in qa/artifact_controls_identity.json is derived under ONE prompt construction
+    (build_card output) and ONE artifact ruler. When the v2 extractor changed what real candidates
+    carry (`description`/`resolution`) while the control lagged, the control drifted below band with
+    NO signal WHY — a silent, mysterious below-band failure that blocked every quest promotion. This
+    guard turns that into a named error forever: if the control's card hash or the ruler no longer
+    matches what the band was calibrated against, the band is STALE and must be re-derived, and we
+    say so explicitly instead of reporting a bare below-band verdict. Legacy entries with neither
+    stamp are skipped (no false signal on un-migrated controls)."""
+    stamped_ph = entry.get("band_prompt_hash")
+    stamped_ruler = entry.get("band_ruler")
+    if not stamped_ph and not stamped_ruler:
+        return None
+    drifted = []
+    if stamped_ruler and stamped_ruler != artifact_config_version():
+        drifted.append(f"ruler {stamped_ruler}->{artifact_config_version()}")
+    if stamped_ph and stamped_ph != artifact_score.prompt_construction_hash(artifact):
+        drifted.append(f"prompt {stamped_ph}->{artifact_score.prompt_construction_hash(artifact)}")
+    if not drifted:
+        return None
+    return (
+        "band derived under a different prompt construction (" + "; ".join(drifted) + ") — the "
+        "control's field surface or the scoring ruler changed since calibration; the stamped band is "
+        "STALE. Re-derive it: python3 qa/build_artifact_controls.py then a fresh calibration panel."
+    )
+
+
 def _dryrun_card(artifact: dict, anchor: float) -> dict:
     """Deterministic stub scorecard at the anchor (offline wiring proof — no live scorer)."""
     _, schema_name = artifact_score.RUBRIC_FOR_CLASS[artifact["class"]]
@@ -168,15 +198,28 @@ def run_panel(
             "overalls": [round(o, 2) for o in overalls],
         })
 
-    # Control-band verdict: every control's median within [anchor-noise, anchor+noise].
+    # Control-band verdict: every control's median within [anchor-noise, anchor+noise]. Before the
+    # band check, the #1380 staleness guard: a control whose stamped band was derived under a
+    # different prompt construction / ruler than the current one has a STALE band — its below-band (or
+    # even in-band) verdict is untrustworthy. Surface that as a NAMED reason so drift can never again
+    # present as a bare, unexplained below-band failure.
     control_results = [r for r in results if r["is_control"]]
+    controls_by_id = {a["artifact_id"]: a for a in controls}
     out_of_band = []
+    stale_bands = []
     for r in control_results:
+        entry = id_map.get(r["artifact_id"], {})
+        stale_reason = _band_staleness(controls_by_id[r["artifact_id"]], entry)
+        if stale_reason:
+            stale_bands.append({"artifact_id": r["artifact_id"], "reason": stale_reason})
         anchor = float(r["anchor"] if r["anchor"] is not None else identity.get("anchor", 4.0))
         lo, hi = anchor - noise, anchor + noise
         if not (lo <= r["median_overall"] <= hi):
-            out_of_band.append({"artifact_id": r["artifact_id"], "median": r["median_overall"],
-                                "band": [round(lo, 1), round(hi, 1)]})
+            oob = {"artifact_id": r["artifact_id"], "median": r["median_overall"],
+                   "band": [round(lo, 1), round(hi, 1)]}
+            if stale_reason:
+                oob["reason"] = stale_reason
+            out_of_band.append(oob)
     candidate_results = [r for r in results if not r["is_control"]]
     cand_median = (round(statistics.median([r["median_overall"] for r in candidate_results]), 2)
                    if candidate_results else None)
@@ -194,7 +237,10 @@ def run_panel(
                              "anchor": r["anchor"]} for r in control_results],
         "controls_in_band": not out_of_band,
         "out_of_band": out_of_band,
-        "panel_valid": not out_of_band,
+        # A stale band invalidates the panel EVEN IF the control happens to land in the old band — the
+        # band itself is no longer trustworthy until re-derived (#1380).
+        "stale_bands": stale_bands,
+        "panel_valid": not out_of_band and not stale_bands,
         "results": results,
     }
 
