@@ -277,7 +277,10 @@ def _quest_wrap_up(quest_title: str, text_blocks: list[str], limit: int = _MAX_Q
         low = title_pat.sub(" ", blk).lower()
         if not any(cue in low for cue in _RESOLUTION_CUES):
             continue
-        beat = blk if len(blk) <= 600 else blk[:599] + "…"
+        # Same cap as the NPC voice-line/dialogue-snippet truncation above (_npc_dialogue_snippets,
+        # _npc_voice_lines) — one consistent payload-size ceiling across the extractor, not a
+        # second one-off limit.
+        beat = blk if len(blk) <= 400 else blk[:399] + "…"
         key = beat.lower()
         if key in seen:
             continue
