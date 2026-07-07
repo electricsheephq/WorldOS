@@ -43,6 +43,10 @@ _LEGACY_KEYS = {
     "encounter", "grid", "lastPath", "impassable", "doors", "occluders", "tokens", "initiative",
     "zones", "selectedTokenId", "actionEconomy", "commandCenter", "actionBar", "battleLog",
     "live", "is_live_view", "can_act", "state_authority", "write_lane",
+    # W4 (#1321) The Living Stage — the clock-driven day/night lighting token. Additive
+    # presentation-only key (see build_combat_surface); folded into the established set so the
+    # `stage`-is-the-only-NEW-key guard still trips on any UNEXPECTED (non-additive) key change.
+    "timePhase",
 }
 
 

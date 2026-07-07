@@ -3733,6 +3733,12 @@ def build_combat_surface(
         "title": _text(snapshot.get("title"), campaign_id or "Open Worlds"),
         "world": _text(snapshot.get("world_id"), "unknown"),
         "dayLabel": _openworlds_day_label(snapshot),
+        # W4 (#1321) THE LIVING STAGE — day/night lighting token from the campaign clock, so the
+        # combat/rest board re-tints with the time of day (dawn/day/dusk/night) exactly as the
+        # World Map's ClockDial does. CLOCK-DRIVEN (reads the engine's time_of_day off the
+        # snapshot via _openworlds_time_phase — the same normalizer the atlas surface uses), so
+        # the lighting can never disagree with the campaign clock. Additive presentation-only key.
+        "timePhase": _openworlds_time_phase(snapshot),
         "location": location,
         "encounter": {
             "active": combat_active,
