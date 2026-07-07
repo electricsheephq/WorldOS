@@ -3105,6 +3105,17 @@ def _combat_event_envelope_fields(payload: dict) -> dict | None:
             # A future/unknown engine combat event → a non-animated narrate beat
             # (additive/back-compat: the renderer never crashes on a new event).
             verb = "narrate"
+        elif event == "damage":
+            # #1347: a monster/NPC dies OUTRIGHT at 0 HP (combat.py's _apply_total_to_hp ->
+            # _die) with no death_save event at all — only this `damage` beat carries the
+            # engine's verdict, nested in its own `result` block (`{..., "dead": true}`, the
+            # same combat.status() shape death_save's `state` uses). Without this override the
+            # beat stayed verb="damage" forever and the renderer's death animation (topple+
+            # fade, #1345) never fired on a live kill. Read-only projection of engine truth —
+            # the engine already decided `dead`; we just pick the matching verb.
+            inner_state = payload.get("result") if isinstance(payload.get("result"), dict) else {}
+            if bool(inner_state.get("dead")):
+                verb = "death"
 
     # Build the engine-decided `result` the renderer renders verbatim. We carry the
     # outcome class + the numbers the engine already produced (roll / damage / hp /

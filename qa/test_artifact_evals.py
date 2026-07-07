@@ -454,11 +454,16 @@ def test_calibration_panel_dryrun_is_valid_and_writes_db(tmp_path, monkeypatch):
     assert report["n_controls"] >= 2
     assert report["controls_in_band"] is True
     assert report["panel_valid"] is True
-    # 5 scorers per control → rows written
+    # 5 per-scorer rows + 1 bare-artifact_id aggregate row per control (#1355).
     rows = scores_db.fetch_artifacts(db)
-    assert len(rows) == report["n_controls"] * 5
+    assert len(rows) == report["n_controls"] * (5 + 1)
     assert all(r["is_control"] == 1 for r in rows)
     assert all(r["scorer_model"] == "sonnet" for r in rows)
+    # The aggregate row is addressable by the BARE artifact_id (no #panel_id#s{n} suffix) — this is
+    # exactly what tools/library/promote.py's bare-id lookup needs with no manual bridge.
+    control_aids = {cm["artifact_id"] for cm in report["control_medians"]}
+    row_ids = {r["artifact_id"] for r in rows}
+    assert control_aids <= row_ids, "every control's bare artifact_id must have a row in scores.db"
 
 
 def test_calibration_panel_flags_out_of_band_control(tmp_path, monkeypatch):

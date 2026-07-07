@@ -118,16 +118,18 @@ def run_panel(
     results: list[dict] = []
     for artifact, is_control, anchor in pool:
         overalls: list[float] = []
+        dims_per_scorer: list[dict] = []
+        prov = artifact.get("provenance") or {}
         for scorer_i in range(panel_size):
             if dryrun:
                 card = _dryrun_card(artifact, float(anchor or identity.get("anchor", 4.0)))
             else:
                 card = artifact_score.score_artifact(artifact, budget=budget)
             overalls.append(float(card["overall"]))
+            dims_per_scorer.append(card.get("scores") or {})
             if write_db:
                 # One row per scorer; the panel_id + a scorer suffix keep artifact_id unique.
                 aid = f"{artifact['artifact_id']}#{panel_id}#s{scorer_i}"
-                prov = artifact.get("provenance") or {}
                 scores_db.add_artifact(
                     aid, db_path=db_path, **{"class": cls}, run_id=prov.get("run_id"),
                     world=artifact.get("world"), sha=prov.get("sha"),
@@ -137,6 +139,29 @@ def run_panel(
                     source_path=artifact["artifact_id"],
                 )
         med = statistics.median(overalls)
+        if write_db:
+            # #1355: ALSO write the panel's own aggregate under the BARE artifact_id — the
+            # median overall (matching this function's own control-band aggregation) plus the
+            # per-dimension median across the N `#s{n}` scorer rows. Without this row,
+            # tools/library/promote.py's bare-artifact_id lookup (_artifacts_by_id) never finds
+            # a panel-scored artifact and a promotion batch needs a manual bridge to connect
+            # them (found live in PR #1354). scores.db stays single-owner: the panel writer is
+            # the one place that both produces the per-scorer rows AND knows how to aggregate
+            # them, so this is additive bookkeeping on the same write path, not a second writer.
+            all_dim_keys = {k for d in dims_per_scorer for k in d}
+            median_dims = {
+                k: round(statistics.median([d[k] for d in dims_per_scorer if k in d]), 2)
+                for k in all_dim_keys
+            }
+            scores_db.add_artifact(
+                artifact["artifact_id"], db_path=db_path, **{"class": cls},
+                run_id=prov.get("run_id"), world=artifact.get("world"), sha=prov.get("sha"),
+                dims_json=median_dims, overall=round(med, 2),
+                panel_id=panel_id, scorer_model="sonnet",
+                is_control=int(is_control), control_anchor=anchor,
+                source_path=artifact["artifact_id"],
+                notes=f"panel aggregate: median of {panel_size} scorer rows (#1355)",
+            )
         results.append({
             "artifact_id": artifact["artifact_id"], "is_control": is_control,
             "anchor": anchor, "median_overall": round(med, 2),
