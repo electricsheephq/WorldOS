@@ -36,7 +36,36 @@ from typing import Optional
 
 _ROOT = Path(__file__).resolve().parent.parent
 _MAX_DIALOGUE_SNIPPETS = 5
+_MAX_QUEST_WRAPUP = 5
 _ARTICLES = {"the", "a", "an"}
+
+# A quoted span of NPC speech: straight or curly DOUBLE quotes, or CURLY single quotes. The
+# straight single-quote (') is deliberately NOT a delimiter — in prose it is overwhelmingly a
+# possessive/contraction ("Kervan's", "doesn't"), so treating it as a quote boundary captures
+# garbage fragments. Curly typographic single quotes ('…') are unambiguous speech and kept.
+_QUOTE_RE = re.compile(r"[\"“]([^\"”]{2,400})[\"”]|[‘]([^‘’]{2,400})[’]")
+# Speech-attribution verbs that mark a quote as a character SPEAKING (vs the narrator merely
+# mentioning them). Matches the DM prose conventions seen in real transcripts ("...", Roe says /
+# Sefa: "..." / he growls). Deliberately narration-agnostic on tense/person.
+_SPEECH_VERBS = (
+    "say", "says", "said", "ask", "asks", "asked", "reply", "replies", "replied",
+    "growl", "growls", "growled", "whisper", "whispers", "whispered", "mutter", "mutters",
+    "muttered", "snap", "snaps", "snapped", "hiss", "hisses", "hissed", "call", "calls",
+    "called", "bark", "barks", "barked", "rasp", "rasps", "rasped", "drawl", "drawls",
+    "drawled", "murmur", "murmurs", "murmured", "sigh", "sighs", "sighed", "spit", "spits",
+    "spat", "roar", "roars", "roared", "add", "adds", "added", "continue", "continues",
+    "demand", "demands", "demanded", "purr", "purrs", "purred", "sneer", "sneers", "sneered",
+    "offer", "offers", "offered", "tell", "tells", "told", "answer", "answers", "answered",
+)
+# Resolution language that marks a narration beat as a quest's WRAP-UP (its outcome/consequence),
+# so the closing beats — not every mid-quest mention — are what land in the quest payload.
+_RESOLUTION_CUES = (
+    "resolv", "complet", "finish", "conclud", "outcome", "consequence", "aftermath", "settle",
+    "in the end", "at last", "closed", "sealed the", "the deal", "repaid", "repay", "avenged",
+    "betray", "the price", "the cost", "spared", "killed", "died", "dead", "survived", "saved",
+    "abandon", "failed", "fell through", "kept the", "broke the", "delivered", "returned the",
+    "the reward", "vengeance", "reckoning", "the debt",
+)
 
 
 # ── engine + distill imports (read-only) ─────────────────────────────────────────────────────
@@ -141,6 +170,124 @@ def _npc_dialogue_snippets(name: str, text_blocks: list[str], limit: int = _MAX_
             out.append(blk if len(blk) <= 400 else blk[:399] + "…")
             if len(out) >= limit:
                 break
+    return out
+
+
+def _quote_spans(block: str) -> list[tuple[int, int, str]]:
+    """Every quoted span in a narration block as (start, end, text). Handles straight and curly
+    double/single quotes. The offsets let the attribution check look at the words immediately
+    around a quote (who is speaking) rather than the whole block."""
+    spans: list[tuple[int, int, str]] = []
+    for m in _QUOTE_RE.finditer(block):
+        txt = m.group(1) if m.group(1) is not None else m.group(2)
+        # Strip markdown emphasis markers (* _) that bracket italicised in-fiction speech and
+        # collapse internal whitespace, so the captured line is the clean spoken text.
+        cleaned = " ".join(txt.replace("*", " ").replace("_", " ").split()) if txt else ""
+        # Keep only quotes with real words (>=2 word chars) — a bare fragment like a name tag or a
+        # stray punctuation quote isn't a spoken line.
+        if len(re.findall(r"\w", cleaned)) >= 2:
+            spans.append((m.start(), m.end(), cleaned))
+    return spans
+
+
+_SPEECH_VERB_RE = re.compile(r"\b(?:%s)\b" % "|".join(_SPEECH_VERBS), re.IGNORECASE)
+
+
+def _attributed_to(block: str, span: tuple[int, int, str], name_pat: re.Pattern) -> bool:
+    """True when the quoted span at `span` is attributed to the NPC whose first name matches
+    `name_pat`. Attribution reads TIGHT in DM prose — `"...", Roe says` (name+verb right after the
+    close-quote) or `Sefa says: "..."` (name+verb right before the open-quote) — so we require the
+    NPC name AND a speech verb to co-occur in a SHORT window on ONE side of the quote (~45 chars),
+    not merely somewhere in the surrounding paragraph. This is the difference between an IN-VOICE
+    line the NPC spoke and a block that only NAMES the NPC in third-person scene/combat narration
+    (the old mention-matcher's false positive, which caps voice_distinctiveness under the rubric),
+    and it stops a quote from being mis-attributed to a second NPC merely named elsewhere in the
+    same paragraph."""
+    start, end, _ = span
+    after = block[end:end + 60]
+    before = block[max(0, start - 60):start]
+    for side in (after, before):
+        if name_pat.search(side) and _SPEECH_VERB_RE.search(side):
+            return True
+    return False
+
+
+def _npc_voice_lines(name: str, text_blocks: list[str], limit: int = _MAX_DIALOGUE_SNIPPETS) -> list[str]:
+    """Up to `limit` IN-VOICE quoted lines this NPC actually SPOKE in the campaign — the thing the
+    NPC rubric rewards (voice_distinctiveness: 'could an actor hear how they talk?'). A quoted span
+    is kept only when the NPC's (leading-article-stripped) first name and a speech-attribution verb
+    both sit in the window around the quote, so third-person narration that merely mentions the NPC
+    (the old matcher's false positives — combat rosters, scene-setting) is excluded. Deduped in
+    first-seen order; a silent NPC (no attributed quotes) returns [] and stays a valid artifact."""
+    if not name:
+        return []
+    # Match ANY significant name token (first OR last), so both `"...", Corren says` and
+    # `"...", Hask says` attribute to "Corren Hask". Articles and 1-char tokens are dropped so a
+    # name like "The Emperor" matches on "Emperor", never the near-ubiquitous article.
+    tokens = [w for w in name.split() if w.lower() not in _ARTICLES and len(w) > 1]
+    if not tokens:
+        tokens = [name.split()[0]]
+    name_pat = re.compile(r"\b(?:%s)\b" % "|".join(re.escape(t) for t in tokens), re.IGNORECASE)
+    out: list[str] = []
+    seen: set[str] = set()
+    for blk in text_blocks:
+        for span in _quote_spans(blk):
+            _, _, quote = span
+            if not _attributed_to(blk, span, name_pat):
+                continue
+            # Drop a fragment that opens mid-sentence (lowercase first letter) — that's a slice of
+            # narration spliced through a quote mark, not a fresh spoken line. A quote opening with
+            # a capital, a digit, or opening punctuation (— … ') reads as real delivered speech.
+            head = quote.lstrip("—–-…‘'\"“ ")
+            if head and head[0].isalpha() and not head[0].isupper():
+                continue
+            line = quote if len(quote) <= 400 else quote[:399] + "…"
+            key = line.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(line)
+            if len(out) >= limit:
+                return out
+    return out
+
+
+def _quest_wrap_up(quest_title: str, text_blocks: list[str], limit: int = _MAX_QUEST_WRAPUP) -> list[str]:
+    """Up to `limit` closing narration beats that describe THIS quest's resolution/outcome — the
+    wrap-up context the Questwright rubric scores for consequence_weight / narrative completeness.
+    A beat qualifies only when it names the quest (leading-article-stripped title token match) AND
+    carries resolution language (_RESOLUTION_CUES), so mid-quest mentions don't dilute the outcome.
+    Deduped in first-seen order; a quest with no mined wrap-up beats returns [] (graceful)."""
+    title = (quest_title or "").strip()
+    if not title:
+        return []
+    tokens = [t for t in re.findall(r"[A-Za-z][A-Za-z'’]+", title) if t.lower() not in _ARTICLES]
+    if not tokens:
+        return []
+    title_pat = re.compile(r"\b(?:%s)\b" % "|".join(re.escape(t) for t in tokens), re.IGNORECASE)
+    out: list[str] = []
+    seen: set[str] = set()
+    for blk in text_blocks:
+        if not title_pat.search(blk):
+            continue
+        # Scan for resolution cues with the quest TITLE tokens masked out, so a cue phrase that is
+        # merely part of the title itself ("the price"/"the debt" inside a title like "The Price of
+        # Silence") never counts as resolution language — the beat must carry an outcome word of
+        # its OWN, not echo the quest name.
+        low = title_pat.sub(" ", blk).lower()
+        if not any(cue in low for cue in _RESOLUTION_CUES):
+            continue
+        # Same cap as the NPC voice-line/dialogue-snippet truncation above (_npc_dialogue_snippets,
+        # _npc_voice_lines) — one consistent payload-size ceiling across the extractor, not a
+        # second one-off limit.
+        beat = blk if len(blk) <= 400 else blk[:399] + "…"
+        key = beat.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(beat)
+        if len(out) >= limit:
+            break
     return out
 
 
@@ -265,19 +412,31 @@ def _quest_consequences(quest_id: str, quest_title: str, consequences: list) -> 
     return out
 
 
-def extract_quests(campaign: dict, provenance_base, world: str) -> list[dict]:
+def extract_quests(campaign: dict, provenance_base, world: str, text_blocks: list[str]) -> list[dict]:
     artifacts = []
     quests = campaign.get("quests") or {}
     consequences = campaign.get("consequences") or []
     for qid, q in quests.items():
+        title = q.get("title", "")
+        # Narrative wrap-up (HV2 #1329): the quest's OWN description (Quest.description, previously
+        # dropped) plus the closing transcript beats that describe its outcome — the resolution
+        # context the Questwright rubric scores for consequence_weight / narrative completeness.
+        wrap_up = _quest_wrap_up(title, text_blocks)
         payload = {
             "id": q.get("id", qid),
-            "name": q.get("title", ""),
+            "name": title,
+            "description": q.get("description", ""),
             "objectives": q.get("objectives", []),
             "completed_objectives": q.get("completed_objectives", []),
             "resolution_status": q.get("status", ""),
+            "resolution": {
+                "status": q.get("status", ""),
+                "evolves_to": q.get("evolves_to", ""),
+                "callback_in_days": q.get("callback_in_days", 0),
+                "wrap_up": wrap_up,
+            },
             "evolves_to": q.get("evolves_to", ""),
-            "consequences": _quest_consequences(qid, q.get("title", ""), consequences),
+            "consequences": _quest_consequences(qid, title, consequences),
         }
         artifacts.append(
             _envelope(f"quest:{campaign['id']}:{qid}", "quest", world, provenance_base(), payload)
@@ -313,7 +472,13 @@ def extract_npcs(campaign: dict, provenance_base, world: str, text_blocks: list[
             "personality": personality,
             "attitude_arc": {"start": start_val, "end": end_val},
             "final_status": _npc_final_status(c),
-            "dialogue_snippets": _npc_dialogue_snippets(c.get("name", ""), text_blocks),
+            # IN-VOICE quoted lines the NPC actually SPOKE (HV2 #1329). The rubric rewards a
+            # VOICED NPC and forces voice_distinctiveness <= 2 on "described-not-voiced" — so we
+            # deliberately DON'T fall back to the old mention-based proxy, which harvested
+            # third-person combat/scene narration (a party roster line naming the NPC is NOT its
+            # voice). A silent NPC surfaces [] and stays a valid artifact (graceful), rather than
+            # carrying noise that actively HURTS the panel score.
+            "dialogue_snippets": _npc_voice_lines(c.get("name", ""), text_blocks),
         }
         artifacts.append(_envelope(f"npc:{campaign['id']}:{cid}", "npc", world, provenance_base(), payload))
     return artifacts
@@ -419,7 +584,7 @@ def build_artifacts(
 
     text_blocks = _dm_player_text_blocks(transcript_lines)
     return {
-        "quests": extract_quests(campaign_dict, provenance_base, world),
+        "quests": extract_quests(campaign_dict, provenance_base, world, text_blocks),
         "npcs": extract_npcs(campaign_dict, provenance_base, world, text_blocks),
         "locations": extract_locations(campaign_dict, provenance_base, world, sg_module, campaign_id),
         "encounters": extract_encounters(campaign_dict, provenance_base, world, transcript_lines),

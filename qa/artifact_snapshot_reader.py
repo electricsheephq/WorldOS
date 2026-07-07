@@ -70,7 +70,9 @@ def extract(
 
     out: list[dict] = []
     if "quest" in classes:
-        out += hv2.extract_quests(snapshot, provenance_base, world)
+        # No transcript in a thin calibration read → empty text blocks (wrap_up comes back [], graceful
+        # per _quest_wrap_up's own contract) — mirrors the NPC call's empty-text-blocks fallback below.
+        out += hv2.extract_quests(snapshot, provenance_base, world, [])
     if "npc" in classes:
         # No transcript in a thin calibration read → empty text blocks (dialogue_snippets come back []).
         out += hv2.extract_npcs(snapshot, provenance_base, world, [])
