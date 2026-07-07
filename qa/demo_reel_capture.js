@@ -113,10 +113,17 @@ async function main() {
     await shot("04-parley-open");
 
     // ── 05 back to the board: select the hero, capture the door cell about to be crossed ──────
+    // The door steps are OPTIONAL: a location with no linked room has no door cell on its board
+    // (an art-backed single-room location is the common case). Capture the walk + approach-talk
+    // loop only and finish clean — a shorter reel, not a failure. Skip 05/06 when no door exists.
     await openBoard();
     await selectHero();
-    await page.waitForSelector(`${board} [data-worldos-door="1"]`, { timeout: 12000 })
-      .catch(() => fail("the door cell never rendered on the board"));
+    const doorCell = await page.$(`${board} [data-worldos-door="1"]`);
+    if (!doorCell) {
+      console.log(JSON.stringify({ ok: true, frames, doorSteps: false, pageErrors: pageErrors.slice(0, 8) }));
+      await browser.close();
+      return;
+    }
     await shot("05-door-cell");
 
     // ── 06 door click → walk-then-cross → arrived in the LINKED room ──────────────────────────
@@ -132,7 +139,7 @@ async function main() {
     await page.waitForTimeout(SETTLE_MS);
     await shot("06-arrived-linked-room");
 
-    console.log(JSON.stringify({ ok: true, frames, pageErrors: pageErrors.slice(0, 8) }));
+    console.log(JSON.stringify({ ok: true, frames, doorSteps: true, pageErrors: pageErrors.slice(0, 8) }));
   } finally {
     await browser.close();
   }

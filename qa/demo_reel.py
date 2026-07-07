@@ -19,6 +19,20 @@ ASSEMBLY (reuse, don't regress):
 NO DM / NO LLM: walk_to_cell + parley_approach (generate_parley_options approach=True) are
 engine-only; the viewer is a pure consumer.
 
+PLATE RESOLUTION — the load-bearing gotcha (record for the next agent): the rest board paints
+the location's scene plate from scope `location:<loc_id>` (build_combat_surface), which the
+viewer's `_safe_scope` bridge (viewer/server.py:_scope_key) resolves by NAME-KEY: it drops the
+kind prefix and matches the ingested art keyed `scene:<slug>`. So a plate renders ONLY when the
+location id is a readable SLUG (e.g. canon `loc-lower-city` -> "lower-city" -> matches
+`scene:lower-city`). This synthetic reel's seed (walk_click_replay) uses HASH ids
+(`loc_<hex>`) which normalize to the bare hex and match NOTHING — so it renders a walkable
+grid with NO plate, BY DESIGN. To capture a plate UNDER the loop, drive an ART-BACKED campaign
+whose current location has a slug id + ingested plate: seed via qa/seed_canon_fixture.py
+(baldurs-gate; current loc `loc-lower-city` has a servable plate + a 19x14 scene_grid), add a
+present NPC on a walkable cell, and run demo_reel_capture.js directly against that booted
+viewer (from the canonical checkout, where the gitignored _private art lives). The door steps
+in demo_reel_capture.js are OPTIONAL — they skip cleanly when the location has no linked room.
+
 Run:  uv run --directory servers/engine python "$PWD/qa/demo_reel.py" [--out DIR]
 Exit 0 = every frame captured + verified non-black; non-zero (with a readable error) = the
 first step that failed. This is a CI-adjacent artifact — it must fail loud.
