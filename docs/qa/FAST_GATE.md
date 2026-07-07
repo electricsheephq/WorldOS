@@ -48,6 +48,7 @@ the bug classes that have actually shipped.
 | Tier | What | Cost | Owns |
 |---|---|---|---|
 | **0 — Deterministic (CI/pytest, $0, ~60s)** | seat-path skill correctness · rest-restores · travel-moves · combat-through-engine · model normalizers | **~60s, $0** | the structural + **seat-path** + engine-transition classes — *including the skill-case crit* |
+| **0.5 — Visual pre-gate (`qa/visual_pregate.py`, $0, under 1s when frames exist)** | rendered frame PNG + manifest `{actors, grid, floor_y_px}`; actor bboxes from manifest or `--baseline` empty-plate diff; checks **frame-lit · floor-contact · screen-scale · occupancy** | **under 1s, $0** | deterministic visual tripwires before any visual-critic/LLM pass: black/blown/solid frames, floating actors, giant/tiny imports, and missing expected actors. Not CI-wired until the capture harness produces frames/manifests. |
 | **1.5 — Mechanism probe (`qa/mechanism_probe.sh`, ~$1, ~10 min)** | a **seeded trigger state** (`qa/probe_fixtures/<fixture>.py`, deterministic, engine=sole-writer) + **2–3 REAL DM beats**, then a **deterministic** verdict (no LLM lens): *did the DM ACT on obligation cue X (engine state moved), only narrate it (**IGNORED**), or did the cue never hold steady at the start (**CUE_ABSENT** — an inconclusive setup, not a DM verdict)?* | **~10 min** | the **cue-mechanism** iteration question that used to cost a 24-beat Opus duo (~$5–8) to reach the trigger state naturally |
 | **1 — Fast LLM loop (~13 min, ~$2.5)** | **rotated** persona `[iter % 5]` from a **short cold-open** (catches seating + free-play reachability + variance over 5 loops) · **≥6-beat** duo (floors stay armed) · a "free-play *reached* combat" check distinct from the sprint | **~13 min** | the satisfaction/quality *iteration* signal (honestly, not a verdict) |
 | **2 — Milestone sweep (unchanged)** | full 5-persona `.app` + RRI + native part-A, **+ correlation tracking** | ~90 min | the release verdict |
@@ -74,6 +75,13 @@ test (`test_canon_wizard_seat_yields_proficient_skill_bonus` in `tests/test_cano
 Covers: G1 combat (`test_combat`), G1 rest (`test_rests`), G1 travel (`test_travel`), G2 seat-path
 data (`test_canon_abilities` + `test_character_skill_normalization`). `$0`, ~60s, no LLM, no cold-open.
 Run it on every change before deciding whether a heavier probe is even warranted.
+
+### Tier 0.5 — visual pre-gate (built now, frame-dependent)
+`qa/visual_pregate.py <frame.png> <manifest.json> [--baseline empty.png] [--json-out report.json]`
+is the deterministic visual tripwire for renderer lanes once a capture harness has produced a frame
+and manifest. It fails fast on frame-lit, floor-contact, screen-scale, and occupancy defects, using
+manifest-provided bboxes when available or diff-vs-empty-plate clusters with `--baseline`. This is
+not wired into CI in this PR because CI does not yet produce renderer frames.
 
 ### Tier 1 — the fast LLM loop (next, with the critique's mitigations baked in)
 Not yet built — it needs a small harness change (skip the cold-open splice when handed a seeded

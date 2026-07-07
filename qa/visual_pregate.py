@@ -63,11 +63,16 @@ USAGE
     print(result["verdict"])                # PASS | FLAG (any CRITICAL/HIGH) | SKIPPED
     # result["gates"] -> list of {gate, severity, metric, value, threshold, detail}
 
-    # CLI:
+    # Spec-facing CLI (future capture harness):
+    python qa/visual_pregate.py /tmp/frame.png /tmp/manifest.json \
+        --baseline /tmp/empty-plate.png --json-out /tmp/report.json
+
+    # Legacy visual-critic CLI:
     python qa/visual_pregate.py --render /tmp/frame.png --scenegrid fixtures/tavern.scenegrid.json \
         --actors @/tmp/actors.json --json
 
-Exit codes: 0 = PASS / SKIPPED, 2 = FLAG (a CRITICAL or HIGH pre-gate fired) — so the loop / CI can gate.
+Exit codes: spec CLI 0 = PASS, 2 = FAIL; legacy CLI 0 = PASS / SKIPPED, 2 = FLAG
+(a CRITICAL or HIGH pre-gate fired) — so the loop / CI can gate.
 """
 
 from __future__ import annotations
@@ -924,6 +929,349 @@ def _summary(verdict: str, gates: list[dict]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Spec-facing manifest runner
+# ---------------------------------------------------------------------------
+def _manifest_check(manifest: dict, name: str) -> dict:
+    checks = manifest.get("checks", {})
+    cfg = checks.get(name, {}) if isinstance(checks, dict) else {}
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def _rgb_tuple(pixels: bytearray, base: int, channels: int) -> tuple[int, int, int]:
+    if channels == 1:
+        v = int(pixels[base])
+        return v, v, v
+    return int(pixels[base]), int(pixels[base + 1]), int(pixels[base + 2])
+
+
+def _bbox_from_actor(actor: dict) -> Optional[list[int]]:
+    raw = actor.get("screen_bbox", actor.get("bbox", actor.get("box")))
+    if raw is None:
+        return None
+    if isinstance(raw, dict):
+        if all(k in raw for k in ("x", "y", "w", "h")):
+            vals = [raw["x"], raw["y"], raw["x"] + raw["w"], raw["y"] + raw["h"]]
+        elif all(k in raw for k in ("left", "top", "right", "bottom")):
+            vals = [raw["left"], raw["top"], raw["right"], raw["bottom"]]
+        else:
+            return None
+    elif isinstance(raw, (list, tuple)) and len(raw) == 4:
+        vals = list(raw)
+    else:
+        return None
+    try:
+        x0, y0, x1, y1 = [int(round(float(v))) for v in vals]
+    except (TypeError, ValueError):
+        return None
+    if x1 < x0:
+        x0, x1 = x1, x0
+    if y1 < y0:
+        y0, y1 = y1, y0
+    if x1 == x0 or y1 == y0:
+        return None
+    return [x0, y0, x1, y1]
+
+
+def _frame_lit_manifest_check(frame_png: str | Path, manifest: dict) -> tuple[dict, tuple[int, int] | None]:
+    cfg = _manifest_check(manifest, "frame_lit")
+    min_mean = float(cfg.get("min_mean_luma", cfg.get("min", MEAN_LUM_DARK)))
+    max_mean = float(cfg.get("max_mean_luma", cfg.get("max", MEAN_LUM_BLOWN)))
+    max_single = float(cfg.get("max_single_color_frac", cfg.get("max_single_color", 0.90)))
+    try:
+        pixels, width, height, channels = _decode_png_pixels(Path(frame_png))
+    except Exception as exc:
+        return ({
+            "check": "frame-lit", "status": "FAIL", "metric": "decode",
+            "value": None, "threshold": None,
+            "detail": f"could not decode frame PNG: {exc}",
+        }, None)
+
+    stride = width * channels
+    total = width * height
+    step = max(1, total // 65536)
+    luma_sum = 0.0
+    colors: dict[tuple[int, int, int], int] = {}
+    samples = 0
+    for i in range(0, total, step):
+        base = (i // width) * stride + (i % width) * channels
+        color = _rgb_tuple(pixels, base, channels)
+        colors[color] = colors.get(color, 0) + 1
+        luma_sum += (0.2126 * color[0] + 0.7152 * color[1] + 0.0722 * color[2]) / 255.0
+        samples += 1
+    mean = luma_sum / (samples or 1)
+    single_frac = max(colors.values(), default=0) / (samples or 1)
+    failures = []
+    if mean < min_mean:
+        failures.append(f"mean luma {mean:.3f} < {min_mean:.3f}")
+    if mean > max_mean:
+        failures.append(f"mean luma {mean:.3f} > {max_mean:.3f}")
+    if single_frac > max_single:
+        failures.append(f"dominant color {single_frac:.1%} > {max_single:.0%}")
+    status = "FAIL" if failures else "PASS"
+    return ({
+        "check": "frame-lit", "status": status, "metric": "mean_luma",
+        "value": {"mean_luma": round(mean, 4), "single_color_frac": round(single_frac, 4)},
+        "threshold": {
+            "min_mean_luma": min_mean,
+            "max_mean_luma": max_mean,
+            "max_single_color_frac": max_single,
+        },
+        "detail": "; ".join(failures) if failures else
+                  f"frame lit: mean luma {mean:.3f}, dominant color {single_frac:.1%}",
+    }, (width, height))
+
+
+def _diff_bboxes(frame_png: str | Path, baseline_png: str | Path, manifest: dict) -> list[list[int]]:
+    cfg = _manifest_check(manifest, "diff")
+    threshold = float(cfg.get("threshold", 20))
+    min_area = int(cfg.get("min_area_px", cfg.get("min_area", 16)))
+    fp, fw, fh, fc = _decode_png_pixels(Path(frame_png))
+    bp, bw, bh, bc = _decode_png_pixels(Path(baseline_png))
+    if (fw, fh) != (bw, bh):
+        raise ValueError(f"baseline dimensions {bw}x{bh} do not match frame {fw}x{fh}")
+    fstride = fw * fc
+    bstride = bw * bc
+    total = fw * fh
+    mask = bytearray(total)
+    for i in range(total):
+        fx, fy = i % fw, i // fw
+        fr, fg, fb = _rgb_tuple(fp, fy * fstride + fx * fc, fc)
+        br, bg, bb = _rgb_tuple(bp, fy * bstride + fx * bc, bc)
+        if max(abs(fr - br), abs(fg - bg), abs(fb - bb)) > threshold:
+            mask[i] = 1
+
+    seen = bytearray(total)
+    bboxes: list[list[int]] = []
+    for start, changed in enumerate(mask):
+        if not changed or seen[start]:
+            continue
+        stack = [start]
+        seen[start] = 1
+        min_x = max_x = start % fw
+        min_y = max_y = start // fw
+        area = 0
+        while stack:
+            idx = stack.pop()
+            area += 1
+            x, y = idx % fw, idx // fw
+            min_x, max_x = min(min_x, x), max(max_x, x)
+            min_y, max_y = min(min_y, y), max(max_y, y)
+            if x > 0:
+                ni = idx - 1
+                if mask[ni] and not seen[ni]:
+                    seen[ni] = 1
+                    stack.append(ni)
+            if x + 1 < fw:
+                ni = idx + 1
+                if mask[ni] and not seen[ni]:
+                    seen[ni] = 1
+                    stack.append(ni)
+            if y > 0:
+                ni = idx - fw
+                if mask[ni] and not seen[ni]:
+                    seen[ni] = 1
+                    stack.append(ni)
+            if y + 1 < fh:
+                ni = idx + fw
+                if mask[ni] and not seen[ni]:
+                    seen[ni] = 1
+                    stack.append(ni)
+        if area >= min_area:
+            bboxes.append([min_x, min_y, max_x + 1, max_y + 1])
+    return sorted(bboxes, key=lambda b: (b[0], b[1], -(b[2] - b[0]) * (b[3] - b[1])))
+
+
+def _grid_expected_floor_y(actor: dict, manifest: dict) -> Optional[float]:
+    if "floor_y_px" in actor:
+        return float(actor["floor_y_px"])
+    if "floor_y_px" in manifest:
+        return float(manifest["floor_y_px"])
+    grid = manifest.get("grid")
+    cell = actor.get("expected_cell", actor.get("cell"))
+    if not isinstance(grid, dict) or not (isinstance(cell, (list, tuple)) and len(cell) == 2):
+        return None
+    origin = grid.get("origin", [0, 0])
+    cell_px = grid.get("cell_px", 1)
+    if not (isinstance(origin, (list, tuple)) and len(origin) >= 2):
+        return None
+    if isinstance(cell_px, (int, float)):
+        cell_h = float(cell_px)
+    elif isinstance(cell_px, (list, tuple)) and len(cell_px) >= 2:
+        cell_h = float(cell_px[1])
+    else:
+        return None
+    try:
+        row = int(cell[1])
+        origin_y = float(origin[1])
+    except (TypeError, ValueError):
+        return None
+    return origin_y + (row + 1) * cell_h
+
+
+def _occupancy_manifest_check(expected_count: int, bboxes: list[list[int]]) -> dict:
+    found = len(bboxes)
+    status = "PASS" if found >= expected_count else "FAIL"
+    return {
+        "check": "occupancy", "status": status, "metric": "actor_bbox_count",
+        "value": {"expected": expected_count, "found": found},
+        "threshold": expected_count,
+        "detail": f"found {found}/{expected_count} expected actor bbox(es)",
+    }
+
+
+def _floor_contact_manifest_check(actors: list[dict], actor_bboxes: list[tuple[dict, list[int]]],
+                                  manifest: dict) -> dict:
+    cfg = _manifest_check(manifest, "floor_contact")
+    tolerance = float(cfg.get("tolerance_px", cfg.get("tolerance", 6)))
+    entries = []
+    failures = []
+    for actor, bbox in actor_bboxes:
+        name = str(actor.get("name") or actor.get("id") or "?")
+        floor_y = _grid_expected_floor_y(actor, manifest)
+        if floor_y is None:
+            entries.append({"actor": name, "status": "SKIP", "detail": "no floor_y_px or grid projection"})
+            continue
+        bottom_y = float(bbox[3])
+        delta = bottom_y - floor_y
+        if abs(delta) <= tolerance:
+            status = "PASS"
+            detail = f"{name} grounded: bbox bottom {bottom_y:.1f}px within {tolerance:.1f}px of floor {floor_y:.1f}px"
+        else:
+            status = "FAIL"
+            mode = "floating above" if delta < 0 else "clipping below"
+            detail = f"{name} {mode}: bbox bottom {bottom_y:.1f}px vs floor {floor_y:.1f}px ({delta:+.1f}px)"
+            failures.append(detail)
+        entries.append({"actor": name, "status": status, "delta_px": round(delta, 2), "detail": detail})
+    if not actor_bboxes and actors:
+        return {
+            "check": "floor-contact", "status": "SKIP", "metric": "feet_vs_floor_px",
+            "value": [], "threshold": tolerance,
+            "detail": "no actor bbox available; occupancy check owns the missing-actor failure",
+        }
+    status = "FAIL" if failures else "PASS"
+    return {
+        "check": "floor-contact", "status": status, "metric": "feet_vs_floor_px",
+        "value": entries, "threshold": tolerance,
+        "detail": "; ".join(failures) if failures else f"{len(entries)} actor bbox(es) grounded",
+    }
+
+
+def _screen_scale_manifest_check(actor_bboxes: list[tuple[dict, list[int]]], manifest: dict,
+                                 frame_size: tuple[int, int] | None) -> dict:
+    cfg = _manifest_check(manifest, "screen_scale")
+    min_frac = float(cfg.get("min_height_frac", cfg.get("min", 0.04)))
+    max_frac = float(cfg.get("max_height_frac", cfg.get("max", 0.40)))
+    if frame_size is None:
+        return {
+            "check": "screen-scale", "status": "SKIP", "metric": "bbox_height_frac",
+            "value": [], "threshold": {"min": min_frac, "max": max_frac},
+            "detail": "frame dimensions unavailable; screen-scale skipped",
+        }
+    _, frame_h = frame_size
+    entries = []
+    failures = []
+    for actor, bbox in actor_bboxes:
+        name = str(actor.get("name") or actor.get("id") or "?")
+        height = max(0, bbox[3] - bbox[1])
+        frac = height / (frame_h or 1)
+        if min_frac <= frac <= max_frac:
+            status = "PASS"
+            detail = f"{name} height {height}px ({frac:.1%}) within {min_frac:.0%}-{max_frac:.0%}"
+        else:
+            status = "FAIL"
+            detail = f"{name} height {height}px ({frac:.1%}) outside {min_frac:.0%}-{max_frac:.0%}"
+            failures.append(detail)
+        entries.append({"actor": name, "status": status, "height_px": height,
+                        "height_frac": round(frac, 4), "detail": detail})
+    if not actor_bboxes:
+        return {
+            "check": "screen-scale", "status": "SKIP", "metric": "bbox_height_frac",
+            "value": [], "threshold": {"min": min_frac, "max": max_frac},
+            "detail": "no actor bbox available; occupancy check owns the missing-actor failure",
+        }
+    status = "FAIL" if failures else "PASS"
+    return {
+        "check": "screen-scale", "status": status, "metric": "bbox_height_frac",
+        "value": entries, "threshold": {"min": min_frac, "max": max_frac},
+        "detail": "; ".join(failures) if failures else f"{len(entries)} actor bbox(es) within scale band",
+    }
+
+
+def run_manifest_pregate(frame_png: str | Path, manifest_json: str | Path,
+                         baseline_png: str | Path | None = None) -> dict:
+    """Run the spec-facing deterministic visual pre-gate.
+
+    Manifest shape:
+        {
+          "actors": [{"name": "Hero", "expected_cell": [c, r], "screen_bbox": [x0,y0,x1,y1]}],
+          "grid": {"origin": [x,y], "cell_px": [w,h], "rows": N, "cols": M},
+          "floor_y_px": 80,
+          "checks": {"floor_contact": {"tolerance_px": 6}, ...}
+        }
+
+    Bboxes come either from actor.screen_bbox (preferred capture-harness path) or from
+    ``baseline_png`` diff clusters when the manifest omits bboxes.
+    """
+    manifest = json.loads(Path(manifest_json).read_text())
+    actors = manifest.get("actors", [])
+    if not isinstance(actors, list):
+        actors = []
+
+    checks: list[dict] = []
+    frame_check, frame_size = _frame_lit_manifest_check(frame_png, manifest)
+    checks.append(frame_check)
+
+    manifest_actor_bboxes = []
+    for actor in actors:
+        bbox = _bbox_from_actor(actor)
+        if bbox is not None:
+            manifest_actor_bboxes.append((actor, bbox))
+    manifest_bboxes = [bbox for _, bbox in manifest_actor_bboxes]
+    bbox_source = "manifest"
+    if baseline_png is not None:
+        try:
+            bboxes = _diff_bboxes(frame_png, baseline_png, manifest)
+        except Exception as exc:
+            bboxes = []
+            checks.append({
+                "check": "bbox-detection", "status": "FAIL", "metric": "baseline_diff",
+                "value": None, "threshold": None,
+                "detail": f"could not compute diff-vs-baseline actor bboxes: {exc}",
+            })
+        bbox_source = "baseline-diff"
+        actor_bboxes = list(zip(actors, bboxes))
+    else:
+        bboxes = manifest_bboxes
+        actor_bboxes = manifest_actor_bboxes
+
+    checks.append(_occupancy_manifest_check(len(actors), bboxes))
+    checks.append(_floor_contact_manifest_check(actors, actor_bboxes, manifest))
+    checks.append(_screen_scale_manifest_check(actor_bboxes, manifest, frame_size))
+
+    failed = [c for c in checks if c["status"] == "FAIL"]
+    verdict = "FAIL" if failed else "PASS"
+    return {
+        "schema": "worldos.visual_pregate.v1",
+        "verdict": verdict,
+        "bbox_source": bbox_source,
+        "frame": str(frame_png),
+        "manifest": str(manifest_json),
+        "baseline": str(baseline_png) if baseline_png else None,
+        "bboxes": [{"bbox": b, "source": bbox_source} for b in bboxes],
+        "checks": checks,
+        "failures": failed,
+        "summary": _manifest_summary(verdict, checks),
+    }
+
+
+def _manifest_summary(verdict: str, checks: list[dict]) -> str:
+    lines = [f"VISUAL PRE-GATE {verdict}"]
+    for c in checks:
+        lines.append(f"  [{c['status']:4s}] {c['check']:14s} {c.get('metric','')}={c.get('value')} :: {c['detail']}")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 def _load_actors(arg: Optional[str]) -> list[dict]:
@@ -948,15 +1296,33 @@ def _load_reel(arg: Optional[str]) -> Optional[list[dict]]:
 
 def main(argv: Optional[list[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Deterministic visual pre-gates for the visual-critic loop")
-    ap.add_argument("--render", required=True, help="path to the rendered PNG")
+    ap.add_argument("positional", nargs="*", metavar="ARG",
+                    help="spec CLI: <frame.png> <manifest.json>; legacy mode uses --render")
+    ap.add_argument("--render", help="legacy: path to the rendered PNG")
     ap.add_argument("--scenegrid", help="path to the *.scenegrid.json (enables G2/G3/G4)")
     ap.add_argument("--actors", help="measured actor boxes JSON or @file.json")
     ap.add_argument("--occupancy", help="rendered occupancy tint JSON or @file.json")
+    ap.add_argument("--baseline", help="spec CLI: empty-plate PNG for diff-vs-baseline actor bbox mode")
+    ap.add_argument("--json-out", help="write machine-readable JSON report to this path")
     ap.add_argument("--reel", help="motion-reel frames JSON or @file.json (enables G5); accepts a "
                                    "bare list of frame dicts OR a qa/motion_reel.py sidecar object "
                                    "with a top-level 'frames' key")
     ap.add_argument("--json", action="store_true", help="emit JSON")
     args = ap.parse_args(argv)
+
+    if args.positional:
+        if len(args.positional) != 2:
+            ap.error("spec CLI expects exactly: <frame.png> <manifest.json>")
+        frame_png, manifest_json = args.positional
+        res = run_manifest_pregate(frame_png, manifest_json, baseline_png=args.baseline)
+        if args.json_out:
+            Path(args.json_out).write_text(json.dumps(res, indent=2) + "\n")
+        if args.json or not args.json_out:
+            print(json.dumps(res, indent=2) if args.json else res["summary"])
+        return 2 if res["verdict"] == "FAIL" else 0
+
+    if not args.render:
+        ap.error("--render is required in legacy option mode")
 
     sg = load_scenegrid(args.scenegrid) if args.scenegrid else None
     actors = _load_actors(args.actors)
@@ -967,9 +1333,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         occ = None
     reel = _load_reel(args.reel) if args.reel else None
     res = run_pregates(args.render, scenegrid=sg, actors=actors, occupancy_tint=occ, reel=reel)
+    if args.json_out:
+        Path(args.json_out).write_text(json.dumps(res, indent=2) + "\n")
     if args.json:
         print(json.dumps(res, indent=2))
-    else:
+    elif not args.json_out:
         print(res["summary"])
     return 2 if res["verdict"] == "FLAG" else 0
 
