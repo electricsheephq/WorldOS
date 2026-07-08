@@ -5,49 +5,11 @@
   "band_ruler": "vc_9c5db9df967d",
   "excluded": {
     "bg2ee_fortress_party_tactical_02.jpg": "disclosed-defective control (baked-in UI chrome + wrong scene; 5/5 scorers flagged, scored 2-3/10 for reasons unrelated to painterly craft) — backdrop-cadence-20260708 market_square panel. A defective plate can never be a registered control.",
-    "bg2ee_forest_party_tactical_01.jpg": "disclosed-defective control (full gameplay screenshot with baked-in UI chrome — portrait rail, action bar, dialogue text box — not a UI-free plate crop, violating the calibration protocol's own 'comparable resolution/crop/UI-free' requirement) — found during the plate-style-regression audit (2026-07-09) camp_clearing_night re-panel: scorer flagged it 1/10 for reasons unrelated to painterly craft. It had been registered as an active control (tag outdoor_forest) despite this defect predating this audit — removed from `controls` below; a defective plate can never be a registered control."
+    "bg2ee_forest_party_tactical_01.jpg": "disclosed-defective control (full gameplay screenshot with baked-in UI chrome — portrait rail, action bar, dialogue text box — not a UI-free plate crop, violating the calibration protocol's own 'comparable resolution/crop/UI-free' requirement) — found during the plate-style-regression audit (2026-07-09) camp_clearing_night re-panel: scorer flagged it 1/10 for reasons unrelated to painterly craft. It had been registered as an active control (tag outdoor_forest) despite this defect predating this audit — removed from `controls` below; a defective plate can never be a registered control.",
+    "bg2ee_cavern_darkzone_lighting_03.jpg": "disclosed-defective control — SAME defect class, found by direct visual inspection during the plate-style-regression audit (2026-07-09), not by a scorer this round: full gameplay screenshot with baked-in UI chrome (portrait rail, action bar, on-screen quest-text overlay). Never actually used as a panel control yet, so no scorer had flagged it, but it fails the calibration protocol's UI-free requirement on inspection. Removed from `controls` below.",
+    "bg2ee_temple_combat_lighting_04.jpg": "disclosed-defective control — SAME defect class, found by direct visual inspection during the plate-style-regression audit (2026-07-09): full gameplay screenshot with baked-in UI chrome (portrait rail, action bar, floating combat-log text 'Lizard Man Elite did 10 damage to Gallus'). Removed from `controls` below. NOTE: with this entry, all 4 of the registry's baldurs-gate-2-ee controls (forest, fortress, cavern, temple) are now confirmed UI-chrome-contaminated and excluded — the whole BG2EE bucket needs re-sourcing (cropped, UI-free frames) before it can serve as a control again; the poe2_* and disco_* buckets were spot-checked (poe2_ruins_brazier_integration_01.jpg confirmed clean) and are not implicated by this finding, but were not exhaustively re-audited."
   },
   "controls": {
-    "control:visual:baldurs-gate-2-ee:bg2ee_cavern_darkzone_lighting_03": {
-      "class": "room",
-      "world": "reference",
-      "anchor": 8.0,
-      "band": [
-        6.8,
-        9.2
-      ],
-      "file": "bg2ee_cavern_darkzone_lighting_03.jpg",
-      "reference_frame": "/Volumes/LEXAR/WorldOS-Unity-spike/refs/bg2ee_cavern_darkzone_lighting_03.jpg",
-      "reference_frame_present": true,
-      "provenance": {
-        "game": "baldurs-gate-2-ee",
-        "tag": "dark_zone",
-        "source": "visual-critic calibration ref set (INTERNAL; qa/../refs/INDEX.md)",
-        "disguised_real_art": true
-      },
-      "band_ruler": "vc_9c5db9df967d",
-      "band_prompt_hash": "vf_5b2d008ae087"
-    },
-    "control:visual:baldurs-gate-2-ee:bg2ee_temple_combat_lighting_04": {
-      "class": "room",
-      "world": "reference",
-      "anchor": 8.0,
-      "band": [
-        6.8,
-        9.2
-      ],
-      "file": "bg2ee_temple_combat_lighting_04.jpg",
-      "reference_frame": "/Volumes/LEXAR/WorldOS-Unity-spike/refs/bg2ee_temple_combat_lighting_04.jpg",
-      "reference_frame_present": true,
-      "provenance": {
-        "game": "baldurs-gate-2-ee",
-        "tag": "combat_lit_interior",
-        "source": "visual-critic calibration ref set (INTERNAL; qa/../refs/INDEX.md)",
-        "disguised_real_art": true
-      },
-      "band_ruler": "vc_9c5db9df967d",
-      "band_prompt_hash": "vf_6abbaeba3143"
-    },
     "control:visual:disco-elysium:disco_cafeteria_bar_interior_03": {
       "class": "room",
       "world": "reference",
