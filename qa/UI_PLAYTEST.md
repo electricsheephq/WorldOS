@@ -104,13 +104,28 @@ macOS primitives instead of Playwright, and scores with the **same** `qa/ui_play
 
 ```sh
 qa/ui_playtest_player.sh --preflight            # check app + deps + swift helper + PERMISSIONS, no run
-qa/ui_playtest_player.sh <runid> <beats> <budget>   # seed → viewer → player app → DM loop → play → score
+qa/ui_playtest_player.sh <runid> <beats> <budget> [--force]   # seed → viewer → player app → DM loop → play → score
 ```
 
-- Boot recipe: `qa/seed_gfx_combat.py` mints `camp_gfxdemo01` → `viewer/server.py` serves
-  `/combat-surface` (move sink + chat wired) → `WorldOSPlayer.app` is launched with the env
-  launch-contract `WORLDOS_ENGINE_BASE_URL` / `WORLDOS_CAMPAIGN_ID` → the **unchanged** `run_duo` DM
-  loop resolves the player's moves → the native palette drives the window → teardown → score.
+- Boot recipe: the **scene-paired seed** (default `qa/seed_gfx_camp.py`, see the pairing table just
+  below) mints `camp_gfxdemo01` → `viewer/server.py` serves `/combat-surface` (move sink + chat
+  wired) → `WorldOSPlayer.app` is launched with the env launch-contract `WORLDOS_ENGINE_BASE_URL` /
+  `WORLDOS_CAMPAIGN_ID` → the **unchanged** `run_duo` DM loop resolves the player's moves → the
+  native palette drives the window → teardown → score.
+
+**SCENE ↔ FIXTURE pairing (#1441 Phase 2 — read this before changing the seed or the baked scene):**
+the Unity player build bakes exactly one scene's painted props into its plate, and the seed script's
+`scene_grid` impassable set must match that same scene or the painted props render walkable — this is
+precisely how the felt bug shipped: the player build baked the `camp_clearing_night` plate (fire pit,
+log seat, bedrolls, supply crates, boulders, tree line) while the harness kept seeding the older
+crypt-shaped grid (pillars + a sarcophagus) under the same `camp_gfxdemo01` campaign id, so none of the
+camp's painted scenery was pathing-solid and actors could stand *in* the campfire or *on* the log seat
+(the owner's "stacking on everything" report). `qa/ui_playtest_player.sh` now resolves the seed script
+from a `WORLDOS_PLAYER_SCENE` env var (`camp` default, or `crypt`) via a fixed pairing table —
+`camp` → `qa/seed_gfx_camp.py`, `crypt` → `qa/seed_gfx_combat.py` — and refuses to run with an explicit
+`WORLDOS_PLAYER_SEED_SCRIPT` override that doesn't match the requested scene unless you pass `--force`;
+when the player app's baked scene changes again, update the pairing table (or set
+`WORLDOS_PLAYER_SCENE=crypt`) rather than swapping the seed's grid contents in place.
 - Palette backing (`qa/native_palette/native_palette_server.js`): `screenshot` = `screencapture -l
   <windowid>` (window found via `CGWindowList`); `click(x,y)` = a `CGEvent` click at window-relative
   pixels mapped to global points (via `qa/native_palette/native_input.swift`, or `cliclick` if
