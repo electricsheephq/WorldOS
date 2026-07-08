@@ -1561,6 +1561,27 @@ class Consequence(_StrictModel):
     note: str = ""  # why / source (e.g. "the player let the cultist escape")
     fired: bool = False
     thread_id: str = ""  # non-empty => a recurring background "world beat" from a standing thread (world-sim); reschedules itself on tick
+    # #1405: the Quest this consequence is the recorded branch-outcome OF (add_consequence(quest_id=…)
+    # / a scheduled quest evolution). ADDITIVE + default "" == today. The authoring/capture cue's
+    # _quest_consequence_recorded checks this STRUCTURED link FIRST so a DM who captures a
+    # consequence in natural in-world prose (no literal quest title in the text) is correctly seen as
+    # captured — the lowercase-substring match on text/note is only a legacy/unlinked fallback.
+    quest_id: str = ""
+
+    @model_serializer(mode="wrap")
+    def _ser_omit_empty_quest_id(self, handler):
+        """OMIT ``quest_id`` from the dump when it is "" so a consequence with no quest link
+        serializes BYTE-IDENTICALLY to a pre-#1405 snapshot (which never carried the key). Same
+        narrowly-scoped guard as Location._ser_omit_none_scene_grid, and for the same reason: the
+        store's F08-2 dirty-skip byte-compares the candidate dump to disk so a pure load->save with
+        no mutation is a no-op that must NOT bump updated_at / steal the #640 live pointer. An
+        unconditional dump would emit ``"quest_id": ""`` for EVERY (incl. unlinked) consequence — a
+        key an un-migrated snapshot lacks — defeating the dirty-skip on any cross-campaign inspect.
+        A quest-LINKED consequence serializes ``quest_id`` normally; all other keys/order unchanged."""
+        data = handler(self)
+        if not self.quest_id:
+            data.pop("quest_id", None)
+        return data
 
 
 class ApprovalEvent(_StrictModel):

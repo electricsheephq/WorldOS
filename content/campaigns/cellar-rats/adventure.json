@@ -2,11 +2,23 @@
   "id": "cellar-rats",
   "title": "Cellar Rats",
   "ruleset": "SRD 5.2",
-  "level_range": [1, 2],
+  "level_range": [
+    1,
+    2
+  ],
   "session_length_minutes": 60,
   "premise": "The Sodden Crown is the only inn for a day's walk, and something has moved into its flooded cellar. The owner blames rats. The scratching in the walls is far too big for rats. Beneath the taproom, a crew of goblin scavengers has tunneled up out of the drowned undercity below — but they aren't raiders. They're fleeing something, and they brought the smell of it with them.",
   "hook": "A storm has stranded the party at the Sodden Crown for the night. Over a bowl of stew, the innkeeper Brakka admits her cellar has been 'rat-troubled' for a week — three barrels of ale fouled, a stable-hand bitten, and a sound at night like something dragging chains through water. She'll knock the whole night's lodging off the bill, and throw in coin, for anyone willing to go down and clear it before dawn.",
-  "themes": ["grounded low-level dungeon crawl", "a twist of unexpected mercy", "a monster you never quite see"],
+  "quest_objectives": [
+    "Descend into the flooded cellar and find the source of the innkeeper's 'rats'",
+    "Learn what the goblin scavengers are fleeing up from the drowned undercity",
+    "Make the Sodden Crown safe by dawn — clear the nest, or spare the goblins and seal what lurks below"
+  ],
+  "themes": [
+    "grounded low-level dungeon crawl",
+    "a twist of unexpected mercy",
+    "a monster you never quite see"
+  ],
   "voices": {
     "narrator-dm": "The Dungeon Master's narration voice. Used for boxed read-aloud text and scene description.",
     "companion-default": "The party's AI companion adventurer.",
@@ -22,26 +34,81 @@
       "voice_id": "companion-default",
       "race": "Half-Elf",
       "background": "Acolyte",
-      "classes": [{ "name": "Cleric", "level": 1 }],
-      "abilities": { "strength": 12, "dexterity": 12, "constitution": 14, "intelligence": 10, "wisdom": 16, "charisma": 11 },
+      "classes": [
+        {
+          "name": "Cleric",
+          "level": 1
+        }
+      ],
+      "abilities": {
+        "strength": 12,
+        "dexterity": 12,
+        "constitution": 14,
+        "intelligence": 10,
+        "wisdom": 16,
+        "charisma": 11
+      },
       "proficiency_bonus": 2,
       "armor_class": 16,
       "max_hp": 10,
       "hit_dice": "1d8",
       "hit_dice_remaining": 1,
-      "skill_proficiencies": ["Insight", "Medicine", "Religion", "Persuasion"],
-      "spells_known": ["Sacred Flame", "Guidance", "Cure Wounds", "Guiding Bolt", "Healing Word", "Bless"],
-      "spells_prepared": ["Cure Wounds", "Healing Word", "Guiding Bolt", "Bless"],
-      "spell_slots": { "1": { "maximum": 2, "used": 0 } },
+      "skill_proficiencies": [
+        "Insight",
+        "Medicine",
+        "Religion",
+        "Persuasion"
+      ],
+      "spells_known": [
+        "Sacred Flame",
+        "Guidance",
+        "Cure Wounds",
+        "Guiding Bolt",
+        "Healing Word",
+        "Bless"
+      ],
+      "spells_prepared": [
+        "Cure Wounds",
+        "Healing Word",
+        "Guiding Bolt",
+        "Bless"
+      ],
+      "spell_slots": {
+        "1": {
+          "maximum": 2,
+          "used": 0
+        }
+      },
       "personality": "A warm, quick-witted field medic who joined for the road and stayed for the people. Vesper fusses over everyone's scrapes, jokes about hazard pay, and keeps her chin up even when scared — and she IS scared, often, she just refuses to let it win. She argues for mercy and curiosity over the blade (she'll be the first to wonder aloud whether the 'monsters' are something sadder), patches the party up mid-fight with Healing Word, and will say so out loud when she thinks the player's plan is reckless — then back the play anyway, because that's what partners do.",
       "notes": "Healer/support. In combat she favors Healing Word on a downed ally, Guiding Bolt or Sacred Flame otherwise. The DM should give Vesper her own voiced line every scene and reach her combat decisions through companion_suggest_action.",
       "companion_dossier": {
         "wound": "a patient she couldn't save on the road — the reason she fusses so hard now",
-        "values": ["mercy", "compassion", "curiosity over the blade"],
-        "wants": ["to save the savable", "to be proven right that the monster is something sadder"],
-        "fears": ["freezing when someone needs her", "a cruelty she could have stopped"],
-        "approval_likes": ["show_mercy", "spare_a_frightened_foe", "tend_the_wounded", "ask_before_you_strike", "protect_the_helpless"],
-        "approval_dislikes": ["needless_cruelty", "kill_a_prisoner", "a_reckless_plan_that_risks_the_party", "torture"]
+        "values": [
+          "mercy",
+          "compassion",
+          "curiosity over the blade"
+        ],
+        "wants": [
+          "to save the savable",
+          "to be proven right that the monster is something sadder"
+        ],
+        "fears": [
+          "freezing when someone needs her",
+          "a cruelty she could have stopped"
+        ],
+        "approval_likes": [
+          "show_mercy",
+          "spare_a_frightened_foe",
+          "tend_the_wounded",
+          "ask_before_you_strike",
+          "protect_the_helpless"
+        ],
+        "approval_dislikes": [
+          "needless_cruelty",
+          "kill_a_prisoner",
+          "a_reckless_plan_that_risks_the_party",
+          "torture"
+        ]
       }
     }
   ],
@@ -100,7 +167,14 @@
       "armor_class": 15,
       "hit_dice": "2d6",
       "proficiency_bonus": 2,
-      "abilities": { "strength": 8, "dexterity": 14, "constitution": 10, "intelligence": 10, "wisdom": 8, "charisma": 8 }
+      "abilities": {
+        "strength": 8,
+        "dexterity": 14,
+        "constitution": 10,
+        "intelligence": 10,
+        "wisdom": 8,
+        "charisma": 8
+      }
     },
     {
       "id": "grett",
@@ -119,7 +193,14 @@
       "armor_class": 17,
       "hit_dice": "6d6",
       "proficiency_bonus": 2,
-      "abilities": { "strength": 10, "dexterity": 14, "constitution": 10, "intelligence": 10, "wisdom": 8, "charisma": 10 }
+      "abilities": {
+        "strength": 10,
+        "dexterity": 14,
+        "constitution": 10,
+        "intelligence": 10,
+        "wisdom": 8,
+        "charisma": 10
+      }
     }
   ],
   "locations": [
@@ -127,35 +208,50 @@
       "id": "loc-taproom",
       "name": "The Sodden Crown — Taproom",
       "description": "A low-beamed common room that smells of woodsmoke, wet wool, and old ale. Rain hammers the shutters. A peat fire keeps the dark at bay. The cellar trapdoor sits behind the bar, bolted, with a faint dragging-water sound rising through the boards when the room goes quiet.",
-      "connections": ["loc-cellar-stairs"],
+      "connections": [
+        "loc-cellar-stairs"
+      ],
       "notes": "Safe zone. Brakka and Dorn are here. The party can short rest, gear up, and gather information before descending. Returning here at the end is the natural place to resolve the adventure."
     },
     {
       "id": "loc-cellar-stairs",
       "name": "The Cellar Stairs",
       "description": "A steep run of damp stone steps descending into cold dark. Ale barrels are stacked along a brick landing halfway down. The lowest three steps vanish under standing black water. A taut cord, strung ankle-high across the landing and hung with bent tin cups, waits to announce anyone careless.",
-      "connections": ["loc-taproom", "loc-rat-run", "loc-crawlspace"],
+      "connections": [
+        "loc-taproom",
+        "loc-rat-run",
+        "loc-crawlspace"
+      ],
       "notes": "The EXPLORATION beat lives here: a Perception check to spot the goblin alarm-cord (trip-trap), and a navigation choice between the narrow flooded main passage (loc-rat-run) and a cramped dry crawlspace (loc-crawlspace)."
     },
     {
       "id": "loc-rat-run",
       "name": "The Rat-Run",
       "description": "A flooded storage passage. Shelves of ruined preserves loom out of knee-deep water; jars float and clink. Things move beneath the surface — and along the rafters, lean shapes with wet eyes track the intruders. The water tugs faintly, all of it draining toward a deeper dark at the far end.",
-      "connections": ["loc-cellar-stairs", "loc-sump"],
+      "connections": [
+        "loc-cellar-stairs",
+        "loc-sump"
+      ],
       "notes": "First COMBAT beat. The 'rats' Brakka complained of are real vermin swarming underfoot (atmosphere/hazard) plus the goblins' two scavenger-hounds — reflavored Wolves that den in the rafters. Difficult terrain (water) matters here."
     },
     {
       "id": "loc-crawlspace",
       "name": "The Dry Crawlspace",
       "description": "A cramped side-tunnel the goblins clawed open through a collapsed wall, just tall enough to stoop in. It is dry, close, and reeks of frightened goblin. A single scavenger has been left here as a lookout — small, cornered, and far more scared of what's below than of the party.",
-      "connections": ["loc-cellar-stairs", "loc-sump"],
+      "connections": [
+        "loc-cellar-stairs",
+        "loc-sump"
+      ],
       "notes": "The SOCIAL beat. Quill is here. This is the 'mercy' path: befriend her and the twist opens up, and the final fight can be turned into a parley. Players who skip the Rat-Run via the alarm-cord choice can arrive here first."
     },
     {
       "id": "loc-sump",
       "name": "The Sump",
       "description": "The cellar's flooded bottom: a brick pit that was once a drain, now clawed wide into a black throat of water. The goblin crew's salvage is heaped on the few dry stones — bolts of cloth, a strongbox, a child's wooden horse. The water here is deep and very still, and something far below makes it shiver in slow, wrong rings.",
-      "connections": ["loc-rat-run", "loc-crawlspace"],
+      "connections": [
+        "loc-rat-run",
+        "loc-crawlspace"
+      ],
       "notes": "Climax COMBAT beat AND the twist payoff. Grett and his crew make their stand here. The widened drain can be re-sealed (a STR/skill check or improvised barricade) to trap 'the Long Thing' below — the real resolution. The Long Thing is never fully seen: a tentacle, a ripple, a dragged chain. Do NOT stat it; it is the threat the goblins fled, not a fight to win."
     }
   ],
@@ -209,8 +305,16 @@
       "navigation_choice": {
         "prompt": "From the landing the cellar forks: the flooded main passage (left) or the cramped dry crawlspace (right).",
         "options": [
-          {"to": "loc-rat-run", "label": "The flooded main passage — wider, but something is moving in the water and the rafters.", "leads_to_scene": "scene-3-ratrun"},
-          {"to": "loc-crawlspace", "label": "The dry crawlspace — tight and stinking of goblin, but quiet.", "leads_to_scene": "scene-4-quill"}
+          {
+            "to": "loc-rat-run",
+            "label": "The flooded main passage — wider, but something is moving in the water and the rafters.",
+            "leads_to_scene": "scene-3-ratrun"
+          },
+          {
+            "to": "loc-crawlspace",
+            "label": "The dry crawlspace — tight and stinking of goblin, but quiet.",
+            "leads_to_scene": "scene-4-quill"
+          }
         ],
         "note": "Both routes converge on loc-sump (scene-5). The order the party meets the wolves vs. Quill simply flips based on this choice. Either way, scenes 3, 4, and 5 should all happen before the conclusion."
       },
@@ -233,7 +337,11 @@
       ],
       "encounter": {
         "monsters": [
-          {"name": "Wolf", "count": 2, "reflavor": "Scavenger-hounds: lean, half-feral curs the goblins keep, denning in the dry rafters above the flood."}
+          {
+            "name": "Wolf",
+            "count": 2,
+            "reflavor": "Scavenger-hounds: lean, half-feral curs the goblins keep, denning in the dry rafters above the flood."
+          }
         ],
         "tactics": "The wolves use Pack Tactics — both pile onto a single target to gain advantage, aiming to knock a PC prone (DC 11 STR save on a hit) and then gang the prone target. They will not stand and trade in the open water; they dart in from the rafters, bite, and a wounded wolf retreats to a beam to be re-flanked. If one wolf drops, the survivor may flee toward the sump and join Grett's stand in scene-5. Vermin underfoot are flavor only unless the DM needs to dial difficulty up.",
         "scaling": "Party of 1-2 or all-squishy: 1 Wolf. Party of 4+ or running hot: 2 Wolves + a vermin swarm hazard.",
@@ -270,7 +378,11 @@
       ],
       "encounter": {
         "monsters": [
-          {"name": "Goblin", "count": 1, "reflavor": "Quill — a starving goblin lookout, more refugee than raider. Only fights if cornered with no mercy offered."}
+          {
+            "name": "Goblin",
+            "count": 1,
+            "reflavor": "Quill — a starving goblin lookout, more refugee than raider. Only fights if cornered with no mercy offered."
+          }
         ],
         "tactics": "Quill does NOT want to fight. If threatened or attacked she uses Nimble Escape (Disengage/Hide as a bonus action) to flee toward the sump and raise the alarm rather than trade blows. If befriended she sheathes the shiv entirely and becomes a non-combatant guide. Killing her is trivially easy (HP 7) and is meant to feel like a moral choice, not a challenge.",
         "xp": 50,
@@ -301,7 +413,11 @@
       ],
       "encounter": {
         "monsters": [
-          {"name": "Goblin", "count": 3, "reflavor": "Grett One-Eye and two scavengers. Driftwood clubs (reflavored scimitars). Refugees making a desperate last stand, not gleeful raiders."}
+          {
+            "name": "Goblin",
+            "count": 3,
+            "reflavor": "Grett One-Eye and two scavengers. Driftwood clubs (reflavored scimitars). Refugees making a desperate last stand, not gleeful raiders."
+          }
         ],
         "tactics": "Grett holds the front, body-blocking the path to the salvage and his crew. The two scavengers use Nimble Escape to dart between the dry stones, throw sling-stones or stab, then Disengage as a bonus action and reposition behind cover — slippery, not suicidal. They fight hardest when cornered and will try to surrender or flee once two of the three are down (a perfect window to flip the fight into the parley/seal resolution mid-combat). A wolf that fled scene-3 joins on round 2. The Long Thing in the water is NOT a combatant — but the DM can spend it as escalating dread: each round the drain stays open, the rings widen, until on the round it's left open too long a chain-thick tendril breaks the surface and drags a goblin (never a PC) screaming under, hammering home WHY the drain must be sealed now.",
         "scaling": "Party of 1-2 or all-squishy: 2 Goblins (Grett + 1). Party of 4+ or running hot: 3 Goblins + the fled Wolf. Either way the real objective is the drain, not a body count.",
@@ -324,10 +440,26 @@
       "note": "Brakka pays 10 gp flat, or 35 gp if her attitude was won over in scene-1. Free lodging for the night regardless. Add the strongbox find below to the haul."
     },
     "loot": [
-      {"item": "Goblin scavenger strongbox", "contents": "23 sp, 14 cp, a tarnished silver locket (10 gp), and a waterlogged but legible river-trade ledger.", "note": "Found on the dry stones in the sump."},
-      {"item": "Potion of Healing", "rarity": "common", "note": "One vial, stoppered with wax, among the salvage — the goblins scavenged it from the drowned undercity and couldn't read the label. 2d4+2 HP."},
-      {"item": "A child's wooden horse", "value": "0 gp", "note": "Worthless, but Brakka recognizes it — it belonged to a family lost when the river rose. Returning it is a quiet roleplay beat and earns the party a permanent free welcome at the Crown."},
-      {"item": "Bundle of river-stained cloth (3 bolts)", "value": "6 gp", "note": "Sellable salvage if the party hauls it up."}
+      {
+        "item": "Goblin scavenger strongbox",
+        "contents": "23 sp, 14 cp, a tarnished silver locket (10 gp), and a waterlogged but legible river-trade ledger.",
+        "note": "Found on the dry stones in the sump."
+      },
+      {
+        "item": "Potion of Healing",
+        "rarity": "common",
+        "note": "One vial, stoppered with wax, among the salvage — the goblins scavenged it from the drowned undercity and couldn't read the label. 2d4+2 HP."
+      },
+      {
+        "item": "A child's wooden horse",
+        "value": "0 gp",
+        "note": "Worthless, but Brakka recognizes it — it belonged to a family lost when the river rose. Returning it is a quiet roleplay beat and earns the party a permanent free welcome at the Crown."
+      },
+      {
+        "item": "Bundle of river-stained cloth (3 bolts)",
+        "value": "6 gp",
+        "note": "Sellable salvage if the party hauls it up."
+      }
     ],
     "story_rewards": [
       "If Quill and/or Grett's crew were spared and led to safety, the goblins owe the party a life-debt — a future-hook ally living rough on the town's edge.",
@@ -344,10 +476,23 @@
       "combat_2": "scene-5-sump — 3x Goblin incl. Grett (bundled)."
     },
     "bundled_assets_used": {
-      "monsters": ["Wolf (x2, scene-3, reflavored scavenger-hounds)", "Goblin (x1 Quill scene-4; x3 Grett+crew scene-5)"],
-      "monsters_optional": ["Bandit (only if Brakka/Dorn are ever forced to fight)"],
-      "spells_in_play": ["Healing Word / Cure Wounds (companion stabilizing a downed PC)", "Fire Bolt / Magic Missile (ranged options across the flooded Rat-Run)", "Mage Armor (a wizard/sorcerer PC pre-buff before descending)"],
-      "conditions_in_play": ["Prone (Wolf knockdown, DC 11 STR)", "Grappled (optional vermin-swarm hazard)", "Frightened (DM may apply via the Long Thing's presence as a narrative dread, optional)"]
+      "monsters": [
+        "Wolf (x2, scene-3, reflavored scavenger-hounds)",
+        "Goblin (x1 Quill scene-4; x3 Grett+crew scene-5)"
+      ],
+      "monsters_optional": [
+        "Bandit (only if Brakka/Dorn are ever forced to fight)"
+      ],
+      "spells_in_play": [
+        "Healing Word / Cure Wounds (companion stabilizing a downed PC)",
+        "Fire Bolt / Magic Missile (ranged options across the flooded Rat-Run)",
+        "Mage Armor (a wizard/sorcerer PC pre-buff before descending)"
+      ],
+      "conditions_in_play": [
+        "Prone (Wolf knockdown, DC 11 STR)",
+        "Grappled (optional vermin-swarm hazard)",
+        "Frightened (DM may apply via the Long Thing's presence as a narrative dread, optional)"
+      ]
     },
     "pacing_for_one_hour": "Scene 1 ~10 min (hook + bargain), Scene 2 ~10 min (descent + trap + fork), Scene 3 ~12 min (wolf fight), Scene 4 ~10 min (Quill + twist), Scene 5 ~15 min (climax + seal), Conclusion ~3 min. Trim the optional vermin swarm and run Grett's crew at 2 goblins to stay inside the hour for a smaller party.",
     "originality_note": "This adventure is 100% original prose written for WorldOS and is shippable under CC-BY. It uses only SRD 5.2 mechanics and the bundled Goblin/Wolf/Bandit stat blocks. No published or copyrighted adventure text is reproduced."
