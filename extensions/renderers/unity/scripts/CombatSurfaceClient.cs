@@ -84,6 +84,40 @@ public class CombatSurfaceClient : MonoBehaviour
     // list of [x,y] incl. the from-cell). The glide follows THIS polyline; empty -> straight-line fallback.
     readonly System.Collections.Generic.List<int[]> _lastPath = new System.Collections.Generic.List<int[]>();
 
+    // #Phase3 WALKABILITY OVERLAY (browser-parity with screen-combat.jsx:721-802): a toggleable per-cell
+    // grid laid flat on the floor — faint gold inset on walkable cells, dark red-brown tint on
+    // impassable/occupied, brighter gold hover (red on a foe cell = attack affordance). Toggled with G;
+    // default ON when WORLDOS_PLAYTEST=1 (playtests), OFF otherwise (beauty captures = byte-identical
+    // scene). Reads ONLY surface data (_impassable/_occupied/_foeCells); a pure consumer, no range ring.
+    // Cheap + deterministic: ONE quad pool (rebuilt only when the grid extents change), colors mutated in
+    // place (no per-frame allocation), hover re-tinted only when the raycast cell changes.
+    [Header("Walkability overlay (#Phase3, browser-parity; G toggles)")]
+    bool _overlayOn = false;
+    GameObject _ovRoot;
+    GameObject[] _ovQuads;
+    Material[] _ovMats;
+    Color[] _ovBase;                 // per-cell resting color, so a hover can restore it
+    int _ovCols = 0, _ovRows = 0;
+    int _ovHover = -1;               // pool index of the hovered cell, -1 = none
+    Texture2D _cellTex;              // shared thin-border + faint-fill cell texture, built once
+    readonly System.Collections.Generic.HashSet<int> _foeCells = new System.Collections.Generic.HashSet<int>();
+    // browser-parity cell colors (mirror screen-combat.jsx:774-790's gold/red-brown affordance tints).
+    static readonly Color OvWalkRest  = new Color(0.96f, 0.82f, 0.48f, 0.18f); // faint gold inset, mostly transparent
+    static readonly Color OvBlockRest = new Color(0.30f, 0.12f, 0.08f, 0.55f); // dark red-brown tint (blocked/occupied)
+    static readonly Color OvWalkHover = new Color(1.00f, 0.90f, 0.55f, 0.34f); // brighter gold (hover a walkable cell)
+    static readonly Color OvFoeHover  = new Color(0.85f, 0.22f, 0.22f, 0.42f); // red (hover a foe cell — attack affordance)
+
+    // #Phase4 ADVISORY VISIBILITY: the engine's advisory move notes surfaced in the player. `movement_illegal`
+    // (over-budget / Speed-0 — the 5e "moved anyway" posture) shows a short fading note + amber ring pulse on
+    // the mover; `move_blocked` (an engine-side reject of a non-prevalidated click) surfaces its reason text
+    // the same way. Pure consumer: parsed from the /move response, engine posture unchanged.
+    [Header("Advisory (#Phase4)")]
+    public float AdvisoryHold = 3.2f;   // seconds the on-screen note holds before it finishes fading
+    string _advMsg = "";
+    float _advT = 0f;                    // fade clock; alpha = 1 - advT/AdvisoryHold
+    GUIStyle _advStyle;
+    int[] _lastPostCell = null;          // the cell the last /move POST targeted (for the pulse anchor)
+
     // #1441 named actor heights — ONE source of truth. These mirror paint_combat_v1.cs's #1418-calibrated
     // LIVE baked-scene heights (foe 4.2 / character 3.2), which is what this client repositions, so a
     // runtime-spawned actor matches its baked twin. NOTE: paint_combat_replay_v1.cs still carries a stale
@@ -120,7 +154,12 @@ public class CombatSurfaceClient : MonoBehaviour
         string envCampaign = System.Environment.GetEnvironmentVariable("WORLDOS_CAMPAIGN_ID");
         if (!string.IsNullOrEmpty(envCampaign)) CampaignId = envCampaign;
 
-        Debug.Log("[CSC] start: campaign=" + CampaignId + " url=" + ViewerUrl);
+        // #Phase3: the walkability overlay defaults ON in playtests (WORLDOS_PLAYTEST=1) and OFF otherwise,
+        // so beauty captures render a byte-identical scene. Built lazily on the first surface (needs grid
+        // extents); a default-on overlay appears after the first /combat-surface poll.
+        _overlayOn = System.Environment.GetEnvironmentVariable("WORLDOS_PLAYTEST") == "1";
+
+        Debug.Log("[CSC] start: campaign=" + CampaignId + " url=" + ViewerUrl + " overlay=" + _overlayOn);
         StartCoroutine(PollLoop());
     }
 
@@ -209,8 +248,9 @@ public class CombatSurfaceClient : MonoBehaviour
         // cellToWorld stays aligned to what paint_combat_v1 baked. Absent ⇒ the 14x11 default.
         if (s.grid != null && s.grid.cols > 0 && s.grid.rows > 0) { Cols = s.grid.cols; Rows = s.grid.rows; }
         // #1441: rebuild the occupied-cell set (every token's cell) for client-side click pre-validation.
-        _occupied.Clear();
-        foreach (var t in s.tokens) if (t != null) _occupied.Add(CellKey(t.x, t.y));
+        // #Phase3: also rebuild the foe-cell set so the overlay hover reads red on an attackable cell.
+        _occupied.Clear(); _foeCells.Clear();
+        foreach (var t in s.tokens) if (t != null) { int k = CellKey(t.x, t.y); _occupied.Add(k); if (t.team == "foe") _foeCells.Add(k); }
         var present = new System.Collections.Generic.HashSet<string>();
         foreach (var t in s.tokens)
         {
@@ -234,6 +274,122 @@ public class CombatSurfaceClient : MonoBehaviour
             foreach (var id in _spawned) if (!present.Contains(id)) stale.Add(id);
             foreach (var id in stale) Despawn(id);
         }
+        // #Phase3: keep the overlay in sync with the new surface — rebuild the quad pool if the grid
+        // extents changed (rest rooms are non-14x11), then repaint per-cell tints for the new occupancy.
+        if (_overlayOn) { EnsureOverlay(); RefreshOverlayColors(); }
+    }
+
+    // ---- #Phase3 walkability overlay (browser-parity affordances; pure surface-data consumer) ----
+
+    // Shared cell texture: a thin inset border (alpha 1) around a faint interior fill (alpha 0.7). A low-alpha
+    // gold tint then reads as "faint gold inset, mostly transparent"; a higher-alpha red-brown as a filled
+    // "blocked" tint — one texture serves both states, so every cell shares it and only the color differs.
+    Texture2D CellTex()
+    {
+        if (_cellTex != null) return _cellTex;
+        const int N = 64, border = 4;
+        _cellTex = new Texture2D(N, N, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+        var px = new Color[N * N];
+        for (int y = 0; y < N; y++) for (int x = 0; x < N; x++)
+        {
+            bool edge = x < border || x >= N - border || y < border || y >= N - border;
+            px[y * N + x] = new Color(1f, 1f, 1f, edge ? 1f : 0.7f);
+        }
+        _cellTex.SetPixels(px); _cellTex.Apply();
+        return _cellTex;
+    }
+
+    // Build the overlay only when it is on and the pool is missing or the grid extents changed. Rebuilds are
+    // rare (a room swap); the common poll just recolors the existing pool via RefreshOverlayColors.
+    void EnsureOverlay()
+    {
+        if (_ovQuads == null || _ovCols != Cols || _ovRows != Rows) BuildOverlay();
+    }
+
+    // One flat quad per cell under a single "TileOverlay" root (tidy hierarchy + one-call teardown). Quads sit
+    // slightly above the floor and just BELOW the actor AO/ring (queue 1900 < 1950) so shadows draw over tiles.
+    void BuildOverlay()
+    {
+        DestroyOverlay();
+        _ovCols = Cols; _ovRows = Rows;
+        int n = Mathf.Max(0, _ovCols * _ovRows);
+        _ovRoot = new GameObject("TileOverlay");
+        _ovQuads = new GameObject[n]; _ovMats = new Material[n]; _ovBase = new Color[n];
+        var tex = CellTex();
+        for (int r = 0; r < _ovRows; r++) for (int c = 0; c < _ovCols; c++)
+        {
+            int idx = r * _ovCols + c;
+            Vector3 p = CellToWorld(c, r);
+            var q = GameObject.CreatePrimitive(PrimitiveType.Quad); q.name = "Tile_" + c + "_" + r;
+            Object.DestroyImmediate(q.GetComponent<Collider>());
+            q.transform.SetParent(_ovRoot.transform, false);
+            q.transform.position = new Vector3(p.x, FloorY + 0.02f, p.z);
+            q.transform.localEulerAngles = new Vector3(90f, 0f, 0f);
+            q.transform.localScale = new Vector3(CellSize * 0.96f, CellSize * 0.96f, 1f);   // slight gutter -> grid read
+            // Sprites/Default (NOT Unlit/Transparent — the latter has no _Color, so a per-cell tint is
+            // ignored): it exposes _Color and alpha-blends. Transparent queue (>2000) so the opaque floor +
+            // actors draw first — tiles then blend over the floor and are depth-occluded by the actors above.
+            var m = new Material(Shader.Find("Sprites/Default")); m.mainTexture = tex; m.renderQueue = 2500;
+            var rend = q.GetComponent<Renderer>(); rend.sharedMaterial = m; rend.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            _ovQuads[idx] = q; _ovMats[idx] = m;
+        }
+        _ovHover = -1;
+    }
+
+    void DestroyOverlay()
+    {
+        if (_ovRoot != null) Object.Destroy(_ovRoot);
+        _ovRoot = null; _ovQuads = null; _ovMats = null; _ovBase = null; _ovCols = 0; _ovRows = 0; _ovHover = -1;
+    }
+
+    // Repaint every cell's resting tint from the current surface: dark red-brown when impassable OR occupied,
+    // faint gold otherwise. Preserves the active hover cell's highlight. No allocation (mutates Material.color).
+    void RefreshOverlayColors()
+    {
+        if (_ovMats == null) return;
+        for (int r = 0; r < _ovRows; r++) for (int c = 0; c < _ovCols; c++)
+        {
+            int idx = r * _ovCols + c;
+            if (idx >= _ovMats.Length || _ovMats[idx] == null) continue;
+            int key = CellKey(c, r);
+            Color baseCol = (_impassable.Contains(key) || _occupied.Contains(key)) ? OvBlockRest : OvWalkRest;
+            _ovBase[idx] = baseCol;
+            _ovMats[idx].color = (idx == _ovHover) ? HoverColor(c, r) : baseCol;
+        }
+    }
+
+    // Hover tint: red on a foe cell (attack affordance), brighter gold elsewhere — mirrors the browser.
+    Color HoverColor(int c, int r) { return _foeCells.Contains(CellKey(c, r)) ? OvFoeHover : OvWalkHover; }
+
+    // Toggle (G): first turn-on builds the pool lazily and repaints; turn-off just hides the root (kept for a
+    // cheap re-show). OFF == zero rendered quads == byte-identical scene.
+    void ToggleOverlay()
+    {
+        _overlayOn = !_overlayOn;
+        if (_overlayOn) { EnsureOverlay(); RefreshOverlayColors(); if (_ovRoot != null) _ovRoot.SetActive(true); }
+        else if (_ovRoot != null) _ovRoot.SetActive(false);
+    }
+
+    // Re-tint on hover from the SAME floor raycast the click uses. Only mutates on a cell change (cheap).
+    void UpdateOverlayHover()
+    {
+        if (_ovQuads == null) return;
+        int hover = -1;
+        var cam = Camera.main;
+        if (cam != null)
+        {
+            Ray ray = cam.ScreenPointToRay(Input.mousePosition);
+            if (Mathf.Abs(ray.direction.y) > 1e-4f)
+            {
+                float tt = (FloorY - ray.origin.y) / ray.direction.y;
+                if (tt >= 0 && WorldToCell(ray.origin + ray.direction * tt, out int c, out int r)) hover = r * _ovCols + c;
+            }
+        }
+        if (hover == _ovHover) return;
+        if (_ovHover >= 0 && _ovHover < _ovMats.Length && _ovMats[_ovHover] != null) _ovMats[_ovHover].color = _ovBase[_ovHover];
+        _ovHover = hover;
+        if (_ovHover >= 0 && _ovHover < _ovMats.Length && _ovMats[_ovHover] != null)
+            _ovMats[_ovHover].color = HoverColor(_ovHover % _ovCols, _ovHover / _ovCols);
     }
 
     // ---- #1436 runtime spawn path (mirrors paint_combat_v1.cs's editor spawn; runtime-safe loads) ----
@@ -799,8 +955,90 @@ public class CombatSurfaceClient : MonoBehaviour
 
     void Update()
     {
+        // #Phase4: advance the advisory fade clock regardless of poll/POST state.
+        if (!string.IsNullOrEmpty(_advMsg)) _advT += Time.deltaTime;
+        // #Phase3: overlay toggle (G) + hover run independent of the click gate below.
+        if (Input.GetKeyDown(KeyCode.G)) ToggleOverlay();
+        if (_overlayOn) UpdateOverlayHover();
         if (_busy) return;
         if (Input.GetMouseButtonDown(0)) HandleClick();
+    }
+
+    // #Phase4: a short, fading amber note near the top of the screen. IMGUI (no Canvas needed); alpha fades
+    // over AdvisoryHold. A drop shadow keeps it legible over the painterly board.
+    void OnGUI()
+    {
+        if (string.IsNullOrEmpty(_advMsg)) return;
+        float a = 1f - Mathf.Clamp01(_advT / AdvisoryHold);
+        if (a <= 0f) { _advMsg = ""; return; }
+        if (_advStyle == null)
+            _advStyle = new GUIStyle(GUI.skin.label) { fontSize = 20, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, wordWrap = true };
+        float w = Mathf.Min(720f, Screen.width - 40f), h = 64f;
+        var rect = new Rect((Screen.width - w) / 2f, Screen.height * 0.14f, w, h);
+        var prev = GUI.color;
+        GUI.color = new Color(0f, 0f, 0f, a * 0.6f);
+        GUI.Label(new Rect(rect.x + 2f, rect.y + 2f, rect.width, rect.height), _advMsg, _advStyle);
+        GUI.color = new Color(1f, 0.80f, 0.35f, a);
+        GUI.Label(rect, _advMsg, _advStyle);
+        GUI.color = prev;
+    }
+
+    void ShowAdvisory(string msg) { _advMsg = msg; _advT = 0f; }
+
+    // #Phase4: parse the engine's advisory notes from a raw /move response and surface them. `move_blocked`
+    // (a reject the engine evaluated) shows its own reason text; `movement_illegal` (over-budget / Speed-0,
+    // "moved anyway") shows a short canned note. Searched at ANY nesting because the combat arbiter wraps the
+    // move view. Absent -> silent (today's behavior). Then an amber ring pulse marks the mover's cell.
+    void HandleAdvisory(string rawJson)
+    {
+        object root;
+        try { root = Json.Parse(rawJson); } catch { return; }
+        var mb = FindDict(root, "move_blocked");
+        var mi = FindDict(root, "movement_illegal");
+        string msg = null;
+        if (mb != null) msg = (mb.ContainsKey("reason") ? mb["reason"] as string : null) ?? "move blocked";
+        else if (mi != null) msg = mi.ContainsKey("conditions") ? "can't move (Speed 0) — moved anyway" : "over movement budget — moved anyway";
+        if (string.IsNullOrEmpty(msg)) return;
+        ShowAdvisory(msg);
+        if (_lastPostCell != null) StartCoroutine(AmberPulse(_lastPostCell[0], _lastPostCell[1]));
+    }
+
+    // Depth-first search of the parsed JSON tree for the first dict-valued entry under `key`.
+    static System.Collections.Generic.Dictionary<string, object> FindDict(object node, string key)
+    {
+        if (node is System.Collections.Generic.Dictionary<string, object> d)
+        {
+            if (d.TryGetValue(key, out var v) && v is System.Collections.Generic.Dictionary<string, object> vd) return vd;
+            foreach (var kv in d) { var f = FindDict(kv.Value, key); if (f != null) return f; }
+        }
+        else if (node is System.Collections.Generic.List<object> l)
+        {
+            foreach (var e in l) { var f = FindDict(e, key); if (f != null) return f; }
+        }
+        return null;
+    }
+
+    // #Phase4: a brief expanding amber ring pulse on the mover's cell — reads "the DM disposed of this move"
+    // rather than a silent teleport. Cosmetic, self-destructs; mirrors FlashReject's throwaway-quad idiom.
+    IEnumerator AmberPulse(int c, int r)
+    {
+        Vector3 p = CellToWorld(c, r);
+        var q = GameObject.CreatePrimitive(PrimitiveType.Quad); q.name = "AdvisoryPulse"; Object.DestroyImmediate(q.GetComponent<Collider>());
+        q.transform.localEulerAngles = new Vector3(90f, 0f, 0f);
+        // Sprites/Default so the amber _Color tint actually applies (Unlit/Transparent ignores it); above
+        // the tile overlay (queue 2600 > 2500) so the pulse reads on top.
+        var m = new Material(Shader.Find("Sprites/Default")); m.mainTexture = RingTex(); m.renderQueue = 2600;
+        var rend = q.GetComponent<Renderer>(); rend.sharedMaterial = m; rend.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        float dur = 0.9f, t = 0f;
+        while (t < dur)
+        {
+            t += Time.deltaTime; float u = t / dur; float scale = Mathf.Lerp(2.2f, 3.4f, u);
+            q.transform.position = new Vector3(p.x, FloorY + 0.07f, p.z);
+            q.transform.localScale = new Vector3(scale, scale, 1f);
+            m.color = new Color(1f, 0.72f, 0.20f, Mathf.Clamp01(1f - u));
+            yield return null;
+        }
+        Object.Destroy(q);
     }
 
     // Minimal input: raycast the click onto the floor plane -> cell -> POST the existing /move kinds
@@ -844,6 +1082,7 @@ public class CombatSurfaceClient : MonoBehaviour
     IEnumerator PostMove(int x, int y)
     {
         _busy = true;
+        _lastPostCell = new[] { x, y };   // #Phase4: anchor the advisory pulse on the move's target cell
         yield return Post("{\"kind\":\"move_to_cell\",\"x\":" + x + ",\"y\":" + y + ",\"turn_token\":\"" + _turnToken + "\",\"campaign\":\"" + CampaignId + "\"}");
         _busy = false;
     }
@@ -871,6 +1110,9 @@ public class CombatSurfaceClient : MonoBehaviour
             // ApplySurf so the glide can follow the engine-confirmed route of the move just resolved.
             if (resp != null && resp.ok && resp.combat != null) { Debug.Log("[CSC] move ok -> re-render"); ParseSurfaceExtras(req.downloadHandler.text); ApplySurf(resp.combat); }
             else Debug.LogWarning("[CSC] move rejected: " + (resp != null ? resp.reason : "null"));
+            // #Phase4: surface any advisory note (movement_illegal / move_blocked) on BOTH accepted and
+            // rejected responses — a short fading toast + amber pulse so a long/blocked move reads clearly.
+            HandleAdvisory(req.downloadHandler.text);
         }
     }
 }
