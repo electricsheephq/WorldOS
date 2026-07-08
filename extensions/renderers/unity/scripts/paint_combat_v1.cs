@@ -491,17 +491,25 @@ if(frameActiveRoom){
 { var occRoot = root.ContainsKey("occluders") ? root["occluders"] as System.Collections.Generic.List<object> : null;
   int occN=0;
   if(occRoot!=null && occRoot.Count>0){
-    string occSrc =
-      "Shader \"WorldOS/OccluderDepth\" {\n"+
-      "  SubShader {\n"+
-      "    Tags { \"RenderType\"=\"Opaque\" \"Queue\"=\"Geometry-1\" }\n"+
-      "    Pass {\n"+
-      "      ColorMask 0\n      ZWrite On\n"+
-      "      CGPROGRAM\n      #pragma vertex vert\n      #pragma fragment frag\n      #include \"UnityCG.cginc\"\n"+
-      "      float4 vert(float4 v:POSITION):SV_POSITION { return UnityObjectToClipPos(v); }\n"+
-      "      fixed4 frag():SV_Target { return fixed4(0,0,0,0); }\n"+
-      "      ENDCG\n    }\n  }\n}\n";
-    var occShader=UnityEditor.ShaderUtil.CreateShaderAsset(occSrc);
+    // #1433: PREFER the committed WorldOS/OccluderDepth asset (Assets/Shaders/OccluderDepth.shader)
+    // so the occluder materials saved into the scene reference a build-compiled shader (a runtime
+    // ShaderUtil.CreateShaderAsset shader is NOT included in a standalone player build -> magenta
+    // blocks, #1433). Fall back to the identical runtime string when the asset is absent, so this
+    // capture flow stays byte-identical on any box that predates the committed shader.
+    var occShader=Shader.Find("WorldOS/OccluderDepth");
+    if(occShader==null){
+      string occSrc =
+        "Shader \"WorldOS/OccluderDepth\" {\n"+
+        "  SubShader {\n"+
+        "    Tags { \"RenderType\"=\"Opaque\" \"Queue\"=\"Geometry-1\" }\n"+
+        "    Pass {\n"+
+        "      ColorMask 0\n      ZWrite On\n"+
+        "      CGPROGRAM\n      #pragma vertex vert\n      #pragma fragment frag\n      #include \"UnityCG.cginc\"\n"+
+        "      float4 vert(float4 v:POSITION):SV_POSITION { return UnityObjectToClipPos(v); }\n"+
+        "      fixed4 frag():SV_Target { return fixed4(0,0,0,0); }\n"+
+        "      ENDCG\n    }\n  }\n}\n";
+      occShader=UnityEditor.ShaderUtil.CreateShaderAsset(occSrc);
+    }
     var occMat=new Material(occShader);
     System.Func<string,float> bandH=(b)=> b=="tall"?7.5f : (b=="low"?1.4f : 3.8f);
     foreach(var oo in occRoot){ var od=oo as System.Collections.Generic.Dictionary<string,object>; if(od==null) continue;
