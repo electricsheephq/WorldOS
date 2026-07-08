@@ -5,32 +5,41 @@
     "control:quest:baldurs-gate:the-emerald-grove": {
       "class": "quest",
       "world": "baldurs-gate",
-      "anchor": 4.0,
+      "anchor": 3.0,
       "band": [
-        2.8,
-        5.0
+        1.8,
+        4.2
       ],
-      "file": "control__quest__baldurs-gate__the-emerald-grove.json"
+      "file": "control__quest__baldurs-gate__the-emerald-grove.json",
+      "band_ruler": "ac_986d87bf235a",
+      "band_prompt_hash": "ph_5124567eebad",
+      "band_calibration": "cal-quest-20260707T224042: 3-scorer median (#1380 v2-surface re-derive)"
     },
     "control:quest:baldurs-gate:the-shadow-cursed-lands": {
       "class": "quest",
       "world": "baldurs-gate",
-      "anchor": 4.0,
+      "anchor": 2.8,
       "band": [
-        2.8,
-        5.0
+        1.6,
+        4.0
       ],
-      "file": "control__quest__baldurs-gate__the-shadow-cursed-lands.json"
+      "file": "control__quest__baldurs-gate__the-shadow-cursed-lands.json",
+      "band_ruler": "ac_986d87bf235a",
+      "band_prompt_hash": "ph_086d64659b72",
+      "band_calibration": "cal-quest-20260707T224042: 3-scorer median (#1380 v2-surface re-derive)"
     },
     "control:quest:baldurs-gate:who-rules-the-gate": {
       "class": "quest",
       "world": "baldurs-gate",
-      "anchor": 4.0,
+      "anchor": 3.4,
       "band": [
-        2.8,
-        5.0
+        2.2,
+        4.6
       ],
-      "file": "control__quest__baldurs-gate__who-rules-the-gate.json"
+      "file": "control__quest__baldurs-gate__who-rules-the-gate.json",
+      "band_ruler": "ac_986d87bf235a",
+      "band_prompt_hash": "ph_b2cd75db7c90",
+      "band_calibration": "cal-quest-20260707T224042: 3-scorer median (#1380 v2-surface re-derive)"
     },
     "control:npc:baldurs-gate:npc-jaheira": {
       "class": "npc",
@@ -40,7 +49,9 @@
         2.8,
         5.0
       ],
-      "file": "control__npc__baldurs-gate__npc-jaheira.json"
+      "file": "control__npc__baldurs-gate__npc-jaheira.json",
+      "band_ruler": "ac_986d87bf235a",
+      "band_prompt_hash": "ph_aee43a2ae1f6"
     },
     "control:npc:baldurs-gate:npc-minsc": {
       "class": "npc",
@@ -50,7 +61,9 @@
         2.8,
         5.0
       ],
-      "file": "control__npc__baldurs-gate__npc-minsc.json"
+      "file": "control__npc__baldurs-gate__npc-minsc.json",
+      "band_ruler": "ac_986d87bf235a",
+      "band_prompt_hash": "ph_5d79c7a451ed"
     },
     "control:npc:baldurs-gate:npc-astarion": {
       "class": "npc",
@@ -60,7 +73,9 @@
         2.8,
         5.0
       ],
-      "file": "control__npc__baldurs-gate__npc-astarion.json"
+      "file": "control__npc__baldurs-gate__npc-astarion.json",
+      "band_ruler": "ac_986d87bf235a",
+      "band_prompt_hash": "ph_d9916b5fc146"
     },
     "control:location:baldurs-gate:loc-basilisk-gate": {
       "class": "location",
@@ -70,7 +85,9 @@
         2.8,
         5.0
       ],
-      "file": "control__location__baldurs-gate__loc-basilisk-gate.json"
+      "file": "control__location__baldurs-gate__loc-basilisk-gate.json",
+      "band_ruler": "ac_986d87bf235a",
+      "band_prompt_hash": "ph_46c09638b16f"
     },
     "control:location:baldurs-gate:loc-bloomridge-market": {
       "class": "location",
@@ -80,7 +97,9 @@
         2.8,
         5.0
       ],
-      "file": "control__location__baldurs-gate__loc-bloomridge-market.json"
+      "file": "control__location__baldurs-gate__loc-bloomridge-market.json",
+      "band_ruler": "ac_986d87bf235a",
+      "band_prompt_hash": "ph_2c3d85e644f9"
     },
     "control:location:baldurs-gate:loc-counting-house": {
       "class": "location",
@@ -90,7 +109,9 @@
         2.8,
         5.0
       ],
-      "file": "control__location__baldurs-gate__loc-counting-house.json"
+      "file": "control__location__baldurs-gate__loc-counting-house.json",
+      "band_ruler": "ac_986d87bf235a",
+      "band_prompt_hash": "ph_e37bd42d582f"
     },
     "control:encounter:baldurs-gate:steel-watch-foundry-husks": {
       "class": "encounter",
@@ -100,7 +121,9 @@
         2.8,
         5.0
       ],
-      "file": "control__encounter__baldurs-gate__steel-watch-foundry-husks.json"
+      "file": "control__encounter__baldurs-gate__steel-watch-foundry-husks.json",
+      "band_ruler": "ac_986d87bf235a",
+      "band_prompt_hash": "ph_72dfc89197e4"
     },
     "control:encounter:baldurs-gate:undercity-drain-ambush": {
       "class": "encounter",
@@ -110,7 +133,9 @@
         2.8,
         5.0
       ],
-      "file": "control__encounter__baldurs-gate__undercity-drain-ambush.json"
+      "file": "control__encounter__baldurs-gate__undercity-drain-ambush.json",
+      "band_ruler": "ac_986d87bf235a",
+      "band_prompt_hash": "ph_f11974a1fdd9"
     }
   }
 }

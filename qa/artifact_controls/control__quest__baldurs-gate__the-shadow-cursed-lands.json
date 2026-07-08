@@ -12,9 +12,20 @@
   "payload": {
     "id": "the-shadow-cursed-lands",
     "name": "The State of the Shadow-Cursed Lands",
+    "description": "The State of the Shadow-Cursed Lands — a live world-thread whose outcome is genuinely in the balance: the party's choices decide which of 3 canon resolutions the world settles into, and each leaves a materially different world behind.",
     "objectives": [],
     "completed_objectives": [],
     "resolution_status": "canon-variant",
+    "resolution": {
+      "status": "canon-variant",
+      "evolves_to": "",
+      "callback_in_days": 0,
+      "wrap_up": [
+        "The Shadow Curse over Reithwin is breaking. Green creeps back across poisoned ground, the dead grow quiet, and a great healer has stayed behind to shepherd the land's slow recovery and the orphans resettling there.",
+        "The curse never lifted. Reithwin and the lands around Moonrise stay drowned in unnatural dark; the things that hunt there still hunt, and a single grim warden holds a line that cannot be won, only held.",
+        "The dark was contained but not cured: the Flaming Fist threw a cordon around the Shadow-Cursed Lands and call it a quarantine. Smugglers run the line, deserters hide past it, and the curse waits behind the wire."
+      ]
+    },
     "evolves_to": "",
     "consequences": [
       {
