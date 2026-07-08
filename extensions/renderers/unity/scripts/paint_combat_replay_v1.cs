@@ -105,16 +105,21 @@ brazier("BrazierL",4,1,true); brazier("BrazierR",9,1,false);
 var blobT=new Texture2D(256,256,TextureFormat.RGBA32,false); blobT.wrapMode=TextureWrapMode.Clamp; { var px=new Color[256*256]; float c=127.5f; for(int y=0;y<256;y++)for(int x=0;x<256;x++){ float d=Mathf.Clamp01(Mathf.Sqrt((x-c)*(x-c)+(y-c)*(y-c))/c); px[y*256+x]=new Color(0.02f,0.02f,0.03f,Mathf.Clamp01(Mathf.Pow(1f-d,0.9f))); } blobT.SetPixels(px); blobT.Apply(); }
 var ringT=new Texture2D(256,256,TextureFormat.RGBA32,false); ringT.wrapMode=TextureWrapMode.Clamp; { var px=new Color[256*256]; float c=127.5f; for(int y=0;y<256;y++)for(int x=0;x<256;x++){ float d=Mathf.Sqrt((x-c)*(x-c)+(y-c)*(y-c))/c; float a=(d>0.78f&&d<0.93f)?1f:0f; px[y*256+x]=new Color(1f,1f,1f,a); } ringT.SetPixels(px); ringT.Apply(); }
 
-// NOTE on animation strategy: the wave-1 cast are SKINNED Meshy/Generic rigs authored Y-up, whose
-// moveset clips bake a near-prone bind pose. Driving a live Animator (anim.Play+Update) in the editor's
-// SYNCHRONOUS multi-actor capture DESYNCS the GPU skin from the CPU bones (BakeMesh reads an upright
-// 12.9/16-tall pose, but the rendered mesh reverts to its prone bind — a per-actor render artifact that
-// reproduces only when a skinned actor is transform-mutated inside the capture loop; the proven static
-// renderer shows the same FBXs UPRIGHT). So this driver renders actors in their CLEAN UPRIGHT BIND POSE
-// (no live controller) and conveys each beat's "which animation" via TRANSFORM MOTION — lunge (swing),
-// knockback (flinch), topple (death) — plus VFX-at-cell + damage number + HP-bar. All engine-driven
-// and deterministic. (The FLAG in the report tracks the residual skinned-render artifact for a Play-mode
-// or bake-to-static follow-up; see build_combat_animator.cs / CombatActor.controller for the clip lane.)
+// NOTE on animation strategy: the wave-1 cast are SKINNED Meshy/Generic rigs authored Y-up. #1397
+// (probe-ladder CONFIRMED on GEX44, Assets/Editor/Probe1397.cs) settled what this note used to guess
+// at: the RAW BIND POSE (no clip sampled) genuinely IS near-prone (goblin.fbx world-bounds aspect
+// vert/horiz 0.67), NOT upright — the earlier "clean upright bind pose" claim here was wrong. The
+// embedded Idle clip sampled at t=0 measures upright (aspect 1.32), so spawn() now poses every actor
+// to Idle via a ONE-TIME SampleAnimation bake before grounding/measuring (see spawn(), below). What
+// stays true from before: driving a LIVE Animator (anim.Play+Update) in the editor's SYNCHRONOUS
+// multi-actor capture DESYNCS the GPU skin from the CPU bones (BakeMesh reads the posed bounds, but
+// the rendered mesh can revert to bind on a later frame) — that risk is about a controller TICKING
+// during the loop, not about sampling one static pose once at spawn, so it does not apply to the
+// Idle-pose fix. This driver still conveys each beat's "which animation" via TRANSFORM MOTION — lunge
+// (swing), knockback (flinch), topple (death) — plus VFX-at-cell + damage number + HP-bar, applied on
+// TOP of the Idle-posed mesh; beats never re-sample or re-drive a clip. All engine-driven and
+// deterministic. (build_combat_animator.cs / CombatActor.controller remain the separate Play-mode /
+// bake-to-static clip lane for a future locomotion pass, untouched by this fix.)
 
 // ---- actor spawner (spawn geometry IDENTICAL to paint_combat_v1.cs, PLUS an Animator so the actor
 //      can play verb clips). Returns the actor root GO so the beat player can pose/glide/flinch it.
@@ -123,14 +128,24 @@ System.Func<string,string,int,int,float,Color,string,GameObject> spawn=(fbxPath,
   var prefab=AssetDatabase.LoadAssetAtPath<GameObject>(fbxPath); if(prefab==null){ sb.AppendLine("MISSING "+fbxPath); missingActor=true; return null; }
   var old=GameObject.Find(nm); if(old!=null) UnityEngine.Object.DestroyImmediate(old);
   // Spawn in the PROVEN paint_combat_v1.cs form: direct FBX instantiate, -90 X stand-up, NO live Animator
-  // controller. WHY no controller: these Meshy/Generic rigs are authored Y-up and their clips BAKE a
-  // near-prone bind — and driving a skinned Animator synchronously (anim.Play+Update) in the editor
-  // capture DESYNCS the GPU skin from the CPU bones (BakeMesh reads an upright 12.9-tall pose, but the
-  // rendered mesh reverts to its prone bind — owner-observed "goblin on its side", verified vs the proven
-  // static renderer which shows BOTH actors UPRIGHT with no controller). So the actor renders in its clean
-  // upright bind pose and the beat is conveyed by TRANSFORM MOTION (lunge / knockback / topple, the
-  // CombatBeatDriver approach) + VFX + damage number + HP-bar — all of which read as motion, deterministically.
+  // COMPONENT/controller ticking during capture. #1397 (probe-ladder CONFIRMED on GEX44,
+  // Assets/Editor/Probe1397.cs): the prior assumption here — that the raw bind pose renders "clean and
+  // upright" — was WRONG. Measured: goblin.fbx's raw bind pose has world-bounds aspect (vert/horiz) 0.67
+  // (PRONE/TILTED); the SAME fbx's embedded Idle clip sampled at t=0 measures 1.32 (UPRIGHT). So every
+  // spawn now poses to its Idle clip via a ONE-TIME SampleAnimation bake, exactly like paint_combat_v1.cs's
+  // poseClipPath mechanism. This is NOT the risky case the old comment warned about: there is still NO
+  // live Animator component and NO Play()+Update() loop driving the skin during the synchronous
+  // multi-actor capture — SampleAnimation posts one deterministic edit-mode pose BEFORE the mesh is ever
+  // baked/measured/rendered, so the GPU/CPU skin desync (a LIVE controller ticking during the per-beat
+  // loop below) still cannot happen. Beats still convey their verb via TRANSFORM MOTION only (lunge /
+  // knockback / topple, the CombatBeatDriver approach) + VFX + damage number + HP-bar — never a second
+  // pose sample after spawn.
   var go=(GameObject)UnityEngine.Object.Instantiate(prefab); go.name=nm;
+  { // one-time Idle-pose bake at spawn (never re-sampled per beat) — mirrors paint_combat_v1.cs's poseClipPath.
+    AnimationClip _pick=null;
+    foreach(var _a in AssetDatabase.LoadAllAssetsAtPath(fbxPath)){ var _cl=_a as AnimationClip; if(_cl==null||_cl.name.StartsWith("__")) continue; if(_cl.name.ToLower().Contains("idle")){ _pick=_cl; break; } if(_pick==null) _pick=_cl; }
+    if(_pick!=null) _pick.SampleAnimation(go, 0f);
+  }
   go.transform.rotation=Quaternion.Euler(-90f, cam.transform.eulerAngles.y+180f, 0f);
   var rends=go.GetComponentsInChildren<Renderer>(); foreach(var r in rends){ r.enabled=true; r.shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.On; r.receiveShadows=true;
     // Force the skinned mesh to re-skin from its LIVE bone transforms on every render + regardless of
@@ -295,7 +310,7 @@ System.Action<string> capture=(label)=>{
   System.Func<object,string> _jesc=(o)=>{ var st=o==null?"":o.ToString(); return st.Replace("\\","\\\\").Replace("\"","\\\"").Replace("\n"," ").Replace("\r"," "); };
   var msb=new System.Text.StringBuilder();
   msb.Append("{\n  \"frame_w\":"+W+", \"frame_h\":"+Hh+",\n");
-  msb.Append("  \"checks\": {\"floor_contact\": {\"tolerance_px\": 8}, \"screen_scale\": {\"min_height_frac\":0.03,\"max_height_frac\":0.45}},\n");
+  msb.Append("  \"checks\": {\"floor_contact\": {\"tolerance_px\": 8}, \"screen_scale\": {\"min_height_frac\":0.03,\"max_height_frac\":0.45}, \"pose_uprightness\": {\"min_aspect_ratio\":1.3}},\n");
   msb.Append("  \"actors\": [\n");
   for(int i=0;i<_repSidecar.Count;i++){ var d=_repSidecar[i];
     var lc=(int[])d["logical_cell"]; var rc2=(int[])d["render_cell"];

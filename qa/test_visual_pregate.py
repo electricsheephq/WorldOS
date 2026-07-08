@@ -24,7 +24,11 @@ import visual_pregate as vp  # noqa: E402
 
 FRAME_SIZE = (100, 100)
 FLOOR_Y = 80
-NORMAL_BBOX = [40, 50, 55, FLOOR_Y]
+NORMAL_BBOX = [40, 50, 55, FLOOR_Y]  # 15px wide x 30px tall (aspect 2.0) — standing humanoid silhouette
+# #1397: a PRONE/tilted actor at the SAME floor cell + SAME screen-scale band as NORMAL_BBOX, but
+# wide+short instead of narrow+tall (aspect 0.24) — isolates the pose-uprightness defect from
+# floor-contact/screen-scale (both still PASS for this bbox; only pose-uprightness should FAIL).
+PRONE_BBOX = [20, 68, 70, FLOOR_Y]
 
 
 def _chunk(tag: bytes, data: bytes) -> bytes:
@@ -88,6 +92,7 @@ def _manifest(path: Path, *, bbox: list[int] | None = NORMAL_BBOX) -> Path:
             },
             "floor_contact": {"tolerance_px": 4},
             "screen_scale": {"min_height_frac": 0.04, "max_height_frac": 0.40},
+            "pose_uprightness": {"min_aspect_ratio": 1.3},
             "diff": {"threshold": 20, "min_area_px": 8},
         },
     }))
@@ -171,6 +176,35 @@ def test_missing_manifest_bbox_fails_occupancy(tmp_path):
     assert occupancy["status"] == "FAIL"
     assert occupancy["value"]["found"] == 0
     assert occupancy["value"]["expected"] == 1
+
+
+def test_prone_actor_fails_pose_uprightness(tmp_path):
+    # #1397 red-first: the binding felt defect — a skinned actor rendered prone/tilted reads as a
+    # wide/short bbox even though it stands at the correct cell/scale (floor-contact + screen-scale
+    # PASS in isolation; only the new pose check should catch the geometry).
+    frame = _write_frame(tmp_path / "prone.png", bbox=PRONE_BBOX)
+    manifest = _manifest(tmp_path / "manifest.json", bbox=PRONE_BBOX)
+
+    rc, report = _run_cli(tmp_path, frame, manifest)
+
+    assert rc != 0
+    assert report["verdict"] == "FAIL"
+    pose = _check(report, "pose-uprightness")
+    assert pose["status"] == "FAIL"
+    assert "prone" in pose["detail"].lower()
+    assert _check(report, "floor-contact")["status"] == "PASS"
+    assert _check(report, "screen-scale")["status"] == "PASS"
+
+
+def test_upright_actor_passes_pose_uprightness(tmp_path):
+    frame = _write_frame(tmp_path / "upright.png", bbox=NORMAL_BBOX)
+    manifest = _manifest(tmp_path / "manifest.json", bbox=NORMAL_BBOX)
+
+    rc, report = _run_cli(tmp_path, frame, manifest)
+
+    assert rc == 0
+    assert report["verdict"] == "PASS"
+    assert _check(report, "pose-uprightness")["status"] == "PASS"
 
 
 def test_diff_vs_baseline_detects_grounded_actor_bbox(tmp_path):

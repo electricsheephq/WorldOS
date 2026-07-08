@@ -227,14 +227,19 @@ foreach(var o in toks){ var t=o as System.Collections.Generic.Dictionary<string,
   string kind=foe?"monster":"character";
   var aref=resolveAsset(slugify(nm),kind); string fbx=aref[0]; string alb=aref[1]; string anim=aref.Length>2?aref[2]:"";
   float h=foe?4.2f:5.0f; Color ring=foe?new Color(1f,0.13f,0.10f,1f):new Color(0.4f,0.95f,1f,1f);
-  // poseClip: pass the fbx to auto-pose to a NEUTRAL IDLE (spawn prefers an 'idle' clip). Left null for the current
-  // Meshy placeholder cast whose idle/bind clips are non-neutral (crouch/lean) + inflate the height-normalized scale;
-  // the bind pose is the most PROPORTIONATE placeholder here. A properly-rigged demo-cast actor (owner-greenlit) with
-  // a clean idle should pass its fbx/clip so this poses it standing. (Grounding via BakeMesh is correct either way.)
-  // W1 (#1318): AT REST, sample idle from the registry's OWN anim_ref (e.g. hero@moveset.fbx) when the asset has
-  // one, so a rigged demo-cast actor settles into its real idle clip instead of the combat bind pose. Assets with
-  // no registry anim_ref (the static hero.fbx entry documents none) fall back to the prior fbx-as-poseClip.
-  var pos=spawn(fbx,alb,restMode?(string.IsNullOrEmpty(anim)?fbx:anim):null,cx,cy,h,ring,"Actor_"+tid);
+  // poseClip: pass the fbx to auto-pose to a NEUTRAL IDLE (spawn prefers an 'idle' clip).
+  // #1397 (probe-ladder CONFIRMED on GEX44, Assets/Editor/Probe1397.cs): the RAW BIND POSE this
+  // combat path previously rendered (poseClipPath left null, on the theory bind was "the most
+  // proportionate placeholder") measures PRONE/TILTED — goblin.fbx world-bounds aspect (vert/horiz)
+  // 0.67 — while the SAME fbx's embedded Idle clip sampled at t=0 measures UPRIGHT (aspect 1.32).
+  // That prior assumption is falsified by the measurement, so combat mode now poses to Idle on
+  // EVERY spawn, same as restMode already did. This is a ONE-TIME SampleAnimation bake at spawn (no
+  // live Animator component, no Update() loop), so the flagged GPU/CPU skin desync from driving a
+  // live controller during a synchronous multi-actor capture (paint_combat_replay_v1.cs's note on
+  // this) does not apply — grounding via BakeMesh re-measures the POSED bounds either way.
+  // W1 (#1318): AT REST, prefer the registry's OWN anim_ref (e.g. hero@moveset.fbx) over the mesh
+  // fbx when the asset has one, so a rigged demo-cast actor settles into its real idle clip.
+  var pos=spawn(fbx,alb,(restMode && !string.IsNullOrEmpty(anim))?anim:fbx,cx,cy,h,ring,"Actor_"+tid);
   if(nm!=null) posByName[nm]=pos; spawned++; celldbg+=" "+nm+"("+team+")@"+cx+","+cy;
 }
 if(missingActor){ sb.AppendLine("ABORT capture — a required actor prefab was missing (no PNG written)"); return sb.ToString(); }

@@ -1197,6 +1197,52 @@ def _screen_scale_manifest_check(actor_bboxes: list[tuple[dict, list[int]]], man
     }
 
 
+def _pose_uprightness_manifest_check(actor_bboxes: list[tuple[dict, list[int]]],
+                                     manifest: dict) -> dict:
+    """G7 / #1397 pose-uprightness pre-gate — a torso-verticality proxy from each actor's bbox
+    ASPECT RATIO (height/width). This is the "binding felt defect" tripwire: a skinned actor
+    rendered PRONE/TILTED (bind-pose desync, missing Animator default state, or an import-axis
+    mismatch — see the #1397 probe ladder) casts a WIDE, SHORT silhouette (aspect << 1) instead
+    of the TALL, NARROW one a standing humanoid casts under the locked dimetric camera (aspect
+    ~2+ — e.g. paint_combat_replay_v1.cs's screen_bbox synthesis: half-width = 0.22 * px_height
+    => aspect ~2.27). Deliberately a bbox-shape proxy, not a skeletal torso-vector: it needs no
+    new Unity-side manifest fields (screen_bbox is already required) and is exercised by the SAME
+    actor_bboxes (manifest-declared OR baseline-diff-detected) floor-contact/screen-scale use, so
+    it stays truthful to real pixel geometry when bboxes come from the baseline-diff path.
+    Mirrors floor-contact/screen-scale's structure exactly (per-actor entries + failures list,
+    SKIP when no bboxes are available)."""
+    cfg = _manifest_check(manifest, "pose_uprightness")
+    min_aspect = float(cfg.get("min_aspect_ratio", cfg.get("min", 1.3)))
+    entries = []
+    failures = []
+    for actor, bbox in actor_bboxes:
+        name = str(actor.get("name") or actor.get("id") or "?")
+        width = max(1e-6, bbox[2] - bbox[0])
+        height = max(0.0, bbox[3] - bbox[1])
+        aspect = height / width
+        if aspect >= min_aspect:
+            status = "PASS"
+            detail = f"{name} upright: bbox aspect {aspect:.2f} (h/w) >= {min_aspect:.2f}"
+        else:
+            status = "FAIL"
+            detail = (f"{name} prone/tilted: bbox aspect {aspect:.2f} (h/w) < {min_aspect:.2f} "
+                      "(wide/short silhouette, not a standing humanoid)")
+            failures.append(detail)
+        entries.append({"actor": name, "status": status, "aspect_ratio": round(aspect, 3), "detail": detail})
+    if not actor_bboxes:
+        return {
+            "check": "pose-uprightness", "status": "SKIP", "metric": "bbox_aspect_ratio",
+            "value": [], "threshold": min_aspect,
+            "detail": "no actor bbox available; occupancy check owns the missing-actor failure",
+        }
+    status = "FAIL" if failures else "PASS"
+    return {
+        "check": "pose-uprightness", "status": status, "metric": "bbox_aspect_ratio",
+        "value": entries, "threshold": min_aspect,
+        "detail": "; ".join(failures) if failures else f"{len(entries)} actor bbox(es) upright",
+    }
+
+
 def run_manifest_pregate(frame_png: str | Path, manifest_json: str | Path,
                          baseline_png: str | Path | None = None) -> dict:
     """Run the spec-facing deterministic visual pre-gate.
@@ -1206,7 +1252,7 @@ def run_manifest_pregate(frame_png: str | Path, manifest_json: str | Path,
           "actors": [{"name": "Hero", "expected_cell": [c, r], "screen_bbox": [x0,y0,x1,y1]}],
           "grid": {"origin": [x,y], "cell_px": [w,h], "rows": N, "cols": M},
           "floor_y_px": 80,
-          "checks": {"floor_contact": {"tolerance_px": 6}, ...}
+          "checks": {"floor_contact": {"tolerance_px": 6}, "pose_uprightness": {"min_aspect_ratio": 1.3}, ...}
         }
 
     Bboxes come either from actor.screen_bbox (preferred capture-harness path) or from
@@ -1247,6 +1293,7 @@ def run_manifest_pregate(frame_png: str | Path, manifest_json: str | Path,
     checks.append(_occupancy_manifest_check(len(actors), bboxes))
     checks.append(_floor_contact_manifest_check(actors, actor_bboxes, manifest))
     checks.append(_screen_scale_manifest_check(actor_bboxes, manifest, frame_size))
+    checks.append(_pose_uprightness_manifest_check(actor_bboxes, manifest))
 
     failed = [c for c in checks if c["status"] == "FAIL"]
     verdict = "FAIL" if failed else "PASS"
