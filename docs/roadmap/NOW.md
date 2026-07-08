@@ -4,7 +4,7 @@
 > a bootstrapping agent reads after OPERATIONS.md. Keep it under a screen. History belongs in
 > git, not here.
 
-_Last updated: 2026-07-08 (UTC) — driver installation session._
+_Last updated: 2026-07-08 (UTC) — driver live; charter #1386 active; bridge recovered._
 
 ## Active sprint
 
@@ -13,13 +13,11 @@ _Last updated: 2026-07-08 (UTC) — driver installation session._
   engine-release bar). S3 charter = #1310. S4-S10: charters not yet written (writing the next
   one from PRODUCT-ROADMAP.md is queue work, not a stop).
 - **Act II:** W1-W4 + HV1-HV5 merged; W5 (Unity player tier, #1322) remains — box lane.
-  The Act II successor charter (live box lane: #1284 → rendered-rest-demo → W5a) is being filed
-  as part of the 2026-07-08 gap-fix batch.
+  ACTIVE charter: **#1386** (Rendered Felt: #1284 → rendered-rest-demo → W5a → HV follow-ups).
 
 ## Live lanes
 
-- **#1284 actor grounding v2** — fix committed on `fix/actor-grounding-v2` (377f5caf); box
-  validation (MenuItem wrapper → capture → visual_pregate floor-contact) in flight → PR.
+- **#1284 actor grounding v2** — PR #1392 open; deterministic floor-contact PASS (−55px → 0px); live-frame acceptance capture in flight (bridge re-armed per BOX.md recovery).
 - **Next box lanes (in order):** rendered rest-scene demo (the real visual bar) → W5a player
   build (packet on #1322).
 - **Flywheel:** nightly harvest accumulates; extractor quality pass 2 targets the 3.9→4.0 quest
