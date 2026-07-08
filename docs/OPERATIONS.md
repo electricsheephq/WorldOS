@@ -14,10 +14,22 @@
    these silently; park `blocked/needs-human` and take other work).
 3. **Find the active work**: `gh issue list --label sprint-charter --state open` — charters are
    the live sprints. Each charter lists ORDERED issues with `lane:*` labels, the runnable gate,
-   and the invariant checklist. Claim an unclaimed issue in your lane (comment on it), or if no
-   charter is active, the roadmap's sequencing section says which sprint is next — author its
-   charter from the roadmap section using the existing charters as the template. Never claim an
-   issue outside an open sprint-charter's listed lanes, even if it matches your lane label.
+   and the invariant checklist. Claim an unclaimed issue in your lane (comment on it) — **`[EPIC]`
+   issues named in the ACTIVE charter's ordered list ARE claimable directly** (the live lane must
+   stay claimable; do not treat "epic" as a reason to skip it). If no charter is active, the
+   roadmap's sequencing section says which sprint is next — **writing that next charter from
+   `docs/roadmap/PRODUCT-ROADMAP.md` §S(N+1) is the next task, never a stop**, using the existing
+   charters as the template. Never claim an issue outside an open sprint-charter's listed lanes,
+   even if it matches your lane label. `docs/ACTIVE-GOAL.md` is the standing any-agent driver and
+   `docs/roadmap/NOW.md` is the you-are-here surface — read both alongside this page (both land in
+   PR #1385; reference by path regardless of merge status).
+
+## Merging (read this — auto-merge hangs)
+
+Repo-wide GitHub auto-merge HANGS on ~every PR (root cause open — see #1389; symptom: auto-merge
+armed + checks green but the merge never fires). **Procedure:** once checks are green and review threads are resolved, merge directly
+— `gh pr merge <n> --admin --squash`. Never rely on `--auto` alone. Never push-and-abandon a PR:
+shepherd every PR you open to merged (or explicitly parked/blocked) before ending your turn.
 
 ## The loop (per issue)
 
@@ -28,6 +40,10 @@ resolved; validate bot findings against source before acting — they are hypoth
 Full detail: the `worldos-dev` skill / `WorldOS-RUNBOOK.md`. Heavy QA runs on the support VM
 (`WorldOS-GUI-RUNBOOK.md`); box/Unity work follows `extensions/renderers/unity/CANONICAL.md`
 (read it FIRST — canonical state lives there) + the GUI runbook's box discipline.
+
+**Delegation notes:** agents working in the canonical checkout (not a worktree) MUST `git checkout
+main` before finishing — two measured pull-aborts came from a session ending stranded on a feature
+branch, which then failed the next agent's `git pull` on that checkout.
 
 ## Run economics — match the instrument to the question
 

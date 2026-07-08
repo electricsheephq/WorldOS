@@ -283,8 +283,9 @@ release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI s
 > same heavy part-B sweep AND a Unity/visual renderer the 32 GB VM could not host — prefer it for new heavy
 > sweeps. This section stays as the reference for the lane mechanics + a fallback host.
 
-- Target: owner-provided **32GB support VM** (`support-vm-1`); connection/auth details live in local
-  operator-only runbooks/evidence, not tracked repo docs.
+- Target: owner-provided **32GB support VM** (`support-vm-1`); connection: `root@178.104.123.213`,
+  key `~/.openclaw/secrets/cloud-deploy-key`, repo `/root/worldos-qa/WorldOS`. Further connection/auth
+  detail lives in local operator-only runbooks/evidence, not tracked repo docs.
 - Do not assume it is ready for Codex runs until credentials/config are intentionally installed and verified.
   The default support-VM persona lane is Codex DM plus Codex UI player; Claude is only required when
   the preflight is run with `--provider claude` or `--player-agent claude`. The Codex lane requires
