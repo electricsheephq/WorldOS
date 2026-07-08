@@ -126,6 +126,41 @@ class LogFramesAndMainTests(unittest.TestCase):
         # a frame with no surviving dims omits the visual_dims_json key entirely.
         self.assertNotIn("visual_dims_json", ctl_row)
 
+    def test_log_frames_non_rest_scene_writes_row_and_preserves_arbitrary_dims(self):
+        """#1415 / RUNBOOK-INDEX gap 3: verify the NON-rest write path. The row is written
+        unconditionally regardless of scene (add_run always fires) — that part was never broken.
+        The real bug: REST_LENSES-only filtering silently dropped every dim key for a non-rest
+        scene, so visual_dims_json came back empty even though the row existed. A non-rest scene
+        (this generic logger reused by e.g. a combat-anchored panel) must both log the row AND
+        keep its own (non-rest) lens keys."""
+        captured = {}
+
+        def _fake_add_run(run_id, **kw):
+            captured[run_id] = kw
+
+        import sys as _sys
+        import types as _types
+        stub = _types.ModuleType("scores_db")
+        stub.add_run = _fake_add_run  # type: ignore[attr-defined]
+        _sys.modules["scores_db"] = stub
+        try:
+            panel = {
+                "scene": "combat:crypt-ambush", "backend": "unity-cl", "round": 1,
+                "pregate": "PASS",
+                "frames": [
+                    {"id": "f1", "kind": "ours", "overall": 6.0,
+                     "dims": {"tactical_readability": 7, "attack_arc": None}},
+                ],
+            }
+            n = frp._log_frames(panel, "felt-combat", None)
+        finally:
+            del _sys.modules["scores_db"]
+        self.assertEqual(n, 1)  # the row IS written for a non-rest scene
+        row = next(iter(captured.values()))
+        self.assertEqual(row["visual_scene"], "combat:crypt-ambush")
+        # non-rest lens key survives (it is NOT one of the 5 REST_LENSES); the None dim is dropped.
+        self.assertEqual(row["visual_dims_json"], {"tactical_readability": 7})
+
     def test_log_frames_uses_each_frames_own_scene_and_disambiguates_same_id_rows(self):
         """Thread PRRT_...G9Xr: a combined panel (tavern + church rows in one panel) must log
         each row under ITS OWN scene, not the panel-level scene — otherwise every row lands as

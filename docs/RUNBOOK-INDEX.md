@@ -49,5 +49,16 @@
 ## Known wiring gaps (tracked)
 1. ~~**Manual-append bucket** (duo, sprint, sweep, app gate, RRI)~~ — CLOSED #1414: each runner now
    self-persists via `qa/scores_persist.py` (fail-loud; CONTAMINATED marker on a QUOTA/INFRA abort).
-2. **Ledger unification**: artifacts + library_metrics tables don't render into scores_ledger.md.
-3. Half-wired: motion_reel capture stub; felt_rest_panel non-rest write path; stale `--layered` naming.
+2. ~~**Ledger unification**: artifacts + library_metrics tables don't render into scores_ledger.md.~~
+   — CLOSED #1415: `scores_db.py --render` now folds an "Artifact panels" roll-up (per-panel_id,
+   per-class median + ±1.2 control-band verdict) and a chronological "Library metrics" trend into
+   `qa/scores_ledger.md` itself, alongside the runs table; each section is cleanly omitted when its
+   store is empty.
+3. Half-wired, #1415 update: `felt_rest_panel`'s non-rest write path was VERIFIED — the row was
+   never skipped (add_run fires unconditionally per frame), but the REST_LENSES-only dims filter
+   silently dropped a non-rest panel's per-lens scores; fixed to pass through arbitrary dims for a
+   non-`rest:` scene. `motion_reel.py`'s Unity-capture hook is now wired against the documented
+   `manage_camera` pattern (env-gated on `WORLDOS_UNITY_MCP_URL`, mockable via `mcp_call=`) but its
+   live `:8080/mcp` round-trip is UNVERIFIED on this lane (no GEX44 box access) — validation queues
+   behind the next box session. Still open: the engine-fetch half of motion_reel (TODO hook,
+   separate scope) and the stale `--layered` naming.

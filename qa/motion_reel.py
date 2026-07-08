@@ -19,9 +19,14 @@ TWO MODES
 ---------
 * MODE A "engine-state reel" — given a campaign id + a list of N beats, fetch successive combat-
   surface states from the engine and render each via the existing Unity render path, then assemble.
-  The ENGINE-FETCH and the UNITY-CAPTURE are clearly-marked HOOKS (the real wiring is a TODO; the
-  engine is the SOLE WRITER and Unity is the renderer — this module never writes game state). The
-  reel ASSEMBLY (contact-sheet + sidecar) from the produced PNG list is REAL and tested.
+  The ENGINE-FETCH (:func:`fetch_combat_surface_states`) is still a clearly-marked HOOK (the real
+  engine read is a TODO; the engine is the SOLE WRITER and Unity is the renderer — this module
+  never writes game state). The UNITY-CAPTURE (:func:`render_state_via_unity`, #1415) is wired
+  against the documented ``manage_camera`` pattern (``extensions/renderers/unity/BOX.md``) —
+  env-gated on ``WORLDOS_UNITY_MCP_URL`` and mockable via ``mcp_call=``; the exact live ``:8080/mcp``
+  round-trip shape is UNVERIFIED on this lane (no GEX44 box access) and queues for validation behind
+  the next box session. The reel ASSEMBLY (contact-sheet + sidecar) from the produced PNG list is
+  REAL and tested.
 * MODE B "timeline reel" — given a directory of already-rendered animation frame PNGs (e.g. a
   Meshy/PixelLab/Unity timeline export), assemble the contact-sheet + sidecar directly. Fully real.
 
@@ -38,7 +43,8 @@ USAGE
     # MODE B — explicit ordered frames with per-frame labels (a JSON manifest):
     python qa/motion_reel.py --mode timeline --frames @/tmp/frames.json --out /tmp/reel.png
 
-    # MODE A — engine-state reel (interface documented; capture is a TODO hook):
+    # MODE A — engine-state reel (interface documented; engine-fetch is still a TODO hook, capture
+    # is wired but unverified off the box — set WORLDOS_UNITY_MCP_URL to opt in):
     python qa/motion_reel.py --mode engine --campaign demo-crypt --beats 6 --out /tmp/beat_reel.png
 
     # From Python:
@@ -68,7 +74,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import shutil
 import struct
 import sys
 import zlib
@@ -411,17 +419,92 @@ def fetch_combat_surface_states(campaign_id: str, beats: int) -> list[dict]:
     return [{"campaign_id": campaign_id, "beat": i, "_stub": True} for i in range(beats)]
 
 
-def render_state_via_unity(state: dict, out_png: str | Path) -> Optional[str]:
-    """HOOK (TODO): render ONE combat-surface state to ``out_png`` via the existing Unity render
-    path (the closed-loop pipeline / CoplayDev MCP capture on the GEX44 Unity host — see the
-    gex44-unity-host skill). Returns the PNG path on success, or None if the capture path is not
-    available in this environment (the common case off the GPU box).
+# Env var naming the live Unity MCP HTTP endpoint (BOX.md: "curl 127.0.0.1:8080/mcp returns 406
+# (server healthy)" — the documented health-check path on the GEX44 box). Unset (the default
+# everywhere except a claimed GEX44 session) means "no live host configured" -> render_state_via_
+# unity returns None immediately, with NO network attempt — this is what keeps the default path
+# safe to run anywhere (CI, a laptop) without risking a stray connection to whatever happens to be
+# on localhost:8080.
+UNITY_MCP_URL_ENV = "WORLDOS_UNITY_MCP_URL"
 
-    This is intentionally a stub here: wiring the live Unity capture is out of scope for the
-    reel-assembly module (it requires the GPU box + a live editor). The contract is: produce a PNG
-    per state; build_engine_reel then assembles whatever PNGs were produced."""
-    # TODO(worldos): call the Unity capture (manage_camera / CL screenshot) for `state` here.
-    return None
+
+def _default_unity_mcp_call(tool: str, params: dict, *, url: str, timeout: float = 30.0) -> dict:
+    """Real transport: POST one MCP ``tools/call`` JSON-RPC request to ``url`` (the live Unity MCP
+    HTTP endpoint documented in ``extensions/renderers/unity/BOX.md``, e.g.
+    ``http://127.0.0.1:8080/mcp``). stdlib-only (``urllib``), no new dependency.
+
+    This function performs REAL network I/O and is deliberately never exercised by the test suite
+    (tests inject a stub via ``render_state_via_unity(..., mcp_call=...)``) — this lane has no GEX44
+    box access, so the exact wire round-trip is UNVERIFIED here; live validation queues behind the
+    next box session (see the gex44-unity-host skill)."""
+    import urllib.error
+    import urllib.request
+
+    payload = json.dumps({
+        "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+        "params": {"name": tool, "arguments": params},
+    }).encode("utf-8")
+    req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 (documented internal host)
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def render_state_via_unity(
+    state: dict,
+    out_png: str | Path,
+    *,
+    mcp_call=None,
+    screenshot_super_size: int = 2,
+) -> Optional[str]:
+    """Render ONE combat-surface state to ``out_png`` via the documented ``manage_camera`` capture
+    (``extensions/renderers/unity/BOX.md``: ``screenshot_super_size`` 2-4, captures land in
+    ``Assets/Screenshots/`` on the live Unity MCP host). Returns the copied PNG path on success, or
+    ``None`` if the capture is unavailable in this environment (the common case off the GPU box) —
+    this function NEVER raises; every failure mode degrades to ``None`` so ``build_engine_reel``'s
+    existing ``no_render`` status handles it exactly like the old stub did.
+
+    ``mcp_call`` is the injectable MCP transport — ``(tool_name, params_dict) -> response_dict`` —
+    so this is fully unit-testable with a mocked call and NO box/network access. When omitted, the
+    real transport (:func:`_default_unity_mcp_call`) is used, but ONLY if ``WORLDOS_UNITY_MCP_URL``
+    is set (the documented live-box endpoint, e.g. ``http://127.0.0.1:8080/mcp``) — with no URL
+    configured (every environment except a claimed GEX44 session), this returns ``None``
+    immediately with zero network I/O, matching ``state`` unused by the state itself beyond
+    identifying what to capture (the live camera/scene already reflects ``state`` by the time this
+    is called; this hook only triggers + fetches the screenshot).
+
+    This is deliberately UNVERIFIED against the live box on this lane (no GEX44 access this pass —
+    see BOX.md's single-tenant claim discipline): the orchestration/parsing here is code-complete
+    and covered by injected-stub unit tests; the real ``:8080/mcp`` round-trip shape queues for
+    validation behind the next box session."""
+    call = mcp_call
+    if call is None:
+        url = os.environ.get(UNITY_MCP_URL_ENV)
+        if not url:
+            return None  # no live Unity MCP host configured -> the documented off-box fallback
+
+        def call(tool: str, params: dict) -> dict:
+            return _default_unity_mcp_call(tool, params, url=url)
+
+    try:
+        resp = call("manage_camera",
+                     {"action": "screenshot", "screenshot_super_size": screenshot_super_size})
+    except Exception:
+        return None
+
+    result = resp.get("result") if isinstance(resp, dict) else None
+    captured = None
+    if isinstance(result, dict):
+        captured = result.get("path") or result.get("screenshot_path")
+    if not captured:
+        return None
+
+    src = Path(captured)
+    if not src.exists():
+        return None
+    dst = Path(out_png)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(src, dst)
+    return str(dst)
 
 
 def build_engine_reel(
@@ -437,11 +520,13 @@ def build_engine_reel(
     """Assemble an engine-state reel (MODE A): fetch N combat-surface states, render each via Unity,
     then assemble the produced PNGs into a contact-sheet + sidecar.
 
-    The ENGINE-FETCH (:func:`fetch_combat_surface_states`) and the UNITY-CAPTURE
-    (:func:`render_state_via_unity`) are HOOKS — the live wiring is a TODO (it needs the GPU box +
-    a running editor + the engine read). What is REAL here is the orchestration + the assembly: when
-    renders ARE produced (live, or supplied via ``frame_dir`` of pre-rendered per-beat PNGs, or via
-    the ``_renderer`` injection in tests), this builds the same contact-sheet + sidecar as MODE B,
+    The ENGINE-FETCH (:func:`fetch_combat_surface_states`) is still a HOOK — the live engine read is
+    a TODO (it needs the GPU box + a running editor). The UNITY-CAPTURE (:func:`render_state_via_unity`,
+    #1415) is now wired against the documented ``manage_camera`` pattern, but its live ``:8080/mcp``
+    round-trip is UNVERIFIED on this lane (no GEX44 box access) and queues behind the next box
+    session. What is REAL and unit-tested here is the orchestration + the assembly: when renders ARE
+    produced (live, or supplied via ``frame_dir`` of pre-rendered per-beat PNGs, or via the
+    ``_renderer`` injection in tests), this builds the same contact-sheet + sidecar as MODE B,
     one frame per beat, labelled ``beat<N>`` and carrying the beat index as t_ms-equivalent ordering.
 
     Returns the sidecar dict (with ``contact_sheet`` + ``sidecar``), or a dict with
@@ -493,7 +578,8 @@ def build_engine_reel(
 def main(argv: Optional[list[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Build a motion REEL (contact-sheet + sidecar) for the visual-critic L7 lens")
     ap.add_argument("--mode", choices=("timeline", "engine"), required=True,
-                    help="timeline = assemble from rendered frame PNGs; engine = fetch+render N beats (capture is a TODO hook)")
+                    help="timeline = assemble from rendered frame PNGs; engine = fetch+render N beats "
+                         "(engine-fetch is a TODO hook; capture needs WORLDOS_UNITY_MCP_URL set)")
     ap.add_argument("--out", required=True, help="output contact-sheet PNG path (sidecar is <out>.json)")
     ap.add_argument("--cell-max", type=int, default=256, help="max per-cell thumbnail edge (default 256)")
     # MODE B

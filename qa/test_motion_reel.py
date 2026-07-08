@@ -174,6 +174,83 @@ class TestSidecarFeedsG5:
 
 
 # ---------------------------------------------------------------------------
+# 2b. render_state_via_unity — the Unity-capture hook (#1415), fully mocked (no box/network access)
+# ---------------------------------------------------------------------------
+class TestUnityCaptureHook:
+    def test_no_url_configured_returns_none_with_no_call(self, tmp_path, monkeypatch):
+        """The default off-box path (WORLDOS_UNITY_MCP_URL unset, no mcp_call injected): returns
+        None immediately, with zero network attempt."""
+        monkeypatch.delenv(mr.UNITY_MCP_URL_ENV, raising=False)
+        assert mr.render_state_via_unity({"beat": 0}, tmp_path / "out.png") is None
+
+    def test_injected_mcp_call_writes_captured_png_to_out_path(self, tmp_path):
+        """A successful manage_camera response (a `path` pointing at a real captured PNG) is
+        copied to out_png and that path is returned."""
+        captured_src = _png(tmp_path / "_captured.png", 8, 8, bright_at=(2, 2))
+        calls = []
+
+        def fake_mcp_call(tool, params):
+            calls.append((tool, params))
+            return {"result": {"path": str(captured_src)}}
+
+        out = tmp_path / "beat_out.png"
+        result = mr.render_state_via_unity({"beat": 0}, out, mcp_call=fake_mcp_call)
+        assert result == str(out)
+        assert out.exists()
+        assert out.read_bytes() == captured_src.read_bytes()
+        assert calls == [("manage_camera",
+                          {"action": "screenshot", "screenshot_super_size": 2})]
+
+    def test_injected_mcp_call_honors_super_size_kwarg(self, tmp_path):
+        seen = {}
+
+        def fake_mcp_call(tool, params):
+            seen.update(params)
+            return {"result": {}}
+
+        mr.render_state_via_unity({"beat": 0}, tmp_path / "out.png",
+                                  mcp_call=fake_mcp_call, screenshot_super_size=4)
+        assert seen["screenshot_super_size"] == 4
+
+    def test_response_with_no_result_path_returns_none(self, tmp_path):
+        def fake_mcp_call(tool, params):
+            return {"result": {}}
+
+        assert mr.render_state_via_unity({"beat": 0}, tmp_path / "out.png",
+                                         mcp_call=fake_mcp_call) is None
+
+    def test_captured_path_missing_on_disk_returns_none(self, tmp_path):
+        def fake_mcp_call(tool, params):
+            return {"result": {"path": str(tmp_path / "does_not_exist.png")}}
+
+        assert mr.render_state_via_unity({"beat": 0}, tmp_path / "out.png",
+                                         mcp_call=fake_mcp_call) is None
+
+    def test_transport_exception_degrades_to_none_not_raise(self, tmp_path):
+        def raising_call(tool, params):
+            raise ConnectionError("no route to host")
+
+        assert mr.render_state_via_unity({"beat": 0}, tmp_path / "out.png",
+                                         mcp_call=raising_call) is None
+
+    def test_url_configured_builds_default_call_bound_to_that_url(self, tmp_path, monkeypatch):
+        """When no mcp_call is injected but WORLDOS_UNITY_MCP_URL IS set, the real transport
+        (_default_unity_mcp_call) is invoked with that url — verified here via monkeypatch so no
+        actual network I/O happens (this lane has no box access)."""
+        monkeypatch.setenv(mr.UNITY_MCP_URL_ENV, "http://127.0.0.1:8080/mcp")
+        seen = {}
+
+        def fake_default(tool, params, *, url, timeout=30.0):
+            seen["tool"], seen["params"], seen["url"] = tool, params, url
+            return {"result": {}}
+
+        monkeypatch.setattr(mr, "_default_unity_mcp_call", fake_default)
+        assert mr.render_state_via_unity({"beat": 0}, tmp_path / "out.png") is None
+        assert seen["url"] == "http://127.0.0.1:8080/mcp"
+        assert seen["tool"] == "manage_camera"
+
+
+# ---------------------------------------------------------------------------
 # 3. MODE A — engine reel orchestration with an injected renderer (capture is a TODO hook)
 # ---------------------------------------------------------------------------
 class TestEngineReel:

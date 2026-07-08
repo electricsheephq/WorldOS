@@ -6,7 +6,7 @@
 
 > **Ruler** = `scoring_config_version` (a content hash of the rubric + schema + gate files, RRI gate included). **Lens ruler** = `lens_config_version` (the 8 files that produce the story/mech/angry LENS numbers — full ruler minus `release_readiness.py`; blank = recorded before lens stamping, #725). Rows under DIFFERENT Ruler values are **NOT directly comparable as a quality trend** — the ruler changed (a rubric recalibration or a new gate moves the number with no change in play quality). Use `python3 qa/scores_db.py --compare` for a lens-fenced engine-duo trend (add `--compare-rc-surface` for the GUI-built-app RC blocks); comparing across rulers requires re-scoring an archived transcript under the current ruler. **RC** = the release candidate a run scored (e.g. `v1.0.4-rc1`).
 
-> Rows: **86** · rendered 2026-07-08T11:44:32+00:00
+> Rows: **86** · rendered 2026-07-08T12:27:08+00:00
 
 | Run | When | SHA | Build date | Surface | DM model | Actor model | Scorer | Ruler | Lens ruler | RC | Methodology | Story | Mech | AngryDM | Behav | Sat | RRI | Crit | Img% | s/beat | cold-open s | turns/beat | combat s/beat | social s/beat | tool% | tool ms | slowest tool | Acts | Structural coverage | Engagement | Inert systems | Pass | Source | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -96,3 +96,32 @@
 | duo-director1 | 2026-05-26 | ~post-#72-director |  | engine-duo | sonnet | sonnet | claude |  |  |  | 3-lens duo | 4.1 | 3.8 | 3.2 | GREEN |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | qa/SCORECARD.md | [persona=wayfarer] Campaign Director validated: add_quest fired 3x (reach-for gap closed in play). |
 | duo-caster1 | 2026-05-26 | ~post-#140 |  | engine-duo | sonnet | sonnet | claude |  |  |  | 3-lens duo | 4 | 3.8 | 2.6 | GREEN |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | qa/SCORECARD.md | [persona=battlemage] add_quest=3. Player made 0 cast_spell/0 attack (roleplay infiltration) -> angry 2.6 is a combat-coverage artifact, NOT an engine defect. |
 | newmain-rogue2 | 2026-05-25 | ~85-commit-merge |  | engine-duo | sonnet | sonnet | claude |  |  |  | 3-lens duo | 4.1 | 3 | 2 | GREEN |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  |  | qa/SCORECARD.md | [persona=rogue (social)] 85-commit merge validation. Low mech/angry = social run, little combat (coverage artifact, not engine defect). [UNCERTAIN] date ~2026-05-25, exact SHA not recorded. |
+
+## Artifact panels
+
+> Per-`panel_id` roll-up of the `artifacts` table (HV1, #1323) — grouped by panel, then class. **Median** is the scored (non-control) rows' median `overall`; **Control anchor** is the disguised control's expected band midpoint (median across control rows, if >1); **Verdict** applies the ±1.2 noise-band law: `IN-BAND` / `OUT-OF-BAND`, or `NO-CONTROL` when the panel recorded no control row (`UNSCORED` when it recorded a control but no scored artifact). Full per-artifact detail lives in `qa/artifacts_ledger.md` (`--render-artifacts`).
+
+| Panel | Class | N | Median | Control anchor | Verdict |
+|---|---|---|---|---|---|
+| qp2-manual-20260708 | quest | 3 | 3.2 |  | NO-CONTROL |
+| cal-quest-20260707T230908 | quest | 15 | 3.2 | 3 | IN-BAND |
+| cal-npc-20260707T212734 | npc | 20 | 2.95 | 4 | IN-BAND |
+| cal-quest-20260707T212734 | quest | 3 | 3.6 | 4 | IN-BAND |
+| cal-npc-20260707T210934 | npc | 10 | 3.25 | 4 | IN-BAND |
+| cal-quest-20260707T211839 | quest | 3 | 3.6 | 4 | IN-BAND |
+| cal-quest-20260707T210934 | quest | 3 | 3.6 | 4 | IN-BAND |
+| cal-location-20260707T210934 | location | 14 | 3.6 | 4 | IN-BAND |
+| cal-encounter-20260707T210934 | encounter | 2 | 2.8 | 4 | OUT-OF-BAND |
+| cal-npc-20260706T070222 | npc | 8 | 3.3 | 4 | IN-BAND |
+| cal-location-20260706T070223 | location | 6 | 3.8 | 4 | IN-BAND |
+| cal-encounter-20260706T070224 | encounter | 4 | 2.7 | 4 | OUT-OF-BAND |
+| cal-quest-20260706T070141 | quest | 2 | 2.05 | 4 | OUT-OF-BAND |
+| cal-quest-20260706T065746 | quest | 2 | 2.05 | 4 | OUT-OF-BAND |
+
+## Library metrics
+
+> Chronological trend (oldest first) of the `library_metrics` table (HV5 slice 2, #1327) — the flywheel's own health, one row per snapshot. **Back-link** is the snapshot's `notes` (falls back to `source_path` when notes is unset) so a size/reuse jump can be traced to the run/curation pass that produced it. Full render lives in `qa/library_metrics_ledger.md` (`--render-library-metrics`).
+
+| When | SHA | Size | By class | By tier | Σreuse | Back-link |
+|---|---|---|---|---|---|---|
+| 2026-07-07T22:26:21+00:00 | 723a2687 | 3 | {"location": 2, "npc": 1} | {"canonical": 0, "experimental": 0, "stable": 3} | 0 | 2nd promotion batch (extractor v2 yield): 2/21 fresh nominations promoted (npc-minsc rri-a1-gate 4.1, loc-elfsong-tavern rri-a1-gate2 4.3); quest panel not control-valid after 3 attempts (the-shadow-cursed-lands control landed 2.4-2.9, below [2.8,5.2] band each time) |
