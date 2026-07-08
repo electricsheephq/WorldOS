@@ -10,7 +10,7 @@ body:
         Reviewers — human AND agent — cannot act on prose descriptions of a visual defect, and
         local file paths (`~/worldos-session-notes/...`) are invisible to them.
         - **Required:** 1–6 still frames showing the defect, either drag-dropped into this issue
-          or committed to `qa/evidence/<issue-number>/` on a branch (repo paths survive; branch
+          or committed to `qa/evidence/<number>/` on a branch (repo paths survive; branch
           raw-links die — prefer drag-drop for issues, committed files for PRs).
         - **Motion defects:** a numbered frame SERIES (2–6 stills at key moments) is the primary
           evidence — agents read stills reliably; a GIF is optional garnish for humans.
