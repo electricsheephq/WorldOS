@@ -26,6 +26,11 @@ struct PlayView: View {
     @Binding var maxTurns: String
     @Binding var webURL: URL?
 
+    // Additive (issue #1322 / W5): path to the standalone Unity player `.app`. Empty → the default
+    // ~/Applications/WorldOSPlayer.app is used; if neither exists the launch is a defaulted no-op.
+    // Read directly from UserDefaults so no binding has to be threaded through RootView.
+    @AppStorage("playerAppPath") private var playerAppPath: String = ""
+
     @State private var runID: String = PlayView.newRunID()
     @State private var companions: String = ""
     @State private var alertMessage: String?
@@ -83,6 +88,11 @@ struct PlayView: View {
                     Label("Start Game", systemImage: "play.fill")
                 }
                 .buttonStyle(.borderedProminent)
+                Button {
+                    openInPlayer()
+                } label: {
+                    Label("Open in Player", systemImage: "cube.transparent")
+                }
                 Button {
                     processService.stopProvider()
                     processService.stopViewer()
@@ -172,6 +182,15 @@ struct PlayView: View {
             )
         } catch {
             alertMessage = error.localizedDescription
+        }
+    }
+
+    /// Hand the running engine's campaign off to the standalone Unity player (issue #1322 / W5).
+    /// A defaulted no-op when no player `.app` is installed; surfaces a hint if there is no engine.
+    private func openInPlayer() {
+        let outcome = processService.launchPlayer(playerAppPath: playerAppPath)
+        if case .notConfigured = outcome, processService.viewerEndpoint?.status == nil {
+            alertMessage = "Start a viewer or game session before opening the player."
         }
     }
 
