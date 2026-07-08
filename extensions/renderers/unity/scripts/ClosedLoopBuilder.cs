@@ -50,6 +50,10 @@ public static class ClosedLoopBuilder
     // height bands (world units)
     const float TALL_H = 3.0f, MID_H = 1.8f, LOW_H = 1.0f;
 
+    // #1284: per-scene FLOOR plane (the painterly plate is FLAT). Actor feet anchor to this constant,
+    // NOT a raycast against prop meshes (the sarcophagus-top-wins-the-cast bug). Greybox floor sits at 0.
+    const float FLOOR_Y = 0f;
+
     // ---- actor render tuning (round-1 fixes: belong-in-scene) ----
     const float ACTOR_TARGET_H = 9.6f;   // r11 L4 (BOTH runs, CRITICAL): on the wider v3 plate the actors
                                          // read as thumbnails dwarfed by the hall = "props, not dramatis
@@ -176,6 +180,27 @@ public static class ClosedLoopBuilder
     // span-center for a multi-cell prop (min..max inclusive), flipped on Z
     static float PropCenterX(PropDef p) { return OriginX + (p.minC + p.maxC + 1) * CELL_SIZE * 0.5f; }
     static float PropCenterZ(PropDef p) { return OriginZ + (ROWS - (p.minR + p.maxR + 1) * 0.5f) * CELL_SIZE; }
+
+    // #1284: presentation-only prop-cell NUDGE. A cell is BLOCKED if it is out of bounds or inside any
+    // prop footprint (the fixture's props ARE the impassable set — sarcophagus/columns/altar). If an
+    // actor's LOGICAL cell is blocked, render it at the nearest walkable neighbor so it never stands ON
+    // the painted prop. Deterministic lowest-index pick: orthogonal (dist 1) before diagonal, fixed order.
+    // The logical spawn cell (Fx.party/foes) is never mutated — a pure view nudge (engine = sole writer).
+    static bool IsBlockedCell(int c, int r)
+    {
+        if (c < 0 || c >= COLS || r < 0 || r >= ROWS) return true;
+        foreach (var p in Fx.props)
+            if (c >= p.minC && c <= p.maxC && r >= p.minR && r <= p.maxR) return true;
+        return false;
+    }
+    static readonly int[][] NUDGE_NB = new int[][] {
+        new[]{0,-1}, new[]{-1,0}, new[]{1,0}, new[]{0,1}, new[]{-1,-1}, new[]{1,-1}, new[]{-1,1}, new[]{1,1} };
+    static int[] NudgeCell(int c, int r)
+    {
+        if (!IsBlockedCell(c, r)) return new[] { c, r };
+        foreach (var d in NUDGE_NB) { int nc = c + d[0], nr = r + d[1]; if (!IsBlockedCell(nc, nr)) return new[] { nc, nr }; }
+        return new[] { c, r };   // no free neighbor -> leave in place (deterministic fallback)
+    }
 
     // ==================================================================
     // ARM toggle (bake-off) — sets which actor pipeline AssembleFinal uses.
@@ -805,6 +830,8 @@ public static class ClosedLoopBuilder
     {
         var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(spritePath);
         if (tex == null) { Debug.LogError("[CL] sprite not found: " + spritePath); return; }
+        // #1284 (2): presentation-only prop-cell nudge (see PlaceActor) — logical spawn cell untouched.
+        { int[] rc = NudgeCell(c, r); c = rc[0]; r = rc[1]; }
 
         var go = GameObject.CreatePrimitive(PrimitiveType.Quad);
         go.name = label;
@@ -832,10 +859,10 @@ public static class ClosedLoopBuilder
 
         float wx = CellX(c);
         float wz = CellZ(r);
-        go.transform.position = new Vector3(wx, worldH * 0.5f, wz); // center; bottom edge -> y=0
+        go.transform.position = new Vector3(wx, FLOOR_Y + worldH * 0.5f, wz); // center; bottom edge -> FLOOR_Y
         var preBounds = Bounds(go);
-        if (Mathf.Abs(preBounds.min.y) > 0.02f)
-            go.transform.position += new Vector3(0f, -preBounds.min.y, 0f); // plant feet exactly on y=0
+        if (Mathf.Abs(preBounds.min.y - FLOOR_Y) > 0.02f)
+            go.transform.position += new Vector3(0f, FLOOR_Y - preBounds.min.y, 0f); // plant feet on the FLOOR plane
 
         // ALPHA-BLENDED unlit billboard (the sprite is pre-lit by Scenario). WorldOS/SpriteBillboard
         // honors the PNG alpha + applies a SUBTLE scene-key/ambient tint + depth exposure so it sits
@@ -874,6 +901,10 @@ public static class ClosedLoopBuilder
     {
         var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
         if (prefab == null) { Debug.LogError("[CL] FBX not found: " + path); return; }
+        // #1284 (2): presentation-only prop-cell nudge — render off a blocked (prop) cell onto the nearest
+        // walkable neighbor. The caller's logical spawn cell (Fx.party/foes) is untouched; c,r below are the
+        // RENDER cell used for placement + ring (part 3), so the actor never stands ON the painted prop.
+        { int[] rc = NudgeCell(c, r); c = rc[0]; r = rc[1]; }
         // WRAPPER controls placement + scale + FACING. The FBX is a child so that
         // PoseToClip's SampleAnimation (which bakes the Idle clip's ROOT rotation onto the FBX
         // root, clobbering any yaw we set on it) does NOT override our facing — the wrapper yaw
@@ -911,13 +942,13 @@ public static class ClosedLoopBuilder
         float wx = CellX(c);
         float wz = CellZ(r);
         var staging = Bounds(wrap);                            // bounds at the (9999) staging pos
-        float floorY = staging.min.y < -0.05f ? -staging.min.y : 0f; // feet -> floor plane (Y only)
+        float floorY = FLOOR_Y - staging.min.y;                // #1284 (1): anchor feet to the FLOOR plane (min.y -> FLOOR_Y)
         wrap.transform.position = new Vector3(wx, floorY, wz);
         var sb = Bounds(wrap);                                // RE-READ after final placement
-        // safety: plant feet exactly on y=0
-        if (Mathf.Abs(sb.min.y) > 0.02f)
+        // safety: plant feet exactly on the FLOOR plane
+        if (Mathf.Abs(sb.min.y - FLOOR_Y) > 0.02f)
         {
-            wrap.transform.position += new Vector3(0f, -sb.min.y, 0f);
+            wrap.transform.position += new Vector3(0f, FLOOR_Y - sb.min.y, 0f);
             sb = Bounds(wrap);
         }
 
