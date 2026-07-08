@@ -1,0 +1,8 @@
+{
+  "frame_w":1920, "frame_h":1097,
+  "checks": {"floor_contact": {"tolerance_px": 8}, "screen_scale": {"min_height_frac":0.03,"max_height_frac":0.45}, "pose_uprightness": {"min_aspect_ratio":1.3}},
+  "actors": [
+    {"name":"Actor_char_85293026ab57","logical_cell":[13,9],"expected_cell":[12,9],"screen_bbox":[1375,27,1697,578],"floor_y_px":504},
+    {"name":"Actor_char_785aa0776129","logical_cell":[6,1],"expected_cell":[6,1],"screen_bbox":[535,37,885,491],"floor_y_px":444}
+  ]
+}

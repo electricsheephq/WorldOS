@@ -92,7 +92,7 @@ def _manifest(path: Path, *, bbox: list[int] | None = NORMAL_BBOX) -> Path:
             },
             "floor_contact": {"tolerance_px": 4},
             "screen_scale": {"min_height_frac": 0.04, "max_height_frac": 0.40},
-            "pose_uprightness": {"min_aspect_ratio": 1.3},
+            "pose_uprightness": {"min_aspect_ratio": 1.25},
             "diff": {"threshold": 20, "min_area_px": 8},
         },
     }))

@@ -124,29 +124,41 @@ var ringT=new Texture2D(256,256,TextureFormat.RGBA32,false); ringT.wrapMode=Text
 // ---- actor spawner (spawn geometry IDENTICAL to paint_combat_v1.cs, PLUS an Animator so the actor
 //      can play verb clips). Returns the actor root GO so the beat player can pose/glide/flinch it.
 bool missingActor=false;
+// #1397 (pixel-bbox CONFIRMED on GEX44, Assets/Editor/Probe1397Pixel.cs, superseding the earlier
+// BakeMesh-only read): the "-90 X stand-up" pitch below is a LEGACY Z-up correction. This whole cast
+// is authored Y-up (registry.json gen_recipe: "meshy --moveset (Y-up)" / "meshy:humanoid moveset");
+// applying -90X to an already-upright Y-up pose tips it onto its back. Measured via actual rendered
+// PIXEL bbox (not BakeMesh, which the -90X rotation was ALSO applied to before measuring, hiding
+// this): goblin.fbx (Humanoid avatar) pitch=-90 -> aspect 1.12 PRONE vs pitch=0 -> 1.31-1.35 UPRIGHT.
+// SPOT-CHECK (Assets/Editor/Probe1397Fighter.cs): fighter.fbx (Aldric) has NO Animator/avatar at all
+// (avatarSetup=NoAvatar) yet IS SkinnedMeshRenderer-rigged with its own embedded Idle clip — pitch=0
+// measured MORE upright (1.65) than pitch=-90 (1.39), confirming it is ALSO Y-up, just not
+// Humanoid-classified. So the guard is NOT "is this Humanoid" but "is this a skinned Meshy Y-up rig
+// at all": pitch=0 whenever a SkinnedMeshRenderer is present (covers both), -90 only for a genuinely
+// static/non-skinned mesh (no rig to be mis-pitched).
+System.Func<GameObject,float> standUpPitchX=(g)=>{ return g.GetComponentInChildren<SkinnedMeshRenderer>()!=null ? 0f : -90f; };
 System.Func<string,string,int,int,float,Color,string,GameObject> spawn=(fbxPath,albedoPath,cx,cy,height,ringCol,nm)=>{
   var prefab=AssetDatabase.LoadAssetAtPath<GameObject>(fbxPath); if(prefab==null){ sb.AppendLine("MISSING "+fbxPath); missingActor=true; return null; }
   var old=GameObject.Find(nm); if(old!=null) UnityEngine.Object.DestroyImmediate(old);
-  // Spawn in the PROVEN paint_combat_v1.cs form: direct FBX instantiate, -90 X stand-up, NO live Animator
-  // COMPONENT/controller ticking during capture. #1397 (probe-ladder CONFIRMED on GEX44,
-  // Assets/Editor/Probe1397.cs): the prior assumption here — that the raw bind pose renders "clean and
-  // upright" — was WRONG. Measured: goblin.fbx's raw bind pose has world-bounds aspect (vert/horiz) 0.67
-  // (PRONE/TILTED); the SAME fbx's embedded Idle clip sampled at t=0 measures 1.32 (UPRIGHT). So every
-  // spawn now poses to its Idle clip via a ONE-TIME SampleAnimation bake, exactly like paint_combat_v1.cs's
-  // poseClipPath mechanism. This is NOT the risky case the old comment warned about: there is still NO
-  // live Animator component and NO Play()+Update() loop driving the skin during the synchronous
-  // multi-actor capture — SampleAnimation posts one deterministic edit-mode pose BEFORE the mesh is ever
-  // baked/measured/rendered, so the GPU/CPU skin desync (a LIVE controller ticking during the per-beat
-  // loop below) still cannot happen. Beats still convey their verb via TRANSFORM MOTION only (lunge /
-  // knockback / topple, the CombatBeatDriver approach) + VFX + damage number + HP-bar — never a second
-  // pose sample after spawn.
+  // Spawn in the PROVEN paint_combat_v1.cs form: direct FBX instantiate, per-avatar stand-up pitch
+  // (standUpPitchX above), NO live Animator COMPONENT/controller ticking during capture. Also poses
+  // every spawn to its Idle clip via a ONE-TIME SampleAnimation bake, exactly like
+  // paint_combat_v1.cs's poseClipPath mechanism (a genuine improvement for non-neutral bind poses on
+  // other assets, even though pitch turned out to be the load-bearing #1397 fix). This is NOT the
+  // risky case the old comment warned about: there is still NO live Animator component and NO
+  // Play()+Update() loop driving the skin during the synchronous multi-actor capture —
+  // SampleAnimation posts one deterministic edit-mode pose BEFORE the mesh is ever
+  // baked/measured/rendered, so the GPU/CPU skin desync (a LIVE controller ticking during the
+  // per-beat loop below) still cannot happen. Beats still convey their verb via TRANSFORM MOTION
+  // only (lunge / knockback / topple, the CombatBeatDriver approach) + VFX + damage number + HP-bar
+  // — never a second pose sample after spawn.
   var go=(GameObject)UnityEngine.Object.Instantiate(prefab); go.name=nm;
   { // one-time Idle-pose bake at spawn (never re-sampled per beat) — mirrors paint_combat_v1.cs's poseClipPath.
     AnimationClip _pick=null;
     foreach(var _a in AssetDatabase.LoadAllAssetsAtPath(fbxPath)){ var _cl=_a as AnimationClip; if(_cl==null||_cl.name.StartsWith("__")) continue; if(_cl.name.ToLower().Contains("idle")){ _pick=_cl; break; } if(_pick==null) _pick=_cl; }
     if(_pick!=null) _pick.SampleAnimation(go, 0f);
   }
-  go.transform.rotation=Quaternion.Euler(-90f, cam.transform.eulerAngles.y+180f, 0f);
+  go.transform.rotation=Quaternion.Euler(standUpPitchX(go), cam.transform.eulerAngles.y+180f, 0f);
   var rends=go.GetComponentsInChildren<Renderer>(); foreach(var r in rends){ r.enabled=true; r.shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.On; r.receiveShadows=true;
     // Force the skinned mesh to re-skin from its LIVE bone transforms on every render + regardless of
     // culling bounds. Without this, the editor's synchronous multi-actor capture can render an actor's
@@ -179,6 +191,14 @@ System.Func<string,string,int,int,float,Color,string,GameObject> spawn=(fbxPath,
   _sd["id"]=nm; _sd["logical_cell"]=new int[]{cx,cy}; _sd["render_cell"]=new int[]{rcx,rcy};
   _sd["feetW"]=new Vector3(bb.center.x,bb.min.y,bb.center.z);
   _sd["headW"]=new Vector3(bb.center.x,bb.max.y,bb.center.z);
+  // #1397: the manifest's screen_bbox used to be SYNTHESIZED from feet/head Y alone (half-width =
+  // 0.22*height) — a formula that reports the SAME ~2.27 aspect regardless of true pose, which is
+  // exactly why the pose-uprightness pre-gate stayed blind to the live prone/tilted defect. Capture
+  // every BAKED vertex (world space, POST-grounding) here so the manifest writer below can project
+  // the REAL silhouette bbox via cam.WorldToViewportPoint instead of guessing its width.
+  { var _vertsW=new System.Collections.Generic.List<Vector3>();
+    foreach(var r in rends){ var smrV=r as SkinnedMeshRenderer; if(smrV==null) continue; var bkV=new Mesh(); smrV.BakeMesh(bkV); var vsV=bkV.vertices; var mV=smrV.transform.localToWorldMatrix; foreach(var vv in vsV) _vertsW.Add(mV.MultiplyPoint3x4(vv)); UnityEngine.Object.DestroyImmediate(bkV); }
+    _sd["vertsW"]=_vertsW; }
   _repSidecar.Add(_sd);
   sb.AppendLine(nm+" x"+s.ToString("F2")+" logical("+cx+","+cy+")->render("+rcx+","+rcy+") rends="+rends.Length);
   return go;
@@ -230,7 +250,7 @@ var actorBaseYaw=new System.Collections.Generic.Dictionary<string,float>();
 var deadActors=new System.Collections.Generic.HashSet<string>();
 // Reset position/scale/yaw to the spawn baseline before a beat mutates them (never restores the
 // pitch/roll — the -90 X stand-up pivot is a gimbal singularity; see the knockBack note below (translation only, no rotation)).
-System.Action<string,GameObject> resetToBaseline=(tid,go)=>{ if(go==null||!actorBase.ContainsKey(tid)) return; var b=actorBase[tid]; go.transform.position=b[0]; go.transform.localScale=b[1]; go.transform.rotation=Quaternion.Euler(-90f, actorBaseYaw.ContainsKey(tid)?actorBaseYaw[tid]:go.transform.eulerAngles.y, 0f); };
+System.Action<string,GameObject> resetToBaseline=(tid,go)=>{ if(go==null||!actorBase.ContainsKey(tid)) return; var b=actorBase[tid]; go.transform.position=b[0]; go.transform.localScale=b[1]; go.transform.rotation=Quaternion.Euler(standUpPitchX(go), actorBaseYaw.ContainsKey(tid)?actorBaseYaw[tid]:go.transform.eulerAngles.y, 0f); };
 // token id -> engine hpMax (from the surface), so an attack/damage beat carrying only hp_after (the
 // live engine's common shape) can still compute the HP-bar fraction. Pure read of engine truth.
 var _actorMaxHp=new System.Collections.Generic.Dictionary<string,int>();
@@ -310,16 +330,21 @@ System.Action<string> capture=(label)=>{
   System.Func<object,string> _jesc=(o)=>{ var st=o==null?"":o.ToString(); return st.Replace("\\","\\\\").Replace("\"","\\\"").Replace("\n"," ").Replace("\r"," "); };
   var msb=new System.Text.StringBuilder();
   msb.Append("{\n  \"frame_w\":"+W+", \"frame_h\":"+Hh+",\n");
-  msb.Append("  \"checks\": {\"floor_contact\": {\"tolerance_px\": 8}, \"screen_scale\": {\"min_height_frac\":0.03,\"max_height_frac\":0.45}, \"pose_uprightness\": {\"min_aspect_ratio\":1.3}},\n");
+  msb.Append("  \"checks\": {\"floor_contact\": {\"tolerance_px\": 8}, \"screen_scale\": {\"min_height_frac\":0.03,\"max_height_frac\":0.45}, \"pose_uprightness\": {\"min_aspect_ratio\":1.25}},\n");
   msb.Append("  \"actors\": [\n");
   for(int i=0;i<_repSidecar.Count;i++){ var d=_repSidecar[i];
     var lc=(int[])d["logical_cell"]; var rc2=(int[])d["render_cell"];
-    var fW=(Vector3)d["feetW"]; var hW=(Vector3)d["headW"];
-    var fp=w2p(fW); var hp=w2p(hW);
+    var fW=(Vector3)d["feetW"];
     var floorPx=w2p(new Vector3(fW.x,FLOOR_Y,fW.z));                       // floor plane at the render cell
-    float half=Mathf.Max(4f,Mathf.Abs(fp[1]-hp[1])*0.22f);
+    // #1397: REAL screen_bbox — project every BAKED (world, post-grounding) vertex and take the
+    // min/max screen X/Y, instead of the old half=0.22*height formula (which reported the SAME
+    // ~2.27 aspect regardless of true pose, hiding the prone/tilted defect from the pre-gate).
+    var vertsW=(System.Collections.Generic.List<Vector3>)d["vertsW"];
+    float bx0=float.MaxValue,by0=float.MaxValue,bx1=float.MinValue,by1=float.MinValue;
+    foreach(var vw in vertsW){ var sp=w2p(vw); if(sp[0]<bx0)bx0=sp[0]; if(sp[0]>bx1)bx1=sp[0]; if(sp[1]<by0)by0=sp[1]; if(sp[1]>by1)by1=sp[1]; }
+    if(vertsW.Count==0){ var hW=(Vector3)d["headW"]; var fp0=w2p(fW); var hp0=w2p(hW); bx0=fp0[0]-4f; bx1=fp0[0]+4f; by0=hp0[1]; by1=fp0[1]; } // fallback: no baked verts (non-skinned actor)
     msb.Append("    {\"name\":\""+_jesc(d["id"])+"\",\"logical_cell\":["+lc[0]+","+lc[1]+"],\"expected_cell\":["+rc2[0]+","+rc2[1]+"],");
-    msb.Append("\"screen_bbox\":["+Mathf.Round(fp[0]-half)+","+Mathf.Round(hp[1])+","+Mathf.Round(fp[0]+half)+","+Mathf.Round(fp[1])+"],");
+    msb.Append("\"screen_bbox\":["+Mathf.Round(bx0)+","+Mathf.Round(by0)+","+Mathf.Round(bx1)+","+Mathf.Round(by1)+"],");
     msb.Append("\"floor_y_px\":"+Mathf.Round(floorPx[1])+"}");
     msb.Append(i<_repSidecar.Count-1?",\n":"\n");
   }
@@ -331,7 +356,7 @@ System.Action<string> capture=(label)=>{
 
 // facing: rotate an actor about world-up so it looks at a target world pos (heading), preserving the
 // stood-up -90 X. The base facing is cam.yaw+180; add the yaw delta from base-forward to the target.
-System.Action<GameObject,Vector3> faceAt=(go,targetPos)=>{ if(go==null) return; Vector3 d=targetPos-go.transform.position; d.y=0f; if(d.sqrMagnitude<0.0001f) return; float yaw=Mathf.Atan2(d.x,d.z)*Mathf.Rad2Deg; go.transform.rotation=Quaternion.Euler(-90f, yaw, 0f); };
+System.Action<GameObject,Vector3> faceAt=(go,targetPos)=>{ if(go==null) return; Vector3 d=targetPos-go.transform.position; d.y=0f; if(d.sqrMagnitude<0.0001f) return; float yaw=Mathf.Atan2(d.x,d.z)*Mathf.Rad2Deg; go.transform.rotation=Quaternion.Euler(standUpPitchX(go), yaw, 0f); };
 
 // TRANSFORM-motion beats (CombatBeatDriver-proven) for SKINNED actors whose clips would flatten them.
 // These read as motion without touching the skin pose: a forward LUNGE (attack), a knockback

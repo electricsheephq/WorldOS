@@ -1212,7 +1212,11 @@ def _pose_uprightness_manifest_check(actor_bboxes: list[tuple[dict, list[int]]],
     Mirrors floor-contact/screen-scale's structure exactly (per-actor entries + failures list,
     SKIP when no bboxes are available)."""
     cfg = _manifest_check(manifest, "pose_uprightness")
-    min_aspect = float(cfg.get("min_aspect_ratio", cfg.get("min", 1.3)))
+    # #1397 live calibration (crypt_dense_v1, GEX44, post pitch-guard fix): genuinely-upright actors
+    # measured aspect 1.297-1.71 via REAL projected-vertex bboxes (isolated pixel probes + the live
+    # capture); genuinely-prone measured ~1.12. 1.25 sits in that gap with margin on both sides — 1.3
+    # was a knife-edge that clipped a visually-confirmed-upright actor (1.297) into a false FAIL.
+    min_aspect = float(cfg.get("min_aspect_ratio", cfg.get("min", 1.25)))
     entries = []
     failures = []
     for actor, bbox in actor_bboxes:
@@ -1252,7 +1256,7 @@ def run_manifest_pregate(frame_png: str | Path, manifest_json: str | Path,
           "actors": [{"name": "Hero", "expected_cell": [c, r], "screen_bbox": [x0,y0,x1,y1]}],
           "grid": {"origin": [x,y], "cell_px": [w,h], "rows": N, "cols": M},
           "floor_y_px": 80,
-          "checks": {"floor_contact": {"tolerance_px": 6}, "pose_uprightness": {"min_aspect_ratio": 1.3}, ...}
+          "checks": {"floor_contact": {"tolerance_px": 6}, "pose_uprightness": {"min_aspect_ratio": 1.25}, ...}
         }
 
     Bboxes come either from actor.screen_bbox (preferred capture-harness path) or from

@@ -129,7 +129,17 @@ System.Func<string,string,string,int,int,float,Color,string,Vector3> spawn=(fbxP
   if(poseClipPath!=null){ var pas=AssetDatabase.LoadAllAssetsAtPath(poseClipPath); AnimationClip pick=null; foreach(var clipAsset in pas){ var clip=clipAsset as AnimationClip; if(clip==null||clip.name.StartsWith("__")) continue; if(clip.name.ToLower().Contains("idle")){ pick=clip; break; } if(pick==null) pick=clip; } if(pick!=null){ float _pt=Mathf.Clamp01(aiPoseTime)*pick.length; pick.SampleAnimation(go, _pt); sb.AppendLine(nm+" posed by "+pick.name+"@t"+_pt.ToString("F2")); } }
   // #1280: aiPoseYaw adds a per-capture yaw offset so actors can face slightly off-axis onto a more readable
   // silhouette (default 0 = the prior fixed facing).
-  go.transform.rotation=Quaternion.Euler(-90f, cam.transform.eulerAngles.y+180f+aiPoseYaw, 0f);
+  // #1397 (pixel-bbox CONFIRMED on GEX44, Assets/Editor/Probe1397Pixel.cs + Probe1397Fighter.cs): the
+  // "-90 X stand-up" pitch is a LEGACY Z-up correction. This whole cast is authored Y-up
+  // (registry.json gen_recipe: "meshy --moveset (Y-up)") — applying -90X to an already-upright Y-up
+  // pose tips it onto its back. Measured via rendered PIXEL bbox: goblin.fbx (Humanoid avatar)
+  // pitch=-90 -> aspect 1.12 PRONE vs pitch=0 -> 1.31-1.35 UPRIGHT; fighter.fbx (NO Animator/avatar at
+  // all, but SkinnedMeshRenderer-rigged) pitch=0 -> 1.65 UPRIGHT vs pitch=-90 -> 1.39, confirming it is
+  // ALSO Y-up despite not being Humanoid-classified. So the guard is "is this a skinned Meshy Y-up
+  // rig at all" (SkinnedMeshRenderer present), not "is this Humanoid" — -90 is kept only for a
+  // genuinely static/non-skinned mesh (no rig to be mis-pitched).
+  { float _pitchX=go.GetComponentInChildren<SkinnedMeshRenderer>()!=null?0f:-90f;
+    go.transform.rotation=Quaternion.Euler(_pitchX, cam.transform.eulerAngles.y+180f+aiPoseYaw, 0f); }
   var rends=go.GetComponentsInChildren<Renderer>(); foreach(var r in rends){ r.enabled=true; r.shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.On; r.receiveShadows=true; }
   // Grounding uses TRUE posed geometry. SkinnedMeshRenderer.bounds is a conservative/inflated culling AABB whose
   // min.y sits BELOW the real feet -> grounding to min.y=0 leaves the actor FLOATING (owner-observed "goblin walking
