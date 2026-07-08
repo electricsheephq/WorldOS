@@ -1375,10 +1375,15 @@ def cross_door(campaign_id: str, x: int, y: int) -> dict:
     # (per-room scoping). If the destination room is ALSO painted, re-stage the party beside its
     # entry door so the linked room's rest board renders them standing there — not the empty
     # door-bar state (demo-reel frame 06). ADDITIVE: an un-painted destination gets no writes.
+    # Seed ONLY the members THIS travel actually relocated (travel_to's `_move_party_to` returns
+    # them as `party_relocated`) — never a companion already RESIDENT in the destination with an
+    # authored stage_cell (the Wyll case in _move_party_to's docstring), whose position must be
+    # left byte-identical.
+    relocated = list(result.get("party_relocated") or [])
     with campaign_lock(campaign_id):
         c2 = _require(campaign_id)  # fresh state — travel_to persisted its own copy above
         dest = c2.locations.get(c2.current_location_id) if c2.current_location_id else None
-        if dest is not None and _seed_stage_cells_on_arrival(c2, dest):
+        if dest is not None and _seed_stage_cells_on_arrival(c2, dest, relocated):
             save_campaign(c2)
     result["crossed_door"] = [int(x), int(y)]
     result["multi_connection"] = len(conns) > 1
@@ -4684,20 +4689,30 @@ def rest_blocked_cells(
     return width, height, impassable | occupied
 
 
-def _seed_stage_cells_on_arrival(c: "Campaign", dest: "Location") -> list[str]:
-    """W4 follow-up (#1378): on a ``cross_door`` arrival, seed each traveling party member's
+def _seed_stage_cells_on_arrival(
+    c: "Campaign", dest: "Location", member_ids: list[str]
+) -> list[str]:
+    """W4 follow-up (#1378): on a ``cross_door`` arrival, seed each RELOCATED party member's
     ``Character.stage_cell`` to a walkable cell beside the destination room's entry door, so the
     linked room's rest board renders the party re-staged — not the empty door-bar state left when
-    ``_move_party_to`` clears every member's stage_cell on travel.
+    ``_move_party_to`` clears every mover's stage_cell on travel.
 
-    Mirrors ``_seed_combat_cells_from_stage``'s discipline: a deterministic member order, cells
-    ranked nearest-the-door first, each member claiming the NEXT free cell so two tokens never
-    stack (contention spreads to the next-nearest walkable). ADDITIVE / default-safe — a
+    ``member_ids`` is exactly ``travel_to``'s ``party_relocated`` list — the members THIS travel
+    moved into ``dest``. Seeding is scoped to them so a companion ALREADY RESIDENT in the
+    destination with an authored stage_cell (the Wyll case in ``_move_party_to``'s docstring, who
+    never appears in ``party_relocated``) keeps their position byte-identical. Residents also sit
+    in ``rest_blocked_cells``' occupancy, so no mover is placed on top of one.
+
+    Mirrors ``_seed_combat_cells_from_stage``'s discipline: the given (deterministic) member order,
+    cells ranked nearest-the-door first, each member claiming the NEXT free cell so two tokens
+    never stack (contention spreads to the next-nearest walkable). ADDITIVE / default-safe — a
     destination with NO ``scene_grid`` or NO ``door_cells`` gets zero writes (returns ``[]``):
     a room that behaved as today (no re-stage, no error) still does. Engine is the SOLE writer;
     the caller holds the campaign lock and persists.
 
     Returns the ids actually re-staged (for surfacing/tests)."""
+    if not member_ids:
+        return []
     grid = getattr(dest, "scene_grid", None)
     if grid is None:
         return []
@@ -4717,14 +4732,12 @@ def _seed_stage_cells_on_arrival(c: "Campaign", dest: "Location") -> list[str]:
     candidates = iter(
         sorted(reach, key=lambda cell: (combat_grid.chebyshev_cells(cell, door), cell[1], cell[0]))
     )
-    # Traveling party = the members _move_party_to just co-located here (PC(s) + companions), in
-    # c.characters insertion order for a deterministic seat assignment. Cells are unique + consumed
-    # sequentially, so each member lands on a distinct cell (no stacking).
-    party_ids = set(c.party)
+    # Seat ONLY the relocated movers, in the caller's deterministic order. Cells are unique +
+    # consumed sequentially, so each mover lands on a distinct cell (no stacking).
     seeded: list[str] = []
-    for cid, member in c.characters.items():
-        travels = cid in party_ids or member.kind in ("player", "companion")
-        if not travels or member.location_id != dest.id:
+    for cid in member_ids:
+        member = c.characters.get(cid)
+        if member is None or member.location_id != dest.id:
             continue
         cell = next(candidates, None)
         if cell is None:

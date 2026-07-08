@@ -70,6 +70,29 @@ def test_cross_door_restages_party_near_the_destination_door(two_room):
         assert combat_grid.chebyshev_cells(cell, door) <= 2  # beside the arrival door
 
 
+def test_cross_door_leaves_a_resident_companions_authored_stage_cell_untouched(two_room):
+    # #1378 hole: seeding must scope to the members THIS travel relocated, never a companion
+    # ALREADY RESIDENT in the destination with an authored stage_cell (the Wyll case). Their
+    # authored position must survive an arriving party's cross_door byte-identical.
+    cid, a, b = two_room
+    _author_grid(cid, b, [[3, 0]])
+    resident = server.create_character(cid, "Wyll", kind="companion", max_hp=25)["id"]
+    hero = server.create_character(cid, "Hero", kind="player", max_hp=30)["id"]
+    c = server._require(cid)
+    c.characters[resident].location_id = b        # already in the destination room
+    c.characters[resident].stage_cell = (10, 8)   # authored rest position
+    c.characters[hero].location_id = a            # traveler in room A
+    c.characters[hero].stage_cell = (5, 5)
+    server.save_campaign(c)
+
+    server.cross_door(cid, 6, 0)  # hero crosses into B
+
+    c = server._require(cid)
+    assert c.characters[resident].stage_cell == (10, 8)  # RESIDENT untouched (was clobbered)
+    assert c.characters[hero].stage_cell is not None      # traveler still re-staged
+    assert c.characters[hero].stage_cell != (10, 8)       # and never onto the resident
+
+
 def test_cross_door_into_ungridded_room_writes_no_stage_cells(two_room):
     # ADDITIVE guard: the destination (room B) has NO scene_grid → seeding is a no-op, exactly as
     # before #1378 (stage_cell stays None after the travel clear). Byte-identical legacy behavior.
