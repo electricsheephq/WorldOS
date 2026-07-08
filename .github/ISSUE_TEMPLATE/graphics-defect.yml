@@ -1,0 +1,46 @@
+name: "Graphics / animation / render defect"
+description: "Anything visual: actors, plates, poses, animation, lighting, UI rendering. EVIDENCE REQUIRED."
+title: "[felt][render] "
+labels: ["graphics"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Evidence rule (WorldOS, owner-ratified 2026-07-08):** visual claims need visible pixels.
+        Reviewers — human AND agent — cannot act on prose descriptions of a visual defect, and
+        local file paths (`~/worldos-session-notes/...`) are invisible to them.
+        - **Required:** 1–6 still frames showing the defect, either drag-dropped into this issue
+          or committed to `qa/evidence/<issue-number>/` on a branch (repo paths survive; branch
+          raw-links die — prefer drag-drop for issues, committed files for PRs).
+        - **Motion defects:** a numbered frame SERIES (2–6 stills at key moments) is the primary
+          evidence — agents read stills reliably; a GIF is optional garnish for humans.
+        - Annotate when helpful (arrow/circle on the defect region).
+  - type: textarea
+    id: frames
+    attributes:
+      label: Evidence frames
+      description: Drag-drop images here, or list committed qa/evidence/ paths. At least one.
+      placeholder: "![defect](...) or qa/evidence/1397/AFTER_fix_final.jpg"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual
+      description: One line each. Reference a known-good frame or the PoE2 anchor if applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Scene / fixture / capture recipe
+      description: Scene or fixture id (e.g. crypt_dense_v1, camp_637cc4322ef2), renderer path (replay / ClosedLoopBuilder / viewer), capture settings (screenshot_super_size, camera), engine SHA.
+    validations:
+      required: true
+  - type: textarea
+    id: pregate
+    attributes:
+      label: Deterministic pre-gate output (if run)
+      description: qa/visual_pregate.py verdict lines + the manifest path. Distinguishes "measured defect" from "eyeball report".
+    validations:
+      required: false
