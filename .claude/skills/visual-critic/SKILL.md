@@ -270,6 +270,19 @@ a positive control, so the ceiling was invisible. Rules:
 5. Complement with the FELT/product track: score the COMPOSED game frame (plate + actors + rings at viewport
    scale) with a "would a player screenshot and share this?" lens — the story-side felt-vs-scores lesson applies
    to graphics identically.
+6. **★ HOUSE-STYLE ANCHOR (MANDATORY since 2026-07-08, the camp/market cadence regression)** — a PoE2/BG2
+   control alone proves the plate beats a real-game bar; it does NOT prove the plate matches WorldOS's OWN
+   established painterly hand. `camp_clearing_night`/`market_square` (backdrop-cadence-20260708) each scored
+   6.0, "adopted," against only a disguised PoE2/BG2 control (market's was itself defective that round) plus a
+   remembered/cited number for the incumbent-class bar — no in-panel image comparison to the actual best-in-
+   class WorldOS plate was ever shown to scorers. Both plates read cartoonish/cel-shaded on later owner review.
+   Fix: **every new-room adoption/verdict panel MUST also embed the current best-in-class WorldOS plate for
+   that room family** (today: `crypt_dense_v1`, disclosed — not disguised — as "the house best"), with an
+   explicit scorer question: *"does the candidate read as the SAME painterly hand / hit the SAME craft bar as
+   this house-best reference, or does it look like a different, lesser pipeline?"* A candidate that beats its
+   PoE2 control but loses the house-style read is a REGRESSION, not an adoption, regardless of the absolute
+   number. This is distinct from L6 (gap to the PoE2 reference) — L6 checks the external bar, this checks
+   internal consistency across WorldOS's own generated rooms.
 
 The lenses (one subagent each):
 1. **L1 registration / cohesion** — does the painted floor register with the gameplay grid under
