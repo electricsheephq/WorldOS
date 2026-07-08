@@ -292,6 +292,24 @@ print(last)
 PY
 }
 
+# #1414: the CONTAMINATED-marker writer for every abort path below (QUOTA/INFRA aborts never
+# reach the normal scoring tail, so without this a contaminated run silently landed NO row at
+# all — the manual-append gap docs/RUNBOOK-INDEX.md calls out). FAIL LOUD like every other write
+# here: a failed marker write is itself a failed run (Universal Run Contract, docs/OPERATIONS.md
+# "No row = no run") — never `|| echo WARN`. Writes surface=engine-duo, behavioral=CONTAMINATED,
+# NO lens numbers (the watcher contract: infra-fail => no citable row).
+duo_persist_contaminated() {  # $1 = reason string
+  local reason="$1"; local cb_arg=()
+  [ "${LAST_COMPLETED_BEAT:--1}" -ge 0 ] && cb_arg=(--completed-beats "$LAST_COMPLETED_BEAT")
+  if ! python3 "$ROOT/qa/scores_persist.py" duo \
+      --run-id "$RUN" --build-sha "$CURRENT_SHA" --dm-model "$WORLDOS_DM_MODEL" \
+      --beats "$BEATS" ${cb_arg[@]+"${cb_arg[@]}"} \
+      --source-path "$T/$RUN" --contaminated-reason "$reason"; then
+    echo "[duo] FATAL: scores_db CONTAMINATED-marker write failed — a failed row write is a failed run per the Universal Run Contract (docs/OPERATIONS.md). See the error above." >&2
+    exit 1
+  fi
+}
+
 duo_acquire_lock
 
 if [ -s "$CHECKPOINT" ]; then
@@ -649,6 +667,7 @@ echo "[duo] DM opened: ${DMSG:0:120}…"
 if duo_quota_protocol_seen "$COMBINED" "$T/$RUN.dm.err" || duo_quota_error_seen "$T/$RUN.dm.err" "$STATE_DIR/.dm_last_result"; then
   echo "[duo] QUOTA ABORT — DM cold-open hit the account session limit (HTTP 429). Skipping scoring; this is an INFRA abort, NOT a product measurement." >&2
   echo "[duo] throttled at beat 0 — re-invoke the same command in a fresh window to resume" >&2
+  duo_persist_contaminated "QUOTA ABORT at cold-open (HTTP 429 session limit)"
   exit "$EX_TEMPFAIL"
 fi
 # SYN-01: an empty resolved reply is a FAILED beat (error-class result, recycled-only prose, or
@@ -657,6 +676,7 @@ fi
 if [ -z "$DMSG" ]; then
   worldos_chatlog_dm_failed
   echo "[duo] DM produced no opening — aborting (see $COMBINED)" >&2
+  duo_persist_contaminated "DM produced no opening at cold-open (empty resolved reply)"
   exit 1
 fi
 worldos_chatlog_dm "$DMSG"
@@ -755,6 +775,7 @@ $EVENT_ADV")"
     if duo_quota_protocol_seen "$STATE_DIR/.dm_last_result" "$COMBINED" "$T/$RUN.dm.err" || duo_quota_error_seen "$STATE_DIR/.dm_last_result" "$T/$RUN.dm.err"; then
       echo "[duo] QUOTA ABORT — DM beat $b hit the account session limit / rate limit. Skipping scoring; this is an INFRA abort, NOT a product measurement." >&2
       echo "[duo] throttled at beat $b — re-invoke the same command in a fresh window to resume" >&2
+      duo_persist_contaminated "QUOTA ABORT at beat $b (HTTP 429 / rate limit)"
       exit "$EX_TEMPFAIL"
     fi
     # #1285: worldos_chatlog_dm_failed stamps $STATE_DIR/.run_infra_invalid.json once the
@@ -766,6 +787,7 @@ $EVENT_ADV")"
     if [ -s "$STATE_DIR/.run_infra_invalid.json" ]; then
       cp "$STATE_DIR/.run_infra_invalid.json" "$T/$RUN.infra_invalid.json" 2>/dev/null || true
       echo "[duo] INFRA ABORT — $WORLDOS_DM_BEATS_FAILED_STREAK consecutive DM beat failures at beat $b (see $T/$RUN.infra_invalid.json). Skipping scoring; this is an INFRA collapse, NOT a product measurement." >&2
+      duo_persist_contaminated "INFRA ABORT — $WORLDOS_DM_BEATS_FAILED_STREAK consecutive DM beat failures at beat $b"
       exit 2
     fi
     echo "[duo] DM went silent at beat $b; stopping early"
@@ -792,6 +814,7 @@ turn dm "$DSID" 0 "We are out of time. Bring this beat to a clean stopping point
 if duo_quota_protocol_seen "$STATE_DIR/.dm_last_result" "$COMBINED" "$T/$RUN.dm.err" || duo_quota_error_seen "$STATE_DIR/.dm_last_result" "$T/$RUN.dm.err"; then
   echo "[duo] QUOTA ABORT — throttled after beat $LAST_COMPLETED_BEAT during session wrap-up. Skipping scoring; this is an INFRA abort, NOT a product measurement." >&2
   echo "[duo] throttled at beat $LAST_COMPLETED_BEAT — re-invoke the same command in a fresh window to resume" >&2
+  duo_persist_contaminated "QUOTA ABORT during session wrap-up (after beat $LAST_COMPLETED_BEAT)"
   exit "$EX_TEMPFAIL"
 fi
 echo "[duo] distilling + scoring…"
@@ -880,6 +903,27 @@ if python3 qa/latency_rollup.py --dir "$T" --run "$RUN" --tooltiming "$TOOLTIMIN
   LAT_SUMMARY="$(jq -r '"s/beat="+(.s_per_beat|tostring)+" cold-open="+(.coldopen_s|tostring)+"s turns/beat="+(.turns_per_beat|tostring)+(if .combat_s_per_beat then " combat="+(.combat_s_per_beat|tostring)+"s" else "" end)+(if .social_s_per_beat then " social="+(.social_s_per_beat|tostring)+"s" else "" end)+(if .tool_exec_pct then " tool="+((.tool_exec_pct*100)|floor|tostring)+"%" else "" end)+(if .slowest_tool then " slowest="+.slowest_tool else "" end)' "$LATENCY_JSON" 2>/dev/null)"
 else
   LAT_SUMMARY="latency=unavailable"
+fi
+# #1414: auto-persist the scores_ledger row at clean completion — FAIL LOUD (never `|| echo WARN`;
+# a failed write is a failed run per the Universal Run Contract, docs/OPERATIONS.md "No row = no
+# run"). Covers BOTH a GREEN and a behavioral-RED finish (RED is a real product measurement, not
+# an abort — only the QUOTA/INFRA abort paths above skip this in favor of the CONTAMINATED marker).
+DUO_GATE_ARG=()
+if [ "${GATE:-0}" != "0" ]; then
+  DUO_GATE_ARG=(--gate-reason "$GATE_REASON")
+fi
+DUO_UNSCORABLE_ARG=()
+[ "$UNSCORABLE" = "1" ] && DUO_UNSCORABLE_ARG=(--unscorable-detail "$UNSCORABLE_DETAIL")
+if ! python3 "$ROOT/qa/scores_persist.py" duo \
+    --run-id "$RUN" --build-sha "$CURRENT_SHA" --dm-model "$WORLDOS_DM_MODEL" \
+    --actor-model "$WORLDOS_ACTOR_MODEL" --beats "$BEATS" --completed-beats "$LAST_COMPLETED_BEAT" \
+    --behavioral "$([ "$GATE" = 0 ] && echo GREEN || echo RED)" \
+    --story-json "$T/$RUN.tolkien.json" --mech-json "$T/$RUN.score.json" --angry-json "$T/$RUN.angrydm.json" \
+    --latency-json "$LATENCY_JSON" --persona "$PLAYER_PROMPT_FILE" --source-path "$T/$RUN.md" \
+    ${DUO_GATE_ARG[@]+"${DUO_GATE_ARG[@]}"} ${DUO_UNSCORABLE_ARG[@]+"${DUO_UNSCORABLE_ARG[@]}"} \
+    --infra-note "checkpoint=$([ "$RESUME_MODE" = 1 ] && echo resumed || echo fresh); last_completed_beat=$LAST_COMPLETED_BEAT"; then
+  echo "[duo] FATAL: scores_db row write failed — a failed write is a failed run per the Universal Run Contract (docs/OPERATIONS.md). See the error above." >&2
+  exit 1
 fi
 # WS0a: print each lens via the shared validator so a scorer FAILURE shows as FAILED (not a blank
 # that misreads as a valid no-score). `worldos_lens_display` echoes the numeric .overall for a valid

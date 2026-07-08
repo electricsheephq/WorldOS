@@ -6,7 +6,8 @@
 > type = adding a row + wiring the five steps. Changing a runner = updating its row (bump
 > Last-verified). Dispatch packets MUST name the run type's row.
 >
-> _Last full verification sweep: 2026-07-08._
+> _Last full verification sweep: 2026-07-08._ Manual-append bucket auto-wired #1414 (2026-07-08):
+> duo/sprint/sweep/app-gate/RRI now self-persist via `qa/scores_persist.py` (fail-loud).
 
 ## Play / engine QA
 
@@ -14,11 +15,11 @@
 |---|---|---|---|---|---|
 | fast_gate | `qa/fast_gate.sh` | free, ~30s, EVERY change | pass log (iteration-only, never release evidence) | — (by design) | worldos-dev |
 | mechanism probe | `qa/mechanism_probe.sh` | ~$1, cue-adjacent PRs | fixture transcript + deterministic ACTED/IGNORED | engine-duo (auto-append) | OPERATIONS QA-econ v2 |
-| combat sprint | `qa/run_combat_sprint.sh` | ~$1.50, combat-adjacent | transcript + mech score + behavioral | engine-duo (⚠ manual add) | worldos-dev |
-| story/mech duo | `qa/run_duo.sh` | ~$6, BATCH/release only, solo-tenant | transcript + 3 lenses + behavioral + infra-health note | engine-duo (⚠ manual add) | worldos-dev + watcher contract |
-| 5-persona sweep | `qa/vm/sweep_v2.sh` (canonical: evaos-support VM) | ~$12, milestone | RRI json + persona score.json ×5 | GUI-headless-proxy (⚠ manual) | WorldOS-GUI-RUNBOOK |
-| app gate (native) | `qa/ui_playtest_app.sh` | ~$7, release | run.json + score.json + handoff.json | GUI-built-app (⚠ manual) | worldos-dev VM-GATE §; ⚠ `ui_playtest.sh` variant tests a non-shippable port |
-| release rollup | `qa/release_gate.sh` → `release_readiness.py` | wraps the above | RRI verdict json + closeout block | rows from parts (⚠ RRI itself manual) | OPERATIONS |
+| combat sprint | `qa/run_combat_sprint.sh` | ~$1.50, combat-adjacent | transcript + mech score + behavioral | engine-duo (auto-append #1414) | worldos-dev |
+| story/mech duo | `qa/run_duo.sh` | ~$6, BATCH/release only, solo-tenant | transcript + 3 lenses + behavioral + infra-health note | engine-duo (auto-append #1414; CONTAMINATED marker on QUOTA/INFRA abort) | worldos-dev + watcher contract |
+| 5-persona sweep | `qa/vm/sweep_v2.sh` (canonical: evaos-support VM) | ~$12, milestone | RRI json + persona score.json ×5 | GUI-headless-proxy (auto-append #1414, per persona) | WorldOS-GUI-RUNBOOK |
+| app gate (native) | `qa/ui_playtest_app.sh` | ~$7, release | run.json + score.json + handoff.json | GUI-built-app (auto-append #1414, from score.json) | worldos-dev VM-GATE §; ⚠ `ui_playtest.sh` variant tests a non-shippable port |
+| release rollup | `qa/release_gate.sh` → `release_readiness.py` | wraps the above | RRI verdict json + closeout block | rows from parts (RRI row itself auto-appends #1414 whenever --out is written) | OPERATIONS |
 
 ## Visual / render
 
@@ -46,7 +47,7 @@
 | character/asset gen | asset-gen skill (Meshy/Tripo/Scenario/PixelLab) | ~5-25 CU/asset | registry entry (gen_recipe) + grounded upright render per actor + evidence commit | ⚠ NONE today — gate via pre-gate + panel on first composed use | asset-gen skill |
 
 ## Known wiring gaps (tracked)
-1. **Manual-append bucket** (duo, sprint, sweep, app gate, RRI): the expensive runs don't auto-write
-   their rows — highest-leverage teeth to add (auto add_run at runner completion).
+1. ~~**Manual-append bucket** (duo, sprint, sweep, app gate, RRI)~~ — CLOSED #1414: each runner now
+   self-persists via `qa/scores_persist.py` (fail-loud; CONTAMINATED marker on a QUOTA/INFRA abort).
 2. **Ledger unification**: artifacts + library_metrics tables don't render into scores_ledger.md.
 3. Half-wired: motion_reel capture stub; felt_rest_panel non-rest write path; stale `--layered` naming.

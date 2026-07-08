@@ -13,7 +13,10 @@ SCRIPT = ROOT / "qa" / "release_readiness.py"
 class ReleaseReadinessContractTests(unittest.TestCase):
     def run_rri(self, tmp: Path, *args: str) -> tuple[int, str, dict]:
         out = tmp / "RRI.json"
-        cmd = [sys.executable, str(SCRIPT), *args, "--out", str(out)]
+        # #1414: --scores-db points the auto-persist row at a TEMP db — NEVER the committed
+        # qa/scores.db (the same additive/read-only test discipline every scores_db test follows).
+        cmd = [sys.executable, str(SCRIPT), *args, "--out", str(out),
+               "--scores-db", str(tmp / "scores.db")]
         proc = subprocess.run(cmd, cwd=ROOT, text=True, capture_output=True, check=False)
         payload = json.loads(out.read_text(encoding="utf-8")) if out.exists() else {}
         return proc.returncode, proc.stdout + proc.stderr, payload
