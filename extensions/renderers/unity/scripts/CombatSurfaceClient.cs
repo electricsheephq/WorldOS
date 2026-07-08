@@ -48,6 +48,15 @@ public class CombatSurfaceClient : MonoBehaviour
 
     void Start()
     {
+        // Additive config resolution (#1322 W5a): the standalone player build has no Inspector to
+        // hand-edit, so the app host (NSWorkspace launch w/ configuration.environment, mirroring
+        // native-bridge.js) hands the engine origin + campaign through the PROCESS ENVIRONMENT.
+        // Absent env vars ⇒ today's Inspector-set defaults, byte-identical to pre-#1322 behavior.
+        string envUrl = System.Environment.GetEnvironmentVariable("WORLDOS_ENGINE_BASE_URL");
+        if (!string.IsNullOrEmpty(envUrl)) ViewerUrl = envUrl;
+        string envCampaign = System.Environment.GetEnvironmentVariable("WORLDOS_CAMPAIGN_ID");
+        if (!string.IsNullOrEmpty(envCampaign)) CampaignId = envCampaign;
+
         _hero = Find("HeroFighter");
         _goblin = Find("MonsterGoblin");
         Debug.Log("[CSC] start: hero=" + (_hero != null) + " goblin=" + (_goblin != null) + " campaign=" + CampaignId + " url=" + ViewerUrl);

@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using UnityEngine;
 using UnityEditor;
 public static class AnimFrameCapture {
@@ -22,3 +23,4 @@ public static class AnimFrameCapture {
     frameIdx++;
   }
 }
+#endif // UNITY_EDITOR

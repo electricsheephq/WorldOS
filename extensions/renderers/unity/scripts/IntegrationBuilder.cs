@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
@@ -585,3 +586,5 @@ public class IntegrationBuilder
         Debug.Log($"[Integration] Screenshot saved: Captures/{fname}.png");
     }
 }
+
+#endif // UNITY_EDITOR
