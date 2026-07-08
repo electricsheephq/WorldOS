@@ -1,0 +1,32 @@
+name: "Engine / viewer / QA bug"
+description: "Non-visual defects: engine rules, snapshot state, viewer wiring, QA harness."
+labels: []
+body:
+  - type: textarea
+    id: symptom
+    attributes:
+      label: Symptom
+      description: What happened, where (file/tool/verb), and the exact error or wrong value.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Smallest path that triggers it — fixture/campaign, tool calls or test, engine SHA. A failing test name is the gold standard.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Transcript excerpt, test output, or a frame if the defect is visible in the viewer (see the graphics-defect template for the visual-evidence rule).
+    validations:
+      required: true
+  - type: textarea
+    id: invariants
+    attributes:
+      label: Invariant impact (if any)
+      description: "Does this touch: engine-sole-writer, additive-by-default, gates-read-gauges, snapshot round-trip? Say which and why."
+    validations:
+      required: false

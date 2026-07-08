@@ -133,3 +133,13 @@ There is no "done" — there is the next gate. A session ends cleanly when: the 
 merged with their gates green, the charter/roadmap state is updated (issues closed with evidence,
 next items noted), every scored run is in the ledger, and anything blocked is labeled with what
 unblocks it. Then take the next issue.
+
+## The evidence rule (visual work — owner-ratified 2026-07-08)
+Visual claims need pixels reviewers can SEE. Any issue or PR about graphics/animation/rendering
+(actors, plates, poses, lighting, viewer UI) MUST attach still-frame evidence that is visible to
+reviewers: drag-dropped into the issue, or committed to `qa/evidence/<number>/` on the PR branch
+(≤400KB/frame, ≤6 frames; JPEG fine). Local machine paths do not count — agents and bots cannot
+read them. Motion defects: a numbered still series is the primary artifact (agents read stills
+reliably; GIFs are optional, for humans). Pair frames with qa/visual_pregate.py output when the
+change touches placement/pose/scale. Use the `graphics-defect` issue template; the PR template's
+Evidence section applies to every visual-affecting PR. See qa/evidence/README.md.

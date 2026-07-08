@@ -61,5 +61,14 @@ List the checks you ran.
 
 - Exact next action:
 
+
+## Evidence (required for anything visual)
+For renderer / viewer / UX / animation changes: commit 1-6 BEFORE/AFTER still frames to
+`qa/evidence/<number>/` **on this branch** (≤400KB each; JPEG fine for painterly plates) and
+reference them here. Local paths (`~/worldos-session-notes/...`) are INVISIBLE to reviewers — repo
+paths only. Motion: a numbered frame series (2-6 stills) is primary; a GIF is optional for humans
+(agents read stills). Include the deterministic pre-gate output (qa/visual_pregate.py) when the
+change touches placement/pose/scale. Engine-only changes: test names + fast_gate line instead.
+
 ---
 _Merging note: required checks stuck at "expected/pending" with mergeState BLOCKED is the known repo-wide auto-merge hang (#1389), NOT a CI failure. Procedure: real checks green + threads resolved → `gh pr merge <n> --admin --squash` (docs/OPERATIONS.md "Merging")._
