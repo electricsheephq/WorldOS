@@ -290,6 +290,9 @@ System.Action<string> capture=(label)=>{
 {
   float _pa2=cam.aspect; var _pt2=cam.targetTexture; cam.aspect=(float)W/Hh;
   System.Func<Vector3,float[]> w2p=(w)=>{ var vp=cam.WorldToViewportPoint(w); return new float[]{ vp.x*W, (1f-vp.y)*Hh }; };
+  // #1284 review P3 (3541403920): the actor id/name comes from /combat-surface tokens[] — JSON-escape it
+  // so a name containing '"', '\\', or a newline can never produce an invalid manifest the pre-gate can't parse.
+  System.Func<object,string> _jesc=(o)=>{ var st=o==null?"":o.ToString(); return st.Replace("\\","\\\\").Replace("\"","\\\"").Replace("\n"," ").Replace("\r"," "); };
   var msb=new System.Text.StringBuilder();
   msb.Append("{\n  \"frame_w\":"+W+", \"frame_h\":"+Hh+",\n");
   msb.Append("  \"checks\": {\"floor_contact\": {\"tolerance_px\": 8}, \"screen_scale\": {\"min_height_frac\":0.03,\"max_height_frac\":0.45}},\n");
@@ -300,7 +303,7 @@ System.Action<string> capture=(label)=>{
     var fp=w2p(fW); var hp=w2p(hW);
     var floorPx=w2p(new Vector3(fW.x,FLOOR_Y,fW.z));                       // floor plane at the render cell
     float half=Mathf.Max(4f,Mathf.Abs(fp[1]-hp[1])*0.22f);
-    msb.Append("    {\"name\":\""+d["id"]+"\",\"logical_cell\":["+lc[0]+","+lc[1]+"],\"expected_cell\":["+rc2[0]+","+rc2[1]+"],");
+    msb.Append("    {\"name\":\""+_jesc(d["id"])+"\",\"logical_cell\":["+lc[0]+","+lc[1]+"],\"expected_cell\":["+rc2[0]+","+rc2[1]+"],");
     msb.Append("\"screen_bbox\":["+Mathf.Round(fp[0]-half)+","+Mathf.Round(hp[1])+","+Mathf.Round(fp[0]+half)+","+Mathf.Round(fp[1])+"],");
     msb.Append("\"floor_y_px\":"+Mathf.Round(floorPx[1])+"}");
     msb.Append(i<_repSidecar.Count-1?",\n":"\n");
