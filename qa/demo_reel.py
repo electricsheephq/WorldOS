@@ -139,7 +139,11 @@ def _mean_luma_sample(p: Path) -> float:
                 pa, pb, pc = abs(b - c), abs(a - c), abs(a + b - 2 * c)
                 pr = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
                 row[i] = (x + pr) & 0xFF
-        # Sample every ~37th pixel's first channel (luma proxy) to keep this cheap.
+        # Sample every ~37th pixel's first channel (luma proxy) to keep this cheap. NOTE: this is
+        # red-biased (true luma weights G ~0.59 >> R ~0.30), so a near-monochrome dark-green/blue
+        # frame could read lower than its real luminance — acceptable for a coarse non-black gate
+        # (threshold 8.0 is well below any rendered board's red channel), but not a general luma
+        # meter. Widen to all channels if a real capture ever needs a tighter threshold here.
         for px in range(0, width, 37):
             total += row[px * channels]
             count += 1
@@ -167,9 +171,11 @@ def _maybe_gif(out_dir: Path, frame_paths: list[Path]) -> bool:
         return False
     magick = shutil.which("magick") or shutil.which("convert")
     if magick:
-        cmd = [magick] + (["convert"] if magick.endswith("convert") is False and Path(magick).name == "magick" else [])
+        # IM7's `magick` binary needs an explicit `convert` subcommand; IM6's `convert` binary
+        # (or a `magick` symlinked straight to it) does not.
+        cmd = [magick] + (["convert"] if Path(magick).name == "magick" and not magick.endswith("convert") else [])
         r = subprocess.run(
-            [magick, "-delay", "160", "-loop", "0", "-resize", "1000x"]
+            cmd + ["-delay", "160", "-loop", "0", "-resize", "1000x"]
             + [str(p) for p in frame_paths] + [str(gif)],
             capture_output=True, text=True,
         )
@@ -205,7 +211,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="demo-reel-") as td:
         state_dir = str(Path(td) / "state")
         Path(state_dir).mkdir(parents=True, exist_ok=True)
-        ids = wcr.seed(state_dir)
+        wcr.seed(state_dir)
 
         env = dict(os.environ)
         env["WORLDOS_STATE_DIR"] = state_dir
