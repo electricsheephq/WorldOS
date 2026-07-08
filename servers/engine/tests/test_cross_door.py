@@ -5,6 +5,7 @@ room-unit (Location.connections), delegating the party move to travel_to. Additi
 """
 import pytest
 
+import combat_grid
 import server  # noqa: PLC0415  (conftest puts servers/engine on the path; import-first per the
 from scene_grid import SceneGrid, SceneGridSpec, SceneCellDefault  # models<->scene_grid circular note)
 
@@ -37,6 +38,53 @@ def test_cross_door_travels_to_the_connected_room(two_room):
     assert server._require(cid).current_location_id == b  # crossed into the linked unit
     assert res["crossed_door"] == [6, 0]
     assert res["multi_connection"] is False
+
+
+def test_cross_door_restages_party_near_the_destination_door(two_room):
+    # #1378: when the linked room is ALSO painted, the party must arrive re-staged onto walkable
+    # cells beside that room's door — not the empty door-bar board (their stage_cell is cleared on
+    # every travel by _move_party_to). Give room B its own grid + entry door and cross into it.
+    cid, a, b = two_room
+    _author_grid(cid, b, [[3, 0]])
+    hero = server.create_character(cid, "Hero", kind="player", max_hp=30)["id"]
+    ally = server.create_character(cid, "Ally", kind="companion", max_hp=20)["id"]
+    c = server._require(cid)
+    for pid, cell in ((hero, (5, 5)), (ally, (6, 5))):  # standing at rest in room A
+        c.characters[pid].location_id = a
+        c.characters[pid].stage_cell = cell
+    server.save_campaign(c)
+
+    server.cross_door(cid, 6, 0)  # walk through A's door → arrive in room B
+
+    c = server._require(cid)
+    assert c.current_location_id == b
+    hero_cell = c.characters[hero].stage_cell
+    ally_cell = c.characters[ally].stage_cell
+    assert hero_cell is not None and ally_cell is not None  # re-staged (was None: the bug)
+    assert hero_cell != ally_cell  # no stacking — deterministic spread
+    door = (3, 0)
+    for pid, cell in ((hero, hero_cell), (ally, ally_cell)):
+        w, h, blocked = server.rest_blocked_cells(c, c.locations[b], exclude_id=pid)
+        assert 0 <= cell[0] < w and 0 <= cell[1] < h  # on the destination grid
+        assert cell not in blocked  # walkable, not a wall/prop and not on a party-mate
+        assert combat_grid.chebyshev_cells(cell, door) <= 2  # beside the arrival door
+
+
+def test_cross_door_into_ungridded_room_writes_no_stage_cells(two_room):
+    # ADDITIVE guard: the destination (room B) has NO scene_grid → seeding is a no-op, exactly as
+    # before #1378 (stage_cell stays None after the travel clear). Byte-identical legacy behavior.
+    cid, a, b = two_room
+    hero = server.create_character(cid, "Hero", kind="player", max_hp=30)["id"]
+    c = server._require(cid)
+    c.characters[hero].location_id = a
+    c.characters[hero].stage_cell = (5, 5)
+    server.save_campaign(c)
+
+    server.cross_door(cid, 6, 0)
+
+    c = server._require(cid)
+    assert c.current_location_id == b
+    assert c.characters[hero].stage_cell is None
 
 
 def test_cross_door_rejects_a_non_doorway_cell(two_room):
