@@ -28,6 +28,7 @@ steps:
         ../../qa/test_scores_db.py
         ../../qa/test_artifact_evals.py
         ../../qa/test_closeout.py
+        ../../qa/test_duo_resume.py
         ../../qa/test_release_gate_static.py
         ../../qa/test_ui_playtest_score_image_outcomes.py
         ../../qa/test_claude_auth_isolation.py

@@ -312,6 +312,26 @@ class QuotaCircuitBreakerStaticContractTests(unittest.TestCase):
             source.index('python3 "$ASSERT_BEHAVIORAL_SCRIPT"'),
         )
 
+    def test_qa_release_gate_ci_lists_are_in_parity(self):
+        # The GHA qa-release-gate-tests job and its Woodpecker mirror each grew test files the other
+        # lacked (test_artifact_evals.py was Woodpecker-only, so the #1427 stale-ruler-pin failure was
+        # invisible in GHA and read as "the Woodpecker mirror is broken"; test_duo_resume.py was
+        # GHA-only). Both gates must run the SAME qa/ test set — additions go to both files.
+        gha = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        job = re.search(r"^  qa-release-gate-tests:\n(.*?)(?=^  \S)", gha, re.M | re.S)
+        self.assertIsNotNone(job, "qa-release-gate-tests job not found in ci.yml")
+        gha_tests = set(re.findall(r"qa/(test_\w+\.py)", job.group(1)))
+        woodpecker = (ROOT / ".woodpecker" / "qa-release-gate-tests.yml").read_text(encoding="utf-8")
+        woodpecker_tests = set(re.findall(r"qa/(test_\w+\.py)", woodpecker))
+        # guard the extraction itself — an empty set would vacuously "match" a broken regex.
+        self.assertGreater(len(gha_tests), 40, "ci.yml extraction came back implausibly small")
+        self.assertEqual(
+            gha_tests,
+            woodpecker_tests,
+            "qa-release-gate test lists drifted between .github/workflows/ci.yml and "
+            ".woodpecker/qa-release-gate-tests.yml — add the test file to BOTH gates",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
