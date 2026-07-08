@@ -79,29 +79,10 @@ fixture_for_scene() {
   esac
 }
 
-# --- locate the installed MCP SDK (worktrees have no node_modules — accept an explicit override or
-# the canonical checkout's qa/playwright install, matching native_palette_server.js's resolution). --
-find_sdk_node_modules() {
-  local c
-  for c in "${WORLDOS_NPT_NODE_MODULES:-}" \
-           "$PW_DIR/node_modules" \
-           "/Users/lume/WorldOS/qa/playwright/node_modules"; do
-    [ -n "$c" ] && [ -d "$c/@modelcontextprotocol" ] && { echo "$c"; return 0; }
-  done
-  return 1
-}
-
-# --- locate the player app ---------------------------------------------------
-find_player_app() {
-  local c
-  for c in "${WORLDOS_PLAYER_APP:-}" \
-           "$HOME/Applications/WorldOSPlayer.app" \
-           "/Applications/WorldOSPlayer.app" \
-           "$HOME/worldos-session-notes/w5a-build/WorldOSPlayer.app"; do
-    [ -n "$c" ] && [ -d "$c" ] && { echo "$c"; return 0; }
-  done
-  return 1
-}
+# --- shared boot helpers (find_sdk_node_modules / find_player_app / pick_port /
+# activate_current_space_context — #1443: the cross-Space launch/capture fix lives in ONE place,
+# shared with qa/player_smoke.sh). ------------------------------------------------------------
+. "$ROOT/qa/lib_native_player_boot.sh"
 
 # --- --preflight: validate prerequisites + permissions, then exit (no run) ---
 if [ "${1:-}" = "--preflight" ]; then
@@ -189,10 +170,7 @@ if ! echo "$PERMS" | grep -q '"accessibility":true'; then
   echo "       (enable the app running this script, then RESTART it). probe=$PERMS" >&2; exit 5; fi
 echo "[t3] permissions OK: $PERMS"
 
-# --- free port in 8990–8999 --------------------------------------------------
-pick_port() { local p; for p in $(seq 8990 8999); do
-  if ! (exec 3<>"/dev/tcp/127.0.0.1/$p") 2>/dev/null; then echo "$p"; return 0; fi
-  exec 3>&- 2>/dev/null || true; done; return 1; }
+# --- free port in 8990–8999 (pick_port from lib_native_player_boot.sh) -------
 PORT="$(pick_port)" || { echo "[t3] no free port in 8990-8999 — aborting" >&2; exit 3; }
 BASE_URL="http://127.0.0.1:$PORT"
 
@@ -266,6 +244,25 @@ for _ in $(seq 1 40); do
 done
 [ "$ready" = "1" ] || { echo "[t3] viewer never served /combat-surface at $BASE_URL (see $RUNDIR/viewer.log)" >&2; exit 4; }
 echo "[t3] viewer ready — /combat-surface serving $CID."
+
+# --- #1443 force-recompile discipline ----------------------------------------
+# A compiled native_input binary that predates the CURRENT native_input.swift is exactly the T3
+# bug (an in-run source patch didn't take effect until the palette server restarted, because
+# resolveHelper() only compiled once per process and only when the output file was absent).
+# native_palette_core.js now also checks source mtime vs binary mtime on every resolve, but this
+# is the belt-and-suspenders half: never START a run with a stale binary already sitting in the
+# run dir (e.g. left over from a manually-poked debug session against the same RUNDIR).
+rm -f "$PLAYERDIR/native_input"
+
+# --- #1443 launch-into-same-Space ---------------------------------------------
+# Re-activate whatever GUI app is currently frontmost (see lib_native_player_boot.sh) right
+# before spawning WorldOSPlayer, so the new window opens on the harness's CURRENT Space instead
+# of wherever focus happened to drift (Mission Control auto-switch, a prior run's cleanup, etc.)
+# — the root cause the T3 run tripped over. This is best-effort or launch position; the real
+# safety net for a player that STILL ends up on another Space is native_palette_core.js's
+# activate-before-capture (screencaptureWindow -> core.captureWindow), which recovers at
+# screenshot time regardless of where the window landed.
+activate_current_space_context
 
 # --- launch the native player build with the env launch-contract -------------
 # WorldOSPlayer.app reads WORLDOS_ENGINE_BASE_URL + WORLDOS_CAMPAIGN_ID at startup

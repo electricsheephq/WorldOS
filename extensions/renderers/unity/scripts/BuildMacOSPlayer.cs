@@ -15,6 +15,15 @@ using UnityEngine;
 /// confirms the Universal (x64+AppleSilicon) architecture, registers the current-best combat
 /// scene in Build Settings (was empty), and builds the .app to BuildOutput/ beside the project.
 /// Writes a build-report text file for evidence (qa/evidence/1322-build/).
+///
+/// AFTER EVERY REBUILD (#1443): run `qa/player_smoke.sh` against the fresh .app before trusting
+/// it for a T3 gate run. It is the free (~30-60s, no LLM) deterministic post-build smoke — boots
+/// the camp fixture + this player, scripts a move + attack through the SAME native-palette
+/// primitives the T3 blind-player agent uses, and asserts the engine actually moved/damaged
+/// something and the captured frames actually changed. This is the standing regression check for
+/// the bug the smoke exists to catch: WorldOSPlayer opening on a different Mission Control Space
+/// silently blinded every screenshot/click for the T3 gate (see docs/RUNBOOK-INDEX.md's "player
+/// smoke" row).
 /// </summary>
 public static class BuildMacOSPlayer
 {

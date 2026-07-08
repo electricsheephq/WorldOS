@@ -49,7 +49,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { execFileSync, spawnSync } = require("child_process");
+const { spawnSync } = require("child_process");
 
 // The MCP SDK + zod live in the sibling qa/playwright workspace (the harness already installs them
 // there). Resolve normally first (in case this dir grows its own node_modules), then fall back to the
@@ -121,38 +121,24 @@ function appendLine(file, obj) {
 }
 function nowIso() { return new Date().toISOString().replace(/\.\d+Z$/, "Z"); }
 
-// ---- the Swift primitives helper -------------------------------------------
-// Prefer a prebuilt binary (WORLDOS_NPT_HELPER); else compile native_input.swift once to a temp
-// binary (fast per-call); else fall back to the `swift` interpreter (slower, ~1-2s/call but portable).
-const SWIFT_SRC = path.join(__dirname, "native_input.swift");
-let helperCmd = null; // {file, argv0extra:[]}
+// ---- the Swift primitives helper (shared with player_smoke_driver.js — see #1443) -----------
+// native_palette_core.js owns: resolving/compiling the swiftc helper (with a source-mtime
+// staleness check so an EDITED native_input.swift is never shadowed by a stale compiled binary —
+// the #1443 T3 finding: an in-run source patch didn't take effect until the server restarted),
+// cross-Space window activation + polling, and the screencapture-with-fallback sequence.
+const core = require("./native_palette_core.js");
+const SWIFT_SRC = core.SWIFT_SRC;
+let helperCmd = null; // {bin, pre} — memoized per-process (mtime check still runs each resolve)
 function resolveHelper() {
-  if (helperCmd) return helperCmd;
   const explicit = (process.env.WORLDOS_NPT_HELPER || "").trim();
-  if (explicit && fs.existsSync(explicit)) { helperCmd = { bin: explicit, pre: [] }; return helperCmd; }
-  // try to compile once
-  const out = path.join(PLAYERDIR, "native_input");
-  try {
-    if (!fs.existsSync(out)) execFileSync("swiftc", [SWIFT_SRC, "-o", out], { stdio: "pipe" });
-    helperCmd = { bin: out, pre: [] };
-    return helperCmd;
-  } catch (_e) {
-    // fall back to interpreting the source
-    helperCmd = { bin: "swift", pre: [SWIFT_SRC] };
-    return helperCmd;
-  }
+  helperCmd = core.resolveHelper(PLAYERDIR, explicit);
+  return helperCmd;
 }
 function runHelper(args) {
-  const h = resolveHelper();
-  const r = spawnSync(h.bin, [...h.pre, ...args], { encoding: "utf8", timeout: 20000 });
-  if (r.status !== 0 && !r.stdout) {
-    return { _error: (r.stderr || r.error || "helper failed").toString().slice(0, 300) };
-  }
-  try { return JSON.parse((r.stdout || "").trim().split("\n").pop()); }
-  catch (_e) { return { _error: "unparseable helper output: " + (r.stdout || "").slice(0, 200) }; }
+  return core.runHelper(resolveHelper(), args);
 }
 function haveCliclick() {
-  try { execFileSync("which", ["cliclick"], { stdio: "pipe" }); return true; } catch (_e) { return false; }
+  return core.haveCliclick();
 }
 
 // ---- permission gate (FAIL LOUD) -------------------------------------------
@@ -182,41 +168,31 @@ function assertPermissions() {
 }
 
 // ---- window + screenshot ----------------------------------------------------
+// #1443: cross-Space capture. core.captureWindow() does the activate+poll+capture(-l)+fallback
+// (fullscreen grab cropped to the window's bounds) sequence — see native_palette_core.js. This
+// function stays a thin per-run wrapper: it picks the file name, threads the persistent
+// `captureState` (remembers the last known-good Retina scale across calls, for the fallback
+// crop), and updates `winCache` for click()'s pixel->global-point mapping exactly as before.
+const captureState = {}; // {lastGoodScale} — persists across calls in this process
 function findWindow() {
-  const w = runHelper(["winfind", OWNER]);
-  if (w && w.found === true) return w;
-  return null;
-}
-function pixelSize(file) {
-  // sips is always present on macOS; parse pixelWidth/pixelHeight.
-  try {
-    const r = spawnSync("sips", ["-g", "pixelWidth", "-g", "pixelHeight", file], { encoding: "utf8" });
-    const w = /pixelWidth:\s*(\d+)/.exec(r.stdout || "");
-    const h = /pixelHeight:\s*(\d+)/.exec(r.stdout || "");
-    if (w && h) return { pw: Number(w[1]), ph: Number(h[1]) };
-  } catch (_e) {}
-  return null;
+  return core.findWindow(resolveHelper(), OWNER);
 }
 function screencaptureWindow(label) {
   const name = "step-" + String(seq).padStart(3, "0") + (label ? "-" + label : "") + ".png";
   const file = path.join(SHOTS, name);
   const rel = path.join("player", "screenshots", name);
-  const win = findWindow();
-  let mode = "window";
-  if (win) {
-    spawnSync("screencapture", ["-l", String(win.id), "-o", "-x", file], { encoding: "utf8" });
-  } else if (FULLSCREEN_FALLBACK) {
-    mode = "fullscreen";
-    spawnSync("screencapture", ["-x", file], { encoding: "utf8" });
-  } else {
-    return { ok: false, screenshot: "", reason: "player window '" + OWNER + "' not found (is WorldOSPlayer.app launched? set WORLDOS_NPT_FULLSCREEN_FALLBACK=1 to grab the whole screen)" };
+  const cap = core.captureWindow({
+    helperCmd: resolveHelper(), owner: OWNER, outFile: file,
+    fullscreenFallback: FULLSCREEN_FALLBACK, state: captureState,
+  });
+  if (!cap.window && !cap.ok) {
+    return {
+      ok: false, screenshot: "",
+      reason: "player window '" + OWNER + "' not found (is WorldOSPlayer.app launched? set WORLDOS_NPT_FULLSCREEN_FALLBACK=1 to grab the whole screen)",
+    };
   }
-  const px = fs.existsSync(file) ? pixelSize(file) : null;
-  // scale = capture pixels / window points (Retina = 2). Used to map click pixels -> global points.
-  let scale = 1;
-  if (win && px && win.w > 0) scale = px.pw / win.w;
-  winCache = win ? { x: win.x, y: win.y, w: win.w, h: win.h, id: win.id, scale } : null;
-  return { ok: fs.existsSync(file), screenshot: rel, mode, window: win || null, pixels: px, scale };
+  winCache = cap.window ? { x: cap.window.x, y: cap.window.y, w: cap.window.w, h: cap.window.h, id: cap.window.id, scale: cap.scale } : null;
+  return { ok: cap.ok, screenshot: rel, mode: cap.mode, window: cap.window, pixels: cap.pixels, scale: cap.scale };
 }
 
 // ---- bug + action logging (identical shape to the browser palette) ----------
@@ -306,16 +282,9 @@ server.registerTool(
     const gy = winCache.y + y / winCache.scale;
     const before = (function () { const f = screencaptureWindow("clickbefore"); return f.ok ? fileHash(path.join(RUNDIR, f.screenshot)) : ""; })();
     let ok = true, reason = "";
-    const args = ["click", String(gx), String(gy)];
-    if (double) args.push("double");
     const useCli = CLICK_TOOL === "cliclick" || (CLICK_TOOL === "auto" && haveCliclick());
-    if (useCli) {
-      const r = spawnSync("cliclick", [(double ? "dc:" : "c:") + Math.round(gx) + "," + Math.round(gy)], { encoding: "utf8" });
-      if (r.status !== 0) { ok = false; reason = (r.stderr || "cliclick failed").slice(0, 200); }
-    } else {
-      const r = runHelper(args);
-      if (!r || r.ok !== true) { ok = false; reason = (r && r._error) || "click helper failed"; }
-    }
+    const clickResult = core.clickAt(resolveHelper(), useCli, gx, gy, !!double);
+    if (!clickResult.ok) { ok = false; reason = clickResult.reason || "click failed"; }
     spawnSync("sleep", ["0.7"]);
     const after = screencaptureWindow("click");
     const afterHash = after.ok ? fileHash(path.join(RUNDIR, after.screenshot)) : "";

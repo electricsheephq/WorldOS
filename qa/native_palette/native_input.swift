@@ -82,9 +82,26 @@ func checkPerms() {
 // captured PIXELS require the grant — so a missing grant still lets us find + click the window, and
 // the screenshot (not this helper) is where the loud failure surfaces. We pick the largest on-screen,
 // non-zero-layer window owned by the target app (the game view, not a tiny helper/status window).
+//
+// #1443: Mission Control SPACES blind spot. `.optionOnScreenOnly` only enumerates windows on the
+// CURRENT Space — if WorldOSPlayer opened on (or got dragged to) a different Space, the on-screen
+// pass returns nothing even though the window is very much alive, and the T3 gate silently died
+// (winfind found:false -> every screenshot/click no-ops). Fix: try on-screen-only FIRST (cheap, and
+// the common case), and if the owner isn't in that list, fall back to a search WITHOUT
+// .optionOnScreenOnly (every Space). The result carries "on_screen" so callers (the palette server's
+// screencaptureWindow) know whether `screencapture -l <id>` will actually work from HERE: macOS 15
+// refuses to rasterize a window that isn't on the current Space, so a caller that sees
+// on_screen:false must activate the owner (switch to its Space) before capturing, or fall back to a
+// full-screen grab + crop.
 func winFind(_ owner: String) {
-    let opts: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
-    guard let infoList = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]] else {
+    func listWithOwner(_ opts: CGWindowListOption) -> [[String: Any]]? {
+        guard let raw = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]] else { return nil }
+        return raw.contains { ($0[kCGWindowOwnerName as String] as? String) == owner } ? raw : nil
+    }
+    let onScreenOpts: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+    let allSpacesOpts: CGWindowListOption = [.excludeDesktopElements]
+    var onScreen = true
+    guard let infoList = listWithOwner(onScreenOpts) ?? { onScreen = false; return listWithOwner(allSpacesOpts) }() else {
         emit(["found": false, "error": "window-list-unavailable"]); exit(2)
     }
     var best: [String: Any]? = nil
@@ -109,6 +126,7 @@ func winFind(_ owner: String) {
         "found": true, "window_id": wid,
         "x": Int(x), "y": Int(y), "w": Int(w), "h": Int(h),
         "owner": owner, "title": (win[kCGWindowName as String] as? String) ?? "",
+        "on_screen": onScreen,
     ])
 }
 
