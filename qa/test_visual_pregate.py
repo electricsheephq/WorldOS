@@ -232,3 +232,115 @@ def test_diff_vs_baseline_missing_actor_fails_occupancy(tmp_path):
     assert rc != 0
     assert report["bbox_source"] == "baseline-diff"
     assert _check(report, "occupancy")["status"] == "FAIL"
+
+
+# ---------------------------------------------------------------------------
+# #1402 floor-contact BAND — project the foot cell's 4 corners instead of a single center point.
+# Unit-tests _floor_contact_manifest_check directly (rather than the full CLI) so the real,
+# committed evidence manifests (JPG frames, no PNG decode support here) can be exercised without
+# touching frame-lit/screen-scale/pose-uprightness.
+# ---------------------------------------------------------------------------
+EVIDENCE_DIR = QA_DIR / "evidence"
+
+
+def _floor_check(manifest: dict, actors: list[dict] | None = None) -> dict:
+    actors = manifest["actors"] if actors is None else actors
+    actor_bboxes = [(a, vp._bbox_from_actor(a)) for a in actors]
+    actor_bboxes = [(a, b) for a, b in actor_bboxes if b is not None]
+    return vp._floor_contact_manifest_check(actors, actor_bboxes, manifest)
+
+
+def _load_evidence(rel_path: str) -> dict:
+    return json.loads((EVIDENCE_DIR / rel_path).read_text())
+
+
+def test_real_evidence_1397_grounded_actors_no_longer_hard_fail():
+    # #1402: PR #1400's honest screen_bbox reads +74px / +47px against the OLD single center-point
+    # reference on these two actors, even though their world-space feet are exactly on FLOOR_Y
+    # (#1392, verified). The corner-projected band must absorb this so neither hard-FAILs.
+    manifest = _load_evidence("1397/AFTER_full_fix_manifest.json")
+    result = _floor_check(manifest)
+
+    assert result["status"] != "FAIL", result
+    by_name = {e["actor"]: e for e in result["value"]}
+    assert set(by_name) == {"Actor_char_85293026ab57", "Actor_char_785aa0776129"}
+    for entry in by_name.values():
+        assert entry["status"] in ("PASS", "ADVISORY"), entry
+        assert entry["mechanism"] == "computed-band", entry
+
+
+def test_real_evidence_1408_grounded_actors_no_longer_hard_fail():
+    manifest = _load_evidence("1408/combat_actors_manifest.json")
+    result = _floor_check(manifest)
+
+    assert result["status"] != "FAIL", result
+    for entry in result["value"]:
+        assert entry["status"] in ("PASS", "ADVISORY"), entry
+        assert entry["mechanism"] == "computed-band", entry
+
+
+def test_genuinely_floated_actor_still_fails_floor_contact_band():
+    # Red-first: take a real, verified-grounded #1397 actor and offset its rendered feet (bbox) far
+    # enough to be a genuine float, well beyond #1402's positional-slop margin. This must still FAIL.
+    manifest = _load_evidence("1397/AFTER_full_fix_manifest.json")
+    actor = next(a for a in manifest["actors"] if a["name"] == "Actor_char_785aa0776129")
+    floated = dict(actor)
+    x0, y0, x1, y1 = floated["screen_bbox"]
+    floated["screen_bbox"] = [x0, y0 - 300, x1, y1 - 300]
+
+    result = _floor_check(manifest, actors=[floated])
+
+    assert result["status"] == "FAIL"
+    entry = result["value"][0]
+    assert entry["status"] == "FAIL"
+    assert entry["mechanism"] == "computed-band"
+    assert "floating" in entry["detail"].lower()
+
+
+def test_manifest_floor_band_field_is_ground_truth_and_not_relaxed():
+    # #1402 tier 1: an explicit floor_band_px is authoritative (renderer-real) -- a miss beyond
+    # tolerance is a hard FAIL, NOT downgraded to advisory (unlike the computed-band/center-point
+    # fallback tiers), even though the miss here is smaller than the advisory margin would allow.
+    manifest = {
+        "frame_w": 1920, "frame_h": 1097,
+        "checks": {"floor_contact": {"tolerance_px": 6}},
+    }
+    actor = {"name": "Hero", "expected_cell": [6, 1], "screen_bbox": [535, 37, 885, 520],
+             "floor_band_px": [440, 460]}
+    result = _floor_check(manifest, actors=[actor])
+
+    assert result["status"] == "FAIL"
+    entry = result["value"][0]
+    assert entry["mechanism"] == "manifest-band"
+    assert entry["status"] == "FAIL"
+
+
+def test_manifest_floor_band_field_passes_when_bbox_within_band():
+    manifest = {
+        "frame_w": 1920, "frame_h": 1097,
+        "checks": {"floor_contact": {"tolerance_px": 6}},
+    }
+    actor = {"name": "Hero", "expected_cell": [6, 1], "screen_bbox": [535, 37, 885, 448],
+             "floor_band_px": [440, 460]}
+    result = _floor_check(manifest, actors=[actor])
+
+    assert result["status"] == "PASS"
+    entry = result["value"][0]
+    assert entry["mechanism"] == "manifest-band"
+    assert entry["status"] == "PASS"
+
+
+def test_non_combat_manifest_keeps_strict_center_point_fallback():
+    # A non-locked-combat-camera frame (e.g. this module's small synthetic canvases) must NOT get
+    # the #1402 advisory relaxation -- it stays exactly the pre-#1402 strict tolerance check.
+    manifest = {
+        "floor_y_px": 80,
+        "checks": {"floor_contact": {"tolerance_px": 4}},
+    }
+    actor = {"name": "Hero", "expected_cell": [1, 1], "screen_bbox": [40, 35, 55, 65]}
+    result = _floor_check(manifest, actors=[actor])
+
+    assert result["status"] == "FAIL"
+    entry = result["value"][0]
+    assert entry["mechanism"] == "center-point"
+    assert entry["status"] == "FAIL"
