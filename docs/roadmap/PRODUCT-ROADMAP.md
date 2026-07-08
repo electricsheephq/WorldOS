@@ -1,5 +1,7 @@
 # WorldOS Product Roadmap — the ladder, the sprints, the versions
 
+> **ACTIVE SPRINT: charter #1386 (Act II close-out — Rendered Felt). Refresh this pointer at every charter transition.**
+
 > **The master navigation doc (v2 — the three Acts).** VISION.md says what the product IS and the
 > bar it must clear; this doc says the ORDER we build it in — every sprint from here to the
 > Walkable World and beyond, with a binding gate, an ordered issue list, and a version pin, so
@@ -53,7 +55,7 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
 
 | Engine version | Sprint(s) | Product rung cut at this version |
 |---|---|---|
-| v1.0.5 | S1 | — (engine release: engagement + combat epic + art pipeline batch) |
+| v1.0.5 | S1 | **SHIPPED 2026-07-08** — S1 evidence gate3d: story 4.2 / mech 4.1 / behavioral GREEN |
 | v1.0.6 | S2 + S3 | — (felt demo loop + combat readability) |
 | v1.0.7 | S4 | — (The Table I) |
 | v1.0.8 | S5 + S6 | — (The Table II + alive/latency) |
@@ -220,14 +222,18 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
 > yet; move_to_coords exists combat-gated;
 > the viewer already paints walkability. The gaps are ungatings + one new render mode.
 
-> **Act II execution state (living; last trued 2026-07-06):**
+> **Act II execution state (living; last trued 2026-07-08):**
 > **Sprint 1 (charter #1328, CLOSED)** — W1 #1330 ✅ · HV1 #1331 ✅ · HV2 #1329 ✅ · Tier-1.5 probe
 > harness #1336 ✅. QA-economics v2 doctrine merged (#1340, docs/OPERATIONS.md).
-> **Sprint 2 (charter #1337, ACTIVE)** — HV3 #1338 ✅ · HV5-slice-1 auto-nomination #1342 ✅ ·
-> W2-engine #1341 (landing) · W3-engine #1344 (staged on #1341) · S2 #1303 Animator/VFX reel
-> #1345 (landing) · W2-UI split → #1350.
-> Wrap-window/teeth: instrument verdict ACTED (#1313, 2026-07-06) — teeth PARKED pending owner
-> sign-off; the v1.0.5 gate = ONE batched ruler duo at the current push's batch head.
+> **Sprint 2 (charter #1337, CLOSED)** — W1–W4 (#1330/#1341/#1344/…) and HV1–HV5 (#1331/#1329/#1338/
+> #1342/…) are MERGED; W5 (#1322, the Unity player tier) remains open, not yet started.
+> **ACTIVE charter = #1386** ("Act II close-out — Rendered Felt"): ordered lane is #1284 actor
+> grounding v2 → the rendered rest-scene demo (canon fixture, grounded actors, W1 stage block,
+> FELT panel vs the PoE2 anchor) → W5a Unity player build (#1322) → HV follow-ups (#1378 cross_door
+> re-stage, HV extractor quality pass 2). Entry gate satisfied: v1.0.5 released, GEX44 box
+> reachable, render-delivery decision #1302 CLOSED. Closing #1386 pulls the next charter: S2
+> (#1309, entry gate satisfied) queues after.
+> **v1.0.5 RELEASED 2026-07-08** — S1 evidence gate: gate3d story 4.2 / mech 4.1 / behavioral GREEN.
 
 - **W1 — "Scene at Rest"** *(✅ SHIPPED — PR #1330, incl. the felt_rest_panel instrument)*. Additive `stage` block (`mode: rest|combat` +
   rest tokens) in `build_combat_surface` (viewer/server.py:3376; optionally aliased as
