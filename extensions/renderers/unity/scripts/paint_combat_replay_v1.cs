@@ -232,10 +232,14 @@ System.Func<string,string,string[]> resolveAsset=(slug,kind)=>{
   string fbxDef=kind=="monster"?"Assets/chars_v2/goblin/goblin.fbx":"Assets/painterly/models/hero.fbx";
   string albDef=kind=="monster"?"Assets/chars_v2/goblin/albedo.png":"Assets/painterly/models/hero_albedo.png";
   if(regAssets==null) return new string[]{fbxDef,albDef};
-  string id=slug;
-  if(!regAssets.ContainsKey(id) && regAliases!=null && regAliases.ContainsKey(id)) id=regAliases[id] as string;
-  if((id==null||!regAssets.ContainsKey(id)) && regDefaults!=null){ if(regDefaults.ContainsKey(kind)) id=regDefaults[kind] as string; else if(regDefaults.ContainsKey("__any__")) id=regDefaults["__any__"] as string; }
-  if(id!=null && regAssets.ContainsKey(id)){ var a=regAssets[id] as System.Collections.Generic.Dictionary<string,object>; if(a!=null){ string m=a.ContainsKey("model_ref")?a["model_ref"] as string:null; string al=a.ContainsKey("albedo_ref")?a["albedo_ref"] as string:null; return new string[]{ string.IsNullOrEmpty(m)?fbxDef:m, string.IsNullOrEmpty(al)?albDef:al }; } }
+  string id=slug; bool exactOrAlias=regAssets.ContainsKey(id);
+  if(!exactOrAlias && regAliases!=null && regAliases.ContainsKey(id)){ id=regAliases[id] as string; exactOrAlias = id!=null && regAssets.ContainsKey(id); }
+  if(!exactOrAlias && regDefaults!=null){ if(regDefaults.ContainsKey(kind)) id=regDefaults[kind] as string; else if(regDefaults.ContainsKey("__any__")) id=regDefaults["__any__"] as string; }
+  if(id!=null && regAssets.ContainsKey(id)){ var a=regAssets[id] as System.Collections.Generic.Dictionary<string,object>; if(a!=null){ string m=a.ContainsKey("model_ref")?a["model_ref"] as string:null; string al=a.ContainsKey("albedo_ref")?a["albedo_ref"] as string:null;
+    // #1423 FIX (mirrors paint_combat_v1.cs): a REAL resolved row's null/empty albedo_ref means "use the
+    // model's own material", not "paint the unrelated default template's texture over it".
+    string alOut = string.IsNullOrEmpty(al) ? (exactOrAlias ? null : albDef) : al;
+    return new string[]{ string.IsNullOrEmpty(m)?fbxDef:m, alOut }; } }
   return new string[]{fbxDef,albDef};
 };
 
