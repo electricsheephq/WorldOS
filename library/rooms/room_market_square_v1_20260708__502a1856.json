@@ -1,0 +1,35 @@
+{
+  "artifact_id": "room:market_square:v1:20260708",
+  "class": "room",
+  "curation_note": "SCALE DISCLOSURE: same as camp_clearing_night (0-10 visual-critic scale, not the HV1 1.0-5.0 text-artifact rubric; promote.py --batch's automated gate does not yet support class=room). ADOPTED ON THE ONE-ITERATION RETRY: iteration 1 was REJECTED outright (Gemini hallucinated armed NPCs + added a decorative picture-frame border around the scene); fixed by adding an explicit anti-character/anti-frame clause to all 4 pass2/pass3 prompt_templates in room_recipes.json (a production-wide fix). Control-anchored panel: the disguised control (bg2ee_fortress_party_tactical_02.jpg) was ITSELF defective this round (unanimously flagged by 5/5 scorers as a full gameplay screenshot with baked-in UI chrome and the wrong scene) \u2014 a control-selection mistake, disclosed rather than hidden; the control-delta metric is N/A. Adoption rests on the absolute score (median 6.0) matching the incumbent-class bar (crypt_dense_v1 ~6.2) and this same batch's camp_clearing_night (6.0). See source_path for full per-scorer detail.",
+  "license": "proprietary",
+  "promoted_at": "2026-07-08T11:12:28+00:00",
+  "provenance": {
+    "run_id": null,
+    "sha": null,
+    "source_path": "qa/evidence/backdrop-cadence-20260708/market_square_panel.json",
+    "world": "worldos"
+  },
+  "reuse_count": 0,
+  "room_ref": {
+    "asset_ids": [
+      "asset_SbBaByHbuvbW1vNkwQjLX4b2",
+      "asset_CMeGkRHeRMrr3GbGc4DDmxmc"
+    ],
+    "recipe_key": "market_square"
+  },
+  "scores": {
+    "ac_ruler": null,
+    "dims": {
+      "control_median_real_bg2ee": "N/A - control image was itself defective this round (UI chrome baked into a real BG2EE gameplay screenshot); see curation_note",
+      "scorer_1": 7,
+      "scorer_2": 5,
+      "scorer_3": 7,
+      "scorer_4": 6,
+      "scorer_5": 6
+    },
+    "overall": 6.0,
+    "panel_id": "panel-backdrop-cadence-20260708-market"
+  },
+  "tier": "stable"
+}
