@@ -107,6 +107,7 @@ jobs:
             ../../qa/test_release_readiness_scope.py \
             ../../qa/test_scores_db_comparability.py \
             ../../qa/test_scores_db.py \
+            ../../qa/test_artifact_evals.py \
             ../../qa/test_closeout.py \
             ../../qa/test_duo_resume.py \
             ../../qa/test_release_gate_static.py \
@@ -123,6 +124,7 @@ jobs:
             ../../qa/test_deterministic_rri_gate.py \
             ../../qa/test_orchestrate_split_rri.py \
             ../../qa/test_visual_regression_check.py \
+            ../../qa/test_visual_critic.py \
             ../../qa/test_structural_coverage.py \
             ../../qa/test_story_readout_approval.py \
             ../../qa/test_feature_engagement.py \
