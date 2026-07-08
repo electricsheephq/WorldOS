@@ -1,0 +1,35 @@
+{
+  "artifact_id": "room:camp_clearing_night:v1:20260708",
+  "class": "room",
+  "curation_note": "SCALE DISCLOSURE: overall/dims are on the visual-critic 0-10 scale (SKILL.md CALIBRATION-CONTROL PROTOCOL), NOT the HV1 text-artifact 1.0-5.0 rubric \u2014 promote.py's --batch automated gate does not yet support class=room (qa/scores_db.py ARTIFACT_CLASSES omits 'room' and its overall/dim thresholds assume the 1-5 scale); this entry was written via promote.py's own build_entry/write_entry primitives with a manually-assembled GateResult reflecting the real control-anchored panel, not the automated --batch gate. Control-anchored 5-scorer blind panel vs a disguised REAL poe2_ruins_brazier_integration_01.jpg: candidate median 6.0 vs control median 8.0 (control scored higher \u2014 the expected healthy signal of an unprimed instrument, confirms the panel is not broken). Matches the incumbent-class bar (crypt_dense_v1 ~6.2). See source_path for full per-scorer detail.",
+  "license": "proprietary",
+  "promoted_at": "2026-07-08T11:12:28+00:00",
+  "provenance": {
+    "run_id": null,
+    "sha": null,
+    "source_path": "qa/evidence/backdrop-cadence-20260708/camp_clearing_night_panel.json",
+    "world": "worldos"
+  },
+  "reuse_count": 0,
+  "room_ref": {
+    "asset_ids": [
+      "asset_AVFNJ6TACe8QWxRYSoQmJ1xC",
+      "asset_cTJg3FEgiUjqswT36spNyr11"
+    ],
+    "recipe_key": "camp_clearing_night"
+  },
+  "scores": {
+    "ac_ruler": null,
+    "dims": {
+      "control_median_real_poe2": 8.0,
+      "scorer_1": 6,
+      "scorer_2": 6,
+      "scorer_3": 6,
+      "scorer_4": 7,
+      "scorer_5": 7
+    },
+    "overall": 6.0,
+    "panel_id": "panel-backdrop-cadence-20260708-camp"
+  },
+  "tier": "stable"
+}

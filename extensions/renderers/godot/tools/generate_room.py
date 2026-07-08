@@ -212,9 +212,25 @@ def _build_prompt(recipe: dict, room: str, lighting: str = "firelit") -> tuple:
     rc = rooms[room]
     # day/night dimension: same camera-pinned greybox, swapped lighting prompt (zero-drift regen). The
     # firelit (night) template is the default; daylight floods the room cool with a stained-glass shaft.
-    if lighting == "daylight":
+    # daylight_outdoor (backdrop-cadence restart, HV5) is a THIRD sibling for OPEN-AIR daylight rooms
+    # (market squares, roads, camps-by-day) — the existing "daylight" template is interior-specific
+    # ("tall windows", "stained-glass shaft"), which is wrong for an exterior plate; this keeps that
+    # interior template untouched (church/tavern's adopted day variants are unaffected) and adds a
+    # sibling with open-sky/sun wording instead. Falls back to the interior daylight template if the
+    # manifest hasn't been given the outdoor template yet (forward/backward compatible).
+    if lighting == "daylight_outdoor":
+        template = recipe.get("daylight_outdoor_positive_template",
+                              recipe.get("daylight_positive_template", recipe["firelit_positive_template"]))
+        negative = recipe.get("daylight_negative", recipe["washout_negative"])
+    elif lighting == "daylight":
         template = recipe.get("daylight_positive_template", recipe["firelit_positive_template"])
         negative = recipe.get("daylight_negative", recipe["washout_negative"])
+    elif lighting == "firelit_outdoor":
+        # night EXTERIOR sibling of the (interior-worded) firelit default — same "single warm key +
+        # deep blue-violet shadow" chiaroscuro law, minus the "interior"/"walls" phrasing that's wrong
+        # for an open-air room (backdrop-cadence restart, HV5; e.g. camp_clearing_night).
+        template = recipe.get("firelit_outdoor_positive_template", recipe["firelit_positive_template"])
+        negative = recipe["washout_negative"]
     else:
         template = recipe["firelit_positive_template"]
         negative = recipe["washout_negative"]
@@ -246,8 +262,11 @@ def main(argv=None) -> None:
     ap.add_argument("--width", type=int, default=d["width"])
     ap.add_argument("--height", type=int, default=d["height"])
     ap.add_argument("--seed", type=int, default=None)
-    ap.add_argument("--lighting", choices=["firelit", "daylight"], default="firelit",
-                    help="day/night dimension: firelit (night, default) or daylight (cool sunlit, stained-glass shaft)")
+    ap.add_argument("--lighting", choices=["firelit", "daylight", "daylight_outdoor", "firelit_outdoor"],
+                    default="firelit",
+                    help="day/night dimension: firelit (night interior, default), daylight (cool sunlit "
+                         "interior, stained-glass shaft), daylight_outdoor (open-sky sun for exterior "
+                         "rooms), or firelit_outdoor (night exterior, e.g. a campfire clearing)")
     ap.add_argument("--timeout", type=int, default=600)
     ap.add_argument("--layered", action="store_true",
                     help="OPTIONAL 3-pass pipeline: after the img2img layout pass, chain a Gemini "
@@ -263,7 +282,12 @@ def main(argv=None) -> None:
     ap.add_argument("--dry-run", action="store_true", help="print the resolved request without calling the API")
     args = ap.parse_args(argv)
 
-    if args.day:
+    if args.day and args.lighting != "daylight_outdoor":
+        # Don't clobber an explicit outdoor choice (backdrop-cadence restart) — --day's whole-manifest
+        # default remains the INTERIOR daylight template (byte-identical for existing --day callers:
+        # church/tavern/bosshall), but --day --lighting daylight_outdoor lets an exterior room (e.g.
+        # market_square) keep its open-sky pass1 template while still routing pass2/pass3 through the
+        # day-state layered pipeline (layered_pipeline_day_2026_07_03).
         args.lighting = "daylight"
 
     # Require EXACTLY ONE image source up front so an ambiguous/missing combo fails fast (incl. on --dry-run),

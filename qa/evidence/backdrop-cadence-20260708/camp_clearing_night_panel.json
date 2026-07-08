@@ -1,0 +1,24 @@
+{
+  "room": "camp_clearing_night",
+  "protocol": "control-anchored 5-scorer blind panel (model sonnet), same protocol as the church/#1274 staging-law adoption — visual-critic SKILL.md CALIBRATION-CONTROL PROTOCOL. No AI-prior primer; scorers judge craft on what they see, not assumed origin.",
+  "candidate_image": "image_A.png = /tmp/worldos-backdrop-gen/camp/room_camp_clearing_night_pass3_staging.png (our generated plate, layered pipeline, strength=0.55, --lighting firelit_outdoor)",
+  "control_image": "image_B.jpg = /Volumes/LEXAR/WorldOS-Unity-spike/refs/poe2_ruins_brazier_integration_01.jpg (REAL Pillars of Eternity II: Deadfire shipped screenshot, disguised as a candidate, NOT among the shown refs)",
+  "generation_pass": 1,
+  "scores": [
+    {"scorer": 1, "candidate": 6, "control": 7},
+    {"scorer": 2, "candidate": 6, "control": 8},
+    {"scorer": 3, "candidate": 6, "control": 9},
+    {"scorer": 4, "candidate": 7, "control": 9},
+    {"scorer": 5, "candidate": 7, "control": 6}
+  ],
+  "candidate_median": 6.0,
+  "control_median": 8.0,
+  "delta_candidate_minus_control": -2.0,
+  "interpretation": "Control scored ABOVE the candidate — the expected healthy signal of an unprimed harsh instrument (confirms the panel is not broken/inflated, per the 2026-07-02 positive-control finding: a broken instrument scores AI plates higher than real shipped art). Candidate's absolute median (6.0) matches the incumbent-class bar set by previously-adopted WorldOS rooms (crypt_dense_v1 ~6.2). ADOPTED on the absolute-bar reading.",
+  "residual_defects": [
+    "bilaterally-symmetric prop layout (radial mirroring around the firepit) reads staged rather than hand-dressed",
+    "duplicate/mirrored dappled ground-light patches and boulder silhouettes (a repetition tell)",
+    "flat clean-edged shading on crates/bedrolls vs the looser fire/canopy brushwork"
+  ],
+  "iterations": 1
+}
