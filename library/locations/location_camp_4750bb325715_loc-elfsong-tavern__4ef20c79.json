@@ -1,0 +1,26 @@
+{
+  "artifact_id": "location:camp_4750bb325715:loc-elfsong-tavern",
+  "class": "location",
+  "curation_note": null,
+  "license": "proprietary",
+  "promoted_at": "2026-07-07T22:15:42+00:00",
+  "provenance": {
+    "run_id": "rri-a1-gate2",
+    "sha": "99594802",
+    "source_path": "location:camp_4750bb325715:loc-elfsong-tavern",
+    "world": "baldurs-gate"
+  },
+  "reuse_count": 0,
+  "scores": {
+    "ac_ruler": "ac_986d87bf235a",
+    "dims": {
+      "affordances": 3.8,
+      "atmosphere": 4.7,
+      "identity": 4.5,
+      "reusability": 4.2
+    },
+    "overall": 4.3,
+    "panel_id": "cal-location-20260707T210934"
+  },
+  "tier": "stable"
+}

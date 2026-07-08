@@ -193,6 +193,14 @@ def snapshot_library(
     counts = scan_library(library_dir)
     promo = scan_promotion_log(library_dir)
 
+    # Record a repo-relative source_path when library_dir lives under this checkout — an absolute
+    # path (e.g. /Users/<you>/WorldOS/library) is developer-local and not reproducible for anyone
+    # else (or CI) re-running this snapshot from a different checkout root.
+    try:
+        source_path = str(library_dir.resolve().relative_to(_REPO_ROOT))
+    except ValueError:
+        source_path = str(library_dir)
+
     payload: dict[str, Any] = {
         "library_sha": library_sha,
         "size_total": counts["size_total"],
@@ -203,7 +211,7 @@ def snapshot_library(
         "promoted_total": promo["promoted_total"],
         "rejected_total": promo["rejected_total"],
         "pct_library_sourced": pct_library_sourced,
-        "source_path": str(library_dir),
+        "source_path": source_path,
         "notes": notes,
     }
 
