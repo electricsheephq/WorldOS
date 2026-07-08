@@ -1,0 +1,251 @@
+{
+  "anchor": 8.0,
+  "noise_law": 1.2,
+  "scale_max": 10.0,
+  "band_ruler": "vc_9c5db9df967d",
+  "excluded": {
+    "bg2ee_fortress_party_tactical_02.jpg": "disclosed-defective control (baked-in UI chrome + wrong scene; 5/5 scorers flagged, scored 2-3/10 for reasons unrelated to painterly craft) — backdrop-cadence-20260708 market_square panel. A defective plate can never be a registered control."
+  },
+  "controls": {
+    "control:visual:baldurs-gate-2-ee:bg2ee_cavern_darkzone_lighting_03": {
+      "class": "room",
+      "world": "reference",
+      "anchor": 8.0,
+      "band": [
+        6.8,
+        9.2
+      ],
+      "file": "bg2ee_cavern_darkzone_lighting_03.jpg",
+      "reference_frame": "/Volumes/LEXAR/WorldOS-Unity-spike/refs/bg2ee_cavern_darkzone_lighting_03.jpg",
+      "reference_frame_present": true,
+      "provenance": {
+        "game": "baldurs-gate-2-ee",
+        "tag": "dark_zone",
+        "source": "visual-critic calibration ref set (INTERNAL; qa/../refs/INDEX.md)",
+        "disguised_real_art": true
+      },
+      "band_ruler": "vc_9c5db9df967d",
+      "band_prompt_hash": "vf_5b2d008ae087"
+    },
+    "control:visual:baldurs-gate-2-ee:bg2ee_forest_party_tactical_01": {
+      "class": "room",
+      "world": "reference",
+      "anchor": 8.0,
+      "band": [
+        6.8,
+        9.2
+      ],
+      "file": "bg2ee_forest_party_tactical_01.jpg",
+      "reference_frame": "/Volumes/LEXAR/WorldOS-Unity-spike/refs/bg2ee_forest_party_tactical_01.jpg",
+      "reference_frame_present": true,
+      "provenance": {
+        "game": "baldurs-gate-2-ee",
+        "tag": "outdoor_forest",
+        "source": "visual-critic calibration ref set (INTERNAL; qa/../refs/INDEX.md)",
+        "disguised_real_art": true
+      },
+      "band_ruler": "vc_9c5db9df967d",
+      "band_prompt_hash": "vf_44045e3f08b4"
+    },
+    "control:visual:baldurs-gate-2-ee:bg2ee_temple_combat_lighting_04": {
+      "class": "room",
+      "world": "reference",
+      "anchor": 8.0,
+      "band": [
+        6.8,
+        9.2
+      ],
+      "file": "bg2ee_temple_combat_lighting_04.jpg",
+      "reference_frame": "/Volumes/LEXAR/WorldOS-Unity-spike/refs/bg2ee_temple_combat_lighting_04.jpg",
+      "reference_frame_present": true,
+      "provenance": {
+        "game": "baldurs-gate-2-ee",
+        "tag": "combat_lit_interior",
+        "source": "visual-critic calibration ref set (INTERNAL; qa/../refs/INDEX.md)",
+        "disguised_real_art": true
+      },
+      "band_ruler": "vc_9c5db9df967d",
+      "band_prompt_hash": "vf_6abbaeba3143"
+    },
+    "control:visual:disco-elysium:disco_cafeteria_bar_interior_03": {
+      "class": "room",
+      "world": "reference",
+      "anchor": 8.0,
+      "band": [
+        6.8,
+        9.2
+      ],
+      "file": "disco_cafeteria_bar_interior_03.jpg",
+      "reference_frame": "/Volumes/LEXAR/WorldOS-Unity-spike/refs/disco_cafeteria_bar_interior_03.jpg",
+      "reference_frame_present": true,
+      "provenance": {
+        "game": "disco-elysium",
+        "tag": "bar_interior",
+        "source": "visual-critic calibration ref set (INTERNAL; qa/../refs/INDEX.md)",
+        "disguised_real_art": true
+      },
+      "band_ruler": "vc_9c5db9df967d",
+      "band_prompt_hash": "vf_ffd3dc7d0661"
+    },
+    "control:visual:disco-elysium:disco_office_interior_lighting_04": {
+      "class": "room",
+      "world": "reference",
+      "anchor": 8.0,
+      "band": [
+        6.8,
+        9.2
+      ],
+      "file": "disco_office_interior_lighting_04.jpg",
+      "reference_frame": "/Volumes/LEXAR/WorldOS-Unity-spike/refs/disco_office_interior_lighting_04.jpg",
+      "reference_frame_present": true,
+      "provenance": {
+        "game": "disco-elysium",
+        "tag": "dark_pocket_lighting",
+        "source": "visual-critic calibration ref set (INTERNAL; qa/../refs/INDEX.md)",
+        "disguised_real_art": true
+      },
+      "band_ruler": "vc_9c5db9df967d",
+      "band_prompt_hash": "vf_64cb4c16a0dd"
+    },
+    "control:visual:disco-elysium:disco_village_integration_02": {
+      "class": "room",
+      "world": "reference",
+      "anchor": 8.0,
+      "band": [
+        6.8,
+        9.2
+      ],
+      "file": "disco_village_integration_02.jpg",
+      "reference_frame": "/Volumes/LEXAR/WorldOS-Unity-spike/refs/disco_village_integration_02.jpg",
+      "reference_frame_present": true,
+      "provenance": {
+        "game": "disco-elysium",
+        "tag": "outdoor_integration",
+        "source": "visual-critic calibration ref set (INTERNAL; qa/../refs/INDEX.md)",
+        "disguised_real_art": true
+      },
+      "band_ruler": "vc_9c5db9df967d",
+      "band_prompt_hash": "vf_c922421fc420"
+    },
+    "control:visual:disco-elysium:disco_whirling_plaza_brushwork_01": {
+      "class": "room",
+      "world": "reference",
+      "anchor": 8.0,
+      "band": [
+        6.8,
+        9.2
+      ],
+      "file": "disco_whirling_plaza_brushwork_01.jpg",
+      "reference_frame": "/Volumes/LEXAR/WorldOS-Unity-spike/refs/disco_whirling_plaza_brushwork_01.jpg",
+      "reference_frame_present": true,
+      "provenance": {
+        "game": "disco-elysium",
+        "tag": "plaza_brushwork",
+        "source": "visual-critic calibration ref set (INTERNAL; qa/../refs/INDEX.md)",
+        "disguised_real_art": true
+      },
+      "band_ruler": "vc_9c5db9df967d",
+      "band_prompt_hash": "vf_648e70882a14"
+    },
+    "control:visual:pillars-of-eternity-2:poe2_cliff_party_brushwork_03": {
+      "class": "room",
+      "world": "reference",
+      "anchor": 8.0,
+      "band": [
+        6.8,
+        9.2
+      ],
+      "file": "poe2_cliff_party_brushwork_03.jpg",
+      "reference_frame": "/Volumes/LEXAR/WorldOS-Unity-spike/refs/poe2_cliff_party_brushwork_03.jpg",
+      "reference_frame_present": true,
+      "provenance": {
+        "game": "pillars-of-eternity-2",
+        "tag": "outdoor_cliff",
+        "source": "visual-critic calibration ref set (INTERNAL; qa/../refs/INDEX.md)",
+        "disguised_real_art": true
+      },
+      "band_ruler": "vc_9c5db9df967d",
+      "band_prompt_hash": "vf_ef1a2dcf8eb8"
+    },
+    "control:visual:pillars-of-eternity-2:poe2_market_interior_lighting_04": {
+      "class": "room",
+      "world": "reference",
+      "anchor": 8.0,
+      "band": [
+        6.8,
+        9.2
+      ],
+      "file": "poe2_market_interior_lighting_04.jpg",
+      "reference_frame": "/Volumes/LEXAR/WorldOS-Unity-spike/refs/poe2_market_interior_lighting_04.jpg",
+      "reference_frame_present": true,
+      "provenance": {
+        "game": "pillars-of-eternity-2",
+        "tag": "market_lit",
+        "source": "visual-critic calibration ref set (INTERNAL; qa/../refs/INDEX.md)",
+        "disguised_real_art": true
+      },
+      "band_ruler": "vc_9c5db9df967d",
+      "band_prompt_hash": "vf_79ca2010886b"
+    },
+    "control:visual:pillars-of-eternity-2:poe2_ruins_brazier_integration_01": {
+      "class": "room",
+      "world": "reference",
+      "anchor": 8.0,
+      "band": [
+        6.8,
+        9.2
+      ],
+      "file": "poe2_ruins_brazier_integration_01.jpg",
+      "reference_frame": "/Volumes/LEXAR/WorldOS-Unity-spike/refs/poe2_ruins_brazier_integration_01.jpg",
+      "reference_frame_present": true,
+      "provenance": {
+        "game": "pillars-of-eternity-2",
+        "tag": "ruins_warm_key",
+        "source": "visual-critic calibration ref set (INTERNAL; qa/../refs/INDEX.md)",
+        "disguised_real_art": true
+      },
+      "band_ruler": "vc_9c5db9df967d",
+      "band_prompt_hash": "vf_779f11dda767"
+    },
+    "control:visual:pillars-of-eternity-2:poe2_tavern_interior_combat_02": {
+      "class": "room",
+      "world": "reference",
+      "anchor": 8.0,
+      "band": [
+        6.8,
+        9.2
+      ],
+      "file": "poe2_tavern_interior_combat_02.jpg",
+      "reference_frame": "/Volumes/LEXAR/WorldOS-Unity-spike/refs/poe2_tavern_interior_combat_02.jpg",
+      "reference_frame_present": true,
+      "provenance": {
+        "game": "pillars-of-eternity-2",
+        "tag": "tavern_interior",
+        "source": "visual-critic calibration ref set (INTERNAL; qa/../refs/INDEX.md)",
+        "disguised_real_art": true
+      },
+      "band_ruler": "vc_9c5db9df967d",
+      "band_prompt_hash": "vf_96a12891b9e6"
+    },
+    "control:visual:pillars-of-eternity-2:poe2_temple_interior_lighting_05": {
+      "class": "room",
+      "world": "reference",
+      "anchor": 8.0,
+      "band": [
+        6.8,
+        9.2
+      ],
+      "file": "poe2_temple_interior_lighting_05.jpg",
+      "reference_frame": "/Volumes/LEXAR/WorldOS-Unity-spike/refs/poe2_temple_interior_lighting_05.jpg",
+      "reference_frame_present": true,
+      "provenance": {
+        "game": "pillars-of-eternity-2",
+        "tag": "temple_cool_key",
+        "source": "visual-critic calibration ref set (INTERNAL; qa/../refs/INDEX.md)",
+        "disguised_real_art": true
+      },
+      "band_ruler": "vc_9c5db9df967d",
+      "band_prompt_hash": "vf_6d220d68fd4c"
+    }
+  }
+}

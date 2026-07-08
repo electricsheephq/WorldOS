@@ -221,6 +221,14 @@ def _coltype(col: str) -> str:
 # different dim set) rather than fixed columns, so adding a class/dim never migrates the table.
 # The ruler stamp is the ARTIFACT ruler (``ac_…``) — its OWN hash family (see scoring_config_version.py
 # ARTIFACT_CONFIG_FILES), NEVER the sc_/lc_ engine-duo rulers.
+#
+# TEXT vs VISUAL split (promotion-gate decision, 2026-07-08, docs/roadmap/VISUAL-PROMOTION-GATE-DECISION.md):
+# these four are the TEXT artifact classes — they score on the 1.0-5.0 rubric in THIS table and promote
+# through promote.py's text threshold gate (overall>=4.0, dims>=3.0, control-valid). The VISUAL class
+# "room" is deliberately NOT here: painterly backdrop plates score 0-10 in the `runs` table
+# (surface="visual", visual_overall/visual_dims_json) + panel JSONs, and promote through promote.py's
+# separate delta-anchored visual gate (GATE_STRATEGIES["room"]="visual"; registry
+# qa/visual_controls_identity.json). Adding "room" here would wrongly subject it to the 1-5 text gate.
 ARTIFACT_CLASSES: tuple[str, ...] = ("quest", "npc", "location", "encounter")
 
 ARTIFACT_COLUMNS: tuple[str, ...] = (

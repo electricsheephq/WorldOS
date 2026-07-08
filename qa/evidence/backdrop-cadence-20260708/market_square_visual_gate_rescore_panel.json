@@ -1,0 +1,162 @@
+{
+  "room": "market_square",
+  "panel_id": "panel-visual-market-rescore-20260708",
+  "protocol": "control-anchored 5-scorer blind panel (model sonnet), visual-critic SKILL.md CALIBRATION-CONTROL PROTOCOL. No AI-prior primer; scorers judged craft on what they saw. Blind mapping kept OUTSIDE this panel dir (image_A=control, image_B=candidate).",
+  "scale": "0-10 visual-critic (delta-anchored; absolute number is NOT a quality verdict)",
+  "candidate_image": "qa/evidence/backdrop-cadence-20260708/market_square_v1.jpg",
+  "control_id": "control:visual:pillars-of-eternity-2:poe2_market_interior_lighting_04",
+  "control_image": "/Volumes/LEXAR/WorldOS-Unity-spike/refs/poe2_market_interior_lighting_04.jpg",
+  "control_note": "REGISTERED clean control (real shipped PoE2: Deadfire underground-market plate, UI-free) from qa/visual_controls_identity.json — replaces the #1416 DEFECTIVE bg2ee_fortress control (that plate had baked-in UI chrome + wrong scene, scored 2.0; excluded from the registry).",
+  "pregate": {
+    "verdict": "FLAG",
+    "blocking": [
+      {
+        "gate": "G6_luma_staging_law",
+        "severity": "HIGH",
+        "metric": "staging_law_stats",
+        "value": {
+          "near_black_frac": 0.0,
+          "lit_frac": 0.8546,
+          "median_L": 105.24
+        },
+        "threshold": {
+          "near_black_pass": [
+            0.66,
+            0.85
+          ],
+          "lit_pass": [
+            0.02,
+            0.05
+          ],
+          "median_pass": [
+            0,
+            15
+          ]
+        },
+        "detail": "FAIL: plate is outside the PoE staging-law band — near_black=0.0% (band 66-85% PASS / 50-66% WARN) [FAIL], lit=85.5% (band 2-5% PASS / 5-20% WARN) [FAIL], median_L=105.2 (band 0-15 PASS / 15-40 WARN) [FAIL]"
+      }
+    ],
+    "gates": [
+      {
+        "gate": "G1_frame_lit",
+        "severity": "PASS",
+        "metric": "mean_luminance",
+        "value": 0.4586,
+        "threshold": null,
+        "detail": "lit (mean 0.459, var 0.04207)"
+      },
+      {
+        "gate": "G6_luma_staging_law",
+        "severity": "HIGH",
+        "metric": "staging_law_stats",
+        "value": {
+          "near_black_frac": 0.0,
+          "lit_frac": 0.8546,
+          "median_L": 105.24
+        },
+        "threshold": {
+          "near_black_pass": [
+            0.66,
+            0.85
+          ],
+          "lit_pass": [
+            0.02,
+            0.05
+          ],
+          "median_pass": [
+            0,
+            15
+          ]
+        },
+        "detail": "FAIL: plate is outside the PoE staging-law band — near_black=0.0% (band 66-85% PASS / 50-66% WARN) [FAIL], lit=85.5% (band 2-5% PASS / 5-20% WARN) [FAIL], median_L=105.2 (band 0-15 PASS / 15-40 WARN) [FAIL]"
+      },
+      {
+        "gate": "G5_motion_liveness",
+        "severity": "SKIPPED",
+        "metric": "reel",
+        "value": null,
+        "threshold": null,
+        "detail": "no render reel supplied; G5 skipped (only meaningful with a motion reel — build one with qa/motion_reel.py and pass its frames)"
+      }
+    ],
+    "summary": "PRE-GATE FLAG\n  [PASS    ] G1_frame_lit       mean_luminance=0.4586 :: lit (mean 0.459, var 0.04207)\n  [HIGH    ] G6_luma_staging_law staging_law_stats={'near_black_frac': 0.0, 'lit_frac': 0.8546, 'median_L': 105.24} :: FAIL: plate is outside the PoE staging-law band — near_black=0.0% (band 66-85% PASS / 50-66% WARN) [FAIL], lit=85.5% (band 2-5% PASS / 5-20% WARN) [FAIL], median_L=105.2 (band 0-15 PASS / 15-40 WARN) [FAIL]\n  [SKIPPED ] G5_motion_liveness reel=None :: no render reel supplied; G5 skipped (only meaningful with a motion reel — build one with qa/motion_reel.py and pass its frames)"
+  },
+  "pregate_note": "run_pregates() overall verdict FLAG comes ONLY from G6 luma-staging-law (a bright DAYLIGHT plaza legitimately sits outside the dark-chiaroscuro band). The promotion HARD FLOOR (G1 frame-lit + occupancy + pin/floor-contact) PASSes; G6/G5 are not promotion floors.",
+  "scores": [
+    {
+      "scorer": 1,
+      "control": 9,
+      "candidate": 4
+    },
+    {
+      "scorer": 2,
+      "control": 9,
+      "candidate": 5
+    },
+    {
+      "scorer": 3,
+      "control": 9,
+      "candidate": 4
+    },
+    {
+      "scorer": 4,
+      "control": 9,
+      "candidate": 5
+    },
+    {
+      "scorer": 5,
+      "control": 9,
+      "candidate": 4
+    }
+  ],
+  "candidate_median": 4.0,
+  "control_median": 9.0,
+  "delta_candidate_minus_control": -5.0,
+  "residual_defects": [
+    "flat cel/vector-toon shading on building facades vs true painterly brush texture (unanimous scorer tell)",
+    "uniform daylight with no coherent scene-light source / dramatic falloff",
+    "repeated dormer/window/facade patterns (cloning tell)"
+  ],
+  "iterations": 1,
+  "gate": {
+    "passed": false,
+    "tier": null,
+    "reasons": [
+      "delta -5.0 < -2.5 adoption bar (candidate below the adopted-quality band)"
+    ],
+    "overall": 4.0,
+    "dims": {
+      "scores": [
+        {
+          "scorer": 1,
+          "control": 9,
+          "candidate": 4
+        },
+        {
+          "scorer": 2,
+          "control": 9,
+          "candidate": 5
+        },
+        {
+          "scorer": 3,
+          "control": 9,
+          "candidate": 4
+        },
+        {
+          "scorer": 4,
+          "control": 9,
+          "candidate": 5
+        },
+        {
+          "scorer": 5,
+          "control": 9,
+          "candidate": 4
+        }
+      ],
+      "candidate_median": 4.0,
+      "control_median": 9.0,
+      "delta_candidate_minus_control": -5.0
+    },
+    "control_valid": true
+  }
+}

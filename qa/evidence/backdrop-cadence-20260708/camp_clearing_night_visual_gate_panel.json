@@ -1,0 +1,134 @@
+{
+  "room": "camp_clearing_night",
+  "panel_id": "panel-visual-camp-gatepath-20260708",
+  "protocol": "control-anchored 5-scorer blind panel (model sonnet), visual-critic CALIBRATION-CONTROL PROTOCOL. Source scores from the adopted backdrop-cadence camp_clearing_night_panel.json; re-run through the visual gate path with the REGISTERED PoE2 control + the deterministic pre-gate.",
+  "scale": "0-10 visual-critic (delta-anchored two-tier ladder; absolute number is NOT a quality verdict)",
+  "candidate_image": "qa/evidence/backdrop-cadence-20260708/camp_clearing_night_v1.jpg",
+  "control_id": "control:visual:pillars-of-eternity-2:poe2_ruins_brazier_integration_01",
+  "control_image": "/Volumes/LEXAR/WorldOS-Unity-spike/refs/poe2_ruins_brazier_integration_01.jpg",
+  "control_note": "REGISTERED clean control (real shipped PoE2:Deadfire ruins/brazier plate) from qa/visual_controls_identity.json.",
+  "pregate": {
+    "verdict": "PASS",
+    "blocking": [],
+    "gates": [
+      {
+        "gate": "G1_frame_lit",
+        "severity": "PASS",
+        "metric": "mean_luminance",
+        "value": 0.1301,
+        "threshold": null,
+        "detail": "lit (mean 0.130, var 0.01897)"
+      },
+      {
+        "gate": "G6_luma_staging_law",
+        "severity": "MED",
+        "metric": "staging_law_stats",
+        "value": {
+          "near_black_frac": 0.6088,
+          "lit_frac": 0.1328,
+          "median_L": 19.53
+        },
+        "threshold": {
+          "near_black_pass": [
+            0.66,
+            0.85
+          ],
+          "lit_pass": [
+            0.02,
+            0.05
+          ],
+          "median_pass": [
+            0,
+            15
+          ]
+        },
+        "detail": "WARN: plate is borderline vs the PoE staging-law band — near_black=60.9% (band 66-85% PASS / 50-66% WARN) [WARN], lit=13.3% (band 2-5% PASS / 5-20% WARN) [WARN], median_L=19.5 (band 0-15 PASS / 15-40 WARN) [WARN]"
+      },
+      {
+        "gate": "G5_motion_liveness",
+        "severity": "SKIPPED",
+        "metric": "reel",
+        "value": null,
+        "threshold": null,
+        "detail": "no render reel supplied; G5 skipped (only meaningful with a motion reel — build one with qa/motion_reel.py and pass its frames)"
+      }
+    ],
+    "summary": "PRE-GATE PASS\n  [PASS    ] G1_frame_lit       mean_luminance=0.1301 :: lit (mean 0.130, var 0.01897)\n  [MED     ] G6_luma_staging_law staging_law_stats={'near_black_frac': 0.6088, 'lit_frac': 0.1328, 'median_L': 19.53} :: WARN: plate is borderline vs the PoE staging-law band — near_black=60.9% (band 66-85% PASS / 50-66% WARN) [WARN], lit=13.3% (band 2-5% PASS / 5-20% WARN) [WARN], median_L=19.5 (band 0-15 PASS / 15-40 WARN) [WARN]\n  [SKIPPED ] G5_motion_liveness reel=None :: no render reel supplied; G5 skipped (only meaningful with a motion reel — build one with qa/motion_reel.py and pass its frames)"
+  },
+  "pregate_note": "run_pregates PASS (G1 frame-lit PASS; G6 night staging-law MED/WARN, not a FAIL). Promotion hard floor PASSes.",
+  "scores": [
+    {
+      "scorer": 1,
+      "control": 7,
+      "candidate": 6
+    },
+    {
+      "scorer": 2,
+      "control": 8,
+      "candidate": 6
+    },
+    {
+      "scorer": 3,
+      "control": 9,
+      "candidate": 6
+    },
+    {
+      "scorer": 4,
+      "control": 9,
+      "candidate": 7
+    },
+    {
+      "scorer": 5,
+      "control": 6,
+      "candidate": 7
+    }
+  ],
+  "candidate_median": 6.0,
+  "control_median": 8.0,
+  "delta_candidate_minus_control": -2.0,
+  "residual_defects": [
+    "bilaterally-symmetric prop layout reads staged",
+    "duplicate/mirrored dappled ground-light + boulder silhouettes",
+    "flat clean-edged shading on crates/bedrolls vs looser fire/canopy brushwork"
+  ],
+  "iterations": 1,
+  "gate": {
+    "passed": true,
+    "tier": "stable",
+    "reasons": [],
+    "overall": 6.0,
+    "dims": {
+      "scores": [
+        {
+          "scorer": 1,
+          "control": 7,
+          "candidate": 6
+        },
+        {
+          "scorer": 2,
+          "control": 8,
+          "candidate": 6
+        },
+        {
+          "scorer": 3,
+          "control": 9,
+          "candidate": 6
+        },
+        {
+          "scorer": 4,
+          "control": 9,
+          "candidate": 7
+        },
+        {
+          "scorer": 5,
+          "control": 6,
+          "candidate": 7
+        }
+      ],
+      "candidate_median": 6.0,
+      "control_median": 8.0,
+      "delta_candidate_minus_control": -2.0
+    },
+    "control_valid": true
+  }
+}

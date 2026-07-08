@@ -1,13 +1,54 @@
 {
   "artifact_id": "room:market_square:v1:20260708",
   "class": "room",
-  "curation_note": "SCALE DISCLOSURE: same as camp_clearing_night (0-10 visual-critic scale, not the HV1 1.0-5.0 text-artifact rubric; promote.py --batch's automated gate does not yet support class=room). ADOPTED ON THE ONE-ITERATION RETRY: iteration 1 was REJECTED outright (Gemini hallucinated armed NPCs + added a decorative picture-frame border around the scene); fixed by adding an explicit anti-character/anti-frame clause to all 4 pass2/pass3 prompt_templates in room_recipes.json (a production-wide fix). Control-anchored panel: the disguised control (bg2ee_fortress_party_tactical_02.jpg) was ITSELF defective this round (unanimously flagged by 5/5 scorers as a full gameplay screenshot with baked-in UI chrome and the wrong scene) \u2014 a control-selection mistake, disclosed rather than hidden; the control-delta metric is N/A. Adoption rests on the absolute score (median 6.0) matching the incumbent-class bar (crypt_dense_v1 ~6.2) and this same batch's camp_clearing_night (6.0). See source_path for full per-scorer detail.",
+  "curation_note": "VISUAL-GATE FIRST REAL RUN (this PR, docs/roadmap/VISUAL-PROMOTION-GATE-DECISION.md): re-scored through promote.py GATE_STRATEGIES[\"room\"]=visual with a CLEAN REGISTERED control from qa/visual_controls_identity.json (real shipped PoE2:Deadfire market plate, poe2_market_interior_lighting_04, UI-free), replacing the #1416 DEFECTIVE bg2ee_fortress control (UI chrome + wrong scene; scored 2.0; now excluded from the registry). VERDICT: REJECTED. 5-scorer blind sonnet panel \u2014 control median 9.0 (in-band [6.8,9.2] -> instrument valid), candidate median 4.0, delta -5.0, below the -2.5 adoption bar (and the -1.2 parity bar). The #1416 adoption rested on the defective control; with a clean control this plate is a full 5 pts below the painterly bar (unanimous scorer tell: flat cel/vector-toon facades, uniform daylight, no coherent scene-light). RETAINED as an EXPERIMENTAL incumbent (not gate-passed, not deleted \u2014 an owner call) and FLAGGED for re-generation to the PoE2 bar. Deterministic pre-gate HARD FLOOR PASSes; the run_pregates FLAG is only the G6 daylight staging-law band (not a promotion floor). See source_path.",
+  "gate": {
+    "control_valid": true,
+    "dims": {
+      "candidate_median": 4.0,
+      "control_median": 9.0,
+      "delta_candidate_minus_control": -5.0,
+      "scores": [
+        {
+          "candidate": 4,
+          "control": 9,
+          "scorer": 1
+        },
+        {
+          "candidate": 5,
+          "control": 9,
+          "scorer": 2
+        },
+        {
+          "candidate": 4,
+          "control": 9,
+          "scorer": 3
+        },
+        {
+          "candidate": 5,
+          "control": 9,
+          "scorer": 4
+        },
+        {
+          "candidate": 4,
+          "control": 9,
+          "scorer": 5
+        }
+      ]
+    },
+    "overall": 4.0,
+    "passed": false,
+    "reasons": [
+      "delta -5.0 < -2.5 adoption bar (candidate below the adopted-quality band)"
+    ],
+    "tier": null
+  },
   "license": "proprietary",
   "promoted_at": "2026-07-08T11:12:28+00:00",
   "provenance": {
     "run_id": null,
     "sha": null,
-    "source_path": "qa/evidence/backdrop-cadence-20260708/market_square_panel.json",
+    "source_path": "qa/evidence/backdrop-cadence-20260708/market_square_visual_gate_rescore_panel.json",
     "world": "worldos"
   },
   "reuse_count": 0,
@@ -21,15 +62,14 @@
   "scores": {
     "ac_ruler": null,
     "dims": {
-      "control_median_real_bg2ee": "N/A - control image was itself defective this round (UI chrome baked into a real BG2EE gameplay screenshot); see curation_note",
-      "scorer_1": 7,
+      "scorer_1": 4,
       "scorer_2": 5,
-      "scorer_3": 7,
-      "scorer_4": 6,
-      "scorer_5": 6
+      "scorer_3": 4,
+      "scorer_4": 5,
+      "scorer_5": 4
     },
-    "overall": 6.0,
-    "panel_id": "panel-backdrop-cadence-20260708-market"
+    "overall": 4.0,
+    "panel_id": "panel-visual-market-rescore-20260708"
   },
-  "tier": "stable"
+  "tier": "experimental"
 }

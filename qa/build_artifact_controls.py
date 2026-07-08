@@ -41,6 +41,7 @@ sys.path.insert(0, str(QA_DIR))
 # artifact_schema.json's per-class definitions). Reused here so a control's required-but-empty fields
 # are kept (not stripped) — see _artifact() below.
 from artifact_score import _CANONICAL_PAYLOAD_REQUIRED, prompt_construction_hash  # noqa: E402
+from control_band import control_band  # noqa: E402 — shared with build_visual_controls.py (0-10)
 from scoring_config_version import artifact_config_version  # noqa: E402
 
 DEFAULT_OUT = QA_DIR / "artifact_controls"
@@ -263,7 +264,9 @@ def build(world: str, out_dir: Path) -> tuple[list[dict], dict]:
                                               encoding="utf-8")
         identity["controls"][a["artifact_id"]] = {
             "class": a["class"], "world": a["world"], "anchor": ANCHOR,
-            "band": [round(ANCHOR - 1.2, 1), round(min(5.0, ANCHOR + 1.2), 1)],
+            # The a-priori ±noise band on the 1-5 text rubric (scale_max=5.0). Shared band CODE with
+            # the 0-10 visual registry (build_visual_controls.py) — separate DATA, one formula.
+            "band": control_band(ANCHOR, scale_max=5.0),
             "file": f"{safe}.json",
             # #1380 drift guard: stamp WHICH scoring ruler + prompt construction this band was
             # derived under. build() writes the a-priori ±noise band; a fresh calibration panel may
