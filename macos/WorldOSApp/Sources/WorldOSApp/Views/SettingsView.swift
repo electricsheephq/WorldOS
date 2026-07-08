@@ -26,12 +26,17 @@ struct SettingsView: View {
 
     @State private var preferredPortText = ""
 
+    // Additive (issue #1322 / W5): standalone Unity player `.app` path. Empty → the default
+    // ~/Applications/WorldOSPlayer.app. Read directly from UserDefaults (no RootView binding).
+    @AppStorage("playerAppPath") private var playerAppPath: String = ""
+
     var body: some View {
         Form {
             Section("Workspace") {
                 ValidatedTextField("Repo path", text: $repoPath, error: repoPathError)
                 ValidatedTextField("Private art repo path", text: $artRepoPath, error: artRepoPathError)
                 TextField("State directory", text: $stateDir)
+                TextField("Player app path (blank = ~/Applications/WorldOSPlayer.app)", text: $playerAppPath)
                 VStack(alignment: .leading, spacing: 6) {
                     HStack {
                         ValidatedTextField("Preferred port", text: $preferredPortText, error: preferredPortError)
