@@ -1,0 +1,11 @@
+result=Succeeded
+totalErrors=0
+totalWarnings=1
+totalSize=255011970 bytes
+totalTime=00:00:11.4481310
+outputPath=/home/unity/worldos-unity/BuildOutput/WorldOSPlayer.app
+buildStartedAt=07/08/2026 17:25:05
+buildEndedAt=07/08/2026 17:25:17
+platform=StandaloneOSX
+architecture=x64ARM64
+scenesBuilt=Assets/Scenes/M1CombatV1_canonical.unity

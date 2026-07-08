@@ -1,0 +1,68 @@
+ManifestFileVersion: 0
+UnityVersion: 6000.5.1f1
+CRC: 2393177051
+Hashes:
+  AssetFileHash:
+    serializedVersion: 2
+    Hash: b1f9c9912664df2235162461ea0d3ba2
+  TypeTreeHash:
+    serializedVersion: 2
+    Hash: b0e406d1da5bbf6e926b348d33a370e8
+  IncrementalBuildHash:
+    serializedVersion: 2
+    Hash: 80648a895652c39944b77a949330439f
+HashAppended: 0
+ClassTypes:
+- Class: 1
+  Script: {instanceID: 0}
+- Class: 4
+  Script: {instanceID: 0}
+- Class: 21
+  Script: {instanceID: 0}
+- Class: 23
+  Script: {instanceID: 0}
+- Class: 28
+  Script: {instanceID: 0}
+- Class: 33
+  Script: {instanceID: 0}
+- Class: 43
+  Script: {instanceID: 0}
+- Class: 48
+  Script: {instanceID: 0}
+- Class: 74
+  Script: {instanceID: 0}
+- Class: 90
+  Script: {instanceID: 0}
+- Class: 95
+  Script: {instanceID: 0}
+- Class: 137
+  Script: {instanceID: 0}
+SerializeReferenceClassIdentifiers: []
+Assets:
+- Assets/painterly/models/hero.fbx
+- Assets/chars_v2/goblin/goblin.fbx
+- Assets/painterly/backdrops/crypt_pinned_v1.png
+- Assets/cast/fighter/albedo.jpg
+- Assets/chars_v2/goblin/albedo.png
+- Assets/chars_v2/skeleton_archer/rigged.fbx
+- Assets/chars_v2/skeleton_archer/albedo.jpg
+- Assets/painterly/vfx/vfx_slash.png
+- Assets/chars_v2/mage/albedo.jpg
+- Assets/chars_v2/mage/rigged.fbx
+- Assets/chars_v2/patron_commoner/anim_idle.fbx
+- Assets/chars_v2/innkeeper/albedo.jpg
+- Assets/chars_v2/patron_commoner/albedo.jpg
+- Assets/chars_v2/mage/anim_idle.fbx
+- Assets/chars_v2/cultist/albedo.jpg
+- Assets/chars_v2/ghoul/anim_idle.fbx
+- Assets/chars_v2/patron_commoner/rigged.fbx
+- Assets/chars_v2/innkeeper/anim_idle.fbx
+- Assets/chars_v2/cultist/rigged.fbx
+- Assets/chars_v2/innkeeper/rigged.fbx
+- Assets/painterly/models/hero_albedo.png
+- Assets/chars_v2/skeleton_archer/anim_idle.fbx
+- Assets/chars_v2/ghoul/albedo.jpg
+- Assets/chars_v2/cultist/anim_idle.fbx
+- Assets/cast/fighter/fighter.fbx
+- Assets/chars_v2/ghoul/rigged.fbx
+Dependencies: []
