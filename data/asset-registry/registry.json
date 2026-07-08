@@ -1,5 +1,5 @@
 {
-  "_doc": "WorldOS asset registry (gfx milestone M-C, issue #1195). The renderer NEVER names a literal asset path; it names a SLOT (asset_id + kind) and asks the registry, which ALWAYS returns a guaranteed-non-null ref dict — the real asset OR a default template. This is the asset analogue of engine=sole-writer: swapping/regenerating ANY asset is ZERO renderer edits. Resolution rule: exact -> alias -> defaults[kind] -> defaults['__any__']. The Python twin is viewer/asset_registry.py; the Unity twin is extensions/renderers/unity/scripts/AssetRegistry.cs. Binary assets (.fbx/.png/...) referenced here are gitignored under the box's Unity Assets/ tree; only this manifest is committed. kind in {character, monster, room, effect, sound}.",
+  "_doc": "WorldOS asset registry (gfx milestone M-C, issue #1195). The renderer NEVER names a literal asset path; it names a SLOT (asset_id + kind) and asks the registry, which ALWAYS returns a guaranteed-non-null ref dict — the real asset OR a default template. This is the asset analogue of engine=sole-writer: swapping/regenerating ANY asset is ZERO renderer edits. Resolution rule: exact -> alias -> defaults[kind] -> defaults['__any__']. The Python twin is viewer/asset_registry.py; the Unity twin is extensions/renderers/unity/scripts/AssetRegistry.cs. Binary assets (.fbx/.png/...) referenced here are gitignored under the box's Unity Assets/ tree; only this manifest is committed. kind in {character, monster, room, effect, sound}. #1423: 'wren'/'camp-scout' (the seed_gfx_camp_clearing.py cast, slugified) had NO alias entry -> silently fell through to defaults.character/template_human (a static clipless mesh whose own bind pose reads T-pose-like) -- the SAME class of registry-miss bug as #1412's missing 'patron' alias and #1418's missing 'aldric' alias, just in the camp fixture instead of the tavern one. Fixed by aliasing them to existing textured/idle-posed cast members (innkeeper/patron_commoner) as placeholders, pending dedicated ranger/scout models -- this reuses the SAME spawn() path the tavern cast already uses correctly, killing the tavern-vs-camp divergence rather than adding a second code path.",
   "version": 1,
   "schema": {
     "asset_row": ["kind", "model_ref", "albedo_ref", "anim_ref", "gen_recipe", "version", "critic_score", "default_used"]
@@ -18,15 +18,17 @@
     "aldric": "fighter",
     "wizard": "mage",
     "goblin_grunt": "goblin",
-    "patron": "patron_commoner"
+    "patron": "patron_commoner",
+    "wren": "innkeeper",
+    "camp-scout": "patron_commoner"
   },
   "assets": {
     "fighter": {
       "kind": "character",
       "model_ref": "Assets/cast/fighter/fighter.fbx",
-      "albedo_ref": null,
+      "albedo_ref": "Assets/cast/fighter/albedo.jpg",
       "anim_ref": null,
-      "gen_recipe": "#1418 fix: the PC's actual in-game name (\"Aldric\") slugifies to \"aldric\", which had NO alias entry -> silently fell through to template_human/the stale hero.fbx placeholder (same class of bug as the #1412 \"patron\" alias miss). Re-pointed at the REAL skinned Meshy humanoid rig deployed 2026-07-01 (Assets/cast/fighter/fighter.fbx: SkinnedMeshRenderer, 24 bones, its OWN embedded \"Idle\" clip, animationType=Generic/avatarSetup=NoAvatar as shipped -- fixed to Humanoid/CreateFromThisModel by fighter_humanoid_fix.cs, mirroring chars_v2_wave2_humanoid_fix.cs's proven pattern). albedo_ref/anim_ref left null: the model's own embedded material + embedded Idle clip are used directly (no separate override file), same convention as goblin.fbx's own-embedded-clip donor read.",
+      "gen_recipe": "#1418 fix: the PC's actual in-game name (\"Aldric\") slugifies to \"aldric\", which had NO alias entry -> silently fell through to template_human/the stale hero.fbx placeholder (same class of bug as the #1412 \"patron\" alias miss). Re-pointed at the REAL skinned Meshy humanoid rig deployed 2026-07-01 (Assets/cast/fighter/fighter.fbx: SkinnedMeshRenderer, 24 bones, its OWN embedded \"Idle\" clip, animationType=Generic/avatarSetup=NoAvatar as shipped -- fixed to Humanoid/CreateFromThisModel by fighter_humanoid_fix.cs, mirroring chars_v2_wave2_humanoid_fix.cs's proven pattern). #1423 fix: the null albedo_ref was WRONG, not an intentional own-material convention -- fighter.fbx's own imported Material_1 has NO texture bound (ModelImporter materialImportMode=ImportViaMaterialDescription left mainTexture null; confirmed via Probe1423Material.cs), so the renderer's registry-miss fallback was silently painting the DEFAULT TEMPLATE's hero_albedo.png (a different mesh's UVs) onto the fighter -- the garbled \"camo\" read in the #1418 evidence. Fixed at the source: extracted the real baseColorTexture from the ORIGINAL Meshy model.glb (same source rigged.fbx was generated from, so UVs match) via extract_glb_albedo.py, deployed to Assets/cast/fighter/albedo.jpg. anim_ref stays null: its own embedded \"Idle\" clip is used directly, same convention as goblin.fbx.",
       "version": "1.1.0",
       "critic_score": 0.0,
       "default_used": false
