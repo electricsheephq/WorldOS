@@ -43,3 +43,14 @@
 For the full drive loop (bring-up, liveness preflight, the unity-mcp raw drive loop, full-res
 capture, non-black gate), use the `gex44-unity-host` skill. This file is the durable
 connection/claim/facts reference the skill and any cold agent should read first.
+
+## Bridge re-arm (session dropped) — PROVEN recovery, no VNC
+Symptom: MCP calls return `no_unity_session` while the editor process is alive and
+`curl 127.0.0.1:8080/mcp` returns 406 (server healthy). The editor↔server SESSION dropped.
+Fix (headless, over SSH as the `unity` user on DISPLAY=:0):
+1. `scrot -o /tmp/s.png` → scp back → locate the "MCP For Unity" window (red "No Session" + Connect).
+2. `xdotool mousemove <titlebar-x> <titlebar-y> click 1` — focus the window first (openbox needs it).
+3. `xdotool mousemove <connect-x> <connect-y> click 1`, sleep ~5.
+4. Verify: panel shows green "Session Active (worldos-unity)"; a `read_console` probe returns entries.
+Do NOT restart the editor or the :8080 server for this symptom, and do not wait for a human VNC
+connect — ssh+xdotool is the proven agent-control path on this box.
