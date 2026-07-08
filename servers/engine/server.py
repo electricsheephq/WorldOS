@@ -1371,6 +1371,15 @@ def cross_door(campaign_id: str, x: int, y: int) -> dict:
     if not conns:
         raise ValueError(f"{getattr(loc, 'name', '')!r} has no connected room to cross to")
     result = travel_to(campaign_id, conns[0])
+    # W4 follow-up (#1378): the party's stage_cell was just CLEARED by travel_to's _move_party_to
+    # (per-room scoping). If the destination room is ALSO painted, re-stage the party beside its
+    # entry door so the linked room's rest board renders them standing there — not the empty
+    # door-bar state (demo-reel frame 06). ADDITIVE: an un-painted destination gets no writes.
+    with campaign_lock(campaign_id):
+        c2 = _require(campaign_id)  # fresh state — travel_to persisted its own copy above
+        dest = c2.locations.get(c2.current_location_id) if c2.current_location_id else None
+        if dest is not None and _seed_stage_cells_on_arrival(c2, dest):
+            save_campaign(c2)
     result["crossed_door"] = [int(x), int(y)]
     result["multi_connection"] = len(conns) > 1
     return result
@@ -4673,6 +4682,56 @@ def rest_blocked_cells(
         for x, y in scene_grid_mod.impassable_cells(grid, width, height, occupied=occupied)
     }
     return width, height, impassable | occupied
+
+
+def _seed_stage_cells_on_arrival(c: "Campaign", dest: "Location") -> list[str]:
+    """W4 follow-up (#1378): on a ``cross_door`` arrival, seed each traveling party member's
+    ``Character.stage_cell`` to a walkable cell beside the destination room's entry door, so the
+    linked room's rest board renders the party re-staged — not the empty door-bar state left when
+    ``_move_party_to`` clears every member's stage_cell on travel.
+
+    Mirrors ``_seed_combat_cells_from_stage``'s discipline: a deterministic member order, cells
+    ranked nearest-the-door first, each member claiming the NEXT free cell so two tokens never
+    stack (contention spreads to the next-nearest walkable). ADDITIVE / default-safe — a
+    destination with NO ``scene_grid`` or NO ``door_cells`` gets zero writes (returns ``[]``):
+    a room that behaved as today (no re-stage, no error) still does. Engine is the SOLE writer;
+    the caller holds the campaign lock and persists.
+
+    Returns the ids actually re-staged (for surfacing/tests)."""
+    grid = getattr(dest, "scene_grid", None)
+    if grid is None:
+        return []
+    door_cells = sorted({(int(a), int(b)) for (a, b) in (getattr(grid, "door_cells", None) or [])})
+    if not door_cells:
+        return []
+    width, height, blocked = rest_blocked_cells(c, dest)
+    if width <= 0 or height <= 0:
+        return []
+    # Best-effort ARRIVAL door: the lowest-sorted door of the destination. There is no authored
+    # door->origin map yet (the same limitation cross_door surfaces via `multi_connection`), so a
+    # deterministic first pick stands in. The party stands BESIDE it, never on the threshold.
+    door = door_cells[0]
+    # Candidate rest cells: every FREE cell reachable from the door (routes around walls/props so
+    # nobody lands in a walled-off pocket), ranked nearest-first with a stable (y, x) tiebreak.
+    reach = combat_grid.reachable(door, width + height, set(), width, height, impassable=blocked)
+    candidates = iter(
+        sorted(reach, key=lambda cell: (combat_grid.chebyshev_cells(cell, door), cell[1], cell[0]))
+    )
+    # Traveling party = the members _move_party_to just co-located here (PC(s) + companions), in
+    # c.characters insertion order for a deterministic seat assignment. Cells are unique + consumed
+    # sequentially, so each member lands on a distinct cell (no stacking).
+    party_ids = set(c.party)
+    seeded: list[str] = []
+    for cid, member in c.characters.items():
+        travels = cid in party_ids or member.kind in ("player", "companion")
+        if not travels or member.location_id != dest.id:
+            continue
+        cell = next(candidates, None)
+        if cell is None:
+            break  # the room ran out of free cells near the door — leave the rest unplaced
+        member.stage_cell = cell
+        seeded.append(cid)
+    return seeded
 
 
 def _coerce_cell_pairs(raw, label: str) -> list[list[int]]:
