@@ -64,6 +64,34 @@ System.Func<int,int,Vector3> cellToWorld=(cx,cy)=> new Vector3((cx-(_gridCols-1f
 // float-cell variant for smooth DOTween glide sampling between engine cells (presentation-only).
 System.Func<float,float,Vector3> cellToWorldF=(cx,cy)=> new Vector3((cx-(_gridCols-1f)/2f)*2.0f,0f,((_gridRows-1f)/2f-cy)*2.0f);
 
+// ---- #1284 grounding v2: per-scene FLOOR plane + presentation-only prop-cell NUDGE ----------------
+// (1) FLOOR-Y grounding: the painterly plate is FLAT, so the floor is a per-scene CONSTANT (default 0),
+//     NOT a raycast against prop meshes (the sarcophagus-top-wins-the-cast bug). Feet anchor to FLOOR_Y.
+// (2) PROP-CELL nudge: the /combat-surface carries `impassable` (== combat.grid_impassable). If an actor's
+//     LOGICAL cell is impassable (a prop, e.g. the sarcophagus), we RENDER it at the nearest walkable
+//     adjacent cell so it never stands ON the painted prop. Presentation-only — the logical cell (kept in
+//     actorCell) is NEVER mutated and NEVER written back: the engine stays SOLE WRITER.
+// (3) RING under feet: the AO blob + selection ring anchor to this same render foot cell (below).
+float FLOOR_Y=0f;
+var _impass=new System.Collections.Generic.HashSet<int>();
+System.Func<int,int,int> cellKey=(c,r)=> c*10000+r;                       // grids are <14x11 -> collision-free
+System.Func<int,int,bool> inBounds=(c,r)=> c>=0 && c<(int)_gridCols && r>=0 && r<(int)_gridRows;
+System.Func<int,int,bool> isWalkable=(c,r)=> inBounds(c,r) && !_impass.Contains(cellKey(c,r));
+// #1284 H2: cross-actor stacking guard. Render cells claimed by an EARLIER-spawned actor join the blocked
+// set so two actors never render on one cell. Filled per actor in the token loop (deterministic order).
+var _occupied=new System.Collections.Generic.HashSet<int>();
+System.Func<int,int,bool> available=(c,r)=> isWalkable(c,r) && !_occupied.Contains(cellKey(c,r));
+// nearest AVAILABLE neighbor, DETERMINISTIC lowest-index pick: orthogonal (dist 1) before diagonal, in a
+// FIXED neighbor order. Returns the logical cell unchanged if it is already free (or nothing is free).
+int[][] _NB=new int[][]{ new int[]{0,-1}, new int[]{-1,0}, new int[]{1,0}, new int[]{0,1},
+                          new int[]{-1,-1}, new int[]{1,-1}, new int[]{-1,1}, new int[]{1,1} };
+System.Func<int,int,int[]> nudgeCell=(c,r)=>{ if(available(c,r)) return new int[]{c,r};
+  foreach(var d in _NB){ int nc=c+d[0], nr=r+d[1]; if(available(nc,nr)) return new int[]{nc,nr}; }
+  return new int[]{c,r}; };  // #1284 H2 fallback: every candidate blocked/occupied -> keep the logical cell (may overlap; documented)
+// honest floor-contact sidecar: the ACTUAL grounded baked-mesh feet/head world points per placed actor,
+// projected to px after the capture resolution is known (see the sidecar writer below the capture rig).
+var _repSidecar=new System.Collections.Generic.List<System.Collections.Generic.Dictionary<string,object>>();
+
 // ---- lighting rig (IDENTICAL to paint_combat_v1.cs) ----------------------------------------------
 foreach(var ln in new[]{"KeyLight","FillLight","BrazierL","BrazierR","CombatKey"}){ var o=GameObject.Find(ln); if(o!=null) UnityEngine.Object.DestroyImmediate(o); }
 var lg=new GameObject("KeyLight"); var L=lg.AddComponent<Light>(); L.type=LightType.Directional; L.color=new Color(1f,0.73f,0.44f); L.intensity=1.35f; L.shadows=LightShadows.Soft; L.shadowStrength=0.75f; lg.transform.rotation=Quaternion.Euler(48f,35f,0f);
@@ -115,12 +143,29 @@ System.Func<string,string,int,int,float,Color,string,GameObject> spawn=(fbxPath,
   System.Func<Renderer,Bounds> worldBounds=(r)=>{ var smr=r as SkinnedMeshRenderer; if(smr==null) return r.bounds; var bk=new Mesh(); smr.BakeMesh(bk); var vs=bk.vertices; if(vs.Length==0){ UnityEngine.Object.DestroyImmediate(bk); return r.bounds; } var m=smr.transform.localToWorldMatrix; var wb=new Bounds(m.MultiplyPoint3x4(vs[0]),Vector3.zero); for(int i=1;i<vs.Length;i++) wb.Encapsulate(m.MultiplyPoint3x4(vs[i])); UnityEngine.Object.DestroyImmediate(bk); return wb; };
   System.Func<Bounds> measure=()=>{ Bounds b=new Bounds(go.transform.position,Vector3.zero); bool a=false; foreach(var r in rends){ var rb=worldBounds(r); if(!a){b=rb;a=true;} else b.Encapsulate(rb);} return b; };
   Bounds bb=measure(); float curH=bb.size.y>0.001f?bb.size.y:1f; float s=height/curH; go.transform.localScale=go.transform.localScale*s;
-  var p=cellToWorld(cx,cy); go.transform.position=p; bb=measure(); Vector3 ctr=bb.center; go.transform.position+=new Vector3(p.x-ctr.x,-bb.min.y,p.z-ctr.z);
+  // #1284 (2) prop-cell render NUDGE (presentation-only): if the LOGICAL cell (cx,cy) is impassable
+  // (a prop, e.g. the sarcophagus), render at the nearest walkable neighbor. The logical cell is kept in
+  // actorCell by the caller and NEVER written back (engine = sole writer).
+  int[] _rc=nudgeCell(cx,cy); int rcx=_rc[0], rcy=_rc[1];
+  _occupied.Add(cellKey(rcx,rcy));  // #1284 H2: claim this render cell so later actors won't stack on it
+  var p=cellToWorld(rcx,rcy); go.transform.position=p; bb=measure(); Vector3 ctr=bb.center;
+  // #1284 (1) FLOOR-Y grounding: anchor feet to the per-scene FLOOR plane (flat plate; NOT a prop-mesh
+  // raycast). foot = the posed baked-mesh bounds min.y -> FLOOR_Y.
+  go.transform.position+=new Vector3(p.x-ctr.x, FLOOR_Y-bb.min.y, p.z-ctr.z);
+  bb=measure();   // re-read the grounded bounds for the honest feet/head floor-contact record
   if(albedoPath!=null){ var al=AssetDatabase.LoadAssetAtPath<Texture2D>(albedoPath); if(al!=null){ var mm=new Material(Shader.Find("Standard")); mm.mainTexture=al; mm.SetFloat("_Glossiness",0.2f); mm.SetFloat("_Metallic",0f); foreach(var r in rends) r.sharedMaterial=mm; } }
-  // AO blob + selection ring (foot-anchored, camera foreshortens the flat circle to the iso ellipse).
-  var ao=GameObject.CreatePrimitive(PrimitiveType.Quad); ao.name=nm+"_AO"; UnityEngine.Object.DestroyImmediate(ao.GetComponent<Collider>()); ao.transform.position=new Vector3(p.x,0.04f,p.z); ao.transform.localEulerAngles=new Vector3(90f,0f,0f); ao.transform.localScale=new Vector3(2.0f,2.0f,1f); var aom=new Material(Shader.Find("Unlit/Transparent")); aom.mainTexture=blobT; aom.renderQueue=1950; ao.GetComponent<Renderer>().sharedMaterial=aom; ao.GetComponent<Renderer>().shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off;
-  var rg=GameObject.CreatePrimitive(PrimitiveType.Quad); rg.name=nm+"_Ring"; UnityEngine.Object.DestroyImmediate(rg.GetComponent<Collider>()); rg.transform.position=new Vector3(p.x,0.06f,p.z); rg.transform.localEulerAngles=new Vector3(90f,0f,0f); rg.transform.localScale=new Vector3(2.6f,2.6f,1f); var rgm=new Material(Shader.Find("Unlit/Transparent")); rgm.mainTexture=ringT; rgm.color=ringCol; rgm.renderQueue=1955; rg.GetComponent<Renderer>().sharedMaterial=rgm; rg.GetComponent<Renderer>().shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off;
-  sb.AppendLine(nm+" x"+s.ToString("F2")+" @cell("+cx+","+cy+") rends="+rends.Length);
+  // #1284 (3) AO blob + selection ring anchored to the RENDER foot cell (p, post-nudge) on the FLOOR
+  // plane, so the ring sits UNDER the feet and never detaches onto the prop the actor was nudged off.
+  var ao=GameObject.CreatePrimitive(PrimitiveType.Quad); ao.name=nm+"_AO"; UnityEngine.Object.DestroyImmediate(ao.GetComponent<Collider>()); ao.transform.position=new Vector3(p.x,FLOOR_Y+0.04f,p.z); ao.transform.localEulerAngles=new Vector3(90f,0f,0f); ao.transform.localScale=new Vector3(2.0f,2.0f,1f); var aom=new Material(Shader.Find("Unlit/Transparent")); aom.mainTexture=blobT; aom.renderQueue=1950; ao.GetComponent<Renderer>().sharedMaterial=aom; ao.GetComponent<Renderer>().shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off;
+  var rg=GameObject.CreatePrimitive(PrimitiveType.Quad); rg.name=nm+"_Ring"; UnityEngine.Object.DestroyImmediate(rg.GetComponent<Collider>()); rg.transform.position=new Vector3(p.x,FLOOR_Y+0.06f,p.z); rg.transform.localEulerAngles=new Vector3(90f,0f,0f); rg.transform.localScale=new Vector3(2.6f,2.6f,1f); var rgm=new Material(Shader.Find("Unlit/Transparent")); rgm.mainTexture=ringT; rgm.color=ringCol; rgm.renderQueue=1955; rg.GetComponent<Renderer>().sharedMaterial=rgm; rg.GetComponent<Renderer>().shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off;
+  // #1284 floor-contact record: feet/head are the ACTUAL grounded baked-mesh bounds (min.y/max.y). If a
+  // regression ever grounds onto prop-top (raycast bug), feetW.y != FLOOR_Y and the pre-gate FAILS.
+  var _sd=new System.Collections.Generic.Dictionary<string,object>();
+  _sd["id"]=nm; _sd["logical_cell"]=new int[]{cx,cy}; _sd["render_cell"]=new int[]{rcx,rcy};
+  _sd["feetW"]=new Vector3(bb.center.x,bb.min.y,bb.center.z);
+  _sd["headW"]=new Vector3(bb.center.x,bb.max.y,bb.center.z);
+  _repSidecar.Add(_sd);
+  sb.AppendLine(nm+" x"+s.ToString("F2")+" logical("+cx+","+cy+")->render("+rcx+","+rcy+") rends="+rends.Length);
   return go;
 };
 
@@ -129,6 +174,11 @@ string surfJson="";
 try { surfJson=new System.Net.WebClient().DownloadString("http://127.0.0.1:8765/combat-surface?campaign="+CID); } catch (System.Exception e) { return "surface GET failed: "+e.Message; }
 var root=MiniJson.Parse(surfJson) as System.Collections.Generic.Dictionary<string,object>;
 if(root==null) return "surface parse failed";
+// #1284 (2): the impassable cell set (engine-owned combat.grid_impassable, surfaced as `impassable`) —
+// the source for the presentation-only prop-cell nudge. [] == no obstacles (nudge is then a no-op).
+{ var _imp=root.ContainsKey("impassable")?(root["impassable"] as System.Collections.Generic.List<object>):null;
+  if(_imp!=null) foreach(var ce in _imp){ var cell=ce as System.Collections.Generic.List<object>; if(cell==null||cell.Count<2) continue; _impass.Add(cellKey(System.Convert.ToInt32(cell[0]),System.Convert.ToInt32(cell[1]))); }
+  sb.AppendLine("impassable cells: "+_impass.Count); }
 var toks=root.ContainsKey("tokens")?(root["tokens"] as System.Collections.Generic.List<object>):null;
 if(toks==null||toks.Count==0) return "no tokens on surface";
 // sweep prior actors/overlays (deterministic rerun) — same class list paint_combat_v1 sweeps.
@@ -232,6 +282,37 @@ System.Action<string> capture=(label)=>{
   var pAct=RenderTexture.active; RenderTexture.active=rt; var t2=new Texture2D(W,Hh,TextureFormat.RGB24,false); t2.ReadPixels(new Rect(0,0,W,Hh),0,0); t2.Apply(); RenderTexture.active=pAct; cam.targetTexture=pt; cam.aspect=pa;
   string fn=OUTDIR+"/replay_"+reelIdx.ToString("D2")+"_"+label+".png"; System.IO.File.WriteAllBytes(fn, t2.EncodeToPNG()); UnityEngine.Object.DestroyImmediate(t2); reel.Add(fn); reelIdx++;
 };
+
+// ---- #1284 floor-contact MANIFEST: project each placed actor's grounded feet/head to px at the CAPTURE
+// resolution and emit a qa/visual_pregate.py-ready manifest (per-actor screen_bbox + independent floor_y_px
+// projected at the render cell). The pre-gate's FLOOR-CONTACT check compares rendered feet-Y to that floor
+// plane — this file is the deterministic #1284 acceptance tripwire (regression -> feet != floor -> FAIL). --
+{
+  float _pa2=cam.aspect; var _pt2=cam.targetTexture; cam.aspect=(float)W/Hh;
+  System.Func<Vector3,float[]> w2p=(w)=>{ var vp=cam.WorldToViewportPoint(w); return new float[]{ vp.x*W, (1f-vp.y)*Hh }; };
+  // #1284 review P3 (3541403920): the actor id/name comes from /combat-surface tokens[] — JSON-escape it
+  // so a name containing '"', '\\', or a newline can never produce an invalid manifest the pre-gate can't parse.
+  System.Func<object,string> _jesc=(o)=>{ var st=o==null?"":o.ToString(); return st.Replace("\\","\\\\").Replace("\"","\\\"").Replace("\n"," ").Replace("\r"," "); };
+  var msb=new System.Text.StringBuilder();
+  msb.Append("{\n  \"frame_w\":"+W+", \"frame_h\":"+Hh+",\n");
+  msb.Append("  \"checks\": {\"floor_contact\": {\"tolerance_px\": 8}, \"screen_scale\": {\"min_height_frac\":0.03,\"max_height_frac\":0.45}},\n");
+  msb.Append("  \"actors\": [\n");
+  for(int i=0;i<_repSidecar.Count;i++){ var d=_repSidecar[i];
+    var lc=(int[])d["logical_cell"]; var rc2=(int[])d["render_cell"];
+    var fW=(Vector3)d["feetW"]; var hW=(Vector3)d["headW"];
+    var fp=w2p(fW); var hp=w2p(hW);
+    var floorPx=w2p(new Vector3(fW.x,FLOOR_Y,fW.z));                       // floor plane at the render cell
+    float half=Mathf.Max(4f,Mathf.Abs(fp[1]-hp[1])*0.22f);
+    msb.Append("    {\"name\":\""+_jesc(d["id"])+"\",\"logical_cell\":["+lc[0]+","+lc[1]+"],\"expected_cell\":["+rc2[0]+","+rc2[1]+"],");
+    msb.Append("\"screen_bbox\":["+Mathf.Round(fp[0]-half)+","+Mathf.Round(hp[1])+","+Mathf.Round(fp[0]+half)+","+Mathf.Round(fp[1])+"],");
+    msb.Append("\"floor_y_px\":"+Mathf.Round(floorPx[1])+"}");
+    msb.Append(i<_repSidecar.Count-1?",\n":"\n");
+  }
+  msb.Append("  ]\n}\n");
+  System.IO.File.WriteAllText(OUTDIR+"/replay_actors_manifest.json", msb.ToString());
+  cam.aspect=_pa2; cam.targetTexture=_pt2;
+  sb.AppendLine("wrote floor-contact manifest -> "+OUTDIR+"/replay_actors_manifest.json ("+_repSidecar.Count+" actors)");
+}
 
 // facing: rotate an actor about world-up so it looks at a target world pos (heading), preserving the
 // stood-up -90 X. The base facing is cam.yaw+180; add the yaw delta from base-forward to the target.

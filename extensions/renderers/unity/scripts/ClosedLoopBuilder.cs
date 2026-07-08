@@ -50,6 +50,10 @@ public static class ClosedLoopBuilder
     // height bands (world units)
     const float TALL_H = 3.0f, MID_H = 1.8f, LOW_H = 1.0f;
 
+    // #1284: per-scene FLOOR plane (the painterly plate is FLAT). Actor feet anchor to this constant,
+    // NOT a raycast against prop meshes (the sarcophagus-top-wins-the-cast bug). Greybox floor sits at 0.
+    const float FLOOR_Y = 0f;
+
     // ---- actor render tuning (round-1 fixes: belong-in-scene) ----
     const float ACTOR_TARGET_H = 9.6f;   // r11 L4 (BOTH runs, CRITICAL): on the wider v3 plate the actors
                                          // read as thumbnails dwarfed by the hall = "props, not dramatis
@@ -176,6 +180,34 @@ public static class ClosedLoopBuilder
     // span-center for a multi-cell prop (min..max inclusive), flipped on Z
     static float PropCenterX(PropDef p) { return OriginX + (p.minC + p.maxC + 1) * CELL_SIZE * 0.5f; }
     static float PropCenterZ(PropDef p) { return OriginZ + (ROWS - (p.minR + p.maxR + 1) * 0.5f) * CELL_SIZE; }
+
+    // #1284: presentation-only prop-cell NUDGE. A cell is BLOCKED if it is out of bounds or inside any
+    // prop footprint (the fixture's props ARE the impassable set — sarcophagus/columns/altar). If an
+    // actor's LOGICAL cell is blocked, render it at the nearest walkable neighbor so it never stands ON
+    // the painted prop. Deterministic lowest-index pick: orthogonal (dist 1) before diagonal, fixed order.
+    // The logical spawn cell (Fx.party/foes) is never mutated — a pure view nudge (engine = sole writer).
+    static bool IsBlockedCell(int c, int r)
+    {
+        if (c < 0 || c >= COLS || r < 0 || r >= ROWS) return true;
+        foreach (var p in Fx.props)
+            if (c >= p.minC && c <= p.maxC && r >= p.minR && r <= p.maxR) return true;
+        return false;
+    }
+    // #1284 H2: cross-actor stacking guard. Render cells already claimed by an actor placed EARLIER this
+    // build join the blocked set, so two actors never render on one cell. Reset per build in PlaceActors;
+    // claimed in PlaceActor/PlaceSpriteActor after the nudge. Actors are placed in a fixed token order
+    // (hero then foe), so selection is deterministic.
+    static HashSet<int> _occupiedRenderCells = new HashSet<int>();
+    static int CellKey(int c, int r) { return c * 10000 + r; }
+    static bool CellAvailable(int c, int r) { return !IsBlockedCell(c, r) && !_occupiedRenderCells.Contains(CellKey(c, r)); }
+    static readonly int[][] NUDGE_NB = new int[][] {
+        new[]{0,-1}, new[]{-1,0}, new[]{1,0}, new[]{0,1}, new[]{-1,-1}, new[]{1,-1}, new[]{-1,1}, new[]{1,1} };
+    static int[] NudgeCell(int c, int r)
+    {
+        if (CellAvailable(c, r)) return new[] { c, r };
+        foreach (var d in NUDGE_NB) { int nc = c + d[0], nr = r + d[1]; if (CellAvailable(nc, nr)) return new[] { nc, nr }; }
+        return new[] { c, r };   // #1284 H2 fallback: every candidate blocked/occupied -> keep the logical cell (may overlap; documented)
+    }
 
     // ==================================================================
     // ARM toggle (bake-off) — sets which actor pipeline AssembleFinal uses.
@@ -710,6 +742,7 @@ public static class ClosedLoopBuilder
         var parent = new GameObject("Actors");
         parent.transform.SetParent(root.transform, false);
         _sidecar = new List<Dictionary<string, object>>();
+        _occupiedRenderCells.Clear();   // #1284 H2: fresh per build; actors claim render cells in token order
 
         int[] heroCell = Fx.party.Count > 0 ? Fx.party[0] : new[] { 6, 8 };
         int[] foeCell  = Fx.foes.Count  > 0 ? Fx.foes[0]  : new[] { 6, 2 };
@@ -805,6 +838,8 @@ public static class ClosedLoopBuilder
     {
         var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(spritePath);
         if (tex == null) { Debug.LogError("[CL] sprite not found: " + spritePath); return; }
+        // #1284 (2): presentation-only prop-cell nudge (see PlaceActor) — logical spawn cell untouched.
+        { int[] rc = NudgeCell(c, r); c = rc[0]; r = rc[1]; _occupiedRenderCells.Add(CellKey(c, r)); }  // #1284 H2: claim the render cell
 
         var go = GameObject.CreatePrimitive(PrimitiveType.Quad);
         go.name = label;
@@ -832,10 +867,10 @@ public static class ClosedLoopBuilder
 
         float wx = CellX(c);
         float wz = CellZ(r);
-        go.transform.position = new Vector3(wx, worldH * 0.5f, wz); // center; bottom edge -> y=0
+        go.transform.position = new Vector3(wx, FLOOR_Y + worldH * 0.5f, wz); // center; bottom edge -> FLOOR_Y
         var preBounds = Bounds(go);
-        if (Mathf.Abs(preBounds.min.y) > 0.02f)
-            go.transform.position += new Vector3(0f, -preBounds.min.y, 0f); // plant feet exactly on y=0
+        if (Mathf.Abs(preBounds.min.y - FLOOR_Y) > 0.02f)
+            go.transform.position += new Vector3(0f, FLOOR_Y - preBounds.min.y, 0f); // plant feet on the FLOOR plane
 
         // ALPHA-BLENDED unlit billboard (the sprite is pre-lit by Scenario). WorldOS/SpriteBillboard
         // honors the PNG alpha + applies a SUBTLE scene-key/ambient tint + depth exposure so it sits
@@ -874,6 +909,10 @@ public static class ClosedLoopBuilder
     {
         var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
         if (prefab == null) { Debug.LogError("[CL] FBX not found: " + path); return; }
+        // #1284 (2): presentation-only prop-cell nudge — render off a blocked (prop) cell onto the nearest
+        // walkable neighbor. The caller's logical spawn cell (Fx.party/foes) is untouched; c,r below are the
+        // RENDER cell used for placement + ring (part 3), so the actor never stands ON the painted prop.
+        { int[] rc = NudgeCell(c, r); c = rc[0]; r = rc[1]; _occupiedRenderCells.Add(CellKey(c, r)); }  // #1284 H2: claim the render cell
         // WRAPPER controls placement + scale + FACING. The FBX is a child so that
         // PoseToClip's SampleAnimation (which bakes the Idle clip's ROOT rotation onto the FBX
         // root, clobbering any yaw we set on it) does NOT override our facing — the wrapper yaw
@@ -886,6 +925,11 @@ public static class ClosedLoopBuilder
 
         // POSE the FBX into the Idle clip first (reads/clobbers its own root); facing is the wrapper's.
         PoseToClip(go, path, "Idle", 0.4f);
+
+        // #1284 H1: force skinned meshes to re-skin from live bones every render regardless of culling,
+        // so the captured pose matches BakeMesh (mirror of paint_combat_replay_v1.cs).
+        foreach (var smr in go.GetComponentsInChildren<SkinnedMeshRenderer>())
+        { smr.updateWhenOffscreen = true; smr.forceMatrixRecalculationPerRender = true; }
 
         // Face the actor TOWARD the game camera. Verified empirically below the clip bake:
         // the model's FRONT ends up facing +Z after the Idle bake, and the camera (z=-55.5,
@@ -911,13 +955,13 @@ public static class ClosedLoopBuilder
         float wx = CellX(c);
         float wz = CellZ(r);
         var staging = Bounds(wrap);                            // bounds at the (9999) staging pos
-        float floorY = staging.min.y < -0.05f ? -staging.min.y : 0f; // feet -> floor plane (Y only)
+        float floorY = FLOOR_Y - staging.min.y;                // #1284 (1): anchor feet to the FLOOR plane (min.y -> FLOOR_Y)
         wrap.transform.position = new Vector3(wx, floorY, wz);
         var sb = Bounds(wrap);                                // RE-READ after final placement
-        // safety: plant feet exactly on y=0
-        if (Mathf.Abs(sb.min.y) > 0.02f)
+        // safety: plant feet exactly on the FLOOR plane
+        if (Mathf.Abs(sb.min.y - FLOOR_Y) > 0.02f)
         {
-            wrap.transform.position += new Vector3(0f, -sb.min.y, 0f);
+            wrap.transform.position += new Vector3(0f, FLOOR_Y - sb.min.y, 0f);
             sb = Bounds(wrap);
         }
 
@@ -1143,9 +1187,32 @@ public static class ClosedLoopBuilder
     {
         var rs = go.GetComponentsInChildren<Renderer>();
         if (rs.Length == 0) return new Bounds(Vector3.zero, Vector3.one * 1.8f);
-        var b = rs[0].bounds;
-        for (int i = 1; i < rs.Length; i++) b.Encapsulate(rs[i].bounds);
-        return b;
+        Bounds b = default; bool started = false;
+        foreach (var r in rs)
+        {
+            var rb = PosedWorldBounds(r);
+            if (!started) { b = rb; started = true; } else b.Encapsulate(rb);
+        }
+        return started ? b : new Bounds(go.transform.position, Vector3.one * 1.8f);
+    }
+
+    // #1284 H1: TRUE POSED world bounds. SkinnedMeshRenderer.bounds is an inflated bind-pose AABB whose
+    // min.y floats the actor (and made CL's floor grounding + RecordActor manifest self-consistent-but-
+    // -invalid). BakeMesh the current pose and transform its verts to world — identical to the proven
+    // paint_combat_replay_v1.cs worldBounds pattern. Plain (non-skinned) Renderer falls back to .bounds.
+    static Bounds PosedWorldBounds(Renderer r)
+    {
+        var smr = r as SkinnedMeshRenderer;
+        if (smr == null) return r.bounds;
+        var bk = new Mesh();
+        smr.BakeMesh(bk);
+        var vs = bk.vertices;
+        if (vs.Length == 0) { Object.DestroyImmediate(bk); return r.bounds; }
+        var m = smr.transform.localToWorldMatrix;
+        var wb = new Bounds(m.MultiplyPoint3x4(vs[0]), Vector3.zero);
+        for (int i = 1; i < vs.Length; i++) wb.Encapsulate(m.MultiplyPoint3x4(vs[i]));
+        Object.DestroyImmediate(bk);
+        return wb;
     }
 
     // ---- soft elliptical contact shadow directly under feet (R1/R2/R3 L2 fix) ----
