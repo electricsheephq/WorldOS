@@ -1,7 +1,7 @@
 {
   "artifact_id": "room:market_square:v1:20260708",
   "class": "room",
-  "curation_note": "VISUAL-GATE FIRST REAL RUN (this PR, docs/roadmap/VISUAL-PROMOTION-GATE-DECISION.md): re-scored through promote.py GATE_STRATEGIES[\"room\"]=visual with a CLEAN REGISTERED control from qa/visual_controls_identity.json (real shipped PoE2:Deadfire market plate, poe2_market_interior_lighting_04, UI-free), replacing the #1416 DEFECTIVE bg2ee_fortress control (UI chrome + wrong scene; scored 2.0; now excluded from the registry). VERDICT: REJECTED. 5-scorer blind sonnet panel \u2014 control median 9.0 (in-band [6.8,9.2] -> instrument valid), candidate median 4.0, delta -5.0 < -1.2 noise law. The #1416 adoption rested on the defective control; with a clean control this plate is a full 5 pts below the painterly bar (unanimous scorer tell: flat cel/vector-toon facades, uniform daylight, no coherent scene-light). RETAINED as an EXPERIMENTAL incumbent (not gate-passed, not deleted \u2014 an owner call) and FLAGGED for re-generation to the PoE2 bar. Deterministic pre-gate HARD FLOOR PASSes; the run_pregates FLAG is only the G6 daylight staging-law band (not a promotion floor). See source_path.",
+  "curation_note": "VISUAL-GATE FIRST REAL RUN (this PR, docs/roadmap/VISUAL-PROMOTION-GATE-DECISION.md): re-scored through promote.py GATE_STRATEGIES[\"room\"]=visual with a CLEAN REGISTERED control from qa/visual_controls_identity.json (real shipped PoE2:Deadfire market plate, poe2_market_interior_lighting_04, UI-free), replacing the #1416 DEFECTIVE bg2ee_fortress control (UI chrome + wrong scene; scored 2.0; now excluded from the registry). VERDICT: REJECTED. 5-scorer blind sonnet panel \u2014 control median 9.0 (in-band [6.8,9.2] -> instrument valid), candidate median 4.0, delta -5.0, below the -2.5 adoption bar (and the -1.2 parity bar). The #1416 adoption rested on the defective control; with a clean control this plate is a full 5 pts below the painterly bar (unanimous scorer tell: flat cel/vector-toon facades, uniform daylight, no coherent scene-light). RETAINED as an EXPERIMENTAL incumbent (not gate-passed, not deleted \u2014 an owner call) and FLAGGED for re-generation to the PoE2 bar. Deterministic pre-gate HARD FLOOR PASSes; the run_pregates FLAG is only the G6 daylight staging-law band (not a promotion floor). See source_path.",
   "gate": {
     "control_valid": true,
     "dims": {
@@ -39,7 +39,7 @@
     "overall": 4.0,
     "passed": false,
     "reasons": [
-      "delta -5.0 < -1.2 (candidate below control beyond the noise law)"
+      "delta -5.0 < -2.5 adoption bar (candidate below the adopted-quality band)"
     ],
     "tier": null
   },

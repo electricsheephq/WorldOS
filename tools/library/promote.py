@@ -286,6 +286,21 @@ GATE_STRATEGIES: dict[str, str] = {  # class -> strategy; absent/text class -> "
     "quest": "text", "npc": "text", "location": "text", "encounter": "text", "room": "visual",
 }
 _VISUAL_CONTROLS_IDENTITY = _QA_DIR / "visual_controls_identity.json"
+# ── The two-tier delta ladder (architect amendment 2026-07-08) ───────────────────────────────────
+# A single delta>=-1.2 PASS bar means "at statistical PARITY with real shipped PoE2 art" — the
+# DESTINATION bar, not the era-appropriate ADOPTION bar. Two measured taste-gated panels calibrate the
+# gap: camp_clearing_night (delta -2.0) PASSED both human taste-gates, so the adoption bar must sit
+# BELOW -2.0; market_square (delta -5.0) was a clear taste-REJECT. So the verdict ladder is:
+#   delta >= VIS_DELTA_PARITY (-1.2)                     → tier "canonical-candidate" (parity with real
+#                                                          art; a human MAY promote to canonical) — PASS.
+#   VIS_DELTA_ADOPT (-2.5) <= delta < VIS_DELTA_PARITY   → tier "stable" (adopted-quality) — PASS.
+#   delta < VIS_DELTA_ADOPT (-2.5)                       → REJECT.
+# VIS_DELTA_PARITY is the noise law (parity == within-noise of real art; == the registry noise_law).
+# VIS_DELTA_ADOPT=-2.5 is the era-appropriate adoption bar, calibrated 2026-07-08 on the two anchors:
+# camp_clearing_night delta -2.0 (taste-PASS) / market_square delta -5.0 (taste-REJECT). A later
+# taste/noise re-measure that moves the bar changes ONE constant here.
+VIS_DELTA_PARITY = -1.2
+VIS_DELTA_ADOPT = -2.5
 # The pre-gate gates that are a PROMOTION hard floor. The stylistic G6 luma-staging-law band (a
 # daylight plaza legitimately sits outside the dark-chiaroscuro band) and the reel-only G5 motion
 # liveness are deliberately EXCLUDED — they filter scorer spend / reels, they do not block adoption.
@@ -360,13 +375,16 @@ def _panel_delta(panel: dict) -> Optional[float]:
 
 
 def evaluate_visual_gate(panel: dict, *, registry: dict, noise_law: float = 1.2) -> GateResult:
-    """Apply the delta-anchored visual gate to one control-anchored panel JSON. stable iff ALL of:
+    """Apply the delta-anchored visual gate to one control-anchored panel JSON. PASSES iff ALL of:
       (i)   the deterministic pre-gate HARD FLOOR PASSed,
       (ii)  the panel cited a control REGISTERED in the visual registry whose same-panel median landed
             inside its band (the instrument was valid this panel), and
-      (iii) candidate-minus-control delta >= -noise_law.
-    NO absolute-threshold check — the candidate_median is carried for provenance only, never gated.
-    canonical is never assigned (human curation only). Returns a GateResult with the fail reasons."""
+      (iii) candidate-minus-control delta >= VIS_DELTA_ADOPT (the two-tier ladder).
+    On a PASS the tier is "canonical-candidate" (delta >= VIS_DELTA_PARITY, parity with real art) or
+    "stable" (adopted-quality, VIS_DELTA_ADOPT <= delta < VIS_DELTA_PARITY). NO absolute-threshold check
+    — the candidate_median is carried for provenance only, never gated. ``noise_law`` is kept for
+    call-site compatibility; the ladder uses the module constants (VIS_DELTA_PARITY == -noise_law by
+    construction). Returns a GateResult with the fail reasons."""
     reasons: list[str] = []
 
     # (i) deterministic pre-gate hard floor
@@ -397,12 +415,19 @@ def evaluate_visual_gate(panel: dict, *, registry: dict, noise_law: float = 1.2)
             reasons.append(f"registered control median {control_median} outside its band {band} — "
                            f"the instrument was not valid this panel")
 
-    # (iii) candidate-vs-control delta within the noise law (NO absolute threshold)
+    # (iii) candidate-vs-control delta on the two-tier ladder (NO absolute threshold). Epsilon at each
+    # boundary so a delta EXACTLY at the bar counts on the passing side (float subtraction of medians).
     delta = _panel_delta(panel)
+    visual_tier: Optional[str] = None
     if delta is None:
         reasons.append("no numeric candidate-vs-control delta")
-    elif delta < -noise_law - 1e-9:  # epsilon: a candidate EXACTLY noise_law below control passes
-        reasons.append(f"delta {delta} < -{noise_law} (candidate below control beyond the noise law)")
+    elif delta < VIS_DELTA_ADOPT - 1e-9:  # below the era-appropriate adoption bar → reject
+        reasons.append(f"delta {delta} < {VIS_DELTA_ADOPT} adoption bar "
+                       f"(candidate below the adopted-quality band)")
+    elif delta >= VIS_DELTA_PARITY - 1e-9:  # at/above parity with real art
+        visual_tier = "canonical-candidate"
+    else:  # VIS_DELTA_ADOPT <= delta < VIS_DELTA_PARITY → adopted-quality
+        visual_tier = "stable"
 
     passed = not reasons
     control_valid = bool(ctrl is not None and not any("instrument was not valid" in r for r in reasons))
@@ -412,7 +437,7 @@ def evaluate_visual_gate(panel: dict, *, registry: dict, noise_law: float = 1.2)
         "control_median": control_median,
         "delta_candidate_minus_control": delta,
     }
-    return GateResult(passed, "stable" if passed else None, reasons,
+    return GateResult(passed, visual_tier if passed else None, reasons,
                       panel.get("candidate_median"), dims, control_valid)
 
 

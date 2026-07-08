@@ -23,10 +23,17 @@ cadence) + actor renders + motion reels queued.
 1. **GATE_STRATEGIES[class] dispatch in promote_batch.** Text classes → existing evaluate_gate,
    byte-untouched. Visual classes ("room" now) → a NEW visual gate whose PASS rule encodes the
    visual-critic doctrine: (i) deterministic pre-gates PASS (the hard floor — frame-lit, occupancy,
-   pin-check), (ii) control-anchored panel present with a REGISTERED disguised real-art control,
-   (iii) candidate-vs-control delta within the noise law (delta ≥ −1.2 on the 0-10 panel scale).
-   NO absolute-threshold pass — absolutes are not citable for images (measured: blind panels score
-   real PoE2/BG2 art 3.0-5.6).
+   pin-check; the stylistic G6 staging-law band and reel-only G5 are NOT floors), (ii) control-anchored
+   panel present with a REGISTERED disguised real-art control whose same-panel median lands in-band,
+   (iii) candidate-vs-control delta on a **two-tier adoption ladder** (amended 2026-07-08):
+   - `delta ≥ VIS_DELTA_PARITY (−1.2)` → tier **canonical-candidate** (at statistical PARITY with real
+     shipped art — a human may promote to canonical). PASSES.
+   - `VIS_DELTA_ADOPT (−2.5) ≤ delta < VIS_DELTA_PARITY` → tier **stable** (adopted-quality). PASSES.
+   - `delta < VIS_DELTA_ADOPT (−2.5)` → REJECT.
+   NO absolute-threshold pass — absolutes are not citable for images (measured: blind panels score real
+   PoE2/BG2 art 3.0-5.6). A SOLE `delta ≥ −1.2` bar was the DESTINATION (parity) bar, not the
+   era-appropriate ADOPTION bar; the second tier is the adopted-quality lane between the two measured
+   taste anchors (see Calibration).
 2. **qa/visual_controls_identity.json** — the image-control registry mirroring the text registry's
    field shape (class, anchor, band, file, provenance, band_ruler, band_prompt_hash) with 0-10
    anchors + reference-frame paths (the already-used poe2_*/bg2ee_* frames, minus the defective
@@ -41,6 +48,18 @@ cadence) + actor renders + motion reels queued.
    to name the split explicitly so the next room promotion doesn't rediscover the gap.
 5. **Rider**: market_square clean-control re-score through the NEW registry (its #1416 control was
    defective) — the new instrument proves itself on day one (decision-by-eval).
+
+## Calibration (the two-tier ladder, 2026-07-08)
+The adoption bar `VIS_DELTA_ADOPT = −2.5` is calibrated on the two measured taste-gated panels — the
+only two data points that pair a control-anchored delta with a human taste verdict:
+- **camp_clearing_night: delta −2.0 → taste-PASS** (adopted, passed both human taste-gates). The
+  adoption bar must therefore sit *below* −2.0.
+- **market_square: delta −5.0 → taste-REJECT** (its #1416 adoption rested on a defective control; the
+  clean-control re-score scored candidate 4.0 vs a real PoE2 control at 9.0).
+−2.5 sits between them. `VIS_DELTA_PARITY = −1.2` is the noise law (parity == within-noise of real art)
+— the destination bar. Both are single named constants in `promote.py`; a later taste/noise re-measure
+moves ONE of them. First real runs through the gate path: **camp → PASS tier=stable** (delta −2.0),
+**market → REJECT** (delta −5.0, retained as an `experimental` incumbent, flagged for re-generation).
 
 ## Counter-arguments considered (from the a-advocate)
 - "control_valid_for_panel is already scale-agnostic; (a) is just two constants + a cap fix."

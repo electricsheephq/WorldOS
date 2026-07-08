@@ -8,11 +8,14 @@ CHECKS (fail loud, list every violation):
   * pack.json exists and carries {name, version, license, provenance}.
   * every entry carries the required metadata: artifact_id, class, provenance, scores, tier,
     reuse_count, license, promoted_at.
-  * NO unscored stable entry — a ``tier == "stable"`` entry MUST have scores.overall not null AND
-    scores.dims non-empty (a stable entry with no score is the exact thing the gate exists to prevent).
+  * NO unscored gate-promoted entry — a ``tier in {"stable", "canonical-candidate"}`` entry MUST have
+    scores.overall not null AND scores.dims non-empty (a gate-promoted entry with no score is the exact
+    thing the gate exists to prevent).
   * provenance AND license are present + non-empty on EVERY entry (any tier).
-  * tier is one of {experimental, stable, canonical} (promote.py only ever writes stable; canonical is
-    human-curated; experimental is reserved for a future manual/lower-bar lane).
+  * tier is one of {experimental, stable, canonical-candidate, canonical} (promote.py's text gate writes
+    stable; its visual gate writes stable OR canonical-candidate — delta at parity with real art;
+    canonical is human-curated; experimental is a manual/lower-bar lane, incl. a retained but
+    gate-rejected incumbent).
   * an entry's class matches its subdirectory (quests/ holds class=quest, …).
   * room entries REFERENCE a recipe key + asset_ids (room_ref present) — they never inline recipe data.
 
@@ -31,7 +34,9 @@ _TOOLS_DIR = Path(__file__).resolve().parent
 _REPO_ROOT = _TOOLS_DIR.parent.parent
 DEFAULT_LIBRARY_DIR = _REPO_ROOT / "library"
 
-VALID_TIERS = {"experimental", "stable", "canonical"}
+VALID_TIERS = {"experimental", "stable", "canonical-candidate", "canonical"}
+# Gate-promoted tiers that MUST carry a score (the visual gate's parity tier joins stable here).
+_SCORED_TIERS = {"stable", "canonical-candidate"}
 _REQUIRED_ENTRY_KEYS = ("artifact_id", "class", "provenance", "scores", "tier",
                         "reuse_count", "license", "promoted_at")
 _REQUIRED_PACK_KEYS = ("name", "version", "license", "provenance")
@@ -97,13 +102,13 @@ def lint_library(library_dir: Path | str) -> list[str]:
             if not _is_nonempty(entry.get("license")):
                 problems.append(f"{rel}: license missing/empty (required on every entry)")
 
-            # NO unscored stable entry.
+            # NO unscored gate-promoted entry (stable OR canonical-candidate).
             scores = entry.get("scores") or {}
-            if tier == "stable":
+            if tier in _SCORED_TIERS:
                 if scores.get("overall") is None:
-                    problems.append(f"{rel}: STABLE entry has no scores.overall (unscored stable)")
+                    problems.append(f"{rel}: {tier.upper()} entry has no scores.overall (unscored {tier})")
                 if not _is_nonempty(scores.get("dims")):
-                    problems.append(f"{rel}: STABLE entry has empty scores.dims (unscored stable)")
+                    problems.append(f"{rel}: {tier.upper()} entry has empty scores.dims (unscored {tier})")
 
             # room entries reference a recipe + asset_ids (never inline recipe data).
             if expected_class == "room":

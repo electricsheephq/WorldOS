@@ -83,10 +83,31 @@ def _gate(panel):
 
 
 # ── the gate: PASS / FAIL / no-control / pre-gate-fail ─────────────────────────────────────────────
-def test_visual_gate_passes_floor_registered_and_in_delta():
-    g = _gate(_panel(candidate_median=7.5, control_median=8.0))  # delta -0.5 >= -1.2
-    assert g.passed is True and g.tier == "stable" and g.control_valid is True
+def test_visual_gate_parity_delta_is_canonical_candidate():
+    g = _gate(_panel(candidate_median=7.5, control_median=8.0))  # delta -0.5 >= parity -1.2
+    assert g.passed is True and g.tier == "canonical-candidate" and g.control_valid is True
     assert g.reasons == []
+
+
+def test_visual_gate_adopted_band_delta_is_stable():
+    """The camp_clearing_night calibration anchor: delta -2.0 is between the adoption bar (-2.5) and
+    the parity bar (-1.2) → PASS tier=stable (adopted-quality, not yet at parity)."""
+    g = _gate(_panel(candidate_median=6.0, control_median=8.0))  # delta -2.0
+    assert g.passed is True and g.tier == "stable"
+
+
+def test_visual_gate_tier_boundaries_with_epsilon():
+    # parity boundary: delta EXACTLY -1.2 (float 6.8-8.0 = -1.2000000000000002) → canonical-candidate
+    assert _gate(_panel(candidate_median=6.8, control_median=8.0)).tier == "canonical-candidate"
+    # just below parity → stable
+    assert _gate(_panel(candidate_median=6.79, control_median=8.0)).tier == "stable"
+    # adoption boundary: delta EXACTLY -2.5 → stable (passing side of the epsilon)
+    g_adopt = _gate(_panel(candidate_median=5.5, control_median=8.0))  # -2.5
+    assert g_adopt.passed is True and g_adopt.tier == "stable"
+    # just below the adoption bar → REJECT
+    g_rej = _gate(_panel(candidate_median=5.4, control_median=8.0))  # -2.6
+    assert g_rej.passed is False and g_rej.tier is None
+    assert any("adoption bar" in r for r in g_rej.reasons)
 
 
 def test_visual_gate_daylight_g6_flag_is_not_a_promotion_floor():
@@ -96,17 +117,11 @@ def test_visual_gate_daylight_g6_flag_is_not_a_promotion_floor():
     assert g.passed is True, g.reasons
 
 
-def test_visual_gate_rejects_delta_below_noise_law():
-    g = _gate(_panel(candidate_median=4.0, control_median=9.0))  # delta -5.0 < -1.2
+def test_visual_gate_rejects_delta_below_adoption_bar():
+    """The market_square calibration anchor: delta -5.0 is below the -2.5 adoption bar → REJECT."""
+    g = _gate(_panel(candidate_median=4.0, control_median=9.0))  # delta -5.0 < -2.5
     assert g.passed is False and g.tier is None
-    assert any("delta" in r for r in g.reasons)
-
-
-def test_visual_gate_rejects_delta_just_below_threshold():
-    g = _gate(_panel(candidate_median=6.79, control_median=8.0))  # delta -1.21 < -1.2
-    assert g.passed is False
-    g_ok = _gate(_panel(candidate_median=6.8, control_median=8.0))  # delta -1.2 == -1.2 → OK
-    assert g_ok.passed is True
+    assert any("adoption bar" in r for r in g.reasons)
 
 
 def test_visual_gate_rejects_unregistered_control():
@@ -147,17 +162,16 @@ def test_visual_gate_derives_delta_from_medians_when_absent():
     p = _panel(candidate_median=7.0, control_median=8.0, delta="derive")
     assert "delta_candidate_minus_control" not in p
     g = _gate(p)
-    assert g.passed is True  # derived delta -1.0 >= -1.2
+    assert g.passed is True and g.tier == "canonical-candidate"  # derived delta -1.0 >= parity -1.2
     assert g.dims["delta_candidate_minus_control"] == pytest.approx(-1.0)
 
 
 def test_visual_gate_no_absolute_threshold():
-    """A LOW absolute candidate median still PASSes if it is within the noise law of the control —
+    """A LOW absolute candidate median still PASSes if it is within the adoption band of the control —
     the visual gate never applies an absolute floor (unlike the text gate's overall>=4.0)."""
-    g = _gate(_panel(candidate_median=3.0, control_median=4.0))  # both low, but control also low & in-band? no
-    # control 4.0 is BELOW the fixture band [6.8,9.2] → instrument invalid; use an in-band low-delta case:
-    g2 = _gate(_panel(candidate_median=6.9, control_median=8.0))  # delta -1.1, absolute 6.9 (< text 4-scale n/a)
-    assert g2.passed is True
+    # control 8.0 in-band; candidate 6.9 → delta -1.1 (parity), absolute 6.9 is not gated.
+    g = _gate(_panel(candidate_median=6.9, control_median=8.0))
+    assert g.passed is True and g.tier == "canonical-candidate"
 
 
 # ── end-to-end promote_batch dispatch ──────────────────────────────────────────────────────────────
@@ -180,9 +194,23 @@ def test_promote_batch_routes_room_to_visual_gate_and_writes_entry(tmp_path, mon
     rep = promote.promote_batch(library_dir=lib, nominations_path=noms, db_path=tmp_path / "s.db")
     assert rep["promoted"] == 1 and rep["rejected"] == 0
     entry = json.loads(next((lib / "rooms").glob("*.json")).read_text())
-    assert entry["class"] == "room" and entry["tier"] == "stable"
+    assert entry["class"] == "room" and entry["tier"] == "canonical-candidate"  # delta -0.5 → parity
     assert entry["room_ref"] == {"recipe_key": "market", "asset_ids": ["asset_x"]}
     assert entry["scores"]["overall"] == 7.5  # candidate median, carried for provenance only
+
+
+def test_promote_batch_room_stable_tier_for_adopted_delta(tmp_path, monkeypatch):
+    monkeypatch.setattr(promote, "load_visual_registry", lambda *a, **k: REGISTRY)
+    lib, noms = tmp_path / "library", tmp_path / "noms.jsonl"
+    panel_path = _write_panel(tmp_path, _panel(candidate_median=6.0, control_median=8.0))  # delta -2.0
+    noms.write_text(json.dumps({
+        "artifact_id": "room:test:adopted", "class": "room", "source_path": str(panel_path),
+        "room_ref": {"recipe_key": "camp", "asset_ids": ["asset_y"]},
+    }) + "\n", encoding="utf-8")
+    rep = promote.promote_batch(library_dir=lib, nominations_path=noms, db_path=tmp_path / "s.db")
+    assert rep["promoted"] == 1
+    entry = json.loads(next((lib / "rooms").glob("*.json")).read_text())
+    assert entry["tier"] == "stable"
 
 
 def test_promote_batch_room_reject_writes_no_entry(tmp_path, monkeypatch):
