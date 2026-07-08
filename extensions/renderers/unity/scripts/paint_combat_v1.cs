@@ -207,7 +207,16 @@ System.Func<string,string,string,int,int,float,Color,string,Vector3> spawn=(fbxP
   // min.y sits BELOW the real feet -> grounding to min.y=0 leaves the actor FLOATING (owner-observed "goblin walking
   // in the air"). BakeMesh snapshots the ACTUAL posed verts (renderer-local space); transform by localToWorldMatrix
   // for an exact world min.y/center. Plain MeshRenderer.bounds are already accurate, so pass those through.
-  System.Func<Renderer,Bounds> worldBounds=(r)=>{ var smr=r as SkinnedMeshRenderer; if(smr==null) return r.bounds; var bk=new Mesh(); smr.BakeMesh(bk); var vs=bk.vertices; if(vs.Length==0){ UnityEngine.Object.DestroyImmediate(bk); return r.bounds; } var m=smr.transform.localToWorldMatrix; var wb=new Bounds(m.MultiplyPoint3x4(vs[0]),Vector3.zero); for(int i=1;i<vs.Length;i++) wb.Encapsulate(m.MultiplyPoint3x4(vs[i])); UnityEngine.Object.DestroyImmediate(bk); return wb; };
+  // #1412 (found while re-rendering the full wave-2 cast): BakeMesh's output ALREADY reflects the renderer's
+  // CURRENT lossyScale (measured empirically on Unity 6000.5.1f1 — bind-pose bounds re-baked after a runtime
+  // localScale change grow by scale^2, not scale, when multiplied by the FULL localToWorldMatrix below). Any
+  // actor whose spawn-time scale multiplier != 1 (i.e. every SkinnedMeshRenderer actor, since `s=height/curH`
+  // is almost never exactly 1) double-applies scale -> a wildly inflated bbox -> the actor is placed floating
+  // and oversized (measured on mage/patron_commoner/innkeeper: postGround bbox height 13-20 world units vs the
+  // intended 5.0). FIX: drop scale from the matrix used to place the ALREADY-scaled baked verts — position +
+  // rotation only. (Static, non-skinned actors like hero.fbx use `r.bounds`, which is unaffected — that path's
+  // grounding was already correct, which is why only the wave-2 skinned cast exposed this.)
+  System.Func<Renderer,Bounds> worldBounds=(r)=>{ var smr=r as SkinnedMeshRenderer; if(smr==null) return r.bounds; var bk=new Mesh(); smr.BakeMesh(bk); var vs=bk.vertices; if(vs.Length==0){ UnityEngine.Object.DestroyImmediate(bk); return r.bounds; } var m=Matrix4x4.TRS(smr.transform.position, smr.transform.rotation, Vector3.one); var wb=new Bounds(m.MultiplyPoint3x4(vs[0]),Vector3.zero); for(int i=1;i<vs.Length;i++) wb.Encapsulate(m.MultiplyPoint3x4(vs[i])); UnityEngine.Object.DestroyImmediate(bk); return wb; };
   System.Func<Bounds> measure=()=>{ Bounds b=new Bounds(go.transform.position,Vector3.zero); bool a=false; foreach(var r in rends){ var rb=worldBounds(r); if(!a){b=rb;a=true;} else b.Encapsulate(rb);} return b; };
   Bounds bb=measure(); float curH=bb.size.y>0.001f?bb.size.y:1f; float s=height/curH; go.transform.localScale=go.transform.localScale*s;
   // ground + CENTER on the cell: snap feet to Y=0 AND align bounds-center X/Z to the cell (fixes the critic's

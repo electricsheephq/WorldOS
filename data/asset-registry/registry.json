@@ -16,7 +16,8 @@
     "hero": "fighter",
     "pc": "fighter",
     "wizard": "mage",
-    "goblin_grunt": "goblin"
+    "goblin_grunt": "goblin",
+    "patron": "patron_commoner"
   },
   "assets": {
     "fighter": {

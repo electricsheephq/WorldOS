@@ -167,7 +167,10 @@ System.Func<string,string,int,int,float,Color,string,GameObject> spawn=(fbxPath,
     var smrF=r as SkinnedMeshRenderer; if(smrF!=null){ smrF.updateWhenOffscreen=true; smrF.forceMatrixRecalculationPerRender=true; } }
   // Grounding via BakeMesh -> true posed world bounds (SkinnedMeshRenderer.bounds is an inflated AABB
   // whose min.y floats the actor) — IDENTICAL to paint_combat_v1.cs.
-  System.Func<Renderer,Bounds> worldBounds=(r)=>{ var smr=r as SkinnedMeshRenderer; if(smr==null) return r.bounds; var bk=new Mesh(); smr.BakeMesh(bk); var vs=bk.vertices; if(vs.Length==0){ UnityEngine.Object.DestroyImmediate(bk); return r.bounds; } var m=smr.transform.localToWorldMatrix; var wb=new Bounds(m.MultiplyPoint3x4(vs[0]),Vector3.zero); for(int i=1;i<vs.Length;i++) wb.Encapsulate(m.MultiplyPoint3x4(vs[i])); UnityEngine.Object.DestroyImmediate(bk); return wb; };
+  // #1412 (ported from paint_combat_v1.cs — same sidecar bug, same fix): BakeMesh's output already
+  // reflects the renderer's CURRENT lossyScale on Unity 6000.5.1f1, so multiplying by the FULL
+  // localToWorldMatrix (which also carries that scale) double-applies it — position+rotation only.
+  System.Func<Renderer,Bounds> worldBounds=(r)=>{ var smr=r as SkinnedMeshRenderer; if(smr==null) return r.bounds; var bk=new Mesh(); smr.BakeMesh(bk); var vs=bk.vertices; if(vs.Length==0){ UnityEngine.Object.DestroyImmediate(bk); return r.bounds; } var m=Matrix4x4.TRS(smr.transform.position, smr.transform.rotation, Vector3.one); var wb=new Bounds(m.MultiplyPoint3x4(vs[0]),Vector3.zero); for(int i=1;i<vs.Length;i++) wb.Encapsulate(m.MultiplyPoint3x4(vs[i])); UnityEngine.Object.DestroyImmediate(bk); return wb; };
   System.Func<Bounds> measure=()=>{ Bounds b=new Bounds(go.transform.position,Vector3.zero); bool a=false; foreach(var r in rends){ var rb=worldBounds(r); if(!a){b=rb;a=true;} else b.Encapsulate(rb);} return b; };
   Bounds bb=measure(); float curH=bb.size.y>0.001f?bb.size.y:1f; float s=height/curH; go.transform.localScale=go.transform.localScale*s;
   // #1284 (2) prop-cell render NUDGE (presentation-only): if the LOGICAL cell (cx,cy) is impassable
@@ -197,7 +200,7 @@ System.Func<string,string,int,int,float,Color,string,GameObject> spawn=(fbxPath,
   // every BAKED vertex (world space, POST-grounding) here so the manifest writer below can project
   // the REAL silhouette bbox via cam.WorldToViewportPoint instead of guessing its width.
   { var _vertsW=new System.Collections.Generic.List<Vector3>();
-    foreach(var r in rends){ var smrV=r as SkinnedMeshRenderer; if(smrV==null) continue; var bkV=new Mesh(); smrV.BakeMesh(bkV); var vsV=bkV.vertices; var mV=smrV.transform.localToWorldMatrix; foreach(var vv in vsV) _vertsW.Add(mV.MultiplyPoint3x4(vv)); UnityEngine.Object.DestroyImmediate(bkV); }
+    foreach(var r in rends){ var smrV=r as SkinnedMeshRenderer; if(smrV==null) continue; var bkV=new Mesh(); smrV.BakeMesh(bkV); var vsV=bkV.vertices; var mV=Matrix4x4.TRS(smrV.transform.position, smrV.transform.rotation, Vector3.one); foreach(var vv in vsV) _vertsW.Add(mV.MultiplyPoint3x4(vv)); UnityEngine.Object.DestroyImmediate(bkV); }
     _sd["vertsW"]=_vertsW; }
   _repSidecar.Add(_sd);
   sb.AppendLine(nm+" x"+s.ToString("F2")+" logical("+cx+","+cy+")->render("+rcx+","+rcy+") rends="+rends.Length);
