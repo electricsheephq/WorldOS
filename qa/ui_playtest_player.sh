@@ -34,21 +34,50 @@
 # Preflight both without launching a run:   qa/ui_playtest_player.sh --preflight
 # ────────────────────────────────────────────────────────────────────────────────────────────────
 #
-# Usage:   qa/ui_playtest_player.sh <runid> <beats> <budget>
+# Usage:   qa/ui_playtest_player.sh <runid> <beats> <budget> [--force]
 #   <runid>  = names qa/ui_playtest_runs/<runid>/ (wiped + recreated).
 #   <beats>  = soft cap on player palette actions.  <budget> = USD cap for the PLAYER agent.
+#   --force  = proceed even if WORLDOS_PLAYER_SEED_SCRIPT doesn't match WORLDOS_PLAYER_SCENE's
+#              paired fixture (see the SCENE<->FIXTURE table below). Without it, a mismatched
+#              override is a hard error — the #1441 P2 scene<->grid coherence gate.
 # Env knobs:
 #   WORLDOS_PLAYER_APP        — path to WorldOSPlayer.app (default: ~/Applications, /Applications,
 #                               then ~/worldos-session-notes/w5a-build/WorldOSPlayer.app).
 #   WORLDOS_NPT_WINDOW_OWNER  — CGWindowList owner name (default "WorldOSPlayer").
 #   WORLDOS_DM_MODEL / WORLDOS_UIPT_PLAYER_MODEL — per-agent models (DM opus; player sonnet).
+#   WORLDOS_PLAYER_SCENE      — which BAKED scene the player app renders: "camp" (default — the
+#                               scene the WorldOSPlayer.app build currently bakes) or "crypt" (for
+#                               when the baked scene reverts). Picks the paired seed script below.
+#   WORLDOS_PLAYER_SEED_SCRIPT — explicit override of the seed script path; must match the scene's
+#                               paired fixture unless --force is passed (see SCENE<->FIXTURE below).
+#
+# ────────────────────────────────────────────────────────────────────────────────────────────────
+# SCENE <-> FIXTURE pairing (#1441 Phase 2 — kills stacking-on-scenery / float-on-props): the Unity
+# player build BAKES ONE scene's painted props into its plate. The seed script's scene_grid
+# impassable set must match THAT scene, or the painted props render walkable and actors visibly
+# stand "on" the fire pit / logs / sarcophagus (the owner's "stacking on everything" report). camp
+# is the DEFAULT pairing (the player's CURRENTLY baked scene); crypt is kept for when the build
+# reverts to it. A mismatched explicit override requires --force — never silently run incoherent.
+#   scene "camp"  -> qa/seed_gfx_camp.py    (camp_clearing_night-coherent: fire pit/logs/crates/
+#                                            bedrolls/rocks/trees all impassable)
+#   scene "crypt" -> qa/seed_gfx_combat.py  (crypt_dense_v1-coherent: pillars/sarcophagus impassable)
+# ────────────────────────────────────────────────────────────────────────────────────────────────
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$ROOT" || exit 1
 
 NPT_DIR="$ROOT/qa/native_palette"
 PW_DIR="$ROOT/qa/playwright"                     # the palette shares the MCP SDK installed here
 OWNER="${WORLDOS_NPT_WINDOW_OWNER:-WorldOSPlayer}"
-CID="camp_gfxdemo01"                             # the id seed_gfx_combat.py + the box renderer pin
+CID="camp_gfxdemo01"        # the id EVERY seed_gfx_camp*/seed_gfx_combat.py + the box renderer pin
+
+# --- SCENE <-> FIXTURE pairing table (#1441 Phase 2; see the header comment) -------------------
+fixture_for_scene() {
+  case "$1" in
+    camp)  echo "$ROOT/qa/seed_gfx_camp.py" ;;
+    crypt) echo "$ROOT/qa/seed_gfx_combat.py" ;;
+    *) return 1 ;;
+  esac
+}
 
 # --- locate the installed MCP SDK (worktrees have no node_modules — accept an explicit override or
 # the canonical checkout's qa/playwright install, matching native_palette_server.js's resolution). --
@@ -93,6 +122,31 @@ if [ "${1:-}" = "--preflight" ]; then
 fi
 
 . "$ROOT/qa/lib_beat_driver.sh"  # worldos_env + shared DM helpers (dm_timeout/resolve/chatlog)
+
+# --- strip a --force flag from anywhere in argv (positional runid/beats/budget stay in order) ---
+FORCE_MISMATCH=0
+POSITIONAL=()
+for _a in "$@"; do
+  case "$_a" in
+    --force) FORCE_MISMATCH=1 ;;
+    *) POSITIONAL+=("$_a") ;;
+  esac
+done
+set -- "${POSITIONAL[@]+"${POSITIONAL[@]}"}"
+
+# --- resolve the SCENE <-> FIXTURE pairing (#1441 Phase 2 — see header comment) -----------------
+SCENE="${WORLDOS_PLAYER_SCENE:-camp}"
+PAIRED_SEED="$(fixture_for_scene "$SCENE")" || {
+  echo "[t3] unknown WORLDOS_PLAYER_SCENE='$SCENE' (known: camp, crypt)" >&2; exit 2; }
+SEED_SCRIPT="${WORLDOS_PLAYER_SEED_SCRIPT:-$PAIRED_SEED}"
+if [ "$SEED_SCRIPT" != "$PAIRED_SEED" ] && [ "$FORCE_MISMATCH" != "1" ]; then
+  echo "[t3] FATAL: WORLDOS_PLAYER_SEED_SCRIPT=$SEED_SCRIPT does not match scene '$SCENE' (paired: $PAIRED_SEED)." >&2
+  echo "       This is the #1441 scene<->grid coherence gate — an incoherent pairing re-introduces the" >&2
+  echo "       stacking-on-scenery bug (painted props walkable). Pass --force to override deliberately." >&2
+  exit 6
+fi
+[ "$SEED_SCRIPT" != "$PAIRED_SEED" ] && echo "[t3] WARN: --force override — seeding '$SEED_SCRIPT' under scene '$SCENE' (paired seed would be '$PAIRED_SEED')." >&2
+echo "[t3] scene=$SCENE seed=$SEED_SCRIPT"
 
 RUN="${1:-t3-$(date +%H%M%S)}"
 BEATS="${2:-40}"
@@ -144,8 +198,9 @@ BASE_URL="http://127.0.0.1:$PORT"
 
 # --- seed the pre-minted combat campaign (engine = sole writer) --------------
 # uv --directory cd's into servers/engine, so pass the seed by ABSOLUTE path (per its docstring).
-echo "[t3] seeding $CID (hero-vs-goblin grid combat)…"
-SEED_JSON="$(WORLDOS_STATE_DIR="$STATE_DIR" uv run --directory servers/engine python "$ROOT/qa/seed_gfx_combat.py" "$STATE_DIR" 2>"$RUNDIR/seed.err")" \
+# SEED_SCRIPT is the scene<->fixture-paired seed resolved above (default: qa/seed_gfx_camp.py).
+echo "[t3] seeding $CID via $SEED_SCRIPT (hero-vs-goblin grid combat, scene=$SCENE)…"
+SEED_JSON="$(WORLDOS_STATE_DIR="$STATE_DIR" uv run --directory servers/engine python "$SEED_SCRIPT" "$STATE_DIR" 2>"$RUNDIR/seed.err")" \
   || { echo "[t3] seed failed (see $RUNDIR/seed.err)" >&2; cat "$RUNDIR/seed.err" >&2; exit 4; }
 echo "[t3] seeded: $SEED_JSON"
 
@@ -248,10 +303,14 @@ dm_turn() {
 
 # The campaign is PRE-SEEDED (camp_gfxdemo01), so — unlike ui_playtest.sh's cold-open — the DM GROUNDS
 # on the existing state and opens the scene; it does NOT start_world/re-seat (mirrors mechanism_probe.sh).
+case "$SCENE" in
+  crypt) SCENE_BRIEF="a firelit crypt (pillars + a sarcophagus) on a combat grid" ;;
+  *)     SCENE_BRIEF="a moonlit campfire clearing (fire pit, log seat, bedrolls, supply crates) on a combat grid" ;;
+esac
 echo "[t3] DM opening the scene on the pre-seeded campaign…"
 DMSG="$(dm_turn 1 "$DM_BRIEF
 
-You are resuming an IN-PROGRESS session (campaign_id=\"$CID\") — the party + a live combat encounter are ALREADY seeded (a level-4 fighter PC vs a goblin in a firelit crypt on a combat grid). Do NOT start_world or re-seat anyone. FIRST call scene_context(campaign_id=\"$CID\") (or get_state) to re-ground on the party, the combat, and the grid. Then open the scene with real quoted narration and hand the player an open moment + a clear choice. Their actions arrive next as tagged moves; resolve them THROUGH the engine and narrate.")"
+You are resuming an IN-PROGRESS session (campaign_id=\"$CID\") — the party + a live combat encounter are ALREADY seeded (a level-4 fighter PC vs a goblin in $SCENE_BRIEF). Do NOT start_world or re-seat anyone. FIRST call scene_context(campaign_id=\"$CID\") (or get_state) to re-ground on the party, the combat, and the grid. Then open the scene with real quoted narration and hand the player an open moment + a clear choice. Their actions arrive next as tagged moves; resolve them THROUGH the engine and narrate.")"
 worldos_resolve_dm_reply "$DMSG" "$STATE_DIR"; DMSG="$WORLDOS_DM_REPLY"
 if [ -z "$DMSG" ]; then
   echo "[t3] WARN: DM produced no opening (see $RUNDIR/dm/dm.err) — recording a visible failure beat." >&2
