@@ -95,6 +95,34 @@ opening turn seats a living canon PC + companion and opens a scene) so the launc
 through the *real* launcher start-flow — which is exactly the flow that exercises #305 (a dead
 character must not be offered/seated as a PC; if it is, the newbie reports it).
 
+## The T3 native-window variant (issue #1436 U2 / #1322)
+
+The T3 gate exits on the RENDERED surface, not the browser: a blind AI playtester completes a quest
+loop in the standalone Unity **WorldOSPlayer.app** window. `qa/ui_playtest_player.sh` is the browser
+harness's native twin — it exposes the **same 9-tool contract** to the player agent but backs it with
+macOS primitives instead of Playwright, and scores with the **same** `qa/ui_playtest_score.py`.
+
+```sh
+qa/ui_playtest_player.sh --preflight            # check app + deps + swift helper + PERMISSIONS, no run
+qa/ui_playtest_player.sh <runid> <beats> <budget>   # seed → viewer → player app → DM loop → play → score
+```
+
+- Boot recipe: `qa/seed_gfx_combat.py` mints `camp_gfxdemo01` → `viewer/server.py` serves
+  `/combat-surface` (move sink + chat wired) → `WorldOSPlayer.app` is launched with the env
+  launch-contract `WORLDOS_ENGINE_BASE_URL` / `WORLDOS_CAMPAIGN_ID` → the **unchanged** `run_duo` DM
+  loop resolves the player's moves → the native palette drives the window → teardown → score.
+- Palette backing (`qa/native_palette/native_palette_server.js`): `screenshot` = `screencapture -l
+  <windowid>` (window found via `CGWindowList`); `click(x,y)` = a `CGEvent` click at window-relative
+  pixels mapped to global points (via `qa/native_palette/native_input.swift`, or `cliclick` if
+  installed); `type`/`key` = synthetic keystrokes; `a11y_tree` = a **pixels-only stub** (the T3
+  persona plays from screenshots); `wait`/`report_bug`/`give_up`/`finish` identical to the browser
+  palette. Persona brief: `qa/native_palette/play_player_native_t3.txt`.
+- **macOS permissions (owner action, FAIL-LOUD):** the palette needs **Screen Recording** (System
+  Settings ▸ Privacy & Security ▸ Screen Recording — for the capture AND for `CGWindowList` to see the
+  window) and **Accessibility** (▸ Accessibility — for synthetic input). A missing grant aborts the
+  run with the exact pane to open; it is never silently skipped. Run `--preflight` to check both.
+- One live GUI harness at a time; the palette never touches Eva; the engine stays the sole writer.
+
 ## The Player palette (the constrained tool surface)
 
 `qa/playwright/palette_server.js` is an **MCP server** that is the Player's *entire* tool surface
