@@ -54,6 +54,7 @@ import json
 import os
 import re
 import sqlite3
+import statistics
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -820,9 +821,150 @@ def render_markdown(db_path: Path | str = DB_PATH, md_path: Path | str = MD_PATH
             cells.append(_fmt(v))
         out.append("| " + " | ".join(cells) + " |")
     out.append("")
+    out.extend(_render_artifact_panels_section(db_path))
+    out.extend(_render_library_metrics_trend_section(db_path))
     text = "\n".join(out)
     Path(md_path).write_text(text, encoding="utf-8")
     return text
+
+
+# ---------------------------------------------------------------------------
+# Ledger unification (#1415): fold the `artifacts` and `library_metrics` stores into the SAME
+# qa/scores_ledger.md the `runs` table renders into, so "one place every scored run is recorded"
+# (the file's own header promise) is actually true — RUNBOOK-INDEX gap 2. Purely ADDITIVE to
+# render_markdown: the runs table renders exactly as before; these two sections are appended
+# after it, and each is OMITTED ENTIRELY (no header, no table) when its store has zero groupable
+# rows — a db with no artifacts/library_metrics yet renders byte-identically to before this PR.
+# The full per-row detail still lives in artifacts_ledger.md / library_metrics_ledger.md
+# (render_artifacts_markdown / render_library_metrics_markdown, unchanged) — these sections are a
+# roll-up, not a replacement.
+# ---------------------------------------------------------------------------
+def _median(vals: list[Optional[float]]) -> Optional[float]:
+    xs = [float(v) for v in vals if v is not None]
+    return statistics.median(xs) if xs else None
+
+
+# The ±1.2 per-panel noise-band already documented as bounding a control's drift (see the
+# `control_anchor` column doc above + qa/felt_rest_panel.md's CALIBRATION-CONTROL LAW) — reused
+# here as the artifact-panel control-band verdict so this section states an honest IN/OUT-OF-BAND
+# read rather than inventing a new threshold.
+_ARTIFACT_CONTROL_BAND = 1.2
+
+
+def _artifact_panel_rows(db_path: Path | str = DB_PATH) -> list[dict]:
+    """One roll-up row per (panel_id, class) pair present in the `artifacts` table, most-recent
+    panel first. Rows with no `panel_id` recorded are excluded from this per-panel view (they
+    still render in full in `qa/artifacts_ledger.md`) — a panel id is what makes "per-class
+    median" and "control-band verdict" a coherent unit; an unpanelled artifact score has no group
+    to summarize into."""
+    rows = fetch_artifacts(db_path)
+    groups: dict[tuple[str, str], dict] = {}
+    order: list[tuple[str, str]] = []
+    for r in rows:
+        panel_id, cls = r.get("panel_id"), r.get("class")
+        if not panel_id or not cls:
+            continue
+        key = (str(panel_id), str(cls))
+        if key not in groups:
+            groups[key] = {"scored": [], "control_anchors": [], "ts": r.get("ts") or ""}
+            order.append(key)
+        g = groups[key]
+        if r.get("ts") and r["ts"] > g["ts"]:
+            g["ts"] = r["ts"]
+        if r.get("is_control"):
+            if r.get("control_anchor") is not None:
+                g["control_anchors"].append(r["control_anchor"])
+        elif r.get("overall") is not None:
+            g["scored"].append(r["overall"])
+
+    out = []
+    for panel_id, cls in order:
+        g = groups[(panel_id, cls)]
+        median = _median(g["scored"])
+        anchor = _median(g["control_anchors"])
+        if anchor is None:
+            verdict = "NO-CONTROL"
+        elif median is None:
+            verdict = "UNSCORED"
+        elif abs(median - anchor) <= _ARTIFACT_CONTROL_BAND:
+            verdict = "IN-BAND"
+        else:
+            verdict = "OUT-OF-BAND"
+        out.append({
+            "panel_id": panel_id, "class": cls, "n": len(g["scored"]),
+            "median": median, "control_anchor": anchor, "verdict": verdict, "ts": g["ts"],
+        })
+    out.sort(key=lambda d: (d["ts"], d["panel_id"], d["class"]), reverse=True)
+    return out
+
+
+_ARTIFACT_PANEL_MD_COLS = [
+    ("panel_id", "Panel"), ("class", "Class"), ("n", "N"),
+    ("median", "Median"), ("control_anchor", "Control anchor"), ("verdict", "Verdict"),
+]
+
+
+def _render_artifact_panels_section(db_path: Path | str = DB_PATH) -> list[str]:
+    """Return the '## Artifact panels' section lines, or `[]` when the `artifacts` table has no
+    panelled rows (cleanly omitted — no header/table for an empty/unpanelled store)."""
+    panel_rows = _artifact_panel_rows(db_path)
+    if not panel_rows:
+        return []
+    out = ["## Artifact panels", ""]
+    out.append(
+        "> Per-`panel_id` roll-up of the `artifacts` table (HV1, #1323) — grouped by panel, then "
+        "class. **Median** is the scored (non-control) rows' median `overall`; **Control anchor** "
+        "is the disguised control's expected band midpoint (median across control rows, if >1); "
+        "**Verdict** applies the ±1.2 noise-band law: `IN-BAND` / `OUT-OF-BAND`, or `NO-CONTROL` "
+        "when the panel recorded no control row (`UNSCORED` when it recorded a control but no "
+        "scored artifact). Full per-artifact detail lives in `qa/artifacts_ledger.md` "
+        "(`--render-artifacts`)."
+    )
+    out.append("")
+    header = "| " + " | ".join(label for _, label in _ARTIFACT_PANEL_MD_COLS) + " |"
+    sep = "|" + "|".join("---" for _ in _ARTIFACT_PANEL_MD_COLS) + "|"
+    out.append(header)
+    out.append(sep)
+    for r in panel_rows:
+        cells = [_fmt(r.get(k)) for k, _ in _ARTIFACT_PANEL_MD_COLS]
+        out.append("| " + " | ".join(cells) + " |")
+    out.append("")
+    return out
+
+
+def _render_library_metrics_trend_section(db_path: Path | str = DB_PATH) -> list[str]:
+    """Return the '## Library metrics' section lines — a CHRONOLOGICAL (oldest-first, the natural
+    trend-reading order) render of every `library_metrics` snapshot — or `[]` when that table is
+    empty (cleanly omitted)."""
+    rows = list(reversed(fetch_library_metrics(db_path)))  # fetch is newest-first -> chronological
+    if not rows:
+        return []
+    out = ["## Library metrics", ""]
+    out.append(
+        "> Chronological trend (oldest first) of the `library_metrics` table (HV5 slice 2, #1327) "
+        "— the flywheel's own health, one row per snapshot. **Back-link** is the snapshot's "
+        "`notes` (falls back to `source_path` when notes is unset) so a size/reuse jump can be "
+        "traced to the run/curation pass that produced it. Full render lives in "
+        "`qa/library_metrics_ledger.md` (`--render-library-metrics`)."
+    )
+    out.append("")
+    cols = [
+        ("ts", "When"), ("library_sha", "SHA"), ("size_total", "Size"),
+        ("size_by_class_json", "By class"), ("size_by_tier_json", "By tier"),
+        ("reuse_count_sum", "Σreuse"), ("_backlink", "Back-link"),
+    ]
+    header = "| " + " | ".join(label for _, label in cols) + " |"
+    sep = "|" + "|".join("---" for _ in cols) + "|"
+    out.append(header)
+    out.append(sep)
+    for r in rows:
+        cells = []
+        for key, _ in cols:
+            v = (r.get("notes") or r.get("source_path") or "") if key == "_backlink" else r.get(key)
+            cells.append(_fmt(v))
+        out.append("| " + " | ".join(cells) + " |")
+    out.append("")
+    return out
 
 
 ARTIFACTS_MD_PATH = QA_DIR / "artifacts_ledger.md"

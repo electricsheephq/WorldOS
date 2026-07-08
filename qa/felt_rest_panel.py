@@ -162,7 +162,19 @@ def _log_frames(panel: dict, run_prefix: str, db_path: str | None) -> int:
         scene = str(f.get("scene", panel_scene))
         fid = str(f.get("id", f"frame_{n}"))
         is_control = f.get("kind") == "control"
-        dims = {k: f.get("dims", {}).get(k) for k in REST_LENSES if f.get("dims", {}).get(k) is not None}
+        raw_dims = f.get("dims") or {}
+        if scene.split(":", 1)[0] == "rest":
+            # The protocol's own 5 rest lenses (qa/felt_rest_panel.md) — filter to just those so a
+            # stray/bogus key never leaks into the ledger's visual_dims_json for a rest frame.
+            dims = {k: raw_dims.get(k) for k in REST_LENSES if raw_dims.get(k) is not None}
+        else:
+            # NON-rest invocation (this logger is generic infra, reused by any control-anchored
+            # panel — RUNBOOK-INDEX gap 3, "felt_rest_panel non-rest write path"). The row itself
+            # was ALWAYS written for every scene (add_run below runs unconditionally); the bug was
+            # here: REST_LENSES-only filtering silently dropped every non-rest lens key, so a
+            # non-rest panel's per-lens scores never reached visual_dims_json even though the row
+            # existed. Pass through whatever dims the frame actually carries instead.
+            dims = {k: v for k, v in raw_dims.items() if v is not None}
         run_id = f"{run_prefix}-{scene.replace(':', '_')}-r{vround}-{fid}-i{n}"
         kw: dict = dict(
             surface="visual",
