@@ -77,13 +77,17 @@ var _impass=new System.Collections.Generic.HashSet<int>();
 System.Func<int,int,int> cellKey=(c,r)=> c*10000+r;                       // grids are <14x11 -> collision-free
 System.Func<int,int,bool> inBounds=(c,r)=> c>=0 && c<(int)_gridCols && r>=0 && r<(int)_gridRows;
 System.Func<int,int,bool> isWalkable=(c,r)=> inBounds(c,r) && !_impass.Contains(cellKey(c,r));
-// nearest walkable neighbor, DETERMINISTIC lowest-index pick: orthogonal (dist 1) before diagonal, in a
-// FIXED neighbor order. Returns the logical cell unchanged if it is already walkable (or nothing is free).
+// #1284 H2: cross-actor stacking guard. Render cells claimed by an EARLIER-spawned actor join the blocked
+// set so two actors never render on one cell. Filled per actor in the token loop (deterministic order).
+var _occupied=new System.Collections.Generic.HashSet<int>();
+System.Func<int,int,bool> available=(c,r)=> isWalkable(c,r) && !_occupied.Contains(cellKey(c,r));
+// nearest AVAILABLE neighbor, DETERMINISTIC lowest-index pick: orthogonal (dist 1) before diagonal, in a
+// FIXED neighbor order. Returns the logical cell unchanged if it is already free (or nothing is free).
 int[][] _NB=new int[][]{ new int[]{0,-1}, new int[]{-1,0}, new int[]{1,0}, new int[]{0,1},
                           new int[]{-1,-1}, new int[]{1,-1}, new int[]{-1,1}, new int[]{1,1} };
-System.Func<int,int,int[]> nudgeCell=(c,r)=>{ if(isWalkable(c,r)) return new int[]{c,r};
-  foreach(var d in _NB){ int nc=c+d[0], nr=r+d[1]; if(isWalkable(nc,nr)) return new int[]{nc,nr}; }
-  return new int[]{c,r}; };
+System.Func<int,int,int[]> nudgeCell=(c,r)=>{ if(available(c,r)) return new int[]{c,r};
+  foreach(var d in _NB){ int nc=c+d[0], nr=r+d[1]; if(available(nc,nr)) return new int[]{nc,nr}; }
+  return new int[]{c,r}; };  // #1284 H2 fallback: every candidate blocked/occupied -> keep the logical cell (may overlap; documented)
 // honest floor-contact sidecar: the ACTUAL grounded baked-mesh feet/head world points per placed actor,
 // projected to px after the capture resolution is known (see the sidecar writer below the capture rig).
 var _repSidecar=new System.Collections.Generic.List<System.Collections.Generic.Dictionary<string,object>>();
@@ -143,6 +147,7 @@ System.Func<string,string,int,int,float,Color,string,GameObject> spawn=(fbxPath,
   // (a prop, e.g. the sarcophagus), render at the nearest walkable neighbor. The logical cell is kept in
   // actorCell by the caller and NEVER written back (engine = sole writer).
   int[] _rc=nudgeCell(cx,cy); int rcx=_rc[0], rcy=_rc[1];
+  _occupied.Add(cellKey(rcx,rcy));  // #1284 H2: claim this render cell so later actors won't stack on it
   var p=cellToWorld(rcx,rcy); go.transform.position=p; bb=measure(); Vector3 ctr=bb.center;
   // #1284 (1) FLOOR-Y grounding: anchor feet to the per-scene FLOOR plane (flat plate; NOT a prop-mesh
   // raycast). foot = the posed baked-mesh bounds min.y -> FLOOR_Y.
