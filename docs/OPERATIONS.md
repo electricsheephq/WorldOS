@@ -24,12 +24,16 @@
    `docs/roadmap/NOW.md` is the you-are-here surface — read both alongside this page (both land in
    PR #1385; reference by path regardless of merge status).
 
-## Merging (read this — auto-merge hangs)
+## Merging
 
-Repo-wide GitHub auto-merge HANGS on ~every PR (root cause open — see #1389; symptom: auto-merge
-armed + checks green but the merge never fires). **Procedure:** once checks are green and review threads are resolved, merge directly
-— `gh pr merge <n> --admin --squash`. Never rely on `--auto` alone. Never push-and-abandon a PR:
-shepherd every PR you open to merged (or explicitly parked/blocked) before ending your turn.
+Once checks are green and review threads are resolved: `gh pr merge <n> --squash --auto`. Auto-merge
+fires normally — the earlier repo-wide "hang" (#1389, closed) was a **red required Woodpecker
+`qa-release-gate-tests` context**, not a GitHub bug: a stale `EXPECTED_SC` ruler pin made the required
+check red on every PR while GitHub Actions stayed green, so auto-merge correctly refused to merge.
+Resolved by #1431 (restamp) + #1434 (GHA↔Woodpecker list parity + static guard). `--admin` is
+**emergency-only** (declare why in a PR comment + file a follow-up) — it bypasses branch protection.
+Never push-and-abandon a PR: shepherd every PR you open to merged (or explicitly parked/blocked) before
+ending your turn.
 
 ## The loop (per issue)
 
