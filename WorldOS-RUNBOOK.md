@@ -213,10 +213,10 @@ change must respect them.
    git worktree prune
    ```
 
-**Merging (auto-merge hangs — read before relying on `--auto`):** repo-wide GitHub auto-merge hangs
-on ~every PR; once checks are green and review threads are resolved, merge directly with
-`gh pr merge <n> --admin --squash` rather than waiting on `--auto`. Never push-and-abandon — shepherd
-to merged. Full detail: `docs/OPERATIONS.md` "Merging" section.
+**Merging:** once checks are green and review threads are resolved: `gh pr merge <n> --squash --auto`.
+Auto-merge works — the earlier repo-wide hang was a red required Woodpecker check, not a GitHub bug
+(resolved #1431/#1434, see closed #1389); `--admin` is emergency-only (it bypasses branch protection).
+Never push-and-abandon — shepherd to merged. Full detail: `docs/OPERATIONS.md` "Merging" section.
 
 **The whole shape:** worktree off main → implement additive → focused single-process test →
 push → `gh pr create` (no `tail` in an `&&` chain) → merge after checks pass →
