@@ -38,6 +38,12 @@ _ROOT = Path(__file__).resolve().parent.parent
 _MAX_DIALOGUE_SNIPPETS = 5
 _MAX_QUEST_WRAPUP = 5
 _ARTICLES = {"the", "a", "an"}
+# Quality pass 2 (#1386 item 5b): a sentence-ending punctuation mark immediately followed by
+# whitespace/end-of-string/closing quote — used by _truncate_at_sentence to find a clean cut
+# point instead of the old blunt char-count chop, which was measured to clip EVERY sampled
+# quest wrap-up beat mid-word/mid-sentence (12/12 across 3 harvested campaigns), losing exactly
+# the resolution payoff the Questwright rubric weighs hardest for consequence_weight.
+_SENTENCE_END_RE = re.compile(r"[.!?…](?:[\"'’”])?(?=\s|$)")
 
 # A quoted span of NPC speech: straight or curly DOUBLE quotes, or CURLY single quotes. The
 # straight single-quote (') is deliberately NOT a delimiter — in prose it is overwhelmingly a
@@ -66,6 +72,36 @@ _RESOLUTION_CUES = (
     "abandon", "failed", "fell through", "kept the", "broke the", "delivered", "returned the",
     "the reward", "vengeance", "reckoning", "the debt",
 )
+
+
+def _truncate_at_sentence(text: str, soft_limit: int = 400, hard_limit: int = 640) -> str:
+    """Truncate `text` at a sentence boundary near `soft_limit`, instead of a blunt char chop.
+
+    Quality pass 2 (#1386 item 5b) — diagnosis of the quest-promotion gap found EVERY sampled
+    wrap-up beat (12/12 across 3 harvested campaigns) clipped mid-word/mid-sentence under the old
+    `blk[:399] + "…"` rule, e.g. "...back to the wall so the…" / "...he isn't there to be gone
+    around. He's a collect…". That truncation lands exactly on the resolution/payoff sentence the
+    Questwright rubric weighs hardest for consequence_weight and stakes_escalation — an incomplete,
+    word-mangled tail actively hurts the scorer's read, it doesn't merely shorten it.
+
+    Behavior: text at or under `soft_limit` is returned unchanged. Otherwise, scan up to
+    `hard_limit` chars for a sentence-ending mark (. ! ? … optionally followed by a closing
+    quote) followed by whitespace or end-of-string; return the text up to and including the
+    FIRST such boundary at/after `soft_limit` (the tightest cut that still finishes the sentence
+    in progress at soft_limit). If no boundary reaches `soft_limit` within `hard_limit`, fall
+    back to the LAST boundary found anywhere in the window (better than none); if there is truly
+    no sentence boundary in the window at all, fall back to the old blunt char-cut + ellipsis so
+    output size stays bounded even on unpunctuated text."""
+    if len(text) <= soft_limit:
+        return text
+    window = text[:hard_limit]
+    matches = list(_SENTENCE_END_RE.finditer(window))
+    for m in matches:
+        if m.end() >= soft_limit:
+            return text[:m.end()].rstrip()
+    if matches:
+        return text[:matches[-1].end()].rstrip()
+    return text[:soft_limit - 1].rstrip() + "…"
 
 
 # ── engine + distill imports (read-only) ─────────────────────────────────────────────────────
@@ -167,7 +203,7 @@ def _npc_dialogue_snippets(name: str, text_blocks: list[str], limit: int = _MAX_
     out: list[str] = []
     for blk in text_blocks:
         if pat.search(blk):
-            out.append(blk if len(blk) <= 400 else blk[:399] + "…")
+            out.append(_truncate_at_sentence(blk))
             if len(out) >= limit:
                 break
     return out
@@ -241,7 +277,7 @@ def _npc_voice_lines(name: str, text_blocks: list[str], limit: int = _MAX_DIALOG
             head = quote.lstrip("—–-…‘'\"“ ")
             if head and head[0].isalpha() and not head[0].isupper():
                 continue
-            line = quote if len(quote) <= 400 else quote[:399] + "…"
+            line = _truncate_at_sentence(quote)
             key = line.lower()
             if key in seen:
                 continue
@@ -277,10 +313,10 @@ def _quest_wrap_up(quest_title: str, text_blocks: list[str], limit: int = _MAX_Q
         low = title_pat.sub(" ", blk).lower()
         if not any(cue in low for cue in _RESOLUTION_CUES):
             continue
-        # Same cap as the NPC voice-line/dialogue-snippet truncation above (_npc_dialogue_snippets,
-        # _npc_voice_lines) — one consistent payload-size ceiling across the extractor, not a
-        # second one-off limit.
-        beat = blk if len(blk) <= 400 else blk[:399] + "…"
+        # Same sentence-boundary-aware truncation as the NPC voice-line/dialogue-snippet capture
+        # above (_npc_dialogue_snippets, _npc_voice_lines) — one consistent helper across the
+        # extractor, not a second one-off limit.
+        beat = _truncate_at_sentence(blk)
         key = beat.lower()
         if key in seen:
             continue
@@ -412,16 +448,40 @@ def _quest_consequences(quest_id: str, quest_title: str, consequences: list) -> 
     return out
 
 
+def _quest_giver_and_location(q: dict, characters: dict, locations: dict) -> tuple[Optional[dict], Optional[dict]]:
+    """Resolve Quest.giver_id / Quest.location_id (recorded by the engine's add_quest — server.py
+    add_quest takes both — but previously dropped on the floor at extraction, present in NEITHER
+    the old payload nor the artifact card) to {id, name} dicts. Quality pass 2 (#1386 item 5b):
+    diagnosis found the Questwright rubric's own card renderer (qa/artifact_score.py _CARD_FIELDS)
+    already reserves a "giver" slot for exactly this — a concrete PERSON grounds hook_strength
+    ("a person, a mystery, a wrong" vs a generic job-board posting) — it was simply never
+    populated. OPTIONAL: a quest whose engine record never set giver_id/location_id (some DMs
+    call add_quest without them) returns None for that side, and the caller omits the key
+    entirely — no invented linkage, no change to quests that already round-trip today."""
+    giver = None
+    giver_id = q.get("giver_id")
+    if giver_id:
+        giver = {"id": giver_id, "name": characters.get(giver_id, {}).get("name", giver_id)}
+    location = None
+    location_id = q.get("location_id")
+    if location_id:
+        location = {"id": location_id, "name": locations.get(location_id, {}).get("name", location_id)}
+    return giver, location
+
+
 def extract_quests(campaign: dict, provenance_base, world: str, text_blocks: list[str]) -> list[dict]:
     artifacts = []
     quests = campaign.get("quests") or {}
     consequences = campaign.get("consequences") or []
+    characters = campaign.get("characters") or {}
+    locations = campaign.get("locations") or {}
     for qid, q in quests.items():
         title = q.get("title", "")
         # Narrative wrap-up (HV2 #1329): the quest's OWN description (Quest.description, previously
         # dropped) plus the closing transcript beats that describe its outcome — the resolution
         # context the Questwright rubric scores for consequence_weight / narrative completeness.
         wrap_up = _quest_wrap_up(title, text_blocks)
+        giver, location = _quest_giver_and_location(q, characters, locations)
         payload = {
             "id": q.get("id", qid),
             "name": title,
@@ -438,6 +498,13 @@ def extract_quests(campaign: dict, provenance_base, world: str, text_blocks: lis
             "evolves_to": q.get("evolves_to", ""),
             "consequences": _quest_consequences(qid, title, consequences),
         }
+        # OPTIONAL (quality pass 2, #1386 item 5b): omitted entirely when the engine never
+        # recorded a giver/location — never a null placeholder, so a payload == exact-dict test
+        # against an old fixture without giver_id/location_id is unaffected.
+        if giver is not None:
+            payload["giver"] = giver
+        if location is not None:
+            payload["location"] = location
         artifacts.append(
             _envelope(f"quest:{campaign['id']}:{qid}", "quest", world, provenance_base(), payload)
         )

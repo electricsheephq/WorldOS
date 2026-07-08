@@ -651,3 +651,116 @@ def test_rerun_clears_stale_artifacts(golden):
     eca.main(args)
     remaining = [json.loads(p.read_text())["payload"]["id"] for p in quests_dir.glob("*.json")]
     assert remaining == ["quest-wagon"]  # orphaned quest-temp.json cleared
+
+
+# ── quality pass 2 (#1386 item 5b): sentence-boundary truncation ───────────────────────────────
+def test_truncate_at_sentence_short_text_unchanged():
+    assert eca._truncate_at_sentence("A short line.") == "A short line."
+
+
+def test_truncate_at_sentence_cuts_at_boundary_not_mid_word():
+    """The old blunt rule (`text[:399] + '…'`) clipped mid-word; the new rule finishes the
+    sentence in progress at the soft limit instead of chopping through it."""
+    lead = "Filler. " * 60  # well past the 400-char soft limit, all clean sentence boundaries
+    text = lead + "The blade goes where you send it, clean and final. He drops the way a sack drops."
+    out = eca._truncate_at_sentence(text, soft_limit=400, hard_limit=640)
+    assert not out.endswith("…")
+    assert out.endswith(".")
+    # never chopped inside a word: the char right after the returned prefix (if any) is
+    # whitespace, not a letter continuing a word.
+    assert text[len(out):len(out) + 1] in ("", " ")
+
+
+def test_truncate_at_sentence_no_boundary_falls_back_to_blunt_ellipsis():
+    """Unpunctuated text with no sentence boundary anywhere in the window still gets bounded."""
+    text = "word " * 200  # no . ! ? … anywhere
+    out = eca._truncate_at_sentence(text, soft_limit=400, hard_limit=640)
+    assert out.endswith("…")
+    assert len(out) <= 400
+
+
+def test_truncate_at_sentence_reused_by_wrap_up_and_dialogue_snippets():
+    """The narration-mining functions route long text through the shared helper — regression
+    guard against a future edit reintroducing a one-off blunt chop in any of them."""
+    long_body = ("Winter has its teeth in the city tonight, and the debt collector walks in low "
+                 "and fast, shoulder into the door before it finishes swinging. " * 6)
+    blocks = [f"In the end, Wrap Test is resolved: {long_body}"]
+    out = eca._quest_wrap_up("Wrap Test", blocks)
+    assert len(out) == 1
+    assert out[0][-1] in ".!?…\""  # never a mid-word chop with no terminal punctuation
+
+    dlg_blocks = [f"Corvin Dresh says: {long_body}"]
+    dlg = eca._npc_dialogue_snippets("Corvin Dresh", dlg_blocks)
+    assert len(dlg) == 1
+    assert dlg[0][-1] in ".!?…\""
+
+
+# ── quality pass 2 (#1386 item 5b): giver / location grounding ─────────────────────────────────
+def test_extract_quests_resolves_giver_and_location_when_recorded():
+    """Quest.giver_id / Quest.location_id (recorded by the engine's add_quest, server.py) are
+    resolved to {id, name} and surfaced on the payload — data the engine already tracks that the
+    pre-pass-2 extractor dropped on the floor entirely."""
+    campaign = {
+        "id": "camp_x",
+        "world_id": "test-world",
+        "quests": {
+            "q1": {
+                "id": "q1", "title": "The Four Hundred", "description": "", "objectives": [],
+                "completed_objectives": [], "status": "active", "evolves_to": "",
+                "callback_in_days": 0, "giver_id": "char-davan", "location_id": "loc-sunkbell",
+            }
+        },
+        "consequences": [],
+        "characters": {"char-davan": {"name": "Davan Relle"}},
+        "locations": {"loc-sunkbell": {"name": "The Sunk Bell"}},
+    }
+    out = eca.extract_quests(campaign, lambda: {}, "test-world", [])
+    payload = out[0]["payload"]
+    assert payload["giver"] == {"id": "char-davan", "name": "Davan Relle"}
+    assert payload["location"] == {"id": "loc-sunkbell", "name": "The Sunk Bell"}
+
+
+def test_extract_quests_omits_giver_and_location_when_not_recorded():
+    """A quest whose engine record never set giver_id/location_id (some DMs call add_quest
+    without them) omits both keys entirely — no None placeholder, no invented linkage — so an
+    old snapshot round-trips to the exact payload shape it produced before this change."""
+    campaign = {
+        "id": "camp_x",
+        "world_id": "test-world",
+        "quests": {
+            "q1": {
+                "id": "q1", "title": "No Giver", "description": "", "objectives": [],
+                "completed_objectives": [], "status": "active", "evolves_to": "",
+                "callback_in_days": 0,
+            }
+        },
+        "consequences": [],
+        "characters": {},
+        "locations": {},
+    }
+    out = eca.extract_quests(campaign, lambda: {}, "test-world", [])
+    payload = out[0]["payload"]
+    assert "giver" not in payload
+    assert "location" not in payload
+
+
+def test_extract_quests_giver_falls_back_to_id_when_character_unresolvable():
+    """A giver_id that doesn't resolve to a known character (stale ref) falls back to the raw id
+    rather than raising or silently dropping the field — mirrors the encounter composition
+    resolver's `characters.get(i, {}).get('name', i)` fallback pattern used elsewhere."""
+    campaign = {
+        "id": "camp_x",
+        "world_id": "test-world",
+        "quests": {
+            "q1": {
+                "id": "q1", "title": "Stale Ref", "description": "", "objectives": [],
+                "completed_objectives": [], "status": "active", "evolves_to": "",
+                "callback_in_days": 0, "giver_id": "char-ghost",
+            }
+        },
+        "consequences": [],
+        "characters": {},
+        "locations": {},
+    }
+    out = eca.extract_quests(campaign, lambda: {}, "test-world", [])
+    assert out[0]["payload"]["giver"] == {"id": "char-ghost", "name": "char-ghost"}
