@@ -105,6 +105,47 @@ def test_move_to_cell_charges_movement_budget(grid_fight):
     assert cb.moved_cells_this_turn == 4  # Chebyshev 0,0 -> 4,0 == 4 cells charged
 
 
+# ── #1447 GAP: move's own advisory notes (movement_illegal / move_blocked) reach the
+# ── digest entry's `result`, so the player advisory UI (dormant since #1447) can render them.
+
+
+def test_legal_move_result_is_byte_identical(grid_fight):
+    """A legal, in-budget move's `result` dict is UNCHANGED — no advisory keys appear when the
+    verb didn't return one. Exact-dict assertion so any future stray key trips this test."""
+    cid, hero, gob = grid_fight
+    out = combat_loop.resolve_player_turn(cid, hero, Intent(kind="move", to_cell=(3, 0)))
+    assert out["ok"] is True, out
+    assert out["resolved"]["result"] == {"to_cell": (3, 0), "to_zone": ""}
+
+
+def test_over_budget_move_surfaces_movement_illegal(grid_fight):
+    """Hero speed 30 / cell_size 5 -> a 6-cell budget. Moving 7 cells is over budget: the engine
+    still moves it (advisory-not-block), and the arbiter must now surface `movement_illegal` in
+    the digest entry's `result` (the #1447 gap) instead of discarding move_to_coords's view."""
+    cid, hero, gob = grid_fight
+    out = combat_loop.resolve_player_turn(cid, hero, Intent(kind="move", to_cell=(7, 0)))
+    assert out["ok"] is True, out
+    result = out["resolved"]["result"]
+    assert result["to_cell"] == (7, 0)
+    assert "movement_illegal" in result
+    assert result["movement_illegal"]["budget_cells"] == 6
+    # Advisory-not-block: the move still landed despite being flagged.
+    assert _cell(cid, hero) == (7, 0)
+
+
+def test_blocked_move_surfaces_move_blocked_and_position_unchanged(grid_fight):
+    """An impassable target cell REJECTS the move (move_to_coords stays put) — the arbiter must
+    surface `move_blocked` in `result`, and the hero's position must be unchanged."""
+    cid, hero, gob = grid_fight
+    server.set_grid(cid, 20, 20, obstacles=[[3, 0]])
+    before = _cell(cid, hero)
+    out = combat_loop.resolve_player_turn(cid, hero, Intent(kind="move", to_cell=(3, 0)))
+    assert out["ok"] is True, out
+    result = out["resolved"]["result"]
+    assert "move_blocked" in result
+    assert _cell(cid, hero) == before  # stayed put
+
+
 def test_attack_on_turn_rolls_via_engine(grid_fight):
     cid, hero, gob = grid_fight
     # Place the goblin adjacent so a melee strike is in reach, then attack it on the PC's turn.

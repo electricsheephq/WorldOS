@@ -622,11 +622,22 @@ def _apply_intent(server, campaign_id: str, actor_id: str, intent: Intent) -> di
                             "save_made": save_made,
                         }
         elif intent.kind == "move":
+            move_view: dict | None = None
             if intent.to_cell is not None:
-                server.move_to_coords(campaign_id, actor_id, intent.to_cell[0], intent.to_cell[1])
+                move_view = server.move_to_coords(campaign_id, actor_id, intent.to_cell[0], intent.to_cell[1])
             elif intent.to_zone:
-                server.move_to_zone(campaign_id, combatant_id=actor_id, zone=intent.to_zone)
+                move_view = server.move_to_zone(campaign_id, combatant_id=actor_id, zone=intent.to_zone)
             entry["result"] = {"to_cell": intent.to_cell, "to_zone": intent.to_zone}
+            # #1447 gap: move_to_coords/move_to_zone's advisory notes (movement_illegal /
+            # move_blocked) were rolled but never surfaced here, so the player's advisory UI
+            # went dormant. ADDITIVE: only set when the verb actually returned one — a legal
+            # in-budget move's result dict stays byte-identical to today. Advisory text only;
+            # never gates (the verbs themselves never block on this).
+            if isinstance(move_view, dict):
+                if move_view.get("movement_illegal") is not None:
+                    entry["result"]["movement_illegal"] = move_view["movement_illegal"]
+                if move_view.get("move_blocked") is not None:
+                    entry["result"]["move_blocked"] = move_view["move_blocked"]
         elif intent.kind == "disengage":
             server.use_action(campaign_id, actor_id, kind="disengage")
             if intent.to_cell is not None:
