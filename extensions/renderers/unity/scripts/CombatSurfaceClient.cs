@@ -96,15 +96,28 @@ public class CombatSurfaceClient : MonoBehaviour
     // #anim-combat COMBAT FEEL (paint_combat_replay_v1.cs verb map, ported to the LIVE player). Pure
     // consumer of the surface's per-token hp: a DROP flinches the target (knockback nudge), floats the
     // damage delta (world-space number, fade-up), lunges the attacker (the isCurrent combatant, + its
-    // attack clip when it has one), and drops the target's HP bar; hp<=0 (or a vanished combatant) plays a
-    // death (topple + shrink + fade → despawn + ring removal). HP bars + the active-turn ring pulse are
+    // attack clip when it has one), and drops the target's HP bar; hp<=0 while the token is STILL on the
+    // surface plays a DOWNED collapse (prone, dimmed ring — revivable, #1106 heals); the token VANISHING
+    // from the surface is the true removal (fade-despawn). HP bars + the active-turn ring pulse are
     // world-space, camera-billboarded, and driven from surface truth. The engine stays SOLE WRITER — this
     // renders engine-decided hp/turn, never a recomputed value.
     [Header("Combat feel (#anim-combat; verb map from paint_combat_replay_v1)")]
     readonly System.Collections.Generic.Dictionary<string, int> _hpOf = new System.Collections.Generic.Dictionary<string, int>();
     readonly System.Collections.Generic.Dictionary<string, int> _hpMaxOf = new System.Collections.Generic.Dictionary<string, int>();
     readonly System.Collections.Generic.Dictionary<string, GameObject> _hpBars = new System.Collections.Generic.Dictionary<string, GameObject>();
-    readonly System.Collections.Generic.HashSet<string> _dead = new System.Collections.Generic.HashSet<string>();
+    // DOWNED state (hp<=0 but still surface-listed — the engine keeps downed combatants in the order at
+    // current_hp=0 and heals revive them, combat_loop.py; a permanent "dead" mark here made a healed ally
+    // invisible forever — the #1451-review P1). _downRunning = DownCo mid-fall; _reviveWanted = a revive
+    // that landed mid-fall, honored when the fall ends; _downPose = captured root pose for the stand-up.
+    readonly System.Collections.Generic.HashSet<string> _downed = new System.Collections.Generic.HashSet<string>();
+    readonly System.Collections.Generic.HashSet<string> _downRunning = new System.Collections.Generic.HashSet<string>();
+    readonly System.Collections.Generic.HashSet<string> _reviveWanted = new System.Collections.Generic.HashSet<string>();
+    class DownPose { public Vector3 scale; public Quaternion rot; }
+    readonly System.Collections.Generic.Dictionary<string, DownPose> _downPose = new System.Collections.Generic.Dictionary<string, DownPose>();
+    // Live walk graphs by actor id: StopCoroutine skips a stopped glide's remaining code, so the graph it
+    // created can never rely on in-coroutine Destroy — every interruption path funnels through
+    // KillWalkGraph instead (the #1451-review P2 leak).
+    readonly System.Collections.Generic.Dictionary<string, UnityEngine.Playables.PlayableGraph> _walkGraphOf = new System.Collections.Generic.Dictionary<string, UnityEngine.Playables.PlayableGraph>();
     string _currentId = "";        // the isCurrent combatant this surface (active-turn ring-pulse anchor)
     string _pulsePrev = "";        // last-pulsed ring, reset to rest when the turn moves on
 
@@ -278,9 +291,10 @@ public class CombatSurfaceClient : MonoBehaviour
         var present = new System.Collections.Generic.HashSet<string>();
         foreach (var t in s.tokens)
         {
-            // #anim-combat: a token the engine still lists after its death beat (hp 0) is skipped — DeathCo
-            // already toppled + despawned it; never re-spawn a corpse.
-            if (t != null && !string.IsNullOrEmpty(t.id) && _dead.Contains(t.id)) continue;
+            // #anim-combat P1 fix: a surface-listed token is ALWAYS live to the client — hp<=0 while listed
+            // means DOWNED (prone on the field, revivable), never a skip. Removal from the surface is the
+            // only terminal signal (the stale path below).
+            if (t == null) continue;
             if (!string.IsNullOrEmpty(t.id)) present.Add(t.id);
             bool foe = (t.team == "foe");
             if (foe) { _foeId = t.id; _foeX = t.x; _foeY = t.y; }
@@ -299,11 +313,24 @@ public class CombatSurfaceClient : MonoBehaviour
         {
             var stale = new System.Collections.Generic.List<string>();
             foreach (var id in _spawned) if (!present.Contains(id)) stale.Add(id);
-            foreach (var id in stale) Despawn(id);
+            foreach (var id in stale)
+            {
+                // #anim-combat P1 fix: a DOWNED (prone) combatant leaving the surface is the true death —
+                // shrink+sink briefly instead of blinking out. _spawned/_downed are cleared NOW so the next
+                // poll can't double-fade; Despawn (at the fade's end) is idempotent on the rest. A mid-fall
+                // removal (DownCo still running) despawns instantly — DownCo's null-guard unwinds it.
+                if (_downed.Contains(id) && !_downRunning.Contains(id))
+                {
+                    _spawned.Remove(id); _downed.Remove(id);
+                    StartCoroutine(FadeOutRemoveCo(id));
+                }
+                else Despawn(id);
+            }
         }
         // #anim-combat: drive combat FEEL from the surface's engine-decided hp/turn (pure consumer). Resolve
         // the active-turn combatant, then for every combatant whose hp DROPPED since the last surface: float
-        // the damage delta, flinch it, lunge its attacker (the isCurrent actor); hp<=0 plays a death. HP bars
+        // the damage delta, flinch it, lunge its attacker (the isCurrent actor); hp<=0 plays a DOWNED
+        // collapse (prone, revivable — removal from the surface is the only terminal signal). HP bars
         // are (re)created for the living; the active-turn ring pulse is anchored on _currentId (Update drives
         // the per-frame billboard + pulse).
         ApplyCombat(s);
@@ -327,7 +354,7 @@ public class CombatSurfaceClient : MonoBehaviour
             int prevHp; bool hadPrev = _hpOf.TryGetValue(t.id, out prevHp);
             _hpMaxOf[t.id] = t.hpMax;
 
-            if (hadPrev && newHp < prevHp && !_dead.Contains(t.id))
+            if (hadPrev && newHp < prevHp && !_downed.Contains(t.id))
             {
                 Transform tgt = FindActor(t.id);
                 if (tgt != null)
@@ -339,8 +366,16 @@ public class CombatSurfaceClient : MonoBehaviour
             }
             _hpOf[t.id] = newHp;
 
-            if (newHp <= 0 && !_dead.Contains(t.id)) StartCoroutine(DeathCo(t.id, FindActor(t.id)));
-            else if (newHp > 0 && !_dead.Contains(t.id)) EnsureHpBar(t.id, FindActor(t.id));
+            // hp<=0 while surface-listed = DOWNED (revivable), not dead — collapse and stay prone. hp back
+            // above 0 while downed = the #1106 heal-revive: stand the actor back up (deferred to the end of
+            // the fall when it lands mid-DownCo). Removal from the surface is the only terminal path.
+            if (newHp <= 0 && !_downed.Contains(t.id)) StartCoroutine(DownCo(t.id, FindActor(t.id)));
+            else if (newHp > 0 && _downed.Contains(t.id))
+            {
+                if (_downRunning.Contains(t.id)) _reviveWanted.Add(t.id);
+                else RestoreDowned(t.id, FindActor(t.id));
+            }
+            else if (newHp > 0) EnsureHpBar(t.id, FindActor(t.id));
         }
         // prune hp/bar state for combatants no longer on the surface (moved off the board / removed).
         var goneHp = new System.Collections.Generic.List<string>();
@@ -739,8 +774,10 @@ public class CombatSurfaceClient : MonoBehaviour
         _spawned.Remove(id);
         // #1441: tear down any in-flight glide + per-actor state so a re-spawn starts clean.
         if (_glide.TryGetValue(id, out var co) && co != null) StopCoroutine(co);
+        KillWalkGraph(id);   // the stopped glide can't destroy its own graph (#1451-review P2)
         _glide.Remove(id); _cellOf.Remove(id); _fbxOf.Remove(id);
         _animOf.Remove(id); _topOf.Remove(id); RemoveHpBar(id);   // #anim-combat: clear combat/anim state
+        _downed.Remove(id); _downRunning.Remove(id); _reviveWanted.Remove(id); _downPose.Remove(id);
         Debug.Log("[CSC] despawned Actor_" + id);
     }
 
@@ -848,7 +885,10 @@ public class CombatSurfaceClient : MonoBehaviour
         if (cur[0] == cx && cur[1] == cy) return;      // already at / gliding toward this cell
         int fromCx = cur[0], fromCy = cur[1];
         _cellOf[id] = new[] { cx, cy };
+        // a DOWNED (prone) combatant never walks — snap it if the engine somehow relocates it.
+        if (_downed.Contains(id)) { GroundSnap(a, cx, cy); return; }
         if (_glide.TryGetValue(id, out var running) && running != null) StopCoroutine(running);
+        KillWalkGraph(id);   // the stopped glide can't destroy its own graph (#1451-review P2)
         _glide[id] = StartCoroutine(GlideTo(a, id, fromCx, fromCy, cx, cy));
     }
 
@@ -925,7 +965,7 @@ public class CombatSurfaceClient : MonoBehaviour
         UnityEngine.Playables.PlayableGraph walkGraph = default; bool haveGraph = false; bool sampleWalk = false;
         if (walkClip != null)
         {
-            if (walkAnim != null && walkAnim.avatar != null) { walkGraph = MakeClipGraph(walkAnim, walkClip, "Walk_" + a.name); haveGraph = true; }
+            if (walkAnim != null && walkAnim.avatar != null) { walkGraph = MakeClipGraph(walkAnim, walkClip, "Walk_" + a.name); haveGraph = true; _walkGraphOf[id] = walkGraph; }
             else sampleWalk = true;   // no Animator/avatar -> legacy rig -> direct curve sample is the only path
         }
 
@@ -954,7 +994,7 @@ public class CombatSurfaceClient : MonoBehaviour
         }
         // arrive: snap exact, tear down walk, return to a grounded idle facing the camera.
         MoveActorAndShadows(a, endPos);
-        if (haveGraph && walkGraph.IsValid()) walkGraph.Destroy();
+        if (haveGraph) KillWalkGraph(id);   // registry-tracked destroy (#1451-review P2)
         PoseIdle(go);
         var cam = Camera.main; float camYaw = cam != null ? cam.transform.eulerAngles.y : 45f;
         a.rotation = Quaternion.Euler(pitchX, camYaw + 180f, 0f);
@@ -1328,33 +1368,88 @@ public class CombatSurfaceClient : MonoBehaviour
         }
     }
 
-    // Death: topple (local-Z roll) + shrink + sink while the ring/AO fade out, then despawn (which removes
-    // the actor + its AO/ring). Plays the actor's own death clip on top when it has one; otherwise the
-    // transform fall reads the death on any rig. Terminal — the id is marked _dead so no beat re-touches it.
-    IEnumerator DeathCo(string id, Transform a)
+    // Downed — hp<=0 while the token is STILL on the surface. In this engine that means DOWNED, not dead:
+    // combat_loop keeps the combatant in the order at current_hp=0 and heals revive it (#1106), so the old
+    // terminal despawn + permanent _dead mark made a healed ally invisible forever (#1451-review P1). Now:
+    // collapse (own death clip when present, else a topple) + dim ring/AO to 0.35, and REMAIN prone on the
+    // field. True removal is the surface-absence fade in ApplySurf; revive is RestoreDowned. A revive that
+    // lands mid-fall is honored when the fall ends (never StopCoroutine this — the clip graph must be
+    // destroyed HERE, on every exit path).
+    IEnumerator DownCo(string id, Transform a)
     {
-        _dead.Add(id);
+        _downed.Add(id); _downRunning.Add(id);
         RemoveHpBar(id);
-        if (a == null) { Despawn(id); yield break; }
+        if (a == null) { _downRunning.Remove(id); yield break; }
+        // an in-flight glide would fight the fall for the transform — kill it (and its graph) first.
+        if (_glide.TryGetValue(id, out var gco) && gco != null) StopCoroutine(gco);
+        _glide.Remove(id); KillWalkGraph(id);
         var go = a.gameObject;
-        Vector3 baseScale = a.localScale; Vector3 home = a.position; Quaternion startRot = a.rotation;
+        Vector3 home = a.position; Quaternion startRot = a.rotation;
+        _downPose[id] = new DownPose { scale = a.localScale, rot = startRot };
         AnimationClip death = FindOwnClip(id, "death", "dead", "die");
         var anim = go.GetComponentInChildren<Animator>();
         UnityEngine.Playables.PlayableGraph g = default; bool hg = false;
-        if (death != null && anim != null && anim.avatar != null) { g = MakeClipGraph(anim, death, "Death_" + a.name); hg = true; }
+        if (death != null && anim != null && anim.avatar != null) { g = MakeClipGraph(anim, death, "Down_" + a.name); hg = true; }
         float dur = 0.85f, t = 0f;
-        while (t < dur && a != null)
+        while (t < dur && a != null && !_reviveWanted.Contains(id))
         {
             t += Time.deltaTime; float u = t / dur;
             if (hg) g.Evaluate(Time.deltaTime);
             else a.rotation = startRot * Quaternion.Euler(0f, 0f, Mathf.Lerp(0f, 85f, u));   // topple when no clip
-            a.localScale = Vector3.Lerp(baseScale, new Vector3(baseScale.x * 0.9f, baseScale.y * 0.2f, baseScale.z * 0.9f), u);
-            MoveActorAndShadows(a, home + new Vector3(0f, -0.4f * u, 0f));
-            FadeSibling(a.name, "_Ring", 1f - u); FadeSibling(a.name, "_AO", 1f - u);
+            MoveActorAndShadows(a, home + new Vector3(0f, -0.25f * u, 0f));
+            float dim = Mathf.Lerp(1f, 0.35f, u);
+            FadeSibling(a.name, "_Ring", dim); FadeSibling(a.name, "_AO", dim);
             yield return null;
         }
         if (hg && g.IsValid()) g.Destroy();
+        _downRunning.Remove(id);
+        if (a != null && _reviveWanted.Contains(id)) { _reviveWanted.Remove(id); RestoreDowned(id, a); }
+        // else: stays prone + dimmed until healed (RestoreDowned) or removed from the surface (fade-despawn).
+    }
+
+    // Revive (hp back above 0 while still surface-listed — the #1106 heal): stand the actor back up. Root
+    // scale/rotation from the captured down-pose, bones re-posed to idle, then a fresh ground-snap on its
+    // engine cell (posed bounds differ from prone bounds); ring/AO restored, HP bar re-created.
+    void RestoreDowned(string id, Transform a)
+    {
+        DownPose p; _downPose.TryGetValue(id, out p);
+        _downed.Remove(id); _reviveWanted.Remove(id); _downPose.Remove(id);
+        if (a == null) return;
+        if (p != null) { a.localScale = p.scale; a.rotation = p.rot; }
+        PoseIdle(a.gameObject);
+        int[] cell; if (_cellOf.TryGetValue(id, out cell)) GroundSnap(a, cell[0], cell[1]);
+        FadeSibling(a.name, "_Ring", 1f); FadeSibling(a.name, "_AO", 1f);
+        EnsureHpBar(id, a);
+        Debug.Log("[CSC] revived Actor_" + id);
+    }
+
+    // A downed combatant the engine no longer lists (the true death/removal): brief shrink+sink from the
+    // prone pose, then the full Despawn. Caller already cleared _spawned/_downed (no double-fade).
+    IEnumerator FadeOutRemoveCo(string id)
+    {
+        var a = FindActor(id);
+        if (a == null) { Despawn(id); yield break; }
+        Vector3 s0 = a.localScale; Vector3 p0 = a.position;
+        float dur = 0.45f, t = 0f;
+        while (t < dur && a != null)
+        {
+            t += Time.deltaTime; float u = t / dur;
+            a.localScale = Vector3.Lerp(s0, s0 * 0.05f, u);
+            MoveActorAndShadows(a, p0 + new Vector3(0f, -0.6f * u, 0f));
+            float dim = Mathf.Lerp(0.35f, 0f, u);
+            FadeSibling(a.name, "_Ring", dim); FadeSibling(a.name, "_AO", dim);
+            yield return null;
+        }
         Despawn(id);   // removes Actor_<id> + _AO + _Ring, clears per-actor state
+    }
+
+    // Deterministically destroy an actor's live walk graph. GlideTo registers its graph here because a
+    // StopCoroutine'd glide never reaches its own Destroy — natural arrival, re-glide, despawn and downing
+    // all funnel through this instead (#1451-review P2 leak).
+    void KillWalkGraph(string id)
+    {
+        UnityEngine.Playables.PlayableGraph g;
+        if (_walkGraphOf.TryGetValue(id, out g)) { if (g.IsValid()) g.Destroy(); _walkGraphOf.Remove(id); }
     }
 
     // Fade a named ground sibling's material alpha (ring/AO death fade).
@@ -1402,7 +1497,7 @@ public class CombatSurfaceClient : MonoBehaviour
         {
             var root = kv.Value; if (root == null) continue;
             var actor = FindActor(kv.Key);
-            if (actor == null || _dead.Contains(kv.Key)) { if (gone == null) gone = new System.Collections.Generic.List<string>(); gone.Add(kv.Key); continue; }
+            if (actor == null || _downed.Contains(kv.Key)) { if (gone == null) gone = new System.Collections.Generic.List<string>(); gone.Add(kv.Key); continue; }
             float top; if (!_topOf.TryGetValue(kv.Key, out top)) top = 5.0f;
             root.transform.position = actor.position + new Vector3(0f, top, 0f);
             if (cam != null) root.transform.rotation = cam.transform.rotation;
