@@ -83,7 +83,15 @@
           }
         },
         "evolves_to": {"type": "string"},
-        "consequences": {"type": "array", "items": {"type": "object"}}
+        "consequences": {"type": "array", "items": {"type": "object"}},
+        "giver": {
+          "type": "object",
+          "description": "OPTIONAL (quality pass 2, #1386 item 5b). The NPC who gave this quest (Quest.giver_id resolved to {id, name}); absent when the source quest never recorded a giver_id."
+        },
+        "location": {
+          "type": "object",
+          "description": "OPTIONAL (quality pass 2, #1386 item 5b). Where the quest is anchored (Quest.location_id resolved to {id, name}); absent when the source quest never recorded a location_id."
+        }
       }
     },
     "npc_payload": {

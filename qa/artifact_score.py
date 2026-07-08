@@ -83,8 +83,8 @@ _CARD_FIELDS: dict[str, list[str]] = {
     # reading order (premise first, resolution near consequences) so both real extracts and the
     # v2-aware controls (#1380) render the same shape instead of dumping the new fields at the tail.
     "quest": ["name", "description", "objectives", "completed_objectives", "resolution_status",
-              "evolves_to", "resolution", "consequences", "title", "hook", "giver", "stakes",
-              "outcomes"],
+              "evolves_to", "resolution", "consequences", "title", "hook", "giver", "location",
+              "stakes", "outcomes"],
     "npc": ["name", "voice_id", "personality", "attitude_arc", "final_status", "dialogue_snippets",
             "role", "dossier", "want", "hook"],
     "location": ["name", "description", "scene_grid", "visited", "region", "connections", "tags"],
