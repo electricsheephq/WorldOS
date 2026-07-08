@@ -16,6 +16,7 @@ cd "$ROOT" || exit 1
 . "$ROOT/qa/lib_beat_driver.sh"
 
 RUN="${1:-cs-$(date +%H%M%S)}"
+CURRENT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 WORLDOS_DM_MODEL="$(worldos_env DM_MODEL opus)"
 # GLM-only settings profile (no-op for Claude). Sourced after model vars resolve, before any
 # timeout/budget/retry knob is consumed. See qa/glm_profile.sh.
@@ -143,4 +144,20 @@ jq -r '
 ' "$T/$RUN.angrydm.json" 2>/dev/null || { echo "(angry-dm parse failed; raw:)"; cat "$T/$RUN.angrydm.json"; }
 
 echo "[cs] behavioral=$([ "${GATE:-0}" = 0 ] && echo GREEN || echo RED)"
+
+# #1414: auto-persist the scores_ledger row at completion (surface=engine-duo, methodology=
+# combat-sprint) — FAIL LOUD (never `|| echo WARN`; a failed write is a failed run per the
+# Universal Run Contract, docs/OPERATIONS.md "No row = no run"). GATE_REASON is only set above
+# when the gate is RED.
+CS_GATE_ARG=()
+[ "${GATE:-0}" != "0" ] && CS_GATE_ARG=(--gate-reason "$GATE_REASON")
+if ! python3 "$ROOT/qa/scores_persist.py" combat-sprint \
+    --run-id "$RUN" --build-sha "$CURRENT_SHA" --dm-model "$WORLDOS_DM_MODEL" \
+    --behavioral "$([ "${GATE:-0}" = 0 ] && echo GREEN || echo RED)" \
+    --angry-json "$T/$RUN.angrydm.json" --source-path "$T/$RUN.md" \
+    ${CS_GATE_ARG[@]+"${CS_GATE_ARG[@]}"}; then
+  echo "[cs] FATAL: scores_db row write failed — a failed write is a failed run per the Universal Run Contract (docs/OPERATIONS.md). See the error above." >&2
+  exit 1
+fi
+
 exit "${GATE:-0}"
