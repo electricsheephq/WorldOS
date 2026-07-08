@@ -45,10 +45,16 @@ class AssetRegistryConformanceTests(unittest.TestCase):
         self.assertEqual(r["resolved_via"], "exact")
         self.assertFalse(r["default_used"])
         # #1418: fighter now points at the real skinned asset (was the stale
-        # clipless Assets/painterly/models/hero.fbx placeholder); albedo_ref/anim_ref
-        # are null -- the model's own embedded material + embedded Idle clip are used.
+        # clipless Assets/painterly/models/hero.fbx placeholder). anim_ref stays
+        # null -- its own embedded Idle clip is used. #1423: albedo_ref was ALSO
+        # null here, but that was a real gap (not an intentional "own material"
+        # convention) -- fighter.fbx's own imported material has no texture bound
+        # at all, so the Unity renderer's registry-miss fallback was silently
+        # substituting the DEFAULT TEMPLATE's hero_albedo.png (a different mesh's
+        # UVs) onto it. Fixed by extracting the real albedo from fighter's source
+        # Meshy model.glb (extract_glb_albedo.py) and wiring it here.
         self.assertEqual(r["model_ref"], "Assets/cast/fighter/fighter.fbx")
-        self.assertIsNone(r["albedo_ref"])
+        self.assertEqual(r["albedo_ref"], "Assets/cast/fighter/albedo.jpg")
 
     def test_goblin_exact_hit_is_monster_real_ref(self):
         r = self.reg.resolve("goblin", "monster")
