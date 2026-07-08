@@ -1,0 +1,11 @@
+{
+  "shadow_scale": 2.4,
+  "shadow_intensity": 1.3,
+  "shadow_softness": 0.9,
+  "core_shadow": 0.85,
+  "core_scale": 0.55,
+  "light_tint": 0.35,
+  "warmth": 1.15,
+  "pose_yaw": 0.0,
+  "pose_time": 0.7
+}

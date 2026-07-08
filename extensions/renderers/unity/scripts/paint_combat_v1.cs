@@ -329,10 +329,18 @@ System.Func<string,string,string[]> resolveAsset=(slug,kind)=>{
   string fbxDef=kind=="monster"?"Assets/chars_v2/goblin/goblin.fbx":"Assets/painterly/models/hero.fbx";
   string albDef=kind=="monster"?"Assets/chars_v2/goblin/albedo.png":"Assets/painterly/models/hero_albedo.png";
   if(regAssets==null) return new string[]{fbxDef,albDef,""};
-  string id=slug;
-  if(!regAssets.ContainsKey(id) && regAliases!=null && regAliases.ContainsKey(id)) id=regAliases[id] as string;
-  if((id==null||!regAssets.ContainsKey(id)) && regDefaults!=null){ if(regDefaults.ContainsKey(kind)) id=regDefaults[kind] as string; else if(regDefaults.ContainsKey("__any__")) id=regDefaults["__any__"] as string; }
-  if(id!=null && regAssets.ContainsKey(id)){ var a=regAssets[id] as System.Collections.Generic.Dictionary<string,object>; if(a!=null){ string m=a.ContainsKey("model_ref")?a["model_ref"] as string:null; string al=a.ContainsKey("albedo_ref")?a["albedo_ref"] as string:null; string an=a.ContainsKey("anim_ref")?a["anim_ref"] as string:null; return new string[]{ string.IsNullOrEmpty(m)?fbxDef:m, string.IsNullOrEmpty(al)?albDef:al, an??"" }; } }
+  string id=slug; bool exactOrAlias=regAssets.ContainsKey(id);
+  if(!exactOrAlias && regAliases!=null && regAliases.ContainsKey(id)){ id=regAliases[id] as string; exactOrAlias = id!=null && regAssets.ContainsKey(id); }
+  if(!exactOrAlias && regDefaults!=null){ if(regDefaults.ContainsKey(kind)) id=regDefaults[kind] as string; else if(regDefaults.ContainsKey("__any__")) id=regDefaults["__any__"] as string; }
+  if(id!=null && regAssets.ContainsKey(id)){ var a=regAssets[id] as System.Collections.Generic.Dictionary<string,object>; if(a!=null){ string m=a.ContainsKey("model_ref")?a["model_ref"] as string:null; string al=a.ContainsKey("albedo_ref")?a["albedo_ref"] as string:null; string an=a.ContainsKey("anim_ref")?a["anim_ref"] as string:null;
+    // #1423 FIX: only substitute the DEFAULT TEMPLATE's albedo when this token fell through to a template
+    // default (no exact/alias asset row exists for it). A REAL resolved asset row (exact id or alias hit)
+    // whose own albedo_ref is null/empty means "use this model's own imported material, no override" (the
+    // registry's documented convention, e.g. fighter before #1423 extracted its albedo) -- silently painting
+    // an UNRELATED default mesh's texture (mismatched UVs) onto a real, distinct asset is WORSE than leaving
+    // its native material: this exact substitution produced the garbled "camo" read on the fighter (#1423).
+    string alOut = string.IsNullOrEmpty(al) ? (exactOrAlias ? null : albDef) : al;
+    return new string[]{ string.IsNullOrEmpty(m)?fbxDef:m, alOut, an??"" }; } }
   return new string[]{fbxDef,albDef,""};
 };
 foreach(var o in toks){ var t=o as System.Collections.Generic.Dictionary<string,object>; if(t==null||!t.ContainsKey("x")||t["x"]==null) continue;
