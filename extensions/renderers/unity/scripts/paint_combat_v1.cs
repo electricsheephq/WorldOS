@@ -146,10 +146,63 @@ System.Func<string,string,string,int,int,float,Color,string,Vector3> spawn=(fbxP
   var prefab=AssetDatabase.LoadAssetAtPath<GameObject>(fbxPath); if(prefab==null){ sb.AppendLine("MISSING "+fbxPath); missingActor=true; return cellToWorld(cx,cy); }
   var old=GameObject.Find(nm); if(old!=null) UnityEngine.Object.DestroyImmediate(old);
   var go=(GameObject)UnityEngine.Object.Instantiate(prefab); go.name=nm;
-  // Pose to a NEUTRAL IDLE stance before measuring/grounding. A skinned actor with no clip sampled sits in its FBX
-  // bind pose, which for gen'd meshes (Meshy goblin) is often a dynamic action pose -> reads as "unstable/floating"
-  // even when grounded (owner-observed). PREFER a clip named 'idle' (fall back to the first real clip); sample at
-  // mid-clip for a settled frame. Static meshes (hero.fbx, no clips) are untouched. Grounding re-measures AFTER this.
+  // #1280: aiPoseYaw adds a per-capture yaw offset so actors can face slightly off-axis onto a more readable
+  // silhouette (default 0 = the prior fixed facing).
+  // #1397 (pixel-bbox CONFIRMED on GEX44, Assets/Editor/Probe1397Pixel.cs + Probe1397Fighter.cs): the
+  // "-90 X stand-up" pitch is a LEGACY Z-up correction. This whole cast is authored Y-up
+  // (registry.json gen_recipe: "meshy --moveset (Y-up)") — applying -90X to an already-upright Y-up
+  // pose tips it onto its back. Measured via rendered PIXEL bbox: goblin.fbx (Humanoid avatar)
+  // pitch=-90 -> aspect 1.12 PRONE vs pitch=0 -> 1.31-1.35 UPRIGHT; fighter.fbx (NO Animator/avatar at
+  // all, but SkinnedMeshRenderer-rigged) pitch=0 -> 1.65 UPRIGHT vs pitch=-90 -> 1.39, confirming it is
+  // ALSO Y-up despite not being Humanoid-classified. So the guard is "is this a skinned Meshy Y-up
+  // rig at all" (SkinnedMeshRenderer present), not "is this Humanoid" — -90 is kept only for a
+  // genuinely static/non-skinned mesh (no rig to be mis-pitched). MOVED ahead of posing (#1418): pitch
+  // depends only on rig type, never on the sampled pose, so it can be set immediately after Instantiate.
+  { float _pitchX=go.GetComponentInChildren<SkinnedMeshRenderer>()!=null?0f:-90f;
+    go.transform.rotation=Quaternion.Euler(_pitchX, cam.transform.eulerAngles.y+180f+aiPoseYaw, 0f); }
+  var rends=go.GetComponentsInChildren<Renderer>(); foreach(var r in rends){ r.enabled=true; r.shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.On; r.receiveShadows=true;
+    // #1408 (ports #1392's replay-lane fix): force the skinned mesh to re-skin from its LIVE bone
+    // transforms on every render + regardless of culling bounds — IDENTICAL to paint_combat_replay_v1.cs.
+    // Without this, the editor's synchronous multi-actor capture can render an actor's STALE GPU skin
+    // even though its CPU bones (and the retarget/SampleAnimation bake above) are already posed correctly.
+    var smrF=r as SkinnedMeshRenderer; if(smrF!=null){ smrF.updateWhenOffscreen=true; smrF.forceMatrixRecalculationPerRender=true; } }
+  // Grounding/scale uses TRUE posed geometry. SkinnedMeshRenderer.bounds is a conservative/inflated culling AABB whose
+  // min.y sits BELOW the real feet -> grounding to min.y=0 leaves the actor FLOATING (owner-observed "goblin walking
+  // in the air"). BakeMesh snapshots the ACTUAL posed verts (renderer-local space); transform by localToWorldMatrix
+  // for an exact world min.y/center. Plain MeshRenderer.bounds are already accurate, so pass those through.
+  // #1412 (found while re-rendering the full wave-2 cast): BakeMesh's output ALREADY reflects the renderer's
+  // CURRENT lossyScale (measured empirically on Unity 6000.5.1f1 — bind-pose bounds re-baked after a runtime
+  // localScale change grow by scale^2, not scale, when multiplied by the FULL localToWorldMatrix below). Any
+  // actor whose spawn-time scale multiplier != 1 (i.e. every SkinnedMeshRenderer actor, since `s=height/curH`
+  // is almost never exactly 1) double-applies scale -> a wildly inflated bbox -> the actor is placed floating
+  // and oversized (measured on mage/patron_commoner/innkeeper: postGround bbox height 13-20 world units vs the
+  // intended 5.0). FIX: drop scale from the matrix used to place the ALREADY-scaled baked verts — position +
+  // rotation only. (Static, non-skinned actors like hero.fbx use `r.bounds`, which is unaffected — that path's
+  // grounding was already correct, which is why only the wave-2 skinned cast exposed this.)
+  System.Func<Renderer,Bounds> worldBounds=(r)=>{ var smr=r as SkinnedMeshRenderer; if(smr==null) return r.bounds; var bk=new Mesh(); smr.BakeMesh(bk); var vs=bk.vertices; if(vs.Length==0){ UnityEngine.Object.DestroyImmediate(bk); return r.bounds; } var m=Matrix4x4.TRS(smr.transform.position, smr.transform.rotation, Vector3.one); var wb=new Bounds(m.MultiplyPoint3x4(vs[0]),Vector3.zero); for(int i=1;i<vs.Length;i++) wb.Encapsulate(m.MultiplyPoint3x4(vs[i])); UnityEngine.Object.DestroyImmediate(bk); return wb; };
+  System.Func<Bounds> measure=()=>{ Bounds b=new Bounds(go.transform.position,Vector3.zero); bool a=false; foreach(var r in rends){ var rb=worldBounds(r); if(!a){b=rb;a=true;} else b.Encapsulate(rb);} return b; };
+  // #1418 FIX: `curH` used to be the full-mesh AABB height of whatever pose the actor landed in AFTER
+  // clip-posing/retargeting. A WIDE/leaning/forward-hunched idle first frame (measured: innkeeper bbox
+  // aspect 0.85 "prone/tilted") has a SMALLER Y-extent than a clean standing pose, which forced
+  // s=height/curH UP to compensate -> the whole actor over-scaled (measured 55-72% frame height vs the
+  // 3-45% pre-gate band). Of the 3 fix directions the issue proposed, direction 1 is used here: measure
+  // the BIND POSE height — right here, BEFORE any clip is sampled or donor-retargeted — then apply the
+  // idle pose for the visual only AFTER scale is locked. A Meshy-generated rig's bind pose is a
+  // conventional upright rest stance (by construction of the gen pipeline), so it's a far more reliable
+  // "standing height" reference than an arbitrary idle clip's first frame, for every actor in this cast.
+  // REJECTED alternative (direction 2, tried + measured on this box, do NOT re-attempt): a fixed
+  // head-to-foot BONE-PAIR height (Animator.GetBoneTransform(Head/LeftFoot/RightFoot)) sampled from the
+  // POSED skeleton. It sounded pose-invariant but empirically made every actor WORSE, not better (e.g.
+  // innkeeper 71.6%->110% of frame height) — a genuine forward lean/hunch drops the head bone's world Y
+  // by roughly the SAME amount it drops the AABB's max.y (both track the same skeletal rotation), so the
+  // bone pair inherits the exact defect it was meant to dodge, with no compensating benefit.
+  Bounds bb=measure(); float curH=bb.size.y>0.001f?bb.size.y:1f;
+  float s=height/curH; go.transform.localScale=go.transform.localScale*s;
+  // ---- pose to a NEUTRAL IDLE stance for the VISUAL, now that scale is locked from the bind pose ----
+  // A skinned actor with no clip sampled sits in its FBX bind pose, which for gen'd meshes (Meshy goblin)
+  // is often a dynamic action pose -> reads as "unstable/floating" even when grounded (owner-observed).
+  // PREFER a clip named 'idle' (fall back to the first real clip); sample at mid-clip for a settled frame.
+  // Static meshes (hero.fbx, no clips) are untouched. Grounding re-measures AFTER this.
   // #1280 pose variety: sample the pose clip at aiPoseTime (0..1 of clip length) instead of always f0, so captures can
   // land on a readable ACTION-pose peak (the FELT panel's "stiff mid-leap / static" note) rather than one frozen frame.
   // Default aiPoseTime=0 reproduces the prior @f0 sampling exactly.
@@ -184,41 +237,7 @@ System.Func<string,string,string,int,int,float,Color,string,Vector3> spawn=(fbxP
       } else { sb.AppendLine(nm+" clipless humanoid but NO donor idle clip found — bind pose kept"); }
     }
   }
-  // #1280: aiPoseYaw adds a per-capture yaw offset so actors can face slightly off-axis onto a more readable
-  // silhouette (default 0 = the prior fixed facing).
-  // #1397 (pixel-bbox CONFIRMED on GEX44, Assets/Editor/Probe1397Pixel.cs + Probe1397Fighter.cs): the
-  // "-90 X stand-up" pitch is a LEGACY Z-up correction. This whole cast is authored Y-up
-  // (registry.json gen_recipe: "meshy --moveset (Y-up)") — applying -90X to an already-upright Y-up
-  // pose tips it onto its back. Measured via rendered PIXEL bbox: goblin.fbx (Humanoid avatar)
-  // pitch=-90 -> aspect 1.12 PRONE vs pitch=0 -> 1.31-1.35 UPRIGHT; fighter.fbx (NO Animator/avatar at
-  // all, but SkinnedMeshRenderer-rigged) pitch=0 -> 1.65 UPRIGHT vs pitch=-90 -> 1.39, confirming it is
-  // ALSO Y-up despite not being Humanoid-classified. So the guard is "is this a skinned Meshy Y-up
-  // rig at all" (SkinnedMeshRenderer present), not "is this Humanoid" — -90 is kept only for a
-  // genuinely static/non-skinned mesh (no rig to be mis-pitched).
-  { float _pitchX=go.GetComponentInChildren<SkinnedMeshRenderer>()!=null?0f:-90f;
-    go.transform.rotation=Quaternion.Euler(_pitchX, cam.transform.eulerAngles.y+180f+aiPoseYaw, 0f); }
-  var rends=go.GetComponentsInChildren<Renderer>(); foreach(var r in rends){ r.enabled=true; r.shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.On; r.receiveShadows=true;
-    // #1408 (ports #1392's replay-lane fix): force the skinned mesh to re-skin from its LIVE bone
-    // transforms on every render + regardless of culling bounds — IDENTICAL to paint_combat_replay_v1.cs.
-    // Without this, the editor's synchronous multi-actor capture can render an actor's STALE GPU skin
-    // even though its CPU bones (and the retarget/SampleAnimation bake above) are already posed correctly.
-    var smrF=r as SkinnedMeshRenderer; if(smrF!=null){ smrF.updateWhenOffscreen=true; smrF.forceMatrixRecalculationPerRender=true; } }
-  // Grounding uses TRUE posed geometry. SkinnedMeshRenderer.bounds is a conservative/inflated culling AABB whose
-  // min.y sits BELOW the real feet -> grounding to min.y=0 leaves the actor FLOATING (owner-observed "goblin walking
-  // in the air"). BakeMesh snapshots the ACTUAL posed verts (renderer-local space); transform by localToWorldMatrix
-  // for an exact world min.y/center. Plain MeshRenderer.bounds are already accurate, so pass those through.
-  // #1412 (found while re-rendering the full wave-2 cast): BakeMesh's output ALREADY reflects the renderer's
-  // CURRENT lossyScale (measured empirically on Unity 6000.5.1f1 — bind-pose bounds re-baked after a runtime
-  // localScale change grow by scale^2, not scale, when multiplied by the FULL localToWorldMatrix below). Any
-  // actor whose spawn-time scale multiplier != 1 (i.e. every SkinnedMeshRenderer actor, since `s=height/curH`
-  // is almost never exactly 1) double-applies scale -> a wildly inflated bbox -> the actor is placed floating
-  // and oversized (measured on mage/patron_commoner/innkeeper: postGround bbox height 13-20 world units vs the
-  // intended 5.0). FIX: drop scale from the matrix used to place the ALREADY-scaled baked verts — position +
-  // rotation only. (Static, non-skinned actors like hero.fbx use `r.bounds`, which is unaffected — that path's
-  // grounding was already correct, which is why only the wave-2 skinned cast exposed this.)
-  System.Func<Renderer,Bounds> worldBounds=(r)=>{ var smr=r as SkinnedMeshRenderer; if(smr==null) return r.bounds; var bk=new Mesh(); smr.BakeMesh(bk); var vs=bk.vertices; if(vs.Length==0){ UnityEngine.Object.DestroyImmediate(bk); return r.bounds; } var m=Matrix4x4.TRS(smr.transform.position, smr.transform.rotation, Vector3.one); var wb=new Bounds(m.MultiplyPoint3x4(vs[0]),Vector3.zero); for(int i=1;i<vs.Length;i++) wb.Encapsulate(m.MultiplyPoint3x4(vs[i])); UnityEngine.Object.DestroyImmediate(bk); return wb; };
-  System.Func<Bounds> measure=()=>{ Bounds b=new Bounds(go.transform.position,Vector3.zero); bool a=false; foreach(var r in rends){ var rb=worldBounds(r); if(!a){b=rb;a=true;} else b.Encapsulate(rb);} return b; };
-  Bounds bb=measure(); float curH=bb.size.y>0.001f?bb.size.y:1f; float s=height/curH; go.transform.localScale=go.transform.localScale*s;
+  sb.AppendLine(nm+" #1418 curH from BIND POSE="+curH.ToString("F2")+" -> scale x"+s.ToString("F2"));
   // ground + CENTER on the cell: snap feet to Y=0 AND align bounds-center X/Z to the cell (fixes the critic's
   // "actor decoupled from its ring" — meshes whose geometry is offset from their transform origin drifted off-ring).
   var p=cellToWorld(cx,cy); go.transform.position=p; bb=measure(); Vector3 ctr=bb.center;
@@ -322,7 +341,19 @@ foreach(var o in toks){ var t=o as System.Collections.Generic.Dictionary<string,
   bool foe=(team=="foe");
   string kind=foe?"monster":"character";
   var aref=resolveAsset(slugify(nm),kind); string fbx=aref[0]; string alb=aref[1]; string anim=aref.Length>2?aref[2]:"";
-  float h=foe?4.2f:5.0f; Color ring=foe?new Color(1f,0.13f,0.10f,1f):new Color(0.4f,0.95f,1f,1f);
+  // #1418 calibration: the character target height was 5.0 (vs monster's 4.2) — measured on THIS
+  // camera/frame (ortho=13, 1920x1097) with the #1418 bind-pose curH fix already applied, a
+  // character token STILL rendered 50-68% of frame height (well over the 45% screen-scale gate) at
+  // BOTH a near-camera cell (rest fixture, row 9) and a mid-board cell (combat calibration check,
+  // row 6) — proving the residual overscale is NOT the near-camera #1403 framing gap (out of scope,
+  // not re-litigated here) but a plain height-constant miscalibration: these wave-2/wave-3 Meshy
+  // rigs import at a realistic human-metric bind-pose scale (curH ~1.3-1.9), so scaling them UP to
+  // "5.0 world units" overshoots badly, unlike the older hero.fbx this constant was tuned against.
+  // 3.2 is calibrated against the SHORTEST/most-compact bind pose in the current cast (innkeeper,
+  // curH=1.32, the worst case) so every character in this cast clears the 45% gate with margin
+  // (measured: 32-44% across fighter/mage/patron_commoner/innkeeper) while staying comfortably
+  // in scale with the already-passing monster/goblin height (4.2, 41.5%).
+  float h=foe?4.2f:3.2f; Color ring=foe?new Color(1f,0.13f,0.10f,1f):new Color(0.4f,0.95f,1f,1f);
   // poseClip: pass the fbx to auto-pose to a NEUTRAL IDLE (spawn prefers an 'idle' clip).
   // #1397 (probe-ladder CONFIRMED on GEX44, Assets/Editor/Probe1397.cs): the RAW BIND POSE this
   // combat path previously rendered (poseClipPath left null, on the theory bind was "the most

@@ -15,6 +15,7 @@
   "aliases": {
     "hero": "fighter",
     "pc": "fighter",
+    "aldric": "fighter",
     "wizard": "mage",
     "goblin_grunt": "goblin",
     "patron": "patron_commoner"
@@ -22,12 +23,12 @@
   "assets": {
     "fighter": {
       "kind": "character",
-      "model_ref": "Assets/painterly/models/hero.fbx",
-      "albedo_ref": "Assets/painterly/models/hero_albedo.png",
-      "anim_ref": "Assets/painterly/models/hero@moveset.fbx",
-      "gen_recipe": "meshy:humanoid moveset (9-clip) + scenario painterly albedo",
-      "version": "1.0.0",
-      "critic_score": 7.4,
+      "model_ref": "Assets/cast/fighter/fighter.fbx",
+      "albedo_ref": null,
+      "anim_ref": null,
+      "gen_recipe": "#1418 fix: the PC's actual in-game name (\"Aldric\") slugifies to \"aldric\", which had NO alias entry -> silently fell through to template_human/the stale hero.fbx placeholder (same class of bug as the #1412 \"patron\" alias miss). Re-pointed at the REAL skinned Meshy humanoid rig deployed 2026-07-01 (Assets/cast/fighter/fighter.fbx: SkinnedMeshRenderer, 24 bones, its OWN embedded \"Idle\" clip, animationType=Generic/avatarSetup=NoAvatar as shipped -- fixed to Humanoid/CreateFromThisModel by fighter_humanoid_fix.cs, mirroring chars_v2_wave2_humanoid_fix.cs's proven pattern). albedo_ref/anim_ref left null: the model's own embedded material + embedded Idle clip are used directly (no separate override file), same convention as goblin.fbx's own-embedded-clip donor read.",
+      "version": "1.1.0",
+      "critic_score": 0.0,
       "default_used": false
     },
     "mage": {

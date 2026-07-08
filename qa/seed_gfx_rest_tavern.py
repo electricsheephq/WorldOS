@@ -71,6 +71,30 @@ def main() -> None:
         campaign_id=CID, name="Patron", kind="npc", race="human",
         location_id=loc_id, add_to_party=False,
     )
+
+    # #1418 item (b): the generator's own `spawns.npcs` anchors ((3,3), (cols-4,3), ...) are
+    # "walkable" per the ABSTRACT scene_grid's own prop registry, but the composed rest scene's
+    # evidence (qa/evidence/1412/rest_v2_close_group.jpg) showed the patron seated ON a painted
+    # table -- the greybox prop cells and the independently-painted tavern_layered_v1.png plate
+    # aren't pixel-registered to each other (the general #1396-class gap, tracked separately, not
+    # re-litigated here). Rather than trust the generator's default npcs bucket for THIS fixture,
+    # explicitly place the two present NPCs via the engine's own `walk_to` (the sole-writer verb
+    # for Character.stage_cell) onto the SAME row the party already stands on cleanly
+    # (spawns.party is (mid_c-1, mid_c, mid_c+1) x (rows-2) -- proven clear in every prior render,
+    # no actor has ever been reported floating/occluded there), flanked further outward so the
+    # innkeeper/patron read as "standing near the party at rest" without overlapping them or any
+    # prop cell. Reads the ACTUAL generated grid's cols/rows back (jittered 14-16 x 10-12 by
+    # _gen_tavern) rather than assuming the fixed contract size, so this stays correct regardless
+    # of which jittered size this campaign's location rolled.
+    c = server._require(CID)
+    loc_obj = c.locations[loc_id]
+    sg = loc_obj.scene_grid
+    if sg is not None and sg.grid is not None and sg.grid.cols > 0 and sg.grid.rows > 0:
+        mid_c = sg.grid.cols // 2
+        safe_row = sg.grid.rows - 2
+        server.walk_to(CID, innkeeper.get("id"), mid_c - 2, safe_row)
+        server.walk_to(CID, patron.get("id"), mid_c + 2, safe_row)
+
     server.start_session(CID, title="GFX Rest Scene Demo")
 
     print(json.dumps({

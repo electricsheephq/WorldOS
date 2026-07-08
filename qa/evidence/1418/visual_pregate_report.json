@@ -1,0 +1,216 @@
+{
+  "schema": "worldos.visual_pregate.v1",
+  "verdict": "FAIL",
+  "bbox_source": "manifest",
+  "frame": "/tmp/rest_v3_final.png",
+  "manifest": "/tmp/m_pt07.json",
+  "baseline": null,
+  "bboxes": [
+    {
+      "bbox": [
+        1112,
+        474,
+        1228,
+        703
+      ],
+      "source": "manifest"
+    },
+    {
+      "bbox": [
+        1157,
+        431,
+        1286,
+        662
+      ],
+      "source": "manifest"
+    },
+    {
+      "bbox": [
+        1292,
+        370,
+        1404,
+        605
+      ],
+      "source": "manifest"
+    },
+    {
+      "bbox": [
+        992,
+        427,
+        1210,
+        736
+      ],
+      "source": "manifest"
+    }
+  ],
+  "checks": [
+    {
+      "check": "frame-lit",
+      "status": "PASS",
+      "metric": "mean_luma",
+      "value": {
+        "mean_luma": 0.1357,
+        "single_color_frac": 0.0137
+      },
+      "threshold": {
+        "min_mean_luma": 0.06,
+        "max_mean_luma": 0.97,
+        "max_single_color_frac": 0.9
+      },
+      "detail": "frame lit: mean luma 0.136, dominant color 1.4%"
+    },
+    {
+      "check": "occupancy",
+      "status": "PASS",
+      "metric": "actor_bbox_count",
+      "value": {
+        "expected": 4,
+        "found": 4
+      },
+      "threshold": 4,
+      "detail": "found 4/4 expected actor bbox(es)"
+    },
+    {
+      "check": "floor-contact",
+      "status": "FAIL",
+      "metric": "feet_vs_floor_px",
+      "value": [
+        {
+          "actor": "Actor_char_ea0b75e5341a",
+          "status": "FAIL",
+          "delta_px": 20.0,
+          "detail": "Actor_char_ea0b75e5341a clipping below: bbox bottom 703.0px vs floor 683.0px (+20.0px)"
+        },
+        {
+          "actor": "Actor_char_2acc5378b26f",
+          "status": "FAIL",
+          "delta_px": 9.0,
+          "detail": "Actor_char_2acc5378b26f clipping below: bbox bottom 662.0px vs floor 653.0px (+9.0px)"
+        },
+        {
+          "actor": "Actor_char_026626744e65",
+          "status": "FAIL",
+          "delta_px": 12.0,
+          "detail": "Actor_char_026626744e65 clipping below: bbox bottom 605.0px vs floor 593.0px (+12.0px)"
+        },
+        {
+          "actor": "Actor_char_d44c6e291f2d",
+          "status": "FAIL",
+          "delta_px": 23.0,
+          "detail": "Actor_char_d44c6e291f2d clipping below: bbox bottom 736.0px vs floor 713.0px (+23.0px)"
+        }
+      ],
+      "threshold": 8.0,
+      "detail": "Actor_char_ea0b75e5341a clipping below: bbox bottom 703.0px vs floor 683.0px (+20.0px); Actor_char_2acc5378b26f clipping below: bbox bottom 662.0px vs floor 653.0px (+9.0px); Actor_char_026626744e65 clipping below: bbox bottom 605.0px vs floor 593.0px (+12.0px); Actor_char_d44c6e291f2d clipping below: bbox bottom 736.0px vs floor 713.0px (+23.0px)"
+    },
+    {
+      "check": "screen-scale",
+      "status": "PASS",
+      "metric": "bbox_height_frac",
+      "value": [
+        {
+          "actor": "Actor_char_ea0b75e5341a",
+          "status": "PASS",
+          "height_px": 229,
+          "height_frac": 0.2088,
+          "detail": "Actor_char_ea0b75e5341a height 229px (20.9%) within 3%-45%"
+        },
+        {
+          "actor": "Actor_char_2acc5378b26f",
+          "status": "PASS",
+          "height_px": 231,
+          "height_frac": 0.2106,
+          "detail": "Actor_char_2acc5378b26f height 231px (21.1%) within 3%-45%"
+        },
+        {
+          "actor": "Actor_char_026626744e65",
+          "status": "PASS",
+          "height_px": 235,
+          "height_frac": 0.2142,
+          "detail": "Actor_char_026626744e65 height 235px (21.4%) within 3%-45%"
+        },
+        {
+          "actor": "Actor_char_d44c6e291f2d",
+          "status": "PASS",
+          "height_px": 309,
+          "height_frac": 0.2817,
+          "detail": "Actor_char_d44c6e291f2d height 309px (28.2%) within 3%-45%"
+        }
+      ],
+      "threshold": {
+        "min": 0.03,
+        "max": 0.45
+      },
+      "detail": "4 actor bbox(es) within scale band"
+    },
+    {
+      "check": "pose-uprightness",
+      "status": "PASS",
+      "metric": "bbox_aspect_ratio",
+      "value": [
+        {
+          "actor": "Actor_char_ea0b75e5341a",
+          "status": "PASS",
+          "aspect_ratio": 1.974,
+          "detail": "Actor_char_ea0b75e5341a upright: bbox aspect 1.97 (h/w) >= 1.25"
+        },
+        {
+          "actor": "Actor_char_2acc5378b26f",
+          "status": "PASS",
+          "aspect_ratio": 1.791,
+          "detail": "Actor_char_2acc5378b26f upright: bbox aspect 1.79 (h/w) >= 1.25"
+        },
+        {
+          "actor": "Actor_char_026626744e65",
+          "status": "PASS",
+          "aspect_ratio": 2.098,
+          "detail": "Actor_char_026626744e65 upright: bbox aspect 2.10 (h/w) >= 1.25"
+        },
+        {
+          "actor": "Actor_char_d44c6e291f2d",
+          "status": "PASS",
+          "aspect_ratio": 1.417,
+          "detail": "Actor_char_d44c6e291f2d upright: bbox aspect 1.42 (h/w) >= 1.25"
+        }
+      ],
+      "threshold": 1.25,
+      "detail": "4 actor bbox(es) upright"
+    }
+  ],
+  "failures": [
+    {
+      "check": "floor-contact",
+      "status": "FAIL",
+      "metric": "feet_vs_floor_px",
+      "value": [
+        {
+          "actor": "Actor_char_ea0b75e5341a",
+          "status": "FAIL",
+          "delta_px": 20.0,
+          "detail": "Actor_char_ea0b75e5341a clipping below: bbox bottom 703.0px vs floor 683.0px (+20.0px)"
+        },
+        {
+          "actor": "Actor_char_2acc5378b26f",
+          "status": "FAIL",
+          "delta_px": 9.0,
+          "detail": "Actor_char_2acc5378b26f clipping below: bbox bottom 662.0px vs floor 653.0px (+9.0px)"
+        },
+        {
+          "actor": "Actor_char_026626744e65",
+          "status": "FAIL",
+          "delta_px": 12.0,
+          "detail": "Actor_char_026626744e65 clipping below: bbox bottom 605.0px vs floor 593.0px (+12.0px)"
+        },
+        {
+          "actor": "Actor_char_d44c6e291f2d",
+          "status": "FAIL",
+          "delta_px": 23.0,
+          "detail": "Actor_char_d44c6e291f2d clipping below: bbox bottom 736.0px vs floor 713.0px (+23.0px)"
+        }
+      ],
+      "threshold": 8.0,
+      "detail": "Actor_char_ea0b75e5341a clipping below: bbox bottom 703.0px vs floor 683.0px (+20.0px); Actor_char_2acc5378b26f clipping below: bbox bottom 662.0px vs floor 653.0px (+9.0px); Actor_char_026626744e65 clipping below: bbox bottom 605.0px vs floor 593.0px (+12.0px); Actor_char_d44c6e291f2d clipping below: bbox bottom 736.0px vs floor 713.0px (+23.0px)"
+    }
+  ],
+  "summary": "VISUAL PRE-GATE FAIL\n  [PASS] frame-lit      mean_luma={'mean_luma': 0.1357, 'single_color_frac': 0.0137} :: frame lit: mean luma 0.136, dominant color 1.4%\n  [PASS] occupancy      actor_bbox_count={'expected': 4, 'found': 4} :: found 4/4 expected actor bbox(es)\n  [FAIL] floor-contact  feet_vs_floor_px=[{'actor': 'Actor_char_ea0b75e5341a', 'status': 'FAIL', 'delta_px': 20.0, 'detail': 'Actor_char_ea0b75e5341a clipping below: bbox bottom 703.0px vs floor 683.0px (+20.0px)'}, {'actor': 'Actor_char_2acc5378b26f', 'status': 'FAIL', 'delta_px': 9.0, 'detail': 'Actor_char_2acc5378b26f clipping below: bbox bottom 662.0px vs floor 653.0px (+9.0px)'}, {'actor': 'Actor_char_026626744e65', 'status': 'FAIL', 'delta_px': 12.0, 'detail': 'Actor_char_026626744e65 clipping below: bbox bottom 605.0px vs floor 593.0px (+12.0px)'}, {'actor': 'Actor_char_d44c6e291f2d', 'status': 'FAIL', 'delta_px': 23.0, 'detail': 'Actor_char_d44c6e291f2d clipping below: bbox bottom 736.0px vs floor 713.0px (+23.0px)'}] :: Actor_char_ea0b75e5341a clipping below: bbox bottom 703.0px vs floor 683.0px (+20.0px); Actor_char_2acc5378b26f clipping below: bbox bottom 662.0px vs floor 653.0px (+9.0px); Actor_char_026626744e65 clipping below: bbox bottom 605.0px vs floor 593.0px (+12.0px); Actor_char_d44c6e291f2d clipping below: bbox bottom 736.0px vs floor 713.0px (+23.0px)\n  [PASS] screen-scale   bbox_height_frac=[{'actor': 'Actor_char_ea0b75e5341a', 'status': 'PASS', 'height_px': 229, 'height_frac': 0.2088, 'detail': 'Actor_char_ea0b75e5341a height 229px (20.9%) within 3%-45%'}, {'actor': 'Actor_char_2acc5378b26f', 'status': 'PASS', 'height_px': 231, 'height_frac': 0.2106, 'detail': 'Actor_char_2acc5378b26f height 231px (21.1%) within 3%-45%'}, {'actor': 'Actor_char_026626744e65', 'status': 'PASS', 'height_px': 235, 'height_frac': 0.2142, 'detail': 'Actor_char_026626744e65 height 235px (21.4%) within 3%-45%'}, {'actor': 'Actor_char_d44c6e291f2d', 'status': 'PASS', 'height_px': 309, 'height_frac': 0.2817, 'detail': 'Actor_char_d44c6e291f2d height 309px (28.2%) within 3%-45%'}] :: 4 actor bbox(es) within scale band\n  [PASS] pose-uprightness bbox_aspect_ratio=[{'actor': 'Actor_char_ea0b75e5341a', 'status': 'PASS', 'aspect_ratio': 1.974, 'detail': 'Actor_char_ea0b75e5341a upright: bbox aspect 1.97 (h/w) >= 1.25'}, {'actor': 'Actor_char_2acc5378b26f', 'status': 'PASS', 'aspect_ratio': 1.791, 'detail': 'Actor_char_2acc5378b26f upright: bbox aspect 1.79 (h/w) >= 1.25'}, {'actor': 'Actor_char_026626744e65', 'status': 'PASS', 'aspect_ratio': 2.098, 'detail': 'Actor_char_026626744e65 upright: bbox aspect 2.10 (h/w) >= 1.25'}, {'actor': 'Actor_char_d44c6e291f2d', 'status': 'PASS', 'aspect_ratio': 1.417, 'detail': 'Actor_char_d44c6e291f2d upright: bbox aspect 1.42 (h/w) >= 1.25'}] :: 4 actor bbox(es) upright"
+}

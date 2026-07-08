@@ -44,8 +44,11 @@ class AssetRegistryConformanceTests(unittest.TestCase):
         self.assertEqual(r["asset_id"], "fighter")
         self.assertEqual(r["resolved_via"], "exact")
         self.assertFalse(r["default_used"])
-        self.assertEqual(r["model_ref"], "Assets/painterly/models/hero.fbx")
-        self.assertEqual(r["albedo_ref"], "Assets/painterly/models/hero_albedo.png")
+        # #1418: fighter now points at the real skinned asset (was the stale
+        # clipless Assets/painterly/models/hero.fbx placeholder); albedo_ref/anim_ref
+        # are null -- the model's own embedded material + embedded Idle clip are used.
+        self.assertEqual(r["model_ref"], "Assets/cast/fighter/fighter.fbx")
+        self.assertIsNone(r["albedo_ref"])
 
     def test_goblin_exact_hit_is_monster_real_ref(self):
         r = self.reg.resolve("goblin", "monster")
@@ -60,7 +63,7 @@ class AssetRegistryConformanceTests(unittest.TestCase):
         self.assertEqual(r["asset_id"], "fighter")
         self.assertEqual(r["resolved_via"], "alias")
         self.assertTrue(r["default_used"])
-        self.assertEqual(r["model_ref"], "Assets/painterly/models/hero.fbx")
+        self.assertEqual(r["model_ref"], "Assets/cast/fighter/fighter.fbx")
 
     # -- miss on a character -> template_human, default:character ---------
     def test_character_miss_falls_to_template_human(self):
