@@ -21,6 +21,9 @@
 # (qa/ui_playtest.sh), palette MCP server (qa/playwright/palette_server.js + package.json),
 # persona briefs, and scorer ARE committed; only the run outputs + node_modules are ignored.
 /qa/ui_playtest_runs/
+# player smoke (#1443): qa/player_smoke.sh run artifacts (screenshots + smoke_result.json) — same
+# regenerable-and-bulky rationale as ui_playtest_runs/ above; the runner + driver ARE committed.
+/qa/player_smoke_runs/
 /qa/playwright/node_modules
 /qa/playwright/_*.js
 # The on-demand findings ledger (qa/collect_findings.py output) — a regenerable digest of

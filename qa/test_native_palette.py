@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -112,6 +113,27 @@ class SwiftHelperTests(unittest.TestCase):
             w = subprocess.run([str(out), "winfind", "NoSuchApp_ZZZ"], capture_output=True, text=True)
             self.assertEqual(json.loads(w.stdout.strip().splitlines()[-1]).get("found"), False)
 
+    @unittest.skipUnless(shutil.which("swiftc"), "swiftc not available (non-macOS CI)")
+    def test_winfind_reports_on_screen_and_has_all_spaces_fallback(self):
+        """#1443: winFind must (a) always report an `on_screen` bool when found (so callers know
+        whether `screencapture -l` will work from here), and (b) fall back to an all-Spaces search
+        when the owner isn't in the on-screen-only pass — proven here by finding Finder (whose
+        actual on-screen window content is environment-dependent, but the owner is ALWAYS present
+        in one pass or the other on a running Mac, since it's always running)."""
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "native_input"
+            subprocess.run(["swiftc", str(SWIFT), "-o", str(out)], check=True, capture_output=True)
+            w = subprocess.run([str(out), "winfind", "Finder"], capture_output=True, text=True)
+            data = json.loads(w.stdout.strip().splitlines()[-1])
+            self.assertTrue(data.get("found"), f"Finder should always be findable: {data}")
+            self.assertIn("on_screen", data, "winfind must report on_screen so callers can decide to activate")
+            self.assertIsInstance(data["on_screen"], bool)
+
+    def test_source_has_all_spaces_fallback(self):
+        src = SWIFT.read_text(encoding="utf-8")
+        self.assertIn("allSpacesOpts", src, "winFind must retry without .optionOnScreenOnly (#1443)")
+        self.assertIn("on_screen", src, "winFind must emit on_screen so capture callers can activate+retry")
+
 
 class ServerBootTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("node"), "node not available")
@@ -172,6 +194,126 @@ class ScorerCompatibilityTests(unittest.TestCase):
             self.assertEqual(score["console_errors"], 0)
             self.assertEqual(score["network_failures"], 0)
             self.assertTrue((rundir / "summary.md").is_file())
+
+
+CORE = NPT / "native_palette_core.js"
+LIB_BOOT = ROOT / "qa" / "lib_native_player_boot.sh"
+SMOKE_RUNNER = ROOT / "qa" / "player_smoke.sh"
+SMOKE_DRIVER = NPT / "player_smoke_driver.js"
+SEED_SMOKE = ROOT / "qa" / "seed_gfx_camp_smoke.py"
+
+
+class CoreModuleTests(unittest.TestCase):
+    """native_palette_core.js (#1443) — the capture/activate/click primitives shared by
+    native_palette_server.js (the T3 MCP tool) and player_smoke_driver.js (the scripted smoke)."""
+
+    def test_core_module_exists_and_is_required_by_the_server(self):
+        self.assertTrue(CORE.is_file())
+        src = SERVER.read_text(encoding="utf-8")
+        self.assertIn('require("./native_palette_core.js")', src,
+                      "native_palette_server.js must share the #1443 capture fix, not fork it")
+
+    def test_core_module_exports_the_capture_primitives(self):
+        src = CORE.read_text(encoding="utf-8")
+        for name in ("resolveHelper", "findWindow", "activateOwner", "waitForOnScreen",
+                     "captureWindow", "clickAt", "fullscreenCropWindow"):
+            self.assertIn(name, src, f"native_palette_core.js must export {name}")
+
+    def test_capture_window_activates_and_falls_back(self):
+        src = CORE.read_text(encoding="utf-8")
+        self.assertIn("activateOwner(owner)", src, "#1443: must activate the owner when off-screen")
+        self.assertIn("fullscreenCropWindow", src, "#1443: must fall back to a cropped full-screen grab")
+
+    @unittest.skipUnless(shutil.which("swiftc") and shutil.which("node"), "swiftc/node not available (non-macOS CI)")
+    def test_stale_compiled_binary_is_rebuilt_on_source_edit(self):
+        """The T3 finding: an in-run source patch to native_input.swift didn't take effect until the
+        server restarted, because the compiled binary was reused whenever it already existed. This
+        proves the FIX (mtime staleness check) actually recompiles — not just that the code exists."""
+        with tempfile.TemporaryDirectory() as td:
+            work = Path(td) / "work"; work.mkdir()
+            src_copy = Path(td) / "native_input.swift"
+            src_copy.write_text(SWIFT.read_text(encoding="utf-8"), encoding="utf-8")
+
+            def resolve():
+                script = (
+                    f'const core = require({json.dumps(str(CORE))});\n'
+                    f'const h = core.resolveHelper({json.dumps(str(work))}, "", {json.dumps(str(src_copy))});\n'
+                    f'console.log(JSON.stringify(h));\n'
+                )
+                r = subprocess.run(["node", "-e", script], capture_output=True, text=True)
+                self.assertEqual(r.returncode, 0, f"resolveHelper failed:\n{r.stderr}")
+                return json.loads(r.stdout.strip().splitlines()[-1])
+
+            h1 = resolve()
+            mtime1 = os.stat(h1["bin"]).st_mtime
+            # No source change -> the binary must NOT be recompiled (mtime unchanged).
+            h2 = resolve()
+            self.assertEqual(os.stat(h2["bin"]).st_mtime, mtime1, "resolveHelper recompiled an up-to-date binary")
+            # Edit the source and push its mtime forward -> MUST recompile.
+            with src_copy.open("a", encoding="utf-8") as f:
+                f.write("\n// touched for test\n")
+            future = time.time() + 5
+            os.utime(src_copy, (future, future))
+            h3 = resolve()
+            self.assertGreater(os.stat(h3["bin"]).st_mtime, mtime1,
+                                "a stale compiled binary was NOT rebuilt after the source changed (#1443 T3 bug)")
+
+
+class LaunchIntoSpaceTests(unittest.TestCase):
+    """#1443: the harnesses re-activate the current GUI context right before launching
+    WorldOSPlayer.app, so the new window opens on the harness's current Space."""
+
+    def test_shared_lib_defines_activation_helper(self):
+        self.assertTrue(LIB_BOOT.is_file())
+        src = LIB_BOOT.read_text(encoding="utf-8")
+        self.assertIn("activate_current_space_context()", src)
+        self.assertIn("frontmost", src)
+
+    def test_ui_playtest_player_sources_shared_lib_and_activates_before_launch(self):
+        text = (ROOT / "qa" / "ui_playtest_player.sh").read_text(encoding="utf-8")
+        self.assertIn("lib_native_player_boot.sh", text)
+        self.assertIn("activate_current_space_context", text)
+        # force-recompile discipline: the runner deletes a stale compiled binary before launch.
+        self.assertIn('rm -f "$PLAYERDIR/native_input"', text)
+
+    def test_player_smoke_sources_shared_lib_and_activates_before_launch(self):
+        text = SMOKE_RUNNER.read_text(encoding="utf-8")
+        self.assertIn("lib_native_player_boot.sh", text)
+        self.assertIn("activate_current_space_context", text)
+        self.assertIn('rm -f "$PLAYERDIR/native_input"', text)
+
+
+class PlayerSmokeTests(unittest.TestCase):
+    """qa/player_smoke.sh (#1443) — the deterministic, headless-of-agents post-build check."""
+
+    def test_files_exist_and_are_executable(self):
+        for p in (SMOKE_RUNNER, SMOKE_DRIVER, SEED_SMOKE):
+            self.assertTrue(p.is_file(), f"missing {p}")
+        self.assertTrue(os.access(SMOKE_RUNNER, os.X_OK), "player_smoke.sh must be executable")
+
+    def test_seed_smoke_is_sandboxed_and_forces_hits_deterministically(self):
+        src = SEED_SMOKE.read_text(encoding="utf-8")
+        self.assertIn("is_sandbox=True", src)
+        self.assertIn("force_hit = True", src)
+        self.assertIn("_author_camp_grid", src, "must reuse seed_gfx_camp.py's grid, not fork it")
+
+    def test_smoke_drives_the_shared_core_primitives(self):
+        src = SMOKE_DRIVER.read_text(encoding="utf-8")
+        self.assertIn('require("./native_palette_core.js")', src)
+        for name in ("captureWindow", "clickAt"):
+            self.assertIn(name, src)
+
+    def test_smoke_asserts_cell_change_hp_drop_and_motion_liveness(self):
+        text = SMOKE_RUNNER.read_text(encoding="utf-8")
+        self.assertIn("hero cell did not change", text)
+        self.assertIn("goblin HP did not drop", text)
+        self.assertIn("motion-liveness failed", text)
+
+    @unittest.skipUnless(shutil.which("node"), "node not available")
+    def test_driver_reports_glide_frame_distinctness_fields(self):
+        src = SMOKE_DRIVER.read_text(encoding="utf-8")
+        self.assertIn("glide_move_distinct", src)
+        self.assertIn("glide_attack_distinct", src)
 
 
 if __name__ == "__main__":

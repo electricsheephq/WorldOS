@@ -14,6 +14,7 @@
 | Run type | Runner | Tier/cost | Required evidence | Scores surface | Owner doc/skill |
 |---|---|---|---|---|---|
 | fast_gate | `qa/fast_gate.sh` | free, ~30s, EVERY change | pass log (iteration-only, never release evidence) | — (by design) | worldos-dev |
+| player smoke (native build) | `qa/player_smoke.sh` | free, ~30-60s, EVERY player rebuild | smoke_result.json + glide frames in `qa/player_smoke_runs/<run>/` | — (gate; no LLM, no scores_ledger row) | worldos-dev + #1443 |
 | mechanism probe | `qa/mechanism_probe.sh` | ~$1, cue-adjacent PRs | fixture transcript + deterministic ACTED/IGNORED | engine-duo (auto-append) | OPERATIONS QA-econ v2 |
 | combat sprint | `qa/run_combat_sprint.sh` | ~$1.50, combat-adjacent | transcript + mech score + behavioral | engine-duo (auto-append #1414) | worldos-dev |
 | story/mech duo | `qa/run_duo.sh` | ~$6, BATCH/release only, solo-tenant | transcript + 3 lenses + behavioral + infra-health note | engine-duo (auto-append #1414; CONTAMINATED marker on QUOTA/INFRA abort) | worldos-dev + watcher contract |
