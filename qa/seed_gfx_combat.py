@@ -4,13 +4,28 @@
 The playable PoE2 3D-on-2D combat-demo seed. Pins the well-known campaign id the box
 renderer hardcodes (paint_combat_v1.cs / paint_backdrop_p0.cs CID="camp_gfxdemo01"),
 seats a fighter PC + a goblin on a 14x11 grid whose OBSTACLE cells match the crypt's
-painted-prop occluders (pillarL(2,3) / pillarR(11,3) / sarcophagus(7,1)), places
-hero@(6,6) / goblin@(9,5), and starts combat. After this, GET /combat-surface?campaign=
-camp_gfxdemo01 returns real engine cells (positionAuthority='grid') for the READ-ONLY
-renderer to consume + the M-B bridge routes movement around exactly the painted props.
+painted-prop occluders on the deployed `crypt_dense_v1.png` plate (pillarL(2,4) /
+pillarR(9,9) / sarcophagus(3,8)+(4,8) — see #1396), places hero@(6,6) / goblin@(9,5),
+and starts combat. After this, GET /combat-surface?campaign=camp_gfxdemo01 returns real
+engine cells (positionAuthority='grid') for the READ-ONLY renderer to consume + the M-B
+bridge routes movement around exactly the painted props.
 
   # NOTE: uv --directory cd's into servers/engine first, so pass the script by ABSOLUTE path:
   WORLDOS_STATE_DIR=<dir> uv run --directory servers/engine python "$PWD/qa/seed_gfx_combat.py" <state_dir>
+
+#1396 content fix (2026-07-08): the ORIGINAL cells here — pillarL(2,3) / pillarR(11,3) /
+sarcophagus(7,1) — matched the OLDER `crypt_firelit_v2` greybox-conditioned plate
+(`paint_backdrop_p0.cs` OCC_ cells), but the currently-deployed `crypt_dense_v1.png` went
+through a later Gemini polish+populate repaint pass (CANONICAL.md) that recomposed the
+room WITHOUT re-deriving prop cells from the greybox — so the engine's impassable set
+drifted from the paint (#1396: "actor on the sarcophagus"). The cells below were
+RE-CALIBRATED against the deployed plate: the `qa/export_scene_grid.py`-style contract
+camera (orthographic, size=13, `Euler(30,45,0)`, `cellToWorld`) was replayed against the
+real capture frames in `qa/evidence/1397/` + `qa/evidence/1408/` (their logical_cell ->
+screen_bbox/floor_y_px manifests reproduce EXACTLY, pixel-for-pixel, confirming the
+camera model), then the SAME projection was grid-overlaid on `qa/evidence/1392/*.jpg`
+(live captures of `crypt_dense_v1.png`) to read off where the pillars/sarcophagus
+actually sit in the paint. Engine untouched; this is a content-only re-authoring.
 
 Engine = SOLE WRITER: writes only via server.* engine calls + save_campaign. Additive
 (a new seed; touches no existing seed/contract).
@@ -22,15 +37,21 @@ import sys
 
 CID = "camp_gfxdemo01"
 GRID_W, GRID_H = 14, 11
-OBSTACLES = [[2, 3], [11, 3], [7, 1]]  # == paint_backdrop_p0.cs OCC_ cells == engine impassable
+# Prop footprints re-calibrated to the DEPLOYED crypt_dense_v1.png plate (#1396). Each entry is a
+# footprint (list of [c, r] cells); OBSTACLES flattens them for the printed summary below.
+PILLAR_L_CELLS = [[2, 4]]
+PILLAR_R_CELLS = [[9, 9]]
+SARCOPHAGUS_CELLS = [[3, 8], [4, 8]]  # ~2-cell footprint under the painted sarcophagus box
+OBSTACLES = PILLAR_L_CELLS + PILLAR_R_CELLS + SARCOPHAGUS_CELLS
 HERO_CELL = [6, 6]
 GOBLIN_CELL = [9, 5]
 
 
-def _author_crypt_grid(server, cid: str) -> None:
-    """Attach a 14x11 crypt scene_grid whose PROP footprints are EXACTLY the combat OBSTACLES, so the
-    greybox->img2img painted room and the combat pathing share one source (the props ARE the obstacles).
-    Replaces the auto-generated dungeon grid (14..17 wide -> mismatched the fixed 14x11 combat contract)."""
+def _build_crypt_grid(cid: str, location_id: str = ""):
+    """Pure grid builder (no server dependency) — a 14x11 crypt scene_grid whose PROP footprints
+    match the painted crypt_dense_v1.png plate (#1396), so the pathing and the paint agree. Kept
+    separate from `_author_crypt_grid` so it's directly unit-testable (validate_scene_grid +
+    impassable_cells) without spinning up a full campaign/server."""
     from scene_grid import (  # noqa: PLC0415
         SceneGrid, SceneGridSpec, SceneCell, SceneCellDefault, SceneProp, SceneLighting, _layout_hash,
     )
@@ -47,19 +68,22 @@ def _author_crypt_grid(server, cid: str) -> None:
 
     props: list = []
 
-    def _prop(pid: str, kind: str, cell: list, band: str, sil: str) -> None:
-        props.append(SceneProp(id=pid, kind=kind, cells=[(cell[0], cell[1])],
-                               anchor_cell=(cell[0], cell[1]), occluder=True,
+    def _prop(pid: str, kind: str, footprint: list, band: str, sil: str) -> None:
+        anchor = footprint[0]
+        props.append(SceneProp(id=pid, kind=kind, cells=[(c0, r0) for (c0, r0) in footprint],
+                               anchor_cell=(anchor[0], anchor[1]), occluder=True,
                                height_band=band, silhouette=sil))
-        cells.append(SceneCell(c=cell[0], r=cell[1], type="prop", walkable=False, prop_ref=pid))
+        for (c0, r0) in footprint:
+            cells.append(SceneCell(c=c0, r=r0, type="prop", walkable=False, prop_ref=pid))
 
-    # the THREE obstacle props — footprints == OBSTACLES (kept in lock-step with set_grid below).
-    _prop("pillar_l", "stone_pillar", OBSTACLES[0], "tall", "ancient cracked stone pillar")
-    _prop("pillar_r", "stone_pillar", OBSTACLES[1], "tall", "ancient mossy stone pillar")
-    _prop("sarcophagus", "sarcophagus", OBSTACLES[2], "tall", "carved stone sarcophagus, lid ajar")
+    # the THREE obstacle props — footprints == PILLAR_L_CELLS/PILLAR_R_CELLS/SARCOPHAGUS_CELLS
+    # (kept in lock-step with set_grid below via OBSTACLES).
+    _prop("pillar_l", "stone_pillar", PILLAR_L_CELLS, "tall", "ancient cracked stone pillar")
+    _prop("pillar_r", "stone_pillar", PILLAR_R_CELLS, "tall", "ancient mossy stone pillar")
+    _prop("sarcophagus", "sarcophagus", SARCOPHAGUS_CELLS, "tall", "carved stone sarcophagus, lid ajar")
 
     grid = SceneGrid(
-        scene_id=f"{cid}:crypt", location_id="", kind="dungeon",
+        scene_id=f"{cid}:crypt", location_id=location_id, kind="dungeon",
         biome="ancient stone crypt, flickering brazier light",
         grid=SceneGridSpec(cols=cols, rows=rows, cell_size_ft=5, projection="dimetric-2to1"),
         cell_default=SceneCellDefault(type="floor", walkable=True, cost=1),
@@ -68,10 +92,15 @@ def _author_crypt_grid(server, cid: str) -> None:
                                mood="dim torchlit crypt, warm brazier glow, cold blue shadow fill"),
     )
     grid.art.layout_hash = _layout_hash(grid)
+    return grid
 
+
+def _author_crypt_grid(server, cid: str):
+    """Attach a 14x11 crypt scene_grid (see `_build_crypt_grid`) to the campaign's current location.
+    Replaces the auto-generated dungeon grid (14..17 wide -> mismatched the fixed 14x11 combat contract)."""
     c = server._require(cid)
     loc = c.locations.get(c.current_location_id)
-    grid.location_id = loc.id
+    grid = _build_crypt_grid(cid, loc.id)
     loc.scene_grid = grid
     server.save_campaign(c)
     return grid
