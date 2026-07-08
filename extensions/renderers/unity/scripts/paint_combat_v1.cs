@@ -129,7 +129,17 @@ System.Func<string,string,string,int,int,float,Color,string,Vector3> spawn=(fbxP
   if(poseClipPath!=null){ var pas=AssetDatabase.LoadAllAssetsAtPath(poseClipPath); AnimationClip pick=null; foreach(var clipAsset in pas){ var clip=clipAsset as AnimationClip; if(clip==null||clip.name.StartsWith("__")) continue; if(clip.name.ToLower().Contains("idle")){ pick=clip; break; } if(pick==null) pick=clip; } if(pick!=null){ float _pt=Mathf.Clamp01(aiPoseTime)*pick.length; pick.SampleAnimation(go, _pt); sb.AppendLine(nm+" posed by "+pick.name+"@t"+_pt.ToString("F2")); } }
   // #1280: aiPoseYaw adds a per-capture yaw offset so actors can face slightly off-axis onto a more readable
   // silhouette (default 0 = the prior fixed facing).
-  go.transform.rotation=Quaternion.Euler(-90f, cam.transform.eulerAngles.y+180f+aiPoseYaw, 0f);
+  // #1397 (pixel-bbox CONFIRMED on GEX44, Assets/Editor/Probe1397Pixel.cs + Probe1397Fighter.cs): the
+  // "-90 X stand-up" pitch is a LEGACY Z-up correction. This whole cast is authored Y-up
+  // (registry.json gen_recipe: "meshy --moveset (Y-up)") — applying -90X to an already-upright Y-up
+  // pose tips it onto its back. Measured via rendered PIXEL bbox: goblin.fbx (Humanoid avatar)
+  // pitch=-90 -> aspect 1.12 PRONE vs pitch=0 -> 1.31-1.35 UPRIGHT; fighter.fbx (NO Animator/avatar at
+  // all, but SkinnedMeshRenderer-rigged) pitch=0 -> 1.65 UPRIGHT vs pitch=-90 -> 1.39, confirming it is
+  // ALSO Y-up despite not being Humanoid-classified. So the guard is "is this a skinned Meshy Y-up
+  // rig at all" (SkinnedMeshRenderer present), not "is this Humanoid" — -90 is kept only for a
+  // genuinely static/non-skinned mesh (no rig to be mis-pitched).
+  { float _pitchX=go.GetComponentInChildren<SkinnedMeshRenderer>()!=null?0f:-90f;
+    go.transform.rotation=Quaternion.Euler(_pitchX, cam.transform.eulerAngles.y+180f+aiPoseYaw, 0f); }
   var rends=go.GetComponentsInChildren<Renderer>(); foreach(var r in rends){ r.enabled=true; r.shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.On; r.receiveShadows=true; }
   // Grounding uses TRUE posed geometry. SkinnedMeshRenderer.bounds is a conservative/inflated culling AABB whose
   // min.y sits BELOW the real feet -> grounding to min.y=0 leaves the actor FLOATING (owner-observed "goblin walking
@@ -227,14 +237,19 @@ foreach(var o in toks){ var t=o as System.Collections.Generic.Dictionary<string,
   string kind=foe?"monster":"character";
   var aref=resolveAsset(slugify(nm),kind); string fbx=aref[0]; string alb=aref[1]; string anim=aref.Length>2?aref[2]:"";
   float h=foe?4.2f:5.0f; Color ring=foe?new Color(1f,0.13f,0.10f,1f):new Color(0.4f,0.95f,1f,1f);
-  // poseClip: pass the fbx to auto-pose to a NEUTRAL IDLE (spawn prefers an 'idle' clip). Left null for the current
-  // Meshy placeholder cast whose idle/bind clips are non-neutral (crouch/lean) + inflate the height-normalized scale;
-  // the bind pose is the most PROPORTIONATE placeholder here. A properly-rigged demo-cast actor (owner-greenlit) with
-  // a clean idle should pass its fbx/clip so this poses it standing. (Grounding via BakeMesh is correct either way.)
-  // W1 (#1318): AT REST, sample idle from the registry's OWN anim_ref (e.g. hero@moveset.fbx) when the asset has
-  // one, so a rigged demo-cast actor settles into its real idle clip instead of the combat bind pose. Assets with
-  // no registry anim_ref (the static hero.fbx entry documents none) fall back to the prior fbx-as-poseClip.
-  var pos=spawn(fbx,alb,restMode?(string.IsNullOrEmpty(anim)?fbx:anim):null,cx,cy,h,ring,"Actor_"+tid);
+  // poseClip: pass the fbx to auto-pose to a NEUTRAL IDLE (spawn prefers an 'idle' clip).
+  // #1397 (probe-ladder CONFIRMED on GEX44, Assets/Editor/Probe1397.cs): the RAW BIND POSE this
+  // combat path previously rendered (poseClipPath left null, on the theory bind was "the most
+  // proportionate placeholder") measures PRONE/TILTED — goblin.fbx world-bounds aspect (vert/horiz)
+  // 0.67 — while the SAME fbx's embedded Idle clip sampled at t=0 measures UPRIGHT (aspect 1.32).
+  // That prior assumption is falsified by the measurement, so combat mode now poses to Idle on
+  // EVERY spawn, same as restMode already did. This is a ONE-TIME SampleAnimation bake at spawn (no
+  // live Animator component, no Update() loop), so the flagged GPU/CPU skin desync from driving a
+  // live controller during a synchronous multi-actor capture (paint_combat_replay_v1.cs's note on
+  // this) does not apply — grounding via BakeMesh re-measures the POSED bounds either way.
+  // W1 (#1318): AT REST, prefer the registry's OWN anim_ref (e.g. hero@moveset.fbx) over the mesh
+  // fbx when the asset has one, so a rigged demo-cast actor settles into its real idle clip.
+  var pos=spawn(fbx,alb,(restMode && !string.IsNullOrEmpty(anim))?anim:fbx,cx,cy,h,ring,"Actor_"+tid);
   if(nm!=null) posByName[nm]=pos; spawned++; celldbg+=" "+nm+"("+team+")@"+cx+","+cy;
 }
 if(missingActor){ sb.AppendLine("ABORT capture — a required actor prefab was missing (no PNG written)"); return sb.ToString(); }

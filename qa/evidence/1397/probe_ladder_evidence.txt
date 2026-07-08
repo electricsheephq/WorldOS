@@ -1,0 +1,52 @@
+#1397 probe-ladder evidence (goblin.fbx, chars_v2), run via Assets/Editor/Probe1397.cs on GEX44:
+
+[R1397 rung1] Animator present. runtimeAnimatorController=NULL (renders import rest pose) avatar=goblinAvatar isHuman=True
+[R1397 rung1] UNPOSED (renderer's actual spawn shape) world bounds: size=(1.64,1.10,1.57) vert=1.10 horiz=1.64 aspect(v/h)=0.67 -> PRONE/TILTED
+[R1397 rung2] embedded clips in goblin.fbx: Attack, Idle, Walk
+[R1397 rung2] IDLE-CLIP-SAMPLED (t=0, clip='Idle') world bounds: size=(1.21,1.60,1.10) vert=1.60 horiz=1.21 aspect(v/h)=1.32 -> UPRIGHT
+[R1397 rung2] VERDICT: unposed_aspect=0.67 idle_aspect=1.32 -> MIXED: unposed differs from idle-clip-sampled -> assigning idle-clip-at-spawn (rung1 fix) should resolve it
+[R1397 rung3] ModelImporter: animationType=Human bakeAxisConversion=False importAnimation=True avatarSetup=CreateFromThisModel useFileScale=True globalScale=1
+[R1397] done
+
+CONFIRMED CAUSE: rung 1 (no Animator controller / no default pose assigned at spawn -> renders the
+raw import BIND POSE, which measures prone/tilted). Rung 2 proves the fix is safe: the embedded Idle
+clip itself is upright (aspect 1.32 vs bind's 0.67) so no asset regeneration is needed. Rung 3 (import
+axis) shows nothing anomalous (bakeAxisConversion=False, standard Generic/Human Y-up import).
+
+--- ROUND 2: coordinator deep-analysis + pixel-probe confirmation (superseding round 1) ---
+Root cause was NOT "no default pose" (round 1's rung-1 read was an artifact of measuring with
+-90X already applied to BOTH bind and idle instances). Real cause: the hardcoded -90 X stand-up
+rotation is a legacy Z-up hack, wrongly applied to this Y-up cast (registry.json gen_recipe:
+"meshy --moveset (Y-up)" for every character, "meshy:humanoid moveset" for goblin).
+
+Assets/Editor/Probe1397Pixel.cs (pixel bbox from actual rendered RenderTexture, goblin.fbx):
+  sample_neg90:       aspect(h/w)=1.12 -> PRONE/TILTED
+  sample_0:           aspect(h/w)=1.31 -> UPRIGHT
+  nosample_0:         aspect(h/w)=1.35 -> UPRIGHT
+  sample_0_animmode:  aspect(h/w)=1.31 -> UPRIGHT
+
+Assets/Editor/Probe1397Fighter.cs spot-check (fighter.fbx / Aldric): NO Animator/avatar at all
+(avatarSetup=NoAvatar) yet HAS a SkinnedMeshRenderer + embedded "Armature|Armature|Idle|baselayer"
+clip. pitch=-90 -> aspect 1.39; pitch=0 -> aspect 1.65 (more upright). Confirms fighter.fbx is ALSO
+Y-up despite not being Humanoid-classified -> guard broadened from "Animator.avatar.isHuman" to
+"SkinnedMeshRenderer present" (covers both goblin and fighter correctly).
+
+FIX (both renderer files, all 4 call sites): standUpPitchX(go) = 0 if a SkinnedMeshRenderer is
+present, else -90 (legacy correction preserved for any future non-skinned/static asset).
+
+LIVE VALIDATION (crypt_dense_v1, paint_combat_replay_v1.cs, full fix): both actors visually
+UPRIGHT in AFTER_full_fix_final.png (qa/evidence/1397/AFTER_full_fix_final.jpg). screen_bbox is
+now REAL (projected from baked vertices via cam.WorldToViewportPoint, replacing the old
+0.22*height formula that always reported ~2.27 aspect regardless of true pose).
+qa/visual_pregate.py verdict (recalibrated min_aspect_ratio 1.25, from live-measured upright range
+1.297-1.71 vs prone ~1.12):
+  pose-uprightness: PASS both actors (1.71, 1.30)
+  floor-contact: FAIL (+74px, +47px) -- NOT a grounding regression: the OLD synthetic bbox made
+    this check a mathematical tautology (bbox bottom == floor_y_px by construction, always
+    "0.0px"). The REAL bbox now exposes a pre-existing #1284 approximation gap: floor_y_px is
+    projected at the actor's CENTER x/z, but under the oblique dimetric camera a tilted floor
+    plane's screen-Y is NOT constant across x/z, so an off-center vertex (e.g. a foot) can
+    legitimately differ from the center-based floor reference. World-space grounding
+    (bb.min.y == FLOOR_Y) is untouched and exact. Flagging as a follow-up, not fixing here.
+  screen-scale: FAIL for Aldric only (50.2% of frame height) -- a pre-existing large-scale /
+    foreground-token-position framing issue, unrelated to pose, present before this fix too.
