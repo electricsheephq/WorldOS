@@ -115,6 +115,33 @@ var ringT=new Texture2D(256,256,TextureFormat.RGBA32,false); ringT.wrapMode=Text
 
 // actor spawner (generalizes the spike's hero block): load fbx, stand up, scale to height, place at cell, foot-snap, albedo, AO, ring.
 bool missingActor=false;
+// #1408 (ports #1392's replay-lane grounding to this REST/combat-still driver): feet anchor to a
+// per-scene FLOOR-Y CONSTANT (default 0), NOT a raycast against prop meshes — IDENTICAL semantics to
+// paint_combat_replay_v1.cs's FLOOR_Y. _repSidecar carries each placed actor's grounded feet/head/baked
+// verts so the manifest writer below (after the token loop) can emit a qa/visual_pregate.py-ready
+// per-actor manifest (real projected screen_bbox — #1397's fix for the pose-uprightness pre-gate's
+// blind spot — not a synthesized formula).
+float FLOOR_Y=0f;
+var _repSidecar=new System.Collections.Generic.List<System.Collections.Generic.Dictionary<string,object>>();
+// capture resolution decided HERE (not at the tail) so the manifest projection below and the final
+// RenderTexture capture share the exact same W/Hh — mirrors the replay's ordering.
+int W=1920,Hh=Mathf.RoundToInt(1920f*(float)bdTex.height/bdTex.width);
+// #1408 humanoid idle RETARGET donor: a clipless cast (registry anim_ref FBX not yet generated for this
+// asset — the "cast variety" asset lane is separate, #1408) leaves poseClipPath's SampleAnimation a
+// no-op below, so the actor renders its raw bind pose (T-pose for this Meshy humanoid rig family).
+// Resolve the donor FBX from the registry's OWN "goblin" entry (self-contained read, mirroring this
+// file's PLATE resolution above rather than depending on the resolveAsset block declared further down)
+// so a future donor swap is a registry edit, zero renderer edit; goblin.fbx is also this file's existing
+// hardcoded monster-default fallback. goblin.fbx carries its OWN embedded Idle clip on a HUMANOID avatar
+// (#1397-confirmed: upright, not the prone/tilted bind). Loaded ONCE, reused for every clipless actor.
+string _donorFbx="Assets/chars_v2/goblin/goblin.fbx";
+try { var _rp2="/home/unity/worldos-unity/registry.json"; if(System.IO.File.Exists(_rp2)){ var _rr2=MiniJson.Parse(System.IO.File.ReadAllText(_rp2)) as System.Collections.Generic.Dictionary<string,object>; var _as2=(_rr2!=null&&_rr2.ContainsKey("assets"))?_rr2["assets"] as System.Collections.Generic.Dictionary<string,object>:null; var _gob=(_as2!=null&&_as2.ContainsKey("goblin"))?_as2["goblin"] as System.Collections.Generic.Dictionary<string,object>:null; if(_gob!=null && _gob.ContainsKey("model_ref") && _gob["model_ref"] is string) _donorFbx=(string)_gob["model_ref"]; } } catch {}
+AnimationClip _donorIdleClip=null; bool _donorIdleTried=false;
+System.Func<AnimationClip> loadDonorIdle=()=>{
+  if(_donorIdleTried) return _donorIdleClip; _donorIdleTried=true;
+  foreach(var _a in AssetDatabase.LoadAllAssetsAtPath(_donorFbx)){ var _cl=_a as AnimationClip; if(_cl==null||_cl.name.StartsWith("__")) continue; if(_cl.name.ToLower().Contains("idle")){ _donorIdleClip=_cl; break; } if(_donorIdleClip==null) _donorIdleClip=_cl; }
+  return _donorIdleClip;
+};
 System.Func<string,string,string,int,int,float,Color,string,Vector3> spawn=(fbxPath,albedoPath,poseClipPath,cx,cy,height,ringCol,nm)=>{
   var prefab=AssetDatabase.LoadAssetAtPath<GameObject>(fbxPath); if(prefab==null){ sb.AppendLine("MISSING "+fbxPath); missingActor=true; return cellToWorld(cx,cy); }
   var old=GameObject.Find(nm); if(old!=null) UnityEngine.Object.DestroyImmediate(old);
@@ -126,7 +153,37 @@ System.Func<string,string,string,int,int,float,Color,string,Vector3> spawn=(fbxP
   // #1280 pose variety: sample the pose clip at aiPoseTime (0..1 of clip length) instead of always f0, so captures can
   // land on a readable ACTION-pose peak (the FELT panel's "stiff mid-leap / static" note) rather than one frozen frame.
   // Default aiPoseTime=0 reproduces the prior @f0 sampling exactly.
-  if(poseClipPath!=null){ var pas=AssetDatabase.LoadAllAssetsAtPath(poseClipPath); AnimationClip pick=null; foreach(var clipAsset in pas){ var clip=clipAsset as AnimationClip; if(clip==null||clip.name.StartsWith("__")) continue; if(clip.name.ToLower().Contains("idle")){ pick=clip; break; } if(pick==null) pick=clip; } if(pick!=null){ float _pt=Mathf.Clamp01(aiPoseTime)*pick.length; pick.SampleAnimation(go, _pt); sb.AppendLine(nm+" posed by "+pick.name+"@t"+_pt.ToString("F2")); } }
+  bool posedByClip=false;
+  if(poseClipPath!=null){ var pas=AssetDatabase.LoadAllAssetsAtPath(poseClipPath); AnimationClip pick=null; foreach(var clipAsset in pas){ var clip=clipAsset as AnimationClip; if(clip==null||clip.name.StartsWith("__")) continue; if(clip.name.ToLower().Contains("idle")){ pick=clip; break; } if(pick==null) pick=clip; } if(pick!=null){ float _pt=Mathf.Clamp01(aiPoseTime)*pick.length; pick.SampleAnimation(go, _pt); sb.AppendLine(nm+" posed by "+pick.name+"@t"+_pt.ToString("F2")); posedByClip=true; } }
+  // #1408 humanoid idle RETARGET for clipless casts (issue #1408 item 2): the above no-ops when
+  // poseClipPath has no usable embedded clip (the anim_ref moveset FBX not yet generated for this
+  // asset). If this actor's own Animator carries a HUMANOID avatar, sample the DONOR idle clip
+  // (goblin.fbx's embedded Idle) onto THIS avatar via a one-shot PlayableGraph evaluate — Unity's
+  // cross-skeleton Humanoid retargeting works because both rigs are avatar-classified Humanoid, even
+  // though their skeletons differ. No Play mode, no persistent controller asset, no live ticking after
+  // the bake (graph is destroyed immediately) — same one-time-pose-then-static discipline as the
+  // SampleAnimation call above. Non-humanoid / already clip-posed actors are untouched.
+  if(!posedByClip){
+    var _anim=go.GetComponentInChildren<Animator>();
+    if(_anim!=null && _anim.avatar!=null && _anim.avatar.isHuman){
+      var _donor=loadDonorIdle();
+      if(_donor!=null){
+        // A one-shot PlayableGraph evaluate — Unity's cross-skeleton Humanoid retargeting: both rigs
+        // are avatar-classified Humanoid, so a donor clip authored on a DIFFERENT skeleton still maps
+        // onto this actor's own avatar. SetSourcePlayable is an EXTENSION method (UnityEngine.Playables.
+        // PlayableOutputExtensions) — called via its fully-qualified STATIC form (not `.` sugar) so it
+        // resolves with NO `using UnityEngine.Playables;` needed in this wrapped body. (AnimationPlayableUtilities,
+        // the higher-level one-liner, isn't referenced by this project's assemblies — CS0234, tried first.)
+        var _graph=UnityEngine.Playables.PlayableGraph.Create("HumanoidIdleRetarget_"+nm);
+        var _clipPlayable=UnityEngine.Animations.AnimationClipPlayable.Create(_graph,_donor);
+        var _outp=UnityEngine.Animations.AnimationPlayableOutput.Create(_graph,"Output",_anim);
+        UnityEngine.Playables.PlayableOutputExtensions.SetSourcePlayable(_outp,_clipPlayable);
+        _graph.Evaluate(0f);
+        _graph.Destroy();
+        sb.AppendLine(nm+" clipless humanoid -> retargeted donor idle ("+_donor.name+")");
+      } else { sb.AppendLine(nm+" clipless humanoid but NO donor idle clip found — bind pose kept"); }
+    }
+  }
   // #1280: aiPoseYaw adds a per-capture yaw offset so actors can face slightly off-axis onto a more readable
   // silhouette (default 0 = the prior fixed facing).
   // #1397 (pixel-bbox CONFIRMED on GEX44, Assets/Editor/Probe1397Pixel.cs + Probe1397Fighter.cs): the
@@ -140,7 +197,12 @@ System.Func<string,string,string,int,int,float,Color,string,Vector3> spawn=(fbxP
   // genuinely static/non-skinned mesh (no rig to be mis-pitched).
   { float _pitchX=go.GetComponentInChildren<SkinnedMeshRenderer>()!=null?0f:-90f;
     go.transform.rotation=Quaternion.Euler(_pitchX, cam.transform.eulerAngles.y+180f+aiPoseYaw, 0f); }
-  var rends=go.GetComponentsInChildren<Renderer>(); foreach(var r in rends){ r.enabled=true; r.shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.On; r.receiveShadows=true; }
+  var rends=go.GetComponentsInChildren<Renderer>(); foreach(var r in rends){ r.enabled=true; r.shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.On; r.receiveShadows=true;
+    // #1408 (ports #1392's replay-lane fix): force the skinned mesh to re-skin from its LIVE bone
+    // transforms on every render + regardless of culling bounds — IDENTICAL to paint_combat_replay_v1.cs.
+    // Without this, the editor's synchronous multi-actor capture can render an actor's STALE GPU skin
+    // even though its CPU bones (and the retarget/SampleAnimation bake above) are already posed correctly.
+    var smrF=r as SkinnedMeshRenderer; if(smrF!=null){ smrF.updateWhenOffscreen=true; smrF.forceMatrixRecalculationPerRender=true; } }
   // Grounding uses TRUE posed geometry. SkinnedMeshRenderer.bounds is a conservative/inflated culling AABB whose
   // min.y sits BELOW the real feet -> grounding to min.y=0 leaves the actor FLOATING (owner-observed "goblin walking
   // in the air"). BakeMesh snapshots the ACTUAL posed verts (renderer-local space); transform by localToWorldMatrix
@@ -150,7 +212,22 @@ System.Func<string,string,string,int,int,float,Color,string,Vector3> spawn=(fbxP
   Bounds bb=measure(); float curH=bb.size.y>0.001f?bb.size.y:1f; float s=height/curH; go.transform.localScale=go.transform.localScale*s;
   // ground + CENTER on the cell: snap feet to Y=0 AND align bounds-center X/Z to the cell (fixes the critic's
   // "actor decoupled from its ring" — meshes whose geometry is offset from their transform origin drifted off-ring).
-  var p=cellToWorld(cx,cy); go.transform.position=p; bb=measure(); Vector3 ctr=bb.center; go.transform.position+=new Vector3(p.x-ctr.x,-bb.min.y,p.z-ctr.z);
+  var p=cellToWorld(cx,cy); go.transform.position=p; bb=measure(); Vector3 ctr=bb.center;
+  // #1408 (#1392 port): anchor feet to FLOOR_Y (a per-scene constant; NOT a raycast against prop
+  // meshes) — IDENTICAL to paint_combat_replay_v1.cs's grounding.
+  go.transform.position+=new Vector3(p.x-ctr.x, FLOOR_Y-bb.min.y, p.z-ctr.z);
+  bb=measure();   // re-read the grounded bounds for the honest feet/head floor-contact record (mirrors replay)
+  // #1408 item 3: record this actor's grounded feet/head + baked world verts for the post-loop manifest
+  // writer (real projected screen_bbox, per #1397's fix) — render_cell==logical_cell here (this driver
+  // has no #1284 prop-cell nudge, unlike the replay lane), documented honestly rather than faked.
+  { var _sd=new System.Collections.Generic.Dictionary<string,object>();
+    _sd["id"]=nm; _sd["logical_cell"]=new int[]{cx,cy}; _sd["render_cell"]=new int[]{cx,cy};
+    _sd["feetW"]=new Vector3(bb.center.x,bb.min.y,bb.center.z);
+    _sd["headW"]=new Vector3(bb.center.x,bb.max.y,bb.center.z);
+    var _vertsW=new System.Collections.Generic.List<Vector3>();
+    foreach(var rv in rends){ var smrV=rv as SkinnedMeshRenderer; if(smrV==null) continue; var bkV=new Mesh(); smrV.BakeMesh(bkV); var vsV=bkV.vertices; var mV=smrV.transform.localToWorldMatrix; foreach(var vv in vsV) _vertsW.Add(mV.MultiplyPoint3x4(vv)); UnityEngine.Object.DestroyImmediate(bkV); }
+    _sd["vertsW"]=_vertsW;
+    _repSidecar.Add(_sd); }
   if(albedoPath!=null){ var al=AssetDatabase.LoadAssetAtPath<Texture2D>(albedoPath); if(al!=null){ var mm=new Material(Shader.Find("Standard")); mm.mainTexture=al; mm.SetFloat("_Glossiness",0.2f); mm.SetFloat("_Metallic",0f);
     // #1280 scene-light take: the FELT panel read actors as "flatly/differently lit — don't sit in the scene light".
     // Approximate "lit by the scene" WITHOUT re-lighting geometry: nudge the albedo tint toward the plate's warm
@@ -171,11 +248,11 @@ System.Func<string,string,string,int,int,float,Color,string,Vector3> spawn=(fbxP
   // match the view -- owner-observed "the ring is off, like an oval, not matching the camera". Let the camera do it.)
   // #1280: contact-shadow footprint scales with aiShadowScale (default 2.0 = unchanged). A larger, softer blob spreads
   // the grounding AO so the actor reads planted, not pasted.
-  var ao=GameObject.CreatePrimitive(PrimitiveType.Quad); ao.name=nm+"_AO"; UnityEngine.Object.DestroyImmediate(ao.GetComponent<Collider>()); ao.transform.position=new Vector3(p.x,0.04f,p.z); ao.transform.localEulerAngles=new Vector3(90f,0f,0f); ao.transform.localScale=new Vector3(aiShadowScale,aiShadowScale,1f); var aom=new Material(Shader.Find("Unlit/Transparent")); aom.mainTexture=blobT; aom.renderQueue=1950; ao.GetComponent<Renderer>().sharedMaterial=aom; ao.GetComponent<Renderer>().shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off;
+  var ao=GameObject.CreatePrimitive(PrimitiveType.Quad); ao.name=nm+"_AO"; UnityEngine.Object.DestroyImmediate(ao.GetComponent<Collider>()); ao.transform.position=new Vector3(p.x,FLOOR_Y+0.04f,p.z); ao.transform.localEulerAngles=new Vector3(90f,0f,0f); ao.transform.localScale=new Vector3(aiShadowScale,aiShadowScale,1f); var aom=new Material(Shader.Find("Unlit/Transparent")); aom.mainTexture=blobT; aom.renderQueue=1950; ao.GetComponent<Renderer>().sharedMaterial=aom; ao.GetComponent<Renderer>().shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off;
   // #1280: optional tighter CORE shadow directly under the feet (only when coreT was built, i.e. aiCoreShadow>0).
   if(coreT!=null){ var coreGo=GameObject.Find(nm+"_Core"); if(coreGo!=null) UnityEngine.Object.DestroyImmediate(coreGo);
-    var core=GameObject.CreatePrimitive(PrimitiveType.Quad); core.name=nm+"_Core"; UnityEngine.Object.DestroyImmediate(core.GetComponent<Collider>()); core.transform.position=new Vector3(p.x,0.05f,p.z); core.transform.localEulerAngles=new Vector3(90f,0f,0f); core.transform.localScale=new Vector3(aiShadowScale*aiCoreScale,aiShadowScale*aiCoreScale,1f); var cm=new Material(Shader.Find("Unlit/Transparent")); cm.mainTexture=coreT; cm.renderQueue=1951; core.GetComponent<Renderer>().sharedMaterial=cm; core.GetComponent<Renderer>().shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off; }
-  var rg=GameObject.CreatePrimitive(PrimitiveType.Quad); rg.name=nm+"_Ring"; UnityEngine.Object.DestroyImmediate(rg.GetComponent<Collider>()); rg.transform.position=new Vector3(p.x,0.06f,p.z); rg.transform.localEulerAngles=new Vector3(90f,0f,0f); rg.transform.localScale=new Vector3(2.6f,2.6f,1f); var rgm=new Material(Shader.Find("Unlit/Transparent")); rgm.mainTexture=ringT; rgm.color=ringCol; rgm.renderQueue=1955; rg.GetComponent<Renderer>().sharedMaterial=rgm; rg.GetComponent<Renderer>().shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off;
+    var core=GameObject.CreatePrimitive(PrimitiveType.Quad); core.name=nm+"_Core"; UnityEngine.Object.DestroyImmediate(core.GetComponent<Collider>()); core.transform.position=new Vector3(p.x,FLOOR_Y+0.05f,p.z); core.transform.localEulerAngles=new Vector3(90f,0f,0f); core.transform.localScale=new Vector3(aiShadowScale*aiCoreScale,aiShadowScale*aiCoreScale,1f); var cm=new Material(Shader.Find("Unlit/Transparent")); cm.mainTexture=coreT; cm.renderQueue=1951; core.GetComponent<Renderer>().sharedMaterial=cm; core.GetComponent<Renderer>().shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off; }
+  var rg=GameObject.CreatePrimitive(PrimitiveType.Quad); rg.name=nm+"_Ring"; UnityEngine.Object.DestroyImmediate(rg.GetComponent<Collider>()); rg.transform.position=new Vector3(p.x,FLOOR_Y+0.06f,p.z); rg.transform.localEulerAngles=new Vector3(90f,0f,0f); rg.transform.localScale=new Vector3(2.6f,2.6f,1f); var rgm=new Material(Shader.Find("Unlit/Transparent")); rgm.mainTexture=ringT; rgm.color=ringCol; rgm.renderQueue=1955; rg.GetComponent<Renderer>().sharedMaterial=rgm; rg.GetComponent<Renderer>().shadowCastingMode=UnityEngine.Rendering.ShadowCastingMode.Off;
   sb.AppendLine(nm+" x"+s.ToString("F2")+" @cell("+cx+","+cy+") rends="+rends.Length);
   return go.transform.position;
 };
@@ -254,6 +331,41 @@ foreach(var o in toks){ var t=o as System.Collections.Generic.Dictionary<string,
 }
 if(missingActor){ sb.AppendLine("ABORT capture — a required actor prefab was missing (no PNG written)"); return sb.ToString(); }
 sb.AppendLine("LIVE "+CID+": spawned "+spawned+" actors:"+celldbg);
+
+// ---- #1408 floor-contact MANIFEST (ports #1392/#1397's replay-lane manifest to this driver): project
+// each placed actor's grounded feet/head + baked verts to px at the CAPTURE resolution and emit a
+// qa/visual_pregate.py-ready manifest — the rest path was previously NOT pre-gate measurable at all
+// (issue #1408 item 3). Real projected screen_bbox (every baked vertex, post-grounding), not a
+// synthesized half=0.22*height formula (#1397 found that blind to true pose). floor_y_px is the SAME
+// single-center-point approximation #1402 flagged as advisory-only under the oblique camera — kept
+// identical to the replay lane (a real fix for #1402 is a separate follow-up, not this issue). -------
+{
+  string OUTDIR="/home/unity/worldos-unity/Captures-Durable"; System.IO.Directory.CreateDirectory(OUTDIR);
+  float _pa2=cam.aspect; var _pt2=cam.targetTexture; cam.aspect=(float)W/Hh;
+  System.Func<Vector3,float[]> w2p=(w)=>{ var vp=cam.WorldToViewportPoint(w); return new float[]{ vp.x*W, (1f-vp.y)*Hh }; };
+  System.Func<object,string> _jesc=(o)=>{ var st=o==null?"":o.ToString(); return st.Replace("\\","\\\\").Replace("\"","\\\"").Replace("\n"," ").Replace("\r"," "); };
+  var msb=new System.Text.StringBuilder();
+  msb.Append("{\n  \"frame_w\":"+W+", \"frame_h\":"+Hh+",\n");
+  msb.Append("  \"checks\": {\"floor_contact\": {\"tolerance_px\": 8}, \"screen_scale\": {\"min_height_frac\":0.03,\"max_height_frac\":0.45}, \"pose_uprightness\": {\"min_aspect_ratio\":1.25}},\n");
+  msb.Append("  \"actors\": [\n");
+  for(int i=0;i<_repSidecar.Count;i++){ var d=_repSidecar[i];
+    var lc=(int[])d["logical_cell"]; var rc2=(int[])d["render_cell"];
+    var fW=(Vector3)d["feetW"];
+    var floorPx=w2p(new Vector3(fW.x,FLOOR_Y,fW.z));
+    var vertsW=(System.Collections.Generic.List<Vector3>)d["vertsW"];
+    float bx0=float.MaxValue,by0=float.MaxValue,bx1=float.MinValue,by1=float.MinValue;
+    foreach(var vw in vertsW){ var sp=w2p(vw); if(sp[0]<bx0)bx0=sp[0]; if(sp[0]>bx1)bx1=sp[0]; if(sp[1]<by0)by0=sp[1]; if(sp[1]>by1)by1=sp[1]; }
+    if(vertsW.Count==0){ var hW=(Vector3)d["headW"]; var fp0=w2p(fW); var hp0=w2p(hW); bx0=fp0[0]-4f; bx1=fp0[0]+4f; by0=hp0[1]; by1=fp0[1]; } // fallback: no baked verts (non-skinned actor)
+    msb.Append("    {\"name\":\""+_jesc(d["id"])+"\",\"logical_cell\":["+lc[0]+","+lc[1]+"],\"expected_cell\":["+rc2[0]+","+rc2[1]+"],");
+    msb.Append("\"screen_bbox\":["+Mathf.Round(bx0)+","+Mathf.Round(by0)+","+Mathf.Round(bx1)+","+Mathf.Round(by1)+"],");
+    msb.Append("\"floor_y_px\":"+Mathf.Round(floorPx[1])+"}");
+    msb.Append(i<_repSidecar.Count-1?",\n":"\n");
+  }
+  msb.Append("  ]\n}\n");
+  System.IO.File.WriteAllText(OUTDIR+"/combat_actors_manifest.json", msb.ToString());
+  cam.aspect=_pa2; cam.targetTexture=_pt2;
+  sb.AppendLine("wrote floor-contact manifest -> "+OUTDIR+"/combat_actors_manifest.json ("+_repSidecar.Count+" actors)");
+}
 
 // ACTIVE-ROOM VIEWPORT FRAMING (#1281, FELT gap). Multi-room plates read as a "level-select diorama" — the
 // whole painted layout floats in void because the fixed contract camera (ortho 13) frames the ENTIRE plate,
@@ -379,7 +491,8 @@ if(dmgN>0 && !string.IsNullOrEmpty(dmgTarget) && posByName.ContainsKey(dmgTarget
 }
 
 // capture
-int W=1920,Hh=Mathf.RoundToInt(1920f*(float)bdTex.height/bdTex.width); var rt=new RenderTexture(W,Hh,24,RenderTextureFormat.ARGB32); rt.Create();
+// W/Hh declared earlier (before spawn) so the #1408 manifest projection above shares this exact resolution.
+var rt=new RenderTexture(W,Hh,24,RenderTextureFormat.ARGB32); rt.Create();
 float pa=cam.aspect; var pt=cam.targetTexture; cam.targetTexture=rt; cam.aspect=(float)W/Hh; cam.Render();
 var pAct=RenderTexture.active; RenderTexture.active=rt; var t2=new Texture2D(W,Hh,TextureFormat.RGB24,false); t2.ReadPixels(new Rect(0,0,W,Hh),0,0); t2.Apply(); RenderTexture.active=pAct; cam.targetTexture=pt; cam.aspect=pa;
 System.IO.Directory.CreateDirectory("/home/unity/worldos-unity/Captures-Durable");
