@@ -4,32 +4,35 @@
 > a bootstrapping agent reads after OPERATIONS.md. Keep it under a screen. History belongs in
 > git, not here.
 
-_Last updated: 2026-07-08 (UTC) — driver live; charter #1386 active; bridge recovered._
+_Last updated: 2026-07-09 (UTC) — Goal Mode active; W5 night._
 
 ## Active sprint
 
-- **Act I spine:** S2 (#1309) is next up — entry gate #1302 SATISFIED (render-delivery decided:
-  Unity = game surface). S1 shipped as **v1.0.5 "Engagement Engined"** (gate3d 4.2/4.1/GREEN,
-  engine-release bar). S3 charter = #1310. S4-S10: charters not yet written (writing the next
-  one from PRODUCT-ROADMAP.md is queue work, not a stop).
-- **Act II:** W1-W4 + HV1-HV5 merged; W5 (Unity player tier, #1322) remains — box lane.
-  ACTIVE charter: **#1386** (Rendered Felt: #1284 → rendered-rest-demo → W5a → HV follow-ups).
+- **ACTIVE charter: #1386** (label `active-sprint`) — Act II close-out, "Rendered Felt".
+  Items 1 (#1284 grounding), 2 (#1397 pose), 5 (#1378 + extractor pass 2) CLOSED.
+  Item 3 (#1398 rest-scene demo): composed scene at panel 5.88 (frames in qa/evidence/1423/) —
+  owner-taste gate pending; polish trackers #1403 (framing) + Meshy-atlas quality remain.
+  Item 4 (W5): **the macOS player RUNS on the Mac** — build+handoff+shaders+live client merged
+  (PRs #1430/#1432/#1435; evidence felt-frames/w5a-smoke/). Remaining: **#1436 W5c** runtime
+  spawning (IN FLIGHT) + T3 harness extension, then the T3 gate run closes Act II.
+- **Next charters queued:** S2 (#1309, entry gate satisfied) → S3 (#1310).
 
 ## Live lanes
 
-- **#1284 actor grounding v2** — PR #1392 open; deterministic floor-contact PASS (−55px → 0px); live-frame acceptance capture in flight (bridge re-armed per BOX.md recovery).
-- **Next box lanes (in order):** rendered rest-scene demo (the real visual bar) → W5a player
-  build (packet on #1322).
-- **Flywheel:** nightly harvest accumulates; extractor quality pass 2 targets the 3.9→4.0 quest
-  gap (flywheel premise still UNPROVEN — content-quality-blocked, not instrument-blocked).
-- **Open PRs to shepherd:** #1376 (demo reel), #1379 (batch 2).
+- **#1436 W5c runtime spawning** — coder on the box (claim via #1386).
+- **Flywheel:** quest-authoring cues LIVE (#1409); visual promotion gate LIVE (two-tier,
+  calibrated — docs/roadmap/VISUAL-PROMOTION-GATE-DECISION.md); backdrop cadence restarted
+  (camp_clearing_night adopted tier=stable; market_square honestly REJECTED at delta −5.0,
+  needs iteration); demo cast at ~10 (wave-2 monsters merged #1428).
 
 ## Blockers
 
-None. (A blocker is only real with a fresh probe row in docs/ACTIVE-GOAL.md — see Blocker Law.)
+None. (Blocker Law: fresh-probe row in docs/ACTIVE-GOAL.md or it isn't a blocker.)
 
 ## Known frictions (not blockers)
 
-- Repo-wide CI auto-merge HANGS — use `gh pr merge --admin --squash` once green + threads
-  resolved (root-cause issue filed; see OPERATIONS.md "Merging").
-- Ruler duos must run SOLO-TENANT (co-tenancy contaminated 2 of 3 gate runs).
+- Auto-merge hangs repo-wide → `gh pr merge --admin --squash` after green+resolved (#1389).
+- qa-release-gate-tests was RED repo-wide (stale ruler pin) — FIXED by #1431; if it re-reds,
+  check SCORING_CONFIG_FILES drift first.
+- Ruler duos: SOLO-TENANT only; scorer keychain token may need re-derivation per
+  reference_claude_p_automation_auth.
