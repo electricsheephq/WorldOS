@@ -60,3 +60,6 @@ List the checks you ran.
 ## Notes For Next Agent
 
 - Exact next action:
+
+---
+_Merging note: required checks stuck at "expected/pending" with mergeState BLOCKED is the known repo-wide auto-merge hang (#1389), NOT a CI failure. Procedure: real checks green + threads resolved → `gh pr merge <n> --admin --squash` (docs/OPERATIONS.md "Merging")._

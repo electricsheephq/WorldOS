@@ -22,7 +22,7 @@ unexecuted, citing a "box blocker" that was never verified (the box was up the w
 
 ## THE QUEUE
 
-The work queue is the open **`sprint-charter`-labeled issues, in sprint order** (S2, S3, … per
+The work queue is the open **`sprint-charter`-labeled issues, in sprint order** — the current head carries the **`active-sprint`** label (exactly one issue; move it at every transition) — (S2, S3, … per
 PRODUCT-ROADMAP.md §Act I; interleaved Act II/box charters ride the same label).
 
 - Closing charter N (with evidence on the issue) **pulls charter N+1**.
