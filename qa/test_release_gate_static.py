@@ -274,6 +274,24 @@ class QuotaCircuitBreakerStaticContractTests(unittest.TestCase):
         # so a 429 short-circuits instead of burning the 3 attempts.
         self.assertLess(source.index('[ "$api_err" = "429" ]'), source.index('if [ ! -s "$RAW" ]; then'))
 
+    def test_score_sh_has_auth_expiry_fast_fail_arm(self):
+        # #1404: score.sh must (1) PROACTIVELY detect an expired DERIVED credential (compare the
+        # keychain/creds-file expiresAt to now) and fail fast with a distinct {error:scorer_auth_expired}
+        # sentinel + exit rc=2, and (2) fail fast on a live 401 instead of burning the 3 retries.
+        source = (ROOT / "qa" / "score.sh").read_text(encoding="utf-8")
+        # proactive pre-check arm
+        self.assertIn('"$_scorer_tok_exp" =~ ^[0-9]+$', source)
+        self.assertIn('"error":"scorer_auth_expired"', source)
+        # live-call 401 arm
+        self.assertIn('[ "$api_err" = "401" ]', source)
+        # both auth arms must sit BEFORE the generic retry-loop tail so an auth failure short-circuits.
+        self.assertLess(source.index('[ "$api_err" = "401" ]'), source.index('if [ ! -s "$RAW" ]; then'))
+        # the proactive pre-check must run BEFORE the live claude call (it gates on the derived token).
+        self.assertLess(source.index('"error":"scorer_auth_expired"'), source.index("timeout \"${WORLDOS_SCORE_TIMEOUT:-600}\" claude -p"))
+        # the lens validator must recognize the new sentinel as a sentinel (not a numeric score).
+        lib = (ROOT / "qa" / "lib_beat_driver.sh").read_text(encoding="utf-8")
+        self.assertIn('"scorer_failed", "scorer_auth_expired"', lib)
+
     def test_run_duo_checks_for_quota_abort_before_scoring(self):
         # Fix E + Fix F (caller half): run_duo.sh must (1) detect a DM cold-open 429 and emit the
         # "[duo] QUOTA ABORT" marker + exit EX_TEMPFAIL BEFORE the empty-reply abort, and (2) treat the

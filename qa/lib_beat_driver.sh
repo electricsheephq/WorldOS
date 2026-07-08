@@ -1479,7 +1479,7 @@ except Exception:
 if not isinstance(d, dict):
     print("invalid"); sys.exit(0)
 # A failure sentinel (scorer exhausted retries, or a 429 quota trip) is NOT a score.
-if d.get("error") == "scorer_failed" or d.get("quota_exhausted") is True:
+if d.get("error") in ("scorer_failed", "scorer_auth_expired") or d.get("quota_exhausted") is True:
     print("sentinel"); sys.exit(0)
 ov = d.get("overall")
 # bool is a subclass of int — exclude it; a scorecard overall is a real number.
