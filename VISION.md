@@ -50,6 +50,8 @@ a rung toward that, and every rung must be a real, playable product on its own.
 
 ## Operating principle: DECISION-BY-EVAL
 
+- **Every run is a schema'd loop** (owner-ratified 2026-07-08): each run type — play QA, render, panel, generation, extraction, promotion — closes HEALTH → EVIDENCE → SCORE → VERDICT → POINTER (the Universal Run Contract, docs/OPERATIONS.md) and lives as a row in docs/RUNBOOK-INDEX.md. Processes evolve by editing their row, never by ad-hoc drift.
+
 When a load-bearing decision lacks an instrument, **building the instrument IS the first step** —
 never decide by vibes what can be decided by measurement. This is how the experiment self-drives:
 every sprint names its gate as a runnable eval; every library promotion is eval-gated

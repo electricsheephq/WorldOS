@@ -143,3 +143,23 @@ read them. Motion defects: a numbered still series is the primary artifact (agen
 reliably; GIFs are optional, for humans). Pair frames with qa/visual_pregate.py output when the
 change touches placement/pose/scale. Use the `graphics-defect` issue template; the PR template's
 Evidence section applies to every visual-affecting PR. See qa/evidence/README.md.
+
+## The Universal Run Contract (owner-ratified 2026-07-08 — every run type, no exceptions)
+Every run — engine test, probe, sprint, duo, sweep, playtest, render, panel, generation, extraction,
+promotion, rollup — closes with the SAME five steps. A run that skips a step didn't happen.
+1. **HEALTH** — deterministic infra check BEFORE reading any result (throttle/crash/auth sentinels,
+   beat completeness). Contaminated ⇒ a `*CONTAMINATED` marker, never a citable row.
+2. **EVIDENCE** — the run's primary artifact captured where reviewers can SEE it: frames →
+   `qa/evidence/<n>/` (committed) or the issue; transcripts/manifests → the run dir. Local-only
+   paths don't count (the evidence rule above).
+3. **SCORE** — one scores-ledger row (`qa/scores_db.py add_run` or the artifacts table) with
+   surface + provenance (model, SHA, panel id). No row = no run.
+4. **VERDICT** — the run-type's bar applied and stated in its format (PASS/FAIL or score-vs-bar +
+   one line), posted where the work item lives (PR/issue comment).
+5. **POINTER** — the state surface updated: the lane's charter/issue for lane runs, the routing
+   ledger for dispatches, `docs/roadmap/NOW.md` at session close.
+
+**The registry:** every run type has a row in `docs/RUNBOOK-INDEX.md` (runner, tier, required
+evidence, scores surface, owning skill/runbook, last-verified). Adding a NEW run type = adding a
+row + wiring the five steps. Changing a runner = updating its row. Dispatch packets for any run
+MUST name the run type's row so the executing agent inherits the contract.
