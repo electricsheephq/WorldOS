@@ -13,7 +13,7 @@
 
 ## WorldOS Takeover Truth
 
-- Read `WorldOS-OPERATING-GOAL.md` first, then `WorldOS-GUI-RUNBOOK.md`, `WorldOS-RUNBOOK.md`, and `qa/SCORECARD.md`.
+- Read `docs/OPERATIONS.md` FIRST (the bootstrap), then `docs/roadmap/NOW.md` → `docs/ACTIVE-GOAL.md` → `docs/roadmap/PRODUCT-ROADMAP.md` → the `active-sprint`-labeled charter issue. Runbooks (`WorldOS-RUNBOOK.md`, `WorldOS-GUI-RUNBOOK.md`) are reference, not the entry point.
 - The product is the launchable, playable `dist/WorldOS.app`. Wrapper/config/test-only progress does not count as product progress unless it directly unlocks built-app gameplay evidence.
 - Engine remains sole writer of campaign state. GUI/native app remains a thin reader plus `/move` intent submitter.
 - Built-app proof must include visible narration, private art, an active player, enabled actions, accepted `/move`, and `/session-surface` showing the live campaign as actionable.

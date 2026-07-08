@@ -12,7 +12,7 @@
 2. **Read `docs/roadmap/PRODUCT-ROADMAP.md`** — the three Acts, every sprint (S/W/HV series) with
    its binding gate, the version map, the Owner Gate Register (human-gated items — never block on
    these silently; park `blocked/needs-human` and take other work).
-3. **Find the active work**: `gh issue list --label sprint-charter --state open` — charters are
+3. **Find the active work**: `gh issue list --label active-sprint --state open` — exactly ONE issue carries `active-sprint` (the queue head; move the label at every charter transition). `gh issue list --label sprint-charter --state open` lists ALL charters — charters are
    the live sprints. Each charter lists ORDERED issues with `lane:*` labels, the runnable gate,
    and the invariant checklist. Claim an unclaimed issue in your lane (comment on it) — **`[EPIC]`
    issues named in the ACTIVE charter's ordered list ARE claimable directly** (the live lane must
