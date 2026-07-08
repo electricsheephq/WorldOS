@@ -855,7 +855,16 @@ def seed_campaign(adv: dict) -> Campaign:
         c.factions[faction.id] = faction
 
     if adv.get("hook"):
-        quest = Quest(title=adv.get("title", "Adventure"), description=adv["hook"])
+        # #1405: an adventure MAY ship an authored objective spine for its opening quest via an
+        # optional top-level `quest_objectives` list. ADDITIVE — an adventure without the key seeds
+        # an objective-less opening quest exactly as before. Authoring these makes the flagship
+        # adventures model the rich-authoring behavior the quest_authoring cue nudges the DM toward
+        # (a content-seeded objective-less starter otherwise, correctly, trips the beat-4 cue).
+        quest = Quest(
+            title=adv.get("title", "Adventure"),
+            description=adv["hook"],
+            objectives=[str(o) for o in (adv.get("quest_objectives") or []) if str(o).strip()],
+        )
         c.quests[quest.id] = quest
 
     # F06-10/F06-11 (audit 2026-06-18): fold an OPTIONAL top-level `companion_quest_arcs` block

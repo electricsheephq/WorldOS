@@ -11349,7 +11349,7 @@ def recall_decisions(campaign_id: str, query: str = "", limit: int = 12) -> dict
 
 @mcp.tool()
 def add_consequence(campaign_id: str, in_days: int = 0, text: str = "", note: str = "",
-                    message: str = "", content: str = "") -> dict:
+                    message: str = "", content: str = "", quest_id: str = "") -> dict:
     """Schedule a time-deferred world event to come due `in_days` from now (the
     in-world Campaign.day). Use it whenever the present sets up the future — a
     ritual that completes in 3 days, a spared villain who returns in a week, a
@@ -11358,20 +11358,30 @@ def add_consequence(campaign_id: str, in_days: int = 0, text: str = "", note: st
 
     Pass the event as ``text`` (canonical) or the aliases ``message`` / ``content`` —
     ``text`` wins if more than one is given. (``note`` is a SEPARATE optional field, not an
-    alias.)"""
+    alias.)
+
+    ``quest_id`` (#1405, optional): when this consequence IS the recorded branch-outcome of a
+    resolved quest, pass its id — that STRUCTURED link is what clears the `consequence_cue`
+    capture nudge, so you can phrase ``text`` as natural in-world prose without echoing the
+    quest's title. Omit it for a free-standing world event (default "" == today)."""
     text = text or message or content  # accept the text the DM reaches for (NOT `note` — distinct field)
     if not text:
         raise ValueError("add_consequence needs text (pass `text` or an alias: `message`/`content`)")
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
-        conseq = consequences_mod.schedule(c, in_days, text, note)
+        conseq = consequences_mod.schedule(c, in_days, text, note, quest_id=(quest_id or "").strip())
         save_campaign(c)
-        return {
+        out = {
             "id": conseq.id,
             "trigger_day": conseq.trigger_day,
             "current_day": c.day,
             "text": conseq.text,
         }
+        # ADDITIVE: echo the structured link back only when set, so an unlinked consequence returns
+        # the exact four-key shape it always has.
+        if conseq.quest_id:
+            out["quest_id"] = conseq.quest_id
+        return out
 
 
 @mcp.tool()
@@ -11925,16 +11935,28 @@ def _quest_authoring_cue(q: Quest) -> Optional[dict]:
 
 
 def _quest_consequence_recorded(c: Campaign, q: Quest) -> bool:
-    """True iff a resolved quest already has its branch outcome captured: a non-empty evolves_to
-    (the follow-on the extractor reads as resolution.evolves_to) OR a Consequence whose note/text
-    names the quest (the sink complete_quest(evolves_to=...) schedules and add_consequence writes).
-    Mirrors the quest_no_echo beat-obligation's own echo check so the result cue and the digest
-    agree on what 'has a consequence' means."""
+    """True iff a resolved quest already has its branch outcome captured. Three signals, in order:
+      1. a non-empty ``evolves_to`` (the follow-on the extractor reads as resolution.evolves_to);
+      2. a Consequence STRUCTURALLY linked to this quest (``Consequence.quest_id == q.id``) — the
+         #1405 machine-checkable link add_consequence(quest_id=…) writes, so a DM who captures the
+         outcome in NATURAL in-world prose (no literal quest title in the text) is correctly seen
+         as captured (the false-positive hole the substring-only check had);
+      3. FALLBACK for legacy / unlinked consequences: a Consequence whose text/note lowercased
+         mentions the quest's title or id. This is best-effort only — a natural-prose consequence
+         with NO structured link and no literal title will not match, so the cue may re-fire; the
+         remediation the cue names is passing quest_id, which lands signal 2.
+    Mirrors the quest_no_echo digest's echo check so the result cue and the digest agree."""
     if (getattr(q, "evolves_to", "") or "").strip():
         return True
+    qid = str(getattr(q, "id", "") or "").strip()
+    consequences = getattr(c, "consequences", None) or []
+    # Signal 2 — the structured link (exact match, no substring guesswork).
+    if qid and any(str(getattr(cs, "quest_id", "") or "").strip() == qid for cs in consequences):
+        return True
+    # Signal 3 — legacy substring fallback (unlinked consequences from before quest_id existed).
     needle_title = (getattr(q, "title", "") or "").strip().lower()
-    needle_id = (str(getattr(q, "id", "") or "")).strip().lower()
-    for cs in getattr(c, "consequences", None) or []:
+    needle_id = qid.lower()
+    for cs in consequences:
         blob = f"{getattr(cs, 'text', '')} {getattr(cs, 'note', '')}".lower()
         if (needle_title and needle_title in blob) or (needle_id and needle_id in blob):
             return True
@@ -11955,8 +11977,10 @@ def _quest_consequence_cue(c: Campaign, q: Quest) -> Optional[dict]:
         "quest_id": getattr(q, "id", None),
         "imperative": (
             f"'{getattr(q, 'title', None) or 'this quest'}' resolved with no branch outcome "
-            "recorded — capture it: complete_quest(quest_id, evolves_to='...') or "
-            "add_consequence(...) so the win/loss leaves a mark the world (and the extractor) sees."
+            "recorded — capture it: complete_quest(quest_id, evolves_to='...'), or "
+            "add_consequence(text='...', quest_id=<this quest's id>) — pass quest_id so the link is "
+            "recorded even when you phrase the fallout as natural prose. This leaves a mark the "
+            "world (and the extractor) can see."
         ),
     }
 

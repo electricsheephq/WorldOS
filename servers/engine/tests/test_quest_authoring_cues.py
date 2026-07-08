@@ -209,3 +209,101 @@ def test_quest_consequence_recorded_true_on_naming_consequence():
     c.quests[q.id] = q
     c.consequences.append(Consequence(text=f"echo of {q.id}", trigger_day=3))
     assert server._quest_consequence_recorded(c, q) is True
+
+
+# ── the false-positive hole: natural-prose consequence, structured quest_id link ─────────────
+# (Coordinator invariant-verify, live-reproduced twice: substring-only capture detection treated a
+#  DM who did EXACTLY what the cue said — complete_quest → add_consequence in natural in-world prose
+#  — as un-captured, so every later unrelated record_decision re-emitted the cue for the closed quest.)
+
+
+def test_add_consequence_with_quest_id_clears_cue_natural_prose(cid):
+    # The DM resolves the quest and records the fallout as NATURAL prose (no literal title/id) but
+    # passes the structured quest_id — a later, unrelated record_decision must NOT re-nag.
+    qid = server.add_quest(cid, "The Silenced Bell", objectives=["find the saboteur"])["id"]
+    server.complete_quest(cid, qid)
+    server.add_consequence(
+        cid, in_days=5, quest_id=qid,
+        text="Word spreads through the temple ward; the priests will not soon forget the night the peal died.",
+    )
+    out = server.record_decision(cid, summary="Later, the party debates where to camp")
+    assert "consequence_cue" not in out
+
+
+def test_add_consequence_natural_prose_without_quest_id_still_nags(cid):
+    # DOCUMENTED LIMITATION / fallback intact: the SAME natural-prose consequence WITHOUT the
+    # structured link (and with no literal title) does not match, so the cue still fires. The
+    # remediation the cue names is exactly `quest_id` (the case above).
+    qid = server.add_quest(cid, "The Silenced Bell", objectives=["find the saboteur"])["id"]
+    server.complete_quest(cid, qid)
+    server.add_consequence(
+        cid, in_days=5,
+        text="Word spreads through the temple ward; the priests will not soon forget the night the peal died.",
+    )
+    out = server.record_decision(cid, summary="Later, the party debates where to camp")
+    assert out["consequence_cue"]["quest_id"] == qid
+
+
+def test_add_consequence_echoes_quest_id_only_when_set(cid):
+    qid = server.add_quest(cid, "A Quest", objectives=["x"])["id"]
+    linked = server.add_consequence(cid, text="the fallout", quest_id=qid)
+    assert linked["quest_id"] == qid
+    unlinked = server.add_consequence(cid, text="a free-standing world event")
+    # BYTE-IDENTICAL default: no quest_id key when unset.
+    assert set(unlinked.keys()) == {"id", "trigger_day", "current_day", "text"}
+
+
+def test_quest_consequence_recorded_true_on_structured_link_prose():
+    c = Campaign(title="C")
+    q = Quest(title="The Bell", status="completed", objectives=["x"], completed_objectives=["x"])
+    c.quests[q.id] = q
+    # Natural prose, NO literal title/id in text — only the structured link.
+    c.consequences.append(Consequence(text="the ward remembers the silence", trigger_day=3, quest_id=q.id))
+    assert server._quest_consequence_recorded(c, q) is True
+
+
+# ── content fix: the flagship starter is authored WITH a spine (no beat-4 nag) ───────────────
+# (Coordinator verify-2: content_mod.seed_campaign built the cellar-rats "Cellar Rats" quest with
+#  objectives=[], so at beats_in_act>=4 the nag fired on every fresh playthrough of the flagship.
+#  Product decision: the cue on a genuinely-bare quest is CORRECT — fix the CONTENT, not the cue.)
+
+
+def test_cellar_rats_starter_quest_is_authored_with_objectives(tmp_path, monkeypatch):
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    cid = server.start_adventure("cellar-rats")["campaign_id"]
+    c = server._require(cid)
+    quest = next(iter(c.quests.values()))
+    assert len(quest.objectives) >= 2  # a real spine the engine can track
+
+
+def test_healthy_starter_no_authoring_cue_at_beat_four(tmp_path, monkeypatch):
+    # The regression the suite missed: push the healthy flagship fixture PAST the beat gate. With
+    # the content fix (authored objectives) it must STILL yield no quest_authoring_incomplete.
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    cid = server.start_adventure("cellar-rats")["campaign_id"]
+    c = server._require(cid)
+    c.narrative_arc.beats_in_act = server._QUEST_AUTHORING_BEATS
+    assert "quest_authoring_incomplete" not in _kinds(server._compute_beat_obligations(c))
+
+
+def test_bare_quest_still_nags_at_beat_four_mechanism_intact(tmp_path, monkeypatch):
+    # The mechanism is NOT disabled by the content fix: a genuinely-bare quest added to the same
+    # campaign at beats_in_act==_QUEST_AUTHORING_BEATS DOES fire the cue.
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    cid = server.start_adventure("cellar-rats")["campaign_id"]
+    bare_qid = server.add_quest(cid, "A Bare Side Thread")["id"]  # no objectives
+    c = server._require(cid)
+    c.narrative_arc.beats_in_act = server._QUEST_AUTHORING_BEATS
+    kinds_by_quest = {o.get("quest_id"): o for o in server._compute_beat_obligations(c)
+                      if o["kind"] == "quest_authoring_incomplete"}
+    assert bare_qid in kinds_by_quest
+
+
+def test_consequence_without_quest_id_serializes_byte_identical():
+    # The omit-when-empty serializer: an unlinked consequence must NOT emit a `quest_id` key (the
+    # store's dirty-skip byte-compare depends on it — a pre-#1405 snapshot never carried the key).
+    cs = Consequence(text="a plain world event", trigger_day=3)
+    assert "quest_id" not in cs.model_dump()
+    assert "quest_id" not in cs.model_dump_json()
+    linked = Consequence(text="linked", trigger_day=3, quest_id="quest_abc")
+    assert linked.model_dump()["quest_id"] == "quest_abc"
