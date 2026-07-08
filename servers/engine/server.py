@@ -366,6 +366,15 @@ _QUEST_STALL_BEATS = 8
 # beats in gets a cue to enlist, so a seeded faction questline isn't left narrated-not-engined.
 _FACTION_JOIN_BEATS = 8
 
+# #1405: quest_authoring_incomplete beats-reach. A quest CREATED without objectives (no spine the
+# engine can track) that is STILL objective-less this many act-local beats later is the flywheel's
+# binding-constraint failure (objectives empty 2/3 at snapshot level). The one-time add_quest
+# `authoring_cue` result already nudges at creation; this per-beat cue only ESCALATES once the
+# quest has been narrated a stretch with no authored spine — so a freshly-introduced quest on
+# beat 0 (the healthy/early case) is NOT nagged. Below _PARTY_STUCK_BEATS(=8) on purpose so it
+# fires before the party_stuck / quest_unresolved_late run-end cues, not stacked on top of them.
+_QUEST_AUTHORING_BEATS = 4
+
 # WS3a party_stuck_one_location beats-reach. PINNED to assert_behavioral's SINGLE_SCENE_MIN_BEATS —
 # the FATAL party_traveled boundary (qa/assert_behavioral.py:676): a substantial run (>= 8 act-local
 # beats) that never left the opening scene AND never progressed in place is a stuck DM. The proactive
@@ -11869,6 +11878,101 @@ def set_flag(campaign_id: str, flag: str, value: bool = True) -> dict:
         return {"flags": dict(c.flags)}
 
 
+# ── #1405: quest authoring & consequence-capture cues ─────────────────────────────────────────
+# ADVISORY return-payload nudges — the same next_action cue-stack family (#1313/#1286/#1334)
+# applied to the AUTHORING seam the flywheel's 3.9→4.0 quest-promotion gap now bottlenecks on:
+# objectives/giver/location empty at creation, and consequences never recorded at resolution
+# (issue #1405 — measured objectives empty 2/3, consequences empty 3/3 at snapshot level). Each
+# helper is a PURE read that returns None/[] when the quest is already rich, so the caller omits
+# the key and the tool result is BYTE-IDENTICAL to today's shape for a complete quest. Cues are
+# text the DM MAY act on — the engine takes NO auto-action and NEVER rejects/blocks the quest
+# (gates-read-gauges preserved; the teeth question is owner-reserved, #1313).
+
+# The richness-critical authoring fields a quest needs a spine (objectives) and grounding
+# (a giver, a place) to be trackable and promotable.
+_QUEST_AUTHORING_FIELDS = ("objectives", "giver_id", "location_id")
+
+
+def _quest_missing_fields(q: Quest) -> list[str]:
+    """Which of the richness-critical authoring fields (objectives / giver_id / location_id) a
+    quest left empty. PURE read; [] == a fully-authored quest (today's happy path)."""
+    missing = []
+    if not (getattr(q, "objectives", None) or []):
+        missing.append("objectives")
+    if not (getattr(q, "giver_id", None) or ""):
+        missing.append("giver_id")
+    if not (getattr(q, "location_id", None) or ""):
+        missing.append("location_id")
+    return missing
+
+
+def _quest_authoring_cue(q: Quest) -> Optional[dict]:
+    """#1405(a): the add_quest-time authoring nudge. next_action-style (kind/severity/imperative,
+    mirroring _next_action) plus the concrete `missing` list. Returns None when the quest is fully
+    authored, so add_quest's result stays byte-identical for a complete quest."""
+    missing = _quest_missing_fields(q)
+    if not missing:
+        return None
+    return {
+        "kind": "quest_authoring_incomplete",
+        "severity": "med",
+        "missing": missing,
+        "imperative": (
+            "Author this quest's " + ", ".join(missing) + " now (re-call add_quest with them) — "
+            "a quest with no objectives / giver / location has no spine to track or promote."
+        ),
+    }
+
+
+def _quest_consequence_recorded(c: Campaign, q: Quest) -> bool:
+    """True iff a resolved quest already has its branch outcome captured: a non-empty evolves_to
+    (the follow-on the extractor reads as resolution.evolves_to) OR a Consequence whose note/text
+    names the quest (the sink complete_quest(evolves_to=...) schedules and add_consequence writes).
+    Mirrors the quest_no_echo beat-obligation's own echo check so the result cue and the digest
+    agree on what 'has a consequence' means."""
+    if (getattr(q, "evolves_to", "") or "").strip():
+        return True
+    needle_title = (getattr(q, "title", "") or "").strip().lower()
+    needle_id = (str(getattr(q, "id", "") or "")).strip().lower()
+    for cs in getattr(c, "consequences", None) or []:
+        blob = f"{getattr(cs, 'text', '')} {getattr(cs, 'note', '')}".lower()
+        if (needle_title and needle_title in blob) or (needle_id and needle_id in blob):
+            return True
+    return False
+
+
+def _quest_consequence_cue(c: Campaign, q: Quest) -> Optional[dict]:
+    """#1405(b): the resolution-time consequence-capture nudge. Fires when a TERMINAL quest
+    (completed/failed) has NO recorded branch outcome. next_action-style. Returns None when the
+    quest already has a consequence/echo, so a resolution that recorded one stays byte-identical."""
+    if getattr(q, "status", "active") not in ("completed", "failed"):
+        return None
+    if _quest_consequence_recorded(c, q):
+        return None
+    return {
+        "kind": "quest_consequence_uncaptured",
+        "severity": "med",
+        "quest_id": getattr(q, "id", None),
+        "imperative": (
+            f"'{getattr(q, 'title', None) or 'this quest'}' resolved with no branch outcome "
+            "recorded — capture it: complete_quest(quest_id, evolves_to='...') or "
+            "add_consequence(...) so the win/loss leaves a mark the world (and the extractor) sees."
+        ),
+    }
+
+
+def _first_uncaptured_quest_cue(c: Campaign) -> Optional[dict]:
+    """The consequence-capture cue for the FIRST terminal quest in the campaign that has no
+    recorded branch outcome, or None when every resolved quest already has one. Used by
+    record_decision (which is not tied to a single quest) to nudge the DM toward capturing a
+    resolved thread's outcome while they are already recording choices."""
+    for q in (getattr(c, "quests", None) or {}).values():
+        cue = _quest_consequence_cue(c, q)
+        if cue is not None:
+            return cue
+    return None
+
+
 @mcp.tool()
 def add_quest(
     campaign_id: str,
@@ -11880,7 +11984,11 @@ def add_quest(
 ) -> dict:
     """Add a quest, optionally linked to the NPC who gave it (giver_id) and the
     location it's anchored to (location_id), so the dashboard and DM can trace
-    who-wants-what-where. A campaign has many quests; the opening hook is just one."""
+    who-wants-what-where. A campaign has many quests; the opening hook is just one.
+
+    #1405: when the quest is created MISSING objectives / giver_id / location_id the result
+    carries an ADVISORY `authoring_cue` (next_action-style) nudging the DM to populate them now
+    — never a rejection; omitted entirely once the quest is fully authored."""
     with campaign_lock(campaign_id):
         c = _require(campaign_id)
         q = Quest(
@@ -11899,7 +12007,13 @@ def add_quest(
         )
         c.quests[q.id] = q
         save_campaign(c)
-        return {"id": q.id, "title": q.title, "status": q.status}
+        out = {"id": q.id, "title": q.title, "status": q.status}
+        # #1405(a): ADDITIVE — only present when the quest is under-authored, so a complete quest
+        # returns the exact three-key shape it always has.
+        cue = _quest_authoring_cue(q)
+        if cue is not None:
+            out["authoring_cue"] = cue
+        return out
 
 
 def _evolution_note(quest_id: str) -> str:
@@ -11993,6 +12107,13 @@ def complete_quest(
         if milestone is not None:
             out["xp_awarded"] = milestone["xp_awarded"]
             out["grants"] = milestone["grants"]
+        # #1405(b): ADDITIVE — nudge the DM to capture the branch outcome when the quest resolved
+        # with none (empty evolves_to AND no consequence naming it). Computed AFTER the evolves_to
+        # kwarg + any scheduled evolution above, so a resolution that already recorded a
+        # consequence returns byte-identical to today.
+        cue = _quest_consequence_cue(c, q)
+        if cue is not None:
+            out["consequence_cue"] = cue
         return out
 
 
@@ -12083,6 +12204,12 @@ def complete_objective(campaign_id: str, quest_id: str, objective: str) -> dict:
                 "trigger_day": evolution.trigger_day,
                 "evolves_to": q.evolves_to,
             }
+        # #1405(b): when the last objective auto-resolved the quest with no branch outcome
+        # recorded, nudge to capture one. ADDITIVE — None (and thus omitted) whenever the quest
+        # stayed active OR already had an echo/consequence, so today's shape is byte-identical.
+        cue = _quest_consequence_cue(c, q)
+        if cue is not None:
+            out["consequence_cue"] = cue
         return out
 
 
@@ -12810,6 +12937,14 @@ def record_decision(
         # (today's default) returns the exact four-key shape it always has.
         if approval_results:
             out["approval_results"] = approval_results
+        # #1405(b): record_decision is the branch-outcome sink — while the DM is here recording a
+        # choice, nudge them to also capture the outcome of any resolved quest that still has none
+        # (empty evolves_to + no naming consequence). ADDITIVE — omitted when every terminal quest
+        # already has its consequence, so an untagged decision in a fully-captured campaign returns
+        # byte-identical to today.
+        cue = _first_uncaptured_quest_cue(c)
+        if cue is not None:
+            out["consequence_cue"] = cue
         return out
 
 
@@ -13568,6 +13703,29 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
                 ),
             })
             continue  # the endgame cue owns this quest in the wrap window (not ALSO resolvable/stalled)
+        # #1405(a): an ACTIVE quest with NO objectives has no spine the engine can track toward a
+        # resolution — surface the authoring gap (the flywheel's binding constraint, #1405) as a
+        # per-beat cue so the DM populates it. This owns the quest's cue (continue) so a spine-less
+        # quest isn't ALSO flagged stalled. Fires only on the load-bearing OBJECTIVES gap; a
+        # giver/location-only gap rides the one-time add_quest `authoring_cue` result, not a
+        # per-beat nag. BEATS-GATED (_QUEST_AUTHORING_BEATS) so a freshly-introduced quest on beat 0
+        # is NOT nagged — only a quest left spine-less across a stretch of play escalates here. The
+        # one-time add_quest `authoring_cue` covers the create moment. ADDITIVE: every authored
+        # (objective-bearing) quest, and every early/healthy campaign, skips this untouched.
+        if not objectives and _beats_in_act >= _QUEST_AUTHORING_BEATS:
+            obligations.append({
+                "kind": "quest_authoring_incomplete",
+                "quest_id": qid,
+                "title": title,
+                "severity": "med",
+                "missing": _quest_missing_fields(q),
+                "detail": (
+                    f"Quest '{title}' has no objectives — it has no spine to track or resolve. "
+                    "Author its objectives (and giver_id / location_id) now (re-call add_quest) so "
+                    "the party has concrete goals and the quest can be advanced and promoted."
+                ),
+            })
+            continue  # a spine-less quest isn't ALSO flagged resolvable/stalled
         # ALL objectives done -> the quest is mechanically resolvable; the DM should close
         # it AND give it an echo (evolves_to) so a win isn't one-and-done (rule of three).
         if objectives and all(o in completed for o in objectives):
@@ -13633,7 +13791,8 @@ def _compute_beat_obligations(c: Campaign) -> list[dict]:
     #     In the #1313 wrap window the endgame cue (quest_endgame_unresolved) already names concrete
     #     active quests to close, so this campaign-level "nothing has moved" cue is redundant there too.
     _already_flagged_quest = any(
-        o.get("kind") in ("quest_resolvable", "quest_stalled", "quest_endgame_unresolved")
+        o.get("kind") in ("quest_resolvable", "quest_stalled", "quest_endgame_unresolved",
+                          "quest_authoring_incomplete")
         for o in obligations
     )
     if _beats_in_act >= _PARTY_STUCK_BEATS and quests and not _already_flagged_quest:

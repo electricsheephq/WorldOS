@@ -50,6 +50,12 @@ CUE_ENGAGEMENT_TOOLS: dict[str, tuple[str, ...]] = {
     "camp_overdue": ("long_rest", "camp_scene"),
     "act_climax_owed": ("mark_climax", "complete_quest"),
     "act_midpoint_owed": ("mark_reversal", "record_decision"),
+    # #1405 authoring cues. authoring: the DM re-authors the spine-less quest (add_quest with
+    # objectives/giver/location, or resolves it away with set_quest_status). capture (quest_no_echo):
+    # the DM records the resolved quest's branch outcome via complete_quest(evolves_to=...) /
+    # add_consequence / record_decision.
+    "quest_authoring_incomplete": ("add_quest", "set_quest_status"),
+    "quest_no_echo": ("complete_quest", "add_consequence", "record_decision"),
 }
 
 
@@ -162,6 +168,96 @@ def quest_moved(before: dict, after: dict) -> bool:
     return False
 
 
+def _raw_quests(state: dict):
+    """The quests as an iterable of dicts from a RAW engine snapshot (dict-of-Quest or list).
+    The #1405 movement checks need the giver/location/objectives/evolves_to fields the projected
+    get_state list drops, so they always read the raw snapshot the probe passes."""
+    quests = state.get("quests")
+    if isinstance(quests, dict):
+        return [q for q in quests.values() if isinstance(q, dict)]
+    if isinstance(quests, list):
+        return [q for q in quests if isinstance(q, dict)]
+    return []
+
+
+def _authoring_signature(state: dict) -> dict:
+    """Per-quest authoring richness from a raw snapshot: objective count + whether a giver /
+    location is set. The quest_authoring_incomplete movement check compares this before vs after."""
+    sig: dict = {}
+    for q in _raw_quests(state):
+        qid = q.get("id") or q.get("quest_id")
+        if qid is None:
+            continue
+        objectives = q.get("objectives")
+        sig[qid] = {
+            "n_objectives": len(objectives) if isinstance(objectives, (list, tuple)) else 0,
+            "has_giver": bool(q.get("giver_id")),
+            "has_location": bool(q.get("location_id")),
+        }
+    return sig
+
+
+def quest_authoring_progressed(before: dict, after: dict) -> bool:
+    """True iff the DM actually AUTHORED richness (#1405(a)): an existing quest gained objectives /
+    a giver / a location, OR a brand-new quest arrived already carrying an objective spine (the
+    realistic 'DM re-called add_quest with the fields' path). Ground truth over prose."""
+    b = _authoring_signature(before)
+    a = _authoring_signature(after)
+    for qid, a_sig in a.items():
+        b_sig = b.get(qid)
+        if b_sig is None:
+            if a_sig["n_objectives"] > 0:  # a new quest authored WITH a spine
+                return True
+            continue
+        if a_sig["n_objectives"] > b_sig["n_objectives"]:
+            return True
+        if a_sig["has_giver"] and not b_sig["has_giver"]:
+            return True
+        if a_sig["has_location"] and not b_sig["has_location"]:
+            return True
+    return False
+
+
+def _echo_signature(state: dict) -> tuple[dict, int]:
+    """Per-quest evolves_to-set flag + the campaign's total consequence count, from a raw
+    snapshot. The quest_no_echo capture check compares this before vs after."""
+    q_echo: dict = {}
+    for q in _raw_quests(state):
+        qid = q.get("id") or q.get("quest_id")
+        if qid is None:
+            continue
+        q_echo[qid] = bool((q.get("evolves_to") or "").strip())
+    consequences = state.get("consequences")
+    n = len(consequences) if isinstance(consequences, (list, tuple)) else 0
+    return q_echo, n
+
+
+def quest_echo_captured(before: dict, after: dict) -> bool:
+    """True iff the DM captured a resolved quest's branch outcome (#1405(b) / quest_no_echo): a new
+    consequence was recorded (add_consequence / a scheduled evolution) OR a quest gained a
+    non-empty evolves_to. Ground truth over prose."""
+    b_echo, b_n = _echo_signature(before)
+    a_echo, a_n = _echo_signature(after)
+    if a_n > b_n:
+        return True
+    for qid, has in a_echo.items():
+        if has and not b_echo.get(qid, False):
+            return True
+    return False
+
+
+def state_progressed(cue: str, before: dict, after: dict) -> bool:
+    """The cue-appropriate 'did engine state MOVE' ground-truth signal. #1405 authoring/capture
+    cues clear by AUTHORING (fields populated) or CAPTURE (a consequence recorded), neither of
+    which is a quest status/objective flip — so they read their own signals. Every other cue keeps
+    the quest_moved status/objective signal it always used (byte-identical for existing cues)."""
+    if cue == "quest_authoring_incomplete":
+        return quest_authoring_progressed(before, after)
+    if cue == "quest_no_echo":
+        return quest_echo_captured(before, after)
+    return quest_moved(before, after)
+
+
 def compute_verdict(
     cue: str,
     cue_present_at_start: bool,
@@ -249,7 +345,7 @@ def build_report(
     # DM resolved the thread — surfaced for observability alongside the each-beat fact.
     cue_cleared_after_action = cue_present_at_start and not cue_present_each_beat
     engagement = engagement_tally(transcript_path, cue)
-    state_moved = quest_moved(state_before, state_after)
+    state_moved = state_progressed(cue, state_before, state_after)
     verdict = compute_verdict(cue, cue_present_at_start, engagement, state_moved, any_beat_failed)
     return {
         "cue": cue,
