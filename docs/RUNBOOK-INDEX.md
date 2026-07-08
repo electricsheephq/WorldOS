@@ -44,7 +44,7 @@
 
 | Run type | Runner | Tier/cost | Required evidence | Scores surface | Owner doc/skill |
 |---|---|---|---|---|---|
-| room/backdrop gen | `qa/export_scene_grid.py` → `qa/gen_room_from_scene_grid.sh` → `qa/deploy_room.sh` (live Unity lane; ⚠ `--layered` naming lives on the quarantined Godot tool) | Scenario CUs | plate PNG + pin-check + control-anchored panel + room_recipes entry + library/rooms promotion | visual (panel) | asset-gen skill |
+| room/backdrop gen | `qa/export_scene_grid.py` → `qa/gen_room_from_scene_grid.sh` → `qa/deploy_room.sh` (live Unity lane; ⚠ `--layered` naming lives on the quarantined Godot tool) | Scenario CUs | plate PNG + pin-check + control-anchored panel (MUST include a disclosed WorldOS house-style anchor — e.g. crypt_dense_v1 — alongside the disguised PoE2/BG2 control; a PoE2-only or absolute-score reading is NOT sufficient for adoption, see plate-style-regression #2026-07-08) + room_recipes entry + library/rooms promotion | visual (panel) | asset-gen skill |
 | character/asset gen | asset-gen skill (Meshy/Tripo/Scenario/PixelLab) | ~5-25 CU/asset | registry entry (gen_recipe) + grounded upright render per actor + evidence commit | ⚠ NONE today — gate via pre-gate + panel on first composed use | asset-gen skill |
 
 ## Known wiring gaps (tracked)

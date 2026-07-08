@@ -1,0 +1,4 @@
+image_A.jpg = candidate (NEW regen, plate-audit branch, proven pin-strength 0.55, --layered --lighting firelit_outdoor, same greybox/asset_id as incumbent)
+image_B.jpg = DISGUISED control: bg2ee_forest_party_tactical_01.jpg (REAL Baldur's Gate II:EE shipped screenshot, registered control:visual:baldurs-gate-2-ee:bg2ee_forest_party_tactical_01, anchor 8.0 band [6.8,9.2])
+image_C.jpg = DISCLOSED house-style anchor: crypt_dense_1.png (one of the two candidate outputs from the actual crypt_dense_v1 production job, 2026-07-01 gemini_polish_populate_pass — crypt_dense_v1 itself is box-only, not locally cached, so this is the closest available proxy; disclosed to scorers as such)
+image_D.jpg = incumbent (currently-adopted camp_clearing_night_v1.jpg, backdrop-cadence-20260708)

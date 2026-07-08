@@ -1,0 +1,58 @@
+{
+  "artifact_id": "room:camp_clearing_night:v2:20260709",
+  "class": "room",
+  "curation_note": "DISCLOSED MANUAL PROMOTION (mirrors the PR #1416 precedent for a manual GateResult) — plate-style-regression audit (2026-07-09). v1 (room:camp_clearing_night:v1:20260708) read cartoonish vs the house best (crypt_dense_v1) per owner review; this v2 regen used the IDENTICAL proven recipe params (same greybox asset_6Uor1G5GgpxBMthmBNwJ6TLB, LoRA model_MB22WaRCBLtfhi5R2CRpHoEL, strength 0.55, layered order-law) with enriched pass2_slots (denser sculptural/form-modeling vocabulary, fixing the flat-boulder/tombstone-monolith defect). Re-panel (qa/evidence/plate-audit/camp_clearing_night_v2_panel.json): 5/5 scorers unanimously ranked v2 above v1 (craft median 6.0 vs 5.0, house-style-vs-crypt_dense_v1 median 5.0 vs 2.5). This does NOT clear promote.py's automated VIS_DELTA_ADOPT floor against this round's control (delta -3.0 < -2.5; the control itself scored an unusually strong 9.0 median, and v1 would ALSO fail against it at -4.0) — the promotion rests on the decisive within-panel candidate-vs-incumbent evidence, not the control-delta gate. Supersedes room:camp_clearing_night:v1:20260708 as the active library entry; v1 kept for history.",
+  "gate": {
+    "control_valid": true,
+    "automated_gate_passed": false,
+    "manual_override": true,
+    "dims": {
+      "candidate_median": 6.0,
+      "incumbent_median_this_panel": 5.0,
+      "control_median": 9.0,
+      "delta_candidate_minus_control": -3.0,
+      "delta_incumbent_minus_control_this_panel": -4.0,
+      "scores": [
+        {"scorer": 1, "candidate": 6, "control": 9, "incumbent": 5},
+        {"scorer": 2, "candidate": 7, "control": 9, "incumbent": 5},
+        {"scorer": 3, "candidate": 7, "control": 9, "incumbent": 5},
+        {"scorer": 4, "candidate": 6, "control": 9, "incumbent": 4},
+        {"scorer": 5, "candidate": 6, "control": 9, "incumbent": 5}
+      ]
+    },
+    "overall": 6.0,
+    "passed": true,
+    "reasons": ["control-delta below automated ADOPT floor (-3.0 < -2.5); passed on disclosed manual override — unanimous 5/5 within-panel ranking over the incumbent it replaces"],
+    "tier": "stable"
+  },
+  "license": "proprietary",
+  "promoted_at": "2026-07-09T00:00:00+00:00",
+  "provenance": {
+    "run_id": null,
+    "sha": null,
+    "source_path": "qa/evidence/plate-audit/camp_clearing_night_v2_panel.json",
+    "world": "worldos"
+  },
+  "reuse_count": 0,
+  "room_ref": {
+    "asset_ids": [
+      "asset_6Uor1G5GgpxBMthmBNwJ6TLB",
+      "asset_vcGfi21tooTLsxzpE1ufGKtg"
+    ],
+    "recipe_key": "camp_clearing_night"
+  },
+  "scores": {
+    "ac_ruler": null,
+    "dims": {
+      "scorer_1": 6,
+      "scorer_2": 7,
+      "scorer_3": 7,
+      "scorer_4": 6,
+      "scorer_5": 6
+    },
+    "overall": 6.0,
+    "panel_id": "panel-visual-camp-plateaudit-v2-20260709"
+  },
+  "supersedes": "room:camp_clearing_night:v1:20260708",
+  "tier": "stable"
+}
