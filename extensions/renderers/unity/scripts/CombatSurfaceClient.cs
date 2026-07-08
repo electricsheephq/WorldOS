@@ -64,6 +64,33 @@ public class CombatSurfaceClient : MonoBehaviour
     Texture2D _blobT, _ringT;                 // procedural AO blob + selection ring, built once, shared
     AnimationClip _donorIdle; bool _donorTried; // goblin.fbx embedded Idle, for clipless-humanoid retarget
 
+    // #1441 W5d player interactivity: grounded reposition + engine-confirmed glide + walk clips + click
+    // pre-validation. GlideSpeed tunes the cell->cell walk tween; the maps below track per-actor state.
+    [Header("Glide (#1441 W5d)")]
+    public float GlideSpeed = 6f;             // world units/sec for the cell->cell walk tween
+    AnimationClip _donorWalk; bool _donorWalkTried; // goblin.fbx embedded Walk, for clipless-humanoid glide
+    // Each actor's CURRENT engine cell (arrived-at or gliding-toward). A poll reporting the SAME cell is a
+    // no-op; a CHANGED cell starts a glide. Seeded on spawn and on a baked actor's first sighting.
+    readonly System.Collections.Generic.Dictionary<string, int[]> _cellOf = new System.Collections.Generic.Dictionary<string, int[]>();
+    readonly System.Collections.Generic.Dictionary<string, Coroutine> _glide = new System.Collections.Generic.Dictionary<string, Coroutine>();
+    // The registry fbx we spawned each actor from, so a glide can play the actor's OWN walk/run clip.
+    readonly System.Collections.Generic.Dictionary<string, string> _fbxOf = new System.Collections.Generic.Dictionary<string, string>();
+    // Click pre-validation sets (cell key = c*10000+r): impassable = engine grid_impassable (walls/props),
+    // parsed from the surface; occupied = every token's cell, rebuilt each ApplySurf.
+    readonly System.Collections.Generic.HashSet<int> _impassable = new System.Collections.Generic.HashSet<int>();
+    readonly System.Collections.Generic.HashSet<int> _occupied = new System.Collections.Generic.HashSet<int>();
+    static int CellKey(int c, int r) { return c * 10000 + r; }  // grids are <14x11 -> collision-free
+    // The engine-confirmed route of the most recent move (surface `lastPath` == combat.last_move_path,
+    // list of [x,y] incl. the from-cell). The glide follows THIS polyline; empty -> straight-line fallback.
+    readonly System.Collections.Generic.List<int[]> _lastPath = new System.Collections.Generic.List<int[]>();
+
+    // #1441 named actor heights — ONE source of truth. These mirror paint_combat_v1.cs's #1418-calibrated
+    // LIVE baked-scene heights (foe 4.2 / character 3.2), which is what this client repositions, so a
+    // runtime-spawned actor matches its baked twin. NOTE: paint_combat_replay_v1.cs still carries a stale
+    // pre-#1418 character height of 5.0 (the editor reel, out of this player-path change's scope) — flagged.
+    const float ActorHeightFoe = 4.2f;
+    const float ActorHeightChar = 3.2f;
+
     [System.Serializable] public class Tok { public string id; public string name; public string team; public int x; public int y; public bool isCurrent; }
     [System.Serializable] public class Grid { public int cols; public int rows; }
     [System.Serializable] public class Surf { public string turnToken; public bool can_act; public Grid grid; public Tok[] tokens; }
@@ -139,7 +166,39 @@ public class CombatSurfaceClient : MonoBehaviour
         Surf s = null;
         try { s = JsonUtility.FromJson<Surf>(json); }
         catch (System.Exception e) { Debug.LogWarning("[CSC] parse: " + e.Message); return; }
+        // #1441: `impassable` (grid_impassable walls/props) and `lastPath` (the engine-confirmed move
+        // route) ride the surface as lists-of-[x,y] that JsonUtility cannot model — parse them with the
+        // runtime map/array parser used for registry.json. Impassable is static per location, so caching
+        // from the poll covers the move-response path too.
+        ParseSurfaceExtras(json);
         ApplySurf(s);
+    }
+
+    // Populate _impassable + _lastPath from a raw /combat-surface OR /move response JSON (the latter nests
+    // the surface under `combat`). Absent/corrupt leaves the sets empty (clicks unfiltered client-side and
+    // a straight-line glide — the engine still rejects illegal moves authoritatively).
+    void ParseSurfaceExtras(string json)
+    {
+        try
+        {
+            var root = Json.Parse(json) as System.Collections.Generic.Dictionary<string, object>;
+            if (root == null) return;
+            // /move responses wrap the surface as { ok, arbiter, combat:{...} }; unwrap it.
+            if (root.ContainsKey("combat") && root["combat"] is System.Collections.Generic.Dictionary<string, object> inner) root = inner;
+            if (root.ContainsKey("impassable"))
+            {
+                _impassable.Clear();
+                var list = root["impassable"] as System.Collections.Generic.List<object>;
+                if (list != null) foreach (var ce in list) { var cell = ce as System.Collections.Generic.List<object>; if (cell == null || cell.Count < 2) continue; _impassable.Add(CellKey(System.Convert.ToInt32(cell[0]), System.Convert.ToInt32(cell[1]))); }
+            }
+            _lastPath.Clear();
+            if (root.ContainsKey("lastPath"))
+            {
+                var lp = root["lastPath"] as System.Collections.Generic.List<object>;
+                if (lp != null) foreach (var ce in lp) { var cell = ce as System.Collections.Generic.List<object>; if (cell == null || cell.Count < 2) continue; _lastPath.Add(new[] { System.Convert.ToInt32(cell[0]), System.Convert.ToInt32(cell[1]) }); }
+            }
+        }
+        catch (System.Exception e) { Debug.LogWarning("[CSC] surface-extras parse: " + e.Message); }
     }
 
     void ApplySurf(Surf s)
@@ -149,6 +208,9 @@ public class CombatSurfaceClient : MonoBehaviour
         // #1318/#1433: honor the surface's own grid extents (rest-mode rooms can be non-14x11) so
         // cellToWorld stays aligned to what paint_combat_v1 baked. Absent ⇒ the 14x11 default.
         if (s.grid != null && s.grid.cols > 0 && s.grid.rows > 0) { Cols = s.grid.cols; Rows = s.grid.rows; }
+        // #1441: rebuild the occupied-cell set (every token's cell) for client-side click pre-validation.
+        _occupied.Clear();
+        foreach (var t in s.tokens) if (t != null) _occupied.Add(CellKey(t.x, t.y));
         var present = new System.Collections.Generic.HashSet<string>();
         foreach (var t in s.tokens)
         {
@@ -156,9 +218,11 @@ public class CombatSurfaceClient : MonoBehaviour
             bool foe = (t.team == "foe");
             if (foe) { _foeId = t.id; _foeX = t.x; _foeY = t.y; }
             Transform a = FindActor(t.id);
-            if (a != null) PlaceActor(a, t.x, t.y);
+            // #1441: reposition through UpdateActor — grounds+snaps on first sight, GLIDES on a changed
+            // engine cell (walk clip + moving rings), no-ops on the same cell. Only engine-confirmed cells.
+            if (a != null) UpdateActor(a, t.id, t.x, t.y);
             // #1436: no baked/prior actor for this token -> spawn it at runtime (SpawnActor grounds +
-            // centers it on the cell itself, mirroring paint_combat_v1's spawn, so no extra PlaceActor).
+            // centers it on the cell itself, mirroring paint_combat_v1's spawn).
             else SpawnActor(t.id, t.name, t.team, t.x, t.y);
         }
         // #1436 despawn-on-removal: an actor WE spawned that the engine no longer reports is destroyed
@@ -359,7 +423,7 @@ public class CombatSurfaceClient : MonoBehaviour
         // #1418 scale lock from the BIND POSE (measured BEFORE any clip is sampled), so a wide/leaning
         // idle first frame can't inflate curH and over-scale the actor.
         Bounds bb = Measure(go, rends); float curH = bb.size.y > 0.001f ? bb.size.y : 1f;
-        float height = foe ? 4.2f : 3.2f;   // paint_combat_v1's #1418-calibrated heights
+        float height = foe ? ActorHeightFoe : ActorHeightChar;   // #1441: named, single-source heights
         float sc = height / curH; go.transform.localScale = go.transform.localScale * sc;
 
         // Pose to a neutral idle for the VISUAL now that scale is locked: prefer an embedded 'idle' clip
@@ -409,12 +473,16 @@ public class CombatSurfaceClient : MonoBehaviour
         }
 
         // AO blob + selection ring siblings (Actor_<id>_AO / _Ring), laid flat on the floor. Baseline
-        // aiShadowScale=2.0, ring 2.6, no core shadow (paint's no-config defaults). PlaceActor moves
-        // these by the same delta on later polls, so they track the feet.
+        // aiShadowScale=2.0, ring 2.6, no core shadow (paint's no-config defaults). MoveActorAndShadows
+        // moves these by the same delta on every reposition/glide frame, so they track the feet.
         MakeGroundQuad(nm + "_AO", p, 0.04f, 2.0f, BlobTex(), Color.white, 1950);
         MakeGroundQuad(nm + "_Ring", p, 0.06f, 2.6f, RingTex(), foe ? new Color(1f, 0.13f, 0.10f, 1f) : new Color(0.4f, 0.95f, 1f, 1f), 1955);
 
         _spawned.Add(id);
+        // #1441: remember the fbx (so a glide can play this actor's own walk clip) and seed the cell (so
+        // the first poll doesn't spuriously glide a just-spawned actor already on its engine cell).
+        _fbxOf[id] = fbx;
+        _cellOf[id] = new[] { cx, cy };
         Debug.Log("[CSC] spawned " + nm + " model=" + fbx + " x" + sc.ToString("F2") + " @cell(" + cx + "," + cy + ") rends=" + rends.Length);
         return go.transform;
     }
@@ -436,6 +504,9 @@ public class CombatSurfaceClient : MonoBehaviour
             if (g != null) Object.Destroy(g);
         }
         _spawned.Remove(id);
+        // #1441: tear down any in-flight glide + per-actor state so a re-spawn starts clean.
+        if (_glide.TryGetValue(id, out var co) && co != null) StopCoroutine(co);
+        _glide.Remove(id); _cellOf.Remove(id); _fbxOf.Remove(id);
         Debug.Log("[CSC] despawned Actor_" + id);
     }
 
@@ -526,24 +597,204 @@ public class CombatSurfaceClient : MonoBehaviour
         static void SkipWs(string s, ref int i) { while (i < s.Length && char.IsWhiteSpace(s[i])) i++; }
     }
 
-    // Position the actor so its VISUAL bounds-center lands on the engine cell (mirrors
-    // paint_combat_v1's centering), keeping the rig's Y (feet already grounded in the baked scene).
-    // The build-time contact shadow / AO / ring siblings (Actor_<id>_AO/_Core/_Ring) follow by the
-    // same delta so they stay under the feet when the engine repositions the actor.
-    void PlaceActor(Transform a, int cx, int cy)
+    // #1441: engine-confirmed reposition. INVARIANT — the renderer animates ONLY engine-confirmed cells:
+    // callers pass cells straight from the authoritative surface and the client never moves an actor
+    // before the /move response. First sighting -> ground+snap (unifies grounding with SpawnActor, the
+    // float fix); a CHANGED engine cell -> start a glide; the SAME cell -> no-op so a poll never restarts
+    // or interrupts an in-flight glide (poll pauses reposition for a gliding actor).
+    void UpdateActor(Transform a, string id, int cx, int cy)
     {
-        Vector3 target = CellToWorld(cx, cy);
-        var rs = a.GetComponentsInChildren<Renderer>();
-        Vector3 ctr = a.position;
-        if (rs.Length > 0) { var b = rs[0].bounds; foreach (var rn in rs) b.Encapsulate(rn.bounds); ctr = b.center; }
-        Vector3 old = a.position;
-        a.position = new Vector3(a.position.x + (target.x - ctr.x), a.position.y, a.position.z + (target.z - ctr.z));
-        Vector3 delta = a.position - old;
+        int[] cur;
+        if (!_cellOf.TryGetValue(id, out cur))
+        {
+            _cellOf[id] = new[] { cx, cy };
+            GroundSnap(a, cx, cy);
+            return;
+        }
+        if (cur[0] == cx && cur[1] == cy) return;      // already at / gliding toward this cell
+        int fromCx = cur[0], fromCy = cur[1];
+        _cellOf[id] = new[] { cx, cy };
+        if (_glide.TryGetValue(id, out var running) && running != null) StopCoroutine(running);
+        _glide[id] = StartCoroutine(GlideTo(a, id, fromCx, fromCy, cx, cy));
+    }
+
+    // Instant grounded placement: feet -> FloorY + bounds-center on the cell, the SAME BakeMesh math as
+    // SpawnActor. #1441 FLOAT FIX: the pre-#1441 reposition preserved the actor's raw Y and only
+    // re-centered X/Z, so any actor whose pivot Y wasn't already grounded (baked actors; post-retarget
+    // bounds shifts) floated after a move — this re-grounds Y on every reposition.
+    void GroundSnap(Transform a, int cx, int cy) { MoveActorAndShadows(a, GroundedPivot(a, cx, cy)); }
+
+    // The pivot position that lands the actor's posed bounds-center on (cx,cy) with feet (bb.min.y) on
+    // FloorY — mirrors SpawnActor's ground+center, via the static Measure (BakeMesh, scale-correct).
+    Vector3 GroundedPivot(Transform a, int cx, int cy)
+    {
+        var rends = a.GetComponentsInChildren<Renderer>();
+        Bounds bb = Measure(a.gameObject, rends);
+        Vector3 ctr = bb.center, cell = CellToWorld(cx, cy);
+        return new Vector3(a.position.x + (cell.x - ctr.x), a.position.y + (FloorY - bb.min.y), a.position.z + (cell.z - ctr.z));
+    }
+
+    // Move the actor to newPos and drag its AO/ring/core siblings by the same delta so they track the feet.
+    void MoveActorAndShadows(Transform a, Vector3 newPos)
+    {
+        Vector3 delta = newPos - a.position;
+        a.position = newPos;
         foreach (var suf in new[] { "_AO", "_Core", "_Ring" })
         {
             var g = GameObject.Find(a.name + suf);
             if (g != null) g.transform.position += delta;
         }
+    }
+
+    // #1441 GLIDE: tween the actor cell->cell at GlideSpeed, playing a walk clip while moving and
+    // returning to idle at rest. Follows the ENGINE-CONFIRMED lastPath polyline when it matches this
+    // move (start==lastPath[0] && target==lastPath[-1]); otherwise a straight-line fallback. Rings/AO
+    // follow every frame. Presentation-only: only ever called with an engine-confirmed target.
+    IEnumerator GlideTo(Transform a, string id, int fromCx, int fromCy, int cx, int cy)
+    {
+        var go = a.gameObject;
+        float pitchX = go.GetComponentInChildren<SkinnedMeshRenderer>() != null ? 0f : -90f;
+
+        // Build the world-space route. Default: straight line start->target. If the engine's lastPath is
+        // this actor's move, follow its cells (each cell grounded to feet on FloorY via the same offset).
+        Vector3 startPos = a.position;
+        Vector3 endPos = GroundedPivot(a, cx, cy);
+        var route = new System.Collections.Generic.List<Vector3> { startPos };
+        bool usePath = _lastPath.Count >= 2
+            && _lastPath[0][0] == fromCx && _lastPath[0][1] == fromCy
+            && _lastPath[_lastPath.Count - 1][0] == cx && _lastPath[_lastPath.Count - 1][1] == cy;
+        if (usePath)
+        {
+            // ground offset that maps the from-cell's CellToWorld to the actor's current grounded pivot,
+            // reused for every intermediate cell so the whole walk stays foot-planted on the flat floor.
+            Vector3 fromCellW = CellToWorld(fromCx, fromCy);
+            Vector3 gOff = new Vector3(startPos.x - fromCellW.x, startPos.y - fromCellW.y, startPos.z - fromCellW.z);
+            for (int i = 1; i < _lastPath.Count; i++) route.Add(CellToWorld(_lastPath[i][0], _lastPath[i][1]) + gOff);
+        }
+        else route.Add(endPos);
+
+        // face the first heading (game feel), pitch-guarded.
+        Vector3 h0 = route[1] - route[0]; h0.y = 0f;
+        if (h0.sqrMagnitude > 1e-4f) a.rotation = Quaternion.Euler(pitchX, Mathf.Atan2(h0.x, h0.z) * Mathf.Rad2Deg, 0f);
+
+        // resolve a walk animation: the actor's OWN walk/run clip (SampleAnimation), else a humanoid
+        // donor-walk retarget graph, else glide with no clip (non-humanoid fallback).
+        AnimationClip ownWalk = FindOwnClip(id, "walk", "run");
+        UnityEngine.Playables.PlayableGraph walkGraph = default; bool haveGraph = false;
+        if (ownWalk == null)
+        {
+            var anim = go.GetComponentInChildren<Animator>();
+            var donor = DonorWalk();
+            if (anim != null && anim.avatar != null && anim.avatar.isHuman && donor != null)
+            {
+                walkGraph = UnityEngine.Playables.PlayableGraph.Create("Walk_" + a.name);
+                var clipP = UnityEngine.Animations.AnimationClipPlayable.Create(walkGraph, donor);
+                var outp = UnityEngine.Animations.AnimationPlayableOutput.Create(walkGraph, "Out", anim);
+                UnityEngine.Playables.PlayableOutputExtensions.SetSourcePlayable(outp, clipP);
+                haveGraph = true;
+            }
+        }
+
+        // total planar length for even-speed sampling across the (possibly multi-segment) route.
+        float total = 0f;
+        var segLen = new float[route.Count - 1];
+        for (int i = 0; i < segLen.Length; i++) { Vector3 d = route[i + 1] - route[i]; d.y = 0f; segLen[i] = d.magnitude; total += segLen[i]; }
+        float dur = GlideSpeed > 0.01f ? total / GlideSpeed : 0f;
+        float elapsed = 0f, animT = 0f;
+        while (elapsed < dur && total > 1e-4f)
+        {
+            elapsed += Time.deltaTime; animT += Time.deltaTime;
+            float travelled = Mathf.Clamp01(elapsed / dur) * total;
+            // find the current segment + interpolant.
+            int si = 0; float acc = 0f;
+            while (si < segLen.Length - 1 && acc + segLen[si] < travelled) { acc += segLen[si]; si++; }
+            float sf = segLen[si] > 1e-4f ? (travelled - acc) / segLen[si] : 1f;
+            Vector3 p = Vector3.Lerp(route[si], route[si + 1], sf);
+            // face this segment's heading; advance the walk animation.
+            Vector3 hd = route[si + 1] - route[si]; hd.y = 0f;
+            if (hd.sqrMagnitude > 1e-4f) a.rotation = Quaternion.Euler(pitchX, Mathf.Atan2(hd.x, hd.z) * Mathf.Rad2Deg, 0f);
+            if (ownWalk != null) { float len = ownWalk.length > 0.01f ? ownWalk.length : 1f; ownWalk.SampleAnimation(go, animT % len); }
+            else if (haveGraph) walkGraph.Evaluate(Time.deltaTime);
+            MoveActorAndShadows(a, p);
+            yield return null;
+        }
+        // arrive: snap exact, tear down walk, return to a grounded idle facing the camera.
+        MoveActorAndShadows(a, endPos);
+        if (haveGraph && walkGraph.IsValid()) walkGraph.Destroy();
+        PoseIdle(go);
+        var cam = Camera.main; float camYaw = cam != null ? cam.transform.eulerAngles.y : 45f;
+        a.rotation = Quaternion.Euler(pitchX, camYaw + 180f, 0f);
+        MoveActorAndShadows(a, GroundedPivot(a, cx, cy));   // re-ground the final idle pose (idempotent)
+        _glide.Remove(id);
+    }
+
+    // Pose `go` to a neutral idle: its own embedded 'idle' clip if present, else a humanoid donor-idle
+    // retarget — the same idle SpawnActor establishes, so a glide returns to it at rest.
+    void PoseIdle(GameObject go)
+    {
+        string nm = go.name;
+        string id = nm.StartsWith("Actor_") ? nm.Substring(6) : nm;
+        string fbx; _fbxOf.TryGetValue(id, out fbx);
+        bool posed = false;
+        var b = Bundle();
+        if (b != null && !string.IsNullOrEmpty(fbx))
+        {
+            foreach (var clip in b.LoadAssetWithSubAssets<AnimationClip>(fbx))
+            {
+                if (clip == null || clip.name.StartsWith("__")) continue;
+                if (clip.name.ToLower().Contains("idle")) { clip.SampleAnimation(go, 0f); posed = true; break; }
+                if (!posed) { clip.SampleAnimation(go, 0f); posed = true; }
+            }
+        }
+        if (!posed)
+        {
+            var anim = go.GetComponentInChildren<Animator>();
+            if (anim != null && anim.avatar != null && anim.avatar.isHuman)
+            {
+                var donor = DonorIdle();
+                if (donor != null)
+                {
+                    var graph = UnityEngine.Playables.PlayableGraph.Create("Idle_" + nm);
+                    var clipPlayable = UnityEngine.Animations.AnimationClipPlayable.Create(graph, donor);
+                    var outp = UnityEngine.Animations.AnimationPlayableOutput.Create(graph, "Output", anim);
+                    UnityEngine.Playables.PlayableOutputExtensions.SetSourcePlayable(outp, clipPlayable);
+                    graph.Evaluate(0f); graph.Destroy();
+                }
+            }
+        }
+    }
+
+    // The actor's OWN embedded clip whose name contains any of `names` (walk/run), from the bundle by its
+    // spawn fbx. Null for baked actors (no _fbxOf) or when no such clip exists -> donor / no-clip fallback.
+    AnimationClip FindOwnClip(string id, params string[] names)
+    {
+        string fbx;
+        if (!_fbxOf.TryGetValue(id, out fbx) || string.IsNullOrEmpty(fbx)) return null;
+        var b = Bundle(); if (b == null) return null;
+        foreach (var clip in b.LoadAssetWithSubAssets<AnimationClip>(fbx))
+        {
+            if (clip == null || clip.name.StartsWith("__")) continue;
+            string ln = clip.name.ToLower();
+            foreach (var n in names) if (ln.Contains(n)) return clip;
+        }
+        return null;
+    }
+
+    // A donor WALK clip from goblin.fbx (embedded moveset) — the walk analogue of DonorIdle, retargeted
+    // onto any clipless humanoid during a glide. Null if goblin carries no walk/run clip (-> glide, no clip).
+    AnimationClip DonorWalk()
+    {
+        if (_donorWalkTried) return _donorWalk;
+        _donorWalkTried = true;
+        var aref = ResolveAsset("goblin", "monster");
+        var b = Bundle(); if (b == null) return null;
+        foreach (var o in b.LoadAssetWithSubAssets<AnimationClip>(aref[0]))
+        {
+            if (o == null || o.name.StartsWith("__")) continue;
+            string ln = o.name.ToLower();
+            if (ln.Contains("walk") || ln.Contains("run")) { _donorWalk = o; break; }
+        }
+        return _donorWalk;
     }
 
     void Update()
@@ -563,8 +814,27 @@ public class CombatSurfaceClient : MonoBehaviour
         float tt = (FloorY - ray.origin.y) / ray.direction.y; if (tt < 0) return;
         Vector3 hit = ray.origin + ray.direction * tt;
         if (!WorldToCell(hit, out int c, out int r)) return;
-        if (c == _foeX && r == _foeY && _foeId.Length > 0) StartCoroutine(PostAttack());
-        else StartCoroutine(PostMove(c, r));
+        // on-turn attack when the clicked cell holds the foe (allowed even though the foe occupies it).
+        if (c == _foeX && r == _foeY && _foeId.Length > 0) { StartCoroutine(PostAttack()); return; }
+        // #1441 click pre-validation (UX pre-filter ONLY; the engine stays authoritative and independently
+        // rejects illegal moves): a click on an impassable (wall/prop) or token-occupied cell flashes a red
+        // ring instead of firing a doomed POST.
+        int key = CellKey(c, r);
+        if (_impassable.Contains(key) || _occupied.Contains(key)) { StartCoroutine(FlashReject(c, r)); return; }
+        StartCoroutine(PostMove(c, r));
+    }
+
+    // Brief red ring flash at a rejected cell — immediate "you can't go there" with no server round-trip.
+    IEnumerator FlashReject(int c, int r)
+    {
+        Vector3 p = CellToWorld(c, r);
+        var q = GameObject.CreatePrimitive(PrimitiveType.Quad); q.name = "RejectFlash"; Object.DestroyImmediate(q.GetComponent<Collider>());
+        q.transform.position = new Vector3(p.x, FloorY + 0.07f, p.z); q.transform.localEulerAngles = new Vector3(90f, 0f, 0f); q.transform.localScale = new Vector3(2.6f, 2.6f, 1f);
+        var m = new Material(Shader.Find("Unlit/Transparent")); m.mainTexture = RingTex(); m.renderQueue = 1960;
+        q.GetComponent<Renderer>().sharedMaterial = m; q.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        float t = 0f;
+        while (t < 0.35f) { t += Time.deltaTime; m.color = new Color(1f, 0.15f, 0.12f, Mathf.Clamp01(1f - t / 0.35f)); yield return null; }
+        Object.Destroy(q);
     }
 
     // ---- public, for headless/programmatic driving (the box has no mouse) ----
@@ -597,7 +867,9 @@ public class CombatSurfaceClient : MonoBehaviour
             MoveResp resp = null;
             try { resp = JsonUtility.FromJson<MoveResp>(req.downloadHandler.text); }
             catch (System.Exception e) { Debug.LogWarning("[CSC] move parse: " + e.Message); yield break; }
-            if (resp != null && resp.ok && resp.combat != null) { Debug.Log("[CSC] move ok -> re-render"); ApplySurf(resp.combat); }
+            // #1441: parse lastPath/impassable from the RAW response (nested under `combat`) BEFORE
+            // ApplySurf so the glide can follow the engine-confirmed route of the move just resolved.
+            if (resp != null && resp.ok && resp.combat != null) { Debug.Log("[CSC] move ok -> re-render"); ParseSurfaceExtras(req.downloadHandler.text); ApplySurf(resp.combat); }
             else Debug.LogWarning("[CSC] move rejected: " + (resp != null ? resp.reason : "null"));
         }
     }
