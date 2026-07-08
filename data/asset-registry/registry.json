@@ -2,7 +2,16 @@
   "_doc": "WorldOS asset registry (gfx milestone M-C, issue #1195). The renderer NEVER names a literal asset path; it names a SLOT (asset_id + kind) and asks the registry, which ALWAYS returns a guaranteed-non-null ref dict — the real asset OR a default template. This is the asset analogue of engine=sole-writer: swapping/regenerating ANY asset is ZERO renderer edits. Resolution rule: exact -> alias -> defaults[kind] -> defaults['__any__']. The Python twin is viewer/asset_registry.py; the Unity twin is extensions/renderers/unity/scripts/AssetRegistry.cs. Binary assets (.fbx/.png/...) referenced here are gitignored under the box's Unity Assets/ tree; only this manifest is committed. kind in {character, monster, room, effect, sound}. #1423: 'wren'/'camp-scout' (the seed_gfx_camp_clearing.py cast, slugified) had NO alias entry -> silently fell through to defaults.character/template_human (a static clipless mesh whose own bind pose reads T-pose-like) -- the SAME class of registry-miss bug as #1412's missing 'patron' alias and #1418's missing 'aldric' alias, just in the camp fixture instead of the tavern one. Fixed by aliasing them to existing textured/idle-posed cast members (innkeeper/patron_commoner) as placeholders, pending dedicated ranger/scout models -- this reuses the SAME spawn() path the tavern cast already uses correctly, killing the tavern-vs-camp divergence rather than adding a second code path.",
   "version": 1,
   "schema": {
-    "asset_row": ["kind", "model_ref", "albedo_ref", "anim_ref", "gen_recipe", "version", "critic_score", "default_used"]
+    "asset_row": [
+      "kind",
+      "model_ref",
+      "albedo_ref",
+      "anim_ref",
+      "gen_recipe",
+      "version",
+      "critic_score",
+      "default_used"
+    ]
   },
   "defaults": {
     "character": "template_human",
@@ -53,7 +62,6 @@
       "critic_score": 7.1,
       "default_used": false
     },
-
     "skeleton_archer": {
       "kind": "monster",
       "model_ref": "Assets/chars_v2/skeleton_archer/rigged.fbx",
@@ -79,12 +87,11 @@
       "model_ref": "Assets/chars_v2/ghoul/rigged.fbx",
       "albedo_ref": "Assets/chars_v2/ghoul/albedo.jpg",
       "anim_ref": "Assets/chars_v2/ghoul/anim_idle.fbx",
-      "gen_recipe": "tripo:text-to-model -> rig(biped, spec=mixamo) -> retarget idle+walk only (creatures support fewer biped presets); rigged.fbx imported animationType=Generic (wave-1 #1290)",
+      "gen_recipe": "tripo:text-to-model -> rig(biped, spec=mixamo) -> retarget idle+walk (wave-1 #1290) + run/attack/cast added (wave-2 #1305, one-preset-per-call: preset:biped:run/slash/shoot); block/dodge/hit/death attempted but FAILED (unsupported presets in Tripo's biped library, non-fatal skip) -- 5/9 clips total; rigged.fbx imported animationType=Generic",
       "version": "1.0.0",
       "critic_score": 0.0,
       "default_used": false
     },
-
     "innkeeper": {
       "kind": "character",
       "model_ref": "Assets/chars_v2/innkeeper/rigged.fbx",
@@ -105,7 +112,6 @@
       "critic_score": 0.0,
       "default_used": false
     },
-
     "template_human": {
       "kind": "character",
       "model_ref": "Assets/painterly/models/hero.fbx",
@@ -160,6 +166,66 @@
       "critic_score": 6.0,
       "default_used": false,
       "is_template": true
+    },
+    "zombie": {
+      "kind": "monster",
+      "model_ref": "Assets/chars_v2/zombie/rigged.fbx",
+      "albedo_ref": "Assets/chars_v2/zombie/albedo.jpg",
+      "anim_ref": "Assets/chars_v2/zombie/anim_idle.fbx",
+      "gen_recipe": "meshy:humanoid moveset (9-clip: idle/walk/run/attack/cast/block/dodge/hit/death), rigged.fbx + all clips imported animationType=Humanoid (avatar CreateFromThisModel/CopyFromOther, avatar.isHuman=True verified) per the #1412 lesson; albedo from model.glb embedded PBR (wave-2 monster cast #1305)",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "bandit": {
+      "kind": "monster",
+      "model_ref": "Assets/chars_v2/bandit/rigged.fbx",
+      "albedo_ref": "Assets/chars_v2/bandit/albedo.jpg",
+      "anim_ref": "Assets/chars_v2/bandit/anim_idle.fbx",
+      "gen_recipe": "meshy:humanoid moveset (9-clip: idle/walk/run/attack/cast/block/dodge/hit/death), rigged.fbx + all clips imported animationType=Humanoid (avatar CreateFromThisModel/CopyFromOther, avatar.isHuman=True verified) per the #1412 lesson; albedo from model.glb embedded PBR (wave-2 monster cast #1305)",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "cult_leader": {
+      "kind": "monster",
+      "model_ref": "Assets/chars_v2/cult_leader/rigged.fbx",
+      "albedo_ref": "Assets/chars_v2/cult_leader/albedo.jpg",
+      "anim_ref": "Assets/chars_v2/cult_leader/anim_idle.fbx",
+      "gen_recipe": "meshy:humanoid moveset (9-clip: idle/walk/run/attack/cast/block/dodge/hit/death), rigged.fbx + all clips imported animationType=Humanoid (avatar CreateFromThisModel/CopyFromOther, avatar.isHuman=True verified) per the #1412 lesson; deliberately bright/pale ivory-gold robe albedo (#1282 light_tint probe body, mirroring cultist); albedo from model.glb embedded PBR (wave-2 monster cast #1305)",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "animated_armor": {
+      "kind": "monster",
+      "model_ref": "Assets/chars_v2/animated_armor/rigged.fbx",
+      "albedo_ref": "Assets/chars_v2/animated_armor/albedo.jpg",
+      "anim_ref": "Assets/chars_v2/animated_armor/anim_idle.fbx",
+      "gen_recipe": "meshy:humanoid moveset (9-clip: idle/walk/run/attack/cast/block/dodge/hit/death), rigged.fbx + all clips imported animationType=Humanoid (avatar CreateFromThisModel/CopyFromOther, avatar.isHuman=True verified) per the #1412 lesson; albedo from model.glb embedded PBR (wave-2 monster cast #1305)",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "giant_spider": {
+      "kind": "monster",
+      "model_ref": "Assets/chars_v2/giant_spider/rigged.fbx",
+      "albedo_ref": "Assets/chars_v2/giant_spider/albedo.jpg",
+      "anim_ref": "Assets/chars_v2/giant_spider/anim_walk.fbx",
+      "gen_recipe": "tripo:text-to-model -> rig-check(octopod) -> rig(spec=tripo) -> retarget walk only (idle preset unsupported for octopod, non-fatal skip); rigged.fbx imported animationType=Generic (Tripo bone names do not auto-map to Unity Humanoid avatar); albedo from model.glb embedded PBR (wave-2 monster cast #1305). CAVEAT: bind-pose-vs-walk-pose curH mismatch inflated render scale (see qa/evidence/1305 render + PR notes) - follow-up recommended, not blocking.",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "dire_rat": {
+      "kind": "monster",
+      "model_ref": "Assets/chars_v2/dire_rat/rigged.fbx",
+      "albedo_ref": "Assets/chars_v2/dire_rat/albedo.jpg",
+      "anim_ref": "Assets/chars_v2/dire_rat/anim_walk.fbx",
+      "gen_recipe": "tripo:text-to-model -> rig-check(quadruped) -> rig(spec=tripo) -> retarget walk only (idle preset unsupported for quadruped, non-fatal skip); rigged.fbx imported animationType=Generic (Tripo bone names do not auto-map to Unity Humanoid avatar); albedo from model.glb embedded PBR (wave-2 monster cast #1305)",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
     }
   }
 }
