@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using UnityEngine;
 using UnityEditor;
 
@@ -131,3 +132,5 @@ public class SetupPainterlyScene : MonoBehaviour
         Debug.Log("SetupPainterlyScene: DONE - BuiltIn pipeline, Unlit backdrop");
     }
 }
+
+#endif // UNITY_EDITOR
