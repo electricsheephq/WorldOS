@@ -84,6 +84,30 @@ public class CombatSurfaceClient : MonoBehaviour
     // list of [x,y] incl. the from-cell). The glide follows THIS polyline; empty -> straight-line fallback.
     readonly System.Collections.Generic.List<int[]> _lastPath = new System.Collections.Generic.List<int[]>();
 
+    // #anim-combat: the actor's ANIM_REF (moveset) fbx (registry anim_ref), so a walk/attack/hit clip that
+    // lives in a SEPARATE moveset fbx rather than the model fbx is still found. Mirrors _fbxOf; both feed
+    // FindOwnClip. (For the wave-2 cast the walk clip is embedded in the MODEL fbx — e.g. goblin.fbx carries
+    // Idle/Walk/Attack — so _fbxOf covers those; _animOf future-proofs the separate-moveset rigs.)
+    readonly System.Collections.Generic.Dictionary<string, string> _animOf = new System.Collections.Generic.Dictionary<string, string>();
+    // Per-actor head-top world offset (from the pivot) for the world-space HP bar, measured once so the
+    // bar rides above the silhouette without a per-frame BakeMesh.
+    readonly System.Collections.Generic.Dictionary<string, float> _topOf = new System.Collections.Generic.Dictionary<string, float>();
+
+    // #anim-combat COMBAT FEEL (paint_combat_replay_v1.cs verb map, ported to the LIVE player). Pure
+    // consumer of the surface's per-token hp: a DROP flinches the target (knockback nudge), floats the
+    // damage delta (world-space number, fade-up), lunges the attacker (the isCurrent combatant, + its
+    // attack clip when it has one), and drops the target's HP bar; hp<=0 (or a vanished combatant) plays a
+    // death (topple + shrink + fade → despawn + ring removal). HP bars + the active-turn ring pulse are
+    // world-space, camera-billboarded, and driven from surface truth. The engine stays SOLE WRITER — this
+    // renders engine-decided hp/turn, never a recomputed value.
+    [Header("Combat feel (#anim-combat; verb map from paint_combat_replay_v1)")]
+    readonly System.Collections.Generic.Dictionary<string, int> _hpOf = new System.Collections.Generic.Dictionary<string, int>();
+    readonly System.Collections.Generic.Dictionary<string, int> _hpMaxOf = new System.Collections.Generic.Dictionary<string, int>();
+    readonly System.Collections.Generic.Dictionary<string, GameObject> _hpBars = new System.Collections.Generic.Dictionary<string, GameObject>();
+    readonly System.Collections.Generic.HashSet<string> _dead = new System.Collections.Generic.HashSet<string>();
+    string _currentId = "";        // the isCurrent combatant this surface (active-turn ring-pulse anchor)
+    string _pulsePrev = "";        // last-pulsed ring, reset to rest when the turn moves on
+
     // #Phase3 WALKABILITY OVERLAY (browser-parity with screen-combat.jsx:721-802): a toggleable per-cell
     // grid laid flat on the floor — faint gold inset on walkable cells, dark red-brown tint on
     // impassable/occupied, brighter gold hover (red on a foe cell = attack affordance). Toggled with G;
@@ -125,7 +149,7 @@ public class CombatSurfaceClient : MonoBehaviour
     const float ActorHeightFoe = 4.2f;
     const float ActorHeightChar = 3.2f;
 
-    [System.Serializable] public class Tok { public string id; public string name; public string team; public int x; public int y; public bool isCurrent; }
+    [System.Serializable] public class Tok { public string id; public string name; public string team; public int x; public int y; public bool isCurrent; public int hp; public int hpMax; }
     [System.Serializable] public class Grid { public int cols; public int rows; }
     [System.Serializable] public class Surf { public string turnToken; public bool can_act; public Grid grid; public Tok[] tokens; }
     [System.Serializable] public class MoveResp { public bool ok; public string reason; public Surf combat; }
@@ -254,6 +278,9 @@ public class CombatSurfaceClient : MonoBehaviour
         var present = new System.Collections.Generic.HashSet<string>();
         foreach (var t in s.tokens)
         {
+            // #anim-combat: a token the engine still lists after its death beat (hp 0) is skipped — DeathCo
+            // already toppled + despawned it; never re-spawn a corpse.
+            if (t != null && !string.IsNullOrEmpty(t.id) && _dead.Contains(t.id)) continue;
             if (!string.IsNullOrEmpty(t.id)) present.Add(t.id);
             bool foe = (t.team == "foe");
             if (foe) { _foeId = t.id; _foeX = t.x; _foeY = t.y; }
@@ -274,9 +301,51 @@ public class CombatSurfaceClient : MonoBehaviour
             foreach (var id in _spawned) if (!present.Contains(id)) stale.Add(id);
             foreach (var id in stale) Despawn(id);
         }
+        // #anim-combat: drive combat FEEL from the surface's engine-decided hp/turn (pure consumer). Resolve
+        // the active-turn combatant, then for every combatant whose hp DROPPED since the last surface: float
+        // the damage delta, flinch it, lunge its attacker (the isCurrent actor); hp<=0 plays a death. HP bars
+        // are (re)created for the living; the active-turn ring pulse is anchored on _currentId (Update drives
+        // the per-frame billboard + pulse).
+        ApplyCombat(s);
         // #Phase3: keep the overlay in sync with the new surface — rebuild the quad pool if the grid
         // extents changed (rest rooms are non-14x11), then repaint per-cell tints for the new occupancy.
         if (_overlayOn) { EnsureOverlay(); RefreshOverlayColors(); }
+    }
+
+    // #anim-combat: the ported verb map, driven off the surface hp fields + isCurrent (engine truth only).
+    void ApplyCombat(Surf s)
+    {
+        // active-turn combatant (attacker anchor + ring-pulse target).
+        _currentId = "";
+        foreach (var t in s.tokens) if (t != null && t.isCurrent && !string.IsNullOrEmpty(t.id)) { _currentId = t.id; break; }
+        Transform attacker = string.IsNullOrEmpty(_currentId) ? null : FindActor(_currentId);
+
+        foreach (var t in s.tokens)
+        {
+            if (t == null || string.IsNullOrEmpty(t.id) || t.hpMax <= 0) continue;   // hp only when the engine carries it
+            int newHp = t.hp;
+            int prevHp; bool hadPrev = _hpOf.TryGetValue(t.id, out prevHp);
+            _hpMaxOf[t.id] = t.hpMax;
+
+            if (hadPrev && newHp < prevHp && !_dead.Contains(t.id))
+            {
+                Transform tgt = FindActor(t.id);
+                if (tgt != null)
+                {
+                    FloatDamage(tgt.position, "-" + (prevHp - newHp), new Color(1f, 0.95f, 0.45f, 1f));
+                    if (newHp > 0) StartCoroutine(FlinchCo(tgt, attacker != null ? attacker.position : tgt.position - tgt.forward));
+                    if (attacker != null && attacker != tgt) StartCoroutine(LungeCo(attacker, _currentId, tgt.position));
+                }
+            }
+            _hpOf[t.id] = newHp;
+
+            if (newHp <= 0 && !_dead.Contains(t.id)) StartCoroutine(DeathCo(t.id, FindActor(t.id)));
+            else if (newHp > 0 && !_dead.Contains(t.id)) EnsureHpBar(t.id, FindActor(t.id));
+        }
+        // prune hp/bar state for combatants no longer on the surface (moved off the board / removed).
+        var goneHp = new System.Collections.Generic.List<string>();
+        foreach (var id in _hpOf.Keys) { bool here = false; foreach (var t in s.tokens) if (t != null && t.id == id) { here = true; break; } if (!here) goneHp.Add(id); }
+        foreach (var id in goneHp) { _hpOf.Remove(id); _hpMaxOf.Remove(id); RemoveHpBar(id); }
     }
 
     // ---- #Phase3 walkability overlay (browser-parity affordances; pure surface-data consumer) ----
@@ -591,8 +660,8 @@ public class CombatSurfaceClient : MonoBehaviour
             foreach (var clip in b2.LoadAssetWithSubAssets<AnimationClip>(fbx))
             {
                 if (clip == null || clip.name.StartsWith("__")) continue;
-                if (clip.name.ToLower().Contains("idle")) { clip.SampleAnimation(go, 0f); posedByClip = true; break; }
-                if (!posedByClip) { clip.SampleAnimation(go, 0f); posedByClip = true; }
+                if (clip.name.ToLower().Contains("idle")) { SampleClipRuntime(go, clip, 0f); posedByClip = true; break; }
+                if (!posedByClip) { SampleClipRuntime(go, clip, 0f); posedByClip = true; }
             }
         }
         if (!posedByClip)
@@ -638,6 +707,10 @@ public class CombatSurfaceClient : MonoBehaviour
         // #1441: remember the fbx (so a glide can play this actor's own walk clip) and seed the cell (so
         // the first poll doesn't spuriously glide a just-spawned actor already on its engine cell).
         _fbxOf[id] = fbx;
+        // #anim-combat: remember the moveset fbx (walk/attack clips may live there, not in the model) and the
+        // head-top offset for the HP bar (height is the scale target; +margin clears the silhouette).
+        _animOf[id] = (aref != null && aref.Length > 2) ? aref[2] : "";
+        _topOf[id] = height + 1.4f;
         _cellOf[id] = new[] { cx, cy };
         Debug.Log("[CSC] spawned " + nm + " model=" + fbx + " x" + sc.ToString("F2") + " @cell(" + cx + "," + cy + ") rends=" + rends.Length);
         return go.transform;
@@ -648,7 +721,11 @@ public class CombatSurfaceClient : MonoBehaviour
         var old = GameObject.Find(name); if (old != null) Object.DestroyImmediate(old);
         var q = GameObject.CreatePrimitive(PrimitiveType.Quad); q.name = name; Object.DestroyImmediate(q.GetComponent<Collider>());
         q.transform.position = new Vector3(p.x, FloorY + yOff, p.z); q.transform.localEulerAngles = new Vector3(90f, 0f, 0f); q.transform.localScale = new Vector3(scale, scale, 1f);
-        var m = new Material(Shader.Find("Unlit/Transparent")); m.mainTexture = tex; m.color = col; m.renderQueue = queue;
+        // #anim-combat TINT FIX: Sprites/Default (NOT Unlit/Transparent — which has no _Color, so the ring's
+        // foe-red / ally-cyan tint was silently dropped and every ring rendered white). Sprites/Default
+        // exposes _Color and alpha-blends, so the tint now actually renders (the AO blob keeps its white tint
+        // over the dark blob texture, unchanged). Same shader the tile overlay + advisory pulse already use.
+        var m = new Material(Shader.Find("Sprites/Default")); m.mainTexture = tex; m.color = col; m.renderQueue = queue;
         var r = q.GetComponent<Renderer>(); r.sharedMaterial = m; r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
     }
 
@@ -663,6 +740,7 @@ public class CombatSurfaceClient : MonoBehaviour
         // #1441: tear down any in-flight glide + per-actor state so a re-spawn starts clean.
         if (_glide.TryGetValue(id, out var co) && co != null) StopCoroutine(co);
         _glide.Remove(id); _cellOf.Remove(id); _fbxOf.Remove(id);
+        _animOf.Remove(id); _topOf.Remove(id); RemoveHpBar(id);   // #anim-combat: clear combat/anim state
         Debug.Log("[CSC] despawned Actor_" + id);
     }
 
@@ -833,22 +911,22 @@ public class CombatSurfaceClient : MonoBehaviour
         Vector3 h0 = route[1] - route[0]; h0.y = 0f;
         if (h0.sqrMagnitude > 1e-4f) a.rotation = Quaternion.Euler(pitchX, Mathf.Atan2(h0.x, h0.z) * Mathf.Rad2Deg, 0f);
 
-        // resolve a walk animation: the actor's OWN walk/run clip (SampleAnimation), else a humanoid
-        // donor-walk retarget graph, else glide with no clip (non-humanoid fallback).
-        AnimationClip ownWalk = FindOwnClip(id, "walk", "run");
-        UnityEngine.Playables.PlayableGraph walkGraph = default; bool haveGraph = false;
-        if (ownWalk == null)
+        // resolve a walk animation. ROOT CAUSE of the pre-#anim-combat "actors SLIDE" report: the walk clip
+        // WAS found (goblin.fbx carries a humanoid Walk), but it was driven with AnimationClip.SampleAnimation
+        // — which CANNOT retarget a Mecanim (humanoid/generic) clip in a BUILT PLAYER (it silently no-ops for
+        // non-legacy clips; it only appears to work in-editor). The canonical runtime path is a PlayableGraph
+        // (AnimationClipPlayable -> AnimationPlayableOutput -> Animator), which retargets humanoid AND plays
+        // generic clips correctly in builds. So: pick the walk clip (own model/moveset, else a humanoid donor
+        // for a clipless humanoid rig) and drive it through the graph whenever the actor has an Animator+avatar;
+        // SampleAnimation stays only as the legacy/no-Animator fallback.
+        AnimationClip walkClip = FindOwnClip(id, "walk", "run");
+        var walkAnim = go.GetComponentInChildren<Animator>();
+        if (walkClip == null && walkAnim != null && walkAnim.avatar != null && walkAnim.avatar.isHuman) walkClip = DonorWalk();
+        UnityEngine.Playables.PlayableGraph walkGraph = default; bool haveGraph = false; bool sampleWalk = false;
+        if (walkClip != null)
         {
-            var anim = go.GetComponentInChildren<Animator>();
-            var donor = DonorWalk();
-            if (anim != null && anim.avatar != null && anim.avatar.isHuman && donor != null)
-            {
-                walkGraph = UnityEngine.Playables.PlayableGraph.Create("Walk_" + a.name);
-                var clipP = UnityEngine.Animations.AnimationClipPlayable.Create(walkGraph, donor);
-                var outp = UnityEngine.Animations.AnimationPlayableOutput.Create(walkGraph, "Out", anim);
-                UnityEngine.Playables.PlayableOutputExtensions.SetSourcePlayable(outp, clipP);
-                haveGraph = true;
-            }
+            if (walkAnim != null && walkAnim.avatar != null) { walkGraph = MakeClipGraph(walkAnim, walkClip, "Walk_" + a.name); haveGraph = true; }
+            else sampleWalk = true;   // no Animator/avatar -> legacy rig -> direct curve sample is the only path
         }
 
         // total planar length for even-speed sampling across the (possibly multi-segment) route.
@@ -869,8 +947,8 @@ public class CombatSurfaceClient : MonoBehaviour
             // face this segment's heading; advance the walk animation.
             Vector3 hd = route[si + 1] - route[si]; hd.y = 0f;
             if (hd.sqrMagnitude > 1e-4f) a.rotation = Quaternion.Euler(pitchX, Mathf.Atan2(hd.x, hd.z) * Mathf.Rad2Deg, 0f);
-            if (ownWalk != null) { float len = ownWalk.length > 0.01f ? ownWalk.length : 1f; ownWalk.SampleAnimation(go, animT % len); }
-            else if (haveGraph) walkGraph.Evaluate(Time.deltaTime);
+            if (haveGraph) walkGraph.Evaluate(Time.deltaTime);
+            else if (sampleWalk) { float len = walkClip.length > 0.01f ? walkClip.length : 1f; walkClip.SampleAnimation(go, animT % len); }
             MoveActorAndShadows(a, p);
             yield return null;
         }
@@ -898,8 +976,8 @@ public class CombatSurfaceClient : MonoBehaviour
             foreach (var clip in b.LoadAssetWithSubAssets<AnimationClip>(fbx))
             {
                 if (clip == null || clip.name.StartsWith("__")) continue;
-                if (clip.name.ToLower().Contains("idle")) { clip.SampleAnimation(go, 0f); posed = true; break; }
-                if (!posed) { clip.SampleAnimation(go, 0f); posed = true; }
+                if (clip.name.ToLower().Contains("idle")) { SampleClipRuntime(go, clip, 0f); posed = true; break; }
+                if (!posed) { SampleClipRuntime(go, clip, 0f); posed = true; }
             }
         }
         if (!posed)
@@ -920,18 +998,25 @@ public class CombatSurfaceClient : MonoBehaviour
         }
     }
 
-    // The actor's OWN embedded clip whose name contains any of `names` (walk/run), from the bundle by its
-    // spawn fbx. Null for baked actors (no _fbxOf) or when no such clip exists -> donor / no-clip fallback.
+    // The actor's OWN embedded clip whose name contains any of `names` (walk/run, attack, ...), from the
+    // bundle — searching BOTH the MODEL fbx (_fbxOf, e.g. goblin.fbx carries Idle/Walk/Attack) AND the
+    // moveset fbx (_animOf, the registry anim_ref, for rigs whose clips live in a separate fbx). Null for
+    // baked actors (no _fbxOf) or when no such clip exists -> donor / no-clip fallback.
     AnimationClip FindOwnClip(string id, params string[] names)
     {
-        string fbx;
-        if (!_fbxOf.TryGetValue(id, out fbx) || string.IsNullOrEmpty(fbx)) return null;
         var b = Bundle(); if (b == null) return null;
-        foreach (var clip in b.LoadAssetWithSubAssets<AnimationClip>(fbx))
+        string fbx, animRef;
+        _fbxOf.TryGetValue(id, out fbx);
+        _animOf.TryGetValue(id, out animRef);
+        foreach (var src in new[] { fbx, animRef })
         {
-            if (clip == null || clip.name.StartsWith("__")) continue;
-            string ln = clip.name.ToLower();
-            foreach (var n in names) if (ln.Contains(n)) return clip;
+            if (string.IsNullOrEmpty(src)) continue;
+            foreach (var clip in b.LoadAssetWithSubAssets<AnimationClip>(src))
+            {
+                if (clip == null || clip.name.StartsWith("__")) continue;
+                string ln = clip.name.ToLower();
+                foreach (var n in names) if (ln.Contains(n)) return clip;
+            }
         }
         return null;
     }
@@ -960,6 +1045,10 @@ public class CombatSurfaceClient : MonoBehaviour
         // #Phase3: overlay toggle (G) + hover run independent of the click gate below.
         if (Input.GetKeyDown(KeyCode.G)) ToggleOverlay();
         if (_overlayOn) UpdateOverlayHover();
+        // #anim-combat: world-space HP bars follow + billboard their actor; the active-turn combatant's ring
+        // pulses. Both run every frame regardless of the click/poll gate.
+        UpdateHpBars();
+        UpdateTurnPulse();
         if (_busy) return;
         if (Input.GetMouseButtonDown(0)) HandleClick();
     }
@@ -1068,7 +1157,9 @@ public class CombatSurfaceClient : MonoBehaviour
         Vector3 p = CellToWorld(c, r);
         var q = GameObject.CreatePrimitive(PrimitiveType.Quad); q.name = "RejectFlash"; Object.DestroyImmediate(q.GetComponent<Collider>());
         q.transform.position = new Vector3(p.x, FloorY + 0.07f, p.z); q.transform.localEulerAngles = new Vector3(90f, 0f, 0f); q.transform.localScale = new Vector3(2.6f, 2.6f, 1f);
-        var m = new Material(Shader.Find("Unlit/Transparent")); m.mainTexture = RingTex(); m.renderQueue = 1960;
+        // #anim-combat TINT FIX: Sprites/Default so the animated red reject tint below actually applies
+        // (Unlit/Transparent ignores _Color — the flash rendered white).
+        var m = new Material(Shader.Find("Sprites/Default")); m.mainTexture = RingTex(); m.renderQueue = 1960;
         q.GetComponent<Renderer>().sharedMaterial = m; q.GetComponent<Renderer>().shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
         float t = 0f;
         while (t < 0.35f) { t += Time.deltaTime; m.color = new Color(1f, 0.15f, 0.12f, Mathf.Clamp01(1f - t / 0.35f)); yield return null; }
@@ -1114,5 +1205,236 @@ public class CombatSurfaceClient : MonoBehaviour
             // rejected responses — a short fading toast + amber pulse so a long/blocked move reads clearly.
             HandleAdvisory(req.downloadHandler.text);
         }
+    }
+
+    // ---- #anim-combat runtime animation helpers ---------------------------------------------------
+
+    // A transient PlayableGraph that drives one clip through an Animator. This is the RUNTIME-CORRECT way
+    // to play a Mecanim (humanoid/generic) clip in a BUILT player — Evaluate(dt) advances + applies the
+    // pose (humanoid clips retarget through the avatar). Caller Evaluates per frame and Destroys at the end.
+    UnityEngine.Playables.PlayableGraph MakeClipGraph(Animator anim, AnimationClip clip, string tag)
+    {
+        var g = UnityEngine.Playables.PlayableGraph.Create(tag);
+        var cp = UnityEngine.Animations.AnimationClipPlayable.Create(g, clip);
+        var op = UnityEngine.Animations.AnimationPlayableOutput.Create(g, "Out", anim);
+        UnityEngine.Playables.PlayableOutputExtensions.SetSourcePlayable(op, cp);
+        return g;
+    }
+
+    // Pose a GameObject to one clip at `time`. Prefers a one-shot PlayableGraph Evaluate through the
+    // Animator (the only path that poses a Mecanim clip in a BUILT player — AnimationClip.SampleAnimation
+    // silently no-ops for non-legacy clips in a standalone build, which is the walk/idle "freeze" bug).
+    // Falls back to SampleAnimation only for a rig with no Animator/avatar (legacy curves write directly).
+    void SampleClipRuntime(GameObject go, AnimationClip clip, float time)
+    {
+        if (go == null || clip == null) return;
+        var anim = go.GetComponentInChildren<Animator>();
+        if (anim != null && anim.avatar != null)
+        {
+            var g = UnityEngine.Playables.PlayableGraph.Create("Pose_" + go.name);
+            var cp = UnityEngine.Animations.AnimationClipPlayable.Create(g, clip);
+            UnityEngine.Playables.PlayableExtensions.SetTime(cp, time);
+            var op = UnityEngine.Animations.AnimationPlayableOutput.Create(g, "Out", anim);
+            UnityEngine.Playables.PlayableOutputExtensions.SetSourcePlayable(op, cp);
+            g.Evaluate(0f); g.Destroy();
+        }
+        else clip.SampleAnimation(go, time);
+    }
+
+    // ---- #anim-combat combat-feel helpers (verb map ported from paint_combat_replay_v1.cs) ---------
+
+    // A world-space damage/heal number that rises + fades over the struck actor (camera-facing).
+    void FloatDamage(Vector3 atFeet, string text, Color col)
+    {
+        var g = new GameObject("DmgNum");
+        var tm = g.AddComponent<TextMesh>();
+        tm.text = text; tm.fontSize = 90; tm.characterSize = 0.22f; tm.anchor = TextAnchor.MiddleCenter; tm.alignment = TextAlignment.Center; tm.color = col;
+        // Unity 6 dropped the builtin Arial; bind the LegacyRuntime font (else the TextMesh renders nothing).
+        var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        var mr = g.GetComponent<MeshRenderer>();
+        if (font != null) { tm.font = font; if (mr != null) { mr.sharedMaterial = new Material(font.material); mr.sharedMaterial.renderQueue = 3100; } }
+        else if (mr != null && mr.sharedMaterial != null) mr.sharedMaterial.renderQueue = 3100;
+        StartCoroutine(FloatNumCo(g, atFeet + new Vector3(0f, 3.7f, 0f), col));
+    }
+    IEnumerator FloatNumCo(GameObject g, Vector3 start, Color col)
+    {
+        float t = 0f, dur = 1.1f; var tm = g != null ? g.GetComponent<TextMesh>() : null;
+        while (t < dur && g != null)
+        {
+            t += Time.deltaTime; float u = t / dur;
+            g.transform.position = start + new Vector3(0f, u * 1.6f, 0f);
+            var cam = Camera.main; if (cam != null) g.transform.rotation = cam.transform.rotation;
+            if (tm != null) tm.color = new Color(col.r, col.g, col.b, Mathf.Clamp01(1f - u));
+            yield return null;
+        }
+        if (g != null) Object.Destroy(g);
+    }
+
+    // Knockback flinch: a short out-and-back nudge AWAY from the attacker (transform motion; reads as a hit
+    // recoil on any rig, matching the replay's knockBack — no clip needed). Rings/AO track via MoveActorAndShadows.
+    IEnumerator FlinchCo(Transform a, Vector3 fromPos)
+    {
+        if (a == null) yield break;
+        Vector3 home = a.position;
+        Vector3 dir = a.position - fromPos; dir.y = 0f;
+        if (dir.sqrMagnitude < 1e-4f) dir = -a.forward;
+        dir = dir.normalized;
+        float dur = 0.28f, t = 0f;
+        while (t < dur && a != null)
+        {
+            t += Time.deltaTime; float u = t / dur;
+            float k = u < 0.4f ? (u / 0.4f) : (1f - (u - 0.4f) / 0.6f);   // peak out at u=0.4, ease back
+            MoveActorAndShadows(a, home + dir * (0.5f * k));
+            yield return null;
+        }
+        if (a != null) MoveActorAndShadows(a, home);
+    }
+
+    // Attack lunge: face the target, lunge forward + back (out-and-back), and — when the actor HAS an attack
+    // clip — play it through the graph on top (goblin.fbx carries Attack; a clipless rig just lunges, the
+    // "or lunge fallback" the packet asks for). Returns to a grounded idle facing the camera.
+    IEnumerator LungeCo(Transform a, string id, Vector3 towardPos)
+    {
+        if (a == null) yield break;
+        var go = a.gameObject;
+        Vector3 home = a.position;
+        Vector3 dir = towardPos - a.position; dir.y = 0f;
+        if (dir.sqrMagnitude < 1e-4f) yield break;
+        dir = dir.normalized;
+        float pitchX = go.GetComponentInChildren<SkinnedMeshRenderer>() != null ? 0f : -90f;
+        a.rotation = Quaternion.Euler(pitchX, Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg, 0f);
+        AnimationClip atk = FindOwnClip(id, "attack", "swing");
+        var anim = go.GetComponentInChildren<Animator>();
+        UnityEngine.Playables.PlayableGraph g = default; bool hg = false;
+        if (atk != null && anim != null && anim.avatar != null) { g = MakeClipGraph(anim, atk, "Atk_" + a.name); hg = true; }
+        float dur = 0.42f, t = 0f;
+        while (t < dur && a != null)
+        {
+            t += Time.deltaTime; float u = t / dur;
+            float k = u < 0.45f ? (u / 0.45f) : (1f - (u - 0.45f) / 0.55f);
+            MoveActorAndShadows(a, home + dir * (0.9f * k));
+            if (hg) g.Evaluate(Time.deltaTime);
+            yield return null;
+        }
+        if (a != null) MoveActorAndShadows(a, home);
+        if (hg && g.IsValid()) g.Destroy();
+        if (a != null)
+        {
+            PoseIdle(go);
+            var cam = Camera.main; float camYaw = cam != null ? cam.transform.eulerAngles.y : 45f;
+            a.rotation = Quaternion.Euler(pitchX, camYaw + 180f, 0f);
+            MoveActorAndShadows(a, home);
+        }
+    }
+
+    // Death: topple (local-Z roll) + shrink + sink while the ring/AO fade out, then despawn (which removes
+    // the actor + its AO/ring). Plays the actor's own death clip on top when it has one; otherwise the
+    // transform fall reads the death on any rig. Terminal — the id is marked _dead so no beat re-touches it.
+    IEnumerator DeathCo(string id, Transform a)
+    {
+        _dead.Add(id);
+        RemoveHpBar(id);
+        if (a == null) { Despawn(id); yield break; }
+        var go = a.gameObject;
+        Vector3 baseScale = a.localScale; Vector3 home = a.position; Quaternion startRot = a.rotation;
+        AnimationClip death = FindOwnClip(id, "death", "dead", "die");
+        var anim = go.GetComponentInChildren<Animator>();
+        UnityEngine.Playables.PlayableGraph g = default; bool hg = false;
+        if (death != null && anim != null && anim.avatar != null) { g = MakeClipGraph(anim, death, "Death_" + a.name); hg = true; }
+        float dur = 0.85f, t = 0f;
+        while (t < dur && a != null)
+        {
+            t += Time.deltaTime; float u = t / dur;
+            if (hg) g.Evaluate(Time.deltaTime);
+            else a.rotation = startRot * Quaternion.Euler(0f, 0f, Mathf.Lerp(0f, 85f, u));   // topple when no clip
+            a.localScale = Vector3.Lerp(baseScale, new Vector3(baseScale.x * 0.9f, baseScale.y * 0.2f, baseScale.z * 0.9f), u);
+            MoveActorAndShadows(a, home + new Vector3(0f, -0.4f * u, 0f));
+            FadeSibling(a.name, "_Ring", 1f - u); FadeSibling(a.name, "_AO", 1f - u);
+            yield return null;
+        }
+        if (hg && g.IsValid()) g.Destroy();
+        Despawn(id);   // removes Actor_<id> + _AO + _Ring, clears per-actor state
+    }
+
+    // Fade a named ground sibling's material alpha (ring/AO death fade).
+    void FadeSibling(string actorName, string suffix, float alpha)
+    {
+        var s = GameObject.Find(actorName + suffix);
+        if (s == null) return;
+        var r = s.GetComponent<Renderer>(); if (r == null || r.sharedMaterial == null) return;
+        var c = r.sharedMaterial.color; c.a = Mathf.Clamp01(alpha); r.sharedMaterial.color = c;
+    }
+
+    // ---- #anim-combat + #1442 world-space HP bars (fed from surface hp; pure consumer) --------------
+
+    // Create the HP bar root (bg + fg quads) for an actor once; UpdateHpBars drives its position/width/billboard.
+    void EnsureHpBar(string id, Transform actor)
+    {
+        if (actor == null) return;
+        GameObject root;
+        if (_hpBars.TryGetValue(id, out root) && root != null) return;
+        root = new GameObject("Actor_" + id + "_HP");
+        MakeBarQuad(root, "_bg", new Color(0.08f, 0.03f, 0.03f, 1f), 3080);   // child 0
+        MakeBarQuad(root, "_fg", new Color(0.85f, 0.15f, 0.12f, 1f), 3090);   // child 1
+        _hpBars[id] = root;
+    }
+    void MakeBarQuad(GameObject root, string suffix, Color col, int queue)
+    {
+        var q = GameObject.CreatePrimitive(PrimitiveType.Quad); q.name = root.name + suffix; Object.DestroyImmediate(q.GetComponent<Collider>());
+        q.transform.SetParent(root.transform, false); q.transform.localScale = new Vector3(3.2f, 0.35f, 1f);
+        var m = new Material(Shader.Find("Unlit/Color")); m.color = col; m.renderQueue = queue;   // Unlit/Color exposes _Color (solid tinted bar)
+        var r = q.GetComponent<Renderer>(); r.sharedMaterial = m; r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+    }
+    void RemoveHpBar(string id)
+    {
+        if (_hpBars.TryGetValue(id, out var root)) { if (root != null) Object.Destroy(root); _hpBars.Remove(id); }
+    }
+
+    // Each frame: ride the bar above its actor's head, billboard it to the camera, and set the fill width
+    // from the tracked hp fraction (engine truth). Prune bars whose actor is gone or dead.
+    void UpdateHpBars()
+    {
+        if (_hpBars.Count == 0) return;
+        var cam = Camera.main;
+        System.Collections.Generic.List<string> gone = null;
+        foreach (var kv in _hpBars)
+        {
+            var root = kv.Value; if (root == null) continue;
+            var actor = FindActor(kv.Key);
+            if (actor == null || _dead.Contains(kv.Key)) { if (gone == null) gone = new System.Collections.Generic.List<string>(); gone.Add(kv.Key); continue; }
+            float top; if (!_topOf.TryGetValue(kv.Key, out top)) top = 5.0f;
+            root.transform.position = actor.position + new Vector3(0f, top, 0f);
+            if (cam != null) root.transform.rotation = cam.transform.rotation;
+            int hp, mx; float frac = (_hpMaxOf.TryGetValue(kv.Key, out mx) && mx > 0 && _hpOf.TryGetValue(kv.Key, out hp)) ? Mathf.Clamp01((float)hp / mx) : 1f;
+            const float full = 3.2f;
+            if (root.transform.childCount >= 2)
+            {
+                var fg = root.transform.GetChild(1);
+                fg.localScale = new Vector3(full * frac, 0.35f, 1f);
+                fg.localPosition = new Vector3(-full * (1f - frac) / 2f, 0f, 0f);
+            }
+        }
+        if (gone != null) foreach (var id in gone) RemoveHpBar(id);
+    }
+
+    // Active-turn ring pulse: the isCurrent combatant's selection ring breathes (alpha + scale); the prior
+    // pulsed ring is reset to rest when the turn moves on.
+    void UpdateTurnPulse()
+    {
+        if (_pulsePrev != _currentId && !string.IsNullOrEmpty(_pulsePrev))
+        {
+            var prev = GameObject.Find("Actor_" + _pulsePrev + "_Ring");
+            if (prev != null) { var pr = prev.GetComponent<Renderer>(); if (pr != null && pr.sharedMaterial != null) { var c = pr.sharedMaterial.color; c.a = 1f; pr.sharedMaterial.color = c; } prev.transform.localScale = new Vector3(2.6f, 2.6f, 1f); }
+            _pulsePrev = _currentId;
+        }
+        _pulsePrev = _currentId;
+        if (string.IsNullOrEmpty(_currentId)) return;
+        var ring = GameObject.Find("Actor_" + _currentId + "_Ring");
+        if (ring == null) return;
+        var r = ring.GetComponent<Renderer>(); if (r == null || r.sharedMaterial == null) return;
+        float p = 0.5f + 0.5f * Mathf.Sin(Time.time * 4f);
+        var col = r.sharedMaterial.color; col.a = Mathf.Lerp(0.55f, 1f, p); r.sharedMaterial.color = col;
+        float s = Mathf.Lerp(2.6f, 3.05f, p); ring.transform.localScale = new Vector3(s, s, 1f);
     }
 }
