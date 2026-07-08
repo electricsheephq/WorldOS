@@ -31,12 +31,12 @@
     },
     "mage": {
       "kind": "character",
-      "model_ref": "Assets/painterly/models/hero.fbx",
-      "albedo_ref": "Assets/painterly/models/hero_albedo.png",
-      "anim_ref": "Assets/painterly/models/hero@moveset.fbx",
-      "gen_recipe": "meshy:humanoid moveset (9-clip) + scenario painterly albedo (mage robe tint pending)",
-      "version": "0.9.0",
-      "critic_score": 7.0,
+      "model_ref": "Assets/chars_v2/mage/rigged.fbx",
+      "albedo_ref": "Assets/chars_v2/mage/albedo.jpg",
+      "anim_ref": "Assets/chars_v2/mage/anim_idle.fbx",
+      "gen_recipe": "meshy:humanoid moveset (9-clip: idle/walk/run/attack/cast/block/dodge/hit/death), rigged.fbx imported animationType=Generic; albedo from model.glb embedded PBR (wave-2 #1398 cast-variety)",
+      "version": "1.0.0",
+      "critic_score": 0.0,
       "default_used": false
     },
     "goblin": {
@@ -76,6 +76,27 @@
       "albedo_ref": "Assets/chars_v2/ghoul/albedo.jpg",
       "anim_ref": "Assets/chars_v2/ghoul/anim_idle.fbx",
       "gen_recipe": "tripo:text-to-model -> rig(biped, spec=mixamo) -> retarget idle+walk only (creatures support fewer biped presets); rigged.fbx imported animationType=Generic (wave-1 #1290)",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+
+    "innkeeper": {
+      "kind": "character",
+      "model_ref": "Assets/chars_v2/innkeeper/rigged.fbx",
+      "albedo_ref": "Assets/chars_v2/innkeeper/albedo.jpg",
+      "anim_ref": "Assets/chars_v2/innkeeper/anim_idle.fbx",
+      "gen_recipe": "meshy:humanoid moveset (9-clip: idle/walk/run/attack/cast/block/dodge/hit/death), rigged.fbx imported animationType=Generic; albedo from model.glb embedded PBR; warm-palette tavern NPC (wave-2 #1398 cast-variety)",
+      "version": "1.0.0",
+      "critic_score": 0.0,
+      "default_used": false
+    },
+    "patron_commoner": {
+      "kind": "character",
+      "model_ref": "Assets/chars_v2/patron_commoner/rigged.fbx",
+      "albedo_ref": "Assets/chars_v2/patron_commoner/albedo.jpg",
+      "anim_ref": "Assets/chars_v2/patron_commoner/anim_idle.fbx",
+      "gen_recipe": "meshy:humanoid moveset (9-clip: idle/walk/run/attack/cast/block/dodge/hit/death), rigged.fbx imported animationType=Generic; albedo from model.glb embedded PBR; generic reusable NPC filler (wave-2 #1398 cast-variety)",
       "version": "1.0.0",
       "critic_score": 0.0,
       "default_used": false
