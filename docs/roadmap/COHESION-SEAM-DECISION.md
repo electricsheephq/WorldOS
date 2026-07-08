@@ -86,3 +86,19 @@ path (default read from the plate manifest; `cohesion:off` restores today's Stan
 Panel-scored ladder frames (5 scorers, house anchor crypt_dense_v1 + verified-clean control per the #1452
 cadence guard), evidence committed under qa/evidence/cohesion-probe/, scores_db rows per rung, verdict folded
 back into this record.
+
+## Probe verdict (2026-07-09, panel-1 — control-valid)
+
+Blind 5-scorer integration panel (evidence: qa/evidence/cohesion-probe/, verdict JSON in panel_verdict.json):
+**baseline 3.8 / full-stack-v4 3.2 / PoE2 control 8.7 (in band).** The v4 parameterization LOST to baseline —
+the CL interior-tuned grade (atmospheric wash + desat + palette-snap toward the cool ambient) reads as
+blue-black cutouts inside the brightest firelight pool. The light-rig half drew scorer praise; the blame
+concentrates in the actor-shader grade. Two hard facts the probe banked regardless:
+1. **The seam is a measured ~5-point gap** (3.8 vs 8.7) — the largest deficit in the visual stack.
+2. **#1454**: 32 accumulated CombatKey lights in the shipped scene are a major cause of the chalk-white
+   baseline actors — a one-line bake fix + scene cleanup + rebuild.
+
+The probe LOOP is now fully mechanized (populate/rungs/captures via MenuItems + plate-derived parameter
+sourcing + this panel recipe) — parameter iteration continues on the cadence at worker prices, next
+hypotheses in panel_verdict.json. The runtime port waits for a panel-passing parameterization; the port
+architecture (plate-sampled rig + registry of tuned per-scene params) stands.
