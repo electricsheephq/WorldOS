@@ -1,0 +1,10 @@
+{
+  "frame_w":1920, "frame_h":1097,
+  "checks": {"floor_contact": {"tolerance_px": 8}, "screen_scale": {"min_height_frac":0.03,"max_height_frac":0.45}, "pose_uprightness": {"min_aspect_ratio":1.25}},
+  "actors": [
+    {"name":"Actor_char_ea0b75e5341a","logical_cell":[6,9],"expected_cell":[6,9],"screen_bbox":[1112,474,1228,703],"floor_y_px":683},
+    {"name":"Actor_char_2acc5378b26f","logical_cell":[7,9],"expected_cell":[7,9],"screen_bbox":[1157,431,1286,662],"floor_y_px":653},
+    {"name":"Actor_char_026626744e65","logical_cell":[9,9],"expected_cell":[9,9],"screen_bbox":[1292,370,1404,605],"floor_y_px":593},
+    {"name":"Actor_char_d44c6e291f2d","logical_cell":[5,9],"expected_cell":[5,9],"screen_bbox":[992,427,1210,736],"floor_y_px":713}
+  ]
+}
