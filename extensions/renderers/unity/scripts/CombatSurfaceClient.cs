@@ -1390,7 +1390,10 @@ public class CombatSurfaceClient : MonoBehaviour
     }
 
     // ---- public, for headless/programmatic driving (the box has no mouse) ----
-    public void DoMove(int x, int y) { if (!_busy) StartCoroutine(PostMove(x, y)); }
+    // #1461: in REST mode a programmatic move is a WALK (walk_to_cell), not the combat move_to_cell —
+    // so a headless/QA driver exercises the same rest lane a mouse click does (a move_to_cell at rest is
+    // engine-rejected as a combat move). Combat mode is unchanged (PostMove).
+    public void DoMove(int x, int y) { if (!_busy) StartCoroutine(_restMode ? PostWalk(x, y) : PostMove(x, y)); }
     public void DoAttack() { if (!_busy && _foeId.Length > 0) StartCoroutine(PostAttack()); }
 
     IEnumerator PostMove(int x, int y)
@@ -1423,8 +1426,20 @@ public class CombatSurfaceClient : MonoBehaviour
             req.downloadHandler = new DownloadHandlerBuffer();
             req.SetRequestHeader("Content-Type", "application/json");
             req.timeout = 8;
-            yield return req.SendWebRequest();
-            if (!Ok(req)) { Debug.LogWarning("[CSC] /walk failed: " + req.error + " body=" + req.downloadHandler.text); }
+            // #1466: the SAME elapsed-time watchdog the GET path uses — a hung /move POST would otherwise
+            // wait forever on SendWebRequest with _busy=true, and PollLoop only fetches when !_busy, so the
+            // renderer could never recover. The watchdog guarantees this coroutine terminates and _busy is
+            // released below on EVERY path (success, reject, or timeout/abort).
+            var op = req.SendWebRequest();
+            float t0 = Time.realtimeSinceStartup;
+            bool timedOut = false;
+            while (!op.isDone)
+            {
+                if (Time.realtimeSinceStartup - t0 > FetchTimeout) { req.Abort(); timedOut = true; break; }
+                yield return null;
+            }
+            if (timedOut) Debug.LogWarning("[CSC] /walk TIMEOUT (aborted after " + FetchTimeout.ToString("0.#") + "s) — PollLoop will retry");
+            else if (!Ok(req)) Debug.LogWarning("[CSC] /walk failed: " + req.error + " body=" + req.downloadHandler.text);
             else
             {
                 // walk_to_cell returns {ok, walked, character_id, from, to, path} (NOT the combat surface).
@@ -1436,7 +1451,7 @@ public class CombatSurfaceClient : MonoBehaviour
                 if (resp != null && !resp.ok && !string.IsNullOrEmpty(resp.reason)) ShowAdvisory(resp.reason);
             }
         }
-        _busy = false;
+        _busy = false;   // always released (the watchdog guarantees the loop above terminates)
         yield return Fetch();   // re-render off the engine's fresh surface (stage_cell now updated)
     }
 

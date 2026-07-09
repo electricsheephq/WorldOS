@@ -21,8 +21,11 @@ Run with the engine venv (pydantic + pytest live there):
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 from pathlib import Path
+
+import pytest
 
 _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT / "qa"))
@@ -30,6 +33,22 @@ sys.path.insert(0, str(_ROOT / "servers" / "engine"))
 
 import server  # noqa: E402  imported FIRST: resolves the models<->scene_grid import cycle
 import seed_gfx_camp_clearing as seed  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _isolate_state_env():
+    """_seed_camp points WORLDOS_STATE_DIR at a per-test tmp dir (store.py reads it live on every
+    call). Save + restore the process-global env around each test so a later test in the same pytest
+    process never inherits this module's (torn-down) tmp state dir — a classic order-dependent-flake
+    foot-gun the review flagged."""
+    prev = os.environ.get("WORLDOS_STATE_DIR")
+    try:
+        yield
+    finally:
+        if prev is None:
+            os.environ.pop("WORLDOS_STATE_DIR", None)
+        else:
+            os.environ["WORLDOS_STATE_DIR"] = prev
 
 
 # Load the stdlib viewer server under a distinct module name (its file is also `server.py`), the same
@@ -54,8 +73,6 @@ def _seed_camp(state_dir: Path):
     Reuses seed_gfx_camp_clearing's own authoring code (the CANONICAL fixture) so the test can never
     drift from what ships. Returns the campaign snapshot dict the viewer consumes + the authored
     SceneGrid (its props are the painted set we assert against)."""
-    import os
-
     os.environ["WORLDOS_STATE_DIR"] = str(state_dir)
     server.save_campaign(
         server.Campaign(id=seed.CID, title="GFX Camp Clearing Demo (rest test)")
@@ -123,7 +140,9 @@ def test_rest_surface_matches_engine_rest_blocked_cells(tmp_path):
 
 def test_combat_surface_impassable_is_byte_identical(tmp_path):
     """BYTE-IDENTITY: the rest branch must never touch a combat surface. When combat is active the
-    `impassable` field stays EXACTLY `combat.grid_impassable` (the pre-W6.2 expression)."""
+    `impassable` field stays EXACTLY `combat.grid_impassable` (the pre-W6.2 expression). Also pin
+    `stage.mode == "combat"` — the SAME predicate the client actually branches on — so an inversion of
+    the surface's rest/combat decision trips here, not just a happens-to-match value."""
     combat_impassable = [[3, 3], [4, 4], [9, 1]]
     snapshot = {
         "current_location_id": "loc1",
@@ -134,7 +153,24 @@ def test_combat_surface_impassable_is_byte_identical(tmp_path):
             "order": [{"character_id": "pc", "name": "Hero", "kind": "player", "initiative": 12}],
         },
     }
-    assert _surface(snapshot)["impassable"] == combat_impassable
+    surface = _surface(snapshot)
+    assert surface["impassable"] == combat_impassable
+    assert surface["stage"]["mode"] == "combat"  # the client's rest/combat branch key
+
+
+def test_rest_branch_is_consulted_when_combat_inactive(tmp_path):
+    """Pin the BRANCH DECISION, not just the value: with combat INACTIVE the surface must derive
+    `impassable` from rest_blocked_cells() and must IGNORE any stale `combat.grid_impassable`. A stray
+    combat-only cell (a corner that is NOT a painted prop) must NOT appear; the log cells MUST. This is
+    what a mis-ordered ternary (rest arm accidentally skipped) would break, which the byte-identity
+    combat case above — combat.active=True — can never reach."""
+    snapshot, _grid = _seed_camp(tmp_path)
+    # A stale, inactive combat block carrying a corner cell no rest prop occupies.
+    snapshot["combat"] = {"active": False, "grid_enabled": True, "grid_impassable": [[15, 11]]}
+    imp = {tuple(c) for c in surface_impassable(snapshot)}
+    assert (15, 11) not in imp, "rest branch must ignore stale combat.grid_impassable when combat is inactive"
+    assert (6, 6) in imp and (6, 7) in imp, "rest branch (rest_blocked_cells) must be the one consulted"
+    assert surface_impassable(snapshot) and _surface(snapshot)["stage"]["mode"] == "rest"
 
 
 def surface_impassable(snapshot: dict) -> list:
