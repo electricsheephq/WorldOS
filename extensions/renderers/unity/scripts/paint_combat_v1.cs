@@ -92,7 +92,9 @@ var bm=new Material(Shader.Find("Unlit/Texture")); bm.mainTexture=bdTex; bm.rend
 System.Func<int,int,Vector3> cellToWorld=(cx,cy)=> new Vector3((cx-(_gridCols-1f)/2f)*2.0f,0f,((_gridRows-1f)/2f-cy)*2.0f);
 
 // PoE2 lighting rig (from spike)
-foreach(var ln in new[]{"KeyLight","FillLight","BrazierL","BrazierR"}){ var o=GameObject.Find(ln); if(o!=null) UnityEngine.Object.DestroyImmediate(o); }
+// #1454: drain EVERY prior instance (CombatKey was never deleted and Find() only returns one - the saved
+// scene accumulated 32 stacked CombatKey point lights = the actor white-blowout in editor AND player).
+foreach(var ln in new[]{"KeyLight","FillLight","BrazierL","BrazierR","CombatKey"}){ GameObject o; while((o=GameObject.Find(ln))!=null) UnityEngine.Object.DestroyImmediate(o); }
 var lg=new GameObject("KeyLight"); var L=lg.AddComponent<Light>(); L.type=LightType.Directional; L.color=new Color(1f,0.73f,0.44f); L.intensity=1.35f; L.shadows=LightShadows.Soft; L.shadowStrength=0.75f; lg.transform.rotation=Quaternion.Euler(48f,35f,0f);
 var fg=new GameObject("FillLight"); var F=fg.AddComponent<Light>(); F.type=LightType.Directional; F.color=new Color(0.36f,0.44f,0.64f); F.intensity=0.55f; F.shadows=LightShadows.None; fg.transform.rotation=Quaternion.Euler(34f,215f,0f);
 // warm-neutral ambient (was cool 0.24,0.28,0.40) so the 3D actors read FIRELIT, not cool-studio-lit (critic L3/L4).
