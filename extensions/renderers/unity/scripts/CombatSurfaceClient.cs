@@ -42,6 +42,11 @@ public class CombatSurfaceClient : MonoBehaviour
     public string ViewerUrl = "http://127.0.0.1:8765";
     public string CampaignId = "";
     public float PollInterval = 1.5f;
+    // #1466 FIX A: hard wall-clock ceiling for ONE /combat-surface fetch. UnityWebRequest.timeout is
+    // unreliable (a hung connect never fires it), so an explicit elapsed-time watchdog Aborts a stuck
+    // request instead — the T3 wedge (t3-gate-1454) where the FIRST fetch hung forever and bricked the
+    // whole PollLoop. 8s > PollInterval, so a healthy poll never trips it.
+    public float FetchTimeout = 8f;
 
     [Header("Grid — mirror paint_combat_v1 (14x11, cell 2.0); overridden by the surface `grid` block")]
     public int Cols = 14;
@@ -83,6 +88,18 @@ public class CombatSurfaceClient : MonoBehaviour
     // The engine-confirmed route of the most recent move (surface `lastPath` == combat.last_move_path,
     // list of [x,y] incl. the from-cell). The glide follows THIS polyline; empty -> straight-line fallback.
     readonly System.Collections.Generic.List<int[]> _lastPath = new System.Collections.Generic.List<int[]>();
+
+    // W6.2 (#1461) REST-MODE walk. A rest surface carries NO combat signals (empty `turnToken`, no
+    // isCurrent token); its `stage` block ({mode, tokens:[{id,x,y,rest_role}]}) marks it mode:"rest".
+    // In rest mode a click routes to the engine's `walk_to` verb (the `walk_to_cell` /move intent)
+    // instead of the combat move — with the SAME impassable/occupied pre-validation the combat path got
+    // in #1441 (rest_blocked_cells folds standers INTO the surface `impassable`, so the walkability
+    // overlay + the click gate read one collision truth). `_restMoverId` is WHO walks: the first
+    // rest_role:"party" stage token (the deterministic lead PC), mirroring the browser board's
+    // "selected party token walks" (screen-combat.jsx). Both stay false/empty on a COMBAT surface, so
+    // every combat-mode code path below is byte-identical.
+    bool _restMode = false;
+    string _restMoverId = "";
 
     // #anim-combat: the actor's ANIM_REF (moveset) fbx (registry anim_ref), so a walk/attack/hit clip that
     // lives in a SEPARATE moveset fbx rather than the model fbx is still found. Mirrors _fbxOf; both feed
@@ -178,7 +195,7 @@ public class CombatSurfaceClient : MonoBehaviour
     System.Collections.Generic.List<object> _occRaw;  // last-parsed raw occluder entries (post-unwrap)
     string _occLocId = "";               // last-parsed location id (a room swap invalidates the proxies)
     string _occSigParsed = "";           // signature of the last-PARSED occluder set + location
-    string _occSigBuilt = " ";      // signature of the last-BUILT proxies (sentinel => first build runs)
+    string _occSigBuilt = "\0";      // signature of the last-BUILT proxies (sentinel => first build runs)
 
     [System.Serializable] public class Tok { public string id; public string name; public string team; public int x; public int y; public bool isCurrent; public int hp; public int hpMax; }
     [System.Serializable] public class Grid { public int cols; public int rows; }
@@ -228,6 +245,10 @@ public class CombatSurfaceClient : MonoBehaviour
 
     IEnumerator PollLoop()
     {
+        // #1466 FIX A: the poll loop must SURVIVE any single bad fetch — one hung/failed request must
+        // never end the loop (the T3 wedge: a forever-hung first Fetch left the loop dead and no surface
+        // was ever applied). Fetch below is now self-limiting (watchdog + Abort), so it always returns
+        // and the NEXT tick recovers; this loop is unconditional-forever by construction.
         while (true)
         {
             if (!_busy) yield return Fetch();
@@ -246,12 +267,29 @@ public class CombatSurfaceClient : MonoBehaviour
 
     IEnumerator Fetch()
     {
+        // #1466 FIX A (T3 wedge): drive the request with an EXPLICIT elapsed-time watchdog — req.timeout=6
+        // is an unreliable backstop (a hung connect can never fire it, wedging this coroutine AND PollLoop
+        // forever: Player.log dies at "[CSC] start" then 10min of silence, zero surfaces applied). If the
+        // request has not completed within FetchTimeout we Abort() it and bail so the next 1.5s poll tick
+        // recovers. A per-fetch outcome line (ok/status/timeout) makes the wedge observable in Player.log.
+        // ADDITIVE + byte-identical on the happy path: a prompt response falls straight through to ApplyJson.
         using (var req = UnityWebRequest.Get(ViewerUrl + "/combat-surface?campaign=" + CampaignId))
         {
-            req.timeout = 6;
-            yield return req.SendWebRequest();
-            if (!Ok(req)) { Debug.LogWarning("[CSC] GET failed: " + req.error); yield break; }
-            ApplyJson(req.downloadHandler.text);
+            req.timeout = 6;   // built-in backstop retained; the watchdog below is the real guard
+            var op = req.SendWebRequest();
+            float t0 = Time.realtimeSinceStartup;
+            while (!op.isDone)
+            {
+                if (Time.realtimeSinceStartup - t0 > FetchTimeout)
+                {
+                    req.Abort();
+                    Debug.LogWarning("[CSC] fetch TIMEOUT (aborted after " + FetchTimeout.ToString("0.#") + "s) — PollLoop will retry next tick");
+                    yield break;   // `using` disposes the aborted request; PollLoop continues
+                }
+                yield return null;
+            }
+            if (Ok(req)) { Debug.Log("[CSC] fetch ok (" + req.responseCode + ")"); ApplyJson(req.downloadHandler.text); }
+            else Debug.LogWarning("[CSC] fetch FAILED status=" + req.responseCode + " err=" + req.error);
         }
     }
 
@@ -303,6 +341,26 @@ public class CombatSurfaceClient : MonoBehaviour
                 _occRaw = root["occluders"] as System.Collections.Generic.List<object>;
                 _occLocId = (root.ContainsKey("location") && root["location"] is System.Collections.Generic.Dictionary<string, object> locd && locd.ContainsKey("id")) ? (locd["id"] as string ?? "") : _occLocId;
                 _occSigParsed = OccSignature(_occLocId, _occRaw);
+            }
+            // W6.2 (#1461): the `stage` block ({mode, tokens}) tells rest from combat and names the walk
+            // mover. Only re-derived when the payload actually carries `stage` (every /combat-surface poll
+            // does; a walk_to_cell /move response does NOT), so a walk response never clobbers the rest
+            // state the last poll established. A combat surface carries mode:"combat" -> _restMode false.
+            if (root.ContainsKey("stage") && root["stage"] is System.Collections.Generic.Dictionary<string, object> stage)
+            {
+                _restMode = (stage.ContainsKey("mode") ? stage["mode"] as string : "") == "rest";
+                _restMoverId = "";
+                if (_restMode && stage.ContainsKey("tokens") && stage["tokens"] is System.Collections.Generic.List<object> stoks)
+                {
+                    foreach (var e in stoks)
+                    {
+                        var tk = e as System.Collections.Generic.Dictionary<string, object>; if (tk == null) continue;
+                        string role = tk.ContainsKey("rest_role") ? tk["rest_role"] as string : "";
+                        if (role != "party") continue;                        // party tokens walk; npc tokens are talk-targets
+                        string id = tk.ContainsKey("id") ? tk["id"] as string : "";
+                        if (!string.IsNullOrEmpty(id)) { _restMoverId = id; break; } // first party token = deterministic lead PC
+                    }
+                }
             }
         }
         catch (System.Exception e) { Debug.LogWarning("[CSC] surface-extras parse: " + e.Message); }
@@ -1293,12 +1351,25 @@ public class CombatSurfaceClient : MonoBehaviour
         float tt = (FloorY - ray.origin.y) / ray.direction.y; if (tt < 0) return;
         Vector3 hit = ray.origin + ray.direction * tt;
         if (!WorldToCell(hit, out int c, out int r)) return;
+        int key = CellKey(c, r);
+        // W6.2 (#1461) REST MODE: no combat signals -> the click WALKS a party member to the cell via the
+        // engine's `walk_to` verb (the walk_to_cell /move intent), NOT the combat move. Same #1441
+        // pre-validation as combat — a blocked/occupied cell flashes a red ring instead of a doomed POST
+        // (rest_blocked_cells folds standers into `impassable`, so the _impassable check rejects a cell a
+        // person stands on too). No known party mover (no rest party token yet) -> reject rather than POST
+        // a moverless walk the engine would 400. This whole branch is inert on a combat surface (_restMode
+        // false), so the combat attack/move path below is byte-identical.
+        if (_restMode)
+        {
+            if (string.IsNullOrEmpty(_restMoverId) || _impassable.Contains(key) || _occupied.Contains(key)) { StartCoroutine(FlashReject(c, r)); return; }
+            StartCoroutine(PostWalk(c, r));
+            return;
+        }
         // on-turn attack when the clicked cell holds the foe (allowed even though the foe occupies it).
         if (c == _foeX && r == _foeY && _foeId.Length > 0) { StartCoroutine(PostAttack()); return; }
         // #1441 click pre-validation (UX pre-filter ONLY; the engine stays authoritative and independently
         // rejects illegal moves): a click on an impassable (wall/prop) or token-occupied cell flashes a red
         // ring instead of firing a doomed POST.
-        int key = CellKey(c, r);
         if (_impassable.Contains(key) || _occupied.Contains(key)) { StartCoroutine(FlashReject(c, r)); return; }
         StartCoroutine(PostMove(c, r));
     }
@@ -1319,7 +1390,10 @@ public class CombatSurfaceClient : MonoBehaviour
     }
 
     // ---- public, for headless/programmatic driving (the box has no mouse) ----
-    public void DoMove(int x, int y) { if (!_busy) StartCoroutine(PostMove(x, y)); }
+    // #1461: in REST mode a programmatic move is a WALK (walk_to_cell), not the combat move_to_cell —
+    // so a headless/QA driver exercises the same rest lane a mouse click does (a move_to_cell at rest is
+    // engine-rejected as a combat move). Combat mode is unchanged (PostMove).
+    public void DoMove(int x, int y) { if (!_busy) StartCoroutine(_restMode ? PostWalk(x, y) : PostMove(x, y)); }
     public void DoAttack() { if (!_busy && _foeId.Length > 0) StartCoroutine(PostAttack()); }
 
     IEnumerator PostMove(int x, int y)
@@ -1334,6 +1408,51 @@ public class CombatSurfaceClient : MonoBehaviour
         _busy = true;
         yield return Post("{\"kind\":\"attack\",\"target_id\":\"" + _foeId + "\",\"turn_token\":\"" + _turnToken + "\",\"campaign\":\"" + CampaignId + "\"}");
         _busy = false;
+    }
+
+    // W6.2 (#1461) REST-MODE walk: POST the `walk_to_cell` intent (the rest-mode twin of move_to_cell)
+    // so the engine's `walk_to` paths around walls/props/standers, writes Character.stage_cell, and
+    // returns the CONFIRMED route. The engine stays the SOLE WRITER — the client never predicts a path;
+    // it re-fetches the surface so the board reflects the engine-written stage_cell (same discipline as
+    // the combat re-render). A refusal (unreachable / off-grid the pre-filter missed) toasts its reason.
+    IEnumerator PostWalk(int x, int y)
+    {
+        _busy = true;
+        _lastPostCell = new[] { x, y };   // #Phase4: anchor any advisory pulse on the walk's target cell
+        string body = "{\"kind\":\"walk_to_cell\",\"character_id\":\"" + _restMoverId + "\",\"x\":" + x + ",\"y\":" + y + ",\"campaign\":\"" + CampaignId + "\"}";
+        using (var req = new UnityWebRequest(ViewerUrl + "/move", "POST"))
+        {
+            req.uploadHandler = new UploadHandlerRaw(System.Text.Encoding.UTF8.GetBytes(body));
+            req.downloadHandler = new DownloadHandlerBuffer();
+            req.SetRequestHeader("Content-Type", "application/json");
+            req.timeout = 8;
+            // #1466: the SAME elapsed-time watchdog the GET path uses — a hung /move POST would otherwise
+            // wait forever on SendWebRequest with _busy=true, and PollLoop only fetches when !_busy, so the
+            // renderer could never recover. The watchdog guarantees this coroutine terminates and _busy is
+            // released below on EVERY path (success, reject, or timeout/abort).
+            var op = req.SendWebRequest();
+            float t0 = Time.realtimeSinceStartup;
+            bool timedOut = false;
+            while (!op.isDone)
+            {
+                if (Time.realtimeSinceStartup - t0 > FetchTimeout) { req.Abort(); timedOut = true; break; }
+                yield return null;
+            }
+            if (timedOut) Debug.LogWarning("[CSC] /walk TIMEOUT (aborted after " + FetchTimeout.ToString("0.#") + "s) — PollLoop will retry");
+            else if (!Ok(req)) Debug.LogWarning("[CSC] /walk failed: " + req.error + " body=" + req.downloadHandler.text);
+            else
+            {
+                // walk_to_cell returns {ok, walked, character_id, from, to, path} (NOT the combat surface).
+                // A rejected walk ({ok:false, reason}) toasts its reason; a success is reflected by the
+                // re-fetch below (the engine wrote stage_cell; we never render a predicted route).
+                MoveResp resp = null;
+                try { resp = JsonUtility.FromJson<MoveResp>(req.downloadHandler.text); }
+                catch (System.Exception e) { Debug.LogWarning("[CSC] walk parse: " + e.Message); }
+                if (resp != null && !resp.ok && !string.IsNullOrEmpty(resp.reason)) ShowAdvisory(resp.reason);
+            }
+        }
+        _busy = false;   // always released (the watchdog guarantees the loop above terminates)
+        yield return Fetch();   // re-render off the engine's fresh surface (stage_cell now updated)
     }
 
     IEnumerator Post(string body)
