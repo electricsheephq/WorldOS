@@ -168,6 +168,28 @@ jobs:
           WORLDOS_RULES_OFFLINE: "1"
         run: uv run --directory servers/engine --group dev python -m pytest -q -p no:xdist ../../servers/integration_tests
 
+  paint-drift-gate:
+    # W6.3 (#1462): the DETERMINISTIC paint-drift eval — a regenerated canonical_plate must keep its
+    # painted set pieces on the authored logical cells (qa/check_plate_drift.py). Its own lane because
+    # the check needs the qa image stack (Pillow + numpy), which the engine venv is intentionally free
+    # of (so those heavy deps never touch the engine/rules/voice suites).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+      - name: Create a venv with the qa image lane (Pillow + numpy + pytest)
+        run: |
+          uv venv .venv-qa-image --python 3.12
+          echo "$PWD/.venv-qa-image/bin" >> "$GITHUB_PATH"
+          uv pip install --python .venv-qa-image pillow numpy pytest
+      - name: Manifests match their seeds (regeneratable, not stale)
+        run: python qa/build_room_manifest.py --check
+      - name: Paint-drift gate tests (known-good PASS + synthetic 2-cell shift CAUGHT; single-process)
+        run: python -m pytest qa/test_plate_drift_gate.py -q -p no:xdist
+      - name: room_recipes.json canonical_plate drift gate (every committed manifest+plate)
+        run: python qa/check_plate_drift.py gate-recipes
+
   license-check:
     runs-on: ubuntu-latest
     steps:

@@ -1,0 +1,79 @@
+{
+ "manifest_version": 1,
+ "room": "crypt_dense_v1",
+ "recipe_key": "crypt",
+ "source_seed": "qa/seed_gfx_crypt_2room.py",
+ "source_plate": null,
+ "grid": {
+  "cols": 14,
+  "rows": 11
+ },
+ "camera": {
+  "recipe": "greybox_render_headless (verified vs Unity Quaternion.Euler(30,45,0) <1e-3)",
+  "ortho_size": 13.0,
+  "pitch_deg": 30.0,
+  "yaw_deg": 45.0,
+  "px_w": 1344,
+  "px_h": 768,
+  "cell_world_units": 2.0,
+  "cam_dist": 80.0
+ },
+ "fingerprint": {
+  "grid": 20,
+  "metric": "mean-sub L2-normalised luma NCC"
+ },
+ "props": [
+  {
+   "id": "sarcophagus",
+   "kind": "sarcophagus",
+   "cells": [
+    [
+     6,
+     3
+    ],
+    [
+     7,
+     3
+    ]
+   ],
+   "screen_bbox": [
+    525.79,
+    310.9,
+    651.11,
+    373.56
+   ]
+  },
+  {
+   "id": "pillar_l",
+   "kind": "stone_pillar",
+   "cells": [
+    [
+     3,
+     4
+    ]
+   ],
+   "screen_bbox": [
+    442.24,
+    415.33,
+    525.79,
+    457.1
+   ]
+  },
+  {
+   "id": "pillar_r",
+   "kind": "stone_pillar",
+   "cells": [
+    [
+     10,
+     4
+    ]
+   ],
+   "screen_bbox": [
+    734.66,
+    269.12,
+    818.21,
+    310.9
+   ]
+  }
+ ]
+}
