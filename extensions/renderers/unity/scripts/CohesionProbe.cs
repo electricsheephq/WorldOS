@@ -246,6 +246,73 @@ public static class CohesionProbe
         Debug.Log("[PROBE] RungA' applied: PainterlyActor on " + n + " actors, per-actor keyDir toward " + _hearthAnchor.ToString("F1"));
     }
 
+    // ---------- rung R: relit backdrop plate (WOSRelight) — the W6.0 unified light stage ----------
+    // Swaps PaintedBackdrop's flat Unlit/Texture material for WOS/Relight (PR #1236, dormant), fed by the
+    // greybox G-buffer sidecars (Captures-Durable/room_greybox_{depth,normal}.png, captured by
+    // build_room_greybox.cs) and the plate as diffuse, driven by the SAME plate-sampled key/fill/ambient
+    // RungB computes — so ONE rig lights the plate AND the actors (the Obsidian/PoE2 plate-GI relight,
+    // amendment W6.0). RungB runs first so the actor rig matches the plate's relight. Metal/built-in-RP
+    // spike: additive material swap only; Reset reopens the scene unsaved.
+    [MenuItem("Tools/WorldOS/Cohesion Probe/4 - Rung R: relit backdrop (WOSRelight)")]
+    public static void RungR()
+    {
+        RungB();                       // shared rig lights the actors (idempotent) + guarantees Analyze() ran
+        if (!Analyze()) return;
+        var bd = GameObject.Find("PaintedBackdrop");
+        if (bd == null) { Debug.LogError("[PROBE] PaintedBackdrop not found."); return; }
+        var rend = bd.GetComponent<Renderer>();
+        var plate = rend != null && rend.sharedMaterial != null ? rend.sharedMaterial.mainTexture : null;
+        if (plate == null) { Debug.LogError("[PROBE] PaintedBackdrop plate texture not found."); return; }
+        var sh = Shader.Find("WOS/Relight");
+        if (sh == null) { Debug.LogError("[PROBE] WOS/Relight shader not found in project."); return; }
+        var nrm = LoadSidecar("room_greybox_normal.png");
+        var dep = LoadSidecar("room_greybox_depth.png");
+        if (nrm == null || dep == null) return;
+        // re-run leak guard: destroy the previous ProbeRelightMat before replacing.
+        if (rend.sharedMaterial != null && rend.sharedMaterial.name.StartsWith("ProbeRelightMat")) Object.DestroyImmediate(rend.sharedMaterial, false);
+        var m = new Material(sh); m.name = "ProbeRelightMat";
+        m.SetTexture("_MainTex", plate);
+        m.SetTexture("_NormalTex", nrm);
+        m.SetTexture("_DepthTex", dep);
+        // key/fill DIRECTIONS = the RungB rig, transformed into the greybox-camera VIEW space the normal
+        // sidecar is encoded in (WOS/ViewNormal = UNITY_MATRIX_IT_MV, +z toward camera). toward-light L is
+        // the negative of the RungB light's forward: KeyLight fwd = (-_fromDir + down*0.9), FillLight fwd =
+        // (_fromDir + down*0.6) -> L_key = (_fromDir + up*0.9), L_fill = (-_fromDir + up*0.6).
+        var cam = Camera.main;
+        Vector3 keyW = (_fromDir + Vector3.up * 0.9f).normalized;
+        Vector3 fillW = (-_fromDir + Vector3.up * 0.6f).normalized;
+        Vector3 keyV = cam != null ? cam.worldToCameraMatrix.MultiplyVector(keyW).normalized : keyW;
+        Vector3 fillV = cam != null ? cam.worldToCameraMatrix.MultiplyVector(fillW).normalized : fillW;
+        m.SetVector("_KeyDir", keyV);
+        m.SetVector("_KeyCol", (Vector4)(_key * 1.1f));     // plate fire-core color, RungB key intensity
+        m.SetVector("_FillDir", fillV);
+        m.SetVector("_FillCol", (Vector4)(_amb * 0.9f));    // cool shadow fill, RungB fill
+        // hemisphere ambient: cool shadow "sky", warm lit-ground "bounce" band (the plate-GI wrap).
+        m.SetVector("_SkyAmb", (Vector4)(_amb * 0.9f));
+        m.SetVector("_GroundAmb", (Vector4)(_warmAmb * 0.7f));
+        m.SetFloat("_Bounce", 0.12f);
+        // point lights are out of scope for the spike (greybox-space P reconstruction) — zero their colors.
+        m.SetVector("_P0Col", Vector4.zero); m.SetVector("_P1Col", Vector4.zero); m.SetVector("_P2Col", Vector4.zero);
+        // ortho extents for the (unused) point-light P reconstruction: contract camera ortho 13, ~1.75 aspect.
+        m.SetVector("_OrthoExt", new Vector4(13f * 1.75f, 13f, 80f, 0.3f));
+        rend.sharedMaterial = m;
+        Debug.Log("[PROBE] RungR applied: PaintedBackdrop -> WOS/Relight, keyV " + keyV.ToString("F2")
+                  + " keyCol " + ColorUtility.ToHtmlStringRGB(_key) + " sidecars " + nrm.width + "x" + nrm.height);
+    }
+
+    // load a greybox G-buffer sidecar PNG off disk (they live at <projectRoot>/Captures-Durable/, OUTSIDE
+    // Assets/ — no AssetDatabase import needed). linear=true: normal/depth bytes are DATA, not sRGB color.
+    static Texture2D LoadSidecar(string fname)
+    {
+        string root = System.IO.Directory.GetParent(Application.dataPath).FullName;
+        string path = System.IO.Path.Combine(root, "Captures-Durable", fname);
+        if (!System.IO.File.Exists(path)) { Debug.LogError("[PROBE] greybox sidecar missing: " + path); return null; }
+        var t = new Texture2D(2, 2, TextureFormat.RGB24, false, true);
+        t.LoadImage(System.IO.File.ReadAllBytes(path));
+        t.wrapMode = TextureWrapMode.Clamp; t.filterMode = FilterMode.Bilinear; t.Apply();
+        return t;
+    }
+
     [MenuItem("Tools/WorldOS/Cohesion Probe/0 - Reset (reopen scene, discard)")]
     public static void ResetScene()
     {
