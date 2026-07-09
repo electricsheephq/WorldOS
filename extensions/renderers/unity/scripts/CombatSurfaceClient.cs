@@ -42,6 +42,11 @@ public class CombatSurfaceClient : MonoBehaviour
     public string ViewerUrl = "http://127.0.0.1:8765";
     public string CampaignId = "";
     public float PollInterval = 1.5f;
+    // #1466 FIX A: hard wall-clock ceiling for ONE /combat-surface fetch. UnityWebRequest.timeout is
+    // unreliable (a hung connect never fires it), so an explicit elapsed-time watchdog Aborts a stuck
+    // request instead — the T3 wedge (t3-gate-1454) where the FIRST fetch hung forever and bricked the
+    // whole PollLoop. 8s > PollInterval, so a healthy poll never trips it.
+    public float FetchTimeout = 8f;
 
     [Header("Grid — mirror paint_combat_v1 (14x11, cell 2.0); overridden by the surface `grid` block")]
     public int Cols = 14;
@@ -240,6 +245,10 @@ public class CombatSurfaceClient : MonoBehaviour
 
     IEnumerator PollLoop()
     {
+        // #1466 FIX A: the poll loop must SURVIVE any single bad fetch — one hung/failed request must
+        // never end the loop (the T3 wedge: a forever-hung first Fetch left the loop dead and no surface
+        // was ever applied). Fetch below is now self-limiting (watchdog + Abort), so it always returns
+        // and the NEXT tick recovers; this loop is unconditional-forever by construction.
         while (true)
         {
             if (!_busy) yield return Fetch();
@@ -258,12 +267,29 @@ public class CombatSurfaceClient : MonoBehaviour
 
     IEnumerator Fetch()
     {
+        // #1466 FIX A (T3 wedge): drive the request with an EXPLICIT elapsed-time watchdog — req.timeout=6
+        // is an unreliable backstop (a hung connect can never fire it, wedging this coroutine AND PollLoop
+        // forever: Player.log dies at "[CSC] start" then 10min of silence, zero surfaces applied). If the
+        // request has not completed within FetchTimeout we Abort() it and bail so the next 1.5s poll tick
+        // recovers. A per-fetch outcome line (ok/status/timeout) makes the wedge observable in Player.log.
+        // ADDITIVE + byte-identical on the happy path: a prompt response falls straight through to ApplyJson.
         using (var req = UnityWebRequest.Get(ViewerUrl + "/combat-surface?campaign=" + CampaignId))
         {
-            req.timeout = 6;
-            yield return req.SendWebRequest();
-            if (!Ok(req)) { Debug.LogWarning("[CSC] GET failed: " + req.error); yield break; }
-            ApplyJson(req.downloadHandler.text);
+            req.timeout = 6;   // built-in backstop retained; the watchdog below is the real guard
+            var op = req.SendWebRequest();
+            float t0 = Time.realtimeSinceStartup;
+            while (!op.isDone)
+            {
+                if (Time.realtimeSinceStartup - t0 > FetchTimeout)
+                {
+                    req.Abort();
+                    Debug.LogWarning("[CSC] fetch TIMEOUT (aborted after " + FetchTimeout.ToString("0.#") + "s) — PollLoop will retry next tick");
+                    yield break;   // `using` disposes the aborted request; PollLoop continues
+                }
+                yield return null;
+            }
+            if (Ok(req)) { Debug.Log("[CSC] fetch ok (" + req.responseCode + ")"); ApplyJson(req.downloadHandler.text); }
+            else Debug.LogWarning("[CSC] fetch FAILED status=" + req.responseCode + " err=" + req.error);
         }
     }
 
