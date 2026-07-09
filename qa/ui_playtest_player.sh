@@ -268,6 +268,10 @@ rm -f "$PLAYERDIR/native_input"
 # background (Unity -screen-fullscreen 0 / -screen-width / -screen-height).
 osascript -e 'quit app "WorldOSPlayer"' >/dev/null 2>&1 || true
 sleep 1
+# #1466 FIX B: -logFile below redirects Unity's own stdout/stderr into unity_player.log, so
+# player_app.log (the shell redirect just below) is now expected to be sparse/near-empty in the
+# common case — it's kept as a belt-and-suspenders capture of anything emitted before Unity's
+# logging takes over (e.g. dyld/early native errors). unity_player.log is the primary player log.
 PLAYER_WIN_ARGS=(); while IFS= read -r __a; do PLAYER_WIN_ARGS+=("$__a"); done < <(player_windowed_launch_args "$PLAYERDIR/unity_player.log")
 WORLDOS_ENGINE_BASE_URL="$BASE_URL" WORLDOS_CAMPAIGN_ID="$CID" "$PLAYER_BIN" "${PLAYER_WIN_ARGS[@]}" \
   > "$RUNDIR/player_app.log" 2>&1 &
