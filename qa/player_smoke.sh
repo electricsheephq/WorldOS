@@ -145,7 +145,7 @@ cleanup() {
   kill "$VIEWER" 2>/dev/null
   [ -n "$PLAYER_APP_PID" ] && kill "$PLAYER_APP_PID" 2>/dev/null
   osascript -e 'quit app "WorldOSPlayer"' >/dev/null 2>&1 || true
-  copy_player_log_fallback "$PLAYERDIR"  # #1466 FIX B: fallback if -logFile capture didn't land
+  copy_player_log_fallback "$PLAYERDIR" "$PLAYERDIR/unity_player.log"  # #1466 FIX B: fallback if -logFile capture didn't land
 }
 trap cleanup EXIT INT TERM
 

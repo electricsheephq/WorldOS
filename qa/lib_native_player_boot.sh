@@ -91,10 +91,17 @@ player_windowed_launch_args() {
 # copy the shared default log location (overwritten on every launch — Player-prev.log is the PRIOR
 # run) into THIS run's dir under distinct names so it's never confused with the -logFile capture.
 # Silent no-op if the source dir/files don't exist (e.g. never launched, or a non-default log path).
+# Second arg (optional) is the run's OWN -logFile path: when it exists and is non-empty, -logFile was
+# honored and the shared default wasn't written THIS run, so the fallback copy is skipped — without
+# this guard a leftover Player.log from an unrelated prior launch could be copied in and mislabeled
+# as this run's fallback (review finding on PR #1467).
 copy_player_log_fallback() {
-  local dest="$1"
+  local dest="$1" primary_log="${2:-}"
   local src_dir="$HOME/Library/Logs/worldos/WorldOSPlayer"
   [ -d "$dest" ] || return 0
+  if [ -n "$primary_log" ] && [ -s "$primary_log" ]; then
+    return 0  # -logFile capture already landed and is non-empty — nothing stale to guard against
+  fi
   [ -f "$src_dir/Player.log" ] && cp -f "$src_dir/Player.log" "$dest/Player.log.fallback" 2>/dev/null
   [ -f "$src_dir/Player-prev.log" ] && cp -f "$src_dir/Player-prev.log" "$dest/Player-prev.log.fallback" 2>/dev/null
   return 0
