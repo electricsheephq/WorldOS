@@ -58,3 +58,33 @@ ALREADY EXISTS as engine-authored data that the shipped player ignores:
 Engine stays SOLE WRITER (all stage data is engine-authored or manifest-static); every piece additive +
 default-off where it touches the shipped render path; text tier untouched; evals gate promotion (W6.3
 gates ship before W6.1/W6.2 close).
+
+## AMENDMENT (2026-07-10, deep-research verdict: AMEND ~80% — full evidence: wf_46db77c8-a30)
+
+Owner asked "are we overlooking existing engines/assets/AI methods?" Research (5 angles + adversarial
+judge, source-verified) says YES — two dormant, already-proven in-repo capabilities are the highest-
+leverage fixes, and the current W6 headline aims at the wrong axis of the 3.2-vs-8.7 panel gap:
+
+1. **W6.0 UNIFIED LIGHT STAGE (new LEAD workstream).** The backdrop quad is flat Unlit/Texture while
+   actors get a separate hand-tuned rig — plate and actors CANNOT be lit coherently; that mismatch IS
+   the cohesion failure. Fix: wire the dormant `WOSRelight.shader` (plate-GI relight, PR #1236, zero
+   refs) onto the backdrop quad, fed by the already-captured `room_greybox_{depth,normal}.png`
+   sidecars, with ONE shared light rig driving plate AND actors. This is the exact Obsidian/PoE bake
+   pipeline (4-pass background: albedo/depth/normal + 2-light rig + bg-color-sample pseudo-GI —
+   eternity.obsidian.net update #79; Disco Elysium GDC 2020 variant). **Metal/built-in-RP spike on the
+   GEX44 build FIRST** (Metal shader gaps are a documented risk). Greybox depth → SV_DEPTH per-pixel
+   occlusion later obsoletes W6.5's silhouette work; AABB proxies stay as the collision/nav proxy.
+2. **W6.3b DRIFT PREVENTION AT SOURCE.** generate_room.py imports CONTROLNET_PATH but never calls it —
+   plates are UNCONDITIONED img2img, which is where paint-vs-grid drift is born. Add a --controlnet
+   path (scenario_gen._cmd_controlnet, proven 2026-06-22) with the greybox as depth/canny control:
+   locks paint to geometry, makes the depth/normal sidecars valid for W6.0, and preempts most
+   after-the-fact gating. W6.3's gates remain as the regression net (SAM2 segmentation usable as a
+   drift-DETECTION signal only — collision stays engine-authored, invariant upheld).
+3. **Resequencing:** W6.4 flicker DEPENDS on W6.0 (flickering actors over a static-bright flat plate
+   increases incoherence — one shared key color drives both). Beautify 3 (owned, unwired) = final
+   tone/grade unification AFTER lighting+texture cohesion, never the stylization layer (screen-space
+   stylization = confirmed dead end, twice). Offline AI texture re-bake of actor albedos (E-track,
+   probing now) is the complementary cohesion lever — zero runtime cost, animation-safe.
+4. **Status corrections:** W6.1 SHIPPED (#1460 → PR #1464, runtime RebuildOccluders + the
+   OccluderDepthOnly shader-name fix). W6.2 (rest-mode collision) is the one open correctness item and
+   is unaffected by this amendment.
