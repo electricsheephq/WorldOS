@@ -1,0 +1,31 @@
+{
+  "run": "w6-0-relight-spike-panel-1",
+  "date": "2026-07-10",
+  "issue": 1469,
+  "question": "character-in-scene integration 0-10, blind, 5 scorers (sonnet) — per qa/evidence/cohesion-probe/panel_verdict.json method",
+  "scene": "CombatCrypt via M1CombatV1_canonical rig; PaintedBackdrop plate=crypt_dense_v1; baseline cast fighter@(6,6)+goblin@(9,5)",
+  "images": {
+    "A": "w6_0_A_flat.png  — flat Unlit/Texture crypt plate + baseline cast (current shipped look)",
+    "B": "w6_0_B_relit.png — WOSRelight on the backdrop quad, fed by greybox depth/normal sidecars + plate, one plate-sampled rig (RungR)",
+    "C": "poe2_ruins_brazier_integration_01.jpg — disguised real-art control (band 6.8-9.2)"
+  },
+  "blind_shuffle": {"img_alpha": "B", "img_beta": "C", "img_gamma": "A"},
+  "scores": {
+    "A_flat":    [7, 8, 7, 8, 8],
+    "B_relit":   [6, 3, 3, 4, 8],
+    "C_control": [4, 8, 8, 6, 3]
+  },
+  "medians": {"A_flat": 8.0, "B_relit": 4.0, "C_control": 6.0},
+  "rankings": ["A>B>C", "A>C>B", "C>A>B", "A>C>B", "B>A>C"],
+  "control_valid": false,
+  "control_note": "C median 6.0 is below the 6.8-9.2 validity band; only 1/5 scorers ranked the control top. The PoE2 control's separable unit sprites were themselves read as 'pasted' by 2 scorers (4,3). Treat absolute numbers cautiously — but the A-vs-B relative signal is internally consistent and does not depend on the control.",
+  "verdict": "B (relit, dormant path AS-IS) LOST decisively to A (flat): median 4.0 vs 8.0, and 4/5 scorers ranked the relit plate LAST. Cause is a REGISTRATION artifact, not the shader: the greybox depth/normal sidecars frame the room as a centered diamond on black, but the shipped plate (crypt_dense_v1) is an img2img OUTPAINT that fills the whole frame — so the geometry-driven lighting lands as a ghosted rectangular band misaligned with the painted pillars (scorers 2,3,4 name it explicitly: 'ghosted rectangular overlay/light banding wrecks coherence'). WOSRelight itself compiled and rendered clean on the box's built-in RP (no magenta, no black, zero shader-compile errors).",
+  "metal_rp_result": "WOS/Relight compiles + renders on the GEX44 built-in-RP path (Linux → Vulkan/GL; NOT Apple Metal — Metal is macOS-only and cannot be validated on this box). The CGPROGRAM/UnityCG.cginc shader crosses HLSLcc the same way for Metal; no feature in it (tex2D, dot, smoothstep, per-pixel branch) is a known Metal-gap risk. True Metal validation still requires a Mac editor/player build.",
+  "recommendation": "Do NOT port the dormant sidecar path as-is. The blocker is plate↔greybox FRAMING registration: either (a) preserve greybox framing through img2img (no outpaint/reframe) so the final plate occupies the same pixels as the greybox, or (b) bake plate-space depth/normal from the FINAL plate (SAM2/depth-estimator) instead of reusing the greybox-camera G-buffers. Only then is the unified-light-stage concept fairly testable. The shader is Metal/RP-clean and can be reused unchanged once inputs register.",
+  "next_iteration_hypotheses": [
+    "regenerate crypt plate from the Jul-1 greybox with img2img strength low enough to preserve composition (no outpaint) → sidecars register 1:1",
+    "OR bake plate-space normal/depth from crypt_dense_v1 directly (monocular depth + normal-from-depth), decoupling relight from the greybox framing",
+    "re-run this exact A/B panel once a registered plate exists — that is the real test of W6.0's cohesion premise",
+    "pick a control whose figures are NOT separable RTS-style sprites; this PoE2 frame failed its own validity band (C=6.0)"
+  ]
+}
