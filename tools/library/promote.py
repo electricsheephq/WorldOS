@@ -551,6 +551,43 @@ def score_if_unscored(nomination: dict, *, budget: str = "1.50",
     return _artifacts_by_id(db_path).get(aid)
 
 
+# ── Paint-drift gate (W6.3, #1462) — a HARD FLOOR on room promotions ─────────────────────────────
+def _paint_drift_gate(nom: dict) -> dict:
+    """Deterministic paint-drift check for a ROOM nomination (qa/check_plate_drift.py). Runs iff the
+    nomination declares a ``candidate_plate`` (the plate being promoted) AND a per-room manifest exists
+    for its recipe_key; then the plate's painted set pieces must still sit on the authored logical cells
+    (reprojected bbox + NCC template match). A DRIFT is a HARD rejection — the eval-blindness #1462 fixed.
+
+    Returns {ran, passed, ...}. Non-blocking NO-OP (ran=False) when: no candidate_plate (today's
+    nominations), no committed manifest for the room, or the qa image lane (Pillow/numpy) is absent in
+    this interpreter — the standalone ci.yml `paint-drift-gate` job is the always-on enforcement; here
+    we never crash a text-heavy batch on a missing optional dep. A real DRIFT, when the check DOES run,
+    is loud (passed=False → the caller rejects)."""
+    candidate = nom.get("candidate_plate")
+    if not candidate:
+        return {"ran": False, "passed": True, "reason": "no candidate_plate on nomination"}
+    recipe_key = (nom.get("room_ref") or {}).get("recipe_key") or nom.get("room")
+    try:
+        import check_plate_drift as cpd  # noqa: PLC0415  (qa/ is on sys.path; PIL/numpy imported here)
+    except Exception as e:  # pragma: no cover - depends on the host interpreter's image lane
+        return {"ran": False, "passed": True, "reason": f"drift lane unavailable ({e})"}
+    manifest_path = cpd._find_manifest_for_recipe(recipe_key, candidate, cpd._MANIFESTS_DIR)
+    if manifest_path is None:
+        return {"ran": False, "passed": True, "reason": f"no manifest for recipe_key {recipe_key!r}"}
+    plate = Path(candidate)
+    if not plate.is_absolute():
+        plate = _REPO_ROOT / candidate
+    if not plate.is_file():
+        return {"ran": True, "passed": False, "reasons": [f"candidate_plate {candidate!r} not found"]}
+    baseline = nom.get("baseline_plate")
+    if baseline and not Path(baseline).is_absolute():
+        baseline = str(_REPO_ROOT / baseline)
+    res = cpd.check_plate_drift(plate, cpd.load_manifest(manifest_path), baseline=baseline)
+    out = res.as_dict()
+    out["ran"] = True
+    return out
+
+
 # ── Visual nomination promotion (the "room" strategy branch of promote_batch) ────────────────────
 def _promote_visual(nom: dict, aid: str, *, registry: dict, library_dir: Path, promoted_at: str,
                     default_license: str, dry_run: bool, report: dict) -> None:
@@ -580,9 +617,15 @@ def _promote_visual(nom: dict, aid: str, *, registry: dict, library_dir: Path, p
 
     noise = float(registry.get("noise_law", 1.2))
     gate = evaluate_visual_gate(panel, registry=registry, noise_law=noise)
-    report["details"].append({"artifact_id": aid,
-                              "verdict": "promoted" if gate.passed else "rejected", **gate.as_dict()})
-    if not gate.passed:
+    # #1462 paint-drift HARD FLOOR: a room plate that slid a set piece off its authored cell is
+    # rejected even if the taste/delta gate passed (that drift is what reads as "actors over the logs").
+    drift = _paint_drift_gate(nom)
+    passed = gate.passed and drift.get("passed", True)
+    detail = {"artifact_id": aid, "verdict": "promoted" if passed else "rejected", **gate.as_dict()}
+    if drift.get("ran"):
+        detail["paint_drift"] = drift
+    report["details"].append(detail)
+    if not passed:
         report["rejected"] += 1
         if not dry_run:
             _append_processed(library_dir, aid, "rejected", None)
