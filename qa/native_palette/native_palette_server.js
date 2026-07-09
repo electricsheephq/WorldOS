@@ -7,7 +7,7 @@
  * playtester to complete a QUEST LOOP entirely in the RENDERED surface; that surface is a native
  * macOS window, so the palette is backed by macOS primitives rather than Playwright:
  *
- *   screenshot()   -> screencapture -l <windowid>  (the player window, found via CGWindowList)
+ *   screenshot()   -> ScreenCaptureKit capture of the player window (#1456 — any Space, no activation)
  *   a11y_tree()    -> STUB. The native window is pixels-only (no DOM/AX tree exposed); the T3 player
  *                     persona works from screenshots. Returned so the 9-tool contract is identical.
  *   click(x,y)     -> a CGEvent left-click at window-relative PIXELS (mapped to global points), via the
@@ -168,11 +168,12 @@ function assertPermissions() {
 }
 
 // ---- window + screenshot ----------------------------------------------------
-// #1443: cross-Space capture. core.captureWindow() does the activate+poll+capture(-l)+fallback
-// (fullscreen grab cropped to the window's bounds) sequence — see native_palette_core.js. This
-// function stays a thin per-run wrapper: it picks the file name, threads the persistent
-// `captureState` (remembers the last known-good Retina scale across calls, for the fallback
-// crop), and updates `winCache` for click()'s pixel->global-point mapping exactly as before.
+// #1456: cross-Space capture WITHOUT activation. core.captureWindow() images the window via
+// ScreenCaptureKit (primary — works on any Space, never steals focus), falling back to
+// screencapture -l / a cropped full-screen grab only when SCK is unavailable — see
+// native_palette_core.js. This function stays a thin per-run wrapper: it picks the file name,
+// threads the persistent `captureState` (remembers the last known-good Retina scale across calls,
+// for the fallback crop), and updates `winCache` for click()'s pixel->global-point mapping.
 const captureState = {}; // {lastGoodScale} — persists across calls in this process
 function findWindow() {
   return core.findWindow(resolveHelper(), OWNER);

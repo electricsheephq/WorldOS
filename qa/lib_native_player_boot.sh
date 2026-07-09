@@ -40,23 +40,42 @@ pick_port() {
   return 1
 }
 
-# --- #1443 launch-into-same-Space discipline ------------------------------------------------------
-# macOS opens a newly-launched app's window on whichever Space is CURRENT at launch time. The T3
-# finding was WorldOSPlayer opening onto (or drifting to) a different Space than the harness, which
-# then made `screencapture -l <id>` refuse to rasterize it. We cannot reliably know which terminal
-# app is running this script (Terminal/iTerm/VSCode/a detached `claude -p` parent), so instead of
-# guessing a name, we ask macOS which app is CURRENTLY frontmost and re-activate exactly that one —
-# re-asserting "whatever GUI context is in front, stays in front" right before we spawn the player.
-# This is the simplest mechanism that needs no app-name knowledge and no Unity/C# change: it just
-# closes the race window between an earlier Space switch (e.g. a previous run's cleanup) and this
-# run's launch. Never fails loud — a failure here just means we skip the pin, not abort the run;
-# native_palette_core.js's activate-before-capture (#1443) is the real belt-and-suspenders fix that
-# makes screenshot/click work even if the player DOES end up on a different Space.
-activate_current_space_context() {
-  local front
-  front="$(osascript -e 'tell application "System Events" to get name of first application process whose frontmost is true' 2>/dev/null)"
-  if [ -n "$front" ]; then
-    osascript -e "tell application \"$front\" to activate" >/dev/null 2>&1 || true
-    sleep 0.3
+# --- #1456 owner-active guard ---------------------------------------------------------------------
+# Player QA drives synthetic clicks/keys and captures the screen — running it while the owner is
+# actively using the Mac hijacks their session (the #1456 report). Refuse to launch when the console
+# user had HID input activity within the last threshold, UNLESS FORCE_PLAYER_QA=1. HIDIdleTime is
+# nanoseconds since the last HID event, read from ioreg. Prints a distinct "SMOKE-DEFERRED (owner
+# active)" line and returns PLAYER_QA_OWNER_ACTIVE_RC so the caller can exit with a distinct code.
+# A missing/unreadable HIDIdleTime is treated as idle (proceed) rather than blocking a headless box.
+PLAYER_QA_OWNER_ACTIVE_RC=75
+owner_active_guard() {
+  local threshold="${WORLDOS_PLAYER_IDLE_THRESHOLD:-120}"
+  if [ "${FORCE_PLAYER_QA:-0}" = "1" ]; then
+    echo "[guard] FORCE_PLAYER_QA=1 — bypassing owner-active guard." >&2
+    return 0
   fi
+  local idle_ns idle_s
+  idle_ns="$(ioreg -c IOHIDSystem 2>/dev/null | awk '/HIDIdleTime/ {print $NF; exit}')"
+  if ! [[ "$idle_ns" =~ ^[0-9]+$ ]]; then
+    echo "[guard] WARN: could not read HIDIdleTime (got '$idle_ns') — proceeding (assume idle)." >&2
+    return 0
+  fi
+  idle_s=$(( idle_ns / 1000000000 ))
+  if [ "$idle_s" -lt "$threshold" ]; then
+    echo "SMOKE-DEFERRED (owner active): last input ${idle_s}s ago (< ${threshold}s idle). Set FORCE_PLAYER_QA=1 to override." >&2
+    return "$PLAYER_QA_OWNER_ACTIVE_RC"
+  fi
+  echo "[guard] owner idle ${idle_s}s (>= ${threshold}s) — OK to launch player QA." >&2
+  return 0
+}
+
+# --- #1456 windowed launch args -------------------------------------------------------------------
+# Force the Unity standalone player WINDOWED at a fixed size (never fullscreen) so a QA run never
+# takes over the display. -screen-fullscreen/-screen-width/-screen-height are Unity's built-in
+# standalone-player command-line args, honored before the app's own window setup — no Unity/C#
+# change needed. Emits one arg per line; callers read it into an array. Size is env-overridable.
+player_windowed_launch_args() {
+  printf '%s\n' -screen-fullscreen 0 \
+    -screen-width "${WORLDOS_PLAYER_WIN_W:-1280}" \
+    -screen-height "${WORLDOS_PLAYER_WIN_H:-800}"
 }

@@ -132,7 +132,32 @@ class SwiftHelperTests(unittest.TestCase):
     def test_source_has_all_spaces_fallback(self):
         src = SWIFT.read_text(encoding="utf-8")
         self.assertIn("allSpacesOpts", src, "winFind must retry without .optionOnScreenOnly (#1443)")
-        self.assertIn("on_screen", src, "winFind must emit on_screen so capture callers can activate+retry")
+        self.assertIn("on_screen", src, "winFind must emit on_screen so capture callers can pick the path")
+
+    def test_source_has_screencapturekit_capture_subcommand(self):
+        """#1456: the helper must expose a `capture` subcommand backed by ScreenCaptureKit
+        (SCScreenshotManager), the no-activation cross-Space capture path."""
+        src = SWIFT.read_text(encoding="utf-8")
+        self.assertIn("import ScreenCaptureKit", src)
+        self.assertIn("SCScreenshotManager", src, "capture must use SCScreenshotManager (no activation)")
+        self.assertIn('case "capture":', src, "helper must dispatch a `capture` subcommand")
+
+    @unittest.skipUnless(shutil.which("swiftc"), "swiftc not available (non-macOS CI)")
+    def test_capture_subcommand_images_a_window_without_activation(self):
+        """Prove the SCK `capture` path actually images an EXISTING window (Finder is always
+        running) to a real PNG — WITHOUT activating anything. Skipped where Screen Recording is not
+        granted (SCK returns ok:false), since the grant is an owner action, not a test outcome."""
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "native_input"
+            subprocess.run(["swiftc", str(SWIFT), "-o", str(out)], check=True, capture_output=True)
+            png = Path(td) / "cap.png"
+            r = subprocess.run([str(out), "capture", "Finder", str(png)], capture_output=True, text=True)
+            data = json.loads(r.stdout.strip().splitlines()[-1])
+            if data.get("ok") is not True:
+                self.skipTest(f"SCK capture unavailable (grant/OS): {data}")
+            self.assertTrue(png.is_file() and png.stat().st_size > 0, "capture must write a non-empty PNG")
+            for k in ("px_w", "px_h", "scale", "window_id"):
+                self.assertIn(k, data, f"capture JSON must report {k}")
 
 
 class ServerBootTests(unittest.TestCase):
@@ -215,14 +240,21 @@ class CoreModuleTests(unittest.TestCase):
 
     def test_core_module_exports_the_capture_primitives(self):
         src = CORE.read_text(encoding="utf-8")
-        for name in ("resolveHelper", "findWindow", "activateOwner", "waitForOnScreen",
+        for name in ("resolveHelper", "findWindow", "captureSCK",
                      "captureWindow", "clickAt", "fullscreenCropWindow"):
             self.assertIn(name, src, f"native_palette_core.js must export {name}")
 
-    def test_capture_window_activates_and_falls_back(self):
+    def test_capture_window_is_sck_primary_and_never_activates(self):
+        """#1456: capture goes through ScreenCaptureKit (any Space, no activation) as the PRIMARY
+        path, with screencapture -l / fullscreen-crop only as fallbacks — and the activate-before-
+        capture behavior is GONE, so QA never steals the user's focus or switches Spaces."""
         src = CORE.read_text(encoding="utf-8")
-        self.assertIn("activateOwner(owner)", src, "#1443: must activate the owner when off-screen")
-        self.assertIn("fullscreenCropWindow", src, "#1443: must fall back to a cropped full-screen grab")
+        self.assertIn("captureSCK(helperCmd, owner, outFile)", src, "#1456: SCK must be the primary capture")
+        self.assertIn("fullscreenCropWindow", src, "must still fall back to a cropped full-screen grab")
+        # No activation anywhere in the module — the whole point of #1456.
+        self.assertNotIn("activateOwner", src, "#1456: activate-before-capture must be removed (no focus theft)")
+        self.assertNotIn("waitForOnScreen", src, "#1456: cross-Space activation polling must be removed")
+        self.assertNotIn("to activate", src, "#1456: the module must not osascript-activate the owner")
 
     @unittest.skipUnless(shutil.which("swiftc") and shutil.which("node"), "swiftc/node not available (non-macOS CI)")
     def test_stale_compiled_binary_is_rebuilt_on_source_edit(self):
@@ -259,28 +291,36 @@ class CoreModuleTests(unittest.TestCase):
                                 "a stale compiled binary was NOT rebuilt after the source changed (#1443 T3 bug)")
 
 
-class LaunchIntoSpaceTests(unittest.TestCase):
-    """#1443: the harnesses re-activate the current GUI context right before launching
-    WorldOSPlayer.app, so the new window opens on the harness's current Space."""
+class NoHijackLaunchTests(unittest.TestCase):
+    """#1456: player QA must not hijack the owner's session — the shared boot lib defines an
+    owner-active guard (HIDIdleTime) + a WINDOWED launch, and BOTH runners wire them in while never
+    re-activating the player or switching Spaces (the deleted #1443 activate-before-launch pin)."""
 
-    def test_shared_lib_defines_activation_helper(self):
+    def test_shared_lib_defines_owner_guard_and_windowed_launch(self):
         self.assertTrue(LIB_BOOT.is_file())
         src = LIB_BOOT.read_text(encoding="utf-8")
-        self.assertIn("activate_current_space_context()", src)
-        self.assertIn("frontmost", src)
+        self.assertIn("owner_active_guard()", src)
+        self.assertIn("HIDIdleTime", src, "guard must read console-user idle from ioreg HIDIdleTime")
+        self.assertIn("FORCE_PLAYER_QA", src, "guard must honor a FORCE_PLAYER_QA=1 override")
+        self.assertIn("SMOKE-DEFERRED (owner active)", src)
+        self.assertIn("player_windowed_launch_args()", src)
+        self.assertIn("-screen-fullscreen", src, "windowed launch must force -screen-fullscreen 0")
+        # The old activate-before-launch Space pin is GONE (never re-activate / switch Spaces).
+        self.assertNotIn("activate_current_space_context", src)
 
-    def test_ui_playtest_player_sources_shared_lib_and_activates_before_launch(self):
-        text = (ROOT / "qa" / "ui_playtest_player.sh").read_text(encoding="utf-8")
+    def _assert_runner_no_hijack(self, text):
         self.assertIn("lib_native_player_boot.sh", text)
-        self.assertIn("activate_current_space_context", text)
+        self.assertIn("owner_active_guard", text, "runner must gate on the owner-active guard")
+        self.assertIn("player_windowed_launch_args", text, "runner must launch WINDOWED")
+        self.assertNotIn("activate_current_space_context", text, "#1456: no re-activation / Space switch")
         # force-recompile discipline: the runner deletes a stale compiled binary before launch.
         self.assertIn('rm -f "$PLAYERDIR/native_input"', text)
 
-    def test_player_smoke_sources_shared_lib_and_activates_before_launch(self):
-        text = SMOKE_RUNNER.read_text(encoding="utf-8")
-        self.assertIn("lib_native_player_boot.sh", text)
-        self.assertIn("activate_current_space_context", text)
-        self.assertIn('rm -f "$PLAYERDIR/native_input"', text)
+    def test_ui_playtest_player_is_no_hijack(self):
+        self._assert_runner_no_hijack((ROOT / "qa" / "ui_playtest_player.sh").read_text(encoding="utf-8"))
+
+    def test_player_smoke_is_no_hijack(self):
+        self._assert_runner_no_hijack(SMOKE_RUNNER.read_text(encoding="utf-8"))
 
 
 class PlayerSmokeTests(unittest.TestCase):

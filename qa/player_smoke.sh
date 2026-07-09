@@ -69,6 +69,10 @@ if ! echo "$PERMS" | grep -q '"accessibility":true'; then
   echo "        (enable the app running this script, then RESTART it). probe=$PERMS" >&2; exit 5; fi
 echo "[smoke] permissions OK: $PERMS"
 
+# --- #1456 owner-active guard: never hijack the Mac while the owner is working (before we spend
+# anything on seeding/booting the player). FORCE_PLAYER_QA=1 overrides; exit 75 == deferred. -------
+owner_active_guard || exit $?
+
 # --- #1443 force-recompile discipline (see ui_playtest_player.sh for the full rationale) ---------
 rm -f "$PLAYERDIR/native_input"
 
@@ -153,14 +157,16 @@ done
 [ "$ready" = "1" ] || { echo "[smoke] viewer never served /combat-surface at $BASE_URL (see $RUNDIR/viewer.log)" >&2; exit 4; }
 echo "[smoke] viewer ready — /combat-surface serving $CID."
 
-# --- #1443 launch-into-same-Space, then launch the player build -----------------------------------
+# --- #1456 launch WINDOWED, never fullscreen, never re-activate (no focus theft / no Space switch).
+# ScreenCaptureKit captures across Spaces, so there is nothing to pin — we just quit any stale
+# instance and spawn a fixed-size WINDOWED player in the background. ---------------------------------
 osascript -e 'quit app "WorldOSPlayer"' >/dev/null 2>&1 || true
 sleep 1
-activate_current_space_context
-WORLDOS_ENGINE_BASE_URL="$BASE_URL" WORLDOS_CAMPAIGN_ID="$CID" "$PLAYER_BIN" \
+PLAYER_WIN_ARGS=(); while IFS= read -r __a; do PLAYER_WIN_ARGS+=("$__a"); done < <(player_windowed_launch_args)
+WORLDOS_ENGINE_BASE_URL="$BASE_URL" WORLDOS_CAMPAIGN_ID="$CID" "$PLAYER_BIN" "${PLAYER_WIN_ARGS[@]}" \
   > "$RUNDIR/player_app.log" 2>&1 &
 PLAYER_APP_PID=$!
-echo "[smoke] player app launched (pid $PLAYER_APP_PID) — engine=$BASE_URL campaign=$CID"
+echo "[smoke] player app launched WINDOWED (pid $PLAYER_APP_PID) — engine=$BASE_URL campaign=$CID args=${PLAYER_WIN_ARGS[*]}"
 # Let Unity open its window, fetch /combat-surface, and settle into the TACTICAL GRID camera
 # framing (not whatever establishing/pre-combat view it opens on) before the scripted clicks —
 # the click-target math below assumes the locked dimetric combat camera is on screen.
