@@ -23,6 +23,15 @@ regeneratable on demand and the workflow is auditable.
   # byte-identical to the plain single-pass img2img above.
   python3 generate_room.py --room crypt --base-plate <png> --layered --out <dir>
 
+  # OPTIONAL --controlnet (W6.3b, #1470): condition the base/layout pass on the greybox as a
+  # ControlNet depth|canny control image (Pipeline A, scenario_gen._cmd_controlnet, proven
+  # 2026-06-22) instead of unconditioned img2img — locks the paint to the authored geometry so
+  # paint-vs-grid drift goes to ~zero. Default OFF — absent flag = byte-identical img2img. Composes
+  # with --layered (conditioning applies to the base pass; the Gemini detail/staging passes ride on
+  # top unchanged, restoring paint quality). The greybox = the --base-plate (or --refine-from asset).
+  python3 generate_room.py --room camp_clearing_night --base-plate <greybox.png> \
+      --controlnet depth --layered --out <dir>
+
 Design notes:
 - The lever from L6 6.5 -> 8 is LIGHTING DRAMA (single warm key, deep blue-violet
   shadows, hard cast shadows), NOT more texture. Keep `strength` low (~0.30-0.45) so
@@ -32,6 +41,8 @@ Design notes:
 - Engine = sole writer; this is a generation/view-layer tool only. It never writes
   engine state; it produces a PNG the renderer/registry later consume by slot.
 """
+from __future__ import annotations
+
 import argparse
 import json
 import os
@@ -247,6 +258,100 @@ def _build_prompt(recipe: dict, room: str, lighting: str = "firelit") -> tuple:
     return positive, negative
 
 
+# Default ControlNet base model + strength for the --controlnet base/layout pass (W6.3b, #1470).
+# These mirror the PROVEN Pipeline A recipe (scenario_gen._cmd_controlnet, validated 2026-06-22:
+# model_bfl-flux-1-dev with canny/depth modality at controlStrength 0.7 — the only controlnet-proven
+# model on the account; our default img2img base_model is model_z-image, whose controlnet support is
+# unproven). Overridable per-manifest via a top-level `controlnet` block ({"model", "control_strength",
+# optional "loras"/"lora_scales"}) or per-invocation via --control-model / --control-strength.
+_CONTROLNET_DEFAULT_MODEL = "model_bfl-flux-1-dev"
+_CONTROLNET_DEFAULT_STRENGTH = 0.7
+
+
+def _resolve_controlnet(recipe: dict, args) -> dict | None:
+    """Resolve {model, modality, strength, loras, lora_scales} for the --controlnet base pass, or
+    None when it's off.
+
+    Returns None whenever args.controlnet is unset so callers keep the byte-identical unconditioned
+    img2img path. Precedence for model/strength: CLI flag > recipe `controlnet` block > proven
+    Pipeline A default.
+
+    LoRA handling INTENTIONALLY differs from the img2img path: the img2img painterly LoRA is trained
+    on the z-image base model and the default ControlNet model (flux.1-dev) REJECTS it with HTTP 400
+    ("Allowed model types: flux.1-lora, flux.1-composition"). So the ControlNet pass does NOT inherit
+    recipe.lora — it applies ONLY LoRAs explicitly declared model-compatible in the recipe
+    `controlnet` block. Default: none (the base pass locks geometry; --layered's Gemini passes
+    restore paint).
+    """
+    if not getattr(args, "controlnet", None):
+        return None
+    cn_block = recipe.get("controlnet", {})
+    model = args.control_model or cn_block.get("model") or _CONTROLNET_DEFAULT_MODEL
+    if args.control_strength is not None:
+        strength = args.control_strength
+    elif "control_strength" in cn_block:
+        strength = cn_block["control_strength"]
+    else:
+        strength = _CONTROLNET_DEFAULT_STRENGTH
+    loras = list(cn_block.get("loras") or [])
+    lora_scales = list(cn_block.get("lora_scales") or [])
+    return {"model": model, "modality": args.controlnet, "strength": float(strength),
+            "loras": loras, "lora_scales": lora_scales}
+
+
+def _build_base_pass_request(recipe: dict, args, positive: str, negative: str,
+                              image_ref, cn: dict | None) -> tuple:
+    """Build (endpoint, body) for the base/layout pass — two shapes on the SAME custom endpoint.
+
+    cn is None (DEFAULT): unconditioned img2img — `image` + `strength` seed, BYTE-IDENTICAL to the
+      pre-W6.3b request (the LoRA rides `loras`/`lorasScale`; the base model is in the PATH).
+    cn set (--controlnet): ControlNet conditioning (Pipeline A) — the greybox rides as `controlImage`
+      with a depth|canny `controlModality` + `controlStrength`, locking the paint to the authored
+      geometry. Same prompt/negative/steps/guidance/size knobs; the image-conditioning fields, the
+      PATH model, and the LoRA set differ (see _resolve_controlnet on why the z-image LoRA is dropped
+      here). --layered's Gemini passes ride on top of this pass unchanged.
+    `image_ref` is the uploaded greybox/base asset id (or None for a dry-run preview).
+    """
+    if cn is None:
+        endpoint = API_BASE + CONTROLNET_PATH.format(model_id=recipe["base_model"])
+        body = {
+            "prompt": positive,
+            "negativePrompt": negative,
+            "image": image_ref,
+            "strength": args.strength,
+            "numInferenceSteps": args.steps,
+            "guidance": args.guidance,
+            "numSamples": args.num_outputs,
+            "width": args.width,
+            "height": args.height,
+            "loras": [recipe["lora"]],
+            "lorasScale": [recipe["lora_scale"]],
+        }
+        if args.seed is not None:
+            body["seed"] = args.seed
+        return endpoint, body
+    endpoint = API_BASE + CONTROLNET_PATH.format(model_id=cn["model"])
+    body = {
+        "prompt": positive,
+        "negativePrompt": negative,
+        "controlImage": image_ref,
+        "controlModality": cn["modality"],
+        "controlStrength": cn["strength"],
+        "numInferenceSteps": args.steps,
+        "guidance": args.guidance,
+        "numSamples": args.num_outputs,
+        "width": args.width,
+        "height": args.height,
+    }
+    if cn["loras"]:
+        body["loras"] = list(cn["loras"])
+        if cn["lora_scales"]:
+            body["lorasScale"] = list(cn["lora_scales"])
+    if args.seed is not None:
+        body["seed"] = args.seed
+    return endpoint, body
+
+
 def main(argv=None) -> None:
     recipe = _load_recipe()
     d = recipe["defaults"]
@@ -279,6 +384,21 @@ def main(argv=None) -> None:
                          "rooms.<room>.layered_day.pass3_slots) instead of the night chiaroscuro staging law. "
                          "No effect without --layered (day/night only differs in the layered pipeline's "
                          "staging pass + pass1 lighting).")
+    ap.add_argument("--controlnet", choices=["depth", "canny"], default=None,
+                    help="W6.3b (#1470): condition the base/layout pass on the greybox as a ControlNet "
+                         "depth|canny control image (Pipeline A, scenario_gen._cmd_controlnet, proven "
+                         "2026-06-22) instead of unconditioned img2img — locks paint to the authored "
+                         "geometry (paint-vs-grid drift -> ~0). The greybox = the --base-plate (or "
+                         "--refine-from asset). Default OFF; absent flag = byte-identical img2img. "
+                         "Composes with --layered (conditioning applies to the base pass only; the "
+                         "Gemini detail/staging passes ride on top unchanged).")
+    ap.add_argument("--control-strength", type=float, default=None,
+                    help="ControlNet conditioning strength 0.0-1.0 for --controlnet (default: recipe "
+                         "controlnet.control_strength, else 0.7). No effect without --controlnet.")
+    ap.add_argument("--control-model", default=None,
+                    help="Scenario model id for the --controlnet base pass (default: recipe "
+                         "controlnet.model, else the proven model_bfl-flux-1-dev). No effect without "
+                         "--controlnet.")
     ap.add_argument("--dry-run", action="store_true", help="print the resolved request without calling the API")
     args = ap.parse_args(argv)
 
@@ -307,30 +427,24 @@ def main(argv=None) -> None:
         )
 
     positive, negative = _build_prompt(recipe, args.room, args.lighting)
+    # W6.3b (#1470): --controlnet swaps the unconditioned img2img seed for greybox ControlNet
+    # conditioning on the base/layout pass. cn is None (default) -> byte-identical img2img below.
     # Standalone base models (model_z-image) run img2img via POST /generate/custom/{modelId}
     # with `image` + `strength` (the txt2img endpoint rejects standalone models). The base model
     # is in the PATH; the painterly LoRA rides `loras`/`lorasScale` (string ids, per the proven job).
-    endpoint = API_BASE + CONTROLNET_PATH.format(model_id=recipe["base_model"])
-    body = {
-        "prompt": positive,
-        "negativePrompt": negative,
-        "image": None,  # filled below (asset id)
-        "strength": args.strength,
-        "numInferenceSteps": args.steps,
-        "guidance": args.guidance,
-        "numSamples": args.num_outputs,
-        "width": args.width,
-        "height": args.height,
-        "loras": [recipe["lora"]],
-        "lorasScale": [recipe["lora_scale"]],
-    }
-    if args.seed is not None:
-        body["seed"] = args.seed
+    cn = _resolve_controlnet(recipe, args)
+    endpoint, body = _build_base_pass_request(recipe, args, positive, negative, None, cn)
 
     if args.dry_run:
         preview = dict(body)
-        preview["image"] = args.refine_from or ("<upload:%s>" % args.base_plate)
-        print("[generate_room] DRY-RUN img2img (%s)" % args.room)
+        img_src = args.refine_from or ("<upload:%s>" % args.base_plate)
+        if cn is None:
+            preview["image"] = img_src
+            print("[generate_room] DRY-RUN img2img (%s)" % args.room)
+        else:
+            preview["controlImage"] = img_src
+            print("[generate_room] DRY-RUN --controlnet %s base pass (%s, model=%s, strength=%.2f)"
+                  % (cn["modality"], args.room, cn["model"], cn["strength"]))
         print(json.dumps(preview, indent=2))
         print("  endpoint  : %s" % endpoint)
         print("  recipe    : %s" % RECIPE_PATH)
@@ -372,20 +486,36 @@ def main(argv=None) -> None:
         image_ref = _upload_image(headers, os.path.expanduser(args.base_plate))
     else:
         sys.exit("[generate_room] ERROR: need --base-plate <png> or --refine-from <asset_id>.")
-    body["image"] = image_ref
+    # Rebuild with the resolved greybox/base asset id filled into the image-conditioning field
+    # (image for img2img, controlImage for --controlnet).
+    endpoint, body = _build_base_pass_request(recipe, args, positive, negative, image_ref, cn)
 
     res = _post_json(endpoint, headers, body)
-    job_id = _job_id_from_create(res, "img2img create")
-    print("[generate_room] %s img2img job submitted: %s (strength=%s)" % (args.room, job_id, args.strength))
-    job = _poll_job(headers, job_id, "img2img", args.timeout)
+    if cn is None:
+        job_id = _job_id_from_create(res, "img2img create")
+        print("[generate_room] %s img2img job submitted: %s (strength=%s)" % (args.room, job_id, args.strength))
+    else:
+        job_id = _job_id_from_create(res, "controlnet create")
+        print("[generate_room] %s --controlnet %s job submitted: %s (model=%s, controlStrength=%.2f)"
+              % (args.room, cn["modality"], job_id, cn["model"], cn["strength"]))
+    job = _poll_job(headers, job_id, "controlnet" if cn else "img2img", args.timeout)
     saved = _download_job_assets(headers, job, out_dir, "room_%s" % args.room)
     meta = {
         "room": args.room, "image_ref": image_ref, "strength": args.strength,
         "steps": args.steps, "guidance": args.guidance, "num_outputs": args.num_outputs,
-        "model_id": recipe["base_model"], "lora": recipe["lora"], "lora_scale": recipe["lora_scale"],
+        "model_id": cn["model"] if cn else recipe["base_model"],
+        "lora": recipe["lora"], "lora_scale": recipe["lora_scale"],
         "prompt": positive, "negative_prompt": negative, "job_id": job_id,
-        "assets": saved, "source": "generate_room-img2img",
+        "assets": saved,
+        "source": "generate_room-controlnet" if cn else "generate_room-img2img",
     }
+    if cn:
+        # W6.3b (#1470): record the ControlNet conditioning so the plate's greybox-lock is auditable.
+        meta["controlnet"] = {
+            "modality": cn["modality"], "control_strength": cn["strength"],
+            "control_model": cn["model"], "control_image_ref": image_ref,
+            "loras": cn["loras"],
+        }
 
     if args.layered and saved:
         # OPTIONAL 3-pass pipeline (room_recipes.json:layered_pipeline_2026_07_02). ORDER LAW:
