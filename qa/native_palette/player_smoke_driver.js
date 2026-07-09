@@ -3,7 +3,7 @@
  * player_smoke_driver.js — the SCRIPTED (no LLM) sequence for qa/player_smoke.sh (#1443).
  *
  * Drives the EXACT SAME primitives native_palette_server.js exposes to the T3 blind-player agent
- * (native_palette_core.js: findWindow/activateOwner/captureWindow/clickAt) but through a fixed
+ * (native_palette_core.js: findWindow/captureWindow/clickAt — #1456 SCK capture, no activation) but through a fixed
  * script instead of an MCP tool loop, so a post-build smoke run needs no LLM call: screenshot ->
  * click a known walkable grid cell (move) -> capture glide frames -> screenshot -> click the
  * goblin's cell (on-turn attack) -> capture glide frames -> screenshot. Assertions on the

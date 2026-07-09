@@ -79,9 +79,9 @@ fixture_for_scene() {
   esac
 }
 
-# --- shared boot helpers (find_sdk_node_modules / find_player_app / pick_port /
-# activate_current_space_context — #1443: the cross-Space launch/capture fix lives in ONE place,
-# shared with qa/player_smoke.sh). ------------------------------------------------------------
+# --- shared boot helpers (find_sdk_node_modules / find_player_app / pick_port / owner_active_guard /
+# player_windowed_launch_args — #1456: the no-hijack launch discipline lives in ONE place, shared
+# with qa/player_smoke.sh). ------------------------------------------------------------------------
 . "$ROOT/qa/lib_native_player_boot.sh"
 
 # --- --preflight: validate prerequisites + permissions, then exit (no run) ---
@@ -170,6 +170,10 @@ if ! echo "$PERMS" | grep -q '"accessibility":true'; then
   echo "       (enable the app running this script, then RESTART it). probe=$PERMS" >&2; exit 5; fi
 echo "[t3] permissions OK: $PERMS"
 
+# --- #1456 owner-active guard: never hijack the Mac while the owner is working (before we spend the
+# DM/player budget). FORCE_PLAYER_QA=1 overrides; exit 75 == deferred. --------------------------
+owner_active_guard || exit $?
+
 # --- free port in 8990–8999 (pick_port from lib_native_player_boot.sh) -------
 PORT="$(pick_port)" || { echo "[t3] no free port in 8990-8999 — aborting" >&2; exit 3; }
 BASE_URL="http://127.0.0.1:$PORT"
@@ -254,26 +258,20 @@ echo "[t3] viewer ready — /combat-surface serving $CID."
 # run dir (e.g. left over from a manually-poked debug session against the same RUNDIR).
 rm -f "$PLAYERDIR/native_input"
 
-# --- #1443 launch-into-same-Space ---------------------------------------------
-# Re-activate whatever GUI app is currently frontmost (see lib_native_player_boot.sh) right
-# before spawning WorldOSPlayer, so the new window opens on the harness's CURRENT Space instead
-# of wherever focus happened to drift (Mission Control auto-switch, a prior run's cleanup, etc.)
-# — the root cause the T3 run tripped over. This is best-effort or launch position; the real
-# safety net for a player that STILL ends up on another Space is native_palette_core.js's
-# activate-before-capture (screencaptureWindow -> core.captureWindow), which recovers at
-# screenshot time regardless of where the window landed.
-activate_current_space_context
-
-# --- launch the native player build with the env launch-contract -------------
-# WorldOSPlayer.app reads WORLDOS_ENGINE_BASE_URL + WORLDOS_CAMPAIGN_ID at startup
-# (CombatSurfaceClient.Start) and renders the surface. ONE live GUI harness at a time — we quit any
-# stale instance first, then launch fresh (the app activates rather than duplicating on relaunch).
+# --- #1456 launch WINDOWED, never fullscreen, never re-activate --------------
+# ScreenCaptureKit (native_palette_core.js) captures the player on ANY Space with no activation, so
+# there is nothing to pin: we do NOT re-activate any app and do NOT switch Spaces (that hijacked the
+# owner's session — the #1456 report). WorldOSPlayer.app reads WORLDOS_ENGINE_BASE_URL +
+# WORLDOS_CAMPAIGN_ID at startup (CombatSurfaceClient.Start) and renders the surface. ONE live GUI
+# harness at a time — quit any stale instance first, then spawn a fixed-size WINDOWED player in the
+# background (Unity -screen-fullscreen 0 / -screen-width / -screen-height).
 osascript -e 'quit app "WorldOSPlayer"' >/dev/null 2>&1 || true
 sleep 1
-WORLDOS_ENGINE_BASE_URL="$BASE_URL" WORLDOS_CAMPAIGN_ID="$CID" "$PLAYER_BIN" \
+PLAYER_WIN_ARGS=(); while IFS= read -r __a; do PLAYER_WIN_ARGS+=("$__a"); done < <(player_windowed_launch_args)
+WORLDOS_ENGINE_BASE_URL="$BASE_URL" WORLDOS_CAMPAIGN_ID="$CID" "$PLAYER_BIN" "${PLAYER_WIN_ARGS[@]}" \
   > "$RUNDIR/player_app.log" 2>&1 &
 PLAYER_APP_PID=$!
-echo "[t3] player app launched (pid $PLAYER_APP_PID) — engine=$BASE_URL campaign=$CID"
+echo "[t3] player app launched WINDOWED (pid $PLAYER_APP_PID) — engine=$BASE_URL campaign=$CID args=${PLAYER_WIN_ARGS[*]}"
 # Give the Unity build a beat to open its window + first combat-surface fetch before the agent looks.
 sleep 6
 

@@ -3,9 +3,13 @@
 // The browser palette (qa/playwright/palette_server.js) drives a Playwright page. The T3 gate needs
 // the SAME blind-player tool surface pointed at the NATIVE WorldOSPlayer.app window instead. This
 // helper is the thin CoreGraphics/Quartz layer that the native palette server shells out to for the
-// three things a browser gives you for free: FIND the player's window, CLICK/press inside it, and
-// PREFLIGHT the macOS TCC permissions those need. Screenshots are taken by /usr/sbin/screencapture
-// (see the server) — this helper never captures pixels, so it needs no Screen-Recording grant itself.
+// things a browser gives you for free: FIND the player's window, CAPTURE it, CLICK/press inside it,
+// and PREFLIGHT the macOS TCC permissions those need.
+//
+// #1456: the `capture` subcommand images a window via ScreenCaptureKit (SCScreenshotManager) — which
+// rasterizes a window on ANY Space WITHOUT activating it (no focus theft, no Space switch), unlike
+// `screencapture -l` which macOS 15+ refuses for off-current-Space windows. So this helper now DOES
+// capture pixels and DOES need the Screen-Recording grant (SCK enforces it, same as screencapture).
 //
 // It is deliberately a SINGLE self-contained file with no third-party deps so it both:
 //   - runs interpreted:  `swift native_input.swift <subcommand> …`   (no build step; what the server uses)
@@ -14,6 +18,8 @@
 // Subcommands (each prints ONE line of JSON to stdout; exit 0 on success, 2 on a usage/lookup miss):
 //   checkperms                      -> {"screen_recording":bool,"accessibility":bool}
 //   winfind  <ownerName>            -> {"found":bool,"window_id":int,"x":n,"y":n,"w":n,"h":n,"owner":s,"title":s}
+//   capture  <ownerName> <outPath>  -> {"ok":bool,"window_id":int,"x":n,"y":n,"w":n,"h":n,"px_w":n,"px_h":n,"scale":f,"on_screen":bool}
+//                                      (ScreenCaptureKit PNG of the owner's largest window — ANY Space, NO activation; macOS 14+)
 //   click    <globalX> <globalY> [double]   -> {"ok":true}   (left click at GLOBAL screen points, top-left origin)
 //   key      <name>                 -> {"ok":true}   (Return/Escape/Tab/Space/Arrow*/Delete or a single char)
 //   type     <text…>                -> {"ok":true}   (synthesize a unicode string into the focused field)
@@ -25,8 +31,12 @@
 
 import Foundation
 import CoreGraphics
+import ImageIO
 #if canImport(ApplicationServices)
 import ApplicationServices
+#endif
+#if canImport(ScreenCaptureKit)
+import ScreenCaptureKit
 #endif
 
 // ---- tiny JSON emit (no Codable ceremony for one-line results) --------------
@@ -88,11 +98,11 @@ func checkPerms() {
 // pass returns nothing even though the window is very much alive, and the T3 gate silently died
 // (winfind found:false -> every screenshot/click no-ops). Fix: try on-screen-only FIRST (cheap, and
 // the common case), and if the owner isn't in that list, fall back to a search WITHOUT
-// .optionOnScreenOnly (every Space). The result carries "on_screen" so callers (the palette server's
-// screencaptureWindow) know whether `screencapture -l <id>` will actually work from HERE: macOS 15
-// refuses to rasterize a window that isn't on the current Space, so a caller that sees
-// on_screen:false must activate the owner (switch to its Space) before capturing, or fall back to a
-// full-screen grab + crop.
+// .optionOnScreenOnly (every Space). The result carries "on_screen" so callers know which capture
+// path applies: #1456 makes ScreenCaptureKit (`capture`) the PRIMARY path — it images a window on
+// ANY Space without activation, so on_screen:false is no longer a dead end — and `screencapture -l`
+// (which macOS 15+ refuses off the current Space) is only a fallback for on_screen:true windows.
+// Either way callers NEVER activate the owner: QA must not steal the user's focus or switch Spaces.
 func winFind(_ owner: String) {
     func listWithOwner(_ opts: CGWindowListOption) -> [[String: Any]]? {
         guard let raw = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]] else { return nil }
@@ -128,6 +138,69 @@ func winFind(_ owner: String) {
         "owner": owner, "title": (win[kCGWindowName as String] as? String) ?? "",
         "on_screen": onScreen,
     ])
+}
+
+// ---- ScreenCaptureKit capture (#1456) --------------------------------------
+// Image the owner's largest window to a PNG via SCScreenshotManager. Unlike `screencapture -l`,
+// SCK rasterizes a window on ANY Space with NO activation — the whole point of #1456: player QA
+// must never steal the user's focus or switch Spaces. Needs the Screen-Recording grant (SCK
+// enforces it) and macOS 14+ (SCScreenshotManager.captureImage / SCContentFilter.pointPixelScale);
+// on an older OS we emit ok:false so the JS caller falls back to `screencapture -l`.
+func writePNG(_ image: CGImage, _ path: String) -> Bool {
+    let url = URL(fileURLWithPath: path) as CFURL
+    guard let dest = CGImageDestinationCreateWithURL(url, "public.png" as CFString, 1, nil) else { return false }
+    CGImageDestinationAddImage(dest, image, nil)
+    return CGImageDestinationFinalize(dest)
+}
+
+func captureWindowSCK(_ owner: String, _ outPath: String) {
+#if canImport(ScreenCaptureKit)
+    if #available(macOS 14.0, *) {
+        // Force the CoreGraphics/WindowServer connection to initialize on the MAIN thread first.
+        // SCK's SCShareableContent/SCContentFilter otherwise trip `CGS_REQUIRE_INIT` when their
+        // first CGS call happens on the background Task thread (observed in this headless CLI).
+        _ = CGMainDisplayID()
+        _ = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID)
+        let sem = DispatchSemaphore(value: 0)
+        var out: [String: Any] = ["ok": false, "error": "sck-init"]
+        Task {
+            defer { sem.signal() }
+            do {
+                // onScreenWindowsOnly:false so windows on OTHER Spaces are enumerated too.
+                let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+                let matches = content.windows.filter {
+                    ($0.owningApplication?.applicationName == owner) && $0.frame.width > 1 && $0.frame.height > 1
+                }
+                guard let win = matches.max(by: { ($0.frame.width * $0.frame.height) < ($1.frame.width * $1.frame.height) }) else {
+                    out = ["ok": false, "error": "window-not-found", "owner": owner]; return
+                }
+                let filter = SCContentFilter(desktopIndependentWindow: win)
+                let cfg = SCStreamConfiguration()
+                let scale = filter.pointPixelScale                 // px per point (2 on Retina)
+                let rect = filter.contentRect                       // window content rect, points
+                cfg.width = Int((rect.width * CGFloat(scale)).rounded())
+                cfg.height = Int((rect.height * CGFloat(scale)).rounded())
+                cfg.showsCursor = false
+                let img = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: cfg)
+                guard writePNG(img, outPath) else { out = ["ok": false, "error": "png-write-failed"]; return }
+                let f = win.frame
+                out = [
+                    "ok": true, "window_id": Int(win.windowID),
+                    "x": Int(f.origin.x), "y": Int(f.origin.y), "w": Int(f.width), "h": Int(f.height),
+                    "px_w": img.width, "px_h": img.height, "scale": Double(scale),
+                    "on_screen": win.isOnScreen, "owner": owner, "path": outPath,
+                ]
+            } catch {
+                out = ["ok": false, "error": "sck-capture-failed: \(error)"]
+            }
+        }
+        sem.wait()
+        emit(out)
+        exit((out["ok"] as? Bool) == true ? 0 : 2)
+    }
+#endif
+    emit(["ok": false, "error": "screencapturekit-unavailable (needs macOS 14+)", "owner": owner])
+    exit(2)
 }
 
 // ---- synthetic input --------------------------------------------------------
@@ -191,6 +264,9 @@ case "checkperms":
 case "winfind":
     guard args.count >= 2 else { emit(["found": false, "error": "usage: winfind <ownerName>"]); exit(2) }
     winFind(args[1])
+case "capture":
+    guard args.count >= 3 else { emit(["ok": false, "error": "usage: capture <ownerName> <outPath>"]); exit(2) }
+    captureWindowSCK(args[1], args[2])
 case "click":
     guard args.count >= 3, let gx = Double(args[1]), let gy = Double(args[2]) else {
         emit(["ok": false, "error": "usage: click <globalX> <globalY> [double]"]); exit(2)

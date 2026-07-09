@@ -8,8 +8,13 @@
  *                                the ~$3 T3 gate.)
  *
  * Extracted 2026-07-09 (issue #1443 — the native palette was blind across Mission Control
- * Spaces): pulling the window-lookup / activate / capture / click plumbing into one module means
- * the cross-Space fix lives in exactly one place and both consumers get it for free.
+ * Spaces): pulling the window-lookup / capture / click plumbing into one module means the
+ * cross-Space fix lives in exactly one place and both consumers get it for free.
+ *
+ * #1456: capture now goes through ScreenCaptureKit (native_input.swift `capture`) as the PRIMARY
+ * path — it images a window on ANY Space with NO activation, so player QA never steals the user's
+ * focus or switches Spaces. `screencapture -l` stays only as a fallback for on-screen windows (and
+ * the activate-before-capture behavior is GONE — we never re-activate the owner).
  *
  * Nothing here talks MCP, nothing here knows about run directories beyond the paths it's given —
  * pure primitives over a target app OWNER name.
@@ -63,34 +68,23 @@ function haveCliclick() {
   try { execFileSync("which", ["cliclick"], { stdio: "pipe" }); return true; } catch (_e) { return false; }
 }
 
-// ---- window lookup + cross-Space activation --------------------------------
+// ---- window lookup ---------------------------------------------------------
 function findWindow(helperCmd, owner) {
   const w = runHelper(helperCmd, ["winfind", owner]);
-  if (w && w.found === true) return w;
+  if (w && w.found === true) {
+    // winfind emits `window_id`; callers (winCache, the -l fallback) read `id`. Normalize so the
+    // two names never diverge (a `screencapture -l undefined` was the latent pre-#1456 symptom).
+    if (w.id === undefined && w.window_id !== undefined) w.id = w.window_id;
+    return w;
+  }
   return null;
 }
 
-// Bring `owner` to the CURRENT Space (macOS switches Spaces to follow an activated app's window,
-// same as clicking its Dock icon). Two mechanisms, in order: NSRunningApplication-style `open -a`
-// activation via `osascript ... activate` (works for a bundled .app), falling back to nothing
-// louder than a logged no-op if the app isn't running — the caller's poll loop below is what
-// actually decides whether activation worked, not this call's exit code.
-function activateOwner(owner) {
-  spawnSync("osascript", ["-e", `tell application "${owner}" to activate`], { encoding: "utf8", timeout: 5000 });
-}
-
-// Poll winfind until the window reports on_screen:true (i.e. the Space switch landed and
-// `screencapture -l` will work) or the timeout elapses. Returns the last window info seen
-// (possibly still on_screen:false) so the caller can decide on a fallback.
-function waitForOnScreen(helperCmd, owner, timeoutMs, pollMs) {
-  const deadline = Date.now() + (timeoutMs || 3000);
-  let last = null;
-  for (;;) {
-    last = findWindow(helperCmd, owner);
-    if (last && last.on_screen !== false) return last; // found + on-screen (or legacy helper w/o the field)
-    if (Date.now() >= deadline) return last;
-    spawnSync("sleep", [String((pollMs || 150) / 1000)]);
-  }
+// ScreenCaptureKit capture (#1456): image the owner's window to a PNG on ANY Space with NO
+// activation. Returns the helper's JSON: {ok, window_id, x, y, w, h, px_w, px_h, scale, on_screen}
+// on success, or {ok:false,error} / {_error} otherwise (older macOS -> caller falls back).
+function captureSCK(helperCmd, owner, outFile) {
+  return runHelper(helperCmd, ["capture", owner, outFile]);
 }
 
 // ---- pixel helpers -----------------------------------------------------------
@@ -134,50 +128,65 @@ function fullscreenCropWindow(win, outFile, scale) {
   return crop.status === 0 && fs.existsSync(outFile);
 }
 
-// ---- the capture sequence (#1443 core fix) ----------------------------------
-// Find the window; if it's on a DIFFERENT Space, activate the owner + wait for it to land on the
-// current Space (screencapture -l only works on the current Space on macOS 15); capture via
-// `-l <id>`; if that still fails (activation didn't land, or -l refused anyway), fall back to a
-// full-screen grab cropped to the window's bounds. `state` is a small mutable object the caller
-// keeps across calls — `{lastGoodScale}` — so the fallback crop can reuse the last real scale
-// factor observed from a successful `-l` capture instead of guessing.
-function captureWindow({ helperCmd, owner, outFile, fullscreenFallback, state, activateTimeoutMs }) {
+// ---- the capture sequence (#1456: no-activation, SCK-primary) ---------------
+// PRIMARY: ScreenCaptureKit (`capture`) images the window on ANY Space with NO activation — QA must
+// never steal the user's focus or switch Spaces. FALLBACK (only if SCK is unavailable/declines,
+// e.g. pre-macOS-14): `screencapture -l <id>` for an on-current-Space window, then a full-screen
+// grab cropped to the window's bounds. We NEVER activate the owner. `state` is a small mutable
+// object the caller keeps across calls — `{lastGoodScale}` — so the fallback crop can reuse the
+// last real scale factor instead of guessing.
+function captureWindow({ helperCmd, owner, outFile, fullscreenFallback, state }) {
   state = state || {};
   let win = findWindow(helperCmd, owner);
-  let usedFallback = false;
-  let activated = false;
-  if (win && win.on_screen === false) {
-    activateOwner(owner);
-    activated = true;
-    win = waitForOnScreen(helperCmd, owner, activateTimeoutMs || 3000, 150) || win;
-  }
-  if (!win) {
-    if (!fullscreenFallback) {
-      return { ok: false, mode: "none", window: null, pixels: null, scale: 1, reason: "window not found" };
-    }
-    const ok = spawnSync("screencapture", ["-x", outFile], { encoding: "utf8" }).status === 0 && fs.existsSync(outFile);
-    return { ok, mode: "fullscreen", window: null, pixels: ok ? pixelSize(outFile) : null, scale: 1 };
-  }
   let ok = false;
-  if (win.on_screen !== false) {
-    const r = spawnSync("screencapture", ["-l", String(win.id), "-o", "-x", outFile], { encoding: "utf8" });
-    ok = r.status === 0 && fs.existsSync(outFile) && fs.statSync(outFile).size > 0;
+  let mode = "none";
+  let usedFallback = false;
+
+  // PRIMARY — ScreenCaptureKit, cross-Space, no activation.
+  const sck = captureSCK(helperCmd, owner, outFile);
+  if (sck && sck.ok === true && fs.existsSync(outFile) && fs.statSync(outFile).size > 0) {
+    ok = true;
+    mode = "sck";
+    // Describe the window that was ACTUALLY imaged (geometry from SCK) so the reported bounds, the
+    // captured pixels, and the scale all agree — even if winfind's largest-layer-0 pick differs.
+    win = {
+      id: sck.window_id, window_id: sck.window_id,
+      x: sck.x, y: sck.y, w: sck.w, h: sck.h,
+      on_screen: sck.on_screen,
+      title: win ? win.title : "",
+    };
   }
+
+  // FALLBACK — only when SCK didn't produce a shot (older OS / declined). Never activates.
   if (!ok) {
-    // -l refused (still not on this Space, or macOS declined anyway) — crop a full-screen grab.
-    usedFallback = true;
-    ok = fullscreenCropWindow(win, outFile, state.lastGoodScale);
+    if (!win) {
+      if (!fullscreenFallback) {
+        return { ok: false, mode: "none", window: null, pixels: null, scale: 1, reason: "window not found" };
+      }
+      const okFS = spawnSync("screencapture", ["-x", outFile], { encoding: "utf8" }).status === 0 && fs.existsSync(outFile);
+      return { ok: okFS, mode: "fullscreen", window: null, pixels: okFS ? pixelSize(outFile) : null, scale: 1 };
+    }
+    // `screencapture -l` only rasterizes a window on the CURRENT Space; if the player is elsewhere
+    // it refuses and we crop a full-screen grab — we deliberately do NOT activate to bring it over.
+    if (win.on_screen !== false) {
+      const r = spawnSync("screencapture", ["-l", String(win.id), "-o", "-x", outFile], { encoding: "utf8" });
+      ok = r.status === 0 && fs.existsSync(outFile) && fs.statSync(outFile).size > 0;
+      if (ok) mode = "window";
+    }
+    if (!ok) {
+      usedFallback = true;
+      ok = fullscreenCropWindow(win, outFile, state.lastGoodScale);
+      if (ok) mode = "fullscreen-crop";
+    }
   }
+
   const px = ok && fs.existsSync(outFile) ? pixelSize(outFile) : null;
   let scale = state.lastGoodScale || 1;
-  if (!usedFallback && px && win.w > 0) {
+  if (ok && !usedFallback && px && win && win.w > 0) {
     scale = px.pw / win.w;
     state.lastGoodScale = scale; // remember for a future fallback crop
   }
-  return {
-    ok, mode: usedFallback ? "fullscreen-crop" : "window", window: win, pixels: px, scale,
-    activated, usedFallback,
-  };
+  return { ok, mode, window: win, pixels: px, scale, usedFallback };
 }
 
 // ---- synthetic click ---------------------------------------------------------
@@ -200,8 +209,7 @@ module.exports = {
   runHelper,
   haveCliclick,
   findWindow,
-  activateOwner,
-  waitForOnScreen,
+  captureSCK,
   pixelSize,
   fileHash,
   fullscreenCropWindow,
