@@ -102,3 +102,27 @@ The probe LOOP is now fully mechanized (populate/rungs/captures via MenuItems + 
 sourcing + this panel recipe) — parameter iteration continues on the cadence at worker prices, next
 hypotheses in panel_verdict.json. The runtime port waits for a panel-passing parameterization; the port
 architecture (plate-sampled rig + registry of tuned per-scene params) stands.
+
+## Owner steering (2026-07-09, playtest #3) — THE STAGE LAYER REDIRECT
+
+Owner verdict on the rebuilt player: improved, but "~5-10% of the way"; the scene "literally looks like a
+2D image with 3D models walking around on it — nothing dynamic"; actors are now "one of the best-looking
+pieces"; **"what matters most is the sets and how the actors interact with the sets"**; collision still
+wrong (walking over logs), clipping, pathing; and: "our evals should be catching all of these — if not,
+something is wrong there."
+
+Diagnosis accepted in full. The architecture gap: our plate is a DEAD IMAGE, while PoE1/2 backgrounds are
+2D paint over LIVE 3D DATA (depth buffer for per-pixel occlusion, navmesh authored with the scene, normal
+maps for dynamic light, animated overlay layers — fire/water/foliage). We already GENERATE plates from a
+3D greybox (ControlNet depth) and then THROW THE GREYBOX AWAY — keeping it live under the paint gives:
+actors walking BEHIND set pieces (occlusion), true collision/pathing derived FROM the geometry (kills the
+walking-over-logs / #1396 drift class at the root), correct shadow catchers, and dynamic light on the set.
+Plus animated overlay layers for "dynamic". The EVAL gap: panels score STILLS for style; nothing measures
+set-INTERACTION — need deterministic gates (prop-footprint vs impassable-cell coherence from the existing
+manifests; occlusion assertions; clip detection) + an interaction/motion lens on player-build reels.
+
+NEXT (epic filed): W6 "The Living Stage" — (1) greybox-under-plate runtime (occluder meshes + navmesh +
+shadow catchers from the same geometry that conditioned the paint); (2) walkmask derived from geometry,
+never hand-recalibrated; (3) per-pixel occlusion via the existing OccluderDepth machinery in the PLAYER;
+(4) animated overlay layers (fire glow pulse first); (5) set-interaction eval gates wired into player_smoke
++ the panel. Style iteration (cohesion v5+) continues but is SECONDARY to the stage layer.
