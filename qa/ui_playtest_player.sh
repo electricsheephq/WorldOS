@@ -237,6 +237,11 @@ cleanup() {
   [ -n "${DMLOOP:-}" ] && kill "$DMLOOP" 2>/dev/null
   [ -n "$PLAYER_APP_PID" ] && kill "$PLAYER_APP_PID" 2>/dev/null
   osascript -e 'quit app "WorldOSPlayer"' >/dev/null 2>&1 || true
+  # #1466 FIX B: fallback if -logFile capture didn't land — gated on PLAYER_APP_PID so a pre-launch
+  # exit (e.g. viewer never came up) never copies a stale prior-run Player.log into this run's dir.
+  # A short settle beat gives Unity's logger a moment to flush unity_player.log before the
+  # emptiness check below (killed-before-flush would otherwise misread as "never captured").
+  [ -n "$PLAYER_APP_PID" ] && { sleep 0.3; copy_player_log_fallback "$PLAYERDIR" "$PLAYERDIR/unity_player.log"; }
 }
 trap cleanup EXIT INT TERM
 
@@ -267,7 +272,11 @@ rm -f "$PLAYERDIR/native_input"
 # background (Unity -screen-fullscreen 0 / -screen-width / -screen-height).
 osascript -e 'quit app "WorldOSPlayer"' >/dev/null 2>&1 || true
 sleep 1
-PLAYER_WIN_ARGS=(); while IFS= read -r __a; do PLAYER_WIN_ARGS+=("$__a"); done < <(player_windowed_launch_args)
+# #1466 FIX B: -logFile below redirects Unity's own stdout/stderr into unity_player.log, so
+# player_app.log (the shell redirect just below) is now expected to be sparse/near-empty in the
+# common case — it's kept as a belt-and-suspenders capture of anything emitted before Unity's
+# logging takes over (e.g. dyld/early native errors). unity_player.log is the primary player log.
+PLAYER_WIN_ARGS=(); while IFS= read -r __a; do PLAYER_WIN_ARGS+=("$__a"); done < <(player_windowed_launch_args "$PLAYERDIR/unity_player.log")
 WORLDOS_ENGINE_BASE_URL="$BASE_URL" WORLDOS_CAMPAIGN_ID="$CID" "$PLAYER_BIN" "${PLAYER_WIN_ARGS[@]}" \
   > "$RUNDIR/player_app.log" 2>&1 &
 PLAYER_APP_PID=$!
