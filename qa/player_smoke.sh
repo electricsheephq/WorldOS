@@ -147,7 +147,9 @@ cleanup() {
   osascript -e 'quit app "WorldOSPlayer"' >/dev/null 2>&1 || true
   # #1466 FIX B: fallback if -logFile capture didn't land — gated on PLAYER_APP_PID so a pre-launch
   # exit (e.g. viewer never came up) never copies a stale prior-run Player.log into this run's dir.
-  [ -n "$PLAYER_APP_PID" ] && copy_player_log_fallback "$PLAYERDIR" "$PLAYERDIR/unity_player.log"
+  # A short settle beat gives Unity's logger a moment to flush unity_player.log before the
+  # emptiness check below (killed-before-flush would otherwise misread as "never captured").
+  [ -n "$PLAYER_APP_PID" ] && { sleep 0.3; copy_player_log_fallback "$PLAYERDIR" "$PLAYERDIR/unity_player.log"; }
 }
 trap cleanup EXIT INT TERM
 

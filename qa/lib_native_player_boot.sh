@@ -102,7 +102,11 @@ copy_player_log_fallback() {
   if [ -n "$primary_log" ] && [ -s "$primary_log" ]; then
     return 0  # -logFile capture already landed and is non-empty — nothing stale to guard against
   fi
-  [ -f "$src_dir/Player.log" ] && cp -f "$src_dir/Player.log" "$dest/Player.log.fallback" 2>/dev/null
-  [ -f "$src_dir/Player-prev.log" ] && cp -f "$src_dir/Player-prev.log" "$dest/Player-prev.log.fallback" 2>/dev/null
+  # An EXISTING-but-empty primary_log is ambiguous (Unity crashed before flushing vs. a genuine
+  # no-logFile run) — flag the copy distinctly so a reader never mistakes it for a confirmed capture.
+  local suffix="fallback"
+  [ -n "$primary_log" ] && [ -e "$primary_log" ] && suffix="fallback.stale-src"
+  [ -f "$src_dir/Player.log" ] && cp -f "$src_dir/Player.log" "$dest/Player.log.$suffix" 2>/dev/null
+  [ -f "$src_dir/Player-prev.log" ] && cp -f "$src_dir/Player-prev.log" "$dest/Player-prev.log.$suffix" 2>/dev/null
   return 0
 }
