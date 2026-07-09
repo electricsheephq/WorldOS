@@ -1,0 +1,29 @@
+{
+  "room": "camp_clearing_night",
+  "image_ref": "asset_6Uor1G5GgpxBMthmBNwJ6TLB",
+  "strength": 0.45,
+  "steps": 40,
+  "guidance": 7.5,
+  "num_outputs": 1,
+  "model_id": "model_bfl-flux-1-dev",
+  "lora": "model_MB22WaRCBLtfhi5R2CRpHoEL",
+  "lora_scale": 0.78,
+  "prompt": "painterly isometric dimetric camp_clearing_night interior background plate, Pillars of Eternity II Deadfire pre-rendered background quality, loose confident visible oil-paint brushstrokes, SINGLE warm the central campfire as the sole dramatic key light, dramatic chiaroscuro tenebrism, steep warm-to-cool value falloff from a hot amber lit pool to near-black corners, DEEP saturated blue-violet shadows (not neutral grey) in the far corners and along the back and side walls, HARD-EDGED directional cast shadows thrown from the campfire, the log seat, and the surrounding trees across the floor, strong warm-key-to-cool-shadow contrast, warm amber rim on edges facing the flame, cool blue-violet bounce on shadow-side stone, low-key moody candlelit interior, varied unique pillar carvings, no two columns identical, crisply chiseled stone relief, scattered pine needles and fallen leaves over a worn dirt clearing floor, moss-covered tree roots, a few embers drifting upward from the fire, hanging travel packs, dappled moonlight through the canopy gaps, environmental storytelling clutter along the walls, tactile hand-painted texture, rich oil-painted detail, atmospheric depth, fixed camera composition, cinematic torchlit interior",
+  "negative_prompt": "flat even ambient light, overcast lighting, museum lighting, uniform gray floor, washed out, blown highlights, clipped white hotspot, pure white, overexposed, low contrast, hazy, milky, foggy bloom, pale watercolor wash, mushy smeared detail, neutral gray shadows, desaturated shadows, evenly lit, no shadows, flat shading, soft diffuse fill light, second light source, multiple key lights, daylight, identical cloned columns, repeating tiled pattern, characters, people, figures, text, watermark, blurry, low detail, floating objects, items floating in mid-air, a lantern resting on top of a column, props balanced on top of pillars, objects stacked on columns, objects perched on top of furniture, duplicated furniture, repeated identical props, cloned objects, extra clutter, random scattered debris, misplaced objects, props merged into or clipping through walls, objects embedded in stone, nonsensical out-of-place objects, levitating props",
+  "job_id": "job_zDhHsUBSsCUqpPGcaVerMk1J",
+  "assets": [
+    {
+      "asset_id": "asset_dLANTT3MwvvBYHhd8Ucqu9bu",
+      "path": "/tmp/camp1470_armB_controlnet/room_camp_clearing_night.png",
+      "bytes": 861779
+    }
+  ],
+  "source": "generate_room-controlnet",
+  "controlnet": {
+    "modality": "depth",
+    "control_strength": 0.7,
+    "control_model": "model_bfl-flux-1-dev",
+    "control_image_ref": "asset_6Uor1G5GgpxBMthmBNwJ6TLB",
+    "loras": []
+  }
+}
