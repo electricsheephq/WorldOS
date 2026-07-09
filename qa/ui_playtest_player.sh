@@ -237,6 +237,7 @@ cleanup() {
   [ -n "${DMLOOP:-}" ] && kill "$DMLOOP" 2>/dev/null
   [ -n "$PLAYER_APP_PID" ] && kill "$PLAYER_APP_PID" 2>/dev/null
   osascript -e 'quit app "WorldOSPlayer"' >/dev/null 2>&1 || true
+  copy_player_log_fallback "$PLAYERDIR"  # #1466 FIX B: fallback if -logFile capture didn't land
 }
 trap cleanup EXIT INT TERM
 
@@ -267,7 +268,7 @@ rm -f "$PLAYERDIR/native_input"
 # background (Unity -screen-fullscreen 0 / -screen-width / -screen-height).
 osascript -e 'quit app "WorldOSPlayer"' >/dev/null 2>&1 || true
 sleep 1
-PLAYER_WIN_ARGS=(); while IFS= read -r __a; do PLAYER_WIN_ARGS+=("$__a"); done < <(player_windowed_launch_args)
+PLAYER_WIN_ARGS=(); while IFS= read -r __a; do PLAYER_WIN_ARGS+=("$__a"); done < <(player_windowed_launch_args "$PLAYERDIR/unity_player.log")
 WORLDOS_ENGINE_BASE_URL="$BASE_URL" WORLDOS_CAMPAIGN_ID="$CID" "$PLAYER_BIN" "${PLAYER_WIN_ARGS[@]}" \
   > "$RUNDIR/player_app.log" 2>&1 &
 PLAYER_APP_PID=$!

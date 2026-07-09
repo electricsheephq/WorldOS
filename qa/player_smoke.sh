@@ -145,6 +145,7 @@ cleanup() {
   kill "$VIEWER" 2>/dev/null
   [ -n "$PLAYER_APP_PID" ] && kill "$PLAYER_APP_PID" 2>/dev/null
   osascript -e 'quit app "WorldOSPlayer"' >/dev/null 2>&1 || true
+  copy_player_log_fallback "$PLAYERDIR"  # #1466 FIX B: fallback if -logFile capture didn't land
 }
 trap cleanup EXIT INT TERM
 
@@ -162,7 +163,7 @@ echo "[smoke] viewer ready — /combat-surface serving $CID."
 # instance and spawn a fixed-size WINDOWED player in the background. ---------------------------------
 osascript -e 'quit app "WorldOSPlayer"' >/dev/null 2>&1 || true
 sleep 1
-PLAYER_WIN_ARGS=(); while IFS= read -r __a; do PLAYER_WIN_ARGS+=("$__a"); done < <(player_windowed_launch_args)
+PLAYER_WIN_ARGS=(); while IFS= read -r __a; do PLAYER_WIN_ARGS+=("$__a"); done < <(player_windowed_launch_args "$PLAYERDIR/unity_player.log")
 WORLDOS_ENGINE_BASE_URL="$BASE_URL" WORLDOS_CAMPAIGN_ID="$CID" "$PLAYER_BIN" "${PLAYER_WIN_ARGS[@]}" \
   > "$RUNDIR/player_app.log" 2>&1 &
 PLAYER_APP_PID=$!

@@ -74,8 +74,28 @@ owner_active_guard() {
 # takes over the display. -screen-fullscreen/-screen-width/-screen-height are Unity's built-in
 # standalone-player command-line args, honored before the app's own window setup — no Unity/C#
 # change needed. Emits one arg per line; callers read it into an array. Size is env-overridable.
+# #1466 FIX B: an optional first arg is a run-dir log path — when given, appends Unity's own
+# -logFile <path> so THIS run's player log lands in the run dir instead of the shared, overwritten-
+# every-launch default (~/Library/Logs/worldos/WorldOSPlayer/Player.log).
 player_windowed_launch_args() {
-  printf '%s\n' -screen-fullscreen 0 \
+  local logfile="${1:-}"
+  local args=(-screen-fullscreen 0 \
     -screen-width "${WORLDOS_PLAYER_WIN_W:-1280}" \
-    -screen-height "${WORLDOS_PLAYER_WIN_H:-800}"
+    -screen-height "${WORLDOS_PLAYER_WIN_H:-800}")
+  [ -n "$logfile" ] && args+=(-logFile "$logfile")
+  printf '%s\n' "${args[@]}"
+}
+
+# --- #1466 FIX B: fallback copy of Unity's own default player log ----------------------------------
+# Belt-and-suspenders for -logFile above: if it was ignored, stripped, or the run predates this fix,
+# copy the shared default log location (overwritten on every launch — Player-prev.log is the PRIOR
+# run) into THIS run's dir under distinct names so it's never confused with the -logFile capture.
+# Silent no-op if the source dir/files don't exist (e.g. never launched, or a non-default log path).
+copy_player_log_fallback() {
+  local dest="$1"
+  local src_dir="$HOME/Library/Logs/worldos/WorldOSPlayer"
+  [ -d "$dest" ] || return 0
+  [ -f "$src_dir/Player.log" ] && cp -f "$src_dir/Player.log" "$dest/Player.log.fallback" 2>/dev/null
+  [ -f "$src_dir/Player-prev.log" ] && cp -f "$src_dir/Player-prev.log" "$dest/Player-prev.log.fallback" 2>/dev/null
+  return 0
 }
