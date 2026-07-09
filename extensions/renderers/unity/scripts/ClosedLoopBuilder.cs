@@ -680,7 +680,7 @@ public static class ClosedLoopBuilder
     // ---- invisible depth-only occluder proxies (fixture props) ----
     static void BuildOccluderProxies(GameObject root)
     {
-        var sh = Shader.Find("WorldOS/OccluderDepthOnly");
+        var sh = Shader.Find("WorldOS/OccluderDepth");  // #1460: was "…OccluderDepthOnly" (never resolved -> visible black boxes); committed shader is "WorldOS/OccluderDepth" (#1433)
         Material mat;
         if (sh != null && sh.isSupported)
         {

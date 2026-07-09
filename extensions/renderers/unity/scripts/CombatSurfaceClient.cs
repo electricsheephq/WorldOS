@@ -162,6 +162,24 @@ public class CombatSurfaceClient : MonoBehaviour
     const float ActorHeightFoe = 4.2f;
     const float ActorHeightChar = 3.2f;
 
+    // W6.1 (#1460) RUNTIME OCCLUDER PROXIES: the runtime twin of the paint_combat_v1.cs:487-533 editor
+    // bake. The engine ships `occluders` ({cells:[[c,r]...], band:"low"|"mid"|"tall"}) on /combat-surface
+    // (viewer/server.py _combat_occluders) — the OCCLUDER props (columns/statues) with footprint cells +
+    // height band. For each occluder cell we place an INVISIBLE depth-only box (WorldOS/OccluderDepth:
+    // ColorMask 0 -> writes DEPTH not color; Queue=Geometry-1 -> renders BEFORE the actors) at the SAME
+    // CellToWorld(cell) the painted column was baked at, so a 3D actor standing BEHIND the column (greater
+    // camera depth) fails the depth test where they overlap and is correctly HIDDEN by it. The editor bake
+    // froze this at last-save and died on any room swap; this rebuilds it every poll the occluder set (or
+    // location) changes. Presentation-only, engine stays SOLE WRITER; [] occluders => today's behavior.
+    // Kept out of Actor_* scans: the boxes are named Occluder_* and parented under a dedicated root.
+    GameObject _occRoot;                 // container parenting every proxy box; destroyed+rebuilt on change
+    Material _occMat;                    // shared WorldOS/OccluderDepth material, built once
+    bool _occMatTried;                   // guards the one-time Shader.Find (a missing shader warns once)
+    System.Collections.Generic.List<object> _occRaw;  // last-parsed raw occluder entries (post-unwrap)
+    string _occLocId = "";               // last-parsed location id (a room swap invalidates the proxies)
+    string _occSigParsed = "";           // signature of the last-PARSED occluder set + location
+    string _occSigBuilt = " ";      // signature of the last-BUILT proxies (sentinel => first build runs)
+
     [System.Serializable] public class Tok { public string id; public string name; public string team; public int x; public int y; public bool isCurrent; public int hp; public int hpMax; }
     [System.Serializable] public class Grid { public int cols; public int rows; }
     [System.Serializable] public class Surf { public string turnToken; public bool can_act; public Grid grid; public Tok[] tokens; }
@@ -248,6 +266,9 @@ public class CombatSurfaceClient : MonoBehaviour
         // from the poll covers the move-response path too.
         ParseSurfaceExtras(json);
         ApplySurf(s);
+        // W6.1 (#1460): (re)build the invisible occluder proxies AFTER ApplySurf has applied this surface's
+        // grid extents (CellToWorld depends on Cols/Rows). No-ops unless the occluder set/location changed.
+        RebuildOccluders();
     }
 
     // Populate _impassable + _lastPath from a raw /combat-surface OR /move response JSON (the latter nests
@@ -273,8 +294,99 @@ public class CombatSurfaceClient : MonoBehaviour
                 var lp = root["lastPath"] as System.Collections.Generic.List<object>;
                 if (lp != null) foreach (var ce in lp) { var cell = ce as System.Collections.Generic.List<object>; if (cell == null || cell.Count < 2) continue; _lastPath.Add(new[] { System.Convert.ToInt32(cell[0]), System.Convert.ToInt32(cell[1]) }); }
             }
+            // W6.1 (#1460): cache the surface's `occluders` + the current `location.id` so RebuildOccluders
+            // can spawn/rebuild the depth-proxy boxes when they change. Guarded on ContainsKey (mirrors the
+            // impassable branch): a response without the key leaves the prior set intact. Both /combat-surface
+            // and /move (unwrapped above) carry these, so the proxies stay live on the move path too.
+            if (root.ContainsKey("occluders"))
+            {
+                _occRaw = root["occluders"] as System.Collections.Generic.List<object>;
+                _occLocId = (root.ContainsKey("location") && root["location"] is System.Collections.Generic.Dictionary<string, object> locd && locd.ContainsKey("id")) ? (locd["id"] as string ?? "") : _occLocId;
+                _occSigParsed = OccSignature(_occLocId, _occRaw);
+            }
         }
         catch (System.Exception e) { Debug.LogWarning("[CSC] surface-extras parse: " + e.Message); }
+    }
+
+    // W6.1 (#1460): a cheap order-preserving fingerprint of the occluder set + its location, so
+    // RebuildOccluders is a no-op on the common poll (unchanged set) and rebuilds only on an actual change
+    // (a prop added/removed, a band change, or a room swap). Malformed entries collapse to empty tokens —
+    // the same guarding BuildOccluders applies — so the signature can never disagree with what is built.
+    static string OccSignature(string locId, System.Collections.Generic.List<object> raw)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append(locId ?? "").Append('|');
+        if (raw != null)
+            foreach (var oo in raw)
+            {
+                var od = oo as System.Collections.Generic.Dictionary<string, object>; if (od == null) continue;
+                sb.Append(od.ContainsKey("band") ? od["band"] as string : "mid").Append(':');
+                var cells = od.ContainsKey("cells") ? od["cells"] as System.Collections.Generic.List<object> : null;
+                if (cells != null) foreach (var cc in cells) { var cell = cc as System.Collections.Generic.List<object>; if (cell == null || cell.Count < 2) continue; sb.Append(System.Convert.ToInt32(cell[0])).Append(',').Append(System.Convert.ToInt32(cell[1])).Append(' '); }
+                sb.Append(';');
+            }
+        return sb.ToString();
+    }
+
+    // W6.1 (#1460): rebuild the invisible depth-only occluder proxies when the parsed set (or location)
+    // changed since the last build. Runtime port of paint_combat_v1.cs:487-533 — same band->height map,
+    // same CellToWorld-aligned 2x2 cubes, same WorldOS/OccluderDepth material (ColorMask 0, ZWrite On,
+    // Queue Geometry-1) — but poll-driven and rebuildable rather than a one-time editor bake. Called from
+    // ApplyJson AFTER ApplySurf so Cols/Rows reflect this surface's grid (CellToWorld depends on them).
+    void RebuildOccluders()
+    {
+        if (_occSigParsed == _occSigBuilt) return;           // unchanged set -> no rebuild (the common poll)
+        _occSigBuilt = _occSigParsed;
+        // Despawn cleanly: dropping the whole container takes every Occluder_* box with it (deterministic;
+        // the boxes are never in _spawned, so the actor despawn path never touches them and vice-versa).
+        if (_occRoot != null) { Destroy(_occRoot); _occRoot = null; }
+        if (_occRaw == null || _occRaw.Count == 0) { Debug.Log("[CSC] occluders: 0 (cleared)"); return; }
+
+        var mat = EnsureOccluderMaterial();
+        if (mat == null) return;                             // shader missing -> skip (never a visible box)
+        _occRoot = new GameObject("OccluderProxies");
+        System.Func<string, float> bandH = (b) => b == "tall" ? 7.5f : (b == "low" ? 1.4f : 3.8f);
+        int occN = 0;
+        foreach (var oo in _occRaw)
+        {
+            var od = oo as System.Collections.Generic.Dictionary<string, object>; if (od == null) continue;
+            string band = od.ContainsKey("band") ? od["band"] as string : "mid"; float H = bandH(band);
+            var ocells = od.ContainsKey("cells") ? od["cells"] as System.Collections.Generic.List<object> : null; if (ocells == null) continue;
+            foreach (var cc in ocells)
+            {
+                var cell = cc as System.Collections.Generic.List<object>; if (cell == null || cell.Count < 2) continue;
+                int ccx = System.Convert.ToInt32(cell[0]); int ccy = System.Convert.ToInt32(cell[1]);
+                var wp = CellToWorld(ccx, ccy);
+                var box = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                box.name = "Occluder_" + ccx + "_" + ccy;
+                Destroy(box.GetComponent<Collider>());       // depth-only proxy, never a physics blocker
+                box.transform.SetParent(_occRoot.transform, true);
+                box.transform.position = new Vector3(wp.x, H * 0.5f, wp.z);
+                box.transform.localScale = new Vector3(2.0f, H, 2.0f);
+                var br = box.GetComponent<Renderer>();
+                br.sharedMaterial = mat;
+                br.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                br.receiveShadows = false;
+                occN++;
+            }
+        }
+        Debug.Log("[CSC] occluders: " + occN + " depth-proxy boxes (loc=" + _occLocId + ")");
+    }
+
+    // W6.1 (#1460): the shared depth-only material, built once from the COMMITTED WorldOS/OccluderDepth
+    // shader (#1433 — a real .shader asset compiled into the player, unlike the old runtime-created string
+    // that fell back to magenta). The runtime has no ShaderUtil.CreateShaderAsset (editor-only), so a
+    // missing shader warns once and skips proxy spawning — invisible-but-broken occlusion beats visible
+    // black boxes. WorldOS/OccluderDepth must be in Always-Included Shaders for Shader.Find to resolve.
+    Material EnsureOccluderMaterial()
+    {
+        if (_occMat != null) return _occMat;
+        if (_occMatTried) return null;
+        _occMatTried = true;
+        var sh = Shader.Find("WorldOS/OccluderDepth");
+        if (sh == null) { Debug.LogWarning("[CSC] occluders: WorldOS/OccluderDepth not found (add to Always-Included Shaders); skipping proxies."); return null; }
+        _occMat = new Material(sh);
+        return _occMat;
     }
 
     void ApplySurf(Surf s)
