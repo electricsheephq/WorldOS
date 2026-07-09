@@ -3523,6 +3523,44 @@ def _combat_occluders(snapshot: dict) -> list[dict]:
     return out
 
 
+def _rest_impassable(snapshot: dict) -> list[list[int]]:
+    """W6.2 (#1461) REST-MODE collision: the geometry-derived blocked cells for the current room when
+    NO combat is active — the out-of-combat sibling of ``combat.grid_impassable``. This is the surface
+    field the CombatSurfaceClient's rest-mode walk pre-validation + the walkability overlay read, so an
+    actor can't walk over the painted logs (the owner's felt-bug: the surface reported ``[]`` at rest,
+    so the client had no collision truth at all).
+
+    Mirrors ``_director_advisory``'s engine-primary + graceful-degrade idiom: reconstruct the Campaign
+    from the engine-owned snapshot and call the engine's own ``rest_blocked_cells`` — the SAME set
+    ``walk_to`` validates against, so the client's collision picture can never drift from the mover
+    (a drift IS this class of bug). Read-only: nothing is mutated or persisted.
+
+    ADDITIVE / default-safe: returns ``[]`` (today's empty rest impassable) when the current location
+    has no ``scene_grid``, when the engine module isn't importable, or on any reconstruction failure —
+    so a pre-W6.2 snapshot (or a degraded QA-only context where ``walk_to`` also wouldn't run) projects
+    exactly as before. Shape is the sorted ``list[list[int]]`` ``grid_impassable`` uses."""
+    loc_id = _text(snapshot.get("current_location_id"))
+    locs = snapshot.get("locations") if isinstance(snapshot.get("locations"), dict) else {}
+    loc = locs.get(loc_id) if isinstance(locs, dict) and loc_id else None
+    sg = loc.get("scene_grid") if isinstance(loc, dict) else None
+    if not isinstance(sg, dict):
+        return []  # no painted room -> rest walk unavailable, byte-identical to today's empty field
+    engine = _load_engine_server()
+    if engine is None:
+        return []
+    try:
+        import models as _models  # engine dir is on sys.path after _load_engine_server
+
+        campaign = _models.Campaign.model_validate(snapshot)
+        location = campaign.locations.get(loc_id) if loc_id else None
+        if location is None:
+            return []
+        _w, _h, blocked = engine.rest_blocked_cells(campaign, location)
+        return [[int(x), int(y)] for (x, y) in sorted(blocked)]
+    except Exception:
+        return []  # any reconstruction/derivation failure -> degrade to today's empty rest impassable
+
+
 def _is_dead_or_downed(ch: dict) -> bool:
     """True for a character who must not stand upright in a rest projection: `dead`, or at 0 HP
     (unconscious/dying, or stabilized-but-still-down — engine fields `stable`/`current_hp`, see
@@ -3762,7 +3800,16 @@ def build_combat_surface(
         # P1: the most-recent routed move path (incl. the from-cell) + the impassable cells, so the
         # read-only renderer can draw the detour around walls/props. Presentation-only; [] == none.
         "lastPath": (snapshot.get("combat") or {}).get("last_move_path") or [],
-        "impassable": (snapshot.get("combat") or {}).get("grid_impassable") or [],
+        # W6.2 (#1461) the walking-over-logs fix — a rest-mode branch on `impassable`. In COMBAT the
+        # field stays EXACTLY the engine's `combat.grid_impassable` (byte-identical to pre-W6.2, the
+        # never-clobber-explicit half of `_derive_grid_from_scene`); when combat is INACTIVE it
+        # surfaces the geometry-derived rest blocked set from `rest_blocked_cells()` (see
+        # `_rest_impassable`), so the client's rest walk has the same collision truth `walk_to` uses.
+        "impassable": (
+            ((snapshot.get("combat") or {}).get("grid_impassable") or [])
+            if combat_active
+            else _rest_impassable(snapshot)
+        ),
         # M-E room transition: the authored doorway cells + their destination room-unit, so the renderer
         # can mark the doorway and the UI can offer to cross. [] == no doors/connections (today's shape).
         "doors": _combat_doors(snapshot),
