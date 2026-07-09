@@ -24,6 +24,7 @@ public static class CohesionProbe
     static Vector3 _fromDir = new Vector3(-1f, 0f, 0f);   // horizontal dir of the light SOURCE from scene center
     static Vector3 _hearthAnchor;                          // floor point shadows are cast AWAY from
     static bool _analyzed;
+    static string _analyzedScene;   // cache key: re-analyze when the active scene changes (review P2)
 
     // ---------- rung 0b: populate the BASELINE cast (mirrors the runtime spawn look exactly) ----------
     // fighter@(6,6) + goblin@(9,5) — the seed_gfx_combat cells on the crypt plate. Standard shader
@@ -169,7 +170,7 @@ public static class CohesionProbe
             go.transform.eulerAngles = new Vector3(90f, yaw, 0f);
             var sh = Shader.Find("WorldOS/ContactShadow");
             var m = new Material(sh != null ? sh : Shader.Find("Sprites/Default"));
-            m.mainTexture = RadialTex(); m.color = new Color(0.05f, 0.03f, 0.02f, 0.78f);
+            m.mainTexture = RadialTex(); m.color = new Color(0.05f, 0.03f, 0.02f, 0.78f); m.renderQueue = 1990;   // before actors (2000+): the ZTest-Always blob must never draw over feet (review P3)
             var r = go.GetComponent<Renderer>(); r.sharedMaterial = m; r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             n++;
         }
@@ -210,6 +211,8 @@ public static class CohesionProbe
             {
                 var src = r.sharedMaterial; if (src == null) continue;
                 var fmat = new Material(sh);
+                fmat.name = "ProbeMat_" + a.name;
+                if (src.name.StartsWith("ProbeMat_")) Object.DestroyImmediate(src, true);   // re-run leak guard (review P3)
                 if (src.HasProperty("_MainTex") && src.mainTexture != null) fmat.SetTexture("_MainTex", src.mainTexture);
                 fmat.SetColor("_BaseColor", Color.white);
                 fmat.SetColor("_KeyColor", _key);
@@ -247,6 +250,7 @@ public static class CohesionProbe
     public static void ResetScene()
     {
         var sc = SceneManager.GetActiveScene();
+        if (string.IsNullOrEmpty(sc.path)) { Debug.LogError("[PROBE] active scene has no saved path - cannot discard-reopen; save it first."); return; }
         EditorSceneManager.OpenScene(sc.path);
         _analyzed = false;
         Debug.Log("[PROBE] scene reopened (all rungs discarded): " + sc.path);
@@ -255,7 +259,7 @@ public static class CohesionProbe
     // ---------- plate analysis ----------
     static bool Analyze()
     {
-        if (_analyzed) return true;
+        if (_analyzed && _analyzedScene == SceneManager.GetActiveScene().path) return true;
         var bd = GameObject.Find("PaintedBackdrop");
         var mat = bd != null ? bd.GetComponent<Renderer>().sharedMaterial : null;
         var tex = mat != null ? mat.mainTexture as Texture2D : null;
@@ -302,7 +306,7 @@ public static class CohesionProbe
                 if (t > 0f) _hearthAnchor = ray.origin + ray.direction * t;
             }
         }
-        _analyzed = true;
+        _analyzed = true; _analyzedScene = SceneManager.GetActiveScene().path;
         Object.DestroyImmediate(small);
         Debug.Log("[PROBE] plate analyzed v2: key " + ColorUtility.ToHtmlStringRGB(_key) + " amb " + ColorUtility.ToHtmlStringRGB(_amb)
                   + " brightUV (" + u.ToString("F2") + "," + v.ToString("F2") + ") fromDir " + _fromDir.ToString("F2") + " hearth " + _hearthAnchor.ToString("F1"));
