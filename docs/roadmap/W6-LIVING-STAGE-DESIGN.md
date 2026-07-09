@@ -88,3 +88,6 @@ leverage fixes, and the current W6 headline aims at the wrong axis of the 3.2-vs
 4. **Status corrections:** W6.1 SHIPPED (#1460 → PR #1464, runtime RebuildOccluders + the
    OccluderDepthOnly shader-name fix). W6.2 (rest-mode collision) is the one open correctness item and
    is unaffected by this amendment.
+
+> Full research corpus + REJECTED-APPROACHES REGISTER (SAM walkmasks, depth-from-paint, screen-space
+> filters, whole-atlas texture re-bake — each with unpark conditions): docs/research/2026-07-10-stage-tech-research.md
