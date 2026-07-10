@@ -1,0 +1,8 @@
+{
+  "name": "forest_road-armB-iter2-noref-dimetric",
+  "room": "forest_road",
+  "generate": { "controlnet": "depth", "control_strength": 0.7, "control_model": "model_bfl-flux-1-dev", "seed": 42,
+                "candidate": "/Users/lume/worldos-session-notes/plate-sprint/forest_road/iter2/style_noref_dimetric/fr_iter2_noref_dimetric.png" },
+  "registration": { "greybox": "/Users/lume/worldos-session-notes/plate-sprint/forest_road/forest_road_greybox.png", "min_recall": 0.95 },
+  "panel": { "incumbent": "/Users/lume/WorldOS/qa/evidence/plate-audit/camp_clearing_night_v2.jpg", "control": "/Users/lume/worldos-session-notes/plate-sprint/armB/poe2_control.jpg", "house_anchor": "/Users/lume/WorldOS/qa/evidence/plate-audit/camp_clearing_night_v2.jpg" }
+}

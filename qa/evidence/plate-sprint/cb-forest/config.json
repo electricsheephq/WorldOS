@@ -1,0 +1,8 @@
+{
+  "name": "forest_road-armC-cb-forest-lora-anchor",
+  "room": "forest_road",
+  "generate": { "controlnet": "depth", "control_strength": 0.65, "control_end": 0.6, "seed": 99,
+                "candidate": "/Users/lume/worldos-session-notes/plate-sprint/forest_road/cb_forest/armb_rerun/cb_forest_r1.png" },
+  "registration": { "greybox": "/Users/lume/worldos-session-notes/plate-sprint/forest_road/forest_road_greybox.png", "min_recall": 0.95 },
+  "panel": { "incumbent": "/Users/lume/WorldOS/qa/evidence/plate-audit/camp_clearing_night_v2.jpg", "control": "/Users/lume/worldos-session-notes/plate-sprint/armB/poe2_control.jpg", "house_anchor": "/Users/lume/WorldOS/qa/evidence/plate-audit/camp_clearing_night_v2.jpg" }
+}
