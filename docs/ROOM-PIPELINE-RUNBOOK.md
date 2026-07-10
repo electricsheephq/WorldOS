@@ -1,0 +1,331 @@
+# ROOM PIPELINE RUNBOOK — author a room end-to-end (cold-agent bootstrap)
+
+> **You were told "make a room" and given this repo. This page is the whole pipeline.** Read it top
+> to bottom, then execute — you do not need any prior conversation's context. Every step names its
+> exact file/command and the decision record that ratified it. This is the TRUE-GREYBOX lane (epic
+> #1508): geometry-first, registration by construction, no paint-vs-grid drift.
+
+## The one invariant every step below honors
+
+The Python engine (`servers/engine/`) is the **sole writer** of level-structure truth (walkable
+cells, occluders, pathing). Every artifact below — greybox, plate, manifest, VFX anchor — is a
+**presentation-layer derivation** of engine-authored geometry, never a second writer of it. If a
+step you're adding would let art or a generator invent grid truth independently, it's wrong by
+construction — see `docs/roadmap/GENERATOR-EXPORT-CONTRACT.md`'s framing of this same rule for the
+generator arms.
+
+## Scale convention — 1 cell = 5 ft ≈ 1 human
+
+The engine cell is **5 ft**. The greybox renderer's world scale is **2.0 world-units per cell**
+(`greybox_render_headless.cell_to_world`), so `2 world-units == 1 cell == 5 ft`. Size every
+authored prop against that ruler — **a standing human is ~1 cell wide**, so a prop's footprint
+should read as a multiple of "how many people could stand there," not an eyeballed blob. This
+convention is what makes cross-tool math (author → derive → DunGen/Tessera world-units-per-cell)
+compose without a unit-conversion bug; see "Scale mapping" in `GENERATOR-EXPORT-CONTRACT.md`.
+
+## The RICHNESS PRINCIPLE (load-bearing lesson, PR #1528 / CRYPT-REPLICATE)
+
+**Paint richness follows GEOMETRY richness.** CRYPT-REPLICATE spent a full style-pass iteration
+loop trying to out-paint a drift-rich incumbent plate (best honest result: 7.1, vs the incumbent's
+7.8) and could not close the gap with cosmetic style-pass levers alone. The honest path past a
+richer incumbent is **authoring a denser greybox** — more prop volumes = richer paint AND richer
+collision, simultaneously, because both are derived from the same geometry. Do not reach for "one
+more style-pass iteration" to fix a plate that reads as sparse; reach for `author_room_geometry.py`
+and add prop volumes instead. (Full note: `docs/RUNBOOK-INDEX.md` LARGE SPACES row / PR #1528.)
+
+---
+
+## The pipeline, step by step
+
+### 1. Author geometry — `tools/author_room_geometry.py`
+
+Emits a `room_geometry.json` (the `export_scene_grid.py`-shaped input every downstream tool
+consumes) directly from a room's own prop constants, at CORRECT WORLD SCALE — each prop sized as a
+kind's proxy volume (height from `greybox_render_headless._KIND_SPECS`) extruded on cells sized to
+the true 5-ft-grid object, not an eyeballed/drifted footprint.
+
+```bash
+python3 tools/author_room_geometry.py crypt -o /tmp/crypt_geometry.json
+python3 tools/author_room_geometry.py camp  -o /tmp/camp_geometry.json
+```
+
+**Shape-appropriate proxies (PR #1495 lesson):** box-shaped trees read as buildings to depth
+models. Route each prop through the kind that matches its true silhouette (cylinder → pillar, cone
+→ tree, box → crate/rubble/masonry) — the generator-export converter (`tools/dungen_to_fixtures.py`)
+applies the same shape→kind rule for generator-sourced props (see step 8a).
+
+**Geometry schema** (mirrors `qa/export_scene_grid.py`):
+```
+{cols, rows, material, cell_default_walkable, walls, props:[{id, kind, cells}],
+ impassable, door_cells, protected_lane_cells}
+```
+`walls` is every non-walkable cell (true perimeter + every prop footprint cell, conflated —
+`greybox_render_headless` dedupes prop cells out of the wall boxes for rendering).
+
+Deterministic, offline, read-only w.r.t. engine state.
+
+### 2. Derive the manifest — `tools/derive_room_manifest.py`
+
+**Owner playtest #5 architecture decision: the greybox geometry is the single source of truth for
+a room's FOOTPRINT + OCCLUSION + WALKABLE; manifests are DERIVED from it, never hand-authored.**
+This is what kills paint-vs-grid drift at the source instead of patching it downstream.
+
+```bash
+python3 tools/derive_room_manifest.py /tmp/crypt_geometry.json \
+    -o qa/room_manifests/crypt.cells.json --room crypt --recipe-key crypt
+```
+
+Per prop this computes:
+- **footprint** — the impassable FLOOR cells (collision + `check_grid_paint_coherence.py`'s
+  correctness check).
+- **occlusion** — the screen-space SILHOUETTE cells (a tall prop's silhouette rises up-screen off
+  its floor footprint — strictly contains but is offset from the footprint).
+- **screen_bbox** — the footprint reprojected under the contract camera.
+
+**Footprint-vs-occlusion is the distinction CAMP-TUNE's defect #5 turned on** (see the recall table
+below, `qa/evidence/journey-eval-first-run/RECALL.md`): a per-prop occlusion hull computed as the
+bounding box over a whole multi-cell footprint can blanket far more of the room than the prop
+actually occupies (a 9-cell L-shaped wall produced a 48-cell occlusion hull covering the room's
+exit). **Keep individual prop runs SHORT** (2-4 cells) specifically so each one's occlusion hull
+stays tight to itself — this is now a standing authoring rule, not just a one-off fix.
+
+Manifests are stamped `derivation: "derived"` + their source geometry — distinguishing them from
+legacy `measured` manifests (`qa/build_room_manifest.py` reconstructions) that exist only until a
+room's geometry JSON is authored.
+
+### 3. Greybox render (the shaded base + optional depth/normal sidecars)
+
+The shaded greybox render is BOTH the plate's visual base AND the ControlNet `controlImage` for
+step 4 — one artifact, two consumers, guaranteeing base and control agree pixel-for-pixel:
+
+```bash
+python3 qa/greybox_render_headless.py /tmp/crypt_geometry.json /tmp/crypt_greybox.png
+```
+
+This is the verified camera rig (`greybox_render_headless` — the #1396 recipe, <1e-3 vs Unity;
+dimetric, elevation 30°, yaw 45, `cell_size 2.0`, `ortho_size 13`).
+
+**Optional depth+normal sidecars** (`qa/greybox_sidecars_headless.py`) — a pure-PIL analog of the
+box `CohesionProbe.cs` G-buffer, co-registered pixel-for-pixel with the greybox render:
+```bash
+python3 qa/greybox_sidecars_headless.py /tmp/crypt_geometry.json \
+    /tmp/crypt_depth.png /tmp/crypt_normal.png
+```
+**Scope note (a PLATE SPRINT finding, not a live dependency):** the ADOPTED recipe (step 4) does
+**not** consume these sidecars — Scenario derives the depth control server-side from the shaded
+greybox `controlImage` directly. These sidecars exist for parity with the crypt relight-lane
+artifact and as a reproducible no-box path for any future relight; issue #1481 concluded the
+WOSRelight lane that DID consume them should **stop** (shared-greybox sidecars stamped
+vertical-banding seams onto warm plates — only a per-plate sidecar would be safe). Don't wire a new
+recipe to these unless you've re-read #1481 first.
+
+### 4. Registered base — flux depth-ControlNet (`docs/roadmap/PLATE-RECIPE-DECISION.md`)
+
+**Adopted pipeline (DECIDED 2026-07-10, supersedes the implicit `model_z-image` img2img default):**
+1. **flux.1-dev + depth-ControlNet base** from the room greybox — registration by construction (the
+   paint is conditioned directly on the authored geometry, so it cannot drift from it).
+2. Via `extensions/renderers/godot/tools/generate_room.py --controlnet depth` (or
+   `qa/plate_loop.py`'s `generate.controlnet` config field) — the greybox is `--base-plate`, Scenario
+   resolves it to `controlImage` with `controlModality=depth`.
+
+### 5. Coherence gate — `qa/check_grid_paint_coherence.py`
+
+The ABSOLUTE grid↔paint coherence gate (#1462/#1491) — this is what would have caught the
+sarcophagus incident (engine cells legal, but the paint sat ~3/4 cell off the grid footprint;
+actor stood on the authored impassable cell while the painted prop was elsewhere).
+
+- **Why `check_plate_drift.py` (relative) doesn't catch this:** that gate only asserts a regen
+  keeps a prop where a KNOWN-GOOD baseline had it — a prop that has ALWAYS been off-grid passes
+  forever. This gate is **absolute**: no baseline needed, it checks the paint against the grid's
+  OWN authored footprint.
+- **Method:** regenerate the grid's structural signature from the manifest FOOTPRINT via the same
+  contract greybox rig; build an edge template per prop (mean-subtracted, L2-normalised silhouette
+  edges — the modality-invariant bridge greybox↔paint); localise it in the plate's edge map via
+  normalised cross-correlation; any prop whose peak offset exceeds `MAX_OFFSET_CELLS` (0.5) →
+  **INCOHERENT, fail loud.**
+- **Reliability scope:** hard-silhouette props (pillars, sarcophagi, walls, altars) localise
+  reliably. Tall organic props (tree foliage) present a poor box-silhouette match — reported as a
+  diagnostic, not a blocking CI signal, for that class.
+
+Run it against every registered candidate before it goes to the panel.
+
+### 6. Style pass — the reference-images LAW + structure/dimetric locks
+
+**Gemini instruction-edit** (`model_google-gemini-3-1-flash`) over the flux depth-CN base, with two
+mandatory prompt clauses:
+
+- **STRUCTURE-LOCK** — "every wall, pillar, archway, doorway, staircase, tree, boulder, road edge,
+  and prop must stay in EXACTLY its current position, size, and shape... only the paint and
+  lighting treatment changes" (verbatim pattern used across every adopted style-pass prompt, e.g.
+  `qa/evidence/plate-sprint/camp-armB/style_pass_prompt_winning.txt`).
+- **DIMETRIC-LOCK** — an explicit camera-angle-preservation clause. Needed because dropping
+  `referenceImages` also drops an *implicit* camera pin that a reference image otherwise supplied
+  (`qa/evidence/plate-sprint/camp-armB/findings.json` finding 3) — but test it per-room: on a base
+  whose camera was never drifting, adding dimetric-lock wording measurably made results WORSE
+  (added prompt complexity/stochastic risk without fixing an actual defect). Don't cargo-cult it.
+
+**★ THE REFERENCE-IMAGES LAW (`PLATE-RECIPE-DECISION.md`):** Gemini `referenceImages` hijack
+CONTENT toward the reference, not just style. A reference is safe **only if its composition already
+matches the room greybox** (e.g. an anchor minted FROM that same greybox). For a room with no
+greybox-aligned anchor: use **no** `referenceImages` — text style description + scene-content
+grounding instead. Measured: no-ref registration recall 0.9439 vs same-room-ref 0.81-0.84 (PR #1492).
+A `STRUCTURE-LOCK EXCEPTION` clause is the sanctioned escape hatch for a specific, named artifact
+region (e.g. an unwanted concentric-ring pattern in ground texture) that the general lock would
+otherwise force Gemini to preserve — scope it tightly to the one region, never generally.
+
+**Registration gate:** edge-recall ≥0.95 for hard-edge/masonry rooms; for organic rooms edge-recall
+is ADVISORY (content-blind and class-dependent — issue #1491) — use the greybox-edge overlay as
+primary evidence instead.
+
+### 7. Blind panel — the in-band control recipe
+
+**`qa/plate_loop.py`** is the one-command conductor: generate → deterministic registration/pre-gate
+→ STAGE the panel packet → (orchestrator scores it) → ingest verdict → scores_db row + gallery row.
+
+```bash
+# Phase 1 — generate + deterministic gates + stage the panel
+python3 qa/plate_loop.py --room crypt --config cfg.json --out-dir out/ --gallery gallery.html
+# ... orchestrator runs the 5 blind scorers per <out-dir>/panel/prompts.json ...
+# Phase 2 — ingest the verdict
+python3 qa/plate_loop.py --panel-verdict verdict.json --out-dir out/ --gallery gallery.html
+```
+
+**★ THE PANEL IS AGENT-WORK, NOT SCRIPT-WORK** — `plate_loop.py` never calls an LLM. It stages
+blind slots (candidate / incumbent / disguised real-art control), writes the blind
+slot→A/B/C mapping OUTSIDE the panel image dir (scorers Read adjacent files), and the
+**orchestrator** runs the 5-scorer blind panel (the visual-critic skill recipe).
+
+**5-scorer blind panel composition:** candidate + incumbent canonical + a **disguised in-band
+real-art control** (validity band 6.8-9.2 on our instrument; out-of-band ⇒ advisory, re-run once).
+Best-of-N (N≥3) generations per iteration (measured run-to-run variance). **Never cite an absolute
+score as a quality verdict** — real shipped PoE2/BG2 art scores 3.0-5.6 on this same instrument; the
+control's presence is what makes a panel result citable at all (`docs/roadmap/VISUAL-PROMOTION-GATE-DECISION.md`
+formalizes this as the promotion gate's delta-anchored strategy for the "room" artifact class).
+
+### 8. Promote — `tools/library/promote.py --batch`
+
+The HV3 eval-gated promotion pipeline (Act II §4c, #1325) — the **sole writer** of the repo-root
+`library/` pack, additive by default (empty nomination queue ⇒ byte-identical library).
+
+```bash
+python3 tools/library/promote.py --batch \
+    --library library/ --nominations qa/nominations.jsonl --db qa/scores.db
+python3 tools/library/library_lint.py   # validate the result
+```
+
+**Two gate strategies by class** (`docs/roadmap/VISUAL-PROMOTION-GATE-DECISION.md`):
+- **TEXT** classes (quest/npc/location/encounter) → absolute threshold gate (overall ≥4.0, every
+  dim ≥3.0, control-valid).
+- **VISUAL** ("room") → **delta-anchored, never absolute**: deterministic pre-gate HARD FLOOR
+  passed + the panel's control landed in-band + candidate-minus-control delta ≥ -1.2 (noise law).
+
+`tier=canonical` is human curation ONLY — `promote.py` never assigns it. **Bootstrap note:** until
+HV5's auto-nominator exists, hand-author `qa/nominations.jsonl` — one JSON line per `artifact_id`
+(room nominations MUST declare `"class": "room"` since a visual score lives in a panel JSON, not
+the `artifacts` DB table).
+
+### 8a. The generator path — DunGen / Tessera export → converter (structure-source alternative)
+
+For a room sourced from a **generator layout** rather than hand-authored constants, the geometry
+step (1) is replaced by an export+convert hop; steps 2-8 above are unchanged downstream. Full
+contract: `docs/roadmap/GENERATOR-EXPORT-CONTRACT.md` (supersedes `DUNGEN-EXPORT-CONTRACT.md`,
+renamed when the Tessera Pro arm landed).
+
+```
+DunGen scene   ──[DunGenLayoutExporter.cs]───▶ dungen_layout.json   ──┐
+Tessera scene  ──[TesseraLayoutExporter.cs]──▶ tessera_layout.json ──┴─[dungen_to_fixtures.py]──▶
+    (a) <name>.scenegrid.json      — engine SceneGrid fixture (the sole-writer truth)
+    (b) <name>_geometry.json       — greybox geometry json (feeds step 3 directly)
+    (b') <name>_<room>_geometry.json  — --room: one cropped room = the registered-plate input
+```
+
+- Both Unity-Editor exporters (`extensions/renderers/unity/scripts/Editor/{DunGen,Tessera}LayoutExporter.cs`)
+  emit the **same top-level layout shape** (`generator`/`bounds`/`rooms`/`doorways`/`props`), so
+  `tools/dungen_to_fixtures.py` is a single converter for both arms — no schema fork. Tessera's
+  gaps (no native doorway object, no `is_main_path`) are additive-empty fields the converter already
+  tolerated before the Tessera arm landed.
+- **Scale mapping is identical to the hand-authored path:** `--world-units-per-cell 2.0` (2 Unity
+  units = 1 five-ft cell), same convention as step 0 above — this is what keeps the whole chain
+  unit-consistent regardless of which structure-source produced the layout.
+- Box drive recipe (when a live Unity session is available): `qa/evidence/dungen-spike/BOX-DRIVE-RECIPE.md`
+  — deploy the exporter → generate+export via unity-mcp `execute_code` → convert → greybox-render →
+  continue at step 4 of this runbook.
+- **Ratified architecture boundary (`docs/roadmap/TILED-SPACE-SPIKE.md` orchestrator ruling,
+  2026-07-12):** the room/plate stays the atomic unit at native painting density — never widen a
+  single generation to grow a space (measured: quality collapses 7→2 stretching one generation past
+  ~1 room). **Towns/larger spaces are a LAYOUT problem** solved at the generator-graph layer (room-scale
+  districts + door-cross transitions + visually MASKED boundaries), not a painting problem. A
+  shared-wide-depth-control + per-tile-paint + feather **hybrid** is the ratified special-case tool
+  for genuinely continuous wide vistas (e.g. a market square spanning two tiles) — used sparingly,
+  panel-gated per vista, never as the default town-building path.
+
+### 9. `plates_manifest.json` + `effects[]` anchors (runtime backdrop + VFX)
+
+**Runtime plate registry** (`docs/roadmap/W5E-PLATE-REGISTRY-DECISION.md`, DECIDED 2026-07-10): ONE
+persistent Unity scene; the backdrop is resolved AT RUNTIME by the engine's location slug via a
+StreamingAssets `plates_manifest.json` — no scene reload, no per-room bake, no Addressables.
+
+```jsonc
+{
+  "version": 1,
+  "plates": {
+    "<location_slug>": {
+      "plate": "plates/<file>.png",
+      "planeSize": [W, H],
+      "cameraPin": { "ortho": 13.0, "pitch": 30.0, "yaw": 45.0 },
+      "stage": "stage.json",
+      "effects": [ { "type": "fire_medium", "cell": [5, 8], "scale": 1.5 } ]
+    }
+  }
+}
+```
+
+**`effects[]` is the additive VFX-anchor mechanism** (PR #1525, VFX-ANCHORS): on plate load/swap,
+`CombatSurfaceClient.SpawnPlateEffects` despawns prior effect instances and spawns each entry's
+mapped prefab (via `effects_registry.json`, abstract `type` → prefab path — single source of truth
+for both the runtime resolver and the build) at the cell's world position, scaled, ParticleSystems
+warmed, parented under `_EffectsRoot`. **Pure presentation — no engine/gameplay contact.** Absent
+`effects`/registry/bundle-prefab ⇒ nothing spawns (byte-identical to the pre-VFX plate). The box
+renders **Built-in RP**; Hovl Shader-Graph particle materials get re-pointed to Legacy Particles at
+runtime (`RepointHovlMaterials`, reuses PR #1515) — a no-op for Synty/GAPH shaders.
+
+**Grid dims + occluders are NEVER in the manifest** — they stay engine truth on the `/combat-surface`
+poll; the manifest carries ONLY presentation data (plate file, plane size, camera pin, effects). This
+is what keeps the renderer a pure consumer (the sole-writer invariant, restated for this seam).
+`BuildMacOSPlayer.EnsurePackaged` copies `plates_manifest.json` + every referenced plate PNG +
+`effects_registry.json` into `StreamingAssets/` at build time.
+
+### 10. Player pickup — box rebuild
+
+The client (`CombatSurfaceClient.cs`) picks up a new/changed plate only after a rebuild bakes the
+updated `StreamingAssets` into the shipped app:
+
+```
+Tools/WorldOS/Build/macOS Player (Universal)   # Unity Editor menu item, on the box
+```
+
+Verify with `qa/player_smoke.sh` (free, ~30-60s, every player rebuild — `docs/RUNBOOK-INDEX.md`
+"player smoke" row) before treating a rebuild as done. A location whose manifest key is unknown ⇒
+current plate kept (invisible-but-safe), never a crash — check `plates_manifest.json` if a room you
+just promoted doesn't appear in the player.
+
+---
+
+## Cross-linked decision records (read before deviating from this runbook)
+
+| Decision | What it settled |
+|---|---|
+| `docs/roadmap/PLATE-RECIPE-DECISION.md` | The adopted flux depth-CN + Gemini style-pass recipe; the reference-images law; outdoor-class rejected-approaches register |
+| `docs/roadmap/TILED-SPACE-SPIKE.md` | Room = atomic paint unit; towns are a layout problem; the ratified hybrid seam recipe for special-case wide vistas |
+| `docs/roadmap/GENERATOR-EXPORT-CONTRACT.md` | The DunGen + Tessera Pro export contract; the additive schema; shape-appropriate proxy routing |
+| `docs/roadmap/W5E-PLATE-REGISTRY-DECISION.md` | Runtime plate registry (`plates_manifest.json`); why per-room baked scenes and Addressables were rejected for this slice |
+| `docs/roadmap/VISUAL-PROMOTION-GATE-DECISION.md` | Why the "room" class gates on control-relative delta, never an absolute score |
+| `docs/research/2026-07-10-stage-tech-research.md` | REJECTED-APPROACHES register cross-linked from the plate recipe decision |
+| `docs/RUNBOOK-INDEX.md` | The run-type registry — every run in this pipeline has a row (runner, tier, evidence, scores surface) |
+
+## Standing instruments that validate a room after it ships
+
+See `docs/OPERATIONS.md` "Standing visual/pipeline instruments" — the coherence gate
+(`check_grid_paint_coherence.py`) and journey-eval (`qa/journey_eval.py`) both run against a shipped
+room; `qa/evidence/journey-eval-first-run/RECALL.md` documents the current instrument gap (the
+legal-path blind spot, #1523) so you know what journey-eval does and does NOT yet catch.

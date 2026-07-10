@@ -62,13 +62,22 @@ List the checks you ran.
 - Exact next action:
 
 
-## Evidence (required for anything visual)
-For renderer / viewer / UX / animation changes: commit 1-6 BEFORE/AFTER still frames to
-`qa/evidence/<number>/` **on this branch** (≤400KB each; JPEG fine for painterly plates) and
-reference them here. Local paths (`~/worldos-session-notes/...`) are INVISIBLE to reviewers — repo
-paths only. Motion: a numbered frame series (2-6 stills) is primary; a GIF is optional for humans
-(agents read stills). Include the deterministic pre-gate output (qa/visual_pregate.py) when the
-change touches placement/pose/scale. Engine-only changes: test names + fast_gate line instead.
+## Visual Evidence (required for any renderer / plate / QA-visual change)
+**The owner browses PRs — frames must render INLINE, not just be linked.** For renderer / viewer /
+plate / VFX / UX / animation changes:
+- Commit 1-6 BEFORE/AFTER still frames to `qa/evidence/<number>/` **on this branch** (≤400KB each;
+  JPEG fine for painterly plates) — local paths (`~/worldos-session-notes/...`) are INVISIBLE to
+  reviewers, repo paths only.
+- **Embed each frame with markdown image syntax so it renders inline in the PR view** —
+  `![caption](../blob/<branch>/qa/evidence/<number>/frame.jpg)` or the repo-relative form GitHub
+  resolves on this PR's branch. A bare path or a "see qa/evidence/123/" pointer does not satisfy this
+  — if the owner has to click through to a file listing to see a pixel, the section is incomplete.
+- Motion: a numbered frame series (2-6 stills) is primary and each still gets its own embedded image
+  (agents read stills reliably); a GIF is optional, for humans, in addition to the stills.
+- Include the deterministic pre-gate output (`qa/visual_pregate.py`) when the change touches
+  placement/pose/scale, and the coherence-gate result (`qa/check_grid_paint_coherence.py`) when the
+  change touches a room's authored geometry or manifest.
+- Engine-only changes with no visual surface: test names + fast_gate line instead of this section.
 
 ---
 _Merging note: required checks stuck at "expected/pending" with mergeState BLOCKED is the known repo-wide auto-merge hang (#1389), NOT a CI failure. Procedure: real checks green + threads resolved → `gh pr merge <n> --admin --squash` (docs/OPERATIONS.md "Merging")._
