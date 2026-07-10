@@ -1,0 +1,7 @@
+{
+  "name": "truegrey-camp-fluxdepthcn-gemini-noref",
+  "room": "camp_clearing_night",
+  "generate": {"candidate": "/Users/lume/WorldOS-worktrees/wt-true-greybox/qa/evidence/true-greybox/camp/camp_painterly_candidate.png"},
+  "registration": {"greybox": "/Users/lume/WorldOS-worktrees/wt-true-greybox/qa/evidence/true-greybox/camp/camp_greybox.png", "min_recall": 0.95, "manifest": "/Users/lume/WorldOS-worktrees/wt-true-greybox/qa/room_manifests/camp_truegrey.cells.json"},
+  "panel": {"incumbent": "/Users/lume/WorldOS-worktrees/wt-true-greybox/qa/evidence/plate-audit/camp_clearing_night_v2.jpg", "control": "/Users/lume/worldos-session-notes/plate-sprint/armB/poe2_control.jpg", "house_anchor": "/Users/lume/WorldOS-worktrees/wt-true-greybox/qa/evidence/plate-audit/camp_clearing_night_v2.jpg"}
+}

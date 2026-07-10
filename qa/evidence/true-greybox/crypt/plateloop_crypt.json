@@ -1,0 +1,7 @@
+{
+  "name": "truegrey-crypt-fluxdepthcn-gemini-noref",
+  "room": "crypt",
+  "generate": {"candidate": "/Users/lume/WorldOS-worktrees/wt-true-greybox/qa/evidence/true-greybox/crypt/crypt_painterly_candidate.png"},
+  "registration": {"greybox": "/Users/lume/WorldOS-worktrees/wt-true-greybox/qa/evidence/true-greybox/crypt/crypt_greybox.png", "min_recall": 0.95, "manifest": "/Users/lume/WorldOS-worktrees/wt-true-greybox/qa/room_manifests/crypt_truegrey.cells.json"},
+  "panel": {"incumbent": "/Users/lume/WorldOS-worktrees/wt-true-greybox/qa/evidence/plate-sprint/adopt-crypt/source-plates/candidate_crypt_armb_iter3.jpg", "control": "/Users/lume/worldos-session-notes/plate-sprint/armB/poe2_control.jpg", "house_anchor": "/Users/lume/WorldOS-worktrees/wt-true-greybox/qa/evidence/plate-sprint/adopt-crypt/source-plates/candidate_crypt_armb_iter3.jpg"}
+}
