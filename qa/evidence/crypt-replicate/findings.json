@@ -1,0 +1,31 @@
+{
+  "lane": "CRYPT-REPLICATE (iter3) — replicate the validated true-greybox method on the crypt and try to honestly beat the 8.0 incumbent (crypt_armb_iter3). API-side only; geometry + registered base from PR #1514 (qa/evidence/true-greybox/crypt/). No box, no training.",
+  "base": "crypt_base_registered.png (#1514, correct-scale 2x2 coffin + 2-cell pillars). Registration truth on the BASE layer; the style pass is cosmetic.",
+  "incumbent_bar": "crypt_armb_iter3.jpg — the ORNAMENTATION bar (carved pillar reliefs, dense stonework, skulls/props). Historically 8.0; medians 7.8 in BOTH blind panels this run. Its richness embeds the known content-drift (staircase / back archway / 2nd tomb / full-height columns / 2x tomb-scale) that a composition-faithful plate structurally cannot match.",
+  "context_carried": "iter2 (PRs #1518/#1519): loose Gemini ref HIJACKS content; hardened structure-lock keeps composition but scored 6.0 (delta -3.0) -> rejected. iter3 goal: close the ornamentation gap WITHOUT importing incumbent content.",
+  "recipes_tried": {
+    "a_two_stage_gemini": {
+      "method": "Stage-1 base = the validated iter2-f structure-locked plate (composition-faithful, overlay-clean). Stage-2 = Gemini 3.1 (nano-banana) img2img DETAIL-ENRICHMENT edit in-place: deepen chiaroscuro + add carved knotwork reliefs to pillars, runes/figural relief to sarcophagus, bones/cobwebs/leaf-litter in corners; change geometry NOWHERE, add NO objects/rooms/openings. Best-of-4 (2 variants x 2: variant-A iter2f-only ref; variant-B iter2f + incumbent-as-density-ONLY ref with hard forbid clauses). All 4 held composition (forbid clauses defeated the hijack).",
+      "selected_candidate": "iter3_a2 (variant A, moodiest + highest recall of the enriched set)",
+      "overlay_recall_vs_1514_greybox": {"iter3_a1": 0.8281, "iter3_a2": 0.8323, "iter3_b1": 0.8054, "iter3_b2": 0.8063, "iter2f_baseline": 0.8643, "incumbent": 0.8778},
+      "overlay_verdict": "PASS — all 4 hold the exact 3-prop composition (brazier + 2 pillar stubs + 1 sarcophagus) in their authored cells; NO staircase/archway/2nd-tomb/opening added. Recall 0.80-0.83 is content-blind corroboration in the same soft-painterly band as the accepted iter2-f (0.864) and the incumbent (0.878); registration truth held on the base layer.",
+      "panel_medians": {"A_candidate": 7.1, "B_incumbent": 7.8, "C_control": 8.8},
+      "gate": {"control_valid": true, "delta_vs_control": -1.7, "automated_floor_pass(>=-2.5)": true, "honesty_bar(A>=B-0.5=7.3)": false}
+    },
+    "b_flux_enrichment": {
+      "method": "FLUX img2img detail pass over the styled Gemini a2 candidate: base model_bfl-flux-1-dev + ARM-C interior LoRA model_G379oza2qhm6MkqDrtTvvmmw (crypt/church/tavern-trained), low strength. Best-of-3 (strength 0.28 x2 @ lorasScale 0.85; strength 0.40 x1 @ lorasScale 1.0).",
+      "selected_candidate": "iter3_flux_s40 (strength 0.40 — richest carved density + deepest mood)",
+      "overlay_recall_vs_1514_greybox": {"flux_s28_1": 0.8133, "flux_s28_2": 0.7982, "flux_s40": 0.7700},
+      "overlay_verdict": "PASS on composition-integrity — 3-prop floor set unchanged, NO openings/rooms/floor-props added (s40 added only wall set-dressing: a torch bracket + carved plaque, same flavor class as the incumbent's wall torches). Recall lower (0.77-0.81) from painterly softening + surface detail; registration truth on the base layer.",
+      "panel_medians": {"A_candidate": 6.6, "B_incumbent": 7.8, "C_control": 7.5},
+      "gate": {"control_valid": true, "delta_vs_control": -0.9, "automated_floor_pass(>=-2.5)": true, "honesty_bar(A>=B-0.5=7.3)": false},
+      "finding": "FLUX enrichment scored LOWER than the Gemini a2 (6.6 vs 7.1) despite visibly denser surface detail — the blind panel read it as 'repetitive skeleton piles / flatter tiling / less refined'. Recipe (b) did NOT beat recipe (a). Busier != better."
+    }
+  },
+  "best_candidate": "iter3_a2 (recipe-a Gemini two-stage enrichment), blind-panel median 7.1.",
+  "adopted": false,
+  "adoption_rationale": "Both recipes stalled below 7.5 (recipe-c outcome). The best candidate (a2, 7.1) CLEARS the automated promote.py visual floor (delta vs control -1.7 >= -2.5) and is a large honest gain over iter2 (6.0 -> 7.1; delta -3.0 -> -1.7). BUT it MISSES the task honesty bar (candidate >= incumbent-0.5): 7.1 < 7.3 by 0.2, and trails the same-panel incumbent by 0.7. Per the gate rule (adopt ONLY if delta>=-2.5 AND candidate>=incumbent-0.5, and do not adopt a not-clearly-better plate on a technical pass), promote.py --batch was NOT run. Honest ceiling reported.",
+  "honest_ceiling": "~7.1 for a composition-FAITHFUL crypt plate via this true-greybox style method. The incumbent's residual ~0.7 edge is bought with content-drift richness (staircase/archway/2nd-tomb/full columns) that the honest greybox composition cannot include. Beating 8.0 honestly on THIS 3-prop greybox likely needs either a richer authored greybox (more props/geometry to paint) or a trained crypt-specific style model — not another cosmetic style pass.",
+  "cu_spent_estimate": "~107 CU (Gemini 4x2K = 80; FLUX 3x = 27). Well under the 300 CU cap. No training spend.",
+  "panels": "5-scorer blind, disguised in-band PoE2 control + incumbent anchor, plates size/format-normalized so identity can't leak. loop/ = recipe-a panel; loop2/ = recipe-b panel."
+}
