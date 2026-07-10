@@ -1234,7 +1234,11 @@ public class CombatSurfaceClient : MonoBehaviour
         // Measure below. Non-humanoid / clipless / controller-absent actors fall through to the persistent idle
         // graph (byte-identical to pre-#anim-pack).
         bool ctrlDriven = false;
-        if (animC != null && animC.avatar != null && animC.avatar.isHuman)
+        // #anim-pack: require isHuman AND isValid — an avatar flagged humanoid but INVALID (a broken bone
+        // map) cannot retarget the humanoid clips and would silently T-pose (the exact #1408 failure). This
+        // mirrors anim_pack_avatar_gate.cs's (isHuman && isValid) accept criterion; an invalid rig falls
+        // through to the per-frame graph fallback below.
+        if (animC != null && animC.avatar != null && animC.avatar.isHuman && animC.avatar.isValid)
         {
             var hc = HumanoidController();
             if (hc != null) { animC.runtimeAnimatorController = hc; animC.applyRootMotion = false; animC.Update(0f); ctrlDriven = true; _ctrlDriven.Add(id); }

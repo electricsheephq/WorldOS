@@ -49,7 +49,11 @@ foreach (var kv in assets) {
 
     if (h0 && v0) { sb.AppendLine("MODEL " + slug + " " + model + " before=" + before + " -> ALREADY_HUMANOID"); continue; }
 
-    // Attempt the fix: re-import as Humanoid with auto-mapping from this model's own skeleton.
+    // Attempt the fix: re-import as Humanoid with auto-mapping from this model's own skeleton. Capture the
+    // original importer settings first so a FAILED fix restores them (never leave a half-changed import that
+    // couldn't become a valid humanoid — the runtime keeps such a rig on the per-frame fallback either way).
+    var origType = imp.animationType;
+    var origSetup = imp.avatarSetup;
     imp.animationType = UnityEditor.ModelImporterAnimationType.Human;
     imp.avatarSetup = UnityEditor.ModelImporterAvatarSetup.CreateFromThisModel;
     imp.SaveAndReimport();
@@ -58,7 +62,16 @@ foreach (var kv in assets) {
     var av1 = avatarOf(model);
     bool h1 = av1 != null && av1.isHuman; bool v1 = av1 != null && av1.isValid;
     string after = "H" + (h1 ? "1" : "0") + "V" + (v1 ? "1" : "0");
-    string verdict = (h1 && v1) ? "FIXED" : "NEEDS_REMODEL";
+    bool fixedOk = h1 && v1;
+    if (!fixedOk)
+    {
+        // restore the original import settings so a needs-remodel rig is left exactly as it was found.
+        imp.animationType = origType;
+        imp.avatarSetup = origSetup;
+        imp.SaveAndReimport();
+        UnityEditor.AssetDatabase.ImportAsset(model, UnityEditor.ImportAssetOptions.ForceUpdate);
+    }
+    string verdict = fixedOk ? "FIXED" : "NEEDS_REMODEL";
     sb.AppendLine("MODEL " + slug + " " + model + " before=" + before + " after=" + after + " -> " + verdict);
 }
 UnityEditor.AssetDatabase.SaveAssets();
