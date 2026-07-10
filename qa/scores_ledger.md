@@ -6,7 +6,7 @@
 
 > **Ruler** = `scoring_config_version` (a content hash of the rubric + schema + gate files, RRI gate included). **Lens ruler** = `lens_config_version` (the 8 files that produce the story/mech/angry LENS numbers — full ruler minus `release_readiness.py`; blank = recorded before lens stamping, #725). Rows under DIFFERENT Ruler values are **NOT directly comparable as a quality trend** — the ruler changed (a rubric recalibration or a new gate moves the number with no change in play quality). Use `python3 qa/scores_db.py --compare` for a lens-fenced engine-duo trend (add `--compare-rc-surface` for the GUI-built-app RC blocks); comparing across rulers requires re-scoring an archived transcript under the current ruler. **RC** = the release candidate a run scored (e.g. `v1.0.4-rc1`).
 
-> Rows: **107** · rendered 2026-07-10T22:07:41+00:00
+> Rows: **107** · rendered 2026-07-10T22:39:31+00:00
 
 | Run | When | SHA | Build date | Surface | DM model | Actor model | Scorer | Ruler | Lens ruler | RC | Methodology | Story | Mech | AngryDM | Behav | Sat | RRI | Crit | Img% | s/beat | cold-open s | turns/beat | combat s/beat | social s/beat | tool% | tool ms | slowest tool | Acts | Structural coverage | Engagement | Inert systems | Pass | Source | Notes |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
