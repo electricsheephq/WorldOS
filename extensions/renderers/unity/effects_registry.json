@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "_comment": "VFX-ANCHORS effect registry: maps an ABSTRACT effect `type` (referenced by plates_manifest.json plate `effects` entries) to a prefab asset PATH baked into the worldos_actors AssetBundle (BuildMacOSPlayer.EnsurePackaged step 2b) and loaded at runtime by CombatSurfaceClient.LoadEffectsRegistry/SpawnPlateEffects. Paths point at OWNED packs on the box (Hovl Studio + the RPG VFX / FantasySpellsEffectsPack bundle); the repo vendors no Hovl files, so a path missing on disk is skipped at build time and simply never spawns (byte-identical). PIPELINE: the box renders Built-in RP, so Hovl Shader-Graph particle materials are re-pointed to Legacy Particles at runtime (RepointHovlMaterials, per PR #1515's FixHovlVFX). Prefer LOOPING, painterly-compatible flames (not one-shot hit flashes). The prefab paths below are BOX-FINALIZED in the deploy/verify phase against the actual owned pack folders — pick the flame that composites best over the painted firepit glow without washing it out.",
+  "effects": {
+    "fire_medium": { "prefab": "Assets/Hovl Studio/Realistic fire and explosions/Prefabs/Fire/Fire.prefab" },
+    "fire_small":  { "prefab": "Assets/Hovl Studio/Realistic fire and explosions/Prefabs/Fire/Small fire.prefab" },
+    "embers":      { "prefab": "Assets/Hovl Studio/Realistic fire and explosions/Prefabs/Sparks/Sparks.prefab" },
+    "fireflies":   { "prefab": "Assets/Hovl Studio/Magic circles/Prefabs/Loop version/Magic circle fire loop.prefab" }
+  }
+}

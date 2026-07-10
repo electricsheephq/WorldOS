@@ -6,7 +6,11 @@
       "plate": "plates/crypt_armb_iter3_v1.png"
     },
     "camp_clearing_night": {
-      "plate": "plates/camp_clearing_night_truegrey_v1.png"
+      "plate": "plates/camp_clearing_night_truegrey_v1.png",
+      "_effects_comment": "VFX-ANCHORS: an animated fire over the painted firepit. Cell is the campfire_pit footprint from qa/room_manifests/camp_truegrey.cells.json (props[campfire].footprint = [[4,8],[5,8]]); the flame anchors on the left pit cell. `type` resolves through effects_registry.json; cell=[c,r], y=ground offset, scale=1.0. Cell/y/scale are BOX-TUNED against the paint so the flame sits in the pit and does not wash out the painted glow (the plate is the star).",
+      "effects": [
+        { "type": "fire_medium", "cell": [4, 8], "scale": 1.0, "y": 0.0 }
+      ]
     }
   }
 }
