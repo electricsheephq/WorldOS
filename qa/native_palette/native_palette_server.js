@@ -93,10 +93,11 @@ const OWNER = (process.env.WORLDOS_NPT_WINDOW_OWNER || "WorldOSPlayer").trim();
 const CLICK_TOOL = (process.env.WORLDOS_NPT_CLICK_TOOL || "auto").trim();
 const SCREEN_LABEL = (process.env.WORLDOS_NPT_SCREEN || "player").trim();
 const FULLSCREEN_FALLBACK = process.env.WORLDOS_NPT_FULLSCREEN_FALLBACK === "1";
-// #1466: input (click/key/type) is PID-delivered to OWNER so the no-activation player actually
-// receives it (see native_input.swift). ACTIVATE_FALLBACK is the opt-in brief activate->post->restore
-// escape if PID delivery proves unreliable for Unity's input polling — OFF by default.
-const CLICK_ACTIVATE_FALLBACK = process.env.WORLDOS_CLICK_ACTIVATE_FALLBACK === "1";
+// #1466/#1483: input (click/key/type) is PID-delivered to OWNER (see native_input.swift), but pid-posted
+// CGEvents produce ZERO Unity input (Unity's Input samples only the FOREGROUND app), so the brief
+// activate->post->restore escape is the PROVEN working path (sub-second, no Space switch — within the
+// windowed no-hijack policy). Now ON by DEFAULT; WORLDOS_CLICK_ACTIVATE_FALLBACK=0 opts back out.
+const CLICK_ACTIVATE_FALLBACK = process.env.WORLDOS_CLICK_ACTIVATE_FALLBACK !== "0";
 function inputFlags() {
   const f = OWNER ? ["--owner", OWNER] : [];
   if (OWNER && CLICK_ACTIVATE_FALLBACK) f.push("--activate-fallback");

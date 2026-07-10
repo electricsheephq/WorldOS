@@ -142,20 +142,36 @@ class SwiftHelperTests(unittest.TestCase):
         self.assertIn("SCScreenshotManager", src, "capture must use SCScreenshotManager (no activation)")
         self.assertIn('case "capture":', src, "helper must dispatch a `capture` subcommand")
 
-    def test_source_input_is_pid_targeted_with_optin_activate_fallback(self):
+    def test_source_input_is_pid_targeted_with_flag_gated_activate_fallback(self):
         """#1466 (completes #1456): input delivery is the no-activation twin of capture. When an
         owner is supplied the helper must resolve its PID (kCGWindowOwnerPID) and deliver the event
         DIRECTLY to that process (CGEvent.postToPid) so an unfocused player still receives it — a
-        plain global HID tap only reaches the ACTIVE app. The activate->post->restore path must stay
-        OPT-IN (never the default), preserving the no-focus-theft contract."""
+        plain global HID tap only reaches the ACTIVE app. The activate->post->restore path stays a
+        FLAG (--activate-fallback) at the swift-helper level; #1483 flips the HARNESS callers to pass
+        that flag BY DEFAULT (pid-only delivery produced zero Unity input) — see the harness test
+        below. The helper itself never activates unless the flag is passed."""
         src = SWIFT.read_text(encoding="utf-8")
         self.assertIn("kCGWindowOwnerPID", src, "input must resolve the owner PID for direct delivery")
         self.assertIn("postToPid", src, "#1466: input must PID-target via CGEvent.postToPid")
         self.assertIn("--owner", src, "click/key/type must accept --owner for PID delivery")
-        self.assertIn("--activate-fallback", src, "the activate fallback must be an opt-in flag")
-        # The fallback must be gated on the flag, not run unconditionally (no default focus theft).
+        self.assertIn("--activate-fallback", src, "the activate fallback must be a flag")
+        # The fallback must be gated on the flag in the helper, not run unconditionally.
         self.assertIn("activateFallback, let owner", src,
-                      "activate fallback must be guarded by the opt-in flag + an owner")
+                      "activate fallback must be guarded by the flag + an owner")
+
+    def test_harness_defaults_activate_fallback_on_1483(self):
+        """#1483: pid-posted CGEvents deliver to the player PID but produce ZERO Unity input (Unity's
+        Input samples only the FOREGROUND app), so the smoke lane was red on the pure-PID default since
+        w6batch. The working path is the brief activate->click->restore escape — now ON by DEFAULT in
+        BOTH the T3 palette server and the scripted smoke driver, with WORLDOS_CLICK_ACTIVATE_FALLBACK=0
+        as the opt-out (pure PID delivery). The `!== "0"` default-on shape is the guarantee."""
+        srv = SERVER.read_text(encoding="utf-8")
+        drv = SMOKE_DRIVER.read_text(encoding="utf-8")
+        for name, src in (("native_palette_server.js", srv), ("player_smoke_driver.js", drv)):
+            self.assertIn('WORLDOS_CLICK_ACTIVATE_FALLBACK !== "0"', src,
+                          f"{name}: activate-fallback must default ON (opt-out via =0), not opt-in (=1)")
+            self.assertNotIn('WORLDOS_CLICK_ACTIVATE_FALLBACK === "1"', src,
+                             f"{name}: the opt-IN (=1) default must be gone — it left the smoke lane red")
 
     @unittest.skipUnless(shutil.which("swiftc"), "swiftc not available (non-macOS CI)")
     def test_click_pid_delivery_selects_pid_for_running_owner_and_hid_otherwise(self):

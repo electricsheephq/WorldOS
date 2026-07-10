@@ -155,6 +155,9 @@ public class CombatSurfaceClient : MonoBehaviour
     int _ovHover = -1;               // pool index of the hovered cell, -1 = none
     Texture2D _cellTex;              // shared thin-border + faint-fill cell texture, built once
     readonly System.Collections.Generic.HashSet<int> _foeCells = new System.Collections.Generic.HashSet<int>();
+    // #1482: the foe token ids this surface (rebuilt each ApplySurf alongside _foeCells) — lets the name
+    // plate read a foe's plate in a hostile tint so a first-timer can tell target from ally.
+    readonly System.Collections.Generic.HashSet<string> _foeIds = new System.Collections.Generic.HashSet<string>();
     // browser-parity cell colors (mirror screen-combat.jsx:774-790's gold/red-brown affordance tints).
     static readonly Color OvWalkRest  = new Color(0.96f, 0.82f, 0.48f, 0.18f); // faint gold inset, mostly transparent
     static readonly Color OvBlockRest = new Color(0.30f, 0.12f, 0.08f, 0.55f); // dark red-brown tint (blocked/occupied)
@@ -166,7 +169,7 @@ public class CombatSurfaceClient : MonoBehaviour
     // the mover; `move_blocked` (an engine-side reject of a non-prevalidated click) surfaces its reason text
     // the same way. Pure consumer: parsed from the /move response, engine posture unchanged.
     [Header("Advisory (#Phase4)")]
-    public float AdvisoryHold = 3.2f;   // seconds the on-screen note holds before it finishes fading
+    public float AdvisoryHold = 2.5f;   // #1482: seconds the on-screen note holds before it finishes fading (was 3.2 — match other transient text)
     string _advMsg = "";
     float _advT = 0f;                    // fade clock; alpha = 1 - advT/AdvisoryHold
     GUIStyle _advStyle;
@@ -500,8 +503,8 @@ public class CombatSurfaceClient : MonoBehaviour
         if (s.grid != null && s.grid.cols > 0 && s.grid.rows > 0) { Cols = s.grid.cols; Rows = s.grid.rows; }
         // #1441: rebuild the occupied-cell set (every token's cell) for client-side click pre-validation.
         // #Phase3: also rebuild the foe-cell set so the overlay hover reads red on an attackable cell.
-        _occupied.Clear(); _foeCells.Clear();
-        foreach (var t in s.tokens) if (t != null) { int k = CellKey(t.x, t.y); _occupied.Add(k); if (t.team == "foe") _foeCells.Add(k); }
+        _occupied.Clear(); _foeCells.Clear(); _foeIds.Clear();
+        foreach (var t in s.tokens) if (t != null) { int k = CellKey(t.x, t.y); _occupied.Add(k); if (t.team == "foe") { _foeCells.Add(k); if (!string.IsNullOrEmpty(t.id)) _foeIds.Add(t.id); } }
         var present = new System.Collections.Generic.HashSet<string>();
         foreach (var t in s.tokens)
         {
@@ -565,7 +568,17 @@ public class CombatSurfaceClient : MonoBehaviour
 
         foreach (var t in s.tokens)
         {
-            if (t == null || string.IsNullOrEmpty(t.id) || t.hpMax <= 0) continue;   // hp only when the engine carries it
+            if (t == null || string.IsNullOrEmpty(t.id)) continue;
+            if (t.hpMax <= 0)
+            {
+                // #1482: foes hide their HP (viewer gates hp/hpMax on hp_known — a D&D DM-screen posture), so
+                // they never enter the HP-bar path and never got a name plate — the reason a first-timer took
+                // 14 blind clicks to find the foe. Give any hp-less token a name-plate-ONLY root (mirrors the
+                // hero plate on the same billboarded HP-bar root UpdateHpBars positions each frame, minus the
+                // HP quads). Onboard-only, so beauty captures stay byte-identical.
+                if (_onboard) EnsureNamePlate(t.id, FindActor(t.id));
+                continue;
+            }
             int newHp = t.hp;
             int prevHp; bool hadPrev = _hpOf.TryGetValue(t.id, out prevHp);
             _hpMaxOf[t.id] = t.hpMax;
@@ -1582,7 +1595,7 @@ public class CombatSurfaceClient : MonoBehaviour
     }
     IEnumerator FloatNumCo(GameObject g, Vector3 start, Color col)
     {
-        float t = 0f, dur = 1.1f; var tm = g != null ? g.GetComponent<TextMesh>() : null;
+        float t = 0f, dur = 1.5f; var tm = g != null ? g.GetComponent<TextMesh>() : null;   // #1482: damage-pop lifetime ~1.5s (rise+fade)
         while (t < dur && g != null)
         {
             t += Time.deltaTime; float u = t / dur;
@@ -1761,6 +1774,20 @@ public class CombatSurfaceClient : MonoBehaviour
         if (_onboard) MakeNameLabel(root, id);
         _hpBars[id] = root;
     }
+    // #1482: a name-plate-ONLY root for a token with no known HP (foes hide their HP, so they never enter the
+    // HP-bar path). Reuses the _hpBars dict + UpdateHpBars' per-frame position/billboard/prune (it carries the
+    // plate above the actor's head for free), but adds NO HP quads — so UpdateHpBars' `childCount >= 2` fill
+    // update is skipped and only the name label rides. Idempotent; onboard-only via the call site. (If a foe's
+    // HP ever became known mid-combat, EnsureHpBar would early-return on this plate root — the foe keeps its
+    // plate but gains no bar; a graceful no-op today since content never reveals foe HP.)
+    void EnsureNamePlate(string id, Transform actor)
+    {
+        if (actor == null) return;
+        if (_hpBars.TryGetValue(id, out var root) && root != null) return;
+        root = new GameObject("Actor_" + id + "_HP");
+        MakeNameLabel(root, id);
+        _hpBars[id] = root;
+    }
     void MakeBarQuad(GameObject root, string suffix, Color col, int queue)
     {
         var q = GameObject.CreatePrimitive(PrimitiveType.Quad); q.name = root.name + suffix; Object.DestroyImmediate(q.GetComponent<Collider>());
@@ -1788,12 +1815,16 @@ public class CombatSurfaceClient : MonoBehaviour
             float top; if (!_topOf.TryGetValue(kv.Key, out top)) top = 5.0f;
             root.transform.position = actor.position + new Vector3(0f, top, 0f);
             if (cam != null) root.transform.rotation = cam.transform.rotation;
-            // #1463 (task 2): the turn indicator — the isCurrent combatant's name plate reads gold, the rest
-            // soft parchment-white (the bar's bg/fg quads carry no TextMesh, so this finds the name label).
+            // #1463 (task 2): the turn indicator — the isCurrent combatant's name plate reads gold. #1482: a
+            // foe (not on turn) reads hostile red so it registers as a TARGET vs an ally's parchment-white
+            // (the bar's bg/fg quads carry no TextMesh, so this finds the name label).
             if (_onboard)
             {
                 var nameTm = root.GetComponentInChildren<TextMesh>();
-                if (nameTm != null) nameTm.color = (kv.Key == _currentId) ? new Color(1f, 0.85f, 0.4f, 1f) : new Color(0.96f, 0.92f, 0.78f, 0.85f);
+                if (nameTm != null)
+                    nameTm.color = (kv.Key == _currentId) ? new Color(1f, 0.85f, 0.4f, 1f)
+                                 : _foeIds.Contains(kv.Key) ? new Color(1f, 0.46f, 0.40f, 0.95f)
+                                 : new Color(0.96f, 0.92f, 0.78f, 0.85f);
             }
             int hp, mx; float frac = (_hpMaxOf.TryGetValue(kv.Key, out mx) && mx > 0 && _hpOf.TryGetValue(kv.Key, out hp)) ? Mathf.Clamp01((float)hp / mx) : 1f;
             const float full = 3.2f;
