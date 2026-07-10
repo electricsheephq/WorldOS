@@ -2,6 +2,7 @@
 using UnityEngine;
 using UnityEditor;
 using System.Collections.Generic;
+using System.Linq;
 
 /// <summary>
 /// M1.5 ASSET SPEND-GATE PROBE (unity-asset-stack skill's "M1.5 spend-gate"; issue #1386, the
@@ -243,6 +244,190 @@ public static class M15SpendGateProbe
         System.IO.Directory.CreateDirectory(OutDir);
         System.IO.File.WriteAllText(OutDir + "/m15_gate_manifest.json", msb.ToString());
         Debug.Log("[M15GATE] wrote manifest -> " + OutDir + "/m15_gate_manifest.json (" + written + "/" + Units.Length + " actors)");
+    }
+
+    // =====================================================================================
+    // RERUN (#1503 gate re-verdict) — the two BOUNDED failures from the first run get fixed:
+    //   (i)  cohesion 1.0: bare Cap_* capsules never went through the CohesionProbe painterly
+    //        stack. Spawn the SAME 6-unit formation as REAL owned meshes named Actor_* so the
+    //        existing Cohesion Probe rungs (RungB light rig -> RungD contact shadows -> RungA'
+    //        PainterlyActor materials) treat all 6 — no new asset spend (fighter/goblin are owned).
+    //   (ii) Hovl zero pixels: the Shader Graphs/HS_Blend_CG materials only render under URP/HDRP.
+    //        Diag the ACTIVE pipeline + re-point to a pipeline-compatible shader when needed.
+    // =====================================================================================
+
+    // owned free meshes reused verbatim from CohesionProbe.SpawnBaseline (Assets/cast + Assets/chars_v2).
+    const string HeroFbx = "Assets/cast/fighter/fighter.fbx";
+    const string HeroAlbedo = "Assets/cast/fighter/albedo.jpg";
+    const string FoeFbx = "Assets/chars_v2/goblin/goblin.fbx";
+    const string FoeAlbedo = "Assets/chars_v2/goblin/albedo.png";
+
+    // Second persistent (looping) Hovl VFX for the "two effects render" check — a magic-circle loop
+    // reads in a still capture alongside the fire one-shot (same rationale as the Populate warm-up).
+    const string HovlPrefabPath2 = "Assets/Hovl Studio/Magic circles/Prefabs/Loop version/Magic circle fire loop.prefab";
+
+    [MenuItem("Tools/WorldOS/M1.5 Spend Gate/2 - Populate 6 REAL-MESH painterly actors (Actor_*)")]
+    public static void PopulatePainterly()
+    {
+        // clear both the capsule set and any prior real-mesh set so the frame is a clean 6-actor read.
+        foreach (var u in Units) DestroyExisting(u.name);
+        foreach (var nm in ActorNames()) foreach (var suf in new[] { "", "_AO", "_Ring", "_Cast" }) { var o = GameObject.Find(nm + suf); if (o != null) Object.DestroyImmediate(o); }
+        int n = 0;
+        foreach (var u in Units)
+        {
+            // party -> "hero" substring so CohesionProbe.RungA' gives them the hero painterly params.
+            string nm = u.foe ? "Actor_M15_foe" + (n % 3 + 1) : "Actor_M15_hero" + (n % 3 + 1);
+            SpawnRealActor(nm, u.foe ? FoeFbx : HeroFbx, u.foe ? FoeAlbedo : HeroAlbedo, u.cx, u.cy, u.foe, u.foe ? 4.2f : 3.2f);
+            n++;
+        }
+        Debug.Log("[M15GATE] populated 6 REAL-MESH actors (3 hero fighter + 3 foe goblin) as Actor_M15_* — "
+                  + "now run Cohesion Probe rungs 1(B) -> 2(D) -> 3(A') to apply the painterly stack to all 6.");
+    }
+
+    static string[] ActorNames() => new[] { "Actor_M15_hero1", "Actor_M15_hero2", "Actor_M15_hero3", "Actor_M15_foe1", "Actor_M15_foe2", "Actor_M15_foe3" };
+
+    // mirrors CohesionProbe.SpawnBaseline (that method is private) — pose own idle, scale to target
+    // height from posed bounds, ground+center feet on FLOOR_Y=0, upright facing camera, Standard+albedo
+    // baseline (the exact runtime spawn material the rungs then upgrade), + blob AO + team ring.
+    static void SpawnRealActor(string nm, string fbxPath, string albedoPath, int cx, int cy, bool foe, float targetH)
+    {
+        var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(fbxPath);
+        if (prefab == null) { Debug.LogError("[M15GATE] fbx not found: " + fbxPath); return; }
+        var go = (GameObject)Object.Instantiate(prefab);
+        go.name = nm;
+        var anim = go.GetComponentInChildren<Animator>();
+        foreach (var clip in AssetDatabase.LoadAllAssetRepresentationsAtPath(fbxPath).OfType<AnimationClip>())
+            if (clip.name.ToLower().Contains("idle") && anim != null && anim.avatar != null)
+            {
+                var g = UnityEngine.Playables.PlayableGraph.Create("Pose_" + nm);
+                var cp = UnityEngine.Animations.AnimationClipPlayable.Create(g, clip);
+                var op = UnityEngine.Animations.AnimationPlayableOutput.Create(g, "Out", anim);
+                UnityEngine.Playables.PlayableOutputExtensions.SetSourcePlayable(op, cp);
+                g.Evaluate(0f); g.Destroy();
+                break;
+            }
+        var b = MeasureBounds(go);
+        if (b.size.y > 0.01f) go.transform.localScale *= targetH / b.size.y;
+        Vector3 cell = CellToWorld(cx, cy);
+        b = MeasureBounds(go);
+        go.transform.position += new Vector3(cell.x - b.center.x, 0f - b.min.y, cell.z - b.center.z);
+        var cam = Camera.main; float camYaw = cam != null ? cam.transform.eulerAngles.y : 45f;
+        float pitchX = go.GetComponentInChildren<SkinnedMeshRenderer>() != null ? 0f : -90f;
+        go.transform.rotation = Quaternion.Euler(pitchX, camYaw + 180f, 0f);
+        b = MeasureBounds(go);
+        go.transform.position += new Vector3(cell.x - b.center.x, 0f - b.min.y, cell.z - b.center.z);
+        var al = AssetDatabase.LoadAssetAtPath<Texture2D>(albedoPath);
+        if (al != null)
+        {
+            var mm = new Material(Shader.Find("Standard"));
+            mm.mainTexture = al; mm.SetFloat("_Glossiness", 0.2f); mm.SetFloat("_Metallic", 0f);
+            foreach (var r in go.GetComponentsInChildren<Renderer>()) { r.sharedMaterial = mm; r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On; r.receiveShadows = true; }
+        }
+        else Debug.LogWarning("[M15GATE] albedo not found (" + albedoPath + ") — actor renders untextured Standard");
+        MakeGroundQuad(nm + "_AO", cell, 2.0f, RadialTex(), Color.white, 1950);
+        MakeGroundQuad(nm + "_Ring", cell, 2.6f, RingTex(), foe ? new Color(1f, 0.13f, 0.10f, 1f) : new Color(0.4f, 0.95f, 1f, 1f), 1955);
+    }
+
+    static Bounds MeasureBounds(GameObject a)
+    {
+        var rends = a.GetComponentsInChildren<Renderer>();
+        if (rends.Length == 0) return new Bounds(a.transform.position, Vector3.one);
+        Bounds b = rends[0].bounds; foreach (var r in rends) b.Encapsulate(r.bounds);
+        return b;
+    }
+
+    // Spawn TWO owned Hovl effects (fire one-shot + magic-circle loop) beside the foe cluster for the
+    // "two effects render visible pixels" check. Both warmed via Simulate() so they read in a still.
+    [MenuItem("Tools/WorldOS/M1.5 Spend Gate/2b - Populate 2 Hovl VFX (visibility check)")]
+    public static void PopulateTwoVFX()
+    {
+        DestroyExisting("M15_VFX"); DestroyExisting("M15_VFX2");
+        SpawnVFX(HovlPrefabPath, "M15_VFX", CellToWorld(2, 7));
+        SpawnVFX(HovlPrefabPath2, "M15_VFX2", CellToWorld(3, 8));
+    }
+
+    static void SpawnVFX(string prefabPath, string nm, Vector3 wp)
+    {
+        var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+        if (prefab == null) { Debug.LogError("[M15GATE] Hovl VFX prefab not found: " + prefabPath); return; }
+        var vfx = (GameObject)Object.Instantiate(prefab);
+        vfx.name = nm;
+        vfx.transform.position = new Vector3(wp.x, 0.05f, wp.z);
+        int nps = 0;
+        foreach (var ps in vfx.GetComponentsInChildren<ParticleSystem>(true)) { ps.Simulate(0.08f, true, true, true); nps++; }
+        Debug.Log("[M15GATE] spawned Hovl VFX '" + nm + "' (" + prefabPath + ") @" + wp.ToString("F1") + ", warmed " + nps + " PS");
+    }
+
+    // ---- Hovl VFX render fix (issue: Shader Graphs/HS_Blend_CG => 0 px). DECISIVE = active pipeline. ----
+    [MenuItem("Tools/WorldOS/M1.5 Spend Gate/diag - Pipeline + Hovl shader support")]
+    public static void DiagPipeline()
+    {
+        var rp = UnityEngine.Rendering.GraphicsSettings.currentRenderPipeline;
+        Debug.Log("[M15GATE][DIAG] currentRenderPipeline=" + (rp == null ? "NULL (Built-in RP => Shader Graph shaders will NOT render)" : rp.GetType().Name + " (" + rp.name + ")"));
+        int i = 0;
+        foreach (var r in HovlRenderers())
+        {
+            var m = r.sharedMaterial;
+            var sh = m != null ? m.shader : null;
+            Debug.Log("[M15GATE][DIAG] hovlRenderer[" + i + "]=" + r.gameObject.name
+                      + " shader=" + (sh != null ? sh.name : "(null)")
+                      + " isSupported=" + (sh != null ? sh.isSupported.ToString() : "n/a")
+                      + " renderQueue=" + (m != null ? m.renderQueue : -1)
+                      + " enabled=" + r.enabled + " tex=" + (m != null && m.HasProperty("_MainTex") && m.mainTexture != null ? m.mainTexture.name : "-"));
+            i++;
+        }
+        Debug.Log("[M15GATE][DIAG] " + i + " Hovl-shader renderer(s) in scene");
+    }
+
+    // All ParticleSystem/Mesh renderers whose material uses a Hovl Shader-Graph shader (HS_*) OR lives
+    // under a "Hovl" GameObject subtree — the set that renders 0 px outside URP.
+    static IEnumerable<Renderer> HovlRenderers()
+    {
+        foreach (var r in Object.FindObjectsByType<Renderer>(FindObjectsSortMode.None))
+        {
+            var m = r.sharedMaterial;
+            var name = m != null && m.shader != null ? m.shader.name : "";
+            if (name.Contains("HS_") || name.StartsWith("Shader Graphs/HS") || name.StartsWith("Hovl")) yield return r;
+        }
+    }
+
+    // Re-point Hovl Shader-Graph particle materials to a pipeline-compatible shader so they render.
+    // Built-in RP branch (the observed #1503 case if currentRenderPipeline==null): swap the SG shader
+    // for Unity's built-in Legacy Particles shader (Additive for fire/energy, keeps mainTexture+tint) —
+    // this IS the unity-asset-stack "URP-convert check" applied to the ACTIVE pipeline. URP branch:
+    // the SG should render; log guidance to enable Opaque/Depth textures (HS_Distortion) or reimport
+    // the Hovl URP-support package instead of blindly re-pointing.
+    [MenuItem("Tools/WorldOS/M1.5 Spend Gate/3 - Fix Hovl VFX (pipeline-compatible shaders)")]
+    public static void FixHovlVFX()
+    {
+        var rp = UnityEngine.Rendering.GraphicsSettings.currentRenderPipeline;
+        bool builtin = rp == null;
+        if (!builtin)
+        {
+            Debug.LogWarning("[M15GATE][FIX] URP/HDRP active (" + rp.name + "): the Shader Graph shaders SHOULD render. "
+                + "If still 0px, enable Opaque Texture + Depth Texture on the URP Renderer asset (HS_Distortion needs them) "
+                + "or reimport the Hovl 'URP support' package / Edit>Rendering>Materials>Convert to URP. NOT re-pointing shaders under URP.");
+            return;
+        }
+        var addBlend = Shader.Find("Legacy Shaders/Particles/Additive");
+        var alphaBlend = Shader.Find("Legacy Shaders/Particles/Alpha Blended");
+        if (addBlend == null) { Debug.LogError("[M15GATE][FIX] Legacy Shaders/Particles/Additive not found."); return; }
+        int fixedN = 0;
+        foreach (var r in HovlRenderers().ToList())
+        {
+            var src = r.sharedMaterial; if (src == null) continue;
+            bool distort = src.shader != null && src.shader.name.Contains("Distort");
+            var tgt = new Material(distort && alphaBlend != null ? alphaBlend : addBlend);
+            tgt.name = "M15HovlFix_" + r.gameObject.name;
+            // preserve the emissive texture: SG particle materials commonly expose _MainTex / _BaseMap.
+            Texture tex = null;
+            foreach (var p in new[] { "_MainTex", "_BaseMap", "_BaseColorMap" }) if (src.HasProperty(p) && src.GetTexture(p) != null) { tex = src.GetTexture(p); break; }
+            if (tex != null) tgt.mainTexture = tex;
+            foreach (var p in new[] { "_TintColor", "_BaseColor", "_Color" }) if (src.HasProperty(p)) { tgt.color = src.GetColor(p); break; }
+            r.sharedMaterial = tgt;
+            fixedN++;
+        }
+        Debug.Log("[M15GATE][FIX] Built-in RP: re-pointed " + fixedN + " Hovl SG material(s) -> Legacy Particles (Additive/AlphaBlended), texture+tint preserved. Re-capture to confirm visible pixels.");
     }
 }
 #endif
