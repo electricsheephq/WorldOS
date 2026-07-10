@@ -27,16 +27,74 @@ public static class CohesionProbe
     static string _analyzedScene;   // cache key: re-analyze when the active scene changes (review P2)
 
     // ---------- rung 0b: populate the BASELINE cast (mirrors the runtime spawn look exactly) ----------
-    // fighter@(6,6) + goblin@(9,5) — the seed_gfx_combat cells on the crypt plate. Standard shader
-    // (_Glossiness .2/_Metallic 0) + blob AO + team ring, target heights hero 3.2/foe 4.2, feet on
-    // FLOOR_Y=0, bounds-center on the cell: the paint_combat_v1/CombatSurfaceClient baseline, so rung
-    // deltas measure the COHESION STACK and not spawn drift.
+    // fighter@(11,3) + goblin@(1,8) — the seed_gfx_combat cells on the crypt plate (#1386
+    // PROBE-PLACEMENT, 2026-07-10: relocated off the crypt_armb_iter3_v1.png plate's widened
+    // sarcophagus footprint — the OLD hero(6,6)/goblin(9,5) now render standing ON the tomb, see
+    // qa/seed_gfx_combat.py's module docstring). Standard shader (_Glossiness .2/_Metallic 0) +
+    // blob AO + team ring, target heights hero 3.2/foe 4.2, feet on FLOOR_Y=0, bounds-center on
+    // the cell: the paint_combat_v1/CombatSurfaceClient baseline, so rung deltas measure the
+    // COHESION STACK and not spawn drift.
     [MenuItem("Tools/WorldOS/Cohesion Probe/0b - Populate baseline cast (fighter+goblin)")]
     public static void Populate()
     {
-        SpawnBaseline("Actor_hero", "Assets/cast/fighter/fighter.fbx", "Assets/cast/fighter/albedo.jpg", 6, 6, false, 3.2f);
-        SpawnBaseline("Actor_goblin", "Assets/chars_v2/goblin/goblin.fbx", "Assets/chars_v2/goblin/albedo.png", 9, 5, true, 4.2f);
-        Debug.Log("[PROBE] baseline cast populated: Actor_hero (6,6) + Actor_goblin (9,5)");
+        // #actor-on-set guard (the "actors ignore the set" class — camp-logs precedent, now the crypt
+        // sarcophagus, #1396-adjacent): best-effort validate the hardcoded spawn cells against the
+        // SAME live /combat-surface impassable set the runtime occluder proxies/CombatSurfaceClient
+        // consume (ApplyJson, CombatSurfaceClient.cs:356-410) — a stale seed/fixture calibration
+        // (e.g. a plate swap that moved/enlarged a prop without a matching grid recalibration) is now
+        // a LOUD console error instead of a silent "actor standing on the tomb" only an eyeball
+        // catches. Never blocks: a missing/unreachable viewer server (no server up, editor-only
+        // exploration) leaves the probe fully functional, just unchecked.
+        string info;
+        var impassable = FetchImpassable(out info);
+        Debug.Log("[PROBE] walkability guard: " + (impassable.Count > 0 ? info : "no live impassable set (" + info + ") — placing on authored cells unchecked"));
+        CheckWalkable(impassable, "Actor_hero", 11, 3);
+        CheckWalkable(impassable, "Actor_goblin", 1, 8);
+        SpawnBaseline("Actor_hero", "Assets/cast/fighter/fighter.fbx", "Assets/cast/fighter/albedo.jpg", 11, 3, false, 3.2f);
+        SpawnBaseline("Actor_goblin", "Assets/chars_v2/goblin/goblin.fbx", "Assets/chars_v2/goblin/albedo.png", 1, 8, true, 4.2f);
+        Debug.Log("[PROBE] baseline cast populated: Actor_hero (11,3) + Actor_goblin (1,8)");
+    }
+
+    // best-effort GET of the live /combat-surface impassable set — finds the scene's own CombatSurfaceClient
+    // (if present) to reuse its ViewerUrl/CampaignId rather than duplicating those constants; falls back to
+    // the CombatSurfaceClient defaults (127.0.0.1:8765 / camp_gfxdemo01, the seed_gfx_combat.py CID) so the
+    // guard still works on a bare scene. Swallows ALL failures (server down, campaign not seeded, timeout) —
+    // this is a diagnostic aid, not a hard dependency of Populate().
+    static HashSet<(int, int)> FetchImpassable(out string info)
+    {
+        var result = new HashSet<(int, int)>();
+        var csc = Object.FindAnyObjectByType<CombatSurfaceClient>();
+        string url = csc != null && !string.IsNullOrEmpty(csc.ViewerUrl) ? csc.ViewerUrl : "http://127.0.0.1:8765";
+        string cid = csc != null && !string.IsNullOrEmpty(csc.CampaignId) ? csc.CampaignId : "camp_gfxdemo01";
+        try
+        {
+            using (var wc = new System.Net.WebClient())
+            {
+                string json = wc.DownloadString(url + "/combat-surface?campaign=" + cid);
+                var root = MiniJson.Parse(json) as Dictionary<string, object>;
+                if (root != null && root.ContainsKey("combat") && root["combat"] is Dictionary<string, object> inner) root = inner;
+                var list = root != null && root.ContainsKey("impassable") ? root["impassable"] as List<object> : null;
+                if (list != null)
+                    foreach (var ce in list)
+                    {
+                        var cell = ce as List<object>;
+                        if (cell == null || cell.Count < 2) continue;
+                        result.Add((System.Convert.ToInt32(cell[0]), System.Convert.ToInt32(cell[1])));
+                    }
+                info = result.Count + " impassable cells from " + url + "?campaign=" + cid;
+            }
+        }
+        catch (System.Exception e) { info = "unavailable (" + e.GetType().Name + ": " + e.Message + ")"; }
+        return result;
+    }
+
+    static void CheckWalkable(HashSet<(int, int)> impassable, string name, int cx, int cy)
+    {
+        if (impassable.Count > 0 && impassable.Contains((cx, cy)))
+            Debug.LogError("[PROBE] " + name + "'s spawn cell (" + cx + "," + cy + ") is IMPASSABLE per the live "
+                          + "engine grid — this actor will render ON a prop/wall. The seed/fixture cell "
+                          + "calibration is stale vs the deployed plate (the #1396 registration-drift class); "
+                          + "recalibrate qa/seed_gfx_combat.py's prop cells against the current canonical_plate.");
     }
 
     static void SpawnBaseline(string nm, string fbxPath, string albedoPath, int cx, int cy, bool foe, float targetH)
