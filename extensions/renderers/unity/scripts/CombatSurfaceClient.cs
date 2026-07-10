@@ -1086,11 +1086,13 @@ public class CombatSurfaceClient : MonoBehaviour
                 var donor = DonorIdle();
                 if (donor != null)
                 {
+                    anim.enabled = true;   // #idle-persist: enable for the retarget Evaluate
                     var graph = UnityEngine.Playables.PlayableGraph.Create("HumanoidIdleRetarget_" + nm);
                     var clipPlayable = UnityEngine.Animations.AnimationClipPlayable.Create(graph, donor);
                     var outp = UnityEngine.Animations.AnimationPlayableOutput.Create(graph, "Output", anim);
                     UnityEngine.Playables.PlayableOutputExtensions.SetSourcePlayable(outp, clipPlayable);
                     graph.Evaluate(0f); graph.Destroy();
+                    anim.enabled = false;  // #idle-persist: FREEZE the retargeted idle (NULL-ctrl Animator reverts otherwise)
                 }
             }
         }
@@ -1432,11 +1434,13 @@ public class CombatSurfaceClient : MonoBehaviour
                 var donor = DonorIdle();
                 if (donor != null)
                 {
+                    anim.enabled = true;   // #idle-persist: enable for the retarget Evaluate
                     var graph = UnityEngine.Playables.PlayableGraph.Create("Idle_" + nm);
                     var clipPlayable = UnityEngine.Animations.AnimationClipPlayable.Create(graph, donor);
                     var outp = UnityEngine.Animations.AnimationPlayableOutput.Create(graph, "Output", anim);
                     UnityEngine.Playables.PlayableOutputExtensions.SetSourcePlayable(outp, clipPlayable);
                     graph.Evaluate(0f); graph.Destroy();
+                    anim.enabled = false;  // #idle-persist: FREEZE the retargeted idle
                 }
             }
         }
@@ -2083,6 +2087,10 @@ public class CombatSurfaceClient : MonoBehaviour
     // pose (humanoid clips retarget through the avatar). Caller Evaluates per frame and Destroys at the end.
     UnityEngine.Playables.PlayableGraph MakeClipGraph(Animator anim, AnimationClip clip, string tag)
     {
+        // #idle-persist: a continuous graph (walk/attack) drives the Animator via Evaluate(dt) every frame,
+        // so the Animator must be ENABLED for the whole run. At-rest actors are frozen (Animator disabled, see
+        // SampleClipRuntime) to hold their idle; re-enable here for the duration of the clip.
+        if (anim != null) anim.enabled = true;
         var g = UnityEngine.Playables.PlayableGraph.Create(tag);
         var cp = UnityEngine.Animations.AnimationClipPlayable.Create(g, clip);
         var op = UnityEngine.Animations.AnimationPlayableOutput.Create(g, "Out", anim);
@@ -2100,12 +2108,19 @@ public class CombatSurfaceClient : MonoBehaviour
         var anim = go.GetComponentInChildren<Animator>();
         if (anim != null && anim.avatar != null)
         {
+            // #idle-persist ROOT-CAUSE FIX: an Animator with an avatar but NO runtimeAnimatorController
+            // (every runtime-spawned actor) REVERTS to its bind pose (the T/A-pose) on the frame AFTER a
+            // one-shot Evaluate — so the idle we sample here silently snaps back to a T-pose next frame. Enable
+            // for the Evaluate (the graph output only applies to an enabled Animator), then DISABLE to FREEZE
+            // the sampled pose so nothing reverts it. A later walk/attack graph (MakeClipGraph) re-enables.
+            anim.enabled = true;
             var g = UnityEngine.Playables.PlayableGraph.Create("Pose_" + go.name);
             var cp = UnityEngine.Animations.AnimationClipPlayable.Create(g, clip);
             UnityEngine.Playables.PlayableExtensions.SetTime(cp, time);
             var op = UnityEngine.Animations.AnimationPlayableOutput.Create(g, "Out", anim);
             UnityEngine.Playables.PlayableOutputExtensions.SetSourcePlayable(op, cp);
             g.Evaluate(0f); g.Destroy();
+            anim.enabled = false;
         }
         else clip.SampleAnimation(go, time);
     }
