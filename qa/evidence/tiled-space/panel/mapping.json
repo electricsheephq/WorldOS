@@ -1,0 +1,4 @@
+{"image_1":"baseline single-room camp @1024 (native density)",
+ "image_2":"Arm A camp tile SLICED from the 2048 wide plate (identical depth control as image_1)",
+ "image_3":"Arm B naive butt-join (two independently generated tiles, no conditioning)",
+ "image_4":"Arm B edge-continuation (tile2 img2img-seeded on tile1 overlap strip + feather blend)"}
