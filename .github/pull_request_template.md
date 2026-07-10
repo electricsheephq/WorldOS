@@ -62,13 +62,29 @@ List the checks you ran.
 - Exact next action:
 
 
-## Evidence (required for anything visual)
-For renderer / viewer / UX / animation changes: commit 1-6 BEFORE/AFTER still frames to
-`qa/evidence/<number>/` **on this branch** (≤400KB each; JPEG fine for painterly plates) and
-reference them here. Local paths (`~/worldos-session-notes/...`) are INVISIBLE to reviewers — repo
-paths only. Motion: a numbered frame series (2-6 stills) is primary; a GIF is optional for humans
-(agents read stills). Include the deterministic pre-gate output (qa/visual_pregate.py) when the
-change touches placement/pose/scale. Engine-only changes: test names + fast_gate line instead.
+## Visual Evidence (required for any renderer / plate / QA-visual change)
+**The owner browses PRs — frames must render INLINE, not just be linked.** For renderer / viewer /
+plate / VFX / UX / animation changes:
+- Commit 1-6 BEFORE/AFTER still frames to `qa/evidence/<number>/` **on this branch** (≤400KB each;
+  JPEG fine for painterly plates) — local paths (`~/worldos-session-notes/...`) are INVISIBLE to
+  reviewers, repo paths only.
+- **Embed each frame with markdown image syntax pointed at the RAW bytes, so it renders inline in
+  the PR view** — `![caption](.../blob/<commit-sha>/qa/evidence/<number>/frame.jpg?raw=true)` using
+  **your own PR-head repo and an immutable commit SHA on this branch** (not a hardcoded upstream
+  `owner/repo`, which 404s the moment this is opened from a fork), or a plain `/blob/...` URL with
+  `?raw=true` appended. **A plain `/blob/...` URL with no `?raw=true` (GitHub's HTML file viewer)
+  will NOT render inline** — it links to a page, not the image bytes; that silently fails the exact
+  case this section exists for. Simplest and most robust for most contributors: drag-and-drop the
+  image directly into the PR description text box — GitHub uploads it to its own CDN and inserts a
+  working inline `![...]` link automatically, with no fork/SHA/URL bookkeeping at all. A bare path
+  or a "see qa/evidence/123/" pointer doesn't satisfy this either — if the owner has to click
+  through to a file listing to see a pixel, the section is incomplete.
+- Motion: a numbered frame series (2-6 stills) is primary and each still gets its own embedded image
+  (agents read stills reliably); a GIF is optional, for humans, in addition to the stills.
+- Include the deterministic pre-gate output (`qa/visual_pregate.py`) when the change touches
+  placement/pose/scale, and the coherence-gate result (`qa/check_grid_paint_coherence.py`) when the
+  change touches a room's authored geometry or manifest.
+- Engine-only changes with no visual surface: test names + fast_gate line instead of this section.
 
 ---
 _Merging note: required checks stuck at "expected/pending" with mergeState BLOCKED is the known repo-wide auto-merge hang (#1389), NOT a CI failure. Procedure: real checks green + threads resolved → `gh pr merge <n> --admin --squash` (docs/OPERATIONS.md "Merging")._

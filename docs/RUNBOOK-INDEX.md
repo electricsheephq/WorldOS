@@ -28,6 +28,8 @@
 |---|---|---|---|---|---|
 | visual pre-gate | `qa/visual_pregate.py` | free, every render | verdict numbers + manifest path (gate, not history) | — (gate) | visual-critic skill |
 | visual-critic panel | `qa/felt_rest_panel.py` / panel protocol | ~$2/scene | frames in qa/evidence/<n>/ + per-lens scores | visual (auto via felt_rest_panel; ⚠ other paths verify) | visual-critic skill |
+| coherence gate | `qa/check_grid_paint_coherence.py` | free, per registered plate candidate (BEFORE the panel) | per-prop offset (cells) + peak-NCC numbers, pass/fail (gate, not history) | — (gate) | ROOM-PIPELINE-RUNBOOK step 5; #1462/#1491 |
+| journey-eval | `qa/journey_eval.py` | ~$1 (per-frame VQA), per shipped room | frames + frames_manifest.json + journey_verdict.json in qa/journey_runs/<run>/ | — (gate; ⚠ v1 has the legal-path blind spot, #1523 — no scores_ledger row) | ROOM-PIPELINE-RUNBOOK + qa/evidence/journey-eval-first-run/RECALL.md |
 | box render/capture | gex44-unity-host skill + manage_camera | free (GPU) | PNG captures (super_size 2-4) → feeds pre-gate/panel | — (feeds visual) | BOX.md + gex44-unity-host; ⚠ motion_reel.py capture hook is a TODO stub |
 | demo reel | `qa/demo_reel.py` | free | frame series + GIF (the pixels rule artifact) | — (visibility) | OPERATIONS pixels rule |
 
