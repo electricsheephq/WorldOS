@@ -51,7 +51,11 @@ def test_painted_camp_props_are_all_impassable():
     frame, and both bedroll groups — must be an engine pathing obstacle. This is the exact "walks THROUGH
     the campfire / over bedrolls / crates / logs — essentially open grid" felt-bug: the pre-fix footprints
     were authored for the OLDER greybox/v1 layout, so NONE of the v2 plate's painted solids were
-    impassable (they sat on open ground) and the owner walked straight through them."""
+    impassable (they sat on open ground) and the owner walked straight through them.
+
+    OWNER PLAYTEST #7 CAMP-TUNE (2026-07-11) re-measured several of these footprints against the newer
+    ADOPTED true-greybox plate (woodpile, crate cluster, shelter, the ruin's wall/tower/link) — the
+    assertion below still holds unconditionally (sg.OBSTACLES stays the single source)."""
     grid = _grid()
     imp = impassable_cells(grid, sg.GRID_W, sg.GRID_H)
     for cell in sg.OBSTACLES:
@@ -68,23 +72,38 @@ def test_the_fire_and_bedrolls_are_impassable():
 
 
 def test_obstacle_prop_cell_count_matches_plate():
-    """39 disjoint prop cells total across the v2 layout — pinned so a future edit can't silently drop a
-    painted solid from the impassable set. Footprints are DISJOINT (no cell claimed by two props), so the
+    """51 disjoint prop cells total (CAMP-TUNE, owner playtest #7 — was 39 pre-tune): the woodpile grew
+    2->3 cells, the crate cluster was re-measured 3->4 cells (drops 2 phantom-blocked ground cells, adds
+    the 3 painted boxes POST_CELLS/crate_l previously missed), POST_CELLS (2 cells, one of which was a
+    phantom) was retired into the crate cluster, the shelter grew 3->5 cells (posts + back wall), and the
+    top-right ruin gained 3 new small wall segments (10 cells: ruin_tower1/tower2/link — tower2 carries
+    the grid's far corner cell too, else it walls (15,11) into an isolated unreachable pocket) that were
+    previously unmodeled. wall_br itself SPLIT into 3 short runs (wall_br/wall_br2/wall_br3, same 9 cells
+    total) so each keeps a tight bounding-box occlusion instead of one hull spanning the whole compound
+    wall (see the module-docstring note). Footprints stay DISJOINT (no cell claimed by two props), so the
     flattened OBSTACLES has no duplicates."""
-    assert len(sg.OBSTACLES) == 39
+    assert len(sg.OBSTACLES) == 51
     assert len(sg.OBSTACLES) == len({tuple(c) for c in sg.OBSTACLES})  # no duplicate cells
     assert len(sg.CAMPFIRE_CELLS) == 4
-    assert len(sg.WALL_BR_CELLS) == 9
+    assert len(sg.WALL_BR_CELLS) == 3
+    assert len(sg.WALL_BR_CELLS) + len(sg.WALL_BR2_CELLS) + len(sg.WALL_BR3_CELLS) == 9
+    assert len(sg.RUIN_TOWER1_CELLS) + len(sg.RUIN_TOWER2_CELLS) + len(sg.RUIN_LINK_CELLS) == 10
 
 
 def test_no_perimeter_walls_open_air_clearing():
     """Coherence with scene_grid.py::_gen_forest's convention: an outdoor clearing has NO hard
     perimeter walls (unlike the crypt's solid perimeter) — only named props are impassable. Corner
-    and edge-midpoint cells that aren't part of a prop footprint must stay walkable."""
+    and edge-midpoint cells that aren't part of a prop footprint must stay walkable.
+
+    (15, 11) — the grid's far corner — is DELIBERATELY excluded from this check as of CAMP-TUNE (owner
+    playtest #7): it is the painted rubble at the base of the top-right ruin's second tower, so
+    RUIN_TOWER2_CELLS legitimately claims it (and must, else it's an isolated unreachable pocket walled
+    off by ruin_tower2/ruin_link — see test_scene_grid_has_zero_validate_violations); it is a real prop
+    footprint, not a perimeter-wall regression."""
     grid = _grid()
     imp = {tuple(c) for c in impassable_cells(grid, sg.GRID_W, sg.GRID_H)}
     obstacle_set = {tuple(c) for c in sg.OBSTACLES}
-    for cell in [(0, 0), (15, 0), (0, 11), (15, 11), (0, 6), (15, 5)]:
+    for cell in [(0, 0), (15, 0), (0, 11), (0, 6), (15, 5)]:
         assert cell not in obstacle_set and cell not in imp, \
             f"open-air clearing cell {cell} must not be a perimeter wall"
 
@@ -100,11 +119,14 @@ def test_hero_and_goblin_spawn_cells_stay_walkable():
 
 def test_obstacles_list_matches_authored_props():
     """OBSTACLES (used for the printed seed summary + kept in lock-step with set_grid) must be
-    exactly the flattened v2-plate prop footprints — no silent drift between the two."""
+    exactly the flattened prop footprints — no silent drift between the two. CAMP-TUNE (owner
+    playtest #7): POST_CELLS was retired (folded into CRATE_L_CELLS / dropped as phantom); wall_br
+    split into 3 short runs; the ruin's tower1/tower2/link segments are new."""
     assert sg.OBSTACLES == (
         sg.CAMPFIRE_CELLS + sg.FIREWOOD_CELLS + sg.CRATE_L_CELLS + sg.CRATE_C_CELLS
         + sg.CRATE_WALL_CELLS + sg.CRATE_R_CELLS + sg.WALL_BL_CELLS + sg.WALL_BR_CELLS
-        + sg.POST_CELLS + sg.SHELTER_CELLS + sg.BEDROLL_L_CELLS + sg.BEDROLL_R_CELLS
+        + sg.WALL_BR2_CELLS + sg.WALL_BR3_CELLS + sg.RUIN_TOWER1_CELLS + sg.RUIN_TOWER2_CELLS
+        + sg.RUIN_LINK_CELLS + sg.SHELTER_CELLS + sg.BEDROLL_L_CELLS + sg.BEDROLL_R_CELLS
     )
 
 
