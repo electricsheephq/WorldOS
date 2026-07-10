@@ -1,4 +1,7 @@
 using System.Collections;
+using System.Collections.Concurrent;   // #1466: thread-safe hand-off from the QA HTTP thread to Update()
+using System.Net;                      // #1466: localhost HttpListener for the QA input channel
+using System.Threading;                // #1466: the QA listener runs off the Unity main thread
 using UnityEngine;
 using UnityEngine.Networking;
 
@@ -294,6 +297,14 @@ public class CombatSurfaceClient : MonoBehaviour
 
         Debug.Log("[CSC] start: campaign=" + CampaignId + " url=" + ViewerUrl + " overlay=" + _overlayOn + " onboard=" + _onboard);
         StartCoroutine(PollLoop());
+
+        // #1466 QA INPUT CHANNEL (env-gated, OFF by default = byte-identical player). OS-synthetic mouse
+        // never reaches a no-activation background Unity window (Input never sees it — HID/postToPid/
+        // brief-activation all REFUTED; see docs/research register + #1466), so player QA had no way to
+        // exercise the click path. When WORLDOS_QA_INPUT=1 we open a LOCALHOST-only HttpListener that
+        // accepts a normalized viewport coord and feeds it through the SAME HandleClickAt raycast->cell->
+        // pre-validation->POST path a human click takes — the client does everything else identically.
+        if (System.Environment.GetEnvironmentVariable("WORLDOS_QA_INPUT") == "1") StartQaInput();
     }
 
     // Resolve the token's already-placed actor by the registry naming (Actor_ + token.id).
@@ -349,7 +360,7 @@ public class CombatSurfaceClient : MonoBehaviour
                 }
                 yield return null;
             }
-            if (Ok(req)) { Debug.Log("[CSC] fetch ok (" + req.responseCode + ")"); ApplyJson(req.downloadHandler.text); }
+            if (Ok(req)) { Debug.Log("[CSC] fetch ok (" + req.responseCode + ")"); _dbgSurf++; ApplyJson(req.downloadHandler.text); }
             else Debug.LogWarning("[CSC] fetch FAILED status=" + req.responseCode + " err=" + req.error);
         }
     }
@@ -1346,6 +1357,20 @@ public class CombatSurfaceClient : MonoBehaviour
         UpdateHpBars();
         UpdateTurnPulse();
         if (_busy) return;
+        // #1466: drain at most one queued QA click per frame on the MAIN thread (Camera/raycast/coroutines
+        // AND Screen.width/height are main-thread only). Same _busy gate as a real click. A cell request
+        // runs the shared HandleCell validation+POST; a viewport request runs the full raycast first.
+        if (_qaClicks != null)
+        {
+            _screenW = Screen.width; _screenH = Screen.height;   // cache for the off-thread /health
+            if (_qaClicks.TryDequeue(out var qc))
+            {
+                _dbgDeq++;
+                if (qc.cell) HandleCell(qc.c, qc.r);
+                else HandleClickAt(new Vector3(qc.vx * Screen.width, qc.vy * Screen.height, 0f));
+                return;
+            }
+        }
         if (Input.GetMouseButtonDown(0)) HandleClick();
     }
 
@@ -1427,18 +1452,35 @@ public class CombatSurfaceClient : MonoBehaviour
         Object.Destroy(q);
     }
 
+    // A real mouse click -> the SAME coordinate-level handler the QA input channel (#1466) drives, so
+    // the raycast->cell->pre-validation->POST product path is identical whether a human or the T3 gate
+    // clicks. Input.mousePosition is screen pixels, bottom-left origin (what ScreenPointToRay wants).
+    void HandleClick() { HandleClickAt(Input.mousePosition); }
+
     // Minimal input: raycast the click onto the floor plane -> cell -> POST the existing /move kinds
     // ONLY (move_to_cell, or an on-turn attack when the clicked cell holds the foe). Payload mirrors
-    // the viewer driver (qa/drive_gfx_combat.py) exactly.
-    void HandleClick()
+    // the viewer driver (qa/drive_gfx_combat.py) exactly. `screenPoint` is screen pixels (bottom-left
+    // origin); the QA channel converts its normalized viewport coord to this via Screen.width/height.
+    void HandleClickAt(Vector3 screenPoint)
     {
         var cam = Camera.main; if (cam == null) return;
-        Ray ray = cam.ScreenPointToRay(Input.mousePosition);
+        Ray ray = cam.ScreenPointToRay(screenPoint);
         if (Mathf.Abs(ray.direction.y) < 1e-4f) return;
         float tt = (FloorY - ray.origin.y) / ray.direction.y; if (tt < 0) return;
         Vector3 hit = ray.origin + ray.direction * tt;
         if (!WorldToCell(hit, out int c, out int r)) return;
+        HandleCell(c, r);
+    }
+
+    // The cell-level half of a click: identical rest-vs-combat pre-validation + POST whether the cell
+    // came from a mouse raycast (HandleClickAt) or the QA input channel's cell path (#1466). This is the
+    // "SAME HandleClick validation path" the QA channel runs — NOT a DoMove/DoAttack shortcut: it still
+    // honors _restMode, the mover check, and the #1441 impassable/occupied pre-filter (FlashReject).
+    void HandleCell(int c, int r)
+    {
         int key = CellKey(c, r);
+        _dbgActed++;
+        _dbgLast = "cell(" + c + "," + r + ") rest=" + _restMode + " foe=(" + _foeX + "," + _foeY + ")'" + _foeId + "' imp=" + (_impassable.Contains(key) ? "Y" : "n") + " occ=" + (_occupied.Contains(key) ? "Y" : "n");
         // W6.2 (#1461) REST MODE: no combat signals -> the click WALKS a party member to the cell via the
         // engine's `walk_to` verb (the walk_to_cell /move intent), NOT the combat move. Same #1441
         // pre-validation as combat — a blocked/occupied cell flashes a red ring instead of a doomed POST
@@ -1460,6 +1502,101 @@ public class CombatSurfaceClient : MonoBehaviour
         if (_impassable.Contains(key) || _occupied.Contains(key)) { StartCoroutine(FlashReject(c, r)); return; }
         StartCoroutine(PostMove(c, r));
     }
+
+    // ---- #1466 QA input channel ------------------------------------------------------------------
+    // Localhost HttpListener that turns a click request into a synthetic click fed through the SAME
+    // validation+POST path a human click takes. OFF unless WORLDOS_QA_INPUT=1 (byte-identical player
+    // otherwise). Port from WORLDOS_QA_INPUT_PORT (default 8971), mirroring the WORLDOS_ENGINE_BASE_URL
+    // env-contract style. Two request shapes on POST /click (queued; resolved next frame on the main thread):
+    //   {"c":9,"r":8}        -> HandleCell(c,r)  — the ROBUST path QA uses. Skips only the raycast; still
+    //                           runs the rest-vs-combat + #1441 impassable/occupied pre-validation + POST.
+    //                           No pixel/titlebar/aspect calibration to get wrong (the SCK capture includes
+    //                           the macOS titlebar, so a captured-pixel viewport never matched Unity's).
+    //   {"vx":0..1,"vy":0..1} -> HandleClickAt  — viewport coord (BOTTOM-LEFT origin), runs the full raycast
+    //                           too; kept as real product-fidelity input for a correctly-calibrated caller.
+    //   GET /health          -> {"ok":true}
+    [System.Serializable] class QaClick { public int c = -1; public int r = -1; public float vx = float.NaN; public float vy = float.NaN; }
+    struct QaCmd { public bool cell; public int c; public int r; public float vx; public float vy; }
+    ConcurrentQueue<QaCmd> _qaClicks;
+    HttpListener _qaListener;
+    Thread _qaThread;
+    volatile bool _qaStop;
+    // Unity's render dims, cached on the MAIN thread (Screen.* is main-thread only) so the off-thread
+    // /health handler can report them. A pixel-space caller (the T3 palette) needs Screen.height to undo
+    // the macOS titlebar the SCK capture includes (captured height != Screen.height).
+    volatile int _screenW, _screenH;
+    // #1466 diagnostics: a no-activation player's Player.log is buffered and unreliable, so the channel
+    // exposes its own counters via GET /debug (enqueued/dequeued/acted + the last branch HandleCell took
+    // + surface-derived state). Single-writer per field in practice; volatile is enough for a QA probe.
+    volatile int _dbgEnq, _dbgDeq, _dbgActed, _dbgSurf;
+    volatile string _dbgLast = "none";
+
+    void StartQaInput()
+    {
+        int port = 8971;
+        string p = System.Environment.GetEnvironmentVariable("WORLDOS_QA_INPUT_PORT");
+        if (!string.IsNullOrEmpty(p) && int.TryParse(p, out int pv) && pv > 0) port = pv;
+        _qaClicks = new ConcurrentQueue<QaCmd>();
+        try
+        {
+            _qaListener = new HttpListener();
+            _qaListener.Prefixes.Add("http://127.0.0.1:" + port + "/");
+            _qaListener.Start();
+        }
+        catch (System.Exception e)
+        { Debug.LogWarning("[CSC] QA input listener failed to bind :" + port + " — " + e.Message); _qaListener = null; return; }
+        _qaThread = new Thread(QaListenLoop) { IsBackground = true, Name = "CSC-QAInput" };
+        _qaThread.Start();
+        Debug.Log("[CSC] QA input channel LISTENING on http://127.0.0.1:" + port + "/click (cell {c,r} or viewport {vx,vy} -> HandleCell/HandleClickAt)");
+    }
+
+    // Runs OFF the Unity main thread: it may ONLY do pure/thread-safe work (parse + Mathf.Clamp01 + queue).
+    // NO Unity API here (Screen/Camera/coroutines) — those happen when Update() drains the queue.
+    void QaListenLoop()
+    {
+        while (!_qaStop && _qaListener != null && _qaListener.IsListening)
+        {
+            HttpListenerContext ctx;
+            try { ctx = _qaListener.GetContext(); }
+            catch { break; }   // listener stopped/disposed -> exit the loop cleanly
+            try
+            {
+                string body = "";
+                if (ctx.Request.HasEntityBody)
+                    using (var sr = new System.IO.StreamReader(ctx.Request.InputStream, ctx.Request.ContentEncoding)) body = sr.ReadToEnd();
+                string resp = "{\"ok\":false}";
+                if (ctx.Request.Url.AbsolutePath == "/click" && ctx.Request.HttpMethod == "POST")
+                {
+                    var q = JsonUtility.FromJson<QaClick>(body);
+                    if (q != null && q.c >= 0 && q.r >= 0)
+                    { _qaClicks.Enqueue(new QaCmd { cell = true, c = q.c, r = q.r }); _dbgEnq++; resp = "{\"ok\":true}"; }
+                    else if (q != null && !float.IsNaN(q.vx) && !float.IsNaN(q.vy))
+                    { _qaClicks.Enqueue(new QaCmd { cell = false, vx = Mathf.Clamp01(q.vx), vy = Mathf.Clamp01(q.vy) }); _dbgEnq++; resp = "{\"ok\":true}"; }
+                }
+                else if (ctx.Request.Url.AbsolutePath == "/health")
+                    resp = "{\"ok\":true,\"screenW\":" + _screenW + ",\"screenH\":" + _screenH + "}";
+                else if (ctx.Request.Url.AbsolutePath == "/debug")
+                    resp = "{\"ok\":true,\"enq\":" + _dbgEnq + ",\"deq\":" + _dbgDeq + ",\"acted\":" + _dbgActed
+                         + ",\"surf\":" + _dbgSurf + ",\"busy\":" + (_busy ? "true" : "false") + ",\"last\":\"" + _dbgLast + "\"}";
+                byte[] buf = System.Text.Encoding.UTF8.GetBytes(resp);
+                ctx.Response.ContentType = "application/json";
+                ctx.Response.ContentLength64 = buf.Length;
+                ctx.Response.OutputStream.Write(buf, 0, buf.Length);
+                ctx.Response.OutputStream.Close();
+            }
+            catch { /* one bad request must never kill the QA loop */ }
+        }
+    }
+
+    void StopQaInput()
+    {
+        _qaStop = true;
+        try { if (_qaListener != null) { _qaListener.Stop(); _qaListener.Close(); } } catch { }
+        _qaListener = null;
+    }
+
+    void OnDestroy() { StopQaInput(); }
+    void OnApplicationQuit() { StopQaInput(); }
 
     // Brief red ring flash at a rejected cell — immediate "you can't go there" with no server round-trip.
     IEnumerator FlashReject(int c, int r)
