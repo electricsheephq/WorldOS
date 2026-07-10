@@ -68,10 +68,14 @@ def test_camp_manifest_cells_match_rest_fixture_seed():
 def test_committed_manifests_match_the_seeds():
     """`build_room_manifest.py` is deterministic: the committed manifests must equal a fresh build from
     the seeds (the --check contract). A stale manifest — e.g. someone edited a seed's prop cell but did
-    not regenerate — fails here."""
+    not regenerate — fails here. Uses the same TOLERANT compare as `--check` (structural fields exact;
+    the env-sensitive `ref_fp` NCC floats within atol) so a pillow/numpy version skew between CI and a
+    dev box can't flake this gate on env-pinned golden floats."""
+    import json  # noqa: PLC0415
     for name, fresh in brm._manifests().items():
         committed = _manifest(_QA_DIR / "room_manifests" / f"{name}.cells.json")
-        assert committed == fresh, f"{name}.cells.json is stale — re-run qa/build_room_manifest.py"
+        assert brm.manifests_equivalent(json.dumps(committed), json.dumps(fresh)), \
+            f"{name}.cells.json is stale — re-run qa/build_room_manifest.py"
 
 
 # ── 2. the known-good plate PASSes (calibration floor) ────────────────────────────────────────────
