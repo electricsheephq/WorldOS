@@ -1,0 +1,32 @@
+{
+  "run": "camp-pass2-iter1-scale060-firepitpin-2026-07-10",
+  "arm": "CAMP-PASS2 iter1: best-of-3 anchor mints (model_bfl-flux-1-dev + depth ControlNet str0.65/end0.6 + LoRA model_RsWEcQL2NWXwoyEodWVE2vWG, lorasScale 0.70/0.65/0.60, seed 42, firepit-pin prompt clause on all 3) -> best-of-3 rejection check (all 3 anchors showed the concentric-ring ground artifact to a similar degree; lorasScale in 0.6-0.7 did not materially change severity) -> selected lorasScale=0.60 (marginally softest rings) -> Gemini instruction-edit re-registration (model_google-gemini-3-1-flash, structure-lock + dimetric-lock + reinforced firepit-pin clause, referenceImages=[selected anchor]) -> overlay + advisory edge-recall (organic class, #1491) -> 5-scorer blind panel vs incumbent + disguised real-art control.",
+  "panel_mapping": {"image_1.jpg": "INCUMBENT_CAMP_V2", "image_2.png": "CANDIDATE_ITER1_SCALE060", "image_3.jpg": "CONTROL"},
+  "scores": {
+    "image_1_INCUMBENT": [7, 6, 7, 8, 7],
+    "image_2_CANDIDATE": [6, 5, 6, 7, 6],
+    "image_3_CONTROL": [9, 9, 10, 9, 9]
+  },
+  "medians": {"A": 6.0, "B": 7.0, "C": 9.0},
+  "control_valid": true,
+  "control_integrity_note": "poe2_control.jpg (the same control used in camp-armB round 2, PR #1492) has visible human NPCs -- the same imperfect-control caveat disclosed there and in the outdoor-lora smoke test; score is in-band (6.8-9.2) so counted, scorers judged craft only as instructed.",
+  "candidate_defect_notes": [
+    "image_2: 6 | clear concentric-ring / target-like banding in the dirt radiating from the firepit reads as an artificial repeated pattern, otherwise strong moody forest brushwork and moonlight glow",
+    "image_2: 5 | the ring pattern around the fire is the dominant flaw here, quite mechanically regular, breaks the illusion of natural ground more than the rest of the scene's quality would suggest",
+    "image_2: 6 | good tree/moss/crate painting and atmosphere, but the banded ground texture around the campfire looks like a rendering tell, not natural dirt",
+    "image_2: 7 | nice composition and lighting overall, ring artifact around the fire is noticeable but the surrounding forest detail is close to house quality",
+    "image_2: 6 | concentric rings in the firepit dirt read as an unnatural, almost target-like pattern; no characters or invented architecture, registration otherwise good"
+  ],
+  "advisory_metrics": {
+    "edge_recall_vs_greybox": 0.7793,
+    "edge_recall_caveat": "Content-blind per #1491 -- advisory only for this organic/outdoor room class, not a gate. Overlay (qa/evidence/plate-sprint/camp-pass2/iter1/overlay_iter1_scale060.jpg) shows good structural alignment (crates, ground diamond, firepit, prop positions) despite the sub-0.95 metric.",
+    "pregate": "G6_luma_staging_law FLAG -- expected for a firelit/dark night scene per plate_loop pregate design; not treated as blocking (matches precedent on prior firelit camp candidates)."
+  },
+  "firepit_lever_findings": {
+    "lever_a_prompt_pin": "Applied at BOTH the base FLUX+LoRA mint prompt and the Gemini structure-lock prompt (explicit 'keep the stone fire-ring exactly as composed; do not redraw it / no concentric rings' clause). Did NOT suppress the artifact at either stage.",
+    "lever_b_lorasScale": "Swept 0.70 / 0.65 / 0.60 at the anchor-mint stage (seed 42 held constant). All three anchors show the ring artifact to a visually similar degree -- lorasScale in the 0.6-0.7 band does not materially change its severity.",
+    "lever_c_best_of_n_rejection": "Inspected all 3 anchors before spending the Gemini pass; none was clean enough to constitute a true 'reject the deformed ones' win -- selected 0.60 as marginally softest, but this was a weak signal, not a clear pass/fail split.",
+    "root_cause_read": "The ring is baked into the base FLUX+ControlNet+LoRA generation (a diffusion radial-falloff tell around the fire light source, consistent with the original smoke-test's hypothesis) and Gemini's STRUCTURE-LOCK requirement then PRESERVES it as 'existing structure' rather than removing it -- the anti-ring instruction added to the Gemini prompt is in direct tension with structure-lock and lost. This is the key new finding this pass: the fix needs to either (a) stop the ring from ever appearing in the anchor (untested lever within scope), or (b) carve an explicit structure-lock EXCEPTION for the ground-texture band so Gemini is authorized to repaint just that region."
+  },
+  "verdict": "NOT CONVERGED this iteration. Candidate (A) median 6.0 vs incumbent (B) median 7.0 vs disguised real-art control (C) median 9.0 (in-band, valid). Below the >=7.0 target and roughly flat-to-slightly-below the original outdoor-lora smoke test's 6.5 baseline -- neither the firepit-pin prompt clause (lever a) nor the lorasScale 0.6-0.7 sweep (lever b) measurably reduced the concentric-ring artifact; best-of-3 rejection (lever c) found no clean winner because all 3 anchors were similarly affected. Proceeding to iteration 2 with a structure-lock EXCEPTION clause targeting the ground-texture band specifically, since this iteration's evidence shows structure-lock is what is actively preserving the defect through the Gemini stage."
+}

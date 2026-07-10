@@ -1,0 +1,20 @@
+{
+  "name": "camp-pass2-iter1-scale060-firepitpin",
+  "room": "camp_clearing_night",
+  "generate": {
+    "candidate": "/Users/lume/WorldOS/qa/evidence/plate-sprint/camp-pass2/iter1/gemini/candidate_iter1_scale060.jpg",
+    "controlnet": "depth",
+    "control_strength": 0.65,
+    "seed": 42
+  },
+  "registration": {
+    "greybox": "/Users/lume/WorldOS/qa/evidence/1470/greybox_control_1344x768.png",
+    "min_recall": 0.95,
+    "manifest": "/Users/lume/WorldOS/qa/room_manifests/camp_clearing_night_v2.cells.json"
+  },
+  "panel": {
+    "incumbent": "/Users/lume/WorldOS/qa/evidence/plate-audit/camp_clearing_night_v2.jpg",
+    "control": "/Users/lume/worldos-session-notes/plate-sprint/armB/poe2_control.jpg",
+    "house_anchor": "/Users/lume/WorldOS/qa/evidence/plate-audit/camp_clearing_night_v2.jpg"
+  }
+}

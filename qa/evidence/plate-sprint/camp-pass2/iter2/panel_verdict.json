@@ -1,0 +1,32 @@
+{
+  "run": "camp-pass2-iter2-scale060-structurelockexception-2026-07-10",
+  "arm": "CAMP-PASS2 iter2: reused the SAME 3 iter1 anchors (lorasScale 0.70/0.65/0.60, seed 42) -> re-ran the Gemini instruction-edit re-registration with a STRENGTHENED firepit lever: an explicit STRUCTURE-LOCK EXCEPTION clause authorizing Gemini to repaint the ground texture immediately around the fire-ring specifically to discard the concentric-ring pattern, overriding the general pixel-exact structure-lock for that one region -> best-of-3 rejection across the 3 resulting Gemini candidates (070/065/060) -> selected lorasScale=0.60 (cleanest surrounding ground, no stray white-patch artifacts seen on the 065 variant) -> overlay + advisory edge-recall (organic class, #1491) -> 5-scorer blind panel vs incumbent + disguised real-art control.",
+  "panel_mapping": {"image_1.png": "CANDIDATE_ITER2_SCALE060", "image_2.jpg": "INCUMBENT_CAMP_V2", "image_3.jpg": "CONTROL"},
+  "scores": {
+    "image_1_CANDIDATE": [6, 6, 7, 5, 6],
+    "image_2_INCUMBENT": [7, 6, 7, 8, 7],
+    "image_3_CONTROL": [9, 9, 10, 9, 9]
+  },
+  "medians": {"A": 6.0, "B": 7.0, "C": 9.0},
+  "control_valid": true,
+  "control_integrity_note": "Same poe2_control.jpg as iter1 (visible human NPCs, the same disclosed imperfect-control caveat from camp-armB/outdoor-lora); score in-band (6.8-9.2), counted.",
+  "candidate_defect_notes": [
+    "image_1: 6 | the concentric-ring ground pattern around the firepit is still clearly present despite the explicit repaint-exception instruction; rest of the scene (crates, moss boulders, full moon) is clean and close to house quality",
+    "image_1: 6 | ring/banding artifact around the fire unchanged from the prior attempt; the exception clause did not appear to have any visible effect on this region",
+    "image_1: 7 | strong composition and lighting, ring pattern is present but reads slightly less mechanical than some prior attempts",
+    "image_1: 5 | the ring is the first thing the eye goes to, it is a hard flaw to look past even though the rest of the frame is well painted",
+    "image_1: 6 | consistent read with the other scorers: good painterly forest detail, unresolved concentric-ring ground artifact at the fire"
+  ],
+  "advisory_metrics": {
+    "edge_recall_vs_greybox": 0.5443,
+    "edge_recall_caveat": "Content-blind per #1491 -- advisory only for this organic/outdoor room class. Lower than iter1's 0.7793, but the overlay (qa/evidence/plate-sprint/camp-pass2/iter2/overlay_iter2_scale060.jpg) still shows good structural alignment (crates, ground diamond, firepit, prop positions) -- the drop reads as softer/hazier ground brushwork from the wider repaint region, not real structural drift, consistent with #1491's finding that this metric under-counts faithful organic reinterpretation.",
+    "pregate": "G6_luma_staging_law FLAG -- expected for a firelit/dark night scene, not treated as blocking, consistent with iter1 and prior firelit camp candidates."
+  },
+  "firepit_lever_findings": {
+    "lever_a_prompt_pin_v2_structure_lock_exception": "Applied an explicit STRUCTURE-LOCK EXCEPTION authorizing Gemini to repaint the fire-ring's surrounding ground texture specifically, naming the ring pattern as a rendering artifact rather than authored geometry. Tested against all 3 iter1 anchors (070/065/060). Did NOT suppress the artifact in any of the 3 -- visually indistinguishable in severity from iter1's softer prompt-pin attempt.",
+    "lever_b_lorasScale": "Reused the same 0.70/0.65/0.60 anchors from iter1 (no new anchor-mint spend); confirms the earlier iter1 finding that lorasScale in this band does not gate the artifact's severity, since the SAME anchors produced the SAME ring outcome under a different Gemini prompt.",
+    "lever_c_best_of_n_rejection": "All 3 iter2 Gemini candidates showed the ring to a similar degree; selection criterion shifted to a secondary defect (stray white ground patches on the 065 variant) rather than the firepit artifact itself, since it did not discriminate between candidates this iteration either.",
+    "root_cause_read": "Two independent prompt strategies (a soft pin in iter1, an explicit authorized override in iter2) both failed to remove the ring across 6 total generated candidates (3 anchors x 2 Gemini prompt variants). This is now a well-tested negative result: the artifact is not prompt-controllable at the Gemini re-registration stage within this recipe -- it most likely reflects a strong learned prior in the model's own depiction of campfire-lit ground (reinforced by the anchor image already showing the pattern), not something addressable by instruction wording alone at this stage. Fixing it would need a stage the task did not authorize testing (e.g. inpainting the ring region as an isolated post-process, or retraining/prompting the base LoRA mint itself away from radial falloff, or swapping the base recipe's control image away from a bare point-light depth cue) -- out of scope for this 2-iteration pass."
+  },
+  "verdict": "NOT CONVERGED. Candidate (A) median 6.0 vs incumbent (B) median 7.0 vs disguised real-art control (C) median 9.0 (in-band, valid) -- identical to iter1's read. Ceiling for this pass is median 6.0, below the >=7.0 target and roughly flat vs the original outdoor-lora smoke test's 6.5. Across 2 iterations and 6 total generated candidates, neither firepit-pin phrasing (soft request in iter1, explicit structure-lock-exception override in iter2) nor the lorasScale 0.6-0.7 sweep measurably reduced the concentric-ring artifact; best-of-N rejection found no clean winner in either iteration because all candidates were similarly affected. Recommend NOT adopting either candidate; the firepit artifact is a confirmed, reproducible ceiling on this LoRA+recipe combination for camp, not a tuning gap this pass's levers can close."
+}
