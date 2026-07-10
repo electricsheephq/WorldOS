@@ -17,8 +17,9 @@ Run: python3 -m pytest extensions/renderers/godot/tools/tests/test_drift_gate_de
 import argparse
 import os
 import sys
+import tempfile
 import unittest
-from unittest import mock
+import unittest.mock as mock
 
 _TOOLS_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 if _TOOLS_DIR not in sys.path:
@@ -37,7 +38,6 @@ class ArgparseDefaultTest(unittest.TestCase):
     the only thing under test."""
 
     def _parsed_drift_gate(self, extra_argv):
-        ap = argparse.ArgumentParser()
         captured = {}
         orig_parse_args = argparse.ArgumentParser.parse_args
 
@@ -84,7 +84,7 @@ class MaybeRunDriftGateTest(unittest.TestCase):
         fake_manifest_path = mock.Mock()
         fake_manifest_path.name = "crypt_dense_v1.cells.json"
         fake_result = check_plate_drift.DriftResult(
-            passed=False, room="crypt",
+            passed=False, room="crypt", checked=1,
             reasons=["sarcophagus drifted (NCC 0.40 < 0.75) — painted prop no longer on authored cell(s)"],
         )
         with mock.patch.object(check_plate_drift, "_find_manifest_for_recipe", return_value=fake_manifest_path), \
@@ -111,6 +111,29 @@ class MaybeRunDriftGateTest(unittest.TestCase):
             generate_room._maybe_run_drift_gate("crypt", self.recipe, "/tmp/candidate.png", enabled=False)
             m_find.assert_not_called()
 
+    def test_import_failure_fails_loud_not_silent_skip(self):
+        # A "default-on safety gate" that silently no-ops when its Pillow/numpy deps are missing (the
+        # common non-qa-image-venv environment) gives false confidence -- must fail loud instead
+        # (chatgpt-codex-connector review finding on this PR).
+        with mock.patch.dict(sys.modules, {"check_plate_drift": None}):
+            with self.assertRaises(SystemExit) as ctx:
+                generate_room._maybe_run_drift_gate("crypt", self.recipe, "/tmp/candidate.png", enabled=True)
+        self.assertIn("could not be imported", str(ctx.exception))
+
+    def test_zero_checked_fails_loud_on_the_real_crypt_manifest(self):
+        # crypt_dense_v1.cells.json genuinely has 3 props and ZERO embedded ref_fp, and
+        # crypt_firelit_v2.png (its canonical_plate) is not locally available in this checkout (only a
+        # subset of plates are committed) -- so with NO mocking of check_plate_drift's internals at
+        # all, a real contract-sized candidate plate must hit the zero-checked fail-loud path, not a
+        # false-confidence PASS (chatgpt-codex-connector review finding on this PR).
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as td:
+            candidate = os.path.join(td, "candidate.png")
+            Image.new("RGB", (check_plate_drift.PX_W, check_plate_drift.PX_H), (10, 10, 10)).save(candidate)
+            with self.assertRaises(SystemExit) as ctx:
+                generate_room._maybe_run_drift_gate("crypt", self.recipe, candidate, enabled=True)
+        self.assertIn("ZERO fingerprintable", str(ctx.exception))
+
 
 class MainEndToEndDriftGateTest(unittest.TestCase):
     """Drive main() with every Scenario helper mocked, verifying the gate actually fires post-generation
@@ -134,7 +157,7 @@ class MainEndToEndDriftGateTest(unittest.TestCase):
     def test_drift_gate_fires_and_fails_loud_for_canonical_room(self):
         fake_manifest_path = mock.Mock()
         fake_manifest_path.name = "crypt_dense_v1.cells.json"
-        fake_result = check_plate_drift.DriftResult(passed=False, room="crypt", reasons=["prop drifted"])
+        fake_result = check_plate_drift.DriftResult(passed=False, room="crypt", checked=1, reasons=["prop drifted"])
         with mock.patch.object(check_plate_drift, "_find_manifest_for_recipe", return_value=fake_manifest_path), \
              mock.patch.object(check_plate_drift, "load_manifest", return_value={"room": "crypt_dense_v1"}), \
              mock.patch.object(check_plate_drift, "check_plate_drift", return_value=fake_result):
@@ -145,7 +168,7 @@ class MainEndToEndDriftGateTest(unittest.TestCase):
     def test_no_drift_gate_flag_skips_even_on_drift(self):
         fake_manifest_path = mock.Mock()
         fake_manifest_path.name = "crypt_dense_v1.cells.json"
-        fake_result = check_plate_drift.DriftResult(passed=False, room="crypt", reasons=["prop drifted"])
+        fake_result = check_plate_drift.DriftResult(passed=False, room="crypt", checked=1, reasons=["prop drifted"])
         with mock.patch.object(check_plate_drift, "_find_manifest_for_recipe", return_value=fake_manifest_path), \
              mock.patch.object(check_plate_drift, "load_manifest", return_value={"room": "crypt_dense_v1"}), \
              mock.patch.object(check_plate_drift, "check_plate_drift", return_value=fake_result):

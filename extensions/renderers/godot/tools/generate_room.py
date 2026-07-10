@@ -303,6 +303,14 @@ def _resolve_controlnet(recipe: dict, args) -> dict | None:
         strength = _CONTROLNET_DEFAULT_STRENGTH
     loras = list(cn_block.get("loras") or [])
     lora_scales = list(cn_block.get("lora_scales") or [])
+    if lora_scales and len(lora_scales) != len(loras):
+        # Symmetry with scenario_gen._cmd_controlnet's --loras/--loras-scale check and this file's own
+        # _resolve_style_pass loras/lorasScale check: a length mismatch here would silently misalign
+        # scales to the wrong LoRAs rather than erroring the way the sibling paths already do.
+        sys.exit(
+            "[generate_room] ERROR: recipe controlnet.loras (%d) and controlnet.lora_scales (%d) must "
+            "be the same length." % (len(loras), len(lora_scales))
+        )
     # Same guard scenario_gen.py's --controlnet command applies: reject loudly (before any credits are
     # spent) if a recipe-declared controlnet LoRA is a known z-image-only LoRA being pointed at a flux
     # model (HTTP 400 on the live API). The passive default above (loras=[] unless explicitly declared
@@ -511,7 +519,11 @@ def _maybe_run_drift_gate(room: str, recipe: dict, plate_path: str, *, enabled: 
     canonical_plate (a brand-new/ad-hoc room being iterated on has nothing to gate against yet) and for
     any canonical room that has no committed qa/room_manifests/*.cells.json manifest — behavior is
     IDENTICAL in both cases whether or not --drift-gate is set. `--no-drift-gate` opts out even when a
-    manifest is found. Fails LOUD (sys.exit) on DRIFT, matching this file's other guards.
+    manifest is found (this is what qa/plate_loop.py forwards, since it runs its own non-fatal drift
+    check separately). Fails LOUD (sys.exit) on: missing check_plate_drift deps (Pillow/numpy — a silent
+    skip here would make a "default-on safety gate" quietly do nothing in the common non-qa-image-venv
+    environment), a manifest with ZERO fingerprintable props and no resolvable baseline (a bare
+    checked=0 PASS is false confidence, not a real check), or an actual DRIFT verdict.
     """
     if not enabled:
         return
@@ -525,17 +537,43 @@ def _maybe_run_drift_gate(room: str, recipe: dict, plate_path: str, *, enabled: 
     try:
         import check_plate_drift as _cpd  # noqa: E402
     except Exception as e:
-        print("[generate_room] WARNING: --drift-gate enabled but check_plate_drift could not be "
-              "imported (%s); skipping the gate for this run." % e)
-        return
+        sys.exit(
+            "[generate_room] ERROR: --drift-gate is enabled and room '%s' has an adopted canonical_plate "
+            "(%s), but qa/check_plate_drift.py could not be imported (%s) — its Pillow+numpy deps are "
+            "likely missing from this interpreter (see the ci.yml paint-drift-gate .venv-qa-image lane). "
+            "Run under an interpreter with pillow+numpy installed, or pass --no-drift-gate to explicitly "
+            "skip the gate for this run." % (room, canonical_plate, e)
+        )
     manifest_path = _cpd._find_manifest_for_recipe(room, canonical_plate, _cpd._MANIFESTS_DIR)
     if manifest_path is None:
         print("[generate_room] --drift-gate: room '%s' has a canonical_plate but no committed "
               "manifest under %s — skipping (nothing to gate against)." % (room, _cpd._MANIFESTS_DIR))
         return
     manifest = _cpd.load_manifest(manifest_path)
-    result = _cpd.check_plate_drift(plate_path, manifest)
+    # A manifest can carry authored geometry with no embedded ref_fp (e.g. crypt_dense_v1.cells.json) —
+    # check_plate_drift then needs an explicit --baseline to fingerprint against. Try the same known
+    # local plate dirs check_plate_drift.gate_room_recipes() already searches before giving up.
+    baseline = None
+    plates_dirs = [qa_dir + "/evidence/plate-audit", qa_dir + "/native_palette", qa_dir + "/screenshot_baselines"]
+    for d in plates_dirs:
+        for stem_variant in (canonical_plate, os.path.splitext(canonical_plate)[0] + ".jpg"):
+            cand = os.path.join(d, stem_variant)
+            if os.path.isfile(cand):
+                baseline = cand
+                break
+        if baseline:
+            break
+    result = _cpd.check_plate_drift(plate_path, manifest, baseline=baseline)
     print("[generate_room] %s" % result.summary())
+    if result.checked == 0:
+        sys.exit(
+            "[generate_room] ERROR: --drift-gate found manifest %s for room '%s' but it has ZERO "
+            "fingerprintable props (no embedded ref_fp, and no local baseline found for '%s') — a PASS "
+            "here would be false confidence, nothing was actually verified. Use --no-drift-gate to "
+            "proceed consciously, or seed the manifest's ref_fp / make a baseline plate locally "
+            "available once one exists."
+            % (manifest_path.name, room, canonical_plate)
+        )
     if not result.passed:
         sys.exit(
             "[generate_room] ERROR: --drift-gate DRIFT on room '%s' (manifest %s): %s. Use "
@@ -609,8 +647,11 @@ def main(argv=None) -> None:
                          "Only fires for a REGEN of a room that already has an adopted `canonical_plate` in "
                          "room_recipes.json AND a committed qa/room_manifests/*.cells.json manifest — a "
                          "no-op (identical behavior) for any ad-hoc/not-yet-adopted room or a canonical room "
-                         "with no committed manifest. Fails loud (nonzero exit) on DRIFT. Use --no-drift-gate "
-                         "to opt out (e.g. a deliberate canonical_plate replacement in progress).")
+                         "with no committed manifest. Fails loud (nonzero exit) on DRIFT, on a manifest with "
+                         "no fingerprintable props/baseline (false-confidence PASS), or if check_plate_drift's "
+                         "Pillow+numpy deps aren't importable. Use --no-drift-gate to opt out (e.g. a "
+                         "deliberate canonical_plate replacement in progress, or qa/plate_loop.py's own "
+                         "exploratory loop, which forwards this and runs its own non-fatal drift check).")
     ap.add_argument("--dry-run", action="store_true", help="print the resolved request without calling the API")
     args = ap.parse_args(argv)
 

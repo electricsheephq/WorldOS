@@ -176,9 +176,18 @@ def config_summary(cfg: PlateConfig) -> str:
 def build_generate_argv(cfg: PlateConfig, out_dir: Path, *, style_pass_file: Optional[Path] = None) -> list[str]:
     """Build the generate_room.py argv from the config's `generate` block (the EXISTING flag surface),
     plus a forwarded `--style-pass <json>` when the config carries a style_pass block (ARM A). Pure —
-    no side effects except (optionally) reading style_pass; unit-tested directly."""
+    no side effects except (optionally) reading style_pass; unit-tested directly.
+
+    Always forwards `--no-drift-gate`: generate_room.py's --drift-gate (PLATE SPRINT Phase 3, #1462
+    follow-up) is ON BY DEFAULT and FAILS LOUD (sys.exit, propagated by run_generate as a RuntimeError
+    that aborts phase1) on any canonical room that already has a committed manifest — crypt and
+    camp_clearing_night both qualify today. plate_loop's whole POINT is iterating candidates that may
+    legitimately drift during exploration; this loop already runs its OWN non-fatal drift check inside
+    registration_gate() (via cfg.registration.manifest) which records the result instead of aborting.
+    Forwarding --no-drift-gate here avoids generate_room's harder in-process gate double-gating (and
+    crashing) an exploratory run that registration_gate is designed to score gracefully."""
     g = cfg.generate
-    argv = ["--room", cfg.room, "--out", str(out_dir)]
+    argv = ["--room", cfg.room, "--out", str(out_dir), "--no-drift-gate"]
     if g.get("base_plate"):
         argv += ["--base-plate", str(g["base_plate"])]
     if g.get("refine_from"):

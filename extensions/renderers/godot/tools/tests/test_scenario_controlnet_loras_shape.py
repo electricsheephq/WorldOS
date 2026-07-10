@@ -18,7 +18,7 @@ import copy
 import os
 import sys
 import unittest
-from unittest import mock
+import unittest.mock as mock
 
 _TOOLS_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 if _TOOLS_DIR not in sys.path:
