@@ -20,6 +20,7 @@ if _QA not in sys.path:
 
 import server  # noqa: E402, F401  (import-first: resolves the models<->scene_grid import cycle)
 import scene_grid as sg  # noqa: E402
+import seed_gfx_camp as camp_seed  # noqa: E402
 import seed_gfx_combat as combat  # noqa: E402
 import seed_gfx_walkslice as ws  # noqa: E402
 
@@ -27,6 +28,8 @@ W, H = combat.GRID_W, combat.GRID_H  # 14x11
 DOOR = (ws.DOOR[0], ws.DOOR[1])
 TAVERN_DOOR = (ws.TAVERN_DOOR[0], ws.TAVERN_DOOR[1])
 TW, TH = ws.TAVERN_W, ws.TAVERN_H  # 12x10
+CW, CH = camp_seed.GRID_W, camp_seed.GRID_H  # 16x12
+CAMP_DOOR = (ws.CAMP_DOOR[0], ws.CAMP_DOOR[1])
 
 
 def _impassable(grid) -> set[tuple[int, int]]:
@@ -35,6 +38,10 @@ def _impassable(grid) -> set[tuple[int, int]]:
 
 def _impassable_t(grid) -> set[tuple[int, int]]:
     return {(x, y) for (x, y) in (tuple(cell) for cell in sg.impassable_cells(grid, TW, TH))}
+
+
+def _impassable_c(grid) -> set[tuple[int, int]]:
+    return {(x, y) for (x, y) in (tuple(cell) for cell in sg.impassable_cells(grid, CW, CH))}
 
 
 def test_walkslice_crypt_reuses_canonical_grid_minus_the_doors():
@@ -113,3 +120,33 @@ def test_walkslice_tavern_spawns_are_walkable_and_off_props():
         for (c, r) in cells:
             assert (c, r) not in blocked, f"tavern {role} spawn {(c, r)} is BLOCKED (wall/prop)"
             assert (c, r) not in prop_cells, f"tavern {role} spawn {(c, r)} stands on a prop"
+
+
+def test_walkslice_camp_has_a_walkable_return_door():
+    """The camp is NOT a dead end (the ship-morning smoke's 'known gap': no authored door_cells meant a
+    clicking player could never leave — the smoke escaped via the QA-side travel_to primitive). One
+    door cell back to the crypt, in the prop-free painted gate-post gap on the top edge, walkable, with
+    a clear Chebyshev-1 landing ring."""
+    grid = ws.build_camp_grid("camp")
+    assert grid.door_cells == [CAMP_DOOR]
+    blocked = _impassable_c(grid)
+    assert CAMP_DOOR not in blocked, "camp return door must be walkable"
+    for dc in range(-1, 2):
+        for dr in range(0, 2):  # rows -1 are off-grid; ring rows 0-1
+            cell = (CAMP_DOOR[0] + dc, CAMP_DOOR[1] + dr)
+            if 0 <= cell[0] < CW and 0 <= cell[1] < CH:
+                assert cell not in blocked, f"camp door landing ring cell {cell} is blocked"
+
+
+def test_walkslice_camp_spawns_are_walkable_and_off_props():
+    """Party + NPC spawn on clear ground. Regression: the old party spawn (8,9) collided with the
+    firewood footprint after CAMP-TUNE (#1526) extended it to include (8,9) — the hero rendered
+    standing ON the woodpile (ship-morning frame2, orchestrator-eyeball find)."""
+    grid = ws.build_camp_grid("camp")
+    blocked = _impassable_c(grid)
+    prop_cells = {(c, r) for p in grid.props for (c, r) in p.cells}
+    assert (8, 9) in prop_cells, "premise: (8,9) is a firewood footprint cell (#1526)"
+    for role, cells in grid.spawns.items():
+        for (c, r) in cells:
+            assert (c, r) not in blocked, f"camp {role} spawn {(c, r)} is BLOCKED (prop)"
+            assert (c, r) not in prop_cells, f"camp {role} spawn {(c, r)} stands on a prop"

@@ -34,6 +34,12 @@ DOOR = [6, 0]
 # (cols 2-7 x rows 7-9) and both pillars — a prop-free door zone. The crypt is the hub: camp <-> crypt
 # <-> tavern.
 TAVERN_DOOR = [0, 5]
+# The camp's RETURN doorway back to the crypt (SHIP-MORNING smoke's "known gap": the camp grid had no
+# authored door_cells, so the camp was a DEAD END for a real player — the smoke could only leave via the
+# QA-side travel_to primitive). Top-edge (5,0) sits in the painted gate-post gap on the north path; the
+# camp's rows 0-1 carry no prop footprint, so the door cell and its Chebyshev-1 landing ring
+# (cols 4-6 x rows 0-1) are prop-free by construction.
+CAMP_DOOR = [5, 0]
 
 
 def build_crypt_grid(loc_id: str):
@@ -62,6 +68,30 @@ def build_crypt_grid(loc_id: str):
     # re-measured pillars ((3,3)/(3,4) and (8,9)/(9,9)), owner-playtest-#5 collision-coherence.
     grid.spawns = {"party": [(3, 5), (4, 5)], "npcs": [(3, 6)]}
     grid.art.layout_hash = sg._layout_hash(grid)  # layout changed (added door) — refresh the hash
+    return grid
+
+
+def build_camp_grid(loc_id: str):
+    """The walkslice camp = the CANONICAL camp_clearing_night grid (``seed_gfx_camp._build_camp_grid``
+    — ONE camp source, #1396 coherence class) plus the walkslice's world topology: the RETURN doorway
+    to the crypt at ``CAMP_DOOR`` (the painted gate-post gap, top edge) and rest-mode ``spawns`` on
+    clear ground by the fire. Two defects fixed here (ship-morning frames, orchestrator eyeball +
+    data-verified): (1) the camp had NO door_cells — a dead end for a clicking player; (2) the old
+    party spawn (8,9) collided with the firewood footprint after CAMP-TUNE (#1526) extended it to
+    [[7,8],[8,8],[8,9]] — the hero rendered standing ON the woodpile. Pure (no server) — directly
+    unit-testable, mirroring ``build_crypt_grid``."""
+    import scene_grid as sg  # noqa: PLC0415
+    import seed_gfx_camp as camp  # noqa: PLC0415  (reuse the camp_clearing_night grid — ONE camp source)
+
+    grid = camp._build_camp_grid(CID, loc_id)
+    # the camp has no perimeter wall cells (outdoor clearing; walkable floor by default), so the door
+    # only needs an explicit door-typed cell + the door_cells registration for the renderer's glow/label.
+    grid.cells.append(sg.SceneCell(c=CAMP_DOOR[0], r=CAMP_DOOR[1], type="door", walkable=True))
+    grid.door_cells = [(CAMP_DOOR[0], CAMP_DOOR[1])]
+    # party on the clear open ground between the fire ((4-5,8-9)) and the firewood ((7,8)-(8,9)):
+    # (6,9)/(7,9) touch no footprint; NPC (9,7) clear of the back-right wall run ((10,5)...).
+    grid.spawns = {"party": [(6, 9), (7, 9)], "npcs": [(9, 7)]}
+    grid.art.layout_hash = sg._layout_hash(grid)  # layout changed (door + spawns) — refresh the hash
     return grid
 
 
@@ -138,7 +168,6 @@ def main() -> None:
     sys.path.insert(0, os.path.join(HERE, "..", "servers", "engine"))
     import server  # noqa: PLC0415
     from models import Campaign  # noqa: PLC0415
-    import seed_gfx_camp as camp  # noqa: PLC0415  (reuse the camp_clearing_night grid — ONE camp source)
 
     server.save_campaign(Campaign(
         id=CID, title="Walkable Slice smoke",
@@ -167,8 +196,9 @@ def main() -> None:
     for neighbour in (camp_loc["id"], tavern_loc["id"]):
         if neighbour not in c.locations[crypt_loc["id"]].connections:
             c.locations[crypt_loc["id"]].connections.append(neighbour)
-    camp_grid = camp._build_camp_grid(CID, camp_loc["id"])
-    camp_grid.spawns = {"party": [(8, 9), (7, 9)], "npcs": [(9, 7)]}
+    # the camp carries the canonical grid + its RETURN door to the crypt (no more dead end) + spawns
+    # moved off the extended firewood footprint — see build_camp_grid.
+    camp_grid = build_camp_grid(camp_loc["id"])
     c.locations[camp_loc["id"]].scene_grid = camp_grid
     # the tavern carries its own world-true grid + a back-wall door_cell returning to the crypt.
     tavern_grid = build_tavern_grid(tavern_loc["id"])
