@@ -115,6 +115,13 @@ public class CombatSurfaceClient : MonoBehaviour
     // parley) instead of a walk. cellKey -> npc id. Rebuilt each ParseSurfaceExtras from the stage block.
     readonly System.Collections.Generic.Dictionary<int, string> _npcAtCell = new System.Collections.Generic.Dictionary<int, string>();
 
+    // WALKABLE-SLICE-V1 (Option A): the rest-mode STAGE cast (party + present NPCs), parsed from the surface
+    // `stage` block into the SAME Tok shape combat tokens use, so ApplySurf renders them through the ONE
+    // spawn/reposition/despawn+glide pipeline — the owner must SEE his character stand, walk, and cross a
+    // door in rest, not just in combat. Empty in combat (top-level `tokens` drive it there); the shared PC
+    // ids mean a rest<->combat transition GLIDES the same actor instead of blinking a new one.
+    readonly System.Collections.Generic.List<Tok> _stageCast = new System.Collections.Generic.List<Tok>();
+
     // #anim-combat: the actor's ANIM_REF (moveset) fbx (registry anim_ref), so a walk/attack/hit clip that
     // lives in a SEPARATE moveset fbx rather than the model fbx is still found. Mirrors _fbxOf; both feed
     // FindOwnClip. (For the wave-2 cast the walk clip is embedded in the MODEL fbx — e.g. goblin.fbx carries
@@ -323,6 +330,9 @@ public class CombatSurfaceClient : MonoBehaviour
         // WALKABLE-SLICE-V1 (item 6): load the OPTIONAL plate registry (per-location backdrop swap). Absent
         // -> no swap, the scene's baked plate stands (byte-identical to pre-W5e).
         LoadPlateManifest();
+        // Option A (item 3): hide the scene's baked mannequins — the client now renders its own cast in rest
+        // AND combat, so a baked actor would double-render / linger T-posed beside the live cast.
+        HideBakedCast();
 
         Debug.Log("[CSC] start: campaign=" + CampaignId + " url=" + ViewerUrl + " overlay=" + _overlayOn + " onboard=" + _onboard);
         StartCoroutine(PollLoop());
@@ -455,6 +465,7 @@ public class CombatSurfaceClient : MonoBehaviour
                 _restMode = (stage.ContainsKey("mode") ? stage["mode"] as string : "") == "rest";
                 _restMoverId = "";
                 _npcAtCell.Clear();                                            // WALKABLE-SLICE-V1 (item 2): rebuilt from this stage
+                _stageCast.Clear();                                            // Option A: rebuilt from this stage
                 if (_restMode && stage.ContainsKey("tokens") && stage["tokens"] is System.Collections.Generic.List<object> stoks)
                 {
                     foreach (var e in stoks)
@@ -462,6 +473,19 @@ public class CombatSurfaceClient : MonoBehaviour
                         var tk = e as System.Collections.Generic.Dictionary<string, object>; if (tk == null) continue;
                         string role = tk.ContainsKey("rest_role") ? tk["rest_role"] as string : "";
                         string id = tk.ContainsKey("id") ? tk["id"] as string : "";
+                        // Option A: render EVERY present stage token (party + npc) as a client actor, through the
+                        // same spawn/pose/ground pipeline combat tokens use. Stage tokens carry name/team/kind
+                        // (server _emit) so SpawnActor resolves the right model; rest cast are all team "ally".
+                        if (!string.IsNullOrEmpty(id) && tk.ContainsKey("x") && tk.ContainsKey("y"))
+                        {
+                            _stageCast.Add(new Tok {
+                                id = id,
+                                name = tk.ContainsKey("name") ? tk["name"] as string : id,
+                                team = tk.ContainsKey("team") ? tk["team"] as string : "ally",
+                                x = System.Convert.ToInt32(tk["x"]), y = System.Convert.ToInt32(tk["y"]),
+                                isCurrent = false, hp = 1, hpMax = 1,
+                            });
+                        }
                         // WALKABLE-SLICE-V1 (item 2): map every present NPC (rest_role:"npc") to its cell so a
                         // click there opens a parley_approach instead of a walk (browser: screen-combat.jsx:373).
                         if (role == "npc" && !string.IsNullOrEmpty(id) && tk.ContainsKey("x") && tk.ContainsKey("y"))
@@ -584,12 +608,18 @@ public class CombatSurfaceClient : MonoBehaviour
         // #1318/#1433: honor the surface's own grid extents (rest-mode rooms can be non-14x11) so
         // cellToWorld stays aligned to what paint_combat_v1 baked. Absent ⇒ the 14x11 default.
         if (s.grid != null && s.grid.cols > 0 && s.grid.rows > 0) { Cols = s.grid.cols; Rows = s.grid.rows; }
+        // Option A: combat surfaces carry the cast in top-level `tokens`; a REST surface carries it under
+        // `stage` (parsed to _stageCast). Render whichever is active through the SAME spawn/reposition/
+        // despawn+glide pipeline, so the party is visible and walkable in rest and a rest<->combat transition
+        // (shared PC ids) glides the same actor instead of blinking a new one.
+        bool isCombat = s.tokens.Length > 0;
+        var cast = isCombat ? s.tokens : (_restMode ? _stageCast.ToArray() : System.Array.Empty<Tok>());
         // #1441: rebuild the occupied-cell set (every token's cell) for client-side click pre-validation.
         // #Phase3: also rebuild the foe-cell set so the overlay hover reads red on an attackable cell.
         _occupied.Clear(); _foeCells.Clear(); _foeIds.Clear();
-        foreach (var t in s.tokens) if (t != null) { int k = CellKey(t.x, t.y); _occupied.Add(k); if (t.team == "foe") { _foeCells.Add(k); if (!string.IsNullOrEmpty(t.id)) _foeIds.Add(t.id); } }
+        foreach (var t in cast) if (t != null) { int k = CellKey(t.x, t.y); _occupied.Add(k); if (t.team == "foe") { _foeCells.Add(k); if (!string.IsNullOrEmpty(t.id)) _foeIds.Add(t.id); } }
         var present = new System.Collections.Generic.HashSet<string>();
-        foreach (var t in s.tokens)
+        foreach (var t in cast)
         {
             // #anim-combat P1 fix: a surface-listed token is ALWAYS live to the client — hp<=0 while listed
             // means DOWNED (prone on the field, revivable), never a skip. Removal from the surface is the
@@ -633,10 +663,29 @@ public class CombatSurfaceClient : MonoBehaviour
         // collapse (prone, revivable — removal from the surface is the only terminal signal). HP bars
         // are (re)created for the living; the active-turn ring pulse is anchored on _currentId (Update drives
         // the per-frame billboard + pulse).
-        ApplyCombat(s);
+        if (isCombat) ApplyCombat(s);
+        else { _currentId = ""; _currentName = ""; RestNamePlates(cast); }   // Option A: rest cast — name plates, no HP/turn
         // #Phase3: keep the overlay in sync with the new surface — rebuild the quad pool if the grid
         // extents changed (rest rooms are non-14x11), then repaint per-cell tints for the new occupancy.
         if (_overlayOn) { EnsureOverlay(); RefreshOverlayColors(); }
+    }
+
+    // Option A: the rest cast gets a #1484 name plate (no HP bar) under onboarding/playtest — mirrors combat's
+    // gated plates so beauty captures stay clean. UpdateHpBars rides + prunes them when the actor despawns.
+    void RestNamePlates(Tok[] cast)
+    {
+        if (!_onboard) return;
+        foreach (var t in cast) if (t != null && !string.IsNullOrEmpty(t.id)) EnsureNamePlate(t.id, FindActor(t.id));
+    }
+
+    // Option A (item 3): when the client renders its OWN cast (rest AND combat), hide the scene's BAKED
+    // mannequins so there is no double-render / stale T-posed actor beside the live cast. Runtime-only —
+    // SetActive(false) never touches the scene asset, so editor-only workflows that rely on the baked cast
+    // are preserved. Runs once at Start, before any runtime spawn, so every Actor_* present is baked.
+    void HideBakedCast()
+    {
+        foreach (var tr in GameObject.FindObjectsOfType<Transform>())
+            if (tr != null && tr.gameObject.name.StartsWith("Actor_")) tr.gameObject.SetActive(false);
     }
 
     // #anim-combat: the ported verb map, driven off the surface hp fields + isCurrent (engine truth only).
@@ -984,6 +1033,12 @@ public class CombatSurfaceClient : MonoBehaviour
         var prefab = LoadAsset<GameObject>(fbx);
         if (prefab == null) { Debug.LogWarning("[CSC] spawn MISSING model " + fbx + " for token " + id + " (bundle stale?)"); return null; }
 
+        // #idle-fix: register the model + moveset fbx BEFORE the idle pose so the idle resolver (FindOwnClip)
+        // can search this actor's OWN clips in EITHER source — a rigged char whose idle lives in a separate
+        // anim_*.fbx (registry anim_ref) poses correctly instead of falling through to the donor/T-pose.
+        _fbxOf[id] = fbx;
+        _animOf[id] = (aref != null && aref.Length > 2) ? aref[2] : "";
+
         string nm = "Actor_" + id;
         var existing = GameObject.Find(nm); if (existing != null) Object.DestroyImmediate(existing);
         var go = (GameObject)Object.Instantiate(prefab); go.name = nm;
@@ -1011,15 +1066,17 @@ public class CombatSurfaceClient : MonoBehaviour
         // Pose to a neutral idle for the VISUAL now that scale is locked: prefer an embedded 'idle' clip
         // on the model; else, for a clipless HUMANOID rig, one-shot retarget the goblin donor idle.
         bool posedByClip = false;
-        var b2 = Bundle();
-        if (b2 != null)
+        var idleClip = FindOwnClip(id, "idle");   // #idle-fix: idle from model OR moveset (dual-source)
+        if (idleClip != null) { SampleClipRuntime(go, idleClip, 0f); posedByClip = true; }
+        else
         {
-            foreach (var clip in b2.LoadAssetWithSubAssets<AnimationClip>(fbx))
-            {
-                if (clip == null || clip.name.StartsWith("__")) continue;
-                if (clip.name.ToLower().Contains("idle")) { SampleClipRuntime(go, clip, 0f); posedByClip = true; break; }
-                if (!posedByClip) { SampleClipRuntime(go, clip, 0f); posedByClip = true; }
-            }
+            var b2 = Bundle();
+            if (b2 != null)
+                foreach (var clip in b2.LoadAssetWithSubAssets<AnimationClip>(fbx))
+                {
+                    if (clip == null || clip.name.StartsWith("__")) continue;
+                    SampleClipRuntime(go, clip, 0f); posedByClip = true; break;   // first non-__ model clip
+                }
         }
         if (!posedByClip)
         {
@@ -1061,12 +1118,9 @@ public class CombatSurfaceClient : MonoBehaviour
         MakeGroundQuad(nm + "_Ring", p, 0.06f, 2.6f, RingTex(), foe ? new Color(1f, 0.13f, 0.10f, 1f) : new Color(0.4f, 0.95f, 1f, 1f), 1955);
 
         _spawned.Add(id);
-        // #1441: remember the fbx (so a glide can play this actor's own walk clip) and seed the cell (so
-        // the first poll doesn't spuriously glide a just-spawned actor already on its engine cell).
-        _fbxOf[id] = fbx;
-        // #anim-combat: remember the moveset fbx (walk/attack clips may live there, not in the model) and the
-        // head-top offset for the HP bar (height is the scale target; +margin clears the silhouette).
-        _animOf[id] = (aref != null && aref.Length > 2) ? aref[2] : "";
+        // #1441/#anim-combat: _fbxOf + _animOf were registered up-front (before the idle pose). Seed the cell
+        // (so the first poll doesn't spuriously glide a just-spawned actor already on its engine cell) and the
+        // head-top offset for the HP/name plate (height is the scale target; +margin clears the silhouette).
         _topOf[id] = height + 1.4f;
         _cellOf[id] = new[] { cx, cy };
         Debug.Log("[CSC] spawned " + nm + " model=" + fbx + " x" + sc.ToString("F2") + " @cell(" + cx + "," + cy + ") rends=" + rends.Length);
@@ -1201,6 +1255,11 @@ public class CombatSurfaceClient : MonoBehaviour
         if (!_cellOf.TryGetValue(id, out cur))
         {
             _cellOf[id] = new[] { cx, cy };
+            // #idle-fix: a FIRST-SIGHTED actor that did not come through SpawnActor (a baked Actor_<id>, or
+            // one relocated by the engine before any glide) was only GROUNDED here — never idle-POSED — so a
+            // clipless humanoid rendered its raw bind (T) pose. Pose idle FIRST, then ground the posed bounds
+            // (feet -> FloorY), mirroring SpawnActor's pose->ground order so the actor also can't float.
+            PoseIdle(a.gameObject);
             GroundSnap(a, cx, cy);
             return;
         }
@@ -1219,6 +1278,25 @@ public class CombatSurfaceClient : MonoBehaviour
     // re-centered X/Z, so any actor whose pivot Y wasn't already grounded (baked actors; post-retarget
     // bounds shifts) floated after a move — this re-grounds Y on every reposition.
     void GroundSnap(Transform a, int cx, int cy) { MoveActorAndShadows(a, GroundedPivot(a, cx, cy)); }
+
+    // #idle-fix (WALKABLE-SLICE-V1 follow-up): after a runtime plate swap (a location change), SETTLE every
+    // cast member to a grounded idle on the NEW plate. A cross-room location change repositions the whole
+    // cast at once; a glide that is still in flight (or interrupted by the rapid re-fetch a cross_door
+    // triggers) can leave a clipless humanoid frozen in its bind (T) pose and/or floating off the floor.
+    // Stop any in-flight glide, then re-pose idle and re-ground (feet -> FloorY) — the SAME pose->ground the
+    // glide arrival uses. Presentation-only; a DOWNED (prone) combatant is left as-is. Called from ApplyPlate.
+    void SettleCastIdleGrounded()
+    {
+        foreach (var kv in _cellOf)
+        {
+            var a = FindActor(kv.Key); if (a == null) continue;
+            if (_downed.Contains(kv.Key)) continue;                 // a downed combatant stays prone
+            if (_glide.TryGetValue(kv.Key, out var g) && g != null) { StopCoroutine(g); _glide[kv.Key] = null; }
+            KillWalkGraph(kv.Key);                                   // the stopped glide can't destroy its own graph
+            PoseIdle(a.gameObject);
+            GroundSnap(a, kv.Value[0], kv.Value[1]);
+        }
+    }
 
     // The pivot position that lands the actor's posed bounds-center on (cx,cy) with feet (bb.min.y) on
     // FloorY — mirrors SpawnActor's ground+center, via the static Measure (BakeMesh, scale-correct).
@@ -1330,16 +1408,20 @@ public class CombatSurfaceClient : MonoBehaviour
     {
         string nm = go.name;
         string id = nm.StartsWith("Actor_") ? nm.Substring(6) : nm;
-        string fbx; _fbxOf.TryGetValue(id, out fbx);
+        // #idle-fix: resolve an 'idle' clip from EITHER the model fbx OR the separate moveset (_animOf) — the
+        // same dual-source FindOwnClip the walk glide uses — so a rigged char whose idle lives in anim_idle.fbx
+        // poses correctly instead of falling straight through to the donor/T-pose.
         bool posed = false;
+        var idleClip = FindOwnClip(id, "idle");
+        if (idleClip != null) { SampleClipRuntime(go, idleClip, 0f); posed = true; }
+        string fbx; _fbxOf.TryGetValue(id, out fbx);
         var b = Bundle();
-        if (b != null && !string.IsNullOrEmpty(fbx))
+        if (!posed && b != null && !string.IsNullOrEmpty(fbx))
         {
             foreach (var clip in b.LoadAssetWithSubAssets<AnimationClip>(fbx))
             {
                 if (clip == null || clip.name.StartsWith("__")) continue;
-                if (clip.name.ToLower().Contains("idle")) { SampleClipRuntime(go, clip, 0f); posed = true; break; }
-                if (!posed) { SampleClipRuntime(go, clip, 0f); posed = true; }
+                SampleClipRuntime(go, clip, 0f); posed = true; break;   // first non-__ model clip
             }
         }
         if (!posed)
@@ -2597,6 +2679,9 @@ public class CombatSurfaceClient : MonoBehaviour
         var ls = bd.transform.localScale;
         bd.transform.localScale = new Vector3(ow, oh, ls.z == 0f ? 1f : ls.z);
         Debug.Log("[CSC] plate swapped -> " + entry.plate + " (" + tex.width + "x" + tex.height + ", loc=" + _locId + ")");
+        // #idle-fix: the location just changed — settle the whole cast to a grounded idle on the new plate so
+        // no actor renders a bind (T) pose or floats after the cross-room reposition (the taste-pass defect).
+        SettleCastIdleGrounded();
         return true;
     }
 }
