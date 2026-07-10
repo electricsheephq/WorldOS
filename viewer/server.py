@@ -1624,7 +1624,9 @@ def _resolve_start_combat(campaign_id: str, move: dict) -> dict:
             continue
         if loc_id and ch.location_id != loc_id:
             continue
-        if str(getattr(ch, "kind", "")).lower() in {"npc", "companion", "player"}:
+        # Include present monsters/foes too — "start a fight in place" needs the hostiles in the room, not
+        # just the party + companions (CharacterKind is player|companion|npc|monster; a monster is the foe).
+        if str(getattr(ch, "kind", "")).lower() in {"npc", "companion", "player", "monster"}:
             present.append(cid)
             seen.add(cid)
     if len(present) < 2:

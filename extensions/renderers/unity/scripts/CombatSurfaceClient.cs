@@ -1875,14 +1875,18 @@ public class CombatSurfaceClient : MonoBehaviour
                 var root = Json.Parse(req.downloadHandler.text) as System.Collections.Generic.Dictionary<string, object>;
                 if (root != null)
                 {
-                    // header/name: prefer an explicit actor/npc name, else keep the cached one.
-                    var actor = root.ContainsKey("actor") ? root["actor"] as System.Collections.Generic.Dictionary<string, object> : null;
-                    string hn = actor != null && actor.ContainsKey("name") ? actor["name"] as string : (root.ContainsKey("npc_name") ? root["npc_name"] as string : null);
+                    // header/name: /parley-surface carries `npc` = {id, name, attitude, disposition, ...}
+                    // (verified against build_parley_surface). `actor` is the PC NAME string (not a dict) and
+                    // `free_form` is a BOOL flag (not a prompt), so neither carries a header/opening line —
+                    // read npc.name, else keep the cached stage-token name.
+                    var npc = root.ContainsKey("npc") ? root["npc"] as System.Collections.Generic.Dictionary<string, object> : null;
+                    string hn = npc != null && npc.ContainsKey("name") ? npc["name"] as string : null;
                     if (!string.IsNullOrEmpty(hn)) _parleyHeader = hn;
-                    // a free-form prompt / opening line if the surface carries one.
-                    var ff = root.ContainsKey("free_form") ? root["free_form"] as System.Collections.Generic.Dictionary<string, object> : null;
-                    string prompt = ff != null && ff.ContainsKey("prompt") ? ff["prompt"] as string : (root.ContainsKey("prompt") ? root["prompt"] as string : null);
-                    _parleyBody = string.IsNullOrEmpty(prompt) ? ("You approach " + _parleyHeader + ". What do you say?") : prompt;
+                    // disposition tints the opening line a touch; the free-form conversation happens via the
+                    // reply field (POST /move say). No streamed opening line on the surface -> a generic invite.
+                    string disp = npc != null && npc.ContainsKey("disposition") ? npc["disposition"] as string : "";
+                    _parleyBody = "You approach " + _parleyHeader
+                        + (string.IsNullOrEmpty(disp) ? "" : " (" + disp + ")") + ". What do you say?";
                 }
             }
             catch (System.Exception e) { Debug.LogWarning("[CSC] parley-surface parse: " + e.Message); _parleyBody = "You approach " + _parleyHeader + "."; }
