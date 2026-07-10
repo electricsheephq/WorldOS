@@ -4,8 +4,9 @@
 The playable PoE2 3D-on-2D combat-demo seed. Pins the well-known campaign id the box
 renderer hardcodes (paint_combat_v1.cs / paint_backdrop_p0.cs CID="camp_gfxdemo01"),
 seats a fighter PC + a goblin on a 14x11 grid whose OBSTACLE cells match the crypt's
-painted-prop occluders on the deployed `crypt_dense_v1.png` plate (pillarL(2,4) /
-pillarR(9,9) / sarcophagus(3,8)+(4,8) — see #1396), places hero@(6,6) / goblin@(9,5),
+painted-prop occluders on the deployed `crypt_armb_iter3_v1.png` plate (pillarL(2,4) /
+pillarR(9,9) / sarcophagus cols 4-9 x rows 3-7 — see #1396, re-calibrated #1386
+PROBE-PLACEMENT), places hero@(11,3) / goblin@(2,7),
 and starts combat. After this, GET /combat-surface?campaign=camp_gfxdemo01 returns real
 engine cells (positionAuthority='grid') for the READ-ONLY renderer to consume + the M-B
 bridge routes movement around exactly the painted props.
@@ -15,7 +16,7 @@ bridge routes movement around exactly the painted props.
 
 #1396 content fix (2026-07-08): the ORIGINAL cells here — pillarL(2,3) / pillarR(11,3) /
 sarcophagus(7,1) — matched the OLDER `crypt_firelit_v2` greybox-conditioned plate
-(`paint_backdrop_p0.cs` OCC_ cells), but the currently-deployed `crypt_dense_v1.png` went
+(`paint_backdrop_p0.cs` OCC_ cells), but the then-deployed `crypt_dense_v1.png` went
 through a later Gemini polish+populate repaint pass (CANONICAL.md) that recomposed the
 room WITHOUT re-deriving prop cells from the greybox — so the engine's impassable set
 drifted from the paint (#1396: "actor on the sarcophagus"). The cells below were
@@ -27,6 +28,26 @@ camera model), then the SAME projection was grid-overlaid on `qa/evidence/1392/*
 (live captures of `crypt_dense_v1.png`) to read off where the pillars/sarcophagus
 actually sit in the paint. Engine untouched; this is a content-only re-authoring.
 
+PROBE-PLACEMENT re-calibration (2026-07-10, #1386): the PLATE SPRINT ADOPT-CRYPT lane
+promoted `crypt_armb_iter3_v1.png` as the new canonical crypt plate (PR #1489) — a
+flux-depth-controlnet regeneration that the content-leak check confirmed keeps the ROOM
+composition near-verbatim (NCC 0.93-0.96, same pillar/sarcophagus/staircase placement),
+but has NO committed `qa/room_manifests/*.cells.json` (the plate-drift gate, #1462,
+never ran against it — there's no manifest for this seed's hand-authored grid, only for
+the unrelated `seed_gfx_crypt_2room.py`/camp fixtures). Re-running the SAME #1396
+grid-overlay recipe against the deployed plate (pulled from the box,
+`Assets/painterly/backdrops/crypt_armb_iter3_v1.png`, itself 1344x768 == the contract
+resolution, so the overlay is pixel-exact with no rescale) found the pillars UNCHANGED
+(2,4)/(9,9) still register correctly, but the sarcophagus repaint is noticeably LARGER
+on the new plate — its silhouette (lid + reclining effigy + wood-panel base) now spans
+roughly cols 4-9 / rows 3-7, which swallows the old hero(6,6)/goblin(9,5) spawn cells
+entirely (the "actors standing on the tomb" bug this fixes, qa/evidence/plate-sprint/
+adopt-crypt/cohesion-frames/). Fixed by (1) widening SARCOPHAGUS_CELLS to its true
+re-measured footprint and (2) relocating HERO_CELL/GOBLIN_CELL to clear floor cells
+outside it (the tomb now occupies most of the room's center, so the old tight
+"flanking the tomb" spawn no longer fits) — same content-only, engine-untouched
+re-authoring as #1396, just a bigger prop this time.
+
 Engine = SOLE WRITER: writes only via server.* engine calls + save_campaign. Additive
 (a new seed; touches no existing seed/contract).
 """
@@ -37,14 +58,20 @@ import sys
 
 CID = "camp_gfxdemo01"
 GRID_W, GRID_H = 14, 11
-# Prop footprints re-calibrated to the DEPLOYED crypt_dense_v1.png plate (#1396). Each entry is a
-# footprint (list of [c, r] cells); OBSTACLES flattens them for the printed summary below.
+# Prop footprints re-calibrated to the DEPLOYED crypt_armb_iter3_v1.png plate (#1386
+# PROBE-PLACEMENT, 2026-07-10). Each entry is a footprint (list of [c, r] cells); OBSTACLES
+# flattens them for the printed summary below.
 PILLAR_L_CELLS = [[2, 4]]
 PILLAR_R_CELLS = [[9, 9]]
-SARCOPHAGUS_CELLS = [[3, 8], [4, 8]]  # ~2-cell footprint under the painted sarcophagus box
+# the re-styled tomb (lid + effigy + wood-panel base) now covers a 6x5 block, not the old
+# ~2-cell footprint (#1396) — re-measured by grid-overlaying the contract camera projection
+# onto the deployed plate (see the module docstring).
+SARCOPHAGUS_CELLS = [[c, r] for c in range(4, 10) for r in range(3, 8)]
 OBSTACLES = PILLAR_L_CELLS + PILLAR_R_CELLS + SARCOPHAGUS_CELLS
-HERO_CELL = [6, 6]
-GOBLIN_CELL = [9, 5]
+# relocated off the enlarged sarcophagus footprint (was hero(6,6)/goblin(9,5), both now
+# INSIDE SARCOPHAGUS_CELLS) — clear floor cells re-verified against the deployed plate.
+HERO_CELL = [11, 3]
+GOBLIN_CELL = [2, 7]
 
 
 def _build_crypt_grid(cid: str, location_id: str = ""):
