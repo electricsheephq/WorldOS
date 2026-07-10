@@ -62,7 +62,7 @@ def test_camp_manifest_cells_match_rest_fixture_seed():
     manifest_cells = {tuple(c) for p in m["props"] for c in p["cells"]}
     seed_cells = {tuple(c) for c in camp.OBSTACLES}
     assert manifest_cells == seed_cells, "manifest prop cells drifted from the authored seed layout"
-    assert len(m["props"]) == 12  # 4 trees + 2 rocks + campfire + 3 bedrolls + log + crate
+    assert len(m["props"]) == 12  # fire + firewood + 4 crates + 2 walls + posts + shelter + 2 bedrolls
 
 
 def test_committed_manifests_match_the_seeds():
@@ -103,8 +103,8 @@ def test_whole_plate_two_cell_shift_is_caught(tmp_path):
 
 def test_single_prop_move_is_localized(tmp_path):
     """Vacate ONE prop's authored cells (paint floor over the campfire) and re-gate: the gate must
-    FAIL and pin the drift to THAT prop while an untouched prop (the log seat) still PASSes — proving
-    the gate localizes drift per-cell, not just globally."""
+    FAIL and pin the drift to THAT prop while an untouched prop (the back-right stone wall) still PASSes —
+    proving the gate localizes drift per-cell, not just globally."""
     arr = drift.load_luma(_CAMP_PLATE).copy()
     cols, rows = camp.GRID_W, camp.GRID_H
     fire_bb = [int(round(v)) for v in drift.project_cell_bbox(camp.CAMPFIRE_CELLS, cols, rows)]
@@ -120,7 +120,7 @@ def test_single_prop_move_is_localized(tmp_path):
     assert not res.passed
     by_id = {p["id"]: p["status"] for p in res.props}
     assert by_id["campfire"] == "DRIFT", "the moved prop must be flagged"
-    assert by_id["log_seat"] == "PASS", "an untouched prop must not be a false positive"
+    assert by_id["wall_br"] == "PASS", "an untouched prop must not be a false positive"
 
 
 def test_ncc_min_sits_in_the_calibration_gap():

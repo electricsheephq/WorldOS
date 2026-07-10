@@ -53,34 +53,42 @@ def test_scene_grid_has_zero_validate_violations():
 
 
 def test_sarcophagus_footprint_is_impassable():
-    """OWNER PLAYTEST #4 correction (#1505, re-measured from #1386): the sarcophagus's impassable
-    footprint is the coffin's FLOOR-CONTACT cells on the deployed crypt_armb_iter3_v1.png plate —
-    cols 2-7 x rows 7-9 — so no actor stands ON the painted box. #1386 pinned the coffin's tall
-    SILHOUETTE (cols3-9 x rows3-7, the open floor BEHIND the coffin under the iso projection) and
-    left the true floor footprint walkable — the exact reason the owner walked his character onto
-    the painted tomb. Cells derived by point-in-polygon of each cell's grounded projection vs the
-    coffin's measured floor parallelogram (verified greybox rig, <1e-3 vs Unity)."""
+    """OWNER PLAYTEST #5 collision-coherence re-measurement (2026-07-10): the sarcophagus's impassable
+    footprint is the coffin's FLOOR-CONTACT cells on the deployed crypt_armb_iter3_v1.png plate — the
+    box body, cols 3-7 x rows 6-8 (irregular) — so no actor stands ON the painted box AND the open lit
+    floor to the tomb's RIGHT stays walkable. The prior #1505 block (cols2-7 x rows7-9) sat down-left of
+    the coffin and blocked that open floor (the owner "cannot walk right of the tomb" report); the #1386
+    block (cols3-9 x rows3-7) was the coffin's tall up-screen SILHOUETTE. Cells derived by projecting the
+    grid onto the deployed plate (greybox_render_headless world_to_screen, <1e-3 vs Unity) and
+    point-in-polygon of the coffin's measured floor parallelogram, then eyeball-confirmed."""
     grid = _grid()
     imp = impassable_cells(grid, sg.GRID_W, sg.GRID_H)
-    assert sg.SARCOPHAGUS_CELLS == [[c, r] for c in range(2, 8) for r in range(7, 10)]
+    assert sg.SARCOPHAGUS_CELLS == [
+        [4, 6], [5, 6], [6, 6], [7, 6],
+        [3, 7], [4, 7], [5, 7], [6, 7], [7, 7],
+        [4, 8], [5, 8], [6, 8],
+    ]
     for cell in sg.SARCOPHAGUS_CELLS:
-        assert cell in imp, f"sarcophagus cell {cell} must be impassable (paint/grid registration gap, #1505)"
+        assert cell in imp, f"sarcophagus cell {cell} must be impassable (paint/grid registration gap)"
+    # the open lit floor RIGHT of the tomb (between the coffin and the right pillar) must be WALKABLE
+    # again — the exact cells the drifted #1505 block trapped and the owner could not cross.
+    for cell in ([8, 7], [9, 7], [8, 8], [9, 8]):
+        assert cell not in imp, f"floor right of the tomb {cell} must be walkable (owner playtest #5)"
 
 
 def test_pillars_match_painted_cells():
-    """Both pillar footprints must sit on their re-calibrated painted cells, not the stale
-    crypt_firelit_v2 positions (2,3)/(11,3)."""
+    """OWNER PLAYTEST #5: each pillar footprint is its painted 2-cell floor base, not the single stale
+    cell (2,4)/(9,9) that missed the base entirely and let the owner walk THROUGH the columns."""
     grid = _grid()
     imp = impassable_cells(grid, sg.GRID_W, sg.GRID_H)
-    assert sg.PILLAR_L_CELLS == [[2, 4]]
-    assert sg.PILLAR_R_CELLS == [[9, 9]]
-    assert [2, 4] in imp
-    assert [9, 9] in imp
-    # the STALE pre-#1396 prop cells must no longer be authored as prop footprints.
+    assert sg.PILLAR_L_CELLS == [[3, 3], [3, 4]]
+    assert sg.PILLAR_R_CELLS == [[8, 9], [9, 9]]
+    for cell in sg.PILLAR_L_CELLS + sg.PILLAR_R_CELLS:
+        assert cell in imp, f"pillar base cell {cell} must be impassable (owner walk-through fix)"
+    # the STALE single-cell + pre-#1396 prop cells must no longer be authored as prop footprints.
     prop_cells = {(c0, r0) for prop in grid.props for (c0, r0) in prop.cells}
-    assert (2, 3) not in prop_cells
-    assert (11, 3) not in prop_cells
-    assert (7, 1) not in prop_cells
+    for stale in [(2, 4), (2, 3), (11, 3), (7, 1)]:
+        assert stale not in prop_cells
 
 
 def test_hero_and_goblin_spawn_cells_stay_walkable():
@@ -91,10 +99,10 @@ def test_hero_and_goblin_spawn_cells_stay_walkable():
     imp = impassable_cells(grid, sg.GRID_W, sg.GRID_H)
     assert sg.HERO_CELL not in imp
     assert sg.GOBLIN_CELL not in imp
-    # the coffin's front floor-footprint cells (where the OLD walkslice party at r=8 stood ON the
-    # painted tomb, #1505) — pin a couple so a future footprint edit can't silently re-open them.
+    # the coffin's front floor-footprint cells — pin a couple so a future footprint edit can't silently
+    # re-open them (an actor standing ON the painted tomb).
     assert [6, 8] in imp
-    assert [4, 9] in imp
+    assert [5, 7] in imp
 
 
 def test_obstacles_list_matches_authored_props():
