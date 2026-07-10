@@ -1,0 +1,40 @@
+{
+  "panel": "ring-cohesion #1524 — blind relative A/B, 5 scorers (sonnet), 2026-07-11",
+  "axis": "character-ground cohesion (do actors belong in the painted world vs carry a UI overlay)",
+  "blind_mapping": {
+    "img_alpha": "AFTER — new subtle contact decal (my 3 fixes), crypt plate, #1525 campfire on",
+    "img_beta":  "rings-OFF baseline (#1515 m15_rerun_cohesion_6actors_noring.png = the 4.0 anchor), pre-campfire",
+    "img_gamma": "matched BEFORE — old bright ellipse rings, crypt plate, #1525 campfire on"
+  },
+  "scores": [
+    {"scorer": 1, "alpha": 5, "beta": 6, "gamma": 2},
+    {"scorer": 2, "alpha": 3, "beta": 8, "gamma": 2},
+    {"scorer": 3, "alpha": 3, "beta": 8, "gamma": 1},
+    {"scorer": 4, "alpha": 4, "beta": 8, "gamma": 2},
+    {"scorer": 5, "alpha": 3, "beta": 7, "gamma": 1}
+  ],
+  "median": {"alpha": 3, "beta": 8, "gamma": 2},
+  "mean":   {"alpha": 3.6, "beta": 7.4, "gamma": 1.6},
+  "ranking_unanimous": "beta (rings-off) > alpha (my decal) > gamma (bright rings)  [5/5]",
+  "verdict": {
+    "vs_bright_rings_baseline": "BEATS decisively (unanimous, large margin) — the loud UI selection ring is eliminated",
+    "vs_rings_off_baseline": "DOES NOT beat — decal faction rim still reads as a faint blue-ish glow/halo; rings-off (no marker) is more cohesive",
+    "gate_beat_4.0_rings_off_decisively": false,
+    "aspiration_6.0": false,
+    "improved_over_shipping_status_quo": true
+  },
+  "residuals_flagged_by_panel": [
+    "decal faction rim still reads as a faint cool glow/halo (a UI tell dressed down, not gone) — 4/5 scorers",
+    "actors still read as dark/cool cutouts against the warm plate — the conservative WARM_AMBIENT_FLOOR=0.35 did not visibly land at combat scale"
+  ],
+  "next_iteration": [
+    "mute the faction rim much further: drop its saturation/alpha, or replace the soft ring with a tiny faction-colored pip/notch at the feet rather than a full soft rim; keep the neutral dark grounding disc",
+    "strengthen the warm ambient floor: raise WARM_AMBIENT_FLOOR above 0.35 and lift the far-actor _KeyStrength/_AmbientLift so combat-distance actors visibly warm up",
+    "note: rings-OFF is the cohesion ceiling but is not shippable (loses faction ID) — the design goal is faction ID at near-zero cohesion cost"
+  ],
+  "caveats": [
+    "absolute panel numbers are instrument-relative (this bespoke A/B instrument scored the rings-off anchor ~7-8 vs its #1515 4.0 anchor — cross-panel drift); ONLY the within-panel ranking + deltas are citable, per the visual-critic calibration protocol",
+    "alpha (AFTER) carried the #1525 campfire advantage and STILL lost to the pre-campfire rings-off beta — strengthens the finding that the decal halo is the dominant negative signal",
+    "not logged to qa/scores_db.py: this was a bespoke relative A/B (3 conditions, 1 axis), not the standard 7-lens visual panel the schema expects"
+  ]
+}
