@@ -1,7 +1,7 @@
 {
  "manifest_version": 1,
  "room": "camp_clearing_night_v2",
- "recipe_key": "camp_clearing_night",
+ "recipe_key": "camp_clearing_night_v2_legacy",
  "derivation": "measured",
  "source_seed": "qa/seed_gfx_camp.py",
  "source_plate": "qa/evidence/plate-audit/camp_clearing_night_v2.jpg",
