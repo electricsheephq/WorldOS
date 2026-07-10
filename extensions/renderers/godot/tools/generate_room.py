@@ -23,6 +23,13 @@ regeneratable on demand and the workflow is auditable.
   # byte-identical to the plain single-pass img2img above.
   python3 generate_room.py --room crypt --base-plate <png> --layered --out <dir>
 
+  # PLATE SPRINT Phase 3 (#1462 follow-up): --drift-gate is ON BY DEFAULT for a REGEN of a room that
+  # already has an adopted canonical_plate (room_recipes.json) with a committed drift manifest
+  # (qa/room_manifests/*.cells.json) — the freshly generated plate is checked against that manifest
+  # (qa/check_plate_drift.py) and the run fails loud on DRIFT. No-op (identical behavior) for any
+  # room without a canonical_plate/manifest yet. Opt out with --no-drift-gate.
+  python3 generate_room.py --room crypt --base-plate <png> --out <dir> --no-drift-gate
+
   # OPTIONAL --controlnet (W6.3b, #1470): condition the base/layout pass on the greybox as a
   # ControlNet depth|canny control image (Pipeline A, scenario_gen._cmd_controlnet, proven
   # 2026-06-22) instead of unconditioned img2img — locks the paint to the authored geometry so
@@ -63,6 +70,7 @@ from scenario_gen import (  # noqa: E402
     _download_job_assets,
     _upload_image,
     _write_meta,
+    guard_flux_lora_compat,
 )
 
 RECIPE_PATH = os.path.normpath(
@@ -295,6 +303,11 @@ def _resolve_controlnet(recipe: dict, args) -> dict | None:
         strength = _CONTROLNET_DEFAULT_STRENGTH
     loras = list(cn_block.get("loras") or [])
     lora_scales = list(cn_block.get("lora_scales") or [])
+    # Same guard scenario_gen.py's --controlnet command applies: reject loudly (before any credits are
+    # spent) if a recipe-declared controlnet LoRA is a known z-image-only LoRA being pointed at a flux
+    # model (HTTP 400 on the live API). The passive default above (loras=[] unless explicitly declared
+    # compatible) already avoids the common case; this catches a recipe author declaring it by mistake.
+    guard_flux_lora_compat(model, loras)
     return {"model": model, "modality": args.controlnet, "strength": float(strength),
             "loras": loras, "lora_scales": lora_scales}
 
@@ -490,6 +503,49 @@ def _build_base_pass_request(recipe: dict, args, positive: str, negative: str,
     return endpoint, body
 
 
+def _maybe_run_drift_gate(room: str, recipe: dict, plate_path: str, *, enabled: bool) -> None:
+    """Gate a freshly-generated plate against its committed drift manifest (qa/check_plate_drift.py),
+    PLATE SPRINT Phase 3 (#1462 follow-up). ON BY DEFAULT for a REGEN of a canonical room — one that
+    already carries an adopted `canonical_plate` in room_recipes.json, i.e. there's an established
+    baseline worth protecting from a prop sliding off its authored cell. A no-op for any room WITHOUT a
+    canonical_plate (a brand-new/ad-hoc room being iterated on has nothing to gate against yet) and for
+    any canonical room that has no committed qa/room_manifests/*.cells.json manifest — behavior is
+    IDENTICAL in both cases whether or not --drift-gate is set. `--no-drift-gate` opts out even when a
+    manifest is found. Fails LOUD (sys.exit) on DRIFT, matching this file's other guards.
+    """
+    if not enabled:
+        return
+    rc = recipe.get("rooms", {}).get(room, {})
+    canonical_plate = rc.get("canonical_plate")
+    if not canonical_plate:
+        return  # not-yet-adopted/ad-hoc room: nothing to gate against, behavior unchanged
+    qa_dir = os.path.normpath(os.path.join(_HERE, "..", "..", "..", "..", "qa"))
+    if qa_dir not in sys.path:
+        sys.path.insert(0, qa_dir)
+    try:
+        import check_plate_drift as _cpd  # noqa: E402
+    except Exception as e:
+        print("[generate_room] WARNING: --drift-gate enabled but check_plate_drift could not be "
+              "imported (%s); skipping the gate for this run." % e)
+        return
+    manifest_path = _cpd._find_manifest_for_recipe(room, canonical_plate, _cpd._MANIFESTS_DIR)
+    if manifest_path is None:
+        print("[generate_room] --drift-gate: room '%s' has a canonical_plate but no committed "
+              "manifest under %s — skipping (nothing to gate against)." % (room, _cpd._MANIFESTS_DIR))
+        return
+    manifest = _cpd.load_manifest(manifest_path)
+    result = _cpd.check_plate_drift(plate_path, manifest)
+    print("[generate_room] %s" % result.summary())
+    if not result.passed:
+        sys.exit(
+            "[generate_room] ERROR: --drift-gate DRIFT on room '%s' (manifest %s): %s. Use "
+            "--no-drift-gate to override once you've confirmed the drift is intentional (e.g. a "
+            "deliberate canonical_plate replacement, gated separately by check_plate_drift.py "
+            "gate-recipes before promotion)."
+            % (room, manifest_path.name, "; ".join(result.reasons))
+        )
+
+
 def main(argv=None) -> None:
     recipe = _load_recipe()
     d = recipe["defaults"]
@@ -547,6 +603,14 @@ def main(argv=None) -> None:
                          "+ the painterly LoRA @ its recipe scale), min_recall defaults to 0.95 (the gate the "
                          "best-sample selector targets). Default OFF; absent flag = byte-identical behavior. "
                          "Composes after the base pass (and after --layered if set).")
+    ap.add_argument("--drift-gate", dest="drift_gate", default=True, action=argparse.BooleanOptionalAction,
+                    help="PLATE SPRINT Phase 3 (#1462 follow-up): after generating the final plate, gate it "
+                         "against qa/check_plate_drift.py's committed manifest for this room (ON by default). "
+                         "Only fires for a REGEN of a room that already has an adopted `canonical_plate` in "
+                         "room_recipes.json AND a committed qa/room_manifests/*.cells.json manifest — a "
+                         "no-op (identical behavior) for any ad-hoc/not-yet-adopted room or a canonical room "
+                         "with no committed manifest. Fails loud (nonzero exit) on DRIFT. Use --no-drift-gate "
+                         "to opt out (e.g. a deliberate canonical_plate replacement in progress).")
     ap.add_argument("--dry-run", action="store_true", help="print the resolved request without calling the API")
     args = ap.parse_args(argv)
 
@@ -778,6 +842,12 @@ def main(argv=None) -> None:
         print("[generate_room] --style-pass OK — final styled plate: %s (recall=%s, %s)"
               % (final_sample["path"], final_sample.get("edge_recall_vs_greybox"),
                  final_sample.get("selected_by")))
+
+    if saved:
+        final_plate = (meta.get("style_pass") or {}).get("final_plate") \
+            or (meta.get("layered") or {}).get("final_plate") \
+            or saved[0]
+        _maybe_run_drift_gate(args.room, recipe, final_plate["path"], enabled=args.drift_gate)
 
     _write_meta(out_dir, meta)
     print("[generate_room] OK — room=%s job=%s assets=%d -> %s" % (args.room, job_id, len(saved), out_dir))
