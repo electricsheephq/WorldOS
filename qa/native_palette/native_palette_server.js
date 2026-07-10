@@ -93,6 +93,15 @@ const OWNER = (process.env.WORLDOS_NPT_WINDOW_OWNER || "WorldOSPlayer").trim();
 const CLICK_TOOL = (process.env.WORLDOS_NPT_CLICK_TOOL || "auto").trim();
 const SCREEN_LABEL = (process.env.WORLDOS_NPT_SCREEN || "player").trim();
 const FULLSCREEN_FALLBACK = process.env.WORLDOS_NPT_FULLSCREEN_FALLBACK === "1";
+// #1466: input (click/key/type) is PID-delivered to OWNER so the no-activation player actually
+// receives it (see native_input.swift). ACTIVATE_FALLBACK is the opt-in brief activate->post->restore
+// escape if PID delivery proves unreliable for Unity's input polling — OFF by default.
+const CLICK_ACTIVATE_FALLBACK = process.env.WORLDOS_CLICK_ACTIVATE_FALLBACK === "1";
+function inputFlags() {
+  const f = OWNER ? ["--owner", OWNER] : [];
+  if (OWNER && CLICK_ACTIVATE_FALLBACK) f.push("--activate-fallback");
+  return f;
+}
 const SELFCHECK = process.argv.includes("--selfcheck");
 const MAX_WAIT_MS = 8000;
 
@@ -284,7 +293,7 @@ server.registerTool(
     const before = (function () { const f = screencaptureWindow("clickbefore"); return f.ok ? fileHash(path.join(RUNDIR, f.screenshot)) : ""; })();
     let ok = true, reason = "";
     const useCli = CLICK_TOOL === "cliclick" || (CLICK_TOOL === "auto" && haveCliclick());
-    const clickResult = core.clickAt(resolveHelper(), useCli, gx, gy, !!double);
+    const clickResult = core.clickAt(resolveHelper(), useCli, gx, gy, !!double, OWNER, CLICK_ACTIVATE_FALLBACK);
     if (!clickResult.ok) { ok = false; reason = clickResult.reason || "click failed"; }
     spawnSync("sleep", ["0.7"]);
     const after = screencaptureWindow("click");
@@ -311,9 +320,9 @@ server.registerTool(
   },
   async ({ text, submit }) => {
     let ok = true, reason = "";
-    const r = runHelper(["type", String(text)]);
+    const r = runHelper(["type", String(text), ...inputFlags()]);
     if (!r || r.ok !== true) { ok = false; reason = (r && r._error) || "type helper failed"; }
-    if (ok && submit) { runHelper(["key", "return"]); spawnSync("sleep", ["0.9"]); }
+    if (ok && submit) { runHelper(["key", "return", ...inputFlags()]); spawnSync("sleep", ["0.9"]); }
     const after = screencaptureWindow("type");
     const s = logAction("type", { text: String(text).slice(0, 200), submit: !!submit, ok, reason });
     return textResult({ ok, seq: s, screen: SCREEN_LABEL, screenshot: after.screenshot, submitted: !!submit, reason });
@@ -330,7 +339,7 @@ server.registerTool(
   },
   async ({ name }) => {
     let ok = true, reason = "";
-    const r = runHelper(["key", String(name)]);
+    const r = runHelper(["key", String(name), ...inputFlags()]);
     if (!r || r.ok !== true) { ok = false; reason = (r && r._error) || "key helper failed"; }
     spawnSync("sleep", ["0.4"]);
     const after = screencaptureWindow("key");

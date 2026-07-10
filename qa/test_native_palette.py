@@ -142,6 +142,46 @@ class SwiftHelperTests(unittest.TestCase):
         self.assertIn("SCScreenshotManager", src, "capture must use SCScreenshotManager (no activation)")
         self.assertIn('case "capture":', src, "helper must dispatch a `capture` subcommand")
 
+    def test_source_input_is_pid_targeted_with_optin_activate_fallback(self):
+        """#1466 (completes #1456): input delivery is the no-activation twin of capture. When an
+        owner is supplied the helper must resolve its PID (kCGWindowOwnerPID) and deliver the event
+        DIRECTLY to that process (CGEvent.postToPid) so an unfocused player still receives it — a
+        plain global HID tap only reaches the ACTIVE app. The activate->post->restore path must stay
+        OPT-IN (never the default), preserving the no-focus-theft contract."""
+        src = SWIFT.read_text(encoding="utf-8")
+        self.assertIn("kCGWindowOwnerPID", src, "input must resolve the owner PID for direct delivery")
+        self.assertIn("postToPid", src, "#1466: input must PID-target via CGEvent.postToPid")
+        self.assertIn("--owner", src, "click/key/type must accept --owner for PID delivery")
+        self.assertIn("--activate-fallback", src, "the activate fallback must be an opt-in flag")
+        # The fallback must be gated on the flag, not run unconditionally (no default focus theft).
+        self.assertIn("activateFallback, let owner", src,
+                      "activate fallback must be guarded by the opt-in flag + an owner")
+
+    @unittest.skipUnless(shutil.which("swiftc"), "swiftc not available (non-macOS CI)")
+    def test_click_pid_delivery_selects_pid_for_running_owner_and_hid_otherwise(self):
+        """#1466: end-to-end delivery SELECTION. A `--owner` that resolves to a running app (Finder,
+        always present) reports delivery:"pid"; a bogus owner has no window/PID so it gracefully
+        falls back to delivery:"hid" (never a crash). Coordinates are a harmless top-left corner."""
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "native_input"
+            subprocess.run(["swiftc", str(SWIFT), "-o", str(out)], check=True, capture_output=True)
+            # bogus owner -> no PID -> HID fallback, still ok:true
+            b = subprocess.run([str(out), "click", "2", "2", "--owner", "NoSuchApp_ZZZ"],
+                               capture_output=True, text=True)
+            bd = json.loads(b.stdout.strip().splitlines()[-1])
+            self.assertTrue(bd.get("ok"), f"bogus-owner click must not fail: {bd}")
+            self.assertEqual(bd.get("delivery"), "hid", f"unresolved owner must fall back to HID: {bd}")
+            # running owner -> PID resolves -> direct postToPid delivery
+            f = subprocess.run([str(out), "click", "2", "2", "--owner", "Finder"],
+                               capture_output=True, text=True)
+            fd = json.loads(f.stdout.strip().splitlines()[-1])
+            self.assertTrue(fd.get("ok"), f"Finder click must not fail: {fd}")
+            self.assertEqual(fd.get("delivery"), "pid",
+                             f"a running owner must PID-target (Finder is always running): {fd}")
+            # legacy path (no owner) stays HID — byte-compatible with pre-#1466 callers
+            n = subprocess.run([str(out), "click", "2", "2"], capture_output=True, text=True)
+            self.assertEqual(json.loads(n.stdout.strip().splitlines()[-1]).get("delivery"), "hid")
+
     @unittest.skipUnless(shutil.which("swiftc"), "swiftc not available (non-macOS CI)")
     def test_capture_subcommand_images_a_window_without_activation(self):
         """Prove the SCK `capture` path actually images an EXISTING window (Finder is always
@@ -255,6 +295,18 @@ class CoreModuleTests(unittest.TestCase):
         self.assertNotIn("activateOwner", src, "#1456: activate-before-capture must be removed (no focus theft)")
         self.assertNotIn("waitForOnScreen", src, "#1456: cross-Space activation polling must be removed")
         self.assertNotIn("to activate", src, "#1456: the module must not osascript-activate the owner")
+
+    def test_clickAt_forwards_owner_for_pid_delivery_and_bypasses_cliclick(self):
+        """#1466: clickAt must forward `--owner` to the swift helper so the click is PID-delivered to
+        the unfocused player, and it must NOT use cliclick when an owner is set (cliclick can only
+        post global HID taps, which a no-activation window never receives)."""
+        src = CORE.read_text(encoding="utf-8")
+        self.assertIn("function clickAt(helperCmd, useCliclick, gx, gy, doubleClick, owner", src,
+                      "clickAt must accept an owner (and activateFallback) for PID delivery")
+        self.assertIn("useCliclick && !owner", src,
+                      "clickAt must skip cliclick when an owner is set (cliclick cannot PID-target)")
+        self.assertIn('args.push("--owner", String(owner))', src,
+                      "clickAt must forward --owner to the helper")
 
     @unittest.skipUnless(shutil.which("swiftc") and shutil.which("node"), "swiftc/node not available (non-macOS CI)")
     def test_stale_compiled_binary_is_rebuilt_on_source_edit(self):
