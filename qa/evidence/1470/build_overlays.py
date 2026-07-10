@@ -11,9 +11,20 @@ High recall == the plate preserves the greybox framing (the relight stack can re
 depth/normal sidecars against it). Low recall == props dropped / floor outpainted (drift).
 
 Deterministic, offline (PIL only). Regenerate: python3 qa/evidence/1470/build_overlays.py
+
+The edge_mask/recall primitives now live in qa/plate_overlays.py (shared with qa/plate_loop.py's
+registration gate); this file imports them so there is ONE implementation of the recall math.
 """
 import os
-from PIL import Image, ImageFilter
+import sys
+
+from PIL import Image
+
+# Share the registration primitives with qa/plate_loop.py (single source of truth).
+_QA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if _QA_DIR not in sys.path:
+    sys.path.insert(0, _QA_DIR)
+from plate_overlays import TOL, edge_mask, recall  # noqa: E402
 
 SRC = {
     "greybox": "/tmp/camp1470_greybox.png",
@@ -22,26 +33,7 @@ SRC = {
 }
 OUT = os.path.dirname(os.path.abspath(__file__))
 W, H = 1344, 768
-SMALL = (896, 512)
-TOL = 3  # px tolerance for an edge to count as aligned
-
-
-def edge_mask(im, thr):
-    return im.convert("L").filter(ImageFilter.FIND_EDGES).point(lambda p: 255 if p > thr else 0)
-
-
-def recall(grey_edges, plate_edges, tol=TOL):
-    """Fraction of greybox edge pixels covered by a plate edge within `tol` px (via dilation)."""
-    dil = plate_edges.filter(ImageFilter.MaxFilter(2 * tol + 1))
-    gd, dd = grey_edges.getdata(), dil.getdata()
-    tot = cov = 0
-    for g, d in zip(gd, dd):
-        if g:
-            tot += 1
-            if d:
-                cov += 1
-    return cov / tot if tot else 0.0
-
+SMALL = (896, 512)  # TOL / edge_mask / recall now imported from qa/plate_overlays.py
 
 grey = Image.open(SRC["greybox"]).convert("RGB").resize((W, H))
 grey_edges = edge_mask(grey, 24)
