@@ -1084,16 +1084,7 @@ public class CombatSurfaceClient : MonoBehaviour
             if (anim != null && anim.avatar != null && anim.avatar.isHuman)
             {
                 var donor = DonorIdle();
-                if (donor != null)
-                {
-                    anim.enabled = true;   // #idle-persist: enable for the retarget Evaluate
-                    var graph = UnityEngine.Playables.PlayableGraph.Create("HumanoidIdleRetarget_" + nm);
-                    var clipPlayable = UnityEngine.Animations.AnimationClipPlayable.Create(graph, donor);
-                    var outp = UnityEngine.Animations.AnimationPlayableOutput.Create(graph, "Output", anim);
-                    UnityEngine.Playables.PlayableOutputExtensions.SetSourcePlayable(outp, clipPlayable);
-                    graph.Evaluate(0f); graph.Destroy();
-                    anim.enabled = false;  // #idle-persist: FREEZE the retargeted idle (NULL-ctrl Animator reverts otherwise)
-                }
+                if (donor != null) SampleClipRuntime(go, donor, 0f);   // #idle-persist: donor retarget via the Rebind+freeze recipe
             }
         }
 
@@ -1432,16 +1423,7 @@ public class CombatSurfaceClient : MonoBehaviour
             if (anim != null && anim.avatar != null && anim.avatar.isHuman)
             {
                 var donor = DonorIdle();
-                if (donor != null)
-                {
-                    anim.enabled = true;   // #idle-persist: enable for the retarget Evaluate
-                    var graph = UnityEngine.Playables.PlayableGraph.Create("Idle_" + nm);
-                    var clipPlayable = UnityEngine.Animations.AnimationClipPlayable.Create(graph, donor);
-                    var outp = UnityEngine.Animations.AnimationPlayableOutput.Create(graph, "Output", anim);
-                    UnityEngine.Playables.PlayableOutputExtensions.SetSourcePlayable(outp, clipPlayable);
-                    graph.Evaluate(0f); graph.Destroy();
-                    anim.enabled = false;  // #idle-persist: FREEZE the retargeted idle
-                }
+                if (donor != null) SampleClipRuntime(go, donor, 0f);   // #idle-persist: donor retarget via the Rebind+freeze recipe
             }
         }
     }
@@ -2088,9 +2070,11 @@ public class CombatSurfaceClient : MonoBehaviour
     UnityEngine.Playables.PlayableGraph MakeClipGraph(Animator anim, AnimationClip clip, string tag)
     {
         // #idle-persist: a continuous graph (walk/attack) drives the Animator via Evaluate(dt) every frame,
-        // so the Animator must be ENABLED for the whole run. At-rest actors are frozen (Animator disabled, see
-        // SampleClipRuntime) to hold their idle; re-enable here for the duration of the clip.
-        if (anim != null) anim.enabled = true;
+        // so the Animator must be ENABLED for the whole run. At-rest actors are frozen (Animator disabled +
+        // stale binding, see SampleClipRuntime) to hold their idle; enable + Rebind here so this fresh graph's
+        // output actually applies (an un-rebound Animator silently no-ops the output). The caller Evaluates the
+        // first frame before any yield, so the Rebind's transient bind pose never renders.
+        if (anim != null) { anim.enabled = true; anim.Rebind(); }
         var g = UnityEngine.Playables.PlayableGraph.Create(tag);
         var cp = UnityEngine.Animations.AnimationClipPlayable.Create(g, clip);
         var op = UnityEngine.Animations.AnimationPlayableOutput.Create(g, "Out", anim);
@@ -2108,15 +2092,21 @@ public class CombatSurfaceClient : MonoBehaviour
         var anim = go.GetComponentInChildren<Animator>();
         if (anim != null && anim.avatar != null)
         {
-            // #idle-persist ROOT-CAUSE FIX: an Animator with an avatar but NO runtimeAnimatorController
-            // (every runtime-spawned actor) REVERTS to its bind pose (the T/A-pose) on the frame AFTER a
-            // one-shot Evaluate — so the idle we sample here silently snaps back to a T-pose next frame. Enable
-            // for the Evaluate (the graph output only applies to an enabled Animator), then DISABLE to FREEZE
-            // the sampled pose so nothing reverts it. A later walk/attack graph (MakeClipGraph) re-enables.
+            // #idle-persist ROOT-CAUSE FIX (verified on the box, bone-calibrated): a runtime-spawned actor's
+            // Animator has an avatar but NO runtimeAnimatorController, so a one-shot Evaluate silently no-ops
+            // (leaving the bind/T-pose) unless the Animator's stale playable state is first RESET. The recipe
+            // that actually applies AND persists a pose:
+            //   1) enable + Rebind()  — clear the stale binding so the fresh graph output takes effect;
+            //   2) sample a SETTLED frame — frame 0 of many idle clips sits at ~the bind (T/A) pose, so a
+            //      time<=0 request samples mid-clip instead (a real idle read);
+            //   3) Evaluate, Destroy, then DISABLE — the pose stays put (a disabled Animator holds the last
+            //      bone pose; MakeClipGraph re-enables for a subsequent walk/attack clip).
             anim.enabled = true;
+            anim.Rebind();
+            float sampleT = time > 0.001f ? time : clip.length * 0.5f;
             var g = UnityEngine.Playables.PlayableGraph.Create("Pose_" + go.name);
             var cp = UnityEngine.Animations.AnimationClipPlayable.Create(g, clip);
-            UnityEngine.Playables.PlayableExtensions.SetTime(cp, time);
+            UnityEngine.Playables.PlayableExtensions.SetTime(cp, sampleT);
             var op = UnityEngine.Animations.AnimationPlayableOutput.Create(g, "Out", anim);
             UnityEngine.Playables.PlayableOutputExtensions.SetSourcePlayable(op, cp);
             g.Evaluate(0f); g.Destroy();
