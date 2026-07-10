@@ -1,0 +1,134 @@
+{
+  "room": "tavern_truegrey",
+  "panel_id": "panel-visual-new-tavern-truegrey-20260711",
+  "protocol": "control-anchored 5-scorer blind panel (model sonnet, independent subagents), visual-critic CALIBRATION-CONTROL PROTOCOL. Candidate = NEW-ROOM tavern painterly plate (brand-new room from NOTHING at world-true scale -> flux depth-ControlNet base -> gemini-noref layered style pass, seed 123). Blind images: A=candidate, B=indoor house anchor (crypt_dense_v1, ALSO disclosed as house_best), C=disguised registered real-art control (PoE2 ruins/brazier).",
+  "scale": "0-10 visual-critic (delta-anchored two-tier ladder; absolute number is NOT a quality verdict)",
+  "candidate_image": "qa/evidence/new-tavern/tavern_painterly_candidate.png",
+  "incumbent_image": "qa/evidence/plate-sprint/adopt-crypt/source-plates/incumbent_crypt_dense_v1.jpg",
+  "house_anchor": "qa/evidence/plate-sprint/adopt-crypt/source-plates/incumbent_crypt_dense_v1.jpg",
+  "control_id": "control:visual:pillars-of-eternity-2:poe2_ruins_brazier_integration_01",
+  "control_note": "REGISTERED clean control (real shipped PoE2:Deadfire ruins/brazier plate, band [6.8,9.2]) from qa/visual_controls_identity.json, disguised as a blind image in the panel packet.",
+  "pregate": {
+    "verdict": "FLAG",
+    "blocking": [
+      {
+        "gate": "G6_luma_staging_law",
+        "severity": "HIGH",
+        "metric": "staging_law_stats",
+        "value": {
+          "near_black_frac": 0.495,
+          "lit_frac": 0.1505,
+          "median_L": 26.34
+        },
+        "threshold": {
+          "near_black_pass": [
+            0.66,
+            0.85
+          ],
+          "lit_pass": [
+            0.02,
+            0.05
+          ],
+          "median_pass": [
+            0,
+            15
+          ]
+        },
+        "detail": "FAIL: plate is outside the PoE staging-law band \u2014 near_black=49.5% (band 66-85% PASS / 50-66% WARN) [FAIL], lit=15.1% (band 2-5% PASS / 5-20% WARN) [WARN], median_L=26.3 (band 0-15 PASS / 15-40 WARN) [WARN]"
+      }
+    ],
+    "gates": [
+      {
+        "gate": "G1_frame_lit",
+        "severity": "PASS",
+        "metric": "mean_luminance",
+        "value": 0.1316,
+        "threshold": null,
+        "detail": "lit (mean 0.132, var 0.01484)"
+      },
+      {
+        "gate": "G6_luma_staging_law",
+        "severity": "HIGH",
+        "metric": "staging_law_stats",
+        "value": {
+          "near_black_frac": 0.495,
+          "lit_frac": 0.1505,
+          "median_L": 26.34
+        },
+        "threshold": {
+          "near_black_pass": [
+            0.66,
+            0.85
+          ],
+          "lit_pass": [
+            0.02,
+            0.05
+          ],
+          "median_pass": [
+            0,
+            15
+          ]
+        },
+        "detail": "FAIL: plate is outside the PoE staging-law band \u2014 near_black=49.5% (band 66-85% PASS / 50-66% WARN) [FAIL], lit=15.1% (band 2-5% PASS / 5-20% WARN) [WARN], median_L=26.3 (band 0-15 PASS / 15-40 WARN) [WARN]"
+      },
+      {
+        "gate": "G5_motion_liveness",
+        "severity": "SKIPPED",
+        "metric": "reel",
+        "value": null,
+        "threshold": null,
+        "detail": "no render reel supplied; G5 skipped (only meaningful with a motion reel \u2014 build one with qa/motion_reel.py and pass its frames)"
+      }
+    ],
+    "summary": "PRE-GATE FLAG\n  [PASS    ] G1_frame_lit       mean_luminance=0.1316 :: lit (mean 0.132, var 0.01484)\n  [HIGH    ] G6_luma_staging_law staging_law_stats={'near_black_frac': 0.495, 'lit_frac': 0.1505, 'median_L': 26.34} :: FAIL: plate is outside the PoE staging-law band \u2014 near_black=49.5% (band 66-85% PASS / 50-66% WARN) [FAIL], lit=15.1% (band 2-5% PASS / 5-20% WARN) [WARN], median_L=26.3 (band 0-15 PASS / 15-40 WARN) [WARN]\n  [SKIPPED ] G5_motion_liveness reel=None :: no render reel supplied; G5 skipped (only meaningful with a motion reel \u2014 build one with qa/motion_reel.py and pass its frames)"
+  },
+  "pregate_note": "G6_luma_staging_law FLAGs HIGH (stylistic, NOT a promotion hard floor per _VISUAL_HARD_FLOOR_GATES). G1_frame_lit PASSes -> the promotion hard floor (G1-G4) PASSes; G2-G4 N/A (backdrop-only plate).",
+  "scores": [
+    {
+      "scorer": 1,
+      "control": 9.0,
+      "candidate": 7.0,
+      "incumbent": 9.0
+    },
+    {
+      "scorer": 2,
+      "control": 9.0,
+      "candidate": 6.0,
+      "incumbent": 9.0
+    },
+    {
+      "scorer": 3,
+      "control": 10.0,
+      "candidate": 7.0,
+      "incumbent": 10.0
+    },
+    {
+      "scorer": 4,
+      "control": 10.0,
+      "candidate": 7.0,
+      "incumbent": 10.0
+    },
+    {
+      "scorer": 5,
+      "control": 9.0,
+      "candidate": 7.0,
+      "incumbent": 9.0
+    }
+  ],
+  "candidate_median": 7.0,
+  "control_median": 9.0,
+  "incumbent_median_this_panel": 9.0,
+  "delta_candidate_minus_control": -2.0,
+  "delta_incumbent_minus_control_this_panel": 0.0,
+  "house_style_votes": {
+    "same-hand": 1,
+    "lesser": 4
+  },
+  "residual_defects": [
+    "Consistent minor tell (all 5 scorers): the hanging lantern-truss in the pass3-staging plate reads slightly graphic/CG rather than fully hand-painted. 4/5 scorers flagged ZERO factual defects; 1/5 flagged 'missing' (outlier).",
+    "Candidate median 7.0 vs control median 9.0 -> delta -2.0 -> tier=stable (>= the -2.5 adopt floor; == the camp anchor that passed human taste-gates).",
+    "REGISTRATION honesty: the painterly FINAL is soft-edge, edge-recall 0.747 (#1491). The collision layer is the flux depth-CN BASE (edge-recall 0.980 >= 0.95 masonry gate; grid<->paint coherence 5/6 @0.03c, near-left-corner barrels drift 1.05c). The DERIVED manifest is the collision source of truth.",
+    "COMPOSITION honesty: for a sparse brand-new-room greybox the Gemini style pass reinterprets more than a dense regen (best-of-3; seed7 invented a well, seed123 kept hearth/bar/tables)."
+  ],
+  "iterations": 1
+}

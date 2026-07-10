@@ -159,7 +159,44 @@ def author_camp() -> dict:
     return geo
 
 
-_ROOMS = {"crypt": author_crypt, "camp": author_camp}
+def author_tavern() -> dict:
+    """12x10 enclosed firelit tavern interior — the FIRST room authored from NOTHING (no prior seed, no
+    prior plate): a brand-new room proving the true-greybox method generalises beyond regenerations
+    (NEW-ROOM-TAVERN, epic #1508). Cells are authored DIRECTLY at world-true 5-ft-grid scale (1 cell =
+    5 ft ~ 1 human), not re-measured from a drifted plate — so the greybox, the plate registered to it,
+    and the derived manifest are correct-scale by construction.
+
+    Layout (indoor firelit class — the strongest): solid perimeter (enclosed hall); a stone HEARTH mass
+    against the back wall (2x1, the future fire anchor — a tall chimney-breast); a waist-high BAR COUNTER
+    on the far-right side (4x1); three round communal TABLES on the central floor (2x2 each — the
+    coherence gate's localisation floor, since a 2x1 low prop drifts >0.5c even on the registered base,
+    epic #1508 finding; stools are sub-cell and live in the style prompt's clutter vocab, NOT as separate
+    footprints); an ALE-BARREL cluster (2x2). A back-wall DOOR cell (8,0) — the seam the walkslice wires
+    to the crypt for the three-room world. Generous walkable floor across the near half.
+
+    Placement respects the contract camera (30/45 dimetric from the -x,-z near corner = grid col0 /
+    max-row): LOW props (tables/barrels) stay in the far/interior zone (cols 2-9, rows 1-7) OFF the two
+    NEAR walls (col0 and the front wall) which would occlude/mislocalise them; only the TALL hearth and
+    the far bar counter sit near back/far walls. Rendered as a CUTAWAY greybox (wall_height 5) so the
+    tall near walls do not poison the interior NCC correlation — coherence-green 6/6 vs its own derived
+    manifest.
+
+    Prop kinds map onto greybox_render_headless._KIND_SPECS: 'bar'/'table' -> 1-cell-tall proxy volumes,
+    'barrel' -> ~0.7-cell, 'hearth' -> the tall default stone mass (a chimney breast)."""
+    props = [
+        ("hearth", "hearth", [[5, 1], [6, 1]]),
+        ("bar_counter", "bar", [[9, 2], [9, 3], [9, 4], [9, 5]]),
+        ("table_nw", "table", [[3, 3], [4, 3], [3, 4], [4, 4]]),
+        ("table_ne", "table", [[6, 3], [7, 3], [6, 4], [7, 4]]),
+        ("table_s", "table", [[5, 6], [6, 6], [5, 7], [6, 7]]),
+        ("barrels", "barrel", [[2, 6], [3, 6], [2, 7], [3, 7]]),
+    ]
+    geo = _geometry(12, 10, "worn wooden planks", props, perimeter=True, door_cells=[[8, 0]])
+    geo["location"] = "Firelit Tavern Hall"
+    return geo
+
+
+_ROOMS = {"crypt": author_crypt, "camp": author_camp, "tavern": author_tavern}
 
 
 def main(argv=None) -> int:
