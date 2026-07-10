@@ -38,6 +38,13 @@ from greybox_render_headless import cell_to_world, world_to_screen  # noqa: E402
 _CAMP_PLATE = _QA_DIR / "evidence" / "plate-audit" / "camp_clearing_night_v2.jpg"
 _CAMP_MANIFEST = _QA_DIR / "room_manifests" / "camp_clearing_night_v2.cells.json"
 _CRYPT_MANIFEST = _QA_DIR / "room_manifests" / "crypt_dense_v1.cells.json"
+# PANEL-ADOPT (2026-07-11): the room_recipes.json "camp_clearing_night" canonical_plate + its
+# live recipe_key binding moved to the true-greybox plate/manifest (correct-scale geometry,
+# fixes the legacy ~25% scale drift) — _CAMP_PLATE/_CAMP_MANIFEST above stay pinned to the OLD
+# v2 pair for the drift-MECHANISM tests (which gate a fixed, hand-verified pair regardless of
+# which room currently binds to it); this pair is what recipe_key="camp_clearing_night" now
+# resolves to for the recipe-level gate tests below.
+_CAMP_TRUEGREY_PLATE = _QA_DIR / "evidence" / "plate-audit" / "camp_clearing_night_truegrey_v1.png"
 
 
 def _manifest(path: Path) -> dict:
@@ -170,8 +177,11 @@ def test_promote_drift_gate_noop_without_candidate_plate():
 
 
 def test_promote_drift_gate_passes_known_good_candidate():
+    """recipe_key="camp_clearing_night" now binds to the ADOPTED true-greybox plate/manifest
+    (PANEL-ADOPT, 2026-07-11) — the known-good candidate for this gate is that plate, not the
+    legacy v2 one (which the mechanism tests above still exercise directly via _CAMP_MANIFEST)."""
     res = _promote()._paint_drift_gate(
-        {"candidate_plate": str(_CAMP_PLATE), "room_ref": {"recipe_key": "camp_clearing_night"}})
+        {"candidate_plate": str(_CAMP_TRUEGREY_PLATE), "room_ref": {"recipe_key": "camp_clearing_night"}})
     assert res["ran"] is True and res["passed"] is True
 
 
