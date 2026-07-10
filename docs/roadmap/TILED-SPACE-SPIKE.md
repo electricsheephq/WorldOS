@@ -130,3 +130,19 @@ graph (tessera) with occluded/door-cross boundaries for town scale.**
   style pass, which would further homogenize seams (an argument FOR the hybrid's post-stitch style pass).
 - Projection-drift under low control strength is the key structural risk for any per-tile approach; the hybrid's
   shared-structure control is the proposed mitigation but is itself unbuilt (next spike).
+
+---
+## ORCHESTRATOR RULING (2026-07-12, ratified with amendments)
+The spike's evidence is accepted. Architecture ruling for large spaces and towns:
+1. **The room/plate remains the atomic unit at native painting density.** Measured: quality collapses 7→2
+   when one generation is stretched past ~1 room (flux 2048px cap). Never widen the frame to grow a space.
+2. **Towns and larger spaces are a LAYOUT problem, not a painting problem.** Default path: generator graphs
+   (DunGen/Tessera, epic #1508) of room-scale districts connected by door-cross transitions and visually
+   MASKED boundaries (gates, walls, alleys, tree lines) — boundaries the paint never has to reconcile.
+3. **The hybrid seam recipe** (shared wide depth control for projection lock + per-tile native-density paint
+   + feather + post-stitch style pass) is ratified as the SPECIAL-CASE tool for genuinely continuous wide
+   vistas (e.g. a market square spanning two tiles) — used sparingly, panel-gated per vista.
+4. Amendment to the spike's projection finding: with one shared wide depth render the projection mismatch is
+   locked out by construction; the residual hybrid risk is the >2048px post-stitch style pass — accept the
+   per-vista cost or skip the global pass when the feather suffices.
+This ruling extends docs/roadmap/PLATE-RECIPE-DECISION.md and epic #1508 (stage: LARGE SPACES).
