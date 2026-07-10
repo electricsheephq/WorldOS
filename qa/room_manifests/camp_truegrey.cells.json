@@ -1,7 +1,7 @@
 {
  "manifest_version": 1,
  "room": "camp_truegrey",
- "recipe_key": "camp",
+ "recipe_key": "camp_truegrey",
  "derivation": "derived",
  "source_geometry": "qa/evidence/true-greybox/camp/camp_geometry.json",
  "grid": {

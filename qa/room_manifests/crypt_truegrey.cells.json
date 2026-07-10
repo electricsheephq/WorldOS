@@ -1,7 +1,7 @@
 {
  "manifest_version": 1,
  "room": "crypt_truegrey",
- "recipe_key": "crypt",
+ "recipe_key": "crypt_truegrey",
  "derivation": "derived",
  "source_geometry": "qa/evidence/true-greybox/crypt/crypt_geometry.json",
  "grid": {
