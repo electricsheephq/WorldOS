@@ -68,10 +68,13 @@ plate / VFX / UX / animation changes:
 - Commit 1-6 BEFORE/AFTER still frames to `qa/evidence/<number>/` **on this branch** (≤400KB each;
   JPEG fine for painterly plates) — local paths (`~/worldos-session-notes/...`) are INVISIBLE to
   reviewers, repo paths only.
-- **Embed each frame with markdown image syntax so it renders inline in the PR view** —
-  `![caption](../blob/<branch>/qa/evidence/<number>/frame.jpg)` or the repo-relative form GitHub
-  resolves on this PR's branch. A bare path or a "see qa/evidence/123/" pointer does not satisfy this
-  — if the owner has to click through to a file listing to see a pixel, the section is incomplete.
+- **Embed each frame with markdown image syntax pointed at the RAW bytes, so it renders inline in
+  the PR view** — `![caption](https://raw.githubusercontent.com/electricsheephq/WorldOS/<branch-or-sha>/qa/evidence/<number>/frame.jpg)`,
+  or the `/blob/...` GitHub URL with `?raw=true` appended. **A plain `/blob/...` URL (GitHub's HTML
+  file viewer) will NOT render inline** — it links to a page, not the image bytes; that silently
+  fails the exact case this section exists for. A bare path or a "see qa/evidence/123/" pointer
+  doesn't satisfy this either — if the owner has to click through to a file listing to see a pixel,
+  the section is incomplete.
 - Motion: a numbered frame series (2-6 stills) is primary and each still gets its own embedded image
   (agents read stills reliably); a GIF is optional, for humans, in addition to the stills.
 - Include the deterministic pre-gate output (`qa/visual_pregate.py`) when the change touches

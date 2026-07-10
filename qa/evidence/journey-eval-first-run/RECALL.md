@@ -48,8 +48,8 @@ across every frame** — including direct approaches to the crypt's sarcophagus 
 
 ## The recall number
 
-**0 of the 4 playtest-#7 missing-footprint-class defects (woodpile, crate stack, hut, trees/exit)
-would have been catchable by journey-eval v1's methodology, even on this exact run's room** — not
+**0 of 3 playtest-#7 missing-footprint-class defects (woodpile, crate stack, hut) would have been
+catchable by journey-eval v1's methodology, even on this exact run's room** — not
 because they were re-introduced (camp-tune's fixes were already merged by the time this run executed),
 but because journey-eval v1 structurally cannot produce the observation "the engine accepted a click
 onto a painted-solid cell." It only asks factual questions of frames reached via LEGAL clicks; a
@@ -67,8 +67,16 @@ playtest #7's, not a subset or superset of it.
 region (from the manifest's footprint+occlusion sets, plus a coarse grid sweep of high-texture
 regions) and flag whenever the engine ACCEPTS the move onto a cell whose paint reads as a solid
 object — the mechanism that would have caught all 3 of playtest #7's missing-footprint defects (1-3
-above) automatically, pre-ship, instead of relying on the owner's eyes. Recall target: 4/4 (or a
-justified partial) against this same playtest-#7 punch list, re-run once v2 lands.
+above) automatically, pre-ship, instead of relying on the owner's eyes.
+
+**Recall target: 3/3 on the missing-footprint class** (woodpile, crate stack, hut — items 1-3), not
+4/4 against the full punch list. Item 4 (trees/exit over-occlusion) is a DIFFERENT mechanism — an
+occlusion-hull sizing bug, not an accepted-move-onto-a-solid-cell bug — and v2's click-and-flag
+adversarial phase as scoped does not exercise it. Don't let "4/4" become the tracked target for #1523;
+that would set future agents up to expect v2 to close an occlusion-regression class it was never
+built to catch. If occlusion-hull regressions need their own standing check, that's a separate
+follow-up (e.g. a hull-size-vs-footprint-size assertion in `derive_room_manifest.py`'s own test
+suite), not a v2 deliverable. Re-run the 3/3 footprint check once v2 lands.
 
 ## Standing implication for anyone shipping a room
 

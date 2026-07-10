@@ -45,9 +45,16 @@ kind's proxy volume (height from `greybox_render_headless._KIND_SPECS`) extruded
 the true 5-ft-grid object, not an eyeballed/drifted footprint.
 
 ```bash
-python3 tools/author_room_geometry.py crypt -o /tmp/crypt_geometry.json
-python3 tools/author_room_geometry.py camp  -o /tmp/camp_geometry.json
+mkdir -p qa/evidence/<n>/   # this PR/issue's evidence dir — write geometry here, NOT /tmp
+python3 tools/author_room_geometry.py crypt -o qa/evidence/<n>/crypt_geometry.json
+python3 tools/author_room_geometry.py camp  -o qa/evidence/<n>/camp_geometry.json
 ```
+**Write outputs under the repo, not `/tmp`:** `derive_room_manifest.py` (step 2) stamps the derived
+manifest's `source_geometry` field by resolving your `-o` path repo-relative (`tools/derive_room_manifest.py:_repo_relative`);
+a path outside the repo (e.g. `/tmp/...`) falls through to being stored verbatim as a transient
+absolute path, breaking the derived manifest's single-source/reproducibility promise the moment that
+`/tmp` file is cleaned up. Use a committed evidence/artifact path for anything you intend to derive
+a manifest from.
 
 **Shape-appropriate proxies (PR #1495 lesson):** box-shaped trees read as buildings to depth
 models. Route each prop through the kind that matches its true silhouette (cylinder → pillar, cone
@@ -71,7 +78,7 @@ a room's FOOTPRINT + OCCLUSION + WALKABLE; manifests are DERIVED from it, never 
 This is what kills paint-vs-grid drift at the source instead of patching it downstream.
 
 ```bash
-python3 tools/derive_room_manifest.py /tmp/crypt_geometry.json \
+python3 tools/derive_room_manifest.py qa/evidence/<n>/crypt_geometry.json \
     -o qa/room_manifests/crypt.cells.json --room crypt --recipe-key crypt
 ```
 
@@ -99,7 +106,7 @@ The shaded greybox render is BOTH the plate's visual base AND the ControlNet `co
 step 4 — one artifact, two consumers, guaranteeing base and control agree pixel-for-pixel:
 
 ```bash
-python3 qa/greybox_render_headless.py /tmp/crypt_geometry.json /tmp/crypt_greybox.png
+python3 qa/greybox_render_headless.py qa/evidence/<n>/crypt_geometry.json qa/evidence/<n>/crypt_greybox.png
 ```
 
 This is the verified camera rig (`greybox_render_headless` — the #1396 recipe, <1e-3 vs Unity;
@@ -108,8 +115,8 @@ dimetric, elevation 30°, yaw 45, `cell_size 2.0`, `ortho_size 13`).
 **Optional depth+normal sidecars** (`qa/greybox_sidecars_headless.py`) — a pure-PIL analog of the
 box `CohesionProbe.cs` G-buffer, co-registered pixel-for-pixel with the greybox render:
 ```bash
-python3 qa/greybox_sidecars_headless.py /tmp/crypt_geometry.json \
-    /tmp/crypt_depth.png /tmp/crypt_normal.png
+python3 qa/greybox_sidecars_headless.py qa/evidence/<n>/crypt_geometry.json \
+    qa/evidence/<n>/crypt_depth.png qa/evidence/<n>/crypt_normal.png
 ```
 **Scope note (a PLATE SPRINT finding, not a live dependency):** the ADOPTED recipe (step 4) does
 **not** consume these sidecars — Scenario derives the depth control server-side from the shaded
@@ -152,7 +159,21 @@ Run it against every registered candidate before it goes to the panel.
 ### 6. Style pass — the reference-images LAW + structure/dimetric locks
 
 **Gemini instruction-edit** (`model_google-gemini-3-1-flash`) over the flux depth-CN base, with two
-mandatory prompt clauses:
+mandatory prompt clauses. **★ No single reusable CLI wraps this exact step today — don't confuse it
+with two DIFFERENT, already-wired mechanisms that also touch Gemini:**
+- `generate_room.py --style-pass <json>` is a **z-image + LoRA img2img** pass (model/loras/
+  lorasScale/strength) — not Gemini at all.
+- `generate_room.py --layered` chains its OWN two Gemini instruction-edit passes
+  (`_run_gemini_pass`, pass2 detail/populate + pass3 staging-last) — a different pipeline stage,
+  for a different purpose, than the base-registration style pass described here.
+- The adopted camp-armB / crypt-replicate style pass (the one `PLATE-RECIPE-DECISION.md` documents)
+  was run as a direct Scenario Gemini instruction-edit job against the flux depth-CN base, using the
+  prompt text committed at e.g. `qa/evidence/plate-sprint/camp-armB/style_pass_prompt_winning.txt` —
+  reproduce it by submitting that same prompt (STRUCTURE-LOCK + DIMETRIC-LOCK clauses intact) against
+  your new base via the Scenario API/MCP, not via `--style-pass`/`--layered`. Wiring this into a
+  first-class `generate_room.py` flag is open follow-up work, not yet done.
+
+Two mandatory prompt clauses, whichever way you submit the edit:
 
 - **STRUCTURE-LOCK** — "every wall, pillar, archway, doorway, staircase, tree, boulder, road edge,
   and prop must stay in EXACTLY its current position, size, and shape... only the paint and
@@ -220,9 +241,11 @@ python3 tools/library/library_lint.py   # validate the result
   passed + the panel's control landed in-band + candidate-minus-control delta ≥ -1.2 (noise law).
 
 `tier=canonical` is human curation ONLY — `promote.py` never assigns it. **Bootstrap note:** until
-HV5's auto-nominator exists, hand-author `qa/nominations.jsonl` — one JSON line per `artifact_id`
-(room nominations MUST declare `"class": "room"` since a visual score lives in a panel JSON, not
-the `artifacts` DB table).
+HV5's auto-nominator exists, hand-author `qa/nominations.jsonl` — one JSON line per `artifact_id`.
+**Room nominations MUST declare BOTH `"class": "room"` AND `"source_path"`** (the control-anchored
+panel JSON the visual gate reads) — a visual score lives in that panel JSON, not the `artifacts` DB
+table, and `promote.py` fails the nomination outright (`"visual nomination has no 'source_path'"`)
+without it; `class` alone is not sufficient.
 
 ### 8a. The generator path — DunGen / Tessera export → converter (structure-source alternative)
 
@@ -248,22 +271,33 @@ Tessera scene  ──[TesseraLayoutExporter.cs]──▶ tessera_layout.json ─
   units = 1 five-ft cell), same convention as step 0 above — this is what keeps the whole chain
   unit-consistent regardless of which structure-source produced the layout.
 - Box drive recipe (when a live Unity session is available): `qa/evidence/dungen-spike/BOX-DRIVE-RECIPE.md`
-  — deploy the exporter → generate+export via unity-mcp `execute_code` → convert → greybox-render →
-  continue at step 4 of this runbook.
-- **Ratified architecture boundary (`docs/roadmap/TILED-SPACE-SPIKE.md` orchestrator ruling,
-  2026-07-12):** the room/plate stays the atomic unit at native painting density — never widen a
-  single generation to grow a space (measured: quality collapses 7→2 stretching one generation past
-  ~1 room). **Towns/larger spaces are a LAYOUT problem** solved at the generator-graph layer (room-scale
-  districts + door-cross transitions + visually MASKED boundaries), not a painting problem. A
-  shared-wide-depth-control + per-tile-paint + feather **hybrid** is the ratified special-case tool
-  for genuinely continuous wide vistas (e.g. a market square spanning two tiles) — used sparingly,
-  panel-gated per vista, never as the default town-building path.
+  — deploy the exporter → generate+export via unity-mcp `execute_code` → convert → **derive the
+  manifest from the converter's `<name>_<room>_geometry.json` output (step 2 above —
+  `tools/derive_room_manifest.py`; do not skip this even though the box-drive recipe's own steps
+  jump straight to greybox-render — the manifest is what `check_grid_paint_coherence.py` and runtime
+  validation depend on)** → greybox-render → continue at step 4 of this runbook.
+- **Architecture boundary — see the ruling appended to `docs/roadmap/TILED-SPACE-SPIKE.md`** (dated
+  2026-07-12 in that file; confirm it has actually landed if you're reading this before that date —
+  treat it as the documented owner direction either way): the room/plate stays the atomic unit at
+  native painting density — never widen a single generation to grow a space (measured: quality
+  collapses 7→2 stretching one generation past ~1 room). **Towns/larger spaces are a LAYOUT problem**
+  solved at the generator-graph layer (room-scale districts + door-cross transitions + visually
+  MASKED boundaries), not a painting problem. A shared-wide-depth-control + per-tile-paint + feather
+  **hybrid** is that ruling's special-case tool for genuinely continuous wide vistas (e.g. a market
+  square spanning two tiles) — used sparingly, panel-gated per vista, never as the default
+  town-building path.
 
 ### 9. `plates_manifest.json` + `effects[]` anchors (runtime backdrop + VFX)
 
 **Runtime plate registry** (`docs/roadmap/W5E-PLATE-REGISTRY-DECISION.md`, DECIDED 2026-07-10): ONE
 persistent Unity scene; the backdrop is resolved AT RUNTIME by the engine's location slug via a
 StreamingAssets `plates_manifest.json` — no scene reload, no per-room bake, no Addressables.
+
+**★ Edit this at its real committed path, the Unity PROJECT root, not the repo root:**
+`extensions/renderers/unity/plates_manifest.json` (+ `extensions/renderers/unity/effects_registry.json`)
+— `BuildMacOSPlayer.EnsurePackaged` resolves both relative to `Application.dataPath`'s parent (the
+Unity project dir), so a copy dropped at the repo root is silently never packaged. Referenced plate
+PNGs live under `extensions/renderers/unity/plates/`.
 
 ```jsonc
 {
@@ -273,12 +307,16 @@ StreamingAssets `plates_manifest.json` — no scene reload, no per-room bake, no
       "plate": "plates/<file>.png",
       "planeSize": [W, H],
       "cameraPin": { "ortho": 13.0, "pitch": 30.0, "yaw": 45.0 },
-      "stage": "stage.json",
       "effects": [ { "type": "fire_medium", "cell": [5, 8], "scale": 1.5 } ]
     }
   }
 }
 ```
+**No per-plate `stage` field** — `CombatSurfaceClient.LoadPlateManifest` only parses `plate`,
+`planeSize`, `cameraPin`, and `effects` per entry (`CombatSurfaceClient.cs` `PlateEntry`/
+`LoadPlateManifest`). Stage data (fire flicker/glow anchors, #1463 W6.4) is a SEPARATE, single global
+`StreamingAssets/stage.json` copied verbatim by the same packaging step — it is not keyed per-plate
+and adding a `"stage"` key to a plate entry above is a silent no-op.
 
 **`effects[]` is the additive VFX-anchor mechanism** (PR #1525, VFX-ANCHORS): on plate load/swap,
 `CombatSurfaceClient.SpawnPlateEffects` despawns prior effect instances and spawns each entry's
@@ -325,7 +363,8 @@ just promoted doesn't appear in the player.
 
 ## Standing instruments that validate a room after it ships
 
-See `docs/OPERATIONS.md` "Standing visual/pipeline instruments" — the coherence gate
-(`check_grid_paint_coherence.py`) and journey-eval (`qa/journey_eval.py`) both run against a shipped
-room; `qa/evidence/journey-eval-first-run/RECALL.md` documents the current instrument gap (the
-legal-path blind spot, #1523) so you know what journey-eval does and does NOT yet catch.
+See `docs/OPERATIONS.md` "Journey-eval + the coherence gate — standing instruments" — the coherence
+gate (`check_grid_paint_coherence.py`) and journey-eval (`qa/journey_eval.py`) both run against a
+shipped room; `qa/evidence/journey-eval-first-run/RECALL.md` documents the current instrument gap
+(the legal-path blind spot, #1523) so you know what journey-eval does and does NOT yet catch. Both
+runners have rows in `docs/RUNBOOK-INDEX.md` "Visual / render".
