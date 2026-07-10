@@ -31,13 +31,16 @@ before any of it was fixed. The recall table below is the receipt.
 | 1 | **Woodpile** walkable (should block) | missing footprint | `FIREWOOD_CELLS` extended onto the painted log mass |
 | 2 | **Crate stack** (left) walkable on boxes + a phantom blocked cell with no paint under it | missing footprint + phantom occlusion | `CRATE_L_CELLS` re-authored to the 3 actually-painted boxes; phantom `POST_CELLS` retired |
 | 3 | **Hut/shelter** (top-center) walk-through | missing footprint | `SHELTER_CELLS` re-authored to the posts + back wall/canvas |
-| 4 | Top-right **trees / camp exit**: over-covering occlusion hid the player near the exit | occlusion-hull bug (not a footprint miss) | `wall_br` split into 3 short runs — hull shrank 48 cells → 7 cells apiece |
+| 4 | **Top-right ruin**: walk into the wall slightly (previously unmodeled) | missing footprint | 3 new props added — `ruin_tower1`, `ruin_tower2`, `ruin_link` |
+| 5 | Top-right **trees / camp exit**: over-covering occlusion hid the player near the exit | occlusion-hull bug (not a footprint miss) | `wall_br` split into 3 short runs — hull shrank 48 cells → 7 cells apiece |
 | — | **Fire-pit blocking** | — | Confirmed CORRECT already — not a defect; no fix needed |
 
-Note: item 4 (trees/exit) is an *occlusion* bug (the silhouette hull over-covered open ground), not a
-missing-footprint bug like 1-3 — it's included here because it's part of the same playtest-#7 punch
+Note: item 5 (trees/exit) is an *occlusion* bug (the silhouette hull over-covered open ground), not a
+missing-footprint bug like 1-4 — it's included here because it's part of the same playtest-#7 punch
 list the owner named, but it's a different mechanism (see `docs/ROOM-PIPELINE-RUNBOOK.md` step 2,
-"footprint-vs-occlusion is the distinction CAMP-TUNE's defect #5 turned on").
+"footprint-vs-occlusion is the distinction CAMP-TUNE's defect #5 turned on"). Items 1-4 are ALL
+missing-footprint-class — four, not three; an earlier draft of this file dropped item 4 (the ruin)
+and misnumbered item 5 as "item 4," undercounting the missing-footprint denominator. Fixed here.
 
 ## What journey-eval run 1 caught (`journey_verdict.json`, PR #1520, ship-camp-1 session)
 
@@ -55,14 +58,14 @@ across every frame** — including direct approaches to the crypt's sarcophagus 
 
 ## The recall number
 
-**0 of 3 playtest-#7 missing-footprint-class defects (woodpile, crate stack, hut) would have been
-reliably caught by journey-eval v1's methodology, even on this exact run's room** — not because they
-were re-introduced (camp-tune's fixes were already merged by the time this run executed), but
+**0 of 4 playtest-#7 missing-footprint-class defects (woodpile, crate stack, hut, ruin) would have
+been reliably caught by journey-eval v1's methodology, even on this exact run's room** — not because
+they were re-introduced (camp-tune's fixes were already merged by the time this run executed), but
 because journey-eval v1's scripted route never deliberately visits a cell just because it LOOKS
 solid; it only visits cells the manifest/plan already picked for other reasons (adjacent to a
 KNOWN-impassable prop, or a narrative waypoint). A missing-footprint cell is exactly the one class
 of cell that method structurally never targets on purpose — it would only get caught by accident, if
-the route happened to cross it. Confirmed directly in #1523's own framing: *"currently 0/4 by the
+the route happened to cross it. This matches #1523's own framing exactly: *"currently 0/4 by the
 legal-path run."*
 
 **What journey-eval v1 IS good at (this run's real catch):** transition-integrity questions (did the
@@ -75,17 +78,17 @@ playtest #7's, not a subset or superset of it.
 **journey_eval v2 (#1523)** adds the missing adversarial phase: click every painted-prop candidate
 region (from the manifest's footprint+occlusion sets, plus a coarse grid sweep of high-texture
 regions) and flag whenever the engine ACCEPTS the move onto a cell whose paint reads as a solid
-object — the mechanism that would have caught all 3 of playtest #7's missing-footprint defects (1-3
+object — the mechanism that would have caught all 4 of playtest #7's missing-footprint defects (1-4
 above) automatically, pre-ship, instead of relying on the owner's eyes.
 
-**Recall target: 3/3 on the missing-footprint class** (woodpile, crate stack, hut — items 1-3), not
-4/4 against the full punch list. Item 4 (trees/exit over-occlusion) is a DIFFERENT mechanism — an
-occlusion-hull sizing bug, not an accepted-move-onto-a-solid-cell bug — and v2's click-and-flag
-adversarial phase as scoped does not exercise it. Don't let "4/4" become the tracked target for #1523;
-that would set future agents up to expect v2 to close an occlusion-regression class it was never
-built to catch. If occlusion-hull regressions need their own standing check, that's a separate
-follow-up (e.g. a hull-size-vs-footprint-size assertion in `derive_room_manifest.py`'s own test
-suite), not a v2 deliverable. Re-run the 3/3 footprint check once v2 lands.
+**Recall target: 4/4 on the missing-footprint class** (woodpile, crate stack, hut, ruin — items 1-4)
+— this matches #1523's own "0/4" framing exactly. Item 5 (trees/exit over-occlusion) is a DIFFERENT
+mechanism — an occlusion-hull sizing bug, not an accepted-move-onto-a-solid-cell bug — and v2's
+click-and-flag adversarial phase as scoped does not exercise it, so don't fold it into the tracked
+#1523 target: that would set future agents up to expect v2 to close an occlusion-regression class it
+was never built to catch. If occlusion-hull regressions need their own standing check, that's a
+separate follow-up (e.g. a hull-size-vs-footprint-size assertion in `derive_room_manifest.py`'s own
+test suite), not a v2 deliverable. Re-run the 4/4 footprint check once v2 lands.
 
 ## Standing implication for anyone shipping a room
 

@@ -251,11 +251,11 @@ the other:
     impassable) is exactly the class of cell that method structurally never targets on purpose — it
     would only get caught by accident. This is a recall gap, not an impossibility: the per-frame
     "on_prop" VQA question runs on every captured frame regardless of why the character is there, so
-    an incidental hit is possible, just not engineered. The first live run (PR #1520) scored 0 of 3
+    an incidental hit is possible, just not engineered. The first live run (PR #1520) scored 0 of 4
     recall against the owner's playtest-#7 missing-footprint punch list (woodpile, crate stack,
-    hut/shelter) for precisely this reason — see `qa/evidence/journey-eval-first-run/RECALL.md` for
-    the full comparison (a 4th playtest-#7 item, top-right trees/exit, is a separate occlusion-hull
-    bug outside this defect class entirely).
+    hut/shelter, top-right ruin) for precisely this reason — see
+    `qa/evidence/journey-eval-first-run/RECALL.md` for the full comparison (a 5th playtest-#7 item,
+    top-right trees/exit, is a separate occlusion-hull bug outside this defect class entirely).
   - **v2 (tracked, #1523)** adds an adversarial phase: click every painted-prop candidate region
     (from the manifest's footprint+occlusion sets, plus a coarse grid sweep of high-texture regions)
     and flag whenever the engine ACCEPTS the move — closing the exact gap v1 has by making the probe
@@ -264,3 +264,17 @@ the other:
     missing-footprint defects** — it answers a different question (does the legal path look right)
     than the coherence gate (does the paint sit on its authored cells) or a human playtest (does
     something painted-but-uncollided exist at all).
+
+## Long-running servers must launch detached (a live incident, 2026-07-11)
+
+An owner session's `viewer/server.py` was launched as a harness-tracked background task and died
+`exit 144` with no output the moment its parent turn ended — a long-running server is not a
+bounded command and the harness reaps it like one. **Any long-lived server (a viewer, a state
+listener, anything meant to outlive the turn that started it) must be launched DETACHED from a
+foreground shell** — `nohup <cmd> > <logfile> 2>&1 & echo $! > <pidfile>` — never handed to a
+run-in-background tool call, which is for bounded commands whose completion you want to be notified
+of, not for processes meant to keep running after the turn ends. Bank the PID to a pid file so a
+later turn (or a different agent) can check liveness (`kill -0 "$(cat <pidfile>)"`) and tear it down
+cleanly instead of hunting for it. The recovery recipe for the specific owner session this happened
+to lives in that session's log + plan file, not here — this entry is the standing rule, not the
+incident's play-by-play.
