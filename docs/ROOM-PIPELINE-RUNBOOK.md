@@ -82,6 +82,18 @@ models. Route each prop through the kind that matches its true silhouette (cylin
 → tree, box → crate/rubble/masonry) — the generator-export converter (`tools/dungen_to_fixtures.py`)
 applies the same shape→kind rule for generator-sourced props (see step 8a).
 
+**ENCLOSED ROOMS need a CUTAWAY greybox (tavern finding, PR #1531; codified from the CRYPT-RICH
+cold-agent run, PR #1538):** full-height near walls poison the interior's depth/lighting read (NCC
+collapses, the frame goes mostly black). Author enclosed interiors with `wall_height ≈ 5` on the
+near/south walls (the camera-facing side stays open, the back walls keep height). Two artifacts to
+avoid, both measured in #1538's panels:
+- **Crenellation:** authoring wall bands as PER-CELL boxes gives the depth map toothed/castellated
+  wall-tops → the depth-CN paints a "tiled/gamey" motif panels penalize. Author each wall run as
+  ONE CONTINUOUS box spanning its cells, not a stack of cell-sized boxes.
+- **Over-dark frames:** a cutaway that still leaves >~40% of the canvas as unlit wall/void reads
+  as a black-margin defect at panel time — check `visual_pregate.py`'s frame-lit gate on the BASE,
+  not just the styled result.
+
 **Geometry schema** (mirrors `qa/export_scene_grid.py`):
 ```
 {cols, rows, material, cell_default_walkable, walls, props:[{id, kind, cells}],
@@ -177,6 +189,12 @@ actor stood on the authored impassable cell while the painted prop was elsewhere
 
 Run it against every registered candidate before it goes to the panel.
 
+**Scope note (from the #1538 cold-agent run):** this gate is a *diagnostic instrument*, not the
+promotion floor — `promote.py`'s panel-delta gate is the floor. Organic/legacy-styled incumbents
+(including the deployed 8.0 crypt) fail cells of this gate identically; a cold agent should not
+read a coherence FLAG on the candidate as blocking when the incumbent FLAGs the same cells. What
+IS blocking: the candidate regressing coherence on cells the incumbent passes.
+
 ### 6. Style pass — the reference-images LAW + structure/dimetric locks
 
 **Gemini instruction-edit** (`model_google-gemini-3-1-flash`) over the flux depth-CN base, with two
@@ -214,6 +232,12 @@ grounding instead. Measured: no-ref registration recall 0.9439 vs same-room-ref 
 A `STRUCTURE-LOCK EXCEPTION` clause is the sanctioned escape hatch for a specific, named artifact
 region (e.g. an unwanted concentric-ring pattern in ground texture) that the general lock would
 otherwise force Gemini to preserve — scope it tightly to the one region, never generally.
+
+**Clarification (from the #1538 cold-agent run):** the LAW governs *external anchors*. Gemini
+img2img mechanically requires the image being edited in `referenceImages[0]` — passing the
+registered BASE you are styling (which was minted from this room's own greybox) is the sanctioned,
+required case, not a violation. "No referenceImages" means: no SECOND image, no external style
+anchor, no other room's plate.
 
 **Registration gate:** edge-recall ≥0.95 for hard-edge/masonry rooms; for organic rooms edge-recall
 is ADVISORY (content-blind and class-dependent — issue #1491) — use the greybox-edge overlay as
