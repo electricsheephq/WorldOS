@@ -1,0 +1,45 @@
+{
+  "lane": "ADOPT-CRYPT \u2014 content-leak verification (coordinator-requested, in response to sibling-lane FOREST-ROAD finding)",
+  "trigger": "qa/evidence/plate-sprint/forest-road/findings.json Finding 1: 'Gemini referenceImages is a CONTENT anchor, not a STYLE anchor' -- crypt's own iter3 style pass used referenceImages=[crypt_dense_v1], so a content leak was possible but MASKED because the anchor room == the target room (crypt). This check makes that leak visible and honest.",
+  "method": "(1) global whole-frame NCC (grayscale, resized to a common resolution, Pearson-correlation) between the candidate (prep_iter3_plate.png) and the incumbent (crypt_dense_v1) at 4 scales; (2) a 4x4 block-wise NCC grid to localize agreement; (3) direct eyeball comparison of the two full-resolution images for prop/geometry/lighting differences.",
+  "ncc_global_by_resolution": {
+    "64x64": 0.9574,
+    "128x128": 0.9543,
+    "256x256": 0.9459,
+    "512x512": 0.9304
+  },
+  "ncc_blockwise_4x4": [
+    [
+      0.97,
+      0.91,
+      0.91,
+      0.95
+    ],
+    [
+      0.97,
+      0.95,
+      0.95,
+      0.95
+    ],
+    [
+      0.96,
+      0.97,
+      0.95,
+      0.95
+    ],
+    [
+      0.94,
+      0.96,
+      0.97,
+      0.97
+    ]
+  ],
+  "ncc_read": "Very high structural correlation (0.93-0.96) across ALL scales and ALL 16 grid blocks, with NO low-correlation region. This is materially higher than a purely independent stylization from the shared authored greybox geometry would be expected to produce on its own -- it corroborates the sibling lane's Finding 1: the Gemini style pass (referenceImages=[crypt_dense_v1]) substantially carried over the incumbent's composition, not just its palette/brush style.",
+  "eyeball_comparison_3_differences": [
+    "1) Directional shadow falloff / corner darkness: the incumbent's far corners, side walls, and the rear-left archway interior stay in an even warm mid-tone throughout; the candidate shows a distinctly deeper, cooler (blue-violet) falloff in those same corners and the same archway interior -- the deliberate chiaroscuro change the iter3 style-pass prompt targeted ('push the shadow falloff... deep blue-violet-tinted shadow').",
+    "2) The right-side wall torch (beside the sword+shield): bright, wide warm glow with a visible halo on the stonework in the incumbent; the SAME torch is present at the SAME position in the candidate but reads dimmer and more contained, consistent with the overall darker/cooler grade.",
+    "3) Rear doorway/archway interiors (the two dark openings at the back of the room): the incumbent's dark openings retain a warm brown undertone; the SAME openings in the candidate crush further toward a cool near-black."
+  ],
+  "no_prop_or_geometry_difference_found": "Pillars (left knotwork + right carved), the sarcophagus and knight-effigy pose, the skull/bone pile, the sword+shield, the overturned urn+coins, the staircase, and cobweb placements are all in IDENTICAL positions/counts between the two images on direct comparison. This absence of any compositional difference is itself the material finding: the candidate is best understood as a RE-LIT / re-graded copy of the incumbent's own composition, not an independently re-imagined interpretation of the crypt greybox.",
+  "verdict_and_disposition": "PROCEED WITH ADOPTION (per coordinator instruction): the candidate is not materially worse-looking than the incumbent on direct comparison -- it is, honestly, the SAME composition with a deliberately deeper/cooler chiaroscuro grade, at a genuinely higher, re-verified registration (0.9903 vs the greybox) than the incumbent's own (drifted, unmeasured-at-this-recall) class. A faithfully re-registered version of the house look is still a strict upgrade over an un-re-registered incumbent, even though the visual novelty versus crypt_dense_v1 is LOW. This caveat is carried into room_recipes.json's status note and the PR description so the owner-facing framing is honest about how visually NEW the plate is (mostly: not very -- it is a relight of the known-good look, not a new composition)."
+}
