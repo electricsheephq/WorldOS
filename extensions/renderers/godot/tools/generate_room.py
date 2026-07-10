@@ -299,6 +299,144 @@ def _resolve_controlnet(recipe: dict, args) -> dict | None:
             "loras": loras, "lora_scales": lora_scales}
 
 
+def _parse_style_pass(value: str) -> dict:
+    """Parse the --style-pass value, which is EITHER a JSON string OR a path to a JSON file.
+
+    plate_loop.py forwards a temp file path (`--style-pass <dir>/style_pass.json`); a human can pass an
+    inline `'{"strength": 0.35}'`. Both resolve here. Fails loud on malformed JSON / a non-object so a
+    typo never silently skips the pass."""
+    text = value
+    if os.path.isfile(value):
+        with open(value, "r") as f:
+            text = f.read()
+    try:
+        obj = json.loads(text)
+    except json.JSONDecodeError as e:
+        sys.exit("[generate_room] ERROR: --style-pass must be JSON (an inline string or a file path): %s" % e)
+    if not isinstance(obj, dict):
+        sys.exit("[generate_room] ERROR: --style-pass JSON must be an object {model,loras,lorasScale,strength}")
+    return obj
+
+
+def _resolve_style_pass(recipe: dict, args) -> dict | None:
+    """Resolve {model, loras, lora_scales, strength} for the ARM A style pass, or None when it's off.
+
+    The style pass is a SECOND img2img run — on the style model (default recipe base_model = z-image)
+    with the painterly LoRA — over the REGISTERED base plate, re-painting the controlnet-locked geometry
+    in the house style at a low denoise strength (the strength is the drift/beauty knob ARM A sweeps).
+    Every field defaults to the recipe painterly recipe (model_z-image + model_MB22… @ 0.78), so a
+    minimal `{"strength": 0.35}` is a complete config; explicit fields win. Accepts either `lorasScale`
+    (the packet/Scenario spelling) or `lora_scales` for the scales list."""
+    if not getattr(args, "style_pass", None):
+        return None
+    raw = _parse_style_pass(args.style_pass)
+    model = raw.get("model") or recipe["base_model"]
+    # Distinguish an ABSENT `loras` key (default to the recipe painterly LoRA) from a PRESENT empty
+    # list (an intentional no-LoRA run on a custom style model — honor it, don't re-add the recipe LoRA).
+    loras = raw.get("loras")
+    loras = list(loras) if loras is not None else [recipe["lora"]]
+    scales = raw.get("lorasScale", raw.get("lora_scales"))
+    scales = list(scales) if scales is not None else [recipe["lora_scale"]] * len(loras)
+    if len(scales) != len(loras):
+        sys.exit("[generate_room] ERROR: --style-pass loras (%d) and lorasScale (%d) must be the same "
+                 "length" % (len(loras), len(scales)))
+    strength = float(raw.get("strength", args.strength))
+    # The gate the sample-selector targets (max style subject to recall >= min_recall); mirrors
+    # plate_loop's registration.min_recall default so the two agree on what "registered" means.
+    min_recall = float(raw.get("min_recall", 0.95))
+    # Optional selection greybox: plate_loop forwards the registration gate's greybox here so the
+    # selector scores samples against the SAME image the gate will (they diverge from --base-plate when
+    # a config sets registration.greybox or uses --refine-from). Absent -> selector uses --base-plate.
+    greybox = raw.get("greybox")
+    return {"model": model, "loras": loras, "lora_scales": scales, "strength": strength,
+            "min_recall": min_recall, "greybox": greybox}
+
+
+_PLATE_OVERLAYS_RECALL = None  # cached qa/plate_overlays.registration_recall (or False if absent)
+
+
+def _edge_recall(greybox: str, candidate: str):
+    """Edge-alignment recall of a plate vs the greybox, reusing qa/plate_overlays (the SAME signal
+    plate_loop's registration gate uses). Returns a float, or None if the scorer can't be imported/run
+    (graceful — style-sample selection then falls back to the first sample)."""
+    global _PLATE_OVERLAYS_RECALL
+    if _PLATE_OVERLAYS_RECALL is None:
+        try:
+            qa_dir = os.path.normpath(os.path.join(_HERE, "..", "..", "..", "..", "qa"))
+            if qa_dir not in sys.path:
+                sys.path.insert(0, qa_dir)
+            from plate_overlays import registration_recall as _rr  # noqa: E402
+            _PLATE_OVERLAYS_RECALL = _rr
+        except Exception:
+            _PLATE_OVERLAYS_RECALL = False
+    if not _PLATE_OVERLAYS_RECALL:
+        return None
+    try:
+        return float(_PLATE_OVERLAYS_RECALL(greybox, candidate))
+    except Exception:
+        return None
+
+
+def _select_style_sample(samples: list, greybox: str | None, min_recall: float) -> dict:
+    """Choose which style-pass sample to promote as the final ARM A plate.
+
+    The z-image style endpoint returns N samples that differ in how far the low-strength repaint drifted
+    the ControlNet-locked geometry. Score each by edge-recall vs the greybox and pick the MOST-STYLIZED
+    sample that still registers — the LOWEST recall at/above `min_recall` (maximum painterly headroom
+    while staying locked). If none clear the gate, keep the HIGHEST-recall sample (the best attempt —
+    plate_loop's gate then FAILs it and the loop reject-retries at a lower strength). Falls back to
+    samples[0] when recall can't be scored (no greybox / scorer unavailable), preserving single-sample
+    behavior. Annotates each sample in place with `edge_recall_vs_greybox`; the winner with `selected_by`."""
+    scored: list = []  # (sample, UNROUNDED recall) — compare unrounded so a 0.94996 doesn't round up
+    if greybox and os.path.isfile(greybox):                #   past a 0.95 gate the plate_loop gate then FAILs
+        for s in samples:
+            r = _edge_recall(greybox, s["path"])
+            s["edge_recall_vs_greybox"] = round(r, 4) if r is not None else None  # rounded for display only
+            if r is not None:
+                scored.append((s, r))
+    if not scored:
+        samples[0]["selected_by"] = "first-sample (recall unavailable)"
+        return samples[0]
+    passing = [(s, r) for s, r in scored if r >= min_recall]
+    if passing:
+        chosen = min(passing, key=lambda t: t[1])[0]  # most style headroom while still registered
+        chosen["selected_by"] = "max-style-above-min_recall"
+    else:
+        chosen = max(scored, key=lambda t: t[1])[0]     # best attempt; gate will fail -> reject-retry
+        chosen["selected_by"] = "best-attempt-below-min_recall"
+    return chosen
+
+
+def _build_style_pass_request(recipe: dict, args, positive: str, negative: str,
+                               image_ref, sp: dict) -> tuple:
+    """Build (endpoint, body) for the ARM A style pass — an img2img run on the style model.
+
+    Same img2img shape as the unconditioned base pass (`image` + `strength` seed, LoRA on
+    `loras`/`lorasScale`, style model in the PATH), but seeded from the REGISTERED base plate
+    (`image_ref` = the base pass output asset id) and carrying the painterly LoRA the flux ControlNet
+    base could not (flux.1-dev rejects the z-image LoRA — HTTP 400). Requests `numSamples`=num_outputs
+    so `_select_style_sample` has a real pool to pick the most-stylized-yet-registered sample from
+    (the style endpoint drifts each sample differently off the locked geometry); the ONE selected sample
+    becomes the final plate the registration gate + reject-retry contract score per config."""
+    endpoint = API_BASE + CONTROLNET_PATH.format(model_id=sp["model"])
+    body = {
+        "prompt": positive,
+        "negativePrompt": negative,
+        "image": image_ref,
+        "strength": sp["strength"],
+        "numInferenceSteps": args.steps,
+        "guidance": args.guidance,
+        "numSamples": args.num_outputs,
+        "width": args.width,
+        "height": args.height,
+        "loras": list(sp["loras"]),
+        "lorasScale": list(sp["lora_scales"]),
+    }
+    if args.seed is not None:
+        body["seed"] = args.seed
+    return endpoint, body
+
+
 def _build_base_pass_request(recipe: dict, args, positive: str, negative: str,
                               image_ref, cn: dict | None) -> tuple:
     """Build (endpoint, body) for the base/layout pass — two shapes on the SAME custom endpoint.
@@ -399,6 +537,16 @@ def main(argv=None) -> None:
                     help="Scenario model id for the --controlnet base pass (default: recipe "
                          "controlnet.model, else the proven model_bfl-flux-1-dev). No effect without "
                          "--controlnet.")
+    ap.add_argument("--style-pass", default=None,
+                    help="ARM A (PLATE SPRINT): after the base/layout pass (typically a --controlnet depth "
+                         "REGISTERED base), run a SECOND img2img STYLE pass on the style model (default recipe "
+                         "base_model=z-image) + the painterly LoRA over that base, re-painting the geometry in "
+                         "the house style at the given denoise strength (the drift/beauty knob). Value = a JSON "
+                         "string OR a path to a JSON file: {model,loras,lorasScale,strength,min_recall} — all "
+                         "optional; model/loras/lorasScale default to the recipe painterly recipe (model_z-image "
+                         "+ the painterly LoRA @ its recipe scale), min_recall defaults to 0.95 (the gate the "
+                         "best-sample selector targets). Default OFF; absent flag = byte-identical behavior. "
+                         "Composes after the base pass (and after --layered if set).")
     ap.add_argument("--dry-run", action="store_true", help="print the resolved request without calling the API")
     args = ap.parse_args(argv)
 
@@ -433,6 +581,9 @@ def main(argv=None) -> None:
     # with `image` + `strength` (the txt2img endpoint rejects standalone models). The base model
     # is in the PATH; the painterly LoRA rides `loras`/`lorasScale` (string ids, per the proven job).
     cn = _resolve_controlnet(recipe, args)
+    # ARM A (PLATE SPRINT): resolve the optional second (style) img2img pass now so a malformed
+    # --style-pass JSON fails fast (even on --dry-run), before any billed base job runs. None = off.
+    sp = _resolve_style_pass(recipe, args)
     endpoint, body = _build_base_pass_request(recipe, args, positive, negative, None, cn)
 
     if args.dry_run:
@@ -473,6 +624,10 @@ def main(argv=None) -> None:
                 print("    %s" % pass2_prompt[:160] + " ...")
                 print("  pass3 prompt (rendered for room=%s, room_recipes.json:layered_pipeline_2026_07_02.pass3_staging_last):" % args.room)
                 print("    %s" % pass3_prompt[:160] + " ...")
+        if sp:
+            print("[generate_room] DRY-RUN --style-pass: would additionally run an img2img STYLE pass "
+                  "on model=%s (loras=%s, lorasScale=%s) over the base plate at strength=%.2f"
+                  % (sp["model"], sp["loras"], sp["lora_scales"], sp["strength"]))
         return
 
     out_dir = args.out or os.path.join(os.getcwd(), "room_gen_%s" % args.room)
@@ -587,6 +742,42 @@ def main(argv=None) -> None:
         }
         print("[generate_room] --layered%s OK — final staged plate: %s"
               % (" --day" if args.day else "", pass3_saved[0]))
+
+    if sp and saved:
+        # ARM A (PLATE SPRINT): the base pass produced the REGISTERED geometry (typically --controlnet
+        # depth); now re-paint it in the house style with a SECOND img2img pass on the style model +
+        # painterly LoRA at a low strength (drift-gated by plate_loop's registration gate afterward).
+        # The style input is the base pass output that already lives on Scenario, so chain its asset id
+        # (no re-upload). When --layered also ran, style the fully-staged pass3 plate; otherwise style
+        # the first base sample. Sequential job (never concurrent with the base/layered paints).
+        style_input = meta["layered"]["final_plate"] if meta.get("layered") else saved[0]
+        style_input_ref = style_input["asset_id"]
+        endpoint_sp, body_sp = _build_style_pass_request(recipe, args, positive, negative, style_input_ref, sp)
+        res_sp = _post_json(endpoint_sp, headers, body_sp)
+        sp_job = _job_id_from_create(res_sp, "style-pass create")
+        print("[generate_room] %s --style-pass img2img job submitted: %s (model=%s, strength=%s)"
+              % (args.room, sp_job, sp["model"], sp["strength"]))
+        sp_job_obj = _poll_job(headers, sp_job, "style-pass", args.timeout)
+        sp_saved = _download_job_assets(headers, sp_job_obj, out_dir, "room_%s_stylepass" % args.room)
+        if not sp_saved:
+            sys.exit("[generate_room] ERROR: --style-pass produced no assets")
+        # The style endpoint returns N samples (varying drift off the locked geometry). Promote the
+        # most-stylized one that still registers vs the greybox (the --base-plate); plate_loop reads
+        # this declared final_plate rather than picking the newest file by mtime.
+        # Prefer the gate's greybox (forwarded by plate_loop) so selection scores the same image the
+        # registration gate will; fall back to --base-plate (the conditioning greybox) standalone.
+        gate_greybox = sp.get("greybox") or args.base_plate
+        greybox = os.path.expanduser(gate_greybox) if gate_greybox else None
+        final_sample = _select_style_sample(sp_saved, greybox, sp["min_recall"])
+        _downscale_to_plate(final_sample["path"], args.width, args.height)
+        meta["style_pass"] = {
+            "model": sp["model"], "loras": sp["loras"], "lora_scales": sp["lora_scales"],
+            "strength": sp["strength"], "min_recall": sp["min_recall"], "input_ref": style_input_ref,
+            "job_id": sp_job, "assets": sp_saved, "final_plate": final_sample,
+        }
+        print("[generate_room] --style-pass OK — final styled plate: %s (recall=%s, %s)"
+              % (final_sample["path"], final_sample.get("edge_recall_vs_greybox"),
+                 final_sample.get("selected_by")))
 
     _write_meta(out_dir, meta)
     print("[generate_room] OK — room=%s job=%s assets=%d -> %s" % (args.room, job_id, len(saved), out_dir))
