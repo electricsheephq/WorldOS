@@ -299,6 +299,74 @@ def _resolve_controlnet(recipe: dict, args) -> dict | None:
             "loras": loras, "lora_scales": lora_scales}
 
 
+def _parse_style_pass(value: str) -> dict:
+    """Parse the --style-pass value, which is EITHER a JSON string OR a path to a JSON file.
+
+    plate_loop.py forwards a temp file path (`--style-pass <dir>/style_pass.json`); a human can pass an
+    inline `'{"strength": 0.35}'`. Both resolve here. Fails loud on malformed JSON / a non-object so a
+    typo never silently skips the pass."""
+    text = value
+    if os.path.isfile(value):
+        with open(value, "r") as f:
+            text = f.read()
+    try:
+        obj = json.loads(text)
+    except json.JSONDecodeError as e:
+        sys.exit("[generate_room] ERROR: --style-pass must be JSON (an inline string or a file path): %s" % e)
+    if not isinstance(obj, dict):
+        sys.exit("[generate_room] ERROR: --style-pass JSON must be an object {model,loras,lorasScale,strength}")
+    return obj
+
+
+def _resolve_style_pass(recipe: dict, args) -> dict | None:
+    """Resolve {model, loras, lora_scales, strength} for the ARM A style pass, or None when it's off.
+
+    The style pass is a SECOND img2img run — on the style model (default recipe base_model = z-image)
+    with the painterly LoRA — over the REGISTERED base plate, re-painting the controlnet-locked geometry
+    in the house style at a low denoise strength (the strength is the drift/beauty knob ARM A sweeps).
+    Every field defaults to the recipe painterly recipe (model_z-image + model_MB22… @ 0.78), so a
+    minimal `{"strength": 0.35}` is a complete config; explicit fields win. Accepts either `lorasScale`
+    (the packet/Scenario spelling) or `lora_scales` for the scales list."""
+    if not getattr(args, "style_pass", None):
+        return None
+    raw = _parse_style_pass(args.style_pass)
+    model = raw.get("model") or recipe["base_model"]
+    loras = list(raw.get("loras") or [recipe["lora"]])
+    scales = raw.get("lorasScale", raw.get("lora_scales"))
+    scales = list(scales) if scales is not None else [recipe["lora_scale"]] * len(loras)
+    strength = float(raw.get("strength", args.strength))
+    return {"model": model, "loras": loras, "lora_scales": scales, "strength": strength}
+
+
+def _build_style_pass_request(recipe: dict, args, positive: str, negative: str,
+                               image_ref, sp: dict) -> tuple:
+    """Build (endpoint, body) for the ARM A style pass — an img2img run on the style model.
+
+    Same img2img shape as the unconditioned base pass (`image` + `strength` seed, LoRA on
+    `loras`/`lorasScale`, style model in the PATH), but seeded from the REGISTERED base plate
+    (`image_ref` = the base pass output asset id) and carrying the painterly LoRA the flux ControlNet
+    base could not (flux.1-dev rejects the z-image LoRA — HTTP 400). numSamples is pinned to 1: the
+    style pass emits ONE final styled+registered plate, the single candidate the registration gate and
+    reject-retry contract score per config."""
+    endpoint = API_BASE + CONTROLNET_PATH.format(model_id=sp["model"])
+    body = {
+        "prompt": positive,
+        "negativePrompt": negative,
+        "image": image_ref,
+        "strength": sp["strength"],
+        "numInferenceSteps": args.steps,
+        "guidance": args.guidance,
+        "numSamples": 1,
+        "width": args.width,
+        "height": args.height,
+        "loras": list(sp["loras"]),
+        "lorasScale": list(sp["lora_scales"]),
+    }
+    if args.seed is not None:
+        body["seed"] = args.seed
+    return endpoint, body
+
+
 def _build_base_pass_request(recipe: dict, args, positive: str, negative: str,
                               image_ref, cn: dict | None) -> tuple:
     """Build (endpoint, body) for the base/layout pass — two shapes on the SAME custom endpoint.
@@ -399,6 +467,15 @@ def main(argv=None) -> None:
                     help="Scenario model id for the --controlnet base pass (default: recipe "
                          "controlnet.model, else the proven model_bfl-flux-1-dev). No effect without "
                          "--controlnet.")
+    ap.add_argument("--style-pass", default=None,
+                    help="ARM A (PLATE SPRINT): after the base/layout pass (typically a --controlnet depth "
+                         "REGISTERED base), run a SECOND img2img STYLE pass on the style model (default recipe "
+                         "base_model=z-image) + the painterly LoRA over that base, re-painting the geometry in "
+                         "the house style at the given denoise strength (the drift/beauty knob). Value = a JSON "
+                         "string OR a path to a JSON file: {model,loras,lorasScale,strength} — all optional, each "
+                         "defaulting to the recipe painterly recipe (model_z-image + the painterly LoRA @ its "
+                         "recipe scale). Default OFF; absent flag = byte-identical behavior. Composes after the "
+                         "base pass (and after --layered if set).")
     ap.add_argument("--dry-run", action="store_true", help="print the resolved request without calling the API")
     args = ap.parse_args(argv)
 
@@ -433,6 +510,9 @@ def main(argv=None) -> None:
     # with `image` + `strength` (the txt2img endpoint rejects standalone models). The base model
     # is in the PATH; the painterly LoRA rides `loras`/`lorasScale` (string ids, per the proven job).
     cn = _resolve_controlnet(recipe, args)
+    # ARM A (PLATE SPRINT): resolve the optional second (style) img2img pass now so a malformed
+    # --style-pass JSON fails fast (even on --dry-run), before any billed base job runs. None = off.
+    sp = _resolve_style_pass(recipe, args)
     endpoint, body = _build_base_pass_request(recipe, args, positive, negative, None, cn)
 
     if args.dry_run:
@@ -473,6 +553,10 @@ def main(argv=None) -> None:
                 print("    %s" % pass2_prompt[:160] + " ...")
                 print("  pass3 prompt (rendered for room=%s, room_recipes.json:layered_pipeline_2026_07_02.pass3_staging_last):" % args.room)
                 print("    %s" % pass3_prompt[:160] + " ...")
+        if sp:
+            print("[generate_room] DRY-RUN --style-pass: would additionally run an img2img STYLE pass "
+                  "on model=%s (loras=%s, lorasScale=%s) over the base plate at strength=%.2f"
+                  % (sp["model"], sp["loras"], sp["lora_scales"], sp["strength"]))
         return
 
     out_dir = args.out or os.path.join(os.getcwd(), "room_gen_%s" % args.room)
@@ -587,6 +671,32 @@ def main(argv=None) -> None:
         }
         print("[generate_room] --layered%s OK — final staged plate: %s"
               % (" --day" if args.day else "", pass3_saved[0]))
+
+    if sp and saved:
+        # ARM A (PLATE SPRINT): the base pass produced the REGISTERED geometry (typically --controlnet
+        # depth); now re-paint it in the house style with a SECOND img2img pass on the style model +
+        # painterly LoRA at a low strength (drift-gated by plate_loop's registration gate afterward).
+        # The style input is the base pass output that already lives on Scenario, so chain its asset id
+        # (no re-upload). When --layered also ran, style the fully-staged pass3 plate; otherwise style
+        # the first base sample. Sequential job (never concurrent with the base/layered paints).
+        style_input = meta["layered"]["final_plate"] if meta.get("layered") else saved[0]
+        style_input_ref = style_input["asset_id"]
+        endpoint_sp, body_sp = _build_style_pass_request(recipe, args, positive, negative, style_input_ref, sp)
+        res_sp = _post_json(endpoint_sp, headers, body_sp)
+        sp_job = _job_id_from_create(res_sp, "style-pass create")
+        print("[generate_room] %s --style-pass img2img job submitted: %s (model=%s, strength=%s)"
+              % (args.room, sp_job, sp["model"], sp["strength"]))
+        sp_job_obj = _poll_job(headers, sp_job, "style-pass", args.timeout)
+        sp_saved = _download_job_assets(headers, sp_job_obj, out_dir, "room_%s_stylepass" % args.room)
+        if not sp_saved:
+            sys.exit("[generate_room] ERROR: --style-pass produced no assets")
+        _downscale_to_plate(sp_saved[0]["path"], args.width, args.height)
+        meta["style_pass"] = {
+            "model": sp["model"], "loras": sp["loras"], "lora_scales": sp["lora_scales"],
+            "strength": sp["strength"], "input_ref": style_input_ref,
+            "job_id": sp_job, "assets": sp_saved, "final_plate": sp_saved[0],
+        }
+        print("[generate_room] --style-pass OK — final styled plate: %s" % sp_saved[0])
 
     _write_meta(out_dir, meta)
     print("[generate_room] OK — room=%s job=%s assets=%d -> %s" % (args.room, job_id, len(saved), out_dir))
