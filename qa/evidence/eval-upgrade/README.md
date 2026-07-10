@@ -12,26 +12,36 @@ regenerates the grid's greybox structural prior from the manifest geometry and l
 silhouette in the plate via edge NCC, failing if any hard-silhouette prop is painted >0.5 cell off its
 authored footprint.
 
-**Verdict on the CURRENT crypt (the honest red-first-against-reality):** `INCOHERENT` — see
-[`A_crypt_current_INCOHERENT.json`](A_crypt_current_INCOHERENT.json).
+The gate checks each prop's **FOOTPRINT** (the impassable floor cells collision keys to), NOT its
+up-screen **SILHOUETTE** (occlusion) — those diverge under the iso projection. #1505's owner-playtest-#4
+correction is the canonical case: the sarcophagus silhouette rises to cols3-9×rows3-7 (open floor
+*behind* the coffin) while its real floor footprint is cols2-7×rows7-9 (where feet land on the painted
+box). The manifests now encode **both** per prop.
 
-| prop | status | offset (cells) | NCC |
-|------|--------|----------------|-----|
-| sarcophagus | PASS | 0.35 | 0.29 |
-| pillar_l | **DRIFT** | **1.20** | 0.27 |
-| pillar_r | **UNLOCATED** | 1.11 | 0.12 |
+**Verdict on the CURRENT (deployed) crypt plate `crypt_armb_iter3_v1` (honest red-first-against-reality):**
+`INCOHERENT` — see [`A_crypt_current_INCOHERENT.json`](A_crypt_current_INCOHERENT.json).
 
-This matches the player-alignment lane's finding on the same plate (`qa/evidence/1469/iter3`): the final
-staging pass "shifted the left half off the greybox" (registration recall 0.708). The left-side pillars
-are painted >1 cell off the cells the engine keys collision to — the sarcophagus class of defect, now
-machine-caught.
+| prop | status | offset (cells) |
+|------|--------|----------------|
+| pillar_l | **DRIFT** | 0.79 |
+| pillar_r | **UNLOCATED** | 0.86 |
+| sarcophagus | **UNLOCATED** | 1.17 |
 
-**Synthetic aligned control:** `COHERENT`, worst offset 0.03 cell — see
-[`A_crypt_aligned_COHERENT.json`](A_crypt_aligned_COHERENT.json).
+#1491 proved this plate carries real grid↔paint drift that no shared transform can realign; #1505 could
+only recalibrate the sarcophagus footprint to the paint, not remove the residual drift. The gate reads
+it INCOHERENT — the defect the owner walked onto, machine-caught. **Synthetic aligned control:**
+`COHERENT`, worst offset 0.05 cell — [`A_crypt_aligned_COHERENT.json`](A_crypt_aligned_COHERENT.json).
 
-**Manifests:** reuses the already-landed `qa/room_manifests/crypt_dense_v1.cells.json` +
-`camp_clearing_night_v2.cells.json` (the #1462 seed manifests, regeneratable via
-`qa/build_room_manifest.py`) — no new manifest files were needed.
+**Manifests — greybox-derived where geometry exists (owner playtest #5):**
+- `tools/derive_room_manifest.py` DERIVES a manifest (footprint + occlusion + walkable) from an
+  `export_scene_grid` geometry JSON, via point-in-polygon of each cell's grounded projection against the
+  prop's box silhouette (#1505 generalised). `qa/room_manifests/forest_road.cells.json` is generated this
+  way (31 props, 420 occlusion cells, 68 walkable) and is **COHERENT against the very greybox its geometry
+  describes** — the loop closed at the source.
+- `crypt_dense_v1` (deployed grid, `seed_gfx_combat.py` + #1505 footprint) and `camp_clearing_night_v2`
+  (W6.2 authored grid, incl. campfire/bedrolls/logs/crates footprints — the owner walked through the fire)
+  are flagged `derivation: "measured"` (reconstructed from measured calibrations); geometry-JSON
+  derivation for them is a follow-up.
 
 **CI:** the deterministic test suite (`qa/test_grid_paint_coherence.py`: aligned PASS + synthetic shift
 CAUGHT + current-crypt INCOHERENT anchor + size guard) is wired into `ci.yml`'s `paint-drift-gate` job.

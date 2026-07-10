@@ -6,41 +6,43 @@
   "skipped": 0,
   "props": [
     {
-      "id": "sarcophagus",
-      "status": "PASS",
-      "offset_cells": 0.345,
-      "offset_px": 16.1,
-      "ncc": 0.2899,
-      "peak_offset_px": [
-        -16,
-        2
-      ]
-    },
-    {
       "id": "pillar_l",
       "status": "DRIFT",
-      "offset_cells": 1.2,
-      "offset_px": 56.0,
-      "ncc": 0.2749,
+      "offset_cells": 0.793,
+      "offset_px": 37.1,
+      "ncc": 0.2741,
       "peak_offset_px": [
-        56,
-        2
+        2,
+        -37
       ]
     },
     {
       "id": "pillar_r",
       "status": "UNLOCATED",
-      "offset_cells": 1.106,
-      "offset_px": 51.7,
-      "ncc": 0.1218,
+      "offset_cells": 0.86,
+      "offset_px": 40.2,
+      "ncc": 0.1781,
       "peak_offset_px": [
-        35,
+        -13,
         38
+      ]
+    },
+    {
+      "id": "sarcophagus",
+      "status": "UNLOCATED",
+      "offset_cells": 1.168,
+      "offset_px": 54.6,
+      "ncc": 0.1598,
+      "peak_offset_px": [
+        -13,
+        53
       ]
     }
   ],
   "reasons": [
-    "pillar_l painted 1.20 cell off authored cells [[3, 4]] (> 0.5; 56px, NCC 0.275) \u2014 actor sits on the cell, paint sits elsewhere",
-    "pillar_r not locatable near authored cells [[10, 4]] (peak NCC 0.122 < 0.2) \u2014 paint put no grid-shaped structure on the footprint"
-  ]
+    "pillar_l painted 0.79 cell off authored cells [[2, 4]] (> 0.5; 37px, NCC 0.274) \u2014 actor sits on the cell, paint sits elsewhere",
+    "pillar_r not locatable near authored cells [[9, 9]] (peak NCC 0.178 < 0.2) \u2014 paint put no grid-shaped structure on the footprint",
+    "sarcophagus not locatable near authored cells [[2, 7], [2, 8], [2, 9], [3, 7], [3, 8], [3, 9], [4, 7], [4, 8], [4, 9], [5, 7], [5, 8], [5, 9], [6, 7], [6, 8], [6, 9], [7, 7], [7, 8], [7, 9]] (peak NCC 0.160 < 0.2) \u2014 paint put no grid-shaped structure on the footprint"
+  ],
+  "plate": "qa/evidence/plate-sprint/adopt-crypt/source-plates/candidate_crypt_armb_iter3.jpg"
 }

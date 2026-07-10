@@ -197,6 +197,12 @@ jobs:
         # greybox from the manifest geometry); single-process. Reliable for hard-silhouette architectural
         # props — the crypt reality anchor here is the validated red-first-against-reality case.
         run: python -m pytest qa/test_grid_paint_coherence.py -q -p no:xdist
+      - name: Room-manifest DERIVATION from greybox geometry (regeneratable + loop-closed on forest_road)
+        # Owner playtest #5: manifests are DERIVED from greybox geometry (single source of truth for
+        # footprint + occlusion + walkable) via tools/derive_room_manifest.py. Pins the derivation math,
+        # that forest_road.cells.json is regeneratable, and that the derived manifest is COHERENT against
+        # the greybox its geometry describes (the loop closed at the source).
+        run: python -m pytest qa/test_derive_room_manifest.py -q -p no:xdist
 
   license-check:
     runs-on: ubuntu-latest

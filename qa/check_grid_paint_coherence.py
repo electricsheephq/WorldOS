@@ -12,8 +12,13 @@ been 3/4 cell off the grid passes the drift gate forever (no baseline to drift f
 ABSOLUTE: it asserts the painted prop sits on the grid's OWN impassable footprint — the cells the engine
 keys pathing/collision to — with no reference plate at all.
 
+This gate checks each prop's FOOTPRINT (the impassable floor cells collision keys to), NOT its up-screen
+SILHOUETTE (occlusion) — those diverge under the iso projection, and the sarcophagus incident was
+precisely a paint-vs-footprint drift (#1505: the coffin's silhouette rose to cols3-9 x rows3-7 while its
+real floor footprint was cols2-7 x rows7-9). The manifest carries both; this reads `footprint`.
+
 The measurement, per authored prop (from qa/room_manifests/<room>.cells.json):
-  1. The grid's structural signature is REGENERATED from the manifest geometry (props' cells + kind) via
+  1. The grid's structural signature is REGENERATED from the manifest FOOTPRINT geometry (+ kind) via
      the SAME contract greybox rig the plate is img2img-conditioned on (greybox_render_headless — the
      #1396 recipe). This greybox IS the authored grid: each prop's box is drawn at exactly its authored
      cells. The greybox depth sidecar (greybox_sidecars_headless) is the same correspondence prior; the
@@ -126,7 +131,10 @@ def greybox_edges_from_manifest(manifest: dict) -> np.ndarray:
         "cols": int(grid.get("cols", 0)),
         "rows": int(grid.get("rows", 0)),
         "walls": [],
-        "props": [{"kind": p.get("kind", "prop"), "cells": p.get("cells", [])}
+        # The correspondence prior is built from the FOOTPRINT (floor cells), so the greybox box sits on
+        # the cells collision keys to — NOT the up-screen silhouette (occlusion). A coffin whose paint
+        # coheres with its footprint matches this template; a drifted one does not.
+        "props": [{"kind": p.get("kind", "prop"), "cells": p.get("footprint") or p.get("cells", [])}
                   for p in manifest.get("props", [])],
     }
     with tempfile.TemporaryDirectory() as td:
@@ -204,10 +212,12 @@ def check_grid_paint_coherence(plate_path: str | Path, manifest: dict, *,
 
     for prop in manifest.get("props", []):
         pid = str(prop.get("id", "?"))
-        cells = prop.get("cells")
+        # Check the FOOTPRINT (the floor cells collision keys to), not the up-screen silhouette
+        # (occlusion) — the sarcophagus incident was precisely a paint-vs-FOOTPRINT drift (#1505).
+        cells = prop.get("footprint") or prop.get("cells")
         kind = prop.get("kind", "prop")
         if not (isinstance(cells, list) and cells):
-            result.props.append({"id": pid, "status": "SKIP", "reason": "no cells"})
+            result.props.append({"id": pid, "status": "SKIP", "reason": "no footprint/cells"})
             result.skipped += 1
             continue
         bbox = prop_box_screen_bbox([tuple(c) for c in cells], kind, cols, rows)

@@ -6,24 +6,13 @@
   "skipped": 0,
   "props": [
     {
-      "id": "sarcophagus",
-      "status": "PASS",
-      "offset_cells": 0.03,
-      "offset_px": 1.4,
-      "ncc": 0.9538,
-      "peak_offset_px": [
-        -1,
-        -1
-      ]
-    },
-    {
       "id": "pillar_l",
       "status": "PASS",
-      "offset_cells": 0.03,
-      "offset_px": 1.4,
-      "ncc": 0.7454,
+      "offset_cells": 0.048,
+      "offset_px": 2.2,
+      "ncc": 0.7342,
       "peak_offset_px": [
-        -1,
+        2,
         -1
       ]
     },
@@ -32,7 +21,18 @@
       "status": "PASS",
       "offset_cells": 0.03,
       "offset_px": 1.4,
-      "ncc": 0.8107,
+      "ncc": 0.8157,
+      "peak_offset_px": [
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "sarcophagus",
+      "status": "PASS",
+      "offset_cells": 0.03,
+      "offset_px": 1.4,
+      "ncc": 0.9941,
       "peak_offset_px": [
         -1,
         -1
