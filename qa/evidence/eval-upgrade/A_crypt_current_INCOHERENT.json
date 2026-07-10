@@ -1,0 +1,46 @@
+{
+  "passed": false,
+  "room": "crypt_dense_v1",
+  "max_offset_cells": 0.5,
+  "checked": 3,
+  "skipped": 0,
+  "props": [
+    {
+      "id": "sarcophagus",
+      "status": "PASS",
+      "offset_cells": 0.345,
+      "offset_px": 16.1,
+      "ncc": 0.2899,
+      "peak_offset_px": [
+        -16,
+        2
+      ]
+    },
+    {
+      "id": "pillar_l",
+      "status": "DRIFT",
+      "offset_cells": 1.2,
+      "offset_px": 56.0,
+      "ncc": 0.2749,
+      "peak_offset_px": [
+        56,
+        2
+      ]
+    },
+    {
+      "id": "pillar_r",
+      "status": "UNLOCATED",
+      "offset_cells": 1.106,
+      "offset_px": 51.7,
+      "ncc": 0.1218,
+      "peak_offset_px": [
+        35,
+        38
+      ]
+    }
+  ],
+  "reasons": [
+    "pillar_l painted 1.20 cell off authored cells [[3, 4]] (> 0.5; 56px, NCC 0.275) \u2014 actor sits on the cell, paint sits elsewhere",
+    "pillar_r not locatable near authored cells [[10, 4]] (peak NCC 0.122 < 0.2) \u2014 paint put no grid-shaped structure on the footprint"
+  ]
+}

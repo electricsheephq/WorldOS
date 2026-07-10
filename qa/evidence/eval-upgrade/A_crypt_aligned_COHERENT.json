@@ -1,0 +1,43 @@
+{
+  "passed": true,
+  "room": "crypt_dense_v1",
+  "max_offset_cells": 0.5,
+  "checked": 3,
+  "skipped": 0,
+  "props": [
+    {
+      "id": "sarcophagus",
+      "status": "PASS",
+      "offset_cells": 0.03,
+      "offset_px": 1.4,
+      "ncc": 0.9538,
+      "peak_offset_px": [
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pillar_l",
+      "status": "PASS",
+      "offset_cells": 0.03,
+      "offset_px": 1.4,
+      "ncc": 0.7454,
+      "peak_offset_px": [
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pillar_r",
+      "status": "PASS",
+      "offset_cells": 0.03,
+      "offset_px": 1.4,
+      "ncc": 0.8107,
+      "peak_offset_px": [
+        -1,
+        -1
+      ]
+    }
+  ],
+  "reasons": []
+}
