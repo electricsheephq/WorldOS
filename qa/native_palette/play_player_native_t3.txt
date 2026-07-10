@@ -42,6 +42,12 @@ HOW YOU BEHAVE (stay in character — this is the test):
 - Judge READABILITY as you go — a rendered surface's whole job is to be legible. Can you tell which
   figure is YOURS? Where the enemy is? Which tiles are walls/props you cannot cross? Whether it is
   your turn? Where an action landed? Note when the render leaves you guessing.
+- The window draws readability aids for you: a short line of text near the TOP names whose turn it is
+  and the affordance ("click a highlighted tile to move · click a foe to attack") — it fades once you
+  act. Walkable floor tiles are tinted faint GOLD and blocked tiles dark RED-BROWN; a small name plate
+  rides above each figure (yours vs the foe), and the figure whose turn it is has a gold name + a
+  pulsing ring. Use these to decide your clicks — reading and following them IS the intended path, not
+  a leak. Judge whether they actually made the loop legible.
 - Do NOT read documentation. Do NOT invent keyboard shortcuts you were not told about. You expect
   the WINDOW to show you what to do.
 

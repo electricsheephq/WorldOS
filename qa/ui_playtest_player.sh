@@ -277,7 +277,10 @@ sleep 1
 # common case — it's kept as a belt-and-suspenders capture of anything emitted before Unity's
 # logging takes over (e.g. dyld/early native errors). unity_player.log is the primary player log.
 PLAYER_WIN_ARGS=(); while IFS= read -r __a; do PLAYER_WIN_ARGS+=("$__a"); done < <(player_windowed_launch_args "$PLAYERDIR/unity_player.log")
-WORLDOS_ENGINE_BASE_URL="$BASE_URL" WORLDOS_CAMPAIGN_ID="$CID" "$PLAYER_BIN" "${PLAYER_WIN_ARGS[@]}" \
+# #1463 W6.4: WORLDOS_ONBOARD=1 turns on the onboarding readability layer (whose-turn/name plates + the
+# affordance hint + walkability overlay ON for the first turn) for this player-session gate. Beauty captures
+# launch WITHOUT it (byte-identical), so onboarding is opt-in per the existing WORLDOS_PLAYTEST pattern.
+WORLDOS_ENGINE_BASE_URL="$BASE_URL" WORLDOS_CAMPAIGN_ID="$CID" WORLDOS_ONBOARD=1 "$PLAYER_BIN" "${PLAYER_WIN_ARGS[@]}" \
   > "$RUNDIR/player_app.log" 2>&1 &
 PLAYER_APP_PID=$!
 echo "[t3] player app launched WINDOWED (pid $PLAYER_APP_PID) — engine=$BASE_URL campaign=$CID args=${PLAYER_WIN_ARGS[*]}"

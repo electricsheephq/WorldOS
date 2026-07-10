@@ -172,6 +172,40 @@ public class CombatSurfaceClient : MonoBehaviour
     GUIStyle _advStyle;
     int[] _lastPostCell = null;          // the cell the last /move POST targeted (for the pulse anchor)
 
+    // W6.4 (#1463) ONBOARDING READABILITY (the T3 gap — readability, not plumbing). A brief on-screen hint
+    // layer names whose turn it is (by NAME) + the one-line affordance, fading out after the first
+    // engine-accepted action; a world-space NAME PLATE rides each actor's HP-bar root (#1451 machinery, task
+    // 2) with the isCurrent combatant's plate tinted gold (the turn indicator); and the walkability overlay
+    // is forced ON for the first turn. ALL gated on _onboard = WORLDOS_PLAYTEST=1 (playtests) OR
+    // WORLDOS_ONBOARD=1 (the app host's real player session). Absent BOTH (beauty captures) -> byte-identical
+    // (no hint, no plate, overlay OFF), preserving the existing WORLDOS_PLAYTEST default-off pattern.
+    [Header("Onboarding readability (#1463 W6.4)")]
+    bool _onboard = false;
+    bool _acted = false;                 // set on the first engine-accepted move/attack/walk -> the hint fades
+    float _actedT = 0f;                  // fade clock after the first action
+    const float HintFadeDur = 1.6f;
+    string _currentName = "";            // display name of the isCurrent combatant (whose turn), for the hint
+    GUIStyle _hintStyle, _hintSubStyle;
+    readonly System.Collections.Generic.Dictionary<string, string> _nameOf = new System.Collections.Generic.Dictionary<string, string>();
+
+    // W6.4 (#1463) STAGE MANIFEST (the #1463 core): an OPTIONAL StreamingAssets/stage.json
+    // ({fire_anchors:[[x,z]], flicker:{amplitude,speed}}) that animates the shipped scene — a Perlin
+    // light-flicker on the scene fire (brazier) lights and a warm procedural glow quad at each anchor, pulsed
+    // by the same noise field so lights + floor pool breathe together like flame. ABSENT FILE = byte-identical
+    // (no flicker touch, no glow quads) — a pure additive stage layer. The base intensities are captured so
+    // the flicker is a revertible multiplier. Copied into the build by BuildMacOSPlayer.EnsurePackaged when
+    // present. (Reuses MakeGroundQuad for the glow pool + the per-frame Update block, per the packet.)
+    [Header("Stage manifest (#1463 W6.4; optional StreamingAssets/stage.json)")]
+    bool _flickerActive = false;
+    float _flickAmp = 0.35f, _flickSpeed = 6f;
+    Light[] _fireLights;                 // scene brazier (fire) lights driven by the flicker
+    float[] _fireBaseIntensity;          // captured base intensity -> flicker is a revertible multiplier
+    float[] _fireSeed;                   // per-light Perlin seed offset -> independent flame flicker
+    System.Collections.Generic.List<GameObject> _glowQuads;   // warm glow quads at fire_anchors
+    System.Collections.Generic.List<Material> _glowMats;      // their materials (alpha pulsed each frame)
+    float[] _glowSeed;                   // per-quad Perlin seed
+    Texture2D _glowT;                    // warm radial glow texture, built once
+
     // #1441 named actor heights — ONE source of truth. These mirror paint_combat_v1.cs's #1418-calibrated
     // LIVE baked-scene heights (foe 4.2 / character 3.2), which is what this client repositions, so a
     // runtime-spawned actor matches its baked twin. NOTE: paint_combat_replay_v1.cs still carries a stale
@@ -231,7 +265,17 @@ public class CombatSurfaceClient : MonoBehaviour
         // extents); a default-on overlay appears after the first /combat-surface poll.
         _overlayOn = System.Environment.GetEnvironmentVariable("WORLDOS_PLAYTEST") == "1";
 
-        Debug.Log("[CSC] start: campaign=" + CampaignId + " url=" + ViewerUrl + " overlay=" + _overlayOn);
+        // #1463: onboarding readability (the T3 gap). On for player sessions — a playtest OR the app host's
+        // WORLDOS_ONBOARD launch. Absent both env vars (beauty captures) stays byte-identical. Force the
+        // walkability overlay ON under onboarding even outside a playtest so the first-timer sees the walkable
+        // tiles immediately (the T3 "15 actions to first turn / intro incomplete" readability failure).
+        _onboard = _overlayOn || System.Environment.GetEnvironmentVariable("WORLDOS_ONBOARD") == "1";
+        if (_onboard) _overlayOn = true;
+
+        // #1463: load the OPTIONAL stage manifest (fire flicker + glow anchors). Absent -> byte-identical.
+        LoadStageManifest();
+
+        Debug.Log("[CSC] start: campaign=" + CampaignId + " url=" + ViewerUrl + " overlay=" + _overlayOn + " onboard=" + _onboard);
         StartCoroutine(PollLoop());
     }
 
@@ -465,7 +509,7 @@ public class CombatSurfaceClient : MonoBehaviour
             // means DOWNED (prone on the field, revivable), never a skip. Removal from the surface is the
             // only terminal signal (the stale path below).
             if (t == null) continue;
-            if (!string.IsNullOrEmpty(t.id)) present.Add(t.id);
+            if (!string.IsNullOrEmpty(t.id)) { present.Add(t.id); _nameOf[t.id] = string.IsNullOrEmpty(t.name) ? t.id : t.name; } // #1463: name plate source
             bool foe = (t.team == "foe");
             if (foe) { _foeId = t.id; _foeX = t.x; _foeY = t.y; }
             Transform a = FindActor(t.id);
@@ -515,6 +559,8 @@ public class CombatSurfaceClient : MonoBehaviour
         // active-turn combatant (attacker anchor + ring-pulse target).
         _currentId = "";
         foreach (var t in s.tokens) if (t != null && t.isCurrent && !string.IsNullOrEmpty(t.id)) { _currentId = t.id; break; }
+        // #1463: the display name of the active combatant, for the onboarding hint's "whose turn" line.
+        _currentName = ""; if (!string.IsNullOrEmpty(_currentId)) _nameOf.TryGetValue(_currentId, out _currentName);
         Transform attacker = string.IsNullOrEmpty(_currentId) ? null : FindActor(_currentId);
 
         foreach (var t in s.tokens)
@@ -1252,6 +1298,9 @@ public class CombatSurfaceClient : MonoBehaviour
     {
         // #Phase4: advance the advisory fade clock regardless of poll/POST state.
         if (!string.IsNullOrEmpty(_advMsg)) _advT += Time.deltaTime;
+        // #1463: advance the onboarding-hint fade clock after the first action; drive the stage flicker.
+        if (_acted) _actedT += Time.deltaTime;
+        if (_flickerActive || _glowMats != null) UpdateStageFlicker();
         // #Phase3: overlay toggle (G) + hover run independent of the click gate below.
         if (Input.GetKeyDown(KeyCode.G)) ToggleOverlay();
         if (_overlayOn) UpdateOverlayHover();
@@ -1267,6 +1316,7 @@ public class CombatSurfaceClient : MonoBehaviour
     // over AdvisoryHold. A drop shadow keeps it legible over the painterly board.
     void OnGUI()
     {
+        DrawOnboardHint();   // #1463 (task 1): whose-turn + affordance hint; fades after the first action
         if (string.IsNullOrEmpty(_advMsg)) return;
         float a = 1f - Mathf.Clamp01(_advT / AdvisoryHold);
         if (a <= 0f) { _advMsg = ""; return; }
@@ -1449,6 +1499,7 @@ public class CombatSurfaceClient : MonoBehaviour
                 try { resp = JsonUtility.FromJson<MoveResp>(req.downloadHandler.text); }
                 catch (System.Exception e) { Debug.LogWarning("[CSC] walk parse: " + e.Message); }
                 if (resp != null && !resp.ok && !string.IsNullOrEmpty(resp.reason)) ShowAdvisory(resp.reason);
+                else MarkActed();   // #1463: an accepted walk retires the onboarding hint
             }
         }
         _busy = false;   // always released (the watchdog guarantees the loop above terminates)
@@ -1468,6 +1519,7 @@ public class CombatSurfaceClient : MonoBehaviour
             MoveResp resp = null;
             try { resp = JsonUtility.FromJson<MoveResp>(req.downloadHandler.text); }
             catch (System.Exception e) { Debug.LogWarning("[CSC] move parse: " + e.Message); yield break; }
+            if (resp != null && resp.ok) MarkActed();   // #1463: the first accepted move/attack retires the hint
             // #1441: parse lastPath/impassable from the RAW response (nested under `combat`) BEFORE
             // ApplySurf so the glide can follow the engine-confirmed route of the move just resolved.
             if (resp != null && resp.ok && resp.combat != null) { Debug.Log("[CSC] move ok -> re-render"); ParseSurfaceExtras(req.downloadHandler.text); ApplySurf(resp.combat); }
@@ -1703,6 +1755,10 @@ public class CombatSurfaceClient : MonoBehaviour
         root = new GameObject("Actor_" + id + "_HP");
         MakeBarQuad(root, "_bg", new Color(0.08f, 0.03f, 0.03f, 1f), 3080);   // child 0
         MakeBarQuad(root, "_fg", new Color(0.85f, 0.15f, 0.12f, 1f), 3090);   // child 1
+        // #1463 (task 2): onboarding name plate — a world-space TextMesh riding just above the bar, parented
+        // to the SAME HP-bar root the #1451 machinery positions + billboards each frame (so it tracks + faces
+        // the camera for free). Only under onboarding, so beauty captures stay byte-identical.
+        if (_onboard) MakeNameLabel(root, id);
         _hpBars[id] = root;
     }
     void MakeBarQuad(GameObject root, string suffix, Color col, int queue)
@@ -1732,6 +1788,13 @@ public class CombatSurfaceClient : MonoBehaviour
             float top; if (!_topOf.TryGetValue(kv.Key, out top)) top = 5.0f;
             root.transform.position = actor.position + new Vector3(0f, top, 0f);
             if (cam != null) root.transform.rotation = cam.transform.rotation;
+            // #1463 (task 2): the turn indicator — the isCurrent combatant's name plate reads gold, the rest
+            // soft parchment-white (the bar's bg/fg quads carry no TextMesh, so this finds the name label).
+            if (_onboard)
+            {
+                var nameTm = root.GetComponentInChildren<TextMesh>();
+                if (nameTm != null) nameTm.color = (kv.Key == _currentId) ? new Color(1f, 0.85f, 0.4f, 1f) : new Color(0.96f, 0.92f, 0.78f, 0.85f);
+            }
             int hp, mx; float frac = (_hpMaxOf.TryGetValue(kv.Key, out mx) && mx > 0 && _hpOf.TryGetValue(kv.Key, out hp)) ? Mathf.Clamp01((float)hp / mx) : 1f;
             const float full = 3.2f;
             if (root.transform.childCount >= 2)
@@ -1762,5 +1825,152 @@ public class CombatSurfaceClient : MonoBehaviour
         float p = 0.5f + 0.5f * Mathf.Sin(Time.time * 4f);
         var col = r.sharedMaterial.color; col.a = Mathf.Lerp(0.55f, 1f, p); r.sharedMaterial.color = col;
         float s = Mathf.Lerp(2.6f, 3.05f, p); ring.transform.localScale = new Vector3(s, s, 1f);
+    }
+
+    // ---- #1463 W6.4 onboarding hint layer (task 1) --------------------------------------------------
+
+    // The onboarding hint — whose turn (by NAME) + a one-line affordance, near the top of the screen. Full
+    // strength until the first engine-accepted action, then fades over HintFadeDur and never returns. Inert
+    // unless _onboard (beauty captures draw nothing). IMGUI (no Canvas), matching the advisory idiom above.
+    void DrawOnboardHint()
+    {
+        if (!_onboard) return;
+        float a = _acted ? (1f - Mathf.Clamp01(_actedT / HintFadeDur)) : 1f;
+        if (a <= 0f) return;
+        if (_hintStyle == null)
+        {
+            _hintStyle = new GUIStyle(GUI.skin.label) { fontSize = 22, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter, wordWrap = true };
+            _hintSubStyle = new GUIStyle(GUI.skin.label) { fontSize = 16, alignment = TextAnchor.MiddleCenter, wordWrap = true };
+        }
+        string turn = _restMode ? "Explore the room" : (string.IsNullOrEmpty(_currentName) ? "Your turn" : _currentName + "'s turn");
+        string hint = _restMode ? "Click a highlighted tile to move" : "Click a highlighted tile to move · click a foe to attack";
+        float w = Mathf.Min(760f, Screen.width - 40f);
+        var r1 = new Rect((Screen.width - w) / 2f, Screen.height * 0.03f, w, 34f);
+        var r2 = new Rect((Screen.width - w) / 2f, Screen.height * 0.03f + 32f, w, 26f);
+        var prev = GUI.color;
+        GUI.color = new Color(0f, 0f, 0f, a * 0.6f);   // drop shadow for legibility over the painterly board
+        GUI.Label(new Rect(r1.x + 2f, r1.y + 2f, r1.width, r1.height), turn, _hintStyle);
+        GUI.Label(new Rect(r2.x + 2f, r2.y + 2f, r2.width, r2.height), hint, _hintSubStyle);
+        GUI.color = new Color(1f, 0.90f, 0.62f, a);
+        GUI.Label(r1, turn, _hintStyle);
+        GUI.color = new Color(0.95f, 0.95f, 0.92f, a);
+        GUI.Label(r2, hint, _hintSubStyle);
+        GUI.color = prev;
+    }
+
+    // The first engine-accepted action retires the onboarding hint (it fades out and stays gone).
+    void MarkActed() { if (_onboard && !_acted) { _acted = true; _actedT = 0f; } }
+
+    // #1463 (task 2): a small camera-facing name plate parented to the HP-bar root (UpdateHpBars' per-frame
+    // position + billboard carry it for free). LegacyRuntime font (Unity 6 dropped builtin Arial), matching
+    // FloatDamage's TextMesh idiom. UpdateHpBars tints the isCurrent combatant's plate gold (the turn indicator).
+    void MakeNameLabel(GameObject root, string id)
+    {
+        string nm; if (!_nameOf.TryGetValue(id, out nm) || string.IsNullOrEmpty(nm)) nm = id;
+        var g = new GameObject(root.name + "_name");
+        g.transform.SetParent(root.transform, false);
+        g.transform.localPosition = new Vector3(0f, 0.7f, 0f);
+        var tm = g.AddComponent<TextMesh>();
+        tm.text = nm; tm.fontSize = 64; tm.characterSize = 0.16f; tm.anchor = TextAnchor.LowerCenter; tm.alignment = TextAlignment.Center; tm.color = new Color(0.96f, 0.92f, 0.78f, 1f);
+        var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+        var mr = g.GetComponent<MeshRenderer>();
+        if (font != null) { tm.font = font; if (mr != null) { mr.sharedMaterial = new Material(font.material); mr.sharedMaterial.renderQueue = 3095; } }
+        else if (mr != null && mr.sharedMaterial != null) mr.sharedMaterial.renderQueue = 3095;
+    }
+
+    // ---- #1463 W6.4 stage manifest (task 3; optional StreamingAssets/stage.json) --------------------
+
+    // Parse the OPTIONAL StreamingAssets/stage.json. Absent/corrupt -> no flicker, no glow quads
+    // (byte-identical to pre-#1463). Resolves the scene fire lights (Brazier* point lights baked by
+    // paint_combat_v1.cs) for the Perlin flicker and spawns a warm glow quad at each fire_anchor via
+    // MakeGroundQuad. Uses the same runtime Json parser registry.json + the surface extras already use.
+    void LoadStageManifest()
+    {
+        try
+        {
+            string p = System.IO.Path.Combine(Application.streamingAssetsPath, "stage.json");
+            if (!System.IO.File.Exists(p)) { Debug.Log("[CSC] no stage.json (byte-identical scene)"); return; }
+            var root = Json.Parse(System.IO.File.ReadAllText(p)) as System.Collections.Generic.Dictionary<string, object>;
+            if (root == null) return;
+
+            // flicker block -> Perlin drive of the scene fire lights (captured base intensity = revertible).
+            if (root.ContainsKey("flicker") && root["flicker"] is System.Collections.Generic.Dictionary<string, object> fl)
+            {
+                if (fl.ContainsKey("amplitude")) _flickAmp = System.Convert.ToSingle(fl["amplitude"]);
+                if (fl.ContainsKey("speed")) _flickSpeed = System.Convert.ToSingle(fl["speed"]);
+                var lights = new System.Collections.Generic.List<Light>();
+                foreach (var lt in GameObject.FindObjectsOfType<Light>())
+                    if (lt != null && lt.type == LightType.Point && lt.name.StartsWith("Brazier")) lights.Add(lt);
+                if (lights.Count > 0)
+                {
+                    _fireLights = lights.ToArray();
+                    _fireBaseIntensity = new float[_fireLights.Length];
+                    _fireSeed = new float[_fireLights.Length];
+                    for (int i = 0; i < _fireLights.Length; i++) { _fireBaseIntensity[i] = _fireLights[i].intensity; _fireSeed[i] = i * 13.37f; }
+                    _flickerActive = true;
+                }
+            }
+
+            // fire_anchors -> a warm glow quad on the floor at each [x,z] WORLD position (reuse MakeGroundQuad;
+            // queue 1948 sits just under the actor AO/ring so the fire pool reads under the cast).
+            if (root.ContainsKey("fire_anchors") && root["fire_anchors"] is System.Collections.Generic.List<object> anchors && anchors.Count > 0)
+            {
+                _glowQuads = new System.Collections.Generic.List<GameObject>();
+                _glowMats = new System.Collections.Generic.List<Material>();
+                var seeds = new System.Collections.Generic.List<float>();
+                int gi = 0;
+                foreach (var ae in anchors)
+                {
+                    var arr = ae as System.Collections.Generic.List<object>; if (arr == null || arr.Count < 2) { gi++; continue; }
+                    float ax = System.Convert.ToSingle(arr[0]), az = System.Convert.ToSingle(arr[1]);
+                    MakeGroundQuad("StageGlow_" + gi, new Vector3(ax, FloorY, az), 0.03f, 6.5f, GlowTex(), new Color(1f, 0.55f, 0.2f, 0.5f), 1948);
+                    var g = GameObject.Find("StageGlow_" + gi);
+                    if (g != null) { var r = g.GetComponent<Renderer>(); _glowQuads.Add(g); _glowMats.Add(r != null ? r.sharedMaterial : null); seeds.Add(gi * 7.7f); }
+                    gi++;
+                }
+                _glowSeed = seeds.ToArray();
+            }
+            Debug.Log("[CSC] stage.json loaded: flicker=" + _flickerActive + " lights=" + (_fireLights != null ? _fireLights.Length : 0) + " glowQuads=" + (_glowQuads != null ? _glowQuads.Count : 0));
+        }
+        catch (System.Exception e) { Debug.LogWarning("[CSC] stage.json parse: " + e.Message); }
+    }
+
+    // A soft warm radial glow, brightest at center -> transparent at the rim (the fire pool on the floor).
+    Texture2D GlowTex()
+    {
+        if (_glowT != null) return _glowT;
+        _glowT = new Texture2D(128, 128, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+        var px = new Color[128 * 128]; float c = 63.5f;
+        for (int y = 0; y < 128; y++) for (int x = 0; x < 128; x++)
+        {
+            float d = Mathf.Clamp01(Mathf.Sqrt((x - c) * (x - c) + (y - c) * (y - c)) / c);
+            px[y * 128 + x] = new Color(1f, 1f, 1f, Mathf.Clamp01(Mathf.Pow(1f - d, 1.8f)));
+        }
+        _glowT.SetPixels(px); _glowT.Apply();
+        return _glowT;
+    }
+
+    // #1463: drive the fire flicker each frame (the per-frame Update block, per the packet). A single Perlin
+    // field (per-source seed offset) modulates each brazier's intensity around its captured base and each glow
+    // quad's alpha, so lights + floor pool breathe together like flame. Pure presentation; reverts to base.
+    void UpdateStageFlicker()
+    {
+        float tt = Time.time * _flickSpeed;
+        if (_flickerActive && _fireLights != null)
+            for (int i = 0; i < _fireLights.Length; i++)
+            {
+                if (_fireLights[i] == null) continue;
+                float n = Mathf.PerlinNoise(_fireSeed[i], tt) - 0.5f;                 // -0.5..0.5
+                _fireLights[i].intensity = _fireBaseIntensity[i] * (1f + _flickAmp * 2f * n);
+            }
+        if (_glowMats != null)
+            for (int i = 0; i < _glowMats.Count; i++)
+            {
+                if (_glowMats[i] == null) continue;
+                float seed = (_glowSeed != null && i < _glowSeed.Length) ? _glowSeed[i] : i;
+                float n = Mathf.PerlinNoise(seed, tt) - 0.5f;
+                var c = _glowMats[i].color; c.a = Mathf.Clamp01(0.5f * (1f + _flickAmp * 2f * n)); _glowMats[i].color = c;
+            }
     }
 }

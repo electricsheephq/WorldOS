@@ -19,6 +19,15 @@ CellSize 2): impassable wall column x=3, one occupied cell, one foe cell.
 - `overlay_off.png` — `ToggleOverlay` → OFF: **zero tiles**, floor byte-identical to the
   no-overlay scene (constraint: OFF = zero visual change).
 
+> **W6.4 (#1463) update — overlay default:** the walkability overlay now defaults **ON** for the
+> first turn under **onboarding** (`WORLDOS_PLAYTEST=1` **or** `WORLDOS_ONBOARD=1`), not only under a
+> playtest — so a first-timer sees the walkable tiles immediately (the T3 readability gap). Absent
+> **both** env vars (beauty captures) the overlay stays **OFF** and the scene is byte-identical, so
+> the "OFF = zero visual change" constraint above is unchanged for captures. `G` still toggles. W6.4
+> also adds an onboarding hint layer (whose-turn-by-name + affordance, fades after the first action)
+> and world-space name plates on the HP-bar root (isCurrent = gold), both `_onboard`-gated. Evidence:
+> `qa/evidence/1463/`.
+
 Shader note: cells use `Sprites/Default` (has `_Color`); `Unlit/Transparent` has **no**
 `_Color` (property index -1) so a per-cell tint is silently ignored — the first capture
 rendered all-white until switched. Transparent queue 2500 so the floor+actors draw first
