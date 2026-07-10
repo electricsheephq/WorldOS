@@ -142,20 +142,74 @@ class SwiftHelperTests(unittest.TestCase):
         self.assertIn("SCScreenshotManager", src, "capture must use SCScreenshotManager (no activation)")
         self.assertIn('case "capture":', src, "helper must dispatch a `capture` subcommand")
 
-    def test_source_input_is_pid_targeted_with_optin_activate_fallback(self):
+    def test_source_input_is_pid_targeted_with_flag_gated_activate_fallback(self):
         """#1466 (completes #1456): input delivery is the no-activation twin of capture. When an
         owner is supplied the helper must resolve its PID (kCGWindowOwnerPID) and deliver the event
         DIRECTLY to that process (CGEvent.postToPid) so an unfocused player still receives it — a
-        plain global HID tap only reaches the ACTIVE app. The activate->post->restore path must stay
-        OPT-IN (never the default), preserving the no-focus-theft contract."""
+        plain global HID tap only reaches the ACTIVE app. The activate->post->restore path stays a
+        FLAG (--activate-fallback) at the swift-helper level; #1483 flips the HARNESS callers to pass
+        that flag BY DEFAULT (pid-only delivery produced zero Unity input) — see the harness test
+        below. The helper itself never activates unless the flag is passed."""
         src = SWIFT.read_text(encoding="utf-8")
         self.assertIn("kCGWindowOwnerPID", src, "input must resolve the owner PID for direct delivery")
         self.assertIn("postToPid", src, "#1466: input must PID-target via CGEvent.postToPid")
         self.assertIn("--owner", src, "click/key/type must accept --owner for PID delivery")
-        self.assertIn("--activate-fallback", src, "the activate fallback must be an opt-in flag")
-        # The fallback must be gated on the flag, not run unconditionally (no default focus theft).
+        self.assertIn("--activate-fallback", src, "the activate fallback must be a flag")
+        # The fallback must be gated on the flag in the helper, not run unconditionally.
         self.assertIn("activateFallback, let owner", src,
-                      "activate fallback must be guarded by the opt-in flag + an owner")
+                      "activate fallback must be guarded by the flag + an owner")
+
+    def test_harness_defaults_activate_fallback_on_1483(self):
+        """#1483: pid-posted CGEvents deliver to the player PID but produce ZERO Unity input (Unity's
+        Input samples only the FOREGROUND app), so the smoke lane was red on the pure-PID default since
+        w6batch. The working path is the brief activate->click->restore escape — now ON by DEFAULT in
+        BOTH the T3 palette server and the scripted smoke driver, with WORLDOS_CLICK_ACTIVATE_FALLBACK=0
+        as the opt-out (pure PID delivery). The `!== "0"` default-on shape is the guarantee."""
+        srv = SERVER.read_text(encoding="utf-8")
+        drv = SMOKE_DRIVER.read_text(encoding="utf-8")
+        for name, src in (("native_palette_server.js", srv), ("player_smoke_driver.js", drv)):
+            self.assertIn('WORLDOS_CLICK_ACTIVATE_FALLBACK !== "0"', src,
+                          f"{name}: activate-fallback must default ON (opt-out via =0), not opt-in (=1)")
+            self.assertNotIn('WORLDOS_CLICK_ACTIVATE_FALLBACK === "1"', src,
+                             f"{name}: the opt-IN (=1) default must be gone — it left the smoke lane red")
+
+    @unittest.skipUnless(shutil.which("node"), "node not available")
+    def test_activate_fallback_env_opt_out_is_authoritative_at_runtime(self):
+        """CodeRabbit (trivial, #1483 follow-up): the source-grep test above proves the `!== "0"`
+        shape exists but cannot prove the RUNTIME precedence — it would NOT have caught the actual bug
+        where player_smoke_driver.js's `!!args["activate-fallback"] || env !== "0"` let an explicit
+        --activate-fallback flag override WORLDOS_CLICK_ACTIVATE_FALLBACK=0. Extract each file's ACTUAL
+        assignment expression (not a hand-copied duplicate of the logic) and eval() it under node with
+        a controlled env + a stand-in `args` object, so unset/=='0'/=='1' and the flag-vs-env precedence
+        are all exercised for real."""
+        re_ = __import__("re")
+        srv_src = SERVER.read_text(encoding="utf-8")
+        drv_src = SMOKE_DRIVER.read_text(encoding="utf-8")
+        srv_m = re_.search(r"const CLICK_ACTIVATE_FALLBACK = (.+);", srv_src)
+        drv_m = re_.search(r"const ACTIVATE_FALLBACK = (.+);", drv_src)
+        self.assertIsNotNone(srv_m, "native_palette_server.js: CLICK_ACTIVATE_FALLBACK assignment not found")
+        self.assertIsNotNone(drv_m, "player_smoke_driver.js: ACTIVATE_FALLBACK assignment not found")
+
+        def run_expr(expr: str, env_val, args_flag: bool) -> bool:
+            env = dict(os.environ)
+            if env_val is None:
+                env.pop("WORLDOS_CLICK_ACTIVATE_FALLBACK", None)
+            else:
+                env["WORLDOS_CLICK_ACTIVATE_FALLBACK"] = env_val
+            flag = "true" if args_flag else "false"
+            script = f'const args = {{"activate-fallback": {flag}}}; console.log(JSON.stringify(!!({expr})));'
+            r = subprocess.run(["node", "-e", script], capture_output=True, text=True, env=env)
+            self.assertEqual(r.returncode, 0, f"node eval failed: {r.stderr}\nexpr={expr}")
+            return json.loads(r.stdout.strip())
+
+        for name, expr in (("native_palette_server.js", srv_m.group(1)),
+                            ("player_smoke_driver.js", drv_m.group(1))):
+            with self.subTest(name=name):
+                self.assertTrue(run_expr(expr, None, False), f"{name}: unset env must default fallback ON")
+                self.assertTrue(run_expr(expr, "1", False), f"{name}: env=1 must turn fallback ON")
+                self.assertFalse(run_expr(expr, "0", False), f"{name}: env=0 must turn fallback OFF")
+                self.assertFalse(run_expr(expr, "0", True),
+                                 f"{name}: env=0 must win over an explicit --activate-fallback flag (opt-out is authoritative)")
 
     @unittest.skipUnless(shutil.which("swiftc"), "swiftc not available (non-macOS CI)")
     def test_click_pid_delivery_selects_pid_for_running_owner_and_hid_otherwise(self):
@@ -406,6 +460,129 @@ class PlayerSmokeTests(unittest.TestCase):
         src = SMOKE_DRIVER.read_text(encoding="utf-8")
         self.assertIn("glide_move_distinct", src)
         self.assertIn("glide_attack_distinct", src)
+
+
+CSHARP = ROOT / "extensions" / "renderers" / "unity" / "scripts" / "CombatSurfaceClient.cs"
+
+
+class QaInputChannelTests(unittest.TestCase):
+    """#1466: OS-synthetic mouse never reaches a no-activation Unity window (HID/postToPid/activation
+    REFUTED). The QA input channel is the robust path: an env-gated in-process localhost listener in the
+    PLAYER that runs a normalized viewport coord through the SAME HandleClickAt raycast->cell->POST path
+    a human click takes; the driver + T3 palette route clicks there when the flag is set."""
+
+    def test_player_runs_in_background_so_a_no_hijack_window_keeps_ticking(self):
+        """#1466 ROOT CAUSE: a macOS player with Run-In-Background OFF pauses its player loop (Update,
+        coroutines, input) while it is not the foreground app — and the no-hijack launch never activates
+        it. So the surface poll AND any injected click froze. The fix must force run-in-background both at
+        runtime (CombatSurfaceClient) and at build time (BuildMacOSPlayer)."""
+        csc = CSHARP.read_text(encoding="utf-8")
+        self.assertIn("Application.runInBackground = true", csc,
+                      "the client must force run-in-background at runtime (no-hijack window would freeze)")
+        build = (ROOT / "extensions" / "renderers" / "unity" / "scripts" / "BuildMacOSPlayer.cs").read_text(encoding="utf-8")
+        self.assertIn("PlayerSettings.runInBackground = true", build,
+                      "the build must bake run-in-background so the player ticks from frame 0")
+
+    def test_player_click_path_is_coordinate_refactored_and_shared(self):
+        src = CSHARP.read_text(encoding="utf-8")
+        # HandleClick is now a thin wrapper over a coordinate-level handler both a mouse and the channel use.
+        self.assertIn("void HandleClickAt(Vector3 screenPoint)", src)
+        self.assertIn("void HandleClick() { HandleClickAt(Input.mousePosition); }", src)
+        self.assertIn("ScreenPointToRay(screenPoint)", src, "raycast must use the injected screen point")
+        # The cell-level validation+POST is a shared method both the raycast and the QA cell path run —
+        # NOT a DoMove/DoAttack shortcut (still honors rest-vs-combat + #1441 pre-validation).
+        self.assertIn("void HandleCell(int c, int r)", src)
+        self.assertIn("HandleCell(c, r)", src, "HandleClickAt must delegate the post-raycast half to HandleCell")
+
+    def test_player_channel_is_env_gated_localhost_and_main_thread(self):
+        src = CSHARP.read_text(encoding="utf-8")
+        # OFF by default: only started when WORLDOS_QA_INPUT=1 (byte-identical player otherwise).
+        self.assertIn('GetEnvironmentVariable("WORLDOS_QA_INPUT") == "1"', src)
+        self.assertIn("StartQaInput", src)
+        self.assertIn("WORLDOS_QA_INPUT_PORT", src, "port must be configurable (env-contract style)")
+        # localhost-only bind, /click + /health endpoints.
+        self.assertIn('"http://127.0.0.1:"', src, "listener must bind localhost only")
+        self.assertIn("HttpListener", src)
+        self.assertIn("/click", src)
+        self.assertIn("/health", src)
+        self.assertIn("screenH", src, "/health must report Screen.height so a pixel caller can undo the titlebar")
+        # Both request shapes dispatch on the MAIN thread (queue drained in Update).
+        self.assertIn("ConcurrentQueue<QaCmd>", src, "queue must hold a cell-or-viewport command")
+        self.assertIn("_qaClicks.TryDequeue", src, "queued clicks must be drained on the main thread in Update")
+        self.assertIn("if (qc.cell) HandleCell(qc.c, qc.r)", src, "a cell request must run HandleCell on the main thread")
+        self.assertIn("Screen.width", src)
+
+    def test_core_exports_qa_channel_helpers(self):
+        src = CORE.read_text(encoding="utf-8")
+        for fn in ("function qaClickCell(port, c, r)", "function qaClick(port, vx, vy)", "function qaHealth(port)"):
+            self.assertIn(fn, src)
+        for ex in ("qaClick,", "qaClickCell,", "qaHealth,"):
+            self.assertIn(ex, src, f"core must export {ex}")
+        self.assertIn("/click", src)
+        self.assertIn("/health", src)
+
+    def test_driver_uses_cell_path_and_server_uses_calibrated_viewport(self):
+        drv = SMOKE_DRIVER.read_text(encoding="utf-8")
+        self.assertIn("QA_INPUT_PORT", drv)
+        # The smoke knows the target cell -> robust cell path (no pixel/titlebar calibration).
+        self.assertIn("core.qaClickCell(QA_INPUT_PORT, target.c, target.r)", drv)
+        srv = SERVER.read_text(encoding="utf-8")
+        self.assertIn("QA_INPUT_PORT", srv)
+        # The T3 AI clicks screenshot pixels -> viewport path, titlebar-corrected via /health.
+        self.assertIn("core.qaClick(QA_INPUT_PORT", srv, "T3 palette must route pixel clicks through the channel")
+        self.assertIn("qaHealthCached()", srv, "server must fetch Screen dims to undo the titlebar band")
+        self.assertIn("winCache.ph - screenH", srv, "titlebar band = captured height - Screen.height")
+
+    def test_runners_launch_player_with_qa_input_enabled(self):
+        for runner in (SMOKE_RUNNER, ROOT / "qa" / "ui_playtest_player.sh"):
+            text = runner.read_text(encoding="utf-8")
+            self.assertIn("WORLDOS_QA_INPUT=1", text, f"{runner.name} must launch the player with the channel on")
+            self.assertIn("WORLDOS_QA_INPUT_PORT", text)
+
+    @unittest.skipUnless(shutil.which("node") and shutil.which("curl"), "node/curl not available")
+    def test_qa_channel_round_trips_cell_viewport_and_health_over_http(self):
+        """Functional: qaClickCell POSTs {c,r}, qaClick POSTs {vx,vy} (both to /click), and qaHealth
+        GETs the player's Screen dims — proving the JS->HTTP contract the player listener implements."""
+        import http.server, threading, json as _json
+        posts = []
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a): pass
+            def _send(self, obj):
+                body = _json.dumps(obj).encode()
+                self.send_response(200); self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body))); self.end_headers()
+                self.wfile.write(body)
+            def do_POST(self):
+                n = int(self.headers.get("Content-Length", 0))
+                rec = _json.loads(self.rfile.read(n) or b"{}"); rec["path"] = self.path
+                posts.append(rec); self._send({"ok": True})
+            def do_GET(self):
+                self._send({"ok": True, "screenW": 1280, "screenH": 800})
+
+        srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+        port = srv.server_address[1]
+        t = threading.Thread(target=srv.serve_forever, daemon=True); t.start()
+        try:
+            script = (
+                f'const core = require({json.dumps(str(CORE))});\n'
+                f'const cell = core.qaClickCell({port}, 9, 8);\n'
+                f'const vp = core.qaClick({port}, 0.5, 0.25);\n'
+                f'const h = core.qaHealth({port});\n'
+                f'console.log(JSON.stringify({{cell, vp, h}}));\n'
+            )
+            r = subprocess.run(["node", "-e", script], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, f"qa-channel node call failed:\n{r.stderr}")
+            out = json.loads(r.stdout.strip().splitlines()[-1])
+            self.assertTrue(out["cell"]["ok"] and out["cell"]["delivery"] == "qa-channel")
+            self.assertTrue(out["vp"]["ok"])
+            self.assertEqual(out["h"].get("screenH"), 800, "qaHealth must return the player's Screen.height")
+            cell_post = next(p for p in posts if p["path"] == "/click" and "c" in p)
+            self.assertEqual((cell_post["c"], cell_post["r"]), (9, 8))
+            vp_post = next(p for p in posts if p["path"] == "/click" and "vx" in p)
+            self.assertAlmostEqual(vp_post["vx"], 0.5); self.assertAlmostEqual(vp_post["vy"], 0.25)
+        finally:
+            srv.shutdown()
 
 
 if __name__ == "__main__":

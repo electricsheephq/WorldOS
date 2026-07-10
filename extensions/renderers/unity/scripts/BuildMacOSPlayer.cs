@@ -123,6 +123,13 @@ public static class BuildMacOSPlayer
         PlayerSettings.productName = "WorldOSPlayer";
         PlayerSettings.applicationIdentifier = "com.worldos.WorldOSPlayer";
 
+        // #1466: RUN IN BACKGROUND. The no-hijack QA/beauty launch (#1456/#1458) never activates the
+        // window, and a macOS player with this OFF PAUSES its player loop (Update/coroutines/input) while
+        // backgrounded — so the surface poll + QA click channel froze and every input path silently did
+        // nothing. Bake it on so the player keeps running from frame 0 whether or not it has focus.
+        // (CombatSurfaceClient also sets Application.runInBackground=true at runtime as a backstop.)
+        PlayerSettings.runInBackground = true;
+
         // --- Architecture: Universal (Intel + Apple Silicon) if the module supports it,
         //     else fall back to x64 only. Never fail the build over this. ---
         string archResult;

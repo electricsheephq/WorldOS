@@ -1,0 +1,29 @@
+{
+  "name": "armA-crypt-cn-depth-str0.45",
+  "room": "crypt",
+  "generate": {
+    "base_plate": "/Users/lume/worldos-session-notes/plate-sprint/armB/crypt_greybox_1344x768.png",
+    "controlnet": "depth",
+    "control_strength": 0.7,
+    "seed": 42
+  },
+  "style_pass": {
+    "model": "model_z-image",
+    "loras": [
+      "model_MB22WaRCBLtfhi5R2CRpHoEL"
+    ],
+    "lorasScale": [
+      0.78
+    ],
+    "strength": 0.45
+  },
+  "registration": {
+    "greybox": "/Users/lume/worldos-session-notes/plate-sprint/armB/crypt_greybox_1344x768.png",
+    "min_recall": 0.95
+  },
+  "panel": {
+    "incumbent": "/Users/lume/worldos-session-notes/plate-sprint/armB/crypt_dense_v1_reference.png",
+    "control": "/Users/lume/worldos-session-notes/plate-sprint/armB/poe2_control.jpg",
+    "house_anchor": "/Users/lume/worldos-session-notes/plate-sprint/armB/crypt_dense_v1_reference.png"
+  }
+}

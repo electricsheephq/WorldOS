@@ -1,0 +1,19 @@
+{
+  "run": "plate-sprint-camp-armB-iter3-g3",
+  "arm": "B (ported to camp) — flux+ControlNet(depth,0.85) base, Gemini instruction-edit style pass WITHOUT referenceImages (text-only style description; referenceImages caused a content-hijack on this room — see README)",
+  "note_round1_discarded": "Round 1 control (image_3=poe2_control) scored median 6.0, below the 6.8-9.2 validity band — 3/5 scorers misread image_2/image_3 as the same scene. Re-ran per the task's re-run-once rule; round 2 below is the one counted.",
+  "scores": {
+    "image_1": [6, 6, 5, 7, 7],
+    "image_2": [7, 5, 6, 8, 8],
+    "image_3": [10, 9, 9, 10, 9]
+  },
+  "rankings": [
+    "image_3,image_2,image_1",
+    "image_3,image_1,image_2",
+    "image_3,image_2,image_1",
+    "image_3,image_2,image_1",
+    "image_3,image_2,image_1"
+  ],
+  "control_valid": true,
+  "verdict": "Candidate (A) median 6.0 vs incumbent camp_clearing_night_v2 (B) median 7.0 vs disguised real-art control (C) median 9.0 (in-band, valid). Candidate does NOT clear the >=7.0 panel bar and reads BELOW the incumbent this round — majority of scorers (3/5) read the candidate's painterly hand as 'lesser' vs the disclosed house-best (which is camp_clearing_night_v2 itself). Common flaws named across scorers: the candidate's symmetric/mirrored tree-canopy and radial prop placement read as staged rather than a lived-in space, and the diamond-tile floor pattern reads uniform/repetitive — both artifacts of the ControlNet-conditioned base geometry (greybox's authored symmetric layout) surfacing through the style pass. Registration 0.9439 (< 0.95 gate) confirms convergence was NOT reached within the 4-iteration budget."
+}

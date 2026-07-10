@@ -1,0 +1,63 @@
+{
+  "lane": "CB-FOREST (PLATE SPRINT synthesis test)",
+  "question": "Does the ARM C LoRA (model_G379oza2qhm6MkqDrtTvvmmw, \"WorldOS Painterly Architectural (FLUX)\", trained on 10 char-free architectural interiors per issue #1481) mint better outdoor anchors than the z-image+house-LoRA layered bootstrap (iter3), lifting the ARM-B forest_road pipeline past the outdoor 6.0 cap?",
+  "room": "forest_road (qa/seed_gfx_forest_road.py, PR #1490 -- unseen structure class, outdoor linear dirt road through forest)",
+  "recipe_under_test": "(1) Mint 3 anchor candidates via schema-correct mcp__scenario__model_run (bypassing scenario_gen.py's controlnet wrapper, which silently drops loras via the wrong loras:[{assetId}] shape -- confirmed live, same trap as issue #1481's ARM C manifest): model_bfl-flux-1-dev, loras=[model_G379oza2qhm6MkqDrtTvvmmw], lorasScale=[0.8], depth ControlNet from forest_road_greybox_depth.png, controlStrength=0.65, controlEnd=0.6 (style-first), seeds 42/7/99, explicit dimetric-lock + anti-architecture prompt clause. (2) Pick best by eyeball. (3) ARM-B re-registration: Gemini instruction-edit (model_google-gemini-3-1-flash) over the iter1 flux-CN registered base (room_forest_road.png), referenceImages=[minted anchor], structure-lock + dimetric-lock prompt (forest_road_stylepass_prompt_dimetric.txt, verbatim from iter3), best-of-2. (4) Evaluate: overlay + advisory edge-recall + NCC-to-base, then a 5-scorer blind panel (candidate vs the outdoor incumbent camp_clearing_night_v2 vs a disguised real-art control poe2_control.jpg).",
+  "findings": [
+    {
+      "id": 1,
+      "title": "ARM C's architectural-interior training bias overpowers the depth ControlNet + explicit anti-architecture prompt on all 3 anchor mints",
+      "detail": "All 3 minted anchor candidates (seeds 42, 7, 99) show clear LoRA-driven architecture bleed despite an explicit 'Do NOT invent any buildings, ruins, stone walls, arches, or architecture' prompt clause and a depth-ControlNet condition drawn from a pure forest-road greybox. Seed 42 and seed 7 render as near-complete crypt/dungeon corridors (stacked stone archways, flagstone floors, seed 7 even shows a human figure), essentially ignoring the forest-road control geometry. Seed 99 was the least-contaminated of the three (real trees, boulders, road, dimetric read intact) but still carries an invented dressed-stone tunnel/culvert mouth on the left -- picked as the least-bad anchor by eyeball, not a clean win.",
+      "root_cause": "ARM C's 10/10 training images (per its manifest) are all architectural interiors (crypt/church/tavern/camp-interior/undercroft); the LoRA's learned concept is dominated by masonry structure, and at the style-first control settings the sprint recipe specifies (str 0.65/end 0.6, chosen to let the LoRA's painterly hand dominate) that bias wins over both the ControlNet depth signal and the text prompt's explicit negative instruction."
+    },
+    {
+      "id": 2,
+      "title": "The invented architecture propagates through the ARM-B re-registration pass (referenceImages is a content anchor, not a pure style anchor -- consistent with PR #1490 / camp-armB findings)",
+      "detail": "Both best-of-2 Gemini re-registration runs (cb_forest_r1, cb_forest_r2) over the SAME iter1 flux-CN base, with the SAME dimetric-lock prompt as iter3, inherited the seed-99 anchor's invented stone-tunnel motif. r2 additionally invented a NEW stone wall on the right edge not present in the anchor or the greybox -- a second-order content leak. r1 (fewer added elements) was picked as best-of-2.",
+      "consistent_with": "issue #1490 finding 1 (referenceImages is a CONTENT anchor) and camp-armB finding 1 -- same root cause observed a third time, now specifically implicating an ARM-C-sourced anchor."
+    },
+    {
+      "id": 3,
+      "title": "Registration is measurably WORSE than iter3 on the identical base+prompt+recipe",
+      "detail": "edge-recall(cb_forest_r1, greybox) = 0.4519, vs iter3's 0.9902 on the exact same iter1 base + dimetric-lock prompt + Gemini-edit recipe -- the only variable changed is the anchor image (ARM-C-minted vs iter3's z-image+house-LoRA layered anchor). NCC-to-base = 0.3924, NCC-to-greybox = 0.5054. Per issue #1491 edge-recall is advisory/content-blind for organic rooms, but the overlay (overlay_candidate_vs_greybox.jpg) corroborates a real regression, not just a metric artifact: it shows the invented stone tunnel as a structural element with no greybox counterpart, plus general looser adherence to the road's exact path/width than iter3 achieved.",
+      "interpretation": "The ARM-C anchor's own composition (its invented tunnel + distinct tree/boulder arrangement) is a much stronger, more specific content signal for Gemini's instruction-edit to imitate than iter3's anchor was, so more of the anchor's own layout leaks into the final registered candidate at the expense of the base's actual authored geometry."
+    },
+    {
+      "id": 4,
+      "title": "5-scorer blind panel: candidate ties the 6.0 outdoor cap exactly, does not converge; ALL 5 scorers independently and unanimously flagged the invented architecture / artifacts",
+      "detail": "Candidate (A) median = 6.0 (raw scores [5,5,6,6,6]) -- identical to iter3's candidate median (6.0) and to the outdoor incumbent camp_clearing_night_v2's own established cross-lane bar (6.0). All 5 independent scorers, blind to labels and to each other, named the stone tunnel/culvert as an unexplained architecture element and/or flagged a canvas-texture-overlay / flattened-canopy tell -- unanimous house_style read of 'lesser' for the candidate. The disguised real-art control (poe2_control.jpg, an actual PoE2 jungle-temple-ruin screenshot with NPCs) scored median 6.0, OUTSIDE the established 6.8-9.2 validity band -- but unlike iter3's slot-confusion issue, all 5 scorers here correctly identified it as a distinct scene and penalized it for genre/content mismatch (invented temple architecture + human figures) rather than misreading which slot it was, so this run's control read is a panel-validity caveat, not evidence the candidate under- or over-performed.",
+      "panel_note": "This config reuses camp_clearing_night_v2.jpg as BOTH the disclosed house_best reference AND the blind incumbent (B) slot (same as iter3's config) -- B's 9.0 read here is inflated by scorers literally comparing an image to an identical copy of itself, not an independent B reassessment; the meaningful comparison is A (candidate) vs the previously-established 6.0 outdoor-class ceiling, not vs this run's B number."
+    }
+  ],
+  "anchor_candidates": {
+    "seed42": {"asset_id": "asset_oeHZmPE3Bm6KYNHFa1YBmYm4", "eyeball": "REJECTED -- near-total crypt/dungeon corridor, ignores forest-road control geometry"},
+    "seed7": {"asset_id": "asset_Z41xP56dJozkkUnLSYHEbKut", "eyeball": "REJECTED -- crypt/dungeon interior with a human figure, ignores forest-road control geometry"},
+    "seed99": {"asset_id": "asset_Tz4Lk5FBThJvTsViysWBJRaz", "eyeball": "PICKED (least-bad) -- real forest content, dimetric read intact, but carries one invented stone-tunnel element"}
+  },
+  "armb_bestof2": {
+    "cb_forest_r1": {"eyeball": "PICKED -- fewer invented elements (one inherited stone tunnel only)"},
+    "cb_forest_r2": {"eyeball": "REJECTED -- inherits the tunnel AND adds a new invented stone wall on the right edge"}
+  },
+  "registration": {
+    "edge_recall_vs_greybox": 0.4519,
+    "min_recall_gate": 0.95,
+    "gate_result": "FAIL (advisory per #1491)",
+    "ncc_vs_base": 0.3924,
+    "ncc_vs_greybox": 0.5054,
+    "comparison": "iter3 (z-image+house-LoRA anchor, identical base+prompt+recipe): edge_recall 0.9902"
+  },
+  "panel": {
+    "scorers": 5, "scorer_model": "sonnet", "blind": true,
+    "scores": {"A_candidate": [5, 5, 6, 6, 6], "B_incumbent_selfref": [9, 9, 9, 9, 10], "C_control": [3, 3, 6, 6, 8]},
+    "medians": {"A": 6.0, "B": 9.0, "C": 6.0},
+    "control_valid": false,
+    "delta_vs_control": 0.0
+  },
+  "convergence": {
+    "gate": "panel median >= 7.0 (edge-recall advisory only per #1491)",
+    "panel_median": 6.0,
+    "converged": false,
+    "verdict": "ARM C's painterly-architectural LoRA does NOT lift the forest_road / outdoor class past the 6.0 cap. Panel score is flat vs iter3 (6.0==6.0) while registration measurably regresses (0.45 vs 0.99) and a unanimous panel-flagged invented-architecture tell appears that iter3's anchor did not carry. ARM C remains validated for its intended char-free architectural/interior use case (issue #1481) but does not generalize to, and actively regresses vs, the already-adopted z-image+house-LoRA layered-anchor bootstrap (iter3) for outdoor content."
+  },
+  "adoption": "NOT adopted -- this lane is evidence-only, consistent with all prior plate-sprint arm lanes. The outdoor-class ceiling stands at 6.0 pending a different lever (iter3's own verdict already named this a painterly-quality problem, not a generalization failure -- this lane's result is consistent with and reinforces that conclusion)."
+}
