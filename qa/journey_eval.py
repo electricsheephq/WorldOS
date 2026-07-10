@@ -156,6 +156,20 @@ ImageDiffer = Callable[[str, str], float]  # (path_a, path_b) -> normalised diff
 # difference means the room did NOT change (a failed plate swap) -> transition_backdrop_unchanged.
 SWAP_MIN_DIFF = 0.04
 
+# Flags NOT asked of an ESTABLISHING shot (kind=="start"): an establishing/cutaway frame may legitimately
+# show only scenery, so "all characters missing" there is not a defect (it would false-red a clean
+# journey). Every gameplay frame (prop_approach / parley / transition) still gets the full set.
+_SCENERY_TOLERANT_FLAGS = {"missing_or_cloned"}
+
+
+def _questions_for_record(questions: list, fr: dict) -> list:
+    """The single-frame LLM questions for THIS frame — transition-aware, minus the scenery-tolerant
+    flags on an establishing 'start' shot."""
+    qs = questions_for_frame(questions, bool(fr.get("transition")))
+    if fr.get("kind") == "start":
+        qs = [q for q in qs if q["flag"] not in _SCENERY_TOLERANT_FLAGS]
+    return qs
+
 
 def _shell_scorer(image_path: str, questions: list, *, model: str = "sonnet",
                   timeout_s: int = 180) -> dict:
@@ -232,7 +246,7 @@ def run_vqa(frames: list, questions: list, scorer: FrameScorer, *,
     results: list = []
     by_frame: dict = {}
     for fr in frames:
-        applicable = questions_for_frame(questions, bool(fr.get("transition")))
+        applicable = _questions_for_record(questions, fr)
         flags = scorer(fr["path"], applicable)
         rec = {"frame": fr["path"], "step": fr.get("step"), "side": fr.get("side", "step"),
                "flags": flags, "defects": sorted(k for k, v in flags.items() if v)}

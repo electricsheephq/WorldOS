@@ -61,18 +61,22 @@ asks factual YES/NO questions of every frame (`qa/journey_vqa_questions.md`, YES
 
 - Path-gen + VQA aggregation + verdict are pure and unit-tested with a stub scorer
   (`qa/test_journey_eval.py`, 7 tests green).
-- **Live VQA pipeline proven** (real `claude -p` per frame, not the stub) over two committed crypt
-  frames — see [`B_vqa_proof_verdict.json`](B_vqa_proof_verdict.json):
+- **Live VQA pipeline exercised** (real `claude -p` per frame, not the stub) over two committed crypt
+  frames — see [`B_vqa_proof_verdict.json`](B_vqa_proof_verdict.json). This proves the PIPELINE MECHANICS
+  end-to-end (image read → per-flag YES/NO → aggregation → verdict) + the missing-character path; it does
+  NOT yet exercise discrimination on an in-loop defect (T-pose / wrong-plate / on-prop) — that needs the
+  box run on real gameplay frames (the claim in-repo is scoped to the mechanics, not full discrimination).
   - `1_crypt_rest_idle.png` (the party at rest) → **all five flags false** (a legitimate multi-PC party
-    is correctly NOT flagged).
-  - `plate_conditioned_crypt.png` (bare backdrop, no cast) → **`missing_or_cloned: true`** — the harness
-    correctly catches "no character present".
+    is correctly NOT flagged — the negative case).
+  - `plate_conditioned_crypt.png` (a bare BASE PLATE, no cast by construction) → **`missing_or_cloned:
+    true`** — a sanity check of the positive path (catches "no character present"), not a gameplay-defect
+    catch.
   - This live run surfaced + fixed a real question-design bug: the original "singular" phrasing
     false-flagged a 4-PC party; `missing_or_cloned` now flags only *nobody there* or *the same character
-    cloned*, never a normal party.
+    cloned*, never a normal party (and is not asked of establishing 'start' shots).
 - The BOX capture (`journey_capture.js` driving the live player) runs on the box when the #1386 claim
-  frees (attach a fresh `journey_verdict.json` + 3 sample frames here). The VQA half is already verified
-  against reality above.
+  frees (attach a fresh `journey_verdict.json` + 3 sample frames here) — that is where discrimination on
+  real in-loop defects is validated.
 - Invocation documented in `qa/UI_PLAYTEST.md`; sample plan `qa/journey_plans/camp.json`.
 
 ## C. Panel factual-defect checklist — `qa/plate_loop.py`

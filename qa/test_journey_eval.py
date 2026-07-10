@@ -123,6 +123,24 @@ def test_unreachable_props_surfaced_in_verdict():
     assert verdict["unreachable_props"][0]["id"] == "tree_9"
 
 
+def test_missing_or_cloned_suppressed_on_establishing_start_frame():
+    """An establishing 'start' shot may legitimately show only scenery, so missing_or_cloned must NOT be
+    asked of it (else a clean journey false-reds) — but every gameplay frame still gets it."""
+    qs = je.load_questions()
+    seen = {}
+
+    def stub(path, questions):
+        seen[path] = {q["flag"] for q in questions}
+        return {q["flag"]: False for q in questions}
+
+    je.run_vqa([{"path": "start.png", "step": "start", "kind": "start", "side": "step",
+                 "transition": False}], qs, stub, image_differ=_NEVER_DIFF)
+    je.run_vqa([{"path": "game.png", "step": "approach_x", "kind": "prop_approach", "side": "step",
+                 "transition": False}], qs, stub, image_differ=_NEVER_DIFF)
+    assert "missing_or_cloned" not in seen["start.png"], "establishing shot must tolerate an empty scene"
+    assert "missing_or_cloned" in seen["game.png"], "gameplay frames must still get missing_or_cloned"
+
+
 def test_transition_swap_check_is_deterministic_from_both_frames():
     """The swap check is computed by the harness from the pre/post pair (NOT asked of the LLM). A tiny
     pre/post difference => backdrop unchanged => a failed plate swap is flagged; a large one => clean."""

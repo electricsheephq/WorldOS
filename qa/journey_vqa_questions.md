@@ -40,7 +40,7 @@ The scorer answers strictly from what is literally visible (no lore, no intent),
     {
       "flag": "missing_or_cloned",
       "applies_to": "all",
-      "text": "Are ALL player characters MISSING (no adventurer figures visible at all), OR is a single character CLONED (the exact same character — same outfit/pose — rendered two or more times)? A party of DIFFERENT adventurers is normal and is NOT a defect; only 'nobody there' or 'the same person duplicated' counts."
+      "text": "Are ALL player characters MISSING (no adventurer figures visible at all), OR is a single character CLONED (the exact same character — same outfit/pose — rendered two or more times)? A party of DIFFERENT adventurers is normal and is NOT a defect; only 'nobody there' or 'the same person duplicated' counts. (The harness does NOT ask this of establishing 'start' shots, which may legitimately show only scenery.)"
     },
     {
       "flag": "broken_backdrop",
