@@ -69,6 +69,12 @@ public static class BuildMacOSPlayer
             if (!File.Exists(regSrc)) { Debug.LogWarning("[Package] no registry.json at " + regSrc + " — skipping packaging"); return; }
             File.Copy(regSrc, Path.Combine(saDir, "registry.json"), true);
 
+            // 1b) #1463 W6.4 OPTIONAL stage manifest -> StreamingAssets (verbatim). Present => the built player
+            //     animates the scene (fire flicker + glow anchors, CombatSurfaceClient.LoadStageManifest);
+            //     ABSENT => not copied, and the runtime finds no stage.json => byte-identical scene. Not fatal.
+            string stageSrc = Path.Combine(projectRoot, "stage.json");
+            if (File.Exists(stageSrc)) { File.Copy(stageSrc, Path.Combine(saDir, "stage.json"), true); Debug.Log("[Package] stage.json -> StreamingAssets (#1463)"); }
+
             // 2) collect every registry-referenced asset path (model/albedo/anim) that actually exists.
             var names = new List<string>();
             var root = MiniJson.Parse(File.ReadAllText(regSrc)) as Dictionary<string, object>;
