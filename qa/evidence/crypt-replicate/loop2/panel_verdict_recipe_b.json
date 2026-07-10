@@ -1,0 +1,37 @@
+{
+  "recipe": "(b) FLUX img2img enrichment (model_bfl-flux-1-dev + ARM-C interior LoRA model_G379oza2qhm6MkqDrtTvvmmw, strength0.40) over the styled Gemini a2 candidate; candidate=iter3_flux_s40",
+  "scores": {
+    "A": [
+      6.6,
+      6.8,
+      6.6,
+      7.0,
+      6.5
+    ],
+    "B": [
+      7.4,
+      8.3,
+      7.8,
+      8.3,
+      7.5
+    ],
+    "C": [
+      9.2,
+      7.2,
+      8.7,
+      7.5,
+      6.8
+    ]
+  },
+  "medians": {
+    "A": 6.6,
+    "B": 7.8,
+    "C": 7.5
+  },
+  "control_valid": true,
+  "delta_vs_control": -0.9,
+  "delta_vs_incumbent": -1.2,
+  "automated_floor_pass(delta>=-2.5)": true,
+  "honesty_bar_pass(A>=B-0.5)": false,
+  "verdict": "5-scorer blind panel (crypt-replicate iter3 recipe-b FLUX). Candidate A median 6.6 vs incumbent B 7.8 vs control C 7.5 (harsh/high-variance panel, control still in-band). Delta vs control -0.9 clears the -2.5 floor, BUT honesty bar 6.6>=7.3 FAILS. IMPORTANT: FLUX enrichment scored LOWER than the Gemini a2 (7.1) despite denser surface detail -- scorers read it as 'repetitive skeleton piles / flatter tiling / less refined'. Recipe (b) did NOT beat recipe (a)."
+}

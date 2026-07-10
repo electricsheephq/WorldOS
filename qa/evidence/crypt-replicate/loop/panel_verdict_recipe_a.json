@@ -1,0 +1,42 @@
+{
+  "recipe": "(a) TWO-STAGE STYLE \u2014 Gemini 3.1 detail-enrichment over the validated iter2-f structure-locked base; candidate=iter3_a2",
+  "scores": {
+    "A": [
+      6.5,
+      7.3,
+      7.3,
+      7.0,
+      7.1
+    ],
+    "B": [
+      7.2,
+      7.8,
+      7.6,
+      8.2,
+      7.8
+    ],
+    "C": [
+      8.8,
+      8.8,
+      9.0,
+      8.8,
+      9.0
+    ]
+  },
+  "medians": {
+    "A": 7.1,
+    "B": 7.8,
+    "C": 8.8
+  },
+  "control_valid": true,
+  "delta_vs_control": -1.7,
+  "delta_vs_incumbent": -0.7,
+  "automated_floor_pass(delta>=-2.5)": true,
+  "honesty_bar_pass(A>=B-0.5)": false,
+  "labels": {
+    "A": "candidate iter3_a2",
+    "B": "incumbent crypt_armb_iter3",
+    "C": "disguised PoE2 control"
+  },
+  "verdict": "5-scorer blind panel (crypt-replicate iter3 recipe-a). Candidate A median 7.1 vs incumbent B 7.8 vs control C 8.8. Control in-band -> instrument valid. Delta vs control -1.7 CLEARS the automated -2.5 adoption floor. BUT honesty bar A>=B-0.5 (7.1>=7.3) FAILS by 0.2 -- candidate trails the ornamentation incumbent by 0.7. Big gain over iter2 (6.0, delta -3.0) but does NOT honestly beat 8.0. Proceed to recipe (b) FLUX enrichment."
+}

@@ -1,0 +1,17 @@
+{
+  "slot_to_label": {
+    "image_1": "C",
+    "image_2": "B",
+    "image_3": "A"
+  },
+  "label_to_slot": {
+    "C": "image_1",
+    "B": "image_2",
+    "A": "image_3"
+  },
+  "labels": {
+    "A": "candidate (iter3 crypt-replicate FLUX enrichment, iter3_flux_s40)",
+    "B": "incumbent-canonical (crypt_armb_iter3, 8.0 bar)",
+    "C": "disguised-real-art-control (PoE2 Deadfire)"
+  }
+}
