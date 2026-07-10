@@ -1,9 +1,15 @@
 # CAMP-PASS2 — one more refinement pass on camp_clearing_night (issue #1481)
 
 **Goal:** push the OUTDOOR-LORA (`model_RsWEcQL2NWXwoyEodWVE2vWG`) camp result past the borderline
-6.5 (`qa/evidence/plate-sprint/outdoor-lora/`) toward the >=7.0 converged bar, specifically attacking
-the recurring firepit-ring ground artifact. Max 2 iterations, best-of-3 each, per the mandate.
+6.5 toward the >=7.0 converged bar, specifically attacking the recurring firepit-ring ground artifact.
+Max 2 iterations, best-of-3 each, per the mandate.
 **Result: NOT CONVERGED — ceiling reached at median 6.0 both iterations.**
+
+**Baseline evidence location:** the 6.5 borderline this pass follows up on is
+`qa/evidence/plate-sprint/outdoor-lora/` on **PR #1498** (`gfx/outdoor-lora-manifest`, not yet merged
+to `main` as of this PR) — this PR was branched fresh off `main` (per the #1493 sequential-merge
+discipline) so that directory is not resolvable in this tree yet. See PR #1498's
+`SMOKE-TEST-VERDICT.md` for the full smoke-test evidence the 6.5/6.0 numbers cite.
 
 | file | what |
 |------|------|
@@ -53,9 +59,12 @@ away from a bare point-light depth cue).
 
 `qa/evidence/plate-sprint/camp-pass2/iter1/gemini/candidate_iter1_scale060.jpg` and
 `qa/evidence/plate-sprint/camp-pass2/iter2/gemini/candidate_iter2_scale060.jpg` are tied at median 6.0;
-neither is a clean improvement over the already-evidenced outdoor-lora smoke-test candidate (6.5) or
-the adopted `camp_clearing_night_v2` incumbent (7.0 this panel). **Do not adopt either** — this PR is
-evidence-only, per the mandate.
+neither is a clean improvement over the outdoor-lora smoke-test candidate (6.5, PR #1498) or the
+adopted `camp_clearing_night_v2` incumbent (7.0 this panel). **Do not adopt either** — this PR is
+evidence-only, per the mandate. Full prompts + `model_run` parameters for every generation are
+committed alongside the candidates: `iter1/mint_prompt.txt` (the base FLUX+ControlNet+LoRA mint,
+lever a+b), `iter1/gemini_prompt.txt` (iter1's Gemini re-registration, lever a), and
+`iter2/gemini_prompt.txt` (iter2's structure-lock-exception Gemini re-registration, lever a v2).
 
 ## Converged
 
@@ -87,6 +96,19 @@ dimensions are auditable from text alone via
 `iter{1,2}/gemini/candidate_iter{1,2}_scale060.dimensions.json` (width/height + sha256 of the
 committed JPEG), added per a follow-up review request rather than requiring a reviewer to execute
 image code to confirm the size claim.
+
+## Panel methodology caveat: the incumbent's blind score is a same-file tell
+
+`qa/plate_loop.py`'s panel packet discloses a `house_best` reference (for the separate house-style
+question) alongside the blind slots; both iterations' configs set `house_anchor` to the same file as
+`incumbent` (`camp_clearing_night_v2.jpg`) — this is the harness's own default pattern, matching
+essentially every other plate-sprint config in the repo (e.g. camp-armB, crypt), not something unique
+to this PR. In practice this means a scorer who notices the blind incumbent slot visually matches the
+disclosed `house_best.jpg` is not scoring it fully blind. **This does not affect the converged/
+NOT-CONVERGED verdict**, which is decided purely by candidate (A) vs the >=7.0 bar and candidate (A) vs
+the in-band real-art control (C) — neither of which involves the incumbent (B) score. B is reported as
+supplementary context only. Not fixed here (it would mean redesigning the shared panel harness or
+finding a genuinely independent disclosed house-best image, both out of scope for an evidence-only PR).
 
 ## Cost actuals (record on #1481)
 
