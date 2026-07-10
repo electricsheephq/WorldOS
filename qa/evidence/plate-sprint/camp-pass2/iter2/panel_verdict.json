@@ -1,7 +1,7 @@
 {
   "run": "camp-pass2-iter2-scale060-structurelockexception-2026-07-10",
   "arm": "CAMP-PASS2 iter2: reused the SAME 3 iter1 anchors (lorasScale 0.70/0.65/0.60, seed 42) -> re-ran the Gemini instruction-edit re-registration with a STRENGTHENED firepit lever: an explicit STRUCTURE-LOCK EXCEPTION clause authorizing Gemini to repaint the ground texture immediately around the fire-ring specifically to discard the concentric-ring pattern, overriding the general pixel-exact structure-lock for that one region -> best-of-3 rejection across the 3 resulting Gemini candidates (070/065/060) -> selected lorasScale=0.60 (cleanest surrounding ground, no stray white-patch artifacts seen on the 065 variant) -> overlay + advisory edge-recall (organic class, #1491) -> 5-scorer blind panel vs incumbent + disguised real-art control.",
-  "panel_mapping": {"image_1.png": "CANDIDATE_ITER2_SCALE060", "image_2.jpg": "INCUMBENT_CAMP_V2", "image_3.jpg": "CONTROL"},
+  "panel_mapping": {"image_1.jpg": "CANDIDATE_ITER2_SCALE060", "image_2.jpg": "INCUMBENT_CAMP_V2", "image_3.jpg": "CONTROL"},
   "scores": {
     "image_1_CANDIDATE": [6, 6, 7, 5, 6],
     "image_2_INCUMBENT": [7, 6, 7, 8, 7],

@@ -1,7 +1,7 @@
 {
   "run": "camp-pass2-iter1-scale060-firepitpin-2026-07-10",
   "arm": "CAMP-PASS2 iter1: best-of-3 anchor mints (model_bfl-flux-1-dev + depth ControlNet str0.65/end0.6 + LoRA model_RsWEcQL2NWXwoyEodWVE2vWG, lorasScale 0.70/0.65/0.60, seed 42, firepit-pin prompt clause on all 3) -> best-of-3 rejection check (all 3 anchors showed the concentric-ring ground artifact to a similar degree; lorasScale in 0.6-0.7 did not materially change severity) -> selected lorasScale=0.60 (marginally softest rings) -> Gemini instruction-edit re-registration (model_google-gemini-3-1-flash, structure-lock + dimetric-lock + reinforced firepit-pin clause, referenceImages=[selected anchor]) -> overlay + advisory edge-recall (organic class, #1491) -> 5-scorer blind panel vs incumbent + disguised real-art control.",
-  "panel_mapping": {"image_1.jpg": "INCUMBENT_CAMP_V2", "image_2.png": "CANDIDATE_ITER1_SCALE060", "image_3.jpg": "CONTROL"},
+  "panel_mapping": {"image_1.jpg": "INCUMBENT_CAMP_V2", "image_2.jpg": "CANDIDATE_ITER1_SCALE060", "image_3.jpg": "CONTROL"},
   "scores": {
     "image_1_INCUMBENT": [7, 6, 7, 8, 7],
     "image_2_CANDIDATE": [6, 5, 6, 7, 6],

@@ -82,7 +82,11 @@ committed at Gemini's native 2744x1568 output resolution rather than the room's 
 contract, which caused `check_plate_drift`'s manifest check to hard-reject on a size mismatch
 (`checked=0`) instead of running a real comparison. Both files have been downsampled to 1344x768 and
 the registration/drift numbers above are recomputed at the correct size; the panel scores are
-unaffected since scoring was done by direct visual inspection, not off image metadata.
+unaffected since scoring was done by direct visual inspection, not off image metadata. The corrected
+dimensions are auditable from text alone via
+`iter{1,2}/gemini/candidate_iter{1,2}_scale060.dimensions.json` (width/height + sha256 of the
+committed JPEG), added per a follow-up review request rather than requiring a reviewer to execute
+image code to confirm the size claim.
 
 ## Cost actuals (record on #1481)
 
