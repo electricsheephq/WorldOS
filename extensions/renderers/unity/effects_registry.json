@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "_comment": "VFX-ANCHORS effect registry: maps an ABSTRACT effect `type` (referenced by plates_manifest.json plate `effects` entries) to a prefab asset PATH baked into the worldos_actors AssetBundle (BuildMacOSPlayer.EnsurePackaged step 2b) and loaded at runtime by CombatSurfaceClient.LoadEffectsRegistry/SpawnPlateEffects. Paths point at OWNED packs on the box; the repo vendors no pack files, so a path missing on disk is skipped at build time and simply never spawns (byte-identical). All four map to Synty PolygonGeneric FX (shader Synty/Generic_ParticlesUnlit) — painterly-flat, render correctly under the box's Built-in RP with NO shader re-point, and match the painted plate aesthetic. PIPELINE: if a Hovl Shader-Graph effect is registered instead, RepointHovlMaterials re-points its HS_*/Shader Graphs/HS materials to Legacy Particles at runtime (per PR #1515 FixHovlVFX); GAPH/FantasySpells custom shaders and Synty unlit particles both render as-is. Box-verified 2026-07-11 (fire_medium=FX_Fire_01 composited over the camp firepit; the FantasySpells FlamePillar was rejected as a giant magical eruption that washed out the painterly plate).",
+  "effects": {
+    "fire_medium": { "prefab": "Assets/Synty/PolygonGeneric/Prefabs/FX/FX_Fire_01.prefab" },
+    "fire_small":  { "prefab": "Assets/Synty/PolygonGeneric/Prefabs/FX/FX_Fire_Card_Small_01.prefab" },
+    "embers":      { "prefab": "Assets/Synty/PolygonGeneric/Prefabs/FX/FX_Dust_Spots_01.prefab" },
+    "fireflies":   { "prefab": "Assets/Synty/PolygonGeneric/Prefabs/FX/FX_Flies_01.prefab" }
+  }
+}

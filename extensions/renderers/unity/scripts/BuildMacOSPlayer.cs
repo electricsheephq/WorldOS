@@ -93,6 +93,13 @@ public static class BuildMacOSPlayer
                 else Debug.LogWarning("[Package] plates_manifest.json present but no plates/ dir at " + platesSrcDir);
             }
 
+            // 1d) VFX-ANCHORS OPTIONAL effects registry -> StreamingAssets (verbatim). Present => the built
+            //     player resolves per-plate `effects` types to prefabs (CombatSurfaceClient.LoadEffectsRegistry
+            //     / SpawnPlateEffects); the referenced prefabs ride in the actor bundle (collected in step 2b).
+            //     ABSENT => not copied, the runtime finds no registry => no anchored VFX spawn. Not fatal.
+            string effectsRegSrc = Path.Combine(projectRoot, "effects_registry.json");
+            if (File.Exists(effectsRegSrc)) { File.Copy(effectsRegSrc, Path.Combine(saDir, "effects_registry.json"), true); Debug.Log("[Package] effects_registry.json -> StreamingAssets (VFX-ANCHORS)"); }
+
             // 2) collect every registry-referenced asset path (model/albedo/anim) that actually exists.
             var names = new List<string>();
             var root = MiniJson.Parse(File.ReadAllText(regSrc)) as Dictionary<string, object>;
@@ -124,6 +131,26 @@ public static class BuildMacOSPlayer
                 Debug.Log("[Package] +humanoid controller " + HumanoidCtrl);
             }
             else Debug.LogWarning("[Package] humanoid controller missing on disk, skipped: " + HumanoidCtrl);
+
+            // 2b) VFX-ANCHORS: bake the effect prefabs (effects_registry.json type->prefab) into the SAME
+            //     bundle so the runtime can LoadAsset them by their exact asset path. Dependencies (Hovl
+            //     materials/textures) are pulled in automatically. A path missing on disk (repo-only build, no
+            //     Hovl vendored) is skipped -> that effect type simply won't spawn (byte-identical). Keep the
+            //     paths in sync with the CombatSurfaceClient runtime resolver (both read effects_registry.json).
+            if (File.Exists(effectsRegSrc))
+            {
+                var fxRoot = MiniJson.Parse(File.ReadAllText(effectsRegSrc)) as Dictionary<string, object>;
+                var fxMap = (fxRoot != null && fxRoot.ContainsKey("effects")) ? fxRoot["effects"] as Dictionary<string, object> : null;
+                if (fxMap != null)
+                    foreach (var kv in fxMap)
+                    {
+                        var row = kv.Value as Dictionary<string, object>; if (row == null) continue;
+                        string path = row.ContainsKey("prefab") ? row["prefab"] as string : null;
+                        if (string.IsNullOrEmpty(path)) continue;
+                        if (string.IsNullOrEmpty(AssetDatabase.AssetPathToGUID(path))) { Debug.LogWarning("[Package] effect prefab missing on disk, skipped: " + path + " (type " + kv.Key + ")"); continue; }
+                        if (!names.Contains(path)) { names.Add(path); Debug.Log("[Package] +effect prefab " + path + " (type " + kv.Key + ")"); }
+                    }
+            }
 
             if (names.Count == 0) { Debug.LogWarning("[Package] no resolvable registry assets — bundle not built"); return; }
 

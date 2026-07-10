@@ -6,7 +6,11 @@
       "plate": "plates/crypt_armb_iter3_v1.png"
     },
     "camp_clearing_night": {
-      "plate": "plates/camp_clearing_night_truegrey_v1.png"
+      "plate": "plates/camp_clearing_night_truegrey_v1.png",
+      "_effects_comment": "VFX-ANCHORS: an animated fire over the painted firepit. The campfire_pit footprint is [[4,8],[5,8]] (qa/room_manifests/camp_truegrey.cells.json props[campfire]); cell [5,8] BOX-TUNED 2026-07-11 as the flame anchor that seats in the painted pit on camp_clearing_night_truegrey_v1.png, scale 1.5 filling the pit without washing out the painted glow (the plate is the star). `type` resolves through effects_registry.json; cell=[c,r], y=ground offset. Embers/fireflies types are registered and one-line-addable here later.",
+      "effects": [
+        { "type": "fire_medium", "cell": [5, 8], "scale": 1.5, "y": 0.0 }
+      ]
     }
   }
 }

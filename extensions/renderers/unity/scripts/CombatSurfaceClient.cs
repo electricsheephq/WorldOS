@@ -291,8 +291,18 @@ public class CombatSurfaceClient : MonoBehaviour
     // Walkable/impassable/occluder truth stays ENGINE-side (already on the surface); the manifest is pure
     // presentation. ABSENT manifest / unknown location => no swap (byte-identical single-plate behavior).
     // (#W5e item 6; optional StreamingAssets/plates_manifest.json)
-    class PlateEntry { public string plate; public float[] planeSize; public float ortho = -1f, pitch = float.NaN, yaw = float.NaN; }
+    // VFX-ANCHORS: an OPTIONAL per-plate "effects" array anchors animated presentation VFX (an animated
+    // campfire over the painted firepit; embers/fireflies later) to grid cells. Each spec is {type, cell:[c,r],
+    // scale?, y?}; `type` resolves through effects_registry.json (type -> prefab asset path in the actor
+    // bundle) so content authors reference abstract types, not asset paths. Pure presentation — no engine/
+    // gameplay contact; ABSENT effects (or absent registry / bundle) => nothing spawns (byte-identical).
+    class EffectSpec { public string type; public int[] cell; public float scale = 1f; public float y = 0f; }
+    class PlateEntry { public string plate; public float[] planeSize; public float ortho = -1f, pitch = float.NaN, yaw = float.NaN;
+                       public System.Collections.Generic.List<EffectSpec> effects; }
     System.Collections.Generic.Dictionary<string, PlateEntry> _plateManifest;
+    System.Collections.Generic.Dictionary<string, string> _effectRegistry;   // type -> prefab asset path (effects_registry.json)
+    System.Collections.Generic.List<GameObject> _effectInstances;            // live spawned effect instances (despawned on plate swap)
+    GameObject _effectsRoot;                                                  // parent of the spawned effect instances (one-call teardown)
     string _locId = "";          // the surface's current location.id (parsed every ParseSurfaceExtras)
     string _plateLocId = "\0";   // the location the CURRENT backdrop plate was applied for (sentinel => unset)
     bool _plateSwapping = false; // guards against a re-entrant swap while a fade is mid-flight
@@ -357,6 +367,9 @@ public class CombatSurfaceClient : MonoBehaviour
         // WALKABLE-SLICE-V1 (item 6): load the OPTIONAL plate registry (per-location backdrop swap). Absent
         // -> no swap, the scene's baked plate stands (byte-identical to pre-W5e).
         LoadPlateManifest();
+        // VFX-ANCHORS: load the OPTIONAL effects registry (type -> prefab asset path). Absent -> no effects
+        // resolve -> nothing spawns (byte-identical). Paired with the per-plate `effects` array above.
+        LoadEffectsRegistry();
         // Option A (item 3): hide the scene's baked mannequins — the client now renders its own cast in rest
         // AND combat, so a baked actor would double-render / linger T-posed beside the live cast.
         HideBakedCast();
@@ -2824,6 +2837,22 @@ public class CombatSurfaceClient : MonoBehaviour
                     if (cp.ContainsKey("pitch")) pe.pitch = System.Convert.ToSingle(cp["pitch"]);
                     if (cp.ContainsKey("yaw")) pe.yaw = System.Convert.ToSingle(cp["yaw"]);
                 }
+                // VFX-ANCHORS: OPTIONAL `effects`:[{type, cell:[c,r], scale?, y?}] anchored VFX for this plate.
+                if (row.ContainsKey("effects") && row["effects"] is System.Collections.Generic.List<object> fx)
+                {
+                    pe.effects = new System.Collections.Generic.List<EffectSpec>();
+                    foreach (var fe in fx)
+                    {
+                        var er = fe as System.Collections.Generic.Dictionary<string, object>; if (er == null) continue;
+                        var es = new EffectSpec();
+                        es.type = er.ContainsKey("type") ? er["type"] as string : null;
+                        if (er.ContainsKey("cell") && er["cell"] is System.Collections.Generic.List<object> cl && cl.Count >= 2)
+                            es.cell = new[] { System.Convert.ToInt32(cl[0]), System.Convert.ToInt32(cl[1]) };
+                        if (er.ContainsKey("scale")) es.scale = System.Convert.ToSingle(er["scale"]);
+                        if (er.ContainsKey("y")) es.y = System.Convert.ToSingle(er["y"]);
+                        if (!string.IsNullOrEmpty(es.type) && es.cell != null) pe.effects.Add(es);
+                    }
+                }
                 _plateManifest[kv.Key] = pe;
             }
             Debug.Log("[CSC] plates_manifest.json loaded: " + _plateManifest.Count + " plate(s)");
@@ -2919,9 +2948,115 @@ public class CombatSurfaceClient : MonoBehaviour
         var ls = bd.transform.localScale;
         bd.transform.localScale = new Vector3(ow, oh, ls.z == 0f ? 1f : ls.z);
         Debug.Log("[CSC] plate swapped -> " + entry.plate + " (" + tex.width + "x" + tex.height + ", loc=" + _locId + ")");
+        // VFX-ANCHORS: despawn the prior plate's effect instances and spawn this plate's anchored VFX (an
+        // animated fire over the painted firepit, etc.). No `effects` / no registry / no bundle => a clean
+        // despawn + nothing spawned (byte-identical to the pre-VFX plate).
+        SpawnPlateEffects(entry);
         // #idle-fix: the location just changed — settle the whole cast to a grounded idle on the new plate so
         // no actor renders a bind (T) pose or floats after the cross-room reposition (the taste-pass defect).
         SettleCastIdleGrounded();
         return true;
+    }
+
+    // ---- VFX-ANCHORS: per-plate anchored presentation effects (fire / embers / fireflies) ----------------
+
+    // Parse the OPTIONAL StreamingAssets/effects_registry.json ({version, effects:{<type>:{prefab}}}) into a
+    // flat type -> prefab-asset-path map. The prefab paths key into the SAME worldos_actors AssetBundle the
+    // build bakes them into (BuildMacOSPlayer.EnsurePackaged). Absent/corrupt -> _effectRegistry null -> no
+    // effect ever resolves (byte-identical). Same runtime Json parser registry.json/stage.json use.
+    void LoadEffectsRegistry()
+    {
+        try
+        {
+            string p = System.IO.Path.Combine(Application.streamingAssetsPath, "effects_registry.json");
+            if (!System.IO.File.Exists(p)) { Debug.Log("[CSC] no effects_registry.json (no anchored VFX)"); return; }
+            var root = Json.Parse(System.IO.File.ReadAllText(p)) as System.Collections.Generic.Dictionary<string, object>;
+            var eff = (root != null && root.ContainsKey("effects")) ? root["effects"] as System.Collections.Generic.Dictionary<string, object> : null;
+            if (eff == null) { Debug.LogWarning("[CSC] effects_registry.json has no `effects` map"); return; }
+            _effectRegistry = new System.Collections.Generic.Dictionary<string, string>();
+            foreach (var kv in eff)
+            {
+                var row = kv.Value as System.Collections.Generic.Dictionary<string, object>; if (row == null) continue;
+                string prefab = row.ContainsKey("prefab") ? row["prefab"] as string : null;
+                if (!string.IsNullOrEmpty(prefab)) _effectRegistry[kv.Key] = prefab;
+            }
+            Debug.Log("[CSC] effects_registry.json loaded: " + _effectRegistry.Count + " effect type(s)");
+        }
+        catch (System.Exception e) { Debug.LogWarning("[CSC] effects_registry parse: " + e.Message); }
+    }
+
+    // Despawn the prior plate's effect instances and spawn this plate's `effects` anchored at each cell's
+    // CellToWorld position (+ y). Each spec's `type` resolves through the registry to a prefab loaded from
+    // the actor bundle; a missing type / prefab / bundle is a logged skip (never a broken frame). Hovl SG
+    // materials are re-pointed to Legacy Particles so they render under the box's Built-in RP (see #1515).
+    void SpawnPlateEffects(PlateEntry entry)
+    {
+        // despawn prior instances first (unconditional — a plate with no effects clears the old ones).
+        if (_effectInstances != null)
+        {
+            foreach (var go in _effectInstances) if (go != null) Object.Destroy(go);
+            _effectInstances.Clear();
+        }
+        if (entry == null || entry.effects == null || entry.effects.Count == 0) return;
+        if (_effectRegistry == null) { Debug.LogWarning("[CSC] plate has effects but no effects_registry.json — skipped"); return; }
+        if (_effectsRoot == null) { _effectsRoot = new GameObject("_EffectsRoot"); }
+        if (_effectInstances == null) _effectInstances = new System.Collections.Generic.List<GameObject>();
+
+        foreach (var es in entry.effects)
+        {
+            if (es == null || string.IsNullOrEmpty(es.type) || es.cell == null || es.cell.Length < 2) continue;
+            if (!_effectRegistry.TryGetValue(es.type, out var prefabPath) || string.IsNullOrEmpty(prefabPath))
+            { Debug.LogWarning("[CSC] effect type '" + es.type + "' not in registry — skipped"); continue; }
+            var prefab = LoadAsset<GameObject>(prefabPath);
+            if (prefab == null) { Debug.LogWarning("[CSC] effect prefab missing in bundle: " + prefabPath + " (type " + es.type + ")"); continue; }
+            var inst = (GameObject)Object.Instantiate(prefab);
+            inst.name = "_FX_" + es.type + "_" + es.cell[0] + "_" + es.cell[1];
+            inst.transform.SetParent(_effectsRoot.transform, false);
+            inst.transform.position = CellToWorld(es.cell[0], es.cell[1]) + new Vector3(0f, es.y, 0f);
+            if (es.scale > 0f && System.Math.Abs(es.scale - 1f) > 1e-4f) inst.transform.localScale *= es.scale;
+            RepointHovlMaterials(inst);
+            WarmParticleSystems(inst);
+            _effectInstances.Add(inst);
+            Debug.Log("[CSC] spawned effect '" + es.type + "' @cell[" + es.cell[0] + "," + es.cell[1] + "] y=" + es.y + " scale=" + es.scale);
+        }
+    }
+
+    // Runtime port of M15SpendGateProbe.FixHovlVFX (#1515) Built-in-RP branch: the box renders under Built-in
+    // RP, where Hovl's Shader-Graph particle materials (Shader Graphs/HS_*, HS_*) draw 0 px. Re-point them to
+    // Unity's Legacy Particles shader (Additive for fire/energy; Alpha Blended for distortion), preserving the
+    // emissive texture + tint. No-op under URP/HDRP (the SG shaders render there) and for non-Hovl materials.
+    static void RepointHovlMaterials(GameObject inst)
+    {
+        if (UnityEngine.Rendering.GraphicsSettings.currentRenderPipeline != null) return;   // URP/HDRP: SG renders
+        var addBlend = Shader.Find("Legacy Shaders/Particles/Additive");
+        var alphaBlend = Shader.Find("Legacy Shaders/Particles/Alpha Blended");
+        if (addBlend == null) { Debug.LogWarning("[CSC] Legacy Shaders/Particles/Additive not found — Hovl VFX may render 0px"); return; }
+        int fixedN = 0;
+        foreach (var r in inst.GetComponentsInChildren<Renderer>(true))
+        {
+            var src = r.sharedMaterial; if (src == null || src.shader == null) continue;
+            string sn = src.shader.name;
+            if (!(sn.Contains("HS_") || sn.StartsWith("Shader Graphs/HS") || sn.StartsWith("Hovl"))) continue;
+            bool distort = sn.Contains("Distort");
+            var tgt = new Material(distort && alphaBlend != null ? alphaBlend : addBlend);
+            Texture tex = null;
+            foreach (var pn in new[] { "_MainTex", "_BaseMap", "_BaseColorMap" }) if (src.HasProperty(pn) && src.GetTexture(pn) != null) { tex = src.GetTexture(pn); break; }
+            if (tex != null) tgt.mainTexture = tex;
+            foreach (var pn in new[] { "_TintColor", "_BaseColor", "_Color" }) if (src.HasProperty(pn)) { tgt.color = src.GetColor(pn); break; }
+            r.material = tgt;   // per-instance material — never edits the shared bundle asset
+            fixedN++;
+        }
+        if (fixedN > 0) Debug.Log("[CSC] Built-in RP: re-pointed " + fixedN + " Hovl SG material(s) -> Legacy Particles");
+    }
+
+    // Tick freshly-instantiated ParticleSystems forward so a persistent VFX (a looping campfire) shows flame
+    // in the first captured frame instead of its empty t=0 bind state (mirrors M15SpendGateProbe's warm-up).
+    static void WarmParticleSystems(GameObject inst)
+    {
+        foreach (var ps in inst.GetComponentsInChildren<ParticleSystem>(true))
+        {
+            ps.Simulate(2f, true, true);
+            ps.Play(true);
+        }
     }
 }
