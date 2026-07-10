@@ -68,6 +68,14 @@ namespace WorldOS.Editor
             var runtime = go.AddComponent(rtType);
             var gen = GetMember(runtime, "Generator");
             if (gen == null) return "FAIL: RuntimeDungeon.Generator was null";
+            // Generator.DungeonFlow/Seed/ShouldRandomizeSeed are DEPRECATED (DunGen 2.19): the pipeline
+            // reads Generator.Settings (a DungeonGeneratorSettings). Setting the top-level fields alone
+            // fails with "[ArchetypeValidator] No Dungeon Flow is assigned" (verified on the GEX44 box
+            // 2026-07-11). Set BOTH the modern Settings AND the legacy fields for cross-version safety.
+            var settings = GetMember(gen, "Settings");
+            SetMember(settings, "DungeonFlow", flow);
+            SetMember(settings, "Seed", seed);
+            SetMember(settings, "ShouldRandomizeSeed", false);
             SetMember(gen, "DungeonFlow", flow);
             SetMember(gen, "Seed", seed);
             SetMember(gen, "ShouldRandomizeSeed", false);
