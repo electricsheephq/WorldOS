@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "_comment": "WALKABLE-SLICE-V1 item 6 (W5e runtime plate registry; docs/roadmap/W5E-PLATE-REGISTRY-DECISION.md). Keys are the ENGINE location.id the surface carries (viewer/server.py _session_location -> surface.location.id), the SAME keying the editor-time _location_plates.json already uses. `plate` is a path under StreamingAssets (BuildMacOSPlayer.EnsurePackaged copies this file + plates/*.png from the Unity project root). planeSize + cameraPin are OPTIONAL: absent => the client derives the plane from the plate aspect (oh=2*orthoSize, ow=oh*aspect) and leaves the scene camera as-is (crypt + camp share the ortho=13 / pitch=30 / yaw=45 rig). Adding a room later = one entry here + drop the PNG under plates/. On the box, CONFIRM these keys against the smoke campaign's real location.id (curl /combat-surface | jq .location.id in each room) and rename if they differ.",
+  "plates": {
+    "crypt": {
+      "plate": "plates/crypt.png"
+    },
+    "camp_clearing_night": {
+      "plate": "plates/camp_clearing_night_v2.png"
+    }
+  }
+}

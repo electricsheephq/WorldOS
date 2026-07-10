@@ -252,6 +252,21 @@ public class CombatSurfaceClient : MonoBehaviour
     string _occSigParsed = "";           // signature of the last-PARSED occluder set + location
     string _occSigBuilt = "\0";      // signature of the last-BUILT proxies (sentinel => first build runs)
 
+    // WALKABLE-SLICE-V1 (item 6) RUNTIME PLATE REGISTRY (W5e; docs/roadmap/W5E-PLATE-REGISTRY-DECISION.md):
+    // ONE persistent scene; the backdrop plate is resolved AT RUNTIME by the engine location id via a
+    // StreamingAssets manifest (plates_manifest.json: {plates:{<slug>:{plate, planeSize?, cameraPin?}}}).
+    // On a surface location change (a cross_door relocates the party -> the re-fetched surface carries the
+    // new location.id), a brief fade + Texture2D.LoadImage swaps the plate on the "PaintedBackdrop" material
+    // (the object paint_combat_v1.cs bakes) and re-sizes the camera-child quad to the new plate aspect.
+    // Walkable/impassable/occluder truth stays ENGINE-side (already on the surface); the manifest is pure
+    // presentation. ABSENT manifest / unknown location => no swap (byte-identical single-plate behavior).
+    // (#W5e item 6; optional StreamingAssets/plates_manifest.json)
+    class PlateEntry { public string plate; public float[] planeSize; public float ortho = -1f, pitch = float.NaN, yaw = float.NaN; }
+    System.Collections.Generic.Dictionary<string, PlateEntry> _plateManifest;
+    string _locId = "";          // the surface's current location.id (parsed every ParseSurfaceExtras)
+    string _plateLocId = "\0";   // the location the CURRENT backdrop plate was applied for (sentinel => unset)
+    bool _plateSwapping = false; // guards against a re-entrant swap while a fade is mid-flight
+
     [System.Serializable] public class Tok { public string id; public string name; public string team; public int x; public int y; public bool isCurrent; public int hp; public int hpMax; }
     [System.Serializable] public class Grid { public int cols; public int rows; }
     [System.Serializable] public class Surf { public string turnToken; public bool can_act; public Grid grid; public Tok[] tokens; }
@@ -305,6 +320,9 @@ public class CombatSurfaceClient : MonoBehaviour
 
         // #1463: load the OPTIONAL stage manifest (fire flicker + glow anchors). Absent -> byte-identical.
         LoadStageManifest();
+        // WALKABLE-SLICE-V1 (item 6): load the OPTIONAL plate registry (per-location backdrop swap). Absent
+        // -> no swap, the scene's baked plate stands (byte-identical to pre-W5e).
+        LoadPlateManifest();
 
         Debug.Log("[CSC] start: campaign=" + CampaignId + " url=" + ViewerUrl + " overlay=" + _overlayOn + " onboard=" + _onboard);
         StartCoroutine(PollLoop());
@@ -390,6 +408,9 @@ public class CombatSurfaceClient : MonoBehaviour
         // W6.1 (#1460): (re)build the invisible occluder proxies AFTER ApplySurf has applied this surface's
         // grid extents (CellToWorld depends on Cols/Rows). No-ops unless the occluder set/location changed.
         RebuildOccluders();
+        // WALKABLE-SLICE-V1 (item 6): swap the backdrop plate when the surface's location changed and the
+        // manifest has an entry for it (a cross_door into a new room). No-op otherwise (byte-identical).
+        MaybeSwapPlate();
     }
 
     // Populate _impassable + _lastPath from a raw /combat-surface OR /move response JSON (the latter nests
@@ -466,6 +487,11 @@ public class CombatSurfaceClient : MonoBehaviour
                     _doorTo[CellKey(System.Convert.ToInt32(cell[0]), System.Convert.ToInt32(cell[1]))] = toName ?? "";
                 }
             }
+            // WALKABLE-SLICE-V1 (item 6): the surface's current location.id, unconditionally (drives the
+            // runtime plate swap in MaybeSwapPlate). Guarded on presence so a /move response without the
+            // block (e.g. walk_to_cell) leaves the last-known location intact.
+            if (root.ContainsKey("location") && root["location"] is System.Collections.Generic.Dictionary<string, object> loc && loc.ContainsKey("id"))
+                _locId = (loc["id"] as string) ?? _locId;
         }
         catch (System.Exception e) { Debug.LogWarning("[CSC] surface-extras parse: " + e.Message); }
     }
@@ -2441,5 +2467,132 @@ public class CombatSurfaceClient : MonoBehaviour
                 float n = Mathf.PerlinNoise(seed, tt) - 0.5f;
                 var c = _glowMats[i].color; c.a = Mathf.Clamp01(0.5f * (1f + _flickAmp * 2f * n)); _glowMats[i].color = c;
             }
+    }
+
+    // ---- WALKABLE-SLICE-V1 (item 6) runtime plate registry --------------------------------------------
+
+    // Parse the OPTIONAL StreamingAssets/plates_manifest.json ({version, plates:{<slug>:{plate, planeSize?,
+    // cameraPin?}}}). Absent/corrupt -> _plateManifest null -> no swap ever runs (byte-identical to the
+    // baked-single-plate scene). Uses the same runtime Json parser registry.json/stage.json use.
+    void LoadPlateManifest()
+    {
+        try
+        {
+            string p = System.IO.Path.Combine(Application.streamingAssetsPath, "plates_manifest.json");
+            if (!System.IO.File.Exists(p)) { Debug.Log("[CSC] no plates_manifest.json (baked single plate)"); return; }
+            var root = Json.Parse(System.IO.File.ReadAllText(p)) as System.Collections.Generic.Dictionary<string, object>;
+            var plates = (root != null && root.ContainsKey("plates")) ? root["plates"] as System.Collections.Generic.Dictionary<string, object> : null;
+            if (plates == null) { Debug.LogWarning("[CSC] plates_manifest.json has no `plates` map"); return; }
+            _plateManifest = new System.Collections.Generic.Dictionary<string, PlateEntry>();
+            foreach (var kv in plates)
+            {
+                var row = kv.Value as System.Collections.Generic.Dictionary<string, object>; if (row == null) continue;
+                var pe = new PlateEntry();
+                pe.plate = row.ContainsKey("plate") ? row["plate"] as string : null;
+                if (string.IsNullOrEmpty(pe.plate)) continue;
+                if (row.ContainsKey("planeSize") && row["planeSize"] is System.Collections.Generic.List<object> ps && ps.Count >= 2)
+                    pe.planeSize = new[] { System.Convert.ToSingle(ps[0]), System.Convert.ToSingle(ps[1]) };
+                if (row.ContainsKey("cameraPin") && row["cameraPin"] is System.Collections.Generic.Dictionary<string, object> cp)
+                {
+                    if (cp.ContainsKey("ortho")) pe.ortho = System.Convert.ToSingle(cp["ortho"]);
+                    if (cp.ContainsKey("pitch")) pe.pitch = System.Convert.ToSingle(cp["pitch"]);
+                    if (cp.ContainsKey("yaw")) pe.yaw = System.Convert.ToSingle(cp["yaw"]);
+                }
+                _plateManifest[kv.Key] = pe;
+            }
+            Debug.Log("[CSC] plates_manifest.json loaded: " + _plateManifest.Count + " plate(s)");
+        }
+        catch (System.Exception e) { Debug.LogWarning("[CSC] plates_manifest parse: " + e.Message); }
+    }
+
+    // Swap the backdrop plate when the surface's location changed since the last-applied plate AND the
+    // manifest has an entry for it. Called from ApplyJson after ApplySurf. No manifest / same location /
+    // unknown location -> no-op (the scene's current plate stands). Guarded against a re-entrant mid-fade swap.
+    void MaybeSwapPlate()
+    {
+        if (_plateManifest == null || _plateSwapping || string.IsNullOrEmpty(_locId)) return;
+        if (_locId == _plateLocId) return;                       // already showing this room's plate
+        if (!_plateManifest.ContainsKey(_locId)) return;         // no entry -> keep the current plate (safe)
+        // _plateSwapping (set synchronously as SwapPlateCo's first line) is the re-entrancy guard; _plateLocId
+        // is committed only on a SUCCESSFUL apply (below) so a missing plate file retries on the next poll.
+        StartCoroutine(SwapPlateCo(_locId, _plateManifest[_locId]));
+    }
+
+    // Brief fade (black cover in) -> LoadImage swap on the PaintedBackdrop material + re-size the camera-child
+    // quad to the new plate aspect + optional camera pin -> fade out. A missing plate file / backdrop object
+    // leaves the current plate untouched (a logged warning, never a broken frame).
+    IEnumerator SwapPlateCo(string slug, PlateEntry entry)
+    {
+        _plateSwapping = true;
+        var cam = Camera.main;
+        GameObject cover = null; Material coverMat = null;
+        if (cam != null)
+        {
+            // full-frame black cover parented to the camera, in FRONT of the backdrop (backdrop is at local
+            // z=160; the cover sits nearer at z=120 and is oversized to blanket the ortho frustum).
+            cover = GameObject.CreatePrimitive(PrimitiveType.Quad); cover.name = "PlateFade"; Object.DestroyImmediate(cover.GetComponent<Collider>());
+            cover.transform.SetParent(cam.transform, false);
+            cover.transform.localPosition = new Vector3(0f, 0f, 120f);
+            float ch = (cam.orthographic ? cam.orthographicSize * 2f : 30f) * 1.4f;
+            cover.transform.localScale = new Vector3(ch * 2f, ch, 1f);
+            coverMat = new Material(Shader.Find("Sprites/Default")); coverMat.color = new Color(0f, 0f, 0f, 0f); coverMat.renderQueue = 4000;
+            var cr = cover.GetComponent<Renderer>(); cr.sharedMaterial = coverMat; cr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            for (float t = 0f; t < 0.18f; t += Time.deltaTime) { coverMat.color = new Color(0f, 0f, 0f, Mathf.Clamp01(t / 0.18f)); yield return null; }
+            coverMat.color = new Color(0f, 0f, 0f, 1f);
+        }
+
+        if (ApplyPlate(entry)) _plateLocId = slug;   // commit only on success -> a missing file retries next poll
+
+        if (cover != null && coverMat != null)
+        {
+            for (float t = 0f; t < 0.18f; t += Time.deltaTime) { coverMat.color = new Color(0f, 0f, 0f, 1f - Mathf.Clamp01(t / 0.18f)); yield return null; }
+            Object.Destroy(cover);
+        }
+        _plateSwapping = false;
+    }
+
+    // Load the plate PNG (StreamingAssets/<entry.plate>) via Texture2D.LoadImage and assign it to the
+    // "PaintedBackdrop" material (the camera-child quad paint_combat_v1.cs bakes). Re-sizes the quad to the
+    // new plate aspect exactly as the bake does (oh = 2*orthoSize, ow = oh*aspect) unless the manifest pins
+    // an explicit planeSize; applies an optional camera pin (ortho/pitch/yaw), reproducing the bake's rig.
+    bool ApplyPlate(PlateEntry entry)
+    {
+        if (entry == null || string.IsNullOrEmpty(entry.plate)) return false;
+        string path = System.IO.Path.Combine(Application.streamingAssetsPath, entry.plate);
+        if (!System.IO.File.Exists(path)) { Debug.LogWarning("[CSC] plate file missing: " + path + " (keeping current plate)"); return false; }
+        Texture2D tex = null;
+        try
+        {
+            var bytes = System.IO.File.ReadAllBytes(path);
+            tex = new Texture2D(2, 2, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+            if (!tex.LoadImage(bytes)) { Debug.LogWarning("[CSC] plate decode failed: " + path); return false; }
+        }
+        catch (System.Exception e) { Debug.LogWarning("[CSC] plate load: " + e.Message); return false; }
+
+        var bd = GameObject.Find("PaintedBackdrop");
+        if (bd == null) { Debug.LogWarning("[CSC] PaintedBackdrop not found — cannot swap plate"); return false; }
+        var rend = bd.GetComponent<Renderer>(); if (rend == null) return false;
+        rend.material.mainTexture = tex;                 // instance material -> per-scene, never edits a shared asset
+
+        var cam = Camera.main;
+        // optional camera pin FIRST (so orthographicSize is current when we derive the plane height).
+        if (cam != null)
+        {
+            if (entry.ortho > 0f) cam.orthographicSize = entry.ortho;
+            if (!float.IsNaN(entry.pitch) && !float.IsNaN(entry.yaw))
+            {
+                Quaternion rot = Quaternion.Euler(entry.pitch, entry.yaw, 0f);
+                cam.transform.rotation = rot;
+                cam.transform.position = -(rot * Vector3.forward) * 80f;   // mirror paint_combat_v1's rig distance
+            }
+        }
+        // re-size the backdrop quad: explicit planeSize wins, else derive from the plate aspect + ortho (the bake).
+        float oh, ow;
+        if (entry.planeSize != null && entry.planeSize.Length >= 2) { ow = entry.planeSize[0]; oh = entry.planeSize[1]; }
+        else { oh = (cam != null && cam.orthographic) ? cam.orthographicSize * 2f : bd.transform.localScale.y; ow = oh * ((float)tex.width / tex.height); }
+        var ls = bd.transform.localScale;
+        bd.transform.localScale = new Vector3(ow, oh, ls.z == 0f ? 1f : ls.z);
+        Debug.Log("[CSC] plate swapped -> " + entry.plate + " (" + tex.width + "x" + tex.height + ", loc=" + _locId + ")");
+        return true;
     }
 }
