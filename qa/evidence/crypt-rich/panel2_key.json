@@ -1,0 +1,19 @@
+{
+  "panel_id": "crypt-rich-20260711-p2",
+  "slot_to_role": {
+    "A": "candidate",
+    "B": "control",
+    "C": "incumbent"
+  },
+  "control_anchor": 8.0,
+  "control_band": [
+    6.8,
+    9.2
+  ],
+  "noise_law": 1.2,
+  "members": {
+    "candidate": "qa/evidence/crypt-rich/candidate_final_v2.png",
+    "incumbent": "qa/evidence/crypt-replicate/refs/incumbent_crypt_armb_iter3.jpg",
+    "control": "/Volumes/LEXAR/WorldOS-Unity-spike/refs/poe2_ruins_brazier_integration_01.jpg"
+  }
+}
