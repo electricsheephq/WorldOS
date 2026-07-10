@@ -1,0 +1,7 @@
+{
+  "_comment": "Journey plan for the walkslice_smoke01 box fixture (qa/seed_gfx_walkslice.py) -- the FULL LOOP plan (walk crypt props, parley, door-cross, combat entry) driving the SHIP-CAMP journey-eval first live run. Pairs with qa/room_manifests/crypt_dense_v1.cells.json (recipe_key=crypt, the LIVE geometry seed_gfx_combat._build_crypt_grid uses -- matches the deployed crypt_armb_iter3_v1.png plate) for the auto-derived prop-approach steps (sarcophagus, pillar_l, pillar_r). start_cell mirrors the party spawn (3,5)/(4,5); parley_cell is Mira the Keeper's crypt cell (3,6); door_cell is the back-center doorway (6,0) crossed to camp_clearing_night (captures both sides -- the plate swap this session shipped: camp_clearing_night_truegrey_v1.png); combat_cell is the goblin's camp render cell per seed_gfx_walkslice.py's camp_grid.spawns npcs entry (9,7) -- a best-effort placement (spawn_monster has no explicit cell param) the first live run will validate or refute.",
+  "start_cell": [3, 5],
+  "parley_cell": [3, 6],
+  "door_cell": [6, 0],
+  "combat_cell": [9, 7]
+}

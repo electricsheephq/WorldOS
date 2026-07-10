@@ -1,0 +1,99 @@
+{
+  "campaign": "walkslice_smoke01",
+  "owner": "WorldOSPlayer",
+  "qa_port": "9090",
+  "steps": 7,
+  "clicks_ok": 6,
+  "frames": [
+    {
+      "path": "qa/journey_runs/ship-camp-1/frames/00_start_step.png",
+      "step": "start",
+      "kind": "start",
+      "side": "step",
+      "transition": false,
+      "capture_ok": true,
+      "mode": "sck",
+      "hash": "1910699:e1f94b699976bb84a102626e2c1314a52189f930"
+    },
+    {
+      "path": "qa/journey_runs/ship-camp-1/frames/01_approach_pillar_l_step.png",
+      "step": "approach_pillar_l",
+      "kind": "prop_approach",
+      "side": "step",
+      "transition": false,
+      "capture_ok": true,
+      "mode": "sck",
+      "hash": "1904977:8c8c9ea7571605772850e63d17d740d97dd57ebd"
+    },
+    {
+      "path": "qa/journey_runs/ship-camp-1/frames/02_approach_pillar_r_step.png",
+      "step": "approach_pillar_r",
+      "kind": "prop_approach",
+      "side": "step",
+      "transition": false,
+      "capture_ok": true,
+      "mode": "sck",
+      "hash": "1903833:465eeeb111783f896357774cc634ec96da2ef015"
+    },
+    {
+      "path": "qa/journey_runs/ship-camp-1/frames/03_approach_sarcophagus_step.png",
+      "step": "approach_sarcophagus",
+      "kind": "prop_approach",
+      "side": "step",
+      "transition": false,
+      "capture_ok": true,
+      "mode": "sck",
+      "hash": "1903058:f124dbdd721eeaeec4817854f27f7b9dd01843e0"
+    },
+    {
+      "path": "qa/journey_runs/ship-camp-1/frames/04_parley_step.png",
+      "step": "parley",
+      "kind": "parley",
+      "side": "step",
+      "transition": false,
+      "capture_ok": true,
+      "mode": "sck",
+      "hash": "1739475:b4bac3009fdf66488f12e747955df61c752cc467"
+    },
+    {
+      "path": "qa/journey_runs/ship-camp-1/frames/05_door_cross_pre.png",
+      "step": "door_cross",
+      "kind": "door_cross",
+      "side": "pre",
+      "transition": true,
+      "capture_ok": true,
+      "mode": "sck",
+      "hash": "1739712:794cf9a3acc621353d3e8c5922e1c01cb8983829"
+    },
+    {
+      "path": "qa/journey_runs/ship-camp-1/frames/06_door_cross_post.png",
+      "step": "door_cross",
+      "kind": "door_cross",
+      "side": "post",
+      "transition": true,
+      "capture_ok": true,
+      "mode": "sck",
+      "hash": "1588583:da8db3ce4ff3bf681fb1a67c0fa40783df7a2365"
+    },
+    {
+      "path": "qa/journey_runs/ship-camp-1/frames/07_combat_entry_pre.png",
+      "step": "combat_entry",
+      "kind": "combat_entry",
+      "side": "pre",
+      "transition": true,
+      "capture_ok": true,
+      "mode": "sck",
+      "hash": "1760144:a6b021e3756cbd08f7b6f09e41a4d3a0457259bf"
+    },
+    {
+      "path": "qa/journey_runs/ship-camp-1/frames/08_combat_entry_post.png",
+      "step": "combat_entry",
+      "kind": "combat_entry",
+      "side": "post",
+      "transition": true,
+      "capture_ok": true,
+      "mode": "sck",
+      "hash": "1760332:fcc4b422c6f134b1607859a53f73e86ce6106921"
+    }
+  ]
+}

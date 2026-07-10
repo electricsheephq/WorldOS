@@ -1,0 +1,76 @@
+{
+  "campaign": "walkslice_smoke01",
+  "steps": [
+    {
+      "id": "start",
+      "kind": "start",
+      "cell": [
+        3,
+        5
+      ],
+      "transition": false,
+      "note": "establishing frame"
+    },
+    {
+      "id": "approach_pillar_l",
+      "kind": "prop_approach",
+      "cell": [
+        3,
+        2
+      ],
+      "transition": false,
+      "note": "stand adjacent to pillar_l [(3, 3), (3, 4)]"
+    },
+    {
+      "id": "approach_pillar_r",
+      "kind": "prop_approach",
+      "cell": [
+        8,
+        8
+      ],
+      "transition": false,
+      "note": "stand adjacent to pillar_r [(8, 9), (9, 9)]"
+    },
+    {
+      "id": "approach_sarcophagus",
+      "kind": "prop_approach",
+      "cell": [
+        4,
+        5
+      ],
+      "transition": false,
+      "note": "stand adjacent to sarcophagus [(4, 6), (5, 6), (6, 6), (7, 6), (3, 7), (4, 7), (5, 7), (6, 7), (7, 7), (4, 8), (5, 8), (6, 8)]"
+    },
+    {
+      "id": "parley",
+      "kind": "parley",
+      "cell": [
+        3,
+        6
+      ],
+      "transition": false,
+      "note": "walk adjacent to the NPC + open parley"
+    },
+    {
+      "id": "door_cross",
+      "kind": "door_cross",
+      "cell": [
+        6,
+        0
+      ],
+      "transition": true,
+      "note": "cross the doorway \u2014 plate swap; capture both sides"
+    },
+    {
+      "id": "combat_entry",
+      "kind": "combat_entry",
+      "cell": [
+        9,
+        7
+      ],
+      "transition": true,
+      "note": "enter combat \u2014 surface swap; capture both sides"
+    }
+  ],
+  "unreachable": []
+}
