@@ -1360,9 +1360,16 @@ def cross_door(campaign_id: str, x: int, y: int) -> dict:
     ``(x, y)`` must be a ``door_cell`` of the current location's ``scene_grid`` (the #1214 schema);
     the party then travels to the location's connected room-unit. A thin gameplay primitive over
     ``travel_to`` (which holds the campaign lock + co-locates the whole party). For a single-connection
-    room-unit (the common case) the door leads to the one neighbour; a multi-connection room needs an
-    authored door->destination map, so the FIRST connection is taken as a best-effort default and
-    surfaced via ``multi_connection``.
+    room-unit (the common case) the door leads to the one neighbour. For a MULTI-connection room
+    (SHIP-MORNING fix, #1508/#1531: the crypt hub now has TWO doors — camp + tavern), the destination
+    is resolved by POSITION: ``door_cells[i]`` maps to ``connections[i]`` (the authoring convention
+    every current multi-door seed already follows — ``qa/seed_gfx_walkslice.py`` appends each door cell
+    and its connection in the SAME order). An out-of-range/unmatched index falls back to ``connections[0]``
+    (today's prior behavior, preserved byte-for-byte for any single-door room), surfaced via
+    ``multi_connection``. Previously this ALWAYS took ``connections[0]`` regardless of which door was
+    crossed, so a room with 2+ doors silently sent the party through the first door's destination no
+    matter which cell was clicked — verified live (crossing the tavern's (0,5) door landed in
+    ``camp_clearing_night``, never ``tavern``) before this fix.
 
     The gameplay GATE (party is at the door, the room is resolved) is the caller's responsibility —
     this verb does NOT force-end an active combat. Raises if (x,y) is not a doorway or there is no
@@ -1373,13 +1380,15 @@ def cross_door(campaign_id: str, x: int, y: int) -> dict:
     sg = getattr(loc, "scene_grid", None) if loc is not None else None
     if sg is None:
         raise ValueError("no current location with a scene_grid to cross from")
-    door_cells = {(int(a), int(b)) for (a, b) in (getattr(sg, "door_cells", None) or [])}
-    if (int(x), int(y)) not in door_cells:
+    door_cells_list = [(int(a), int(b)) for (a, b) in (getattr(sg, "door_cells", None) or [])]
+    if (int(x), int(y)) not in door_cells_list:
         raise ValueError(f"({x},{y}) is not a doorway cell of {getattr(loc, 'name', '')!r}")
     conns = [cid for cid in (getattr(loc, "connections", None) or []) if isinstance(cid, str)]
     if not conns:
         raise ValueError(f"{getattr(loc, 'name', '')!r} has no connected room to cross to")
-    result = travel_to(campaign_id, conns[0])
+    door_idx = door_cells_list.index((int(x), int(y)))
+    dest_id = conns[door_idx] if door_idx < len(conns) else conns[0]
+    result = travel_to(campaign_id, dest_id)
     # W4 follow-up (#1378): the party's stage_cell was just CLEARED by travel_to's _move_party_to
     # (per-room scoping). If the destination room is ALSO painted, re-stage the party beside its
     # entry door so the linked room's rest board renders them standing there — not the empty

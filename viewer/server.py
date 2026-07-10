@@ -3521,9 +3521,12 @@ def _combat_doors(snapshot: dict) -> list[dict]:
     ADDITIVE / presentation-only: READS engine-owned ``scene_grid.door_cells`` (the #1214 schema) +
     ``Location.connections`` (the engine is the sole writer); never mutates. ``[]`` when the location has
     no door cells or no connections (== today). Each entry: ``{cell:[c,r], to:<loc_id>, toName, multi}``.
-    For a single-connection room-unit (the common case) every door cell leads to the one neighbour; a
-    multi-connection room would need an authored door->destination map, so ``multi=true`` flags the
-    ambiguity and the FIRST connection is surfaced as a best-effort default."""
+    For a single-connection room-unit (the common case) every door cell leads to the one neighbour. For a
+    MULTI-connection room (SHIP-MORNING fix, #1508/#1531), each door cell's destination is resolved by
+    POSITION — ``door_cells[i]`` -> ``connections[i]`` — mirroring the engine's ``cross_door`` resolution
+    (``servers/engine/server.py``) so the UI label always names the room the engine will actually cross
+    into; an out-of-range index falls back to ``connections[0]`` (prior behavior, unchanged for any
+    single-door room). ``multi=true`` still flags a multi-connection room for the UI."""
     loc_id = _text(snapshot.get("current_location_id"))
     locs = snapshot.get("locations")
     loc = locs.get(loc_id) if isinstance(locs, dict) and loc_id else None
@@ -3536,12 +3539,12 @@ def _combat_doors(snapshot: dict) -> list[dict]:
     conns = [cid for cid in (loc.get("connections") or []) if isinstance(cid, str)]
     if not conns:
         return []
-    dest_id = conns[0]
-    dest = locs.get(dest_id) if isinstance(locs, dict) else None
-    dest_name = _text(dest.get("name")) if isinstance(dest, dict) else ""
     out: list[dict] = []
-    for cell in door_cells:
+    for i, cell in enumerate(door_cells):
         if isinstance(cell, (list, tuple)) and len(cell) == 2:
+            dest_id = conns[i] if i < len(conns) else conns[0]
+            dest = locs.get(dest_id) if isinstance(locs, dict) else None
+            dest_name = _text(dest.get("name")) if isinstance(dest, dict) else ""
             out.append({"cell": [int(cell[0]), int(cell[1])], "to": dest_id,
                         "toName": dest_name, "multi": len(conns) > 1})
     return out
