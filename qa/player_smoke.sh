@@ -42,6 +42,10 @@
 #          WORLDOS_NPT_WINDOW_OWNER  — CGWindowList owner name (default "WorldOSPlayer")
 #          WORLDOS_NPT_HELPER        — path to a prebuilt native_input binary (else compiled fresh)
 #          WORLDOS_NPT_FULLSCREEN_FALLBACK — "1" to allow the full-screen+crop fallback capture
+# #1466:   the player is launched with WORLDOS_QA_INPUT=1 + WORLDOS_QA_INPUT_PORT (engine port +100),
+#          opening an in-process localhost click listener; the driver routes clicks there (viewport
+#          coord -> HandleClickAt) because OS-synthetic mouse never reaches a no-activation Unity
+#          window (HID/postToPid/brief-activation REFUTED — see #1466 + docs/research register).
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$ROOT" || exit 1
 
@@ -172,10 +176,17 @@ sleep 1
 # common case — it's kept as a belt-and-suspenders capture of anything emitted before Unity's
 # logging takes over (e.g. dyld/early native errors). unity_player.log is the primary player log.
 PLAYER_WIN_ARGS=(); while IFS= read -r __a; do PLAYER_WIN_ARGS+=("$__a"); done < <(player_windowed_launch_args "$PLAYERDIR/unity_player.log")
-WORLDOS_ENGINE_BASE_URL="$BASE_URL" WORLDOS_CAMPAIGN_ID="$CID" "$PLAYER_BIN" "${PLAYER_WIN_ARGS[@]}" \
+# #1466 QA INPUT CHANNEL: launch the player with an in-process localhost click listener so the driver
+# can inject clicks the ROBUST way (OS-synthetic mouse never reaches a no-activation Unity window —
+# HID/postToPid/brief-activation all REFUTED). Port is derived from the engine port (unique per run).
+# Byte-identical player when WORLDOS_QA_INPUT is unset — this smoke opts in.
+QA_INPUT_PORT="$((PORT + 100))"
+export WORLDOS_QA_INPUT=1 WORLDOS_QA_INPUT_PORT="$QA_INPUT_PORT"
+WORLDOS_ENGINE_BASE_URL="$BASE_URL" WORLDOS_CAMPAIGN_ID="$CID" \
+WORLDOS_QA_INPUT=1 WORLDOS_QA_INPUT_PORT="$QA_INPUT_PORT" "$PLAYER_BIN" "${PLAYER_WIN_ARGS[@]}" \
   > "$RUNDIR/player_app.log" 2>&1 &
 PLAYER_APP_PID=$!
-echo "[smoke] player app launched WINDOWED (pid $PLAYER_APP_PID) — engine=$BASE_URL campaign=$CID args=${PLAYER_WIN_ARGS[*]}"
+echo "[smoke] player app launched WINDOWED (pid $PLAYER_APP_PID) — engine=$BASE_URL campaign=$CID qa_input=:$QA_INPUT_PORT args=${PLAYER_WIN_ARGS[*]}"
 # Let Unity open its window, fetch /combat-surface, and settle into the TACTICAL GRID camera
 # framing (not whatever establishing/pre-combat view it opens on) before the scripted clicks —
 # the click-target math below assumes the locked dimetric combat camera is on screen.
