@@ -1,0 +1,139 @@
+{
+  "passed": false,
+  "frames_checked": 9,
+  "frames_with_defects": 1,
+  "defects": [
+    {
+      "frame": "qa/journey_runs/ship-camp-1/frames/08_combat_entry_post.png",
+      "step": "combat_entry",
+      "side": "post",
+      "defects": [
+        "transition_backdrop_unchanged"
+      ]
+    }
+  ],
+  "unreachable_props": [],
+  "reasons": [],
+  "per_frame": [
+    {
+      "frame": "qa/journey_runs/ship-camp-1/frames/00_start_step.png",
+      "step": "start",
+      "side": "step",
+      "flags": {
+        "on_prop": false,
+        "broken_backdrop": false,
+        "t_pose": false,
+        "floating": false
+      },
+      "defects": []
+    },
+    {
+      "frame": "qa/journey_runs/ship-camp-1/frames/01_approach_pillar_l_step.png",
+      "step": "approach_pillar_l",
+      "side": "step",
+      "flags": {
+        "t_pose": false,
+        "on_prop": false,
+        "broken_backdrop": false,
+        "floating": false,
+        "missing_or_cloned": false
+      },
+      "defects": []
+    },
+    {
+      "frame": "qa/journey_runs/ship-camp-1/frames/02_approach_pillar_r_step.png",
+      "step": "approach_pillar_r",
+      "side": "step",
+      "flags": {
+        "t_pose": false,
+        "on_prop": false,
+        "broken_backdrop": false,
+        "floating": false,
+        "missing_or_cloned": false
+      },
+      "defects": []
+    },
+    {
+      "frame": "qa/journey_runs/ship-camp-1/frames/03_approach_sarcophagus_step.png",
+      "step": "approach_sarcophagus",
+      "side": "step",
+      "flags": {
+        "t_pose": false,
+        "on_prop": false,
+        "broken_backdrop": false,
+        "floating": false,
+        "missing_or_cloned": false
+      },
+      "defects": []
+    },
+    {
+      "frame": "qa/journey_runs/ship-camp-1/frames/04_parley_step.png",
+      "step": "parley",
+      "side": "step",
+      "flags": {
+        "t_pose": false,
+        "on_prop": false,
+        "broken_backdrop": false,
+        "floating": false,
+        "missing_or_cloned": false
+      },
+      "defects": []
+    },
+    {
+      "frame": "qa/journey_runs/ship-camp-1/frames/05_door_cross_pre.png",
+      "step": "door_cross",
+      "side": "pre",
+      "flags": {
+        "t_pose": false,
+        "on_prop": false,
+        "broken_backdrop": false,
+        "floating": false,
+        "missing_or_cloned": false
+      },
+      "defects": []
+    },
+    {
+      "frame": "qa/journey_runs/ship-camp-1/frames/06_door_cross_post.png",
+      "step": "door_cross",
+      "side": "post",
+      "flags": {
+        "t_pose": false,
+        "on_prop": false,
+        "broken_backdrop": false,
+        "floating": false,
+        "missing_or_cloned": false,
+        "transition_backdrop_unchanged": false
+      },
+      "defects": []
+    },
+    {
+      "frame": "qa/journey_runs/ship-camp-1/frames/07_combat_entry_pre.png",
+      "step": "combat_entry",
+      "side": "pre",
+      "flags": {
+        "t_pose": false,
+        "on_prop": false,
+        "broken_backdrop": false,
+        "floating": false,
+        "missing_or_cloned": false
+      },
+      "defects": []
+    },
+    {
+      "frame": "qa/journey_runs/ship-camp-1/frames/08_combat_entry_post.png",
+      "step": "combat_entry",
+      "side": "post",
+      "flags": {
+        "t_pose": false,
+        "on_prop": false,
+        "broken_backdrop": false,
+        "floating": false,
+        "missing_or_cloned": false,
+        "transition_backdrop_unchanged": true
+      },
+      "defects": [
+        "transition_backdrop_unchanged"
+      ]
+    }
+  ]
+}
