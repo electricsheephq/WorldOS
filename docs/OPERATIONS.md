@@ -190,7 +190,14 @@ cost a rebuild/regeneration round, and one recovery briefly killed the owner's l
   single-path one you believe is safe.
 - **Commit-and-push-early stays the recovery guarantee.** A worktree that gets swept mid-session is
   only a lost *regeneration round*, never lost work, if you've been committing and pushing as you
-  go (per the `worldos-dev` dev-loop) rather than accumulating uncommitted state.
+  go (per the `worldos-dev` dev-loop) rather than accumulating uncommitted state. **Confirmed again
+  independently after #1516 landed** (NEW-ROOM-TAVERN, PR #1531, 2026-07-11): "a parallel
+  worktree-prune destroyed the first uncommitted run; rebuilt byte-faithfully — deterministic
+  numbers reproduced exactly." The sweeping behavior is still live somewhere in this environment —
+  a `.worldos-keep` marker is not yet a proven full mitigation (an unrelated worktree carrying one
+  was still removed mid-session during this very docs-consolidate lane, 2026-07-11) — so treat the
+  commit/push discipline above as load-bearing, not optional, until the sweeper itself is found and
+  fixed.
 
 ## The orchestrator-eyeball rule (owner-bound visuals get a human look before shipping)
 

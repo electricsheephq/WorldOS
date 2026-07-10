@@ -35,6 +35,18 @@ and add prop volumes instead. (Full note: `docs/RUNBOOK-INDEX.md` LARGE SPACES r
 
 ---
 
+## Worked example — a room from scratch, start to finish
+
+**NEW-ROOM-TAVERN (epic #1508, merged 2026-07-11) ran every step below, in order, on a room with no
+prior plate or seed** (proving the method generalises beyond regenerating an existing incumbent):
+geometry (`author_room_geometry.py tavern`, 6 props, world-true 12×10) → cutaway greybox + sidecars
+(coherence-green 6/6) → derived manifest → registered flux depth-CN base (edge-recall 0.980 ≥ 0.95
+masonry gate) → Gemini-noref layered style pass (best-of-3, seed123 adopted) → blind 5-scorer panel
+(candidate median 7.0 vs the registered PoE2 control 9.0, Δ−2.0 in-band ⇒ `tier=stable`) →
+`promote.py` (automated PASS) → `room_recipes.json` + `plates_manifest.json` wiring, ready for the
+box's next rebuild. Productive wall-clock: ~40 min. If a step below is ambiguous, that PR's diff and
+evidence (`qa/evidence/new-tavern/`) is the concrete ground truth to check against.
+
 ## The pipeline, step by step
 
 ### 1. Author geometry — `tools/author_room_geometry.py`
@@ -276,6 +288,15 @@ Tessera scene  ──[TesseraLayoutExporter.cs]──▶ tessera_layout.json ─
   `tools/derive_room_manifest.py`; do not skip this even though the box-drive recipe's own steps
   jump straight to greybox-render — the manifest is what `check_grid_paint_coherence.py` and runtime
   validation depend on)** → greybox-render → continue at step 4 of this runbook.
+- **DunGen-vs-Tessera verdict (both arms run for real on the box, 2026-07-11 —
+  `docs/roadmap/GENERATOR-EXPORT-CONTRACT.md` "Box comparison RESULTS"): ADOPT DunGen as the primary
+  dungeon/room STRUCTURE generator.** DunGen's native `Doorway`/`Connection` objects + room-graph flow
+  map directly onto the engine `SceneGrid` (25 doorways exported cleanly on a 26-tile sample); Tessera
+  Pro exported 0 doorways on its 396-tile castle run — no native connection object, so rooms come out
+  as disconnected floor islands — the decisive gap for THIS pipeline. **Keep Tessera Pro for
+  tile-dense WFC set-dressing/exterior fields** (walls, terrain) where connectivity isn't the point.
+  Both arms still feed the identical `tools/dungen_to_fixtures.py` with no schema fork — that
+  architecture win holds regardless of which generator you pick per-room.
 - **Architecture boundary — see the ruling appended to `docs/roadmap/TILED-SPACE-SPIKE.md`** (dated
   2026-07-12 in that file; confirm it has actually landed if you're reading this before that date —
   treat it as the documented owner direction either way): the room/plate stays the atomic unit at
