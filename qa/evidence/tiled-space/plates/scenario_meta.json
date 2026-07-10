@@ -1,0 +1,20 @@
+{
+  "prompt": "a dark pine forest path continuing from a camp clearing, mossy boulders, fallen logs, dense conifers flanking a trodden dirt trail, moody hand-painted painterly environment art, Pillars of Eternity Deadfire isometric backdrop, dramatic chiaroscuro, warm firelight vs cool teal shadow, dark earthy palette, dimetric bird's-eye view, lush organic painted forms, cohesive scene, no visible geometry blocks, no characters, no text",
+  "model_id": "model_bfl-flux-1-dev",
+  "control_asset_id": "asset_iDCaaKb77aa1z1SCenXkdnAK",
+  "control_image_path": "qa/evidence/tiled-space/controls/tileR_depth.png",
+  "control_modality": "depth",
+  "control_strength": 0.5,
+  "num_samples": 1,
+  "width": 1024,
+  "height": 768,
+  "job_id": "job_KDiZCTGh69vWdDmpKZs4f75M",
+  "assets": [
+    {
+      "asset_id": "asset_qu2aRMT5MPkkkExtfhEqbNRg",
+      "path": "/Users/lume/WorldOS-worktrees/wt-tiled-space/qa/evidence/tiled-space/plates/tile2_cont.png",
+      "bytes": 1058121
+    }
+  ],
+  "source": "scenario-controlnet"
+}

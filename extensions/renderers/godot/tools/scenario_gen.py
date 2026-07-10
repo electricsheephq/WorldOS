@@ -539,6 +539,19 @@ def _cmd_controlnet(args) -> None:
         "width": args.width,
         "height": args.height,
     }
+    # Optional img2img INIT image (composes with the depth ControlNet on flux.1-dev, which advertises
+    # txt2img+img2img+controlnet together). Used by the TILED-SPACE edge-continuation arm: seed tile 2
+    # with tile 1's finished overlap strip so the paint continues across the seam. `strength` is the
+    # img2img denoise (lower = adhere more closely to the init; flux recommends higher values).
+    init_image = getattr(args, "init_image", None)
+    if init_image:
+        init_asset_id = getattr(args, "init_asset_id", None)
+        if not init_asset_id:
+            print("[scenario_gen] uploading init image: %s" % init_image)
+            init_asset_id = _upload_image(headers, init_image)
+        body["image"] = init_asset_id
+        if getattr(args, "strength", None) is not None:
+            body["strength"] = float(args.strength)
     if args.seed is not None:
         body["seed"] = args.seed
     if getattr(args, "loras", None):
@@ -660,6 +673,17 @@ def main(argv=None) -> None:
         "--model-id",
         default="model_bfl-flux-1-dev",
         help="Scenario model id (default: model_bfl-flux-1-dev)",
+    )
+    sp_cn.add_argument(
+        "--init-image", metavar="PATH",
+        help="optional img2img INIT image (uploaded automatically). Composes with the depth ControlNet "
+             "on flux.1-dev — used by the tiled-space edge-continuation arm to seed tile 2 with tile 1's "
+             "finished overlap strip. Requires --strength to tune adherence.",
+    )
+    sp_cn.add_argument(
+        "--strength", type=float,
+        help="img2img denoise strength 0.01–1.0 (lower = adhere more closely to --init-image). No "
+             "effect without --init-image.",
     )
     sp_cn.add_argument("--num-samples", type=int, default=2,
                        help="number of output images (default: 2)")
