@@ -334,6 +334,9 @@ def _resolve_style_pass(recipe: dict, args) -> dict | None:
     loras = list(raw.get("loras") or [recipe["lora"]])
     scales = raw.get("lorasScale", raw.get("lora_scales"))
     scales = list(scales) if scales is not None else [recipe["lora_scale"]] * len(loras)
+    if len(scales) != len(loras):
+        sys.exit("[generate_room] ERROR: --style-pass loras (%d) and lorasScale (%d) must be the same "
+                 "length" % (len(loras), len(scales)))
     strength = float(raw.get("strength", args.strength))
     # The gate the sample-selector targets (max style subject to recall >= min_recall); mirrors
     # plate_loop's registration.min_recall default so the two agree on what "registered" means.
@@ -377,21 +380,22 @@ def _select_style_sample(samples: list, greybox: str | None, min_recall: float) 
     plate_loop's gate then FAILs it and the loop reject-retries at a lower strength). Falls back to
     samples[0] when recall can't be scored (no greybox / scorer unavailable), preserving single-sample
     behavior. Annotates each sample in place with `edge_recall_vs_greybox`; the winner with `selected_by`."""
-    if greybox and os.path.isfile(greybox):
+    scored: list = []  # (sample, UNROUNDED recall) — compare unrounded so a 0.94996 doesn't round up
+    if greybox and os.path.isfile(greybox):                #   past a 0.95 gate the plate_loop gate then FAILs
         for s in samples:
             r = _edge_recall(greybox, s["path"])
-            s["edge_recall_vs_greybox"] = round(r, 4) if r is not None else None
-    valid = [(s, s.get("edge_recall_vs_greybox")) for s in samples
-             if s.get("edge_recall_vs_greybox") is not None]
-    if not valid:
+            s["edge_recall_vs_greybox"] = round(r, 4) if r is not None else None  # rounded for display only
+            if r is not None:
+                scored.append((s, r))
+    if not scored:
         samples[0]["selected_by"] = "first-sample (recall unavailable)"
         return samples[0]
-    passing = [(s, r) for s, r in valid if r >= min_recall]
+    passing = [(s, r) for s, r in scored if r >= min_recall]
     if passing:
         chosen = min(passing, key=lambda t: t[1])[0]  # most style headroom while still registered
         chosen["selected_by"] = "max-style-above-min_recall"
     else:
-        chosen = max(valid, key=lambda t: t[1])[0]      # best attempt; gate will fail -> reject-retry
+        chosen = max(scored, key=lambda t: t[1])[0]     # best attempt; gate will fail -> reject-retry
         chosen["selected_by"] = "best-attempt-below-min_recall"
     return chosen
 
@@ -530,10 +534,11 @@ def main(argv=None) -> None:
                          "REGISTERED base), run a SECOND img2img STYLE pass on the style model (default recipe "
                          "base_model=z-image) + the painterly LoRA over that base, re-painting the geometry in "
                          "the house style at the given denoise strength (the drift/beauty knob). Value = a JSON "
-                         "string OR a path to a JSON file: {model,loras,lorasScale,strength} — all optional, each "
-                         "defaulting to the recipe painterly recipe (model_z-image + the painterly LoRA @ its "
-                         "recipe scale). Default OFF; absent flag = byte-identical behavior. Composes after the "
-                         "base pass (and after --layered if set).")
+                         "string OR a path to a JSON file: {model,loras,lorasScale,strength,min_recall} — all "
+                         "optional; model/loras/lorasScale default to the recipe painterly recipe (model_z-image "
+                         "+ the painterly LoRA @ its recipe scale), min_recall defaults to 0.95 (the gate the "
+                         "best-sample selector targets). Default OFF; absent flag = byte-identical behavior. "
+                         "Composes after the base pass (and after --layered if set).")
     ap.add_argument("--dry-run", action="store_true", help="print the resolved request without calling the API")
     args = ap.parse_args(argv)
 

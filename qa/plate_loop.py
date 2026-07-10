@@ -240,8 +240,14 @@ def run_generate(cfg: PlateConfig, out_dir: Path, *, dry_run: bool = False) -> P
     gen_dir.mkdir(parents=True, exist_ok=True)
     style_pass_file: Optional[Path] = None
     if cfg.style_pass:
+        sp = dict(cfg.style_pass)
+        # Keep generate_room's best-sample selector aligned with THIS run's registration gate: forward
+        # the gate's min_recall so the selector and the gate agree on what "registered" means (a config
+        # that overrides registration.min_recall shouldn't leave the selector on the 0.95 default).
+        if "min_recall" not in sp and cfg.registration.get("min_recall") is not None:
+            sp["min_recall"] = cfg.registration["min_recall"]
         style_pass_file = out_dir / "style_pass.json"
-        style_pass_file.write_text(json.dumps(cfg.style_pass, indent=2), encoding="utf-8")
+        style_pass_file.write_text(json.dumps(sp, indent=2), encoding="utf-8")
     argv = build_generate_argv(cfg, gen_dir, style_pass_file=style_pass_file)
     cmd = [sys.executable, str(_GENERATE_ROOM), *argv]
     if dry_run:

@@ -83,6 +83,11 @@ class ResolveStylePassTest(unittest.TestCase):
         sp = generate_room._resolve_style_pass(self.recipe, _args(style_pass="{}", strength=0.42))
         self.assertEqual(sp["strength"], 0.42)
 
+    def test_lora_scale_length_mismatch_exits(self):
+        with self.assertRaises(SystemExit):
+            generate_room._resolve_style_pass(
+                self.recipe, _args(style_pass='{"loras": ["L1","L2"], "lorasScale": [0.5], "strength": 0.3}'))
+
     def test_reads_from_a_json_file_path(self):
         with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
             json.dump({"strength": 0.45}, f)
@@ -175,6 +180,21 @@ class SelectStyleSampleTest(unittest.TestCase):
         self.assertEqual(chosen["asset_id"], "s2")
         self.assertEqual(chosen["selected_by"], "best-attempt-below-min_recall")
 
+    def test_unrounded_recall_just_below_gate_is_not_promoted(self):
+        # 0.94996 rounds to 0.95 for display but must NOT clear a 0.95 gate (the plate_loop gate uses
+        # the unrounded value; the selector must agree or it promotes a sample the gate then FAILs).
+        samples = self._samples()
+        recalls = {"/tmp/s0.png": 0.94996, "/tmp/s1.png": 0.9400,
+                   "/tmp/s2.png": 0.9300, "/tmp/s3.png": 0.9200}
+        with mock.patch.object(generate_room, "os") as m_os, \
+             mock.patch.object(generate_room, "_edge_recall", side_effect=lambda gb, p: recalls[p]):
+            m_os.path.isfile.return_value = True
+            chosen = generate_room._select_style_sample(samples, "/tmp/gb.png", 0.95)
+        # None truly clear 0.95 -> best attempt = highest recall (s0, 0.94996), flagged as below-min.
+        self.assertEqual(chosen["asset_id"], "s0")
+        self.assertEqual(chosen["selected_by"], "best-attempt-below-min_recall")
+        self.assertEqual(chosen["edge_recall_vs_greybox"], 0.95)  # display value is rounded
+
     def test_falls_back_to_first_without_greybox(self):
         samples = self._samples()
         chosen = generate_room._select_style_sample(samples, None, 0.95)
@@ -239,6 +259,17 @@ class MainPlumbingTest(unittest.TestCase):
         self.assertIn("style_pass", cap["meta"])
         self.assertEqual(cap["meta"]["style_pass"]["input_ref"], "asset_1")
         self.assertEqual(cap["meta"]["style_pass"]["strength"], 0.35)
+        self.assertEqual(cap["meta"]["style_pass"]["final_plate"]["asset_id"], "asset_2")
+
+    def test_refine_from_plus_style_pass_falls_back_to_first(self):
+        # --refine-from (no --base-plate) means no local greybox -> _select_style_sample can't score
+        # registration and falls back to the first sample. Must still run the style pass, not crash.
+        cap = self._run_main(
+            ["--room", "crypt", "--refine-from", "asset_SEED",
+             "--style-pass", '{"strength": 0.35}', "--out", "/tmp/o"]
+        )
+        self.assertEqual(len(cap["posts"]), 2)  # base img2img (refine) + style pass
+        self.assertIn("style_pass", cap["meta"])
         self.assertEqual(cap["meta"]["style_pass"]["final_plate"]["asset_id"], "asset_2")
 
     def test_style_pass_composes_after_plain_img2img_base(self):
