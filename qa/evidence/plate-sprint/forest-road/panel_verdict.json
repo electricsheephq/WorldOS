@@ -1,0 +1,8 @@
+{
+  "run": "forest_road-armB-iter2-noref-dimetric",
+  "arm": "ARM-B generalization on UNSEEN structure (forest road at dusk); best candidate = no-referenceImages + explicit dimetric-camera-lock prompt (the referenceImages anchor leaks the anchor room's CONTENT, so it was dropped)",
+  "scores": {"image_1": [6,7,6,6,7], "image_2": [9,9,9,9,9], "image_3": [7,6,6,5,5]},
+  "control_valid": true,
+  "house_style_A": "split 3 same-hand / 2 lesser",
+  "verdict": "Candidate (A/image_3) median 6.0 TIES the adopted outdoor house anchor camp_clearing_night_v2 (B/image_1, median 6.0) on painterly craft, on an UNSEEN structure class; real-art control (C/image_2) median 9.0 valid (in 6.8-9.2 band), delta_vs_control -3.0. NOT converged per the sprint gate (registration 0.6696 < 0.95 AND panel 6.0 < 7.0), but the registration miss is a mis-specified-gate finding (edge-recall penalizes faithful painterly reinterpretation of a boxy greybox into organic forest forms and is gameable by busy wrong-room imagery), and 6.0 == the outdoor incumbent's own bar."
+}
