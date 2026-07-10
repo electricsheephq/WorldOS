@@ -1,0 +1,21 @@
+{
+  "name": "camp-pass2-iter1-scale060-firepitpin",
+  "room": "camp_clearing_night",
+  "generate": {
+    "candidate": "qa/evidence/plate-sprint/camp-pass2/iter1/gemini/candidate_iter1_scale060.jpg",
+    "controlnet": "depth",
+    "control_strength": 0.65,
+    "seed": 42
+  },
+  "registration": {
+    "greybox": "qa/evidence/1470/greybox_control_1344x768.png",
+    "min_recall": 0.95,
+    "manifest": "qa/room_manifests/camp_clearing_night_v2.cells.json"
+  },
+  "panel": {
+    "incumbent": "qa/evidence/plate-audit/camp_clearing_night_v2.jpg",
+    "control": "/Users/lume/worldos-session-notes/plate-sprint/armB/poe2_control.jpg",
+    "control_note": "Not committed to the repo (a disguised real-art control, kept out-of-tree per the plate-sprint convention, same file camp-armB PR #1492 used); this absolute path is machine-local and won't resolve on another checkout.",
+    "house_anchor": "qa/evidence/plate-audit/camp_clearing_night_v2.jpg"
+  }
+}
