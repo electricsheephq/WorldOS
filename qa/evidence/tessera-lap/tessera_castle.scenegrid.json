@@ -1,0 +1,314 @@
+{
+ "scene_id": "dungen:tessera_castle",
+ "location_id": "tessera_castle",
+ "kind": "dungeon",
+ "biome": "DunGen-authored stone dungeon",
+ "seed": 12345,
+ "grid": {
+  "cols": 10,
+  "rows": 10,
+  "cell_size_ft": 5,
+  "projection": "dimetric-2to1"
+ },
+ "cell_default": {
+  "type": "void",
+  "walkable": false,
+  "cost": 1
+ },
+ "cells": [
+  {
+   "c": 0,
+   "r": 0,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 2,
+   "r": 0,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 4,
+   "r": 0,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 6,
+   "r": 0,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 8,
+   "r": 0,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 7,
+   "r": 1,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 8,
+   "r": 1,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 0,
+   "r": 2,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 2,
+   "r": 2,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 4,
+   "r": 2,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 6,
+   "r": 2,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 7,
+   "r": 2,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 8,
+   "r": 2,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 0,
+   "r": 4,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 2,
+   "r": 4,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 4,
+   "r": 4,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 6,
+   "r": 4,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 8,
+   "r": 4,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 0,
+   "r": 6,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 2,
+   "r": 6,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 4,
+   "r": 6,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 5,
+   "r": 6,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 6,
+   "r": 6,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 8,
+   "r": 6,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 5,
+   "r": 7,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 6,
+   "r": 7,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 0,
+   "r": 8,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 2,
+   "r": 8,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 4,
+   "r": 8,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 6,
+   "r": 8,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 8,
+   "r": 8,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  }
+ ],
+ "props": [],
+ "zone_anchors": {},
+ "exits": [],
+ "spawns": {},
+ "door_cells": [],
+ "protected_lane_cells": [],
+ "lighting": {
+  "key_dir_deg": 45,
+  "key_color": "#ffe6b0",
+  "ambient_color": "#2a2f3f",
+  "mood": "torchlit dungeon"
+ },
+ "art": {
+  "status": "tier1_blockout"
+ }
+}
