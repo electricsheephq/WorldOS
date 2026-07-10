@@ -2,6 +2,7 @@
  "manifest_version": 1,
  "room": "camp_clearing_night_v2",
  "recipe_key": "camp_clearing_night",
+ "derivation": "measured",
  "source_seed": "qa/seed_gfx_camp.py",
  "source_plate": "qa/evidence/plate-audit/camp_clearing_night_v2.jpg",
  "grid": {
@@ -26,6 +27,26 @@
   {
    "id": "tree_0",
    "kind": "large_tree",
+   "footprint": [
+    [
+     2,
+     0
+    ],
+    [
+     2,
+     1
+    ]
+   ],
+   "occlusion": [
+    [
+     2,
+     0
+    ],
+    [
+     2,
+     1
+    ]
+   ],
    "cells": [
     [
      2,
@@ -448,6 +469,26 @@
   {
    "id": "tree_1",
    "kind": "large_tree",
+   "footprint": [
+    [
+     6,
+     0
+    ],
+    [
+     6,
+     1
+    ]
+   ],
+   "occlusion": [
+    [
+     6,
+     0
+    ],
+    [
+     6,
+     1
+    ]
+   ],
    "cells": [
     [
      6,
@@ -870,6 +911,26 @@
   {
    "id": "tree_2",
    "kind": "large_tree",
+   "footprint": [
+    [
+     9,
+     0
+    ],
+    [
+     9,
+     1
+    ]
+   ],
+   "occlusion": [
+    [
+     9,
+     0
+    ],
+    [
+     9,
+     1
+    ]
+   ],
    "cells": [
     [
      9,
@@ -1292,6 +1353,26 @@
   {
    "id": "tree_3",
    "kind": "large_tree",
+   "footprint": [
+    [
+     13,
+     0
+    ],
+    [
+     13,
+     1
+    ]
+   ],
+   "occlusion": [
+    [
+     13,
+     0
+    ],
+    [
+     13,
+     1
+    ]
+   ],
    "cells": [
     [
      13,
@@ -1714,6 +1795,18 @@
   {
    "id": "rock_l",
    "kind": "boulder",
+   "footprint": [
+    [
+     1,
+     6
+    ]
+   ],
+   "occlusion": [
+    [
+     1,
+     6
+    ]
+   ],
    "cells": [
     [
      1,
@@ -2132,6 +2225,18 @@
   {
    "id": "rock_r",
    "kind": "boulder",
+   "footprint": [
+    [
+     14,
+     6
+    ]
+   ],
+   "occlusion": [
+    [
+     14,
+     6
+    ]
+   ],
    "cells": [
     [
      14,
@@ -2550,6 +2655,18 @@
   {
    "id": "campfire",
    "kind": "campfire_pit",
+   "footprint": [
+    [
+     8,
+     6
+    ]
+   ],
+   "occlusion": [
+    [
+     8,
+     6
+    ]
+   ],
    "cells": [
     [
      8,
@@ -2968,6 +3085,18 @@
   {
    "id": "bedroll_1",
    "kind": "bedroll",
+   "footprint": [
+    [
+     7,
+     7
+    ]
+   ],
+   "occlusion": [
+    [
+     7,
+     7
+    ]
+   ],
    "cells": [
     [
      7,
@@ -3386,6 +3515,18 @@
   {
    "id": "bedroll_2",
    "kind": "bedroll",
+   "footprint": [
+    [
+     9,
+     7
+    ]
+   ],
+   "occlusion": [
+    [
+     9,
+     7
+    ]
+   ],
    "cells": [
     [
      9,
@@ -3804,6 +3945,18 @@
   {
    "id": "bedroll_3",
    "kind": "bedroll",
+   "footprint": [
+    [
+     8,
+     8
+    ]
+   ],
+   "occlusion": [
+    [
+     8,
+     8
+    ]
+   ],
    "cells": [
     [
      8,
@@ -4222,6 +4375,26 @@
   {
    "id": "log_seat",
    "kind": "fallen_log",
+   "footprint": [
+    [
+     6,
+     6
+    ],
+    [
+     6,
+     7
+    ]
+   ],
+   "occlusion": [
+    [
+     6,
+     6
+    ],
+    [
+     6,
+     7
+    ]
+   ],
    "cells": [
     [
      6,
@@ -4644,6 +4817,18 @@
   {
    "id": "supply_crates",
    "kind": "supply_crates",
+   "footprint": [
+    [
+     10,
+     6
+    ]
+   ],
+   "occlusion": [
+    [
+     10,
+     6
+    ]
+   ],
    "cells": [
     [
      10,

@@ -1,0 +1,5 @@
+{
+  "_comment": "Journey plan for the camp_gfxdemo01 box fixture (qa/seed_gfx_camp_smoke.py, 16x12). The prop-approach steps are auto-derived from the camp_clearing_night_v2 manifest; this file supplies the semantic waypoints a manifest can't hold. Cells mirror qa/player_smoke.sh's fixture (hero 7,9 / goblin 10,8). parley_cell/door_cell are omitted (this fixture has no NPC/doorway); add them when driving a room that does.",
+  "start_cell": [7, 9],
+  "combat_cell": [10, 8]
+}

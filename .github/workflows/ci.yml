@@ -189,6 +189,24 @@ jobs:
         run: python -m pytest qa/test_plate_drift_gate.py -q -p no:xdist
       - name: room_recipes.json canonical_plate drift gate (every committed manifest+plate)
         run: python qa/check_plate_drift.py gate-recipes
+      - name: Grid<->paint coherence gate tests (aligned PASS + synthetic shift + current-crypt INCOHERENT)
+        # The ABSOLUTE grid<->paint gate (qa/check_grid_paint_coherence.py): a painted prop must sit on
+        # its OWN authored footprint, not just avoid drifting from a baseline (the drift gate above).
+        # This is the eval that would have caught the sarcophagus the owner walked onto (paint ~3/4 cell
+        # off the grid the engine keys collision to). Deterministic + self-contained (regenerates the
+        # greybox from the manifest geometry); single-process. Reliable for hard-silhouette architectural
+        # props — the crypt reality anchor here is the validated red-first-against-reality case.
+        run: python -m pytest qa/test_grid_paint_coherence.py -q -p no:xdist
+      - name: Room-manifest DERIVATION from greybox geometry (regeneratable + loop-closed on forest_road)
+        # Owner playtest #5: manifests are DERIVED from greybox geometry (single source of truth for
+        # footprint + occlusion + walkable) via tools/derive_room_manifest.py. Pins the derivation math,
+        # that forest_road.cells.json is regeneratable, and that the derived manifest is COHERENT against
+        # the greybox its geometry describes (the loop closed at the source).
+        run: python -m pytest qa/test_derive_room_manifest.py -q -p no:xdist
+      - name: Journey factual-VQA cores + panel defect-checklist regression (instruments B + C)
+        # Instrument B's path-gen/aggregation/verdict (stub scorer, no LLM/box) and amendment C's panel
+        # defect-checklist prompt regression — pinned so an edit to either can't silently drift.
+        run: python -m pytest qa/test_journey_eval.py qa/test_plate_loop.py -q -p no:xdist
 
   license-check:
     runs-on: ubuntu-latest

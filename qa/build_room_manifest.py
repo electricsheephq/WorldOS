@@ -1,17 +1,24 @@
 #!/usr/bin/env python3
 """build_room_manifest.py — seed the DURABLE, VERSIONED per-room cell->bbox manifests (W6.3, #1462).
 
-Emits qa/room_manifests/<room>.cells.json: for every authored prop, its logical cells reprojected to
-the expected `screen_bbox` under the CONTRACT camera (greybox_render_headless.py's verified rig — the
-#1396 reprojection recipe), plus (when a known-good plate is supplied) a per-prop reference FINGERPRINT
-so qa/check_plate_drift.py is self-contained. This is the versioned successor to the one-off paint-drift
-incident folders (qa/evidence/1397, 1408).
+Emits qa/room_manifests/<room>.cells.json: for every authored prop, its FOOTPRINT + OCCLUSION cells and
+the footprint reprojected to the expected `screen_bbox` under the CONTRACT camera (greybox_render_headless.py's
+verified rig — the #1396 reprojection recipe), plus (when a known-good plate is supplied) a per-prop
+reference FINGERPRINT so qa/check_plate_drift.py is self-contained. Versioned successor to the one-off
+paint-drift incident folders (qa/evidence/1397, 1408).
+
+Per-prop the manifest carries BOTH (they diverge under the iso projection — #1505):
+  * footprint — the impassable FLOOR cells (what collision + qa/check_grid_paint_coherence.py check).
+  * occlusion — the screen-space SILHOUETTE cells (what occluder proxies / silhouette rendering use).
+`cells` + `screen_bbox` mirror the footprint (drift-gate back-compat).
 
 The authored prop layout is read straight from the scene_grid seeds (their module-level cell constants
 are the single source of truth shared with the engine's impassable set), so a manifest is regeneratable
 on demand and can never silently diverge from the seed:
-  * camp_clearing_night_v2  <- qa/seed_gfx_camp.py            (16x12; the rest-camp fixture)
-  * crypt_dense_v1          <- qa/seed_gfx_crypt_2room.py     (14x11; the TOMB unit — sarcophagus+pillars)
+  * camp_clearing_night_v2  <- qa/seed_gfx_camp.py     (16x12; the rest-camp fixture; occlusion==footprint)
+  * crypt_dense_v1          <- MEASURED (PR #1505 point-in-polygon fit, sha 49d53fa; 14x11 deployed
+                              crypt_armb_iter3_v1 grid) — values copied in, NOT imported from the
+                              concurrently-edited seed_gfx_combat.py; a stable measured snapshot.
 
   python3 qa/build_room_manifest.py          # regenerate both committed manifests
   python3 qa/build_room_manifest.py --check   # verify the committed manifests match the seeds (CI-safe)
@@ -30,8 +37,16 @@ if str(_QA_DIR) not in sys.path:
     sys.path.insert(0, str(_QA_DIR))
 
 import seed_gfx_camp as camp  # noqa: E402
-import seed_gfx_crypt_2room as crypt  # noqa: E402
 from check_plate_drift import FP_GRID, fingerprint, load_luma, project_cell_bbox  # noqa: E402
+
+# The DEPLOYED crypt (crypt_armb_iter3_v1 plate) grid values, MEASURED — copied verbatim from PR #1505
+# (merged sha 49d53fa; point-in-polygon fit on the deployed plate) rather than importing seed_gfx_combat.
+# The crypt manifest is a `measured` SNAPSHOT, and the collision-coherence lane is concurrently editing
+# those seeds; decoupling keeps this manifest a stable, self-describing record instead of a moving target.
+_CRYPT_GRID = (14, 11)
+_CRYPT_PILLAR_L = [[2, 4]]
+_CRYPT_PILLAR_R = [[9, 9]]
+_CRYPT_SARCOPHAGUS_FOOTPRINT = [[c, r] for c in range(2, 8) for r in range(7, 10)]  # cols2-7 x rows7-9 (18)
 
 _MANIFESTS_DIR = _QA_DIR / "room_manifests"
 _CAMERA = {  # the contract greybox rig, recorded so a manifest is self-describing
@@ -41,11 +56,18 @@ _CAMERA = {  # the contract greybox rig, recorded so a manifest is self-describi
 }
 
 
+# A prop entry is (id, kind, footprint, occlusion):
+#   footprint  = the impassable FLOOR cells (what collision + the coherence gate check).
+#   occlusion  = the screen-space SILHOUETTE cells (what occluder proxies / silhouette rendering use).
+# Under the iso projection a tall prop's silhouette rises UP-SCREEN off its floor footprint (the
+# sarcophagus is the canonical case — see #1505). When no distinct silhouette is measured (thin/short
+# props, outdoor scatter), occlusion defaults to the footprint.
 def _camp_props() -> list:
     """The camp_clearing_night prop decomposition — VERBATIM from seed_gfx_camp.py's authored grid
-    (each tree pair, each bedroll, the log, etc. is its own prop, matching _build_camp_grid)."""
+    (each tree pair, each bedroll, the log, etc. is its own prop, matching _build_camp_grid). Outdoor
+    scatter has no measured silhouette split, so occlusion == footprint."""
     t = camp.TREE_CELLS
-    return [
+    fp = [
         ("tree_0", "large_tree", [t[0], t[1]]),
         ("tree_1", "large_tree", [t[2], t[3]]),
         ("tree_2", "large_tree", [t[4], t[5]]),
@@ -59,13 +81,25 @@ def _camp_props() -> list:
         ("log_seat", "fallen_log", list(camp.LOG_SEAT_CELLS)),
         ("supply_crates", "supply_crates", list(camp.SUPPLY_CRATE_CELLS)),
     ]
+    return [(pid, kind, [list(c) for c in cells], [list(c) for c in cells]) for (pid, kind, cells) in fp]
+
+
+# The sarcophagus SILHOUETTE (occlusion) — the coffin's tall lid+effigy rise up-screen to cols3-9 x
+# rows3-7 under the iso projection. This is the #1386 value #1505 correctly RECLASSIFIED as the
+# silhouette (NOT the impassable footprint), point-in-polygon-verified on the deployed plate.
+_SARCOPHAGUS_OCCLUSION = [[c, r] for c in range(3, 10) for r in range(3, 8)]
 
 
 def _crypt_tomb_props() -> list:
-    """The crypt_dense_v1 (TOMB unit) props — from seed_gfx_crypt_2room.py's TOMB_PROPS spec
-    (id, kind, footprint, band, silhouette)."""
-    return [(pid, kind, [list(c) for c in footprint]) for (pid, kind, footprint, _band, _sil)
-            in crypt.TOMB_PROPS]
+    """The DEPLOYED crypt (crypt_armb_iter3_v1 plate) props — MEASURED from PR #1505's recalibrated
+    footprints (owner-playtest-#4 correction, sha 49d53fa). The sarcophagus carries its distinct
+    silhouette as occlusion; the pillars' tall-but-thin silhouette has no separate measured extent, so
+    occlusion == footprint."""
+    return [
+        ("pillar_l", "stone_pillar", _CRYPT_PILLAR_L, _CRYPT_PILLAR_L),
+        ("pillar_r", "stone_pillar", _CRYPT_PILLAR_R, _CRYPT_PILLAR_R),
+        ("sarcophagus", "sarcophagus", _CRYPT_SARCOPHAGUS_FOOTPRINT, _SARCOPHAGUS_OCCLUSION),
+    ]
 
 
 def build_manifest(*, room: str, recipe_key: str, source_seed: str, cols: int, rows: int,
@@ -80,10 +114,14 @@ def build_manifest(*, room: str, recipe_key: str, source_seed: str, cols: int, r
     plate_arr = load_luma(plate_path) if plate_path is not None else None
 
     prop_entries = []
-    for (pid, kind, cells) in props:
-        cells = [[int(c), int(r)] for (c, r) in cells]
-        bbox = [round(v, 2) for v in project_cell_bbox(cells, cols, rows)]
-        entry = {"id": pid, "kind": kind, "cells": cells, "screen_bbox": bbox}
+    for (pid, kind, footprint, occlusion) in props:
+        footprint = [[int(c), int(r)] for (c, r) in footprint]
+        occlusion = [[int(c), int(r)] for (c, r) in occlusion]
+        # screen_bbox + the drift-gate `cells` are keyed to the FOOTPRINT (the floor cells collision +
+        # the coherence gate check), NOT the up-screen silhouette.
+        bbox = [round(v, 2) for v in project_cell_bbox(footprint, cols, rows)]
+        entry = {"id": pid, "kind": kind, "footprint": footprint, "occlusion": occlusion,
+                 "cells": footprint, "screen_bbox": bbox}
         if plate_arr is not None:
             fp = fingerprint(plate_arr, bbox)
             entry["ref_fp"] = [round(float(x), 5) for x in fp.tolist()]
@@ -93,6 +131,11 @@ def build_manifest(*, room: str, recipe_key: str, source_seed: str, cols: int, r
         "manifest_version": 1,
         "room": room,
         "recipe_key": recipe_key,
+        # MEASURED, not geometry-DERIVED: crypt/camp have no greybox geometry JSON yet, so their
+        # footprint+occlusion are reconstructed from measured calibrations (crypt: PR #1505's point-in-
+        # polygon tomb footprint; camp: the W6.2-era authored grid). Geometry-json derivation via
+        # tools/derive_room_manifest.py (the forest_road path) is the follow-up — owner playtest #5.
+        "derivation": "measured",
         "source_seed": source_seed,
         "source_plate": (str(plate_path.relative_to(_QA_DIR.parent)) if plate_path else None),
         "grid": {"cols": cols, "rows": rows},
@@ -111,9 +154,10 @@ def _manifests() -> dict:
             source_plate="evidence/plate-audit/camp_clearing_night_v2.jpg"),
         "crypt_dense_v1": build_manifest(
             room="crypt_dense_v1", recipe_key="crypt",
-            source_seed="qa/seed_gfx_crypt_2room.py", cols=crypt.GRID_W, rows=crypt.GRID_H,
+            source_seed="measured: PR #1505 point-in-polygon fit (sha 49d53fa)",
+            cols=_CRYPT_GRID[0], rows=_CRYPT_GRID[1],
             props=_crypt_tomb_props(),
-            source_plate=None),  # crypt_dense_v1.png lives on the box; geometry-only + fingerprint-ready
+            source_plate=None),  # crypt_armb_iter3_v1.png lives on the box; geometry-only + fingerprint-ready
     }
 
 
