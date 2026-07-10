@@ -178,12 +178,19 @@ def reachable(
     an occupied cell, so `occupied` cells are dropped from the result (and the start
     itself is excluded — you stay put for free, it's not a "move to").
 
-    `occupied` should NOT include `start` (the mover doesn't block itself). `difficult`
-    empty (no terrain) => flat cost 1 (PR-1 behaviour, byte-for-byte). Returns a set of
-    (x, y) cells. Pure Dijkstra over per-step cost; deterministic.
+    `occupied` should NOT include `start` (the mover doesn't block itself) — and even if a
+    caller violates that (STUCK-CELL #1511: a stale/re-painted cell now overlaps where the
+    mover already stands), `start` is EXPLICITLY exempted below, so you can never be trapped
+    by your own square. `difficult` empty (no terrain) => flat cost 1 (PR-1 behaviour,
+    byte-for-byte). Returns a set of (x, y) cells. Pure Dijkstra over per-step cost;
+    deterministic.
     """
     if budget_cells <= 0:
         return set()
+    # STUCK-CELL (#1511): explicit source exemption (see shortest_path's matching comment) —
+    # `start` never blocks itself, whatever `occupied`/`impassable` the caller passes in.
+    occupied = set(occupied) - {start}
+    impassable = set(impassable) - {start}
     import heapq
 
     # Dijkstra: costs are 1 or 2, so a priority queue gives the minimal-cost distance to
@@ -242,6 +249,14 @@ def shortest_path(
         return None
     if goal in occupied or goal in impassable:
         return None
+    # STUCK-CELL (#1511): the SOURCE cell is EXEMPT from the blocked set — you can always step
+    # OFF wherever you're standing, even if it's (or became) occupied/impassable. The Dijkstra
+    # below already achieves this incidentally (it only tests NEIGHBOUR cells, never re-checks
+    # `cur`), but that's fragile: make the exemption explicit so it survives a future "skip an
+    # already-blocked cur" tweak. `goal` is unaffected — you still can't ROUTE INTO a blocked
+    # cell (checked above; the only exception is goal == start, already short-circuited).
+    occupied = set(occupied) - {start}
+    impassable = set(impassable) - {start}
     import heapq
 
     # Dijkstra over per-step cost (1, or 2 into difficult terrain). `seq` is a monotonic

@@ -4644,7 +4644,11 @@ def rest_blocked_cells(
         ``scene_grid.impassable_cells`` — the same derivation a painted fight uses — and (2) rest
         OCCUPANCY: every character's ``stage_cell`` in this location PLUS any ``npc:<id>`` spawn
         anchors W1 writes into ``scene_grid.spawns`` (both are where PEOPLE stand at rest). The
-        mover's own ``exclude_id`` cell is removed (you never block yourself).
+        mover's own ``exclude_id`` cell is removed (you never block yourself) — STUCK-CELL
+        (#1511): this holds whether that cell is blocked via OCCUPANCY *or* TERRAIN (a wall/prop
+        the mover happens to be standing on, e.g. a post-re-paint obstacle that now overlaps an
+        already-staged party member) — the mover's cell is EXPLICITLY exempted below rather than
+        relying on it merely being absent from the occupancy side.
 
     Pure read of engine-owned state; no mutation, no I/O. If the location has no scene_grid, or a
     non-positive grid, returns ``(0, 0, set())`` (the caller treats that as "not walkable here" —
@@ -4656,6 +4660,15 @@ def rest_blocked_cells(
     height = int(grid.grid.rows)
     if width <= 0 or height <= 0:
         return 0, 0, set()
+
+    # STUCK-CELL (#1511): the mover's own CURRENT cell (if any) — needed below to exempt it from
+    # the TERRAIN half of the blocked set too, not just the occupancy half.
+    mover_cell: tuple[int, int] | None = None
+    if exclude_id:
+        mover_ch = c.characters.get(exclude_id)
+        sc = getattr(mover_ch, "stage_cell", None) if mover_ch is not None else None
+        if sc is not None:
+            mover_cell = (int(sc[0]), int(sc[1]))
 
     # (2) rest occupancy: where PEOPLE stand. Authoritative source is Character.stage_cell (this
     # PR's sole-writer field); the npc:<id> spawn anchors (W1 #1318) are folded in when present so
@@ -4685,12 +4698,51 @@ def rest_blocked_cells(
                     occupied.add((int(cell[0]), int(cell[1])))
 
     # (1) walls + prop footprints, minus any cell someone stands on (never trap a stander on a
-    # prop) — the SAME impassable_cells derivation a painted fight uses.
+    # prop) — the SAME impassable_cells derivation a painted fight uses. STUCK-CELL (#1511): widen
+    # the exemption set with the mover's OWN cell too (it's deliberately absent from `occupied`
+    # above, precisely so it doesn't count as an OCCUPANT blocking anyone else) — otherwise a
+    # mover standing on terrain the scene now paints impassable would stay stuck in the returned
+    # blocked set even though `occupied` correctly never counted them as an occupant.
+    terrain_exempt = occupied | {mover_cell} if mover_cell is not None else occupied
     impassable = {
         (x, y)
-        for x, y in scene_grid_mod.impassable_cells(grid, width, height, occupied=occupied)
+        for x, y in scene_grid_mod.impassable_cells(grid, width, height, occupied=terrain_exempt)
     }
-    return width, height, impassable | occupied
+    blocked = impassable | occupied
+    if mover_cell is not None:
+        blocked.discard(mover_cell)  # belt-and-suspenders: never block the mover's own cell
+    return width, height, blocked
+
+
+def _nearest_walkable_cell(
+    width: int, height: int, blocked: set[tuple[int, int]], cell: tuple[int, int]
+) -> "tuple[int, int] | None":
+    """STUCK-CELL (#1511) defense in depth: if `cell` is already walkable (in-bounds and not in
+    `blocked`), return it unchanged. Otherwise BFS outward over the 8-neighbourhood (rings of
+    increasing Chebyshev distance) for the nearest walkable cell — a deterministic fallback for
+    any rest-position WRITE that landed a character on a blocked cell (a grid-mismatched
+    combat-end write-back, a spawn that drifted onto a re-painted obstacle, ...). Returns None
+    only if the whole grid is blocked (nothing to relocate to). Pure; no mutation."""
+    if 0 <= cell[0] < width and 0 <= cell[1] < height and cell not in blocked:
+        return cell
+    from collections import deque
+
+    visited = {cell}
+    dq = deque([cell])
+    while dq:
+        cx, cy = dq.popleft()
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+                nxt = (cx + dx, cy + dy)
+                if nxt in visited or not (0 <= nxt[0] < width and 0 <= nxt[1] < height):
+                    continue
+                visited.add(nxt)
+                if nxt not in blocked:
+                    return nxt
+                dq.append(nxt)
+    return None  # no walkable cell anywhere in this room
 
 
 def _seed_stage_cells_on_arrival(c: "Campaign", dest: "Location") -> list[str]:
@@ -7428,13 +7480,30 @@ def end_combat(campaign_id: str, resolution: str = "") -> dict:
         # the grid) get a write-back; a zone/theater fight leaves x/y None ⇒ NO stage_cell write,
         # byte-for-byte today's behavior. The dead are skipped (a corpse has no rest position).
         # This IS the engine writing its own sole-writer field from its own combat state.
+        #
+        # STUCK-CELL (#1511) defense in depth: the combat grid's OWN geometry/impassable set is
+        # not guaranteed to track the location's REST scene_grid cell-for-cell (a plain #461
+        # `set_grid` fight, or a grid-mismatch degrade, has no obligation to match it) — so a
+        # combat-legal final cell could still land on a cell rest_blocked_cells treats as solid.
+        # Prefer the exact cell when it's rest-walkable; otherwise relocate to the nearest
+        # walkable cell rather than parking a survivor somewhere `walk_to` would refuse to route
+        # through. A location with no scene_grid (or an empty room) is untouched — write the
+        # combat cell exactly as before.
         for cb in c.combat.order:
             if cb.x is None or cb.y is None:
                 continue
             ch = c.characters.get(cb.character_id)
             if ch is None or ch.dead or ch.current_hp <= 0:
                 continue
-            ch.stage_cell = (int(cb.x), int(cb.y))
+            cell = (int(cb.x), int(cb.y))
+            loc = c.locations.get(ch.location_id) if ch.location_id else None
+            if loc is not None and getattr(loc, "scene_grid", None) is not None:
+                rw, rh, rest_blocked = rest_blocked_cells(c, loc, exclude_id=ch.id)
+                if rw > 0 and rh > 0 and cell in rest_blocked:
+                    relocated = _nearest_walkable_cell(rw, rh, rest_blocked, cell)
+                    if relocated is not None:
+                        cell = relocated
+            ch.stage_cell = cell
         c.combat = Combat()
         save_campaign(c)
         return result

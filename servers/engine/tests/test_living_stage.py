@@ -143,6 +143,32 @@ def test_end_combat_skips_the_dead(staged):
     assert tuple(c.characters[ally].stage_cell) == (1, 0)
 
 
+def test_end_combat_relocates_write_back_off_a_blocked_cell(staged):
+    """STUCK-CELL (#1511) defense in depth: the NO-TELEPORT write-back copies a combatant's
+    final COMBAT-grid cell straight into rest stage_cell with no rest-walkability check. If a
+    fight's own grid_impassable doesn't happen to cover a cell the location's rest scene_grid
+    treats as blocked (a wall/prop), that combatant would land — and be written back — onto a
+    rest-impassable cell. Place Hero on the combat grid directly on (2, 1) (the wall-column's
+    rest-impassable cell, but NOT one of the combat's own obstacles, so the grid-mode move is
+    legal) — end_combat must relocate the write-back to the nearest WALKABLE rest cell, never
+    park a survivor on a cell rest_blocked_cells would refuse to route through."""
+    cid, hero, ally, goblin, loc_id = staged
+    # No seed_from_stage / no set_grid obstacles — an open 5x3 combat grid (a plain #461 grid
+    # fight) so placing Hero at (2, 1) — a WALL cell in the room's rest scene_grid — is a legal
+    # combat placement (the fight's own grid_impassable is empty; only rest treats it as solid).
+    server.start_combat(cid, [hero, ally, goblin])
+    server.set_grid(cid, 5, 3)
+    server.place_combatant_at_coords(cid, hero, 2, 1)
+    server.end_combat(cid, resolution="the goblin fled")
+    c = server._require(cid)
+    loc = c.locations[loc_id]
+    _w, _h, blocked = server.rest_blocked_cells(c, loc, exclude_id=hero)
+    hero_cell = tuple(c.characters[hero].stage_cell)
+    assert hero_cell not in blocked, (
+        f"end_combat parked Hero on a rest-blocked cell {hero_cell} instead of relocating"
+    )
+
+
 def test_full_loop_rest_to_combat_to_rest_continuity(staged):
     """The scripted NO-TELEPORT loop end to end: rest (walk) → combat (seed) → combat move →
     rest (write-back). Assert continuity at BOTH seams with no actor jump."""
