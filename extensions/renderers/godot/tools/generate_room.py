@@ -331,7 +331,10 @@ def _resolve_style_pass(recipe: dict, args) -> dict | None:
         return None
     raw = _parse_style_pass(args.style_pass)
     model = raw.get("model") or recipe["base_model"]
-    loras = list(raw.get("loras") or [recipe["lora"]])
+    # Distinguish an ABSENT `loras` key (default to the recipe painterly LoRA) from a PRESENT empty
+    # list (an intentional no-LoRA run on a custom style model — honor it, don't re-add the recipe LoRA).
+    loras = raw.get("loras")
+    loras = list(loras) if loras is not None else [recipe["lora"]]
     scales = raw.get("lorasScale", raw.get("lora_scales"))
     scales = list(scales) if scales is not None else [recipe["lora_scale"]] * len(loras)
     if len(scales) != len(loras):
@@ -341,8 +344,12 @@ def _resolve_style_pass(recipe: dict, args) -> dict | None:
     # The gate the sample-selector targets (max style subject to recall >= min_recall); mirrors
     # plate_loop's registration.min_recall default so the two agree on what "registered" means.
     min_recall = float(raw.get("min_recall", 0.95))
+    # Optional selection greybox: plate_loop forwards the registration gate's greybox here so the
+    # selector scores samples against the SAME image the gate will (they diverge from --base-plate when
+    # a config sets registration.greybox or uses --refine-from). Absent -> selector uses --base-plate.
+    greybox = raw.get("greybox")
     return {"model": model, "loras": loras, "lora_scales": scales, "strength": strength,
-            "min_recall": min_recall}
+            "min_recall": min_recall, "greybox": greybox}
 
 
 _PLATE_OVERLAYS_RECALL = None  # cached qa/plate_overlays.registration_recall (or False if absent)
@@ -407,9 +414,10 @@ def _build_style_pass_request(recipe: dict, args, positive: str, negative: str,
     Same img2img shape as the unconditioned base pass (`image` + `strength` seed, LoRA on
     `loras`/`lorasScale`, style model in the PATH), but seeded from the REGISTERED base plate
     (`image_ref` = the base pass output asset id) and carrying the painterly LoRA the flux ControlNet
-    base could not (flux.1-dev rejects the z-image LoRA — HTTP 400). numSamples is pinned to 1: the
-    style pass emits ONE final styled+registered plate, the single candidate the registration gate and
-    reject-retry contract score per config."""
+    base could not (flux.1-dev rejects the z-image LoRA — HTTP 400). Requests `numSamples`=num_outputs
+    so `_select_style_sample` has a real pool to pick the most-stylized-yet-registered sample from
+    (the style endpoint drifts each sample differently off the locked geometry); the ONE selected sample
+    becomes the final plate the registration gate + reject-retry contract score per config."""
     endpoint = API_BASE + CONTROLNET_PATH.format(model_id=sp["model"])
     body = {
         "prompt": positive,
@@ -418,7 +426,7 @@ def _build_style_pass_request(recipe: dict, args, positive: str, negative: str,
         "strength": sp["strength"],
         "numInferenceSteps": args.steps,
         "guidance": args.guidance,
-        "numSamples": 1,
+        "numSamples": args.num_outputs,
         "width": args.width,
         "height": args.height,
         "loras": list(sp["loras"]),
@@ -756,7 +764,10 @@ def main(argv=None) -> None:
         # The style endpoint returns N samples (varying drift off the locked geometry). Promote the
         # most-stylized one that still registers vs the greybox (the --base-plate); plate_loop reads
         # this declared final_plate rather than picking the newest file by mtime.
-        greybox = os.path.expanduser(args.base_plate) if args.base_plate else None
+        # Prefer the gate's greybox (forwarded by plate_loop) so selection scores the same image the
+        # registration gate will; fall back to --base-plate (the conditioning greybox) standalone.
+        gate_greybox = sp.get("greybox") or args.base_plate
+        greybox = os.path.expanduser(gate_greybox) if gate_greybox else None
         final_sample = _select_style_sample(sp_saved, greybox, sp["min_recall"])
         _downscale_to_plate(final_sample["path"], args.width, args.height)
         meta["style_pass"] = {

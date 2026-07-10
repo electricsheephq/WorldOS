@@ -160,6 +160,20 @@ def test_style_pass_forwarded_when_present(tmp_path):
     assert "--style-pass" not in pl.build_generate_argv(cfg2, tmp_path / "gen")
 
 
+def test_empty_style_pass_dict_is_enabled(tmp_path):
+    """A present-but-empty style_pass ({}) means "run the style pass with defaults" — run_generate must
+    forward it (is-not-None, not a falsey check), and inject the gate's greybox/min_recall so the
+    selector matches the gate."""
+    cfg = pl.PlateConfig(name="t", room="crypt", generate={"base_plate": "/tmp/gb.png"},
+                         style_pass={}, registration={"greybox": "/tmp/gate_gb.png", "min_recall": 0.9})
+    pl.run_generate(cfg, tmp_path, dry_run=True)  # dry-run writes the temp json, skips the API
+    spf = tmp_path / "style_pass.json"
+    assert spf.is_file()
+    written = json.loads(spf.read_text())
+    assert written["greybox"] == "/tmp/gate_gb.png"  # gate greybox forwarded to the selector
+    assert written["min_recall"] == 0.9
+
+
 def test_config_summary_reflects_levers():
     cfg = pl.PlateConfig(name="t", room="crypt",
                          generate={"controlnet": "depth", "control_strength": 0.7, "strength": 0.3, "seed": 9},

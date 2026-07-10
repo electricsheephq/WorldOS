@@ -239,13 +239,21 @@ def run_generate(cfg: PlateConfig, out_dir: Path, *, dry_run: bool = False) -> P
     gen_dir = out_dir / "gen"
     gen_dir.mkdir(parents=True, exist_ok=True)
     style_pass_file: Optional[Path] = None
-    if cfg.style_pass:
+    # `is not None` (not truthiness): a present-but-empty `style_pass: {}` means "run the style pass with
+    # all defaults", which generate_room --style-pass '{}' supports — an empty-dict falsey check would
+    # silently drop it and gate a plain base plate instead.
+    if cfg.style_pass is not None:
         sp = dict(cfg.style_pass)
         # Keep generate_room's best-sample selector aligned with THIS run's registration gate: forward
-        # the gate's min_recall so the selector and the gate agree on what "registered" means (a config
-        # that overrides registration.min_recall shouldn't leave the selector on the 0.95 default).
+        # the gate's min_recall AND greybox so the selector and the gate agree on what "registered" means
+        # (a config that overrides registration.min_recall/greybox shouldn't leave the selector on the
+        # --base-plate @ 0.95 defaults).
         if "min_recall" not in sp and cfg.registration.get("min_recall") is not None:
             sp["min_recall"] = cfg.registration["min_recall"]
+        if "greybox" not in sp:
+            gate_greybox = cfg.registration.get("greybox") or cfg.generate.get("base_plate")
+            if gate_greybox:
+                sp["greybox"] = gate_greybox
         style_pass_file = out_dir / "style_pass.json"
         style_pass_file.write_text(json.dumps(sp, indent=2), encoding="utf-8")
     argv = build_generate_argv(cfg, gen_dir, style_pass_file=style_pass_file)

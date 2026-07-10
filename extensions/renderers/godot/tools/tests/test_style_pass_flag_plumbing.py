@@ -25,7 +25,7 @@ import os
 import sys
 import tempfile
 import unittest
-from unittest import mock
+import unittest.mock as mock
 
 _TOOLS_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 if _TOOLS_DIR not in sys.path:
@@ -83,6 +83,22 @@ class ResolveStylePassTest(unittest.TestCase):
         sp = generate_room._resolve_style_pass(self.recipe, _args(style_pass="{}", strength=0.42))
         self.assertEqual(sp["strength"], 0.42)
 
+    def test_explicit_empty_loras_honored(self):
+        # A present-but-empty loras list is an intentional no-LoRA run — must NOT be replaced by the
+        # recipe painterly LoRA.
+        sp = generate_room._resolve_style_pass(
+            self.recipe, _args(style_pass='{"loras": [], "lorasScale": [], "strength": 0.3}'))
+        self.assertEqual(sp["loras"], [])
+        self.assertEqual(sp["lora_scales"], [])
+
+    def test_greybox_passthrough(self):
+        sp = generate_room._resolve_style_pass(
+            self.recipe, _args(style_pass='{"strength": 0.3, "greybox": "/tmp/gate_gb.png"}'))
+        self.assertEqual(sp["greybox"], "/tmp/gate_gb.png")
+        # absent -> None (selector falls back to --base-plate)
+        sp2 = generate_room._resolve_style_pass(self.recipe, _args(style_pass='{"strength": 0.3}'))
+        self.assertIsNone(sp2["greybox"])
+
     def test_lora_scale_length_mismatch_exits(self):
         with self.assertRaises(SystemExit):
             generate_room._resolve_style_pass(
@@ -120,8 +136,9 @@ class BuildStylePassRequestTest(unittest.TestCase):
         self.assertEqual(body["strength"], 0.35)
         self.assertEqual(body["loras"], [self.recipe["lora"]])
         self.assertEqual(body["lorasScale"], [self.recipe["lora_scale"]])
-        # Exactly one final styled plate per config (the reject-retry candidate).
-        self.assertEqual(body["numSamples"], 1)
+        # Requests num_outputs samples so _select_style_sample has a real pool (the endpoint drifts
+        # each sample differently); the ONE selected sample becomes the final plate.
+        self.assertEqual(body["numSamples"], args.num_outputs)
         self.assertEqual(body["prompt"], self.positive)
         self.assertEqual(body["negativePrompt"], self.negative)
         # This is img2img, never ControlNet conditioning.
@@ -254,7 +271,7 @@ class MainPlumbingTest(unittest.TestCase):
         self.assertEqual(style_post["body"]["image"], "asset_1")  # first download = base output
         self.assertEqual(style_post["body"]["strength"], 0.35)
         self.assertEqual(style_post["body"]["loras"], ["model_MB22WaRCBLtfhi5R2CRpHoEL"])
-        self.assertEqual(style_post["body"]["numSamples"], 1)
+        self.assertEqual(style_post["body"]["numSamples"], 4)  # num_outputs default -> selector pool
         # Meta records the style pass, its input_ref (the registered base), and the final plate.
         self.assertIn("style_pass", cap["meta"])
         self.assertEqual(cap["meta"]["style_pass"]["input_ref"], "asset_1")
