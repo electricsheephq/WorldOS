@@ -688,8 +688,22 @@ public class CombatSurfaceClient : MonoBehaviour
     // are preserved. Runs once at Start, before any runtime spawn, so every Actor_* present is baked.
     void HideBakedCast()
     {
+        var hide = new System.Collections.Generic.HashSet<GameObject>();
+        // Every baked character MESH -> hide its whole root object. At Start (before any runtime spawn) every
+        // SkinnedMeshRenderer in the scene is baked scaffolding (paint_combat_v1's FIGHTER/Goblin3D/pose
+        // dummies P___bind_-1 / P_Idle_* / P_Walk_*), so this catches them regardless of name.
+        foreach (var smr in GameObject.FindObjectsOfType<SkinnedMeshRenderer>())
+        { var t = smr.transform; while (t.parent != null) t = t.parent; hide.Add(t.gameObject); }
+        // Baked selection decals (AO blobs + rings) live as their own roots (SoloAO/SoloRing/HeroAO), plus any
+        // prior Actor_* — match them by name so no stale ring is left under the live cast.
         foreach (var tr in GameObject.FindObjectsOfType<Transform>())
-            if (tr != null && tr.gameObject.name.StartsWith("Actor_")) tr.gameObject.SetActive(false);
+        {
+            if (tr.parent != null) continue;   // roots only
+            string n = tr.name;
+            if (n.StartsWith("Actor_") || n.StartsWith("Solo") || n.StartsWith("Hero")
+                || n.EndsWith("AO") || n.EndsWith("Ring") || n.EndsWith("Core")) hide.Add(tr.gameObject);
+        }
+        foreach (var go in hide) if (go != this.gameObject) go.SetActive(false);
     }
 
     // #anim-combat: the ported verb map, driven off the surface hp fields + isCurrent (engine truth only).
@@ -1053,6 +1067,13 @@ public class CombatSurfaceClient : MonoBehaviour
         // the legacy -90 Z-up stand-up. Set before posing (depends only on rig type).
         float pitchX = go.GetComponentInChildren<SkinnedMeshRenderer>() != null ? 0f : -90f;
         go.transform.rotation = Quaternion.Euler(pitchX, camYaw + 180f, 0f);
+
+        // #idle-persist: keep the Animator updating its skinned pose even when briefly off-screen/unfocused —
+        // AnimatorCullingMode.CullUpdateTransforms freezes the skinned mesh at its last dispatched pose when
+        // the actor isn't in the active render, which is exactly the "T-pose on capture" symptom. AlwaysAnimate
+        // guarantees the persistent idle graph's pose is dispatched every frame in the player's render loop.
+        var animC = go.GetComponentInChildren<Animator>();
+        if (animC != null) animC.cullingMode = AnimatorCullingMode.AlwaysAnimate;
 
         var rends = go.GetComponentsInChildren<Renderer>();
         foreach (var r in rends)
