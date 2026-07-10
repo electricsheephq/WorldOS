@@ -113,3 +113,29 @@ def test_cross_door_flags_multi_connection_and_takes_first(tmp_path, monkeypatch
     res = server.cross_door(cid, 6, 0)
     assert res["multi_connection"] is True
     assert server._require(cid).current_location_id == b  # best-effort: the first connection
+
+
+def test_cross_door_resolves_each_door_of_a_multi_door_hub_to_its_own_room(tmp_path, monkeypatch):
+    """SHIP-MORNING regression (#1508/#1531): a hub with TWO authored doors (mirroring the walkslice
+    crypt's camp-door + tavern-door) must send the party through the door-cell-SPECIFIC destination —
+    door_cells[i] -> connections[i] — not always connections[0]. Verified live on the box before this
+    fix: crossing the walkslice tavern's (0,5) door landed in camp_clearing_night, never tavern, because
+    cross_door ignored WHICH door cell was crossed. Reproduces that shape with a minimal 2-door hub."""
+    monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
+    cid = server.create_campaign("multi-door-hub")["id"]
+    hub = server.add_location(campaign_id=cid, name="Hub", make_current=True)["id"]
+    north = server.add_location(campaign_id=cid, name="North", connections=[hub])["id"]
+    east = server.add_location(campaign_id=cid, name="East", connections=[hub])["id"]
+    # add_location bidirectionally wires connections, so hub.connections is now [north, east] in
+    # creation order — author door_cells in the SAME order (door_cells[0]->north, door_cells[1]->east).
+    _author_grid(cid, hub, [[6, 0], [0, 5]])
+
+    res_north = server.cross_door(cid, 6, 0)
+    assert res_north["multi_connection"] is True
+    assert server._require(cid).current_location_id == north
+
+    # travel back to the hub via the same primitive cross_door delegates to, then cross the OTHER door.
+    server.travel_to(cid, hub)
+    res_east = server.cross_door(cid, 0, 5)
+    assert res_east["multi_connection"] is True
+    assert server._require(cid).current_location_id == east  # NOT north — each door its own room
