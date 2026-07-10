@@ -351,6 +351,17 @@ _HOUSE_STYLE_QUESTION = (
     "candidate that beats its real-art control but LOSES this house-style read is a REGRESSION, not "
     "an adoption — regardless of the absolute number."
 )
+# FACTS-BEFORE-BEAUTY (eval-upgrade): panels score beauty-vs-bar and scored AROUND a T-posing actor +
+# a wrong-plate bundle that reached an owner build. Every scorer must first answer this 5-item factual
+# defect checklist per image (YES = defect present) and emit it as machine-readable flags — a factual
+# NO on all five is a precondition to trusting the aesthetic score, never a change to the scale.
+_DEFECT_CHECKLIST = [
+    ("on_prop", "Is any character standing ON or INSIDE a painted prop/object (not on open floor)?"),
+    ("t_pose", "Is any character in a T-pose / bind-pose / obviously broken rig pose?"),
+    ("floating", "Is any character floating (feet off the ground / no ground-contact shadow)?"),
+    ("duplicate", "Is any character/prop duplicated (the same one rendered more than once)?"),
+    ("missing", "Is an expected character/prop MISSING or the wrong asset for the scene?"),
+]
 
 
 def prepare_panel(candidate: Path, cfg: PlateConfig, out_dir: Path, *,
@@ -399,17 +410,23 @@ def prepare_panel(candidate: Path, cfg: PlateConfig, out_dir: Path, *,
         house_ref = house_dst.name
 
     prompts = {
-        "task": "blind painterly-plate panel — score each image, then answer the house-style question",
+        "task": "blind painterly-plate panel — answer the factual defect checklist, THEN score each image",
         "rubric": _PANEL_RUBRIC,
+        "factual_defect_checklist": [{"flag": k, "question": q} for (k, q) in _DEFECT_CHECKLIST],
         "house_style_question": _HOUSE_STYLE_QUESTION,
         "house_best_reference": house_ref,
         "images": sorted(staged.keys()),
         "n_scorers": n_scorers,
         "control_band": control_band,
         "instructions": (
-            "Independently score EVERY image_N in this directory 0-10 on the rubric. Return TEXT-ONLY "
-            "JSON: {\"scores\": {\"image_1\": N, ...}, \"ranking\": [...best->worst...], "
-            "\"house_style\": {\"image_N\": \"same-hand|lesser\", ...}, \"notes\": \"...\"}. "
+            "FIRST, for EVERY image_N, answer the factual_defect_checklist — a plain YES/NO per flag on "
+            "what you literally SEE, before any aesthetic judgement. THEN independently score every "
+            "image_N 0-10 on the rubric. Return TEXT-ONLY JSON: {"
+            "\"defects\": {\"image_1\": {\"on_prop\": true|false, \"t_pose\": ..., \"floating\": ..., "
+            "\"duplicate\": ..., \"missing\": ...}, ...}, "
+            "\"scores\": {\"image_1\": N, ...}, \"ranking\": [...best->worst...], "
+            "\"house_style\": {\"image_N\": \"same-hand|lesser\", ...}, \"notes\": \"...\"}. Any defect "
+            "flagged true is a FACT the harness surfaces regardless of the aesthetic score. "
             f"Run {n_scorers} independent scorers; the harness takes the per-image MEDIAN. The "
             "real-art control's median sets the bar — a candidate at/above it (within the ±"
             f"{control_band} panel noise band) meets the bar."

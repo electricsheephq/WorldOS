@@ -230,6 +230,42 @@ npx playwright install chromium  # ONLY if chromium isn't already cached (it oft
 - `WORLDOS_DM_MODEL` / `WORLDOS_UIPT_PLAYER_MODEL` — model per agent (DM default `opus`; player `sonnet`).
 - `WORLDOS_UIPT_DM_BUDGET` — USD per DM turn (default `1.50`).
 
+## Journey eval — factual VQA (qa/journey_eval.py)
+
+The aesthetic panels measure **beauty-vs-bar**, so a T-posing actor, a wrong-plate bundle, a character
+standing inside a painted prop, and a failed door-cross plate swap all reached owner builds *scored
+around*. `journey_eval.py` walks the playable loop and asks **factual YES/NO** questions of every frame
+(YES = defect); any yes fails the journey and names the frame. It drives the SAME box player as
+`qa/player_smoke.sh` (`lib_native_player_boot.sh` boot + the #1466 `WORLDOS_QA_INPUT` cell-click channel).
+
+Three phases (split so the box drive and the LLM VQA run independently):
+
+```sh
+# 1. derive the scripted path from a room manifest (+ an optional plan of parley/door/combat cells).
+#    One step adjacent to EVERY impassable prop; transitions capture both sides.
+python3 qa/journey_eval.py build-script qa/room_manifests/camp_clearing_night_v2.cells.json \
+  --plan qa/journey_plans/camp.json -o /tmp/journey/script.json
+
+# 2+3. ON THE BOX: boot the player, drive the script, capture frames, then VQA + verdict end to end.
+#    (needs Screen Recording + Accessibility grants + WorldOSPlayer.app, same as player_smoke.sh)
+python3 qa/journey_eval.py run qa/room_manifests/camp_clearing_night_v2.cells.json \
+  --plan qa/journey_plans/camp.json --campaign camp_gfxdemo01 --rundir qa/journey_runs/camp-1
+
+# VQA-only over an already-captured frames dir (anywhere claude is authed — no box):
+python3 qa/journey_eval.py vqa qa/journey_runs/camp-1/frames_manifest.json \
+  -o qa/journey_runs/camp-1/journey_verdict.json
+```
+
+- **Questions** are versioned + reviewable in `qa/journey_vqa_questions.md` (the harness reads only the
+  fenced `json` block; `applies_to: all|transition`). Every question is phrased YES = defect.
+- **Scorer**: `qa/vqa_frame.sh` runs one `sonnet` `claude -p` per frame over the image, reusing
+  `score.sh`'s auth-isolation (fresh config dir + keychain token + GLM-neutralised env). Env:
+  `WORLDOS_VQA_MODEL` (default `sonnet`), `WORLDOS_VQA_TIMEOUT` (default `180`),
+  `WORLDOS_VQA_GUARD_ONLY=1` (offline wiring proof, no LLM).
+- **Verdict**: `journey_verdict.json` — `passed:false` with the offending frames + flags if ANY yes.
+- The aggregation is unit-tested with a stub scorer (`qa/test_journey_eval.py`); the box capture + live
+  VQA are exercised on the box.
+
 ## Scope notes
 
 - The bugs this finds are **the point** — record them; do **not** fix WorldOS UI bugs from a

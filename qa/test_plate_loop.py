@@ -157,6 +157,21 @@ def test_generate_argv_always_forwards_no_drift_gate(tmp_path):
     assert "--no-drift-gate" in pl.build_generate_argv(cfg2, tmp_path / "gen")
 
 
+def test_panel_prompt_carries_factual_defect_checklist(tmp_path):
+    """Eval-upgrade amendment C: the blind panel packet must ask every scorer the 5-item factual defect
+    checklist (on-prop / T-pose / floating / duplicate / missing) BEFORE scoring, so the FACTS a beauty
+    score scored around are captured as machine-readable flags. Additive — the 0-10 rubric is unchanged."""
+    candidate = _structured(tmp_path / "cand.png")
+    cfg = pl.PlateConfig(name="c-check", room="crypt")
+    panel = pl.prepare_panel(candidate, cfg, tmp_path / "out", n_scorers=3)
+    prompts = json.loads((Path(panel["panel_dir"]) / "prompts.json").read_text())
+    flags = {q["flag"] for q in prompts["factual_defect_checklist"]}
+    assert {"on_prop", "t_pose", "floating", "duplicate", "missing"} == flags
+    assert "defects" in prompts["instructions"] and "FIRST" in prompts["instructions"]
+    # the scoring scale is untouched (still 0-10 on the same rubric)
+    assert "0-10" in prompts["rubric"]
+
+
 def test_style_pass_forwarded_when_present(tmp_path):
     """The forward-looking style_pass block (ARM A) is forwarded as --style-pass <json>; absent by
     default (the common config) it never appears."""
