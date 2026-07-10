@@ -39,7 +39,7 @@ function parseArgs(argv) {
     const a = argv[i];
     if (!a.startsWith("--")) continue;
     const key = a.slice(2);
-    if (key === "fullscreen-fallback") { out[key] = true; continue; }
+    if (key === "fullscreen-fallback" || key === "activate-fallback") { out[key] = true; continue; }
     out[key] = argv[++i];
   }
   return out;
@@ -56,6 +56,9 @@ const GOBLIN = cell(args["goblin-cell"] || "10,8");
 const WALK = cell(args["walk-cell"] || "8,9");
 const HELPER = args.helper || "";
 const FULLSCREEN_FALLBACK = !!args["fullscreen-fallback"];
+// #1466: opt-in brief activate->click->restore escape if PID-targeted delivery proves unreliable for
+// Unity's input polling. OFF by default (via --activate-fallback or WORLDOS_CLICK_ACTIVATE_FALLBACK=1).
+const ACTIVATE_FALLBACK = !!args["activate-fallback"] || process.env.WORLDOS_CLICK_ACTIVATE_FALLBACK === "1";
 const GLIDE_FRAMES = 4;
 const GLIDE_INTERVAL_MS = 150;
 const SETTLE_MS = 500;
@@ -116,8 +119,10 @@ function clickCell(target, pxW, pxH, winCache, label) {
   // exactly like native_palette_server.js's click tool does (winCache.x/y are global points).
   const gx = winCache.x + sx / winCache.scale;
   const gy = winCache.y + sy / winCache.scale;
+  // #1466: pass OWNER so the click is PID-delivered to the unfocused player (a global HID tap /
+  // cliclick never reaches a no-activation window's Input). ACTIVATE_FALLBACK is the opt-in escape.
   const useCli = core.haveCliclick();
-  const r = core.clickAt(helperCmd, useCli, gx, gy, false);
+  const r = core.clickAt(helperCmd, useCli, gx, gy, false, OWNER, ACTIVATE_FALLBACK);
   return { ...r, sx, sy, gx, gy, label };
 }
 

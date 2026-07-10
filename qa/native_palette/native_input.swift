@@ -20,9 +20,24 @@
 //   winfind  <ownerName>            -> {"found":bool,"window_id":int,"x":n,"y":n,"w":n,"h":n,"owner":s,"title":s}
 //   capture  <ownerName> <outPath>  -> {"ok":bool,"window_id":int,"x":n,"y":n,"w":n,"h":n,"px_w":n,"px_h":n,"scale":f,"on_screen":bool}
 //                                      (ScreenCaptureKit PNG of the owner's largest window — ANY Space, NO activation; macOS 14+)
-//   click    <globalX> <globalY> [double]   -> {"ok":true}   (left click at GLOBAL screen points, top-left origin)
-//   key      <name>                 -> {"ok":true}   (Return/Escape/Tab/Space/Arrow*/Delete or a single char)
-//   type     <text…>                -> {"ok":true}   (synthesize a unicode string into the focused field)
+//   click    <globalX> <globalY> [double] [--owner NAME] [--activate-fallback]
+//                                   -> {"ok":true,"delivery":"pid|hid"}   (left click at GLOBAL screen points, top-left origin)
+//   key      <name> [--owner NAME] [--activate-fallback]
+//                                   -> {"ok":true,"delivery":"pid|hid"}   (Return/Escape/Tab/Space/Arrow*/Delete or a single char)
+//   type     <text…> [--owner NAME] [--activate-fallback]
+//                                   -> {"ok":true,"delivery":"pid|hid"}   (synthesize a unicode string into the focused field)
+//
+// #1466 (completes #1456): input delivery is the twin of the no-activation CAPTURE. A HID-tap
+// CGEvent (.cghidEventTap) at a global point is only routed into an app's Input system while that
+// app is ACTIVE/key — but player QA must NEVER activate the owner (no focus theft, no Space switch),
+// so those clicks landed on the window pixels yet never reached Unity's Input.GetMouseButtonDown
+// (the T3/smoke "clicks do nothing" symptom). When an owner NAME is supplied we resolve its PID
+// (kCGWindowOwnerPID of the largest layer-0 window, same pick as winfind) and DELIVER THE EVENT
+// DIRECTLY to that process via CGEvent.postToPid — which reaches an unfocused, off-current-Space app
+// without activating it. No owner -> the legacy HID-tap path (unchanged). `--activate-fallback` is the
+// documented escape if PID delivery proves unreliable for Unity's input polling: a BRIEF
+// activate->post->restore-previous-frontmost (sub-second, current Space only) — OFF by default; the
+// PID path is tried first and this is opt-in with evidence.
 //
 // Coordinate contract: Quartz CGWindow bounds AND CGEvent cursor positions are BOTH global screen
 // POINTS with a top-left origin, so they compose directly. The server maps window-relative screenshot
@@ -37,6 +52,9 @@ import ApplicationServices
 #endif
 #if canImport(ScreenCaptureKit)
 import ScreenCaptureKit
+#endif
+#if canImport(AppKit)
+import AppKit   // #1466: activate->click->restore fallback (NSRunningApplication) only, no Space switch
 #endif
 
 // ---- tiny JSON emit (no Codable ceremony for one-line results) --------------
@@ -204,21 +222,93 @@ func captureWindowSCK(_ owner: String, _ outPath: String) {
 }
 
 // ---- synthetic input --------------------------------------------------------
-func postClick(_ gx: Double, _ gy: Double, doubleClick: Bool) {
+// #1466: how a synthesized CGEvent is delivered. `.pid` posts DIRECTLY to a resolved process
+// (CGEvent.postToPid) so an UNFOCUSED, off-current-Space app still receives it — the no-activation
+// input twin of the SCK capture. `.hid` is the legacy global HID-tap (only routed to the active app).
+enum Delivery {
+    case hid
+    case pid(pid_t)
+    var label: String { switch self { case .hid: return "hid"; case .pid: return "pid" } }
+    func post(_ ev: CGEvent?) {
+        guard let ev = ev else { return }
+        switch self {
+        case .hid: ev.post(tap: .cghidEventTap)
+        case .pid(let p): ev.postToPid(p)
+        }
+    }
+}
+
+// Resolve the owner app's PID the SAME way winfind picks its window: the largest layer-0 window owned
+// by `owner`, on the current Space first (cheap, common case) then any Space. Returns nil if the owner
+// has no such window (caller then keeps the HID path). Owner name + PID are readable WITHOUT the
+// Screen-Recording grant, so this never depends on a capture permission.
+func ownerPID(_ owner: String) -> pid_t? {
+    func pick(_ opts: CGWindowListOption) -> pid_t? {
+        guard let list = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]] else { return nil }
+        var best: pid_t? = nil
+        var bestArea: CGFloat = -1
+        for w in list {
+            guard let o = w[kCGWindowOwnerName as String] as? String, o == owner else { continue }
+            if let layer = w[kCGWindowLayer as String] as? Int, layer != 0 { continue }
+            guard let b = w[kCGWindowBounds as String] as? [String: Any],
+                  let ww = b["Width"] as? CGFloat, let hh = b["Height"] as? CGFloat,
+                  let pidNum = w[kCGWindowOwnerPID as String] as? Int else { continue }
+            let area = ww * hh
+            if area > bestArea { bestArea = area; best = pid_t(pidNum) }
+        }
+        return best
+    }
+    return pick([.optionOnScreenOnly, .excludeDesktopElements]) ?? pick([.excludeDesktopElements])
+}
+
+// #1466 fallback (opt-in): briefly activate the owner, run `body` (an HID post), then restore the
+// previously-frontmost app. Sub-second, CURRENT Space only — never a Space switch. Returns true if it
+// could actually run (AppKit + a resolvable owner app); false lets the caller keep the plain path.
+func withBriefActivation(_ owner: String, _ body: () -> Void) -> Bool {
+#if canImport(AppKit)
+    let apps = NSWorkspace.shared.runningApplications
+    guard let target = apps.first(where: { $0.localizedName == owner }) else { return false }
+    let prev = NSWorkspace.shared.frontmostApplication
+    target.activate(options: [])
+    usleep(120_000)          // let the activation settle before the click routes
+    body()
+    usleep(30_000)
+    if let prev = prev, prev.processIdentifier != target.processIdentifier { prev.activate(options: []) }
+    return true
+#else
+    return false
+#endif
+}
+
+// Choose delivery: an owner with a resolvable PID -> direct PID post; else HID. The activate-fallback
+// is handled by the caller (it wraps an HID post), so here we only pick pid-vs-hid.
+func deliveryFor(_ owner: String?) -> Delivery {
+    if let owner = owner, !owner.isEmpty, let pid = ownerPID(owner) { return .pid(pid) }
+    return .hid
+}
+
+func postClick(_ gx: Double, _ gy: Double, doubleClick: Bool, owner: String?, activateFallback: Bool) {
     let pt = CGPoint(x: gx, y: gy)
     let src = CGEventSource(stateID: .hidSystemState)
-    // move first so hover/enter handlers see the cursor, then down/up.
-    CGEvent(mouseEventSource: src, mouseType: .mouseMoved, mouseCursorPosition: pt, mouseButton: .left)?.post(tap: .cghidEventTap)
-    func clickOnce(_ count: Int64) {
-        let down = CGEvent(mouseEventSource: src, mouseType: .leftMouseDown, mouseCursorPosition: pt, mouseButton: .left)
-        let up = CGEvent(mouseEventSource: src, mouseType: .leftMouseUp, mouseCursorPosition: pt, mouseButton: .left)
-        if count > 1 { down?.setIntegerValueField(.mouseEventClickState, value: count); up?.setIntegerValueField(.mouseEventClickState, value: count) }
-        down?.post(tap: .cghidEventTap)
-        up?.post(tap: .cghidEventTap)
+    func sequence(_ delivery: Delivery) {
+        // move first so hover/enter handlers see the cursor, then down/up.
+        delivery.post(CGEvent(mouseEventSource: src, mouseType: .mouseMoved, mouseCursorPosition: pt, mouseButton: .left))
+        func clickOnce(_ count: Int64) {
+            let down = CGEvent(mouseEventSource: src, mouseType: .leftMouseDown, mouseCursorPosition: pt, mouseButton: .left)
+            let up = CGEvent(mouseEventSource: src, mouseType: .leftMouseUp, mouseCursorPosition: pt, mouseButton: .left)
+            if count > 1 { down?.setIntegerValueField(.mouseEventClickState, value: count); up?.setIntegerValueField(.mouseEventClickState, value: count) }
+            delivery.post(down)
+            delivery.post(up)
+        }
+        clickOnce(1)
+        if doubleClick { clickOnce(2) }
     }
-    clickOnce(1)
-    if doubleClick { clickOnce(2) }
-    emit(["ok": true])
+    if activateFallback, let owner = owner, withBriefActivation(owner, { sequence(.hid) }) {
+        emit(["ok": true, "delivery": "activate", "owner": owner]); return
+    }
+    let delivery = deliveryFor(owner)
+    sequence(delivery)
+    emit(["ok": true, "delivery": delivery.label, "owner": owner ?? ""])
 }
 
 // Named virtual keycodes (US layout) for the keys the palette contract uses. Anything not here that is
@@ -229,32 +319,63 @@ let NAMED_KEYS: [String: CGKeyCode] = [
     "down": 125, "arrowdown": 125, "up": 126, "arrowup": 126,
 ]
 
-func postKey(_ name: String) {
+func postKey(_ name: String, owner: String?, activateFallback: Bool) {
     let src = CGEventSource(stateID: .hidSystemState)
     let key = name.lowercased()
-    if let code = NAMED_KEYS[key] {
-        CGEvent(keyboardEventSource: src, virtualKey: code, keyDown: true)?.post(tap: .cghidEventTap)
-        CGEvent(keyboardEventSource: src, virtualKey: code, keyDown: false)?.post(tap: .cghidEventTap)
-        emit(["ok": true]); return
+    guard let code = NAMED_KEYS[key] else {
+        // single unnamed char -> unicode keystroke (same owner/PID delivery)
+        postType(name, owner: owner, activateFallback: activateFallback); return
     }
-    // single unnamed char -> unicode keystroke
-    postType(name)
+    func sequence(_ delivery: Delivery) {
+        delivery.post(CGEvent(keyboardEventSource: src, virtualKey: code, keyDown: true))
+        delivery.post(CGEvent(keyboardEventSource: src, virtualKey: code, keyDown: false))
+    }
+    if activateFallback, let owner = owner, withBriefActivation(owner, { sequence(.hid) }) {
+        emit(["ok": true, "delivery": "activate", "owner": owner]); return
+    }
+    let delivery = deliveryFor(owner)
+    sequence(delivery)
+    emit(["ok": true, "delivery": delivery.label, "owner": owner ?? ""])
 }
 
-func postType(_ text: String) {
+func postType(_ text: String, owner: String?, activateFallback: Bool) {
     let src = CGEventSource(stateID: .hidSystemState)
-    let down = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: true)
-    let up = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: false)
     var chars = Array(text.utf16)
-    down?.keyboardSetUnicodeString(stringLength: chars.count, unicodeString: &chars)
-    up?.keyboardSetUnicodeString(stringLength: chars.count, unicodeString: &chars)
-    down?.post(tap: .cghidEventTap)
-    up?.post(tap: .cghidEventTap)
-    emit(["ok": true])
+    func sequence(_ delivery: Delivery) {
+        let down = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: true)
+        let up = CGEvent(keyboardEventSource: src, virtualKey: 0, keyDown: false)
+        down?.keyboardSetUnicodeString(stringLength: chars.count, unicodeString: &chars)
+        up?.keyboardSetUnicodeString(stringLength: chars.count, unicodeString: &chars)
+        delivery.post(down)
+        delivery.post(up)
+    }
+    if activateFallback, let owner = owner, withBriefActivation(owner, { sequence(.hid) }) {
+        emit(["ok": true, "delivery": "activate", "owner": owner]); return
+    }
+    let delivery = deliveryFor(owner)
+    sequence(delivery)
+    emit(["ok": true, "delivery": delivery.label, "owner": owner ?? ""])
 }
 
 // ---- dispatch ---------------------------------------------------------------
-let args = Array(CommandLine.arguments.dropFirst())
+// #1466: click/key/type accept two optional trailing flags — `--owner NAME` (PID-target delivery to
+// the unfocused player) and `--activate-fallback` (opt-in brief activate->post->restore). Strip them
+// out first so the positional parsing below is unchanged for callers that don't pass them.
+var rawArgs = Array(CommandLine.arguments.dropFirst())
+var optOwner: String? = nil
+var optActivateFallback = false
+do {
+    var kept: [String] = []
+    var i = 0
+    while i < rawArgs.count {
+        let a = rawArgs[i]
+        if a == "--owner", i + 1 < rawArgs.count { optOwner = rawArgs[i + 1]; i += 2; continue }
+        if a == "--activate-fallback" { optActivateFallback = true; i += 1; continue }
+        kept.append(a); i += 1
+    }
+    rawArgs = kept
+}
+let args = rawArgs
 guard let cmd = args.first else {
     emit(["ok": false, "error": "usage: native_input <checkperms|winfind|click|key|type> …"]); exit(2)
 }
@@ -269,14 +390,14 @@ case "capture":
     captureWindowSCK(args[1], args[2])
 case "click":
     guard args.count >= 3, let gx = Double(args[1]), let gy = Double(args[2]) else {
-        emit(["ok": false, "error": "usage: click <globalX> <globalY> [double]"]); exit(2)
+        emit(["ok": false, "error": "usage: click <globalX> <globalY> [double] [--owner NAME] [--activate-fallback]"]); exit(2)
     }
-    postClick(gx, gy, doubleClick: args.count >= 4 && args[3] == "double")
+    postClick(gx, gy, doubleClick: args.count >= 4 && args[3] == "double", owner: optOwner, activateFallback: optActivateFallback)
 case "key":
-    guard args.count >= 2 else { emit(["ok": false, "error": "usage: key <name>"]); exit(2) }
-    postKey(args[1])
+    guard args.count >= 2 else { emit(["ok": false, "error": "usage: key <name> [--owner NAME] [--activate-fallback]"]); exit(2) }
+    postKey(args[1], owner: optOwner, activateFallback: optActivateFallback)
 case "type":
-    postType(args.dropFirst().joined(separator: " "))
+    postType(args.dropFirst().joined(separator: " "), owner: optOwner, activateFallback: optActivateFallback)
 default:
     emit(["ok": false, "error": "unknown subcommand: \(cmd)"]); exit(2)
 }

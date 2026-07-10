@@ -190,17 +190,24 @@ function captureWindow({ helperCmd, owner, outFile, fullscreenFallback, state })
 }
 
 // ---- synthetic click ---------------------------------------------------------
-function clickAt(helperCmd, useCliclick, gx, gy, doubleClick) {
-  if (useCliclick) {
+// #1466: when an `owner` is supplied we ALWAYS route through the swift helper's PID-targeted delivery
+// (CGEvent.postToPid) — cliclick can only post global HID taps, which a no-activation player never
+// receives (the T3/smoke "clicks do nothing" bug). `owner` empty/undefined keeps the legacy behavior
+// (cliclick when available, else an HID-tap helper click). `activateFallback` opts into the brief
+// activate->click->restore escape (off by default). Returns the helper's `delivery` for observability.
+function clickAt(helperCmd, useCliclick, gx, gy, doubleClick, owner, activateFallback) {
+  if (useCliclick && !owner) {
     const r = spawnSync("cliclick", [(doubleClick ? "dc:" : "c:") + Math.round(gx) + "," + Math.round(gy)], { encoding: "utf8" });
     if (r.status !== 0) return { ok: false, reason: (r.stderr || "cliclick failed").slice(0, 200) };
-    return { ok: true };
+    return { ok: true, delivery: "cliclick" };
   }
   const args = ["click", String(gx), String(gy)];
   if (doubleClick) args.push("double");
+  if (owner) args.push("--owner", String(owner));
+  if (activateFallback) args.push("--activate-fallback");
   const r = runHelper(helperCmd, args);
   if (!r || r.ok !== true) return { ok: false, reason: (r && r._error) || "click helper failed" };
-  return { ok: true };
+  return { ok: true, delivery: r.delivery };
 }
 
 module.exports = {
