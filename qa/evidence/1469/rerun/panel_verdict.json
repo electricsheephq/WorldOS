@@ -1,0 +1,47 @@
+{
+  "run": "w6-0-relight-rerun-panel-1",
+  "date": "2026-07-10",
+  "issue": 1469,
+  "resequence": "post-#1470 (ControlNet conditioning merged, PR #1474): re-run the exact failed #1469 A/B on a REGISTERED plate",
+  "question": "character-in-scene integration 0-10, blind, 5 scorers (sonnet) - per qa/evidence/cohesion-probe/panel_verdict.json method",
+  "scene": "M1CombatV1_canonical rig (CombatCrypt); PaintedBackdrop plate=crypt_rerun_conditioned (ControlNet-depth conditioned, this run); baseline cast fighter@(6,6)+goblin@(9,5) via Cohesion Probe 0b",
+  "plate_provenance": {
+    "source": "generate_room.py --controlnet depth --room crypt (single-pass, mirrors #1470 armB)",
+    "control_image": "crypt greybox render (Captures-Durable framing, 1344x768) == the depth/normal sidecars' framing",
+    "control_model": "model_bfl-flux-1-dev",
+    "control_strength": 0.7,
+    "job_id": "job_kgTaixLhaDgX4w21bqh5BxWk",
+    "note": "single-pass ControlNet drops the z-image painterly LoRA (flux.1-dev rejects it) -> plate is geometrically faithful but FLAT/COOL/low-key (no warm fire pool). RungB Analyze() consequently sampled a COOL key (DDE0FF), not warm firelight."
+  },
+  "registration": {
+    "method": "#1470 edge-alignment recall: fraction of greybox structural edges with a painted plate edge within 3px",
+    "edge_recall_vs_greybox_structural": 1.000,
+    "edge_recall_vs_depth_sidecar": 1.000,
+    "camp_armB_reference": 0.870,
+    "verdict": "REGISTRATION FIXED. The conditioned plate reproduces every authored greybox edge (floor diamond, both pillars, sarcophagus block, wall panels) by construction; the WOSRelight depth/normal sidecars register 1:1. In the relit frame the geometry-driven shading now lands ON the painted pillars/sarcophagus, NOT as the failed round's floating misaligned rectangular band."
+  },
+  "images": {
+    "A": "A_flat_conditioned.jpg  - flat Unlit/Texture conditioned crypt plate + baseline cast (current shipped look)",
+    "B": "B_relit_conditioned.jpg - WOSRelight (Cohesion Probe RungR) on the backdrop quad, greybox sidecars + RungB plate-sampled rig",
+    "C": "poe2_ruins_brazier_integration_01.jpg - disguised real-art control (PoE2 Deadfire, band 6.8-9.2; NOT committed - copyrighted ref)"
+  },
+  "blind_shuffle": {"img_alpha": "C", "img_beta": "B", "img_gamma": "A"},
+  "scores": {
+    "A_flat":    [2, 3, 3, 3, 2],
+    "B_relit":   [2, 2, 2, 2, 1],
+    "C_control": [8, 8, 8, 9, 8]
+  },
+  "medians": {"A_flat": 3.0, "B_relit": 2.0, "C_control": 8.0},
+  "rankings": ["C>B>A", "C>A>B", "C>A>B", "C>A>B", "C>A>B"],
+  "control_valid": true,
+  "control_note": "C median 8.0 is WITHIN the 6.8-9.2 validity band (unlike the failed #1469 round where C=6.0 fell below band). This panel's absolute numbers ARE trustworthy.",
+  "verdict": "B (relit) LOST to A (flat) AGAIN: median 2.0 vs 3.0, 4/5 scorers ranked B last. BUT the cause CHANGED. The failed #1469 round lost on REGISTRATION (a floating misaligned light band); that is now FIXED (recall 1.000, shading lands on geometry). This round B loses to a NEW, control-independent failure: the WOSRelight rig CRUSHES ALL VERTICAL GEOMETRY (pillars, sarcophagus, wall panels) TO SOLID BLACK - every scorer named 'broken black-block voids'. On a low-key/cool conditioned plate, vertical-normal surfaces facing away from the single cool directional key receive only the dim hemisphere ambient (_SkyAmb=amb*0.9, _GroundAmb=warmAmb*0.7, _Bounce=0.12) and go to ~0. The floor (up-facing) survives. Both arms also scored LOW absolute (A=3.0) because the single-pass conditioned plate is far flatter/duller than the polished firelit crypt_dense_v1 - a plate-quality confound that drags BOTH arms down ~5 points vs control.",
+  "recommendation": "REGISTRATION BLOCKER RESOLVED - the #1470 ControlNet conditioning makes the sidecars valid, so the unified-light-stage concept is now fairly testable. Do NOT port relight to the shipped path yet; two coupled fixes remain before a fair port: (1) ITERATE RELIGHT PARAMS so vertical normals never crush to black - raise the ambient/bounce floor (_SkyAmb / _GroundAmb / _Bounce), add a warm point-light fill at the hearth anchor, and/or clamp a minimum lit value on back-facing normals; (2) FEED A FIRELIT PLATE - regenerate the conditioned crypt plate with the warm firelit pass ON TOP of the ControlNet base (--layered rides on the locked geometry, preserving registration) so it has a real warm fire pool for RungB Analyze() to sample a warm key from, instead of the cool DDE0FF this flat single-pass plate produced. Re-run this exact A/B once both land.",
+  "next_iteration_hypotheses": [
+    "clamp WOSRelight per-pixel lit value to a floor (e.g. 0.18-0.25) so no vertical face reads as pure black; verify pillars/sarcophagus stay readable",
+    "raise _Bounce (0.12 -> ~0.3) and _GroundAmb so warm floor-bounce wraps the pillar bases",
+    "add the RungB ProbeFireKey point light INTO the relight (currently _P*Col zeroed for the spike) so the fire pool actually lights the plate geometry",
+    "regenerate the conditioned crypt plate via generate_room.py --controlnet depth --layered (firelit) - keeps registration, restores the warm fire pool + painterly polish the single-pass flux-dev plate lacks",
+    "re-run once B has a warm key and no black voids; A (flat) baseline will also rise with a firelit plate, so the A-vs-B delta is the real test"
+  ]
+}
