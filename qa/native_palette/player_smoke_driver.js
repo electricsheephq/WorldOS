@@ -56,9 +56,14 @@ const GOBLIN = cell(args["goblin-cell"] || "10,8");
 const WALK = cell(args["walk-cell"] || "8,9");
 const HELPER = args.helper || "";
 const FULLSCREEN_FALLBACK = !!args["fullscreen-fallback"];
-// #1466: opt-in brief activate->click->restore escape if PID-targeted delivery proves unreliable for
-// Unity's input polling. OFF by default (via --activate-fallback or WORLDOS_CLICK_ACTIVATE_FALLBACK=1).
-const ACTIVATE_FALLBACK = !!args["activate-fallback"] || process.env.WORLDOS_CLICK_ACTIVATE_FALLBACK === "1";
+// #1466/#1483: brief activate->click->restore escape. pid-posted CGEvents deliver to the player PID but
+// produce ZERO Unity input (Unity's Input samples only the FOREGROUND app), so this is the PROVEN working
+// click path (sub-second activation, no Space switch — within the windowed no-hijack policy). Now ON by
+// DEFAULT (the smoke lane was red on the pure-PID default since w6batch); WORLDOS_CLICK_ACTIVATE_FALLBACK=0
+// opts back out to pure PID delivery (currently non-functional for Unity). The env opt-out is
+// AUTHORITATIVE — it must win over the explicit --activate-fallback flag too (matches
+// native_palette_server.js's CLICK_ACTIVATE_FALLBACK exactly, which has no such flag to override it).
+const ACTIVATE_FALLBACK = process.env.WORLDOS_CLICK_ACTIVATE_FALLBACK !== "0";
 const GLIDE_FRAMES = 4;
 const GLIDE_INTERVAL_MS = 150;
 const SETTLE_MS = 500;
