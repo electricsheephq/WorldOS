@@ -1,0 +1,28 @@
+{
+  "run": "camp-outdoor-lora-smoke-2026-07-10",
+  "arm": "OUTDOOR-LORA smoke test (#1481): mint anchor via schema-correct model_run (model_bfl-flux-1-dev + depth ControlNet str0.65/end0.6 + model_RsWEcQL2NWXwoyEodWVE2vWG, the new 18-image exterior-only LoRA, lorasScale 0.7, seed 42) -> Gemini instruction-edit re-registration (model_google-gemini-3-1-flash, structure-lock + dimetric-lock prompt, referenceImages=[minted anchor]) over camp_clearing_night_greybox.jpg.",
+  "panel_mapping": {"img_1.jpg": "CONTROL", "img_2.jpg": "INCUMBENT_CAMP_V2", "img_3.jpg": "CANDIDATE_CAMP_OUTDOORLORA"},
+  "scores": {
+    "img_1_CONTROL_poe2": [9, 9, 9, 9, 9],
+    "img_2_INCUMBENT_CAMP_V2": [6, 6, 7, 6, 6],
+    "img_3_CANDIDATE": [6, 7, 6, 8, 6.5]
+  },
+  "medians": {"CONTROL": 9.0, "INCUMBENT_CAMP_V2": 6.0, "CANDIDATE": 6.5},
+  "control_valid": false,
+  "control_integrity_note": "Control (poe2_control.jpg) scored median 9.0 with human figures visible and flagged by all 5 scorers -- same imperfect-control caveat as the forest_road panel and the CB-FOREST precedent; scorers judged craft only as instructed.",
+  "incumbent_cross_validation": "Incumbent (camp_clearing_night_v2.jpg, the room's actual adopted canonical_plate) scored median 6.0 blind, independently reproducing its already-registered backdrop_score=6.0 in room_recipes.json -- this cross-validates the blind-panel methodology (scorers were not told which image was which, yet landed on the known number).",
+  "candidate_defect_notes": [
+    "img_3: 6 | odd concentric-ring ground texture radiating from firepit reads as a repeated/tiled artifact, hanging bags on tree at right lack a visible attachment point",
+    "img_3: 7 | clean brushwork and lighting, faint repetitive concentric rings in the dirt around the firepit read slightly artificial",
+    "img_3: 6 | concentric ring/banding pattern in dirt around firepit looks like an artificial glow-radius artifact rather than natural ground texture",
+    "img_3: 8 | hanging satchels upper-right look faintly disconnected/floating from the branch, no characters or structures, otherwise clean",
+    "img_3: 6.5 | decent fire/smoke and moss-rock brushwork, but crate stack has a mildly ambiguous overlap/perspective and hanging satchels read slightly flat/pasted-on"
+  ],
+  "advisory_metrics": {
+    "ncc_candidate_vs_base": 0.8749,
+    "ncc_candidate_vs_greybox": 0.4558,
+    "edge_recall_vs_greybox": 0.6645,
+    "edge_recall_caveat": "Content-blind per #1491 -- lower than forest_road's number DESPITE being the visually cleaner, better result, because the candidate correctly reinterpreted the greybox's rectangular placeholder volumes as rounded organic forms (crates, boulders) rather than preserving their blocky edges literally. Confirms edge-recall alone is not a reliable quality signal here; the overlay + panel are the binding evidence."
+  },
+  "verdict": "BORDERLINE PASS, NOT a clean win. Candidate median 6.5 vs incumbent median 6.0 -- a +0.5 delta over the existing adopted plate, sitting exactly AT (not clearly above) the >6.5 success threshold, and well short of the 7.0+ target. No invented architecture, no characters, no melted/broken geometry -- the LoRA generalizes CLEANLY to camp, in sharp contrast to forest_road's severe regression. One consistent, real defect: 3/5 scorers independently flagged a repeated concentric-ring ground-texture artifact around the campfire (likely a training-data or diffusion-radial-falloff tell) and 2/5 flagged hanging-satchel attachment ambiguity. Given the borderline number and this recurring artifact, this is NOT a strong enough result to recommend replacing the adopted camp_clearing_night_v2 canonical_plate on its own -- it would need at least one more iteration (prompt-level fix for the ring artifact) before being a genuine promote.py-grade candidate."
+}

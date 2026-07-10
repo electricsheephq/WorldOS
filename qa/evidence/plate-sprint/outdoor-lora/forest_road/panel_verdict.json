@@ -1,0 +1,27 @@
+{
+  "run": "forest_road-outdoor-lora-smoke-2026-07-10",
+  "arm": "OUTDOOR-LORA smoke test (#1481): mint anchor via schema-correct model_run (model_bfl-flux-1-dev + depth ControlNet str0.65/end0.6 + model_RsWEcQL2NWXwoyEodWVE2vWG, the new 18-image exterior-only LoRA, lorasScale 0.7, seed 7) -> Gemini instruction-edit re-registration (model_google-gemini-3-1-flash, structure-lock + dimetric-lock prompt, referenceImages=[minted anchor]) over forest_road_greybox.png.",
+  "panel_mapping": {"img_1.jpg": "ANCHOR_CAMP_V2", "img_2.jpg": "CONTROL", "img_3.jpg": "CANDIDATE_FR_OUTDOORLORA"},
+  "scores": {
+    "img_1_ANCHOR_CAMP_V2": [7, 7, 7, 8, 7],
+    "img_2_CONTROL_poe2": [9, 9, 9, 9, 9],
+    "img_3_CANDIDATE": [2, 2, 4, 3, 2]
+  },
+  "medians": {"ANCHOR_CAMP_V2": 7.0, "CONTROL": 9.0, "CANDIDATE": 2.0},
+  "control_valid": false,
+  "control_integrity_note": "Control (poe2_control.jpg) scored median 9.0 with human figures visible and flagged by all 5 scorers -- consistent with the CB-FOREST precedent's finding that this control is imperfect for genre-fit judgment, but scorers here were asked to judge craft only, and did.",
+  "candidate_defect_notes": [
+    "img_3: 2 | broken/nonsensical geometry -- three structures render as transparent wireframe frames with wood-carved panels floating disconnected from walls/roofs, no coherent solid form, reads as melted/AI-artifacted architecture",
+    "img_3: 2 | broken/melted geometry -- the two forest structures read as disconnected wireframe boxes with doors/curtains floating in impossible non-volumetric frames, repeated carved-door and curtain motifs tiled across separate huts",
+    "img_3: 4 | wooden hut modules read as flat disconnected box-frames with unnatural thin wireframe-like edge seams, nonsensical open-cubicle architecture with no coherent walls/roofline",
+    "img_3: 3 | nonsensical wireframe/open-frame box structures with disconnected beams and textures applied to only some faces -- reads as broken/melted geometry",
+    "img_3: 2 | broken/melted geometry -- 'buildings' are disconnected wireframe-edge fragments with walls that don't close or support each other, nonsensical structure placement in the forest, incoherent construction logic"
+  ],
+  "advisory_metrics": {
+    "ncc_candidate_vs_base": 0.6974,
+    "ncc_candidate_vs_greybox": -0.0800,
+    "edge_recall_vs_greybox": 0.9678,
+    "edge_recall_caveat": "MISLEADINGLY HIGH -- content-blind per #1491. The candidate preserved the greybox's blocky rectangular edges too literally, reading them as walls/doors instead of trees, so edges 'recall' well while content is badly wrong. The overlay image (overlay_fr_outdoorlora.png) is the binding evidence, not this number."
+  },
+  "verdict": "NOT CONVERGED -- SEVERE REGRESSION. Candidate median 2.0 is far below both the 6.0 baseline cap and the >6.5 success bar, and is WORSE than ARM C's own (interior LoRA) forest_road attempt (CB-FOREST precedent, median 6.0 tie, qa/evidence/... /cb_forest/panel_verdict.json -- kept in session-notes, not yet migrated to this evidence tree). All 5 scorers independently and unprompted flagged broken/wireframe/melted architecture -- the SAME invented-architecture failure mode the OUTDOOR-LORA effort was built to fix, still present despite training on 18 char-free, quality-passed, exterior-only images (with fortress/temple content deliberately trimmed in the pre-train quality pass). ROOT CAUSE HYPOTHESIS: forest_road's greybox represents its dense tree line as adjacent rectangular box volumes (see forest_road_greybox.png / forest_road_greybox_depth.png) -- a coarser, more literally 'architectural-looking' placeholder geometry than camp's greybox. The model appears to read blocky rectangular volumes as buildings/structures regardless of whether its training data was interior or exterior -- a GEOMETRY-SHAPE bias, not purely a training-domain bias. This is a genuinely new finding beyond the original hypothesis (that exterior-only training data would fix outdoor generalization) and suggests forest_road-class rooms may need a differently-shaped greybox (more organic/clustered tree footprints, not axis-aligned boxes) rather than a different LoRA, if this failure mode is to be fixed."
+}
