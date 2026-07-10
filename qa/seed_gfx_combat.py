@@ -48,6 +48,15 @@ outside it (the tomb now occupies most of the room's center, so the old tight
 "flanking the tomb" spawn no longer fits) — same content-only, engine-untouched
 re-authoring as #1396, just a bigger prop this time.
 
+SUPERSEDED by the OWNER PLAYTEST #4 correction (2026-07-10, PR #1505): #1386 blocked the
+coffin's SILHOUETTE (cols3-9 x rows3-7, which under the iso projection is the open floor
+*behind* the coffin — where the lid+effigy rise up-screen), NOT its floor footprint. So the
+coffin's real floor cells stayed walkable and the owner walked onto the painted tomb.
+SARCOPHAGUS_CELLS is now the coffin's FLOOR-CONTACT footprint (cols2-7 x rows7-9), derived by
+point-in-polygon of each cell's grounded projection vs the coffin's measured floor
+parallelogram (see the constant below). This is the same content-only, engine-untouched
+re-authoring discipline — just the correct cells this time.
+
 Engine = SOLE WRITER: writes only via server.* engine calls + save_campaign. Additive
 (a new seed; touches no existing seed/contract).
 """
@@ -63,18 +72,20 @@ GRID_W, GRID_H = 14, 11
 # flattens them for the printed summary below.
 PILLAR_L_CELLS = [[2, 4]]
 PILLAR_R_CELLS = [[9, 9]]
-# the re-styled tomb (lid + effigy + wood-panel base) now covers a 7x5 block, not the old
-# ~2-cell footprint (#1396) — re-measured by grid-overlaying the contract camera projection
-# onto the deployed plate (see the module docstring). Widened from an initial cols 4-9 pass
-# after a blind cohesion panel caught the front-left corner (col 3) still reading as painted
-# tomb wood, not floor — the box's front-left corner bleeds slightly past a clean col-4 edge.
-SARCOPHAGUS_CELLS = [[c, r] for c in range(3, 10) for r in range(3, 8)]
+# OWNER PLAYTEST #4 FOOTPRINT CORRECTION (2026-07-10, PR #1505): the tomb's impassable footprint is
+# the coffin's FLOOR-CONTACT cells, cols 2-7 x rows 7-9 — NOT the #1386 cols3-9 x rows3-7. That prior
+# pass measured the coffin's tall SILHOUETTE (lid + effigy rise up-screen to rows3-7 under the iso
+# projection) and blocked THOSE cells — i.e. the open floor BEHIND the coffin — while leaving the
+# coffin's actual floor footprint (rows7-9, where an actor's feet land ON the painted box) walkable.
+# That is exactly why the owner walked his character onto the painted sarcophagus. Re-derived from a
+# point-in-polygon of every cell's grounded projection against the coffin's measured floor
+# parallelogram on the deployed plate (verified `greybox_render_headless` rig, <1e-3 vs Unity; the
+# least-squares fit that proved no shared-transform can realign a drifted plate is on PR #1505 / #1491).
+SARCOPHAGUS_CELLS = [[c, r] for c in range(2, 8) for r in range(7, 10)]
 OBSTACLES = PILLAR_L_CELLS + PILLAR_R_CELLS + SARCOPHAGUS_CELLS
-# relocated off the enlarged sarcophagus footprint (was hero(6,6)/goblin(9,5), both now
-# INSIDE SARCOPHAGUS_CELLS) — clear floor cells re-verified against the deployed plate.
-# GOBLIN_CELL was first set to (2,7) (one cell clear of the initial cols 4-9 footprint), but
-# the panel still read the goblin as standing on the tomb's front-left corner (the same
-# bleed noted above) — moved one more cell out to (1,8) for real, panel-confirmed clearance.
+# hero far back-right / goblin front-left, both clear of the corrected front-center tomb footprint
+# (rows 7-9) and both pillars — re-verified against the deployed plate. (The old hero(6,6)/goblin(9,5)
+# sat behind the coffin; #1386 relocated them to (11,3)/(1,8), which remain clear under this footprint.)
 HERO_CELL = [11, 3]
 GOBLIN_CELL = [1, 8]
 
