@@ -2,7 +2,8 @@
 // stage-1 spike). DunGen is an AUTHORING-TIME accelerator only: it proposes a room-graph, we EXPORT its
 // layout and bake it to engine fixtures downstream (tools/dungen_to_fixtures.py). The Python engine stays
 // the SOLE WRITER of grid truth — this script never touches runtime game state, it only reads a generated
-// scene and writes json. See docs/roadmap/DUNGEN-EXPORT-CONTRACT.md and the PCG scout packet.
+// scene and writes json. See docs/roadmap/GENERATOR-EXPORT-CONTRACT.md (renamed from
+// DUNGEN-EXPORT-CONTRACT.md to cover both the DunGen and Tessera Pro arms) and the PCG scout packet.
 //
 // The export contract (dungen_layout.json), all coordinates in Unity WORLD units:
 //   {

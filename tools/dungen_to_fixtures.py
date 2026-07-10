@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
-"""dungen_to_fixtures.py — convert a DunGen layout export into WorldOS engine fixtures (epic #1508 stage-1).
+"""dungen_to_fixtures.py — convert a generator layout export into WorldOS engine fixtures (epic #1508).
 
 DunGen (Unity, owner-purchased 2026-07-11) is an AUTHORING-TIME structure accelerator. Its layout export
 (extensions/renderers/unity/scripts/Editor/DunGenLayoutExporter.cs -> dungen_layout.json) proposes a
 room-graph in Unity WORLD units; this tool bakes that into the two fixtures the rest of the pipeline
 already consumes, so a DunGen-authored dungeon flows straight into greybox -> registered plate -> derived
-manifest with NO schema fork:
+manifest with NO schema fork.
+
+Stage-2 (epic #1508): Tessera Pro's tile-WFC exporter (TesseraLayoutExporter.cs -> tessera_layout.json,
+see docs/roadmap/GENERATOR-EXPORT-CONTRACT.md) emits the SAME top-level shape, one tile instance = one
+`rooms[]` entry, so this converter needed NO changes for the core path. The one genuine 1:1-mapping gap —
+a WFC "big tile" can occupy a non-rectangular multi-cell footprint that a bounds-AABB would over-carve —
+is closed by an ADDITIVE, tolerated `rooms[].cell_positions` field (see `_room_footprint` below); DunGen
+layouts that omit it fall back to the original bounds-AABB rasterization, unchanged.
 
   (a) <name>.scenegrid.json     — the engine SceneGrid fixture (servers/engine/scene_grid.py). The Python
                                   engine remains the SOLE WRITER of grid truth; DunGen only proposed the
@@ -113,6 +120,23 @@ class Projector:
 
 
 # ── the conversion ────────────────────────────────────────────────────────────────────────────────────
+def _room_footprint(rm: dict, proj: Projector) -> set:
+    """Footprint cells for one room/tile entry.
+
+    Prefers the ADDITIVE `cell_positions` field (a world-space center point per grid cell the tile
+    instance occupies) when present — needed for generators whose placed units aren't a simple continuous
+    AABB (Tessera Pro's tile-WFC output can place non-rectangular multi-cell "big tiles"; rasterizing the
+    bounding box would over-include cells that were never actually part of the tile). Falls back to
+    rasterizing the room's `bounds` AABB when `cell_positions` is absent — DunGen's original room-graph
+    shape, unchanged, still exactly reproduces the pre-Tessera behaviour.
+    """
+    cps = rm.get("cell_positions")
+    if cps:
+        return {proj.cell_of(float(p[0]), float(p[2])) for p in cps}
+    b = rm.get("bounds", {})
+    return set(proj.cells_in_xz_bounds(b["min"], b["max"]))
+
+
 def _prop_entries(layout: dict, proj: Projector, floor: set) -> list:
     """Snap each exported prop to a footprint (cells within its XZ bounds, clamped to floor)."""
     entries = []
@@ -184,8 +208,7 @@ def convert(layout: dict, *, name: str, upc: float, material: str) -> dict:
     floor: set = set()
     room_cells: dict = {}
     for rm in layout.get("rooms", []):
-        b = rm.get("bounds", {})
-        cells = set(proj.cells_in_xz_bounds(b["min"], b["max"]))
+        cells = _room_footprint(rm, proj)
         room_cells[rm.get("id", "")] = cells
         floor |= cells
 
