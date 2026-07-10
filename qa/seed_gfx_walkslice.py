@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """seed_gfx_walkslice.py — WALKABLE-SLICE-V1 smoke fixture: a REST-mode crypt linked by a doorway to
-a camp clearing, with a present NPC to talk to and a lurking goblin to fight. Reuses the crypt
-``_author_room`` (door_cells) from seed_gfx_crypt_2room and the camp grid from seed_gfx_camp — ONE
-grid source each. NO combat is started (rest mode), so the surface's ``stage`` carries the walk /
-parley / door affordances the player consumes. ``start_combat`` (item 4) then opens the fight in place.
+a camp clearing, with a present NPC to talk to and a lurking goblin to fight. The crypt reuses the
+CANONICAL crypt grid (``seed_gfx_combat._build_crypt_grid``: the 14x11 fixture whose sarcophagus
+cols3-9 x rows3-7 + pillars (2,4)/(9,9) match the adopted ``crypt_armb_iter3_v1`` plate, #1386) with
+ONE addition — a back-center doorway — so the player renders the SAME crypt as the combat demo instead
+of a divergent hand-authored grid (the #1396 scene-grid coherence defect class). The camp grid comes
+from seed_gfx_camp — ONE grid source each. NO combat is started (rest mode), so the surface's ``stage``
+carries the walk / parley / door affordances the player consumes. ``start_combat`` (item 4) then opens
+the fight in place.
 
 Engine = SOLE WRITER (writes only via server.* + save_campaign). Additive: a new seed/campaign, no
 existing seed touched.
@@ -17,6 +21,36 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 CID = "walkslice_smoke01"
+# back-center doorway punched into the reused canonical crypt grid — the ONLY change vs the combat
+# fixture (a closed arena, no door). cross_door(6,0) leads to the camp. Its Chebyshev-1 landing ring
+# (rows 0-1) stays clear of the sarcophagus (rows 3-7) and both pillars, so the door zone is prop-free.
+DOOR = [6, 0]
+
+
+def build_crypt_grid(loc_id: str):
+    """The walkslice crypt scene_grid = the CANONICAL combat crypt (``seed_gfx_combat._build_crypt_grid``:
+    14x11, sarcophagus cols3-9 x rows3-7, pillars (2,4)/(9,9) — matched to the adopted plate, #1386)
+    with ONE addition: a back-center DOORWAY the party crosses to the camp. Reuses the canonical grid
+    verbatim (same cells/props/impassable) so the player renders the SAME crypt as the combat demo.
+    Pure (no server) — directly unit-testable, mirroring ``_build_crypt_grid``'s own split rationale.
+
+    REST-mode ``spawns`` are WHERE the party + present NPC stand when the room renders inhabited (the
+    stage projects party onto ``spawns['party']``, present NPCs onto ``spawns['npcs']``): front-of-room
+    floor cells at r=8, clear of the center tomb (rows 3-7), the pillars, and the doorway zone."""
+    import scene_grid as sg  # noqa: PLC0415
+    import seed_gfx_combat as combat  # noqa: PLC0415  (reuse the CANONICAL crypt grid — ONE crypt source)
+
+    grid = combat._build_crypt_grid(CID, loc_id)
+    for cell in grid.cells:  # punch the back-center wall cell into a walkable doorway
+        if [cell.c, cell.r] == DOOR:
+            cell.type, cell.walkable = "door", True
+    grid.door_cells = [(DOOR[0], DOOR[1])]
+    # party + Mira on the front floor row (r=8), IN FRONT of the mid-height tomb (like the combat
+    # fixture's spawns) — never a col that sits screen-in-front of a TALL pillar ((2,4)/(9,9)), which
+    # makes a grounded actor read as standing ON the painted column (box re-verify, this lane).
+    grid.spawns = {"party": [(6, 8), (5, 8)], "npcs": [(4, 8)]}
+    grid.art.layout_hash = sg._layout_hash(grid)  # layout changed (added door) — refresh the hash
+    return grid
 
 
 def main() -> None:
@@ -28,7 +62,6 @@ def main() -> None:
     sys.path.insert(0, os.path.join(HERE, "..", "servers", "engine"))
     import server  # noqa: PLC0415
     from models import Campaign  # noqa: PLC0415
-    import seed_gfx_crypt_2room as crypt  # noqa: PLC0415  (reuse _author_room + DOOR — ONE crypt grid source)
     import seed_gfx_camp as camp  # noqa: PLC0415  (reuse the camp_clearing_night grid — ONE camp source)
 
     server.save_campaign(Campaign(
@@ -47,14 +80,8 @@ def main() -> None:
         description="A camp clearing under the night sky.", connections=[crypt_loc["id"]])
 
     c = server._require(CID)
-    # crypt carries the door_cells scene_grid; wire crypt -> camp so cross_door(6,0) leads to the camp.
-    crypt_grid = crypt._author_room(
-        crypt_loc["id"], f"{CID}:crypt",
-        "cold stone crypt antechamber, doorway to a night camp", crypt.STAIR_PROPS)
-    # REST-mode spawns: WHERE the party + present NPC stand when the room renders inhabited (the stage
-    # projects party onto spawns["party"], present NPCs onto spawns["npcs"]). Front-of-room floor cells,
-    # clear of the back-half props (STAIR_PROPS at r<=4) and the (6,0) doorway.
-    crypt_grid.spawns = {"party": [(6, 8), (5, 8)], "npcs": [(8, 6)]}
+    # crypt carries the CANONICAL grid + a door_cell; wire crypt -> camp so cross_door(6,0) leads to camp.
+    crypt_grid = build_crypt_grid(crypt_loc["id"])
     c.locations[crypt_loc["id"]].scene_grid = crypt_grid
     if camp_loc["id"] not in c.locations[crypt_loc["id"]].connections:
         c.locations[crypt_loc["id"]].connections.append(camp_loc["id"])
@@ -90,7 +117,7 @@ def main() -> None:
 
     print(json.dumps({
         "campaign_id": CID, "crypt_id": crypt_loc["id"], "camp_id": camp_loc["id"],
-        "door_cell": crypt.DOOR, "hero_id": hero_id, "npc_id": npc_id, "goblin_id": goblin_id,
+        "door_cell": DOOR, "hero_id": hero_id, "npc_id": npc_id, "goblin_id": goblin_id,
         "crypt_connections": list(server._require(CID).locations[crypt_loc["id"]].connections),
     }))
 
