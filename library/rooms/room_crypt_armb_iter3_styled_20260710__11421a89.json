@@ -1,9 +1,33 @@
 {
   "artifact_id": "room:crypt:armb_iter3_styled:20260710",
   "class": "room",
-  "curation_note": "PLATE SPRINT Phase 2 ADOPT-CRYPT: ARM-B iter3 styled+registered crypt plate (flux depth-controlnet base + Gemini calibrated-chiaroscuro style-edit), registration edge-recall 0.9903 vs the crypt greybox. Fresh control-anchored 5-scorer blind panel (independent of the plate-sprint's own iter3 8.0-median panel): candidate median 7.5 vs registered PoE2 ruins-brazier control median 9.0 (delta -1.5, in-band/valid) vs incumbent crypt_dense_v1 median 9.5 this panel. Relight A/B (PR #1488) verdict is STOP -- this plate ships FLAT, no WOSRelight/RungR. HONEST CAVEAT (qa/evidence/plate-sprint/adopt-crypt/content_leak_check.json): the Gemini style pass used referenceImages=[crypt_dense_v1], and a whole-frame NCC check (0.93-0.96) + eyeball comparison confirm this candidate reproduces crypt_dense_v1 composition near-verbatim (a sibling FOREST-ROAD lane finding: referenceImages leaks CONTENT not just style, masked here because anchor room == target room). Real differences found are lighting-only (deeper/cooler shadow falloff, dimmer torch glow, cooler doorway interiors) -- no prop/geometry change. Adoption proceeds regardless: a re-registered copy of the known-good look is a strict upgrade over the incumbent, but visual novelty vs crypt_dense_v1 is LOW.",
+  "curation_note": "PLATE SPRINT Phase 2 ADOPT-CRYPT: ARM-B iter3 styled+registered crypt plate (flux depth-controlnet base + Gemini calibrated-chiaroscuro style-edit), registration edge-recall 0.9903 vs the crypt greybox. Fresh control-anchored 5-scorer blind panel (independent of the plate-sprint's own iter3 8.0-median panel): candidate median 7.5 vs registered PoE2 ruins-brazier control median 9.0 (delta -1.5, in-band/valid) vs incumbent crypt_dense_v1 median 9.5 this panel. Relight A/B (PR #1488) verdict is STOP -- this plate ships FLAT, no WOSRelight/RungR. HONEST CAVEAT (qa/evidence/plate-sprint/adopt-crypt/content_leak_check.json): the Gemini style pass used referenceImages=[crypt_dense_v1], and a whole-frame NCC check (0.93-0.96) + eyeball comparison confirm this candidate reproduces crypt_dense_v1 composition near-verbatim (a sibling FOREST-ROAD lane finding: referenceImages leaks CONTENT not just style, masked here because anchor room == target room). Real differences found are lighting-only (deeper/cooler shadow falloff, dimmer torch glow, cooler doorway interiors) -- no prop/geometry change. Adoption proceeds regardless: a re-registered copy of the known-good look is a strict upgrade over the incumbent, but visual novelty vs crypt_dense_v1 is LOW. PAINT-DRIFT GATE (qa/check_plate_drift.py, real automated run, qa/room_manifests/crypt_dense_v1.cells.json): PASS, 3/3 authored props checked (sarcophagus NCC 0.945, pillar_l NCC 0.9615, pillar_r NCC 0.968) -- no painted prop slid off its authored pathing cell.",
   "license": "proprietary",
-  "promoted_at": "2026-07-10T07:33:12+00:00",
+  "paint_drift": {
+    "checked": 3,
+    "gate": "qa/check_plate_drift.py check_plate_drift() vs qa/room_manifests/crypt_dense_v1.cells.json (recipe_key=crypt)",
+    "passed": true,
+    "props": [
+      {
+        "id": "sarcophagus",
+        "ncc": 0.945,
+        "status": "PASS"
+      },
+      {
+        "id": "pillar_l",
+        "ncc": 0.9615,
+        "status": "PASS"
+      },
+      {
+        "id": "pillar_r",
+        "ncc": 0.968,
+        "status": "PASS"
+      }
+    ],
+    "read": "No authored painted prop slid off its pathing cell vs the crypt_dense_v1 baseline fingerprint.",
+    "skipped": 0
+  },
+  "promoted_at": "2026-07-10T08:19:33+00:00",
   "provenance": {
     "run_id": null,
     "sha": null,

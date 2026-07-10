@@ -3,8 +3,8 @@
   "panel_id": "panel-visual-adopt-crypt-armB-iter3-20260710",
   "protocol": "control-anchored 5-scorer blind panel (model sonnet), visual-critic CALIBRATION-CONTROL PROTOCOL, run via qa/plate_loop.py packet machinery (PLATE SPRINT Phase 2, ADOPT-CRYPT lane, #1386). Candidate = ARM-B iter3 styled+registered crypt plate (registration edge-recall 0.9903 vs the crypt greybox). Blind images: A=candidate, B=incumbent house anchor (crypt_dense_v1.png, the current-best crypt plate), C=disguised registered real-art control.",
   "scale": "0-10 visual-critic (delta-anchored two-tier ladder; absolute number is NOT a quality verdict)",
-  "candidate_image": "/Users/lume/worldos-session-notes/plate-sprint/armB/iter3/style/prep_iter3_plate.png",
-  "incumbent_image": "/Users/lume/worldos-session-notes/plate-sprint/armB/crypt_dense_v1_reference.png",
+  "candidate_image": "qa/evidence/plate-sprint/adopt-crypt/source-plates/candidate_crypt_armb_iter3.jpg",
+  "incumbent_image": "qa/evidence/plate-sprint/adopt-crypt/source-plates/incumbent_crypt_dense_v1.jpg",
   "control_id": "control:visual:pillars-of-eternity-2:poe2_ruins_brazier_integration_01",
   "control_image": "/Volumes/LEXAR/WorldOS-Unity-spike/refs/poe2_ruins_brazier_integration_01.jpg",
   "control_note": "REGISTERED clean control (real shipped PoE2:Deadfire ruins/brazier plate) from qa/visual_controls_identity.json, disguised as blind image_2 in the panel packet.",
@@ -12,7 +12,8 @@
     "recall": 0.9903,
     "min_recall": 0.95,
     "greybox": "/Users/lume/worldos-session-notes/plate-sprint/armB/crypt_greybox_1344x768.png",
-    "passed": true
+    "passed": true,
+    "greybox_note": "local-machine greybox path retained for provenance only (/Users/lume/worldos-session-notes/plate-sprint/armB/crypt_greybox_1344x768.png); the committed authored-geometry source of truth is qa/room_manifests/crypt_dense_v1.cells.json (recipe_key=crypt), which the paint-drift gate below re-derives from."
   },
   "pregate": {
     "verdict": "FLAG",
@@ -198,5 +199,29 @@
       "delta_candidate_minus_control": -1.5
     },
     "control_valid": true
+  },
+  "paint_drift": {
+    "gate": "qa/check_plate_drift.py check_plate_drift() vs qa/room_manifests/crypt_dense_v1.cells.json (recipe_key=crypt)",
+    "passed": true,
+    "checked": 3,
+    "skipped": 0,
+    "props": [
+      {
+        "id": "sarcophagus",
+        "status": "PASS",
+        "ncc": 0.945
+      },
+      {
+        "id": "pillar_l",
+        "status": "PASS",
+        "ncc": 0.9615
+      },
+      {
+        "id": "pillar_r",
+        "status": "PASS",
+        "ncc": 0.968
+      }
+    ],
+    "read": "No authored painted prop slid off its pathing cell vs the crypt_dense_v1 baseline fingerprint."
   }
 }
