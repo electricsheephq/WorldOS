@@ -18,8 +18,9 @@
     "image_2: 6 | concentric rings in the firepit dirt read as an unnatural, almost target-like pattern; no characters or invented architecture, registration otherwise good"
   ],
   "advisory_metrics": {
-    "edge_recall_vs_greybox": 0.7793,
-    "edge_recall_caveat": "Content-blind per #1491 -- advisory only for this organic/outdoor room class, not a gate. Overlay (qa/evidence/plate-sprint/camp-pass2/iter1/overlay_iter1_scale060.jpg) shows good structural alignment (crates, ground diamond, firepit, prop positions) despite the sub-0.95 metric.",
+    "edge_recall_vs_greybox": 0.8253,
+    "edge_recall_caveat": "Content-blind per #1491 -- advisory only for this organic/outdoor room class, not a gate. Recomputed after downsampling the committed candidate to the 1344x768 plate contract (the raw Gemini 2K output was 2744x1568; caught by adversarial PR review, see PR #1504). Overlay (qa/evidence/plate-sprint/camp-pass2/iter1/overlay_iter1_scale060.jpg) shows good structural alignment (crates, ground diamond, firepit, prop positions) despite the sub-0.95 metric.",
+    "drift_vs_v2_manifest": "check_plate_drift against qa/room_manifests/camp_clearing_night_v2.cells.json: checked=12, 11/12 DRIFT, campfire PASS (ncc 0.75). This manifest was authored against the ADOPTED camp_clearing_night_v2 plate's own composition (walls, cabin, torches) -- our candidate is generated from the PLAIN contract greybox (crates/rocks/campfire only, no walls), the same mismatch camp-armB's candidate hit against this same manifest+greybox pairing. Advisory only per #1491; the overlay against the greybox (not this v2-specific manifest) is the binding structural-registration evidence.",
     "pregate": "G6_luma_staging_law FLAG -- expected for a firelit/dark night scene per plate_loop pregate design; not treated as blocking (matches precedent on prior firelit camp candidates)."
   },
   "firepit_lever_findings": {

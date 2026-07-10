@@ -22,7 +22,11 @@ the recurring firepit-ring ground artifact. Max 2 iterations, best-of-3 each, pe
 
 **None of them.** This pass tested all three prescribed levers, including a stronger variant of (a) in
 iteration 2, and the concentric-ring ground artifact around the campfire was visually present, to a
-similar degree, in **all 6 generated candidates** (3 anchors x 2 Gemini prompt variants):
+similar degree, in every generated candidate that reached the Gemini re-registration stage: **3 raw
+anchors inspected pre-Gemini** (best-of-3 rejection, iter1: lorasScale 0.70/0.65/0.60, all similarly
+affected) **and 4 total Gemini-styled candidates** (1 in iter1 on the selected anchor + 3 in iter2 on
+all 3 iter1 anchors, since iter1 only spent the Gemini pass once on the winner of its anchor-stage
+best-of-3, while iter2 ran Gemini on all 3 to test the stronger override across the full anchor set):
 
 - **(a) prompt pinning** — a soft "keep it as composed" clause (iter1) and an explicit authorized
   override naming the ring a "rendering artifact, not authored geometry" (iter2) both failed to
@@ -65,8 +69,20 @@ not a tuning gap the mandate's three levers could close in 2 iterations.
 `camp_clearing_night` is an organic/outdoor room class — edge-recall vs the greybox is ADVISORY only
 per #1491 (content-blind, anti-correlated with faithful organic reinterpretation on this class). Both
 iterations' overlays (`iter1/overlay_iter1_scale060.jpg`, `iter2/overlay_iter2_scale060.jpg`) show good
-structural alignment despite sub-0.95 recall numbers (0.7793, 0.5443) — consistent with #1491's own
-findings, not treated as a gate failure.
+structural alignment despite sub-0.95 recall numbers (0.8253, 0.5689, computed at the correct 1344x768
+plate-contract resolution) — consistent with #1491's own findings, not treated as a gate failure.
+`check_plate_drift` against `qa/room_manifests/camp_clearing_night_v2.cells.json` also shows most props
+DRIFT for both candidates; that manifest is authored against the ADOPTED v2 plate's own composition
+(walls/cabin/torches), not the plain contract greybox our candidates are generated from — the same
+manifest/greybox mismatch camp-armB's candidate hit against this identical pairing. Advisory only,
+noted in each iteration's `panel_verdict.json`.
+
+**Correction (adversarial PR review, 2026-07-10):** the two selected candidate files were originally
+committed at Gemini's native 2744x1568 output resolution rather than the room's 1344x768 plate
+contract, which caused `check_plate_drift`'s manifest check to hard-reject on a size mismatch
+(`checked=0`) instead of running a real comparison. Both files have been downsampled to 1344x768 and
+the registration/drift numbers above are recomputed at the correct size; the panel scores are
+unaffected since scoring was done by direct visual inspection, not off image metadata.
 
 ## Cost actuals (record on #1481)
 
