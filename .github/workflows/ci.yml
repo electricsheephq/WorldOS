@@ -207,6 +207,11 @@ jobs:
         # Instrument B's path-gen/aggregation/verdict (stub scorer, no LLM/box) and amendment C's panel
         # defect-checklist prompt regression — pinned so an edit to either can't silently drift.
         run: python -m pytest qa/test_journey_eval.py qa/test_plate_loop.py -q -p no:xdist
+      - name: Journey click-sweep cores (#1523 — adversarial prop-click sweep target/traversal logic)
+        # manifest_from_surface / build_adversarial_targets / dfs_sweep / build_findings — pure, no
+        # engine/HTTP/box involved (mirrors the split above); the live HTTP driving is exercised
+        # on-box (see qa/journey_click_sweep.py's module docstring), deliberately not unit-tested here.
+        run: python -m pytest qa/test_journey_click_sweep.py -q -p no:xdist
 
   license-check:
     runs-on: ubuntu-latest
