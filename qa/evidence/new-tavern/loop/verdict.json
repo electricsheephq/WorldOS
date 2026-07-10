@@ -1,0 +1,1 @@
+{"scores": {"image_1": [7, 6, 7, 7, 7], "image_2": [9, 9, 10, 10, 9], "image_3": [9, 9, 10, 10, 9]}, "medians": {"image_1": 7.0, "image_2": 9.0, "image_3": 9.0}, "control_valid": true, "verdict": "NEW-ROOM tavern median 7.0 clears the 7.0 bar; control 9.0 valid; tier stable."}

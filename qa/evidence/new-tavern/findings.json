@@ -1,0 +1,60 @@
+{
+  "lane": "NEW-ROOM-TAVERN (epic #1508) \u2014 a BRAND-NEW room through the full true-greybox pipeline from NOTHING (no prior plate, no prior seed)",
+  "premise": "Replication-breadth test: PR #1514 proved the method on REGENERATIONS (crypt/camp, authored FROM incumbent plates). This lane proves it GENERALISES to a room invented from scratch.",
+  "method": "tools/author_room_geometry.py tavern (inline 12x10 world-true geometry) -> greybox_render_headless + greybox_sidecars_headless (cutaway wall_height 5) -> derive_room_manifest -> flux.1-dev depth-ControlNet base (cs 0.8-0.85, best-of-3 seeds) -> gemini-noref LAYERED style pass -> registration + coherence + blind 5-scorer panel -> tools/library/promote.py automated visual gate.",
+  "geometry": {
+    "tavern": {
+      "grid": "12x10",
+      "props": 6,
+      "manifest_props": 6,
+      "occlusion_cells": 54,
+      "walkable": 58
+    }
+  },
+  "greybox_self_coherence": {
+    "verdict": "PASS 6/6 props <=0.10c at cutaway wall_height 5",
+    "wall_height_finding": "At full wall_height 9, an ENCLOSED room's tall near walls (grid col0 + front wall) poison the interior NCC correlation -> low interior props drift ~1.0-1.5c. wall_height 5 (tallest keeping 6/6 <=0.1c) is coherence-green AND more correct for the look-into-the-room camera."
+  },
+  "best_of_3": {
+    "seed7_cs0.8": {
+      "base_recall": 0.797,
+      "base_coherence": "5/6",
+      "final_recall": 0.661,
+      "note": "pass3 invented a spurious central WELL"
+    },
+    "seed42_cs0.85": {
+      "base_recall": 0.882,
+      "base_coherence": "4/6",
+      "final_recall": 0.815,
+      "note": "cleanest final but base < 0.95"
+    },
+    "seed123_cs0.85": {
+      "base_recall": 0.98,
+      "base_coherence": "5/6",
+      "final_recall": 0.747,
+      "note": "ADOPTED \u2014 base CLEARS the 0.95 masonry gate; only near-left-corner barrels drift 1.05c"
+    }
+  },
+  "registered_base_gate": {
+    "edge_recall": 0.98,
+    "masonry_gate": ">=0.95 PASS",
+    "grid_paint_coherence": "5/6 props @0.03c (barrels 1.05c)"
+  },
+  "blind_panel": {
+    "candidate_median": 7.0,
+    "control_median": 9.0,
+    "incumbent_crypt_median": 9.0,
+    "delta_candidate_minus_control": -2.0,
+    "tier": "stable (>= -2.5 adopt floor; == the camp anchor that passed human taste-gates)",
+    "defects": "4/5 scorers zero-defect; minor tell = hanging lantern-truss reads graphic (pass3 artifact)"
+  },
+  "painterly_final": {
+    "file": "tavern_painterly_candidate.png (seed123 pass3_staging)",
+    "registration": "edge-recall 0.747 (soft-edge, #1491) \u2014 proven via the greybox-edge overlay + the coherence-green BASE",
+    "asset_id": "asset_2Bc7ghubvijhMsvVbcnvnZzu"
+  },
+  "promotion": "AUTOMATED tools/library/promote.py visual gate PASS (tier=stable) -> library/rooms/room_tavern_truegrey_seed123_20260711__bb792bd6.json. room_recipes.rooms.tavern canonical_plate=tavern_truegrey_v1.png; plates_manifest tavern entry (box picks up at next rebuild).",
+  "seed_integration": "qa/seed_gfx_walkslice.py -> THREE-ROOM WORLD: crypt HUB <-> camp (door 6,0) AND <-> tavern (NEW left-wall door 0,5). build_tavern_grid from the SAME world-true geometry (pathing==paint). 9/9 pinned tests pass.",
+  "replication_breadth_finding": "The method GENERALISES. Registration holds at the BASE (0.980 >= masonry gate). One NEW-room delta vs regenerations: for a sparse new-room greybox the Gemini style pass reinterprets composition MORE (best-of-N needed; seed7 invented a well). Painterly final soft-edge (0.747, #1491); collision truth = the DERIVED manifest.",
+  "recovery_note": "This lane's first worktree (uncommitted) was destroyed mid-run by a parallel worktree-prune; reconstructed byte-faithfully from committed knowledge + Scenario asset re-download (deterministic numbers reproduced exactly: base-recall 0.980, final-recall 0.747, coherence 5/6). Lesson: commit+push each unit early."
+}
