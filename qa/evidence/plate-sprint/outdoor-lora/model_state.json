@@ -1,0 +1,46 @@
+{
+  "model_id": "model_RsWEcQL2NWXwoyEodWVE2vWG",
+  "model_name": "WorldOS Painterly Exterior (FLUX)",
+  "model_type": "flux.1-lora",
+  "scenario_project_id": "proj_sd4w3ozsJaBHYnHS4mP1S2Pw",
+  "status": "images_attached_not_trained",
+  "blocker": {
+    "type": "PlanLimitReachedError",
+    "http_status": 429,
+    "actionName": "train-model",
+    "actionLimit": 10000,
+    "actionValue": 9754,
+    "limitScope": "team",
+    "note": "Scenario team plan train-model CU allowance 97.5% consumed (246 CU headroom); dry-run cost for this 18-image set is 1080 CU. Needs owner to add CU / confirm quota reset before train(action=start) can succeed."
+  },
+  "dry_run_cost_cu": 1080,
+  "dry_run_cost_estimate_usd": 20.67,
+  "lane_cap_usd": 25,
+  "training_images": [
+    {"asset_id": "asset_58ehPSyWAB4dVpWmp4oNg9LS", "file": "ext_001_fortress_raedric_hold.jpg", "reused_from": "worldos-poe2-clean-env-v4 (t_044.jpg)"},
+    {"asset_id": "asset_fdVzG3S1Y4jyR8ErCLqLCyvq", "file": "ext_002_ruins_oldsong.jpg", "reused_from": "worldos-poe2-clean-env-v4 (t_045.jpg)"},
+    {"asset_id": "asset_pkgacsDZsqxXeMRrp8bNZVRK", "file": "ext_003_temple_abbey.jpg", "reused_from": "worldos-poe2-clean-env-v4 (t_046.jpg)"},
+    {"asset_id": "asset_uzqFWgHgyghpnmM3QFDyfvKi", "file": "ext_004_settlement_brackenbury.jpg", "reused_from": "worldos-poe2-clean-env-v4 (t_047.jpg)"},
+    {"asset_id": "asset_dWCdqiENwCyq9EdzDDQCfUTK", "file": "ext_005_ruins_firstfires.jpg", "reused_from": "worldos-poe2-clean-env-v4 (t_048.jpg)"},
+    {"asset_id": "asset_KwmxyNGS274jtUWMZ3BbpfHC", "file": "ext_006_jungle_path.jpg", "new_upload": true},
+    {"asset_id": "asset_hWtoxJFBN1i6UeJfe3CR7Gz8", "file": "ext_007_jungle_courtyard_shrine.jpg", "new_upload": true},
+    {"asset_id": "asset_nYiu6Gu6GXWdRKSh9TKfMhYs", "file": "ext_008_twinelms_hearthsong_village.jpg", "new_upload": true},
+    {"asset_id": "asset_ofmGDEpi6ur85RnTBgA6LAzJ", "file": "ext_009_ondras_gift_coast.jpg", "new_upload": true},
+    {"asset_id": "asset_v7ADRUjCQACLPJdXh9nbsBKR", "file": "ext_010_night_camp.jpg", "new_upload": true},
+    {"asset_id": "asset_SquJXAUqH9D9R8zaRXu2dztd", "file": "ext_011_gilded_vale_wilderness.jpg", "new_upload": true},
+    {"asset_id": "asset_VzYgaAA38o6QuHFS9NMmqYGg", "file": "ext_012_black_meadow_wilderness.jpg", "new_upload": true},
+    {"asset_id": "asset_LydPVC6jauLTGaYsmKMhPhTD", "file": "ext_013_stronghold_ext_pristine.jpg", "new_upload": true},
+    {"asset_id": "asset_oR9zJaAB79sPJv7KG6N7GfUr", "file": "ext_014_bridge_district.jpg", "new_upload": true},
+    {"asset_id": "asset_q26TbJau96Z2qgF2Cuw5qPzN", "file": "ext_015_madhmr_bridge.jpg", "new_upload": true},
+    {"asset_id": "asset_2jzyZEd1ukzp5emeiukC1zae", "file": "ext_016_woodend_plains.jpg", "new_upload": true},
+    {"asset_id": "asset_GbPoqFErs6rfifNa6QFTr18T", "file": "ext_017_bog.jpg", "new_upload": true},
+    {"asset_id": "asset_kpVSMEiqkxhgtmvuMpXD8v6t", "file": "ext_018_camp_clearing_night_v2_ADOPTED.jpg", "reused_from": "ARM C training set + qa/evidence/plate-audit/camp_clearing_night_v2.jpg"}
+  ],
+  "deleted_from_initial_22": [
+    {"asset_id": "asset_XhU3yw8GWrJx5gWLFxsrPimf", "file": "western_exterior_mountain", "reason": "cost trim, non-mandate category, duplicate-of-eastern"},
+    {"asset_id": "asset_3qcdgkVmFKrpzmj7StJRTT77", "file": "eastern_exterior_mountain", "reason": "cost trim, non-mandate category, duplicate-of-western"},
+    {"asset_id": "asset_rqeAXPXtPJrH6sMAQCZ3Pg4S", "file": "jungle_waterfall", "reason": "cost trim, 3rd redundant jungle-biome frame"},
+    {"asset_id": "asset_zGGeb6YKonabKqquXGTRi128", "file": "durgans_battery_ext", "reason": "cost trim, 3rd redundant fortress-ext frame"}
+  ],
+  "resume_instructions": "Once Scenario CU headroom is available (>=1080 CU on the team train-model quota), call mcp__scenario__train(action='start', model_id='model_RsWEcQL2NWXwoyEodWVE2vWG') — no dry_run flag — to kick off training. Poll via jobs_wait / job_get. ETA ~1-2h based on ARM C's comparable 111min/627CU run. Then proceed to mandate step 3 (smoke test)."
+}
