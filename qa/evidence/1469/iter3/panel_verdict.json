@@ -1,0 +1,30 @@
+{
+  "run": "1469-relight-iter3-panel-1",
+  "date": "2026-07-10",
+  "issue": 1469,
+  "resequence": "post-#1479 (rerun): registration was FIXED (recall 1.000) but B (relit) still LOST to A (flat) 2.0 vs 3.0 on a control-independent defect — WOSRelight crushed away-facing vertical normals (pillars/sarcophagus/walls) to SOLID BLACK under the lone cool key ('black-block voids', every scorer). iter3 lands the two prescribed coupled fixes and re-runs the exact A/B.",
+  "question": "character-in-scene integration 0-10, blind, 5 scorers (sonnet) — per qa/evidence/cohesion-probe/panel_verdict.json method",
+  "changes_under_test": {
+    "shader": "extensions/renderers/unity/shaders/WOSRelight.shader — additive, all-new-uniforms-default-0 (byte-compatible when unset): (1) _AmbLift ambient FLOOR (lit>=0.80 so no vertical normal renders below a readable painted value — mirrors PainterlyActor _AmbientLift); (2) _WarmBounceCol/_WarmBounce warm floor/hearth bounce wrap for side/down-facing verticals; (3) _Hearth/_HearthCol dedicated hearth POINT fill.",
+    "rungR": "extensions/renderers/unity/scripts/CohesionProbe.cs — RungR now feeds the three new uniforms (_AmbLift=0.80, _WarmBounceCol=plate _warmAmb, _WarmBounce=0.25, _Hearth=fire anchor in greybox view space z-pinned mid-depth, _HearthCol=_key*0.6). RungR + LoadSidecar brought into the repo (were box-only) for reproducibility."
+  },
+  "scene": "M1CombatV1_canonical rig; baseline cast fighter@(6,6)+goblin@(9,5) via Cohesion Probe 0b; M1 greybox Occluder_* + stray char1 disabled for a clean flat-plate frame (setup-only, discarded on Reset).",
+  "plate_decision": {
+    "plate_used_for_AB": "crypt_rerun_conditioned (the #1479 REGISTERED ControlNet-depth base plate, edge-recall 1.000) — held CONSTANT vs #1479 so the A/B isolates ONLY the shader change (clean before/after).",
+    "firelit_layered_plate_ATTEMPTED": "generate_room.py --room crypt --refine-from asset_gAxojwQJitHwezoNrUrQUagL --controlnet depth --control-strength 0.7 --layered --seed 42 (mirrors #1479's base pass byte-for-byte + adds the firelit Gemini detail/staging passes).",
+    "firelit_layered_REJECTED_reason": "The --layered premise ('firelit rides the locked geometry, preserving registration') is EMPIRICALLY FALSE. Edge-recall vs greybox structural edges: pass1 ControlNet base = 1.000, pass2 Gemini detail/populate = 0.873, pass3 Gemini staging (final) = 0.708. The Gemini instruction-edit passes have NO strength knob and RECOMPOSED the geometry — the staging pass invented a central staircase and shifted the left-half floor/walls off the greybox (see overlay_conditioned_crypt.jpg). A 0.708-registered plate would re-misalign the WOSRelight depth/normal sidecars — the ORIGINAL #1469 failure mode. So 'firelit AND 1:1-registered' is UNATTAINABLE via this pipeline; the fair A/B was run on the registered (cool) base instead."
+  },
+  "control_valid": true,
+  "control_note": "C (poe2_ruins_brazier_integration_01, disguised real-art control, NOT committed — copyrighted) median 8.0 is WITHIN the 6.8-9.2 validity band. This panel's absolute numbers are trustworthy.",
+  "blind_shuffle": {"img_alpha": "C_control", "img_beta": "B_relit", "img_gamma": "A_flat"},
+  "scores": {
+    "A_flat":  [2, 2, 4, 2, 3],
+    "B_relit": [2, 2, 4, 2, 3],
+    "C_control": [8, 8, 8, 8, 8]
+  },
+  "medians": {"A_flat": 2.0, "B_relit": 2.0, "C_control": 8.0},
+  "rankings": ["C>B>A", "C>B>A", "C>B>A", "C>B>A", "C>B>A"],
+  "verdict": "The #1479 LOSS IS RESOLVED but there is NO decisive WIN. B (relit) and A (flat) are numerically TIED at median 2.0 — yet all 5 scorers RANKED B > A (the forced-ranking tiebreak favored the relit arm every time). Verified in-frame: the shader ambient floor (_AmbLift=0.80) eliminated the black-block voids — pillars, sarcophagus and walls now render as readable painted stone, not solid black (the sole binding defect from #1479 is gone; B went from 2.0<3.0 LOSING to 2.0=2.0 TIED/marginally-preferred). B does NOT beat A decisively because the ONLY plate that registers 1:1 (the single-pass ControlNet base) is cool/flat/low-key — RungB Analyze() sampled a COOL key (DDE0FF), so the relight adds only mild cool directional shaping, not warm firelit cohesion. Both arms score far below the control (2.0 vs 8.0): a ~6-point gap driven by the dull cool plate + dark empty crypt room (a plate-quality confound that drags BOTH arms, not a relight defect).",
+  "recommendation": "STOP the relight-shader A/B iteration loop; the shader is now CORRECT and NO-HARM (merge it — additive, byte-compatible, resolves the void failure, marginally preferred 5/5). Do NOT port relight to the shipped path yet. The remaining ~6-point gap is NOT a relight-shader problem — it is a PLATE-PIPELINE problem, and the two prescribed fixes are now MUTUALLY EXCLUSIVE: you can have 1:1 REGISTRATION (single-pass ControlNet, but COOL) OR a WARM firelit plate (--layered, but registration drops to 0.708), never both. Progress on the relight is therefore BLOCKED on a new work item: a plate pipeline that yields a WARM firelit plate at ~1.0 registration (e.g. a ControlNet base that keeps the warm painterly grade, or feeding warmth via the LIGHT RIG on a neutral registered plate rather than sampling it from a cool plate). This is out of scope of 'relight iteration' — hence STOP here.",
+  "diminishing_returns": "3 A/B rounds (#1469 lost on registration; #1479 lost on shader black-voids; iter3 tied, no win). Each round fixed the named defect and surfaced the next binding one; iter3's binding blocker (warm+registered plate) cannot be solved by relight-shader work. A 4th relight-shader round has no lever left — stop."
+}
