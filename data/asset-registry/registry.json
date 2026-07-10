@@ -29,7 +29,8 @@
     "goblin_grunt": "goblin",
     "patron": "patron_commoner",
     "wren": "innkeeper",
-    "camp-scout": "patron_commoner"
+    "camp-scout": "patron_commoner",
+    "mira-the-keeper": "fighter"
   },
   "assets": {
     "fighter": {

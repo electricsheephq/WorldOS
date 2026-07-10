@@ -115,6 +115,13 @@ public class CombatSurfaceClient : MonoBehaviour
     // parley) instead of a walk. cellKey -> npc id. Rebuilt each ParseSurfaceExtras from the stage block.
     readonly System.Collections.Generic.Dictionary<int, string> _npcAtCell = new System.Collections.Generic.Dictionary<int, string>();
 
+    // WALKABLE-SLICE-V1 (Option A): the rest-mode STAGE cast (party + present NPCs), parsed from the surface
+    // `stage` block into the SAME Tok shape combat tokens use, so ApplySurf renders them through the ONE
+    // spawn/reposition/despawn+glide pipeline — the owner must SEE his character stand, walk, and cross a
+    // door in rest, not just in combat. Empty in combat (top-level `tokens` drive it there); the shared PC
+    // ids mean a rest<->combat transition GLIDES the same actor instead of blinking a new one.
+    readonly System.Collections.Generic.List<Tok> _stageCast = new System.Collections.Generic.List<Tok>();
+
     // #anim-combat: the actor's ANIM_REF (moveset) fbx (registry anim_ref), so a walk/attack/hit clip that
     // lives in a SEPARATE moveset fbx rather than the model fbx is still found. Mirrors _fbxOf; both feed
     // FindOwnClip. (For the wave-2 cast the walk clip is embedded in the MODEL fbx — e.g. goblin.fbx carries
@@ -153,6 +160,10 @@ public class CombatSurfaceClient : MonoBehaviour
     // created can never rely on in-coroutine Destroy — every interruption path funnels through
     // KillWalkGraph instead (the #1451-review P2 leak).
     readonly System.Collections.Generic.Dictionary<string, UnityEngine.Playables.PlayableGraph> _walkGraphOf = new System.Collections.Generic.Dictionary<string, UnityEngine.Playables.PlayableGraph>();
+    // #idle-persist: per-actor PERSISTENT idle graph. A resting actor's idle is a LIVE graph the Update loop
+    // evaluates every frame (a one-shot pose cannot hold a skinned pose — see PlayIdleGraph). Torn down by
+    // KillIdleGraph on glide/attack start and on despawn.
+    readonly System.Collections.Generic.Dictionary<string, UnityEngine.Playables.PlayableGraph> _idleGraphOf = new System.Collections.Generic.Dictionary<string, UnityEngine.Playables.PlayableGraph>();
     string _currentId = "";        // the isCurrent combatant this surface (active-turn ring-pulse anchor)
     string _pulsePrev = "";        // last-pulsed ring, reset to rest when the turn moves on
 
@@ -323,6 +334,9 @@ public class CombatSurfaceClient : MonoBehaviour
         // WALKABLE-SLICE-V1 (item 6): load the OPTIONAL plate registry (per-location backdrop swap). Absent
         // -> no swap, the scene's baked plate stands (byte-identical to pre-W5e).
         LoadPlateManifest();
+        // Option A (item 3): hide the scene's baked mannequins — the client now renders its own cast in rest
+        // AND combat, so a baked actor would double-render / linger T-posed beside the live cast.
+        HideBakedCast();
 
         Debug.Log("[CSC] start: campaign=" + CampaignId + " url=" + ViewerUrl + " overlay=" + _overlayOn + " onboard=" + _onboard);
         StartCoroutine(PollLoop());
@@ -455,6 +469,7 @@ public class CombatSurfaceClient : MonoBehaviour
                 _restMode = (stage.ContainsKey("mode") ? stage["mode"] as string : "") == "rest";
                 _restMoverId = "";
                 _npcAtCell.Clear();                                            // WALKABLE-SLICE-V1 (item 2): rebuilt from this stage
+                _stageCast.Clear();                                            // Option A: rebuilt from this stage
                 if (_restMode && stage.ContainsKey("tokens") && stage["tokens"] is System.Collections.Generic.List<object> stoks)
                 {
                     foreach (var e in stoks)
@@ -462,6 +477,19 @@ public class CombatSurfaceClient : MonoBehaviour
                         var tk = e as System.Collections.Generic.Dictionary<string, object>; if (tk == null) continue;
                         string role = tk.ContainsKey("rest_role") ? tk["rest_role"] as string : "";
                         string id = tk.ContainsKey("id") ? tk["id"] as string : "";
+                        // Option A: render EVERY present stage token (party + npc) as a client actor, through the
+                        // same spawn/pose/ground pipeline combat tokens use. Stage tokens carry name/team/kind
+                        // (server _emit) so SpawnActor resolves the right model; rest cast are all team "ally".
+                        if (!string.IsNullOrEmpty(id) && tk.ContainsKey("x") && tk.ContainsKey("y"))
+                        {
+                            _stageCast.Add(new Tok {
+                                id = id,
+                                name = tk.ContainsKey("name") ? tk["name"] as string : id,
+                                team = tk.ContainsKey("team") ? tk["team"] as string : "ally",
+                                x = System.Convert.ToInt32(tk["x"]), y = System.Convert.ToInt32(tk["y"]),
+                                isCurrent = false, hp = 1, hpMax = 1,
+                            });
+                        }
                         // WALKABLE-SLICE-V1 (item 2): map every present NPC (rest_role:"npc") to its cell so a
                         // click there opens a parley_approach instead of a walk (browser: screen-combat.jsx:373).
                         if (role == "npc" && !string.IsNullOrEmpty(id) && tk.ContainsKey("x") && tk.ContainsKey("y"))
@@ -584,12 +612,18 @@ public class CombatSurfaceClient : MonoBehaviour
         // #1318/#1433: honor the surface's own grid extents (rest-mode rooms can be non-14x11) so
         // cellToWorld stays aligned to what paint_combat_v1 baked. Absent ⇒ the 14x11 default.
         if (s.grid != null && s.grid.cols > 0 && s.grid.rows > 0) { Cols = s.grid.cols; Rows = s.grid.rows; }
+        // Option A: combat surfaces carry the cast in top-level `tokens`; a REST surface carries it under
+        // `stage` (parsed to _stageCast). Render whichever is active through the SAME spawn/reposition/
+        // despawn+glide pipeline, so the party is visible and walkable in rest and a rest<->combat transition
+        // (shared PC ids) glides the same actor instead of blinking a new one.
+        bool isCombat = s.tokens.Length > 0;
+        var cast = isCombat ? s.tokens : (_restMode ? _stageCast.ToArray() : System.Array.Empty<Tok>());
         // #1441: rebuild the occupied-cell set (every token's cell) for client-side click pre-validation.
         // #Phase3: also rebuild the foe-cell set so the overlay hover reads red on an attackable cell.
         _occupied.Clear(); _foeCells.Clear(); _foeIds.Clear();
-        foreach (var t in s.tokens) if (t != null) { int k = CellKey(t.x, t.y); _occupied.Add(k); if (t.team == "foe") { _foeCells.Add(k); if (!string.IsNullOrEmpty(t.id)) _foeIds.Add(t.id); } }
+        foreach (var t in cast) if (t != null) { int k = CellKey(t.x, t.y); _occupied.Add(k); if (t.team == "foe") { _foeCells.Add(k); if (!string.IsNullOrEmpty(t.id)) _foeIds.Add(t.id); } }
         var present = new System.Collections.Generic.HashSet<string>();
-        foreach (var t in s.tokens)
+        foreach (var t in cast)
         {
             // #anim-combat P1 fix: a surface-listed token is ALWAYS live to the client — hp<=0 while listed
             // means DOWNED (prone on the field, revivable), never a skip. Removal from the surface is the
@@ -633,10 +667,43 @@ public class CombatSurfaceClient : MonoBehaviour
         // collapse (prone, revivable — removal from the surface is the only terminal signal). HP bars
         // are (re)created for the living; the active-turn ring pulse is anchored on _currentId (Update drives
         // the per-frame billboard + pulse).
-        ApplyCombat(s);
+        if (isCombat) ApplyCombat(s);
+        else { _currentId = ""; _currentName = ""; RestNamePlates(cast); }   // Option A: rest cast — name plates, no HP/turn
         // #Phase3: keep the overlay in sync with the new surface — rebuild the quad pool if the grid
         // extents changed (rest rooms are non-14x11), then repaint per-cell tints for the new occupancy.
         if (_overlayOn) { EnsureOverlay(); RefreshOverlayColors(); }
+    }
+
+    // Option A: the rest cast gets a #1484 name plate (no HP bar) under onboarding/playtest — mirrors combat's
+    // gated plates so beauty captures stay clean. UpdateHpBars rides + prunes them when the actor despawns.
+    void RestNamePlates(Tok[] cast)
+    {
+        if (!_onboard) return;
+        foreach (var t in cast) if (t != null && !string.IsNullOrEmpty(t.id)) EnsureNamePlate(t.id, FindActor(t.id));
+    }
+
+    // Option A (item 3): when the client renders its OWN cast (rest AND combat), hide the scene's BAKED
+    // mannequins so there is no double-render / stale T-posed actor beside the live cast. Runtime-only —
+    // SetActive(false) never touches the scene asset, so editor-only workflows that rely on the baked cast
+    // are preserved. Runs once at Start, before any runtime spawn, so every Actor_* present is baked.
+    void HideBakedCast()
+    {
+        var hide = new System.Collections.Generic.HashSet<GameObject>();
+        // Every baked character MESH -> hide its whole root object. At Start (before any runtime spawn) every
+        // SkinnedMeshRenderer in the scene is baked scaffolding (paint_combat_v1's FIGHTER/Goblin3D/pose
+        // dummies P___bind_-1 / P_Idle_* / P_Walk_*), so this catches them regardless of name.
+        foreach (var smr in GameObject.FindObjectsOfType<SkinnedMeshRenderer>())
+        { var t = smr.transform; while (t.parent != null) t = t.parent; hide.Add(t.gameObject); }
+        // Baked selection decals (AO blobs + rings) live as their own roots (SoloAO/SoloRing/HeroAO), plus any
+        // prior Actor_* — match them by name so no stale ring is left under the live cast.
+        foreach (var tr in GameObject.FindObjectsOfType<Transform>())
+        {
+            if (tr.parent != null) continue;   // roots only
+            string n = tr.name;
+            if (n.StartsWith("Actor_") || n.StartsWith("Solo") || n.StartsWith("Hero")
+                || n.EndsWith("AO") || n.EndsWith("Ring") || n.EndsWith("Core")) hide.Add(tr.gameObject);
+        }
+        foreach (var go in hide) if (go != this.gameObject) go.SetActive(false);
     }
 
     // #anim-combat: the ported verb map, driven off the surface hp fields + isCurrent (engine truth only).
@@ -984,6 +1051,12 @@ public class CombatSurfaceClient : MonoBehaviour
         var prefab = LoadAsset<GameObject>(fbx);
         if (prefab == null) { Debug.LogWarning("[CSC] spawn MISSING model " + fbx + " for token " + id + " (bundle stale?)"); return null; }
 
+        // #idle-fix: register the model + moveset fbx BEFORE the idle pose so the idle resolver (FindOwnClip)
+        // can search this actor's OWN clips in EITHER source — a rigged char whose idle lives in a separate
+        // anim_*.fbx (registry anim_ref) poses correctly instead of falling through to the donor/T-pose.
+        _fbxOf[id] = fbx;
+        _animOf[id] = (aref != null && aref.Length > 2) ? aref[2] : "";
+
         string nm = "Actor_" + id;
         var existing = GameObject.Find(nm); if (existing != null) Object.DestroyImmediate(existing);
         var go = (GameObject)Object.Instantiate(prefab); go.name = nm;
@@ -994,6 +1067,13 @@ public class CombatSurfaceClient : MonoBehaviour
         // the legacy -90 Z-up stand-up. Set before posing (depends only on rig type).
         float pitchX = go.GetComponentInChildren<SkinnedMeshRenderer>() != null ? 0f : -90f;
         go.transform.rotation = Quaternion.Euler(pitchX, camYaw + 180f, 0f);
+
+        // #idle-persist: keep the Animator updating its skinned pose even when briefly off-screen/unfocused —
+        // AnimatorCullingMode.CullUpdateTransforms freezes the skinned mesh at its last dispatched pose when
+        // the actor isn't in the active render, which is exactly the "T-pose on capture" symptom. AlwaysAnimate
+        // guarantees the persistent idle graph's pose is dispatched every frame in the player's render loop.
+        var animC = go.GetComponentInChildren<Animator>();
+        if (animC != null) animC.cullingMode = AnimatorCullingMode.AlwaysAnimate;
 
         var rends = go.GetComponentsInChildren<Renderer>();
         foreach (var r in rends)
@@ -1008,35 +1088,12 @@ public class CombatSurfaceClient : MonoBehaviour
         float height = foe ? ActorHeightFoe : ActorHeightChar;   // #1441: named, single-source heights
         float sc = height / curH; go.transform.localScale = go.transform.localScale * sc;
 
-        // Pose to a neutral idle for the VISUAL now that scale is locked: prefer an embedded 'idle' clip
-        // on the model; else, for a clipless HUMANOID rig, one-shot retarget the goblin donor idle.
-        bool posedByClip = false;
-        var b2 = Bundle();
-        if (b2 != null)
-        {
-            foreach (var clip in b2.LoadAssetWithSubAssets<AnimationClip>(fbx))
-            {
-                if (clip == null || clip.name.StartsWith("__")) continue;
-                if (clip.name.ToLower().Contains("idle")) { SampleClipRuntime(go, clip, 0f); posedByClip = true; break; }
-                if (!posedByClip) { SampleClipRuntime(go, clip, 0f); posedByClip = true; }
-            }
-        }
-        if (!posedByClip)
-        {
-            var anim = go.GetComponentInChildren<Animator>();
-            if (anim != null && anim.avatar != null && anim.avatar.isHuman)
-            {
-                var donor = DonorIdle();
-                if (donor != null)
-                {
-                    var graph = UnityEngine.Playables.PlayableGraph.Create("HumanoidIdleRetarget_" + nm);
-                    var clipPlayable = UnityEngine.Animations.AnimationClipPlayable.Create(graph, donor);
-                    var outp = UnityEngine.Animations.AnimationPlayableOutput.Create(graph, "Output", anim);
-                    UnityEngine.Playables.PlayableOutputExtensions.SetSourcePlayable(outp, clipPlayable);
-                    graph.Evaluate(0f); graph.Destroy();
-                }
-            }
-        }
+        // Pose to a neutral idle for the VISUAL now that scale is locked. #idle-persist: start a PERSISTENT
+        // idle graph (Update evaluates it each frame) — a one-shot Evaluate cannot hold a SKINNED pose (a
+        // disabled Animator freezes GPU skinning at bind; an enabled controllerless Animator reverts to bind),
+        // so the idle must be a live graph like the walk glide. Resolve the clip: own idle (model OR moveset),
+        // else the model's first clip, else the goblin donor idle retargeted onto a clipless humanoid rig.
+        PlayIdleGraph(go, id, ResolveIdleClip(id, fbx, go));
 
         // Ground + center on the cell: feet to FloorY, bounds-center X/Z to the cell.
         Vector3 p = CellToWorld(cx, cy); go.transform.position = p; bb = Measure(go, rends); Vector3 ctr = bb.center;
@@ -1061,12 +1118,9 @@ public class CombatSurfaceClient : MonoBehaviour
         MakeGroundQuad(nm + "_Ring", p, 0.06f, 2.6f, RingTex(), foe ? new Color(1f, 0.13f, 0.10f, 1f) : new Color(0.4f, 0.95f, 1f, 1f), 1955);
 
         _spawned.Add(id);
-        // #1441: remember the fbx (so a glide can play this actor's own walk clip) and seed the cell (so
-        // the first poll doesn't spuriously glide a just-spawned actor already on its engine cell).
-        _fbxOf[id] = fbx;
-        // #anim-combat: remember the moveset fbx (walk/attack clips may live there, not in the model) and the
-        // head-top offset for the HP bar (height is the scale target; +margin clears the silhouette).
-        _animOf[id] = (aref != null && aref.Length > 2) ? aref[2] : "";
+        // #1441/#anim-combat: _fbxOf + _animOf were registered up-front (before the idle pose). Seed the cell
+        // (so the first poll doesn't spuriously glide a just-spawned actor already on its engine cell) and the
+        // head-top offset for the HP/name plate (height is the scale target; +margin clears the silhouette).
         _topOf[id] = height + 1.4f;
         _cellOf[id] = new[] { cx, cy };
         Debug.Log("[CSC] spawned " + nm + " model=" + fbx + " x" + sc.ToString("F2") + " @cell(" + cx + "," + cy + ") rends=" + rends.Length);
@@ -1097,6 +1151,7 @@ public class CombatSurfaceClient : MonoBehaviour
         // #1441: tear down any in-flight glide + per-actor state so a re-spawn starts clean.
         if (_glide.TryGetValue(id, out var co) && co != null) StopCoroutine(co);
         KillWalkGraph(id);   // the stopped glide can't destroy its own graph (#1451-review P2)
+        KillIdleGraph(id);   // #idle-persist: tear down the persistent idle graph too
         _glide.Remove(id); _cellOf.Remove(id); _fbxOf.Remove(id);
         _animOf.Remove(id); _topOf.Remove(id); RemoveHpBar(id);   // #anim-combat: clear combat/anim state
         _downed.Remove(id); _downRunning.Remove(id); _reviveWanted.Remove(id); _downPose.Remove(id);
@@ -1201,6 +1256,11 @@ public class CombatSurfaceClient : MonoBehaviour
         if (!_cellOf.TryGetValue(id, out cur))
         {
             _cellOf[id] = new[] { cx, cy };
+            // #idle-fix: a FIRST-SIGHTED actor that did not come through SpawnActor (a baked Actor_<id>, or
+            // one relocated by the engine before any glide) was only GROUNDED here — never idle-POSED — so a
+            // clipless humanoid rendered its raw bind (T) pose. Pose idle FIRST, then ground the posed bounds
+            // (feet -> FloorY), mirroring SpawnActor's pose->ground order so the actor also can't float.
+            PoseIdle(a.gameObject);
             GroundSnap(a, cx, cy);
             return;
         }
@@ -1219,6 +1279,25 @@ public class CombatSurfaceClient : MonoBehaviour
     // re-centered X/Z, so any actor whose pivot Y wasn't already grounded (baked actors; post-retarget
     // bounds shifts) floated after a move — this re-grounds Y on every reposition.
     void GroundSnap(Transform a, int cx, int cy) { MoveActorAndShadows(a, GroundedPivot(a, cx, cy)); }
+
+    // #idle-fix (WALKABLE-SLICE-V1 follow-up): after a runtime plate swap (a location change), SETTLE every
+    // cast member to a grounded idle on the NEW plate. A cross-room location change repositions the whole
+    // cast at once; a glide that is still in flight (or interrupted by the rapid re-fetch a cross_door
+    // triggers) can leave a clipless humanoid frozen in its bind (T) pose and/or floating off the floor.
+    // Stop any in-flight glide, then re-pose idle and re-ground (feet -> FloorY) — the SAME pose->ground the
+    // glide arrival uses. Presentation-only; a DOWNED (prone) combatant is left as-is. Called from ApplyPlate.
+    void SettleCastIdleGrounded()
+    {
+        foreach (var kv in _cellOf)
+        {
+            var a = FindActor(kv.Key); if (a == null) continue;
+            if (_downed.Contains(kv.Key)) continue;                 // a downed combatant stays prone
+            if (_glide.TryGetValue(kv.Key, out var g) && g != null) { StopCoroutine(g); _glide[kv.Key] = null; }
+            KillWalkGraph(kv.Key);                                   // the stopped glide can't destroy its own graph
+            PoseIdle(a.gameObject);
+            GroundSnap(a, kv.Value[0], kv.Value[1]);
+        }
+    }
 
     // The pivot position that lands the actor's posed bounds-center on (cx,cy) with feet (bb.min.y) on
     // FloorY — mirrors SpawnActor's ground+center, via the static Measure (BakeMesh, scale-correct).
@@ -1284,6 +1363,7 @@ public class CombatSurfaceClient : MonoBehaviour
         AnimationClip walkClip = FindOwnClip(id, "walk", "run");
         var walkAnim = go.GetComponentInChildren<Animator>();
         if (walkClip == null && walkAnim != null && walkAnim.avatar != null && walkAnim.avatar.isHuman) walkClip = DonorWalk();
+        KillIdleGraph(id);   // #idle-persist: stop the idle graph so it doesn't fight the walk graph over the Animator
         UnityEngine.Playables.PlayableGraph walkGraph = default; bool haveGraph = false; bool sampleWalk = false;
         if (walkClip != null)
         {
@@ -1324,40 +1404,66 @@ public class CombatSurfaceClient : MonoBehaviour
         _glide.Remove(id);
     }
 
-    // Pose `go` to a neutral idle: its own embedded 'idle' clip if present, else a humanoid donor-idle
-    // retarget — the same idle SpawnActor establishes, so a glide returns to it at rest.
+    // Pose `go` to a neutral idle by (re)starting its PERSISTENT idle graph — the same idle SpawnActor
+    // establishes, so a glide/attack returns to it at rest. See PlayIdleGraph for why a live graph (not a
+    // one-shot pose) is required to hold a skinned pose.
     void PoseIdle(GameObject go)
     {
+        if (go == null) return;
         string nm = go.name;
         string id = nm.StartsWith("Actor_") ? nm.Substring(6) : nm;
         string fbx; _fbxOf.TryGetValue(id, out fbx);
-        bool posed = false;
-        var b = Bundle();
-        if (b != null && !string.IsNullOrEmpty(fbx))
+        PlayIdleGraph(go, id, ResolveIdleClip(id, fbx, go));
+    }
+
+    // Resolve the best neutral-idle clip for an actor: its OWN idle (model fbx OR separate moveset, dual-source
+    // FindOwnClip), else the model's first embedded clip, else the goblin donor idle retargeted onto a clipless
+    // HUMANOID rig. Null only for a legacy no-clip rig.
+    AnimationClip ResolveIdleClip(string id, string fbx, GameObject go)
+    {
+        var clip = FindOwnClip(id, "idle");
+        if (clip == null)
         {
-            foreach (var clip in b.LoadAssetWithSubAssets<AnimationClip>(fbx))
-            {
-                if (clip == null || clip.name.StartsWith("__")) continue;
-                if (clip.name.ToLower().Contains("idle")) { SampleClipRuntime(go, clip, 0f); posed = true; break; }
-                if (!posed) { SampleClipRuntime(go, clip, 0f); posed = true; }
-            }
-        }
-        if (!posed)
-        {
-            var anim = go.GetComponentInChildren<Animator>();
-            if (anim != null && anim.avatar != null && anim.avatar.isHuman)
-            {
-                var donor = DonorIdle();
-                if (donor != null)
+            var b = Bundle();
+            if (b != null && !string.IsNullOrEmpty(fbx))
+                foreach (var c in b.LoadAssetWithSubAssets<AnimationClip>(fbx))
                 {
-                    var graph = UnityEngine.Playables.PlayableGraph.Create("Idle_" + nm);
-                    var clipPlayable = UnityEngine.Animations.AnimationClipPlayable.Create(graph, donor);
-                    var outp = UnityEngine.Animations.AnimationPlayableOutput.Create(graph, "Output", anim);
-                    UnityEngine.Playables.PlayableOutputExtensions.SetSourcePlayable(outp, clipPlayable);
-                    graph.Evaluate(0f); graph.Destroy();
+                    if (c == null || c.name.StartsWith("__")) continue;
+                    clip = c; break;   // first non-__ model clip
                 }
-            }
         }
+        if (clip == null)
+        {
+            var anim = go != null ? go.GetComponentInChildren<Animator>() : null;
+            if (anim != null && anim.avatar != null && anim.avatar.isHuman) clip = DonorIdle();
+        }
+        return clip;
+    }
+
+    // #idle-persist ROOT-CAUSE FIX (bone- + BakeMesh-verified on the box): a one-shot Evaluate CANNOT hold a
+    // SKINNED pose — a runtime actor's Animator has an avatar but no controller, so on the next frame either it
+    // reverts to the bind (T/A) pose (if left enabled) or its GPU skinning freezes at bind (if disabled). The
+    // walk glide renders correctly because it drives a LIVE graph every frame; idle must do the same. This
+    // starts (or restarts) a persistent idle graph the Update loop evaluates each frame — the clip loops, so
+    // the actor breathes. GlideTo/LungeCo KillIdleGraph before driving walk/attack, then PoseIdle restarts it.
+    void PlayIdleGraph(GameObject go, string id, AnimationClip clip)
+    {
+        if (go == null || clip == null || string.IsNullOrEmpty(id)) return;
+        var anim = go.GetComponentInChildren<Animator>();
+        if (anim == null || anim.avatar == null) { SampleClipRuntime(go, clip, 0f); return; }   // legacy rig
+        KillIdleGraph(id);
+        anim.enabled = true; anim.Rebind();   // clear stale binding so the fresh graph output applies
+        var g = UnityEngine.Playables.PlayableGraph.Create("Idle_" + go.name);
+        var cp = UnityEngine.Animations.AnimationClipPlayable.Create(g, clip);
+        var op = UnityEngine.Animations.AnimationPlayableOutput.Create(g, "Out", anim);
+        UnityEngine.Playables.PlayableOutputExtensions.SetSourcePlayable(op, cp);
+        UnityEngine.Playables.PlayableExtensions.SetTime(cp, clip.length * 0.5f);   // start settled, not at bind-like frame 0
+        g.Evaluate(0f);
+        _idleGraphOf[id] = g;
+    }
+    void KillIdleGraph(string id)
+    {
+        if (_idleGraphOf.TryGetValue(id, out var g)) { if (g.IsValid()) g.Destroy(); _idleGraphOf.Remove(id); }
     }
 
     // The actor's OWN embedded clip whose name contains any of `names` (walk/run, attack, ...), from the
@@ -1402,6 +1508,11 @@ public class CombatSurfaceClient : MonoBehaviour
 
     void Update()
     {
+        // #idle-persist: drive every resting actor's persistent idle graph so its skinned pose renders (and
+        // breathes) each frame — the walk/attack coroutines Evaluate their own graphs, so a gliding/attacking
+        // actor has no idle graph here (KillIdleGraph removed it) until PoseIdle restarts it at rest.
+        if (_idleGraphOf.Count > 0)
+            foreach (var kv in _idleGraphOf) if (kv.Value.IsValid()) kv.Value.Evaluate(Time.deltaTime);
         // #Phase4: advance the advisory fade clock regardless of poll/POST state.
         if (!string.IsNullOrEmpty(_advMsg)) _advT += Time.deltaTime;
         // #1463: advance the onboarding-hint fade clock after the first action; drive the stage flicker.
@@ -2001,6 +2112,12 @@ public class CombatSurfaceClient : MonoBehaviour
     // pose (humanoid clips retarget through the avatar). Caller Evaluates per frame and Destroys at the end.
     UnityEngine.Playables.PlayableGraph MakeClipGraph(Animator anim, AnimationClip clip, string tag)
     {
+        // #idle-persist: a continuous graph (walk/attack) drives the Animator via Evaluate(dt) every frame,
+        // so the Animator must be ENABLED for the whole run. At-rest actors are frozen (Animator disabled +
+        // stale binding, see SampleClipRuntime) to hold their idle; enable + Rebind here so this fresh graph's
+        // output actually applies (an un-rebound Animator silently no-ops the output). The caller Evaluates the
+        // first frame before any yield, so the Rebind's transient bind pose never renders.
+        if (anim != null) { anim.enabled = true; anim.Rebind(); }
         var g = UnityEngine.Playables.PlayableGraph.Create(tag);
         var cp = UnityEngine.Animations.AnimationClipPlayable.Create(g, clip);
         var op = UnityEngine.Animations.AnimationPlayableOutput.Create(g, "Out", anim);
@@ -2018,9 +2135,16 @@ public class CombatSurfaceClient : MonoBehaviour
         var anim = go.GetComponentInChildren<Animator>();
         if (anim != null && anim.avatar != null)
         {
+            // One-shot pose (legacy/edge path; the persistent idle uses PlayIdleGraph). Enable + Rebind so the
+            // fresh graph output applies; sample a settled frame (frame 0 of many idle clips sits at ~bind).
+            // NOTE: do NOT disable the Animator afterward — a disabled Animator freezes the SKINNED render at
+            // bind even though the bone transforms move (verified via BakeMesh on the box).
+            anim.enabled = true;
+            anim.Rebind();
+            float sampleT = time > 0.001f ? time : clip.length * 0.5f;
             var g = UnityEngine.Playables.PlayableGraph.Create("Pose_" + go.name);
             var cp = UnityEngine.Animations.AnimationClipPlayable.Create(g, clip);
-            UnityEngine.Playables.PlayableExtensions.SetTime(cp, time);
+            UnityEngine.Playables.PlayableExtensions.SetTime(cp, sampleT);
             var op = UnityEngine.Animations.AnimationPlayableOutput.Create(g, "Out", anim);
             UnityEngine.Playables.PlayableOutputExtensions.SetSourcePlayable(op, cp);
             g.Evaluate(0f); g.Destroy();
@@ -2093,6 +2217,7 @@ public class CombatSurfaceClient : MonoBehaviour
         a.rotation = Quaternion.Euler(pitchX, Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg, 0f);
         AnimationClip atk = FindOwnClip(id, "attack", "swing");
         var anim = go.GetComponentInChildren<Animator>();
+        KillIdleGraph(id);   // #idle-persist: stop the idle graph while the attack clip drives the Animator
         UnityEngine.Playables.PlayableGraph g = default; bool hg = false;
         if (atk != null && anim != null && anim.avatar != null) { g = MakeClipGraph(anim, atk, "Atk_" + a.name); hg = true; }
         float dur = 0.42f, t = 0f;
@@ -2130,6 +2255,7 @@ public class CombatSurfaceClient : MonoBehaviour
         // an in-flight glide would fight the fall for the transform — kill it (and its graph) first.
         if (_glide.TryGetValue(id, out var gco) && gco != null) StopCoroutine(gco);
         _glide.Remove(id); KillWalkGraph(id);
+        KillIdleGraph(id);   // #idle-persist: a downed combatant is prone, not idle — stop the idle graph so it can't stand it back up
         var go = a.gameObject;
         Vector3 home = a.position; Quaternion startRot = a.rotation;
         _downPose[id] = new DownPose { scale = a.localScale, rot = startRot };
@@ -2597,6 +2723,9 @@ public class CombatSurfaceClient : MonoBehaviour
         var ls = bd.transform.localScale;
         bd.transform.localScale = new Vector3(ow, oh, ls.z == 0f ? 1f : ls.z);
         Debug.Log("[CSC] plate swapped -> " + entry.plate + " (" + tex.width + "x" + tex.height + ", loc=" + _locId + ")");
+        // #idle-fix: the location just changed — settle the whole cast to a grounded idle on the new plate so
+        // no actor renders a bind (T) pose or floats after the cross-room reposition (the taste-pass defect).
+        SettleCastIdleGrounded();
         return true;
     }
 }
