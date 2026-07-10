@@ -118,11 +118,13 @@
       "model_ref": "Assets/painterly/models/hero.fbx",
       "albedo_ref": "Assets/painterly/models/hero_albedo.png",
       "anim_ref": "Assets/painterly/models/hero@moveset.fbx",
-      "gen_recipe": "DEFAULT TEMPLATE: any character without a model resolves here.",
+      "gen_recipe": "DEFAULT TEMPLATE: any character without a model resolves here. #anim-pack (#1408): hero.fbx has a GENERIC (non-humanoid) rig — anim_pack_avatar_gate.cs re-imported it as Humanoid/CreateFromThisModel but auto-mapping could not produce a valid humanoid avatar (isHuman=false, isValid=true), so it CANNOT retarget the shared RPG-pack controller. It stays on the per-frame idle/donor graph fallback (its own embedded idle clip) and is flagged needs_remodel pending a proper humanoid rig.",
       "version": "1.0.0",
       "critic_score": 7.4,
       "default_used": false,
-      "is_template": true
+      "is_template": true,
+      "humanoid": false,
+      "needs_remodel": true
     },
     "template_demon": {
       "kind": "monster",
@@ -213,20 +215,22 @@
       "model_ref": "Assets/chars_v2/giant_spider/rigged.fbx",
       "albedo_ref": "Assets/chars_v2/giant_spider/albedo.jpg",
       "anim_ref": "Assets/chars_v2/giant_spider/anim_walk.fbx",
-      "gen_recipe": "tripo:text-to-model -> rig-check(octopod) -> rig(spec=tripo) -> retarget walk only (idle preset unsupported for octopod, non-fatal skip); rigged.fbx imported animationType=Generic (Tripo bone names do not auto-map to Unity Humanoid avatar); albedo from model.glb embedded PBR (wave-2 monster cast #1305). CAVEAT: bind-pose-vs-walk-pose curH mismatch inflated render scale (see qa/evidence/1305 render + PR notes) - follow-up recommended, not blocking.",
+      "gen_recipe": "tripo:text-to-model -> rig-check(octopod) -> rig(spec=tripo) -> retarget walk only (idle preset unsupported for octopod, non-fatal skip); rigged.fbx imported animationType=Generic (Tripo bone names do not auto-map to Unity Humanoid avatar); albedo from model.glb embedded PBR (wave-2 monster cast #1305). CAVEAT: bind-pose-vs-walk-pose curH mismatch inflated render scale (see qa/evidence/1305 render + PR notes) - follow-up recommended, not blocking. #anim-pack: NON-BIPED by design (octopod) -> keeps the per-frame graph fallback, never the humanoid RPG-pack controller.",
       "version": "1.0.0",
       "critic_score": 0.0,
-      "default_used": false
+      "default_used": false,
+      "humanoid": false
     },
     "dire_rat": {
       "kind": "monster",
       "model_ref": "Assets/chars_v2/dire_rat/rigged.fbx",
       "albedo_ref": "Assets/chars_v2/dire_rat/albedo.jpg",
       "anim_ref": "Assets/chars_v2/dire_rat/anim_walk.fbx",
-      "gen_recipe": "tripo:text-to-model -> rig-check(quadruped) -> rig(spec=tripo) -> retarget walk only (idle preset unsupported for quadruped, non-fatal skip); rigged.fbx imported animationType=Generic (Tripo bone names do not auto-map to Unity Humanoid avatar); albedo from model.glb embedded PBR (wave-2 monster cast #1305)",
+      "gen_recipe": "tripo:text-to-model -> rig-check(quadruped) -> rig(spec=tripo) -> retarget walk only (idle preset unsupported for quadruped, non-fatal skip); rigged.fbx imported animationType=Generic (Tripo bone names do not auto-map to Unity Humanoid avatar); albedo from model.glb embedded PBR (wave-2 monster cast #1305). #anim-pack: NON-BIPED by design (quadruped) -> keeps the per-frame graph fallback, never the humanoid RPG-pack controller.",
       "version": "1.0.0",
       "critic_score": 0.0,
-      "default_used": false
+      "default_used": false,
+      "humanoid": false
     }
   }
 }
