@@ -3,25 +3,46 @@
   "model_name": "WorldOS Painterly Exterior (FLUX)",
   "model_type": "flux.1-lora",
   "scenario_project_id": "proj_sd4w3ozsJaBHYnHS4mP1S2Pw",
-  "status": "images_attached_not_trained",
-  "blocker": {
+  "status": "training",
+  "training_job_id": "job_U3HDsSj7T4aPETy7MRCuX6oK",
+  "training_started_at": "2026-07-10T10:21:49.874Z",
+  "training_config": {
+    "rank": 64,
+    "learningRate": 0.0001,
+    "learningRateTextEncoder": 0.00001,
+    "nbEpochs": 10,
+    "nbRepeats": 20,
+    "batchSize": 1,
+    "note": "mirrors ARM C's (model_G379oza2qhm6MkqDrtTvvmmw) proven config for apples-to-apples smoke-test comparability"
+  },
+  "blocker_resolved": {
     "type": "PlanLimitReachedError",
     "http_status": 429,
     "actionName": "train-model",
     "actionLimit": 10000,
-    "actionValue": 9754,
+    "actionValue_at_block": 9754,
     "limitScope": "team",
-    "note": "Scenario team plan train-model CU allowance 97.5% consumed (246 CU headroom); dry-run cost for this 18-image set is 1080 CU. Needs owner to add CU / confirm quota reset before train(action=start) can succeed."
+    "resolution": "Owner added 5,000 CU to the Scenario account on 2026-07-10 after confirming (7 private models on the account, none an exterior FLUX LoRA) this training is not redundant. train(action=start) succeeded after this."
+  },
+  "quality_pass_before_training": {
+    "performed": "2026-07-10, immediately before train(action=start)",
+    "char_free_zoom_recheck": "all 18 confirmed char-free at full resolution (not thumbnail); one ambiguous figure (gilded_vale_wilderness) crop-zoomed 3x and confirmed a statue on a pedestal, not a living figure",
+    "resolution_compression_watermark_check": "all clean, no watermarks, no compression artifacts; two resolution tiers (2048 vs 2560-2758px long edge -- 5 reused v4 assets vs 13 this-session uploads) noted as minor, non-blocking",
+    "caption_vs_content_mismatches_found": "t_046 (labeled temple_abbey) and t_048 (labeled ruins_firstfires) actually depict grander architecture (an ice fortress; a full cathedral plaza) than their PoE-wiki filenames implied; ext_017 (bog) was Scenario auto-caption-misfired as a 'war-torn landscape...tanks' scene -- visually confirmed a legitimate marsh/ruins scene, no vehicles, no characters",
+    "rebalance_action": "swapped OUT t_048/ruins_firstfires (asset_dWCdqiENwCyq9EdzDDQCfUTK, a full cathedral-plaza -- the single most architecture-dominant frame, and least representative of the forest_road/camp smoke-test target rooms) for refc_068/western_exterior_mountain (asset_XhU3yw8GWrJx5gWLFxsrPimf, natural snowy terrain, zero architecture, already uploaded from the earlier cost-trim pass at no extra cost)",
+    "dedupe_check": "no near-identical frames in the final 18 (the one true duplicate scene in the wider corpus, refc_066 vs t_044, was already resolved pre-quality-pass by using only t_044)",
+    "cost_after_swap": "dry-run reconfirmed 1080 CU (unchanged -- image count is the cost driver, not composition)"
   },
   "dry_run_cost_cu": 1080,
   "dry_run_cost_estimate_usd": 20.67,
   "lane_cap_usd": 25,
-  "training_images": [
+  "account_model_count_limit_note": "Could not be read via API (403, role scope) -- if a future model create/train call ever fails on a count-limit error: STOP and report, do not delete existing models to work around it.",
+  "training_images_final_18": [
     {"asset_id": "asset_58ehPSyWAB4dVpWmp4oNg9LS", "file": "ext_001_fortress_raedric_hold.jpg", "reused_from": "worldos-poe2-clean-env-v4 (t_044.jpg)"},
     {"asset_id": "asset_fdVzG3S1Y4jyR8ErCLqLCyvq", "file": "ext_002_ruins_oldsong.jpg", "reused_from": "worldos-poe2-clean-env-v4 (t_045.jpg)"},
     {"asset_id": "asset_pkgacsDZsqxXeMRrp8bNZVRK", "file": "ext_003_temple_abbey.jpg", "reused_from": "worldos-poe2-clean-env-v4 (t_046.jpg)"},
     {"asset_id": "asset_uzqFWgHgyghpnmM3QFDyfvKi", "file": "ext_004_settlement_brackenbury.jpg", "reused_from": "worldos-poe2-clean-env-v4 (t_047.jpg)"},
-    {"asset_id": "asset_dWCdqiENwCyq9EdzDDQCfUTK", "file": "ext_005_ruins_firstfires.jpg", "reused_from": "worldos-poe2-clean-env-v4 (t_048.jpg)"},
+    {"asset_id": "asset_XhU3yw8GWrJx5gWLFxsrPimf", "file": "ext_005_western_exterior_mountain.jpg", "new_upload": true, "note": "swapped in during quality pass, replacing ruins_firstfires"},
     {"asset_id": "asset_KwmxyNGS274jtUWMZ3BbpfHC", "file": "ext_006_jungle_path.jpg", "new_upload": true},
     {"asset_id": "asset_hWtoxJFBN1i6UeJfe3CR7Gz8", "file": "ext_007_jungle_courtyard_shrine.jpg", "new_upload": true},
     {"asset_id": "asset_nYiu6Gu6GXWdRKSh9TKfMhYs", "file": "ext_008_twinelms_hearthsong_village.jpg", "new_upload": true},
@@ -36,11 +57,11 @@
     {"asset_id": "asset_GbPoqFErs6rfifNa6QFTr18T", "file": "ext_017_bog.jpg", "new_upload": true},
     {"asset_id": "asset_kpVSMEiqkxhgtmvuMpXD8v6t", "file": "ext_018_camp_clearing_night_v2_ADOPTED.jpg", "reused_from": "ARM C training set + qa/evidence/plate-audit/camp_clearing_night_v2.jpg"}
   ],
-  "deleted_from_initial_22": [
-    {"asset_id": "asset_XhU3yw8GWrJx5gWLFxsrPimf", "file": "western_exterior_mountain", "reason": "cost trim, non-mandate category, duplicate-of-eastern"},
-    {"asset_id": "asset_3qcdgkVmFKrpzmj7StJRTT77", "file": "eastern_exterior_mountain", "reason": "cost trim, non-mandate category, duplicate-of-western"},
-    {"asset_id": "asset_rqeAXPXtPJrH6sMAQCZ3Pg4S", "file": "jungle_waterfall", "reason": "cost trim, 3rd redundant jungle-biome frame"},
-    {"asset_id": "asset_zGGeb6YKonabKqquXGTRi128", "file": "durgans_battery_ext", "reason": "cost trim, 3rd redundant fortress-ext frame"}
+  "deleted_final": [
+    {"asset_id": "asset_dWCdqiENwCyq9EdzDDQCfUTK", "file": "ruins_firstfires (t_048)", "reason": "quality-pass rebalance -- most architecture-dominant frame (full cathedral plaza), swapped for western_exterior_mountain"},
+    {"asset_id": "asset_3qcdgkVmFKrpzmj7StJRTT77", "file": "eastern_exterior_mountain", "reason": "cost trim + duplicate-of-western, stayed excluded"},
+    {"asset_id": "asset_rqeAXPXtPJrH6sMAQCZ3Pg4S", "file": "jungle_waterfall", "reason": "cost trim; quality pass separately confirmed this has characters ('three adventurers') -- correctly excluded"},
+    {"asset_id": "asset_zGGeb6YKonabKqquXGTRi128", "file": "durgans_battery_ext", "reason": "cost trim, 3rd redundant fortress-ext frame, stayed excluded"}
   ],
-  "resume_instructions": "Once Scenario CU headroom is available (>=1080 CU on the team train-model quota), call mcp__scenario__train(action='start', model_id='model_RsWEcQL2NWXwoyEodWVE2vWG') — no dry_run flag — to kick off training. Poll via jobs_wait / job_get. ETA ~1-2h based on ARM C's comparable 111min/627CU run. Then proceed to mandate step 3 (smoke test)."
+  "next_steps": "Poll job_U3HDsSj7T4aPETy7MRCuX6oK via jobs_wait/job_get to completion (ETA ~1-2h based on ARM C's comparable 111min/627CU run). Then run the smoke test: forest_road + camp greybox anchors (flux.1-dev + depth-CN + this LoRA, str~0.6-0.7) -> Gemini re-registration -> overlay + advisory edge-recall -> 5-scorer blind panel vs the 6.0 baseline. Success = outdoor median >6.5, target 7.0+."
 }

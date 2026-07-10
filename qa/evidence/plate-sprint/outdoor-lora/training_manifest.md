@@ -47,7 +47,7 @@ coverage held up without them.
 | 2 | ext_002_ruins_oldsong.jpg | Fandom PoE1 wiki, `Ar_1201_oldsong_ext.jpg` (reused, `t_045.jpg`) | ruins, exterior | Fandom wiki | `asset_fdVzG3S1Y4jyR8ErCLqLCyvq` (reused) |
 | 3 | ext_003_temple_abbey.jpg | Fandom PoE1 wiki, `Px2_0301_abbey_ext.jpg` (reused, `t_046.jpg`) | temple_sacred, exterior | Fandom wiki | `asset_pkgacsDZsqxXeMRrp8bNZVRK` (reused) |
 | 4 | ext_004_settlement_brackenbury.jpg | Fandom PoE1 wiki, `Ar_0401_brackenbury_exterior.jpg` (reused, `t_047.jpg`) | settlement, exterior (town street) | Fandom wiki | `asset_uzqFWgHgyghpnmM3QFDyfvKi` (reused) |
-| 5 | ext_005_ruins_firstfires.jpg | Fandom PoE1 wiki, `Ar_0201_first_fires_exterior.jpg` (reused, `t_048.jpg`) | ruins, exterior | Fandom wiki | `asset_dWCdqiENwCyq9EdzDDQCfUTK` (reused) |
+| 5 | ext_005_western_exterior_mountain.jpg | Fandom wiki, `Px1_0301_western_exterior.jpg` (`refc_068.jpg`) | mountain, exterior | Fandom wiki, PoE1 | `asset_XhU3yw8GWrJx5gWLFxsrPimf` (already-uploaded, re-attached at no extra cost) |
 | 6 | ext_006_jungle_path.jpg | RPGFan, `Pillars-of-Eternity-II-Deadfire-Artwork-007.jpg` (`refc_002.jpg`) | exterior (forest-road analog) | RPGFan press/promo screenshot, editorial use | `asset_KwmxyNGS274jtUWMZ3BbpfHC` |
 | 7 | ext_007_jungle_courtyard_shrine.jpg | RPGFan, `...Screenshot-066.jpg` (`refc_003.jpg`) | exterior (ruins-outdoor analog) | RPGFan press screenshot | `asset_hWtoxJFBN1i6UeJfe3CR7Gz8` |
 | 8 | ext_008_twinelms_hearthsong_village.jpg | Fandom wiki, `Twin-elms-hearthsong.jpg` (`refc_004.webp`) | exterior (town street) | Fandom wiki, PoE1 | `asset_nYiu6Gu6GXWdRKSh9TKfMhYs` |
@@ -72,33 +72,103 @@ re-litigate that precedent.
 
 ## Excluded (deliberately, this pass)
 - `refc_015.jpg` — battlefield exterior, characters visible (char-free bar).
-- `refc_068.jpg` / `refc_069.jpg` — western/eastern "exterior mountain",
-  dropped to trim Scenario CU cost (see COST NOTE); not a named mandate
-  category, and duplicative of each other.
-- `refc_013.jpg` (jungle waterfall) / `refc_067.jpg` (Durgan's Battery ext) —
-  3rd redundant frame in their respective sub-categories (jungle, fortress
-  ext); dropped for the same cost reason.
+- `refc_069.jpg` — eastern "exterior mountain", duplicative of the western
+  frame (#5) once that was swapped back in; not a named mandate category.
+- `refc_013.jpg` (jungle waterfall) — **has characters** ("three adventurers
+  stand on a sandy beach"), caught on the quality-pass caption re-check;
+  correctly excluded already for cost, now double-confirmed exclude for
+  char-free.
+- `refc_067.jpg` (Durgan's Battery ext) — 3rd redundant fortress-exterior
+  frame; dropped to keep architecture-heavy content from dominating (see
+  Quality pass below).
+- `t_048.jpg` / `refc_070.jpg` ("ruins_firstfires") — **swapped OUT** in the
+  quality pass (see below): visually a grand cathedral/basilica plaza
+  (domes, colonnades, twin statues), not simple ruins — the single most
+  architecture-dominant frame in the set. Swapped for `refc_068.jpg`
+  (western exterior mountain, already-uploaded, no extra cost) to shore up
+  genuine natural-terrain representation for the forest_road/camp target
+  rooms.
 
-## COST NOTE — Scenario plan CU limit hit (training blocked, needs owner)
+## Quality pass (owner-directed, before training — 2026-07-10)
 
-Dry-run cost estimate for this 18-image `flux.1-lora` config: **1080 CU**
-(confirmed linear at 60 CU/image against the 22-image dry run of 1320 CU).
-Extrapolating from ARM C's actual spend (627 CU logged as "~<=$12"), 1080 CU
-is comfortably under the lane's **$25 cap** (~$20.7 est.) with headroom left
-for the smoke-test anchor mints.
+Per owner discipline ("models are expensive — make prep top-notch before
+spending"), every one of the 18 images was re-verified at full resolution
+(not thumbnail) before `train(action=start)`, plus two were crop-zoomed for a
+disputed detail:
 
-**However, `train(action=start)` returned HTTP 429**:
-`PlanLimitReachedError` — `actionName: "train-model"`, `actionLimit: 10000`,
-`actionValue: 9754`, `limitScope: "team"`. The Scenario team plan's
-train-model CU allowance is **97.5% consumed** (246 CU of headroom left,
-against 1080 CU needed) — this is a hard account-level quota, not a
-dollar-cost gate, and it is **not something I can resolve by trimming the
-dataset further** (246 CU is not enough for any viable `flux.1-lora` run at
-the mandate's 18-30 image floor).
+1. **Char-free re-check (zoom, not thumbnail):** all 18 confirmed free of
+   living human/creature figures.
+   - `ext_005` (then "gilded_vale_wilderness", now the mountain swap target)
+     had one ambiguous humanoid silhouette — crop-zoomed 3x
+     (`/tmp/gilded_vale_zoom.png`): confirmed a stone/bronze **statue on a
+     pedestal** (matches the same wayside-monument convention as the
+     confirmed statues in `ext_004` and the swapped-out `t_048`), not a
+     living figure. Kept.
+   - `ext_010` ("night_camp") — caption mentions "cave walls"; visual check
+     confirms it's a rock-alcove/grotto clearing, technically exterior (sky
+     and tree canopy visible top-left) but more enclosed than an open forest
+     camp. Kept — it's the corpus's only real "camp" reference — but flagged:
+     lean on `ext_018` (our adopted `camp_clearing_night_v2`, open-sky) as the
+     cleaner camp exemplar in this set.
+   - `ext_015` (madhmr_bridge) has 2-3 small reddish shapes in the grass —
+     confirmed wildlife (resting deer/animal), not humanoid figures. Common
+     PoE scene-dressing convention, not disqualifying.
+   - `refc_013.jpg` (jungle waterfall, already excluded for cost) was
+     independently caught here too: its caption reads "three adventurers
+     stand on a sandy beach" — genuinely has characters. Good thing it was
+     already out; this closes the loop on why.
+2. **Resolution / compression / watermark check:** all 18 are clean JPEGs,
+   long-edge ~2048-2560px (5 reused v4 assets sit at 2560x2015-2560x2758 from
+   prior curation, the 13 new uploads were resized to 2048 long-edge this
+   session) — no corruption, no watermarks, no visible compression artifacts
+   at 1:1. The two resolution tiers are a minor inconsistency but not a
+   blocker (Scenario's training pipeline buckets/resizes inputs internally).
+3. **Auto-caption vs. actual-content mismatches found** (Scenario's
+   auto-captioner, not a manifest error, but worth recording since it changed
+   my read of category balance): `t_046` ("temple_abbey") is actually
+   captioned/depicts a grand ice-fortress complex, not a simple abbey;
+   `t_048` ("ruins_firstfires") is captioned/depicts a full cathedral plaza,
+   not ruins; `ext_017` ("bog") was mis-captioned by Scenario as a "war-torn
+   landscape... abandoned military vehicles, rusted tank remnants" — visual
+   check confirms this is a captioning misfire, the actual image is a
+   legitimate marsh/ruins scene with wooden boardwalks and a skull-motif
+   stone entrance, no military hardware, no characters.
+4. **Category-balance rebalance (the actual finding that changed the set):**
+   the corpus's own PoE-wiki "biome" tags undersold how architecture-heavy
+   several frames actually are once viewed (see point 3) — grand
+   fortress/castle/cathedral content was a de-facto plurality (~7-8/18)
+   against genuinely natural/rustic content directly analogous to the two
+   smoke-test target rooms, forest_road and camp (~5-6/18: jungle_path,
+   gilded_vale hillside-path, black_meadow tents+campfire+skeleton,
+   woodend_plains clearing, madhmr_bridge, camp_clearing_night_v2). This is
+   the same failure shape as ARM C (architecture bias invading natural
+   scenes), just latent rather than 10/10 dominant. **Action taken:** dropped
+   the single most architecture-dominant frame (`t_048`/"ruins_firstfires" —
+   full cathedral plaza) and swapped in `refc_068.jpg` (western exterior
+   mountain: snowy rocks, sparse trees, frozen ponds, zero architecture,
+   already uploaded from the cost-trim pass, asset_XhU3yw8GWrJx5gWLFxsrPimf)
+   — same 18-image count, same 1080 CU cost (re-confirmed by dry-run after
+   the swap), better-aimed at the target rooms.
+5. **Dedupe check:** no near-identical frames found among the final 18 (the
+   one true duplicate scene in the wider corpus, `refc_066`/`Raedric's Hold
+   ext` vs `t_044`, was already resolved by using only `t_044`).
 
-Model `model_RsWEcQL2NWXwoyEodWVE2vWG` ("WorldOS Painterly Exterior (FLUX)")
-is created with all 18 training images attached and ready — training has NOT
-been started. This needs the owner to either (a) purchase additional Scenario
-CU / raise the team's `train-model` plan limit, or (b) confirm this is a
-recurring-period quota that will reset, before this lane can proceed to the
-train → smoke-test phase.
+## Cost + quota — RESOLVED, training started
+
+Owner added 5,000 CU to the Scenario account (2026-07-10) after model-count
+inventory was checked (7 private models on the account, none an exterior
+FLUX LoRA — this training is not redundant). Post-swap dry-run reconfirmed
+**1080 CU** (~$20.7 est., unchanged from pre-swap — image count is the cost
+driver here, not composition), still comfortably under the lane's $25 cap.
+
+`train(action=start)` succeeded: **job `job_U3HDsSj7T4aPETy7MRCuX6oK`**,
+`flux-model-training`, `cuCost: 1080`, status `queued` → `running-train` as
+of 2026-07-10T10:21 UTC. Config: `rank=64, learningRate=0.0001,
+learningRateTextEncoder=0.00001, nbEpochs=10, nbRepeats=20` (mirrors ARM C's
+proven config). ETA comparable to ARM C's 111 min run.
+
+**Note for future training on this account:** the Scenario account's
+model-count limit could not be read via the API (`GET` on the relevant
+endpoint returns 403, role scope). If a future model create/train call ever
+fails on a count-limit error, **stop and report — do not delete existing
+models** to work around it.
