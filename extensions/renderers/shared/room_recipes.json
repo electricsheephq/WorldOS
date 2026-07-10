@@ -304,6 +304,30 @@
           "room_space_desc": "a bustling sunlit town square on a clear day"
         }
       }
+    },
+    "forest_road": {
+      "_doc": "PLATE SPRINT Phase 2 — the ARM-B generalization test on an UNSEEN structure class (issue #1481 lane FOREST-ROAD). An OUTDOOR LINEAR dirt road threading through dense forest at DUSK — a new STRUCTURE class (a long walkable corridor flanked by impassable forest, vs the crypt's enclosed room / camp's open clearing), while DUSK keeps the lighting adjacent to the proven firelit/night regimes so the read isolates STRUCTURE, not lighting. status=candidate (NOT adopted): converge + report only. Authored scene_grid: qa/seed_gfx_forest_road.py (16x12, open-air, no perimeter walls — a dense tree line + roadside boulders/fallen logs bound a central walkable dirt road; every painted tree/boulder/log is an impassable pathing obstacle, one source, so a plate never paints an obstacle the engine lets you walk over). WINNING RECIPE (ARM-B iter3, converged on crypt): flux-1-dev + ControlNet depth base from the greybox (control_strength 0.7, no z-image LoRA on flux) -> Gemini instruction-edit style pass (model_google-gemini-3-1-flash, referenceImages=[house style anchor], the calibrated structure-lock prompt). Base prompt uses firelit_outdoor_positive_template (dusk warm-amber key adjacent to the proven night regime) via generate_room.py --lighting firelit_outdoor. The layered.* slots below keep the room ALSO regeneratable via the standard z-image layered pipeline; the ARM-B lane does NOT consume them.",
+      "status": "candidate",
+      "key_light": "the low amber dusk sun raking through the trees",
+      "shadow_casters": "the roadside trees, the boulders, and the fallen logs",
+      "room_detail_tokens": "a rutted dirt road winding away into the forest, wheel ruts and packed-earth hoofprints, scattered fallen leaves and pine needles over the road, exposed tree roots crossing the verge, moss on the trunks, low ferns and undergrowth crowding the road edge, a few embers of dusk light filtering through the dense canopy",
+      "base_plate": "forest_road_greybox.png",
+      "canonical_plate": null,
+      "layered": {
+        "pass2_slots": {
+          "room_setting_noun": "forest road",
+          "room_focal_features": "the individual tree trunks' deeply grooved bark rings and gnarled exposed roots, the roadside boulders' ROUNDED, irregular, moss-covered weathered-granite surfaces (never flat-faced or squared-off — natural rock, not carved standing stones), the fallen logs' split-grain broken ends and peeling bark, and the dirt road's rutted, packed-earth surface with visible wheel tracks and scattered leaf litter",
+          "room_repeat_elements": "tree trunk and roadside boulder",
+          "room_clutter_vocab": "fallen leaves, pine needles, a broken cartwheel, exposed roots, low ferns, drifting dusk haze between the trunks"
+        },
+        "pass3_slots": {
+          "room_setting_noun": "forest road",
+          "room_preserve_list": "the dirt road, the roadside trees, the boulders, the fallen logs, the exposed roots",
+          "room_key_source": "the low amber dusk sun",
+          "room_fill_source": "the cool sky-glow filtering through the canopy",
+          "room_space_desc": "a quiet dusk-lit road through deep forest"
+        }
+      }
     }
   }
 }
