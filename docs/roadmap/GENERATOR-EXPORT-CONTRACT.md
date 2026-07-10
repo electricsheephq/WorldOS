@@ -221,3 +221,33 @@ empty of verdicts here (repo-side has no box access to produce a real generation
 | **Door/connection handling** | DunGen has native `Doorway`/`Connection` objects — exported directly, world position + forward. | No native doorway object; `doorways` is always empty. Any door-like geometry only surfaces if it round-trips as a generic prop via `kind_hint`. | This is Tessera's clearest structural gap vs DunGen for this pipeline — confirm on the box whether Tessera tile prefabs in the comparison set tag doors as child objects at all |
 | **Constraint expressiveness** — how much authorial control over the result (paths, symmetry, tile budgets, region tagging)? | DunGen: `DungeonFlow` graph (tile sets, branching, length) + `IsOnMainPath`. | Tessera Pro: `PathConstraint`, `BorderConstraint`, `MirrorConstraint`, `CountConstraint` (Pro-only) — richer constraint vocabulary per the docs, but `is_main_path`-equivalent data isn't exposed through the export path built here (see flagged gap above) | Score the GENERATOR's actual expressiveness, not just what this exporter currently surfaces — note where the exporter itself is the limiting factor vs. Tessera itself |
 | **Generation speed** — wall-clock for a comparable-size layout, editor vs headless | _(fill in on the box)_ | _(fill in on the box)_ | Use the SAME seed/tile-budget/room-count target for both arms if possible |
+
+## Box comparison RESULTS — DunGen vs Tessera (2026-07-11, GEX44, both arms real)
+
+Both arms generated, exported, converted, greybox-rendered, plated, and paneled on the box. DunGen: Basic
+Sample flow, 26 tiles/25 doorways/407 props. Tessera: Castle sample (native 9×5×9, `size.y=1` was
+unsolvable — castle tiles have vertical-adjacency constraints), seed 12345 → 396 tiles. Tessera API
+verified against the installed Tessera 6 package (matches `TesseraLayoutExporter.cs`'s VERIFIED assumptions
+exactly: `TesseraGenerator.{cellSize,bounds,Generate}` → `TesseraCompletion.{success,tileInstances}`;
+`TesseraTileInstance.{Position,Cell,Cells,Tile,CellRotation}`).
+
+| Dimension | DunGen | Tessera Pro | Winner |
+|---|---|---|---|
+| **Export fidelity** | 26 tiles + 25 doorways + **407 props** exported; rooms=bounds+tags, props from child `MeshFilter`s. | 396 tiles + `cell_positions` + bounds exported cleanly; **props = 0** — the nearest-child-by-`Position` prop-association heuristic (FLAGGED-1) matched nothing on the castle tileset (tile geometry isn't a direct positioned child within 0.25·cellSize). Tiles/bounds/`cell_positions` faithful; props need a box-verified association fix. | **DunGen** (props) |
+| **Door/connection handling** | Native `Doorway`/`Connection` → **25 doorways** (position+forward) → `door` cells + exits in the fixture. | **0 doorways** — Tessera has no native connection object (WFC face-matching). Rooms become disconnected floor islands unless a `PathConstraint` + tagged door-prop is used. | **DunGen** (decisive) |
+| **Constraint expressiveness** | `DungeonFlow` graph (tile sets, branching, length) + `IsOnMainPath` (level flow exported). | Richer raw constraint vocab (`Path`/`Border`/`Mirror`/`Count`Constraint, Pro-only), but `is_main_path`-equivalent isn't exposed through the export path → always `false`. Great for tile-field coherence, weaker for exported "level flow". | DunGen for level flow; Tessera for tile coherence |
+| **Generation speed** | 26 tiles, synchronous in edit mode, one `execute_code` call (sub-second effective). | 396 tiles, synchronous in edit mode, one `execute_code` call (sub-second effective; opened+restored a sample scene). | Tie (both fast/headless) |
+| **Converts via the ONE converter** | ✅ `tools/dungen_to_fixtures.py` → 84×94 fixture, validates against `SceneGrid` model. | ✅ **same converter, no schema fork** (`cell_positions` path) → 10×10 fixture, validates against `SceneGrid` model. | **Tie — the architecture win** |
+| **Registration (masonry gate 0.95)** | 0.9894 @ cs0.95 (PASS). | 0.9226 @ cs0.95 (just below; the scattered castle-wall pattern is harder to lock). | DunGen |
+| **Bare-structure plate panel** | median 2.0/10. | median 2.0/10 (3-scorer). | Tie — **plate quality is generator-independent** (recipe-side) |
+
+### DunGen-vs-Tessera verdict for #1508 stage 1
+**ADOPT DunGen as the primary dungeon/room STRUCTURE generator.** For a room-graph pipeline whose fixture
+needs walkable floor + **door cells** + occluder props, DunGen's native doorways/connections + room-graph
+flow + clean prop export map directly onto the engine `SceneGrid`; Tessera's lack of a native connection
+object is the decisive gap (rooms export as disconnected islands). **Keep Tessera Pro for tile-dense WFC
+set-dressing / exterior fields** (walls, terrain, buildings) where its constraint vocabulary shines and
+connectivity is not the point. The load-bearing win is architectural: **both generators feed the identical
+`tools/dungen_to_fixtures.py`** with no schema fork — the generator is a swappable authoring front-end,
+the engine stays the sole writer. (Plate painterly quality — 2.0/10 for both bare structures — is a
+recipe-side concern, not a generator differentiator; wire the Gemini style-pass step 2.)

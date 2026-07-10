@@ -1,0 +1,1 @@
+{"location": "tessera_castle:room_0", "cols": 3, "rows": 3, "material": "stone", "cell_default_walkable": true, "walls": [[0, 0], [1, 0], [2, 0], [0, 1], [2, 1], [0, 2], [1, 2], [2, 2]], "props": [], "impassable": [[0, 0], [1, 0], [2, 0], [0, 1], [2, 1], [0, 2], [1, 2], [2, 2]], "door_cells": [], "protected_lane_cells": []}
