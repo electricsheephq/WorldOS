@@ -511,6 +511,28 @@ def _build_base_pass_request(recipe: dict, args, positive: str, negative: str,
     return endpoint, body
 
 
+def _find_manifest_path_lightweight(room: str, canonical_plate: str, manifests_dir: str) -> str | None:
+    """A json/os-only mirror of qa/check_plate_drift.py's `_find_manifest_for_recipe` (match by
+    `recipe_key`, else fall back to a `<plate-stem>.cells.json` filename twin) — deliberately reimplemented
+    here rather than imported so a canonical room with NO committed manifest (e.g. market_square today)
+    can be recognized as a no-op WITHOUT ever importing check_plate_drift (whose module-level numpy/PIL
+    imports would otherwise make even a manifestless room fail in a plain, non-qa-image interpreter)."""
+    if not os.path.isdir(manifests_dir):
+        return None
+    names = sorted(n for n in os.listdir(manifests_dir) if n.endswith(".cells.json"))
+    for name in names:
+        path = os.path.join(manifests_dir, name)
+        try:
+            with open(path, "r") as f:
+                m = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if m.get("recipe_key") == room:
+            return path
+    twin = os.path.join(manifests_dir, "%s.cells.json" % os.path.splitext(canonical_plate)[0])
+    return twin if os.path.isfile(twin) else None
+
+
 def _maybe_run_drift_gate(room: str, recipe: dict, plate_path: str, *, enabled: bool) -> None:
     """Gate a freshly-generated plate against its committed drift manifest (qa/check_plate_drift.py),
     PLATE SPRINT Phase 3 (#1462 follow-up). ON BY DEFAULT for a REGEN of a canonical room — one that
@@ -532,6 +554,15 @@ def _maybe_run_drift_gate(room: str, recipe: dict, plate_path: str, *, enabled: 
     if not canonical_plate:
         return  # not-yet-adopted/ad-hoc room: nothing to gate against, behavior unchanged
     qa_dir = os.path.normpath(os.path.join(_HERE, "..", "..", "..", "..", "qa"))
+    manifests_dir = os.path.join(qa_dir, "room_manifests")
+    # Lightweight manifest lookup FIRST (json only, no numpy/PIL) — mirrors check_plate_drift.
+    # _find_manifest_for_recipe's own match-by-recipe_key-then-plate-stem-twin logic, so a canonical
+    # room with NO committed manifest (e.g. market_square today) is recognized as a no-op WITHOUT ever
+    # importing check_plate_drift and paying its Pillow/numpy cost in a plain interpreter.
+    if _find_manifest_path_lightweight(room, canonical_plate, manifests_dir) is None:
+        print("[generate_room] --drift-gate: room '%s' has a canonical_plate but no committed "
+              "manifest under %s — skipping (nothing to gate against)." % (room, manifests_dir))
+        return
     if qa_dir not in sys.path:
         sys.path.insert(0, qa_dir)
     try:
@@ -539,16 +570,21 @@ def _maybe_run_drift_gate(room: str, recipe: dict, plate_path: str, *, enabled: 
     except Exception as e:
         sys.exit(
             "[generate_room] ERROR: --drift-gate is enabled and room '%s' has an adopted canonical_plate "
-            "(%s), but qa/check_plate_drift.py could not be imported (%s) — its Pillow+numpy deps are "
-            "likely missing from this interpreter (see the ci.yml paint-drift-gate .venv-qa-image lane). "
-            "Run under an interpreter with pillow+numpy installed, or pass --no-drift-gate to explicitly "
-            "skip the gate for this run." % (room, canonical_plate, e)
+            "(%s) with a committed manifest, but qa/check_plate_drift.py could not be imported (%s) — "
+            "its Pillow+numpy deps are likely missing from this interpreter (see the ci.yml "
+            "paint-drift-gate .venv-qa-image lane). Run under an interpreter with pillow+numpy "
+            "installed, or pass --no-drift-gate to explicitly skip the gate for this run."
+            % (room, canonical_plate, e)
         )
     manifest_path = _cpd._find_manifest_for_recipe(room, canonical_plate, _cpd._MANIFESTS_DIR)
     if manifest_path is None:
-        print("[generate_room] --drift-gate: room '%s' has a canonical_plate but no committed "
-              "manifest under %s — skipping (nothing to gate against)." % (room, _cpd._MANIFESTS_DIR))
-        return
+        # Should not happen (the lightweight lookup above just found one) unless the two lookups
+        # somehow disagree — fail loud rather than silently trust the lightweight pre-check.
+        sys.exit(
+            "[generate_room] ERROR: --drift-gate: lightweight manifest lookup found a manifest for "
+            "room '%s' but check_plate_drift._find_manifest_for_recipe did not -- the two lookups have "
+            "drifted apart; treat as a bug, not a no-op." % room
+        )
     manifest = _cpd.load_manifest(manifest_path)
     # A manifest can carry authored geometry with no embedded ref_fp (e.g. crypt_dense_v1.cells.json) —
     # check_plate_drift then needs an explicit --baseline to fingerprint against. Try the same known
@@ -565,6 +601,18 @@ def _maybe_run_drift_gate(room: str, recipe: dict, plate_path: str, *, enabled: 
             break
     result = _cpd.check_plate_drift(plate_path, manifest, baseline=baseline)
     print("[generate_room] %s" % result.summary())
+    # Check `not passed` BEFORE `checked == 0`: a wrong-size candidate (or an actual per-prop DRIFT)
+    # already comes back with passed=False and the REAL reason in result.reasons — surfacing that
+    # first avoids masking it behind the generic "zero fingerprintable props" message below, which is
+    # reserved for the separate "PASSED but nothing was actually verified" false-confidence case.
+    if not result.passed:
+        sys.exit(
+            "[generate_room] ERROR: --drift-gate DRIFT on room '%s' (manifest %s): %s. Use "
+            "--no-drift-gate to override once you've confirmed the drift is intentional (e.g. a "
+            "deliberate canonical_plate replacement, gated separately by check_plate_drift.py "
+            "gate-recipes before promotion)."
+            % (room, manifest_path.name, "; ".join(result.reasons) or "no reason given")
+        )
     if result.checked == 0:
         sys.exit(
             "[generate_room] ERROR: --drift-gate found manifest %s for room '%s' but it has ZERO "
@@ -573,14 +621,6 @@ def _maybe_run_drift_gate(room: str, recipe: dict, plate_path: str, *, enabled: 
             "proceed consciously, or seed the manifest's ref_fp / make a baseline plate locally "
             "available once one exists."
             % (manifest_path.name, room, canonical_plate)
-        )
-    if not result.passed:
-        sys.exit(
-            "[generate_room] ERROR: --drift-gate DRIFT on room '%s' (manifest %s): %s. Use "
-            "--no-drift-gate to override once you've confirmed the drift is intentional (e.g. a "
-            "deliberate canonical_plate replacement, gated separately by check_plate_drift.py "
-            "gate-recipes before promotion)."
-            % (room, manifest_path.name, "; ".join(result.reasons))
         )
 
 
@@ -884,13 +924,18 @@ def main(argv=None) -> None:
               % (final_sample["path"], final_sample.get("edge_recall_vs_greybox"),
                  final_sample.get("selected_by")))
 
+    # Write the audit trail (job_id, image_ref, assets, controlnet/style_pass/layered provenance,
+    # prompts) BEFORE the drift gate: the gate can sys.exit, and a gate-failing run is exactly the run
+    # an operator most needs scenario_meta.json for (to reproduce/inspect why it drifted) — losing it
+    # on the failure path would defeat the auditability the gate itself is meant to protect.
+    _write_meta(out_dir, meta)
+
     if saved:
         final_plate = (meta.get("style_pass") or {}).get("final_plate") \
             or (meta.get("layered") or {}).get("final_plate") \
             or saved[0]
         _maybe_run_drift_gate(args.room, recipe, final_plate["path"], enabled=args.drift_gate)
 
-    _write_meta(out_dir, meta)
     print("[generate_room] OK — room=%s job=%s assets=%d -> %s" % (args.room, job_id, len(saved), out_dir))
 
 

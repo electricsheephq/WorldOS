@@ -76,9 +76,33 @@ class MaybeRunDriftGateTest(unittest.TestCase):
                                              enabled=True)
 
     def test_noop_when_no_manifest_found_for_canonical_room(self):
-        with mock.patch.object(check_plate_drift, "_find_manifest_for_recipe", return_value=None):
-            generate_room._maybe_run_drift_gate("crypt", self.recipe, "/definitely/not/a/real/file.png",
-                                                 enabled=True)
+        # market_square has a canonical_plate but genuinely NO committed qa/room_manifests/*.cells.json
+        # manifest in this checkout -- the lightweight (json-only) pre-check must recognize this and
+        # never even attempt `import check_plate_drift`: simulating totally broken Pillow/numpy deps
+        # via sys.modules must NOT raise, proving a manifestless canonical room stays a no-op without
+        # paying (or needing) the image-stack import cost (chatgpt-codex-connector finding on this PR).
+        self.assertEqual(self.recipe["rooms"]["market_square"].get("canonical_plate"), "market_square_v1.png")
+        with mock.patch.dict(sys.modules, {"check_plate_drift": None}):
+            generate_room._maybe_run_drift_gate("market_square", self.recipe,
+                                                 "/definitely/not/a/real/file.png", enabled=True)
+
+    def test_wrong_size_reason_surfaces_not_generic_zero_checked_message(self):
+        # A wrong-size candidate comes back passed=False, checked=0, with the REAL reason in
+        # result.reasons -- must surface THAT reason, not the generic "ZERO fingerprintable props"
+        # message reserved for a PASSED-but-nothing-verified result (evaos-code-review-bot finding).
+        fake_manifest_path = mock.Mock()
+        fake_manifest_path.name = "crypt_dense_v1.cells.json"
+        fake_result = check_plate_drift.DriftResult(
+            passed=False, room="crypt", checked=0,
+            reasons=["plate candidate.png is 100x100, expected the contract 1344x768"],
+        )
+        with mock.patch.object(check_plate_drift, "_find_manifest_for_recipe", return_value=fake_manifest_path), \
+             mock.patch.object(check_plate_drift, "load_manifest", return_value={"room": "crypt_dense_v1"}), \
+             mock.patch.object(check_plate_drift, "check_plate_drift", return_value=fake_result):
+            with self.assertRaises(SystemExit) as ctx:
+                generate_room._maybe_run_drift_gate("crypt", self.recipe, "/tmp/candidate.png", enabled=True)
+        self.assertIn("expected the contract 1344x768", str(ctx.exception))
+        self.assertNotIn("ZERO fingerprintable", str(ctx.exception))
 
     def test_drift_fails_loud(self):
         fake_manifest_path = mock.Mock()
@@ -139,9 +163,17 @@ class MainEndToEndDriftGateTest(unittest.TestCase):
     """Drive main() with every Scenario helper mocked, verifying the gate actually fires post-generation
     for a canonical room and is skippable via --no-drift-gate."""
 
-    def _run_main(self, argv, plate_path="/tmp/candidate.png"):
+    def _run_main(self, argv, plate_path="/tmp/candidate.png", captured=None):
+        # `captured` is accepted (and mutated in place) rather than only returned, because a
+        # gate-failing run raises SystemExit out of main() -- and out of this helper -- before ever
+        # reaching a `return`; a caller that wants to inspect what happened before the raise must pass
+        # its own dict in, since the normal return value is unreachable on that path.
+        if captured is None:
+            captured = {}
+        captured.setdefault("write_meta_called", False)
+
         def fake_write_meta(out_dir, meta):
-            pass
+            captured["write_meta_called"] = True
 
         with mock.patch.object(generate_room, "_load_credentials", return_value=("k", "s")), \
              mock.patch.object(generate_room, "_auth_headers", return_value={}), \
@@ -153,6 +185,7 @@ class MainEndToEndDriftGateTest(unittest.TestCase):
                                return_value=[{"asset_id": "a1", "path": plate_path, "bytes": 1}]), \
              mock.patch.object(generate_room, "_write_meta", side_effect=fake_write_meta):
             generate_room.main(argv)
+        return captured
 
     def test_drift_gate_fires_and_fails_loud_for_canonical_room(self):
         fake_manifest_path = mock.Mock()
@@ -182,6 +215,23 @@ class MainEndToEndDriftGateTest(unittest.TestCase):
         with mock.patch.object(check_plate_drift, "_find_manifest_for_recipe") as m_find:
             self._run_main(["--room", "tavern", "--base-plate", "/tmp/gb.png", "--out", "/tmp/o"])
             m_find.assert_not_called()
+
+    def test_write_meta_called_even_when_drift_gate_fails(self):
+        # scenario_meta.json (job_id/assets/prompts/provenance) must still be written when the gate
+        # sys.exits -- that's exactly the run an operator needs the audit trail for (evaos-code-
+        # review-bot finding on this PR).
+        fake_manifest_path = mock.Mock()
+        fake_manifest_path.name = "crypt_dense_v1.cells.json"
+        fake_result = check_plate_drift.DriftResult(passed=False, room="crypt", checked=1, reasons=["prop drifted"])
+        captured = {}
+        with mock.patch.object(check_plate_drift, "_find_manifest_for_recipe", return_value=fake_manifest_path), \
+             mock.patch.object(check_plate_drift, "load_manifest", return_value={"room": "crypt_dense_v1"}), \
+             mock.patch.object(check_plate_drift, "check_plate_drift", return_value=fake_result):
+            with self.assertRaises(SystemExit):
+                self._run_main(["--room", "crypt", "--base-plate", "/tmp/gb.png", "--out", "/tmp/o"],
+                               captured=captured)
+        self.assertTrue(captured["write_meta_called"],
+                        "scenario_meta.json must be written even when --drift-gate fails")
 
 
 if __name__ == "__main__":
