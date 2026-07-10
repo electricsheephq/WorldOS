@@ -122,6 +122,10 @@ public class CombatSurfaceClient : MonoBehaviour
     readonly System.Collections.Generic.Dictionary<string, int> _hpOf = new System.Collections.Generic.Dictionary<string, int>();
     readonly System.Collections.Generic.Dictionary<string, int> _hpMaxOf = new System.Collections.Generic.Dictionary<string, int>();
     readonly System.Collections.Generic.Dictionary<string, GameObject> _hpBars = new System.Collections.Generic.Dictionary<string, GameObject>();
+    // #1482-review: discriminates a name-plate-ONLY root (EnsureNamePlate; hp-hidden foe) from a full
+    // HP-bar root (EnsureHpBar) inside the shared _hpBars dict, so EnsureHpBar can UPGRADE a plate-only
+    // root in place instead of early-returning on it when a foe's HP later becomes known.
+    readonly System.Collections.Generic.HashSet<string> _namePlateOnly = new System.Collections.Generic.HashSet<string>();
     // DOWNED state (hp<=0 but still surface-listed — the engine keeps downed combatants in the order at
     // current_hp=0 and heals revive them, combat_loop.py; a permanent "dead" mark here made a healed ally
     // invisible forever — the #1451-review P1). _downRunning = DownCo mid-fall; _reviveWanted = a revive
@@ -620,6 +624,16 @@ public class CombatSurfaceClient : MonoBehaviour
         var goneHp = new System.Collections.Generic.List<string>();
         foreach (var id in _hpOf.Keys) { bool here = false; foreach (var t in s.tokens) if (t != null && t.id == id) { here = true; break; } if (!here) goneHp.Add(id); }
         foreach (var id in goneHp) { _hpOf.Remove(id); _hpMaxOf.Remove(id); RemoveHpBar(id); }
+        // #1482-review: name-plate-only roots (hp-hidden foes) never enter _hpOf (they `continue` above),
+        // so the prune above misses them — a foe that leaves the surface while still hp-hidden left its
+        // plate floating forever over a stale actor (baked actors are never despawned; see ApplySurf's
+        // despawn-on-removal note). Prune those separately off the same surface-presence check.
+        if (_namePlateOnly.Count > 0)
+        {
+            var goneNamePlates = new System.Collections.Generic.List<string>();
+            foreach (var id in _namePlateOnly) { bool here = false; foreach (var t in s.tokens) if (t != null && t.id == id) { here = true; break; } if (!here) goneNamePlates.Add(id); }
+            foreach (var id in goneNamePlates) RemoveHpBar(id);
+        }
     }
 
     // ---- #Phase3 walkability overlay (browser-parity affordances; pure surface-data consumer) ----
@@ -1770,11 +1784,26 @@ public class CombatSurfaceClient : MonoBehaviour
     // ---- #anim-combat + #1442 world-space HP bars (fed from surface hp; pure consumer) --------------
 
     // Create the HP bar root (bg + fg quads) for an actor once; UpdateHpBars drives its position/width/billboard.
+    // #1482-review: also the UPGRADE path — a name-plate-only root (EnsureNamePlate) whose foe's HP has since
+    // become known gets the bg/fg quads added in place, instead of staying plate-only forever.
     void EnsureHpBar(string id, Transform actor)
     {
         if (actor == null) return;
         GameObject root;
-        if (_hpBars.TryGetValue(id, out root) && root != null) return;
+        if (_hpBars.TryGetValue(id, out root) && root != null)
+        {
+            if (_namePlateOnly.Contains(id))
+            {
+                MakeBarQuad(root, "_bg", new Color(0.08f, 0.03f, 0.03f, 1f), 3080);
+                MakeBarQuad(root, "_fg", new Color(0.85f, 0.15f, 0.12f, 1f), 3090);
+                // UpdateHpBars indexes the fg quad at child 1 — reorder so bg/fg precede the name label
+                // EnsureNamePlate already parented (it was the sole/first child until now).
+                var bg = GameObject.Find(root.name + "_bg"); if (bg != null) bg.transform.SetSiblingIndex(0);
+                var fg = GameObject.Find(root.name + "_fg"); if (fg != null) fg.transform.SetSiblingIndex(1);
+                _namePlateOnly.Remove(id);
+            }
+            return;
+        }
         root = new GameObject("Actor_" + id + "_HP");
         MakeBarQuad(root, "_bg", new Color(0.08f, 0.03f, 0.03f, 1f), 3080);   // child 0
         MakeBarQuad(root, "_fg", new Color(0.85f, 0.15f, 0.12f, 1f), 3090);   // child 1
@@ -1787,9 +1816,9 @@ public class CombatSurfaceClient : MonoBehaviour
     // #1482: a name-plate-ONLY root for a token with no known HP (foes hide their HP, so they never enter the
     // HP-bar path). Reuses the _hpBars dict + UpdateHpBars' per-frame position/billboard/prune (it carries the
     // plate above the actor's head for free), but adds NO HP quads — so UpdateHpBars' `childCount >= 2` fill
-    // update is skipped and only the name label rides. Idempotent; onboard-only via the call site. (If a foe's
-    // HP ever became known mid-combat, EnsureHpBar would early-return on this plate root — the foe keeps its
-    // plate but gains no bar; a graceful no-op today since content never reveals foe HP.)
+    // update is skipped and only the name label rides. Idempotent; onboard-only via the call site. Marked in
+    // _namePlateOnly so EnsureHpBar can UPGRADE this root in place if the foe's HP later becomes known, and so
+    // ApplyCombat's surface-presence prune can clear it once the foe leaves the surface.
     void EnsureNamePlate(string id, Transform actor)
     {
         if (actor == null) return;
@@ -1797,6 +1826,7 @@ public class CombatSurfaceClient : MonoBehaviour
         root = new GameObject("Actor_" + id + "_HP");
         MakeNameLabel(root, id);
         _hpBars[id] = root;
+        _namePlateOnly.Add(id);
     }
     void MakeBarQuad(GameObject root, string suffix, Color col, int queue)
     {
@@ -1808,6 +1838,7 @@ public class CombatSurfaceClient : MonoBehaviour
     void RemoveHpBar(string id)
     {
         if (_hpBars.TryGetValue(id, out var root)) { if (root != null) Object.Destroy(root); _hpBars.Remove(id); }
+        _namePlateOnly.Remove(id);
     }
 
     // Each frame: ride the bar above its actor's head, billboard it to the camera, and set the fill width

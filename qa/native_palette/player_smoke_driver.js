@@ -60,8 +60,10 @@ const FULLSCREEN_FALLBACK = !!args["fullscreen-fallback"];
 // produce ZERO Unity input (Unity's Input samples only the FOREGROUND app), so this is the PROVEN working
 // click path (sub-second activation, no Space switch — within the windowed no-hijack policy). Now ON by
 // DEFAULT (the smoke lane was red on the pure-PID default since w6batch); WORLDOS_CLICK_ACTIVATE_FALLBACK=0
-// opts back out to pure PID delivery (currently non-functional for Unity).
-const ACTIVATE_FALLBACK = !!args["activate-fallback"] || process.env.WORLDOS_CLICK_ACTIVATE_FALLBACK !== "0";
+// opts back out to pure PID delivery (currently non-functional for Unity). The env opt-out is
+// AUTHORITATIVE — it must win over the explicit --activate-fallback flag too (matches
+// native_palette_server.js's CLICK_ACTIVATE_FALLBACK exactly, which has no such flag to override it).
+const ACTIVATE_FALLBACK = process.env.WORLDOS_CLICK_ACTIVATE_FALLBACK !== "0";
 const GLIDE_FRAMES = 4;
 const GLIDE_INTERVAL_MS = 150;
 const SETTLE_MS = 500;
