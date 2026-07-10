@@ -1,0 +1,13 @@
+A moody hand-painted CRPG environment background, isometric dimetric view: a rustic campsite clearing at night, a small low ring of natural stones holds the central campfire casting warm firelight upward, scattered pine needles and fallen leaves over a worn dirt clearing floor, moss-covered tree roots, a few embers drifting upward from the fire, hanging travel packs, bedrolls, crates, dappled moonlight through the canopy gaps. Visible oil-brush strokes, muted painterly palette, warm firelit core falling off into cool blue-violet shadow at the clearing's edge. CRITICAL FIREPIT CLAUSE: keep the stone fire-ring small and simple, exactly as composed -- do not redraw, enlarge, or reshape it, and render the dirt immediately around it as plain worn ground with soft, uneven, natural light falloff only -- absolutely NO concentric rings, NO radiating bands, NO target-like or tree-ring pattern in the ground texture. No characters, people, creatures, text, letters, UI, frames, or borders.
+
+--- model_run params (model_bfl-flux-1-dev) ---
+controlStrength: 0.65
+controlEnd: 0.6
+controlImage: asset_pDdhipXU6h8AysxgUmmxkMvH (the camp ControlNet-depth control image, qa/evidence/1470/greybox_control_1344x768.png)
+controlModality: depth
+seed: 42
+loras: ["model_RsWEcQL2NWXwoyEodWVE2vWG"]  (WorldOS Painterly Exterior FLUX LoRA)
+lorasScale: [0.70] / [0.65] / [0.60]  (this exact prompt run 3x, once per scale, producing
+  asset_7RThikt7MfEJWii2bZX9a8w1 / asset_ToK8EE7FhWBzsAQ84nGi7BCw / asset_byFDkDhZRPJwrYPgnqYySPAE
+  -> anchors/anchor_scale070.jpg / anchor_scale065.jpg / anchor_scale060.jpg)
+width: 1344, height: 768, numOutputs: 1

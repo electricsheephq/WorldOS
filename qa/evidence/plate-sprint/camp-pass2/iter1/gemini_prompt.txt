@@ -1,0 +1,10 @@
+Repaint this image in the painterly hand-painted CRPG environment-background style of the reference image: visible oil-brush strokes, muted painterly palette, warm firelit key light from the central campfire falling off into cool blue-violet shadow at the clearing's edge, dappled moonlight through canopy gaps. The blocky grey placeholder trees, crates, and rocks must be repainted as natural organic tree trunks with bark texture and foliage, rounded moss-covered boulders, and weathered wooden crates/bedrolls with visible grain -- never flat-faced geometric boxes or glassy/translucent prisms.
+
+CRITICAL STRUCTURE-LOCK (non-negotiable, checked pixel-by-pixel against the original): every wall, pillar, archway, doorway, staircase, tree, boulder, road edge, and prop must stay in EXACTLY its current position, size, and shape -- do NOT move, add, remove, resize, re-project, or recompose ANYTHING; only the paint and lighting treatment changes. Do NOT introduce any repeated, cloned, or tiled decorative motifs. Do NOT add any text, letters, numbers, labels, legends, map insets, UI elements, frames, or borders. Do NOT add any characters, people, figures, or creatures.
+
+This is a TOP-DOWN DIMETRIC (2:1 isometric) game BACKGROUND PLATE viewed at a fixed ~30-degree downward camera pitch -- you are looking DOWN onto the scene from high above and to the side, exactly like a Pillars of Eternity II pre-rendered isometric level. Keep that EXACT high dimetric bird's-eye angle: there is NO horizon and NO sky band across the top of the frame -- the top of the frame is MORE ground/canopy seen from above. Do NOT tilt the camera to an eye-level, first-person, or landscape-horizon view.
+
+--- model_run params (model_google-gemini-3-1-flash) ---
+referenceImages: [asset_byFDkDhZRPJwrYPgnqYySPAE]  (the selected lorasScale=0.60 anchor, anchors/anchor_scale060.jpg)
+resolution: 2K
+Output: asset_WQuoeqw6M6Zv4uvHDGYFvtMp -> gemini/candidate_iter1_scale060.jpg (downsampled 2744x1568 -> 1344x768 post-review, see README correction note)

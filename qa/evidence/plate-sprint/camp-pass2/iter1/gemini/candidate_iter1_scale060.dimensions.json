@@ -1,0 +1,7 @@
+{
+  "file": "candidate_iter1_scale060.jpg",
+  "width": 1344,
+  "height": 768,
+  "sha256": "89f40784e89b427ff666a935b5366eeda6c9c13c3e36d2411ceeef4f9cb784de",
+  "note": "Recorded post-correction (adversarial review, PR #1504): the raw Gemini output was 2744x1568 (2K); this file was downsampled to the 1344x768 plate contract before the committed registration/drift numbers in panel_verdict.json were computed."
+}
