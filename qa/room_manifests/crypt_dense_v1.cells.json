@@ -3,7 +3,7 @@
  "room": "crypt_dense_v1",
  "recipe_key": "crypt",
  "derivation": "measured",
- "source_seed": "qa/seed_gfx_combat.py",
+ "source_seed": "measured: PR #1505 point-in-polygon fit (sha 49d53fa)",
  "source_plate": null,
  "grid": {
   "cols": 14,

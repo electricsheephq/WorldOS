@@ -68,7 +68,7 @@ if str(_QA_DIR) not in sys.path:
 
 # One camera rig, one fingerprint definition — shared with the drift gate so the two can never disagree.
 from check_plate_drift import (  # noqa: E402
-    FP_GRID, col_pitch_px, fingerprint, load_manifest,
+    col_pitch_px, fingerprint, load_manifest,
 )
 from greybox_render_headless import (  # noqa: E402
     PX_H, PX_W, cell_to_world, render as render_greybox, world_to_screen,

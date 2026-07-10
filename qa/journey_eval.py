@@ -51,12 +51,16 @@ def load_questions(path: str | Path = _QUESTIONS_MD) -> list:
         raise ValueError(f"no ```json question block in {path}")
     qs = json.loads(m.group(1)).get("questions", [])
     for q in qs:
-        if not (q.get("flag") and q.get("text") and q.get("applies_to") in ("all", "transition")):
+        if not (q.get("flag") and q.get("text")
+                and q.get("applies_to") in ("all", "transition", "transition_pair")):
             raise ValueError(f"malformed question entry: {q}")
     return qs
 
 
 def questions_for_frame(questions: list, is_transition: bool) -> list:
+    """The questions a SINGLE-FRAME LLM scorer can answer. `transition_pair` questions are excluded —
+    they need both sides of a transition and are computed deterministically (see _transition_pair_flags),
+    never guessed from one image."""
     return [q for q in questions if q["applies_to"] == "all"
             or (q["applies_to"] == "transition" and is_transition)]
 
@@ -87,28 +91,45 @@ def _adjacent_walkable(cells: list, prop_cells: set, cols: int, rows: int) -> Op
     return None
 
 
-def build_script(manifest: dict, plan: Optional[dict] = None) -> list:
-    """Derive the journey steps from the room manifest (+ an optional plan carrying the semantic
-    waypoints a manifest can't hold: start cell, parley/door/combat cells). One prop_approach step per
-    impassable prop, then the configured transitions. Returns a list of Step."""
+@dataclass
+class JourneyScript:
+    steps: list                                       # approachable Step objects (drive capture)
+    unreachable: list = field(default_factory=list)   # [{id, cells, reason}] — no walkable neighbour
+
+    def as_dict(self) -> dict:
+        return {"steps": [s.as_dict() for s in self.steps], "unreachable": self.unreachable}
+
+
+def build_script(manifest: dict, plan: Optional[dict] = None) -> JourneyScript:
+    """Derive the journey from the room manifest (+ an optional plan carrying the semantic waypoints a
+    manifest can't hold: start cell, parley/door/combat cells). One prop_approach step per impassable
+    prop that HAS a walkable neighbour, then the configured transitions. Props with NO walkable adjacent
+    cell (e.g. scenery pinned in a wall corner) can't be stood next to — they are RECORDED as
+    `unreachable` (surfaced in the verdict), never silently dropped. Approaches key off the FOOTPRINT
+    (the floor cells the coherence gate checks), not `cells`, so the two agree if they ever diverge."""
     plan = plan or {}
     grid = manifest.get("grid", {})
     cols, rows = int(grid.get("cols", 0)), int(grid.get("rows", 0))
     props = manifest.get("props", [])
-    prop_cells = {(int(c), int(r)) for p in props for (c, r) in p.get("cells", [])}
+    prop_cells = {(int(c), int(r)) for p in props
+                  for (c, r) in (p.get("footprint") or p.get("cells", []))}
 
     steps: list = []
+    unreachable: list = []
     start = plan.get("start_cell")
     if start:
         steps.append(Step("start", "start", tuple(start), note="establishing frame"))
     for p in props:
-        cells = [(int(c), int(r)) for (c, r) in p.get("cells", [])]
+        cells = [(int(c), int(r)) for (c, r) in (p.get("footprint") or p.get("cells", []))]
+        pid = str(p.get("id", "prop"))
         if not cells:
+            unreachable.append({"id": pid, "cells": [], "reason": "no footprint cells"})
             continue
         adj = _adjacent_walkable(cells, prop_cells, cols, rows)
         if adj is None:
+            unreachable.append({"id": pid, "cells": [list(c) for c in cells],
+                                "reason": "no walkable orthogonal neighbour"})
             continue
-        pid = str(p.get("id", "prop"))
         steps.append(Step(f"approach_{pid}", "prop_approach", adj,
                           note=f"stand adjacent to {pid} {cells}"))
     # Configured transitions / interactions (all optional — a plan without them just walks the props).
@@ -121,7 +142,7 @@ def build_script(manifest: dict, plan: Optional[dict] = None) -> list:
     if plan.get("combat_cell"):
         steps.append(Step("combat_entry", "combat_entry", tuple(plan["combat_cell"]), transition=True,
                           note="enter combat — surface swap; capture both sides"))
-    return steps
+    return JourneyScript(steps=steps, unreachable=unreachable)
 
 
 # ── Phase 3: VQA over frames (PURE core + injectable scorer) ─────────────────────────────────────────
@@ -129,13 +150,19 @@ def build_script(manifest: dict, plan: Optional[dict] = None) -> list:
 #   {"path": "...png", "step": "approach_sarcophagus", "kind": "prop_approach",
 #    "side": "step"|"pre"|"post", "transition": bool}
 FrameScorer = Callable[[str, list], dict]  # (image_path, questions) -> {flag: bool}
+ImageDiffer = Callable[[str, str], float]  # (path_a, path_b) -> normalised difference 0..1
+
+# A door-cross / combat-entry SHOULD swap the backdrop; a pre/post pair below this normalised luma
+# difference means the room did NOT change (a failed plate swap) -> transition_backdrop_unchanged.
+SWAP_MIN_DIFF = 0.04
 
 
 def _shell_scorer(image_path: str, questions: list, *, model: str = "sonnet",
                   timeout_s: int = 180) -> dict:
     """Default scorer: qa/vqa_frame.sh runs one sonnet `claude -p` pass over the image, returning
-    {"flags": {flag: bool, ...}}. Mirrors score.sh's auth-isolation (fresh config dir + keychain
-    token + GLM-neutralised env)."""
+    {"flags": {flag: bool, ...}}. Mirrors score.sh's auth-isolation. VALIDATES that the scorer answered
+    EXACTLY the requested flags — a missing flag is an error (never silently treated as clean), and the
+    booleans are already normalised by vqa_frame.sh (YES/NO/true/false coercion happens there)."""
     payload = json.dumps({"questions": questions})
     proc = subprocess.run(
         [str(_VQA_FRAME_SH), image_path],
@@ -146,9 +173,15 @@ def _shell_scorer(image_path: str, questions: list, *, model: str = "sonnet",
         raise RuntimeError(f"vqa_frame.sh failed on {image_path} (rc={proc.returncode}): "
                            f"{proc.stderr.strip()[-400:]}")
     try:
-        return {k: bool(v) for k, v in json.loads(proc.stdout).get("flags", {}).items()}
+        flags = {k: bool(v) for k, v in json.loads(proc.stdout).get("flags", {}).items()}
     except (ValueError, AttributeError) as exc:
         raise RuntimeError(f"vqa_frame.sh emitted non-JSON for {image_path}: {exc}") from exc
+    want = {q["flag"] for q in questions}
+    missing = want - flags.keys()
+    if missing:
+        raise RuntimeError(f"vqa_frame.sh did not answer {sorted(missing)} for {image_path} "
+                           f"(got {sorted(flags)}) — a missing flag must never read as clean")
+    return {k: flags[k] for k in want}
 
 
 def _sh_env(model: str, timeout_s: int) -> dict:
@@ -156,49 +189,98 @@ def _sh_env(model: str, timeout_s: int) -> dict:
     return {**os.environ, "WORLDOS_VQA_MODEL": model, "WORLDOS_VQA_TIMEOUT": str(timeout_s)}
 
 
-def run_vqa(frames: list, questions: list, scorer: FrameScorer) -> list:
-    """Ask the applicable questions of every frame. Returns per-frame results:
-    {frame, step, side, flags:{flag:bool}, defects:[flag,...]}. The scorer is injected so the
-    aggregation is unit-testable with a stub (no LLM / no box)."""
+def _default_image_differ(a: str, b: str) -> float:
+    """Normalised (0..1) mean-absolute luma difference of two frames at 64x64 — a deterministic backdrop-
+    change detector for transition pairs. Lazy PIL import so the pure aggregation stays dependency-free."""
+    from PIL import Image  # noqa: PLC0415
+    ia = Image.open(a).convert("L").resize((64, 64))
+    ib = Image.open(b).convert("L").resize((64, 64))
+    da, db = list(ia.getdata()), list(ib.getdata())
+    return sum(abs(x - y) for x, y in zip(da, db)) / (len(da) * 255.0)
+
+
+def _transition_pair_flags(frames: list, results_by_frame: dict, questions: list,
+                           image_differ: ImageDiffer) -> None:
+    """Compute the `transition_pair` questions deterministically from BOTH sides of each transition (a
+    single-frame LLM scorer can't compare to the other side). Today: transition_backdrop_unchanged — a
+    pre/post pair that barely differs means the plate swap failed. Mutates the POST frame's result."""
+    pair_flags = [q["flag"] for q in questions if q["applies_to"] == "transition_pair"]
+    if not pair_flags:
+        return
+    by_step: dict = {}
+    for fr in frames:
+        if fr.get("transition"):
+            by_step.setdefault(fr.get("step"), {})[fr.get("side")] = fr["path"]
+    for step, sides in by_step.items():
+        pre, post = sides.get("pre"), sides.get("post")
+        if not (pre and post):
+            continue
+        res = results_by_frame.get(post)
+        if res is None:
+            continue
+        diff = image_differ(pre, post)
+        if "transition_backdrop_unchanged" in pair_flags:
+            res["flags"]["transition_backdrop_unchanged"] = diff < SWAP_MIN_DIFF
+        res["defects"] = sorted(k for k, v in res["flags"].items() if v)
+
+
+def run_vqa(frames: list, questions: list, scorer: FrameScorer, *,
+            image_differ: Optional[ImageDiffer] = None) -> list:
+    """Ask the single-frame LLM questions of every frame, then fill in the `transition_pair` questions
+    deterministically from paired frames. Returns per-frame results {frame, step, side, flags, defects}.
+    The scorer AND the differ are injected so the aggregation is unit-testable with stubs (no LLM/box)."""
     results: list = []
+    by_frame: dict = {}
     for fr in frames:
         applicable = questions_for_frame(questions, bool(fr.get("transition")))
         flags = scorer(fr["path"], applicable)
-        defects = sorted(k for k, v in flags.items() if v)
-        results.append({"frame": fr["path"], "step": fr.get("step"), "side": fr.get("side", "step"),
-                        "flags": flags, "defects": defects})
+        rec = {"frame": fr["path"], "step": fr.get("step"), "side": fr.get("side", "step"),
+               "flags": flags, "defects": sorted(k for k, v in flags.items() if v)}
+        results.append(rec)
+        by_frame[fr["path"]] = rec
+    _transition_pair_flags(frames, by_frame, questions, image_differ or _default_image_differ)
     return results
 
 
-def build_verdict(vqa_results: list) -> dict:
-    """ANY yes on ANY frame == journey FAIL, naming the offending frame(s) + flags. A clean journey is
-    passed=True with an empty defects list."""
+def build_verdict(vqa_results: list, unreachable: Optional[list] = None) -> dict:
+    """ANY yes on ANY frame == journey FAIL, naming the offending frame(s) + flags. Also FAILs when NO
+    frames were checked (an empty/malformed capture is not evidence the loop was inspected). Props the
+    journey could not approach are surfaced (informational — a wall-pinned scenery prop is legitimately
+    unreachable, not a defect, but it must never silently disappear)."""
     offenders = [{"frame": r["frame"], "step": r["step"], "side": r["side"], "defects": r["defects"]}
                  for r in vqa_results if r["defects"]]
+    reasons = []
+    if not vqa_results:
+        reasons.append("no frames checked — capture produced nothing to inspect")
     return {
-        "passed": not offenders,
+        "passed": bool(vqa_results) and not offenders,
         "frames_checked": len(vqa_results),
         "frames_with_defects": len(offenders),
         "defects": offenders,
+        "unreachable_props": unreachable or [],
+        "reasons": reasons,
         "per_frame": vqa_results,
     }
 
 
 # ── Phase 2: box capture (thin shell over lib_native_player_boot.sh + journey_capture.js) ───────────
-def capture(script_steps: list, rundir: Path, *, campaign: str, owner: str = "WorldOSPlayer") -> Path:
-    """Drive the box player over the scripted path and write frames + a frames_manifest.json. Requires
-    the box player env (Screen Recording + Accessibility grants + WorldOSPlayer.app), exactly as
-    qa/player_smoke.sh — this is the box-only phase (run when the #1386 claim frees)."""
+def capture(script: JourneyScript, rundir: Path, *, campaign: str, owner: str = "WorldOSPlayer") -> Path:
+    """Drive the box player over the scripted path and write frames + a frames_manifest.json. The player
+    must ALREADY be booted with the #1466 QA click channel (WORLDOS_QA_INPUT=1 + WORLDOS_QA_INPUT_PORT) —
+    boot it exactly as qa/player_smoke.sh does (lib_native_player_boot.sh + Screen Recording/Accessibility
+    grants + WorldOSPlayer.app). journey_capture.js FAILS LOUD if the QA channel is unhealthy or no click
+    lands, so it can never VQA a stack of stale/unchanged frames. Box-only phase (#1386 claim)."""
     rundir.mkdir(parents=True, exist_ok=True)
     script_path = rundir / "journey_script.json"
-    script_path.write_text(json.dumps({"campaign": campaign,
-                                       "steps": [s.as_dict() for s in script_steps]}, indent=2),
+    script_path.write_text(json.dumps({"campaign": campaign, **script.as_dict()}, indent=2),
                            encoding="utf-8")
     cmd = ["node", str(_CAPTURE_JS), "--script", str(script_path), "--rundir", str(rundir),
            "--owner", owner]
     proc = subprocess.run(cmd, cwd=str(_ROOT))
     if proc.returncode != 0:
-        raise RuntimeError(f"journey_capture.js failed (rc={proc.returncode}) — see {rundir}")
+        raise RuntimeError(f"journey_capture.js failed (rc={proc.returncode}) — the QA click channel was "
+                           f"unhealthy or no click landed (boot the player with WORLDOS_QA_INPUT=1 first); "
+                           f"see {rundir}")
     manifest = rundir / "frames_manifest.json"
     if not manifest.is_file():
         raise RuntimeError(f"capture produced no frames_manifest.json in {rundir}")
@@ -210,15 +292,27 @@ def _load_frames_manifest(path: str | Path) -> list:
     return data.get("frames", data if isinstance(data, list) else [])
 
 
+def _load_unreachable(frames_manifest: Path) -> list:
+    """The un-approachable props recorded in the sibling journey_script.json (surfaced in the verdict)."""
+    script = frames_manifest.parent / "journey_script.json"
+    if script.is_file():
+        try:
+            return json.loads(script.read_text(encoding="utf-8")).get("unreachable", [])
+        except (OSError, ValueError):
+            return []
+    return []
+
+
 # ── CLI ─────────────────────────────────────────────────────────────────────────────────────────────
 def _do_vqa_and_verdict(frames_manifest: Path, out: Path, model: str, timeout_s: int) -> int:
     questions = load_questions()
     frames = _load_frames_manifest(frames_manifest)
     scorer: FrameScorer = lambda p, q: _shell_scorer(p, q, model=model, timeout_s=timeout_s)
-    verdict = build_verdict(run_vqa(frames, questions, scorer))
+    verdict = build_verdict(run_vqa(frames, questions, scorer), _load_unreachable(frames_manifest))
     out.write_text(json.dumps(verdict, indent=2), encoding="utf-8")
     print(f"[journey_eval] {'PASS' if verdict['passed'] else 'FAIL'}: "
-          f"{verdict['frames_checked']} frames, {verdict['frames_with_defects']} with defects -> {out}")
+          f"{verdict['frames_checked']} frames, {verdict['frames_with_defects']} with defects, "
+          f"{len(verdict['unreachable_props'])} unreachable props -> {out}")
     for off in verdict["defects"]:
         print(f"  DEFECT {off['step']}/{off['side']} {off['defects']} :: {off['frame']}")
     return 0 if verdict["passed"] else 1
@@ -262,15 +356,16 @@ def main(argv=None) -> int:
         return json.loads(Path(p).read_text(encoding="utf-8")) if p else None
 
     if args.cmd == "build-script":
-        steps = build_script(json.loads(Path(args.manifest).read_text()), _plan(args.plan))
-        payload = json.dumps({"steps": [s.as_dict() for s in steps]}, indent=2)
+        script = build_script(json.loads(Path(args.manifest).read_text()), _plan(args.plan))
+        payload = json.dumps(script.as_dict(), indent=2)
         (Path(args.out).write_text(payload, encoding="utf-8") if args.out else print(payload))
-        print(f"[journey_eval] {len(steps)} steps", file=sys.stderr)
+        print(f"[journey_eval] {len(script.steps)} steps, {len(script.unreachable)} unreachable props",
+              file=sys.stderr)
         return 0
 
     if args.cmd == "capture":
-        steps = build_script(json.loads(Path(args.manifest).read_text()), _plan(args.plan))
-        mf = capture(steps, Path(args.rundir), campaign=args.campaign, owner=args.owner)
+        script = build_script(json.loads(Path(args.manifest).read_text()), _plan(args.plan))
+        mf = capture(script, Path(args.rundir), campaign=args.campaign, owner=args.owner)
         print(f"[journey_eval] frames manifest -> {mf}")
         return 0
 
@@ -278,8 +373,8 @@ def main(argv=None) -> int:
         return _do_vqa_and_verdict(Path(args.frames_manifest), Path(args.out), args.model, args.timeout)
 
     # run
-    steps = build_script(json.loads(Path(args.manifest).read_text()), _plan(args.plan))
-    mf = capture(steps, Path(args.rundir), campaign=args.campaign, owner=args.owner)
+    script = build_script(json.loads(Path(args.manifest).read_text()), _plan(args.plan))
+    mf = capture(script, Path(args.rundir), campaign=args.campaign, owner=args.owner)
     return _do_vqa_and_verdict(mf, Path(args.rundir) / "journey_verdict.json", args.model, args.timeout)
 
 

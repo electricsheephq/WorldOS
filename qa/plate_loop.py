@@ -506,11 +506,18 @@ def ingest_verdict(verdict: dict, contract: dict) -> dict:
     control_valid = verdict.get("control_valid")
     if control_valid is None and ctrl is not None:
         control_valid = True  # a control was scored; validity band is a panel-review concern
+    # Facts-before-beauty (amendment C): carry the scorers' factual defect flags through to the evidence
+    # instead of discarding them. A true flag on the CANDIDATE (A) is a FACT the panel scored around —
+    # surfaced here so write_scores_row / the gallery can show it regardless of the aesthetic median.
+    defects = _relabel(verdict.get("defects") or {})
+    candidate_defects = sorted(k for k, v in (defects.get("A") or {}).items() if v)
     return {
         "medians": {k: (round(v, 3) if v is not None else None) for k, v in medians.items()},
         "control_valid": control_valid,
         "delta_vs_control": round(delta, 3) if delta is not None else None,
         "verdict": verdict.get("verdict", ""),
+        "defects": {k: v for k, v in defects.items() if v},
+        "candidate_defects": candidate_defects,
     }
 
 
@@ -531,7 +538,9 @@ def write_scores_row(row: dict, panel_read: dict, *, db_path: str | Path | None 
         f"{'PASS' if reg.get('passed') else 'FAIL'}) · pregate={row.get('pregate', {}).get('verdict')} · "
         f"panel medians A/B/C={medians.get('A')}/{medians.get('B')}/{medians.get('C')} · "
         f"delta_vs_control={panel_read.get('delta_vs_control')} · "
-        f"control_valid={panel_read.get('control_valid')} · {panel_read.get('verdict', '')}"
+        f"control_valid={panel_read.get('control_valid')} · "
+        f"candidate_defects={panel_read.get('candidate_defects') or 'none'} · "
+        f"{panel_read.get('verdict', '')}"
     ).strip()
     kwargs: dict[str, Any] = dict(
         surface="visual", scorer_model="sonnet",

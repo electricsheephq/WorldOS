@@ -80,10 +80,25 @@ function click(cell) {
   return core.qaClickCell(QA_PORT, c, r);
 }
 
-// health preflight (non-fatal): confirms the #1466 channel is up before driving.
-if (QA_PORT) {
+// How many steps REQUIRE a click to land (everything but the establishing 'start' frame). A journey
+// that never lands a click would VQA a stack of stale/identical frames and falsely "pass" — so the
+// capture fails loud rather than publish a manifest for cells it never actually visited.
+const clickSteps = steps.filter((s) => s.kind !== "start").length;
+
+// health preflight — if clicks are needed, the #1466 QA channel MUST be up (the player booted with
+// WORLDOS_QA_INPUT=1, exactly as qa/player_smoke.sh). Fail loud before driving, never VQA stale frames.
+if (clickSteps > 0) {
+  if (!QA_PORT) {
+    console.error("[journey_capture] FATAL: " + clickSteps + " click steps but WORLDOS_QA_INPUT is not set — " +
+      "boot the player with WORLDOS_QA_INPUT=1 + WORLDOS_QA_INPUT_PORT first (the player_smoke.sh pattern).");
+    process.exit(3);
+  }
   const h = core.qaHealth(QA_PORT);
-  if (!h || h.ok === false) console.error("[journey_capture] WARN: QA input channel " + QA_PORT + " not healthy — clicks may not land");
+  if (!h || h.ok === false) {
+    console.error("[journey_capture] FATAL: QA input channel " + QA_PORT + " unhealthy — the player is not booted " +
+      "with the #1466 listener; refusing to capture stale frames.");
+    process.exit(3);
+  }
 }
 
 let clicks_ok = 0;
@@ -111,6 +126,13 @@ const manifest = { campaign: script.campaign || null, owner: OWNER, qa_port: QA_
 fs.writeFileSync(path.join(RUNDIR, "frames_manifest.json"), JSON.stringify(manifest, null, 2));
 
 const captured_ok = frames.filter((f) => f.capture_ok).length;
-console.log(JSON.stringify({ ok: captured_ok > 0, frames: frames.length, captured_ok, clicks_ok,
+// Accept only if screenshots were captured AND (no clicks were needed OR at least one click landed).
+// clicks needed but zero landed => every frame is the same pre-move view => not evidence of a journey.
+const ok = captured_ok > 0 && (clickSteps === 0 || clicks_ok > 0);
+if (clickSteps > 0 && clicks_ok === 0) {
+  console.error("[journey_capture] FATAL: " + clickSteps + " click steps but 0 clicks landed — frames are " +
+    "the pre-move view, not the visited cells. Failing loud (check the QA channel / player focus).");
+}
+console.log(JSON.stringify({ ok, frames: frames.length, captured_ok, clickSteps, clicks_ok,
                              manifest: path.join(RUNDIR, "frames_manifest.json") }));
-process.exit(captured_ok > 0 ? 0 : 1);
+process.exit(ok ? 0 : 1);

@@ -8,9 +8,13 @@ score never registers.
 **Contract, do not break it:** every question is phrased so **YES = a defect**. `journey_eval.py`
 treats ANY `true` flag on ANY frame as a journey FAIL and reports the offending frame path. Keep new
 questions in the same polarity. The harness reads ONLY the fenced `json` block below (the prose is for
-humans); edit the block to add/adjust questions — `applies_to` is `"all"` (every frame) or
-`"transition"` (only the paired frames captured on both sides of a door-cross / combat-entry, where the
-backdrop legitimately changes and a wrong/failed swap is the defect).
+humans); edit the block to add/adjust questions. `applies_to` is one of:
+- `"all"` — asked of every frame by the single-frame LLM scorer.
+- `"transition"` — asked of each side of a transition by the single-frame scorer.
+- `"transition_pair"` — computed DETERMINISTICALLY by the harness from BOTH sides of a transition (a
+  single-frame scorer can't compare to the other side). Today `transition_backdrop_unchanged` is a
+  pre/post luma-difference check: a door-cross/combat-entry whose two frames barely differ = a failed
+  plate swap. These are never sent to the LLM.
 
 The scorer answers strictly from what is literally visible (no lore, no intent), one YES/NO per flag.
 
@@ -45,8 +49,8 @@ The scorer answers strictly from what is literally visible (no lore, no intent),
     },
     {
       "flag": "transition_backdrop_unchanged",
-      "applies_to": "transition",
-      "text": "This is one side of a door-cross / room transition. Does the backdrop look IDENTICAL to the other side — i.e. the room did NOT actually change when it should have (a failed plate swap)?"
+      "applies_to": "transition_pair",
+      "text": "HARNESS-COMPUTED (not asked of the LLM): the pre/post frames of a door-cross / combat-entry barely differ — the room did NOT change when it should have (a failed plate swap)."
     }
   ]
 }

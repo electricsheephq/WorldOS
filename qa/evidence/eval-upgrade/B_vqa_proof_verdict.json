@@ -4,7 +4,7 @@
   "frames_with_defects": 1,
   "defects": [
     {
-      "frame": "/Users/lume/WorldOS-worktrees/wt-eval-upgrade/qa/evidence/1469/iter3/plate_conditioned_crypt.png",
+      "frame": "qa/evidence/1469/iter3/plate_conditioned_crypt.png",
       "step": "crypt_empty_plate",
       "side": "step",
       "defects": [
@@ -14,7 +14,7 @@
   ],
   "per_frame": [
     {
-      "frame": "/Users/lume/WorldOS-worktrees/wt-eval-upgrade/qa/evidence/walkable-slice-optionA/1_crypt_rest_idle.png",
+      "frame": "qa/evidence/walkable-slice-optionA/1_crypt_rest_idle.png",
       "step": "crypt_rest_idle",
       "side": "step",
       "flags": {
@@ -27,7 +27,7 @@
       "defects": []
     },
     {
-      "frame": "/Users/lume/WorldOS-worktrees/wt-eval-upgrade/qa/evidence/1469/iter3/plate_conditioned_crypt.png",
+      "frame": "qa/evidence/1469/iter3/plate_conditioned_crypt.png",
       "step": "crypt_empty_plate",
       "side": "step",
       "flags": {

@@ -203,6 +203,10 @@ jobs:
         # that forest_road.cells.json is regeneratable, and that the derived manifest is COHERENT against
         # the greybox its geometry describes (the loop closed at the source).
         run: python -m pytest qa/test_derive_room_manifest.py -q -p no:xdist
+      - name: Journey factual-VQA cores + panel defect-checklist regression (instruments B + C)
+        # Instrument B's path-gen/aggregation/verdict (stub scorer, no LLM/box) and amendment C's panel
+        # defect-checklist prompt regression — pinned so an edit to either can't silently drift.
+        run: python -m pytest qa/test_journey_eval.py qa/test_plate_loop.py -q -p no:xdist
 
   license-check:
     runs-on: ubuntu-latest

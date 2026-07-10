@@ -54,9 +54,14 @@ PY
 
 if [ "${WORLDOS_VQA_GUARD_ONLY:-}" = "1" ]; then printf '{"flags":{}}\n'; exit 0; fi
 
-# --- auth isolation (score.sh #1260/#1404 pattern, condensed) --------------------------------------
-_cfg="${TMPDIR:-/tmp}/worldos-vqa-config"
-mkdir -p "$_cfg"; [ -s "$_cfg/settings.json" ] || printf '{}' > "$_cfg/settings.json"
+# --- timeout shim: stock macOS ships no timeout(1); use gtimeout (coreutils) if present, else none ---
+if command -v timeout >/dev/null 2>&1; then TIMEOUT_CMD="timeout $TIMEOUT"
+elif command -v gtimeout >/dev/null 2>&1; then TIMEOUT_CMD="gtimeout $TIMEOUT"
+else TIMEOUT_CMD=""; echo "[vqa] WARN: no timeout(1)/gtimeout — running claude -p unbounded" >&2; fi
+
+# --- auth isolation (score.sh #1260/#1404 pattern, condensed) — per-invocation config dir (no reuse) --
+_cfg="$(mktemp -d "${TMPDIR:-/tmp}/worldos-vqa-config.XXXXXX")"
+printf '{}' > "$_cfg/settings.json"
 _tok="${CLAUDE_CODE_OAUTH_TOKEN:-}"
 if [ -z "$_tok" ]; then
   if [ "$(uname)" = "Darwin" ]; then
@@ -71,7 +76,7 @@ sys.stdout.write(d.get("accessToken") or "")' 2>/dev/null || true)"
 fi
 
 RAW="$(mktemp)"; ERR="$(mktemp)"
-trap 'rm -f "$RAW" "$ERR"' EXIT
+trap 'rm -f "$RAW" "$ERR"; rm -rf "$_cfg"' EXIT
 
 attempt=0
 while [ "$attempt" -lt 3 ]; do
@@ -81,22 +86,32 @@ while [ "$attempt" -lt 3 ]; do
     -u CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH -u CLAUDE_CODE_SDK_HAS_OAUTH_REFRESH -u CLAUDE_CODE_SESSION_ID \
     CLAUDE_CONFIG_DIR="$_cfg" \
     ${_tok:+CLAUDE_CODE_OAUTH_TOKEN="$_tok"} \
-    timeout "$TIMEOUT" claude -p \
+    $TIMEOUT_CMD claude -p \
     --model "$MODEL" --permission-mode bypassPermissions \
     --output-format json > "$RAW" 2> "$ERR"
 
-  # The answer text lives at .result; strip any stray code fences, keep the {...} object.
+  # The answer text lives at .result; strip any stray code fences, keep the {...} object. The parser
+  # REQUIRES every requested flag and COERCES YES/NO/true/false/1/0 strings to booleans — a missing
+  # flag or an unparseable value is a hard parse failure (retry), never a silent "clean".
   RES="$(jq -r '.result // empty' "$RAW" 2>/dev/null | sed -E '/^```/d')"
-  FLAGS="$(printf '%s' "$RES" | python3 -c 'import json,sys,re
-t=sys.stdin.read()
-m=re.search(r"\{.*\}", t, re.DOTALL)
+  FLAGS="$(WORLDOS_VQA_QJSON="$QUESTIONS_JSON" python3 -c 'import json,os,sys,re
+want=[q["flag"] for q in json.loads(os.environ["WORLDOS_VQA_QJSON"]).get("questions",[])]
+def coerce(v):
+    if isinstance(v,bool): return v
+    if isinstance(v,(int,float)): return bool(v)
+    if isinstance(v,str):
+        s=v.strip().lower()
+        if s in ("true","yes","y","1"): return True
+        if s in ("false","no","n","0"): return False
+    raise ValueError("uncoercible flag value: %r"%(v,))
+t=sys.stdin.read(); m=re.search(r"\{.*\}", t, re.DOTALL)
 try:
-    obj=json.loads(m.group(0)) if m else {}
-    fl=obj.get("flags", {})
-    assert isinstance(fl, dict)
-    print(json.dumps({"flags": {k: bool(v) for k,v in fl.items()}}))
+    fl=(json.loads(m.group(0)) if m else {}).get("flags",{})
+    assert isinstance(fl,dict)
+    out={k:coerce(fl[k]) for k in want}  # KeyError if a requested flag is missing -> parse failure
+    print(json.dumps({"flags":out}))
 except Exception:
-    sys.exit(1)' 2>/dev/null || true)"
+    sys.exit(1)' <<<"$RES" 2>/dev/null || true)"
   if [ -n "$FLAGS" ]; then printf '%s\n' "$FLAGS"; exit 0; fi
 
   api_err="$(jq -r 'select(.is_error==true) | .api_error_status // .subtype // "error"' "$RAW" 2>/dev/null)"

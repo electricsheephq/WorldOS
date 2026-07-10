@@ -16,8 +16,9 @@ The authored prop layout is read straight from the scene_grid seeds (their modul
 are the single source of truth shared with the engine's impassable set), so a manifest is regeneratable
 on demand and can never silently diverge from the seed:
   * camp_clearing_night_v2  <- qa/seed_gfx_camp.py     (16x12; the rest-camp fixture; occlusion==footprint)
-  * crypt_dense_v1          <- qa/seed_gfx_combat.py    (14x11; the DEPLOYED crypt_armb_iter3_v1 grid —
-                                                        recalibrated sarcophagus FOOTPRINT + silhouette, #1505)
+  * crypt_dense_v1          <- MEASURED (PR #1505 point-in-polygon fit, sha 49d53fa; 14x11 deployed
+                              crypt_armb_iter3_v1 grid) — values copied in, NOT imported from the
+                              concurrently-edited seed_gfx_combat.py; a stable measured snapshot.
 
   python3 qa/build_room_manifest.py          # regenerate both committed manifests
   python3 qa/build_room_manifest.py --check   # verify the committed manifests match the seeds (CI-safe)
@@ -36,8 +37,16 @@ if str(_QA_DIR) not in sys.path:
     sys.path.insert(0, str(_QA_DIR))
 
 import seed_gfx_camp as camp  # noqa: E402
-import seed_gfx_combat as crypt  # noqa: E402  (the DEPLOYED crypt grid — the crypt_armb_iter3_v1 plate)
 from check_plate_drift import FP_GRID, fingerprint, load_luma, project_cell_bbox  # noqa: E402
+
+# The DEPLOYED crypt (crypt_armb_iter3_v1 plate) grid values, MEASURED — copied verbatim from PR #1505
+# (merged sha 49d53fa; point-in-polygon fit on the deployed plate) rather than importing seed_gfx_combat.
+# The crypt manifest is a `measured` SNAPSHOT, and the collision-coherence lane is concurrently editing
+# those seeds; decoupling keeps this manifest a stable, self-describing record instead of a moving target.
+_CRYPT_GRID = (14, 11)
+_CRYPT_PILLAR_L = [[2, 4]]
+_CRYPT_PILLAR_R = [[9, 9]]
+_CRYPT_SARCOPHAGUS_FOOTPRINT = [[c, r] for c in range(2, 8) for r in range(7, 10)]  # cols2-7 x rows7-9 (18)
 
 _MANIFESTS_DIR = _QA_DIR / "room_manifests"
 _CAMERA = {  # the contract greybox rig, recorded so a manifest is self-describing
@@ -82,16 +91,14 @@ _SARCOPHAGUS_OCCLUSION = [[c, r] for c in range(3, 10) for r in range(3, 8)]
 
 
 def _crypt_tomb_props() -> list:
-    """The DEPLOYED crypt (crypt_armb_iter3_v1 plate) props — from seed_gfx_combat.py's recalibrated
-    footprints (#1505 owner-playtest-#4 correction). The sarcophagus carries its distinct silhouette as
-    occlusion; the pillars' tall-but-thin silhouette has no separate measured extent, so occlusion ==
-    footprint."""
+    """The DEPLOYED crypt (crypt_armb_iter3_v1 plate) props — MEASURED from PR #1505's recalibrated
+    footprints (owner-playtest-#4 correction, sha 49d53fa). The sarcophagus carries its distinct
+    silhouette as occlusion; the pillars' tall-but-thin silhouette has no separate measured extent, so
+    occlusion == footprint."""
     return [
-        ("pillar_l", "stone_pillar", [list(c) for c in crypt.PILLAR_L_CELLS],
-         [list(c) for c in crypt.PILLAR_L_CELLS]),
-        ("pillar_r", "stone_pillar", [list(c) for c in crypt.PILLAR_R_CELLS],
-         [list(c) for c in crypt.PILLAR_R_CELLS]),
-        ("sarcophagus", "sarcophagus", [list(c) for c in crypt.SARCOPHAGUS_CELLS], _SARCOPHAGUS_OCCLUSION),
+        ("pillar_l", "stone_pillar", _CRYPT_PILLAR_L, _CRYPT_PILLAR_L),
+        ("pillar_r", "stone_pillar", _CRYPT_PILLAR_R, _CRYPT_PILLAR_R),
+        ("sarcophagus", "sarcophagus", _CRYPT_SARCOPHAGUS_FOOTPRINT, _SARCOPHAGUS_OCCLUSION),
     ]
 
 
@@ -147,7 +154,8 @@ def _manifests() -> dict:
             source_plate="evidence/plate-audit/camp_clearing_night_v2.jpg"),
         "crypt_dense_v1": build_manifest(
             room="crypt_dense_v1", recipe_key="crypt",
-            source_seed="qa/seed_gfx_combat.py", cols=crypt.GRID_W, rows=crypt.GRID_H,
+            source_seed="measured: PR #1505 point-in-polygon fit (sha 49d53fa)",
+            cols=_CRYPT_GRID[0], rows=_CRYPT_GRID[1],
             props=_crypt_tomb_props(),
             source_plate=None),  # crypt_armb_iter3_v1.png lives on the box; geometry-only + fingerprint-ready
     }
