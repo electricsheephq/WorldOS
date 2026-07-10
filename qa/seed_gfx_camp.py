@@ -44,20 +44,51 @@ GRID_W, GRID_H = 16, 12
 # eyeball-confirming each painted solid's floor-contact cells against the plate. Footprints kept DISJOINT
 # (no cell claimed by two props). Each entry is a footprint (list of [c, r] cells).
 CAMPFIRE_CELLS = [[4, 8], [5, 8], [4, 9], [5, 9]]        # the central fire pit + fire-stone ring
-FIREWOOD_CELLS = [[7, 8], [8, 8]]                        # the stacked firewood logs right of the fire
-CRATE_L_CELLS = [[2, 4], [3, 4], [3, 5]]                 # the left stacked supply crates
+# OWNER PLAYTEST #7 PER-PROP FOOTPRINT/OCCLUSION TUNE (2026-07-11, on the adopted true-greybox
+# camp_clearing_night_truegrey_v1.png plate — CAMP-TUNE): the woodpile, crate stack, and shelter
+# footprints below were re-measured directly against the ADOPTED plate (the true-greybox regen fixed
+# scale; these 5 defects were pure per-prop drift within that correct-scale plate). wall_br was SPLIT
+# into 3 short segments (same 9 cells, regrouped) and the ruin gained 3 new small segments — a long
+# multi-cell footprint gives tools/derive_room_manifest.py's per-prop bounding-box occlusion a huge
+# span (its hull is the MIN/MAX box over the whole footprint), which was silently over-occluding open
+# ground near the top-right exit; several SHORT props keep each hull tight to its own segment.
+FIREWOOD_CELLS = [[7, 8], [8, 8], [8, 9]]      # the stacked firewood logs right of the fire (extended
+                                                # down-right to the painted log mass; (7,9) stays clear
+                                                # for HERO_CELL)
+CRATE_L_CELLS = [[2, 2], [3, 2], [3, 3], [2, 4]]  # the left stacked-crate cluster — re-measured to the
+                                                    # 4 painted boxes (2x2 block at (2,2)/(3,2)/(3,3) +
+                                                    # the small front crate at (2,4)); drops (3,4)/(3,5)
+                                                    # (bare ground, a phantom blocked cell) and folds in
+                                                    # (3,2) (previously the misplaced POST_CELLS, which
+                                                    # painted as a 5th crate corner, not a stone post)
 CRATE_C_CELLS = [[8, 3], [8, 4]]                         # the crate by the shelter entrance
 CRATE_WALL_CELLS = [[6, 3]]                              # the lone box atop the back wall
 CRATE_R_CELLS = [[9, 10], [10, 10], [10, 11]]           # the crate front-right
 WALL_BL_CELLS = [[5, 2], [6, 2], [7, 3]]                 # the ruined low stone wall, back-left run
-WALL_BR_CELLS = [[10, 5], [10, 6], [11, 6], [11, 7], [11, 8],
-                 [12, 8], [12, 9], [11, 9], [12, 10]]    # the thick stone wall, back-right compound edge
-POST_CELLS = [[3, 2], [4, 2]]                            # the two stone gate posts, far left
-SHELTER_CELLS = [[12, 3], [13, 4], [14, 5]]             # the timber lean-to's ground-contact base
+# the back-right compound wall, split into 3 short runs (same 9 cells as before the CAMP-TUNE split;
+# see the module-docstring note above on why occlusion needs each run kept short).
+WALL_BR_CELLS = [[10, 5], [10, 6], [11, 6]]
+WALL_BR2_CELLS = [[11, 7], [11, 8], [12, 8]]
+WALL_BR3_CELLS = [[12, 9], [11, 9], [12,10]]
+# the top-right ruin's tall gable + second tower + connecting wall base — previously UNMODELED (only
+# the near corner via WALL_BR3_CELLS existed), so the player could walk into the painted wall stones;
+# the enclosed interior ((13,8)-(14,9) ish) is left walkable/enterable, matching the painted floor.
+RUIN_TOWER1_CELLS = [[15, 6], [15, 7]]                   # the tall gabled wall's base
+RUIN_TOWER2_CELLS = [[15, 8], [15, 9], [15, 10], [15, 11]]  # the second (shorter) tower's base,
+                                                              # incl. its far grid-corner rubble (else
+                                                              # (15,11) is walled off into an isolated
+                                                              # unreachable pocket by ruin_link/tower2)
+RUIN_LINK_CELLS = [[13, 10], [13, 11], [14, 10], [14, 11]]  # the low wall connecting the two towers
+SHELTER_CELLS = [[12, 2], [12, 3], [13, 3], [13, 4], [14, 4]]  # the timber lean-to's posts + back wall
+                                                                 # (re-measured: the covered floor with
+                                                                 # the bedrolls reads as enterable and
+                                                                 # stays walkable; only the posts/back
+                                                                 # wall paint block)
 BEDROLL_L_CELLS = [[1, 8], [2, 8], [2, 9], [3, 9]]      # the two bedrolls, front-left
 BEDROLL_R_CELLS = [[5, 10], [6, 10], [6, 11]]           # the bedroll, front-right
 OBSTACLES = (CAMPFIRE_CELLS + FIREWOOD_CELLS + CRATE_L_CELLS + CRATE_C_CELLS + CRATE_WALL_CELLS
-             + CRATE_R_CELLS + WALL_BL_CELLS + WALL_BR_CELLS + POST_CELLS + SHELTER_CELLS
+             + CRATE_R_CELLS + WALL_BL_CELLS + WALL_BR_CELLS + WALL_BR2_CELLS + WALL_BR3_CELLS
+             + RUIN_TOWER1_CELLS + RUIN_TOWER2_CELLS + RUIN_LINK_CELLS + SHELTER_CELLS
              + BEDROLL_L_CELLS + BEDROLL_R_CELLS)
 # Combat spawns — open dirt near the fire (clear of every prop footprint above), re-verified vs the plate.
 HERO_CELL = [7, 9]
@@ -98,8 +129,16 @@ def _build_camp_grid(cid: str, location_id: str = ""):
     _prop("crate_wall", "supply_crates", CRATE_WALL_CELLS, "mid", "a lone crate set atop the low wall")
     _prop("crate_r", "supply_crates", CRATE_R_CELLS, "mid", "a supply crate at the camp's front edge")
     _prop("wall_bl", "stone_wall", WALL_BL_CELLS, "mid", "a low ruined stone wall, back-left")
+    # wall_br split into 3 short runs (CAMP-TUNE, owner playtest #7) so each keeps its own tight
+    # bounding-box occlusion instead of one hull spanning the whole compound wall's diagonal.
     _prop("wall_br", "stone_wall", WALL_BR_CELLS, "mid", "the thick stone compound wall, back-right")
-    _prop("post_l", "stone_pillar", POST_CELLS, "tall", "a pair of weathered stone gate posts")
+    _prop("wall_br2", "stone_wall", WALL_BR2_CELLS, "mid", "the thick stone compound wall, back-right")
+    _prop("wall_br3", "stone_wall", WALL_BR3_CELLS, "mid", "the thick stone compound wall, back-right")
+    # the top-right ruin's tall gable/tower/link wall — previously unmodeled footprint (owner playtest #7:
+    # "walk into the wall slightly"); the enclosed interior between the towers stays walkable/enterable.
+    _prop("ruin_tower1", "stone_wall", RUIN_TOWER1_CELLS, "mid", "the ruin's tall mossy gabled wall")
+    _prop("ruin_tower2", "stone_wall", RUIN_TOWER2_CELLS, "mid", "the ruin's second broken stone tower")
+    _prop("ruin_link", "stone_wall", RUIN_LINK_CELLS, "mid", "the low wall linking the ruin's two towers")
     _prop("shelter", "timber_frame", SHELTER_CELLS, "tall", "the timber lean-to's post-and-beam frame")
     _prop("bedroll_l", "bedroll", BEDROLL_L_CELLS, "low", "two rolled sleeping bedrolls, front-left")
     _prop("bedroll_r", "bedroll_2", BEDROLL_R_CELLS, "low", "a rolled bedroll with a pack for a pillow")

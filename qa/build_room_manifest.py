@@ -55,6 +55,26 @@ _CRYPT_SARCOPHAGUS_FOOTPRINT = [  # the coffin BODY floor cells, cols3-7 x rows6
     [4, 8], [5, 8], [6, 8],
 ]
 
+# The DEPLOYED camp v2 plate (camp_clearing_night_v2.jpg) grid values, MEASURED — a stable
+# self-describing SNAPSHOT (kept decoupled from the concurrently-edited seed_gfx_camp.py, same
+# pattern as the crypt snapshot above). Values are the OWNER PLAYTEST #5 collision-coherence
+# re-measurement (2026-07-10), frozen here so this HISTORY-only manifest (camp_clearing_night_v2,
+# parked on its own non-colliding recipe_key — PANEL-ADOPT #1519) never drifts when a later pass
+# (owner playtest #7 CAMP-TUNE, 2026-07-11) re-measures the LIVE seed's footprints against the newer
+# ADOPTED true-greybox plate instead — a different plate, so a different set of authored cells.
+_CAMP_V2_CAMPFIRE = [[4, 8], [5, 8], [4, 9], [5, 9]]
+_CAMP_V2_FIREWOOD = [[7, 8], [8, 8]]
+_CAMP_V2_CRATE_L = [[2, 4], [3, 4], [3, 5]]
+_CAMP_V2_CRATE_C = [[8, 3], [8, 4]]
+_CAMP_V2_CRATE_WALL = [[6, 3]]
+_CAMP_V2_CRATE_R = [[9, 10], [10, 10], [10, 11]]
+_CAMP_V2_WALL_BL = [[5, 2], [6, 2], [7, 3]]
+_CAMP_V2_WALL_BR = [[10, 5], [10, 6], [11, 6], [11, 7], [11, 8], [12, 8], [12, 9], [11, 9], [12, 10]]
+_CAMP_V2_POST = [[3, 2], [4, 2]]
+_CAMP_V2_SHELTER = [[12, 3], [13, 4], [14, 5]]
+_CAMP_V2_BEDROLL_L = [[1, 8], [2, 8], [2, 9], [3, 9]]
+_CAMP_V2_BEDROLL_R = [[5, 10], [6, 10], [6, 11]]
+
 _MANIFESTS_DIR = _QA_DIR / "room_manifests"
 _CAMERA = {  # the contract greybox rig, recorded so a manifest is self-describing
     "recipe": "greybox_render_headless (verified vs Unity Quaternion.Euler(30,45,0) <1e-3)",
@@ -70,23 +90,25 @@ _CAMERA = {  # the contract greybox rig, recorded so a manifest is self-describi
 # sarcophagus is the canonical case — see #1505). When no distinct silhouette is measured (thin/short
 # props, outdoor scatter), occlusion defaults to the footprint.
 def _camp_props() -> list:
-    """The camp_clearing_night_v2 prop decomposition — VERBATIM from seed_gfx_camp.py's authored grid
-    (fire pit, firewood, crates, stone walls, gate posts, lean-to, bedrolls), matching _build_camp_grid's
-    prop list one-for-one (owner playtest #5 re-measurement of the DEPLOYED v2 plate). These solids have
-    no measured up-screen silhouette split, so occlusion == footprint."""
+    """The camp_clearing_night_v2 (HISTORY-only, PANEL-ADOPT #1519) prop decomposition — a frozen
+    SNAPSHOT of seed_gfx_camp.py's footprints as they stood for the owner-playtest-#5 measurement
+    against the OLD v2 plate (see the `_CAMP_V2_*` constants above), decoupled from the live seed so a
+    later CAMP-TUNE pass re-measuring against the newer ADOPTED plate can't silently rewrite this
+    HISTORY manifest's pinned values. These solids have no measured up-screen silhouette split, so
+    occlusion == footprint."""
     fp = [
-        ("campfire", "campfire_pit", list(camp.CAMPFIRE_CELLS)),
-        ("firewood", "fallen_log", list(camp.FIREWOOD_CELLS)),
-        ("crate_l", "supply_crates", list(camp.CRATE_L_CELLS)),
-        ("crate_c", "supply_crates", list(camp.CRATE_C_CELLS)),
-        ("crate_wall", "supply_crates", list(camp.CRATE_WALL_CELLS)),
-        ("crate_r", "supply_crates", list(camp.CRATE_R_CELLS)),
-        ("wall_bl", "stone_wall", list(camp.WALL_BL_CELLS)),
-        ("wall_br", "stone_wall", list(camp.WALL_BR_CELLS)),
-        ("post_l", "stone_pillar", list(camp.POST_CELLS)),
-        ("shelter", "timber_frame", list(camp.SHELTER_CELLS)),
-        ("bedroll_l", "bedroll", list(camp.BEDROLL_L_CELLS)),
-        ("bedroll_r", "bedroll", list(camp.BEDROLL_R_CELLS)),
+        ("campfire", "campfire_pit", list(_CAMP_V2_CAMPFIRE)),
+        ("firewood", "fallen_log", list(_CAMP_V2_FIREWOOD)),
+        ("crate_l", "supply_crates", list(_CAMP_V2_CRATE_L)),
+        ("crate_c", "supply_crates", list(_CAMP_V2_CRATE_C)),
+        ("crate_wall", "supply_crates", list(_CAMP_V2_CRATE_WALL)),
+        ("crate_r", "supply_crates", list(_CAMP_V2_CRATE_R)),
+        ("wall_bl", "stone_wall", list(_CAMP_V2_WALL_BL)),
+        ("wall_br", "stone_wall", list(_CAMP_V2_WALL_BR)),
+        ("post_l", "stone_pillar", list(_CAMP_V2_POST)),
+        ("shelter", "timber_frame", list(_CAMP_V2_SHELTER)),
+        ("bedroll_l", "bedroll", list(_CAMP_V2_BEDROLL_L)),
+        ("bedroll_r", "bedroll", list(_CAMP_V2_BEDROLL_R)),
     ]
     return [(pid, kind, [list(c) for c in cells], [list(c) for c in cells]) for (pid, kind, cells) in fp]
 

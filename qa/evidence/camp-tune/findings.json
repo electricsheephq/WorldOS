@@ -1,0 +1,54 @@
+{
+  "title": "CAMP-TUNE — owner playtest #7 per-prop footprint/occlusion tune on the adopted true-greybox camp_clearing_night_truegrey_v1.png plate",
+  "plate": "qa/evidence/plate-audit/camp_clearing_night_truegrey_v1.png",
+  "geometry": "qa/evidence/true-greybox/camp/camp_geometry.json",
+  "manifest": "qa/room_manifests/camp_truegrey.cells.json",
+  "method": "Re-authored qa/seed_gfx_camp.py's per-prop cell constants (the single source tools/author_room_geometry.py + the engine's own SceneGrid both read) directly against the ADOPTED plate, using a debug grid+cell-label overlay (world_to_screen/cell_to_world from qa/greybox_render_headless.py) to pixel-verify each footprint before committing it. Regenerated camp_geometry.json (tools/author_room_geometry.py) and camp_truegrey.cells.json (tools/derive_room_manifest.py), then re-baked qa/check_plate_drift.py ref_fp fingerprints against the plate and verified every prop PASSes (NCC >= 0.75) at its new authored bbox.",
+  "defects": [
+    {
+      "id": 1,
+      "name": "WOODPILE walkable",
+      "fix": "FIREWOOD_CELLS [[7,8],[8,8]] -> [[7,8],[8,8],[8,9]] (extended onto the painted log mass; (7,9) kept clear for HERO_CELL)",
+      "evidence": "defect1_woodpile.png",
+      "ncc": 0.981
+    },
+    {
+      "id": 2,
+      "name": "CRATE STACK (left): walkable on boxes + phantom blocked cell",
+      "fix": "CRATE_L_CELLS [[2,4],[3,4],[3,5]] -> [[2,2],[3,2],[3,3],[2,4]] (adds the 3 painted boxes previously walkable, drops the 2 phantom cells at (3,4)/(3,5) with no paint); POST_CELLS ([[3,2],[4,2]]) retired — (3,2) was really a 4th crate corner (folded into crate_l), (4,2) was a pure phantom with nothing painted under it",
+      "evidence": "defect2_crate_stack.png",
+      "ncc": 0.9918
+    },
+    {
+      "id": 3,
+      "name": "HUT/SHELTER (top-center): walk-through",
+      "fix": "SHELTER_CELLS [[12,3],[13,4],[14,5]] -> [[12,2],[12,3],[13,3],[13,4],[14,4]] (the posts + back wall/canvas now block; the covered floor with the bedrolls stays walkable/enterable per the paint)",
+      "evidence": "defect3_shelter.png",
+      "ncc": 0.9898
+    },
+    {
+      "id": 4,
+      "name": "TOP-RIGHT RUIN: walk into the wall slightly",
+      "fix": "3 new small props added — ruin_tower1 [[15,6],[15,7]], ruin_tower2 [[15,8],[15,9],[15,10],[15,11]], ruin_link [[13,10],[13,11],[14,10],[14,11]] (previously unmodeled; the enclosed interior stays walkable/enterable, matching the owner's note that being occluded there reads fine)",
+      "evidence": "defect4_ruin.png",
+      "ncc": {"ruin_tower1": 0.9799, "ruin_tower2": 0.9873, "ruin_link": 0.9832}
+    },
+    {
+      "id": 5,
+      "name": "TOP-RIGHT TREES + camp EXIT: over-covering occlusion hides the player",
+      "root_cause": "tools/derive_room_manifest.py's per-prop occlusion hull is the MIN/MAX bounding box over the WHOLE footprint. wall_br's original 9-cell L-shaped footprint (spanning cols 10-12, rows 5-10) produced a single 48-CELL occlusion hull (cols 9-15, rows 4-10) that blanketed most of the top-right clearing, including open ground near the exit.",
+      "fix": "wall_br SPLIT into 3 short runs (wall_br/wall_br2/wall_br3, same 9 cells, regrouped) — each segment's occlusion hull shrank from the shared 48-cell mega-hull to 7 cells apiece (21 total), hugging just its own run. The new ruin segments (defect 4) are similarly kept short (2-4 cells each) for the same reason.",
+      "evidence": "defect5_exit_occlusion.png",
+      "occlusion_before": {"wall_br (pre-split, 9-cell footprint)": 48},
+      "occlusion_after": {"wall_br": 7, "wall_br2": 7, "wall_br3": 7}
+    }
+  ],
+  "drift_gate_verification": {
+    "command": "qa/check_plate_drift.py check against camp_clearing_night_truegrey_v1.png",
+    "result": "PASS (16 checked, 0 skipped)",
+    "min_ncc": 0.9519,
+    "note": "every prop's peak NCC at its authored bbox is comfortably above NCC_MIN=0.75 and above the 0.90 calibration floor test_known_good_camp_plate_passes uses for the legacy pair"
+  },
+  "obstacle_count": {"before": 39, "after": 51},
+  "prop_count": {"before": 12, "after": 16}
+}

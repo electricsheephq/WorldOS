@@ -128,7 +128,10 @@ def author_camp() -> dict:
     of the crypt's — the SCENE is painted ~25% too small while the seed prop footprints are already
     plausible real-world sizes, so footprints are kept VERBATIM and the correct-scale greybox + registered
     regeneration fixes the paint fill. ONE exception: the fire pit's 2x2 (10ftx10ft) seed footprint is
-    oversized; a campfire + stone ring is ~2x1 cells."""
+    oversized; a campfire + stone ring is ~2x1 cells. Owner playtest #7 CAMP-TUNE (2026-07-11) further
+    re-measured several footprints directly against the ADOPTED true-greybox plate (woodpile, crate
+    cluster, shelter posts/back-wall, the ruin's tower/link walls) — see seed_gfx_camp.py's per-constant
+    comments for the per-defect rationale."""
     cp = _load_seed("_seed_camp", "seed_gfx_camp.py")
     props = [
         ("campfire", "campfire_pit", _centered_box(cp.CAMPFIRE_CELLS, 2, 1)),
@@ -138,8 +141,15 @@ def author_camp() -> dict:
         ("crate_wall", "supply_crates", cp.CRATE_WALL_CELLS),
         ("crate_r", "supply_crates", cp.CRATE_R_CELLS),
         ("wall_bl", "stone_wall", cp.WALL_BL_CELLS),
+        # wall_br SPLIT into 3 short runs + the ruin's own tower1/tower2/link (owner playtest #7
+        # CAMP-TUNE): a long multi-cell footprint gives derive_room_manifest.py's per-prop
+        # bounding-box occlusion hull a huge span; several short props keep each hull tight.
         ("wall_br", "stone_wall", cp.WALL_BR_CELLS),
-        ("post_l", "stone_pillar", cp.POST_CELLS),
+        ("wall_br2", "stone_wall", cp.WALL_BR2_CELLS),
+        ("wall_br3", "stone_wall", cp.WALL_BR3_CELLS),
+        ("ruin_tower1", "stone_wall", cp.RUIN_TOWER1_CELLS),
+        ("ruin_tower2", "stone_wall", cp.RUIN_TOWER2_CELLS),
+        ("ruin_link", "stone_wall", cp.RUIN_LINK_CELLS),
         ("shelter", "timber_frame", cp.SHELTER_CELLS),
         ("bedroll_l", "bedroll", cp.BEDROLL_L_CELLS),
         ("bedroll_r", "bedroll_2", cp.BEDROLL_R_CELLS),

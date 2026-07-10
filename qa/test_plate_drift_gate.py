@@ -61,14 +61,20 @@ def _cell_shift_px(cols: int, rows: int, dc: int, dr: int) -> tuple[int, int]:
 
 # ── 1. the manifest pins the authored REST-fixture prop cells ─────────────────────────────────────
 def test_camp_manifest_cells_match_rest_fixture_seed():
-    """Every camp_clearing_night prop cell in the manifest is exactly a seed_gfx_camp.py authored
-    obstacle cell, and vice-versa — the manifest can never silently disagree with the grid the
-    engine's impassable set is built from. Grid dims + prop count pinned too."""
+    """Every camp_clearing_night_v2 (HISTORY-only, PANEL-ADOPT #1519) prop cell in the manifest is
+    exactly a `brm._camp_props()` frozen-snapshot cell, and vice-versa — the manifest can never
+    silently disagree with the FROZEN v2-plate layout it was built from. Grid dims + prop count
+    pinned too.
+
+    CAMP-TUNE (owner playtest #7, 2026-07-11): this legacy manifest/plate pair is intentionally
+    DECOUPLED from the live seed_gfx_camp.py (see build_room_manifest.py's `_CAMP_V2_*` snapshot
+    constants) — the live seed now re-measures several footprints against the newer ADOPTED
+    true-greybox plate, a different composition this frozen v2 pair must not silently absorb."""
     m = _manifest(_CAMP_MANIFEST)
     assert (m["grid"]["cols"], m["grid"]["rows"]) == (camp.GRID_W, camp.GRID_H) == (16, 12)
     manifest_cells = {tuple(c) for p in m["props"] for c in p["cells"]}
-    seed_cells = {tuple(c) for c in camp.OBSTACLES}
-    assert manifest_cells == seed_cells, "manifest prop cells drifted from the authored seed layout"
+    snapshot_cells = {tuple(c) for (_, _, cells, _occ) in brm._camp_props() for c in cells}
+    assert manifest_cells == snapshot_cells, "manifest prop cells drifted from the frozen v2 snapshot"
     assert len(m["props"]) == 12  # fire + firewood + 4 crates + 2 walls + posts + shelter + 2 bedrolls
 
 
@@ -152,12 +158,14 @@ def test_geometry_only_manifest_skips_without_baseline():
 
 def test_gate_room_recipes_covers_camp_and_stays_green():
     """The room_recipes.json canonical_plate gate: it must find the camp room (manifest + committed
-    plate), PASS it, and report the crypt as no-plate — overall green."""
+    plate), PASS it, and report the crypt as no-plate — overall green. camp_clearing_night resolves
+    to the ADOPTED camp_truegrey manifest (PANEL-ADOPT #1519), 16 props as of CAMP-TUNE (owner
+    playtest #7: wall_br split into 3 + the ruin's 3 new segments, was 12)."""
     report = drift.gate_room_recipes()
     assert report["passed"], report
     rooms = {r["recipe_key"]: r for r in report["rooms"]}
     assert rooms["camp_clearing_night"].get("passed") is True
-    assert rooms["camp_clearing_night"].get("checked") == 12
+    assert rooms["camp_clearing_night"].get("checked") == 16
     assert rooms["crypt"]["status"] == "no-plate"
 
 
