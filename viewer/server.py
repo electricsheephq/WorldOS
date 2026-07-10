@@ -109,6 +109,7 @@ _MOVE_KINDS = {
     "cross_door",  # M-E: cross an authored doorway to the linked room-unit (engine-resolved)
     "walk_to_cell",  # W2 #1319: rest-mode click-to-walk (engine walk_to; carried by x/y)
     "parley_approach",  # W3 #1320: rest-mode click-to-talk (engine generate_parley_options approach)
+    "start_combat",  # WALKABLE-SLICE-V1 item 4: rest-mode "start a fight in place" (engine start_combat)
 }
 # Kinds whose payload is carried by `target` alone (no free `text`/`name`) — the graphical
 # intents. Used to relax the "needs text or name" guard below for these click-driven moves.
@@ -202,6 +203,12 @@ def sanitize_move(raw: object) -> tuple[Optional[dict], str]:
     if kind == "parley_approach":
         if not move.get("target_id"):
             return None, "'parley_approach' needs a 'target_id' (the NPC to talk to)"
+        return move, ""
+    # `start_combat` (WALKABLE-SLICE-V1 item 4) is the ENGINE-resolved rest-mode "start a fight in place"
+    # intent: no client-named target — the resolver SELECTS the combatants (present party + present NPCs)
+    # from the engine snapshot and calls the engine's start_combat verb. The only carried field is the
+    # campaign (handled by do_POST). Nothing else required.
+    if kind == "start_combat":
         return move, ""
     # The graphical intents (travel/inspect/examine/move_to_zone) are carried by `target`;
     # everything else needs a `text` or `name` so the DM has something to act on. An `attack`
@@ -1578,6 +1585,57 @@ def _resolve_parley_approach(campaign_id: str, move: dict) -> dict:
         "to": approach.get("to") if isinstance(approach, dict) else None,
         "path": (approach.get("path") if isinstance(approach, dict) else None) or [],
     }
+
+
+def _resolve_start_combat(campaign_id: str, move: dict) -> dict:
+    """Resolve a `start_combat` intent (WALKABLE-SLICE-V1 item 4 rest-mode "start a fight in place"):
+    open combat among everyone staged in the room — the present party + present NPCs/companions at the
+    party's current location — seeding initiative WHERE THEY RESTED (``seed_from_stage=True``). The
+    viewer stays a pure CONSUMER of the engine's SOLE-WRITER ``start_combat`` verb: it only SELECTS the
+    combatants from the engine snapshot and calls the verb; the engine rolls initiative + builds the
+    turn order under its lock. Gated on combat NOT already being active. Additive viewer intent — the
+    established rest-mode bridge lane (mirrors _resolve_cross_door / _resolve_walk_to /
+    _resolve_parley_approach); ``servers/engine`` is untouched.
+
+    Returns ``{ok:True, combatants:[...]}`` so the client re-fetches /combat-surface (now combat mode);
+    an already-active fight, too few combatants, or a hard engine error is a clean ``{ok:False, reason}``."""
+    engine = _load_engine_server()
+    if engine is None:
+        return {"ok": False, "reason": "engine unavailable"}
+    try:
+        snap = engine._require(campaign_id)
+    except Exception as exc:  # noqa: BLE001 — surface any engine read error as a clean rejection
+        return {"ok": False, "reason": f"could not read rest state: {exc}"}
+    if snap.combat.active:
+        return {"ok": False, "reason": "combat already active"}
+    loc_id = snap.current_location_id or ""
+    # Everyone staged in the current room: present party first (stable order), then present NPCs/
+    # companions anchored here — the deterministic "the whole room fights" combatant set. Location
+    # filter is skipped when the snapshot has no current location (older campaigns) so a fight still opens.
+    present: list[str] = []
+    seen: set[str] = set()
+    for cid in list(snap.party):
+        ch = snap.characters.get(cid)
+        if ch is not None and (not loc_id or ch.location_id == loc_id) and cid not in seen:
+            present.append(cid)
+            seen.add(cid)
+    for cid, ch in snap.characters.items():
+        if cid in seen or ch is None:
+            continue
+        if loc_id and ch.location_id != loc_id:
+            continue
+        if str(getattr(ch, "kind", "")).lower() in {"npc", "companion", "player"}:
+            present.append(cid)
+            seen.add(cid)
+    if len(present) < 2:
+        return {"ok": False, "reason": "need at least two combatants in the room to start a fight"}
+    try:
+        engine.start_combat(campaign_id, present, seed_from_stage=True)
+    except ValueError as exc:
+        return {"ok": False, "reason": str(exc)}
+    except Exception as exc:  # noqa: BLE001 — surface any engine error as a clean rejection
+        return {"ok": False, "reason": f"start_combat failed: {exc}"}
+    return {"ok": True, "combatants": present}
 
 
 def _resolve_player_combat_turn(campaign_id: str, move: dict, *, live: bool) -> dict:
@@ -9760,6 +9818,12 @@ class _Handler(BaseHTTPRequestHandler):
         # being resolved (see _resolve_parley_approach). The browser then re-fetches /parley-surface.
         if move.get("kind") == "parley_approach":
             self._json(_resolve_parley_approach(self.campaign_id, move))
+            return
+        # WALKABLE-SLICE-V1 item 4 START-A-FIGHT LANE: `start_combat` is engine-resolved in-process
+        # (engine.start_combat rolls initiative under the engine lock — the SOLE WRITER), NOT appended for
+        # the DM. The resolver selects the combatants (present party + present NPCs) from the snapshot.
+        if move.get("kind") == "start_combat":
+            self._json(_resolve_start_combat(self.campaign_id, move))
             return
         is_combat_cell = move.get("kind") in ("move_to_cell", "end_turn") or (
             move.get("kind") == "attack" and "target_id" in move
