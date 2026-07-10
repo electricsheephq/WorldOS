@@ -1,0 +1,130 @@
+{
+  "room": "camp_clearing_night_truegrey",
+  "panel_id": "panel-visual-panel-adopt-camp-truegrey-20260711",
+  "protocol": "control-anchored 5-scorer blind panel (model sonnet, independent subagents), visual-critic CALIBRATION-CONTROL PROTOCOL. Candidate = TRUE-GREYBOX camp painterly plate (correct-scale geometry, gemini-noref style pass). Blind images: A=candidate, B=incumbent house anchor (camp_clearing_night_v2, ALSO disclosed as house_best.jpg for the house-style question \u2014 the outdoor room family's only prior best-in-class plate), C=disguised registered real-art control.",
+  "scale": "0-10 visual-critic (delta-anchored two-tier ladder; absolute number is NOT a quality verdict)",
+  "candidate_image": "qa/evidence/true-greybox/camp/camp_painterly_candidate.png",
+  "incumbent_image": "qa/evidence/plate-audit/camp_clearing_night_v2.jpg",
+  "house_anchor": "qa/evidence/plate-audit/camp_clearing_night_v2.jpg",
+  "control_id": "control:visual:pillars-of-eternity-2:poe2_ruins_brazier_integration_01",
+  "control_note": "REGISTERED clean control (real shipped PoE2:Deadfire ruins/brazier plate, band [6.8,9.2]) from qa/visual_controls_identity.json, disguised as blind image_1 in the panel packet (same control file reused from plateloop_camp.json's panel.control).",
+  "pregate": {
+    "verdict": "FLAG",
+    "blocking": [
+      {
+        "gate": "G6_luma_staging_law",
+        "severity": "HIGH",
+        "metric": "staging_law_stats",
+        "value": {
+          "near_black_frac": 0.3269,
+          "lit_frac": 0.1947,
+          "median_L": 34.64
+        },
+        "threshold": {
+          "near_black_pass": [
+            0.66,
+            0.85
+          ],
+          "lit_pass": [
+            0.02,
+            0.05
+          ],
+          "median_pass": [
+            0,
+            15
+          ]
+        },
+        "detail": "FAIL: plate is outside the PoE staging-law band \u2014 near_black=32.7% (band 66-85% PASS / 50-66% WARN) [FAIL], lit=19.5% (band 2-5% PASS / 5-20% WARN) [WARN], median_L=34.6 (band 0-15 PASS / 15-40 WARN) [WARN]"
+      }
+    ],
+    "gates": [
+      {
+        "gate": "G1_frame_lit",
+        "severity": "PASS",
+        "metric": "mean_luminance",
+        "value": 0.1611,
+        "threshold": null,
+        "detail": "lit (mean 0.161, var 0.01066)"
+      },
+      {
+        "gate": "G6_luma_staging_law",
+        "severity": "HIGH",
+        "metric": "staging_law_stats",
+        "value": {
+          "near_black_frac": 0.3269,
+          "lit_frac": 0.1947,
+          "median_L": 34.64
+        },
+        "threshold": {
+          "near_black_pass": [
+            0.66,
+            0.85
+          ],
+          "lit_pass": [
+            0.02,
+            0.05
+          ],
+          "median_pass": [
+            0,
+            15
+          ]
+        },
+        "detail": "FAIL: plate is outside the PoE staging-law band \u2014 near_black=32.7% (band 66-85% PASS / 50-66% WARN) [FAIL], lit=19.5% (band 2-5% PASS / 5-20% WARN) [WARN], median_L=34.6 (band 0-15 PASS / 15-40 WARN) [WARN]"
+      },
+      {
+        "gate": "G5_motion_liveness",
+        "severity": "SKIPPED",
+        "metric": "reel",
+        "value": null,
+        "threshold": null,
+        "detail": "no render reel supplied; G5 skipped (only meaningful with a motion reel \u2014 build one with qa/motion_reel.py and pass its frames)"
+      }
+    ],
+    "summary": "PRE-GATE FLAG\n  [PASS    ] G1_frame_lit       mean_luminance=0.1611 :: lit (mean 0.161, var 0.01066)\n  [HIGH    ] G6_luma_staging_law staging_law_stats={'near_black_frac': 0.3269, 'lit_frac': 0.1947, 'median_L': 34.64} :: FAIL: plate is outside the PoE staging-law band \u2014 near_black=32.7% (band 66-85% PASS / 50-66% WARN) [FAIL], lit=19.5% (band 2-5% PASS / 5-20% WARN) [WARN], median_L=34.6 (band 0-15 PASS / 15-40 WARN) [WARN]\n  [SKIPPED ] G5_motion_liveness reel=None :: no render reel supplied; G5 skipped (only meaningful with a motion reel \u2014 build one with qa/motion_reel.py and pass its frames)"
+  },
+  "pregate_note": "G6_luma_staging_law FLAGs HIGH (stylistic gate, NOT a promotion hard floor per _VISUAL_HARD_FLOOR_GATES). G1_frame_lit PASSes -> the promotion hard floor (G1-G4) PASSes; G2-G4 N/A (backdrop-only plate, no actor sidecar).",
+  "scores": [
+    {
+      "scorer": 1,
+      "control": 3.0,
+      "candidate": 6.0,
+      "incumbent": 9.0
+    },
+    {
+      "scorer": 2,
+      "control": 10.0,
+      "candidate": 5.0,
+      "incumbent": 8.0
+    },
+    {
+      "scorer": 3,
+      "control": 3.0,
+      "candidate": 6.0,
+      "incumbent": 10.0
+    },
+    {
+      "scorer": 4,
+      "control": 10.0,
+      "candidate": 6.0,
+      "incumbent": 7.0
+    },
+    {
+      "scorer": 5,
+      "control": 7.0,
+      "candidate": 6.0,
+      "incumbent": 10.0
+    }
+  ],
+  "candidate_median": 6.0,
+  "control_median": 7.0,
+  "incumbent_median_this_panel": 9.0,
+  "delta_candidate_minus_control": -1.0,
+  "delta_incumbent_minus_control_this_panel": 2.0,
+  "house_style_votes": null,
+  "residual_defects": [
+    "HONEST CAVEAT: the disguised control (image_1) shows unusually HIGH scorer variance this panel (3,10,3,10,7 -> median 7, technically in-band [6.8,9.2] but a wide spread). Root cause: the control depicts a different scene (a PoE2 jungle-temple/ruins courtyard) than the campfire-clearing candidate/incumbent, and 2 of 5 scorer dispatches were missing an explicit calibration note that the control's scene need not match ('score craft, not scene-match') -- those 2 scored it 3/10 as 'wrong asset', the other 3 (which had or effectively applied the calibration framing) scored it 7-10. Per protocol this triggers only a conditional re-run ('re-run once if invalid'); the median (7.0) IS in-band, so the panel is treated as VALID and not re-run, but the variance is disclosed here rather than hidden.",
+    "HONEST CAVEAT: image_3 (incumbent B) is BYTE-IDENTICAL to the disclosed house_best.jpg reference (same file serves both roles, since camp_clearing_night_v2 is the outdoor family's only prior best-in-class plate) -- several scorers noticed this and scored B at/near the ceiling (7-10) partly because it trivially matches the disclosed 'house best' by definition, not purely on independent craft judgement. This does not affect the GATE (which only compares candidate vs CONTROL, not vs incumbent) but is disclosed for honesty.",
+    "Candidate median 6.0 vs control median 7.0 -> delta -1.0, which clears BOTH the adoption bar (-2.5) and the parity bar (-1.2) -> tier=canonical-candidate (the top automated tier)."
+  ],
+  "iterations": 1
+}

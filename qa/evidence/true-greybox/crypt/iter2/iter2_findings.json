@@ -1,0 +1,24 @@
+{
+  "lane": "PANEL-ADOPT (TRUE-GREYBOX follow-on, PR #1514 merged as af1bd716) — crypt style iteration 2, ornamentation/carved-relief-density pass",
+  "goal": "The crypt candidate (7.5 interim) trailed the incumbent (8.0) on ornamentation (carved reliefs/detail density). Run one more Gemini style pass on the SAME registered base (crypt_base_registered.png), strengthening carved-relief density using the incumbent crypt plate (candidate_crypt_armb_iter3.jpg) as a same-room style reference (content-hijack benign per THE REFERENCE-IMAGES LAW since the base is registered — docs/roadmap/PLATE-RECIPE-DECISION.md).",
+  "method": "model_google-gemini-3-1-flash via the scenario MCP, referenceImages=[crypt_base_registered.png, candidate_crypt_armb_iter3.jpg], structure-lock + dimetric-lock prompt clauses, resolution 2K, aspectRatio 16:9, numOutputs 3 per batch.",
+  "batch_1_loose_prompt": {
+    "candidates": {
+      "a": {"recall_vs_greybox": 0.7816, "read": "BEST composition of batch 1: 2 pillars (one tall knotwork column, one shorter carved pillar) + 1 sarcophagus w/ knight-effigy + carved side relief, strong ornamentation gain. Drift: adds a partial staircase corner + a back archway/doorway not in crypt_geometry.json."},
+      "b": {"recall_vs_greybox": 0.9418, "read": "Rejected: hijacked composition toward the incumbent — adds a SECOND sarcophagus/plinth-with-relief, a full staircase, and dense perimeter frieze walls. Real collision-drift risk (extra tomb prop not in the manifest)."},
+      "c": {"recall_vs_greybox": 0.9699, "read": "Rejected: adds a full staircase, a wall-mounted torch, and cobwebs not in crypt_geometry.json (matches the OLD incumbent's non-modeled flavor props, not this room's true-greybox geometry)."}
+    },
+    "verdict": "Loose prompt let Gemini's referenceImages hijack CONTENT (staircase / second tomb / perimeter friezes) beyond style, confirming the known gate limitation (edge-recall is content-blind, PLATE-RECIPE-DECISION.md open question #1491: it rewards busy imagery over faithful composition)."
+  },
+  "batch_2_hardened_structure_lock": {
+    "prompt_change": "Explicitly enumerated the ONLY allowed elements (perimeter wall, 1 brazier, 2 pillar STUBS at original small proportions, 1 sarcophagus) and explicitly forbade staircase/second-tomb/archway/wall-torch/cobwebs, directing the incumbent reference to ornamentation-density ONLY.",
+    "candidates": {
+      "d": {"recall_vs_greybox": 0.896, "read": "Clean: brazier + 1 pillar-stub in frame (tight crop) + sarcophagus w/ knight effigy + carved side panel. No staircase/archway/2nd tomb."},
+      "e": {"recall_vs_greybox": 0.9319, "read": "Rejected: still added a back archway/doorway with cobwebs, and its single pillar reads as a tall column rather than the original stub proportions."},
+      "f": {"recall_vs_greybox": 0.8492, "read": "SELECTED. Brazier + BOTH pillar stubs at correct proportions (rich carved knotwork relief) + 1 sarcophagus w/ knight-effigy + carved side relief, matching crypt_geometry.json's 3 props exactly. Only addition: a minor skull/bone pile + scattered leaf litter (thematic set-dressing, same class as the brazier itself — not a modeled prop but not collision-relevant; consistent with prior accepted crypt flavor clutter)."}
+    },
+    "overlay_check": "crypt_iter2_candidate_f_overlay.png (greybox edge-mask in red over the candidate): back-left corner, back wall, and floor perimeter register cleanly with only a small residual shift — same magnitude/class as the ALREADY-ACCEPTED iter1 overlay (crypt_painterly_overlay.png, whose ~0.5c residual shift is documented as edge-NCC noise, not real drift). Registration evidence for collision/occlusion purposes stays on the BASE layer per the #1514 finding (base=registered, paint=cosmetic) — this overlay is corroborating/advisory evidence for the painterly final, consistent with PLATE-RECIPE-DECISION.md's treatment of organic/soft-painterly finals."
+  },
+  "selected_candidate": "crypt_iter2_candidate_f_SELECTED.jpg, staged as the new image_2 (label A) in qa/evidence/true-greybox/crypt/loop/panel/ for the full 5-scorer blind panel.",
+  "honesty_note": "Recall-vs-greybox (edge alignment) is NOT the deciding metric here — it is content-blind and a busier/drift-prone candidate (b, c) can score HIGHER on recall than a faithful one (f) simply by adding more edges somewhere in frame. Candidate f was selected on COMPOSITION FIDELITY (matches crypt_geometry.json's exact prop set) + carved-relief density gain + a clean greybox-edge overlay, not on the recall number alone."
+}
