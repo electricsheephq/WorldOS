@@ -1,0 +1,52 @@
+{
+  "panel_id": "crypt-rich-20260711-p2",
+  "n_scorers": 5,
+  "scores": {
+    "scorer1": {
+      "A": 7,
+      "B": 9.5,
+      "C": 8.5
+    },
+    "scorer2": {
+      "A": 6.5,
+      "B": 9.5,
+      "C": 8
+    },
+    "scorer3": {
+      "A": 6.5,
+      "B": 9.5,
+      "C": 8
+    },
+    "scorer4": {
+      "A": 6.5,
+      "B": 8.5,
+      "C": 7.5
+    },
+    "scorer5": {
+      "A": 7,
+      "B": 9.5,
+      "C": 8.5
+    }
+  },
+  "slot_to_role": {
+    "A": "candidate",
+    "B": "control",
+    "C": "incumbent"
+  },
+  "candidate_file": "candidate_final_v2.png (refine/ref_3)",
+  "medians": {
+    "candidate": 6.5,
+    "incumbent": 8,
+    "control": 9.5
+  },
+  "control_band": [
+    6.8,
+    9.2
+  ],
+  "control_in_band": false,
+  "delta_candidate_minus_control": -3.0,
+  "delta_candidate_minus_incumbent": -1.5,
+  "at_or_above_incumbent_band(>=8.0-class)": false,
+  "verdict": "HONEST-NEGATIVE",
+  "note": "v2 frame-fill/wall-solidify refine removed the panel-1 crenellation+black-margin defects (black 52%->6%) but candidate median stayed 6.5 (==panel-1). Binding ceiling = painterly carving fidelity: scorers read the AI carvings as soft/repetitive/flat ('repeated pillar-knot motif','repetitive sarcophagus shapes','murky/generic brick tiling') vs the incumbent's crisp hand-painted relief. Control 9.5 is marginally above the 9.2 band ceiling (advisory) but the candidate<incumbent gap is unambiguous across BOTH panels."
+}
