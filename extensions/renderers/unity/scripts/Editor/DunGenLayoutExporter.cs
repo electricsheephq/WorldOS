@@ -50,25 +50,32 @@ namespace WorldOS.Editor
             Debug.Log("[DunGenLayoutExporter] " + msg);
         }
 
-        // --- Headless entry: build a generator from a DungeonFlow asset, generate, export. ---------------
+        // --- Headless entry: generate from a DungeonFlow asset via RuntimeDungeon, export. ---------------
+        // Uses the RuntimeDungeon component (not a bare DungeonGenerator): RuntimeDungeon.Generate() builds
+        // the default DungeonGenerationRequest and DungeonGenerator.Generate creates its own Root, so the
+        // whole thing runs synchronously in edit mode (GenerateAsynchronously defaults false). Callable
+        // from unity-mcp execute_code on the GEX44 box.
         public static string Export(string flowAssetPath, string outPath, int seed)
         {
             var flow = AssetDatabase.LoadAssetAtPath<Object>(flowAssetPath);
             if (flow == null) return "FAIL: DungeonFlow asset not found at " + flowAssetPath;
 
-            var genType = System.Type.GetType("DunGen.DungeonGenerator, Assembly-CSharp") ??
-                          FindType("DunGen.DungeonGenerator");
-            if (genType == null) return "FAIL: DunGen.DungeonGenerator type not found (is DunGen imported?)";
+            var rtType = FindType("DunGen.RuntimeDungeon");
+            if (rtType == null) return "FAIL: DunGen.RuntimeDungeon type not found (is DunGen imported?)";
 
-            var gen = System.Activator.CreateInstance(genType);
+            var go = new GameObject("DunGenSpikeExport");
+            var runtime = go.AddComponent(rtType);
+            var gen = GetMember(runtime, "Generator");
+            if (gen == null) return "FAIL: RuntimeDungeon.Generator was null";
             SetMember(gen, "DungeonFlow", flow);
             SetMember(gen, "Seed", seed);
             SetMember(gen, "ShouldRandomizeSeed", false);
-            InvokeMember(gen, "Generate");
+            InvokeWithArgs(runtime, "Generate", new object[] { null });  // synchronous full generation
 
             var dungeon = GetMember(gen, "CurrentDungeon");
-            if (dungeon == null) return "FAIL: generation produced no CurrentDungeon";
-            return WriteLayout(dungeon, outPath, seed);
+            var status = GetMember(gen, "Status");
+            if (dungeon == null) return "FAIL: generation produced no CurrentDungeon (status=" + status + ")";
+            return WriteLayout(dungeon, outPath, seed) + " (status=" + status + ")";
         }
 
         // --- Menu entry: export the RuntimeDungeon already generated in the open scene. --------------------
@@ -113,7 +120,9 @@ namespace WorldOS.Editor
                 if (rooms.Length > 0) rooms.Append(",\n");
                 rooms.Append("  { \"id\": \"").Append(tileId[tile]).Append("\", ");
                 rooms.Append("\"tags\": [").Append(TagsJson(tile)).Append("], ");
-                rooms.Append("\"is_main_path\": ").Append(Bl(GetMember(tile, "OnMainPath"))).Append(", ");
+                // main-path flag lives on Tile.Placement.IsOnMainPath (not the Tile itself).
+                rooms.Append("\"is_main_path\": ")
+                     .Append(Bl(GetMember(GetMember(tile, "Placement"), "IsOnMainPath"))).Append(", ");
                 rooms.Append("\"bounds\": ").Append(BoundsJson(b)).Append(" }");
 
                 // props = child mesh renderers under the tile (set-dressing), excluding the tile's own floor.
@@ -300,12 +309,13 @@ namespace WorldOS.Editor
             if (f != null) f.SetValue(obj, value);
         }
 
-        static void InvokeMember(object obj, string name)
+        static void InvokeWithArgs(object obj, string name, object[] args)
         {
             if (obj == null) return;
-            var m = obj.GetType().GetMethod(name, BindingFlags.Public | BindingFlags.Instance,
-                                            null, System.Type.EmptyTypes, null);
-            if (m != null) m.Invoke(obj, null);
+            // match by name + arg count (the arg types include a null DungeonGenerationRequest we cannot
+            // name without an asmdef reference, so a typed GetMethod lookup would miss it).
+            foreach (var m in obj.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance))
+                if (m.Name == name && m.GetParameters().Length == args.Length) { m.Invoke(obj, args); return; }
         }
 
         static List<object> AsList(object v)

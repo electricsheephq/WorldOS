@@ -28,11 +28,19 @@ DunGen scene ──[DunGenLayoutExporter.cs]──▶ dungen_layout.json ──[
   `DungeonFlow` asset, generates deterministically, exports. Callable from unity-mcp `execute_code` for
   the headless GEX44 box drive loop.
 
-It walks the generated `Dungeon`: `AllTiles` → rooms (world AABB `Placement.Bounds` + `Tags` +
-`OnMainPath`), `Connections` → doorways (world position + forward), child `MeshFilter`s → props
-(transform + world bounds + a **shape class**). DunGen member access is reflection-guarded so a 3.x minor
-version rename (`Placement.Bounds`, `Tags`, `UsedDoorways`) degrades with a log rather than throwing
-mid-export.
+It walks the generated `Dungeon`: `AllTiles` → rooms (world AABB + tags + main-path), `Connections` →
+doorways (world position + forward), child `MeshFilter`s → props (transform + world bounds + a **shape
+class**). DunGen member access is reflection-guarded so a 3.x minor version rename degrades with a log
+rather than throwing mid-export.
+
+**Verified against the installed DunGen 3.x source on the GEX44 box (2026-07-11):**
+`RuntimeDungeon.Generator` / `.Generate(request=null)`; `DungeonGenerator.{DungeonFlow, Seed,
+ShouldRandomizeSeed, CurrentDungeon, Status, GenerateAsynchronously=false}` (synchronous in edit mode,
+creates its own Root); `Dungeon.{AllTiles, MainPathTiles, Connections}` (ReadOnlyCollections);
+`Tile.{Bounds, Placement, Tags, AllDoorways}`; `TilePlacementData.{Bounds (world), LocalBounds,
+IsOnMainPath}`; `DoorwayConnection.{A, B}` (Doorway); `Doorway.{Tile, transform, Tags}`. The exporter
+generates via the `RuntimeDungeon.Generate()` path (not a bare generator) so Root + the default request
+are set up for us.
 
 **`dungen_layout.json`** (all coords Unity WORLD units):
 ```json
