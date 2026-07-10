@@ -17,7 +17,7 @@
    "tile_name": "BasicRoomTile",
    "cell_rotation": "Identity",
    "bounds": { "min": [0, 0, 8], "max": [2, 2, 10] },
-   "cell_positions": [[1, 0, 9]]
+   "cell_positions": [[0.8, 0, 9.2]]
   },
   {
    "id": "room_1",
@@ -36,7 +36,7 @@
    "room": "room_0",
    "shape_class": "box",
    "kind_hint": "supply_crates",
-   "position": [1, 0, 9],
+   "position": [0.8, 0, 9.2],
    "bounds": { "min": [0.5, 0, 8.5], "max": [1.5, 1, 9.5] }
   }
  ]

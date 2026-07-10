@@ -138,6 +138,15 @@ analog:
   pre-Tessera behaviour** — regression-pinned in `qa/test_tessera_to_fixtures.py`. `rooms[].bounds` is
   still always ALSO emitted (the AABB across `cell_positions`) for backward-compat with any bounds-only
   consumer.
+  ⚠ **Scoping the "exact" claim:** `TesseraLayoutExporter.cs` computes each cell's world position as
+  `Position + (Cells[i] - Cell) * cellSize` — an axis-aligned, **unrotated** approximation (documented as
+  FLAGGED (1) in the exporter's header). For an un-rotated big tile this is exact; for a **rotated**
+  Tessera big tile, the true world footprint can diverge from this approximation, and the converter has
+  no way to detect that from `cell_positions` alone — it consumes whatever the exporter emitted as ground
+  truth. `qa/test_tessera_to_fixtures.py`'s "exact non-rectangular footprint" assertions are exact
+  relative to this unrotated model, not a guarantee against the real installed package. **The box session
+  must re-verify footprint fidelity specifically for a rotated big tile** before the "export fidelity"
+  rubric row below is scored for Tessera.
 - **`rooms[].tile_name`, `rooms[].cell_rotation`** — purely descriptive (the source `TesseraTile`'s name
   and the placed rotation), ignored by the converter, useful for the comparison rubric / box-session
   debugging.
@@ -145,6 +154,14 @@ analog:
 - **`doorways: []`** — Tessera has no native doorway object; `tools/dungen_to_fixtures.py` already
   tolerated a missing/empty `doorways` list before this PR (`layout.get("doorways", [])`), so **no
   converter change was needed** for this gap specifically — only `cell_positions` required one.
+
+⚠ **`qa/evidence/tessera-spike/synth_tessera_layout.json` is schema-valid but NOT pathing-valid.** Its two
+rooms are disconnected floor islands (no doorway carves a path between them, matching the "Tessera has no
+native doorway object" gap above) — this fixture only proves the conversion's schema/footprint correctness
+(`SceneGrid(**fixture)` validates, `qa/test_tessera_to_fixtures.py` covers it), NOT that a Tessera export
+produces a connected, walkable dungeon. It would fail the engine's own `validate_scene_grid` connectivity
+gate (`servers/engine/scene_grid.py`) if that gate were ever run over it. Don't cite this fixture as
+evidence of connectivity — that property depends on the actual Tessera scene / constraints used on the box.
 
 ### Hop 2 — `dungen_to_fixtures.py` (unchanged file, one additive change)
 
@@ -200,7 +217,7 @@ empty of verdicts here (repo-side has no box access to produce a real generation
 
 | Dimension | DunGen | Tessera Pro | Notes |
 |---|---|---|---|
-| **Export fidelity** — does the exported json faithfully reproduce what was generated in-editor (room shapes, prop placement, no silently-dropped data)? | _(fill in on the box)_ | _(fill in on the box — pay particular attention to the flagged prop-association heuristic above; if props come up empty, that's the signal the position-match assumption didn't hold)_ | |
+| **Export fidelity** — does the exported json faithfully reproduce what was generated in-editor (room shapes, prop placement, no silently-dropped data)? | _(fill in on the box)_ | _(fill in on the box — pay particular attention to the flagged prop-association heuristic above; if props come up empty, that's the signal the position-match assumption didn't hold. ALSO specifically re-verify a **rotated** big tile's `cell_positions` against the real generated footprint — the exporter's unrotated-approximation caveat above means the repo-side test suite cannot prove fidelity for that case)_ | |
 | **Door/connection handling** | DunGen has native `Doorway`/`Connection` objects — exported directly, world position + forward. | No native doorway object; `doorways` is always empty. Any door-like geometry only surfaces if it round-trips as a generic prop via `kind_hint`. | This is Tessera's clearest structural gap vs DunGen for this pipeline — confirm on the box whether Tessera tile prefabs in the comparison set tag doors as child objects at all |
 | **Constraint expressiveness** — how much authorial control over the result (paths, symmetry, tile budgets, region tagging)? | DunGen: `DungeonFlow` graph (tile sets, branching, length) + `IsOnMainPath`. | Tessera Pro: `PathConstraint`, `BorderConstraint`, `MirrorConstraint`, `CountConstraint` (Pro-only) — richer constraint vocabulary per the docs, but `is_main_path`-equivalent data isn't exposed through the export path built here (see flagged gap above) | Score the GENERATOR's actual expressiveness, not just what this exporter currently surfaces — note where the exporter itself is the limiting factor vs. Tessera itself |
 | **Generation speed** — wall-clock for a comparable-size layout, editor vs headless | _(fill in on the box)_ | _(fill in on the box)_ | Use the SAME seed/tile-budget/room-count target for both arms if possible |

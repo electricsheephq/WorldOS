@@ -83,7 +83,11 @@ namespace WorldOS.Editor
     public static class TesseraLayoutExporter
     {
         const string DefaultOut = "/home/unity/worldos-unity/tessera_layout.json";
-        const float PositionMatchEpsilon = 0.05f; // world units; see FLAGGED (1)
+        // Prop-association match tolerance, as a FRACTION of the generator's own cell pitch (not a fixed
+        // world-unit constant — a tiny dungeon and a huge one need different absolute tolerances). See
+        // FLAGGED (1): if the real default instantiate doesn't set position to exact equality, this is
+        // the slack allowed before we give up and skip props for that tile rather than risk a wrong match.
+        const float PositionMatchCellFraction = 0.25f;
 
         [MenuItem("WorldOS/Tessera/Export Active Tessera Layout")]
         public static void ExportActiveMenu()
@@ -157,6 +161,7 @@ namespace WorldOS.Editor
                 for (int i = 0; i < t.childCount; i++) candidates.Add(t.GetChild(i));
             }
             var claimed = new HashSet<Transform>();
+            float matchMaxDist = Mathf.Min(Mathf.Abs(cellSize.x), Mathf.Abs(cellSize.z)) * PositionMatchCellFraction;
 
             var rooms = new StringBuilder();
             var props = new StringBuilder();
@@ -206,7 +211,7 @@ namespace WorldOS.Editor
                 rooms.Append("\"cell_positions\": [").Append(V3List(cellPositions)).Append("] }");
 
                 // Best-effort prop scan: nearest unclaimed spawned child by world position (FLAGGED (1)).
-                Transform matched = NearestUnclaimed(candidates, claimed, position);
+                Transform matched = NearestUnclaimed(candidates, claimed, position, matchMaxDist);
                 if (matched != null)
                 {
                     claimed.Add(matched);
@@ -245,7 +250,7 @@ namespace WorldOS.Editor
             return "OK: " + tileInstances.Count + " tiles, " + propCount + " props -> " + outPath;
         }
 
-        static Transform NearestUnclaimed(List<Transform> candidates, HashSet<Transform> claimed, Vector3 pos)
+        static Transform NearestUnclaimed(List<Transform> candidates, HashSet<Transform> claimed, Vector3 pos, float maxDist)
         {
             Transform best = null;
             float bestDist = float.PositiveInfinity;
@@ -255,10 +260,11 @@ namespace WorldOS.Editor
                 float d = (t.position - pos).sqrMagnitude;
                 if (d < bestDist) { bestDist = d; best = t; }
             }
-            // Prefer an exact-ish match, but degrade gracefully to nearest rather than silently dropping
-            // props for every tile if the real default instantiate doesn't set position to EXACT equality.
-            if (best != null && bestDist <= (PositionMatchEpsilon * PositionMatchEpsilon) * 4f) return best;
-            return best;
+            // Only trust a CONFIDENT match (within maxDist of the tile's Position). Beyond that, skip
+            // props for this tile rather than risk silently attaching an unrelated GameObject's meshes —
+            // "no props" degrades gracefully; "wrong props" does not (see FLAGGED (1)).
+            if (best != null && bestDist <= maxDist * maxDist) return best;
+            return null;
         }
 
         // --- shape classification: same taxonomy as DunGenLayoutExporter.ShapeClass (kept independent —

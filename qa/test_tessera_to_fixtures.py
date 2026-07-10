@@ -80,7 +80,8 @@ _TESSERA_LAYOUT = {
         {"id": "room_0", "tags": [], "is_main_path": False, "tile_name": "BasicRoomTile",
          "cell_rotation": "Identity",
          "bounds": {"min": [0, 0, 8], "max": [2, 2, 10]},
-         "cell_positions": [[1, 0, 9]]},                      # -> (col0, row0)
+         "cell_positions": [[0.8, 0, 9.2]]},                  # -> (col0, row0); off-center on purpose,
+                                                               # not a k.5 quotient (see module docstring)
         {"id": "room_1", "tags": [], "is_main_path": False, "tile_name": "LShapeBigTile",
          "cell_rotation": "Identity",
          "bounds": {"min": [5, 0, 3], "max": [9, 2, 7]},       # AABB would over-include (4,3)
@@ -90,7 +91,7 @@ _TESSERA_LAYOUT = {
     # face-matching, not an explicit Doorway type); the converter must tolerate this.
     "props": [
         {"id": "prop_crate", "room": "room_0", "shape_class": "box", "kind_hint": "supply_crates",
-         "position": [1, 0, 9], "bounds": {"min": [0.5, 0, 8.5], "max": [1.5, 1, 9.5]}},
+         "position": [0.8, 0, 9.2], "bounds": {"min": [0.5, 0, 8.5], "max": [1.5, 1, 9.5]}},
     ],
 }
 
