@@ -29,11 +29,15 @@ CID = "walkslice_smoke01"
 # Its Chebyshev-1 landing ring (rows 0-1) stays clear of the sarcophagus (rows 6-8) and both pillars,
 # so the door zone is prop-free.
 DOOR = [6, 0]
-# THREE-ROOM WORLD (NEW-ROOM-TAVERN, epic #1508): a SECOND crypt doorway on the LEFT wall (0,5) leads
-# to the brand-new firelit tavern. Its landing ring (col 1, rows 4-6) is clear of the sarcophagus
-# (cols 2-7 x rows 7-9) and both pillars — a prop-free door zone. The crypt is the hub: camp <-> crypt
-# <-> tavern.
-TAVERN_DOOR = [0, 5]
+# THREE-ROOM WORLD (NEW-ROOM-TAVERN, epic #1508): a SECOND crypt doorway leads to the brand-new
+# firelit tavern. #1534 (door cells must sit at PAINTED doorways): the original (0,5) left-wall cell
+# had NO doorway painted on the plate — the label/glow floated over open floor. Re-measured against
+# crypt_armb_iter3 with the cell-lattice overlay (qa/evidence/1534/grid_crypt.png): the plate's BIG
+# right archway bases at (13,4) on the NE wall edge. Its landing ring (cols 12-13 x rows 3-5) is clear
+# of the sarcophagus (cols 2-7) and both pillars ((3,3)/(3,4), (8,9)/(9,9)). The crypt is the hub:
+# camp <-> crypt <-> tavern. (The camp door (6,0) was re-measured too — it already sits at the painted
+# left archway; unchanged.)
+TAVERN_DOOR = [13, 4]
 # The camp's RETURN doorway back to the crypt (SHIP-MORNING smoke's "known gap": the camp grid had no
 # authored door_cells, so the camp was a DEAD END for a real player — the smoke could only leave via the
 # QA-side travel_to primitive). Top-edge (5,0) sits in the painted gate-post gap on the north path; the
@@ -100,7 +104,13 @@ def build_camp_grid(loc_id: str):
 # manifest were built from (tools/author_room_geometry.py tavern -> qa/room_manifests/tavern_truegrey.
 # cells.json). Prop footprints are VERBATIM from that geometry, so pathing and paint agree by construction.
 TAVERN_W, TAVERN_H = 12, 10
-TAVERN_BACK_DOOR = [8, 0]  # the tavern's back-wall door, returning to the crypt
+# The tavern's door back to the crypt. #1534: the original (8,0) back-wall cell had no doorway painted
+# there (blank wall between hearth and bar). The tavern plate's ONLY painted doorway (the dark left-wall
+# opening) sits just OUTSIDE the 12x10 grid's west corner — out-painted dressing — so the door cell
+# moves to (0,0), the nearest walkable cell, putting the label/glow directly beside the painted opening
+# (overlay: qa/evidence/1534/grid_tavern.png). Durable fix (tracked on #1534): author a real door gap
+# into the tavern geometry at the next regen so the paint and the cell coincide exactly.
+TAVERN_BACK_DOOR = [0, 0]
 # (id, kind, footprint, height_band, silhouette) — correct 5-ft-grid scale, off the two near walls.
 _TAVERN_PROPS = [
     ("hearth", "hearth", [(5, 1), (6, 1)], "tall", "stone hearth with glowing embers"),
