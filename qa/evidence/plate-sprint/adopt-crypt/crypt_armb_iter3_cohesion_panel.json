@@ -1,0 +1,65 @@
+{
+  "room": "crypt",
+  "panel_id": "panel-visual-adopt-crypt-cohesion-armB-iter3-20260710",
+  "protocol": "control-anchored 5-scorer blind panel (model sonnet), CHARACTER-IN-SCENE COHESION question (visual-critic recipe), run via qa/plate_loop.py packet machinery (PLATE SPRINT Phase 2, ADOPT-CRYPT lane, #1386). Frame captured on the GEX44 box: M1CombatV1_canonical, PaintedBackdrop swapped to the newly-adopted crypt_armb_iter3_v1.png, camp occluders + stale live-combat cast (36 objs) disabled, Tools/WorldOS/Cohesion Probe 0b (baseline cast) -> 1 RungB (plate-sampled light rig) -> 2 RungD (contact shadows) -> 3 RungA' (painterly actor materials) applied cumulatively. Rung 4/RungR (WOSRelight) deliberately NOT run per the PR #1488 STOP verdict.",
+  "scale": "0-10 character-in-scene cohesion (delta-anchored; absolute number is NOT a quality verdict)",
+  "candidate_image": "qa/evidence/plate-sprint/adopt-crypt/cohesion-frames/adopt_crypt_cohesion_frame1.jpg",
+  "incumbent_image": "qa/evidence/cohesion-probe/rung3_v4_warm_wrap.jpg",
+  "incumbent_note": "the prior BEST full-stack cohesion frame on record (cohesion-probe-panel-1, 2026-07-09: median 3.2 on the OLD camp scene backdrop). Also used, unchanged, as the disclosed house-style anchor for this panel (same file \u2014 scorers correctly read it as 'the reference itself').",
+  "control_id": "control:visual:pillars-of-eternity-2:poe2_ruins_brazier_integration_01",
+  "control_image": "/Volumes/LEXAR/WorldOS-Unity-spike/refs/poe2_ruins_brazier_integration_01.jpg",
+  "control_note": "REGISTERED clean control (real shipped PoE2:Deadfire ruins/brazier plate) from qa/visual_controls_identity.json, disguised as blind image_2.",
+  "scores": [
+    {
+      "scorer": 1,
+      "candidate": 6.5,
+      "incumbent": 9,
+      "control": 9
+    },
+    {
+      "scorer": 2,
+      "candidate": 4,
+      "incumbent": 10,
+      "control": 9
+    },
+    {
+      "scorer": 3,
+      "candidate": 6,
+      "incumbent": 8,
+      "control": 9
+    },
+    {
+      "scorer": 4,
+      "candidate": 6,
+      "incumbent": 9,
+      "control": 9
+    },
+    {
+      "scorer": 5,
+      "candidate": 4,
+      "incumbent": 9,
+      "control": 10
+    }
+  ],
+  "candidate_median": 6.0,
+  "incumbent_median_this_panel": 9.0,
+  "control_median": 9.0,
+  "delta_candidate_minus_control": -3.0,
+  "baseline_comparison": {
+    "prior_full_stack_cohesion_baseline_median": 3.0,
+    "prior_baseline_control_median": 8.7,
+    "prior_baseline_source": "qa/evidence/cohesion-probe/panel_verdict.json (cohesion-probe-panel-1, 2026-07-09; rung3_v4/B median 3.2, ~3.0)",
+    "this_run_candidate_median": 6.0,
+    "delta_vs_prior_baseline": 3.0,
+    "read": "The ARM-B iter3 adopted crypt plate + cumulative Cohesion Probe stack (RungB+D+A', no RungR) roughly DOUBLES full-stack character-in-scene cohesion versus the historical baseline (6.0 vs ~3.0, +3.0 pts) -- a decisive gain -- but still sits ~3.0 points below the real-art control this round (9.0) and below the disclosed incumbent read (9.0, itself the same file as house_best so an inflated same-image tell)."
+  },
+  "residual_defects": [
+    "3/5 scorers flagged the two actors on the sarcophagus as flatter/more cel-shaded than the richly painted stonework around them (a mild-to-moderate pasted-cutout tell)",
+    "1/5 scorers (scorer 2) called out a visible feet/floor-contact gap for the fighter figure on the tomb lid",
+    "the goblin's glossy specular sheen was noted as mismatched vs the matte painted stone (scorer 5)"
+  ],
+  "relight_note": "Independent relight A/B (qa/evidence/1481/, PR #1488) already showed WOSRelight LOSES on this same styled plate (2.5 unanimous last, vertical-banding). Consistent with that STOP verdict, RungR/WOSRelight was NOT enabled for this capture.",
+  "iterations": 1,
+  "verdict": "Candidate median 6.0 vs registered PoE2 control median 9.0 (in-band [6.8,9.2], delta -3.0) vs incumbent/house-best 9.0 this panel (same-file tell). Versus the PRIOR full-stack cohesion baseline (~3.0 vs control 8.7), this is a +3.0-point gain -- the adopted crypt plate substantially improves cohesion though it has not yet closed the gap to the real-art control.",
+  "candidate_image_frame2": "qa/evidence/plate-sprint/adopt-crypt/cohesion-frames/adopt_crypt_cohesion_frame2.jpg"
+}

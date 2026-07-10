@@ -1,0 +1,202 @@
+{
+  "room": "crypt",
+  "panel_id": "panel-visual-adopt-crypt-armB-iter3-20260710",
+  "protocol": "control-anchored 5-scorer blind panel (model sonnet), visual-critic CALIBRATION-CONTROL PROTOCOL, run via qa/plate_loop.py packet machinery (PLATE SPRINT Phase 2, ADOPT-CRYPT lane, #1386). Candidate = ARM-B iter3 styled+registered crypt plate (registration edge-recall 0.9903 vs the crypt greybox). Blind images: A=candidate, B=incumbent house anchor (crypt_dense_v1.png, the current-best crypt plate), C=disguised registered real-art control.",
+  "scale": "0-10 visual-critic (delta-anchored two-tier ladder; absolute number is NOT a quality verdict)",
+  "candidate_image": "/Users/lume/worldos-session-notes/plate-sprint/armB/iter3/style/prep_iter3_plate.png",
+  "incumbent_image": "/Users/lume/worldos-session-notes/plate-sprint/armB/crypt_dense_v1_reference.png",
+  "control_id": "control:visual:pillars-of-eternity-2:poe2_ruins_brazier_integration_01",
+  "control_image": "/Volumes/LEXAR/WorldOS-Unity-spike/refs/poe2_ruins_brazier_integration_01.jpg",
+  "control_note": "REGISTERED clean control (real shipped PoE2:Deadfire ruins/brazier plate) from qa/visual_controls_identity.json, disguised as blind image_2 in the panel packet.",
+  "registration": {
+    "recall": 0.9903,
+    "min_recall": 0.95,
+    "greybox": "/Users/lume/worldos-session-notes/plate-sprint/armB/crypt_greybox_1344x768.png",
+    "passed": true
+  },
+  "pregate": {
+    "verdict": "FLAG",
+    "blocking": [
+      {
+        "gate": "G6_luma_staging_law",
+        "severity": "HIGH",
+        "metric": "staging_law_stats",
+        "value": {
+          "near_black_frac": 0.2383,
+          "lit_frac": 0.3504,
+          "median_L": 46.74
+        },
+        "threshold": {
+          "near_black_pass": [
+            0.66,
+            0.85
+          ],
+          "lit_pass": [
+            0.02,
+            0.05
+          ],
+          "median_pass": [
+            0,
+            15
+          ]
+        },
+        "detail": "FAIL: plate is outside the PoE staging-law band \u2014 near_black=23.8% (band 66-85% PASS / 50-66% WARN) [FAIL], lit=35.0% (band 2-5% PASS / 5-20% WARN) [FAIL], median_L=46.7 (band 0-15 PASS / 15-40 WARN) [FAIL]"
+      }
+    ],
+    "gates": [
+      {
+        "gate": "G1_frame_lit",
+        "severity": "PASS",
+        "metric": "mean_luminance",
+        "value": 0.2319,
+        "threshold": null,
+        "detail": "lit (mean 0.232, var 0.02529)"
+      },
+      {
+        "gate": "G6_luma_staging_law",
+        "severity": "HIGH",
+        "metric": "staging_law_stats",
+        "value": {
+          "near_black_frac": 0.2383,
+          "lit_frac": 0.3504,
+          "median_L": 46.74
+        },
+        "threshold": {
+          "near_black_pass": [
+            0.66,
+            0.85
+          ],
+          "lit_pass": [
+            0.02,
+            0.05
+          ],
+          "median_pass": [
+            0,
+            15
+          ]
+        },
+        "detail": "FAIL: plate is outside the PoE staging-law band \u2014 near_black=23.8% (band 66-85% PASS / 50-66% WARN) [FAIL], lit=35.0% (band 2-5% PASS / 5-20% WARN) [FAIL], median_L=46.7 (band 0-15 PASS / 15-40 WARN) [FAIL]"
+      },
+      {
+        "gate": "G5_motion_liveness",
+        "severity": "SKIPPED",
+        "metric": "reel",
+        "value": null,
+        "threshold": null,
+        "detail": "no render reel supplied; G5 skipped (only meaningful with a motion reel \u2014 build one with qa/motion_reel.py and pass its frames)"
+      }
+    ],
+    "summary": "PRE-GATE FLAG\n  [PASS    ] G1_frame_lit       mean_luminance=0.2319 :: lit (mean 0.232, var 0.02529)\n  [HIGH    ] G6_luma_staging_law staging_law_stats={'near_black_frac': 0.2383, 'lit_frac': 0.3504, 'median_L': 46.74} :: FAIL: plate is outside the PoE staging-law band \u2014 near_black=23.8% (band 66-85% PASS / 50-66% WARN) [FAIL], lit=35.0% (band 2-5% PASS / 5-20% WARN) [FAIL], median_L=46.7 (band 0-15 PASS / 15-40 WARN) [FAIL]\n  [SKIPPED ] G5_motion_liveness reel=None :: no render reel supplied; G5 skipped (only meaningful with a motion reel \u2014 build one with qa/motion_reel.py and pass its frames)"
+  },
+  "pregate_note": "run_pregates FLAG (G6 luma-staging-law fires HIGH on this warm-lit candidate; G6 is a stylistic gate, NOT a promotion hard floor per VISUAL_HARD_FLOOR_GATES). G1_frame_lit PASSes -> the promotion hard floor PASSes.",
+  "scores": [
+    {
+      "scorer": 1,
+      "control": 9.0,
+      "candidate": 7.5,
+      "incumbent": 9.5
+    },
+    {
+      "scorer": 2,
+      "control": 9.0,
+      "candidate": 7.5,
+      "incumbent": 9.5
+    },
+    {
+      "scorer": 3,
+      "control": 9.0,
+      "candidate": 7.5,
+      "incumbent": 9.5
+    },
+    {
+      "scorer": 4,
+      "control": 9.0,
+      "candidate": 6.5,
+      "incumbent": 8.0
+    },
+    {
+      "scorer": 5,
+      "control": 9.0,
+      "candidate": 7.0,
+      "incumbent": 10.0
+    }
+  ],
+  "candidate_median": 7.5,
+  "control_median": 9.0,
+  "incumbent_median_this_panel": 9.5,
+  "delta_candidate_minus_control": -1.5,
+  "delta_incumbent_minus_control_this_panel": 0.5,
+  "house_style_votes": {
+    "candidate": [
+      "same-hand",
+      "lesser",
+      "lesser",
+      "lesser",
+      "same-hand"
+    ],
+    "control": [
+      "lesser",
+      "lesser",
+      "lesser",
+      "lesser",
+      "lesser"
+    ],
+    "incumbent": [
+      "same-hand",
+      "same-hand",
+      "same-hand",
+      "same-hand",
+      "same-hand"
+    ]
+  },
+  "residual_defects": [
+    "candidate reads slightly cooler/darker-graded than the incumbent house anchor in 3/5 scorer notes (softer linework on knotwork pillar + effigy face vs the reference)",
+    "G6 staging-law FLAG (near_black 23.8% vs 66-85% band; median_L 46.7 vs 0-15 target) \u2014 candidate sits in a brighter/warmer key than the strict PoE staging-law band, consistent with the plate-sprint's own iter3 finding"
+  ],
+  "iterations": 1,
+  "verdict": "5-scorer blind panel (fresh run, independent from the plate-sprint's own iter3 8.0-median panel): candidate median 7.5 vs control median 9.0 (delta -1.5) vs incumbent-this-panel median 9.5. Control landed IN-BAND (9.0 within [6.8, 9.2]) -> instrument valid. Delta -1.5 sits between VIS_DELTA_ADOPT (-2.5) and VIS_DELTA_PARITY (-1.2) -> tier=stable (adopted-quality, automated PASS).",
+  "gate": {
+    "passed": true,
+    "tier": "stable",
+    "reasons": [],
+    "overall": 7.5,
+    "dims": {
+      "scores": [
+        {
+          "scorer": 1,
+          "control": 9.0,
+          "candidate": 7.5,
+          "incumbent": 9.5
+        },
+        {
+          "scorer": 2,
+          "control": 9.0,
+          "candidate": 7.5,
+          "incumbent": 9.5
+        },
+        {
+          "scorer": 3,
+          "control": 9.0,
+          "candidate": 7.5,
+          "incumbent": 9.5
+        },
+        {
+          "scorer": 4,
+          "control": 9.0,
+          "candidate": 6.5,
+          "incumbent": 8.0
+        },
+        {
+          "scorer": 5,
+          "control": 9.0,
+          "candidate": 7.0,
+          "incumbent": 10.0
+        }
+      ],
+      "candidate_median": 7.5,
+      "control_median": 9.0,
+      "delta_candidate_minus_control": -1.5
+    },
+    "control_valid": true
+  }
+}
