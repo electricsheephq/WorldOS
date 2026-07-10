@@ -171,6 +171,18 @@ public class CombatSurfaceClient : MonoBehaviour
     // evaluates every frame (a one-shot pose cannot hold a skinned pose — see PlayIdleGraph). Torn down by
     // KillIdleGraph on glide/attack start and on despawn.
     readonly System.Collections.Generic.Dictionary<string, UnityEngine.Playables.PlayableGraph> _idleGraphOf = new System.Collections.Generic.Dictionary<string, UnityEngine.Playables.PlayableGraph>();
+    // #anim-pack (RPG Character Mecanim pack — the PERMANENT #1408 T-pose/roster fix): the SHARED humanoid
+    // AnimatorController (idle/walk/run + attack/hit/death states, driven by a Speed float + Attack/Hit/Death
+    // triggers) retargeted onto any actor whose Animator has a VALID humanoid avatar. A REAL controller keeps
+    // the Animator evaluating every frame, so it REPLACES the per-frame idle/walk/attack PlayableGraph
+    // workaround for humanoids; the graph paths (PlayIdleGraph/MakeClipGraph/donor retarget) stay as the
+    // FALLBACK for non-humanoid / clipless / controller-absent rigs — byte-identical to pre-#anim-pack when the
+    // controller can't load or the avatar isn't humanoid. _ctrlDriven tracks who the controller currently
+    // drives (every glide/attack/hit/death/idle branch keys off it). Parameter names must match the controller
+    // built by build_worldos_humanoid_controller.cs.
+    const string HumanoidControllerPath = "Assets/Animations/WorldOSHumanoid.controller";
+    RuntimeAnimatorController _humanoidCtrl; bool _humanoidCtrlTried;
+    readonly System.Collections.Generic.HashSet<string> _ctrlDriven = new System.Collections.Generic.HashSet<string>();
     string _currentId = "";        // the isCurrent combatant this surface (active-turn ring-pulse anchor)
     string _pulsePrev = "";        // last-pulsed ring, reset to rest when the turn moves on
 
@@ -754,7 +766,13 @@ public class CombatSurfaceClient : MonoBehaviour
                 if (tgt != null)
                 {
                     FloatDamage(tgt.position, "-" + (prevHp - newHp), new Color(1f, 0.95f, 0.45f, 1f));
-                    if (newHp > 0) StartCoroutine(FlinchCo(tgt, attacker != null ? attacker.position : tgt.position - tgt.forward));
+                    if (newHp > 0)
+                    {
+                        // #anim-pack: fire the controller's Hit reaction (the transform knockback flinch still
+                        // runs on top for any rig). Controller-absent actors just flinch, as before.
+                        if (_ctrlDriven.Contains(t.id)) { var han = tgt.GetComponentInChildren<Animator>(); if (han != null) han.SetTrigger("Hit"); }
+                        StartCoroutine(FlinchCo(tgt, attacker != null ? attacker.position : tgt.position - tgt.forward));
+                    }
                     if (attacker != null && attacker != tgt) StartCoroutine(LungeCo(attacker, _currentId, tgt.position));
                 }
             }
@@ -1020,6 +1038,18 @@ public class CombatSurfaceClient : MonoBehaviour
         return b.LoadAsset<T>(assetPath);
     }
 
+    // #anim-pack: the shared humanoid controller, loaded ONCE from the actor bundle by HumanoidControllerPath.
+    // Baked into worldos_actors (with its pack clip dependencies) by BuildMacOSPlayer.EnsurePackaged. Absent
+    // (an un-repackaged/old bundle) -> null -> every actor uses the per-frame graph fallback (byte-identical).
+    RuntimeAnimatorController HumanoidController()
+    {
+        if (_humanoidCtrlTried) return _humanoidCtrl;
+        _humanoidCtrlTried = true;
+        _humanoidCtrl = LoadAsset<RuntimeAnimatorController>(HumanoidControllerPath);
+        Debug.Log("[CSC] humanoid controller " + (_humanoidCtrl != null ? "loaded" : "absent") + " @" + HumanoidControllerPath);
+        return _humanoidCtrl;
+    }
+
     // Parse StreamingAssets/registry.json into the same assets/defaults/aliases maps paint_combat_v1
     // reads. Uses a self-contained parser (MiniJson lives in the editor-only assembly and is not
     // available to this runtime MonoBehaviour). Absent/corrupt -> null maps -> resolve falls to the
@@ -1196,12 +1226,29 @@ public class CombatSurfaceClient : MonoBehaviour
         float height = foe ? ActorHeightFoe : ActorHeightChar;   // #1441: named, single-source heights
         float sc = height / curH; go.transform.localScale = go.transform.localScale * sc;
 
-        // Pose to a neutral idle for the VISUAL now that scale is locked. #idle-persist: start a PERSISTENT
-        // idle graph (Update evaluates it each frame) — a one-shot Evaluate cannot hold a SKINNED pose (a
-        // disabled Animator freezes GPU skinning at bind; an enabled controllerless Animator reverts to bind),
-        // so the idle must be a live graph like the walk glide. Resolve the clip: own idle (model OR moveset),
-        // else the model's first clip, else the goblin donor idle retargeted onto a clipless humanoid rig.
-        PlayIdleGraph(go, id, ResolveIdleClip(id, fbx, go));
+        // #anim-pack: a VALID humanoid avatar retargets the shared RPG-pack controller (idle/walk/run +
+        // attack/hit/death, driven by Speed + triggers). A real controller keeps the Animator evaluating every
+        // frame, so the bind-pose revert the per-frame idle graph worked around (#1408/#idle-persist) cannot
+        // happen — this is the permanent T-pose fix. Assigned AFTER the bind-pose scale lock so the controller's
+        // idle first frame can't inflate the height; animC.Update(0f) settles that idle before the grounding
+        // Measure below. Non-humanoid / clipless / controller-absent actors fall through to the persistent idle
+        // graph (byte-identical to pre-#anim-pack).
+        bool ctrlDriven = false;
+        // #anim-pack: require isHuman AND isValid — an avatar flagged humanoid but INVALID (a broken bone
+        // map) cannot retarget the humanoid clips and would silently T-pose (the exact #1408 failure). This
+        // mirrors anim_pack_avatar_gate.cs's (isHuman && isValid) accept criterion; an invalid rig falls
+        // through to the per-frame graph fallback below.
+        if (animC != null && animC.avatar != null && animC.avatar.isHuman && animC.avatar.isValid)
+        {
+            var hc = HumanoidController();
+            if (hc != null) { animC.runtimeAnimatorController = hc; animC.applyRootMotion = false; animC.Update(0f); ctrlDriven = true; _ctrlDriven.Add(id); }
+        }
+        // Pose to a neutral idle for the VISUAL now that scale is locked (fallback path). #idle-persist: start a
+        // PERSISTENT idle graph (Update evaluates it each frame) — a one-shot Evaluate cannot hold a SKINNED
+        // pose (a disabled Animator freezes GPU skinning at bind; an enabled controllerless Animator reverts to
+        // bind), so the idle must be a live graph like the walk glide. Resolve the clip: own idle (model OR
+        // moveset), else the model's first clip, else the goblin donor idle retargeted onto a clipless rig.
+        if (!ctrlDriven) PlayIdleGraph(go, id, ResolveIdleClip(id, fbx, go));
 
         // Ground + center on the cell: feet to FloorY, bounds-center X/Z to the cell.
         Vector3 p = CellToWorld(cx, cy); go.transform.position = p; bb = Measure(go, rends); Vector3 ctr = bb.center;
@@ -1263,6 +1310,7 @@ public class CombatSurfaceClient : MonoBehaviour
         _glide.Remove(id); _cellOf.Remove(id); _fbxOf.Remove(id);
         _animOf.Remove(id); _topOf.Remove(id); RemoveHpBar(id);   // #anim-combat: clear combat/anim state
         _downed.Remove(id); _downRunning.Remove(id); _reviveWanted.Remove(id); _downPose.Remove(id);
+        _ctrlDriven.Remove(id);   // #anim-pack: forget controller-driven state so a re-spawn re-resolves the avatar
         Debug.Log("[CSC] despawned Actor_" + id);
     }
 
@@ -1468,15 +1516,27 @@ public class CombatSurfaceClient : MonoBehaviour
         // generic clips correctly in builds. So: pick the walk clip (own model/moveset, else a humanoid donor
         // for a clipless humanoid rig) and drive it through the graph whenever the actor has an Animator+avatar;
         // SampleAnimation stays only as the legacy/no-Animator fallback.
-        AnimationClip walkClip = FindOwnClip(id, "walk", "run");
         var walkAnim = go.GetComponentInChildren<Animator>();
-        if (walkClip == null && walkAnim != null && walkAnim.avatar != null && walkAnim.avatar.isHuman) walkClip = DonorWalk();
-        KillIdleGraph(id);   // #idle-persist: stop the idle graph so it doesn't fight the walk graph over the Animator
+        bool cd = _ctrlDriven.Contains(id);   // #anim-pack: controller-driven -> drive Speed, not a walk graph
+        AnimationClip walkClip = null;
         UnityEngine.Playables.PlayableGraph walkGraph = default; bool haveGraph = false; bool sampleWalk = false;
-        if (walkClip != null)
+        if (cd)
         {
-            if (walkAnim != null && walkAnim.avatar != null) { walkGraph = MakeClipGraph(walkAnim, walkClip, "Walk_" + a.name); haveGraph = true; _walkGraphOf[id] = walkGraph; }
-            else sampleWalk = true;   // no Animator/avatar -> legacy rig -> direct curve sample is the only path
+            // #anim-pack: the shared controller's Locomotion blend plays walk/run off the Speed float; the
+            // Animator self-updates in the player loop, so there is NO per-frame graph Evaluate here. Speed is
+            // set to the glide's planar rate so the blend picks a stride matching the cell->cell tween.
+            if (walkAnim != null) walkAnim.SetFloat("Speed", GlideSpeed);
+        }
+        else
+        {
+            walkClip = FindOwnClip(id, "walk", "run");
+            if (walkClip == null && walkAnim != null && walkAnim.avatar != null && walkAnim.avatar.isHuman) walkClip = DonorWalk();
+            KillIdleGraph(id);   // #idle-persist: stop the idle graph so it doesn't fight the walk graph over the Animator
+            if (walkClip != null)
+            {
+                if (walkAnim != null && walkAnim.avatar != null) { walkGraph = MakeClipGraph(walkAnim, walkClip, "Walk_" + a.name); haveGraph = true; _walkGraphOf[id] = walkGraph; }
+                else sampleWalk = true;   // no Animator/avatar -> legacy rig -> direct curve sample is the only path
+            }
         }
 
         // total planar length for even-speed sampling across the (possibly multi-segment) route.
@@ -1505,7 +1565,8 @@ public class CombatSurfaceClient : MonoBehaviour
         // arrive: snap exact, tear down walk, return to a grounded idle facing the camera.
         MoveActorAndShadows(a, endPos);
         if (haveGraph) KillWalkGraph(id);   // registry-tracked destroy (#1451-review P2)
-        PoseIdle(go);
+        if (cd) { if (walkAnim != null) walkAnim.SetFloat("Speed", 0f); }   // #anim-pack: Speed 0 -> controller's Idle
+        else PoseIdle(go);
         var cam = Camera.main; float camYaw = cam != null ? cam.transform.eulerAngles.y : 45f;
         a.rotation = Quaternion.Euler(pitchX, camYaw + 180f, 0f);
         MoveActorAndShadows(a, GroundedPivot(a, cx, cy));   // re-ground the final idle pose (idempotent)
@@ -1520,6 +1581,16 @@ public class CombatSurfaceClient : MonoBehaviour
         if (go == null) return;
         string nm = go.name;
         string id = nm.StartsWith("Actor_") ? nm.Substring(6) : nm;
+        // #anim-pack: a controller-driven humanoid returns to Idle via the controller — Rebind clears any
+        // terminal Death / one-shot state (this is the revive path's stand-up), Update(0f) settles the pose,
+        // and Speed 0 selects Idle in the Locomotion blend. The glide/attack arrival paths set Speed directly
+        // (no Rebind), so this heavier reset only runs on first-sight/settle/revive.
+        if (_ctrlDriven.Contains(id))
+        {
+            var an = go.GetComponentInChildren<Animator>();
+            if (an != null) { an.Rebind(); an.Update(0f); an.SetFloat("Speed", 0f); }
+            return;
+        }
         string fbx; _fbxOf.TryGetValue(id, out fbx);
         PlayIdleGraph(go, id, ResolveIdleClip(id, fbx, go));
     }
@@ -2325,11 +2396,16 @@ public class CombatSurfaceClient : MonoBehaviour
         dir = dir.normalized;
         float pitchX = go.GetComponentInChildren<SkinnedMeshRenderer>() != null ? 0f : -90f;
         a.rotation = Quaternion.Euler(pitchX, Mathf.Atan2(dir.x, dir.z) * Mathf.Rad2Deg, 0f);
-        AnimationClip atk = FindOwnClip(id, "attack", "swing");
         var anim = go.GetComponentInChildren<Animator>();
-        KillIdleGraph(id);   // #idle-persist: stop the idle graph while the attack clip drives the Animator
+        bool cd = _ctrlDriven.Contains(id);   // #anim-pack: controller plays the Attack state, then auto-returns
         UnityEngine.Playables.PlayableGraph g = default; bool hg = false;
-        if (atk != null && anim != null && anim.avatar != null) { g = MakeClipGraph(anim, atk, "Atk_" + a.name); hg = true; }
+        if (cd) { if (anim != null) anim.SetTrigger("Attack"); }
+        else
+        {
+            AnimationClip atk = FindOwnClip(id, "attack", "swing");
+            KillIdleGraph(id);   // #idle-persist: stop the idle graph while the attack clip drives the Animator
+            if (atk != null && anim != null && anim.avatar != null) { g = MakeClipGraph(anim, atk, "Atk_" + a.name); hg = true; }
+        }
         float dur = 0.42f, t = 0f;
         while (t < dur && a != null)
         {
@@ -2343,7 +2419,7 @@ public class CombatSurfaceClient : MonoBehaviour
         if (hg && g.IsValid()) g.Destroy();
         if (a != null)
         {
-            PoseIdle(go);
+            if (!cd) PoseIdle(go);   // #anim-pack: the controller returns to Locomotion via the Attack->exit transition
             var cam = Camera.main; float camYaw = cam != null ? cam.transform.eulerAngles.y : 45f;
             a.rotation = Quaternion.Euler(pitchX, camYaw + 180f, 0f);
             MoveActorAndShadows(a, home);
@@ -2369,16 +2445,21 @@ public class CombatSurfaceClient : MonoBehaviour
         var go = a.gameObject;
         Vector3 home = a.position; Quaternion startRot = a.rotation;
         _downPose[id] = new DownPose { scale = a.localScale, rot = startRot };
-        AnimationClip death = FindOwnClip(id, "death", "dead", "die");
         var anim = go.GetComponentInChildren<Animator>();
+        bool cd = _ctrlDriven.Contains(id);   // #anim-pack: controller plays the Death state (terminal)
         UnityEngine.Playables.PlayableGraph g = default; bool hg = false;
-        if (death != null && anim != null && anim.avatar != null) { g = MakeClipGraph(anim, death, "Down_" + a.name); hg = true; }
+        if (cd) { if (anim != null) anim.SetTrigger("Death"); }
+        else
+        {
+            AnimationClip death = FindOwnClip(id, "death", "dead", "die");
+            if (death != null && anim != null && anim.avatar != null) { g = MakeClipGraph(anim, death, "Down_" + a.name); hg = true; }
+        }
         float dur = 0.85f, t = 0f;
         while (t < dur && a != null && !_reviveWanted.Contains(id))
         {
             t += Time.deltaTime; float u = t / dur;
             if (hg) g.Evaluate(Time.deltaTime);
-            else a.rotation = startRot * Quaternion.Euler(0f, 0f, Mathf.Lerp(0f, 85f, u));   // topple when no clip
+            else if (!cd) a.rotation = startRot * Quaternion.Euler(0f, 0f, Mathf.Lerp(0f, 85f, u));   // topple when no clip (controller plays Death)
             MoveActorAndShadows(a, home + new Vector3(0f, -0.25f * u, 0f));
             float dim = Mathf.Lerp(1f, 0.35f, u);
             FadeSibling(a.name, "_Ring", dim); FadeSibling(a.name, "_AO", dim);

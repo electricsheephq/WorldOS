@@ -111,6 +111,20 @@ public static class BuildMacOSPlayer
                     }
                 }
             }
+            // #anim-pack: also bake the SHARED humanoid AnimatorController so the runtime can retarget it onto
+            // humanoid actors (CombatSurfaceClient.HumanoidController). BuildAssetBundles pulls its dependencies
+            // — the RPG-pack Idle/Walk/Run/Attack/Hit/Death clips + blend tree — in automatically, so only the
+            // .controller path is listed. Absent on disk (controller not yet built by
+            // build_worldos_humanoid_controller.cs) -> skipped, and the runtime falls back to the per-frame
+            // graph path (byte-identical). Keep this path in sync with CombatSurfaceClient.HumanoidControllerPath.
+            const string HumanoidCtrl = "Assets/Animations/WorldOSHumanoid.controller";
+            if (!string.IsNullOrEmpty(AssetDatabase.AssetPathToGUID(HumanoidCtrl)))
+            {
+                if (!names.Contains(HumanoidCtrl)) names.Add(HumanoidCtrl);
+                Debug.Log("[Package] +humanoid controller " + HumanoidCtrl);
+            }
+            else Debug.LogWarning("[Package] humanoid controller missing on disk, skipped: " + HumanoidCtrl);
+
             if (names.Count == 0) { Debug.LogWarning("[Package] no resolvable registry assets — bundle not built"); return; }
 
             // 3) build the bundle for StandaloneOSX to a temp dir, then copy the main bundle file into
