@@ -282,7 +282,7 @@ def _psa(cid):
     return server._require(cid).combat.pending_spell_attack
 
 
-def test_guiding_bolt_then_attack_resolves_and_rearms(bolt_caster):
+def test_guiding_bolt_then_attack_resolves_and_rearms(bolt_caster, monkeypatch):
     """The sprint's exact sequence: cast Guiding Bolt (automated:false) -> the same-turn
     attack() that resolves it lands damage, the on-hit rider is consumed, and the gate
     re-arms (a second independent strike is refused)."""
@@ -292,8 +292,26 @@ def test_guiding_bolt_then_attack_resolves_and_rearms(bolt_caster):
     # The pending spell-attack leg was recorded (keyed to this caster + target).
     psa = _psa(cid)
     assert psa is not None and psa.source_id == cleric and gob in psa.target_ids
-    # The resolving attack() bypasses the cast+attack gate and deals damage (auto-hit nat-20
-    # not needed — a big bonus vs AC 5 hits): the bolt no longer "deals 0".
+    # Pin the resolving attack's d20 to a mid-range natural (15) so the hit is
+    # deterministic: attack_bonus=20 vs AC 5 hits on any roll except a natural 1
+    # (auto-miss per SRD), which flaked CI ~5% of the time (#1395, blocked PR #1474).
+    # Same monkeypatch.setattr(server.dice_mod, "roll", ...) pinning pattern used
+    # throughout tests/test_combat.py and tests/test_grapple_shove.py; damage rolls
+    # pass through to the real roller unpinned.
+    from dice import DiceRoll
+
+    real_roll = server.dice_mod.roll
+
+    def _pinned_roll(expression, *args, **kwargs):
+        if expression.startswith("1d20"):
+            return DiceRoll(
+                expression=expression, total=15 + 20, rolls=[15], is_d20=True, natural=15, crit=False
+            )
+        return real_roll(expression, *args, **kwargs)
+
+    monkeypatch.setattr(server.dice_mod, "roll", _pinned_roll)
+    # The resolving attack() bypasses the cast+attack gate and deals damage (the pinned
+    # natural-15 vs a big bonus and AC 5 hits): the bolt no longer "deals 0".
     atk = server.attack(cid, cleric, gob, attack_bonus=20, damage_dice="4d6")
     assert atk["hit"] is True and atk["damage"]["total"] > 0
     assert atk["attacks_made_this_turn"] == 1
