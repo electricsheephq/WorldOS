@@ -46,25 +46,35 @@ def test_grid_dims_match_camp_clearing_night_recipe():
 
 
 def test_painted_camp_props_are_all_impassable():
-    """#1441 P2 RED-FIRST: every painted prop on the camp_clearing_night plate — fire pit, log seat,
-    bedrolls, supply crates, both boulders, all four trees — must be an engine pathing obstacle. This
-    is the exact "stacking on everything" felt-bug: under the pre-fix crypt grid, NONE of these cells
-    were impassable (the crypt grid doesn't know about camp props at all), so an actor could be
-    placed standing in the campfire or on the log seat."""
+    """OWNER PLAYTEST #5 RED-FIRST: every painted solid on the DEPLOYED camp_clearing_night_v2.png plate
+    — the fire pit, firewood, all four crate clusters, both stone walls, the gate posts, the shelter
+    frame, and both bedroll groups — must be an engine pathing obstacle. This is the exact "walks THROUGH
+    the campfire / over bedrolls / crates / logs — essentially open grid" felt-bug: the pre-fix footprints
+    were authored for the OLDER greybox/v1 layout, so NONE of the v2 plate's painted solids were
+    impassable (they sat on open ground) and the owner walked straight through them."""
     grid = _grid()
     imp = impassable_cells(grid, sg.GRID_W, sg.GRID_H)
     for cell in sg.OBSTACLES:
-        assert cell in imp, f"camp prop cell {cell} must be impassable (#1441 scene<->grid coherence)"
+        assert cell in imp, f"camp prop cell {cell} must be impassable (owner playtest #5 collision-coherence)"
 
 
-def test_obstacle_prop_cell_count_matches_recipe():
-    """17 prop cells total (4 trees x2 + 2 boulders + 1 campfire + 3 bedrolls + log seat x2 + 1 supply
-    crate) — pinned so a future edit can't silently drop a prop from the impassable set without a
-    test failing."""
-    assert len(sg.OBSTACLES) == 17
-    assert len(sg.TREE_CELLS) == 8
-    assert len(sg.BEDROLL_CELLS) == 3
-    assert len(sg.LOG_SEAT_CELLS) == 2
+def test_the_fire_and_bedrolls_are_impassable():
+    """The felt-bug pinned explicitly on the v2 plate: the central fire pit and both bedroll groups —
+    the cells the owner watched his character walk straight through — must all block."""
+    grid = _grid()
+    imp = {tuple(c) for c in impassable_cells(grid, sg.GRID_W, sg.GRID_H)}
+    for cell in [(4, 9), (5, 9), (1, 8), (2, 8), (5, 10), (6, 10)]:
+        assert cell in imp, f"painted fire/bedroll cell {cell} must block (owner playtest #5)"
+
+
+def test_obstacle_prop_cell_count_matches_plate():
+    """39 disjoint prop cells total across the v2 layout — pinned so a future edit can't silently drop a
+    painted solid from the impassable set. Footprints are DISJOINT (no cell claimed by two props), so the
+    flattened OBSTACLES has no duplicates."""
+    assert len(sg.OBSTACLES) == 39
+    assert len(sg.OBSTACLES) == len({tuple(c) for c in sg.OBSTACLES})  # no duplicate cells
+    assert len(sg.CAMPFIRE_CELLS) == 4
+    assert len(sg.WALL_BR_CELLS) == 9
 
 
 def test_no_perimeter_walls_open_air_clearing():
@@ -90,11 +100,11 @@ def test_hero_and_goblin_spawn_cells_stay_walkable():
 
 def test_obstacles_list_matches_authored_props():
     """OBSTACLES (used for the printed seed summary + kept in lock-step with set_grid) must be
-    exactly the flattened tree/rock/campfire/bedroll/log-seat/crate footprints — no silent drift
-    between the two."""
+    exactly the flattened v2-plate prop footprints — no silent drift between the two."""
     assert sg.OBSTACLES == (
-        sg.TREE_CELLS + sg.ROCK_L_CELLS + sg.ROCK_R_CELLS + sg.CAMPFIRE_CELLS
-        + sg.BEDROLL_CELLS + sg.LOG_SEAT_CELLS + sg.SUPPLY_CRATE_CELLS
+        sg.CAMPFIRE_CELLS + sg.FIREWOOD_CELLS + sg.CRATE_L_CELLS + sg.CRATE_C_CELLS
+        + sg.CRATE_WALL_CELLS + sg.CRATE_R_CELLS + sg.WALL_BL_CELLS + sg.WALL_BR_CELLS
+        + sg.POST_CELLS + sg.SHELTER_CELLS + sg.BEDROLL_L_CELLS + sg.BEDROLL_R_CELLS
     )
 
 

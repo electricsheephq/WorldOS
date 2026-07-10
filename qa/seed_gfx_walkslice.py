@@ -2,8 +2,8 @@
 """seed_gfx_walkslice.py — WALKABLE-SLICE-V1 smoke fixture: a REST-mode crypt linked by a doorway to
 a camp clearing, with a present NPC to talk to and a lurking goblin to fight. The crypt reuses the
 CANONICAL crypt grid (``seed_gfx_combat._build_crypt_grid``: the 14x11 fixture whose sarcophagus
-floor footprint cols2-7 x rows7-9 + pillars (2,4)/(9,9) match the adopted ``crypt_armb_iter3_v1``
-plate, #1386 as corrected by #1505) with
+floor footprint cols3-7 x rows6-8 + pillars (3,3)/(3,4) and (8,9)/(9,9) match the adopted
+``crypt_armb_iter3_v1`` plate, owner-playtest-#5 collision-coherence re-measurement) with
 ONE addition — a back-center doorway — so the player renders the SAME crypt as the combat demo instead
 of a divergent hand-authored grid (the #1396 scene-grid coherence defect class). The camp grid comes
 from seed_gfx_camp — ONE grid source each. NO combat is started (rest mode), so the surface's ``stage``
@@ -24,7 +24,7 @@ sys.path.insert(0, HERE)
 CID = "walkslice_smoke01"
 # back-center doorway punched into the reused canonical crypt grid — the ONLY change vs the combat
 # fixture (a closed arena, no door). cross_door(6,0) leads to the camp. Its Chebyshev-1 landing ring
-# (rows 0-1) stays clear of the sarcophagus (rows 7-9, #1505) and both pillars, so the door zone is prop-free.
+# (rows 0-1) stays clear of the sarcophagus (rows 6-8) and both pillars, so the door zone is prop-free.
 DOOR = [6, 0]
 
 
@@ -49,9 +49,8 @@ def build_crypt_grid(loc_id: str):
             cell.type, cell.walkable = "door", True
     grid.door_cells = [(DOOR[0], DOOR[1])]
     # party + Mira on the OPEN flagstone floor between the left pillar and the tomb (cols 3-4, rows
-    # 5-6) — clear painted floor, one+ cell off the corrected tomb footprint (cols2-7 x rows7-9, #1505)
-    # and both pillars ((2,4)/(9,9)). The OLD r=8 spawns sat squarely ON the coffin's floor footprint —
-    # the "party starts snug against / standing on the sarcophagus" the owner flagged (playtest #4).
+    # 5-6) — clear painted floor, off the corrected tomb footprint (cols3-7 x rows6-8) and both
+    # re-measured pillars ((3,3)/(3,4) and (8,9)/(9,9)), owner-playtest-#5 collision-coherence.
     grid.spawns = {"party": [(3, 5), (4, 5)], "npcs": [(3, 6)]}
     grid.art.layout_hash = sg._layout_hash(grid)  # layout changed (added door) — refresh the hash
     return grid

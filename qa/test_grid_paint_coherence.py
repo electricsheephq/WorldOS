@@ -74,15 +74,17 @@ def _cell_shift_px(cols: int, rows: int, dc: int, dr: int) -> tuple[int, int]:
 # ── 1. footprint / occlusion schema + the gate checks the FOOTPRINT ────────────────────────────────
 def test_manifest_carries_footprint_and_occlusion():
     """Every prop carries BOTH a footprint (floor cells) and an occlusion (silhouette cells). The
-    sarcophagus is the case where they DIVERGE — the #1505 recalibration: an 18-cell FLOOR footprint
-    (cols2-7 × rows7-9) vs a 35-cell up-screen SILHOUETTE (cols3-9 × rows3-7)."""
+    sarcophagus is the case where they DIVERGE — the owner-playtest-#5 recalibration (PR #1507): a
+    12-cell FLOOR footprint (the coffin body, cols3-7 × rows6-8) vs a 35-cell up-screen SILHOUETTE
+    (cols3-9 × rows3-7). (Supersedes #1505's 18-cell cols2-7×rows7-9 footprint, which still read off the
+    paint.)"""
     m = _manifest(_CRYPT_MANIFEST)
     for p in m["props"]:
         assert isinstance(p.get("footprint"), list) and p["footprint"]
         assert isinstance(p.get("occlusion"), list) and p["occlusion"]
         assert p["cells"] == p["footprint"], "cells must mirror the footprint (drift-gate back-compat)"
     sarc = next(p for p in m["props"] if p["id"] == "sarcophagus")
-    assert len(sarc["footprint"]) == 18 and len(sarc["occlusion"]) == 35
+    assert len(sarc["footprint"]) == 12 and len(sarc["occlusion"]) == 35
     assert sarc["footprint"] != sarc["occlusion"]  # they genuinely diverge under the iso projection
 
 

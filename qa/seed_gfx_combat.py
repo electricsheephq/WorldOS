@@ -4,9 +4,9 @@
 The playable PoE2 3D-on-2D combat-demo seed. Pins the well-known campaign id the box
 renderer hardcodes (paint_combat_v1.cs / paint_backdrop_p0.cs CID="camp_gfxdemo01"),
 seats a fighter PC + a goblin on a 14x11 grid whose OBSTACLE cells match the crypt's
-painted-prop occluders on the deployed `crypt_armb_iter3_v1.png` plate (pillarL(2,4) /
-pillarR(9,9) / sarcophagus cols 3-9 x rows 3-7 — see #1396, re-calibrated #1386
-PROBE-PLACEMENT), places hero@(11,3) / goblin@(1,8),
+painted-prop footprints on the deployed `crypt_armb_iter3_v1.png` plate (pillarL(3,3)+(3,4) /
+pillarR(8,9)+(9,9) / sarcophagus cols 3-7 x rows 6-8 — see the constants below, owner
+playtest #5 re-measurement), places hero@(11,3) / goblin@(1,8),
 and starts combat. After this, GET /combat-surface?campaign=camp_gfxdemo01 returns real
 engine cells (positionAuthority='grid') for the READ-ONLY renderer to consume + the M-B
 bridge routes movement around exactly the painted props.
@@ -52,10 +52,18 @@ SUPERSEDED by the OWNER PLAYTEST #4 correction (2026-07-10, PR #1505): #1386 blo
 coffin's SILHOUETTE (cols3-9 x rows3-7, which under the iso projection is the open floor
 *behind* the coffin — where the lid+effigy rise up-screen), NOT its floor footprint. So the
 coffin's real floor cells stayed walkable and the owner walked onto the painted tomb.
-SARCOPHAGUS_CELLS is now the coffin's FLOOR-CONTACT footprint (cols2-7 x rows7-9), derived by
-point-in-polygon of each cell's grounded projection vs the coffin's measured floor
-parallelogram (see the constant below). This is the same content-only, engine-untouched
-re-authoring discipline — just the correct cells this time.
+SARCOPHAGUS_CELLS was set to (cols2-7 x rows7-9) — but that ALSO drifted (down-left of the coffin,
+swallowing the open floor to the tomb's right).
+
+SUPERSEDED AGAIN by the OWNER PLAYTEST #5 COLLISION-COHERENCE re-measurement (2026-07-10): all three
+props were re-derived from scratch by projecting the grid onto the deployed plate and point-in-polygon'ing
+each prop's floor-contact polygon (details on the constants below). The pillars were widened from a single
+cell to their painted 2-cell bases (the owner still walked THROUGH them), and the sarcophagus block was
+moved onto the coffin body (cols3-7 x rows6-8), freeing the open lit floor RIGHT of the tomb the owner
+could not cross. Because the read-only renderer derives its invisible occluder proxies from these SAME
+occluder-prop footprints (viewer/server.py `_combat_occluders` -> CombatSurfaceClient.RebuildOccluders),
+this one content edit also re-seats the occluders onto the true silhouettes and clears the strays that
+sat on open floor (owner playtest #5 task C).
 
 Engine = SOLE WRITER: writes only via server.* engine calls + save_campaign. Additive
 (a new seed; touches no existing seed/contract).
@@ -67,25 +75,34 @@ import sys
 
 CID = "camp_gfxdemo01"
 GRID_W, GRID_H = 14, 11
-# Prop footprints re-calibrated to the DEPLOYED crypt_armb_iter3_v1.png plate (#1386
-# PROBE-PLACEMENT, 2026-07-10). Each entry is a footprint (list of [c, r] cells); OBSTACLES
-# flattens them for the printed summary below.
-PILLAR_L_CELLS = [[2, 4]]
-PILLAR_R_CELLS = [[9, 9]]
-# OWNER PLAYTEST #4 FOOTPRINT CORRECTION (2026-07-10, PR #1505): the tomb's impassable footprint is
-# the coffin's FLOOR-CONTACT cells, cols 2-7 x rows 7-9 — NOT the #1386 cols3-9 x rows3-7. That prior
-# pass measured the coffin's tall SILHOUETTE (lid + effigy rise up-screen to rows3-7 under the iso
-# projection) and blocked THOSE cells — i.e. the open floor BEHIND the coffin — while leaving the
-# coffin's actual floor footprint (rows7-9, where an actor's feet land ON the painted box) walkable.
-# That is exactly why the owner walked his character onto the painted sarcophagus. Re-derived from a
-# point-in-polygon of every cell's grounded projection against the coffin's measured floor
-# parallelogram on the deployed plate (verified `greybox_render_headless` rig, <1e-3 vs Unity; the
-# least-squares fit that proved no shared-transform can realign a drifted plate is on PR #1505 / #1491).
-SARCOPHAGUS_CELLS = [[c, r] for c in range(2, 8) for r in range(7, 10)]
+# OWNER PLAYTEST #5 COLLISION-COHERENCE RE-MEASUREMENT (2026-07-10): all three prop footprints on the
+# DEPLOYED crypt_armb_iter3_v1.png plate were still DRIFTED after #1386/#1505 — the owner walked THROUGH
+# both pillars and could not walk the open floor RIGHT of the tomb. Root cause: #1386's PROBE-PLACEMENT
+# and #1505's re-measure both landed the cells off the actual paint (the sarcophagus block sat down-RIGHT
+# of the coffin, blocking open floor to its right; each pillar was pinned to a SINGLE cell that missed its
+# painted base entirely). Re-derived here by projecting the 14x11 grid's grounded cell centers onto the
+# deployed 1344x768 plate with the verified `greybox_render_headless` world_to_screen basis (<1e-3 vs
+# Unity Quaternion.Euler(30,45,0)) and point-in-polygon'ing each prop's measured floor-contact polygon —
+# then eyeball-confirmed against the plate (qa/evidence/plate-sprint/adopt-crypt/). Each entry is a
+# footprint (list of [c, r] cells); OBSTACLES flattens them for the printed summary below.
+# Pillars widened from a single cell to their painted 2-cell floor base (the owner's walk-through fix);
+# pillar_r's base also runs onto the r=10 perimeter-wall row (already impassable), so only its two floor
+# cells are listed.
+PILLAR_L_CELLS = [[3, 3], [3, 4]]
+PILLAR_R_CELLS = [[8, 9], [9, 9]]
+# The tomb's impassable footprint is the coffin's FLOOR-CONTACT cells — the box body hugging the ground,
+# cols 3-7 x rows 6-8 (irregular) — NOT the #1505 cols2-7 x rows7-9 (which sat down-left of the coffin and
+# swallowed the open lit floor to the tomb's right, the exact "blocked floor right of the tomb" the owner
+# reported) nor the #1386 cols3-9 x rows3-7 (the coffin's tall up-screen silhouette). Measured floor
+# parallelogram L(560,472)/F(690,550)/R(835,440)/B(705,362) px on the deployed plate.
+SARCOPHAGUS_CELLS = [
+    [4, 6], [5, 6], [6, 6], [7, 6],
+    [3, 7], [4, 7], [5, 7], [6, 7], [7, 7],
+    [4, 8], [5, 8], [6, 8],
+]
 OBSTACLES = PILLAR_L_CELLS + PILLAR_R_CELLS + SARCOPHAGUS_CELLS
-# hero far back-right / goblin front-left, both clear of the corrected front-center tomb footprint
-# (rows 7-9) and both pillars — re-verified against the deployed plate. (The old hero(6,6)/goblin(9,5)
-# sat behind the coffin; #1386 relocated them to (11,3)/(1,8), which remain clear under this footprint.)
+# hero far back-right / goblin front-left, both clear of the corrected center tomb footprint (rows 6-8)
+# and both re-measured pillars — re-verified against the deployed plate.
 HERO_CELL = [11, 3]
 GOBLIN_CELL = [1, 8]
 
@@ -123,7 +140,10 @@ def _build_crypt_grid(cid: str, location_id: str = ""):
     # (kept in lock-step with set_grid below via OBSTACLES).
     _prop("pillar_l", "stone_pillar", PILLAR_L_CELLS, "tall", "ancient cracked stone pillar")
     _prop("pillar_r", "stone_pillar", PILLAR_R_CELLS, "tall", "ancient mossy stone pillar")
-    _prop("sarcophagus", "sarcophagus", SARCOPHAGUS_CELLS, "tall", "carved stone sarcophagus, lid ajar")
+    # OWNER PLAYTEST #5 (occluder silhouette, task C): the tomb is a waist-high coffin, NOT a tall column
+    # — its occluder proxy is "mid", so actors standing BEHIND the painted box still read above it (a
+    # "tall" band raised a full-height depth wall over the low coffin and vanished them).
+    _prop("sarcophagus", "sarcophagus", SARCOPHAGUS_CELLS, "mid", "carved stone sarcophagus, lid ajar")
 
     grid = SceneGrid(
         scene_id=f"{cid}:crypt", location_id=location_id, kind="dungeon",
