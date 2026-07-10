@@ -2,7 +2,8 @@
 SAME room as the combat demo, so its scene_grid REUSES the canonical combat crypt grid
 (``seed_gfx_combat._build_crypt_grid``) rather than a divergent hand-authored one. These pin that the
 only difference is a single back-center DOORWAY the walkslice needs, and that the reused props (the
-enlarged sarcophagus cols3-9 x rows3-7 + both pillars, #1386) plus every actor spawn stay coherent.
+sarcophagus floor footprint cols2-7 x rows7-9 + both pillars, #1386 corrected by #1505) plus every
+actor spawn stay coherent.
 
 Pure/unit (no server, no state dir) — exercises the ``build_crypt_grid`` helper directly.
 """
@@ -39,7 +40,7 @@ def test_walkslice_crypt_reuses_canonical_grid_minus_the_door():
 
 
 def test_walkslice_crypt_keeps_the_canonical_props():
-    """The enlarged sarcophagus (cols3-9 x rows3-7) + both pillars — the #1386-recalibrated props the
+    """The sarcophagus floor footprint (cols2-7 x rows7-9, #1505) + both pillars — the props the
     adopted plate is painted around — are all still impassable in the walkslice crypt."""
     blocked = _impassable(ws.build_crypt_grid("loc"))
     for cell in combat.SARCOPHAGUS_CELLS + combat.PILLAR_L_CELLS + combat.PILLAR_R_CELLS:
