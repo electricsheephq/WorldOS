@@ -1,0 +1,31 @@
+{
+  "panel_id": "panel-visual-m15-spend-gate-RERUN-NORING-20260711",
+  "protocol": "control-anchored 5-scorer blind panel (model sonnet), CHARACTER-IN-SCENE COHESION. DIAGNOSTIC variant of the rerun panel: identical 6 real-mesh painterly actors, but the team-ring UI decals (Actor_*_Ring) DISABLED to isolate the painterly stack's true contribution from the gameplay-UI overlay that the primary panel's 5/5 scorers flagged as the dominant tell. RungD directional contact shadows remain.",
+  "scale": "0-10 character-in-scene cohesion. Control band [6.8, 9.2], anchor 8.0.",
+  "candidate_image": "qa/evidence/m15-gate/rerun/m15_rerun_cohesion_6actors_noring.png",
+  "control_id": "control:visual:pillars-of-eternity-2:poe2_ruins_brazier_integration_01",
+  "control_image": "/Volumes/LEXAR/WorldOS-Unity-spike/refs/poe2_ruins_brazier_integration_01.jpg",
+  "blind_mapping": "frame_A=CONTROL, frame_B=CANDIDATE (rings-off); mapping OUTSIDE the panel image dir; 1600x900 blind",
+  "scores": [
+    {"scorer": 1, "candidate": 4, "control": 8},
+    {"scorer": 2, "candidate": 4, "control": 8},
+    {"scorer": 3, "candidate": 4, "control": 8},
+    {"scorer": 4, "candidate": 3, "control": 6},
+    {"scorer": 5, "candidate": 3, "control": 6}
+  ],
+  "candidate_median": 4.0,
+  "candidate_mean": 3.6,
+  "control_median": 8.0,
+  "control_mean": 7.2,
+  "delta_candidate_minus_control": -4.0,
+  "ranking": "control > candidate, unanimous 5/5",
+  "in_band": false,
+  "lift_vs_rings_on": "+2.0 median (2.0 -> 4.0) — quantifies the team-ring UI decal as the single largest cohesion penalty.",
+  "residual_defects": [
+    "4/5: figures (esp. the party trio) read as flat DARK/COOL silhouettes that do not pick up the plate's dominant warm torchlight grade — root cause is RungA' PainterlyActor's fire-proximity (near01) warmth scaling: the combat-formation cells sit far from the plate's hearth center, so warmth/key-strength are dialed down and the units render dark.",
+    "3/5: RungD directional contact shadow is too FAINT at combat-camera scale — scorers read the units as 'floating just above the tile'; the ground-plant is weak without the (removed) ring decal.",
+    "2/5: the PainterlyActor rim/edge-soften reads as a 'glow halo / semi-transparent' outline at small on-screen size rather than a lit silhouette.",
+    "small on-screen scale at the LOCKED combat camera amplifies the 'token' read."
+  ],
+  "interpretation": "The painterly stack DOES lift cohesion materially over bare capsules (first-run 1.0 -> real-mesh rings-off 4.0, a +3.0 lift), but even with the UI overlay removed the 6-unit combat-distance frame scores 4.0 — below the [6.8,9.2] band. The gate does NOT pass on cohesion. Bounded, actionable fixes (all in CohesionProbe.cs / the spawn convention, no new assets): (1) rework the team ring as a subtle rendered contact decal, not a bright UI selection ring [+~2.0]; (2) give combat-distance units a plate-ambient warm FLOOR independent of hearth proximity so far units aren't dark/cool; (3) strengthen RungD contact shadow density at combat scale; (4) consider a tighter combat-camera or larger actor target-height for the multi-unit read."
+}

@@ -264,7 +264,7 @@ public static class M15SpendGateProbe
 
     // Second persistent (looping) Hovl VFX for the "two effects render" check — a magic-circle loop
     // reads in a still capture alongside the fire one-shot (same rationale as the Populate warm-up).
-    const string HovlPrefabPath2 = "Assets/Hovl Studio/Magic circles/Prefabs/Magic circle fire loop.prefab";
+    const string HovlPrefabPath2 = "Assets/Hovl Studio/Magic circles/Prefabs/Loop version/Magic circle fire loop.prefab";
 
     [MenuItem("Tools/WorldOS/M1.5 Spend Gate/2 - Populate 6 REAL-MESH painterly actors (Actor_*)")]
     public static void PopulatePainterly()
