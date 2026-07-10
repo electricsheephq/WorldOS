@@ -1,0 +1,7 @@
+{
+  "name": "panel-adopt-crypt-truegrey-iter2-carved-relief",
+  "room": "crypt",
+  "generate": {"candidate": "/Users/lume/WorldOS-worktrees/wt-panel-adopt/qa/evidence/true-greybox/crypt/iter2/crypt_iter2_candidate_f_SELECTED.jpg"},
+  "registration": {"greybox": "/Users/lume/WorldOS-worktrees/wt-panel-adopt/qa/evidence/true-greybox/crypt/crypt_greybox.png", "min_recall": 0.95},
+  "panel": {"incumbent": "/Users/lume/WorldOS-worktrees/wt-panel-adopt/qa/evidence/plate-sprint/adopt-crypt/source-plates/candidate_crypt_armb_iter3.jpg", "control": "/Users/lume/worldos-session-notes/plate-sprint/armB/poe2_control.jpg", "house_anchor": "/Users/lume/WorldOS-worktrees/wt-panel-adopt/qa/evidence/plate-sprint/adopt-crypt/source-plates/candidate_crypt_armb_iter3.jpg"}
+}

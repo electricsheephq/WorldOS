@@ -1,0 +1,10 @@
+{
+  "scores": {
+    "A": [6.0, 6.0, 6.0, 5.0, 6.0],
+    "B": [8.0, 8.0, 9.0, 8.0, 8.0],
+    "C": [9.0, 9.0, 9.0, 9.0, 9.0]
+  },
+  "medians": {"A": 6.0, "B": 8.0, "C": 9.0},
+  "control_valid": true,
+  "verdict": "5-scorer blind panel (panel-adopt, crypt iteration 2, carved-relief-density pass): candidate median 6.0 vs registered PoE2 ruins-brazier control median 9.0 (delta -3.0) vs incumbent crypt_armb_iter3 median 8.0 this panel. Control in-band (9.0 within [6.8,9.2]) -> instrument valid. Delta -3.0 is BELOW the automated VIS_DELTA_ADOPT floor (-2.5) -> promote.py REJECTS. Iteration 2 fixed composition fidelity (matches crypt_geometry.json's exact 3-prop set) but did not close the ornamentation gap enough to clear adoption in a full blind panel -- crypt needs one more iteration."
+}
