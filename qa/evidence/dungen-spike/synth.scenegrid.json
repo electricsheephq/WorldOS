@@ -1,0 +1,419 @@
+{
+ "scene_id": "dungen:synth",
+ "location_id": "synth",
+ "kind": "dungeon",
+ "biome": "DunGen-authored stone dungeon",
+ "seed": 4242,
+ "grid": {
+  "cols": 9,
+  "rows": 4,
+  "cell_size_ft": 5,
+  "projection": "dimetric-2to1"
+ },
+ "cell_default": {
+  "type": "void",
+  "walkable": false,
+  "cost": 1
+ },
+ "cells": [
+  {
+   "c": 0,
+   "r": 0,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 1,
+   "r": 0,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 2,
+   "r": 0,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 3,
+   "r": 0,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 5,
+   "r": 0,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 6,
+   "r": 0,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 7,
+   "r": 0,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 8,
+   "r": 0,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 0,
+   "r": 1,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 1,
+   "r": 1,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 2,
+   "r": 1,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 3,
+   "r": 1,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 4,
+   "r": 1,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 5,
+   "r": 1,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 7,
+   "r": 1,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 8,
+   "r": 1,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 0,
+   "r": 2,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 2,
+   "r": 2,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 3,
+   "r": 2,
+   "type": "door",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 4,
+   "r": 2,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 5,
+   "r": 2,
+   "type": "door",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 8,
+   "r": 2,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 0,
+   "r": 3,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 1,
+   "r": 3,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 2,
+   "r": 3,
+   "type": "door",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 3,
+   "r": 3,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 5,
+   "r": 3,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 6,
+   "r": 3,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 7,
+   "r": 3,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 8,
+   "r": 3,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 1,
+   "r": 2,
+   "type": "prop",
+   "walkable": false,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": "prop_crate"
+  },
+  {
+   "c": 6,
+   "r": 1,
+   "type": "prop",
+   "walkable": false,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": "prop_pillar"
+  },
+  {
+   "c": 6,
+   "r": 2,
+   "type": "prop",
+   "walkable": false,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": "prop_pillar"
+  },
+  {
+   "c": 7,
+   "r": 2,
+   "type": "prop",
+   "walkable": false,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": "prop_tree"
+  }
+ ],
+ "props": [
+  {
+   "id": "prop_crate",
+   "kind": "supply_crates",
+   "cells": [
+    [
+     1,
+     2
+    ]
+   ],
+   "anchor_cell": [
+    1,
+    2
+   ],
+   "occluder": true,
+   "height_band": "mid",
+   "silhouette": "supply_crates"
+  },
+  {
+   "id": "prop_pillar",
+   "kind": "pillar",
+   "cells": [
+    [
+     6,
+     1
+    ],
+    [
+     6,
+     2
+    ]
+   ],
+   "anchor_cell": [
+    6,
+    2
+   ],
+   "occluder": true,
+   "height_band": "tall",
+   "silhouette": ""
+  },
+  {
+   "id": "prop_tree",
+   "kind": "large_tree",
+   "cells": [
+    [
+     7,
+     2
+    ]
+   ],
+   "anchor_cell": [
+    7,
+    2
+   ],
+   "occluder": true,
+   "height_band": "tall",
+   "silhouette": ""
+  }
+ ],
+ "zone_anchors": {},
+ "exits": [
+  {
+   "cell": [
+    2,
+    3
+   ],
+   "to_location_id": "",
+   "label": "the passage out"
+  }
+ ],
+ "spawns": {},
+ "door_cells": [
+  [
+   3,
+   2
+  ],
+  [
+   5,
+   2
+  ],
+  [
+   2,
+   3
+  ]
+ ],
+ "protected_lane_cells": [],
+ "lighting": {
+  "key_dir_deg": 45,
+  "key_color": "#ffe6b0",
+  "ambient_color": "#2a2f3f",
+  "mood": "torchlit dungeon"
+ },
+ "art": {
+  "status": "tier1_blockout"
+ }
+}
