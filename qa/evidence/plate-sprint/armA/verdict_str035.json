@@ -1,0 +1,32 @@
+{
+  "scores": {
+    "A": [
+      5,
+      5.5,
+      6.5,
+      5.5,
+      6
+    ],
+    "B": [
+      7.5,
+      8,
+      8,
+      7.5,
+      8
+    ],
+    "C": [
+      9.5,
+      9.5,
+      9.5,
+      9.5,
+      9.5
+    ]
+  },
+  "medians": {
+    "A": 5.5,
+    "B": 8.0,
+    "C": 9.5
+  },
+  "control_valid": false,
+  "verdict": "ARM A str035: registration 0.9701 PASS, beauty median 5.5 (ceiling 7.0, incumbent 8.0). Structural style-vs-registration ceiling."
+}

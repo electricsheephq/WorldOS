@@ -1,0 +1,68 @@
+{
+  "lane": "CAMP-ARMB (PLATE SPRINT Phase 2)",
+  "room": "camp_clearing_night (16x12 open-air campfire clearing, comparator = incumbent camp_clearing_night_v2)",
+  "recipe_under_test": "ARM B winning recipe ported from crypt (issue #1481 / ~/worldos-session-notes/plate-sprint/armB iter3): flux-1-dev + ControlNet-depth base from the camp greybox -> Gemini instruction-edit style pass (model_google-gemini-3-1-flash), 4 iterations, best-of-3 generations per iteration",
+  "greybox_used": "qa/evidence/1470/greybox_control_1344x768.png (the W6.3b ControlNet depth control image for camp_clearing_night, camera-pinned 1344x768, same basis as qa/room_manifests/camp_clearing_night_v2.cells.json). No separate normal sidecar exists or is needed: generate_room.py --controlnet only accepts depth|canny, and #1481 concluded the WOSRelight lane that consumes depth/normal sidecars should STOP (shared-greybox sidecars caused vertical-banding on warm plates) -- ARM-B's flux ControlNet pass derives depth server-side from the greybox controlImage directly, no sidecar file consumed.",
+  "findings": [
+    {
+      "id": 1,
+      "title": "referenceImages is a CONTENT anchor, not a STYLE anchor -- confirmed independently, contradicts a mid-run course-correction",
+      "detail": "iter1: referenceImages=[crypt_dense_v1] (ARM B's proven crypt reference) reproduced a full crypt scene wholesale on the camp base twice (sarcophagus, skulls, stone pillars; registration 0.758 and 0.987 -- the 0.987 run scores well on edge-recall DESPITE wrong content, a metric-gaming false positive). iter1-2: swapping to camp_clearing_night_v2 (the SAME-ROOM incumbent) as the reference did NOT fix this -- it reproduced v2's OWN specific composition (a timber cabin + stone perimeter wall that do not exist in this greybox) across 4 separate attempts (0.644, 0.796, 0.808, 0.839-with-reinforced-anti-import-prompt), never the greybox's actual authored layout (loose 4-tree treeline, 2 boulders, campfire, 3 bedrolls, crates -- see qa/seed_gfx_camp_clearing.py). A mid-task course-correction asserted the same-room reference's content leak would be 'benign' -- this batch's own 4 real generations refute that for this greybox; the sibling forest-road lane's findings.json (qa/evidence/plate-sprint/forest-road/, worktree wt-forest-road) independently confirms both anchors leaked their full room content and does not claim a same-room exception either.",
+      "fix": "Drop referenceImages entirely; carry the target painterly style as TEXT ONLY in the prompt (the existing rich style description already covers oil-brush strokes / chiaroscuro / warm-cool falloff). This is the arm that actually converged content-wise."
+    },
+    {
+      "id": 2,
+      "title": "scene-content grounding + explicit anti-import clause was necessary once referenceImages was dropped",
+      "detail": "The base ControlNet pass renders camp's authored trees/boulders as blocky rectangular placeholders (matching the greybox's simple box geometry); the plain style-pass prompt read these as literal stone pillars/columns (the base template's crypt-authored boilerplate 'varied unique pillar carvings... crisply chiseled stone relief' leaking in from generate_room.py's shared prompt template, which is not room-gated). Adding explicit SCENE-CONTENT GROUNDING language (\"the tall vertical shapes are TREES... the low blocky shapes are BOULDERS... NO walls/buildings/architecture\") fixed this: no-ref generations correctly painted real gnarled trees and rounded mossy boulders, matching the tombstone-monolith fix already documented in room_recipes.json for the z-image pipeline (2026-07-09 camp v1->v2 audit) -- same lesson, different pipeline."
+    },
+    {
+      "id": 3,
+      "title": "best-of-3 control_strength sweep: 0.85 beat 0.7 and 0.92",
+      "detail": "Base ControlNet control_strength 0.7 (ARM B's crypt default) -> best style-pass registration 0.9005/0.9254 across iters 1-2. Raising to 0.85 (iter3) raised the best-of-3 ceiling to 0.9439 (this lane's best candidate). Raising further to 0.92 (iter4) REGRESSED to 0.8818 best-of-3 -- not a monotonic lever; 0.85 is the measured sweet spot for this room/base pair, not a universal constant."
+    },
+    {
+      "id": 4,
+      "title": "course-correction's suggested dimetric/camera-lock clause tested and found NOT beneficial for this base",
+      "detail": "A mid-run course-correction (citing the sibling forest-road lane's finding-3: dropping referenceImages also drops an implicit camera pin, recoverable via an explicit dimetric-lock prompt clause) was tested directly: added the same camera-lock wording to the winning no-ref prompt and ran best-of-3 on the identical iter3 base. Result: 0.8302 / 0.8613 / 0.6249 -- all WORSE than the plain no-ref prompt's 0.9439. Root cause: this camp base's camera projection was never drifting (unlike forest-road's base, which tilted to an eye-level landscape without a reference) -- the extra camera-lock + scene-grounding wording only added prompt complexity/stochastic risk without fixing an actual defect here. Kept the plain no-ref prompt as the winner; documented rather than silently adopting the suggested change."
+    },
+    {
+      "id": 5,
+      "title": "edge-recall vs greybox is content-blind and may undercount faithful organic reinterpretation (advisory, per sibling lane's finding-2)",
+      "detail": "The winning candidate's overlay (overlay_candidate_vs_greybox.jpg: magenta greybox structural edges composited over the candidate) shows the floor-diamond boundary, tree positions, and boulder position landing correctly on painted structure -- visually a well-registered plate. Its raw edge-recall (0.9439) sits just under the 0.95 gate, plausibly because painting an authored BOX placeholder as an organic tree trunk/canopy naturally sheds some of the box's own edge pixels (the metric was co-tuned on hard-edged crypt masonry). Reporting the number as the gate result (FAIL, per the sprint's literal bar) while flagging this class-dependent caveat, consistent with the sibling forest-road lane's own advisory framing of the same metric behavior."
+    }
+  ],
+  "iteration_log": [
+    {"iter": 1, "arm": "crypt_dense_v1 reference (ARM B proven default)", "n_gen": 2, "best_registration": 0.987, "verdict": "REJECTED -- content hijack (full crypt scene), registration is a false positive"},
+    {"iter": 1, "arm": "camp_clearing_night_v2 reference (comparison arm)", "n_gen": 3, "best_registration": 0.808, "verdict": "REJECTED -- reproduces v2's own cabin+wall composition, not this greybox"},
+    {"iter": 2, "arm": "camp_clearing_night_v2 reference + reinforced anti-import prompt", "n_gen": 1, "best_registration": 0.839, "verdict": "REJECTED -- reinforcement did not stop the content import"},
+    {"iter": 2, "arm": "no referenceImages + scene-content-grounding prompt (discovery)", "n_gen": 3, "best_registration": 0.9254, "verdict": "correct content, close to gate"},
+    {"iter": 3, "arm": "no-ref, base control_strength raised 0.7->0.85", "n_gen": 3, "best_registration": 0.9439, "verdict": "BEST CANDIDATE -- scored by panel"},
+    {"iter": 4, "arm": "no-ref, base control_strength raised to 0.92", "n_gen": 3, "best_registration": 0.8818, "verdict": "REJECTED -- regressed vs iter3, control_strength 0.85 is the sweet spot"},
+    {"iter": "5 (post-course-correction)", "arm": "no-ref + dimetric camera-lock clause on iter3's base", "n_gen": 3, "best_registration": 0.8613, "verdict": "REJECTED -- camera-lock not needed for this base, added variance instead"}
+  ],
+  "best_candidate": {
+    "path": "~/worldos-session-notes/plate-sprint/camp/iter3/style_noref/camp_iter3_noref_g3.png (plate-contract 1344x768 copy: camp_iter3_noref_g3_plate.png)",
+    "registration_recall_vs_greybox": 0.9439,
+    "ncc_drift_vs_v2_manifest": "FAIL (all 12 fingerprinted props) -- expected: NCC compares luma template texture against camp_clearing_night_v2's OWN paint job, and this candidate is a deliberately different (correct, non-v2-derived) generation; not evidence of positional drift, see overlay",
+    "pregate": "FLAG (G6 luma-staging-law) -- candidate reads brighter/less crushed-shadow than the PoE staging-law target band, same class of gap iter3's crypt sibling noted (panel catches up to a bar the numeric staging law calibrates tighter than)"
+  },
+  "panel": {
+    "scorers": 5, "scorer_model": "sonnet", "blind": true,
+    "round_1_discarded": {"control_median": 6.0, "reason": "out of 6.8-9.2 validity band -- 3/5 scorers misread the incumbent (B) and control (C) images as the same scene"},
+    "round_2_counted": {
+      "A_candidate": {"scores": [6,6,5,7,7], "median": 6.0},
+      "B_camp_incumbent_v2": {"scores": [7,5,6,8,8], "median": 7.0},
+      "C_realart_control_poe2": {"scores": [10,9,9,10,9], "median": 9.0, "valid_band_6.8_9.2": true},
+      "delta_vs_control": -3.0,
+      "read": "Candidate median 6.0 is BELOW both the incumbent (7.0) and the >=7.0 sprint bar. Scorers named the candidate's mirror-symmetric tree canopy and radial/diamond floor tiling as staged/repetitive tells (artifacts of the ControlNet-conditioned base's authored symmetric greybox layout surfacing through the style pass)."
+    }
+  },
+  "convergence": {
+    "gate": "registration >= 0.95 AND panel median >= 7.0 (comparator camp_clearing_night_v2)",
+    "registration": 0.9439, "panel_median": 6.0,
+    "converged": false,
+    "caveat": "Registration miss is close (0.9439 vs 0.95) and overlay-verified as visually well-aligned (finding 5); panel miss is real and scorer-named (symmetric/staged composition reads below the incumbent's own bar)."
+  },
+  "style_reference_winner": "NO referenceImages (text-only style description) -- both crypt_dense_v1 and camp_clearing_night_v2 as referenceImages caused content hijack; this is the opposite of ARM B's crypt-only assumption and the key generalization finding of this lane.",
+  "adoption": "NOT adopted -- adoption is a separate gated lane per the task scope. This PR is evidence-only."
+}

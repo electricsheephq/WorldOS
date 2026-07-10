@@ -56,9 +56,19 @@ const GOBLIN = cell(args["goblin-cell"] || "10,8");
 const WALK = cell(args["walk-cell"] || "8,9");
 const HELPER = args.helper || "";
 const FULLSCREEN_FALLBACK = !!args["fullscreen-fallback"];
-// #1466: opt-in brief activate->click->restore escape if PID-targeted delivery proves unreliable for
-// Unity's input polling. OFF by default (via --activate-fallback or WORLDOS_CLICK_ACTIVATE_FALLBACK=1).
-const ACTIVATE_FALLBACK = !!args["activate-fallback"] || process.env.WORLDOS_CLICK_ACTIVATE_FALLBACK === "1";
+// #1466/#1483: brief activate->click->restore escape. pid-posted CGEvents deliver to the player PID but
+// produce ZERO Unity input (Unity's Input samples only the FOREGROUND app), so this is the PROVEN working
+// click path (sub-second activation, no Space switch — within the windowed no-hijack policy). Now ON by
+// DEFAULT (the smoke lane was red on the pure-PID default since w6batch); WORLDOS_CLICK_ACTIVATE_FALLBACK=0
+// opts back out to pure PID delivery (currently non-functional for Unity). The env opt-out is
+// AUTHORITATIVE — it must win over the explicit --activate-fallback flag too (matches
+// native_palette_server.js's CLICK_ACTIVATE_FALLBACK exactly, which has no such flag to override it).
+const ACTIVATE_FALLBACK = process.env.WORLDOS_CLICK_ACTIVATE_FALLBACK !== "0";
+// #1466/#1477 QA INPUT CHANNEL (preferred, zero-activation): when the player is launched with
+// WORLDOS_QA_INPUT=1, route clicks through its in-process localhost listener (cell {c,r} -> HandleCell)
+// instead of OS-synthetic mouse — titlebar-immune and skips the activate-fallback path entirely. Empty
+// => falls through to the synthetic-click path (ACTIVATE_FALLBACK, above) as before.
+const QA_INPUT_PORT = process.env.WORLDOS_QA_INPUT === "1" ? String(process.env.WORLDOS_QA_INPUT_PORT || "8971") : "";
 const GLIDE_FRAMES = 4;
 const GLIDE_INTERVAL_MS = 150;
 const SETTLE_MS = 500;
@@ -115,6 +125,16 @@ function cellPixel(c, r, cols, rows, pxW, pxH) {
 
 function clickCell(target, pxW, pxH, winCache, label) {
   const { sx, sy } = cellPixel(target.c, target.r, COLS, ROWS, pxW, pxH);
+  // #1466 QA INPUT CHANNEL (preferred when the player exposes it): the smoke KNOWS the target grid cell,
+  // so it uses the ROBUST cell path — the player runs the SAME HandleCell rest-vs-combat + #1441
+  // pre-validation + POST a human click triggers, with none of the OS synthetic-mouse delivery problem
+  // AND none of the capture-pixel->Unity-viewport calibration risk (the SCK capture includes the macOS
+  // titlebar, so a captured-pixel viewport never matched Unity's screen; the T3 palette handles that via
+  // /health, but the deterministic smoke needs neither).
+  if (QA_INPUT_PORT) {
+    const r = core.qaClickCell(QA_INPUT_PORT, target.c, target.r);
+    return { ...r, delivery: r.delivery || "qa-channel", cell: { c: target.c, r: target.r }, sx, sy, label };
+  }
   // sx,sy are in the SAME capture-pixel space screenshots are saved in -> map to global points
   // exactly like native_palette_server.js's click tool does (winCache.x/y are global points).
   const gx = winCache.x + sx / winCache.scale;
