@@ -69,12 +69,16 @@ plate / VFX / UX / animation changes:
   JPEG fine for painterly plates) — local paths (`~/worldos-session-notes/...`) are INVISIBLE to
   reviewers, repo paths only.
 - **Embed each frame with markdown image syntax pointed at the RAW bytes, so it renders inline in
-  the PR view** — `![caption](https://raw.githubusercontent.com/electricsheephq/WorldOS/<branch-or-sha>/qa/evidence/<number>/frame.jpg)`,
-  or the `/blob/...` GitHub URL with `?raw=true` appended. **A plain `/blob/...` URL (GitHub's HTML
-  file viewer) will NOT render inline** — it links to a page, not the image bytes; that silently
-  fails the exact case this section exists for. A bare path or a "see qa/evidence/123/" pointer
-  doesn't satisfy this either — if the owner has to click through to a file listing to see a pixel,
-  the section is incomplete.
+  the PR view** — `![caption](.../blob/<commit-sha>/qa/evidence/<number>/frame.jpg?raw=true)` using
+  **your own PR-head repo and an immutable commit SHA on this branch** (not a hardcoded upstream
+  `owner/repo`, which 404s the moment this is opened from a fork), or a plain `/blob/...` URL with
+  `?raw=true` appended. **A plain `/blob/...` URL with no `?raw=true` (GitHub's HTML file viewer)
+  will NOT render inline** — it links to a page, not the image bytes; that silently fails the exact
+  case this section exists for. Simplest and most robust for most contributors: drag-and-drop the
+  image directly into the PR description text box — GitHub uploads it to its own CDN and inserts a
+  working inline `![...]` link automatically, with no fork/SHA/URL bookkeeping at all. A bare path
+  or a "see qa/evidence/123/" pointer doesn't satisfy this either — if the owner has to click
+  through to a file listing to see a pixel, the section is incomplete.
 - Motion: a numbered frame series (2-6 stills) is primary and each still gets its own embedded image
   (agents read stills reliably); a GIF is optional, for humans, in addition to the stills.
 - Include the deterministic pre-gate output (`qa/visual_pregate.py`) when the change touches

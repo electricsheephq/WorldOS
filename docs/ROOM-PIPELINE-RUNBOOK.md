@@ -5,6 +5,14 @@
 > exact file/command and the decision record that ratified it. This is the TRUE-GREYBOX lane (epic
 > #1508): geometry-first, registration by construction, no paint-vs-grid drift.
 
+**Preflight (do this before any command below):** read `docs/OPERATIONS.md` first — it's the
+general cold-start bootstrap (worktree discipline, box claim etiquette, the Universal Run Contract)
+this page specializes for room authoring. Verify `pwd` before running anything: you should be inside
+a real checkout of this repo (`/Users/lume/WorldOS` or an approved same-disk worktree per
+OPERATIONS.md's worktree-discipline section) — never a bare scratch directory. Any step below that
+touches the live Unity project (step 9's `plates_manifest.json`, step 10's player rebuild) requires
+the canonical checkout or box path named in that step; don't improvise a different location.
+
 ## The one invariant every step below honors
 
 The Python engine (`servers/engine/`) is the **sole writer** of level-structure truth (walkable
@@ -57,9 +65,10 @@ kind's proxy volume (height from `greybox_render_headless._KIND_SPECS`) extruded
 the true 5-ft-grid object, not an eyeballed/drifted footprint.
 
 ```bash
-mkdir -p qa/evidence/<n>/   # this PR/issue's evidence dir — write geometry here, NOT /tmp
-python3 tools/author_room_geometry.py crypt -o qa/evidence/<n>/crypt_geometry.json
-python3 tools/author_room_geometry.py camp  -o qa/evidence/<n>/camp_geometry.json
+EVIDENCE_ID=1234   # this PR/issue's number — write geometry under it, NOT /tmp
+mkdir -p "qa/evidence/${EVIDENCE_ID}/"
+python3 tools/author_room_geometry.py crypt -o "qa/evidence/${EVIDENCE_ID}/crypt_geometry.json"
+python3 tools/author_room_geometry.py camp  -o "qa/evidence/${EVIDENCE_ID}/camp_geometry.json"
 ```
 **Write outputs under the repo, not `/tmp`:** `derive_room_manifest.py` (step 2) stamps the derived
 manifest's `source_geometry` field by resolving your `-o` path repo-relative (`tools/derive_room_manifest.py:_repo_relative`);
@@ -90,7 +99,7 @@ a room's FOOTPRINT + OCCLUSION + WALKABLE; manifests are DERIVED from it, never 
 This is what kills paint-vs-grid drift at the source instead of patching it downstream.
 
 ```bash
-python3 tools/derive_room_manifest.py qa/evidence/<n>/crypt_geometry.json \
+python3 tools/derive_room_manifest.py "qa/evidence/${EVIDENCE_ID}/crypt_geometry.json" \
     -o qa/room_manifests/crypt.cells.json --room crypt --recipe-key crypt
 ```
 
@@ -118,7 +127,7 @@ The shaded greybox render is BOTH the plate's visual base AND the ControlNet `co
 step 4 — one artifact, two consumers, guaranteeing base and control agree pixel-for-pixel:
 
 ```bash
-python3 qa/greybox_render_headless.py qa/evidence/<n>/crypt_geometry.json qa/evidence/<n>/crypt_greybox.png
+python3 qa/greybox_render_headless.py "qa/evidence/${EVIDENCE_ID}/crypt_geometry.json" "qa/evidence/${EVIDENCE_ID}/crypt_greybox.png"
 ```
 
 This is the verified camera rig (`greybox_render_headless` — the #1396 recipe, <1e-3 vs Unity;
@@ -127,8 +136,8 @@ dimetric, elevation 30°, yaw 45, `cell_size 2.0`, `ortho_size 13`).
 **Optional depth+normal sidecars** (`qa/greybox_sidecars_headless.py`) — a pure-PIL analog of the
 box `CohesionProbe.cs` G-buffer, co-registered pixel-for-pixel with the greybox render:
 ```bash
-python3 qa/greybox_sidecars_headless.py qa/evidence/<n>/crypt_geometry.json \
-    qa/evidence/<n>/crypt_depth.png qa/evidence/<n>/crypt_normal.png
+python3 qa/greybox_sidecars_headless.py "qa/evidence/${EVIDENCE_ID}/crypt_geometry.json" \
+    "qa/evidence/${EVIDENCE_ID}/crypt_depth.png" "qa/evidence/${EVIDENCE_ID}/crypt_normal.png"
 ```
 **Scope note (a PLATE SPRINT finding, not a live dependency):** the ADOPTED recipe (step 4) does
 **not** consume these sidecars — Scenario derives the depth control server-side from the shaded

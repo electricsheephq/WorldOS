@@ -10,12 +10,19 @@ a room has no missing-footprint defects.
 ## Why this comparison exists
 
 `journey_eval.py` walks a scripted path of clicks the ENGINE considers legal, then asks factual VQA
-questions of the resulting frames. That method has a structural hole named in #1523: it **cannot
-click onto a cell the engine already refuses** (an unwalkable/impassable cell), so it can never
-observe the specific defect class "the engine accepted a move onto a cell whose paint reads as a
-solid object" — a missing-footprint bug is invisible to a run that only walks legal paths. Playtest
-#7 found exactly that class by hand, on the same room (`camp_clearing_night_truegrey_v1.png`), before
-any of it was fixed. The recall table below is the receipt.
+questions of the resulting frames (including a per-frame "is the character standing on a painted
+object?" check, asked of every captured frame, not just deliberate approach steps). **This is a
+coverage gap, not a structural impossibility:** a missing-footprint cell (one the engine wrongly
+treats as walkable) is itself engine-legal, so a frame that happens to land on one COULD in
+principle trip that check. The real hole named in #1523 is that v1's script never DELIBERATELY
+routes through candidate painted-solid regions to test them — the auto-derived `prop_approach` steps
+target cells adjacent to props the manifest ALREADY marks impassable (`qa/journey_eval.py`: "one
+prop_approach step per impassable"), which by definition excludes exactly the props a
+missing-footprint bug is about; the plan-authored waypoints (start/parley/door/combat) are chosen for
+narrative reasons, not to probe suspect cells. So recall against this defect class is **unguaranteed,
+not impossible** — it depends entirely on whether the scripted route happens to cross the bad cell.
+Playtest #7 found this class by hand, on the same room (`camp_clearing_night_truegrey_v1.png`),
+before any of it was fixed. The recall table below is the receipt.
 
 ## Owner playtest #7 defects (human eyeball, pre-fix) — `qa/evidence/camp-tune/findings.json`
 
@@ -49,12 +56,14 @@ across every frame** — including direct approaches to the crypt's sarcophagus 
 ## The recall number
 
 **0 of 3 playtest-#7 missing-footprint-class defects (woodpile, crate stack, hut) would have been
-catchable by journey-eval v1's methodology, even on this exact run's room** — not
-because they were re-introduced (camp-tune's fixes were already merged by the time this run executed),
-but because journey-eval v1 structurally cannot produce the observation "the engine accepted a click
-onto a painted-solid cell." It only asks factual questions of frames reached via LEGAL clicks; a
-missing-footprint bug is, by definition, a cell the engine treats as legal that shouldn't be. Confirmed
-directly in #1523's own framing: *"currently 0/4 by the legal-path run."*
+reliably caught by journey-eval v1's methodology, even on this exact run's room** — not because they
+were re-introduced (camp-tune's fixes were already merged by the time this run executed), but
+because journey-eval v1's scripted route never deliberately visits a cell just because it LOOKS
+solid; it only visits cells the manifest/plan already picked for other reasons (adjacent to a
+KNOWN-impassable prop, or a narrative waypoint). A missing-footprint cell is exactly the one class
+of cell that method structurally never targets on purpose — it would only get caught by accident, if
+the route happened to cross it. Confirmed directly in #1523's own framing: *"currently 0/4 by the
+legal-path run."*
 
 **What journey-eval v1 IS good at (this run's real catch):** transition-integrity questions (did the
 backdrop plausibly change on a room-crossing action) and, per the manual-eyeball note, surfacing

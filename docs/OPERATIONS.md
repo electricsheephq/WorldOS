@@ -244,15 +244,22 @@ the other:
   floating, missing/cloned actor, backdrop-transition-changed). This is the eval-blindness
   instrument: aesthetic panels measure beauty-vs-bar and can score highly around a T-posing actor or
   a character standing inside a painted prop.
-  - **★ v1 has a known structural blind spot (#1523, "the legal-path blind spot"):** the run only
-    walks cells the ENGINE considers legal, so it structurally cannot catch a missing-footprint prop
-    (standing on a painted object that the engine never flagged impassable) — exactly the defect
-    class the owner's playtest #7 found by hand (woodpile, crate stack, hut/shelter, top-right
-    trees). The first live run (PR #1520) scored 0/4 recall against that punch list for precisely
-    this reason — see `qa/evidence/journey-eval-first-run/RECALL.md` for the full comparison.
+  - **★ v1 has a known coverage gap (#1523, "the legal-path blind spot"):** the scripted route only
+    ever visits cells picked for OTHER reasons (adjacent to a prop the manifest already marks
+    impassable, or a narrative waypoint) — it never deliberately routes onto a cell just because it
+    LOOKS solid. A missing-footprint prop (standing on a painted object the engine never flagged
+    impassable) is exactly the class of cell that method structurally never targets on purpose — it
+    would only get caught by accident. This is a recall gap, not an impossibility: the per-frame
+    "on_prop" VQA question runs on every captured frame regardless of why the character is there, so
+    an incidental hit is possible, just not engineered. The first live run (PR #1520) scored 0 of 3
+    recall against the owner's playtest-#7 missing-footprint punch list (woodpile, crate stack,
+    hut/shelter) for precisely this reason — see `qa/evidence/journey-eval-first-run/RECALL.md` for
+    the full comparison (a 4th playtest-#7 item, top-right trees/exit, is a separate occlusion-hull
+    bug outside this defect class entirely).
   - **v2 (tracked, #1523)** adds an adversarial phase: click every painted-prop candidate region
     (from the manifest's footprint+occlusion sets, plus a coarse grid sweep of high-texture regions)
-    and flag whenever the engine ACCEPTS the move — closing the exact gap v1 has.
+    and flag whenever the engine ACCEPTS the move — closing the exact gap v1 has by making the probe
+    deliberate instead of incidental.
   - Until v2 lands, **do not treat a clean journey-eval v1 run as proof a room has no
     missing-footprint defects** — it answers a different question (does the legal path look right)
     than the coherence gate (does the paint sit on its authored cells) or a human playtest (does
