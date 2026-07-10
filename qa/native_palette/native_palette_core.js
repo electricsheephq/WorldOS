@@ -210,6 +210,31 @@ function clickAt(helperCmd, useCliclick, gx, gy, doubleClick, owner, activateFal
   return { ok: true, delivery: r.delivery };
 }
 
+// ---- #1466 QA input channel ---------------------------------------------------
+// The player's in-process localhost listener (CombatSurfaceClient StartQaInput) is the ROBUST input
+// path for the no-activation player: OS-synthetic mouse never reaches a background Unity window
+// (HID/postToPid/brief-activation all REFUTED — see #1466). When WORLDOS_QA_INPUT=1 the driver + T3
+// palette route clicks HERE and the player runs them through the SAME HandleCell rest-vs-combat +
+// #1441 pre-validation + POST path a human click takes. Synchronous (curl) to match the spawnSync style.
+function qaPostClick(port, payload) {
+  const r = spawnSync("curl", ["-s", "-m", "3", "-X", "POST", "-H", "Content-Type: application/json",
+    "-d", JSON.stringify(payload), `http://127.0.0.1:${port}/click`], { encoding: "utf8" });
+  if (r.status !== 0) return { ok: false, reason: (r.stderr || "qa-click curl failed").slice(0, 200) };
+  try { return { ok: JSON.parse(r.stdout || "{}").ok === true, delivery: "qa-channel" }; }
+  catch { return { ok: false, reason: "qa-click bad response: " + (r.stdout || "").slice(0, 120) }; }
+}
+// CELL path (robust — no pixel/titlebar/aspect calibration): the caller already knows the grid cell.
+function qaClickCell(port, c, r) { return qaPostClick(port, { c, r }); }
+// VIEWPORT path (full raycast fidelity): vx,vy are 0..1, BOTTOM-LEFT origin (Unity screen space).
+function qaClick(port, vx, vy) { return qaPostClick(port, { vx, vy }); }
+// GET the player's Screen.width/height so a pixel-space caller can undo the macOS titlebar the SCK
+// capture includes (captured height != Screen.height). Returns { ok, screenW, screenH } or { ok:false }.
+function qaHealth(port) {
+  const r = spawnSync("curl", ["-s", "-m", "3", `http://127.0.0.1:${port}/health`], { encoding: "utf8" });
+  if (r.status !== 0) return { ok: false };
+  try { return JSON.parse(r.stdout || "{}"); } catch { return { ok: false }; }
+}
+
 module.exports = {
   SWIFT_SRC,
   resolveHelper,
@@ -222,4 +247,7 @@ module.exports = {
   fullscreenCropWindow,
   captureWindow,
   clickAt,
+  qaClick,
+  qaClickCell,
+  qaHealth,
 };

@@ -103,6 +103,17 @@ function inputFlags() {
   if (OWNER && CLICK_ACTIVATE_FALLBACK) f.push("--activate-fallback");
   return f;
 }
+// #1466 QA INPUT CHANNEL: when the player is launched with WORLDOS_QA_INPUT=1, the click tool routes
+// through its in-process localhost listener (viewport coord -> HandleClickAt) instead of OS-synthetic
+// mouse — the only path that reaches a no-activation Unity window. Empty => legacy synthetic-click path.
+const QA_INPUT_PORT = process.env.WORLDOS_QA_INPUT === "1" ? String(process.env.WORLDOS_QA_INPUT_PORT || "8971") : "";
+// Cache the player's Screen dims (from /health) once — they're stable for a windowed run and every
+// click needs the titlebar band (captured.ph - screenH) to map a screenshot pixel to a Unity viewport.
+let _qaHealth = null;
+function qaHealthCached() {
+  if (_qaHealth === null) _qaHealth = QA_INPUT_PORT ? (core.qaHealth(QA_INPUT_PORT) || { ok: false }) : { ok: false };
+  return _qaHealth;
+}
 const SELFCHECK = process.argv.includes("--selfcheck");
 const MAX_WAIT_MS = 8000;
 
@@ -202,7 +213,9 @@ function screencaptureWindow(label) {
       reason: "player window '" + OWNER + "' not found (is WorldOSPlayer.app launched? set WORLDOS_NPT_FULLSCREEN_FALLBACK=1 to grab the whole screen)",
     };
   }
-  winCache = cap.window ? { x: cap.window.x, y: cap.window.y, w: cap.window.w, h: cap.window.h, id: cap.window.id, scale: cap.scale } : null;
+  // #1466: keep the capture PIXEL dims (pw/ph) so the QA input channel can normalize a screenshot
+  // pixel (x,y) into a viewport coord for HandleClickAt.
+  winCache = cap.window ? { x: cap.window.x, y: cap.window.y, w: cap.window.w, h: cap.window.h, id: cap.window.id, scale: cap.scale, pw: cap.pixels ? cap.pixels.pw : null, ph: cap.pixels ? cap.pixels.ph : null } : null;
   return { ok: cap.ok, screenshot: rel, mode: cap.mode, window: cap.window, pixels: cap.pixels, scale: cap.scale };
 }
 
@@ -288,13 +301,29 @@ server.registerTool(
       const s = logAction("click", { x, y, ok: false, reason: "no window" });
       return textResult({ ok: false, seq: s, reason: "player window not located — take a screenshot first." });
     }
-    // window-relative pixels -> global screen points
+    // window-relative pixels -> global screen points (legacy synthetic-mouse path)
     const gx = winCache.x + x / winCache.scale;
     const gy = winCache.y + y / winCache.scale;
     const before = (function () { const f = screencaptureWindow("clickbefore"); return f.ok ? fileHash(path.join(RUNDIR, f.screenshot)) : ""; })();
     let ok = true, reason = "";
-    const useCli = CLICK_TOOL === "cliclick" || (CLICK_TOOL === "auto" && haveCliclick());
-    const clickResult = core.clickAt(resolveHelper(), useCli, gx, gy, !!double, OWNER, CLICK_ACTIVATE_FALLBACK);
+    // #1466: prefer the QA input channel when the player exposes it — normalize the screenshot pixel
+    // (top-left origin, winCache.pw x winCache.ph) into a Unity viewport coord (bottom-left origin) and
+    // hand it to HandleClickAt (full raycast fidelity). The SCK capture includes the macOS titlebar, so
+    // captured height != Screen.height — /health gives Screen.height so we subtract the titlebar band
+    // (captured.ph - screenH) before normalizing. Falls back to synthetic mouse if the channel isn't
+    // enabled or pixel dims are unknown (e.g. a fullscreen-crop capture).
+    let clickResult;
+    if (QA_INPUT_PORT && winCache.pw && winCache.ph) {
+      const h = qaHealthCached();
+      const screenH = h && h.screenH ? h.screenH : winCache.ph;   // fallback: assume no titlebar band
+      const titlebarPx = Math.max(0, winCache.ph - screenH);       // captured extra height = macOS titlebar
+      const vx = x / winCache.pw;
+      const vy = 1 - (y - titlebarPx) / screenH;
+      clickResult = core.qaClick(QA_INPUT_PORT, vx, vy);
+    } else {
+      const useCli = CLICK_TOOL === "cliclick" || (CLICK_TOOL === "auto" && haveCliclick());
+      clickResult = core.clickAt(resolveHelper(), useCli, gx, gy, !!double, OWNER, CLICK_ACTIVATE_FALLBACK);
+    }
     if (!clickResult.ok) { ok = false; reason = clickResult.reason || "click failed"; }
     spawnSync("sleep", ["0.7"]);
     const after = screencaptureWindow("click");

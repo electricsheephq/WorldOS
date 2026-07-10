@@ -177,6 +177,10 @@ owner_active_guard || exit $?
 # --- free port in 8990–8999 (pick_port from lib_native_player_boot.sh) -------
 PORT="$(pick_port)" || { echo "[t3] no free port in 8990-8999 — aborting" >&2; exit 3; }
 BASE_URL="http://127.0.0.1:$PORT"
+# #1466 QA INPUT CHANNEL port (engine port +100, unique per run): the player opens an in-process
+# localhost click listener and the palette routes clicks there (viewport coord -> HandleClickAt) —
+# OS-synthetic mouse never reaches a no-activation Unity window (HID/postToPid/activation REFUTED, #1466).
+QA_INPUT_PORT="$((PORT + 100))"
 
 # --- seed the pre-minted combat campaign (engine = sole writer) --------------
 # uv --directory cd's into servers/engine, so pass the seed by ABSOLUTE path (per its docstring).
@@ -209,9 +213,9 @@ PY
 
 # --- PLAYER MCP config: ONLY the NATIVE palette server (strict, no other tools). The palette treats
 # WORLDOS_NPT_RUNDIR as the RUN ROOT (bugs.ndjson + status.json there; screenshots/actions under player/).
-python3 - "$NPT_DIR" "$RUNDIR" "$OWNER" "$SDK_NM" "$PLAYER_CFG" <<'PY'
+python3 - "$NPT_DIR" "$RUNDIR" "$OWNER" "$SDK_NM" "$PLAYER_CFG" "$QA_INPUT_PORT" <<'PY'
 import json, sys
-npt_dir, rundir, owner, node_modules, out = sys.argv[1:6]
+npt_dir, rundir, owner, node_modules, out, qa_port = sys.argv[1:7]
 json.dump({"mcpServers": {"worldos-nativeplayer": {
     "command": "node",
     "args": [f"{npt_dir}/native_palette_server.js"],
@@ -220,6 +224,9 @@ json.dump({"mcpServers": {"worldos-nativeplayer": {
         "WORLDOS_NPT_PERSONA": "t3-native",
         "WORLDOS_NPT_WINDOW_OWNER": owner,
         "WORLDOS_NPT_NODE_MODULES": node_modules,
+        # #1466: route the palette's click tool through the player's QA input channel.
+        "WORLDOS_QA_INPUT": "1",
+        "WORLDOS_QA_INPUT_PORT": qa_port,
     },
 }}}, open(out, "w"))
 PY
@@ -280,10 +287,13 @@ PLAYER_WIN_ARGS=(); while IFS= read -r __a; do PLAYER_WIN_ARGS+=("$__a"); done <
 # #1463 W6.4: WORLDOS_ONBOARD=1 turns on the onboarding readability layer (whose-turn/name plates + the
 # affordance hint + walkability overlay ON for the first turn) for this player-session gate. Beauty captures
 # launch WITHOUT it (byte-identical), so onboarding is opt-in per the existing WORLDOS_PLAYTEST pattern.
-WORLDOS_ENGINE_BASE_URL="$BASE_URL" WORLDOS_CAMPAIGN_ID="$CID" WORLDOS_ONBOARD=1 "$PLAYER_BIN" "${PLAYER_WIN_ARGS[@]}" \
+# #1466/#1477: WORLDOS_QA_INPUT=1 opens the in-process HTTP QA channel (titlebar-immune viewport click
+# path) this T3 palette run drives instead of OS-synthetic mouse; port = engine port + 100.
+WORLDOS_ENGINE_BASE_URL="$BASE_URL" WORLDOS_CAMPAIGN_ID="$CID" WORLDOS_ONBOARD=1 \
+WORLDOS_QA_INPUT=1 WORLDOS_QA_INPUT_PORT="$QA_INPUT_PORT" "$PLAYER_BIN" "${PLAYER_WIN_ARGS[@]}" \
   > "$RUNDIR/player_app.log" 2>&1 &
 PLAYER_APP_PID=$!
-echo "[t3] player app launched WINDOWED (pid $PLAYER_APP_PID) — engine=$BASE_URL campaign=$CID args=${PLAYER_WIN_ARGS[*]}"
+echo "[t3] player app launched WINDOWED (pid $PLAYER_APP_PID) — engine=$BASE_URL campaign=$CID qa_input=:$QA_INPUT_PORT args=${PLAYER_WIN_ARGS[*]}"
 # Give the Unity build a beat to open its window + first combat-surface fetch before the agent looks.
 sleep 6
 
