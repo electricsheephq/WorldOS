@@ -24,7 +24,7 @@ camp occluders + combat cast disabled (33 objs); Analyze cache force-invalidated
 
 Only the backdrop shader differs A→B. `super_size 2` (5120×2880), both non-black. See `AB_compare.jpg`.
 
-## Result — decisive, and the OPPOSITE of the relight-win hypothesis
+## Result — the relight LOSES on the warm plate (control-independent)
 
 | arm | median | rank |
 |-----|--------|------|
@@ -32,28 +32,38 @@ Only the backdrop shader differs A→B. `super_size 2` (5120×2880), both non-bl
 | **B_relit** (#1480 relight) | **2.5** | **5/5 LAST** |
 | C_control (PoE2 real art) | 6.5 | — |
 
-- **The styled plate FLAT is the win.** A=7.5 is **at/above the real-art control** (6.5); the plate-sprint
-  ARM-B pipeline is itself the cohesion unlock — a warm firelit ~1.0-registered painterly plate makes the
-  flat composite read as natively integrated.
-- **The relight REGRESSES hard.** B=2.5, **unanimous last**, on a NEW **vertical-banding artifact** every
+> **Control is INVALID this panel** (C=6.5 < the 6.8–9.2 floor → `control_valid:false`). So the panel's
+> *absolute* numbers are NOT citable as a passed validity bar, and this is NOT a control-parity or
+> styled-plate adoption claim. The load-bearing finding below is **control-independent**.
+
+- **PRIMARY (control-independent) — the relight REGRESSES hard.** B=2.5, **unanimous last**, on a NEW
+  **vertical-banding artifact** every
   scorer named. Root cause: the crude *shared greybox* depth/normal sidecars (2 flat walls + 2 pillars)
   relighting a far richer, high-contrast warm plate (carved pillars, sarcophagus, arch) print the greybox
   seams through as stripe banding — invisible on iter3's low-contrast **cool** plate (same shader+sidecars,
   no banding), glaring here. The relight's premise (a cool/flat plate needs geometric relighting for warmth)
-  is **invalidated** by a plate that arrives warm+firelit: it can only darken and stamp seams.
+  is **invalidated** by a plate that arrives warm+firelit: it can only darken and stamp seams. Only the
+  backdrop shader changed A→B, so the 5.0-point **unanimous** drop is attributable to the relight alone —
+  no reliance on the (invalid) control.
+- **SECONDARY (control-soft, advisory).** A_flat's high absolute (7.5, above C, A>C on 4/5) is *consistent*
+  with the warm styled plate integrating well — but with `control_valid:false` this is **not** a parity
+  claim. The styled plate's actual house-anchor evidence is a **separate** panel: in its plate-sprint
+  ARM-B iter3 panel the plate scored **8.0 = ties the incumbent `crypt_dense_v1`** (that panel, not this
+  one, is the plate-adoption gate).
 
-**Control caveat:** C median 6.5 is 0.3 *below* the 6.8–9.2 validity floor (soft this panel — same file read
-8.0 in #1469 iter3; normal variance). This weakens only the *absolute* numbers; the **relative** verdict is
-robust — the A↔B gap is **5.0 points and unanimous**, dwarfing a 0.3 control miss.
-
-## Recommendation — STOP the relight loop; ship the styled-plate pipeline
+## Recommendation — STOP the relight loop
 Do **not** port relight to the shipped path. `WOSRelight` is additive / all-uniforms-default-0 /
 byte-compatible-when-unset and nothing shipped lights it, so the #1480 merge stays safe-dormant — nothing to
-gate off. The #1481 blocker is **RESOLVED by the warm styled plate, not by relighting**: on ARM-B-class
-plates the flat composite already reaches control-parity integration. If relight is ever revisited it needs a
+gate off. **Basis = the control-independent relight regression above, not this panel's absolute numbers.**
+The styled-plate pipeline remains the cohesion path, but its **adoption** rests on the plate-sprint anchor
+panel (plate tied `crypt_dense_v1` at 8.0), not on this control-invalid panel — before any promotion, re-run
+a FELT/visual panel with an **in-band control + the house anchor**. If relight is ever revisited it needs a
 **per-plate** depth/normal sidecar (from that plate's own conditioning geometry), never the crude shared
 greybox — that mismatch is the binding banding defect. Diminishing returns: 4 A/B rounds, no shader lever
-left; the win migrated to the plate pipeline.
+left; the relight is done.
+
+Ledger: recorded as run `1481-relight-on-styled-plate-panel-1` (surface=visual) in `qa/scores.db` /
+`qa/scores_ledger.md`.
 
 Blind mapping (recorded for audit): `img_alpha=A_flat, img_beta=B_relit, img_gamma=C_control`.
 Durable full-res captures on box: `Captures-Durable/1481_{A_flat,B_relit}.png`.
