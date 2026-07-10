@@ -1,0 +1,45 @@
+{
+  "passed": false,
+  "frames_checked": 2,
+  "frames_with_defects": 1,
+  "defects": [
+    {
+      "frame": "/Users/lume/WorldOS-worktrees/wt-eval-upgrade/qa/evidence/1469/iter3/plate_conditioned_crypt.png",
+      "step": "crypt_empty_plate",
+      "side": "step",
+      "defects": [
+        "missing_or_cloned"
+      ]
+    }
+  ],
+  "per_frame": [
+    {
+      "frame": "/Users/lume/WorldOS-worktrees/wt-eval-upgrade/qa/evidence/walkable-slice-optionA/1_crypt_rest_idle.png",
+      "step": "crypt_rest_idle",
+      "side": "step",
+      "flags": {
+        "on_prop": false,
+        "t_pose": false,
+        "floating": false,
+        "missing_or_cloned": false,
+        "broken_backdrop": false
+      },
+      "defects": []
+    },
+    {
+      "frame": "/Users/lume/WorldOS-worktrees/wt-eval-upgrade/qa/evidence/1469/iter3/plate_conditioned_crypt.png",
+      "step": "crypt_empty_plate",
+      "side": "step",
+      "flags": {
+        "on_prop": false,
+        "t_pose": false,
+        "floating": false,
+        "missing_or_cloned": true,
+        "broken_backdrop": false
+      },
+      "defects": [
+        "missing_or_cloned"
+      ]
+    }
+  ]
+}

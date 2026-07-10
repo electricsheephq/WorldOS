@@ -51,8 +51,18 @@ asks factual YES/NO questions of every frame (`qa/journey_vqa_questions.md`, YES
 
 - Path-gen + VQA aggregation + verdict are pure and unit-tested with a stub scorer
   (`qa/test_journey_eval.py`, 7 tests green).
-- The box capture + live VQA run on the box when the #1386 claim frees (attach
-  `journey_verdict.json` + 3 sample frames here).
+- **Live VQA pipeline proven** (real `claude -p` per frame, not the stub) over two committed crypt
+  frames — see [`B_vqa_proof_verdict.json`](B_vqa_proof_verdict.json):
+  - `1_crypt_rest_idle.png` (the party at rest) → **all five flags false** (a legitimate multi-PC party
+    is correctly NOT flagged).
+  - `plate_conditioned_crypt.png` (bare backdrop, no cast) → **`missing_or_cloned: true`** — the harness
+    correctly catches "no character present".
+  - This live run surfaced + fixed a real question-design bug: the original "singular" phrasing
+    false-flagged a 4-PC party; `missing_or_cloned` now flags only *nobody there* or *the same character
+    cloned*, never a normal party.
+- The BOX capture (`journey_capture.js` driving the live player) runs on the box when the #1386 claim
+  frees (attach a fresh `journey_verdict.json` + 3 sample frames here). The VQA half is already verified
+  against reality above.
 - Invocation documented in `qa/UI_PLAYTEST.md`; sample plan `qa/journey_plans/camp.json`.
 
 ## C. Panel factual-defect checklist — `qa/plate_loop.py`

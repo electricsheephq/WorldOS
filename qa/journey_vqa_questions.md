@@ -34,9 +34,9 @@ The scorer answers strictly from what is literally visible (no lore, no intent),
       "text": "Is any character floating — feet clearly off the ground, or no ground-contact shadow anchoring them to the floor?"
     },
     {
-      "flag": "not_singular",
+      "flag": "missing_or_cloned",
       "applies_to": "all",
-      "text": "Is the player character MISSING from the frame, or DUPLICATED (rendered more than once) — i.e. NOT exactly one clearly visible player character?"
+      "text": "Are ALL player characters MISSING (no adventurer figures visible at all), OR is a single character CLONED (the exact same character — same outfit/pose — rendered two or more times)? A party of DIFFERENT adventurers is normal and is NOT a defect; only 'nobody there' or 'the same person duplicated' counts."
     },
     {
       "flag": "broken_backdrop",

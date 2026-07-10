@@ -30,7 +30,7 @@ def test_questions_parse_and_are_defect_polarity():
     qs = je.load_questions()
     flags = {q["flag"] for q in qs}
     # the packet's factual set, phrased YES=defect
-    assert {"on_prop", "t_pose", "floating", "not_singular"} <= flags
+    assert {"on_prop", "t_pose", "floating", "missing_or_cloned"} <= flags
     assert all(q["applies_to"] in ("all", "transition") for q in qs)
     # at least one transition-scoped question (both-sides-of-a-transition check)
     assert any(q["applies_to"] == "transition" for q in qs)
