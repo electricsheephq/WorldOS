@@ -79,6 +79,46 @@
       "prompt_template_note": "slots: room_setting_noun, room_preserve_list (shared with night pass3), room_day_key_source (the daylight source noun phrase, e.g. 'the tall windows' daylight'), room_fill_source (shared with night pass3 — the secondary warm light, now demoted to accent), room_space_desc (shared with night pass3, day-appropriate phrasing implied by the prompt's own 'in daytime' clause)."
     }
   },
+  "registered_pipeline_2026_07_10": {
+    "_doc": "ADOPTED pipeline for REGISTERED plates (PLATE SPRINT Phase 3 codification, 2026-07-10). Full rationale, evidence, and the REJECTED-APPROACHES list live in docs/roadmap/PLATE-RECIPE-DECISION.md (cross-linked from docs/research/2026-07-10-stage-tech-research.md and docs/RUNBOOK-INDEX.md) -- this block is the machine-readable params record, NOT a new default wiring: it does not change any room's canonical_plate/active pointer. Supersedes the implicit model_z-image img2img default as the RECORDED best-known recipe. WIRING STATUS (checked 2026-07-10, review finding on this PR): step 1 (base_pass, flux ControlNet depth) IS wired today via generate_room.py --controlnet depth. Step 2 (style_pass, Gemini instruction-edit with the structure/dimetric-lock clauses below) is NOT wired to a CLI flag yet -- generate_room.py --style-pass today runs the REJECTED ARM A two-stage model_z-image img2img pass (see the REJECTED-APPROACHES register), a different code path from the adopted Gemini step recorded here; do not conflate the two. Wiring a dedicated flag for the adopted Gemini style pass is a follow-up, not part of this PR.",
+    "base_pass": {
+      "_doc": "Step 1: the greybox-registered base. Registration by construction -- the flux ControlNet depth pass locks paint to the authored geometry (see generate_room.py _resolve_controlnet / _build_base_pass_request, W6.3b #1470).",
+      "model": "model_bfl-flux-1-dev",
+      "controlnet_modality": "depth",
+      "control_strength": 0.7,
+      "source": "the room greybox render (build_room_greybox.cs), NOT a painted reference"
+    },
+    "style_pass": {
+      "_doc": "Step 2: the Gemini instruction-edit style pass over the registered base, carrying the STRUCTURE-LOCK and DIMETRIC-LOCK clauses below (verbatim source: qa/evidence/plate-sprint/camp-armB/style_pass_prompt_winning.txt for structure-lock, qa/evidence/plate-sprint/forest-road/forest_road_stylepass_prompt_dimetric.txt for dimetric-lock). THE REFERENCE-IMAGES LAW (see decision record): Gemini referenceImages hijack CONTENT toward the reference, not just style -- a reference is safe ONLY if its composition already matches the room greybox (e.g. an anchor minted FROM that same greybox). For rooms with no greybox-aligned anchor, use NO referenceImages -- text style description + scene-content grounding instead (no-ref reg 0.9439 vs same-room-ref 0.81-0.84, PR #1492).",
+      "model": "model_google-gemini-3-1-flash",
+      "structure_lock_clause": "CRITICAL STRUCTURE-LOCK (non-negotiable, checked pixel-by-pixel against the original): every wall, pillar, archway, doorway, staircase, tree, boulder, road edge, and prop must stay in EXACTLY its current position, size, and shape -- do NOT move, add, remove, resize, re-project, or recompose ANYTHING; only the paint and lighting treatment changes. Do NOT introduce any repeated, cloned, or tiled decorative motifs. Do NOT add any text, letters, numbers, labels, legends, map insets, UI elements, frames, or borders. Do NOT add any characters, people, figures, or creatures.",
+      "dimetric_lock_clause": "This is a TOP-DOWN DIMETRIC (2:1 isometric) game BACKGROUND PLATE viewed at a fixed ~30-degree downward camera pitch -- you are looking DOWN onto the scene from high above and to the side, exactly like a Pillars of Eternity II pre-rendered isometric level. Keep that EXACT high dimetric bird's-eye angle: there is NO horizon and NO sky band across the top of the frame -- the top of the frame is MORE ground/ceiling seen from above. Do NOT tilt the camera to an eye-level, first-person, or landscape-horizon view.",
+      "reference_images_default": "NONE unless the reference is an anchor minted FROM the same room's greybox (the crypt adoption's degenerate safe case)"
+    },
+    "registration_gate": {
+      "_doc": "qa/plate_overlays.registration_recall (edge-recall vs the greybox), the same signal generate_room.py's _select_style_sample and plate_loop.py's registration gate both use.",
+      "hard_edged_min_recall": 0.95,
+      "hard_edged_classes": [
+        "crypt",
+        "church",
+        "bosshall",
+        "masonry-interior"
+      ],
+      "organic_outdoor_class_rule": "ADVISORY ONLY -- edge-recall is content-blind and anti-correlated with correctness for organic/outdoor rooms (forest_road/camp/market); use the greybox-edge overlay as PRIMARY evidence instead. See issue #1491 (open: per-room-class registration strategy / a content-aware structural metric)."
+    },
+    "panel": {
+      "_doc": "The 5-scorer blind panel (visual-critic skill recipe), run by the orchestrator, never by plate_loop.py itself (script stages the packet; never calls an LLM).",
+      "scorer_count": 5,
+      "real_art_control": "a disguised in-band real-art control image; validity band 6.8-9.2 -- an out-of-band control score makes the run ADVISORY, re-run once",
+      "house_anchor_required": true,
+      "best_of_n_min": 3
+    },
+    "open_questions": [
+      "issue #1491 -- registration metric is content-blind/class-dependent for organic rooms (see organic_outdoor_class_rule above)",
+      "issue #1493 -- qa/scores.db + qa/scores_ledger.md are committed binary/rendered artifacts that conflict across parallel PLATE SPRINT PR lanes; this PR intentionally does not touch scores.db",
+      "PR #1496 -- no qa/room_manifests/*.cells.json manifest exists for hand-authored QA seeds (e.g. qa/seed_gfx_combat.py's SARCOPHAGUS_CELLS), so the #1462 plate-drift gate never runs on them; fixture manifests for hand-authored seeds is an open follow-up alongside #1491/#1493"
+    ]
+  },
   "rooms": {
     "crypt": {
       "key_light": "brazier firelight",

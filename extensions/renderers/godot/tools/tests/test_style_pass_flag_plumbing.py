@@ -246,7 +246,11 @@ class MainPlumbingTest(unittest.TestCase):
              mock.patch.object(generate_room, "_poll_job", return_value={"job": {}}), \
              mock.patch.object(generate_room, "_download_job_assets", side_effect=fake_download), \
              mock.patch.object(generate_room, "_downscale_to_plate", return_value=None), \
-             mock.patch.object(generate_room, "_write_meta", side_effect=fake_write_meta):
+             mock.patch.object(generate_room, "_write_meta", side_effect=fake_write_meta), \
+             mock.patch.object(generate_room, "_maybe_run_drift_gate", return_value=None):
+            # _maybe_run_drift_gate is mocked here: these tests assert STYLE-PASS plumbing, not the
+            # drift gate (ON by default for crypt — see test_drift_gate_default_on.py), and the fake
+            # downloaded paths above (/tmp/aN.png) don't exist on disk for it to check.
             generate_room.main(argv)
         return captured
 

@@ -6,6 +6,13 @@ vs docs/roadmap/W6-LIVING-STAGE-DESIGN.md. **Verdict: AMEND** (folded into that 
 issues #1469 W6.0 relight, #1470 W6.3b ControlNet). This file is the durable corpus so future agents do
 not re-run the same research or re-try registered dead ends.
 
+**PLATE SPRINT Phase 3 update (2026-07-10):** the ControlNet + Gemini-style-pass direction this research
+recommended (quick win #2 below) is now the ADOPTED registered-plate recipe — see
+`docs/roadmap/PLATE-RECIPE-DECISION.md` for the full pipeline, the outdoor-class rejections, and open
+questions. The four PLATE-SPRINT-Phase-2 rejections (z-image outdoor anchors, same-room
+`referenceImages`, the ARM C interior LoRA as outdoor anchor-minter, WOSRelight on shared sidecars) plus
+the earlier ARM A two-stage rejection are folded into the REJECTED-APPROACHES REGISTER below.
+
 ## Judge verdict (deep-reasoner, ~80% confidence)
 **Verdict:** AMEND
 
@@ -48,6 +55,11 @@ not re-run the same research or re-try registered dead ends.
 | Render-3D-char-to-sprite (modern Dead Cells) | Sacrifices free camera + dynamic lighting — the reasons the 3D actor lane exists | Only if the 3D lane itself is abandoned |
 | Buying pre-rendered-background kits (Retro PreRendered $13 / Adventure Creator $80) | Cover less than what is already built in-repo | Reference implementations only (depth-occlusion shader patterns) |
 | PID-targeted synthetic clicks (CGEvent.postToPid) as the SOLE input path to the unfocused player (#1476 default) | Delivers to the player PID (the tap arrives) but produces ZERO Unity input — Unity's `Input` only samples the FOREGROUND app, so a background window's queued events never poll. Left player_smoke red since w6batch (#1483) | Use the brief activate->click->restore fallback (WORLDOS_CLICK_ACTIVATE_FALLBACK default-on, #1483) OR the in-process #1477 QA HTTP input channel (WORLDOS_QA_INPUT, zero activation). Pure pid-delivery unparks only if a future macOS/Unity build polls input while backgrounded (needs `Application.runInBackground=true`, the #1477 loop-freeze fix) |
+| z-image layered anchors for outdoor rooms (PLATE SPRINT Phase 2) | Capped ~6.0 quality ceiling by available style sources (PR #1490) | Better outdoor layered recipes or references. See docs/roadmap/PLATE-RECIPE-DECISION.md |
+| Same-room Gemini `referenceImages` as a style anchor (PLATE SPRINT Phase 2) | Content hijack — `referenceImages` pull COMPOSITION toward the reference, not just style/brushwork (no-ref registration 0.9439 vs same-room-ref 0.81-0.84, PR #1492) | None — see the decision record's THE REFERENCE-IMAGES LAW (docs/roadmap/PLATE-RECIPE-DECISION.md); a reference is only safe when minted FROM the same room's greybox |
+| Interior-trained ARM C LoRA (`model_G379oza2qhm6MkqDrtTvvmmw`) as an outdoor anchor-minter (PLATE SPRINT Phase 2) | Imposes crypt interiors on outdoor greyboxes, recall 0.45 (PR #1495) | Retrain with an outdoor-heavy training set (est <=$12, OWNER SPEND GATE). The LoRA IS validated for char-free interior/architectural one-pass style at low control strength — see docs/roadmap/PLATE-RECIPE-DECISION.md |
+| WOSRelight on shared greybox sidecars (PLATE SPRINT Phase 2) | Vertical banding on warm high-contrast plates (PR #1488, 5/5 scorers) | Per-plate sidecars; relight is unnecessary once plates arrive warm+firelit from the Gemini style pass. See docs/roadmap/PLATE-RECIPE-DECISION.md |
+| ARM A two-stage z-image style pass over the flux ControlNet base (PLATE SPRINT Phase 1-2) | Style-vs-registration tradeoff structurally capped ~5.5 (PR #1487; tooling retained for future ARM lanes) | None known. See docs/roadmap/PLATE-RECIPE-DECISION.md (the adopted style pass is Gemini instruction-edit, not this two-stage z-image approach) |
 
 ## Process lessons (for future research/workflow runs)
 - **Audit dormant capability BEFORE building new.** Both top findings (WOSRelight zero-refs; CONTROLNET_PATH imported-never-called) were in-repo. The wiring-debt pattern has now recurred 3x (ClosedLoopBuilder cohesion stack, WOSRelight, ControlNet). A 'zero-references sweep' of proven-but-unwired capabilities is cheap and should precede any new-build sprint.

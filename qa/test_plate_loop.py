@@ -147,6 +147,16 @@ def test_load_config_and_generate_argv(tmp_path):
     assert "--lighting" in argv and "firelit" in argv
 
 
+def test_generate_argv_always_forwards_no_drift_gate(tmp_path):
+    # PLATE SPRINT Phase 3 (#1462 follow-up): generate_room.py's --drift-gate defaults ON and FAILS
+    # LOUD for crypt/camp_clearing_night (both have a committed manifest) — plate_loop must opt out
+    # unconditionally since it runs its OWN non-fatal drift check via registration_gate() instead.
+    cfg = pl.PlateConfig(name="t", room="crypt", generate={"base_plate": "/g.png"})
+    assert "--no-drift-gate" in pl.build_generate_argv(cfg, tmp_path / "gen")
+    cfg2 = pl.PlateConfig(name="t2", room="tavern", generate={"base_plate": "/g.png"})
+    assert "--no-drift-gate" in pl.build_generate_argv(cfg2, tmp_path / "gen")
+
+
 def test_style_pass_forwarded_when_present(tmp_path):
     """The forward-looking style_pass block (ARM A) is forwarded as --style-pass <json>; absent by
     default (the common config) it never appears."""

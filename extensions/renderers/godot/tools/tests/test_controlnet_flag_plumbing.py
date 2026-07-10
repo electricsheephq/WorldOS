@@ -82,6 +82,24 @@ class ResolveControlnetTest(unittest.TestCase):
         self.assertEqual(cn2["model"], "model_cli")
         self.assertEqual(cn2["strength"], 0.9)
 
+    def test_recipe_lora_scales_length_mismatch_exits(self):
+        # Symmetry with scenario_gen's --loras/--loras-scale check and this file's own
+        # _resolve_style_pass loras/lorasScale check (evaos-code-review-bot finding).
+        recipe = copy.deepcopy(self.recipe)
+        recipe["controlnet"] = {"loras": ["model_a", "model_b"], "lora_scales": [0.8]}
+        with self.assertRaises(SystemExit):
+            generate_room._resolve_controlnet(recipe, _args(controlnet="depth"))
+
+    def test_rejects_z_image_lora_declared_on_a_flux_controlnet_block(self):
+        # PLATE SPRINT Phase 3: the same guard scenario_gen.py's --controlnet command applies (a
+        # z-image-trained LoRA on a flux model is a live HTTP 400) fires here too, catching a recipe
+        # author mistakenly declaring the incompatible combo in room_recipes.json's controlnet block.
+        recipe = copy.deepcopy(self.recipe)
+        recipe["controlnet"] = {"loras": [recipe["lora"]], "lora_scales": [recipe["lora_scale"]]}
+        with self.assertRaises(SystemExit) as ctx:
+            generate_room._resolve_controlnet(recipe, _args(controlnet="depth"))
+        self.assertIn("REJECTED", str(ctx.exception))
+
 
 class BuildBasePassRequestTest(unittest.TestCase):
     @classmethod
@@ -182,7 +200,12 @@ class MainPlumbingTest(unittest.TestCase):
              mock.patch.object(generate_room, "_poll_job", return_value={"job": {}}), \
              mock.patch.object(generate_room, "_download_job_assets",
                                return_value=[{"asset_id": "a1", "path": "/tmp/a1.png", "bytes": 1}]), \
-             mock.patch.object(generate_room, "_write_meta", side_effect=fake_write_meta):
+             mock.patch.object(generate_room, "_write_meta", side_effect=fake_write_meta), \
+             mock.patch.object(generate_room, "_maybe_run_drift_gate", return_value=None):
+            # _maybe_run_drift_gate is mocked here: these tests assert REQUEST-SHAPE plumbing, not the
+            # drift gate (which is ON by default for crypt/camp_clearing_night — see
+            # test_drift_gate_default_on.py for its dedicated coverage) and the fake downloaded paths
+            # above (/tmp/a1.png) don't exist on disk for it to check.
             generate_room.main(argv)
         return captured
 

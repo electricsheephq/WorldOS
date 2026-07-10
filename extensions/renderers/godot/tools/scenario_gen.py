@@ -440,6 +440,35 @@ def _upload_image(headers: dict, local_path: str) -> str:
     return asset_id
 
 
+# Known Scenario model-family incompatibility (confirmed live 2026-07-10, ARM C / PLATE SPRINT): a
+# LoRA trained on the z-image base model is REJECTED by flux.1-dev-family ControlNet models with HTTP
+# 400 ("Allowed model types: flux.1-lora, flux.1-composition"). The WorldOS painterly LoRA is z-image-
+# trained (room_recipes.json top-level `lora`). This guard rejects the known-bad combo LOUDLY before
+# any credits are spent, instead of letting it 400 deep inside _post_json or (worse) silently drop the
+# LoRA the way the malformed loras:[{"assetId":...}] payload shape used to (see _cmd_controlnet below).
+_FLUX_MODEL_PREFIXES = ("model_bfl-flux",)
+_Z_IMAGE_ONLY_LORA_IDS = {"model_MB22WaRCBLtfhi5R2CRpHoEL"}  # the WorldOS painterly LoRA (z-image-trained)
+
+
+def guard_flux_lora_compat(model_id: str, lora_ids) -> None:
+    """Reject loudly (sys.exit) if a known z-image-only LoRA is being applied to a flux model.
+
+    Both scenario_gen.py's --controlnet command and generate_room.py's --controlnet base pass share
+    this guard (generate_room imports it) so the incompatible combo is caught the same way regardless
+    of entry point.
+    """
+    if not lora_ids or not model_id:
+        return
+    if any(model_id.startswith(p) for p in _FLUX_MODEL_PREFIXES):
+        bad = [lid for lid in lora_ids if lid in _Z_IMAGE_ONLY_LORA_IDS]
+        if bad:
+            sys.exit(
+                "[scenario_gen] ERROR: LoRA(s) %s are trained on model_z-image and are REJECTED by "
+                "flux model '%s' (HTTP 400: \"Allowed model types: flux.1-lora, flux.1-composition\"). "
+                "Use a flux-compatible LoRA or drop --loras for the ControlNet/flux pass." % (bad, model_id)
+            )
+
+
 def _cmd_controlnet(args) -> None:
     """Pipeline A: painterly-on-grid ControlNet generation (FLUX.1-dev canny/depth).
 
@@ -457,9 +486,14 @@ def _cmd_controlnet(args) -> None:
       * Submit ControlNet   : POST /v1/generate/custom/<modelId>
                               {"prompt", "controlImage", "controlModality",
                                "controlStrength", "width", "height", "numSamples", "seed",
-                               "loras"}
+                               "loras", "lorasScale"}
                               -> job (same shape as txt2img)
       * Poll + download     : same _poll_job / _job_asset_ids / _asset_url / _download
+
+    LoRA payload shape (fixed 2026-07-10, PLATE SPRINT Phase 3, ARM C): the Scenario custom-model
+    endpoint expects `loras` as a list of bare model-id STRINGS (["<model_id>", ...]) plus a parallel
+    `lorasScale` list of floats — NOT a list of {"assetId": id} objects. The old dict-shaped payload
+    was SILENTLY DROPPED by the API (confirmed live) so --loras had zero effect.
     """
     out_dir = _resolve_out(args)
 
@@ -510,7 +544,16 @@ def _cmd_controlnet(args) -> None:
     if getattr(args, "loras", None):
         lora_list = [s.strip() for s in args.loras.split(",") if s.strip()]
         if lora_list:
-            body["loras"] = [{"assetId": lid} for lid in lora_list]
+            guard_flux_lora_compat(args.model_id, lora_list)
+            body["loras"] = lora_list
+            if getattr(args, "loras_scale", None):
+                scale_list = [float(s.strip()) for s in args.loras_scale.split(",") if s.strip()]
+                if len(scale_list) != len(lora_list):
+                    sys.exit(
+                        "[scenario_gen] ERROR: --loras (%d) and --loras-scale (%d) must have the same "
+                        "number of entries." % (len(lora_list), len(scale_list))
+                    )
+                body["lorasScale"] = scale_list
 
     url = API_BASE + CONTROLNET_PATH.format(model_id=args.model_id)
     print("[scenario_gen] submitting controlnet job (model=%s, modality=%s, strength=%.2f)"
@@ -625,7 +668,13 @@ def main(argv=None) -> None:
     sp_cn.add_argument("--seed", type=int, help="deterministic seed (optional)")
     sp_cn.add_argument(
         "--loras",
-        help="comma-separated Scenario LoRA asset ids to apply (optional)",
+        help="comma-separated Scenario LoRA model/asset ids to apply (optional). Rejected loudly if a "
+             "known z-image-only LoRA is combined with a flux model (see guard_flux_lora_compat).",
+    )
+    sp_cn.add_argument(
+        "--loras-scale",
+        help="comma-separated LoRA scales (floats), same length + order as --loras (optional; omit to "
+             "let the API use its default scale per LoRA). No effect without --loras.",
     )
     _add_out(sp_cn)
 
