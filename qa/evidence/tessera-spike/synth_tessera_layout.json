@@ -1,0 +1,43 @@
+{
+ "generator": {
+  "kind": "tessera_wfc",
+  "seed": 99,
+  "world_units_per_cell": 2.0,
+  "tile_count": 2
+ },
+ "bounds": {
+  "min": [0, 0, 0],
+  "max": [10, 4, 10]
+ },
+ "rooms": [
+  {
+   "id": "room_0",
+   "tags": [],
+   "is_main_path": false,
+   "tile_name": "BasicRoomTile",
+   "cell_rotation": "Identity",
+   "bounds": { "min": [0, 0, 8], "max": [2, 2, 10] },
+   "cell_positions": [[1, 0, 9]]
+  },
+  {
+   "id": "room_1",
+   "tags": [],
+   "is_main_path": false,
+   "tile_name": "LShapeBigTile",
+   "cell_rotation": "Identity",
+   "bounds": { "min": [5, 0, 3], "max": [9, 2, 7] },
+   "cell_positions": [[6, 0, 6], [8, 0, 6], [6, 0, 4]]
+  }
+ ],
+ "doorways": [],
+ "props": [
+  {
+   "id": "prop_crate",
+   "room": "room_0",
+   "shape_class": "box",
+   "kind_hint": "supply_crates",
+   "position": [1, 0, 9],
+   "bounds": { "min": [0.5, 0, 8.5], "max": [1.5, 1, 9.5] }
+  }
+ ]
+}

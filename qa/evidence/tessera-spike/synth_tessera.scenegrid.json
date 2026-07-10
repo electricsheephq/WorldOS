@@ -1,0 +1,89 @@
+{
+ "scene_id": "dungen:synth_tessera",
+ "location_id": "synth_tessera",
+ "kind": "dungeon",
+ "biome": "DunGen-authored stone dungeon",
+ "seed": 99,
+ "grid": {
+  "cols": 6,
+  "rows": 6,
+  "cell_size_ft": 5,
+  "projection": "dimetric-2to1"
+ },
+ "cell_default": {
+  "type": "void",
+  "walkable": false,
+  "cost": 1
+ },
+ "cells": [
+  {
+   "c": 3,
+   "r": 2,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 4,
+   "r": 2,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 3,
+   "r": 3,
+   "type": "floor",
+   "walkable": true,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": null
+  },
+  {
+   "c": 0,
+   "r": 0,
+   "type": "prop",
+   "walkable": false,
+   "cost": 1,
+   "elevation": 0,
+   "prop_ref": "prop_crate"
+  }
+ ],
+ "props": [
+  {
+   "id": "prop_crate",
+   "kind": "supply_crates",
+   "cells": [
+    [
+     0,
+     0
+    ]
+   ],
+   "anchor_cell": [
+    0,
+    0
+   ],
+   "occluder": true,
+   "height_band": "mid",
+   "silhouette": "supply_crates"
+  }
+ ],
+ "zone_anchors": {},
+ "exits": [],
+ "spawns": {},
+ "door_cells": [],
+ "protected_lane_cells": [],
+ "lighting": {
+  "key_dir_deg": 45,
+  "key_color": "#ffe6b0",
+  "ambient_color": "#2a2f3f",
+  "mood": "torchlit dungeon"
+ },
+ "art": {
+  "status": "tier1_blockout"
+ }
+}
