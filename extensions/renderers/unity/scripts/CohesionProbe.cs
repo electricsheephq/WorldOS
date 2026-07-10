@@ -27,7 +27,7 @@ public static class CohesionProbe
     static string _analyzedScene;   // cache key: re-analyze when the active scene changes (review P2)
 
     // ---------- rung 0b: populate the BASELINE cast (mirrors the runtime spawn look exactly) ----------
-    // fighter@(11,3) + goblin@(2,7) — the seed_gfx_combat cells on the crypt plate (#1386
+    // fighter@(11,3) + goblin@(1,8) — the seed_gfx_combat cells on the crypt plate (#1386
     // PROBE-PLACEMENT, 2026-07-10: relocated off the crypt_armb_iter3_v1.png plate's widened
     // sarcophagus footprint — the OLD hero(6,6)/goblin(9,5) now render standing ON the tomb, see
     // qa/seed_gfx_combat.py's module docstring). Standard shader (_Glossiness .2/_Metallic 0) +
@@ -49,10 +49,10 @@ public static class CohesionProbe
         var impassable = FetchImpassable(out info);
         Debug.Log("[PROBE] walkability guard: " + (impassable.Count > 0 ? info : "no live impassable set (" + info + ") — placing on authored cells unchecked"));
         CheckWalkable(impassable, "Actor_hero", 11, 3);
-        CheckWalkable(impassable, "Actor_goblin", 2, 7);
+        CheckWalkable(impassable, "Actor_goblin", 1, 8);
         SpawnBaseline("Actor_hero", "Assets/cast/fighter/fighter.fbx", "Assets/cast/fighter/albedo.jpg", 11, 3, false, 3.2f);
-        SpawnBaseline("Actor_goblin", "Assets/chars_v2/goblin/goblin.fbx", "Assets/chars_v2/goblin/albedo.png", 2, 7, true, 4.2f);
-        Debug.Log("[PROBE] baseline cast populated: Actor_hero (11,3) + Actor_goblin (2,7)");
+        SpawnBaseline("Actor_goblin", "Assets/chars_v2/goblin/goblin.fbx", "Assets/chars_v2/goblin/albedo.png", 1, 8, true, 4.2f);
+        Debug.Log("[PROBE] baseline cast populated: Actor_hero (11,3) + Actor_goblin (1,8)");
     }
 
     // best-effort GET of the live /combat-surface impassable set — finds the scene's own CombatSurfaceClient
