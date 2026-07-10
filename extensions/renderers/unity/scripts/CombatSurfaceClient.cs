@@ -110,6 +110,13 @@ public class CombatSurfaceClient : MonoBehaviour
     // PC onto it then POSTs `cross_door` (item 3). Keyed by CellKey for an O(1) HandleCell lookup; the
     // dest-room NAME rides the value for an onboarding toast. Empty on a combat surface / a doorless room.
     readonly System.Collections.Generic.Dictionary<int, string> _doorTo = new System.Collections.Generic.Dictionary<int, string>();
+    // Owner playtest #4 (B) DOOR DISCOVERABILITY: door cells rendered no affordance, so the owner could not
+    // find how to change rooms. A persistent, gently PULSING gold glow quad + a floating "To <Room>" label
+    // now mark each door cell (built from _doorTo whenever the set changes; a room swap rebuilds them). Pure
+    // presentation over the same authored door cells the click path already crosses — no engine change.
+    GameObject _doorRoot;                 // parent of the glow quads + labels (one-call teardown/rebuild)
+    System.Collections.Generic.List<Material> _doorGlowMats;  // per-door glow material (per-frame alpha pulse)
+    string _doorSig = "\0";               // signature of the door set the affordance was last built for
     // WALKABLE-SLICE-V1 (item 2): rest-mode NPC talk-targets by cell (rest_role:"npc" stage tokens). A
     // click on an NPC's cell POSTs `parley_approach` (the engine walks the lead PC adjacent + opens the
     // parley) instead of a walk. cellKey -> npc id. Rebuilt each ParseSurfaceExtras from the stage block.
@@ -317,17 +324,21 @@ public class CombatSurfaceClient : MonoBehaviour
         string envCampaign = System.Environment.GetEnvironmentVariable("WORLDOS_CAMPAIGN_ID");
         if (!string.IsNullOrEmpty(envCampaign)) CampaignId = envCampaign;
 
-        // #Phase3: the walkability overlay defaults ON in playtests (WORLDOS_PLAYTEST=1) and OFF otherwise,
-        // so beauty captures render a byte-identical scene. Built lazily on the first surface (needs grid
-        // extents); a default-on overlay appears after the first /combat-surface poll.
-        _overlayOn = System.Environment.GetEnvironmentVariable("WORLDOS_PLAYTEST") == "1";
+        // #Phase3 / owner playtest #4 (C): the walkability overlay is a QA/debug grid, NOT a normal-play
+        // affordance — the owner found a default-ON overlay confusing (and, with the adopted crypt plate's
+        // prop drift, visibly misaligned with the painted room). It now defaults OFF in normal play and turns
+        // ON only under an explicit QA env var (WORLDOS_WALK_OVERLAY=1) or a playtest (WORLDOS_PLAYTEST=1). G
+        // still toggles it live (ToggleOverlay). Beauty captures + a normal onboarding session (no QA var)
+        // render a byte-identical, overlay-free scene. Built lazily on the first surface (needs grid extents).
+        _overlayOn = System.Environment.GetEnvironmentVariable("WORLDOS_WALK_OVERLAY") == "1"
+                  || System.Environment.GetEnvironmentVariable("WORLDOS_PLAYTEST") == "1";
 
-        // #1463: onboarding readability (the T3 gap). On for player sessions — a playtest OR the app host's
-        // WORLDOS_ONBOARD launch. Absent both env vars (beauty captures) stays byte-identical. Force the
-        // walkability overlay ON under onboarding even outside a playtest so the first-timer sees the walkable
-        // tiles immediately (the T3 "15 actions to first turn / intro incomplete" readability failure).
+        // #1463: onboarding readability (the T3 gap) — the whose-turn/affordance hint, name plates, and the
+        // door affordance (B). On for player sessions: a playtest OR the app host's WORLDOS_ONBOARD launch.
+        // Owner playtest #4 (C): onboarding NO LONGER force-enables the walkability overlay — a first-timer
+        // gets the hint + the glowing doorway (B), not a full grid over the board. Absent both env vars
+        // (beauty captures) stays byte-identical.
         _onboard = _overlayOn || System.Environment.GetEnvironmentVariable("WORLDOS_ONBOARD") == "1";
-        if (_onboard) _overlayOn = true;
 
         // #1463: load the OPTIONAL stage manifest (fire flicker + glow anchors). Absent -> byte-identical.
         LoadStageManifest();
@@ -672,6 +683,10 @@ public class CombatSurfaceClient : MonoBehaviour
         // #Phase3: keep the overlay in sync with the new surface — rebuild the quad pool if the grid
         // extents changed (rest rooms are non-14x11), then repaint per-cell tints for the new occupancy.
         if (_overlayOn) { EnsureOverlay(); RefreshOverlayColors(); }
+        // owner playtest #4 (B): (re)build the door affordance for this surface's door set (rebuilds only on a
+        // change — a room swap; a doorless/combat surface tears it down). Unconditional: the glowing doorway is
+        // a normal-play affordance, not a QA overlay.
+        EnsureDoorAffordance();
     }
 
     // Option A: the rest cast gets a #1484 name plate (no HP bar) under onboarding/playtest — mirrors combat's
@@ -853,6 +868,99 @@ public class CombatSurfaceClient : MonoBehaviour
 
     // Hover tint: red on a foe cell (attack affordance), brighter gold elsewhere — mirrors the browser.
     Color HoverColor(int c, int r) { return _foeCells.Contains(CellKey(c, r)) ? OvFoeHover : OvWalkHover; }
+
+    // ---- owner playtest #4 (B): DOOR AFFORDANCE (pulsing gold glow + floating "To <Room>" label) --------
+    // Door cells previously rendered NOTHING, so the owner could not find how to change rooms. These mark the
+    // authored door cells (already in _doorTo) with an unmissable glow + destination label. Presentation-only
+    // over the same cells the click path already crosses (HandleCell -> cross_door); no engine/contract change.
+
+    static readonly Color DoorGlowCol = new Color(1f, 0.80f, 0.30f, 0.55f);  // warm gold (door affordance)
+
+    // A short fingerprint of the door set, so EnsureDoorAffordance rebuilds only on an actual change (a room
+    // swap), not every poll — mirroring the occluder/overlay "rebuild-on-change" idiom.
+    string DoorSignature()
+    {
+        if (_doorTo.Count == 0) return "";
+        var keys = new System.Collections.Generic.List<int>(_doorTo.Keys); keys.Sort();
+        var sb = new System.Text.StringBuilder();
+        foreach (var k in keys) sb.Append(k).Append('=').Append(_doorTo[k]).Append(';');
+        return sb.ToString();
+    }
+
+    // Called every ApplySurf: (re)build the door glow/labels only when the door set changed. A doorless or
+    // combat surface (empty _doorTo) tears the affordance down.
+    void EnsureDoorAffordance()
+    {
+        string sig = DoorSignature();
+        if (sig == _doorSig) return;
+        _doorSig = sig;
+        BuildDoorAffordance();
+    }
+
+    void BuildDoorAffordance()
+    {
+        if (_doorRoot != null) { Object.Destroy(_doorRoot); _doorRoot = null; }
+        _doorGlowMats = null;
+        if (_doorTo.Count == 0) return;
+        _doorRoot = new GameObject("DoorAffordance");
+        _doorGlowMats = new System.Collections.Generic.List<Material>();
+        foreach (var kv in _doorTo)
+        {
+            int c = kv.Key / 10000, r = kv.Key % 10000;
+            Vector3 p = CellToWorld(c, r);
+            // gold glow quad on the floor (queue 1949 -> just under the actor AO/ring, like the stage glow).
+            var q = GameObject.CreatePrimitive(PrimitiveType.Quad); q.name = "DoorGlow_" + c + "_" + r;
+            Object.DestroyImmediate(q.GetComponent<Collider>());
+            q.transform.SetParent(_doorRoot.transform, false);
+            q.transform.position = new Vector3(p.x, FloorY + 0.03f, p.z);
+            q.transform.localEulerAngles = new Vector3(90f, 0f, 0f);
+            q.transform.localScale = new Vector3(CellSize * 1.7f, CellSize * 1.7f, 1f);
+            var m = new Material(Shader.Find("Sprites/Default")); m.mainTexture = GlowTex();
+            m.color = DoorGlowCol; m.renderQueue = 1949;
+            var rend = q.GetComponent<Renderer>(); rend.sharedMaterial = m; rend.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            _doorGlowMats.Add(m);
+            // floating "To <Room>" label above the doorway (camera-facing TextMesh; UpdateDoorGlow billboards it).
+            var g = new GameObject("DoorLabel_" + c + "_" + r);
+            g.transform.SetParent(_doorRoot.transform, false);
+            g.transform.position = new Vector3(p.x, FloorY + 3.2f, p.z);
+            var tm = g.AddComponent<TextMesh>();
+            tm.text = "To " + Prettify(kv.Value); tm.fontSize = 64; tm.characterSize = 0.16f;
+            tm.anchor = TextAnchor.LowerCenter; tm.alignment = TextAlignment.Center; tm.color = new Color(1f, 0.87f, 0.45f, 1f);
+            var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            if (font == null) font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+            var mr = g.GetComponent<MeshRenderer>();
+            if (font != null) { tm.font = font; if (mr != null) { mr.sharedMaterial = new Material(font.material); mr.sharedMaterial.renderQueue = 3096; } }
+            else if (mr != null && mr.sharedMaterial != null) mr.sharedMaterial.renderQueue = 3096;
+        }
+    }
+
+    // Prettify a destination room name/id for the label: split on _/-, Title-Case each word. An already-pretty
+    // toName ("Campfire Clearing") passes through; a raw id ("camp_clearing_night") -> "Camp Clearing Night".
+    static string Prettify(string raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return "the next room";
+        var parts = raw.Replace('_', ' ').Replace('-', ' ').Split(new[] { ' ' }, System.StringSplitOptions.RemoveEmptyEntries);
+        var sb = new System.Text.StringBuilder();
+        foreach (var w in parts) { if (sb.Length > 0) sb.Append(' '); sb.Append(char.ToUpper(w[0])); if (w.Length > 1) sb.Append(w.Substring(1)); }
+        return sb.Length > 0 ? sb.ToString() : "the next room";
+    }
+
+    // Per-frame gentle pulse of the door glow(s) + billboard each label to the camera. Cheap; no-op with no
+    // doors. Called from Update.
+    void UpdateDoorGlow()
+    {
+        if (_doorRoot == null) return;
+        if (_doorGlowMats != null)
+        {
+            float pulse = 0.30f + 0.32f * (0.5f + 0.5f * Mathf.Sin(Time.time * 3.0f));  // ~0.30..0.62 alpha
+            for (int i = 0; i < _doorGlowMats.Count; i++)
+                if (_doorGlowMats[i] != null) { var col = DoorGlowCol; col.a = pulse; _doorGlowMats[i].color = col; }
+        }
+        var cam = Camera.main;
+        if (cam != null)
+            foreach (Transform t in _doorRoot.transform)
+                if (t.GetComponent<TextMesh>() != null) t.rotation = cam.transform.rotation;
+    }
 
     // Toggle (G): first turn-on builds the pool lazily and repaints; turn-off just hides the root (kept for a
     // cheap re-show). OFF == zero rendered quads == byte-identical scene.
@@ -1518,6 +1626,8 @@ public class CombatSurfaceClient : MonoBehaviour
         // #1463: advance the onboarding-hint fade clock after the first action; drive the stage flicker.
         if (_acted) _actedT += Time.deltaTime;
         if (_flickerActive || _glowMats != null) UpdateStageFlicker();
+        // owner playtest #4 (B): pulse the door glow(s) + billboard their labels.
+        UpdateDoorGlow();
         // #Phase3: overlay toggle (G) + hover run independent of the click gate below.
         if (Input.GetKeyDown(KeyCode.G)) ToggleOverlay();
         if (_overlayOn) UpdateOverlayHover();
@@ -2468,7 +2578,12 @@ public class CombatSurfaceClient : MonoBehaviour
             _hintSubStyle = new GUIStyle(GUI.skin.label) { fontSize = 16, alignment = TextAnchor.MiddleCenter, wordWrap = true };
         }
         string turn = _restMode ? "Explore the room" : (string.IsNullOrEmpty(_currentName) ? "Your turn" : _currentName + "'s turn");
-        string hint = _restMode ? "Click a highlighted tile to move" : "Click a highlighted tile to move · click a foe to attack";
+        // owner playtest #4 (B): in rest mode with a door in view, tell the first-timer HOW to change rooms
+        // (the owner could not find the doorway). Overlay is now default-off, so the rest hint no longer
+        // references "highlighted tiles"; it points at the click-to-move + the glowing doorway instead.
+        string hint = _restMode
+            ? (_doorTo.Count > 0 ? "Click to move · click the glowing doorway to travel" : "Click a tile to move")
+            : "Click a highlighted tile to move · click a foe to attack";
         float w = Mathf.Min(760f, Screen.width - 40f);
         var r1 = new Rect((Screen.width - w) / 2f, Screen.height * 0.03f, w, 34f);
         var r2 = new Rect((Screen.width - w) / 2f, Screen.height * 0.03f + 32f, w, 26f);
