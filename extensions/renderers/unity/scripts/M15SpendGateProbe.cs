@@ -124,7 +124,7 @@ public static class M15SpendGateProbe
         mat.SetFloat("_Glossiness", 0.2f); mat.SetFloat("_Metallic", 0f);
         go.GetComponent<Renderer>().sharedMaterial = mat;
         MakeGroundQuad(u.name + "_AO", cell, 2.0f, RadialTex(), Color.white, 1950);
-        MakeGroundQuad(u.name + "_Ring", cell, 2.6f, RingTex(), u.foe ? new Color(1f, 0.13f, 0.10f, 1f) : new Color(0.4f, 0.95f, 1f, 1f), 1955);
+        MakeContactDecal(u.name + "_Ring", cell, u.foe, false);
     }
 
     static void MakeGroundQuad(string name, Vector3 cell, float scale, Texture2D tex, Color col, int queue)
@@ -139,7 +139,7 @@ public static class M15SpendGateProbe
         var r = q.GetComponent<Renderer>(); r.sharedMaterial = m; r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
     }
 
-    static Texture2D _radial, _ring;
+    static Texture2D _radial;
     static Texture2D RadialTex()
     {
         if (_radial != null) return _radial;
@@ -155,20 +155,46 @@ public static class M15SpendGateProbe
         _radial.Apply();
         return _radial;
     }
-    static Texture2D RingTex()
+    // ---- team decal (#1515 fix 1: the bright ellipse ring cost the panel 2.0 alone — it read as a
+    // GAME-ENGINE UI SELECTION RING, not character art). Replaced by a SUBTLE faction contact decal:
+    // a soft radial-gradient that sits ON the plate like a muted selection SHADOW (PoE2's readable-but-
+    // not-UI-loud circles) — a dark grounding disc under the base + a low-saturation faction-tinted rim
+    // baked into the texture (so faction semantics survive), alpha-blended to darken the plate slightly.
+    // The hover/selected state is a modest brightness bump (col alpha), preserving selection behavior. ----
+    static Texture2D _decalFoe, _decalParty;
+    static Texture2D ContactDecalTex(bool foe)
     {
-        if (_ring != null) return _ring;
-        const int N = 64;
-        _ring = new Texture2D(N, N, TextureFormat.RGBA32, false);
+        if (foe && _decalFoe != null) return _decalFoe;
+        if (!foe && _decalParty != null) return _decalParty;
+        const int N = 128;
+        // muted, low-saturation faction hue for the rim (readable, not UI-loud); dark neutral grounding core.
+        Color faction = foe ? new Color(0.55f, 0.24f, 0.19f) : new Color(0.34f, 0.52f, 0.60f);
+        Color core = new Color(0.045f, 0.035f, 0.03f);
+        var t = new Texture2D(N, N, TextureFormat.RGBA32, false);
         for (int y = 0; y < N; y++) for (int x = 0; x < N; x++)
         {
             float dx = (x - N / 2f) / (N / 2f), dy = (y - N / 2f) / (N / 2f);
             float d = Mathf.Sqrt(dx * dx + dy * dy);
-            float a = (d > 0.78f && d < 0.93f) ? 1f : 0f;
-            _ring.SetPixel(x, y, new Color(1f, 1f, 1f, a));
+            // grounding disc: darkest under the base, soft falloff (the "soft selection shadow").
+            float discA = Mathf.Pow(Mathf.Clamp01(1f - d / 0.98f), 1.7f) * 0.5f;
+            // faction contact ring: a soft muted band near the base rim, NOT a hard bright annulus.
+            float ringA = Mathf.Exp(-Mathf.Pow((d - 0.72f) / 0.13f, 2f)) * 0.55f;
+            float w = ringA / (ringA + discA + 1e-4f);   // rim vs core blend weight
+            Color rgb = Color.Lerp(core, faction, w);
+            float a = d > 1f ? 0f : Mathf.Clamp01(discA + ringA);
+            t.SetPixel(x, y, new Color(rgb.r, rgb.g, rgb.b, a));
         }
-        _ring.Apply();
-        return _ring;
+        t.Apply();
+        if (foe) _decalFoe = t; else _decalParty = t;
+        return t;
+    }
+
+    // Ground the faction decal on the plate. scale 2.3 ≈ actor base (down from the old 2.6 UI ring);
+    // col is white * alpha so the baked faction hue survives — `selected` gives the hover/selected read
+    // a modest brightness bump (preserves the selection-ring behavior without the UI-loud look).
+    static void MakeContactDecal(string name, Vector3 cell, bool foe, bool selected)
+    {
+        MakeGroundQuad(name, cell, 2.3f, ContactDecalTex(foe), new Color(1f, 1f, 1f, selected ? 0.98f : 0.72f), 1955);
     }
 
     [MenuItem("Tools/WorldOS/M1.5 Spend Gate/diag - Inspect VFX renderers")]
@@ -271,7 +297,7 @@ public static class M15SpendGateProbe
     {
         // clear both the capsule set and any prior real-mesh set so the frame is a clean 6-actor read.
         foreach (var u in Units) DestroyExisting(u.name);
-        foreach (var nm in ActorNames()) foreach (var suf in new[] { "", "_AO", "_Ring", "_Cast" }) { var o = GameObject.Find(nm + suf); if (o != null) Object.DestroyImmediate(o); }
+        foreach (var nm in ActorNames()) foreach (var suf in new[] { "", "_AO", "_Ring", "_Cast", "_Contact" }) { var o = GameObject.Find(nm + suf); if (o != null) Object.DestroyImmediate(o); }
         int n = 0;
         foreach (var u in Units)
         {
@@ -325,7 +351,7 @@ public static class M15SpendGateProbe
         }
         else Debug.LogWarning("[M15GATE] albedo not found (" + albedoPath + ") — actor renders untextured Standard");
         MakeGroundQuad(nm + "_AO", cell, 2.0f, RadialTex(), Color.white, 1950);
-        MakeGroundQuad(nm + "_Ring", cell, 2.6f, RingTex(), foe ? new Color(1f, 0.13f, 0.10f, 1f) : new Color(0.4f, 0.95f, 1f, 1f), 1955);
+        MakeContactDecal(nm + "_Ring", cell, foe, false);
     }
 
     static Bounds MeasureBounds(GameObject a)

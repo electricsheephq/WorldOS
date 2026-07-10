@@ -21,6 +21,10 @@ public static class CohesionProbe
     static Color _key = new Color(1f, 0.73f, 0.44f);
     static Color _amb = new Color(0.30f, 0.25f, 0.21f);
     static Color _warmAmb = new Color(0.55f, 0.35f, 0.18f);   // lit-ground band; near-fire wrap ambient
+    // #1515 fix 2: hearth-INDEPENDENT minimum warmth blended into every actor's ambient (conservative)
+    // so combat-distance formations never read cool/dark against a warm plate. 0=fully cool _amb (old
+    // behavior), 1=fully _warmAmb; the fire-proximity lerp adds MORE warmth on top for near-fire actors.
+    const float WARM_AMBIENT_FLOOR = 0.35f;
     static Vector3 _fromDir = new Vector3(-1f, 0f, 0f);   // horizontal dir of the light SOURCE from scene center
     static Vector3 _hearthAnchor;                          // floor point shadows are cast AWAY from
     static bool _analyzed;
@@ -136,9 +140,9 @@ public static class CohesionProbe
             mm.mainTexture = al; mm.SetFloat("_Glossiness", 0.2f); mm.SetFloat("_Metallic", 0f);
             foreach (var r in go.GetComponentsInChildren<Renderer>()) { r.sharedMaterial = mm; r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On; r.receiveShadows = true; }
         }
-        // blob AO + team ring, flat on the floor (paint_combat_v1 conventions: queues 1950/1955).
+        // blob AO + team CONTACT DECAL, flat on the floor (paint_combat_v1 conventions: queues 1950/1955).
         MakeGroundQuad(nm + "_AO", cell, 2.0f, RadialTex(), Color.white, 1950);
-        MakeGroundQuad(nm + "_Ring", cell, 2.6f, RingTex(), foe ? new Color(1f, 0.13f, 0.10f, 1f) : new Color(0.4f, 0.95f, 1f, 1f), 1955);
+        MakeContactDecal(nm + "_Ring", cell, foe, false);
     }
 
     static void MakeGroundQuad(string name, Vector3 cell, float scale, Texture2D tex, Color col, int queue)
@@ -153,21 +157,42 @@ public static class CohesionProbe
         var r = q.GetComponent<Renderer>(); r.sharedMaterial = m; r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
     }
 
-    static Texture2D _ring;
-    static Texture2D RingTex()
+    // ---- team decal (#1515 fix 1: the bright ellipse ring cost the cohesion panel 2.0 alone — scorers
+    // read it as a GAME-ENGINE UI SELECTION RING, not character art). Replaced by a SUBTLE faction
+    // contact decal: a soft radial-gradient that sits ON the plate like a muted selection SHADOW (PoE2's
+    // readable-but-not-UI-loud circles) — a dark grounding disc under the base + a low-saturation
+    // faction-tinted rim baked in (faction semantics survive), alpha-blended to darken the plate slightly.
+    // Hover/selected = a modest brightness bump via col alpha, preserving selection behavior. ----
+    static Texture2D _decalFoe, _decalParty;
+    static Texture2D ContactDecalTex(bool foe)
     {
-        if (_ring != null) return _ring;
+        if (foe && _decalFoe != null) return _decalFoe;
+        if (!foe && _decalParty != null) return _decalParty;
         const int N = 256;
-        _ring = new Texture2D(N, N, TextureFormat.RGBA32, false);
+        Color faction = foe ? new Color(0.55f, 0.24f, 0.19f) : new Color(0.34f, 0.52f, 0.60f);
+        Color core = new Color(0.045f, 0.035f, 0.03f);
+        var t = new Texture2D(N, N, TextureFormat.RGBA32, false);
         for (int y = 0; y < N; y++) for (int x = 0; x < N; x++)
         {
             float dx = (x - N / 2f) / (N / 2f), dy = (y - N / 2f) / (N / 2f);
             float d = Mathf.Sqrt(dx * dx + dy * dy);
-            float aA = (d > 0.78f && d < 0.93f) ? 1f : 0f;
-            _ring.SetPixel(x, y, new Color(1f, 1f, 1f, aA));
+            float discA = Mathf.Pow(Mathf.Clamp01(1f - d / 0.98f), 1.7f) * 0.5f;   // soft grounding shadow
+            float ringA = Mathf.Exp(-Mathf.Pow((d - 0.72f) / 0.13f, 2f)) * 0.55f;  // muted faction contact rim
+            float w = ringA / (ringA + discA + 1e-4f);
+            Color rgb = Color.Lerp(core, faction, w);
+            float a = d > 1f ? 0f : Mathf.Clamp01(discA + ringA);
+            t.SetPixel(x, y, new Color(rgb.r, rgb.g, rgb.b, a));
         }
-        _ring.Apply();
-        return _ring;
+        t.Apply();
+        if (foe) _decalFoe = t; else _decalParty = t;
+        return t;
+    }
+
+    // scale 2.3 ≈ actor base (down from the old 2.6 UI ring); col white*alpha so the baked faction hue
+    // survives — `selected` gives the hover/selected read a modest brightness bump.
+    static void MakeContactDecal(string name, Vector3 cell, bool foe, bool selected)
+    {
+        MakeGroundQuad(name, cell, 2.3f, ContactDecalTex(foe), new Color(1f, 1f, 1f, selected ? 0.98f : 0.72f), 1955);
     }
 
     // ---------- rung B: plate-sampled per-scene light rig ----------
@@ -212,6 +237,7 @@ public static class CohesionProbe
         {
             foreach (var suf in new[] { "_AO", "_Core" }) { var s = GameObject.Find(a.name + suf); if (s != null) s.SetActive(false); }
             var old = GameObject.Find(a.name + "_Cast"); if (old != null) Object.DestroyImmediate(old);
+            var oldC = GameObject.Find(a.name + "_Contact"); if (oldC != null) Object.DestroyImmediate(oldC);
             var b = MeasureBounds(a);
             var go = GameObject.CreatePrimitive(PrimitiveType.Quad);
             go.name = a.name + "_Cast"; Object.DestroyImmediate(go.GetComponent<Collider>());
@@ -219,20 +245,32 @@ public static class CohesionProbe
             if (away.sqrMagnitude < 1e-4f) away = new Vector3(1f, 0f, 0.3f);
             away.Normalize();
             float footX = Mathf.Clamp(b.size.x * 1.0f, 1.8f, 3.4f);
-            float castLen = footX * 1.7f, footZ = footX * 0.55f;
+            // #1515 fix 3: strengthen contact-shadow presence at combat scale — a longer/wider directional
+            // cast (1.7→1.85 len, 0.55→0.62 half-width) so distant units don't read as floating.
+            float castLen = footX * 1.85f, footZ = footX * 0.62f;
             float yaw = Mathf.Atan2(away.x, away.z) * Mathf.Rad2Deg;
             float floorY = FloorYOf(a);
             Vector3 footPos = new Vector3(b.center.x, floorY + 0.02f, b.center.z - 0.3f);
-            go.transform.localScale = new Vector3(footZ * 1.05f, castLen, 1f);
+            go.transform.localScale = new Vector3(footZ * 1.15f, castLen, 1f);
             go.transform.position = footPos + away * (castLen * 0.18f);
             go.transform.eulerAngles = new Vector3(90f, yaw, 0f);
             var sh = Shader.Find("WorldOS/ContactShadow");
             var m = new Material(sh != null ? sh : Shader.Find("Sprites/Default"));
-            m.mainTexture = RadialTex(); m.color = new Color(0.05f, 0.03f, 0.02f, 0.78f); m.renderQueue = 1990;   // before actors (2000+): the ZTest-Always blob must never draw over feet (review P3)
+            m.mainTexture = RadialTex(); m.color = new Color(0.04f, 0.025f, 0.018f, 0.90f); m.renderQueue = 1990;   // denser (#1515 fix 3: α 0.78→0.90); before actors (2000+): the ZTest-Always blob must never draw over feet (review P3)
             var r = go.GetComponent<Renderer>(); r.sharedMaterial = m; r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            // #1515 fix 3: a TIGHT, dense under-foot contact core so the unit reads GROUNDED even when the
+            // (now-subtle) team decal no longer carries the grounding — the directional cast alone floats.
+            var core = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            core.name = a.name + "_Contact"; Object.DestroyImmediate(core.GetComponent<Collider>());
+            core.transform.position = new Vector3(b.center.x, floorY + 0.015f, b.center.z);
+            core.transform.eulerAngles = new Vector3(90f, 0f, 0f);
+            core.transform.localScale = new Vector3(footX * 0.9f, footX * 0.9f, 1f);
+            var mc = new Material(sh != null ? sh : Shader.Find("Sprites/Default"));
+            mc.mainTexture = RadialTex(); mc.color = new Color(0.03f, 0.02f, 0.015f, 0.92f); mc.renderQueue = 1988;
+            var rc = core.GetComponent<Renderer>(); rc.sharedMaterial = mc; rc.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             n++;
         }
-        Debug.Log("[PROBE] RungD applied: " + n + " directional cast shadows (blob AO/core disabled), away-from " + _hearthAnchor.ToString("F1"));
+        Debug.Log("[PROBE] RungD applied: " + n + " directional cast shadows + tight contact cores (blob AO/core disabled), away-from " + _hearthAnchor.ToString("F1"));
     }
 
     // ---------- rung A': PainterlyActor materials with the CL r10-tuned params ----------
@@ -276,10 +314,17 @@ public static class CohesionProbe
                 fmat.SetColor("_KeyColor", _key);
                 // v4: near-fire actors live in the painting's warm wrap-around bounce — blend the ambient
                 // from the scene's cool shadow color to the lit-ground warm band by fire proximity.
-                fmat.SetColor("_AmbientColor", Color.Lerp(_amb, _warmAmb, near01));
+                // #1515 fix 2 (WARM AMBIENT FLOOR): the OLD lerp base was the fully-cool _amb, so a
+                // combat-distance actor (near01≈0) got a cool/dark ambient against the warm plate. Floor
+                // the base toward warm (hearth-independent) so no actor reads cool/dark; near-fire actors
+                // still lerp UP to the full _warmAmb on top.
+                Color ambBase = Color.Lerp(_amb, _warmAmb, WARM_AMBIENT_FLOOR);
+                fmat.SetColor("_AmbientColor", Color.Lerp(ambBase, _warmAmb, near01));
                 fmat.SetVector("_KeyDir", keyDir);
-                // the ClosedLoopBuilder r10 consensus values (ClosedLoopBuilder.cs:1013-1078), verbatim.
-                fmat.SetFloat("_KeyStrength", Mathf.Lerp(0.9f, isHero ? 1.8f : 1.6f, near01));
+                // the ClosedLoopBuilder r10 consensus values (ClosedLoopBuilder.cs:1013-1078); #1515 fix 2
+                // nudges the FAR-actor floors up (key 0.9→1.0, ambLift +0.08, maxLuma 0.56→0.62) so distant
+                // formations are not crushed dark — conservative, near-fire values unchanged.
+                fmat.SetFloat("_KeyStrength", Mathf.Lerp(1.0f, isHero ? 1.8f : 1.6f, near01));
                 fmat.SetFloat("_RimStrength", isHero ? 0.16f : 0.20f);
                 fmat.SetFloat("_Desat", isHero ? 0.24f : 0.36f);
                 fmat.SetFloat("_BounceStrength", Mathf.Lerp(0.10f, 0.30f, near01));
@@ -290,8 +335,8 @@ public static class CohesionProbe
                 fmat.SetFloat("_EdgeSoften", isHero ? 0.22f : 0.30f);
                 fmat.SetFloat("_PaletteSnap", isHero ? 0.42f : 0.55f);
                 fmat.SetFloat("_PaintLift", Mathf.Lerp(0.06f, 0.11f, near01));
-                fmat.SetFloat("_AmbientLift", Mathf.Lerp(isHero ? 0.16f : 0.20f, 0.36f, near01));
-                fmat.SetFloat("_MaxLuma", Mathf.Lerp(0.56f, isHero ? 0.85f : 0.75f, near01));
+                fmat.SetFloat("_AmbientLift", Mathf.Lerp(isHero ? 0.24f : 0.28f, 0.36f, near01));
+                fmat.SetFloat("_MaxLuma", Mathf.Lerp(0.62f, isHero ? 0.85f : 0.75f, near01));
                 fmat.SetFloat("_TermSharp", 0.30f);
                 // halved vs CL: the camp is a shallow scene — the full interior wash flattened everyone.
                 float atm = Mathf.Clamp01((1f - depth01) * 0.42f);
@@ -474,7 +519,7 @@ public static class CohesionProbe
     }
 
     // ---------- scene helpers ----------
-    static readonly string[] Sufs = { "_AO", "_Ring", "_Core", "_Cast", "_HP", "_bg", "_fg" };
+    static readonly string[] Sufs = { "_AO", "_Ring", "_Core", "_Cast", "_Contact", "_HP", "_bg", "_fg" };
     static List<GameObject> ActorRoots()
     {
         var outl = new List<GameObject>();
