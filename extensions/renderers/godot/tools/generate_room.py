@@ -335,7 +335,65 @@ def _resolve_style_pass(recipe: dict, args) -> dict | None:
     scales = raw.get("lorasScale", raw.get("lora_scales"))
     scales = list(scales) if scales is not None else [recipe["lora_scale"]] * len(loras)
     strength = float(raw.get("strength", args.strength))
-    return {"model": model, "loras": loras, "lora_scales": scales, "strength": strength}
+    # The gate the sample-selector targets (max style subject to recall >= min_recall); mirrors
+    # plate_loop's registration.min_recall default so the two agree on what "registered" means.
+    min_recall = float(raw.get("min_recall", 0.95))
+    return {"model": model, "loras": loras, "lora_scales": scales, "strength": strength,
+            "min_recall": min_recall}
+
+
+_PLATE_OVERLAYS_RECALL = None  # cached qa/plate_overlays.registration_recall (or False if absent)
+
+
+def _edge_recall(greybox: str, candidate: str):
+    """Edge-alignment recall of a plate vs the greybox, reusing qa/plate_overlays (the SAME signal
+    plate_loop's registration gate uses). Returns a float, or None if the scorer can't be imported/run
+    (graceful — style-sample selection then falls back to the first sample)."""
+    global _PLATE_OVERLAYS_RECALL
+    if _PLATE_OVERLAYS_RECALL is None:
+        try:
+            qa_dir = os.path.normpath(os.path.join(_HERE, "..", "..", "..", "..", "qa"))
+            if qa_dir not in sys.path:
+                sys.path.insert(0, qa_dir)
+            from plate_overlays import registration_recall as _rr  # noqa: E402
+            _PLATE_OVERLAYS_RECALL = _rr
+        except Exception:
+            _PLATE_OVERLAYS_RECALL = False
+    if not _PLATE_OVERLAYS_RECALL:
+        return None
+    try:
+        return float(_PLATE_OVERLAYS_RECALL(greybox, candidate))
+    except Exception:
+        return None
+
+
+def _select_style_sample(samples: list, greybox: str | None, min_recall: float) -> dict:
+    """Choose which style-pass sample to promote as the final ARM A plate.
+
+    The z-image style endpoint returns N samples that differ in how far the low-strength repaint drifted
+    the ControlNet-locked geometry. Score each by edge-recall vs the greybox and pick the MOST-STYLIZED
+    sample that still registers — the LOWEST recall at/above `min_recall` (maximum painterly headroom
+    while staying locked). If none clear the gate, keep the HIGHEST-recall sample (the best attempt —
+    plate_loop's gate then FAILs it and the loop reject-retries at a lower strength). Falls back to
+    samples[0] when recall can't be scored (no greybox / scorer unavailable), preserving single-sample
+    behavior. Annotates each sample in place with `edge_recall_vs_greybox`; the winner with `selected_by`."""
+    if greybox and os.path.isfile(greybox):
+        for s in samples:
+            r = _edge_recall(greybox, s["path"])
+            s["edge_recall_vs_greybox"] = round(r, 4) if r is not None else None
+    valid = [(s, s.get("edge_recall_vs_greybox")) for s in samples
+             if s.get("edge_recall_vs_greybox") is not None]
+    if not valid:
+        samples[0]["selected_by"] = "first-sample (recall unavailable)"
+        return samples[0]
+    passing = [(s, r) for s, r in valid if r >= min_recall]
+    if passing:
+        chosen = min(passing, key=lambda t: t[1])[0]  # most style headroom while still registered
+        chosen["selected_by"] = "max-style-above-min_recall"
+    else:
+        chosen = max(valid, key=lambda t: t[1])[0]      # best attempt; gate will fail -> reject-retry
+        chosen["selected_by"] = "best-attempt-below-min_recall"
+    return chosen
 
 
 def _build_style_pass_request(recipe: dict, args, positive: str, negative: str,
@@ -690,13 +748,20 @@ def main(argv=None) -> None:
         sp_saved = _download_job_assets(headers, sp_job_obj, out_dir, "room_%s_stylepass" % args.room)
         if not sp_saved:
             sys.exit("[generate_room] ERROR: --style-pass produced no assets")
-        _downscale_to_plate(sp_saved[0]["path"], args.width, args.height)
+        # The style endpoint returns N samples (varying drift off the locked geometry). Promote the
+        # most-stylized one that still registers vs the greybox (the --base-plate); plate_loop reads
+        # this declared final_plate rather than picking the newest file by mtime.
+        greybox = os.path.expanduser(args.base_plate) if args.base_plate else None
+        final_sample = _select_style_sample(sp_saved, greybox, sp["min_recall"])
+        _downscale_to_plate(final_sample["path"], args.width, args.height)
         meta["style_pass"] = {
             "model": sp["model"], "loras": sp["loras"], "lora_scales": sp["lora_scales"],
-            "strength": sp["strength"], "input_ref": style_input_ref,
-            "job_id": sp_job, "assets": sp_saved, "final_plate": sp_saved[0],
+            "strength": sp["strength"], "min_recall": sp["min_recall"], "input_ref": style_input_ref,
+            "job_id": sp_job, "assets": sp_saved, "final_plate": final_sample,
         }
-        print("[generate_room] --style-pass OK — final styled plate: %s" % sp_saved[0])
+        print("[generate_room] --style-pass OK — final styled plate: %s (recall=%s, %s)"
+              % (final_sample["path"], final_sample.get("edge_recall_vs_greybox"),
+                 final_sample.get("selected_by")))
 
     _write_meta(out_dir, meta)
     print("[generate_room] OK — room=%s job=%s assets=%d -> %s" % (args.room, job_id, len(saved), out_dir))

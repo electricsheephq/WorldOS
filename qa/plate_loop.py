@@ -209,6 +209,27 @@ def _newest_image(under: Path, *, exclude: set[str] | None = None) -> Optional[P
     return max(cands, key=lambda p: p.stat().st_mtime) if cands else None
 
 
+def _declared_final_plate(gen_dir: Path) -> Optional[Path]:
+    """generate_room's EXPLICITLY-declared final plate (style_pass / layered `final_plate` in
+    scenario_meta.json), so the gate scores the same image the generator promoted — not merely the
+    newest file by mtime. The style pass emits N samples and generate_room selects one (the most-
+    stylized that still registers); relying on mtime could gate a different, rejected sample. Returns
+    None when there is no meta / no declared plate (plain single-output runs) so the caller falls back
+    to newest-image."""
+    meta_path = gen_dir / "scenario_meta.json"
+    if not meta_path.is_file():
+        return None
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    for block in ("style_pass", "layered"):
+        path = ((meta.get(block) or {}).get("final_plate") or {}).get("path")
+        if path and Path(path).is_file():
+            return Path(path)
+    return None
+
+
 def run_generate(cfg: PlateConfig, out_dir: Path, *, dry_run: bool = False) -> Path:
     """Run generate_room.py into <out-dir>/gen/ and return the generated plate path.
 
@@ -233,9 +254,13 @@ def run_generate(cfg: PlateConfig, out_dir: Path, *, dry_run: bool = False) -> P
     sys.stderr.write(proc.stderr)
     if proc.returncode != 0:
         raise RuntimeError(f"generate_room.py failed (exit {proc.returncode}); see output above")
-    plate = _newest_image(gen_dir, exclude=before)
+    # Prefer the generator's declared final plate (the selected style/layered sample) over newest-mtime.
+    declared = _declared_final_plate(gen_dir)
+    plate = declared or _newest_image(gen_dir, exclude=before)
     if plate is None:
         raise RuntimeError(f"generate_room.py produced no image under {gen_dir}")
+    if declared is not None:
+        print(f"[plate_loop] using generate_room's declared final plate: {plate}")
     return plate
 
 

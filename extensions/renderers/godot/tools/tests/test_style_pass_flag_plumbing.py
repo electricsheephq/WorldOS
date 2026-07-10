@@ -132,6 +132,56 @@ class BuildStylePassRequestTest(unittest.TestCase):
         self.assertEqual(body["seed"], 99)
 
 
+class SelectStyleSampleTest(unittest.TestCase):
+    """The style endpoint returns N samples; _select_style_sample promotes the most-stylized one that
+    still registers (lowest recall >= min_recall), or the best attempt when none clear the gate."""
+
+    def _samples(self):
+        return [{"asset_id": "s%d" % i, "path": "/tmp/s%d.png" % i} for i in range(4)]
+
+    def test_picks_lowest_recall_above_min(self):
+        samples = self._samples()
+        recalls = {"/tmp/s0.png": 0.9492, "/tmp/s1.png": 0.9701,
+                   "/tmp/s2.png": 0.9309, "/tmp/s3.png": 0.9306}
+        with mock.patch.object(generate_room, "os") as m_os, \
+             mock.patch.object(generate_room, "_edge_recall", side_effect=lambda gb, p: recalls[p]):
+            m_os.path.isfile.return_value = True
+            chosen = generate_room._select_style_sample(samples, "/tmp/gb.png", 0.95)
+        # Only s1 (0.9701) clears 0.95 -> it is the (only, hence lowest) passer.
+        self.assertEqual(chosen["asset_id"], "s1")
+        self.assertEqual(chosen["selected_by"], "max-style-above-min_recall")
+        self.assertEqual(chosen["edge_recall_vs_greybox"], 0.9701)
+
+    def test_prefers_most_style_when_several_pass(self):
+        samples = self._samples()
+        recalls = {"/tmp/s0.png": 0.99, "/tmp/s1.png": 0.96,
+                   "/tmp/s2.png": 0.97, "/tmp/s3.png": 0.94}
+        with mock.patch.object(generate_room, "os") as m_os, \
+             mock.patch.object(generate_room, "_edge_recall", side_effect=lambda gb, p: recalls[p]):
+            m_os.path.isfile.return_value = True
+            chosen = generate_room._select_style_sample(samples, "/tmp/gb.png", 0.95)
+        # s1=0.96 is the lowest recall still >= 0.95 -> most painterly headroom.
+        self.assertEqual(chosen["asset_id"], "s1")
+
+    def test_best_attempt_when_none_pass(self):
+        samples = self._samples()
+        recalls = {"/tmp/s0.png": 0.91, "/tmp/s1.png": 0.93,
+                   "/tmp/s2.png": 0.94, "/tmp/s3.png": 0.90}
+        with mock.patch.object(generate_room, "os") as m_os, \
+             mock.patch.object(generate_room, "_edge_recall", side_effect=lambda gb, p: recalls[p]):
+            m_os.path.isfile.return_value = True
+            chosen = generate_room._select_style_sample(samples, "/tmp/gb.png", 0.95)
+        # None clear 0.95 -> keep the highest recall (0.94) as the best attempt (gate FAILs -> retry).
+        self.assertEqual(chosen["asset_id"], "s2")
+        self.assertEqual(chosen["selected_by"], "best-attempt-below-min_recall")
+
+    def test_falls_back_to_first_without_greybox(self):
+        samples = self._samples()
+        chosen = generate_room._select_style_sample(samples, None, 0.95)
+        self.assertEqual(chosen["asset_id"], "s0")
+        self.assertIn("recall unavailable", chosen["selected_by"])
+
+
 class MainPlumbingTest(unittest.TestCase):
     """Drive main() with every Scenario helper mocked — assert the posted bodies + the style_pass meta."""
 
