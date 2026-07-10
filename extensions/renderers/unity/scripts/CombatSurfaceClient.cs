@@ -254,6 +254,16 @@ public class CombatSurfaceClient : MonoBehaviour
 
     void Start()
     {
+        // #1483 (runtime backstop; DEDUPE with #1477 at merge — same one-line fix): a macOS player with
+        // Run-In-Background OFF PAUSES its whole loop (Update, coroutines, input, the /combat-surface poll)
+        // whenever it is not the FOREGROUND app. The no-hijack launch (#1456) never activates the window, so
+        // between the brief activate->click->restore taps the player FREEZES — the smoke's walk glide never
+        // animates (motion-liveness fails) and the 2nd click reads a STALE surface (foe target unresolved ->
+        // an attack falls through to a move). runInBackground=true keeps the loop ticking so QA input lands.
+        // Harmless/standard for an interactive player; beauty captures are unaffected (rendered content is
+        // identical — this only governs ticking while unfocused). #1477 also bakes this into PlayerSettings.
+        Application.runInBackground = true;
+
         // Additive config resolution (#1322 W5a): the standalone player build has no Inspector to
         // hand-edit, so the app host (NSWorkspace launch w/ configuration.environment, mirroring
         // native-bridge.js) hands the engine origin + campaign through the PROCESS ENVIRONMENT.
