@@ -115,6 +115,37 @@ def test_rest_blocked_cells_reads_npc_spawns(room):
     assert (1, 1) not in blocked  # a positional "npcs" list is NOT treated as per-id occupancy
 
 
+def test_rest_blocked_cells_excludes_mover_even_on_impassable_terrain(room):
+    """STUCK-CELL (#1511): the "mover's own exclude_id cell is removed (you never block
+    yourself)" contract must hold whether the mover's cell is blocked via OCCUPANCY (already
+    covered by test_rest_blocked_cells_excludes_mover) or via TERRAIN (a wall/prop cell the
+    mover happens to be standing on, e.g. after a post-#1507-style obstacle re-paint lands a
+    crate under an already-staged party member). Move Hero directly onto the crate cell (4, 2)
+    and confirm rest_blocked_cells still fully exempts it for Hero."""
+    cid, hero, _ally, loc_id = room
+    c = server._require(cid)
+    c.characters[hero].stage_cell = (4, 2)  # the crate/prop cell — now Hero's OWN position
+    server.save_campaign(c)
+    c = server._require(cid)
+    loc = c.locations[loc_id]
+    _w, _h, blocked = server.rest_blocked_cells(c, loc, exclude_id=hero)
+    assert (4, 2) not in blocked, "a mover's own cell must never block itself, terrain or not"
+
+
+def test_walk_to_escapes_when_own_cell_is_impassable_terrain(room):
+    """STUCK-CELL (#1511) canonical repro: a character standing on a cell that IS/becomes
+    impassable terrain (a camp crate, post-#1507) must still be able to walk off it. Move Hero
+    directly onto the crate cell (4, 2), then confirm walk_to routes them to an adjacent open
+    cell instead of rejecting the move — the source cell can never trap you."""
+    cid, hero, _ally, _loc = room
+    c = server._require(cid)
+    c.characters[hero].stage_cell = (4, 2)  # standing ON the crate
+    server.save_campaign(c)
+    out = server.walk_to(cid, hero, 3, 2)  # step off onto the adjacent open floor
+    assert out["walked"] is True
+    assert out["to"] == [3, 2]
+
+
 def test_rest_blocked_cells_no_scene_grid_is_empty(tmp_path, monkeypatch):
     monkeypatch.setenv("WORLDOS_STATE_DIR", str(tmp_path))
     cid = server.create_campaign("no grid")["id"]

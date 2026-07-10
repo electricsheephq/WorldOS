@@ -47,6 +47,32 @@ def test_open_floor_additive_unchanged():
     assert combat_grid.path_cost_cells((0, 0), (3, 3), p) == combat_grid.chebyshev_cells((0, 0), (3, 3)) == 3
 
 
+# ── STUCK-CELL (#1511): the SOURCE cell must be exempt from the blocked set ───────────
+# A mover standing on a cell that is (or becomes) impassable/occupied must always be able to
+# step OFF it — you can never be trapped by your own square. Pinned explicitly here (not just
+# incidentally true of the neighbour-only check) so a future "skip an already-blocked cur"
+# tweak can't silently reintroduce the trap.
+
+
+def test_shortest_path_escapes_when_start_is_impassable():
+    # start (2,2) is itself a wall cell; the open floor around it must still be reachable.
+    p = combat_grid.shortest_path((2, 2), (3, 2), occupied=set(), width=5, height=5,
+                                  impassable={(2, 2)})
+    assert p == [(3, 2)]
+
+
+def test_shortest_path_escapes_when_start_is_occupied():
+    # start (2,2) is itself in the combined blocked/occupied set (e.g. a stale stander cell).
+    p = combat_grid.shortest_path((2, 2), (3, 2), occupied={(2, 2)}, width=5, height=5)
+    assert p == [(3, 2)]
+
+
+def test_reachable_includes_neighbours_when_start_is_impassable():
+    r = combat_grid.reachable((2, 2), 4, occupied=set(), width=5, height=5, impassable={(2, 2)})
+    assert (3, 2) in r and (2, 3) in r
+    assert (2, 2) not in r  # start itself is never a "destination"
+
+
 # ── integration via the engine tools (set_grid obstacles + move_to_coords) ───
 
 
