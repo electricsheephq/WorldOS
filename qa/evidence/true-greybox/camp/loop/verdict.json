@@ -1,0 +1,4 @@
+{"scores": {"A": [7.0], "B": [6.0], "C": [9.0]},
+ "medians": {"A": 7.0, "B": 6.0, "C": 9.0},
+ "control_valid": true,
+ "verdict": "1-scorer interim (blind 5-scorer packet staged): candidate A=7.0 fills-frame correct-scale, BEATS outdoor incumbent B=6.0; control C=9.0 in-band."}
