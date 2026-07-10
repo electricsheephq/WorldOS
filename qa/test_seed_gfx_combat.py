@@ -53,16 +53,18 @@ def test_scene_grid_has_zero_validate_violations():
 
 
 def test_sarcophagus_footprint_is_impassable():
-    """#1396 RED-FIRST (re-measured #1386): the painted sarcophagus's footprint on the deployed
-    crypt_armb_iter3_v1.png plate — cols 3-9 x rows 3-7 — must be an engine pathing obstacle, so
-    no actor can be placed standing on it. This is the exact "actor on the sarcophagus" felt-bug
-    the issue names; the #1386 repaint made the tomb noticeably bigger than the #1396 ~2-cell
-    footprint, so the OLD cells (3,8)/(4,8) would leave this assertion failing again today."""
+    """OWNER PLAYTEST #4 correction (#1505, re-measured from #1386): the sarcophagus's impassable
+    footprint is the coffin's FLOOR-CONTACT cells on the deployed crypt_armb_iter3_v1.png plate —
+    cols 2-7 x rows 7-9 — so no actor stands ON the painted box. #1386 pinned the coffin's tall
+    SILHOUETTE (cols3-9 x rows3-7, the open floor BEHIND the coffin under the iso projection) and
+    left the true floor footprint walkable — the exact reason the owner walked his character onto
+    the painted tomb. Cells derived by point-in-polygon of each cell's grounded projection vs the
+    coffin's measured floor parallelogram (verified greybox rig, <1e-3 vs Unity)."""
     grid = _grid()
     imp = impassable_cells(grid, sg.GRID_W, sg.GRID_H)
-    assert sg.SARCOPHAGUS_CELLS == [[c, r] for c in range(3, 10) for r in range(3, 8)]
+    assert sg.SARCOPHAGUS_CELLS == [[c, r] for c in range(2, 8) for r in range(7, 10)]
     for cell in sg.SARCOPHAGUS_CELLS:
-        assert cell in imp, f"sarcophagus cell {cell} must be impassable (paint/grid registration gap, #1396/#1386)"
+        assert cell in imp, f"sarcophagus cell {cell} must be impassable (paint/grid registration gap, #1505)"
 
 
 def test_pillars_match_painted_cells():
@@ -82,18 +84,17 @@ def test_pillars_match_painted_cells():
 
 
 def test_hero_and_goblin_spawn_cells_stay_walkable():
-    """The hero(11,3)/goblin(1,8) spawn cells (relocated #1386 off the widened sarcophagus
-    footprint — the old hero(6,6)/goblin(9,5) are now INSIDE it) must never collide with the
-    corrected prop footprints — a content fix here must not accidentally trap the demo's own
-    combatants."""
+    """The hero(11,3)/goblin(1,8) spawn cells (far back-right / front-left, both clear of the
+    corrected front-center tomb footprint, #1505) must never collide with the prop footprints — a
+    content fix here must not accidentally trap the demo's own combatants."""
     grid = _grid()
     imp = impassable_cells(grid, sg.GRID_W, sg.GRID_H)
     assert sg.HERO_CELL not in imp
     assert sg.GOBLIN_CELL not in imp
-    # the #1396-era spawn cells are now part of the (correctly) widened sarcophagus footprint —
-    # pin this so a future footprint edit can't silently re-collide with the OLD demo positions.
-    assert [6, 6] in imp
-    assert [9, 5] in imp
+    # the coffin's front floor-footprint cells (where the OLD walkslice party at r=8 stood ON the
+    # painted tomb, #1505) — pin a couple so a future footprint edit can't silently re-open them.
+    assert [6, 8] in imp
+    assert [4, 9] in imp
 
 
 def test_obstacles_list_matches_authored_props():
