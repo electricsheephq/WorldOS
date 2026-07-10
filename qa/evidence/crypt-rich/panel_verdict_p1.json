@@ -1,0 +1,50 @@
+{
+  "panel_id": "crypt-rich-20260711-p1",
+  "n_scorers": 5,
+  "scores": {
+    "scorer1": {
+      "A": 6.5,
+      "B": 8.5,
+      "C": 9.5
+    },
+    "scorer2": {
+      "A": 7,
+      "B": 8,
+      "C": 9
+    },
+    "scorer3": {
+      "A": 6.5,
+      "B": 8,
+      "C": 9
+    },
+    "scorer4": {
+      "A": 6.5,
+      "B": 8,
+      "C": 8.5
+    },
+    "scorer5": {
+      "A": 7,
+      "B": 8,
+      "C": 9
+    }
+  },
+  "slot_to_role": {
+    "A": "candidate",
+    "B": "incumbent",
+    "C": "control"
+  },
+  "medians": {
+    "candidate": 6.5,
+    "incumbent": 8,
+    "control": 9
+  },
+  "control_in_band": true,
+  "control_band": [
+    6.8,
+    9.2
+  ],
+  "delta_candidate_minus_control": -2.5,
+  "delta_candidate_minus_incumbent": -1.5,
+  "at_or_above_incumbent_band(>=8.0-class)": false,
+  "convergent_critique": "cutaway greybox artifacts: toothed/crenellated walls read tiled/gamey + ~52% black empty margins read sparse; ornamentation (effigies/columns/skulls/torches) landed but composition sabotaged the read"
+}
