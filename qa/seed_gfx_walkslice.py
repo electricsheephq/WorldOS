@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""seed_gfx_walkslice.py — WALKABLE-SLICE-V1 smoke fixture: a REST-mode crypt linked by a doorway to
-a camp clearing, with a present NPC to talk to and a lurking goblin to fight. The crypt reuses the
-CANONICAL crypt grid (``seed_gfx_combat._build_crypt_grid``: the 14x11 fixture whose sarcophagus
-floor footprint cols3-7 x rows6-8 + pillars (3,3)/(3,4) and (8,9)/(9,9) match the adopted
-``crypt_armb_iter3_v1`` plate, owner-playtest-#5 collision-coherence re-measurement) with
-ONE addition — a back-center doorway — so the player renders the SAME crypt as the combat demo instead
-of a divergent hand-authored grid (the #1396 scene-grid coherence defect class). The camp grid comes
-from seed_gfx_camp — ONE grid source each. NO combat is started (rest mode), so the surface's ``stage``
-carries the walk / parley / door affordances the player consumes. ``start_combat`` (item 4) then opens
-the fight in place.
+"""seed_gfx_walkslice.py — WALKABLE-SLICE-V1 smoke fixture, now a THREE-ROOM WORLD: a REST-mode crypt
+HUB linked by doorways to a camp clearing AND a brand-new firelit tavern, with a present NPC to talk to
+and a lurking goblin to fight. The crypt reuses the CANONICAL crypt grid
+(``seed_gfx_combat._build_crypt_grid``: the 14x11 fixture whose sarcophagus floor footprint cols3-7 x
+rows6-8 + pillars (3,3)/(3,4) and (8,9)/(9,9) match the adopted ``crypt_armb_iter3_v1`` plate,
+owner-playtest-#5 collision-coherence re-measurement) with TWO additions — a back-center doorway (6,0)
+to the camp and a left-wall doorway (0,5) to the tavern — so the player renders the SAME crypt as the
+combat demo instead of a divergent hand-authored grid (the #1396 scene-grid coherence defect class). The
+camp grid comes from seed_gfx_camp; the tavern grid (``build_tavern_grid``) is authored HERE from the
+SAME world-true geometry as its greybox / registered plate / DERIVED manifest (NEW-ROOM-TAVERN, epic
+#1508) — ONE grid source each. NO combat is started (rest mode), so the surface's ``stage`` carries the
+walk / parley / door affordances the player consumes. ``start_combat`` (item 4) then opens the fight in
+place.
 
 Engine = SOLE WRITER (writes only via server.* + save_campaign). Additive: a new seed/campaign, no
 existing seed touched.
@@ -22,10 +25,15 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 CID = "walkslice_smoke01"
-# back-center doorway punched into the reused canonical crypt grid — the ONLY change vs the combat
-# fixture (a closed arena, no door). cross_door(6,0) leads to the camp. Its Chebyshev-1 landing ring
-# (rows 0-1) stays clear of the sarcophagus (rows 6-8) and both pillars, so the door zone is prop-free.
+# back-center doorway punched into the reused canonical crypt grid — cross_door(6,0) leads to the camp.
+# Its Chebyshev-1 landing ring (rows 0-1) stays clear of the sarcophagus (rows 6-8) and both pillars,
+# so the door zone is prop-free.
 DOOR = [6, 0]
+# THREE-ROOM WORLD (NEW-ROOM-TAVERN, epic #1508): a SECOND crypt doorway on the LEFT wall (0,5) leads
+# to the brand-new firelit tavern. Its landing ring (col 1, rows 4-6) is clear of the sarcophagus
+# (cols 2-7 x rows 7-9) and both pillars — a prop-free door zone. The crypt is the hub: camp <-> crypt
+# <-> tavern.
+TAVERN_DOOR = [0, 5]
 
 
 def build_crypt_grid(loc_id: str):
@@ -44,15 +52,80 @@ def build_crypt_grid(loc_id: str):
     import seed_gfx_combat as combat  # noqa: PLC0415  (reuse the CANONICAL crypt grid — ONE crypt source)
 
     grid = combat._build_crypt_grid(CID, loc_id)
-    for cell in grid.cells:  # punch the back-center wall cell into a walkable doorway
-        if [cell.c, cell.r] == DOOR:
+    doors = [DOOR, TAVERN_DOOR]  # back-center -> camp, left-wall -> tavern (three-room world)
+    for cell in grid.cells:  # punch each wall cell into a walkable doorway
+        if [cell.c, cell.r] in doors:
             cell.type, cell.walkable = "door", True
-    grid.door_cells = [(DOOR[0], DOOR[1])]
+    grid.door_cells = [(DOOR[0], DOOR[1]), (TAVERN_DOOR[0], TAVERN_DOOR[1])]
     # party + Mira on the OPEN flagstone floor between the left pillar and the tomb (cols 3-4, rows
     # 5-6) — clear painted floor, off the corrected tomb footprint (cols3-7 x rows6-8) and both
     # re-measured pillars ((3,3)/(3,4) and (8,9)/(9,9)), owner-playtest-#5 collision-coherence.
     grid.spawns = {"party": [(3, 5), (4, 5)], "npcs": [(3, 6)]}
     grid.art.layout_hash = sg._layout_hash(grid)  # layout changed (added door) — refresh the hash
+    return grid
+
+
+# The tavern is a BRAND-NEW room (NEW-ROOM-TAVERN, epic #1508) — no separate combat seed exists, so its
+# grid is authored HERE from the SAME world-true 12x10 geometry the greybox / registered plate / DERIVED
+# manifest were built from (tools/author_room_geometry.py tavern -> qa/room_manifests/tavern_truegrey.
+# cells.json). Prop footprints are VERBATIM from that geometry, so pathing and paint agree by construction.
+TAVERN_W, TAVERN_H = 12, 10
+TAVERN_BACK_DOOR = [8, 0]  # the tavern's back-wall door, returning to the crypt
+# (id, kind, footprint, height_band, silhouette) — correct 5-ft-grid scale, off the two near walls.
+_TAVERN_PROPS = [
+    ("hearth", "hearth", [(5, 1), (6, 1)], "tall", "stone hearth with glowing embers"),
+    ("bar_counter", "bar_counter", [(9, 2), (9, 3), (9, 4), (9, 5)], "mid", "carved wooden bar counter"),
+    ("table_nw", "table", [(3, 3), (4, 3), (3, 4), (4, 4)], "low", "round wooden tavern table"),
+    ("table_ne", "table", [(6, 3), (7, 3), (6, 4), (7, 4)], "low", "round wooden tavern table"),
+    ("table_s", "table", [(5, 6), (6, 6), (5, 7), (6, 7)], "low", "round wooden tavern table"),
+    ("barrels", "barrel", [(2, 6), (3, 6), (2, 7), (3, 7)], "low", "stacked ale barrels"),
+]
+
+
+def build_tavern_grid(location_id: str = ""):
+    """Pure 12x10 firelit-tavern scene_grid (no server) — the three-room world's THIRD room, authored
+    from the SAME world-true geometry as its greybox / registered plate / derived manifest so pathing and
+    paint agree. A back-wall doorway (TAVERN_BACK_DOOR) returns to the crypt. Directly unit-testable
+    (validate_scene_grid + impassable_cells), mirroring ``seed_gfx_combat._build_crypt_grid``."""
+    from scene_grid import (  # noqa: PLC0415
+        SceneGrid, SceneGridSpec, SceneCell, SceneCellDefault, SceneProp, SceneLighting, _layout_hash,
+    )
+
+    cols, rows = TAVERN_W, TAVERN_H
+    cells: list = []
+    for c in range(cols):  # solid perimeter (enclosed hall; the greybox uses a cutaway wall height)
+        cells.append(SceneCell(c=c, r=0, type="wall", walkable=False))
+        cells.append(SceneCell(c=c, r=rows - 1, type="wall", walkable=False))
+    for r in range(1, rows - 1):
+        cells.append(SceneCell(c=0, r=r, type="wall", walkable=False))
+        cells.append(SceneCell(c=cols - 1, r=r, type="wall", walkable=False))
+
+    props: list = []
+    for pid, kind, footprint, band, sil in _TAVERN_PROPS:
+        anchor = footprint[0]
+        props.append(SceneProp(id=pid, kind=kind, cells=[(c0, r0) for (c0, r0) in footprint],
+                               anchor_cell=(anchor[0], anchor[1]), occluder=True,
+                               height_band=band, silhouette=sil))
+        for (c0, r0) in footprint:
+            cells.append(SceneCell(c=c0, r=r0, type="prop", walkable=False, prop_ref=pid))
+
+    for cell in cells:  # punch the back-wall doorway back to the crypt
+        if [cell.c, cell.r] == TAVERN_BACK_DOOR:
+            cell.type, cell.walkable = "door", True
+
+    grid = SceneGrid(
+        scene_id=f"{CID}:tavern", location_id=location_id, kind="tavern",
+        biome="firelit tavern hall, hearth fire and hanging iron lanterns",
+        grid=SceneGridSpec(cols=cols, rows=rows, cell_size_ft=5, projection="dimetric-2to1"),
+        cell_default=SceneCellDefault(type="floor", walkable=True, cost=1),
+        cells=cells, props=props,
+        lighting=SceneLighting(key_dir_deg=200, key_color="#e8823a", ambient_color="#1a2040",
+                               mood="warm firelit tavern, hearth glow, deep blue-violet corners"),
+    )
+    grid.door_cells = [(TAVERN_BACK_DOOR[0], TAVERN_BACK_DOOR[1])]
+    # party + present NPC stand on the open near-half floor (row 8), clear of every prop and the door zone.
+    grid.spawns = {"party": [(4, 8), (5, 8)], "npcs": [(7, 8)]}
+    grid.art.layout_hash = _layout_hash(grid)
     return grid
 
 
@@ -81,16 +154,25 @@ def main() -> None:
     camp_loc = server.add_location(
         campaign_id=CID, name="Campfire Clearing", location_id="camp_clearing_night",
         description="A camp clearing under the night sky.", connections=[crypt_loc["id"]])
+    # THREE-ROOM WORLD: the brand-new firelit tavern, the crypt's OTHER neighbour (via the left-wall door).
+    tavern_loc = server.add_location(
+        campaign_id=CID, name="Firelit Tavern Hall", location_id="tavern",
+        description="A warm firelit tavern hall — a hearth, a bar counter, tables, and a doorway back "
+                    "to the crypt.", connections=[crypt_loc["id"]])
 
     c = server._require(CID)
-    # crypt carries the CANONICAL grid + a door_cell; wire crypt -> camp so cross_door(6,0) leads to camp.
+    # crypt carries the CANONICAL grid + TWO door_cells; wire crypt -> camp (6,0) and crypt -> tavern (0,5).
     crypt_grid = build_crypt_grid(crypt_loc["id"])
     c.locations[crypt_loc["id"]].scene_grid = crypt_grid
-    if camp_loc["id"] not in c.locations[crypt_loc["id"]].connections:
-        c.locations[crypt_loc["id"]].connections.append(camp_loc["id"])
+    for neighbour in (camp_loc["id"], tavern_loc["id"]):
+        if neighbour not in c.locations[crypt_loc["id"]].connections:
+            c.locations[crypt_loc["id"]].connections.append(neighbour)
     camp_grid = camp._build_camp_grid(CID, camp_loc["id"])
     camp_grid.spawns = {"party": [(8, 9), (7, 9)], "npcs": [(9, 7)]}
     c.locations[camp_loc["id"]].scene_grid = camp_grid
+    # the tavern carries its own world-true grid + a back-wall door_cell returning to the crypt.
+    tavern_grid = build_tavern_grid(tavern_loc["id"])
+    c.locations[tavern_loc["id"]].scene_grid = tavern_grid
     server.save_campaign(c)
     server.start_session(CID, title="Walkable Slice Demo")
 
@@ -120,7 +202,8 @@ def main() -> None:
 
     print(json.dumps({
         "campaign_id": CID, "crypt_id": crypt_loc["id"], "camp_id": camp_loc["id"],
-        "door_cell": DOOR, "hero_id": hero_id, "npc_id": npc_id, "goblin_id": goblin_id,
+        "tavern_id": tavern_loc["id"], "door_cell": DOOR, "tavern_door_cell": TAVERN_DOOR,
+        "hero_id": hero_id, "npc_id": npc_id, "goblin_id": goblin_id,
         "crypt_connections": list(server._require(CID).locations[crypt_loc["id"]].connections),
     }))
 

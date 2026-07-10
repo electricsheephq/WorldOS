@@ -11,6 +11,10 @@
       "effects": [
         { "type": "fire_medium", "cell": [5, 8], "scale": 1.5, "y": 0.0 }
       ]
+    },
+    "tavern": {
+      "plate": "plates/tavern_truegrey_v1.png",
+      "_effects_comment": "NEW-ROOM-TAVERN (epic #1508): a future animated hearth fire seats over the painted hearth. The hearth footprint is [[5,1],[6,1]] (qa/room_manifests/tavern_truegrey.cells.json props[hearth]) — the fire anchor. Effects deferred (the plate ships flat; the hearth glow is painted). Add a fire_medium here later keyed to a hearth cell, mirroring the camp entry."
     }
   }
 }

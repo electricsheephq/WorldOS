@@ -170,8 +170,9 @@
       "key_light": "hearth fire and hanging iron lanterns",
       "shadow_casters": "the timber posts, the bar counter, and the tables",
       "room_detail_tokens": "worn wooden plank floor, heavy timber roof beams, ale barrels and tankards, a stone hearth with glowing embers, candlelit tables, hanging dried herbs",
-      "base_plate": null,
-      "status": "TODO — needs a camera-pinned greybox/base plate (Unity render or txt2img at contract aspect)",
+      "base_plate": "tavern_truegrey_greybox.png",
+      "canonical_plate": "tavern_truegrey_v1.png",
+      "status": "ADOPTED 2026-07-11 (NEW-ROOM-TAVERN, epic #1508 replication-breadth): the FIRST room taken through the full true-greybox pipeline from NOTHING — no prior plate, no prior seed — proving the method generalises beyond regenerations. Pipeline: world-true 12x10 geometry authored inline (tools/author_room_geometry.py tavern) -> greybox + depth/normal sidecars at cutaway wall_height 5 (coherence-green 6/6 vs its own DERIVED manifest qa/room_manifests/tavern_truegrey.cells.json) -> flux depth-ControlNet base (edge-recall 0.980 >= the 0.95 masonry gate; grid<->paint coherence 5/6 props @0.03c, only the near-left-corner barrels drift 1.05c — the documented low-corner-prop localisation floor) -> gemini-noref layered style pass, best-of-3 seeds (seed123 adopted; seed7 invented a spurious well — a sparse-new-room reinterpretation finding). Adopted through the AUTOMATED tools/library/promote.py visual-class gate, no manual bypass: library/rooms/room_tavern_truegrey_seed123_20260711__bb792bd6.json (tier=stable, passed=true). Control-anchored 5-scorer blind panel (qa/evidence/new-tavern/tavern_visual_gate_panel.json): candidate median 7.0 vs registered PoE2 ruins-brazier control median 9.0 (delta -2.0, in-band/valid -> clears the -2.5 adopt floor = tier stable, == the camp anchor that passed human taste-gates). Collision source of truth = the derived manifest. The painterly final is soft-edge (edge-recall 0.747, #1491); its registration is proven on the BASE + the greybox-edge overlay. extensions/renderers/unity/plates_manifest.json updated to point at the new plate — the Unity box picks it up at its NEXT rebuild; the box itself was not touched by this PR.",
       "layered": {
         "pass2_slots": {
           "room_setting_noun": "tavern",
