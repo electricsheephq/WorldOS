@@ -123,6 +123,58 @@ def author_crypt() -> dict:
     return geo
 
 
+def author_crypt_rich() -> dict:
+    """14x11 enclosed stone crypt — the RICHNESS-PRINCIPLE denser sibling of author_crypt (CRYPT-RICH,
+    epic #1508 / PR #1528 lesson). The sparse 3-prop true-greybox capped an honest style-pass at ~7.1 vs
+    the 8.0 incumbent (`crypt_armb_iter3`) because "paint richness follows GEOMETRY richness": the honest
+    composition-faithful plate had only two plain pillar stubs + one coffin to carve, while the incumbent's
+    8.0 buys its edge from ORNAMENTATION the greybox lacked (carved full-height knotwork columns, a reclining
+    effigy tomb, wall reliefs/niches, a skull-and-bone pile, lit wall torch brackets, a spilled funerary urn,
+    rubble/broken slabs). This room AUTHORS those ornament classes as real prop VOLUMES so the depth-ControlNet
+    base and the Gemini style pass have surfaces to carve — more volumes = richer paint AND richer collision,
+    both derived from the same geometry.
+
+    Canonical layout contract KEPT EXACTLY (drop-in for the deployed incumbent's engine seed
+    `qa/seed_gfx_combat.py`): pillars PILLAR_L_CELLS (3,3)/(3,4) + PILLAR_R_CELLS (8,9)/(9,9), the full
+    12-cell coffin SARCOPHAGUS_CELLS (cols3-7 x rows6-8), solid perimeter, and door zones (6,0) (top) +
+    (13,4) (the tavern-seam door, PR #1535) marked + KEPT CLEAR of props. Every ADDED prop hugs a wall band
+    or corner (never the central circulation floor or a door approach), so the walkable topology — the ring
+    around the tomb, and reachability of both doors — is preserved (flood-fill-verified in the CRYPT-RICH
+    evidence). Runs are kept SHORT (1-2 cells) so each prop's derived occlusion hull stays tight
+    (derive_room_manifest.py, CAMP-TUNE defect #5).
+
+    Camera placement (30/45 dimetric; near walls = col0 + max-row, far walls = max-col + row0, per
+    author_tavern): TALL ornaments (braziers 2.2, altars 2.0, the engaged column 7.5) sit on the BACK/FAR
+    bands (row1, col12) where they won't occlude the interior; LOW clutter (rubble/skull/slabs/urn ~1.4)
+    tucks into the near/left corners. Prop KINDS pick the right proxy silhouette+height from
+    greybox_render_headless._KIND_SPECS; the ornament IDENTITY (knotwork/effigy/skulls/torch-flame/cobwebs)
+    is carried by the style-pass prompt, not the greybox."""
+    sc = _load_seed("_seed_crypt", "seed_gfx_combat.py")
+    props = [
+        # --- canonical layout, kept EXACTLY (matches the deployed incumbent seed) ---
+        ("pillar_l", "stone_pillar", sc.PILLAR_L_CELLS),          # -> carved knotwork full-height column
+        ("pillar_r", "stone_pillar", sc.PILLAR_R_CELLS),          # -> carved knotwork full-height column
+        ("sarcophagus", "sarcophagus", sc.SARCOPHAGUS_CELLS),     # -> raised tomb w/ reclining effigy lid
+        # --- ADDED ornamentation volumes (richness principle). TALL, on the BACK/FAR wall bands ---
+        ("relief_back_l", "altar", [[2, 1]]),                     # carved wall relief panel, back-left
+        ("torch_door_l", "brazier", [[5, 1]]),                    # lit torch bracket, left of the top door
+        ("torch_door_r", "brazier", [[7, 1]]),                    # lit torch bracket, right of the top door
+        ("niche_back_r", "altar", [[10, 1], [11, 1]]),            # recessed wall niche / 2nd tomb slab
+        ("pilaster_arch", "stone_pillar", [[12, 3]]),             # engaged full-height column beside the door
+        ("torch_l", "brazier", [[1, 4]]),                         # lit torch bracket, left (near) wall
+        ("torch_r", "brazier", [[12, 6]]),                        # lit torch bracket, right (far) wall
+        # --- LOW floor clutter, tucked into near/left corners (won't occlude, won't block circulation) ---
+        ("rubble_bl", "rubble", [[1, 1], [1, 2]]),                # rubble pile, back-left corner
+        ("broken_slabs", "rubble", [[1, 6], [1, 7]]),             # heaved/broken floor slabs, left wall
+        ("skull_pile", "rubble", [[2, 9], [3, 9]]),               # skull-and-bone cluster, front-left
+        ("urn_spill", "barrel", [[11, 9]]),                       # tipped funerary urn spilling coins
+    ]
+    geo = _geometry(sc.GRID_W, sc.GRID_H, "ancient stone", props, perimeter=True,
+                    door_cells=[[6, 0], [13, 4]])
+    geo["location"] = "Ancient Stone Crypt (firelit)"
+    return geo
+
+
 def author_camp() -> dict:
     """16x12 open-air night campfire clearing: NO perimeter (outdoor). The camp's error is the opposite
     of the crypt's — the SCENE is painted ~25% too small while the seed prop footprints are already
@@ -196,7 +248,8 @@ def author_tavern() -> dict:
     return geo
 
 
-_ROOMS = {"crypt": author_crypt, "camp": author_camp, "tavern": author_tavern}
+_ROOMS = {"crypt": author_crypt, "crypt_rich": author_crypt_rich,
+          "camp": author_camp, "tavern": author_tavern}
 
 
 def main(argv=None) -> int:
