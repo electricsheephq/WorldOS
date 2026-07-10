@@ -155,7 +155,13 @@ def build_manifest(*, room: str, recipe_key: str, source_seed: str, cols: int, r
 def _manifests() -> dict:
     return {
         "camp_clearing_night_v2": build_manifest(
-            room="camp_clearing_night_v2", recipe_key="camp_clearing_night",
+            # PANEL-ADOPT (2026-07-11): recipe_key "camp_clearing_night" moved to
+            # qa/room_manifests/camp_truegrey.cells.json — the true-greybox plate is now the
+            # room's canonical_plate (correct-scale geometry), so its manifest must own the live
+            # recipe_key (mirrors the non-colliding-recipe_key discipline of commit 4e9097e1, in
+            # reverse now that the candidate is adopted). This v2 manifest is kept for HISTORY —
+            # parked on its own non-colliding key, never bound to a canonical room again.
+            room="camp_clearing_night_v2", recipe_key="camp_clearing_night_v2_legacy",
             source_seed="qa/seed_gfx_camp.py", cols=camp.GRID_W, rows=camp.GRID_H,
             props=_camp_props(),
             source_plate="evidence/plate-audit/camp_clearing_night_v2.jpg"),
