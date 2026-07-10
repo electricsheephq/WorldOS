@@ -43,6 +43,15 @@ class MoveIntentVocabularyTests(unittest.TestCase):
         self.assertIsNone(move)
         self.assertIn("x", reason.lower())
 
+    def test_start_combat_intent_accepted_without_target(self):
+        """WALKABLE-SLICE-V1 item 4: start_combat carries no client-named target — the resolver
+        selects the combatants from the snapshot; sanitize only needs the whitelisted kind."""
+        move, reason = server.sanitize_move({"kind": "start_combat"})
+        self.assertEqual(reason, "")
+        self.assertIsNotNone(move)
+        self.assertEqual(move["kind"], "start_combat")
+        self.assertEqual(move["role"], "player")
+
     def test_travel_intent_accepted_with_target(self):
         move, reason = server.sanitize_move({"kind": "travel", "target": "loc-lower-city"})
         self.assertEqual(reason, "")

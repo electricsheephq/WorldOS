@@ -104,6 +104,17 @@ public class CombatSurfaceClient : MonoBehaviour
     bool _restMode = false;
     string _restMoverId = "";
 
+    // WALKABLE-SLICE-V1 (item 1): the surface's authored DOORWAY cells (viewer/server.py _combat_doors,
+    // `doors:[{cell:[c,r], to, toName, multi}]`) — the M-E room-transition affordance. Parsed alongside
+    // impassable/lastPath/occluders in ParseSurfaceExtras. A rest-mode click on a door cell WALKS the lead
+    // PC onto it then POSTs `cross_door` (item 3). Keyed by CellKey for an O(1) HandleCell lookup; the
+    // dest-room NAME rides the value for an onboarding toast. Empty on a combat surface / a doorless room.
+    readonly System.Collections.Generic.Dictionary<int, string> _doorTo = new System.Collections.Generic.Dictionary<int, string>();
+    // WALKABLE-SLICE-V1 (item 2): rest-mode NPC talk-targets by cell (rest_role:"npc" stage tokens). A
+    // click on an NPC's cell POSTs `parley_approach` (the engine walks the lead PC adjacent + opens the
+    // parley) instead of a walk. cellKey -> npc id. Rebuilt each ParseSurfaceExtras from the stage block.
+    readonly System.Collections.Generic.Dictionary<int, string> _npcAtCell = new System.Collections.Generic.Dictionary<int, string>();
+
     // #anim-combat: the actor's ANIM_REF (moveset) fbx (registry anim_ref), so a walk/attack/hit clip that
     // lives in a SEPARATE moveset fbx rather than the model fbx is still found. Mirrors _fbxOf; both feed
     // FindOwnClip. (For the wave-2 cast the walk clip is embedded in the MODEL fbx — e.g. goblin.fbx carries
@@ -241,6 +252,21 @@ public class CombatSurfaceClient : MonoBehaviour
     string _occSigParsed = "";           // signature of the last-PARSED occluder set + location
     string _occSigBuilt = "\0";      // signature of the last-BUILT proxies (sentinel => first build runs)
 
+    // WALKABLE-SLICE-V1 (item 6) RUNTIME PLATE REGISTRY (W5e; docs/roadmap/W5E-PLATE-REGISTRY-DECISION.md):
+    // ONE persistent scene; the backdrop plate is resolved AT RUNTIME by the engine location id via a
+    // StreamingAssets manifest (plates_manifest.json: {plates:{<slug>:{plate, planeSize?, cameraPin?}}}).
+    // On a surface location change (a cross_door relocates the party -> the re-fetched surface carries the
+    // new location.id), a brief fade + Texture2D.LoadImage swaps the plate on the "PaintedBackdrop" material
+    // (the object paint_combat_v1.cs bakes) and re-sizes the camera-child quad to the new plate aspect.
+    // Walkable/impassable/occluder truth stays ENGINE-side (already on the surface); the manifest is pure
+    // presentation. ABSENT manifest / unknown location => no swap (byte-identical single-plate behavior).
+    // (#W5e item 6; optional StreamingAssets/plates_manifest.json)
+    class PlateEntry { public string plate; public float[] planeSize; public float ortho = -1f, pitch = float.NaN, yaw = float.NaN; }
+    System.Collections.Generic.Dictionary<string, PlateEntry> _plateManifest;
+    string _locId = "";          // the surface's current location.id (parsed every ParseSurfaceExtras)
+    string _plateLocId = "\0";   // the location the CURRENT backdrop plate was applied for (sentinel => unset)
+    bool _plateSwapping = false; // guards against a re-entrant swap while a fade is mid-flight
+
     [System.Serializable] public class Tok { public string id; public string name; public string team; public int x; public int y; public bool isCurrent; public int hp; public int hpMax; }
     [System.Serializable] public class Grid { public int cols; public int rows; }
     [System.Serializable] public class Surf { public string turnToken; public bool can_act; public Grid grid; public Tok[] tokens; }
@@ -294,6 +320,9 @@ public class CombatSurfaceClient : MonoBehaviour
 
         // #1463: load the OPTIONAL stage manifest (fire flicker + glow anchors). Absent -> byte-identical.
         LoadStageManifest();
+        // WALKABLE-SLICE-V1 (item 6): load the OPTIONAL plate registry (per-location backdrop swap). Absent
+        // -> no swap, the scene's baked plate stands (byte-identical to pre-W5e).
+        LoadPlateManifest();
 
         Debug.Log("[CSC] start: campaign=" + CampaignId + " url=" + ViewerUrl + " overlay=" + _overlayOn + " onboard=" + _onboard);
         StartCoroutine(PollLoop());
@@ -379,6 +408,9 @@ public class CombatSurfaceClient : MonoBehaviour
         // W6.1 (#1460): (re)build the invisible occluder proxies AFTER ApplySurf has applied this surface's
         // grid extents (CellToWorld depends on Cols/Rows). No-ops unless the occluder set/location changed.
         RebuildOccluders();
+        // WALKABLE-SLICE-V1 (item 6): swap the backdrop plate when the surface's location changed and the
+        // manifest has an entry for it (a cross_door into a new room). No-op otherwise (byte-identical).
+        MaybeSwapPlate();
     }
 
     // Populate _impassable + _lastPath from a raw /combat-surface OR /move response JSON (the latter nests
@@ -422,18 +454,44 @@ public class CombatSurfaceClient : MonoBehaviour
             {
                 _restMode = (stage.ContainsKey("mode") ? stage["mode"] as string : "") == "rest";
                 _restMoverId = "";
+                _npcAtCell.Clear();                                            // WALKABLE-SLICE-V1 (item 2): rebuilt from this stage
                 if (_restMode && stage.ContainsKey("tokens") && stage["tokens"] is System.Collections.Generic.List<object> stoks)
                 {
                     foreach (var e in stoks)
                     {
                         var tk = e as System.Collections.Generic.Dictionary<string, object>; if (tk == null) continue;
                         string role = tk.ContainsKey("rest_role") ? tk["rest_role"] as string : "";
-                        if (role != "party") continue;                        // party tokens walk; npc tokens are talk-targets
                         string id = tk.ContainsKey("id") ? tk["id"] as string : "";
-                        if (!string.IsNullOrEmpty(id)) { _restMoverId = id; break; } // first party token = deterministic lead PC
+                        // WALKABLE-SLICE-V1 (item 2): map every present NPC (rest_role:"npc") to its cell so a
+                        // click there opens a parley_approach instead of a walk (browser: screen-combat.jsx:373).
+                        if (role == "npc" && !string.IsNullOrEmpty(id) && tk.ContainsKey("x") && tk.ContainsKey("y"))
+                            _npcAtCell[CellKey(System.Convert.ToInt32(tk["x"]), System.Convert.ToInt32(tk["y"]))] = id;
+                        if (role != "party") continue;                        // party tokens walk; npc tokens are talk-targets
+                        if (!string.IsNullOrEmpty(id) && string.IsNullOrEmpty(_restMoverId)) _restMoverId = id; // first party token = deterministic lead PC
                     }
                 }
             }
+            // WALKABLE-SLICE-V1 (item 1): parse the authored doorway cells (server _combat_doors). Guarded on
+            // ContainsKey (mirrors impassable/occluders) so a /move response without `doors` leaves the prior
+            // set intact; a /combat-surface poll always carries the key ([] when the room has no doors).
+            if (root.ContainsKey("doors"))
+            {
+                _doorTo.Clear();
+                var doors = root["doors"] as System.Collections.Generic.List<object>;
+                if (doors != null) foreach (var de in doors)
+                {
+                    var dd = de as System.Collections.Generic.Dictionary<string, object>; if (dd == null) continue;
+                    var cell = dd.ContainsKey("cell") ? dd["cell"] as System.Collections.Generic.List<object> : null;
+                    if (cell == null || cell.Count < 2) continue;
+                    string toName = dd.ContainsKey("toName") ? dd["toName"] as string : "";
+                    _doorTo[CellKey(System.Convert.ToInt32(cell[0]), System.Convert.ToInt32(cell[1]))] = toName ?? "";
+                }
+            }
+            // WALKABLE-SLICE-V1 (item 6): the surface's current location.id, unconditionally (drives the
+            // runtime plate swap in MaybeSwapPlate). Guarded on presence so a /move response without the
+            // block (e.g. walk_to_cell) leaves the last-known location intact.
+            if (root.ContainsKey("location") && root["location"] is System.Collections.Generic.Dictionary<string, object> loc && loc.ContainsKey("id"))
+                _locId = (loc["id"] as string) ?? _locId;
         }
         catch (System.Exception e) { Debug.LogWarning("[CSC] surface-extras parse: " + e.Message); }
     }
@@ -1352,6 +1410,11 @@ public class CombatSurfaceClient : MonoBehaviour
         // #Phase3: overlay toggle (G) + hover run independent of the click gate below.
         if (Input.GetKeyDown(KeyCode.G)) ToggleOverlay();
         if (_overlayOn) UpdateOverlayHover();
+        // WALKABLE-SLICE-V1 (item 5): the parley panel captures input while open — Esc closes it (a world
+        // click is gated out below so the party never walks underneath the panel).
+        if (_parleyOpen) { if (Input.GetKeyDown(KeyCode.Escape)) CloseParley(); }
+        // WALKABLE-SLICE-V1 (item 4): F starts a fight in place from rest mode (onboarding affordance).
+        else if (_restMode && !_busy && Input.GetKeyDown(KeyCode.F)) StartCoroutine(PostStartCombat());
         // #anim-combat: world-space HP bars follow + billboard their actor; the active-turn combatant's ring
         // pulses. Both run every frame regardless of the click/poll gate.
         UpdateHpBars();
@@ -1371,7 +1434,7 @@ public class CombatSurfaceClient : MonoBehaviour
                 return;
             }
         }
-        if (Input.GetMouseButtonDown(0)) HandleClick();
+        if (Input.GetMouseButtonDown(0) && !_parleyOpen) HandleClick();   // WALKABLE-SLICE-V1: parley panel eats world clicks
     }
 
     // #Phase4: a short, fading amber note near the top of the screen. IMGUI (no Canvas needed); alpha fades
@@ -1379,6 +1442,7 @@ public class CombatSurfaceClient : MonoBehaviour
     void OnGUI()
     {
         DrawOnboardHint();   // #1463 (task 1): whose-turn + affordance hint; fades after the first action
+        DrawParleyPanel();   // WALKABLE-SLICE-V1 (item 5): the in-player parley panel when talking to an NPC
         if (string.IsNullOrEmpty(_advMsg)) return;
         float a = 1f - Mathf.Clamp01(_advT / AdvisoryHold);
         if (a <= 0f) { _advMsg = ""; return; }
@@ -1490,6 +1554,14 @@ public class CombatSurfaceClient : MonoBehaviour
         // false), so the combat attack/move path below is byte-identical.
         if (_restMode)
         {
+            // WALKABLE-SLICE-V1 (item 2): a click on a present NPC's cell TALKS (parley_approach) — the engine
+            // walks the lead PC adjacent and opens the parley; the in-player panel (item 5) renders it. Checked
+            // BEFORE the occupied gate because an NPC cell is `occupied` (it holds the NPC token).
+            if (_npcAtCell.TryGetValue(key, out string npcId) && !string.IsNullOrEmpty(npcId)) { StartCoroutine(PostParley(npcId)); return; }
+            // WALKABLE-SLICE-V1 (item 3): a click on an authored doorway cell CROSSES it — walk the lead PC onto
+            // the doorway then POST cross_door (relocates the party to the linked room; item 6 swaps the plate on
+            // the re-fetched surface). Checked BEFORE the walkability gate so a door on the room edge still crosses.
+            if (_doorTo.ContainsKey(key)) { StartCoroutine(PostCrossDoor(c, r)); return; }
             if (string.IsNullOrEmpty(_restMoverId) || _impassable.Contains(key) || _occupied.Contains(key)) { StartCoroutine(FlashReject(c, r)); return; }
             StartCoroutine(PostWalk(c, r));
             return;
@@ -1678,6 +1750,224 @@ public class CombatSurfaceClient : MonoBehaviour
         }
         _busy = false;   // always released (the watchdog guarantees the loop above terminates)
         yield return Fetch();   // re-render off the engine's fresh surface (stage_cell now updated)
+    }
+
+    // WALKABLE-SLICE-V1: a minimal POST /move for the rest-mode intents (walk-to-door, cross_door,
+    // parley_approach, start_combat) whose responses are NOT the combat surface (so they don't re-render
+    // inline — the caller re-fetches). Mirrors PostWalk's elapsed-time watchdog so a hung POST can never
+    // wedge the poll loop. `onReject(reason)` (optional) fires with the engine's reason on an {ok:false}.
+    IEnumerator PostSimple(string body, string tag, System.Action<string> onReject = null)
+    {
+        using (var req = new UnityWebRequest(ViewerUrl + "/move", "POST"))
+        {
+            req.uploadHandler = new UploadHandlerRaw(System.Text.Encoding.UTF8.GetBytes(body));
+            req.downloadHandler = new DownloadHandlerBuffer();
+            req.SetRequestHeader("Content-Type", "application/json");
+            req.timeout = 8;
+            var op = req.SendWebRequest();
+            float t0 = Time.realtimeSinceStartup;
+            bool timedOut = false;
+            while (!op.isDone)
+            {
+                if (Time.realtimeSinceStartup - t0 > FetchTimeout) { req.Abort(); timedOut = true; break; }
+                yield return null;
+            }
+            if (timedOut) Debug.LogWarning("[CSC] /" + tag + " TIMEOUT (aborted) — PollLoop will retry");
+            else if (!Ok(req)) Debug.LogWarning("[CSC] /" + tag + " failed: " + req.error + " body=" + req.downloadHandler.text);
+            else
+            {
+                MoveResp resp = null;
+                try { resp = JsonUtility.FromJson<MoveResp>(req.downloadHandler.text); }
+                catch (System.Exception e) { Debug.LogWarning("[CSC] " + tag + " parse: " + e.Message); }
+                if (resp != null && !resp.ok && !string.IsNullOrEmpty(resp.reason)) { if (onReject != null) onReject(resp.reason); }
+            }
+        }
+    }
+
+    // WALKABLE-SLICE-V1 (item 3): cross an authored doorway. Walk the lead PC onto the doorway first
+    // (engine paths there; best-effort), then POST cross_door which relocates the party to the linked
+    // room (engine-gated: rejects cleanly if combat is unresolved / it isn't a real doorway). Mirrors the
+    // browser onRestDoorWalk:360 -> crossDoor:167. The re-fetch renders the NEW room and item 6 swaps the plate.
+    IEnumerator PostCrossDoor(int x, int y)
+    {
+        _busy = true;
+        if (!string.IsNullOrEmpty(_restMoverId))
+            yield return PostSimple("{\"kind\":\"walk_to_cell\",\"character_id\":\"" + _restMoverId + "\",\"x\":" + x + ",\"y\":" + y + ",\"campaign\":\"" + CampaignId + "\"}", "walk-to-door");
+        string reason = null;
+        yield return PostSimple("{\"kind\":\"cross_door\",\"x\":" + x + ",\"y\":" + y + ",\"campaign\":\"" + CampaignId + "\"}", "cross_door", r => reason = r);
+        if (!string.IsNullOrEmpty(reason)) ShowAdvisory(reason);
+        else MarkActed();
+        _busy = false;
+        yield return Fetch();   // re-render the new room's surface (plate swap resolves here, item 6)
+    }
+
+    // WALKABLE-SLICE-V1 (item 2): talk to an NPC. POST parley_approach (the engine walks the lead PC
+    // adjacent + opens the parley in-process), re-fetch so the walked tokens glide to the confirmed cells,
+    // then open the in-player parley panel bound to this NPC (item 5). Browser: screen-combat.jsx:373.
+    IEnumerator PostParley(string npcId)
+    {
+        _busy = true;
+        string reason = null;
+        yield return PostSimple("{\"kind\":\"parley_approach\",\"target_id\":\"" + npcId + "\",\"character_id\":\"" + _restMoverId + "\",\"campaign\":\"" + CampaignId + "\"}", "parley_approach", r => reason = r);
+        _busy = false;
+        if (!string.IsNullOrEmpty(reason)) { ShowAdvisory(reason); yield break; }
+        MarkActed();
+        yield return Fetch();          // glide the walked tokens to the engine-confirmed cells
+        OpenParley(npcId);             // item 5: bind + fetch /parley-surface, show the panel
+    }
+
+    // WALKABLE-SLICE-V1 (item 4): start a fight in place from rest mode. POST a start_combat intent (the
+    // additive viewer resolver picks the combatants — party + present NPCs — and seeds initiative where
+    // they rested; the engine stays SOLE WRITER). The next surface arrives combat-mode, which the player
+    // already consumes. Triggered by the F key in rest mode (see Update). Engine untouched.
+    IEnumerator PostStartCombat()
+    {
+        _busy = true;
+        string reason = null;
+        yield return PostSimple("{\"kind\":\"start_combat\",\"campaign\":\"" + CampaignId + "\"}", "start_combat", r => reason = r);
+        _busy = false;
+        if (!string.IsNullOrEmpty(reason)) ShowAdvisory(reason);
+        else MarkActed();
+        yield return Fetch();          // re-render as the combat surface
+    }
+
+    // ---- WALKABLE-SLICE-V1 (item 5) in-player parley panel ------------------------------------------
+    // A minimal parchment HUD panel that opens on talking to an NPC (item 2). Consumes
+    // GET /parley-surface?npc=<id> for the speaker header, and offers a reply field posted via the same
+    // /move `say` lane the browser dialogue uses. Pure consumer; scrolling text + one input, parchment-
+    // styled to match the onboarding HUD. Closed with Esc or the Leave button.
+    string _parleyNpc = "";
+    bool _parleyOpen = false;
+    string _parleyHeader = "";
+    string _parleyBody = "";
+    string _parleyReply = "";
+    Vector2 _parleyScroll;
+    GUIStyle _parleyTitleStyle, _parleyBodyStyle;
+    Texture2D _parchTex;
+
+    void OpenParley(string npcId)
+    {
+        _parleyNpc = npcId;
+        _parleyOpen = true;
+        _parleyReply = "";
+        _parleyScroll = Vector2.zero;
+        // Speaker name from the surface's name cache (populated in ApplySurf); the fetch enriches the header.
+        string nm; _parleyHeader = (_nameOf.TryGetValue(npcId, out nm) && !string.IsNullOrEmpty(nm)) ? nm : npcId;
+        _parleyBody = "…";
+        StartCoroutine(LoadParleySurface(npcId));
+    }
+
+    void CloseParley() { _parleyOpen = false; _parleyNpc = ""; }
+
+    // Fetch GET /parley-surface?npc=<id> and read a display header + any prompt defensively (the parley
+    // surface is a skill/DC menu, not a chat log — so this reads a name/header if present and otherwise
+    // keeps the cached name). A failed fetch leaves the cached name + a generic invitation; never fatal.
+    IEnumerator LoadParleySurface(string npcId)
+    {
+        string url = ViewerUrl + "/parley-surface?campaign=" + CampaignId + "&npc=" + UnityWebRequest.EscapeURL(npcId);
+        using (var req = UnityWebRequest.Get(url))
+        {
+            req.timeout = 8;
+            yield return req.SendWebRequest();
+            if (!Ok(req)) { _parleyBody = "You approach " + _parleyHeader + "."; yield break; }
+            try
+            {
+                var root = Json.Parse(req.downloadHandler.text) as System.Collections.Generic.Dictionary<string, object>;
+                if (root != null)
+                {
+                    // header/name: /parley-surface carries `npc` = {id, name, attitude, disposition, ...}
+                    // (verified against build_parley_surface). `actor` is the PC NAME string (not a dict) and
+                    // `free_form` is a BOOL flag (not a prompt), so neither carries a header/opening line —
+                    // read npc.name, else keep the cached stage-token name.
+                    var npc = root.ContainsKey("npc") ? root["npc"] as System.Collections.Generic.Dictionary<string, object> : null;
+                    string hn = npc != null && npc.ContainsKey("name") ? npc["name"] as string : null;
+                    if (!string.IsNullOrEmpty(hn)) _parleyHeader = hn;
+                    // disposition tints the opening line a touch; the free-form conversation happens via the
+                    // reply field (POST /move say). No streamed opening line on the surface -> a generic invite.
+                    string disp = npc != null && npc.ContainsKey("disposition") ? npc["disposition"] as string : "";
+                    _parleyBody = "You approach " + _parleyHeader
+                        + (string.IsNullOrEmpty(disp) ? "" : " (" + disp + ")") + ". What do you say?";
+                }
+            }
+            catch (System.Exception e) { Debug.LogWarning("[CSC] parley-surface parse: " + e.Message); _parleyBody = "You approach " + _parleyHeader + "."; }
+        }
+    }
+
+    // Speak the typed reply via the existing /move `say` lane (the engine advances the conversation). The
+    // panel stays open; the DM's reply is not streamed here (out of scope for the slice) — a "…" sent state.
+    IEnumerator SpeakParley(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) yield break;
+        _busy = true;
+        yield return PostSimple("{\"kind\":\"say\",\"text\":\"" + JsonEsc(text) + "\",\"campaign\":\"" + CampaignId + "\"}", "say");
+        _busy = false;
+        _parleyReply = "";
+        _parleyBody = "You said: “" + text + "”";
+    }
+
+    // Minimal JSON string escaping for a typed reply (quotes/backslashes/newlines) — the reply is the only
+    // user-authored string this client POSTs; every other body is machine-built with safe values.
+    static string JsonEsc(string s)
+    {
+        if (string.IsNullOrEmpty(s)) return "";
+        var b = new System.Text.StringBuilder(s.Length + 8);
+        foreach (char ch in s)
+        {
+            switch (ch)
+            {
+                case '"': b.Append("\\\""); break;
+                case '\\': b.Append("\\\\"); break;
+                case '\n': b.Append("\\n"); break;
+                case '\r': b.Append("\\r"); break;
+                case '\t': b.Append("\\t"); break;
+                default: if (ch < 0x20) b.Append(' '); else b.Append(ch); break;
+            }
+        }
+        return b.ToString();
+    }
+
+    // A soft parchment fill for the panel background, built once (opaque warm paper).
+    Texture2D ParchTex()
+    {
+        if (_parchTex != null) return _parchTex;
+        _parchTex = new Texture2D(4, 4, TextureFormat.RGBA32, false);
+        var px = new Color[16]; for (int i = 0; i < 16; i++) px[i] = new Color(0.16f, 0.13f, 0.09f, 0.94f);
+        _parchTex.SetPixels(px); _parchTex.Apply();
+        return _parchTex;
+    }
+
+    // Draw the parley panel (called from OnGUI when open). Parchment card, scrolling body text, a reply
+    // input field (Enter speaks), and a Leave button. IMGUI so no Canvas is needed (matches the HUD idiom).
+    void DrawParleyPanel()
+    {
+        if (!_parleyOpen) return;
+        if (_parleyTitleStyle == null)
+        {
+            _parleyTitleStyle = new GUIStyle(GUI.skin.label) { fontSize = 22, fontStyle = FontStyle.Bold, wordWrap = true, normal = { textColor = new Color(1f, 0.90f, 0.62f) } };
+            _parleyBodyStyle = new GUIStyle(GUI.skin.label) { fontSize = 16, wordWrap = true, normal = { textColor = new Color(0.95f, 0.94f, 0.88f) } };
+        }
+        float w = Mathf.Min(560f, Screen.width - 40f), h = Mathf.Min(320f, Screen.height - 60f);
+        var panel = new Rect(Screen.width - w - 20f, Screen.height - h - 20f, w, h);
+        GUI.DrawTexture(panel, ParchTex());
+        GUILayout.BeginArea(new Rect(panel.x + 16f, panel.y + 14f, panel.width - 32f, panel.height - 28f));
+        GUILayout.Label(_parleyHeader, _parleyTitleStyle);
+        _parleyScroll = GUILayout.BeginScrollView(_parleyScroll, GUILayout.Height(h - 130f));
+        GUILayout.Label(_parleyBody, _parleyBodyStyle);
+        GUILayout.EndScrollView();
+        GUILayout.Space(6f);
+        // Enter in the reply field speaks; the field is named so we can detect the keystroke.
+        var e = Event.current;
+        GUI.SetNextControlName("ParleyReply");
+        _parleyReply = GUILayout.TextField(_parleyReply, GUILayout.Height(24f));
+        if (e.type == EventType.KeyDown && (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter)
+            && GUI.GetNameOfFocusedControl() == "ParleyReply" && !string.IsNullOrWhiteSpace(_parleyReply))
+        { StartCoroutine(SpeakParley(_parleyReply)); e.Use(); }
+        GUILayout.BeginHorizontal();
+        if (GUILayout.Button("Speak", GUILayout.Width(90f)) && !string.IsNullOrWhiteSpace(_parleyReply)) StartCoroutine(SpeakParley(_parleyReply));
+        GUILayout.FlexibleSpace();
+        if (GUILayout.Button("Leave", GUILayout.Width(90f))) CloseParley();
+        GUILayout.EndHorizontal();
+        GUILayout.EndArea();
     }
 
     IEnumerator Post(string body)
@@ -2181,5 +2471,132 @@ public class CombatSurfaceClient : MonoBehaviour
                 float n = Mathf.PerlinNoise(seed, tt) - 0.5f;
                 var c = _glowMats[i].color; c.a = Mathf.Clamp01(0.5f * (1f + _flickAmp * 2f * n)); _glowMats[i].color = c;
             }
+    }
+
+    // ---- WALKABLE-SLICE-V1 (item 6) runtime plate registry --------------------------------------------
+
+    // Parse the OPTIONAL StreamingAssets/plates_manifest.json ({version, plates:{<slug>:{plate, planeSize?,
+    // cameraPin?}}}). Absent/corrupt -> _plateManifest null -> no swap ever runs (byte-identical to the
+    // baked-single-plate scene). Uses the same runtime Json parser registry.json/stage.json use.
+    void LoadPlateManifest()
+    {
+        try
+        {
+            string p = System.IO.Path.Combine(Application.streamingAssetsPath, "plates_manifest.json");
+            if (!System.IO.File.Exists(p)) { Debug.Log("[CSC] no plates_manifest.json (baked single plate)"); return; }
+            var root = Json.Parse(System.IO.File.ReadAllText(p)) as System.Collections.Generic.Dictionary<string, object>;
+            var plates = (root != null && root.ContainsKey("plates")) ? root["plates"] as System.Collections.Generic.Dictionary<string, object> : null;
+            if (plates == null) { Debug.LogWarning("[CSC] plates_manifest.json has no `plates` map"); return; }
+            _plateManifest = new System.Collections.Generic.Dictionary<string, PlateEntry>();
+            foreach (var kv in plates)
+            {
+                var row = kv.Value as System.Collections.Generic.Dictionary<string, object>; if (row == null) continue;
+                var pe = new PlateEntry();
+                pe.plate = row.ContainsKey("plate") ? row["plate"] as string : null;
+                if (string.IsNullOrEmpty(pe.plate)) continue;
+                if (row.ContainsKey("planeSize") && row["planeSize"] is System.Collections.Generic.List<object> ps && ps.Count >= 2)
+                    pe.planeSize = new[] { System.Convert.ToSingle(ps[0]), System.Convert.ToSingle(ps[1]) };
+                if (row.ContainsKey("cameraPin") && row["cameraPin"] is System.Collections.Generic.Dictionary<string, object> cp)
+                {
+                    if (cp.ContainsKey("ortho")) pe.ortho = System.Convert.ToSingle(cp["ortho"]);
+                    if (cp.ContainsKey("pitch")) pe.pitch = System.Convert.ToSingle(cp["pitch"]);
+                    if (cp.ContainsKey("yaw")) pe.yaw = System.Convert.ToSingle(cp["yaw"]);
+                }
+                _plateManifest[kv.Key] = pe;
+            }
+            Debug.Log("[CSC] plates_manifest.json loaded: " + _plateManifest.Count + " plate(s)");
+        }
+        catch (System.Exception e) { Debug.LogWarning("[CSC] plates_manifest parse: " + e.Message); }
+    }
+
+    // Swap the backdrop plate when the surface's location changed since the last-applied plate AND the
+    // manifest has an entry for it. Called from ApplyJson after ApplySurf. No manifest / same location /
+    // unknown location -> no-op (the scene's current plate stands). Guarded against a re-entrant mid-fade swap.
+    void MaybeSwapPlate()
+    {
+        if (_plateManifest == null || _plateSwapping || string.IsNullOrEmpty(_locId)) return;
+        if (_locId == _plateLocId) return;                       // already showing this room's plate
+        if (!_plateManifest.ContainsKey(_locId)) return;         // no entry -> keep the current plate (safe)
+        // _plateSwapping (set synchronously as SwapPlateCo's first line) is the re-entrancy guard; _plateLocId
+        // is committed only on a SUCCESSFUL apply (below) so a missing plate file retries on the next poll.
+        StartCoroutine(SwapPlateCo(_locId, _plateManifest[_locId]));
+    }
+
+    // Brief fade (black cover in) -> LoadImage swap on the PaintedBackdrop material + re-size the camera-child
+    // quad to the new plate aspect + optional camera pin -> fade out. A missing plate file / backdrop object
+    // leaves the current plate untouched (a logged warning, never a broken frame).
+    IEnumerator SwapPlateCo(string slug, PlateEntry entry)
+    {
+        _plateSwapping = true;
+        var cam = Camera.main;
+        GameObject cover = null; Material coverMat = null;
+        if (cam != null)
+        {
+            // full-frame black cover parented to the camera, in FRONT of the backdrop (backdrop is at local
+            // z=160; the cover sits nearer at z=120 and is oversized to blanket the ortho frustum).
+            cover = GameObject.CreatePrimitive(PrimitiveType.Quad); cover.name = "PlateFade"; Object.DestroyImmediate(cover.GetComponent<Collider>());
+            cover.transform.SetParent(cam.transform, false);
+            cover.transform.localPosition = new Vector3(0f, 0f, 120f);
+            float ch = (cam.orthographic ? cam.orthographicSize * 2f : 30f) * 1.4f;
+            cover.transform.localScale = new Vector3(ch * 2f, ch, 1f);
+            coverMat = new Material(Shader.Find("Sprites/Default")); coverMat.color = new Color(0f, 0f, 0f, 0f); coverMat.renderQueue = 4000;
+            var cr = cover.GetComponent<Renderer>(); cr.sharedMaterial = coverMat; cr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            for (float t = 0f; t < 0.18f; t += Time.deltaTime) { coverMat.color = new Color(0f, 0f, 0f, Mathf.Clamp01(t / 0.18f)); yield return null; }
+            coverMat.color = new Color(0f, 0f, 0f, 1f);
+        }
+
+        if (ApplyPlate(entry)) _plateLocId = slug;   // commit only on success -> a missing file retries next poll
+
+        if (cover != null && coverMat != null)
+        {
+            for (float t = 0f; t < 0.18f; t += Time.deltaTime) { coverMat.color = new Color(0f, 0f, 0f, 1f - Mathf.Clamp01(t / 0.18f)); yield return null; }
+            Object.Destroy(cover);
+        }
+        _plateSwapping = false;
+    }
+
+    // Load the plate PNG (StreamingAssets/<entry.plate>) via Texture2D.LoadImage and assign it to the
+    // "PaintedBackdrop" material (the camera-child quad paint_combat_v1.cs bakes). Re-sizes the quad to the
+    // new plate aspect exactly as the bake does (oh = 2*orthoSize, ow = oh*aspect) unless the manifest pins
+    // an explicit planeSize; applies an optional camera pin (ortho/pitch/yaw), reproducing the bake's rig.
+    bool ApplyPlate(PlateEntry entry)
+    {
+        if (entry == null || string.IsNullOrEmpty(entry.plate)) return false;
+        string path = System.IO.Path.Combine(Application.streamingAssetsPath, entry.plate);
+        if (!System.IO.File.Exists(path)) { Debug.LogWarning("[CSC] plate file missing: " + path + " (keeping current plate)"); return false; }
+        Texture2D tex = null;
+        try
+        {
+            var bytes = System.IO.File.ReadAllBytes(path);
+            tex = new Texture2D(2, 2, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+            if (!tex.LoadImage(bytes)) { Debug.LogWarning("[CSC] plate decode failed: " + path); return false; }
+        }
+        catch (System.Exception e) { Debug.LogWarning("[CSC] plate load: " + e.Message); return false; }
+
+        var bd = GameObject.Find("PaintedBackdrop");
+        if (bd == null) { Debug.LogWarning("[CSC] PaintedBackdrop not found — cannot swap plate"); return false; }
+        var rend = bd.GetComponent<Renderer>(); if (rend == null) return false;
+        rend.material.mainTexture = tex;                 // instance material -> per-scene, never edits a shared asset
+
+        var cam = Camera.main;
+        // optional camera pin FIRST (so orthographicSize is current when we derive the plane height).
+        if (cam != null)
+        {
+            if (entry.ortho > 0f) cam.orthographicSize = entry.ortho;
+            if (!float.IsNaN(entry.pitch) && !float.IsNaN(entry.yaw))
+            {
+                Quaternion rot = Quaternion.Euler(entry.pitch, entry.yaw, 0f);
+                cam.transform.rotation = rot;
+                cam.transform.position = -(rot * Vector3.forward) * 80f;   // mirror paint_combat_v1's rig distance
+            }
+        }
+        // re-size the backdrop quad: explicit planeSize wins, else derive from the plate aspect + ortho (the bake).
+        float oh, ow;
+        if (entry.planeSize != null && entry.planeSize.Length >= 2) { ow = entry.planeSize[0]; oh = entry.planeSize[1]; }
+        else { oh = (cam != null && cam.orthographic) ? cam.orthographicSize * 2f : bd.transform.localScale.y; ow = oh * ((float)tex.width / tex.height); }
+        var ls = bd.transform.localScale;
+        bd.transform.localScale = new Vector3(ow, oh, ls.z == 0f ? 1f : ls.z);
+        Debug.Log("[CSC] plate swapped -> " + entry.plate + " (" + tex.width + "x" + tex.height + ", loc=" + _locId + ")");
+        return true;
     }
 }

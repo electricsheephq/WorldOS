@@ -75,6 +75,24 @@ public static class BuildMacOSPlayer
             string stageSrc = Path.Combine(projectRoot, "stage.json");
             if (File.Exists(stageSrc)) { File.Copy(stageSrc, Path.Combine(saDir, "stage.json"), true); Debug.Log("[Package] stage.json -> StreamingAssets (#1463)"); }
 
+            // 1c) WALKABLE-SLICE-V1 (item 6) OPTIONAL plate registry -> StreamingAssets (verbatim). Present =>
+            //     the built player swaps the backdrop per engine location at runtime (CombatSurfaceClient
+            //     LoadPlateManifest/ApplyPlate); the referenced plates/*.png ride along under plates/. ABSENT
+            //     => not copied, the runtime finds no manifest => the scene's baked single plate stands. Not fatal.
+            string platesManifestSrc = Path.Combine(projectRoot, "plates_manifest.json");
+            if (File.Exists(platesManifestSrc))
+            {
+                File.Copy(platesManifestSrc, Path.Combine(saDir, "plates_manifest.json"), true);
+                string platesSrcDir = Path.Combine(projectRoot, "plates");
+                if (Directory.Exists(platesSrcDir))
+                {
+                    string platesDstDir = Path.Combine(saDir, "plates"); Directory.CreateDirectory(platesDstDir);
+                    foreach (var f in Directory.GetFiles(platesSrcDir, "*.png")) File.Copy(f, Path.Combine(platesDstDir, Path.GetFileName(f)), true);
+                    Debug.Log("[Package] plates_manifest.json + plates/*.png -> StreamingAssets (W5e item 6)");
+                }
+                else Debug.LogWarning("[Package] plates_manifest.json present but no plates/ dir at " + platesSrcDir);
+            }
+
             // 2) collect every registry-referenced asset path (model/albedo/anim) that actually exists.
             var names = new List<string>();
             var root = MiniJson.Parse(File.ReadAllText(regSrc)) as Dictionary<string, object>;
