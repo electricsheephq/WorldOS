@@ -1,7 +1,7 @@
 [
   {
     "id": "tavern-fit2-density-law-s1000",
-    "ts": "2026-07-11T06:31:01+00:00",
+    "ts": "2026-07-11T06:36:44+00:00",
     "config_name": "tavern-fit2-density-law-s1000",
     "room": "tavern_fit2",
     "config_summary": "(defaults)",
@@ -139,7 +139,41 @@
         "model_google-gemini-3-1-flash"
       ]
     },
-    "panel": null,
-    "out_dir": "qa/evidence/tavern-fit2/loop_s1000"
+    "panel": {
+      "medians": {
+        "A": 6.0,
+        "B": 9.0,
+        "C": 9.0
+      },
+      "control_valid": true,
+      "delta_vs_control": -3.0,
+      "verdict": "candidate s1000 (deep-tenebrist) median 6.0 vs incumbent 9.0 (7.0 canon) vs control 9.0; delta -3.0. Same 6.0 as flat-lit s1111 AND as #1557 sparse -> density is NOT the binding gap.",
+      "defects": {
+        "A": {
+          "on_prop": false,
+          "t_pose": false,
+          "floating": false,
+          "duplicate": false,
+          "missing": false
+        },
+        "B": {
+          "on_prop": false,
+          "t_pose": false,
+          "floating": false,
+          "duplicate": false,
+          "missing": false
+        },
+        "C": {
+          "on_prop": false,
+          "t_pose": false,
+          "floating": false,
+          "duplicate": false,
+          "missing": false
+        }
+      },
+      "candidate_defects": []
+    },
+    "out_dir": "qa/evidence/tavern-fit2/loop_s1000",
+    "scores_run_id": "plate-tavern-fit2-density-law-s1000-20260711T063644Z"
   }
 ]
