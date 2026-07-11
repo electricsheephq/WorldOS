@@ -1,0 +1,18 @@
+{
+  "name": "tavern-fit2-density-law-s1000",
+  "room": "tavern_fit2",
+  "generate": {"candidate": "/Users/lume/WorldOS-worktrees/wt-tavern-fit2/qa/evidence/tavern-fit2/gen_style/candidate_s1000.png"},
+  "registration": {"greybox": "/Users/lume/WorldOS-worktrees/wt-tavern-fit2/qa/evidence/tavern-fit2/tavern_fit2_greybox.png", "min_recall": 0.95, "manifest": "/Users/lume/WorldOS-worktrees/wt-tavern-fit2/qa/room_manifests/tavern_fit2.cells.json"},
+  "panel": {
+    "incumbent": "/Users/lume/WorldOS-worktrees/wt-tavern-fit2/qa/evidence/new-tavern/tavern_truegrey_v1.png",
+    "control": "/Users/lume/worldos-session-notes/plate-sprint/armB/poe2_control.jpg",
+    "house_anchor": "/Users/lume/WorldOS-worktrees/wt-tavern-fit2/qa/evidence/new-tavern/tavern_truegrey_v1.png"
+  },
+  "model_chain": {
+    "base_model": "model_bfl-flux-1-dev",
+    "controlnet_model": "model_bfl-flux-1-dev",
+    "control_modality": "depth",
+    "loras": [],
+    "style_pass": {"model": "model_google-gemini-3-1-flash", "loras": [], "strength": null}
+  }
+}

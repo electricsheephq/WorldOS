@@ -1,0 +1,11 @@
+{
+  "scores": {"A": [6,6,6,6.5,7], "B": [9,9,9,6,6], "C": [9,9,9,9,9.5]},
+  "medians": {"A": 6.0, "B": 9.0, "C": 9.0},
+  "control_valid": true,
+  "defects": {
+    "A": {"on_prop": false, "t_pose": false, "floating": false, "duplicate": false, "missing": false},
+    "B": {"on_prop": false, "t_pose": false, "floating": false, "duplicate": false, "missing": false},
+    "C": {"on_prop": false, "t_pose": false, "floating": false, "duplicate": false, "missing": false}
+  },
+  "verdict": "candidate s1000 (deep-tenebrist) median 6.0 vs incumbent 9.0 (7.0 canon) vs control 9.0; delta -3.0. Same 6.0 as flat-lit s1111 AND as #1557 sparse -> density is NOT the binding gap."
+}
