@@ -1,0 +1,94 @@
+{
+  "_doc": "Machine-readable Scenario model registry — the allowlist the promote.py provenance gate checks a plate's model_chain against. HUMAN-readable companion + full audit: docs/MODEL-REGISTRY.md (#1553, M-ALIGN). A room plate may be promoted only if every model id in its recorded model_chain is listed here (in `models` or `approved_bases`). ADDITIVE by design: the gate is a NO-OP when this file is absent (default-allow) or when a candidate carries no model_chain (legacy). Update this file (and MODEL-REGISTRY.md) whenever a model is trained/adopted/deprecated — never delete a Scenario model (account rule), deprecate it here (verdict=DEPRECATED still keeps it registry-VALID so old plates stay promotable; the verdict is advisory to humans, the allowlist membership is the gate).",
+  "updated": "2026-07-11",
+  "issue": "#1553",
+  "approved_bases": [
+    "model_bfl-flux-1-dev",
+    "flux.1-dev",
+    "flux.1-schnell",
+    "model_bfl-flux-2-dev",
+    "flux.2-dev",
+    "model_google-gemini-3-1-flash",
+    "model_z-image",
+    "z-image"
+  ],
+  "models": {
+    "model_bfl-flux-1-dev": {
+      "name": "FLUX.1 Dev (base)",
+      "base": "flux.1-dev",
+      "training_data": "n/a (foundation model)",
+      "role": "CANONICAL registered base — depth-ControlNet geometry lock for every adopted plate (camp truegrey, tavern, crypt_armb_iter3).",
+      "verdict": "CANONICAL"
+    },
+    "model_google-gemini-3-1-flash": {
+      "name": "Gemini 3.1 Flash (style pass)",
+      "base": "gemini-3-1-flash",
+      "training_data": "n/a (foundation model)",
+      "role": "CANONICAL style pass — instruction-edit structure-lock enrichment over the registered flux depth-CN base. The paint quality of every adopted plate.",
+      "verdict": "CANONICAL"
+    },
+    "model_MB22WaRCBLtfhi5R2CRpHoEL": {
+      "name": "WorldOS Painterly",
+      "base": "z-image",
+      "type": "zimage-lora",
+      "training_images": 6,
+      "training_data_class": "curated-real-mixed (BG/PoE/Disco-inspired characters/props/scenes)",
+      "role": "Original z-image img2img painterly LoRA (early generate_room default recipe lora @0.78).",
+      "verdict": "REFERENCE-ONLY"
+    },
+    "model_H7GSNY6rDYPN85cMdMGQVtsX": {
+      "name": "WorldOS PoE2 Environments (v1)",
+      "base": "z-image",
+      "type": "zimage-lora",
+      "training_images": 11,
+      "training_data_class": "REAL PoE2 refs",
+      "role": "First PoE2-environment backdrop LoRA (z-image). Superseded by v3/v4.",
+      "verdict": "REFERENCE-ONLY"
+    },
+    "model_J97JPYrKtWNUUujkCgTG4s1W": {
+      "name": "WorldOS PoE2 Environments v2 (Flux2)",
+      "base": "flux.2-dev",
+      "type": "flux.2-dev-lora",
+      "training_images": 11,
+      "training_data_class": "REAL PoE2 refs (poe2_001..022.jpg)",
+      "role": "Owner's highest-rated OUTPUT quality. BEAUTY REFERENCE only: flux.2-dev is txt2img/referenceImages-only (NO depth ControlNet today, verified 2026-07-11) so it CANNOT drive the geometry-locked registered path. Seed set for the #1546 retrain.",
+      "verdict": "REFERENCE-ONLY"
+    },
+    "model_AxwVTjTcMm8RZieM9ZZi8nNG": {
+      "name": "WorldOS PoE2 Environments v3 (Z-Image, 21 refs)",
+      "base": "z-image",
+      "type": "zimage-lora",
+      "training_images": 19,
+      "training_data_class": "REAL PoE2/ArtStation refs (environment-dominant)",
+      "role": "Data-scale variant of v1 (larger env-dominant set).",
+      "verdict": "REFERENCE-ONLY"
+    },
+    "model_ng6MSaWtyvwKbZyDBMtzv7tA": {
+      "name": "worldos-poe2-clean-env-v4",
+      "base": "z-image",
+      "type": "zimage-lora",
+      "training_images": 26,
+      "training_data_class": "REAL curated PoE/Obsidian refs (Fandom-wiki no-in-engine-effects + ArtStation)",
+      "role": "Cleanest real-reference environment set. Primary seed set for the #1546 retrain.",
+      "verdict": "REFERENCE-ONLY"
+    },
+    "model_RsWEcQL2NWXwoyEodWVE2vWG": {
+      "name": "WorldOS Painterly Exterior (FLUX)",
+      "base": "flux.1-dev",
+      "type": "flux.1-lora",
+      "training_images": 18,
+      "training_data_class": "MOSTLY REAL (v4 refs + real landscape/env refs; 1 AI plate leaked in)",
+      "role": "Exterior/outdoor depth-CN LoRA lane (forest, ruins, coast, camps). Cleaner training than G379. Bake-off control arm (#1553).",
+      "verdict": "CANDIDATE"
+    },
+    "model_G379oza2qhm6MkqDrtTvvmmw": {
+      "name": "WorldOS Painterly Architectural (FLUX)",
+      "base": "flux.1-dev",
+      "type": "flux.1-lora",
+      "training_images": 10,
+      "training_data_class": "AI-ON-AI — 8/10 training images are our OWN generated plates (camp_clearing_night_v1/v2, crypt_dense_v1, crypt_firelit_v2, church_firelit_v1, cc2_nave, tavern_firelit_v1, seedream_undercroft) + 2 props",
+      "role": "Interior depth-CN LoRA used in the crypt-rich experiment (asset_rYC4). Quality ceiling baked in by training on its own predecessors' AI output.",
+      "verdict": "DEPRECATED"
+    }
+  }
+}

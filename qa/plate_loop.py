@@ -239,6 +239,108 @@ def _declared_final_plate(gen_dir: Path) -> Optional[Path]:
     return None
 
 
+def build_model_chain_from_meta(meta: dict) -> dict:
+    """Normalise a generate_room ``scenario_meta.json`` into a registry-checkable MODEL CHAIN — the full
+    provenance of every base model + LoRA (with scales) + style-pass model that produced the plate.
+
+    The returned dict carries a flat ``model_ids`` list (base + every LoRA + the style-pass model, de-
+    duplicated, order-preserved) that the promote.py provenance gate checks against qa/model_registry.json,
+    plus a structured breakdown for humans/reproduction. Tolerant of the several meta shapes generate_room
+    emits (plain img2img, --controlnet, --style-pass, --layered): every field is optional."""
+    ids: list[str] = []
+
+    def _add(x: Any) -> None:
+        if isinstance(x, str) and x and x not in ids:
+            ids.append(x)
+
+    cn = meta.get("controlnet") if isinstance(meta.get("controlnet"), dict) else {}
+    base = meta.get("model_id") or cn.get("control_model") or meta.get("baseModelId")
+    _add(base)
+
+    loras: list[dict] = []
+    # img2img painterly LoRA (single lora/lora_scale pair)
+    if meta.get("lora"):
+        loras.append({"id": meta["lora"], "scale": meta.get("lora_scale")})
+        _add(meta["lora"])
+    # ControlNet-pass LoRAs (loras[] + parallel lora_scales[])
+    cn_loras = cn.get("loras") or []
+    cn_scales = cn.get("lora_scales") or []
+    _add(cn.get("control_model"))
+    for i, lid in enumerate(cn_loras):
+        loras.append({"id": lid, "scale": cn_scales[i] if i < len(cn_scales) else None})
+        _add(lid)
+
+    style_pass = meta.get("style_pass") if isinstance(meta.get("style_pass"), dict) else None
+    style_out: Optional[dict] = None
+    if style_pass:
+        sp_model = style_pass.get("model")
+        _add(sp_model)
+        sp_loras: list[dict] = []
+        sp_scales = style_pass.get("lora_scales") or style_pass.get("lorasScale") or []
+        for i, lid in enumerate(style_pass.get("loras") or []):
+            sp_loras.append({"id": lid, "scale": sp_scales[i] if i < len(sp_scales) else None})
+            _add(lid)
+        style_out = {"model": sp_model, "loras": sp_loras, "strength": style_pass.get("strength")}
+
+    return {
+        "base_model": base,
+        "controlnet_model": cn.get("control_model"),
+        "control_modality": cn.get("modality"),
+        "loras": loras,
+        "style_pass": style_out,
+        "model_ids": ids,
+        "source": meta.get("source"),
+    }
+
+
+def read_model_chain(gen_dir: Path, cfg: PlateConfig) -> Optional[dict]:
+    """The plate's full model chain for provenance stamping into the loop JSON.
+
+    Prefers the generator's own ``scenario_meta.json`` (the ground truth for a plate_loop-generated
+    plate). Falls back to a chain the config DECLARES (``model_chain`` block) — the escape hatch for a
+    pre-generated ``generate.candidate`` plate whose meta lives elsewhere, so a hand-fed canonical plate
+    can still record its provenance. Returns None when neither is available (unknown provenance is
+    recorded as None, never silently faked)."""
+    meta_path = gen_dir / "scenario_meta.json"
+    if meta_path.is_file():
+        try:
+            return build_model_chain_from_meta(json.loads(meta_path.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            pass
+    declared = cfg.raw.get("model_chain")
+    if isinstance(declared, dict):
+        # A declared chain already uses the CHAIN shape (base_model / loras / style_pass). If it omits
+        # the flat model_ids the gate checks, derive them from those fields so a hand-declared chain is
+        # still registry-checkable.
+        if "model_ids" not in declared:
+            declared = dict(declared)
+            declared["model_ids"] = _collect_chain_model_ids(declared)
+        return declared
+    return None
+
+
+def _collect_chain_model_ids(chain: dict) -> list[str]:
+    """Flat, de-duplicated, order-preserved list of every model id referenced by a model-chain dict
+    (base + controlnet + every LoRA + the style-pass model + its LoRAs). Mirrors promote._chain_model_ids
+    so plate_loop can self-derive model_ids for a config-declared chain without importing promote."""
+    ids: list[str] = []
+
+    def _add(x: Any) -> None:
+        if isinstance(x, str) and x and x not in ids:
+            ids.append(x)
+
+    _add(chain.get("base_model"))
+    _add(chain.get("controlnet_model"))
+    for lora in chain.get("loras") or []:
+        _add(lora.get("id") if isinstance(lora, dict) else lora)
+    sp = chain.get("style_pass")
+    if isinstance(sp, dict):
+        _add(sp.get("model"))
+        for lora in sp.get("loras") or []:
+            _add(lora.get("id") if isinstance(lora, dict) else lora)
+    return ids
+
+
 def run_generate(cfg: PlateConfig, out_dir: Path, *, dry_run: bool = False) -> Path:
     """Run generate_room.py into <out-dir>/gen/ and return the generated plate path.
 
@@ -713,12 +815,17 @@ def phase1(cfg: PlateConfig, out_dir: Path, gallery: Path, *,
     panel = prepare_panel(candidate, cfg, out_dir)
     thumb = _thumb_data_uri(candidate)
 
+    # PROVENANCE STAMP (#1553): record the full model chain (base + LoRAs + scales + style pass) that
+    # produced this plate, so the promotion gate can refuse a chain that isn't in qa/model_registry.json
+    # and so every gallery row is self-describing about which models made it.
+    model_chain = read_model_chain(out_dir / "gen", cfg)
+
     row = {
         "id": cfg.run_id, "ts": _now_iso(), "config_name": cfg.name, "room": cfg.room,
         "config_summary": config_summary(cfg), "candidate": str(candidate),
         "thumbnail": thumb, "registration": reg,
         "pregate": {"verdict": pre["verdict"], "blocking": [g.get("gate") for g in pre.get("blocking", [])]},
-        "panel": None, "out_dir": str(out_dir),
+        "model_chain": model_chain, "panel": None, "out_dir": str(out_dir),
     }
     append_gallery_row(gallery, row)
 
@@ -726,6 +833,7 @@ def phase1(cfg: PlateConfig, out_dir: Path, gallery: Path, *,
         "run_id": cfg.run_id, "config_name": cfg.name, "room": cfg.room, "candidate": str(candidate),
         "out_dir": str(out_dir), "gallery": str(gallery), "registration": reg,
         "pregate": row["pregate"], "config_summary": config_summary(cfg),
+        "model_chain": model_chain,
         "slot_to_label": panel["slot_to_label"], "panel": panel, "row": row,
     }
     (out_dir / "panel" / "contract.json").write_text(json.dumps(contract, indent=2), encoding="utf-8")

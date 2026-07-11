@@ -252,3 +252,62 @@ def test_ingest_verdict_surfaces_candidate_defect_flags():
     out = pl.ingest_verdict(verdict, contract)
     assert out["candidate_defects"] == ["on_prop"]
     assert out["defects"]["A"]["on_prop"] is True
+
+
+# ── MODEL-CHAIN provenance stamping (#1553) ─────────────────────────────────────────────────────────
+def test_model_chain_from_controlnet_meta_with_lora():
+    """A --controlnet scenario_meta (crypt-rich shape) yields base + the interior LoRA + its scale, and
+    a flat model_ids list the promote gate can check."""
+    meta = {
+        "model_id": "model_G379interior", "lora": "model_G379interior", "lora_scale": 0.85,
+        "controlnet": {"modality": "depth", "control_model": "model_bfl-flux-1-dev", "loras": []},
+        "source": "generate_room-controlnet",
+    }
+    chain = pl.build_model_chain_from_meta(meta)
+    assert chain["base_model"] == "model_G379interior"
+    assert chain["controlnet_model"] == "model_bfl-flux-1-dev"
+    assert {"id": "model_G379interior", "scale": 0.85} in chain["loras"]
+    # every distinct model id is collected, de-duplicated, for the registry gate:
+    assert set(chain["model_ids"]) == {"model_G379interior", "model_bfl-flux-1-dev"}
+
+
+def test_model_chain_from_style_pass_meta():
+    """A base + style_pass meta collects the style model + its LoRAs into the chain and model_ids."""
+    meta = {
+        "model_id": "model_bfl-flux-1-dev",
+        "controlnet": {"modality": "depth", "control_model": "model_bfl-flux-1-dev"},
+        "style_pass": {"model": "model_z-image", "loras": ["model_painterly"], "lora_scales": [0.35]},
+        "source": "generate_room-controlnet",
+    }
+    chain = pl.build_model_chain_from_meta(meta)
+    assert chain["style_pass"]["model"] == "model_z-image"
+    assert chain["style_pass"]["loras"] == [{"id": "model_painterly", "scale": 0.35}]
+    assert "model_z-image" in chain["model_ids"] and "model_painterly" in chain["model_ids"]
+
+
+def test_read_model_chain_prefers_scenario_meta(tmp_path):
+    gen = tmp_path / "gen"
+    gen.mkdir()
+    (gen / "scenario_meta.json").write_text(json.dumps(
+        {"model_id": "model_bfl-flux-1-dev",
+         "controlnet": {"control_model": "model_bfl-flux-1-dev", "modality": "depth"}}))
+    cfg = pl.PlateConfig(name="t", room="crypt", raw={})  # PlateConfig directly (no config file needed)
+    chain = pl.read_model_chain(gen, cfg)
+    assert chain and chain["model_ids"] == ["model_bfl-flux-1-dev"]
+
+
+def test_read_model_chain_falls_back_to_declared_chain(tmp_path):
+    """A pre-generated candidate (no scenario_meta) can still record provenance via a config-declared
+    model_chain; read_model_chain derives model_ids from it so the gate can check it."""
+    gen = tmp_path / "gen"  # does not exist / no meta
+    cfg = pl.PlateConfig(name="t", room="crypt", raw={"model_chain": {
+        "base_model": "model_bfl-flux-1-dev",
+        "style_pass": {"model": "model_google-gemini-3-1-flash", "loras": []},
+    }})
+    chain = pl.read_model_chain(gen, cfg)
+    assert chain["model_ids"] == ["model_bfl-flux-1-dev", "model_google-gemini-3-1-flash"]
+
+
+def test_read_model_chain_none_when_no_meta_and_no_declaration(tmp_path):
+    cfg = pl.PlateConfig(name="t", room="crypt", raw={})
+    assert pl.read_model_chain(tmp_path / "gen", cfg) is None
