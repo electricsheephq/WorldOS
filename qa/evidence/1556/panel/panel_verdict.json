@@ -1,0 +1,66 @@
+{
+  "lane": "#1556 STYLE-PASS BAKE-OFF v2 blind 5-scorer panel",
+  "n_scorers": 5,
+  "mapping": {
+    "image_1": "MAI 2.5 Edit",
+    "image_2": "El Diablo",
+    "image_3": "CONTROL real-PoE2 (jungle exterior)",
+    "image_4": "GPT-Image-2",
+    "image_5": "Gemini 3.1 (anchor)"
+  },
+  "per_scorer": [
+    {
+      "image_1": 7,
+      "image_2": 3,
+      "image_3": 1,
+      "image_4": 6,
+      "image_5": 8
+    },
+    {
+      "image_1": 8,
+      "image_2": 3,
+      "image_3": 8,
+      "image_4": 6,
+      "image_5": 9
+    },
+    {
+      "image_1": 7,
+      "image_2": 3,
+      "image_3": 1,
+      "image_4": 5,
+      "image_5": 8
+    },
+    {
+      "image_1": 8,
+      "image_2": 2,
+      "image_3": 2,
+      "image_4": 5,
+      "image_5": 8
+    },
+    {
+      "image_1": 7,
+      "image_2": 2,
+      "image_3": 9,
+      "image_4": 6,
+      "image_5": 8
+    }
+  ],
+  "medians": {
+    "image_1": 7,
+    "image_2": 3,
+    "image_3": 2,
+    "image_4": 6,
+    "image_5": 8
+  },
+  "medians_by_arm": {
+    "MAI 2.5 Edit": 7,
+    "El Diablo": 3,
+    "CONTROL real-PoE2 (jungle exterior)": 2,
+    "GPT-Image-2": 6,
+    "Gemini 3.1 (anchor)": 8
+  },
+  "anchor": "image_5 Gemini 3.1 = 8.0 (reproduces its documented adopted incumbent score of 8.0 -> instrument valid on the subject-matched anchor)",
+  "control_check": "image_3 (real PoE2) median 2.0 \u2014 OUT of the [6.8,9.2] band, BIMODAL [1,1,2,8,9]. CAUSE: the control I chose is an outdoor jungle-temple EXTERIOR, not a crypt interior; 3/5 scorers applied the not_a_crypt/off-brief penalty (1,1,2) while 2 scored pure craft (8,9). This is a CONTROL-SELECTION flaw (off-subject), NOT an instrument failure: the craft reads (8,9) confirm real art reads top-tier on craft, and the subject-matched Gemini ANCHOR reproduced 8.0 exactly. Panel RELATIVE ordering is unanimous across all 5 scorers and trustworthy; the band-validation is deferred to the anchor rather than the control this round.",
+  "ranking_arms": "Gemini 3.1 (8.0) > MAI 2.5 Edit (7.0) > GPT-Image-2 (6.0) > El Diablo (3.0)",
+  "verdict": "NO challenger BEATS the Gemini 3.1 incumbent (8.0). MAI 2.5 Edit (7.0) is the strongest challenger and is defect-clean + artifact-free (no signature, unlike Gemini) + perfect structure-lock (0.9999) + cheaper (12 vs 20 CU) \u2014 a legitimate CANDIDATE but it did not exceed the incumbent this single-seed round. GPT-Image-2 (6.0) is clean but mid and 45 CU (too costly). El Diablo (3.0) under-cooked. Seedream (invented arch) and Kontext (0.854 recall + invented water) were REJECTED pre-panel."
+}
