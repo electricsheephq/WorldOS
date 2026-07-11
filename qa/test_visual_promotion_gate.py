@@ -334,3 +334,96 @@ def test_committed_visual_registry_matches_builder():
             c.pop("reference_frame_present", None)
         return reg
     assert _strip(committed)["controls"] == _strip(built)["controls"]
+
+
+# ── model-provenance gate (#1553) ────────────────────────────────────────────────────────────────
+MODEL_REGISTRY = {
+    "approved_bases": ["model_bfl-flux-1-dev", "model_google-gemini-3-1-flash"],
+    "models": {"model_G379interior": {"verdict": "DEPRECATED"}},
+}
+_REGISTERED_CHAIN = {"base_model": "model_bfl-flux-1-dev",
+                     "style_pass": {"model": "model_google-gemini-3-1-flash", "loras": []},
+                     "model_ids": ["model_bfl-flux-1-dev", "model_google-gemini-3-1-flash"]}
+_UNREGISTERED_CHAIN = {"base_model": "model_bfl-flux-1-dev",
+                       "loras": [{"id": "model_SOME_ADHOC_LORA", "scale": 0.8}],
+                       "model_ids": ["model_bfl-flux-1-dev", "model_SOME_ADHOC_LORA"]}
+
+
+def test_model_registry_gate_noop_when_registry_absent():
+    # registry None (file absent) → default-allow no-op EVEN with an unregistered chain present.
+    g = promote._model_registry_gate({"model_chain": _UNREGISTERED_CHAIN}, {}, None)
+    assert g["ran"] is False and g["passed"] is True
+
+
+def test_model_registry_gate_noop_when_no_chain():
+    g = promote._model_registry_gate({}, {}, MODEL_REGISTRY)
+    assert g["ran"] is False and g["passed"] is True
+
+
+def test_model_registry_gate_passes_registered_chain():
+    g = promote._model_registry_gate({"model_chain": _REGISTERED_CHAIN}, {}, MODEL_REGISTRY)
+    assert g["ran"] is True and g["passed"] is True
+
+
+def test_model_registry_gate_refuses_unregistered_chain():
+    g = promote._model_registry_gate({"model_chain": _UNREGISTERED_CHAIN}, {}, MODEL_REGISTRY)
+    assert g["ran"] is True and g["passed"] is False
+    assert g["unregistered"] == ["model_SOME_ADHOC_LORA"]
+
+
+def test_model_registry_gate_reads_chain_from_panel_when_not_on_nomination():
+    # a room plate stamps its chain into the PANEL JSON (plate_loop) — the gate reads it there too.
+    g = promote._model_registry_gate({}, {"model_chain": _UNREGISTERED_CHAIN}, MODEL_REGISTRY)
+    assert g["ran"] is True and g["passed"] is False
+
+
+def _reg_file(tmp_path: Path) -> Path:
+    p = tmp_path / "model_registry.json"
+    p.write_text(json.dumps(MODEL_REGISTRY), encoding="utf-8")
+    return p
+
+
+def test_promote_batch_refuses_room_with_unregistered_chain(tmp_path, monkeypatch):
+    monkeypatch.setattr(promote, "load_visual_registry", lambda *a, **k: REGISTRY)
+    lib, noms = tmp_path / "library", tmp_path / "noms.jsonl"
+    panel_path = _write_panel(tmp_path, _panel(candidate_median=7.5, control_median=8.0))  # taste PASS
+    noms.write_text(json.dumps({
+        "artifact_id": "room:test:adhoc", "class": "room", "source_path": str(panel_path),
+        "model_chain": _UNREGISTERED_CHAIN,
+        "room_ref": {"recipe_key": "market", "asset_ids": ["a"]},
+    }) + "\n", encoding="utf-8")
+    rep = promote.promote_batch(library_dir=lib, nominations_path=noms, db_path=tmp_path / "s.db",
+                                model_registry_path=_reg_file(tmp_path))
+    # taste gate PASSES but the provenance gate REFUSES the ad-hoc LoRA.
+    assert rep["promoted"] == 0 and rep["rejected"] == 1
+    assert rep["details"][0]["model_registry"]["unregistered"] == ["model_SOME_ADHOC_LORA"]
+
+
+def test_promote_batch_allows_room_with_registered_chain(tmp_path, monkeypatch):
+    monkeypatch.setattr(promote, "load_visual_registry", lambda *a, **k: REGISTRY)
+    lib, noms = tmp_path / "library", tmp_path / "noms.jsonl"
+    panel_path = _write_panel(tmp_path, _panel(candidate_median=7.5, control_median=8.0))
+    noms.write_text(json.dumps({
+        "artifact_id": "room:test:ok", "class": "room", "source_path": str(panel_path),
+        "model_chain": _REGISTERED_CHAIN,
+        "room_ref": {"recipe_key": "market", "asset_ids": ["a"]},
+    }) + "\n", encoding="utf-8")
+    rep = promote.promote_batch(library_dir=lib, nominations_path=noms, db_path=tmp_path / "s.db",
+                                model_registry_path=_reg_file(tmp_path))
+    assert rep["promoted"] == 1 and rep["rejected"] == 0
+
+
+def test_promote_batch_additive_when_registry_file_absent(tmp_path, monkeypatch):
+    """ADDITIVE contract: with NO registry file, an unregistered-chain room still promotes (byte-identical
+    to pre-#1553 behaviour) — the gate only bites once the registry file exists."""
+    monkeypatch.setattr(promote, "load_visual_registry", lambda *a, **k: REGISTRY)
+    lib, noms = tmp_path / "library", tmp_path / "noms.jsonl"
+    panel_path = _write_panel(tmp_path, _panel(candidate_median=7.5, control_median=8.0))
+    noms.write_text(json.dumps({
+        "artifact_id": "room:test:legacy", "class": "room", "source_path": str(panel_path),
+        "model_chain": _UNREGISTERED_CHAIN,
+        "room_ref": {"recipe_key": "market", "asset_ids": ["a"]},
+    }) + "\n", encoding="utf-8")
+    rep = promote.promote_batch(library_dir=lib, nominations_path=noms, db_path=tmp_path / "s.db",
+                                model_registry_path=tmp_path / "no_registry_here.json")
+    assert rep["promoted"] == 1 and rep["rejected"] == 0

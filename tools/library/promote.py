@@ -588,9 +588,95 @@ def _paint_drift_gate(nom: dict) -> dict:
     return out
 
 
+# ── Model-provenance gate (#1553) — a HARD FLOOR on room promotions ──────────────────────────────
+# Ends ad-hoc model selection structurally: a plate may only be promoted if every model in its recorded
+# model_chain (base + LoRAs + style-pass model) is REGISTERED in qa/model_registry.json. ADDITIVE by
+# construction — like _paint_drift_gate, it is a NON-BLOCKING NO-OP (ran=False) when the registry file is
+# absent (default-allow, byte-identical to pre-#1553 behaviour) OR when the candidate carries no
+# model_chain (legacy nominations / plates minted before plate_loop stamped provenance). It only REFUSES
+# (ran=True, passed=False) a candidate that DOES declare a chain using a model not in the registry.
+DEFAULT_MODEL_REGISTRY = _QA_DIR / "model_registry.json"
+
+
+def load_model_registry(path: Path | str = DEFAULT_MODEL_REGISTRY) -> Optional[dict]:
+    """The machine-readable Scenario model registry (qa/model_registry.json), or None when the file is
+    absent/unreadable. None means the provenance gate is a NO-OP (default-allow) — the ADDITIVE contract:
+    a repo without the registry file behaves exactly as it did before #1553."""
+    p = Path(path)
+    if not p.exists():
+        return None
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _registry_allowed_ids(registry: dict) -> set[str]:
+    """The set of model ids a chain may reference: every registered model id PLUS the approved base /
+    foundation model ids (flux.1-dev, gemini, z-image, flux.2-dev …)."""
+    allowed: set[str] = set(registry.get("approved_bases") or [])
+    models = registry.get("models")
+    if isinstance(models, dict):
+        allowed |= set(models.keys())
+    return allowed
+
+
+def _chain_model_ids(chain: dict) -> list[str]:
+    """Flat, de-duplicated list of every model id a model_chain references. Prefers the chain's own
+    ``model_ids`` (what plate_loop stamps); otherwise derives it from base_model + controlnet_model +
+    every LoRA id + the style-pass model + its LoRA ids."""
+    explicit = chain.get("model_ids")
+    if isinstance(explicit, list):
+        return [x for x in explicit if isinstance(x, str) and x]
+    ids: list[str] = []
+
+    def _add(x: Any) -> None:
+        if isinstance(x, str) and x and x not in ids:
+            ids.append(x)
+
+    _add(chain.get("base_model"))
+    _add(chain.get("controlnet_model"))
+    for lora in chain.get("loras") or []:
+        _add(lora.get("id") if isinstance(lora, dict) else lora)
+    sp = chain.get("style_pass")
+    if isinstance(sp, dict):
+        _add(sp.get("model"))
+        for lora in sp.get("loras") or []:
+            _add(lora.get("id") if isinstance(lora, dict) else lora)
+    return ids
+
+
+def _model_registry_gate(nom: dict, panel: dict, registry: Optional[dict]) -> dict:
+    """Deterministic model-provenance check for a ROOM nomination. The candidate's model_chain is read
+    from the nomination (``model_chain``) or, failing that, the panel JSON (``model_chain`` — where
+    plate_loop stamps it). Returns {ran, passed, ...} mirroring _paint_drift_gate.
+
+    NON-BLOCKING NO-OP (ran=False, passed=True) when: the registry file is absent (registry is None →
+    default-allow), or the candidate carries no model_chain at all (legacy/additive). REFUSES (ran=True,
+    passed=False) only when a chain IS present and references a model absent from the registry."""
+    if registry is None:
+        return {"ran": False, "passed": True, "reason": "no model registry file (default-allow)"}
+    chain = nom.get("model_chain") or panel.get("model_chain")
+    if not isinstance(chain, dict) or not chain:
+        return {"ran": False, "passed": True,
+                "reason": "no model_chain recorded on candidate (legacy/additive no-op)"}
+    ids = _chain_model_ids(chain)
+    if not ids:
+        return {"ran": False, "passed": True, "reason": "model_chain present but lists no model ids"}
+    allowed = _registry_allowed_ids(registry)
+    unregistered = [i for i in ids if i not in allowed]
+    if unregistered:
+        return {"ran": True, "passed": False, "model_ids": ids, "unregistered": unregistered,
+                "reasons": [f"model_chain uses unregistered model(s) {unregistered} — not in "
+                            f"qa/model_registry.json (register the model or fix the lane)"]}
+    return {"ran": True, "passed": True, "model_ids": ids}
+
+
 # ── Visual nomination promotion (the "room" strategy branch of promote_batch) ────────────────────
 def _promote_visual(nom: dict, aid: str, *, registry: dict, library_dir: Path, promoted_at: str,
-                    default_license: str, dry_run: bool, report: dict) -> None:
+                    default_license: str, dry_run: bool, report: dict,
+                    model_registry: Optional[dict] = None) -> None:
     """Gate + (on pass) write ONE visual nomination, mutating ``report`` with the same bookkeeping the
     text branch uses (promoted/rejected/skipped, details, entries, processed-log). The visual score is
     a PANEL JSON at the nomination's source_path — there is no score-if-unscored for visual (a plate is
@@ -620,10 +706,16 @@ def _promote_visual(nom: dict, aid: str, *, registry: dict, library_dir: Path, p
     # #1462 paint-drift HARD FLOOR: a room plate that slid a set piece off its authored cell is
     # rejected even if the taste/delta gate passed (that drift is what reads as "actors over the logs").
     drift = _paint_drift_gate(nom)
-    passed = gate.passed and drift.get("passed", True)
+    # #1553 model-provenance HARD FLOOR: refuse a plate whose model_chain uses a model not registered in
+    # qa/model_registry.json (ends ad-hoc model selection). Additive: a no-op when the registry file is
+    # absent or the candidate carries no chain.
+    modelreg = _model_registry_gate(nom, panel, model_registry)
+    passed = gate.passed and drift.get("passed", True) and modelreg.get("passed", True)
     detail = {"artifact_id": aid, "verdict": "promoted" if passed else "rejected", **gate.as_dict()}
     if drift.get("ran"):
         detail["paint_drift"] = drift
+    if modelreg.get("ran"):
+        detail["model_registry"] = modelreg
     report["details"].append(detail)
     if not passed:
         report["rejected"] += 1
@@ -656,6 +748,7 @@ def promote_batch(
     skip_unscored: bool = False,
     dry_run: bool = False,
     budget: str = "1.50",
+    model_registry_path: Path | str = DEFAULT_MODEL_REGISTRY,
 ) -> dict:
     """Process every unprocessed nomination top-to-bottom. Returns a batch report dict.
 
@@ -669,6 +762,8 @@ def promote_batch(
     rows_by_id = _artifacts_by_id(db_path)
     all_rows = scores_db.fetch_artifacts(db_path)
     visual_registry = load_visual_registry()  # cheap; empty registry if the file is absent (fail-closed)
+    # #1553 model registry: None when the file is absent → the provenance gate is a default-allow no-op.
+    model_registry = load_model_registry(model_registry_path)
     promoted_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     report: dict[str, Any] = {
@@ -695,7 +790,7 @@ def promote_batch(
         if _strategy_for(nom) == "visual":
             _promote_visual(nom, aid, registry=visual_registry, library_dir=library_dir,
                             promoted_at=promoted_at, default_license=default_license,
-                            dry_run=dry_run, report=report)
+                            dry_run=dry_run, report=report, model_registry=model_registry)
             continue
 
         row = rows_by_id.get(aid)
@@ -766,12 +861,15 @@ def main(argv: Optional[list[str]] = None) -> int:
     ap.add_argument("--dry-run", action="store_true",
                     help="gate preview only — write NOTHING (no scoring, no library, no processed-log)")
     ap.add_argument("--budget", default="1.50", help="per-scorer USD budget for score-if-unscored")
+    ap.add_argument("--model-registry", default=str(DEFAULT_MODEL_REGISTRY),
+                    help="qa/model_registry.json — the room provenance gate's allowlist (#1553); an "
+                         "absent file makes that gate a default-allow no-op")
     args = ap.parse_args(argv)
 
     report = promote_batch(
         library_dir=Path(args.library), nominations_path=Path(args.nominations), db_path=args.db,
         default_license=args.license, skip_unscored=args.skip_unscored, dry_run=args.dry_run,
-        budget=args.budget,
+        budget=args.budget, model_registry_path=Path(args.model_registry),
     )
     print(json.dumps(report, indent=2, ensure_ascii=False))
     return 0  # batch always exits 0, even with zero promotions (CLI contract)
