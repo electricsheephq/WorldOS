@@ -1388,15 +1388,18 @@ def cross_door(campaign_id: str, x: int, y: int) -> dict:
         raise ValueError(f"{getattr(loc, 'name', '')!r} has no connected room to cross to")
     door_idx = door_cells_list.index((int(x), int(y)))
     dest_id = conns[door_idx] if door_idx < len(conns) else conns[0]
+    source_id = loc.id  # where we crossed FROM — the reciprocal-door anchor in the destination (#1541)
     result = travel_to(campaign_id, dest_id)
     # W4 follow-up (#1378): the party's stage_cell was just CLEARED by travel_to's _move_party_to
     # (per-room scoping). If the destination room is ALSO painted, re-stage the party beside its
     # entry door so the linked room's rest board renders them standing there — not the empty
-    # door-bar state (demo-reel frame 06). ADDITIVE: an un-painted destination gets no writes.
+    # door-bar state (demo-reel frame 06). #1541: anchor on the destination's door back to the
+    # source (the reciprocal door), so you land at the door you'd leave by — not door_cells[0].
+    # ADDITIVE: an un-painted destination gets no writes.
     with campaign_lock(campaign_id):
         c2 = _require(campaign_id)  # fresh state — travel_to persisted its own copy above
         dest = c2.locations.get(c2.current_location_id) if c2.current_location_id else None
-        if dest is not None and _seed_stage_cells_on_arrival(c2, dest):
+        if dest is not None and _seed_stage_cells_on_arrival(c2, dest, source_id=source_id):
             save_campaign(c2)
     result["crossed_door"] = [int(x), int(y)]
     result["multi_connection"] = len(conns) > 1
@@ -4754,11 +4757,24 @@ def _nearest_walkable_cell(
     return None  # no walkable cell anywhere in this room
 
 
-def _seed_stage_cells_on_arrival(c: "Campaign", dest: "Location") -> list[str]:
+def _seed_stage_cells_on_arrival(
+    c: "Campaign", dest: "Location", source_id: str | None = None
+) -> list[str]:
     """W4 follow-up (#1378): on a ``cross_door`` arrival, seed each traveling party member's
     ``Character.stage_cell`` to a walkable cell beside the destination room's entry door, so the
     linked room's rest board renders the party re-staged — not the empty door-bar state left when
     ``_move_party_to`` clears every member's stage_cell on travel.
+
+    RECIPROCAL-DOOR arrival (#1541): when ``source_id`` (the location we just crossed FROM) is
+    given, the arrival door is the destination's door that maps BACK to the source — the
+    ``door_cells[j]`` whose ``connections[j] == source_id`` (the SAME positional authoring
+    convention ``cross_door`` resolves the forward hop by: door_cells[i] -> connections[i]). So
+    exiting the tavern lands the party at the crypt's TAVERN door, not its lowest-sorted (camp)
+    door. Falls back to the lowest-sorted door — the pre-#1541 behavior, byte-identical — when
+    there is NO such door (``source_id`` is ``None``, unmapped, or the destination has fewer door
+    cells than the source's connection index). The party stands BESIDE the door, never on the
+    threshold (``reachable`` excludes the start cell, so members land on its Chebyshev-1 ring and
+    spread outward when it is crowded).
 
     Mirrors ``_seed_combat_cells_from_stage``'s discipline: a deterministic member order, cells
     ranked nearest-the-door first, each member claiming the NEXT free cell so two tokens never
@@ -4771,16 +4787,25 @@ def _seed_stage_cells_on_arrival(c: "Campaign", dest: "Location") -> list[str]:
     grid = getattr(dest, "scene_grid", None)
     if grid is None:
         return []
-    door_cells = sorted({(int(a), int(b)) for (a, b) in (getattr(grid, "door_cells", None) or [])})
+    # RAW (authored-order) door cells for the positional door->connection mapping; the sorted set
+    # (deduped, stable) is the fallback anchor when no reciprocal door resolves.
+    raw_doors = [(int(a), int(b)) for (a, b) in (getattr(grid, "door_cells", None) or [])]
+    door_cells = sorted(set(raw_doors))
     if not door_cells:
         return []
     width, height, blocked = rest_blocked_cells(c, dest)
     if width <= 0 or height <= 0:
         return []
-    # Best-effort ARRIVAL door: the lowest-sorted door of the destination. There is no authored
-    # door->origin map yet (the same limitation cross_door surfaces via `multi_connection`), so a
-    # deterministic first pick stands in. The party stands BESIDE it, never on the threshold.
+    # ARRIVAL door: the RECIPROCAL door back to `source_id` when we know where we came from —
+    # door_cells[j] where the destination's connections[j] == source_id — else the lowest-sorted
+    # door (pre-#1541 best-effort). The party stands BESIDE it, never on the threshold.
     door = door_cells[0]
+    if source_id is not None:
+        conns = [cid for cid in (getattr(dest, "connections", None) or []) if isinstance(cid, str)]
+        for idx, cid in enumerate(conns):
+            if cid == source_id and idx < len(raw_doors):
+                door = raw_doors[idx]
+                break
     # Candidate rest cells: every FREE cell reachable from the door (routes around walls/props so
     # nobody lands in a walled-off pocket), ranked nearest-first with a stable (y, x) tiebreak.
     reach = combat_grid.reachable(door, width + height, set(), width, height, impassable=blocked)
