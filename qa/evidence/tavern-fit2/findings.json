@@ -1,31 +1,75 @@
 {
-  "lane": "TAVERN_FIT-V2 (M-ALIGN wave-2 capstone retry) — apply the DENSITY LAW: author the furniture the #1557 panel LIKED as REAL collision props, then regen through the full pipeline",
-  "verdict": "HONEST NEGATIVE — do NOT adopt. The density-law tavern (14 authored interior props vs #1557's 6) is coherence-correct-by-construction and visibly DENSE (no scorer flagged sparseness/missing furniture), but BOTH a flat-lit (s1111) and a deep-tenebrist (s1000) style pass plateau at panel median 6.0 vs the incumbent (9.0 this-panel / 7.0 canonical) and the real-art control (9.0); delta_candidate_minus_control = -3.0, below promote.py's -2.5 adopt floor. promote.py --dry-run machine verdict: rejected / passed=false / tier=null / 'delta -3.0 < -2.5 adoption bar'.",
-  "capstone_finding": "THE DENSITY HYPOTHESIS IS REFUTED as the binding panel gap. #1557 concluded the 6.0 cap was 'furniture density, not lighting' and prescribed authoring the furniture as real props. Done: 14 real collision props (benches flanking every table, bar stools, back-bar shelf + casks, hearth woodpile, corner barrels). The panel score did NOT move: real-14-prop density scores 6.0 — IDENTICAL to #1557's faked-sparse-6-prop 6.0, AND identical across a bright (s1111) and a tenebrist (s1000) style pass. Density is closed; the score gap is elsewhere. Two residual causes the 5 blind scorers named repeatedly: (1) HOUSE-STYLE ANCHORING — the panel's house_best reference IS the incumbent (byte-identical), so scorers rate the incumbent 'same-hand' 9 and ANY different-pipeline plate 'lesser'; the gate structurally defines quality AS the incumbent's exact hand, so a new-pipeline plate can rarely clear it regardless of merit. (2) STYLE-PASS BRUSHWORK CEILING — scorers ding the single additions-locked Gemini pass for 'CG-render sheen / airbrushed gloss', 'tiled/repetitive floor planks', 'flatter single-source lighting', 'thinner stone/wall detail' vs the incumbent's LAYERED (z-image+LoRA + multi-Gemini) pipeline. The untried lever (now viable BECAUSE the greybox is dense): run the LAYERED pipeline — its populate pass was the #1557 no-go on a SPARSE greybox (it invents furniture) but on a 14-prop greybox + STRUCTURE-LOCK it has little room to invent and is the exact pipeline that produced the 8.0/7.0 incumbent's richer brushwork.",
-  "pipeline_run": {
-    "1_geometry": "tools/author_room_geometry.py tavern_fit2 -> tavern_fit2_geometry.json (12x10, camera_fit=true, door_cells=[[8,0]], 14 interior props + 5 continuous wall_run segments split at the door; no crenellation). Walkability validated: 0 disconnected pockets (8-conn flood-fill), door zone (8,0)+(8,1) clear, 43 clear combat-floor cells (>=12 rule), no prop in a door cell.",
-    "2_manifest": "tools/derive_room_manifest.py -> qa/room_manifests/tavern_fit2.cells.json (derived, 19 props, 43 walkable, 318 occlusion cells).",
-    "3_greybox": "qa/greybox_render_headless.py --camera-fit --wall-height 5 -> tavern_fit2_greybox.png (camera-fit ortho=9.26, 1344x768) + depth/normal sidecars. G1_frame_lit PASS (mean-lum 0.220).",
-    "4_registered_base": "flux.1-dev + depth-ControlNet (model_bfl-flux-1-dev), NO LoRA, --control-strength 0.95 --seed 222. gen_base/room_tavern.png -> edge-recall 0.98 vs greybox CLEARS the >=0.95 masonry gate (better than #1557's 0.9554 — denser geometry = more edges to lock).",
-    "5_style_pass": "SINGLE Gemini instruction-edit (model_google-gemini-3-1-flash) over the base, STRUCTURE-LOCK + ADDITIONS-LOCK verbatim, DENSITY-AWARE scene grounding (each of the 14 props named so Gemini paints benches/stools/woodpile/shelf/casks as the real furniture they are, not remove or add beyond). NO external referenceImages (self-edit). NOT --layered. Best-of-3 tenebrist seeds (1000/1111/1222); all three richly furnished and correct. Paneled two: s1111 (round tables, styled-recall 0.81, flattest lit) and s1000 (deep tenebrist, round tables, styled-recall 0.75).",
-    "model_chain": ["model_bfl-flux-1-dev (depth-CN base)", "model_google-gemini-3-1-flash (style pass)"],
-    "model_chain_provenance": "both ids qa/model_registry.json-approved; declared in the plate_loop config model_chain block -> promote provenance gate PASS."
-  },
-  "gates": {
-    "edge_recall_base": {"value": 0.98, "gate": ">=0.95 masonry", "verdict": "PASS"},
-    "edge_recall_styled_candidate": {"s1111": 0.81, "s1000": 0.75, "note": "soft-edge painterly, ADVISORY per #1491 (registration primary evidence is the BASE recall 0.98)"},
-    "coherence_gate": {"candidate": "INCOHERENT (per-prop NCC 0.2-0.3)", "base": "INCOHERENT too (at recall 0.98)", "incumbent": "INCOHERENT too (hearth/bar not-locatable)", "verdict": "DIAGNOSTIC-ONLY NOT BLOCKING — the per-prop NCC gate is over-sensitive for camera-fit painterly rooms; the BASE at registration-recall 0.98 fails it and the deployed 7.0 incumbent fails it identically/worse (runbook #1538 scope note: not the promotion floor; regression-vs-incumbent is the test, and there is none)"},
-    "pregate": {"G1_frame_lit": "PASS (mean 0.118)", "G6_luma_staging_law": "MED/WARN near_black 56.4% (borderline the PoE 66-85% band; better than #1557's 47% FLAG)", "hard_floor": "PASS (G1-G4 hard-floor set; G6 non-blocking)"},
-    "blind_panel_s1111": {"candidate_median": 6.0, "incumbent_median": 8.0, "control_median": 9.0, "delta_vs_control": -3.0, "control_valid": true, "defects": 0},
-    "blind_panel_s1000": {"candidate_median": 6.0, "incumbent_median": 9.0, "control_median": 9.0, "delta_vs_control": -3.0, "control_valid": true, "defects": 0},
-    "promote_dry_run": {"passed": false, "tier": null, "reason": "delta -3.0 < -2.5 adoption bar"}
-  },
-  "walkslice_reconciliation": "REPORT-ONLY (per packet — NOT changed here; the walkslice build_tavern_grid must eventually match an ADOPTED geometry, and this is an honest negative so nothing is adopted). IF tavern_fit2 were ever adopted, qa/seed_gfx_walkslice.py needs: (a) TAVERN_BACK_DOOR [0,0] -> [8,0] (the #1534 durable fix — real back-wall door gap now authored, so the door cell and the painted opening coincide; update the 107-112 comment). (b) ADD 8 props to _TAVERN_PROPS (16 impassable cells), footprints VERBATIM from tavern_fit2 geometry: woodpile [(3,1),(4,1)], bench_nw [(3,5),(4,5)], bench_ne [(6,5),(7,5)], bench_s [(7,6),(7,7)], stools_bar [(8,3),(8,4)], shelf_bar [(10,2),(10,3)], casks_bar [(10,4),(10,5)], barrels_corner [(10,7),(10,8)]. (c) walkable 59 -> 43. (d) spawns UNCHANGED: party [(4,8),(5,8)], npcs [(7,8)] — none collide with any new prop (all new props are off row 8). validate_scene_grid still PASSES on the updated grid (connectivity intact, 43 clear-floor cells >> 12, door (8,0) walkable).",
-  "runbook_gaps_hit": [
-    "The coherence gate (check_grid_paint_coherence per-prop NCC) is over-sensitive for CAMERA-FIT painterly rooms: the geometry-locked BASE at registration-recall 0.98 fails it INCOHERENT, as does the deployed 7.0 incumbent. Runbook step 5 already calls it a diagnostic, but a cold agent will read 'INCOHERENT (19 checked)' as blocking. Suggest the runbook explicitly note that camera-fit + soft-edge painterly plates fail per-prop NCC by construction and to lean on registration-recall (base) as the registration floor.",
-    "plate_loop.py's registration recall check runs on the STYLED candidate (0.81) against the 0.95 min and prints '-> FAIL / pre-gate FLAG', but for painterly rooms styled-recall is ADVISORY (#1491) and the real gate is the BASE recall (0.98). The FLAG is misleading; the base recall is the number that matters.",
-    "The house-best anchor in the blind panel IS the incumbent (byte-identical house_best.png == incumbent slot). The house_style regression check ('a candidate that loses the same-hand read is a REGRESSION') therefore structurally caps any NEW-pipeline plate below the incumbent regardless of craft — worth surfacing as a known gate property when a lane's goal is to BEAT the incumbent with a different pipeline."
+ "lane": "TAVERN_FIT-V2 (M-ALIGN wave-2 capstone retry) \u2014 apply the DENSITY LAW: author the furniture the #1557 panel LIKED as REAL collision props, then regen through the full pipeline",
+ "verdict": "HONEST NEGATIVE \u2014 do NOT adopt. The density-law tavern (14 authored interior props vs #1557's 6) is coherence-correct-by-construction and visibly DENSE (no scorer flagged sparseness/missing furniture), but BOTH a flat-lit (s1111) and a deep-tenebrist (s1000) style pass plateau at panel median 6.0 vs the incumbent (8.0 (s1111 panel) / 9.0 (s1000 panel) / 7.0 canonical) and the real-art control (9.0); delta_candidate_minus_control = -3.0, below promote.py's -2.5 adopt floor. promote.py --dry-run machine verdict: rejected / passed=false / tier=null / 'delta -3.0 < -2.5 adoption bar'.",
+ "capstone_finding": "THE DENSITY HYPOTHESIS IS REFUTED as the binding panel gap. #1557 concluded the 6.0 cap was 'furniture density, not lighting' and prescribed authoring the furniture as real props. Done: 14 real collision props (benches flanking every table, bar stools, back-bar shelf + casks, hearth woodpile, corner barrels). The panel score did NOT move: real-14-prop density scores 6.0 \u2014 IDENTICAL to #1557's faked-sparse-6-prop 6.0, AND identical across a bright (s1111) and a tenebrist (s1000) style pass. Density is closed; the score gap is elsewhere. Two residual causes the 5 blind scorers named repeatedly: (1) HOUSE-STYLE ANCHORING \u2014 the panel's house_best reference IS the incumbent (byte-identical), so scorers rate the incumbent 'same-hand' 9 and ANY different-pipeline plate 'lesser'; the gate structurally defines quality AS the incumbent's exact hand, so a new-pipeline plate can rarely clear it regardless of merit. (2) STYLE-PASS BRUSHWORK CEILING \u2014 scorers ding the single additions-locked Gemini pass for 'CG-render sheen / airbrushed gloss', 'tiled/repetitive floor planks', 'flatter single-source lighting', 'thinner stone/wall detail' vs the incumbent's LAYERED (z-image+LoRA + multi-Gemini) pipeline. The untried lever (now viable BECAUSE the greybox is dense): run the LAYERED pipeline \u2014 its populate pass was the #1557 no-go on a SPARSE greybox (it invents furniture) but on a 14-prop greybox + STRUCTURE-LOCK it has little room to invent and is the exact pipeline that produced the 8.0/7.0 incumbent's richer brushwork.",
+ "pipeline_run": {
+  "1_geometry": "tools/author_room_geometry.py tavern_fit2 -> tavern_fit2_geometry.json (12x10, camera_fit=true, door_cells=[[8,0]], 14 interior props + 5 continuous wall_run segments split at the door; no crenellation). Walkability validated: 0 disconnected pockets (8-conn flood-fill), door zone (8,0)+(8,1) clear, 43 clear combat-floor cells (>=12 rule), no prop in a door cell.",
+  "2_manifest": "tools/derive_room_manifest.py -> qa/room_manifests/tavern_fit2.cells.json (derived, 19 props, 43 walkable, 318 occlusion cells).",
+  "3_greybox": "qa/greybox_render_headless.py --camera-fit --wall-height 5 -> tavern_fit2_greybox.png (camera-fit ortho=9.26, 1344x768) + depth/normal sidecars. G1_frame_lit PASS (mean-lum 0.220).",
+  "4_registered_base": "flux.1-dev + depth-ControlNet (model_bfl-flux-1-dev), NO LoRA, --control-strength 0.95 --seed 222. gen_base/room_tavern.png -> edge-recall 0.98 vs greybox CLEARS the >=0.95 masonry gate (better than #1557's 0.9554 \u2014 denser geometry = more edges to lock).",
+  "5_style_pass": "SINGLE Gemini instruction-edit (model_google-gemini-3-1-flash) over the base, STRUCTURE-LOCK + ADDITIONS-LOCK verbatim, DENSITY-AWARE scene grounding (each of the 14 props named so Gemini paints benches/stools/woodpile/shelf/casks as the real furniture they are, not remove or add beyond). NO external referenceImages (self-edit). NOT --layered. Best-of-3 tenebrist seeds (1000/1111/1222); all three richly furnished and correct. Paneled two: s1111 (round tables, styled-recall 0.81, flattest lit) and s1000 (deep tenebrist, round tables, styled-recall 0.75).",
+  "model_chain": [
+   "model_bfl-flux-1-dev (depth-CN base)",
+   "model_google-gemini-3-1-flash (style pass)"
   ],
-  "cu_note": "Scenario spend: 1 flux depth-CN base job (best-of-4 requested, 1 returned) + 3 Gemini 3.1 style-pass jobs (2K). No training. Well under the 100 CU scenario cap.",
-  "auto_merge": "NOT armed (armed only on ADOPT). Evidence-only honest negative."
+  "model_chain_provenance": "both ids qa/model_registry.json-approved; declared in the plate_loop config model_chain block -> promote provenance gate PASS."
+ },
+ "gates": {
+  "edge_recall_base": {
+   "value": 0.98,
+   "gate": ">=0.95 masonry",
+   "verdict": "PASS"
+  },
+  "edge_recall_styled_candidate": {
+   "s1111": 0.81,
+   "s1000": 0.75,
+   "note": "soft-edge painterly, ADVISORY per #1491 (registration primary evidence is the BASE recall 0.98)"
+  },
+  "coherence_gate": {
+   "candidate": "INCOHERENT (per-prop NCC 0.2-0.3)",
+   "base": "INCOHERENT too (at recall 0.98)",
+   "incumbent": "INCOHERENT too (hearth/bar not-locatable)",
+   "verdict": "DIAGNOSTIC-ONLY NOT BLOCKING \u2014 the per-prop NCC gate is over-sensitive for camera-fit painterly rooms; the BASE at registration-recall 0.98 fails it and the deployed 7.0 incumbent fails it identically/worse (runbook #1538 scope note: not the promotion floor; regression-vs-incumbent is the test, and there is none)"
+  },
+  "pregate": {
+   "G1_frame_lit": "PASS (mean 0.118)",
+   "G6_luma_staging_law": "MED/WARN near_black 56.4% (borderline the PoE 66-85% band; better than #1557's 47% FLAG)",
+   "hard_floor": "PASS (G1-G4 hard-floor set; G6 non-blocking)"
+  },
+  "blind_panel_s1111": {
+   "candidate_median": 6.0,
+   "incumbent_median": 8.0,
+   "control_median": 9.0,
+   "delta_vs_control": -3.0,
+   "control_valid": true,
+   "defects": 0
+  },
+  "blind_panel_s1000": {
+   "candidate_median": 6.0,
+   "incumbent_median": 9.0,
+   "control_median": 9.0,
+   "delta_vs_control": -3.0,
+   "control_valid": true,
+   "defects": 0
+  },
+  "promote_dry_run": {
+   "passed": false,
+   "tier": null,
+   "reason": "delta -3.0 < -2.5 adoption bar"
+  }
+ },
+ "walkslice_reconciliation": "REPORT-ONLY (per packet \u2014 NOT changed here; the walkslice build_tavern_grid must eventually match an ADOPTED geometry, and this is an honest negative so nothing is adopted). IF tavern_fit2 were ever adopted, qa/seed_gfx_walkslice.py needs: (a) TAVERN_BACK_DOOR [0,0] -> [8,0] (the #1534 durable fix \u2014 real back-wall door gap now authored, so the door cell and the painted opening coincide; update the 107-112 comment). (b) ADD 8 props to _TAVERN_PROPS (16 impassable cells), footprints VERBATIM from tavern_fit2 geometry: woodpile [(3,1),(4,1)], bench_nw [(3,5),(4,5)], bench_ne [(6,5),(7,5)], bench_s [(7,6),(7,7)], stools_bar [(8,3),(8,4)], shelf_bar [(10,2),(10,3)], casks_bar [(10,4),(10,5)], barrels_corner [(10,7),(10,8)]. (c) walkable 59 -> 43. (d) spawns UNCHANGED: party [(4,8),(5,8)], npcs [(7,8)] \u2014 none collide with any new prop (all new props are off row 8). validate_scene_grid still PASSES on the updated grid (connectivity intact, 43 clear-floor cells >> 12, door (8,0) walkable).",
+ "runbook_gaps_hit": [
+  "The coherence gate (check_grid_paint_coherence per-prop NCC) is over-sensitive for CAMERA-FIT painterly rooms: the geometry-locked BASE at registration-recall 0.98 fails it INCOHERENT, as does the deployed 7.0 incumbent. Runbook step 5 already calls it a diagnostic, but a cold agent will read 'INCOHERENT (19 checked)' as blocking. Suggest the runbook explicitly note that camera-fit + soft-edge painterly plates fail per-prop NCC by construction and to lean on registration-recall (base) as the registration floor.",
+  "plate_loop.py's registration recall check runs on the STYLED candidate (0.81) against the 0.95 min and prints '-> FAIL / pre-gate FLAG', but for painterly rooms styled-recall is ADVISORY (#1491) and the real gate is the BASE recall (0.98). The FLAG is misleading; the base recall is the number that matters.",
+  "The house-best anchor in the blind panel IS the incumbent (byte-identical house_best.png == incumbent slot). The house_style regression check ('a candidate that loses the same-hand read is a REGRESSION') therefore structurally caps any NEW-pipeline plate below the incumbent regardless of craft \u2014 worth surfacing as a known gate property when a lane's goal is to BEAT the incumbent with a different pipeline."
+ ],
+ "cu_note": "Scenario spend: 1 flux depth-CN base job (best-of-4 requested, 1 returned) + 3 Gemini 3.1 style-pass jobs (2K). No training. Well under the 100 CU scenario cap.",
+ "auto_merge": "NOT armed (armed only on ADOPT). Evidence-only honest negative.",
+ "incumbent_panel_medians": {
+  "s1111_panel": 8.0,
+  "s1000_panel": 9.0,
+  "canonical_adoption_median": 7.0,
+  "note": "per-panel incumbent medians differ (anchor-slot variance, see #1560); the canonical adoption score is 7.0"
+ }
 }
