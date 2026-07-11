@@ -1,0 +1,14 @@
+LAYERED PASS 3 of 3 — STAGING-LAST MICRO-DETAIL (non-blocking scatter only).
+
+Take this dark, richly-painted tenebrist tavern plate and add ONLY the final layer of small, non-blocking staging micro-detail and brush accents — the "lived-in" touches a painter adds last. PRESERVE the composition, the surface brushwork, and the dramatic single-hearth lighting exactly; do NOT brighten the scene and do NOT re-smooth any material.
+
+Add ONLY small loose items that rest ON existing surfaces and that no player could ever collide with — this is the sanctioned small-scatter allowance, NOT new furniture:
+- a few wooden TANKARDS / MUGS and a bottle or two sitting ON the existing tavern tables and ON the bar counter top;
+- worn ring-stains, a small spill sheen, a stray coin or dice ON the table and bar tops;
+- loose STRAW, wood shavings, and a few pebbles scattered ON the plank floor;
+- a wisp of smoke and a few glowing embers/sparks rising from the hearth fire; catch a warm amber highlight on the rims of the mugs, the bottle glass, and the wet spill.
+Finish with a few final confident edge-highlight brush accents where the hearth light catches an edge, to lift the plate from "rendered" to "hand-painted".
+
+ADDITIONS-LOCK (non-negotiable): add ONLY the small loose tabletop/floor scatter listed above (mugs, bottles, straw, pebbles, embers) — items that sit on top of existing surfaces and occupy NO floor a player walks through. Add NO new FURNITURE or BLOCKING elements whatsoever: no EXTRA tables, benches, stools, barrels, casks, or shelves, no chandeliers, no hanging lanterns or shelves floating in empty floor space, no well, no fire pit, no staircase, no signage, and no NPC, patron, figure, or creature. Every solid, walk-blocking object must still correspond exactly to an authored collision cell — so the only additions permitted are ones too small to block a cell.
+
+CRITICAL STRUCTURE-LOCK (non-negotiable, checked pixel-by-pixel against the original): every wall, doorway, hearth, bar counter, stool, table, bench, barrel, cask, shelf, and woodpile must stay in EXACTLY its current position, size, and shape — do NOT move, add, remove, resize, or recompose any of the furniture or architecture; only tiny surface scatter and final brush accents are added. Do NOT introduce any repeated, cloned, or tiled decorative motifs. Do NOT add any text, letters, numbers, labels, UI elements, signatures, frames, or borders. Do NOT add any characters, people, figures, or creatures.
