@@ -81,10 +81,45 @@ def _perimeter_walls(cols: int, rows: int) -> list:
     return cells
 
 
+def _perimeter_wall_run_props(cols: int, rows: int, door_cells: Optional[list] = None) -> list:
+    """The EXTENT-CONTRACT perimeter wall band (#1543): the enclosing perimeter authored as CONTINUOUS
+    wall RUNS — one prop per contiguous run of a wall edge, split wherever a door cell interrupts it —
+    NOT one cell per box (the #1539 crenellation rule: per-cell boxes give the depth map a toothed
+    wall-top the depth-CN paints as a tiled/gamey motif). Each run is emitted with kind ``wall_run`` so
+    greybox_render_headless draws it as a single thin box spanning the run at wall_height; because the
+    run cells are also folded into ``walls``/``impassable`` by _geometry, the painted wall sits ON
+    impassable cells by construction, and the DOOR gap stays walkable (no wall box over it — the old
+    _perimeter_walls walled the door cell shut). Returns [(id, "wall_run", [(c,r),...]), ...]."""
+    doors = {(int(c), int(r)) for (c, r) in (door_cells or [])}
+    edges = [
+        ("wall_n", [(c, 0) for c in range(cols)]),                 # back wall (row 0)
+        ("wall_s", [(c, rows - 1) for c in range(cols)]),          # near/front wall (row rows-1)
+        ("wall_w", [(0, r) for r in range(1, rows - 1)]),          # left wall (corners owned by n/s)
+        ("wall_e", [(cols - 1, r) for r in range(1, rows - 1)]),   # right wall
+    ]
+    props = []
+    for edge_id, cells in edges:
+        run: list = []
+        seg = 0
+        for cell in cells:
+            if cell in doors:
+                if run:
+                    props.append((f"{edge_id}_{seg}", "wall_run", run))
+                    seg += 1
+                    run = []
+                continue
+            run.append(cell)
+        if run:
+            props.append((f"{edge_id}_{seg}", "wall_run", run))
+    return props
+
+
 def _geometry(cols: int, rows: int, material: str, props: list, *,
-              perimeter: bool, door_cells: Optional[list] = None) -> dict:
+              perimeter: bool, door_cells: Optional[list] = None,
+              camera_fit: bool = False) -> dict:
     """Assemble the geometry dict. `props` is [(id, kind, [[c,r],...]), ...]. `walls` follows the
-    export_scene_grid convention: perimeter wall cells (when enclosed) UNION every prop footprint cell."""
+    export_scene_grid convention: perimeter wall cells (when enclosed) UNION every prop footprint cell.
+    `camera_fit` stamps the opt-in extent-contract flag greybox_render_headless reads (#1543)."""
     prop_entries = [{"id": pid, "kind": kind, "cells": [[int(c), int(r)] for (c, r) in cells]}
                     for (pid, kind, cells) in props]
     wall_set: set = set()
@@ -93,7 +128,7 @@ def _geometry(cols: int, rows: int, material: str, props: list, *,
     for p in prop_entries:
         wall_set |= {(c, r) for (c, r) in map(tuple, p["cells"])}
     walls = sorted((list(cr) for cr in wall_set), key=lambda cr: (cr[0], cr[1]))
-    return {
+    geo = {
         "location": None,  # set by caller
         "cols": cols, "rows": rows, "material": material,
         "cell_default_walkable": True,
@@ -103,6 +138,9 @@ def _geometry(cols: int, rows: int, material: str, props: list, *,
         "door_cells": list(door_cells or []),
         "protected_lane_cells": [],
     }
+    if camera_fit:
+        geo["camera_fit"] = True
+    return geo
 
 
 def author_crypt() -> dict:
@@ -248,8 +286,45 @@ def author_tavern() -> dict:
     return geo
 
 
+def author_tavern_fit() -> dict:
+    """The tavern re-authored under the EXTENT CONTRACT (#1543 / M-ALIGN) — the reference room proving
+    paint == playable grid. Two additions over author_tavern(), both OPT-IN so nothing about the
+    deployed tavern (its plate, manifest, and the engine-grid tests that pin author_tavern's props)
+    changes:
+
+    1. ``camera_fit: true`` — greybox_render_headless fits the ortho scale so the 12x10 grid diamond +
+       wall band fills the 1344x768 frame edge-to-edge, instead of the fixed ortho=13 that left canvas
+       margins the style pass out-painted into a room LARGER than the grid (owner playtest #8: unreachable
+       painted floor, invisible walls at the grid edges).
+    2. an explicit PERIMETER WALL BAND authored as continuous wall RUNS (``_perimeter_wall_run_props``,
+       kind ``wall_run``) — one box per edge run (the #1539 no-crenellation rule), the door gap at (8,0)
+       left OPEN (the old per-cell perimeter walled the door cell shut), so painted walls sit ON
+       impassable cells by construction.
+
+    The interior prop layout is IDENTICAL to author_tavern() (kept in sync deliberately — same 6 props,
+    same cells); only the wall representation and the camera flag differ. Kept as a SEPARATE room key so
+    ``tavern`` stays byte-identical for every existing consumer."""
+    props = [
+        # --- interior props: identical layout to author_tavern() ---
+        ("hearth", "hearth", [[5, 1], [6, 1]]),
+        ("bar_counter", "bar", [[9, 2], [9, 3], [9, 4], [9, 5]]),
+        ("table_nw", "table", [[3, 3], [4, 3], [3, 4], [4, 4]]),
+        ("table_ne", "table", [[6, 3], [7, 3], [6, 4], [7, 4]]),
+        ("table_s", "table", [[5, 6], [6, 6], [5, 7], [6, 7]]),
+        ("barrels", "barrel", [[2, 6], [3, 6], [2, 7], [3, 7]]),
+    ]
+    # --- explicit continuous perimeter wall band, door (8,0) left open ---
+    props += _perimeter_wall_run_props(12, 10, door_cells=[[8, 0]])
+    # perimeter=False: the wall band is now carried by the wall_run props (which _geometry folds into
+    # walls/impassable), so we must NOT also add the per-cell _perimeter_walls (which would wall the door).
+    geo = _geometry(12, 10, "worn wooden planks", props, perimeter=False,
+                    door_cells=[[8, 0]], camera_fit=True)
+    geo["location"] = "Firelit Tavern Hall"
+    return geo
+
+
 _ROOMS = {"crypt": author_crypt, "crypt_rich": author_crypt_rich,
-          "camp": author_camp, "tavern": author_tavern}
+          "camp": author_camp, "tavern": author_tavern, "tavern_fit": author_tavern_fit}
 
 
 def main(argv=None) -> int:
