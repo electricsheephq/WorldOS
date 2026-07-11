@@ -159,6 +159,33 @@ WOSRelight lane that DID consume them should **stop** (shared-greybox sidecars s
 vertical-banding seams onto warm plates — only a per-plate sidecar would be safe). Don't wire a new
 recipe to these unless you've re-read #1481 first.
 
+### 3a. THE EXTENT CONTRACT — the painted room must equal the playable grid (#1543, M-ALIGN)
+
+**The defect (owner playtest #8):** the fixed ortho=13 rig leaves canvas margins around a small room,
+and the style pass out-paints those margins into "more room" — the tavern painted a room LARGER than
+its authored 12×10 grid (unreachable painted floor, invisible walls at the grid edges, edge cells on
+painted furniture). Two amendments kill it at the recipe level, both **strictly opt-in** (a room
+without them renders byte-identical — the registration/coherence instruments share the fixed rig):
+
+- **CAMERA-FIT** — render the greybox with `--camera-fit` (or a geometry field `"camera_fit": true`):
+  `greybox_render_headless` computes the ortho SCALE from the room's own grid extent so the grid
+  diamond + perimeter wall band fills the frame edge-to-edge — no margin left to out-paint. Only the
+  ortho scale changes; the dimetric basis (`cell_to_world`/`world_to_screen`) is identical.
+  ```bash
+  python3 qa/greybox_render_headless.py <geometry.json> <greybox.png> --camera-fit --wall-height 5
+  ```
+- **PERIMETER WALL BAND** — for ENCLOSED rooms, author the perimeter as continuous wall RUNS
+  (`author_room_geometry._perimeter_wall_run_props`, kind `wall_run`: one box per edge run, split at
+  doors — the #1539 no-crenellation rule), so painted walls sit ON impassable cells by construction
+  and the door gap stays walkable. `tavern_fit` is the reference room emitting both (`camera_fit` +
+  the wall band); keep `tavern` as-is (its geometry is pinned by the engine-grid tests).
+
+**HOTFIX for already-painted plates** — you can't un-paint an out-painted plate, but you can mask it:
+`tools/mask_plate_extent.py <plate> <geometry.json> -o <masked.png>` feathers everything OUTSIDE the
+grid diamond + wall band to a dark vignette (deterministic, PIL-only), so the room fades to darkness
+instead of showing unreachable painted floor. Evidence: `qa/evidence/1543/` (masked tavern +
+before/after). Adopting a masked plate into `plates_manifest.json` is a separate, deliberate step.
+
 ### 4. Registered base — flux depth-ControlNet (`docs/roadmap/PLATE-RECIPE-DECISION.md`)
 
 **Adopted pipeline (DECIDED 2026-07-10, supersedes the implicit `model_z-image` img2img default):**
