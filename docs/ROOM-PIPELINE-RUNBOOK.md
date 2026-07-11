@@ -223,8 +223,11 @@ Two mandatory prompt clauses, whichever way you submit the edit:
   wear, lighting, small loose scatter like straw/pebbles that no one could collide with)".
   STRUCTURE-LOCK protects what's authored; it never forbade *inventing* — the tavern's painted
   benches had no cells, so players walked through solid-looking furniture. Every style-pass prompt
-  MUST carry this clause; the visual journey's inverse-coherence check (#1540) is the enforcement
-  gate (painted-object edges on authored-walkable cells ⇒ FLAG, no promote).
+  MUST carry this clause. Enforcement today: the visual journey's inverse-coherence check (#1540,
+  qa/journey_visual_sweep.py) FLAGS painted-object edges on authored-walkable cells and they count
+  against the room's CLEAN% (the M-ALIGN bar); wiring those flags into promote.py as a hard
+  no-promote condition is tracked on #1542/#1553 — until that lands, a flagged room is a human
+  reject-by-policy, not a machine-blocked one.
 - **DIMETRIC-LOCK** — an explicit camera-angle-preservation clause. Needed because dropping
   `referenceImages` also drops an *implicit* camera pin that a reference image otherwise supplied
   (`qa/evidence/plate-sprint/camp-armB/findings.json` finding 3) — but test it per-room: on a base
