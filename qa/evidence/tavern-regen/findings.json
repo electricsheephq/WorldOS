@@ -1,0 +1,58 @@
+{
+ "lane": "TAVERN-REGEN (M-ALIGN wave-2 capstone) — regenerate the tavern under the fully amended pipeline so paint == world by construction",
+ "verdict": "HONEST NEGATIVE — do NOT adopt. The extent-contract + additions-lock tavern is coherence-correct (paint==grid, 0 invented furniture, door at authored (8,0)) but panel median 6.0 < incumbent (7.0 canonical / 8.0 this-panel) and < real-art control 9.0; delta_candidate_minus_control = -3.0, below promote.py's -2.5 adopt floor. promote.py --dry-run machine verdict: rejected / passed=false / tier=null / 'delta -3.0 < -2.5 adoption bar'.",
+ "pipeline_run": {
+  "1_geometry": "tools/author_room_geometry.py tavern_fit -> tavern_fit_geometry.json (12x10, camera_fit=true, door_cells=[[8,0]], 6 interior props + 5 continuous wall_run segments split at the door; no crenellation).",
+  "2_manifest": "tools/derive_room_manifest.py -> qa/room_manifests/tavern_fit.cells.json (derived, 11 props, 59 walkable).",
+  "3_greybox": "qa/greybox_render_headless.py --camera-fit --wall-height 5 -> tavern_fit_greybox.png (camera-fit ortho=9.26, 1344x768) + depth/normal sidecars. G1_frame_lit PASS (mean-lum 0.223).",
+  "4_registered_base": "flux.1-dev + depth-ControlNet (model_bfl-flux-1-dev), NO LoRA. Best-of-N base seeds at controlStrength 0.85/0.92/0.95; seed222@cs0.95 -> edge-recall 0.9554 CLEARS the >=0.95 masonry gate. gen_base95_s222/room_tavern.png.",
+  "5_style_pass": "SINGLE Gemini instruction-edit (model_google-gemini-3-1-flash) over the base, STRUCTURE-LOCK + ADDITIONS-LOCK verbatim + tavern scene-content grounding, NO external referenceImages (self-edit only), DIMETRIC-LOCK omitted (base camera geometry-locked). Deliberately NOT --layered (its populate pass invents furniture, violating ADDITIONS-LOCK). Two best-of-3 iterations: v1 (style_pass_prompt.txt, brighter) and v2 (style_pass_prompt_v2.txt, tenebrist). Adopted-for-panel: v2 candidate_s1000 (near_black 49%, matches the deployed incumbent's staging).",
+  "model_chain": ["model_bfl-flux-1-dev (depth-CN base)", "model_google-gemini-3-1-flash (style pass)"],
+  "model_chain_provenance": "both ids are qa/model_registry.json-approved; declared in the plate_loop config model_chain block -> promote provenance gate PASS."
+ },
+ "gates": {
+  "edge_recall_base": {"value": 0.9554, "gate": ">=0.95 masonry", "verdict": "PASS"},
+  "edge_recall_final_candidate": {"value": 0.855, "note": "soft-edge painterly, ADVISORY per #1491 (new-tavern adopted at 0.747)"},
+  "visual_pregate_frame_lit": {"gate": "G1_frame_lit", "verdict": "PASS", "mean_luminance": 0.1646},
+  "visual_pregate_G6_staging_law": {"verdict": "FLAG (near_black 49%)", "note": "NOT a promotion floor; matches the ADOPTED new-tavern which also FLAGged G6 at 49.5%"},
+  "ADDITIONS_check": {
+   "headline_invented_furniture_count": 0,
+   "method": "qa/journey_visual_sweep.inverse_coherence_flags on candidate v2 s1000 + tavern_fit manifest",
+   "footprint_exclusion_raw": "0 flags (v2 s1000) — even the sweep's default footprint-exclusion gives ZERO for the adopted candidate",
+   "furniture_occlusion_exclusion": "0 flags — the principled silhouette-aware discriminator (exclude non-wall furniture OCCLUSION, not footprint); validated non-vacuous because a rejected sibling (v2 s1111) still flagged its 1-2 invented objects and v1 s1111 flagged 2 invented barrels at open-floor cells (5,8)/(2,5).",
+   "panel_defect_flags": "0 across 5 scorers x 3 images (on_prop/t_pose/floating/duplicate/missing all false)."
+  }
+ },
+ "blind_panel": {
+  "protocol": "control-anchored 5-scorer blind panel (fast-worker sonnet, independent). A=candidate B=incumbent(tavern_truegrey_v1, deployed 7.0) C=disguised real-art PoE2 control [6.8,9.2].",
+  "v1_bright": {"candidate_median": 6.0, "incumbent_median": 9.0, "control_median": 9.0, "delta_vs_control": -3.0},
+  "v2_tenebrist": {"candidate_median": 6.0, "incumbent_median": 8.0, "control_median": 9.0, "delta_vs_control": -3.0},
+  "control_valid": true,
+  "read": "Candidate CAPPED at 6.0 across BOTH lighting variants — the cap is furniture SPARSENESS, not lighting. Every scorer cited missing seating/tableware/hanging-lanterns/clutter."
+ },
+ "capstone_finding": "ADDITIONS-LOCK caps painterly panel score on a SPARSE greybox. The incumbent tavern buys its 7.0 substantially from INVENTED walk-through furniture (stools, benches, a hanging chandelier, wall lanterns, shelf clutter) that has NO authored collision cells — the exact paint!=world defect M-ALIGN exists to eliminate. An additions-locked plate from the 6-prop tavern_fit geometry is coherence-correct but inherently sparser, and the panel rewards the incumbent's forbidden richness. Per the RICHNESS PRINCIPLE, the durable fix is a DENSER tavern GREYBOX (author stools/benches/bar-shelving/wall-fixtures as REAL collision props), not more style-pass iteration — style variants (bright v1 / tenebrist v2) both plateau at 6.0.",
+ "walkslice_reconciliation_needed": {
+  "authored_door": "tavern_fit door_cells = [[8,0]] (back wall, wall band split there).",
+  "walkslice_current": "qa/seed_gfx_walkslice.py:113 TAVERN_BACK_DOOR = [0, 0] — a #1534 WORKAROUND (the deployed incumbent plate painted its only doorway on the LEFT wall, outside the grid).",
+  "required_change_IF_a_tavern_fit_plate_is_adopted": "qa/seed_gfx_walkslice.py line 113: TAVERN_BACK_DOOR = [0, 0]  ->  TAVERN_BACK_DOOR = [8, 0]; update the lines 107-112 comment (the #1534 durable-fix landed). NOT changed in this lane (honest negative -> incumbent plate + its left-wall door remain).",
+  "note": "tavern_fit IS the durable fix #1534 named ('author a real door gap into the tavern geometry at the next regen'): the greybox+base+style pass all render a real open door at (8,0)."
+ },
+ "runbook_gaps_hit": [
+  "The dispatch packet claimed EXTENT-CONTRACT §3a, ADDITIONS-LOCK, and tavern_fit were all 'merged today' into the runbook; on cold checkout local main was 2 commits stale. §3a/tavern_fit (#1543/#1555) and the model registry (#1554) ARE on origin/main, but the ADDITIONS-LOCK style-pass clause (#1542) is on the UNMERGED branch origin/additions-lock — its verbatim clause had to be read from that branch, not the main runbook.",
+  "The ADDITIONS inverse-coherence check (qa/journey_visual_sweep.py) excludes prop FOOTPRINT but tests the standing-SILHOUETTE band lifted up-screen, so tall/mid authored props (hearth, bar counter, door frame) self-flag on the walkable cells up-screen of their footprint. Raw footprint-exclusion flagged 5-6 authored-structure cells on v1; the correct silhouette-aware discriminator is per-prop OCCLUSION exclusion (runbook §2's footprint-vs-occlusion distinction). NOTE the manifest's wall_run OCCLUSION hulls blanket all 120 cells (the §2 'long run -> huge hull' anti-pattern), so full-occlusion exclusion is vacuous; exclude NON-WALL furniture occlusion only.",
+  "No first-class CLI wraps the ADDITIONS-locked single-Gemini style pass (runbook step 6 confirms this). generate_room.py --layered is UNSAFE for M-ALIGN (its pass2 populate invents furniture). A small reusable driver (qa/evidence/tavern-regen/gemini_style_pass.py) was written for the direct instruction-edit; worth promoting to a tools/ CLI.",
+  "The visual gate's house_anchor defaults to doubling as the incumbent slot, so the incumbent is disclosed as house_best and scores inflated (image==house_best). The control-anchored delta (vs C) is the robust signal and is unaffected."
+ ],
+ "cu_note": "Scenario spend well under the 100 CU cap: ~11 flux depth-CN base samples (best-of-N seed search to clear 0.95) + 6 Gemini style samples (2 x best-of-3). No training.",
+ "artifacts": {
+  "geometry": "qa/evidence/tavern-regen/tavern_fit_geometry.json",
+  "manifest": "qa/room_manifests/tavern_fit.cells.json",
+  "greybox": "qa/evidence/tavern-regen/tavern_fit_greybox.png",
+  "registered_base": "qa/evidence/tavern-regen/gen_base95_s222/room_tavern.png (edge-recall 0.9554)",
+  "candidate_adopted_for_panel": "qa/evidence/tavern-regen/gen_style_v2/candidate_s1000.png",
+  "style_prompts": ["qa/evidence/tavern-regen/style_pass_prompt.txt", "qa/evidence/tavern-regen/style_pass_prompt_v2.txt"],
+  "panel_json": "qa/evidence/tavern-regen/tavern_regen_visual_gate_panel.json",
+  "galleries": ["qa/evidence/tavern-regen/gallery.html", "qa/evidence/tavern-regen/gallery_v2.html"],
+  "before_after": "qa/evidence/tavern-regen/before_after.png"
+ }
+}
