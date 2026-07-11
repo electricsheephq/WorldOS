@@ -1,0 +1,11 @@
+{
+  "scores": {"A": [6,5,6,5,7], "B": [8,8,8,8,9], "C": [9,9,9,9,10]},
+  "medians": {"A": 6.0, "B": 8.0, "C": 9.0},
+  "control_valid": true,
+  "defects": {
+    "A": {"on_prop": false, "t_pose": false, "floating": false, "duplicate": false, "missing": false},
+    "B": {"on_prop": false, "t_pose": false, "floating": false, "duplicate": false, "missing": false},
+    "C": {"on_prop": false, "t_pose": false, "floating": false, "duplicate": false, "missing": false}
+  },
+  "verdict": "candidate s1111 median 6.0 vs incumbent 8.0 (7.0 canonical) vs control 9.0; delta cand-control -3.0. Density gap CLOSED (no sparse/missing flags) but s1111 flat-lit."
+}

@@ -1,0 +1,36 @@
+{
+  "task": "blind painterly-plate panel \u2014 answer the factual defect checklist, THEN score each image",
+  "rubric": "Score the CANDIDATE plate's painterly quality + character-in-scene readiness as the GAP to the reference bar (Pillars of Eternity II: Deadfire). Score what you SEE \u2014 judge the image on its craft, NOT on assumptions about how it was made. Do NOT apply any 'AI-made deserves less' prior; harshness belongs in flaw-finding, not in a scale-suppressing prior. 0-10: 9-10 indistinguishable from the reference bar; 7-8 clearly the same world, minor tells; 5-6 reads as a game but visibly below the bar; 3-4 the illusion is breaking; 0-2 broken. Within-panel comparisons only.",
+  "factual_defect_checklist": [
+    {
+      "flag": "on_prop",
+      "question": "Is any character standing ON or INSIDE a painted prop/object (not on open floor)?"
+    },
+    {
+      "flag": "t_pose",
+      "question": "Is any character in a T-pose / bind-pose / obviously broken rig pose?"
+    },
+    {
+      "flag": "floating",
+      "question": "Is any character floating (feet off the ground / no ground-contact shadow)?"
+    },
+    {
+      "flag": "duplicate",
+      "question": "Is any character/prop duplicated (the same one rendered more than once)?"
+    },
+    {
+      "flag": "missing",
+      "question": "Is an expected character/prop MISSING or the wrong asset for the scene?"
+    }
+  ],
+  "house_style_question": "Does the candidate read as the SAME painterly hand / hit the SAME craft bar as the disclosed house-best reference (house_best.*), or does it look like a different, lesser pipeline? A candidate that beats its real-art control but LOSES this house-style read is a REGRESSION, not an adoption \u2014 regardless of the absolute number.",
+  "house_best_reference": "house_best.png",
+  "images": [
+    "image_1",
+    "image_2",
+    "image_3"
+  ],
+  "n_scorers": 5,
+  "control_band": 1.2,
+  "instructions": "FIRST, for EVERY image_N, answer the factual_defect_checklist \u2014 a plain YES/NO per flag on what you literally SEE, before any aesthetic judgement. THEN independently score every image_N 0-10 on the rubric. Return TEXT-ONLY JSON: {\"defects\": {\"image_1\": {\"on_prop\": true|false, \"t_pose\": ..., \"floating\": ..., \"duplicate\": ..., \"missing\": ...}, ...}, \"scores\": {\"image_1\": N, ...}, \"ranking\": [...best->worst...], \"house_style\": {\"image_N\": \"same-hand|lesser\", ...}, \"notes\": \"...\"}. Any defect flagged true is a FACT the harness surfaces regardless of the aesthetic score. Run 5 independent scorers; the harness takes the per-image MEDIAN. The real-art control's median sets the bar \u2014 a candidate at/above it (within the \u00b11.2 panel noise band) meets the bar."
+}
