@@ -91,6 +91,15 @@ public class CombatSurfaceClient : MonoBehaviour
     // The engine-confirmed route of the most recent move (surface `lastPath` == combat.last_move_path,
     // list of [x,y] incl. the from-cell). The glide follows THIS polyline; empty -> straight-line fallback.
     readonly System.Collections.Generic.List<int[]> _lastPath = new System.Collections.Generic.List<int[]>();
+    // #1544 REST-WALK ROUTE: the engine-confirmed route of the most recent REST `walk_to_cell`. The rest
+    // walk verb routes AROUND props (combat_grid.shortest_path) but the engine stores that route ONLY in the
+    // /move RESPONSE `path` (server.py:5171 envelope_path) — it never writes combat.last_move_path, so the
+    // surface's `lastPath` (viewer/server.py:3865 reads combat.last_move_path) is empty in rest and the glide
+    // fell back to a STRAIGHT LINE that visually clipped prop cells ("walking through tables"). PostWalk now
+    // parses that response `path` into this field so GlideTo follows the engine polyline cell-by-cell, exactly
+    // as combat does. Pure consumer (reads a field the engine already returns); cleared once the matching
+    // glide consumes it, so a later poll never reuses a stale walk route.
+    readonly System.Collections.Generic.List<int[]> _walkPath = new System.Collections.Generic.List<int[]>();
 
     // W6.2 (#1461) REST-MODE walk. A rest surface carries NO combat signals (empty `turnToken`, no
     // isCurrent token); its `stage` block ({mode, tokens:[{id,x,y,rest_role}]}) marks it mode:"rest".
@@ -306,6 +315,13 @@ public class CombatSurfaceClient : MonoBehaviour
     string _locId = "";          // the surface's current location.id (parsed every ParseSurfaceExtras)
     string _plateLocId = "\0";   // the location the CURRENT backdrop plate was applied for (sentinel => unset)
     bool _plateSwapping = false; // guards against a re-entrant swap while a fade is mid-flight
+    // #1544 TRANSITION POLISH: a SHARED black cover raised OPAQUE the instant a room change is detected (top
+    // of ApplyJson, BEFORE ApplySurf/RebuildOccluders mutate the scene), so the destination room's occluder
+    // proxies + repositioned cast are built BEHIND black — the owner never sees the un-textured greybox flash
+    // or the black-gap disconnect the old fade-IN exposed. Held through the (synchronous) plate load, faded
+    // OUT only once the destination plate is applied AND the new-room surface has been consumed. Destroyed at
+    // the end of the reveal (fields nulled) so each transition builds a fresh cover.
+    GameObject _plateCover; Material _plateCoverMat;
 
     [System.Serializable] public class Tok { public string id; public string name; public string team; public int x; public int y; public bool isCurrent; public int hp; public int hpMax; }
     [System.Serializable] public class Grid { public int cols; public int rows; }
@@ -454,6 +470,14 @@ public class CombatSurfaceClient : MonoBehaviour
         // runtime map/array parser used for registry.json. Impassable is static per location, so caching
         // from the poll covers the move-response path too.
         ParseSurfaceExtras(json);
+        // #1544 TRANSITION POLISH: if this surface changed the room (a cross_door relocation) and the plate
+        // manifest has an entry for the new location, raise the OPAQUE black cover NOW — BEFORE ApplySurf +
+        // RebuildOccluders rebuild the destination room's cast and (invisible depth-only) occluder proxies.
+        // The old fade-IN in SwapPlateCo let that rebuild flash over the OLD plate for ~0.18s (the owner's
+        // "raw grey proxy boxes then a disconnected black frame"). Covering FIRST hides the whole rebuild +
+        // plate-load window; MaybeSwapPlate then applies the destination plate behind the cover and fades back
+        // in only once the plate is applied AND this new-room surface has been consumed (which happens here).
+        if (PlateSwapPending()) RaisePlateCover();
         ApplySurf(s);
         // W6.1 (#1460): (re)build the invisible occluder proxies AFTER ApplySurf has applied this surface's
         // grid extents (CellToWorld depends on Cols/Rows). No-ops unless the occluder set/location changed.
@@ -1490,30 +1514,50 @@ public class CombatSurfaceClient : MonoBehaviour
         }
     }
 
+    // #1544: the engine-confirmed polyline to follow for a from->to move, or null for a straight line. Combat
+    // moves ride the surface `_lastPath` (combat.last_move_path); rest walks ride `_walkPath` (the walk
+    // response `path`, which never reaches the surface's lastPath — see _walkPath). A path only applies when
+    // its endpoints match THIS move, so a stale route is never followed. Returns the SAME list instance so the
+    // caller can tell which channel matched (rest routes are single-use and cleared on consumption).
+    System.Collections.Generic.List<int[]> MatchingEnginePath(int fromCx, int fromCy, int cx, int cy)
+    {
+        if (PathMatches(_lastPath, fromCx, fromCy, cx, cy)) return _lastPath;
+        if (PathMatches(_walkPath, fromCx, fromCy, cx, cy)) return _walkPath;
+        return null;
+    }
+    static bool PathMatches(System.Collections.Generic.List<int[]> p, int fromCx, int fromCy, int cx, int cy)
+    {
+        return p != null && p.Count >= 2
+            && p[0][0] == fromCx && p[0][1] == fromCy
+            && p[p.Count - 1][0] == cx && p[p.Count - 1][1] == cy;
+    }
+
     // #1441 GLIDE: tween the actor cell->cell at GlideSpeed, playing a walk clip while moving and
-    // returning to idle at rest. Follows the ENGINE-CONFIRMED lastPath polyline when it matches this
-    // move (start==lastPath[0] && target==lastPath[-1]); otherwise a straight-line fallback. Rings/AO
-    // follow every frame. Presentation-only: only ever called with an engine-confirmed target.
+    // returning to idle at rest. Follows the ENGINE-CONFIRMED polyline (combat lastPath or rest _walkPath)
+    // when it matches this move (start==path[0] && target==path[-1]); otherwise a straight-line fallback.
+    // Rings/AO follow every frame. Presentation-only: only ever called with an engine-confirmed target.
     IEnumerator GlideTo(Transform a, string id, int fromCx, int fromCy, int cx, int cy)
     {
         var go = a.gameObject;
         float pitchX = go.GetComponentInChildren<SkinnedMeshRenderer>() != null ? 0f : -90f;
 
-        // Build the world-space route. Default: straight line start->target. If the engine's lastPath is
-        // this actor's move, follow its cells (each cell grounded to feet on FloorY via the same offset).
+        // Build the world-space route. Default: straight line start->target. If the engine confirmed a route
+        // for THIS move (combat `lastPath`, or the rest walk's `_walkPath` — #1544), follow its cells (each
+        // grounded to feet on FloorY via the same offset) so the walk detours around props like the engine did.
         Vector3 startPos = a.position;
         Vector3 endPos = GroundedPivot(a, cx, cy);
         var route = new System.Collections.Generic.List<Vector3> { startPos };
-        bool usePath = _lastPath.Count >= 2
-            && _lastPath[0][0] == fromCx && _lastPath[0][1] == fromCy
-            && _lastPath[_lastPath.Count - 1][0] == cx && _lastPath[_lastPath.Count - 1][1] == cy;
-        if (usePath)
+        var engPath = MatchingEnginePath(fromCx, fromCy, cx, cy);
+        if (engPath != null)
         {
             // ground offset that maps the from-cell's CellToWorld to the actor's current grounded pivot,
             // reused for every intermediate cell so the whole walk stays foot-planted on the flat floor.
             Vector3 fromCellW = CellToWorld(fromCx, fromCy);
             Vector3 gOff = new Vector3(startPos.x - fromCellW.x, startPos.y - fromCellW.y, startPos.z - fromCellW.z);
-            for (int i = 1; i < _lastPath.Count; i++) route.Add(CellToWorld(_lastPath[i][0], _lastPath[i][1]) + gOff);
+            for (int i = 1; i < engPath.Count; i++) route.Add(CellToWorld(engPath[i][0], engPath[i][1]) + gOff);
+            // A rest walk route is single-use — clear it once consumed so a later same-endpoints glide can't
+            // reuse a stale polyline (the combat `_lastPath` is refreshed every surface, so it self-corrects).
+            if (engPath == _walkPath) _walkPath.Clear();
         }
         else route.Add(endPos);
 
@@ -2050,11 +2094,38 @@ public class CombatSurfaceClient : MonoBehaviour
                 try { resp = JsonUtility.FromJson<MoveResp>(req.downloadHandler.text); }
                 catch (System.Exception e) { Debug.LogWarning("[CSC] walk parse: " + e.Message); }
                 if (resp != null && !resp.ok && !string.IsNullOrEmpty(resp.reason)) ShowAdvisory(resp.reason);
-                else MarkActed();   // #1463: an accepted walk retires the onboarding hint
+                else
+                {
+                    // #1544: capture the engine-confirmed walk route from the response `path` BEFORE the
+                    // re-fetch below. The surface never carries this route in rest (its `lastPath` reads
+                    // combat.last_move_path, which walk_to_cell doesn't write), so without this the glide
+                    // straight-lined through prop cells. GlideTo (via MatchingEnginePath) now follows it.
+                    ParseWalkPath(req.downloadHandler.text);
+                    MarkActed();   // #1463: an accepted walk retires the onboarding hint
+                }
             }
         }
         _busy = false;   // always released (the watchdog guarantees the loop above terminates)
         yield return Fetch();   // re-render off the engine's fresh surface (stage_cell now updated)
+    }
+
+    // #1544: parse a rest `walk_to_cell` response's engine-confirmed `path` ([[x,y],... incl. the from-cell)
+    // into _walkPath so the imminent glide follows the routed polyline instead of straight-lining through
+    // props. Uses the runtime Json map parser (JsonUtility can't model a list-of-[x,y]), mirroring
+    // ParseSurfaceExtras' lastPath parse. Absent/corrupt `path` leaves _walkPath empty (straight-line
+    // fallback, engine still authoritative). Cleared first so a rejected/pathless walk can't reuse a stale one.
+    void ParseWalkPath(string json)
+    {
+        _walkPath.Clear();
+        try
+        {
+            var root = Json.Parse(json) as System.Collections.Generic.Dictionary<string, object>;
+            if (root == null || !root.ContainsKey("path")) return;
+            var lp = root["path"] as System.Collections.Generic.List<object>;
+            if (lp == null) return;
+            foreach (var ce in lp) { var cell = ce as System.Collections.Generic.List<object>; if (cell == null || cell.Count < 2) continue; _walkPath.Add(new[] { System.Convert.ToInt32(cell[0]), System.Convert.ToInt32(cell[1]) }); }
+        }
+        catch (System.Exception e) { Debug.LogWarning("[CSC] walk-path parse: " + e.Message); }
     }
 
     // WALKABLE-SLICE-V1: a minimal POST /move for the rest-mode intents (walk-to-door, cross_door,
@@ -2865,43 +2936,65 @@ public class CombatSurfaceClient : MonoBehaviour
     // unknown location -> no-op (the scene's current plate stands). Guarded against a re-entrant mid-fade swap.
     void MaybeSwapPlate()
     {
-        if (_plateManifest == null || _plateSwapping || string.IsNullOrEmpty(_locId)) return;
-        if (_locId == _plateLocId) return;                       // already showing this room's plate
-        if (!_plateManifest.ContainsKey(_locId)) return;         // no entry -> keep the current plate (safe)
+        if (!PlateSwapPending()) return;
         // _plateSwapping (set synchronously as SwapPlateCo's first line) is the re-entrancy guard; _plateLocId
         // is committed only on a SUCCESSFUL apply (below) so a missing plate file retries on the next poll.
         StartCoroutine(SwapPlateCo(_locId, _plateManifest[_locId]));
     }
 
-    // Brief fade (black cover in) -> LoadImage swap on the PaintedBackdrop material + re-size the camera-child
-    // quad to the new plate aspect + optional camera pin -> fade out. A missing plate file / backdrop object
-    // leaves the current plate untouched (a logged warning, never a broken frame).
+    // #1544: the plate-swap gate, shared by ApplyJson's pre-mutation cover raise and MaybeSwapPlate so the
+    // cover is raised for EXACTLY the surfaces that swap the plate. True only when a manifest is loaded, no
+    // swap is already mid-flight, the surface carries a location, and that location differs from the one the
+    // current backdrop plate was applied for AND has a manifest entry (an unknown room keeps its plate — no
+    // pointless fade). Same-room occluder/prop changes don't trip it, so the cover is a room-change affordance.
+    bool PlateSwapPending()
+    {
+        return _plateManifest != null && !_plateSwapping && !string.IsNullOrEmpty(_locId)
+            && _locId != _plateLocId && _plateManifest.ContainsKey(_locId);
+    }
+
+    // #1544: raise the shared black cover to FULLY OPAQUE this frame (idempotent). Called BEFORE any visible
+    // scene mutation on a room change so the destination-room rebuild happens behind black — no fade-IN, so no
+    // window where the un-textured proxies show through. Parented to the camera in FRONT of the backdrop
+    // (backdrop local z=160; cover nearer at z=120, oversized to blanket the ortho frustum). SwapPlateCo fades
+    // it out and destroys it once the destination plate is applied.
+    void RaisePlateCover()
+    {
+        var cam = Camera.main; if (cam == null) return;
+        if (_plateCover == null)
+        {
+            _plateCover = GameObject.CreatePrimitive(PrimitiveType.Quad); _plateCover.name = "PlateFade";
+            Object.DestroyImmediate(_plateCover.GetComponent<Collider>());
+            _plateCover.transform.SetParent(cam.transform, false);
+            _plateCover.transform.localPosition = new Vector3(0f, 0f, 120f);
+            float ch = (cam.orthographic ? cam.orthographicSize * 2f : 30f) * 1.4f;
+            _plateCover.transform.localScale = new Vector3(ch * 2f, ch, 1f);
+            _plateCoverMat = new Material(Shader.Find("Sprites/Default")); _plateCoverMat.renderQueue = 4000;
+            var cr = _plateCover.GetComponent<Renderer>(); cr.sharedMaterial = _plateCoverMat;
+            cr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        }
+        _plateCoverMat.color = new Color(0f, 0f, 0f, 1f);   // opaque immediately — never a greybox-exposing fade-IN
+    }
+
+    // #1544: LoadImage swap on the PaintedBackdrop material + re-size the camera-child quad to the new plate
+    // aspect + optional camera pin, then fade the (already-opaque) cover back OUT. The cover was raised OPAQUE
+    // by ApplyJson (RaisePlateCover) BEFORE the scene was rebuilt, so the whole rebuild + plate load stays
+    // behind black; the reveal only starts once the destination plate is applied AND this new-room surface has
+    // been consumed — no greybox flash, no black-gap disconnect. A missing plate file / backdrop object leaves
+    // the current plate untouched (a logged warning, never a broken frame).
     IEnumerator SwapPlateCo(string slug, PlateEntry entry)
     {
         _plateSwapping = true;
-        var cam = Camera.main;
-        GameObject cover = null; Material coverMat = null;
-        if (cam != null)
-        {
-            // full-frame black cover parented to the camera, in FRONT of the backdrop (backdrop is at local
-            // z=160; the cover sits nearer at z=120 and is oversized to blanket the ortho frustum).
-            cover = GameObject.CreatePrimitive(PrimitiveType.Quad); cover.name = "PlateFade"; Object.DestroyImmediate(cover.GetComponent<Collider>());
-            cover.transform.SetParent(cam.transform, false);
-            cover.transform.localPosition = new Vector3(0f, 0f, 120f);
-            float ch = (cam.orthographic ? cam.orthographicSize * 2f : 30f) * 1.4f;
-            cover.transform.localScale = new Vector3(ch * 2f, ch, 1f);
-            coverMat = new Material(Shader.Find("Sprites/Default")); coverMat.color = new Color(0f, 0f, 0f, 0f); coverMat.renderQueue = 4000;
-            var cr = cover.GetComponent<Renderer>(); cr.sharedMaterial = coverMat; cr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            for (float t = 0f; t < 0.18f; t += Time.deltaTime) { coverMat.color = new Color(0f, 0f, 0f, Mathf.Clamp01(t / 0.18f)); yield return null; }
-            coverMat.color = new Color(0f, 0f, 0f, 1f);
-        }
+        // Ensure the cover is up (defensive — e.g. a first-load swap where ApplyJson's raise was skipped
+        // because Camera.main resolved late); a no-op when ApplyJson already raised it.
+        RaisePlateCover();
 
         if (ApplyPlate(entry)) _plateLocId = slug;   // commit only on success -> a missing file retries next poll
 
-        if (cover != null && coverMat != null)
+        if (_plateCover != null && _plateCoverMat != null)
         {
-            for (float t = 0f; t < 0.18f; t += Time.deltaTime) { coverMat.color = new Color(0f, 0f, 0f, 1f - Mathf.Clamp01(t / 0.18f)); yield return null; }
-            Object.Destroy(cover);
+            for (float t = 0f; t < 0.18f; t += Time.deltaTime) { _plateCoverMat.color = new Color(0f, 0f, 0f, 1f - Mathf.Clamp01(t / 0.18f)); yield return null; }
+            Object.Destroy(_plateCover); _plateCover = null; _plateCoverMat = null;
         }
         _plateSwapping = false;
     }
