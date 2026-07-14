@@ -1,0 +1,4 @@
+{"scores": {"A": [6,6,6,6,5], "B": [8,10,8,8,8], "C": [10,9,9,9,9]},
+ "medians": {"A": 6, "B": 8, "C": 9},
+ "control_valid": true,
+ "verdict": "HONEST NEGATIVE — candidate (extent-contract+additions-lock tavern, tenebrist v2 s1000) median 6.0 vs incumbent 8.0 and real-art control 9.0; delta_vs_control -3.0 (below -2.5 adopt floor). Zero invented-furniture defect flags on all images. Cap is furniture sparseness (additions-lock forbids the incumbent's invented walk-through seating/tableware), not lighting."}

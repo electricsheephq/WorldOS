@@ -1,0 +1,15 @@
+[scenario_gen] uploaded p1_material_s1111.png -> asset_id=asset_v6nvaCxY6YK4Y5R4Hkr95bXs
+[gemini_style_pass] base uploaded -> asset_v6nvaCxY6YK4Y5R4Hkr95bXs
+[gemini_style_pass] seed 1000 job job_S1qGyS3vZDjh3HW6LnguE4Az (model=model_google-gemini-3-1-flash)
+[scenario_gen] style_s1000 status=in-progress progress=0
+[scenario_gen] style_s1000 status=success progress=1
+[scenario_gen] downloaded candidate_s1000.png (5524686 bytes)
+[gemini_style_pass] downscaled candidate_s1000.png (2816, 1536) -> 1344x768
+[gemini_style_pass] seed 1000 -> qa/evidence/layered-reg/passes_v2/candidate_s1000.png
+[gemini_style_pass] seed 1111 job job_pCHa37EUvQJ2NPMnKUZWw3xT (model=model_google-gemini-3-1-flash)
+[scenario_gen] style_s1111 status=in-progress progress=0
+[scenario_gen] style_s1111 status=success progress=1
+[scenario_gen] downloaded candidate_s1111.png (5204981 bytes)
+[gemini_style_pass] downscaled candidate_s1111.png (2816, 1536) -> 1344x768
+[gemini_style_pass] seed 1111 -> qa/evidence/layered-reg/passes_v2/candidate_s1111.png
+[gemini_style_pass] DONE — 2 candidates in qa/evidence/layered-reg/passes_v2

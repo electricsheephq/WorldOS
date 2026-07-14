@@ -1,0 +1,17 @@
+{
+  "slot_to_label": {
+    "image_1": "A",
+    "image_2": "C",
+    "image_3": "B"
+  },
+  "label_to_slot": {
+    "A": "image_1",
+    "C": "image_2",
+    "B": "image_3"
+  },
+  "labels": {
+    "A": "candidate",
+    "B": "incumbent-canonical",
+    "C": "disguised-real-art-control"
+  }
+}
