@@ -49,7 +49,8 @@ CAMP_DOOR = [5, 0]
 def build_crypt_grid(loc_id: str):
     """The walkslice crypt scene_grid = the CANONICAL combat crypt (``seed_gfx_combat._build_crypt_grid``:
     14x11, sarcophagus 2x2 coffin footprint cols4-5 x rows7-8, pillars (3,3)/(3,4) and (8,9)/(9,9) —
-    matched to the adopted crypt_fresh plate, WALKSLICE-CRYPT-ALIGN #1565) with ONE addition: a back-center DOORWAY the party crosses to the
+    matched to the adopted crypt_fresh plate, WALKSLICE-CRYPT-ALIGN #1565) with TWO additions: a
+    back-center DOORWAY (6,0) to the camp and a right-wall DOORWAY (13,4) to the tavern, the party crosses to the
     camp. Reuses the canonical grid verbatim (same cells/props/impassable) so the player renders the
     SAME crypt as the combat demo. Pure (no server) — directly unit-testable, mirroring
     ``_build_crypt_grid``'s own split rationale.

@@ -43,7 +43,7 @@
       "room": "crypt",
       "cols": 14,
       "rows": 11,
-      "plate": "/Users/lume/WorldOS-worktrees/wt-crypt-align/qa/evidence/crypt-fresh/crypt_fresh_v1.png",
+      "plate": "qa/evidence/crypt-fresh/crypt_fresh_v1.png",
       "plate_status": "resolved",
       "inverse_coherence": {
         "room": "crypt",
@@ -277,7 +277,7 @@
       "room": "camp_clearing_night",
       "cols": 16,
       "rows": 12,
-      "plate": "/Users/lume/WorldOS-worktrees/wt-crypt-align/qa/evidence/plate-audit/camp_clearing_night_truegrey_v1.png",
+      "plate": "qa/evidence/plate-audit/camp_clearing_night_truegrey_v1.png",
       "plate_status": "resolved",
       "inverse_coherence": {
         "room": "camp_clearing_night",
@@ -431,7 +431,7 @@
       "room": "tavern",
       "cols": 12,
       "rows": 10,
-      "plate": "/Users/lume/WorldOS-worktrees/wt-crypt-align/qa/evidence/tavern-fit2/tavern_fit2_v1.png",
+      "plate": "qa/evidence/tavern-fit2/tavern_fit2_v1.png",
       "plate_status": "resolved",
       "inverse_coherence": {
         "room": "tavern",
