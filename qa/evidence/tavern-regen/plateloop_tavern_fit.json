@@ -1,0 +1,18 @@
+{
+  "name": "tavern-regen-extentcontract-additionslock-seed1222",
+  "room": "tavern_fit",
+  "generate": {"candidate": "/Users/lume/WorldOS-worktrees/wt-tavern-regen/qa/evidence/tavern-regen/gen_style/candidate_s1222.png"},
+  "registration": {"greybox": "/Users/lume/WorldOS-worktrees/wt-tavern-regen/qa/evidence/tavern-regen/tavern_fit_greybox.png", "min_recall": 0.95, "manifest": "/Users/lume/WorldOS-worktrees/wt-tavern-regen/qa/room_manifests/tavern_fit.cells.json"},
+  "panel": {
+    "incumbent": "/Users/lume/WorldOS-worktrees/wt-tavern-regen/qa/evidence/new-tavern/tavern_truegrey_v1.png",
+    "control": "/Users/lume/worldos-session-notes/plate-sprint/armB/poe2_control.jpg",
+    "house_anchor": "/Users/lume/WorldOS-worktrees/wt-tavern-regen/qa/evidence/new-tavern/tavern_truegrey_v1.png"
+  },
+  "model_chain": {
+    "base_model": "model_bfl-flux-1-dev",
+    "controlnet_model": "model_bfl-flux-1-dev",
+    "control_modality": "depth",
+    "loras": [],
+    "style_pass": {"model": "model_google-gemini-3-1-flash", "loras": [], "strength": null}
+  }
+}
