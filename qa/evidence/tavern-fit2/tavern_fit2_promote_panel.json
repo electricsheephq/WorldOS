@@ -1,0 +1,49 @@
+{
+  "room": "tavern_fit2",
+  "panel_id": "panel-visual-tavern-fit2-corrected-anchor-20260711",
+  "protocol": "CORRECTED-ANCHOR (#1560) control-anchored 5-scorer blind panel, re-scored in PR #1561 (source: qa/evidence/layered-reg/panel_verdict.json). Neutral anchors: disguised registered PoE2 real-art control (slot C) + a DISCLOSED CAMP house-ref (non-competing room); the incumbent is a DISCLOSED comparison, NOT house_best (the #1560 anchor-circularity fix). Candidate = the fit2 single-pass s1111 plate (slot B): world-true 12x10 DENSITY-LAW greybox (14 authored interior props) -> flux.1-dev depth-ControlNet base (edge-recall 0.98 vs greybox) -> single Gemini-3.1-flash structure/additions-locked style pass. Under #1559's OLD incumbent-as-house_best anchoring this SAME plate scored 6.0 / delta -3.0 (honest negative); the #1560 anchor correction moved it to 7.0 / delta -1.0.",
+  "scale": "0-10 visual-critic (delta-anchored two-tier ladder; an absolute number is NOT a quality verdict — real shipped PoE2/BG2 art scores 3.0-5.6 on this instrument)",
+  "candidate_image": "qa/evidence/tavern-fit2/gen_style/candidate_s1111.png",
+  "incumbent_image": "extensions/renderers/unity/plates/tavern_truegrey_v1.png",
+  "control_id": "control:visual:pillars-of-eternity-2:poe2_ruins_brazier_integration_01",
+  "control_note": "REGISTERED clean control (real shipped PoE2:Deadfire ruins/brazier plate, band [6.8,9.2]) from qa/visual_controls_identity.json, disguised as blind slot C in the #1561 corrected panel packet.",
+  "pregate": {
+    "verdict": "FLAG",
+    "pregate_note": "G1_frame_lit (a promotion HARD-FLOOR gate) PASSes on the adopted plate; G6_luma_staging_law is HIGH because the s1111 single-pass is the flattest-lit best-of-N seed (near_black 30% vs the PoE 66-85% band) — G6 is the STYLISTIC staging-law band, explicitly NOT a promotion floor (promote.py _VISUAL_HARD_FLOOR_GATES = {G1,G2,G3,G4}); the deployed incumbent was promoted with the same G6 FLAG. Computed on candidate_s1111.png via qa/visual_pregate.py.",
+    "blocking": [],
+    "gates": [
+      {
+        "gate": "G1_frame_lit",
+        "severity": "PASS",
+        "metric": "mean_luminance",
+        "value": 0.1459,
+        "threshold": null,
+        "detail": "lit (mean 0.146, var 0.00912)"
+      },
+      {
+        "gate": "G6_luma_staging_law",
+        "severity": "HIGH",
+        "metric": "staging_law_stats",
+        "value": {"near_black_frac": 0.2997, "lit_frac": 0.1273, "median_L": 31.28},
+        "threshold": {"near_black_pass": [0.66, 0.85], "lit_pass": [0.02, 0.05], "median_pass": [0, 15]},
+        "detail": "FAIL: outside the PoE staging-law band (flattest-lit best-of-N seed) — NON-BLOCKING for promotion (stylistic band, not a hard floor)"
+      }
+    ]
+  },
+  "scores": [
+    {"scorer": 1, "lens": "brushwork", "control": 6, "candidate": 7, "incumbent": 6},
+    {"scorer": 2, "lens": "lighting", "control": 3, "candidate": 8, "incumbent": 8},
+    {"scorer": 3, "lens": "readability", "control": 8, "candidate": 7, "incumbent": 8},
+    {"scorer": 4, "lens": "material", "control": 9, "candidate": 7, "incumbent": 6},
+    {"scorer": 5, "lens": "holistic", "control": 9, "candidate": 5.5, "incumbent": 7.5}
+  ],
+  "candidate_median": 7.0,
+  "control_median": 8.0,
+  "incumbent_median_this_panel": 7.5,
+  "delta_candidate_minus_control": -1.0,
+  "delta_incumbent_minus_control_this_panel": -0.5,
+  "control_valid": true,
+  "source_panel": "qa/evidence/layered-reg/panel_verdict.json (PR #1561, corrected #1560 anchoring)",
+  "anchor_correction": "#1560 — panels no longer use the incumbent as house_best; challenger deltas were suppressed ~2pts by the circularity. The 0.5-point candidate/incumbent gap (7.0 vs 7.5) is inside the +/-1.5 per-lens scorer variance; the geometry/alignment gap is total (fit2 is coherence-perfect, 14 authored props, camera-fit extent, door at authored (8,0)).",
+  "candidate_note": "s1111 is the exact asset the #1561 corrected panel scored at 7.0/delta -1.0 (byte-identical to qa/evidence/layered-reg/panel/B.png). The fit2 lane's sibling seed s1000 (deeper tenebrist) scored identically 6.0 under the OLD anchor but was NOT in the corrected panel — so s1111 is the only fit2 plate with a measured corrected-anchor score, and it is the one adopted here."
+}

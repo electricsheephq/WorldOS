@@ -101,17 +101,21 @@ def build_camp_grid(loc_id: str):
 
 # The tavern is a BRAND-NEW room (NEW-ROOM-TAVERN, epic #1508) — no separate combat seed exists, so its
 # grid is authored HERE from the SAME world-true 12x10 geometry the greybox / registered plate / DERIVED
-# manifest were built from (tools/author_room_geometry.py tavern -> qa/room_manifests/tavern_truegrey.
-# cells.json). Prop footprints are VERBATIM from that geometry, so pathing and paint agree by construction.
+# manifest were built from. TAVERN-FIT2 ADOPTION (M-ALIGN wave-2 close, ruling on #1557): the canonical
+# tavern is now the DENSITY-LAW fit2 room (tools/author_room_geometry.py tavern_fit2 ->
+# qa/room_manifests/tavern_fit2.cells.json). Prop footprints are VERBATIM from that geometry, so pathing
+# and paint agree by construction.
 TAVERN_W, TAVERN_H = 12, 10
-# The tavern's door back to the crypt. #1534: the original (8,0) back-wall cell had no doorway painted
-# there (blank wall between hearth and bar). The tavern plate's ONLY painted doorway (the dark left-wall
-# opening) sits just OUTSIDE the 12x10 grid's west corner — out-painted dressing — so the door cell
-# moves to (0,0), the nearest walkable cell, putting the label/glow directly beside the painted opening
-# (overlay: qa/evidence/1534/grid_tavern.png). Durable fix (tracked on #1534): author a real door gap
-# into the tavern geometry at the next regen so the paint and the cell coincide exactly.
-TAVERN_BACK_DOOR = [0, 0]
+# The tavern's door back to the crypt. #1534/#1535 durable fix, now LANDED by fit2: the incumbent
+# truegrey plate painted NO doorway on the (8,0) back wall (blank wall between hearth and bar), so the
+# door cell had to move to (0,0) beside an out-painted west opening. The fit2 geometry AUTHORS a real
+# door gap in the north wall_run at (8,0) and the fit2 plate PAINTS its doorway there — so the door cell
+# and the painted opening now COINCIDE exactly. The door returns to the authored back-wall cell (8,0).
+TAVERN_BACK_DOOR = [8, 0]
 # (id, kind, footprint, height_band, silhouette) — correct 5-ft-grid scale, off the two near walls.
+# TAVERN-FIT2: the 6-prop truegrey interior grown to 14 REAL collision props (the density law, #1557/
+# #1559). Footprints VERBATIM from tools/author_room_geometry.py author_tavern_fit2. The 8 added props
+# are all off row 8 (the party/npc spawn row) and off the (8,0) door zone.
 _TAVERN_PROPS = [
     ("hearth", "hearth", [(5, 1), (6, 1)], "tall", "stone hearth with glowing embers"),
     ("bar_counter", "bar_counter", [(9, 2), (9, 3), (9, 4), (9, 5)], "mid", "carved wooden bar counter"),
@@ -119,6 +123,15 @@ _TAVERN_PROPS = [
     ("table_ne", "table", [(6, 3), (7, 3), (6, 4), (7, 4)], "low", "round wooden tavern table"),
     ("table_s", "table", [(5, 6), (6, 6), (5, 7), (6, 7)], "low", "round wooden tavern table"),
     ("barrels", "barrel", [(2, 6), (3, 6), (2, 7), (3, 7)], "low", "stacked ale barrels"),
+    # --- DENSITY-LAW additions (fit2): 8 props -> 14 interior (16 new impassable cells) ---
+    ("woodpile", "fallen_log", [(3, 1), (4, 1)], "low", "stacked firewood logs beside the hearth"),
+    ("bench_nw", "fallen_log", [(3, 5), (4, 5)], "low", "wooden bench flanking the NW table"),
+    ("bench_ne", "fallen_log", [(6, 5), (7, 5)], "low", "wooden bench flanking the NE table"),
+    ("bench_s", "fallen_log", [(7, 6), (7, 7)], "low", "wooden bench flanking the S table"),
+    ("stools_bar", "fallen_log", [(8, 3), (8, 4)], "low", "patron stools at the bar"),
+    ("shelf_bar", "supply_crates", [(10, 2), (10, 3)], "mid", "back-bar shelf behind the counter"),
+    ("casks_bar", "barrel", [(10, 4), (10, 5)], "mid", "ale casks stacked behind the bar"),
+    ("barrels_corner", "barrel", [(10, 7), (10, 8)], "low", "a barrel pair in the SE corner"),
 ]
 
 
