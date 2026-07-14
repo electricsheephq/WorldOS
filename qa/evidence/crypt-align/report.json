@@ -1,0 +1,726 @@
+{
+  "hub": "crypt",
+  "overall_clean_pct": 92.1,
+  "per_room": [
+    {
+      "room": "crypt",
+      "plate_status": "resolved",
+      "hero_steps": 1,
+      "hero_pass": 1,
+      "walkable_floor_cells": 86,
+      "inverse_coherence_flags": 15,
+      "clean_pct": 82.8,
+      "meets_95": false
+    },
+    {
+      "room": "camp_clearing_night",
+      "plate_status": "resolved",
+      "hero_steps": 1,
+      "hero_pass": 1,
+      "walkable_floor_cells": 134,
+      "inverse_coherence_flags": 6,
+      "clean_pct": 95.6,
+      "meets_95": true
+    },
+    {
+      "room": "tavern",
+      "plate_status": "resolved",
+      "hero_steps": 1,
+      "hero_pass": 1,
+      "walkable_floor_cells": 43,
+      "inverse_coherence_flags": 0,
+      "clean_pct": 100.0,
+      "meets_95": true
+    }
+  ],
+  "findings_by_class": {
+    "invented_furniture_flags": 21,
+    "reciprocal_door_failures": 0,
+    "hero_position_failures": 0
+  },
+  "rooms": [
+    {
+      "room": "crypt",
+      "cols": 14,
+      "rows": 11,
+      "plate": "qa/evidence/crypt-fresh/crypt_fresh_v1.png",
+      "plate_status": "resolved",
+      "inverse_coherence": {
+        "room": "crypt",
+        "edge_thr": 128,
+        "z_cut": 3.0,
+        "baseline_median": 0.0133,
+        "mad": 0.0102,
+        "threshold": 0.0587,
+        "n_cells": 86,
+        "flagged": [
+          {
+            "cell": [
+              6,
+              5
+            ],
+            "density": 0.1093,
+            "z": 6.34,
+            "ratio": 8.21
+          },
+          {
+            "cell": [
+              8,
+              4
+            ],
+            "density": 0.1069,
+            "z": 6.19,
+            "ratio": 8.03
+          },
+          {
+            "cell": [
+              11,
+              4
+            ],
+            "density": 0.1063,
+            "z": 6.14,
+            "ratio": 7.98
+          },
+          {
+            "cell": [
+              4,
+              2
+            ],
+            "density": 0.1051,
+            "z": 6.07,
+            "ratio": 7.9
+          },
+          {
+            "cell": [
+              6,
+              4
+            ],
+            "density": 0.101,
+            "z": 5.8,
+            "ratio": 7.59
+          },
+          {
+            "cell": [
+              6,
+              6
+            ],
+            "density": 0.0978,
+            "z": 5.58,
+            "ratio": 7.34
+          },
+          {
+            "cell": [
+              7,
+              4
+            ],
+            "density": 0.0946,
+            "z": 5.37,
+            "ratio": 7.11
+          },
+          {
+            "cell": [
+              7,
+              5
+            ],
+            "density": 0.0928,
+            "z": 5.25,
+            "ratio": 6.97
+          },
+          {
+            "cell": [
+              11,
+              3
+            ],
+            "density": 0.0912,
+            "z": 5.15,
+            "ratio": 6.85
+          },
+          {
+            "cell": [
+              5,
+              6
+            ],
+            "density": 0.0847,
+            "z": 4.72,
+            "ratio": 6.36
+          },
+          {
+            "cell": [
+              12,
+              4
+            ],
+            "density": 0.0842,
+            "z": 4.68,
+            "ratio": 6.32
+          },
+          {
+            "cell": [
+              10,
+              4
+            ],
+            "density": 0.0761,
+            "z": 4.15,
+            "ratio": 5.72
+          },
+          {
+            "cell": [
+              7,
+              3
+            ],
+            "density": 0.0677,
+            "z": 3.6,
+            "ratio": 5.09
+          },
+          {
+            "cell": [
+              9,
+              4
+            ],
+            "density": 0.0672,
+            "z": 3.56,
+            "ratio": 5.05
+          },
+          {
+            "cell": [
+              8,
+              3
+            ],
+            "density": 0.0649,
+            "z": 3.41,
+            "ratio": 4.87
+          }
+        ]
+      },
+      "flagged_cells": [
+        [
+          6,
+          5
+        ],
+        [
+          8,
+          4
+        ],
+        [
+          11,
+          4
+        ],
+        [
+          4,
+          2
+        ],
+        [
+          6,
+          4
+        ],
+        [
+          6,
+          6
+        ],
+        [
+          7,
+          4
+        ],
+        [
+          7,
+          5
+        ],
+        [
+          11,
+          3
+        ],
+        [
+          5,
+          6
+        ],
+        [
+          12,
+          4
+        ],
+        [
+          10,
+          4
+        ],
+        [
+          7,
+          3
+        ],
+        [
+          9,
+          4
+        ],
+        [
+          8,
+          3
+        ]
+      ],
+      "n_walkable_floor": 86,
+      "calibration": null,
+      "hero_checks": [
+        {
+          "step": 0,
+          "pass": true,
+          "cell": [
+            3,
+            5
+          ],
+          "feet": [
+            525.8,
+            457.1
+          ],
+          "feet_in_quad": true,
+          "on_flagged_cell": false,
+          "reason": null
+        }
+      ]
+    },
+    {
+      "room": "camp_clearing_night",
+      "cols": 16,
+      "rows": 12,
+      "plate": "qa/evidence/plate-audit/camp_clearing_night_truegrey_v1.png",
+      "plate_status": "resolved",
+      "inverse_coherence": {
+        "room": "camp_clearing_night",
+        "edge_thr": 128,
+        "z_cut": 3.0,
+        "baseline_median": 0.0036,
+        "mad": 0.0033,
+        "threshold": 0.02,
+        "n_cells": 134,
+        "flagged": [
+          {
+            "cell": [
+              3,
+              10
+            ],
+            "density": 0.0553,
+            "z": 10.52,
+            "ratio": 15.47
+          },
+          {
+            "cell": [
+              9,
+              5
+            ],
+            "density": 0.0358,
+            "z": 6.55,
+            "ratio": 10.01
+          },
+          {
+            "cell": [
+              9,
+              7
+            ],
+            "density": 0.0309,
+            "z": 5.56,
+            "ratio": 8.64
+          },
+          {
+            "cell": [
+              4,
+              10
+            ],
+            "density": 0.0302,
+            "z": 5.42,
+            "ratio": 8.46
+          },
+          {
+            "cell": [
+              9,
+              8
+            ],
+            "density": 0.0279,
+            "z": 4.95,
+            "ratio": 7.81
+          },
+          {
+            "cell": [
+              9,
+              6
+            ],
+            "density": 0.0276,
+            "z": 4.88,
+            "ratio": 7.71
+          }
+        ]
+      },
+      "flagged_cells": [
+        [
+          3,
+          10
+        ],
+        [
+          9,
+          5
+        ],
+        [
+          9,
+          7
+        ],
+        [
+          4,
+          10
+        ],
+        [
+          9,
+          8
+        ],
+        [
+          9,
+          6
+        ]
+      ],
+      "n_walkable_floor": 134,
+      "calibration": {
+        "clean_cells": [
+          [
+            4,
+            3
+          ],
+          [
+            5,
+            3
+          ],
+          [
+            6,
+            3
+          ],
+          [
+            4,
+            4
+          ],
+          [
+            5,
+            4
+          ],
+          [
+            6,
+            4
+          ],
+          [
+            5,
+            5
+          ],
+          [
+            6,
+            5
+          ]
+        ],
+        "clean_cells_flagged": [],
+        "ok": true
+      },
+      "hero_checks": [
+        {
+          "step": 1,
+          "pass": true,
+          "cell": [
+            4,
+            0
+          ],
+          "feet": [
+            296.0,
+            342.2
+          ],
+          "feet_in_quad": true,
+          "on_flagged_cell": false,
+          "reason": null
+        }
+      ]
+    },
+    {
+      "room": "tavern",
+      "cols": 12,
+      "rows": 10,
+      "plate": "qa/evidence/tavern-fit2/tavern_fit2_v1.png",
+      "plate_status": "resolved",
+      "inverse_coherence": {
+        "room": "tavern",
+        "edge_thr": 128,
+        "z_cut": 3.0,
+        "baseline_median": 0.0395,
+        "mad": 0.0162,
+        "threshold": 0.1116,
+        "n_cells": 43,
+        "flagged": []
+      },
+      "flagged_cells": [],
+      "n_walkable_floor": 43,
+      "calibration": null,
+      "hero_checks": [
+        {
+          "step": 3,
+          "pass": true,
+          "cell": [
+            7,
+            1
+          ],
+          "feet": [
+            588.5,
+            279.6
+          ],
+          "feet_in_quad": true,
+          "on_flagged_cell": false,
+          "reason": null
+        }
+      ]
+    }
+  ],
+  "transitions": [
+    {
+      "from": "crypt",
+      "to": "camp_clearing_night",
+      "crossed": true,
+      "arrival": [
+        4,
+        0
+      ],
+      "reciprocal": {
+        "pass": true,
+        "arrival": [
+          4,
+          0
+        ],
+        "max_cheb": 2,
+        "nearest_door": [
+          5,
+          0
+        ],
+        "cheb": 1,
+        "reason": null
+      }
+    },
+    {
+      "from": "camp_clearing_night",
+      "to": "crypt",
+      "crossed": true,
+      "arrival": [
+        6,
+        1
+      ],
+      "reciprocal": {
+        "pass": true,
+        "arrival": [
+          6,
+          1
+        ],
+        "max_cheb": 2,
+        "nearest_door": [
+          6,
+          0
+        ],
+        "cheb": 1,
+        "reason": null
+      }
+    },
+    {
+      "from": "crypt",
+      "to": "tavern",
+      "crossed": true,
+      "arrival": [
+        7,
+        1
+      ],
+      "reciprocal": {
+        "pass": true,
+        "arrival": [
+          7,
+          1
+        ],
+        "max_cheb": 2,
+        "nearest_door": [
+          8,
+          0
+        ],
+        "cheb": 1,
+        "reason": null
+      }
+    },
+    {
+      "from": "tavern",
+      "to": "crypt",
+      "crossed": true,
+      "arrival": [
+        12,
+        4
+      ],
+      "reciprocal": {
+        "pass": true,
+        "arrival": [
+          12,
+          4
+        ],
+        "max_cheb": 2,
+        "nearest_door": [
+          13,
+          4
+        ],
+        "cheb": 1,
+        "reason": null
+      }
+    }
+  ],
+  "steps": [
+    {
+      "step": 0,
+      "kind": "spawn",
+      "room": "crypt",
+      "label": "spawn in crypt",
+      "frame": "frames/step00_spawn_crypt.png",
+      "hero_check": {
+        "pass": true,
+        "cell": [
+          3,
+          5
+        ],
+        "feet": [
+          525.8,
+          457.1
+        ],
+        "feet_in_quad": true,
+        "on_flagged_cell": false,
+        "reason": null
+      },
+      "reciprocal": null
+    },
+    {
+      "step": 1,
+      "kind": "arrive",
+      "room": "camp_clearing_night",
+      "label": "crossed crypt -> camp_clearing_night",
+      "frame": "frames/step01_arrive_camp_clearing_night.png",
+      "hero_check": {
+        "pass": true,
+        "cell": [
+          4,
+          0
+        ],
+        "feet": [
+          296.0,
+          342.2
+        ],
+        "feet_in_quad": true,
+        "on_flagged_cell": false,
+        "reason": null
+      },
+      "reciprocal": {
+        "pass": true,
+        "arrival": [
+          4,
+          0
+        ],
+        "max_cheb": 2,
+        "nearest_door": [
+          5,
+          0
+        ],
+        "cheb": 1,
+        "reason": null
+      }
+    },
+    {
+      "step": 2,
+      "kind": "return",
+      "room": "crypt",
+      "label": "returned camp_clearing_night -> crypt",
+      "frame": "frames/step02_return_crypt.png",
+      "hero_check": {
+        "pass": true,
+        "cell": [
+          6,
+          1
+        ],
+        "feet": [
+          484.0,
+          310.9
+        ],
+        "feet_in_quad": true,
+        "on_flagged_cell": false,
+        "reason": null
+      },
+      "reciprocal": {
+        "pass": true,
+        "arrival": [
+          6,
+          1
+        ],
+        "max_cheb": 2,
+        "nearest_door": [
+          6,
+          0
+        ],
+        "cheb": 1,
+        "reason": null
+      }
+    },
+    {
+      "step": 3,
+      "kind": "arrive",
+      "room": "tavern",
+      "label": "crossed crypt -> tavern",
+      "frame": "frames/step03_arrive_tavern.png",
+      "hero_check": {
+        "pass": true,
+        "cell": [
+          7,
+          1
+        ],
+        "feet": [
+          588.5,
+          279.6
+        ],
+        "feet_in_quad": true,
+        "on_flagged_cell": false,
+        "reason": null
+      },
+      "reciprocal": {
+        "pass": true,
+        "arrival": [
+          7,
+          1
+        ],
+        "max_cheb": 2,
+        "nearest_door": [
+          8,
+          0
+        ],
+        "cheb": 1,
+        "reason": null
+      }
+    },
+    {
+      "step": 4,
+      "kind": "return",
+      "room": "crypt",
+      "label": "returned tavern -> crypt",
+      "frame": "frames/step04_return_crypt.png",
+      "hero_check": {
+        "pass": false,
+        "cell": [
+          12,
+          4
+        ],
+        "feet": [
+          860.0,
+          248.2
+        ],
+        "feet_in_quad": true,
+        "on_flagged_cell": true,
+        "reason": "hero stands on cell [12, 4] the plate painted an object onto (inverse-coherence flag) \u2014 actor-inside-the-object"
+      },
+      "reciprocal": {
+        "pass": true,
+        "arrival": [
+          12,
+          4
+        ],
+        "max_cheb": 2,
+        "nearest_door": [
+          13,
+          4
+        ],
+        "cheb": 1,
+        "reason": null
+      }
+    }
+  ]
+}

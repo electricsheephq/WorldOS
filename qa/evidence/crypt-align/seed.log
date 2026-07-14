@@ -1,0 +1,1 @@
+{"campaign_id": "walkslice_smoke01", "crypt_id": "crypt", "camp_id": "camp_clearing_night", "tavern_id": "tavern", "door_cell": [6, 0], "tavern_door_cell": [13, 4], "hero_id": "char_0c050ae7611e", "npc_id": "char_0683c46088eb", "goblin_id": "char_cec4d4692418", "crypt_connections": ["camp_clearing_night", "tavern"]}
