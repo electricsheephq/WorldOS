@@ -90,17 +90,49 @@ GRID_W, GRID_H = 14, 11
 # cells are listed.
 PILLAR_L_CELLS = [[3, 3], [3, 4]]
 PILLAR_R_CELLS = [[8, 9], [9, 9]]
-# The tomb's impassable footprint is the coffin's FLOOR-CONTACT cells — the box body hugging the ground,
-# cols 3-7 x rows 6-8 (irregular) — NOT the #1505 cols2-7 x rows7-9 (which sat down-left of the coffin and
-# swallowed the open lit floor to the tomb's right, the exact "blocked floor right of the tomb" the owner
-# reported) nor the #1386 cols3-9 x rows3-7 (the coffin's tall up-screen silhouette). Measured floor
-# parallelogram L(560,472)/F(690,550)/R(835,440)/B(705,362) px on the deployed plate.
+# WALKSLICE-CRYPT-ALIGN (#1565): the FRESH crypt plate (author_crypt_fresh geometry, adopted at
+# neutral-anchor parity 7.0) paints the sarcophagus as the TRUE 2x2 coffin — the box body hugging the
+# ground at cols4-5 x rows7-8 — NOT the earlier over-large 12-cell drift blob (cols3-7 x rows6-8, the
+# #1386/#1505/owner-playtest-#5 re-measures against the SUPERSEDED crypt_armb_iter3_v1.png plate). The
+# 2x2 is a strict subset of that blob, so it frees 8 over-large drift cells
+# ((4,6),(5,6),(6,6),(7,6),(3,7),(6,7),(7,7),(6,8)) back to walkable floor while introducing no new tomb
+# blocking. Reconciliation table: qa/evidence/crypt-fresh/WALKSLICE-RECONCILIATION.md.
 SARCOPHAGUS_CELLS = [
-    [4, 6], [5, 6], [6, 6], [7, 6],
-    [3, 7], [4, 7], [5, 7], [6, 7], [7, 7],
-    [4, 8], [5, 8], [6, 8],
+    [4, 7], [5, 7],
+    [4, 8], [5, 8],
 ]
 OBSTACLES = PILLAR_L_CELLS + PILLAR_R_CELLS + SARCOPHAGUS_CELLS
+# WALKSLICE-CRYPT-ALIGN (#1565): the fresh plate also paints 16 wall-band ornament cells the engine seed
+# never blocked, so the collision now agrees with the fresh geometry pixel-for-pixel (edge-recall 0.975,
+# flood-fill CONNECTED, both doors reachable). Each is a wall-hugging architectural element (tall niche /
+# engaged pilaster / flanking torch) or low floor clutter (rubble / skulls / a spilled urn), imported
+# verbatim from author_crypt_fresh (qa/evidence/crypt-fresh/crypt_fresh_geometry.json) per the
+# reconciliation table's section B. `(pid, kind, footprint, band, sil, occluder)`; the tall back-band
+# elements occlude (they rise against the rear wall, no actor stands behind row 1), the low clutter does
+# not (a full-height depth wall over ankle-high rubble would vanish actors behind it — the tomb "tall"
+# bug, owner playtest #5). The two door-flanking torches (5,1)/(7,1) and the tavern-door pilaster (12,3)
+# are wall-MOUNTED (against the solid perimeter the doorway is punched through), so they are authored as
+# non-walkable wall cells rather than free-standing props — impassable and painted, but NOT furniture in
+# the door landing (the door-zone gate correctly guards only free-standing props, exactly as it already
+# tolerates the perimeter wall cells that ring every door).
+ORNAMENT_PROPS = [
+    ("effigy_niche_l", "altar", [[2, 1], [3, 1]], "tall", "carved effigy niche, robed figure", True),
+    ("niche_back_r", "altar", [[10, 1], [11, 1]], "tall", "recessed back-wall niche / tomb slab", True),
+    ("torch_near_l", "brazier", [[1, 4]], "tall", "iron wall torch, guttering flame", True),
+    ("torch_far_r", "brazier", [[12, 6]], "tall", "iron wall torch, guttering flame", True),
+    ("rubble_bl", "rubble", [[1, 1], [1, 2]], "low", "heaped corner rubble", False),
+    ("broken_slabs", "rubble", [[1, 6], [1, 7]], "low", "toppled broken floor slabs", False),
+    ("skull_pile", "rubble", [[2, 9], [3, 9]], "low", "scattered pile of skulls", False),
+    ("urn_spill", "barrel", [[11, 9]], "low", "cracked funerary urn, spilled", False),
+]
+# Wall-mounted ornament cells that sit in a walkslice door-zone (door + Chebyshev-1): the two braziers
+# flanking the camp door (6,0) and the engaged pilaster beside the tavern door (13,4). Authored as
+# impassable WALL cells (not props) so they align the plate without tripping the free-standing-prop
+# door-zone gate — the doorway is punched through this same solid back/side wall.
+ORNAMENT_WALL_CELLS = [
+    [5, 1], [7, 1],  # torch_door_l / torch_door_r — flank the camp door (6,0)
+    [12, 3],         # pilaster_arch — engaged column beside the tavern door (13,4)
+]
 # hero far back-right / goblin front-left, both clear of the corrected center tomb footprint (rows 6-8)
 # and both re-measured pillars — re-verified against the deployed plate.
 HERO_CELL = [11, 3]
@@ -128,10 +160,10 @@ def _build_crypt_grid(cid: str, location_id: str = ""):
 
     props: list = []
 
-    def _prop(pid: str, kind: str, footprint: list, band: str, sil: str) -> None:
+    def _prop(pid: str, kind: str, footprint: list, band: str, sil: str, occluder: bool = True) -> None:
         anchor = footprint[0]
         props.append(SceneProp(id=pid, kind=kind, cells=[(c0, r0) for (c0, r0) in footprint],
-                               anchor_cell=(anchor[0], anchor[1]), occluder=True,
+                               anchor_cell=(anchor[0], anchor[1]), occluder=occluder,
                                height_band=band, silhouette=sil))
         for (c0, r0) in footprint:
             cells.append(SceneCell(c=c0, r=r0, type="prop", walkable=False, prop_ref=pid))
@@ -142,8 +174,15 @@ def _build_crypt_grid(cid: str, location_id: str = ""):
     _prop("pillar_r", "stone_pillar", PILLAR_R_CELLS, "tall", "ancient mossy stone pillar")
     # OWNER PLAYTEST #5 (occluder silhouette, task C): the tomb is a waist-high coffin, NOT a tall column
     # — its occluder proxy is "mid", so actors standing BEHIND the painted box still read above it (a
-    # "tall" band raised a full-height depth wall over the low coffin and vanished them).
+    # "tall" band raised a full-height depth wall over the low coffin and vanished them). WALKSLICE-CRYPT-
+    # ALIGN (#1565): now the true 2x2 coffin (SARCOPHAGUS_CELLS), down from the 12-cell drift blob.
     _prop("sarcophagus", "sarcophagus", SARCOPHAGUS_CELLS, "mid", "carved stone sarcophagus, lid ajar")
+    # WALKSLICE-CRYPT-ALIGN (#1565): the fresh-plate wall-band ornaments (reconciliation section B). Free-
+    # standing ornaments become props; the door-flanking wall-mounted ones are impassable wall cells below.
+    for (pid, kind, footprint, band, sil, occ) in ORNAMENT_PROPS:
+        _prop(pid, kind, footprint, band, sil, occ)
+    for (c0, r0) in ORNAMENT_WALL_CELLS:
+        cells.append(SceneCell(c=c0, r=r0, type="wall", walkable=False))
 
     grid = SceneGrid(
         scene_id=f"{cid}:crypt", location_id=location_id, kind="dungeon",

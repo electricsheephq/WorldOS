@@ -2,9 +2,9 @@
 """seed_gfx_walkslice.py — WALKABLE-SLICE-V1 smoke fixture, now a THREE-ROOM WORLD: a REST-mode crypt
 HUB linked by doorways to a camp clearing AND a brand-new firelit tavern, with a present NPC to talk to
 and a lurking goblin to fight. The crypt reuses the CANONICAL crypt grid
-(``seed_gfx_combat._build_crypt_grid``: the 14x11 fixture whose sarcophagus floor footprint cols3-7 x
-rows6-8 + pillars (3,3)/(3,4) and (8,9)/(9,9) match the adopted ``crypt_armb_iter3_v1`` plate,
-owner-playtest-#5 collision-coherence re-measurement) with TWO additions — a back-center doorway (6,0)
+(``seed_gfx_combat._build_crypt_grid``: the 14x11 fixture whose sarcophagus 2x2 coffin footprint
+cols4-5 x rows7-8 + pillars (3,3)/(3,4) and (8,9)/(9,9) + fresh-plate wall-band ornaments match the
+adopted ``crypt_fresh`` plate, WALKSLICE-CRYPT-ALIGN #1565) with TWO additions — a back-center doorway (6,0)
 to the camp and a left-wall doorway (0,5) to the tavern — so the player renders the SAME crypt as the
 combat demo instead of a divergent hand-authored grid (the #1396 scene-grid coherence defect class). The
 camp grid comes from seed_gfx_camp; the tavern grid (``build_tavern_grid``) is authored HERE from the
@@ -48,8 +48,8 @@ CAMP_DOOR = [5, 0]
 
 def build_crypt_grid(loc_id: str):
     """The walkslice crypt scene_grid = the CANONICAL combat crypt (``seed_gfx_combat._build_crypt_grid``:
-    14x11, sarcophagus floor footprint cols2-7 x rows7-9, pillars (2,4)/(9,9) — matched to the adopted
-    plate, #1386 corrected by #1505) with ONE addition: a back-center DOORWAY the party crosses to the
+    14x11, sarcophagus 2x2 coffin footprint cols4-5 x rows7-8, pillars (3,3)/(3,4) and (8,9)/(9,9) —
+    matched to the adopted crypt_fresh plate, WALKSLICE-CRYPT-ALIGN #1565) with ONE addition: a back-center DOORWAY the party crosses to the
     camp. Reuses the canonical grid verbatim (same cells/props/impassable) so the player renders the
     SAME crypt as the combat demo. Pure (no server) — directly unit-testable, mirroring
     ``_build_crypt_grid``'s own split rationale.
@@ -57,7 +57,7 @@ def build_crypt_grid(loc_id: str):
     REST-mode ``spawns`` are WHERE the party + present NPC stand when the room renders inhabited (the
     stage projects party onto ``spawns['party']``, present NPCs onto ``spawns['npcs']``): the open
     flagstone floor between the left pillar and the tomb (cols 3-4, rows 5-6), clear of the tomb
-    footprint (rows 7-9), the pillars, and the doorway zone."""
+    footprint (rows 7-8), the pillars, and the doorway zone."""
     import scene_grid as sg  # noqa: PLC0415
     import seed_gfx_combat as combat  # noqa: PLC0415  (reuse the CANONICAL crypt grid — ONE crypt source)
 
@@ -68,8 +68,8 @@ def build_crypt_grid(loc_id: str):
             cell.type, cell.walkable = "door", True
     grid.door_cells = [(DOOR[0], DOOR[1]), (TAVERN_DOOR[0], TAVERN_DOOR[1])]
     # party + Mira on the OPEN flagstone floor between the left pillar and the tomb (cols 3-4, rows
-    # 5-6) — clear painted floor, off the corrected tomb footprint (cols3-7 x rows6-8) and both
-    # re-measured pillars ((3,3)/(3,4) and (8,9)/(9,9)), owner-playtest-#5 collision-coherence.
+    # 5-6) — clear painted floor, off the 2x2 coffin footprint (cols4-5 x rows7-8, #1565) and both
+    # pillars ((3,3)/(3,4) and (8,9)/(9,9)).
     grid.spawns = {"party": [(3, 5), (4, 5)], "npcs": [(3, 6)]}
     grid.art.layout_hash = sg._layout_hash(grid)  # layout changed (added door) — refresh the hash
     return grid
