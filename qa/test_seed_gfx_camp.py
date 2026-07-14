@@ -72,22 +72,23 @@ def test_the_fire_and_bedrolls_are_impassable():
 
 
 def test_obstacle_prop_cell_count_matches_plate():
-    """51 disjoint prop cells total (CAMP-TUNE, owner playtest #7 — was 39 pre-tune): the woodpile grew
-    2->3 cells, the crate cluster was re-measured 3->4 cells (drops 2 phantom-blocked ground cells, adds
-    the 3 painted boxes POST_CELLS/crate_l previously missed), POST_CELLS (2 cells, one of which was a
-    phantom) was retired into the crate cluster, the shelter grew 3->5 cells (posts + back wall), and the
-    top-right ruin gained 3 new small wall segments (10 cells: ruin_tower1/tower2/link — tower2 carries
-    the grid's far corner cell too, else it walls (15,11) into an isolated unreachable pocket) that were
-    previously unmodeled. wall_br itself SPLIT into 3 short runs (wall_br/wall_br2/wall_br3, same 9 cells
-    total) so each keeps a tight bounding-box occlusion instead of one hull spanning the whole compound
-    wall (see the module-docstring note). Footprints stay DISJOINT (no cell claimed by two props), so the
-    flattened OBSTACLES has no duplicates."""
-    assert len(sg.OBSTACLES) == 51
+    """58 disjoint prop cells total (CAMP-CELLS wave-2, #1540/#1552, 2026-07-15 — was 51 pre-wave-2,
+    39 pre-CAMP-TUNE): the journey-visual-sweep's inverse-coherence pass flagged 13 camp cells as
+    painted-but-unauthored; 7 were real solids with no footprint (firewood_tail +2, gear_stones +1,
+    camp_sack +1, shelter_post_r +1, ruin_rubble1 +1, ruin_rubble2 +1 = 7 new cells) and are added
+    here; the other 6 were the detector's silhouette band sweeping into a NEIGHBORING object (the
+    fire, the lean-to's already-walkable bedroll mats, or a decorative loose item) with nothing
+    painted at their own floor position, and are deliberately left walkable (see
+    test_1540_flagged_camp_cells_keep_reject below for the per-cell table). Footprints stay DISJOINT
+    (no cell claimed by two props), so the flattened OBSTACLES has no duplicates."""
+    assert len(sg.OBSTACLES) == 58
     assert len(sg.OBSTACLES) == len({tuple(c) for c in sg.OBSTACLES})  # no duplicate cells
     assert len(sg.CAMPFIRE_CELLS) == 4
     assert len(sg.WALL_BR_CELLS) == 3
     assert len(sg.WALL_BR_CELLS) + len(sg.WALL_BR2_CELLS) + len(sg.WALL_BR3_CELLS) == 9
     assert len(sg.RUIN_TOWER1_CELLS) + len(sg.RUIN_TOWER2_CELLS) + len(sg.RUIN_LINK_CELLS) == 10
+    assert (len(sg.FIREWOOD_TAIL_CELLS) + len(sg.GEAR_STONES_CELLS) + len(sg.CAMP_SACK_CELLS)
+            + len(sg.SHELTER_POST_R_CELLS) + len(sg.RUIN_RUBBLE1_CELLS) + len(sg.RUIN_RUBBLE2_CELLS)) == 7
 
 
 def test_no_perimeter_walls_open_air_clearing():
@@ -121,13 +122,35 @@ def test_obstacles_list_matches_authored_props():
     """OBSTACLES (used for the printed seed summary + kept in lock-step with set_grid) must be
     exactly the flattened prop footprints — no silent drift between the two. CAMP-TUNE (owner
     playtest #7): POST_CELLS was retired (folded into CRATE_L_CELLS / dropped as phantom); wall_br
-    split into 3 short runs; the ruin's tower1/tower2/link segments are new."""
+    split into 3 short runs; the ruin's tower1/tower2/link segments are new. CAMP-CELLS wave-2
+    (#1540/#1552): 6 new single/short-run props appended (firewood_tail, gear_stones, camp_sack,
+    shelter_post_r, ruin_rubble1, ruin_rubble2)."""
     assert sg.OBSTACLES == (
         sg.CAMPFIRE_CELLS + sg.FIREWOOD_CELLS + sg.CRATE_L_CELLS + sg.CRATE_C_CELLS
         + sg.CRATE_WALL_CELLS + sg.CRATE_R_CELLS + sg.WALL_BL_CELLS + sg.WALL_BR_CELLS
         + sg.WALL_BR2_CELLS + sg.WALL_BR3_CELLS + sg.RUIN_TOWER1_CELLS + sg.RUIN_TOWER2_CELLS
         + sg.RUIN_LINK_CELLS + sg.SHELTER_CELLS + sg.BEDROLL_L_CELLS + sg.BEDROLL_R_CELLS
+        + sg.FIREWOOD_TAIL_CELLS + sg.GEAR_STONES_CELLS + sg.CAMP_SACK_CELLS
+        + sg.SHELTER_POST_R_CELLS + sg.RUIN_RUBBLE1_CELLS + sg.RUIN_RUBBLE2_CELLS
     )
+
+
+# ── CAMP-CELLS wave-2 (#1540/#1552, 2026-07-15): the journey-visual-sweep keep/reject regression ────
+def test_1540_flagged_camp_cells_keep_reject():
+    """RED-FIRST regression for the #1540 inverse-coherence sweep's 13 flagged camp cells
+    (qa/evidence/1540/report.json): the 7 cells with a REAL painted solid at their own floor position
+    must now block; the 6 flagged purely by the silhouette-band detector sweeping into a NEIGHBORING
+    object (the fire, the lean-to's deliberately-walkable bedroll mats, or a decorative loose item —
+    see the module-level constants comment) must stay walkable. Pins both halves of the PR's keep/
+    reject call so neither direction can silently regress."""
+    grid = _grid()
+    imp = {tuple(c) for c in impassable_cells(grid, sg.GRID_W, sg.GRID_H)}
+    kept = [(6, 8), (6, 9), (11, 3), (10, 4), (12, 6), (14, 5), (12, 11)]
+    for cell in kept:
+        assert cell in imp, f"#1540-flagged real obstacle {cell} must now be impassable"
+    rejected = [(3, 10), (4, 10), (9, 5), (9, 6), (9, 7), (9, 8)]
+    for cell in rejected:
+        assert cell not in imp, f"#1540-flagged texture false-positive {cell} must stay walkable"
 
 
 def test_same_campaign_id_as_crypt_seed():
