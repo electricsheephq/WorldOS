@@ -528,7 +528,7 @@
       "kind": "spawn",
       "room": "crypt",
       "label": "spawn in crypt",
-      "frame": "frames/step00_spawn_crypt.png",
+      "frame": "frames/step00_spawn_crypt.jpg",
       "hero_check": {
         "pass": true,
         "cell": [
@@ -550,7 +550,7 @@
       "kind": "arrive",
       "room": "camp_clearing_night",
       "label": "crossed crypt -> camp_clearing_night",
-      "frame": "frames/step01_arrive_camp_clearing_night.png",
+      "frame": "frames/step01_arrive_camp_clearing_night.jpg",
       "hero_check": {
         "pass": true,
         "cell": [
@@ -585,7 +585,7 @@
       "kind": "return",
       "room": "crypt",
       "label": "returned camp_clearing_night -> crypt",
-      "frame": "frames/step02_return_crypt.png",
+      "frame": "frames/step02_return_crypt.jpg",
       "hero_check": {
         "pass": true,
         "cell": [
@@ -620,7 +620,7 @@
       "kind": "arrive",
       "room": "tavern",
       "label": "crossed crypt -> tavern",
-      "frame": "frames/step03_arrive_tavern.png",
+      "frame": "frames/step03_arrive_tavern.jpg",
       "hero_check": {
         "pass": true,
         "cell": [
@@ -655,7 +655,7 @@
       "kind": "return",
       "room": "crypt",
       "label": "returned tavern -> crypt",
-      "frame": "frames/step04_return_crypt.png",
+      "frame": "frames/step04_return_crypt.jpg",
       "hero_check": {
         "pass": true,
         "cell": [
