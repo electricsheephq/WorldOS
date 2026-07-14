@@ -33,6 +33,22 @@ qa/seed_gfx_walkslice.py), and at every room + every door round-trip it VERIFIES
      authored-walkable cell" FLAG. This is the pass that catches the tavern's invented benches / furniture
      the manifest never authored.
 
+     SWEEP-PRECISION (follow-up noted in #1552, closed here): occlusion != footprint. A tall AUTHORED
+     prop's silhouette legitimately paints OVER walkable cells behind it under the iso projection (occlu-
+     sion strictly contains but is offset from the prop's floor footprint — docs/ROOM-PIPELINE-RUNBOOK.md
+     Sec.2). Through #1552 this check only ever excluded FOOTPRINT cells, so a dense, richly-authored room
+     (more tall props => more legitimate up-screen silhouette) necessarily flagged MORE than a sparse one —
+     punishing exactly the density the owner wants. Cells inside any authored prop's OCCLUSION cell set
+     (resolve_occlusion_cells, below) are now EXEMPTED from being flagged — never from the room's own
+     clean-floor baseline calibration, and never silently: every exemption is counted and logged per room
+     so precision stays auditable, not just improved. Live-sweep proof (#1565's crypt_fresh_v1 plate,
+     registered as canonical crypt but painted over the sparser un-reconciled walkslice grid, #1559): 21
+     flags before this fix (CLEAN% 77.9) -> 9 after (CLEAN% 90.5, 12 cells exempted as authored-occlusion
+     silhouette). The 9 that still flag are the SEPARATE, already-tracked #1559 walkslice-reconciliation
+     gap (the live crypt grid hasn't been re-authored with fresh-crypt's full prop set yet) — this fix
+     correctly does NOT paper over an unauthored gap, only exempts what a committed manifest ACTUALLY
+     authors (proof: qa/test_journey_visual_sweep.py's tavern_truegrey-vs-tavern_fit2 negative control).
+
   4. A per-step composite FRAME (the registered plate + the hero marker at its projected feet + the
      floor quad + every flagged cell, checks annotated) -> a human gallery.html, plus a machine
      report.json and a per-room CLEAN% table (CLEAN% = passing (steps + inverse-coherence cells) / total —
@@ -88,6 +104,16 @@ from journey_click_sweep import (  # noqa: E402
 # instrument can never disagree with the rig the plates are registered to.
 from greybox_render_headless import PX_W, PX_H, cell_to_world, world_to_screen  # noqa: E402
 from plate_overlays import edge_mask  # noqa: E402  (shared FIND_EDGES->binary primitive)
+
+# tools/derive_room_manifest.derive_occlusion_cells is the ON-THE-FLY occlusion fallback (SWEEP-PRECISION,
+# below) — the exact function that PRODUCES every committed qa/room_manifests/*.cells.json `occlusion`
+# field, reusing the same box-corner screen-projection qa/check_grid_paint_coherence.py's
+# prop_box_screen_bbox uses (refined to a convex-hull/point-in-polygon test, not an axis-aligned bbox, so
+# a rotated silhouette isn't over-approximated).
+_TOOLS_DIR = _ROOT / "tools"
+if str(_TOOLS_DIR) not in sys.path:
+    sys.path.insert(0, str(_TOOLS_DIR))
+from derive_room_manifest import derive_occlusion_cells  # noqa: E402
 
 
 # ── Plate resolution: engine location.id -> the registered 1344x768 plate on disk ───────────────────
@@ -247,6 +273,102 @@ def cell_edge_density(edge_img: Image.Image, quad: list) -> float:
     return hit / inside if inside else 0.0
 
 
+# ── Occlusion resolution: authored SILHOUETTE cells a tall prop legitimately paints over ────────────
+# docs/ROOM-PIPELINE-RUNBOOK.md Sec.2: footprint = the impassable FLOOR cells; occlusion = the up-screen
+# SILHOUETTE cells a tall prop's box paints over under the iso projection — strictly contains but is
+# offset from the footprint (a coffin's silhouette rises off its floor cells the same way an actor
+# standing behind it would still read above it). manifest_from_surface (journey_click_sweep, reused
+# verbatim above) is sourced from the LIVE /combat-surface and only ever carries {id, footprint} per prop
+# — the live scene_grid's SceneCell has no occlusion/kind fields at all (servers/engine/scene_grid.py) —
+# so occlusion can never be read off the live surface directly; it has to come from the room's own
+# committed DERIVED manifest (qa/room_manifests/<room>.cells.json, tools/derive_room_manifest.py's output).
+_ROOM_MANIFESTS_DIR = _QA_DIR / "room_manifests"
+_STATIC_MANIFESTS_CACHE: Optional[list] = None
+
+
+def load_static_manifests(manifests_dir: Path = _ROOM_MANIFESTS_DIR, *, refresh: bool = False) -> list:
+    """Every committed qa/room_manifests/*.cells.json, loaded once (module-level cache — pass
+    refresh=True to force a re-read; the unit tests do, so a fixture manifest never leaks across tests
+    or a later real run). Corrupt/unreadable files are skipped, never raised: this is a best-effort
+    precision aid, never a hard dependency of the sweep (a room with no resolvable manifest just gets the
+    pre-#1565 CURRENT behaviour — see resolve_occlusion_cells)."""
+    global _STATIC_MANIFESTS_CACHE
+    if _STATIC_MANIFESTS_CACHE is not None and not refresh:
+        return _STATIC_MANIFESTS_CACHE
+    out: list = []
+    manifests_dir = Path(manifests_dir)
+    if manifests_dir.is_dir():
+        for mp in sorted(manifests_dir.glob("*.cells.json")):
+            try:
+                out.append(json.loads(mp.read_text(encoding="utf-8")))
+            except (OSError, ValueError):
+                continue
+    _STATIC_MANIFESTS_CACHE = out
+    return out
+
+
+def resolve_occlusion_cells(live_props: list, cols: int, rows: int, *,
+                            manifests: Optional[list] = None) -> tuple:
+    """For every LIVE prop ({id, footprint} off manifest_from_surface), resolve its authored OCCLUSION
+    cell set — PER PROP, never per room (a room's props can straddle manifest generations: the tavern
+    room today authors 14 props but only 6 of them predate the fit2 density-law upgrade, #1557/#1559):
+
+      1. EXACT MATCH — scan every loaded manifest's own props for one with the SAME id AND the IDENTICAL
+         footprint cell set (both are derived from the same authored geometry, so an identical id +
+         footprint IS the same authored prop, regardless of which manifest file happens to carry it).
+         Use its committed `occlusion` list verbatim.
+      2. DERIVE — the matched prop entry has no `occlusion` field (an older/measured manifest) but does
+         carry a `kind` — derive on the fly with tools/derive_room_manifest.derive_occlusion_cells, the
+         exact function that PRODUCES every committed `occlusion` field.
+      3. NO MATCH anywhere — fall back to CURRENT (pre-#1565) behaviour for this one prop: no exemption.
+         Never silently dropped — recorded in `notes` so a cold room (no manifest resolvable at all) is
+         still visible in the report, not silently unimproved.
+
+    Returns (occlusion_cells, notes): occlusion_cells is a set of (c, r) tuples (the union over every
+    prop — always a superset of that prop's own footprint, though the footprint is separately excluded by
+    inverse_coherence_flags already); notes is one string per prop describing how it resolved, surfaced
+    in the room report so exemption stays auditable, never a silent mask."""
+    manifests = load_static_manifests() if manifests is None else manifests
+    occlusion_cells: set = set()
+    notes: list = []
+    for prop in live_props:
+        pid = str(prop.get("id", "?"))
+        footprint = sorted((int(c), int(r)) for (c, r) in prop.get("footprint", []))
+        if not footprint:
+            continue
+        match = None
+        for m in manifests:
+            for sp in m.get("props", []):
+                if str(sp.get("id", "?")) != pid:
+                    continue
+                sp_fp = sorted((int(c), int(r)) for (c, r) in (sp.get("footprint") or sp.get("cells") or []))
+                if sp_fp == footprint:
+                    match = (m, sp)
+                    break
+            if match:
+                break
+        if match is None:
+            notes.append(f"{pid}: no manifest prop matches this id+footprint — occlusion NOT exempted "
+                        "(current behaviour)")
+            continue
+        m, sp = match
+        sp_occlusion = sp.get("occlusion")
+        if sp_occlusion:
+            occlusion_cells.update((int(c), int(r)) for (c, r) in sp_occlusion)
+            notes.append(f"{pid}: occlusion from {m.get('room', '?')}.cells.json ({len(sp_occlusion)} cells)")
+            continue
+        kind = sp.get("kind")
+        if kind:
+            derived = derive_occlusion_cells([list(c) for c in footprint], kind, cols, rows)
+            occlusion_cells.update((int(c), int(r)) for (c, r) in derived)
+            notes.append(f"{pid}: occlusion DERIVED (kind={kind}, matched manifest has no `occlusion` "
+                        f"field) ({len(derived)} cells)")
+            continue
+        notes.append(f"{pid}: matched {m.get('room', '?')}.cells.json but it carries neither `occlusion` "
+                    "nor `kind` — occlusion NOT exempted (current behaviour)")
+    return occlusion_cells, notes
+
+
 # ── Check 3: inverse-coherence (the painted-object detector) ────────────────────────────────────────
 # A cell is FLAGGED when its hard-edge silhouette density is a robust OUTLIER above the room's own floor
 # baseline: density > median + Z_CUT * 1.4826 * MAD (a MAD-scaled robust z-score; 1.4826 makes MAD a
@@ -272,12 +394,14 @@ class InverseCoherenceResult:
     threshold: float
     n_cells: int
     flagged: list = field(default_factory=list)          # [{cell, density, z, ratio}]
+    exempted: list = field(default_factory=list)          # same shape — would-flag cells inside authored occlusion
     densities: dict = field(default_factory=dict)         # "c,r" -> density (for the frame overlay)
 
     def as_dict(self) -> dict:
         return {"room": self.room, "edge_thr": IC_EDGE_THR, "z_cut": Z_CUT,
                 "baseline_median": round(self.baseline_median, 4), "mad": round(self.mad, 4),
-                "threshold": round(self.threshold, 4), "n_cells": self.n_cells, "flagged": self.flagged}
+                "threshold": round(self.threshold, 4), "n_cells": self.n_cells,
+                "flagged": self.flagged, "exempted": self.exempted, "n_exempted": len(self.exempted)}
 
 
 def _robust_z(v: float, med: float, mad: float) -> float:
@@ -286,12 +410,28 @@ def _robust_z(v: float, med: float, mad: float) -> float:
 
 def inverse_coherence_flags(edge_img: Image.Image, walkable: list, prop_cells: set,
                             cols: int, rows: int, room: str = "?", *,
-                            z_cut: float = Z_CUT, abs_floor: float = ABS_FLOOR) -> InverseCoherenceResult:
+                            z_cut: float = Z_CUT, abs_floor: float = ABS_FLOOR,
+                            occlusion_cells: Optional[set] = None) -> InverseCoherenceResult:
     """Flag every authored-WALKABLE, non-prop cell whose hard-edge STANDING-SILHOUETTE density is a robust
     outlier above the room's own floor baseline (robust-z >= z_cut AND density >= abs_floor) — i.e. the
     plate painted an object where the grid authored clear floor (invented furniture; the tavern-benches /
     the actor-inside-the-coffin class). `edge_img` is the plate's HARD-edge mask (load_plate_edges @
-    IC_EDGE_THR). Self-calibrating per room; the camp clean cells only pin that z_cut is high enough."""
+    IC_EDGE_THR). Self-calibrating per room; the camp clean cells only pin that z_cut is high enough.
+
+    `occlusion_cells` (SWEEP-PRECISION; from resolve_occlusion_cells) EXEMPTS a cell from being flagged —
+    an authored TALL prop's silhouette legitimately paints over it, occlusion != footprint (docs/ROOM-
+    PIPELINE-RUNBOOK.md Sec.2). The per-room baseline (median/MAD) is calibrated EXACTLY as before —
+    over every authored-walkable, non-footprint cell, occlusion included — so the Z_CUT/ABS_FLOOR
+    constants (co-calibrated against the camp clean-floor anchor pre-#1565) keep meaning what they always
+    meant; occlusion is applied ONLY as a post-hoc partition of cells that already cleared the outlier
+    bar. This also sidesteps a degenerate case a baseline-exclusion design would hit on a genuinely dense
+    room: #1565's fresh crypt authors so much silhouette that its occlusion union covers the room's ENTIRE
+    walkable floor, which would leave zero cells to calibrate a "clear floor" median from at all. A cell
+    inside `occlusion_cells` that clears the bar is recorded in `exempted`, not `flagged` — still visible
+    in the report (never a silent mask), just not counted against CLEAN%. A cell outside every authored
+    occlusion band that still clears the bar is exactly the invented-furniture class this check exists to
+    catch (unauthored anywhere) and flags exactly as before (#1552's tavern benches)."""
+    occlusion_cells = occlusion_cells or set()
     cells = [(int(c), int(r)) for (c, r) in walkable if (int(c), int(r)) not in prop_cells]
     densities: dict = {}
     for (c, r) in cells:
@@ -303,14 +443,17 @@ def inverse_coherence_flags(edge_img: Image.Image, walkable: list, prop_cells: s
     mad = statistics.median([abs(v - med) for v in vals]) or 0.0
     threshold = max(med + z_cut * 1.4826 * mad, abs_floor)
     flagged = []
+    exempted = []
     for (c, r), d in sorted(densities.items(), key=lambda kv: -kv[1]):
         if d > threshold and d >= abs_floor:
-            flagged.append({"cell": [c, r], "density": round(d, 4),
-                            "z": round(_robust_z(d, med, mad), 2),
-                            "ratio": round(d / med, 2) if med > 0 else None})
+            entry = {"cell": [c, r], "density": round(d, 4),
+                     "z": round(_robust_z(d, med, mad), 2),
+                     "ratio": round(d / med, 2) if med > 0 else None}
+            (exempted if (c, r) in occlusion_cells else flagged).append(entry)
     return InverseCoherenceResult(
-        room=room, baseline_median=med, mad=mad, threshold=threshold, n_cells=len(vals),
-        flagged=flagged, densities={f"{c},{r}": d for (c, r), d in densities.items()})
+        room=room, baseline_median=med, mad=mad, threshold=threshold, n_cells=len(cells),
+        flagged=flagged, exempted=exempted,
+        densities={f"{c},{r}": d for (c, r), d in densities.items()})
 
 
 # ── Check 2: reciprocal-door landing ────────────────────────────────────────────────────────────────
@@ -374,11 +517,14 @@ def _draw_quad(draw, quad, outline, width=2, fill=None):
 def composite_frame(plate_path: Optional[str | Path], hero_cell: Optional[tuple], cols: int, rows: int,
                     flagged_cells: list, doors: list, out_path: Path, *,
                     label: str = "", checks: Optional[list] = None,
-                    reciprocal_target: Optional[list] = None) -> None:
+                    reciprocal_target: Optional[list] = None,
+                    exempted_cells: Optional[list] = None) -> None:
     """Render the human evidence frame: the registered plate (or a grey placeholder if box-only) + the
     hero marker at its projected feet + the hero cell's floor quad (green pass / red on-flagged) + every
-    inverse-coherence flagged cell (orange) + door cells (blue) + the reciprocal return door (cyan) +
-    a text annotation of the checks. This is what the gallery shows per step."""
+    inverse-coherence flagged cell (orange) + every occlusion-EXEMPTED cell (dashed olive-green — would
+    have flagged, but sits inside an authored prop's silhouette band; SWEEP-PRECISION) + door cells (blue)
+    + the reciprocal return door (cyan) + a text annotation of the checks. This is what the gallery shows
+    per step."""
     if plate_path and Path(plate_path).is_file():
         base = Image.open(plate_path).convert("RGB")
         if base.size != (PX_W, PX_H):
@@ -396,6 +542,9 @@ def composite_frame(plate_path: Optional[str | Path], hero_cell: Optional[tuple]
     if reciprocal_target:
         _draw_quad(draw, cell_floor_quad(int(reciprocal_target[0]), int(reciprocal_target[1]), cols, rows),
                    (0, 220, 220, 255), width=3)
+    for cell in exempted_cells or []:
+        _draw_quad(draw, cell_floor_quad(int(cell[0]), int(cell[1]), cols, rows),
+                   (150, 200, 60, 200), width=1)
     for cell in flagged_cells or []:
         _draw_quad(draw, cell_floor_quad(int(cell[0]), int(cell[1]), cols, rows),
                    (255, 140, 0, 255), width=2, fill=(255, 140, 0, 55))
@@ -460,17 +609,22 @@ def run_journey(get_surface: Callable[[], dict], cross_door: Callable[[dict], di
         cols, rows = _grid(surface)
         manifest = manifest_from_surface(surface)
         walkable = manifest.get("walkable", [])
-        prop_cells = {(int(c), int(r)) for p in manifest.get("props", []) for (c, r) in p.get("footprint", [])}
+        live_props = manifest.get("props", [])
+        prop_cells = {(int(c), int(r)) for p in live_props for (c, r) in p.get("footprint", [])}
+        occlusion_cells, occlusion_notes = resolve_occlusion_cells(live_props, cols, rows)
         plate = _plate_for(loc_id)
         if plate is not None:
-            ic = inverse_coherence_flags(load_plate_edges(plate), walkable, prop_cells, cols, rows, loc_id)
+            ic = inverse_coherence_flags(load_plate_edges(plate), walkable, prop_cells, cols, rows, loc_id,
+                                         occlusion_cells=occlusion_cells)
             ic_dict = ic.as_dict()
             flagged_cells = [f["cell"] for f in ic.flagged]
+            exempted_cells = [f["cell"] for f in ic.exempted]
             plate_status = "resolved"
         else:
             ic_dict = {"room": loc_id, "status": "no-plate",
                        "reason": "plate ships box-only; inverse-coherence skipped (absence != failure)"}
             flagged_cells = []
+            exempted_cells = []
             plate_status = "no-plate"
         # camp calibration receipt: the designated known-clean cells must NOT be among the flags.
         calib = None
@@ -482,7 +636,8 @@ def run_journey(get_surface: Callable[[], dict], cross_door: Callable[[dict], di
                      "ok": not clean_flagged}
         rec = {"room": loc_id, "cols": cols, "rows": rows, "plate": str(plate) if plate else None,
                "plate_status": plate_status, "inverse_coherence": ic_dict,
-               "flagged_cells": flagged_cells, "n_walkable_floor": len(
+               "flagged_cells": flagged_cells, "exempted_cells": exempted_cells,
+               "occlusion_notes": occlusion_notes, "n_walkable_floor": len(
                    [1 for (c, r) in walkable if (int(c), int(r)) not in prop_cells]),
                "calibration": calib, "hero_checks": []}
         rooms[loc_id] = rec
@@ -494,6 +649,7 @@ def run_journey(get_surface: Callable[[], dict], cross_door: Callable[[dict], di
         cols, rows = _grid(surface)
         rec = rooms.get(loc_id) or _visit_room(surface)
         flagged = rec.get("flagged_cells", [])
+        exempted = rec.get("exempted_cells", [])
         hero = _hero_cell(surface, hero_id)
         hero_chk = hero_feet_check(hero, cols, rows, {tuple(c) for c in flagged})
         checks_txt = [f"room={loc_id}  hero_cell={hero_chk.get('cell')}  "
@@ -503,12 +659,14 @@ def run_journey(get_surface: Callable[[], dict], cross_door: Callable[[dict], di
                               f"({reciprocal.get('reason') or 'within Chebyshev-'+str(max_cheb)})")
         if rec.get("plate_status") == "resolved":
             checks_txt.append(f"inverse-coherence flags={len(flagged)} "
-                              f"(walkable floor cells={rec['n_walkable_floor']})")
+                              f"(walkable floor cells={rec['n_walkable_floor']}, "
+                              f"occlusion-exempted={len(exempted)})")
         recip_target = reciprocal.get("nearest_door") if reciprocal else None
         frame_name = f"step{step_no:02d}_{kind}_{loc_id}.png"
         composite_frame(rec.get("plate"), hero, cols, rows, flagged,
                         surface.get("doors") or [], frames_dir / frame_name,
-                        label=f"[{step_no}] {label}", checks=checks_txt, reciprocal_target=recip_target)
+                        label=f"[{step_no}] {label}", checks=checks_txt, reciprocal_target=recip_target,
+                        exempted_cells=exempted)
         step = {"step": step_no, "kind": kind, "room": loc_id, "label": label, "frame": f"frames/{frame_name}",
                 "hero_check": hero_chk, "reciprocal": reciprocal}
         steps.append(step)
@@ -579,6 +737,7 @@ def build_report(room_recs: list, steps: list, transitions: list, hub_id: str) -
         n_hero += hero_total - hero_pass
         n_floor = rec.get("n_walkable_floor", 0)
         n_flag = len(rec.get("flagged_cells", []))
+        n_exempt = len(rec.get("exempted_cells", []))
         n_furniture += n_flag
         clean_cells = n_floor - n_flag
         num = hero_pass + clean_cells
@@ -587,6 +746,7 @@ def build_report(room_recs: list, steps: list, transitions: list, hub_id: str) -
         per_room.append({"room": loc, "plate_status": rec.get("plate_status"),
                          "hero_steps": hero_total, "hero_pass": hero_pass,
                          "walkable_floor_cells": n_floor, "inverse_coherence_flags": n_flag,
+                         "occlusion_exempted": n_exempt,
                          "clean_pct": clean_pct, "meets_95": (clean_pct is not None and clean_pct >= 95.0)})
     for t in transitions:
         recip = t.get("reciprocal")
@@ -612,6 +772,7 @@ def write_gallery(report: dict, out_path: Path) -> None:
         f"<td>{r['room']}</td><td>{r['plate_status']}</td>"
         f"<td>{r['hero_pass']}/{r['hero_steps']}</td>"
         f"<td>{r['inverse_coherence_flags']} / {r['walkable_floor_cells']}</td>"
+        f"<td>{r.get('occlusion_exempted', 0)}</td>"
         f"<td><b>{'' if r['clean_pct'] is None else str(r['clean_pct'])+'%'}</b></td></tr>"
         for r in report["per_room"])
     f = report["findings_by_class"]
@@ -652,7 +813,8 @@ def write_gallery(report: dict, out_path: Path) -> None:
  <span>reciprocal-door failures: <b>{f['reciprocal_door_failures']}</b></span>
  <span>hero-position failures: <b>{f['hero_position_failures']}</b></span>
 </div>
-<table><tr><th>room</th><th>plate</th><th>hero-pos pass</th><th>furniture flags / floor cells</th><th>CLEAN%</th></tr>
+<table><tr><th>room</th><th>plate</th><th>hero-pos pass</th><th>furniture flags / floor cells</th>
+<th>occlusion-exempted</th><th>CLEAN%</th></tr>
 {rows_html}</table>
 <div class=cards>
 {''.join(cards)}
@@ -731,7 +893,7 @@ def _print_summary(report: dict) -> None:
     for r in report["per_room"]:
         print(f"  ROOM {r['room']}: CLEAN {r['clean_pct']}%  hero {r['hero_pass']}/{r['hero_steps']}  "
               f"furniture-flags {r['inverse_coherence_flags']}/{r['walkable_floor_cells']}  "
-              f"[{r['plate_status']}]")
+              f"occlusion-exempted={r.get('occlusion_exempted', 0)}  [{r['plate_status']}]")
     print(f"  FINDINGS: invented-furniture={f['invented_furniture_flags']}  "
           f"reciprocal-door-failures={f['reciprocal_door_failures']}  "
           f"hero-position-failures={f['hero_position_failures']}")
