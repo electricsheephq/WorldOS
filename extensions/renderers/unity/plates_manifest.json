@@ -3,7 +3,8 @@
   "_comment": "WALKABLE-SLICE-V1 item 6 (W5e runtime plate registry; docs/roadmap/W5E-PLATE-REGISTRY-DECISION.md). Keys are the ENGINE location.id the surface carries (viewer/server.py _session_location -> surface.location.id), the SAME keying the editor-time _location_plates.json already uses. `plate` is a path under StreamingAssets (BuildMacOSPlayer.EnsurePackaged copies this file + plates/*.png from the Unity project root). planeSize + cameraPin are OPTIONAL: absent => the client derives the plane from the plate aspect (oh=2*orthoSize, ow=oh*aspect) and leaves the scene camera as-is (crypt + camp share the ortho=13 / pitch=30 / yaw=45 rig). Adding a room later = one entry here + drop the PNG under plates/. On the box, CONFIRM these keys against the smoke campaign's real location.id (curl /combat-surface | jq .location.id in each room) and rename if they differ.",
   "plates": {
     "crypt": {
-      "plate": "plates/crypt_armb_iter3_v1.png"
+      "plate": "plates/crypt_fresh_v1.png",
+      "_provenance": "FRESH-CRYPT (2026-07-15): brand-new crypt via author_crypt_fresh -> flux.1-dev depth-CN base (clean, no LoRA) -> Gemini-3.1 STRUCTURE+ADDITIONS-lock style pass. Adopted through promote.py visual gate (tier=canonical-candidate; candidate 7.0 / incumbent 8.0 / real-art control 8.0 in-band, delta -1.0 >= -1.2). Repo copy for QA/sweep: qa/evidence/crypt-fresh/crypt_fresh_v1.png; the box carries plates/crypt_fresh_v1.png (drop it there on the NEXT box cycle — this PR does no box deploy). WALKSLICE grid reconciliation (fresh geometry vs canonical combat seed) REPORTED, seed NOT edited this lane (#1559): qa/evidence/crypt-fresh/WALKSLICE-RECONCILIATION.md. _provenance/_effects keys are ignored by CombatSurfaceClient.LoadPlateManifest (parses only plate/planeSize/cameraPin/effects)."
     },
     "camp_clearing_night": {
       "plate": "plates/camp_clearing_night_truegrey_v1.png",

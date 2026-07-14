@@ -213,6 +213,67 @@ def author_crypt_rich() -> dict:
     return geo
 
 
+def author_crypt_fresh() -> dict:
+    """14x11 enclosed stone crypt — a BRAND-NEW crypt authored with EVERY M-ALIGN learning applied
+    (FRESH-CRYPT lane). This is NOT a regen of the deployed incumbent (``crypt_armb_iter3``, panel 8.0)
+    nor of ``crypt_rich``: it is a fresh authoring that combines the RICHNESS PRINCIPLE (PR #1528 — dense
+    ornament VOLUMES so the depth-CN base + Gemini style pass have surfaces to carve) with the EXTENT
+    CONTRACT (#1543 — ``camera_fit`` + a CONTINUOUS ``wall_run`` perimeter band split at the doors, the
+    #1539 no-crenellation rule) that ``crypt_rich`` predated and therefore lacked (it used ``perimeter=True``
+    per-cell walls, which give the depth map the toothed/castellated wall-top penalized as a "tiled/gamey"
+    motif). Three learnings not in ``crypt_rich``:
+
+    1. **CAMERA-FIT + continuous wall band** (extent contract) — no canvas margin to out-paint, painted
+       walls sit ON impassable cells by construction, both door gaps stay walkable (``wall_run`` split at
+       (6,0) + (13,4)).
+    2. **TRUE 2x2-proportioned coffin** — the sarcophagus is authored as the correct-scale 2x2 stone
+       coffin (centered in the canonical cols2-7 x rows7-9 tomb region, #1505), NOT the 12-cell drift
+       blob ``crypt_rich`` inherited from the seed. Cleaner silhouette, tighter coherence localisation.
+    3. **DOOR RINGS kept clear** — both door landings ((6,1) for the camp seam, (12,4) for the tavern
+       seam) are prop-free; torches FLANK the top door (5,1)/(7,1) and a pilaster sits BESIDE the tavern
+       door (12,3), never on the landing.
+
+    Canonical layout contract kept: pillars PILLAR_L_CELLS (3,3)/(3,4) + PILLAR_R_CELLS (8,9)/(9,9)
+    (imported from the engine seed so they track the combat grid), doors (6,0) (camp) + (13,4) (tavern).
+    The fresh geometry's coffin footprint DIFFERS from the canonical combat grid's sarcophagus footprint
+    (the engine seed is NOT edited in this lane — walkslice reconciliation is REPORTED, per #1559).
+
+    Ornament classes (effigy niches, skull/bone piles, rubble, torch brackets, spilled urn) are authored
+    as real prop VOLUMES in SHORT 1-2 cell runs (runbook step 2 / CAMP-TUNE defect #5 — tight occlusion
+    hulls). TALL ornaments (braziers 2.2, altars 2.0, engaged column 7.5) sit on the BACK band (row 1) or
+    FAR wall (col 12) where they won't occlude the interior under the 30/45 dimetric camera; LOW clutter
+    (rubble/skull/urn ~1.4) tucks into the near/left corners. Prop identity (knotwork/effigy/skulls/
+    torch-flame/cobwebs) is carried by the style-pass prompt, not the greybox. Walkable topology
+    (the ring around the tomb + reachability of both doors) is preserved by construction."""
+    sc = _load_seed("_seed_crypt", "seed_gfx_combat.py")
+    props = [
+        # --- canonical layout, kept EXACTLY (pillars track the engine combat grid) ---
+        ("pillar_l", "stone_pillar", sc.PILLAR_L_CELLS),          # -> carved knotwork full-height column
+        ("pillar_r", "stone_pillar", sc.PILLAR_R_CELLS),          # -> carved knotwork full-height column
+        # TRUE 2x2 coffin, centered in the canonical cols2-7 x rows7-9 tomb region (#1505) ---
+        ("sarcophagus", "sarcophagus", [[4, 7], [5, 7], [4, 8], [5, 8]]),  # -> raised tomb, reclining effigy lid
+        # --- TALL ornament volumes on the BACK band (row 1) / FAR wall (col 12) — won't occlude interior ---
+        ("effigy_niche_l", "altar", [[2, 1], [3, 1]]),           # carved wall effigy niche, back-left (2-cell)
+        ("torch_door_l", "brazier", [[5, 1]]),                   # lit torch bracket, left of the camp door
+        ("torch_door_r", "brazier", [[7, 1]]),                   # lit torch bracket, right of the camp door
+        ("niche_back_r", "altar", [[10, 1], [11, 1]]),           # recessed wall niche / 2nd tomb slab (2-cell)
+        ("pilaster_arch", "stone_pillar", [[12, 3]]),            # engaged column BESIDE the tavern door (12,4 clear)
+        ("torch_near_l", "brazier", [[1, 4]]),                   # lit torch bracket, left (near) wall
+        ("torch_far_r", "brazier", [[12, 6]]),                   # lit torch bracket, far (right) wall
+        # --- LOW floor clutter, near/left corners (won't occlude, won't block circulation or doors) ---
+        ("rubble_bl", "rubble", [[1, 1], [1, 2]]),               # rubble pile, back-left corner (2-cell)
+        ("broken_slabs", "rubble", [[1, 6], [1, 7]]),            # heaved/broken floor slabs, left wall (2-cell)
+        ("skull_pile", "rubble", [[2, 9], [3, 9]]),              # skull-and-bone cluster, front-left (2-cell)
+        ("urn_spill", "barrel", [[11, 9]]),                      # tipped funerary urn spilling coins, front-right
+    ]
+    # continuous perimeter wall band as wall_run props, split at both doors (no crenellation, doors open)
+    props += _perimeter_wall_run_props(sc.GRID_W, sc.GRID_H, door_cells=[[6, 0], [13, 4]])
+    geo = _geometry(sc.GRID_W, sc.GRID_H, "ancient stone", props, perimeter=False,
+                    door_cells=[[6, 0], [13, 4]], camera_fit=True)
+    geo["location"] = "Ancient Stone Crypt (firelit)"
+    return geo
+
+
 def author_camp() -> dict:
     """16x12 open-air night campfire clearing: NO perimeter (outdoor). The camp's error is the opposite
     of the crypt's — the SCENE is painted ~25% too small while the seed prop footprints are already
@@ -379,6 +440,7 @@ def author_tavern_fit2() -> dict:
 
 
 _ROOMS = {"crypt": author_crypt, "crypt_rich": author_crypt_rich,
+          "crypt_fresh": author_crypt_fresh,
           "camp": author_camp, "tavern": author_tavern, "tavern_fit": author_tavern_fit,
           "tavern_fit2": author_tavern_fit2}
 

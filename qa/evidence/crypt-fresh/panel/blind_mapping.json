@@ -1,0 +1,11 @@
+{
+ "blind_slots": {
+  "A": "incumbent",
+  "B": "control",
+  "C": "candidate"
+ },
+ "disclosed": {
+  "camp": "non-competing house ref (outdoor night camp)"
+ },
+ "note": "A/B/C are blind; incumbent disclosed-as-comparison per #1560 anti-circularity is here folded into the blind set as an extra rigor check, camp is the disclosed house ref."
+}
