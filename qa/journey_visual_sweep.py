@@ -96,6 +96,7 @@ _PLATES_MANIFEST = _ROOT / "extensions" / "renderers" / "unity" / "plates_manife
 # painted plates under qa/evidence/*). Searched in order; first hit wins.
 _PLATE_SEARCH_DIRS = [
     _QA_DIR / "evidence" / "plate-audit",
+    _QA_DIR / "evidence" / "crypt-fresh",  # the adopted FRESH-CRYPT plate (crypt_fresh_v1.png); box deploy deferred
     _QA_DIR / "evidence" / "tavern-fit2",  # the adopted density-law tavern plate (tavern_fit2_v1.png)
     _QA_DIR / "evidence" / "new-tavern",
     _QA_DIR / "evidence" / "crypt-replicate" / "refs",
