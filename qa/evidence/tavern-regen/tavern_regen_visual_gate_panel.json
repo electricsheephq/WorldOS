@@ -1,0 +1,130 @@
+{
+ "room": "tavern_fit",
+ "panel_id": "panel-visual-tavern-regen-v2-20260711",
+ "protocol": "control-anchored 5-scorer blind panel (fast-worker sonnet, independent). Candidate=TAVERN-REGEN v2 (tavern_fit extent-contract greybox -> flux.1-dev depth-CN base seed222 recall 0.9554 -> single Gemini instruction-edit style pass with STRUCTURE-LOCK+ADDITIONS-LOCK, no external referenceImages, tenebrist best-of-3 seed1000). Blind A=candidate B=incumbent(tavern_truegrey_v1, the deployed 7.0) C=disguised real-art control (PoE2).",
+ "scale": "0-10 visual-critic delta-anchored (absolute number is NOT a quality verdict)",
+ "candidate_image": "qa/evidence/tavern-regen/gen_style_v2/candidate_s1000.png",
+ "incumbent_image": "qa/evidence/new-tavern/tavern_truegrey_v1.png",
+ "house_anchor": "qa/evidence/new-tavern/tavern_truegrey_v1.png",
+ "control_id": "control:visual:pillars-of-eternity-2:poe2_ruins_brazier_integration_01",
+ "control_note": "REGISTERED clean control (real shipped PoE2:Deadfire plate, band [6.8,9.2]) disguised as a blind image.",
+ "pregate": {
+  "verdict": "FLAG",
+  "blocking": [
+   {
+    "gate": "G6_luma_staging_law",
+    "severity": "HIGH",
+    "metric": "staging_law_stats",
+    "value": {
+     "near_black_frac": 0.4717,
+     "lit_frac": 0.1443,
+     "median_L": 28.29
+    },
+    "threshold": {
+     "near_black_pass": [
+      0.66,
+      0.85
+     ],
+     "lit_pass": [
+      0.02,
+      0.05
+     ],
+     "median_pass": [
+      0,
+      15
+     ]
+    },
+    "detail": "FAIL: plate is outside the PoE staging-law band \u2014 near_black=47.2% (band 66-85% PASS / 50-66% WARN) [FAIL], lit=14.4% (band 2-5% PASS / 5-20% WARN) [WARN], median_L=28.3 (band 0-15 PASS / 15-40 WARN) [WARN]"
+   }
+  ],
+  "gates": [
+   {
+    "gate": "G1_frame_lit",
+    "severity": "PASS",
+    "metric": "mean_luminance",
+    "value": 0.132,
+    "threshold": null,
+    "detail": "lit (mean 0.132, var 0.01509)"
+   },
+   {
+    "gate": "G6_luma_staging_law",
+    "severity": "HIGH",
+    "metric": "staging_law_stats",
+    "value": {
+     "near_black_frac": 0.4717,
+     "lit_frac": 0.1443,
+     "median_L": 28.29
+    },
+    "threshold": {
+     "near_black_pass": [
+      0.66,
+      0.85
+     ],
+     "lit_pass": [
+      0.02,
+      0.05
+     ],
+     "median_pass": [
+      0,
+      15
+     ]
+    },
+    "detail": "FAIL: plate is outside the PoE staging-law band \u2014 near_black=47.2% (band 66-85% PASS / 50-66% WARN) [FAIL], lit=14.4% (band 2-5% PASS / 5-20% WARN) [WARN], median_L=28.3 (band 0-15 PASS / 15-40 WARN) [WARN]"
+   },
+   {
+    "gate": "G5_motion_liveness",
+    "severity": "SKIPPED",
+    "metric": "reel",
+    "value": null,
+    "threshold": null,
+    "detail": "no render reel supplied; G5 skipped (only meaningful with a motion reel \u2014 build one with qa/motion_reel.py and pass its frames)"
+   }
+  ],
+  "summary": "PRE-GATE FLAG\n  [PASS    ] G1_frame_lit       mean_luminance=0.132 :: lit (mean 0.132, var 0.01509)\n  [HIGH    ] G6_luma_staging_law staging_law_stats={'near_black_frac': 0.4717, 'lit_frac': 0.1443, 'median_L': 28.29} :: FAIL: plate is outside the PoE staging-law band \u2014 near_black=47.2% (band 66-85% PASS / 50-66% WARN) [FAIL], lit=14.4% (band 2-5% PASS / 5-20% WARN) [WARN], median_L=28.3 (band 0-15 PASS / 15-40 WARN) [WARN]\n  [SKIPPED ] G5_motion_liveness reel=None :: no render reel supplied; G5 skipped (only meaningful with a motion reel \u2014 build one with qa/motion_reel.py and pass its frames)"
+ },
+ "pregate_note": "hard floor = G1/G2/G3/G4; G6 staging-law is NOT a promotion floor (matches adopted new-tavern which also FLAGged G6).",
+ "scores": [
+  {
+   "scorer": 1,
+   "control": 10.0,
+   "candidate": 6.0,
+   "incumbent": 8.0
+  },
+  {
+   "scorer": 2,
+   "control": 9.0,
+   "candidate": 6.0,
+   "incumbent": 10.0
+  },
+  {
+   "scorer": 3,
+   "control": 9.0,
+   "candidate": 6.0,
+   "incumbent": 8.0
+  },
+  {
+   "scorer": 4,
+   "control": 9.0,
+   "candidate": 6.0,
+   "incumbent": 8.0
+  },
+  {
+   "scorer": 5,
+   "control": 9.0,
+   "candidate": 5.0,
+   "incumbent": 8.0
+  }
+ ],
+ "candidate_median": 6.0,
+ "control_median": 9.0,
+ "incumbent_median_this_panel": 8.0,
+ "delta_candidate_minus_control": -3.0,
+ "delta_incumbent_minus_control_this_panel": -1.0,
+ "house_style_votes": {
+  "candidate": "lesser (5/5)",
+  "incumbent": "same-hand",
+  "control": "mixed"
+ },
+ "residual_defects": "zero factual defect flags (on_prop/t_pose/floating/duplicate/missing) on all 3 images across 5 scorers; ADDITIONS inverse-coherence = 0 invented-furniture flags. Cap is furniture SPARSENESS (additions-lock forbids the incumbents invented walk-through seating/tableware/lanterns), not lighting or coherence.",
+ "iterations": 2
+}

@@ -113,6 +113,44 @@ support depth ControlNet on Scenario today; it does NOT unlock the registered pa
 
 ---
 
+## Style-pass bake-off v2 (#1556) — GPT-Image-2 / Kontext / MAI / SeeDream / Ideogram / El Diablo vs Gemini
+
+Owner-surfaced challengers, one style pass each over the SAME fixed crypt base
+(`asset_BKn1kiX2c8BaifYj559yKx7Y`, flux.1-dev depth-CN, seed 12345), identical STRUCTURE-LOCK +
+ADDITIONS-LOCK prompt on the edit arms; Kontext took the greybox directly (native blockout mode). Blind
+5-scorer panel, Gemini as the anchor. **111 / 120 CU.** Machine data:
+[`qa/evidence/1556/RANKED.md`](../qa/evidence/1556/RANKED.md) +
+[`gate_results.json`](../qa/evidence/1556/gate_results.json) +
+[`panel/panel_verdict.json`](../qa/evidence/1556/panel/panel_verdict.json); rows in
+`qa/model_registry.json → evaluated_1556`.
+
+| Arm | Recall vs base (≥0.95) | Invented (net-new) | Panel median (n=5) | Cost/img | Verdict |
+|---|---|---|---|---|---|
+| **Gemini 3.1** (incumbent) | 0.973 ✅ | 1 | **8.0** | 20 CU | **HOLDS** — reproduces its adopted 8.0; faint signature (fake-text 5/5) |
+| **MAI 2.5 Edit** | **0.9999 ✅** | **0** | **7.0** | **12 CU** | **CANDIDATE** — defect-clean, artifact-free, cheapest, perfect lock; did NOT beat 8.0 |
+| **GPT-Image-2** | 0.988 ✅ | 3 | 6.0 | **45 CU** | REJECT — clean but mid + costliest |
+| **El Diablo** (iso-dungeon LoRA) | 0.981 ✅ | 0 | 3.0 | 9 CU | REJECT — under-cooked; walls read as broken tiling |
+| **Seedream 5.0 Pro** | 0.997 ✅ | 4 | — | 9 CU | REJECT — INVENTED an arch doorway (ADDITIONS-LOCK violation) |
+| **Kontext Blockout→Render** | **0.854 ❌** | 4 | — | 16 CU | REJECT — geometry-aware not geometry-locked; invented a water pool |
+| Ideogram V4 | — | — | — | 0 CU | INELIGIBLE — txt2img-only on Scenario (no img2img edit) |
+
+**Verdict: no challenger beats the Gemini 3.1 incumbent (8.0); the pipeline is unchanged.** The panel
+ordering was unanimous across all 5 scorers. **MAI Image 2.5 Edit (7.0)** is the notable near-miss — the
+only edit arm that is defect-clean, free of Gemini's signature artifact, perfectly structure-locked
+(0.9999) and the cheapest (12 CU); registered as an evaluated **CANDIDATE** worth a multi-seed re-run
+before any adoption call (owner's). No challenger id is added to the promotion allowlist.
+
+Two honest calibration notes (why the gate thresholds aren't cargo-culted): (1) **Gate 1 is recall vs the
+fixed BASE, not the raw greybox** — the adopted gold incumbent scores only **0.878 vs the raw greybox**
+with `registration_recall`, so a "≥0.95 vs greybox" bar is unreachable for any painterly plate. (2)
+**"invented == 0" is unreachable for the walled crypt** — the base itself and the gold incumbent each flag
+7 cells (the #1540 detector was calibrated on the camp open clearing), so the signal is **net-new flags
+vs that structural baseline**. Access facts: **GPT-Image-2 is Scenario-only, 45 CU** (the codex CLI has no
+image-gen connector — only `-i` vision input); the disguised control was off-subject (jungle exterior) so
+instrument validity rests on the anchor this round — full caveat in RANKED.md.
+
+---
+
 ## The provenance gate (how this registry is enforced)
 
 - **`qa/plate_loop.py`** stamps the full **model chain** (base + every LoRA + scales + style-pass model)

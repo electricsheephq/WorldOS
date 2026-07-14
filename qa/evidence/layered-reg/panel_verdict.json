@@ -1,0 +1,71 @@
+{
+  "anchoring": "CORRECTED per #1560: neutral anchors = disguised PoE2 control (C) + disclosed CAMP house-ref; incumbent DISCLOSED comparison, not house_best.",
+  "mapping": {
+    "A": "layered_p3 (full 3-pass, camera broken)",
+    "B": "fit2 single-pass s1111 (#1559 result, re-scored)",
+    "C": "poe2 control (disguised neutral)",
+    "D": "layered_p1 material-only (registration-locked 0.93)",
+    "INCUMBENT": "deployed tavern_truegrey_v1"
+  },
+  "raw_scores": {
+    "A_layered_p3": [
+      5,
+      5,
+      5,
+      8,
+      6
+    ],
+    "B_singlepass": [
+      7,
+      8,
+      7,
+      7,
+      5.5
+    ],
+    "C_control": [
+      6,
+      3,
+      8,
+      9,
+      9
+    ],
+    "D_layered_p1": [
+      6,
+      3,
+      7,
+      9,
+      5.5
+    ],
+    "INCUMBENT": [
+      6,
+      8,
+      8,
+      6,
+      7.5
+    ]
+  },
+  "medians": {
+    "A_layered_p3": 5,
+    "B_singlepass": 7,
+    "C_control": 8,
+    "D_layered_p1": 6,
+    "INCUMBENT": 7.5
+  },
+  "control_median": 8,
+  "control_valid": true,
+  "deltas_vs_control": {
+    "A_layered_p3": -3,
+    "B_singlepass": -1,
+    "C_control": 0,
+    "D_layered_p1": -2,
+    "INCUMBENT": -0.5
+  },
+  "camera_break_flags": {
+    "A_layered_p3": 1,
+    "others": 0
+  },
+  "structure_incoherent_flags": {
+    "A_layered_p3": 1,
+    "others": 0
+  }
+}

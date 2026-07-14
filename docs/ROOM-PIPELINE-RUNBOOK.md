@@ -245,6 +245,16 @@ Two mandatory prompt clauses, whichever way you submit the edit:
   and prop must stay in EXACTLY its current position, size, and shape... only the paint and
   lighting treatment changes" (verbatim pattern used across every adopted style-pass prompt, e.g.
   `qa/evidence/plate-sprint/camp-armB/style_pass_prompt_winning.txt`).
+- **ADDITIONS-LOCK (#1542, owner playtest #8)** — "add NO new furniture, props, objects, walls,
+  or blocking elements of any kind; enrich only the SURFACES of what already exists (materials,
+  wear, lighting, small loose scatter like straw/pebbles that no one could collide with)".
+  STRUCTURE-LOCK protects what's authored; it never forbade *inventing* — the tavern's painted
+  benches had no cells, so players walked through solid-looking furniture. Every style-pass prompt
+  MUST carry this clause. Enforcement today: the visual journey's inverse-coherence check (#1540,
+  qa/journey_visual_sweep.py) FLAGS painted-object edges on authored-walkable cells and they count
+  against the room's CLEAN% (the M-ALIGN bar); wiring those flags into promote.py as a hard
+  no-promote condition is tracked on #1542/#1553 — until that lands, a flagged room is a human
+  reject-by-policy, not a machine-blocked one.
 - **DIMETRIC-LOCK** — an explicit camera-angle-preservation clause. Needed because dropping
   `referenceImages` also drops an *implicit* camera pin that a reference image otherwise supplied
   (`qa/evidence/plate-sprint/camp-armB/findings.json` finding 3) — but test it per-room: on a base

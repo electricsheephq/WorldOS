@@ -1,0 +1,18 @@
+LAYERED PASS 2 of 3 — LIGHTING / CHIAROSCURO DEEPENING (staging).
+
+Take this already-detailed painterly tavern plate and deepen its LIGHTING into dramatic Pillars of Eternity II: Deadfire tenebrism, WITHOUT losing or smoothing any of the hand-painted surface detail and brushwork already present — preserve every wood-grain, stone, plank-wear, tarnish, and soot stroke; only the light and shadow change.
+
+The scene is lit by a SINGLE warm source — the hearth fire at the back — with faint secondary glow from small hanging iron lanterns. Build the chiaroscuro: a concentrated HOT AMBER light pool spilling across the plank floor and near walls immediately around the hearth, warm amber rim-light on the edges of tables, benches, barrels and stone facing the flame, and cool blue-violet BOUNCE on the shadow sides. Push the falloff HARD: the far corners, the side walls, and the near-wall interiors should sink into deep, saturated blue-violet shadow reading as near-black, with only faint low-contrast value steps that still let you trace the layout in the dark, exactly like a real oil-painted tenebrism reference. Throw strong directional CAST SHADOWS from the hearth across the floor and from every table, bench, barrel, and the bar counter. This is NOT an evenly-lit room — it is a dark, crowded tavern hall with one fire. Keep the doorway to the right of the hearth reading as a dark recessed OPEN opening.
+
+SCENE-CONTENT GROUNDING (the geometry is fixed; relight each element as exactly what it is):
+- STONE HEARTH / chimney-breast at back-center with a glowing fire — the single warm key light.
+- DOORWAY in the back wall just right of the hearth — dark recessed timber opening, kept OPEN.
+- WOODPILE of split logs against the back wall left of the hearth.
+- carved wooden BAR COUNTER along the far-right side; BACK-BAR SHELVES + wooden ALE CASKS behind it against the far-right wall; wooden BAR STOOLS on the near side.
+- three round wooden TAVERN TABLES across the central floor, each flanked by wooden BENCHES.
+- stack of wooden ALE BARRELS in the near-left area and a second BARREL PAIR in the right-hand corner.
+- TIMBER WALLS around the perimeter (near/front and left cut away low for the camera).
+
+ADDITIONS-LOCK (non-negotiable): the painted room must contain EXACTLY the objects already present in this image and nothing more — every solid-looking object maps to an authored collision cell. Add NO new furniture, props, or blocking elements: no EXTRA tables, benches, stools, or barrels, no chandeliers, no free-floating hanging lanterns in empty floor space, no well, no central fire pit, no staircase, no hanging signage, and no NPC, patron, figure, or creature. Relight only what is already present.
+
+CRITICAL STRUCTURE-LOCK (non-negotiable, checked pixel-by-pixel against the original): every wall, doorway, hearth, bar counter, stool, table, bench, barrel, cask, shelf, and woodpile must stay in EXACTLY its current position, size, and shape — do NOT move, add, remove, resize, or recompose ANYTHING; only the lighting and shadow treatment changes. Do NOT introduce any repeated, cloned, or tiled decorative motifs. Do NOT add any text, letters, numbers, labels, UI elements, signatures, frames, or borders. Do NOT add any characters, people, figures, or creatures.
