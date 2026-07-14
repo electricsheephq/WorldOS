@@ -1,0 +1,38 @@
+{
+  "lane": "FRESH-CRYPT",
+  "date": "2026-07-15",
+  "goal": "Build a BRAND-NEW crypt through the complete amended pipeline; adopt if it clears the gates.",
+  "geometry": {"room": "crypt_fresh", "grid": "14x11", "props": 20, "walkable": 86,
+    "connected": true, "doors_walkable": ["(6,0) camp", "(13,4) tavern"],
+    "extent_contract": {"camera_fit": true, "wall_run_band": true, "crenellation": false},
+    "coffin": "true 2x2 (4,7)(5,7)(4,8)(5,8) — strict subset of the canonical 12-cell blob"},
+  "base": {"model": "model_bfl-flux-1-dev", "modality": "depth", "control_strength": 0.7,
+    "loras": "NONE (clean registered flux.1-dev; deprecates AI-on-AI G379)", "best_of": 3,
+    "adopted": "asset_sTSiKW8FyEUhLWeeiygqM78e (base_2)", "edge_recall_vs_greybox": 0.9603,
+    "other_seeds_recall": [0.7016, 0.7484], "cu": 26},
+  "style": {"model": "model_google-gemini-3-1-flash", "clauses": ["STRUCTURE-LOCK", "ADDITIONS-LOCK", "no-text", "no-figures"],
+    "reference": "base_2 only (greybox-aligned, sanctioned img2img case; NO external anchor)",
+    "best_of": 3, "adopted": "asset_zPi3GpbhkiMGYV8V2iwP5G6M (styled_3)",
+    "edge_recall_vs_greybox": 0.9750, "cu": 39, "fake_text": "abstract weathering, <= incumbent 5/5 signature; no re-pass"},
+  "gates": {
+    "edge_recall": {"value": 0.9750, "bar": 0.95, "pass": true},
+    "visual_pregate_hard_floor": {"frame_lit": "PASS", "occupancy": "PASS", "floor_contact": "PASS", "screen_scale": "PASS", "verdict": "PASS"},
+    "inverse_coherence_net_new_vs_base": {"raw": 14, "inside_authored_occlusion": 14, "on_clear_floor": 0,
+      "verdict": "0 invented walk-through furniture (ADDITIONS-LOCK held); raw==0 bar is #1556-documented miscalibrated for the walled crypt"},
+    "coherence_absolute": "INCOHERENT (diagnostic only; 8.0 incumbent fails identically)",
+    "panel": {"protocol": "neutral-anchor 5-scorer blind (A/B/C shuffled)",
+      "candidate_median": 7.0, "incumbent_median": 8.0, "control_median": 8.0,
+      "control_id": "poe2_ruins_brazier_integration_01", "control_band": [6.8, 9.2], "control_in_band": true,
+      "delta_vs_incumbent": -1.0, "delta_vs_control": -1.0, "verdict": "ADOPT (7.0-parity band cleared)"},
+    "promote": {"verdict": "promoted", "tier": "canonical-candidate", "library_lint": "clean"}
+  },
+  "visual_sweep": {
+    "instrument": "qa/journey_visual_sweep.py run (scratch, port 8771/8772, NEVER :8766)",
+    "crypt_clean_pct": {"incumbent_on_canonical_grid": 94.7, "fresh_on_canonical_grid": 77.9, "fresh_on_aligned_fresh_grid": 82.6},
+    "flags": {"incumbent": "5/94", "fresh_canonical": "21/94", "fresh_aligned": "15/86"},
+    "note": "ALL fresh-plate flags fall inside authored prop occlusion (0 invented clear-floor furniture). The 77.9 vs 82.6 gap is the walkslice-reconciliation penalty (engine seed not aligned to the fresh geometry this lane, #1559). The 82.6 vs 94.7 gap is the richness cost: a denser crypt has more tall-prop up-screen silhouettes than the sparse incumbent on this footprint-based detector. hero-position 3/3, reciprocal-door 0 failures both runs.",
+    "hub": "crypt"
+  },
+  "budget": {"cu_spent": 65, "cu_cap": 80, "training": false},
+  "verdict": "ADOPT — clears every named gate (panel 7.0-parity, recall 0.975, 0 clear-floor net-new, promote canonical-candidate). OPEN RISK: the visual sweep CLEAN% regresses 94.7 -> 77.9 on the un-aligned canonical grid; closing it needs the deferred engine-seed alignment (WALKSLICE-RECONCILIATION.md)."
+}

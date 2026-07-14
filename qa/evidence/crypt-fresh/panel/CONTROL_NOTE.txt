@@ -1,0 +1,6 @@
+Blind slot B = the disguised real-art control, control_id
+"control:visual:pillars-of-eternity-2:poe2_ruins_brazier_integration_01"
+(registered in qa/visual_controls_identity.json, band [6.8,9.2], tag ruins_warm_key).
+The control's PIXELS are NOT committed (real shipped PoE2:Deadfire art — copyright); the
+frame lives at /Volumes/LEXAR/WorldOS-Unity-spike/refs/poe2_ruins_brazier_integration_01.jpg,
+exactly as the registry keeps every control frame off-repo. blind_mapping.json records B=control.
