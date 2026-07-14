@@ -150,3 +150,29 @@ def test_walkslice_camp_spawns_are_walkable_and_off_props():
         for (c, r) in cells:
             assert (c, r) not in blocked, f"camp {role} spawn {(c, r)} is BLOCKED (prop)"
             assert (c, r) not in prop_cells, f"camp {role} spawn {(c, r)} stands on a prop"
+
+
+def test_walkslice_camp_party_spawn_moved_off_firewood_tail():
+    """CAMP-CELLS wave-2 (#1540/#1552, 2026-07-15): camp.FIREWOOD_TAIL_CELLS now claims (6,9) (the
+    woodpile's painted tail, #1540-flagged), the SAME cell the walkslice's rest-mode party spawn used
+    to stand on — the #1526 pattern recurring one cell over. The spawn was moved to (7,10); pin both
+    that the old cell is now blocked AND the new spawn cell is clear, so this can't silently regress
+    either direction."""
+    grid = ws.build_camp_grid("camp")
+    blocked = _impassable_c(grid)
+    assert (6, 9) in blocked, "premise: (6,9) is now the firewood_tail footprint (#1540)"
+    assert (6, 9) not in set(grid.spawns["party"]), "party spawn must no longer sit on (6,9)"
+    assert (7, 10) in grid.spawns["party"]
+    assert (7, 10) not in blocked, "new party spawn (7,10) must be walkable"
+
+
+def test_walkslice_camp_1540_flagged_cells_keep_reject():
+    """The #1540/#1552 inverse-coherence keep/reject call holds through the walkslice's camp grid too
+    (it reuses camp._build_camp_grid verbatim, plus the door + relocated spawns) — not just the bare
+    combat-demo grid qa/test_seed_gfx_camp.py pins."""
+    grid = ws.build_camp_grid("camp")
+    blocked = _impassable_c(grid)
+    for cell in [(6, 8), (6, 9), (11, 3), (10, 4), (12, 6), (14, 5), (12, 11)]:
+        assert cell in blocked, f"#1540-flagged real obstacle {cell} must be impassable in the walkslice camp"
+    for cell in [(3, 10), (4, 10), (9, 5), (9, 6), (9, 7), (9, 8)]:
+        assert cell not in blocked, f"#1540-flagged false-positive {cell} must stay walkable in the walkslice camp"

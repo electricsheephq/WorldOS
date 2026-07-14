@@ -86,10 +86,38 @@ SHELTER_CELLS = [[12, 2], [12, 3], [13, 3], [13, 4], [14, 4]]  # the timber lean
                                                                  # wall paint block)
 BEDROLL_L_CELLS = [[1, 8], [2, 8], [2, 9], [3, 9]]      # the two bedrolls, front-left
 BEDROLL_R_CELLS = [[5, 10], [6, 10], [6, 11]]           # the bedroll, front-right
+# CAMP-CELLS wave-2 (#1540/#1552, 2026-07-15): the journey-visual-sweep's inverse-coherence pass
+# (qa/journey_visual_sweep.py, evidence qa/evidence/1540/report.json) flagged 13 camp cells as
+# "painted object on a walkable cell" — a standing-token's silhouette band (cell_silhouette_quad)
+# lands on dense paint. Each flag was eyeballed against the adopted true-greybox plate at BOTH its
+# floor quad (does the object's floor-contact actually sit in this cell — the bar for a footprint)
+# and its silhouette quad (why the detector fired); see the PR's keep/reject table for the full
+# per-cell call. 7 are REAL painted solids with no footprint (kept, added below); 6 are the
+# detector's silhouette band sweeping UP-AND-BACK on screen into a NEIGHBORING object (the fire, the
+# lean-to's bedroll mats — themselves deliberately walkable, #1526/CAMP-TUNE — or a decorative loose
+# item) with nothing painted at the flagged cell's OWN floor position (rejected as false positives:
+# (3,10), (4,10), (9,5), (9,6), (9,7), (9,8)).
+FIREWOOD_TAIL_CELLS = [[6, 8], [6, 9]]   # the log pile's near-left tail (log ends painted right into
+                                          # both cells) — unmodeled since FIREWOOD_CELLS was measured
+                                          # against the pile's own 3-cell mass, not this tail. NOTE:
+                                          # (6,9) was also the walkslice's rest-mode party spawn
+                                          # (#1526 precedent: the OLD spawn (8,9) collided with the
+                                          # firewood footprint the same way) — moved to (7,10) in
+                                          # qa/seed_gfx_walkslice.py's build_camp_grid.
+GEAR_STONES_CELLS = [[11, 3]]             # a broken stone footing + a dropped pair of sandals, short
+                                           # of the shelter's near post
+CAMP_SACK_CELLS = [[10, 4]]               # a leather sack + boots dropped on bare ground
+SHELTER_POST_R_CELLS = [[12, 6]]          # the lean-to's rear support post, staked short of
+                                           # SHELTER_CELLS's own footprint
+RUIN_RUBBLE1_CELLS = [[14, 5]]            # a broken stone block fallen from the tall gable's base
+                                           # (RUIN_TOWER1_CELLS), short of the tower proper
+RUIN_RUBBLE2_CELLS = [[12, 11]]           # moss-covered rubble spilled from the compound wall's base,
+                                           # short of WALL_BR3_CELLS/RUIN_LINK_CELLS
 OBSTACLES = (CAMPFIRE_CELLS + FIREWOOD_CELLS + CRATE_L_CELLS + CRATE_C_CELLS + CRATE_WALL_CELLS
              + CRATE_R_CELLS + WALL_BL_CELLS + WALL_BR_CELLS + WALL_BR2_CELLS + WALL_BR3_CELLS
              + RUIN_TOWER1_CELLS + RUIN_TOWER2_CELLS + RUIN_LINK_CELLS + SHELTER_CELLS
-             + BEDROLL_L_CELLS + BEDROLL_R_CELLS)
+             + BEDROLL_L_CELLS + BEDROLL_R_CELLS + FIREWOOD_TAIL_CELLS + GEAR_STONES_CELLS
+             + CAMP_SACK_CELLS + SHELTER_POST_R_CELLS + RUIN_RUBBLE1_CELLS + RUIN_RUBBLE2_CELLS)
 # Combat spawns — open dirt near the fire (clear of every prop footprint above), re-verified vs the plate.
 HERO_CELL = [7, 9]
 GOBLIN_CELL = [10, 8]
@@ -142,6 +170,19 @@ def _build_camp_grid(cid: str, location_id: str = ""):
     _prop("shelter", "timber_frame", SHELTER_CELLS, "tall", "the timber lean-to's post-and-beam frame")
     _prop("bedroll_l", "bedroll", BEDROLL_L_CELLS, "low", "two rolled sleeping bedrolls, front-left")
     _prop("bedroll_r", "bedroll_2", BEDROLL_R_CELLS, "low", "a rolled bedroll with a pack for a pillow")
+    # CAMP-CELLS wave-2 (#1540/#1552): 7 painted solids the inverse-coherence sweep flagged with no
+    # footprint — see the module-level constants comment above for the per-cell keep rationale.
+    _prop("firewood_tail", "fallen_log", FIREWOOD_TAIL_CELLS, "low",
+          "the woodpile's near tail, a few split logs trailing toward the fire")
+    _prop("gear_stones", "rubble", GEAR_STONES_CELLS, "low",
+          "a broken stone footing with a dropped pair of sandals")
+    _prop("camp_sack", "rubble", CAMP_SACK_CELLS, "low", "a leather sack and a pair of boots on the ground")
+    _prop("shelter_post_r", "timber_frame", SHELTER_POST_R_CELLS, "tall",
+          "a rear support post of the timber lean-to, staked short of the frame")
+    _prop("ruin_rubble1", "stone_wall", RUIN_RUBBLE1_CELLS, "mid",
+          "a broken stone block fallen from the ruin's tall gable")
+    _prop("ruin_rubble2", "stone_wall", RUIN_RUBBLE2_CELLS, "mid",
+          "moss-covered rubble spilled from the compound wall's base")
 
     grid = SceneGrid(
         scene_id=f"{cid}:camp_clearing", location_id=location_id, kind="forest",

@@ -92,9 +92,12 @@ def build_camp_grid(loc_id: str):
     # only needs an explicit door-typed cell + the door_cells registration for the renderer's glow/label.
     grid.cells.append(sg.SceneCell(c=CAMP_DOOR[0], r=CAMP_DOOR[1], type="door", walkable=True))
     grid.door_cells = [(CAMP_DOOR[0], CAMP_DOOR[1])]
-    # party on the clear open ground between the fire ((4-5,8-9)) and the firewood ((7,8)-(8,9)):
-    # (6,9)/(7,9) touch no footprint; NPC (9,7) clear of the back-right wall run ((10,5)...).
-    grid.spawns = {"party": [(6, 9), (7, 9)], "npcs": [(9, 7)]}
+    # party on the clear open ground south of the firewood pile: (7,9)/(7,10) touch no footprint;
+    # NPC (9,7) clear of the back-right wall run ((10,5)...). CAMP-CELLS wave-2 (#1540/#1552,
+    # 2026-07-15): (6,9) MOVED to (7,10) — camp.FIREWOOD_TAIL_CELLS now claims (6,9) (the log pile's
+    # painted tail), the SAME #1526 "spawn collides with a footprint the tune just extended into"
+    # pattern that moved the old (8,9) spawn here in the first place.
+    grid.spawns = {"party": [(7, 10), (7, 9)], "npcs": [(9, 7)]}
     grid.art.layout_hash = sg._layout_hash(grid)  # layout changed (door + spawns) — refresh the hash
     return grid
 
