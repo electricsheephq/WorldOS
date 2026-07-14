@@ -1,0 +1,79 @@
+{
+ "room": "tavern_fit2",
+ "panel_id": "panel-visual-tavern-fit2-densitylaw-20260711",
+ "protocol": "control-anchored 5-scorer blind panel (fast-worker sonnet, independent). Candidate=TAVERN_FIT-V2 density-law (tavern_fit2 14-prop greybox -> flux.1-dev depth-CN base cs0.95 seed222 recall 0.98 -> single Gemini instruction-edit style pass STRUCTURE-LOCK+ADDITIONS-LOCK, density-aware grounding, no external referenceImages, tenebrist best-of-3 seed1000). Blind A=candidate B=incumbent(tavern_truegrey_v1, deployed 7.0) C=disguised real-art control(PoE2).",
+ "scale": "0-10 visual-critic delta-anchored (absolute number is NOT a quality verdict)",
+ "candidate_image": "qa/evidence/tavern-fit2/gen_style/candidate_s1000.png",
+ "incumbent_image": "qa/evidence/new-tavern/tavern_truegrey_v1.png",
+ "house_anchor": "qa/evidence/new-tavern/tavern_truegrey_v1.png",
+ "control_id": "control:visual:pillars-of-eternity-2:poe2_ruins_brazier_integration_01",
+ "control_note": "REGISTERED clean control (real shipped PoE2:Deadfire plate, band [6.8,9.2]) disguised as a blind image.",
+ "pregate": {
+  "verdict": "PASS",
+  "blocking": [],
+  "gates": [
+   {
+    "gate": "G1_frame_lit",
+    "severity": "PASS",
+    "metric": "mean_luminance",
+    "value": 0.1177,
+    "threshold": null,
+    "detail": "lit (mean 0.118, var 0.00903)"
+   },
+   {
+    "gate": "G6_luma_staging_law",
+    "severity": "MED",
+    "metric": "staging_law_stats",
+    "value": {
+     "near_black_frac": 0.5643,
+     "lit_frac": 0.086,
+     "median_L": 23.0
+    },
+    "threshold": {
+     "near_black_pass": [
+      0.66,
+      0.85
+     ],
+     "lit_pass": [
+      0.02,
+      0.05
+     ],
+     "median_pass": [
+      0,
+      15
+     ]
+    },
+    "detail": "WARN: plate is borderline vs the PoE staging-law band \u2014 near_black=56.4% (band 66-85% PASS / 50-66% WARN) [WARN], lit=8.6% (band 2-5% PASS / 5-20% WARN) [WARN], median_L=23.0 (band 0-15 PASS / 15-40 WARN) [WARN]"
+   }
+  ]
+ },
+ "scores": {
+  "A": [
+   6,
+   6,
+   6,
+   6.5,
+   7
+  ],
+  "B": [
+   9,
+   9,
+   9,
+   6,
+   6
+  ],
+  "C": [
+   9,
+   9,
+   9,
+   9,
+   9.5
+  ]
+ },
+ "candidate_median": 6.0,
+ "incumbent_median": 9.0,
+ "control_median": 9.0,
+ "delta_candidate_minus_control": -3.0,
+ "control_valid": true,
+ "verdict": "HONEST NEGATIVE \u2014 candidate median 6.0 vs incumbent 9.0 (7.0 canonical) vs control 9.0; delta -3.0 < -2.5 adopt bar. Both flat-lit (s1111) and tenebrist (s1000) density-law variants plateau at 6.0 == #1557 sparse -> density REFUTED as the binding gap."
+}
