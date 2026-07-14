@@ -1,0 +1,64 @@
+{
+  "n_walkable_floor": 43,
+  "base_flagged_cells": [],
+  "per_target": {
+    "base_fit2": {
+      "n_flagged": 0,
+      "flagged_cells": [],
+      "threshold": 0.02,
+      "baseline_median": 0.0008,
+      "net_new_vs_base": [],
+      "n_net_new": 0
+    },
+    "singlepass_s1111": {
+      "n_flagged": 0,
+      "flagged_cells": [],
+      "threshold": 0.1116,
+      "baseline_median": 0.0395,
+      "net_new_vs_base": [],
+      "n_net_new": 0
+    },
+    "singlepass_s1000": {
+      "n_flagged": 0,
+      "flagged_cells": [],
+      "threshold": 0.0906,
+      "baseline_median": 0.0401,
+      "net_new_vs_base": [],
+      "n_net_new": 0
+    },
+    "layered_p1_material": {
+      "n_flagged": 0,
+      "flagged_cells": [],
+      "threshold": 0.0914,
+      "baseline_median": 0.0419,
+      "net_new_vs_base": [],
+      "n_net_new": 0
+    },
+    "layered_p2_lighting": {
+      "n_flagged": 0,
+      "flagged_cells": [],
+      "threshold": 0.1174,
+      "baseline_median": 0.0277,
+      "net_new_vs_base": [],
+      "n_net_new": 0
+    },
+    "layered_p3_final": {
+      "n_flagged": 1,
+      "flagged_cells": [
+        [
+          9,
+          1
+        ]
+      ],
+      "threshold": 0.0868,
+      "baseline_median": 0.0261,
+      "net_new_vs_base": [
+        [
+          9,
+          1
+        ]
+      ],
+      "n_net_new": 1
+    }
+  }
+}

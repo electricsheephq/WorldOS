@@ -1,0 +1,21 @@
+LAYERED PASS 1 of 3 — MATERIAL / BRUSHWORK ENRICHMENT (surfaces only).
+
+Repaint this image in the painting style of Pillars of Eternity II: Deadfire's pre-rendered backgrounds: loose confident VISIBLE oil-brush strokes, tactile hand-painted material. This pass is about SURFACE CRAFT, not lighting — establish every surface with rich, individuated, hand-painted brushwork and keep the scene readable (moderate ambient warmth; do NOT crush the room to black in this pass — a later pass sets the dramatic tenebrism).
+
+Enrich the SURFACES heavily (this is allowed and wanted): deep oil-painted wood grain and plank wear on the floor, tables, benches, bar counter, and timber walls; soot and heat-staining on the hearth stone; moss and knot detail in the timber; worn scuffed rounded edges; iron-hoop tarnish, spilled-ale sheen and stave grain on the barrels and casks; split-log end-grain on the woodpile; ring-stains and tankard-scuff already worn into the table and bar tops. Vary the brushwork so no two planks and no two stones read identical — remove any flat, tiled, CG-render or airbrushed-gloss look; every material should read as painted by hand, lived-in and tactile. This is the "detail" pass of a layered painterly pipeline.
+
+SCENE-CONTENT GROUNDING (read the existing geometry correctly before repainting — this is a DENSELY FURNISHED tavern; every block is a real piece of furniture, paint each as exactly what it is):
+- The tall vertical mass at the back-center is a STONE HEARTH / chimney-breast with a glowing fire — the single warm key light.
+- The gap in the back wall just to the right of the hearth is a DOORWAY — paint it as a dark recessed timber door opening and keep it OPEN (do NOT fill or wall it shut).
+- The low stack against the back wall to the LEFT of the hearth is a WOODPILE of split firewood logs.
+- The tall mid-height run along the far-right side is a carved wooden BAR COUNTER.
+- Behind the bar counter, against the far-right wall, are BACK-BAR SHELVES of crates/tankards and a stack of wooden ALE CASKS.
+- The small low blocks on the near (patron) side of the bar counter are wooden BAR STOOLS.
+- The three low raised flat shapes across the central floor are round wooden TAVERN TABLES.
+- The long low plank shapes immediately alongside each table are wooden BENCHES (seating flanking the tables).
+- The blocky cluster tucked into the near-left area is a stack of wooden ALE BARRELS, and there is a second BARREL PAIR stacked in the right-hand corner.
+- The thick bands around the perimeter are the tavern's TIMBER WALLS (the near/front and left walls are cut away low so the camera looks down into the room).
+
+ADDITIONS-LOCK (non-negotiable): the painted room must contain EXACTLY the objects already present in this image and nothing more — because every solid-looking object a player cannot walk through must correspond to an authored collision cell. Paint the tables, benches, bar stools, bar counter, back-bar shelves, ale casks, barrels, woodpile, and hearth that are already here as the rich furniture they are, but add NO new furniture, props, or blocking elements beyond them: no EXTRA tables, EXTRA benches, EXTRA stools, EXTRA barrels, no chandeliers, hanging lanterns, wall shelves of tankards floating in empty floor space, no well, no central fire pit, no staircase, no hanging signage, and no NPC, patron, figure, or creature. Enrich only what is already present, plus small loose scatter (straw/pebbles) no one could collide with.
+
+CRITICAL STRUCTURE-LOCK (non-negotiable, checked pixel-by-pixel against the original): every wall, doorway, hearth, bar counter, stool, table, bench, barrel, cask, shelf, and woodpile must stay in EXACTLY its current position, size, and shape — do NOT move, add, remove, resize, or recompose ANYTHING; only the paint and material treatment changes. Do NOT introduce any repeated, cloned, or tiled decorative motifs. Do NOT add any text, letters, numbers, labels, UI elements, signatures, frames, or borders. Do NOT add any characters, people, figures, or creatures.

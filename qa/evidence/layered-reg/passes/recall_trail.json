@@ -1,0 +1,79 @@
+{
+  "base": "qa/evidence/layered-reg/gen_base/base_fit2.png",
+  "base_recall_vs_greybox": 0.98,
+  "passes": [
+    {
+      "tag": "p1_material",
+      "prompt_file": "pass1_material.txt",
+      "samples": [
+        {
+          "path": "qa/evidence/layered-reg/passes/p1_material_s1000.png",
+          "recall_vs_base": 0.8392,
+          "recall_vs_prev": 0.8392,
+          "recall_vs_greybox": 0.8783
+        },
+        {
+          "path": "qa/evidence/layered-reg/passes/p1_material_s1111.png",
+          "recall_vs_base": 0.9348,
+          "recall_vs_prev": 0.9348,
+          "recall_vs_greybox": 0.9173
+        }
+      ],
+      "winner": {
+        "path": "qa/evidence/layered-reg/passes/p1_material_s1111.png",
+        "recall_vs_base": 0.9348,
+        "recall_vs_prev": 0.9348,
+        "recall_vs_greybox": 0.9173
+      }
+    },
+    {
+      "tag": "p2_lighting",
+      "prompt_file": "pass2_lighting.txt",
+      "samples": [
+        {
+          "path": "qa/evidence/layered-reg/passes/p2_lighting_s2000.png",
+          "recall_vs_base": 0.5769,
+          "recall_vs_prev": 0.5819,
+          "recall_vs_greybox": 0.5865
+        },
+        {
+          "path": "qa/evidence/layered-reg/passes/p2_lighting_s2111.png",
+          "recall_vs_base": 0.6272,
+          "recall_vs_prev": 0.6693,
+          "recall_vs_greybox": 0.6242
+        }
+      ],
+      "winner": {
+        "path": "qa/evidence/layered-reg/passes/p2_lighting_s2111.png",
+        "recall_vs_base": 0.6272,
+        "recall_vs_prev": 0.6693,
+        "recall_vs_greybox": 0.6242
+      }
+    },
+    {
+      "tag": "p3_scatter",
+      "prompt_file": "pass3_scatter.txt",
+      "samples": [
+        {
+          "path": "qa/evidence/layered-reg/passes/p3_scatter_s3000.png",
+          "recall_vs_base": 0.7941,
+          "recall_vs_prev": 0.7666,
+          "recall_vs_greybox": 0.805
+        },
+        {
+          "path": "qa/evidence/layered-reg/passes/p3_scatter_s3111.png",
+          "recall_vs_base": 0.5405,
+          "recall_vs_prev": 0.6014,
+          "recall_vs_greybox": 0.551
+        }
+      ],
+      "winner": {
+        "path": "qa/evidence/layered-reg/passes/p3_scatter_s3000.png",
+        "recall_vs_base": 0.7941,
+        "recall_vs_prev": 0.7666,
+        "recall_vs_greybox": 0.805
+      }
+    }
+  ],
+  "final_winner": "qa/evidence/layered-reg/passes/p3_scatter_s3000.png"
+}
