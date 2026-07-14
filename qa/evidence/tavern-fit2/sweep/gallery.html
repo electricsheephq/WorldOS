@@ -1,0 +1,30 @@
+<!doctype html><meta charset=utf-8><title>VISUAL JOURNEY — #1540</title>
+<style>
+ body{font:14px/1.5 -apple-system,sans-serif;margin:24px;background:#111;color:#eee}
+ h1{margin:0 0 4px} .sub{color:#9aa;margin:0 0 18px}
+ table{border-collapse:collapse;margin:12px 0 24px} td,th{border:1px solid #333;padding:6px 12px;text-align:left}
+ th{background:#1c1c22} tr.bad td{background:#3a1414}
+ .kpis span{display:inline-block;background:#1c1c22;border:1px solid #333;border-radius:6px;padding:6px 12px;margin-right:8px}
+ .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(560px,1fr));gap:20px}
+ .card{background:#1a1a20;border:1px solid #2a2a33;border-radius:10px;padding:12px}
+ .card img{width:100%;border-radius:6px;border:1px solid #333}
+ .badges span{display:inline-block;padding:2px 8px;border-radius:4px;margin:0 6px 8px 0;font-weight:600}
+ .ok{background:#123d1e;color:#7fe0a0} .fail{background:#4a1414;color:#ff9a9a}
+ .reason{color:#ffb0b0;font-size:13px;margin:4px 0 0}
+ h3{margin:0 0 8px;font-size:15px} small{color:#8a8}
+</style>
+<h1>VISUAL JOURNEY sweep — walkslice 3-room world</h1>
+<p class=sub>#1540 · M-ALIGN · overall CLEAN% <b>93.6%</b>
+ · hub <code>crypt</code></p>
+<div class=kpis>
+ <span>invented-furniture flags: <b>18</b></span>
+ <span>reciprocal-door failures: <b>0</b></span>
+ <span>hero-position failures: <b>0</b></span>
+</div>
+<table><tr><th>room</th><th>plate</th><th>hero-pos pass</th><th>furniture flags / floor cells</th><th>CLEAN%</th></tr>
+<tr class='bad'><td>crypt</td><td>resolved</td><td>1/1</td><td>5 / 94</td><td><b>94.7%</b></td></tr>
+<tr class='bad'><td>camp_clearing_night</td><td>resolved</td><td>1/1</td><td>13 / 141</td><td><b>90.8%</b></td></tr>
+<tr class=''><td>tavern</td><td>resolved</td><td>1/1</td><td>0 / 43</td><td><b>100.0%</b></td></tr></table>
+<div class=cards>
+<div class='card'><h3>[0] spawn in crypt <small>(spawn)</small></h3><div class='badges'><span class='ok'>hero-pos PASS</span></div><img src='frames/step00_spawn_crypt.png' loading='lazy'/></div><div class='card'><h3>[1] crossed crypt -> camp_clearing_night <small>(arrive)</small></h3><div class='badges'><span class='ok'>hero-pos PASS</span><span class='ok'>reciprocal-door PASS</span></div><img src='frames/step01_arrive_camp_clearing_night.png' loading='lazy'/></div><div class='card'><h3>[2] returned camp_clearing_night -> crypt <small>(return)</small></h3><div class='badges'><span class='ok'>hero-pos PASS</span><span class='ok'>reciprocal-door PASS</span></div><img src='frames/step02_return_crypt.png' loading='lazy'/></div><div class='card'><h3>[3] crossed crypt -> tavern <small>(arrive)</small></h3><div class='badges'><span class='ok'>hero-pos PASS</span><span class='ok'>reciprocal-door PASS</span></div><img src='frames/step03_arrive_tavern.png' loading='lazy'/></div><div class='card'><h3>[4] returned tavern -> crypt <small>(return)</small></h3><div class='badges'><span class='ok'>hero-pos PASS</span><span class='ok'>reciprocal-door PASS</span></div><img src='frames/step04_return_crypt.png' loading='lazy'/></div>
+</div>

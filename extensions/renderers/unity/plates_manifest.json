@@ -13,8 +13,8 @@
       ]
     },
     "tavern": {
-      "plate": "plates/tavern_truegrey_v1.png",
-      "_effects_comment": "NEW-ROOM-TAVERN (epic #1508): a future animated hearth fire seats over the painted hearth. The hearth footprint is [[5,1],[6,1]] (qa/room_manifests/tavern_truegrey.cells.json props[hearth]) — the fire anchor. Effects deferred (the plate ships flat; the hearth glow is painted). Add a fire_medium here later keyed to a hearth cell, mirroring the camp entry."
+      "plate": "plates/tavern_fit2_v1.png",
+      "_effects_comment": "TAVERN-FIT2 ADOPTION (M-ALIGN wave-2 close, ruling on #1557): the canonical tavern is now the density-law fit2 plate (was plates/tavern_truegrey_v1.png). fit2 = 14 authored collision props at world-true scale, coherence-perfect, camera-fit extent, doorway PAINTED at the authored (8,0). Adopted plate = the s1111 single-pass (the exact asset the #1560-corrected panel scored 7.0/delta -1.0 in PR #1561). Repo copy for QA/sweep at qa/evidence/tavern-fit2/tavern_fit2_v1.png; the box carries the real plates/tavern_fit2_v1.png (drop it there on the NEXT box cycle — this PR does no box deploy). The hearth footprint is unchanged [[5,1],[6,1]] (qa/room_manifests/tavern_fit2.cells.json props[hearth]) — a future animated hearth fire's anchor; effects still deferred (glow is painted). Add a fire_medium here later keyed to a hearth cell, mirroring the camp entry."
     }
   }
 }

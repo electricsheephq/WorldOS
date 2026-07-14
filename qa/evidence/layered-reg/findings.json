@@ -1,0 +1,45 @@
+{
+  "lane": "LAYERED-ON-REGISTERED (M-ALIGN wave-2) — apply the layered multi-pass style treatment (never before combined with the registered true-greybox path) to the REUSED tavern_fit2 registered base, to test whether it recovers the incumbent's LAYERED brushwork richness WHILE keeping registration.",
+  "verdict": "HONEST NEGATIVE — do NOT adopt. The layered treatment recovers brushwork richness but CANNOT keep registration: the second heavy Gemini relight edit breaks the dimetric camera (p2) or relocates props (camera-locked p2b). No layered variant clears the incumbent band under corrected anchoring. promote.py --dry-run: passed=false, tier=null, control_valid=true (delta -3.0 < -2.5 adopt floor).",
+  "hypothesis_result": "REFUTED for the all-Gemini layered chain. The two conjuncts cannot be held together: (a) the registration-SAFE pass (p1 material-only, STRUCTURE-LOCK) holds recall 0.9348 vs base AND enriches brushwork, but by the layered order-law it deliberately keeps lighting flat and so lacks the incumbent's dramatic staging -> panel 6.0; (b) the pass that adds the dramatic tenebrist staging (p2 lighting) REIMAGINES the scene -> dimetric camera lost (recall 0.93->0.63), and with a hard camera-lock retry (p2b) it holds the camera but RELOCATES the hearth (recall ->0.735). The incumbent keeps registration because ITS layered pipeline uses a LOW-STRENGTH z-image img2img base pass (strength 0.5-0.6, camera-pinned by construction) BEFORE the Gemini detail passes; an all-Gemini instruction-edit chain accumulates composition drift on the 2nd heavy edit.",
+  "reused_base": {
+    "path": "qa/evidence/layered-reg/gen_base/base_fit2.png",
+    "provenance": "tavern_fit2 flux.1-dev depth-CN base from PR #1559 (model_bfl-flux-1-dev, cs0.95 seed222), reused NOT regenerated",
+    "recall_vs_greybox": 0.98
+  },
+  "passes": {
+    "p1_material": {"prompt": "pass1_material.txt", "winner": "passes/p1_material_s1111.png", "recall_vs_base": 0.9348, "recall_vs_greybox": 0.9173, "note": "SWEET SPOT: composition perfectly locked to base (round tables, timber walls, camera, layout), visibly richer hand-painted material. Structure-locked material pass works."},
+    "p2_lighting": {"prompt": "pass2_lighting.txt", "winner": "passes/p2_lighting_s2111.png", "recall_vs_base": 0.6272, "recall_vs_greybox": 0.6242, "note": "CATASTROPHIC REGISTRATION BREAK: tenebrism relight recomposed to a front-on eye-level view (dimetric camera LOST), raised the cutaway near-walls into full walls, INVENTED wall lanterns."},
+    "p2b_lighting_camera_locked_retry": {"prompt": "pass2b_lighting_camlock.txt", "winner": "passes_v2/candidate_s1000.png", "recall_vs_base": 0.7354, "recall_vs_greybox": 0.7362, "note": "packet-sanctioned retry-once with a HARD dimetric camera-lock: HELD the top-down dimetric camera but RELOCATED the hearth (back-center -> right) and round->rectangular tables. Milder break, still a break."},
+    "p3_scatter": {"prompt": "pass3_scatter.txt", "winner": "passes/p3_scatter_s3000.png", "recall_vs_base": 0.7941, "recall_vs_greybox": 0.805, "note": "richest brushwork of the set (real stone masonry, deep hearth-pool tenebrism, tabletop mugs/bottles) BUT built on the camera-broken p2 -> inherits the camera break; +1 net-new inverse-coherence flag (invented micro-object on authored-clear floor)."}
+  },
+  "recall_trail_note": "edge-recall vs base is ADVISORY for soft-edge painterly plates (#1491) — a painterly Gemini pass structurally scores ~0.75-0.81 (measured: single-pass s1111=0.81, s1000=0.75 vs base). The literal packet gate 'abort below 0.95 vs base' would abort EVERY paint pass by construction; the 0.95 masonry gate is on the BASE (met at 0.98). Per-pass styled recall tracked as advisory + relative no-drift; the real per-pass structural gate is inverse-coherence net-new==0. IMPORTANT: edge-recall UNDER-reports the camera break (p3 '0.805 vs greybox' is a fully-recomposed wrong-camera plate) because it is brightness-robust + tolerance-based and inflated by plate busy-ness. Visual inspection is ground truth.",
+  "inverse_coherence": {
+    "tool": "qa/journey_visual_sweep.py inverse_coherence_flags (#1540 painted-object detector) via qa/evidence/layered-reg/inverse_coherence_netnew.py",
+    "net_new_vs_base": {"base_fit2": 0, "singlepass_s1111": 0, "singlepass_s1000": 0, "layered_p1_material": 0, "layered_p2_lighting": 0, "layered_p3_final": 1},
+    "p3_flag_cells": {"s3000": [[9, 1]], "s3111": [[1, 3]]},
+    "caveat": "the p2 '0 net-new' is MISLEADING — once the camera drifts off the contract dimetric projection, the detector projects grid cells onto the wrong pixels and silently under-reports. The IC check is only trustworthy when the plate is on-contract (base, p1). The p3 scatter pass reliably costs 1 ADDITIONS-LOCK flag (both seeds)."
+  },
+  "panel_corrected_anchoring": {
+    "issue": "#1560 anchor circularity — panels no longer use the incumbent as house_best. Neutral anchors: disguised PoE2 real-art control (slot C, registered control_id poe2_ruins_brazier_integration_01, band [6.8,9.2]) + DISCLOSED CAMP house-ref (non-competing room). Incumbent DISCLOSED comparison only.",
+    "protocol": "5-scorer blind panel, diverse lenses (brushwork / lighting / readability / material / holistic), fast-worker sonnet, independent, blind to the slot mapping.",
+    "medians": {"layered_p3": 5.0, "layered_p1": 6.0, "fit2_singlepass": 7.0, "incumbent": 7.5, "control": 8.0},
+    "deltas_vs_control": {"layered_p3": -3.0, "layered_p1": -2.0, "fit2_singlepass": -1.0, "incumbent": -0.5},
+    "control_valid": true,
+    "camera_break_or_incoherent_flags": {"layered_p3": "2/5 scorers flagged camera_break/structure_incoherent", "others": 0}
+  },
+  "fit2_rescore_under_corrected_anchoring": "YES — THE ANCHOR FIX MOVED IT. The fit2 single-pass was 6.0 / delta -3.0 under #1559's incumbent-as-house_best anchoring; under corrected neutral anchoring it is 7.0 / delta -1.0 — a +1.0 score gain and a +2.0 delta gain. The incumbent itself scored only 7.5 (delta -0.5), barely above the single-pass. So #1560 is CONFIRMED: the incumbent-as-house_best circularity was suppressing challenger deltas by ~2 points, and the #1559 honest-negative was SUBSTANTIALLY an anchor artifact — the fit2 single-pass sits only 0.5 below the incumbent and, at delta -1.0, within promote.py's parity band (>= -1.2) under neutral anchoring.",
+  "promote_dry_run": {"passed": false, "tier": null, "control_valid": true, "reason": "layered_p3 delta_candidate_minus_control -3.0 < -2.5 adopt floor; camera-broken. Gate ladder (promote.py): >=-1.2 canonical-candidate, -2.5..-1.2 stable, < -2.5 REJECT."},
+  "remaining_lever": "With the layered lever REFUTED for the all-Gemini path, TRAINED PAINT FIDELITY (#1546) is the sole remaining lever to BEAT the incumbent's brushwork WHILE keeping registration. HOWEVER the corrected-anchoring re-score reframes the whole question: under neutral anchoring the fit2 single-pass (delta -1.0) is already at statistical parity with real PoE2 art and only 0.5 below the incumbent — the M-ALIGN 'gap to the incumbent' was largely an anchor artifact, not a craft deficit. A non-refuted intermediate lever also surfaced: reproduce the incumbent's OWN recipe on the registered path — a LOW-STRENGTH img2img (z-image+LoRA) base/detail pass (camera-pinned) rather than an all-Gemini chain — which is the mechanism that lets the incumbent be layered AND registered.",
+  "cu_spend": "Base REUSED (0 CU). 6 Gemini-3.1-flash 2K instruction-edits (chain p1/p2/p3 best-of-2) + 2 for the p2b camera-locked retry = 8 Gemini jobs, no training. Well under the 80 CU scenario cap. No box deploy; plates_manifest/room_recipes/library untouched.",
+  "artifacts": {
+    "progression_strip": "qa/evidence/layered-reg/progression_strip.png",
+    "panel_strip": "qa/evidence/layered-reg/panel_strip.png",
+    "recall_trail": "qa/evidence/layered-reg/passes/recall_trail.json",
+    "inverse_coherence": "qa/evidence/layered-reg/inverse_coherence_netnew.json",
+    "panel_verdict": "qa/evidence/layered-reg/panel_verdict.json",
+    "promote_gate_panel": "qa/evidence/layered-reg/layered_visual_gate_panel.json",
+    "prompts": ["pass1_material.txt", "pass2_lighting.txt", "pass2b_lighting_camlock.txt", "pass3_scatter.txt"]
+  },
+  "auto_merge": "NOT armed (armed only on ADOPT). Evidence-only honest negative."
+}
