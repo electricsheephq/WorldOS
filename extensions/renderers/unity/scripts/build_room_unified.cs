@@ -220,6 +220,25 @@ if(props!=null) foreach(var po in props){ var p=po as System.Collections.Generic
       hcyl(pid+"_cap",kind,new Vector3(bx0,2.15f,bz0),Mathf.Min(hx,hz)*0.5f,(longX?hx:hz)*1.35f,longX,new Color(0.70f,0.68f,0.63f));
       np++; continue;
     }
+    if(kind.Contains("table")){
+      // tavern table: slim pedestal + WIDE overhanging oval top (molded — the stone_well trough
+      // read failed the tavern v1 design gate; a table is pedestal+disc, not tier+lid).
+      // heights are CONDITIONING CUES: measured (tavern v3 base) a 1.33-high top = 0 grey delta in
+      // the remapped depth -> flux dropped/moved every table. 2.0-surface chunky tables match the
+      // h2.0 flat proxies that SURVIVED in the promoted truegrey tavern.
+      float hx=exX+0.85f, hz=exZ+0.85f; float pr=Mathf.Min(hx,hz)*0.55f;
+      cyl(pid+"_pedestal",kind,new Vector3(bx0,0f,bz0),pr,pr,1.6f,new Color(0.46f,0.38f,0.28f));
+      cyl(pid+"_top",kind,new Vector3(bx0,1.6f,bz0),hx*1.10f,hz*1.10f,0.4f,new Color(0.68f,0.56f,0.40f));
+      np++; continue;
+    }
+    if(kind=="bar"){
+      // bar counter: solid dark body + LIGHT overhanging countertop lip (v1 gate: a plain dark box
+      // edge-on read as a floor stripe — the lip + albedo contrast is the depth/paint cue).
+      float hx=exX+0.9f, hz=exZ+0.9f;
+      box(pid+"_body",kind,new Vector3(bx0,1.3f,bz0),new Vector3(hx*1.7f,2.6f,hz*1.7f),new Color(0.40f,0.32f,0.23f));
+      box(pid+"_top",kind,new Vector3(bx0,2.73f,bz0),new Vector3(hx*2.1f,0.26f,hz*2.1f),new Color(0.72f,0.60f,0.42f));
+      np++; continue;
+    }
     if(kind.Contains("brazier")){
       // pedestal column + fire BOWL — reads as ironwork, not a crate.
       cyl(pid+"_pedestal",kind,new Vector3(bx0,0f,bz0),0.38f,0.38f,1.7f,new Color(0.42f,0.39f,0.34f));
@@ -238,7 +257,7 @@ if(props!=null) foreach(var po in props){ var p=po as System.Collections.Generic
       np++; continue;
     }
     if(kind.Contains("barrel")){
-      cyl(pid,kind,new Vector3(bx0,0f,bz0),0.62f,0.62f,1.5f,new Color(0.52f,0.47f,0.40f));
+      cyl(pid,kind,new Vector3(bx0,0f,bz0),0.62f,0.62f,1.5f,new Color(0.64f,0.56f,0.44f)); // light oak — dark-on-dark barrels vanished at the tavern v1 gate
       np++; continue;
     }
   }
@@ -327,7 +346,11 @@ _capPass("WOS/ViewNormal","room_greybox_normal.png");
 // bounding corners along the view forward, padded.
 {
   Vector3 fwd=crot*Vector3.forward;
-  float hx2=(cols/2f)*2.0f, hz2=(rows/2f)*2.0f, hy2=Mathf.Max(wallH,8f)+1f;
+  // hy2 = the ACTUAL scene ceiling (wallH), not a fixed 8+ pad — padding the remap range with
+  // unused headroom flattens low furniture into a sliver of the depth band (tavern v3 base: tables
+  // at h1.3 in a 9-unit range conditioned so weakly that flux relocated/dropped them; crypt only
+  // survived because 6.8-unit pillars filled the range).
+  float hx2=(cols/2f)*2.0f, hz2=(rows/2f)*2.0f, hy2=wallH+0.5f;
   float dMin=float.MaxValue, dMax=float.MinValue;
   for(int i=0;i<8;i++){
     Vector3 p=new Vector3(((i&1)==0?-hx2:hx2), ((i&2)==0?0f:hy2), ((i&4)==0?-hz2:hz2));
