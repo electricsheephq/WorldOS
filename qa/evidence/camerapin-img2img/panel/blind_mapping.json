@@ -1,0 +1,9 @@
+{
+  "blind_slots": {
+    "A": "input (crypt_fresh_v1.png, the registered/adopted fresh crypt this experiment builds on)",
+    "B": "control (disguised real-art: control:visual:pillars-of-eternity-2:poe2_ruins_brazier_integration_01)",
+    "C": "candidate (strength_020.png — the sole Gate-1 survivor of the 3-strength img2img sweep)"
+  },
+  "control_note": "Blind slot B = the SAME registered disguised real-art control used in the original crypt_fresh adoption panel (qa/evidence/crypt-fresh/panel/CONTROL_NOTE.txt): control_id control:visual:pillars-of-eternity-2:poe2_ruins_brazier_integration_01, registered in qa/visual_controls_identity.json, band [6.8, 9.2], tag ruins_warm_key. Pixels are real shipped PoE2:Deadfire art (copyright) so NOT committed to the repo; sourced from /Volumes/LEXAR/WorldOS-Unity-spike/refs/poe2_ruins_brazier_integration_01.jpg for this panel run only.",
+  "note": "NEUTRAL-anchor protocol per #1560: the input (this round's pre-experiment baseline) sits in the BLIND set alongside the control, never disclosed as 'the house best' — 5 independent scorer subagents (fast-worker/sonnet) each Read all 3 slot files blind (filenames carry no identity) plus one disclosed non-competing house ref (ref_camp.png, outdoor night camp) for craft calibration only, and returned an independent 0-10 score per slot with the mandatory anti-AI-prior calibration instruction from the visual-critic SKILL.md calibration-control protocol."
+}
