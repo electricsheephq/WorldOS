@@ -45,6 +45,10 @@ eyeball (axes 6-7) → blind panel (axis 8) → grade the row → fix the LOWEST
 | 2026-07-15 | crypt | v3.6 | geometry SHIPPED (focal light cluster, niches removed — panel levers); paint honest negative: style collapse at single-shot cs0.85 on the depth-rich class → best-of-N now universal | 9 |
 | 2026-07-15 | tavern | 1 | process-refined honest negative: molded table/bar kinds + cue-mass rule (1.33h top = 0 depth delta, raised to 2.0) landed; base registration fails flat-interior class at cs0.85 single-shot -> best-of-3 selection gate next | 18 |
 
+| 2026-07-15 | crypt | v3.6-restored | ★ BAR MET: panel 8.3 (Δ control −1.1; incumbent 7.2) via paint_room one-command chain; draw recall 0.9595 | 29 |
+| 2026-07-15 | tavern | 2-restored | ★ BAR MET: panel 8.4 (Δ −1.0); the previously-unpaintable room | 29 |
+| 2026-07-15 | throne | registered-1 | panel 7.0; levers: material wash + Gemini-additions (gallery) | 29 |
+
 ## Defect classes (appended)
 - FLAT-INTERIOR conditioning: rooms whose tallest furniture is ~2 units give flux compositional
   freedom (displacement, count drift, invented arches, soft finish). Levers: best-of-3 + edge-recall

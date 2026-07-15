@@ -399,3 +399,11 @@ an unattended loop.
   companion stage-machine; #143 reused `_resolve_quest_variants`). Find the existing primitive.
 - **Don't collide with the macOS/OpenWorlds sibling lane** (their open PRs: #150/#182/#187 +
   drafts #190/#191/#192). Stay in the engine/content/QA lane.
+
+## THE ROOM PAINT LOOP (unified pipeline — added 2026-07-15)
+One command per room; never freehand a Scenario call: `python3 qa/paint_room.py <class> --depth <png>`
+(prompts/params pinned in qa/unified_paint_recipes.json; controlImage slot pinned — see the
+slot-bug postmortem in qa/evidence/gemini-restyle/FLUX_ROOTCAUSE.md). The full loop, gates, cycle
+log, and defect classes: docs/roadmap/PROCEDURAL-SCORECARD.md + docs/ROOM-PIPELINE-RUNBOOK.md.
+Town generation: tools/generate_town.py → qa/seed_gfx_town.py (reciprocal cross_door contract).
+Verification instruments: qa/select_best_draw.py, qa/overlay_boxes.py (--solve, --composite).

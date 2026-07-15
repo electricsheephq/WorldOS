@@ -122,12 +122,62 @@ def blob_solve(boxes: dict, image: Path) -> dict:
     return best
 
 
+
+
+def _hull(points: list) -> list:
+    """Convex hull (Andrew monotone chain) of projected box corners."""
+    pts = sorted(set((round(x, 1), round(y, 1)) for x, y in points))
+    if len(pts) <= 2:
+        return pts
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+    lower, upper = [], []
+    for p in pts:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+            lower.pop()
+        lower.append(p)
+    for p in reversed(pts):
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+            upper.pop()
+        upper.append(p)
+    return lower[:-1] + upper[:-1]
+
+
+def mask_composite(boxes: dict, base_path, styled_path, out_path, feather: int = 12):
+    """Kill the Gemini invented-architecture class DETERMINISTICALLY: keep the styled pixels only
+    inside the room's projected volume envelope (union of every sidecar box hull, floor included);
+    everything outside — the apron and the void above the cutaway walls, where Gemini invents
+    galleries/staircases — comes from the REGISTERED base. Feathered seam."""
+    from PIL import Image, ImageDraw, ImageFilter
+
+    base = Image.open(base_path).convert("RGB")
+    styled = Image.open(styled_path).convert("RGB").resize(base.size)
+    mask = Image.new("L", base.size, 0)
+    d = ImageDraw.Draw(mask)
+    ortho = boxes["ortho"]
+    for b in boxes["boxes"]:
+        c, s = b["center"], b["size"]
+        corners = [(x, y, z)
+                   for x in (c[0] - s[0] / 2, c[0] + s[0] / 2)
+                   for y in (c[1] - s[1] / 2, c[1] + s[1] / 2)
+                   for z in (c[2] - s[2] / 2, c[2] + s[2] / 2)]
+        pts = [G.world_to_screen(*p, ortho_size=ortho) for p in corners]
+        hull = _hull(pts)
+        if len(hull) >= 3:
+            d.polygon(hull, fill=255)
+    mask = mask.filter(ImageFilter.GaussianBlur(feather))
+    Image.composite(styled, base, mask).save(out_path)
+    return out_path
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("boxes", help="room_boxes.json sidecar (build_room_unified.cs output)")
     ap.add_argument("image", help="plate / styled candidate / greybox PNG (1344x768)")
     ap.add_argument("--out", help="write the wireframe overlay PNG here")
     ap.add_argument("--solve", action="store_true", help="run the brazier blob solve and print JSON")
+    ap.add_argument("--composite", nargs=3, metavar=("BASE", "STYLED", "OUT"),
+                    help="mask-composite: styled inside the room envelope, BASE outside (kills Gemini invented architecture)")
     ap.add_argument("--include-floor", action="store_true",
                     help="draw floor-kind boxes too (WARNING: apron skirts read as false misalignment)")
     args = ap.parse_args()
@@ -138,8 +188,11 @@ def main() -> int:
         print(f"overlay: {n} boxes at ortho {boxes['ortho']} -> {args.out}")
     if args.solve:
         print(json.dumps(blob_solve(boxes, Path(args.image)), indent=1))
-    if not args.out and not args.solve:
-        ap.error("nothing to do: pass --out and/or --solve")
+    if args.composite:
+        out = mask_composite(boxes, args.composite[0], args.composite[1], args.composite[2])
+        print(f"composite: styled-inside/base-outside -> {out}")
+    if not args.out and not args.solve and not args.composite:
+        ap.error("nothing to do: pass --out, --solve, and/or --composite")
     return 0
 
 

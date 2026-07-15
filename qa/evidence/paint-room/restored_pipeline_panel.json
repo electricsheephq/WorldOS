@@ -1,0 +1,7 @@
+{
+  "panel": "restored-pipeline-panel (wf_4833d53a-3ad, 2026-07-15, 5 sonnet scorers, lens-diverse, blind)",
+  "slots": {"A": "crypt frame19 (paint_room)", "B": "tavern frame20 (paint_room)", "C": "throne frame21 (paint_room)", "D": "PoE2 real-art control", "E": "incumbent crypt_fresh_v1"},
+  "medians": {"crypt": 8.3, "tavern": 8.4, "throne": 7.0, "control": 9.4, "incumbent": 7.2},
+  "verdict": "PHASE A BAR MET (crypt 8.3, delta -1.1 >= -1.2) + PHASE B BAR MET (tavern 8.4, delta -1.0). Both beat the incumbent by >1.0. Crypt arc today: 6.2 -> 8.3. Throne 7.0: levers = flat grey wash on stone (material lens 6.5), gallery/coffin incoherence (the Gemini-additions defect).",
+  "next": "adoption chain (promote.py gate + registry provenance) for crypt+tavern; throne cycle 2 with additions-clause + material-grounding prompt."
+}

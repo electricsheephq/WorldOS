@@ -488,3 +488,22 @@ Critique the greybox as a GAME SPACE, not a prop list. REJECT (free, before CU s
    arched headers, stepped/curved lids. An all-cube greybox paints as "squares, squares, squares".
 5. Freestanding props ≥2-cell footprints (1-cell props do not survive the style pass — measured
    2/2 drops in the v3 arc; see qa/evidence/crypt-v3/FINDINGS.md).
+
+## PAINT CALLS: THE PINNED PATH + THE DIAGNOSTIC LADDER (2026-07-15 slot-bug postmortem)
+⛔ NEVER freehand a Scenario generation call. ALL room paints go through `qa/paint_room.py`
+(prompts/params in `qa/unified_paint_recipes.json`; the depth goes in **controlImage** — the
+`image` slot is img2img and silently ignores ControlNet params; a compacted agent swapping these
+cost an afternoon and a false vendor-blame doc, see qa/evidence/gemini-restyle/FLUX_ROOTCAUSE.md).
+Every paint_room run logs each job's SUBMITTED body beside its output.
+
+**Provenance-attached-to-PR rule:** any PR that adds/changes a plate embeds its paint_room
+`report.json` (job ids, seeds, recalls, selected draw) in the evidence dir — a plate without a
+reproducible recipe trail is not mergeable.
+
+**When generation output looks wrong, climb this ladder — in order, before ANY vendor theory:**
+1. `job_get verbose` the failing job AND a known-good job → diff the SERVICE-RECORDED inputs
+   field-by-field (param slots, not just values).
+2. Same-seed determinism probe: re-submit the known-good job's recorded input verbatim; a
+   byte-identical output (md5) exonerates the provider entirely.
+3. Only if 1-2 pass and output still differs: provider-side theories (deployment, subprocessor
+   routing — note LoRA-attached flux jobs route via Replicate, bare flux via Modal).
