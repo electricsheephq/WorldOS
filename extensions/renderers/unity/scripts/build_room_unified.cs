@@ -101,7 +101,11 @@ var stoneNrm=new Texture2D(TS,TS,TextureFormat.RGB24,true);
   stoneAlb.Apply(); stoneNrm.Apply();
 }
 
-// --- box factory: every box is RECORDED for room_boxes.json (the unification payload) -----------
+// --- primitive factories: every volume is RECORDED (as its AABB) for room_boxes.json ------------
+// MOLDED FORMS (owner, post-v3.3 "everything is squares"): pillars get plinth+cylindrical shaft+
+// capital, tombs get curved lid ridges, braziers get pedestal+bowl, niches and doors get ARCHES.
+// The depth map then carries CURVES, so flux paints molded stone instead of box salad. Occluders
+// stay AABBs of these forms (box granularity is fine for masking).
 var boxRecords=new System.Collections.Generic.List<string>();
 System.Func<string,string,Vector3,Vector3,Color,GameObject> box=(nm,kindTag,center,size,col)=>{
   var b=GameObject.CreatePrimitive(PrimitiveType.Cube); b.name="GB_"+nm; UnityEngine.Object.DestroyImmediate(b.GetComponent<Collider>());
@@ -115,6 +119,35 @@ System.Func<string,string,Vector3,Vector3,Color,GameObject> box=(nm,kindTag,cent
   boxRecords.Add("{\"name\":\""+nm+"\",\"kind\":\""+kindTag+"\",\"center\":["
     +center.x.ToString("F3")+","+center.y.ToString("F3")+","+center.z.ToString("F3")+"],\"size\":["
     +size.x.ToString("F3")+","+size.y.ToString("F3")+","+size.z.ToString("F3")+"]}");
+  return b; };
+
+// elliptical CYLINDER (rx/rz half-extents, full height h) — recorded as its AABB.
+System.Func<string,string,Vector3,float,float,float,Color,GameObject> cyl=(nm,kindTag,baseCenter,rx,rz,h,col)=>{
+  var b=GameObject.CreatePrimitive(PrimitiveType.Cylinder); b.name="GB_"+nm; UnityEngine.Object.DestroyImmediate(b.GetComponent<Collider>());
+  b.transform.position=new Vector3(baseCenter.x, baseCenter.y+h/2f, baseCenter.z);
+  b.transform.localScale=new Vector3(rx*2f, h/2f, rz*2f);
+  var m=new Material(Shader.Find("Standard")); m.color=col; m.SetFloat("_Glossiness",0.04f);
+  m.mainTexture=stoneAlb; m.SetTexture("_BumpMap", stoneNrm); m.EnableKeyword("_NORMALMAP");
+  m.mainTextureScale=new Vector2(Mathf.Max(1.5f,(rx+rz)*1.4f), Mathf.Max(1.5f,h*0.35f)); m.SetTextureScale("_BumpMap", m.mainTextureScale);
+  b.GetComponent<Renderer>().sharedMaterial=m;
+  boxRecords.Add("{\"name\":\""+nm+"\",\"kind\":\""+kindTag+"\",\"center\":["
+    +baseCenter.x.ToString("F3")+","+(baseCenter.y+h/2f).ToString("F3")+","+baseCenter.z.ToString("F3")+"],\"size\":["
+    +(rx*2f).ToString("F3")+","+h.ToString("F3")+","+(rz*2f).ToString("F3")+"]}");
+  return b; };
+// HORIZONTAL cylinder (arch/lid ridge): axis along X or Z, radius r, length len, centered at c.
+System.Func<string,string,Vector3,float,float,bool,Color,GameObject> hcyl=(nm,kindTag,c2,r2,len,alongX,col)=>{
+  var b=GameObject.CreatePrimitive(PrimitiveType.Cylinder); b.name="GB_"+nm; UnityEngine.Object.DestroyImmediate(b.GetComponent<Collider>());
+  b.transform.position=c2;
+  b.transform.rotation = alongX ? Quaternion.Euler(0f,0f,90f) : Quaternion.Euler(90f,0f,0f);
+  b.transform.localScale = new Vector3(r2*2f, len/2f, r2*2f);
+  var m=new Material(Shader.Find("Standard")); m.color=col; m.SetFloat("_Glossiness",0.04f);
+  m.mainTexture=stoneAlb; m.SetTexture("_BumpMap", stoneNrm); m.EnableKeyword("_NORMALMAP");
+  m.mainTextureScale=new Vector2(2f,2f); m.SetTextureScale("_BumpMap", m.mainTextureScale);
+  b.GetComponent<Renderer>().sharedMaterial=m;
+  float ax = alongX?len:r2*2f, az = alongX?r2*2f:len;
+  boxRecords.Add("{\"name\":\""+nm+"\",\"kind\":\""+kindTag+"\",\"center\":["
+    +c2.x.ToString("F3")+","+c2.y.ToString("F3")+","+c2.z.ToString("F3")+"],\"size\":["
+    +ax.ToString("F3")+","+(r2*2f).ToString("F3")+","+az.ToString("F3")+"]}");
   return b; };
 
 // floor + carved flagstone grout (floor boxes are recorded but flagged kind=floor so the client
@@ -154,19 +187,67 @@ if(props!=null) foreach(var po in props){ var p=po as System.Collections.Generic
     nWallRuns++;
     continue;
   }
-  // prop kinds — heights mirror qa/greybox_render_headless._KIND_SPECS (authored intent parity).
+  // prop kinds — MOLDED composites (owner post-v3.3: "not just squares"); heights mirror _KIND_SPECS.
   float ph=2.6f, pw=1.4f; Color pc=new Color(0.52f,0.5f,0.48f);
-  if(kind.Contains("pillar")||kind.Contains("column")){ ph=7.5f; pw=2.4f; pc=new Color(0.62f,0.61f,0.58f); } // pw 1.6->2.4 + brighter: 1-cell pillars need a FAT, bright depth cue or flux snaps them sideways (crypt v3 measured ~0.7-cell drift + one dropped pillar at pw 1.6)
-  else if(kind.Contains("large_tree")){ ph=9.0f; pw=1.8f; pc=new Color(0.23f,0.29f,0.20f); }
-  else if(kind.Contains("stone_well")){ ph=3.2f; pw=1.8f; pc=new Color(0.59f,0.58f,0.55f); }
-  else if(kind.Contains("sarcophagus")||kind.Contains("altar")||kind.Contains("bar")||kind.Contains("table")||kind.Contains("pew")||kind.Contains("market_stall")){ ph=2.0f; pw=1.8f; pc=new Color(0.6f,0.58f,0.55f); }
-  else if(kind.Contains("brazier")){ ph=2.6f; pw=1.2f; pc=new Color(0.5f,0.46f,0.4f); } // taller+fatter+brighter cue (v3 drift lesson)
+  {
+    float bx0=(minX+maxX)/2f, bz0=(minZ+maxZ)/2f;
+    float exX=(maxX-minX)/2f, exZ=(maxZ-minZ)/2f;
+    if(kind.Contains("pillar")||kind.Contains("column")){
+      // plinth + ELLIPTICAL shaft + capital — a molded pier, not a slab.
+      float hx=exX+1.1f, hz=exZ+1.1f;
+      box(pid+"_plinth",kind,new Vector3(bx0,0.35f,bz0),new Vector3(hx*2f,0.7f,hz*2f),new Color(0.60f,0.59f,0.56f));
+      cyl(pid+"_shaft",kind,new Vector3(bx0,0.7f,bz0),hx*0.72f,hz*0.72f,6.0f,new Color(0.64f,0.63f,0.60f));
+      box(pid+"_capital",kind,new Vector3(bx0,7.05f,bz0),new Vector3(hx*2f,0.7f,hz*2f),new Color(0.60f,0.59f,0.56f));
+      np++; continue;
+    }
+    if(kind.Contains("sarcophagus")){
+      // stepped base + inset tier + CURVED lid ridge along the long axis.
+      float hx=exX+0.95f, hz=exZ+0.95f;
+      box(pid+"_base",kind,new Vector3(bx0,0.55f,bz0),new Vector3(hx*2f,1.1f,hz*2f),new Color(0.62f,0.60f,0.56f));
+      box(pid+"_tier",kind,new Vector3(bx0,1.35f,bz0),new Vector3(hx*1.7f,0.5f,hz*1.7f),new Color(0.66f,0.64f,0.60f));
+      bool longX = hx>=hz;
+      hcyl(pid+"_lid",kind,new Vector3(bx0,1.75f,bz0),Mathf.Min(hx,hz)*0.55f,(longX?hx:hz)*1.5f,longX,new Color(0.70f,0.68f,0.63f));
+      np++; continue;
+    }
+    if(kind.Contains("stone_well")){
+      // raised tier w/ curved cap (the tomb's upper tier when authored separately).
+      float hx=exX+0.9f, hz=exZ+0.9f; bool longX = hx>=hz;
+      box(pid+"_tier",kind,new Vector3(bx0,1.55f,bz0),new Vector3(hx*1.6f,0.9f,hz*1.6f),new Color(0.66f,0.64f,0.60f));
+      hcyl(pid+"_cap",kind,new Vector3(bx0,2.15f,bz0),Mathf.Min(hx,hz)*0.5f,(longX?hx:hz)*1.35f,longX,new Color(0.70f,0.68f,0.63f));
+      np++; continue;
+    }
+    if(kind.Contains("brazier")){
+      // pedestal column + fire BOWL — reads as ironwork, not a crate.
+      cyl(pid+"_pedestal",kind,new Vector3(bx0,0f,bz0),0.38f,0.38f,1.7f,new Color(0.42f,0.39f,0.34f));
+      var bowl=GameObject.CreatePrimitive(PrimitiveType.Sphere); bowl.name="GB_"+pid+"_bowl"; UnityEngine.Object.DestroyImmediate(bowl.GetComponent<Collider>());
+      bowl.transform.position=new Vector3(bx0,1.85f,bz0); bowl.transform.localScale=new Vector3(1.5f,0.75f,1.5f);
+      var bm=new Material(Shader.Find("Standard")); bm.color=new Color(0.86f,0.62f,0.30f); bm.SetFloat("_Glossiness",0.15f);
+      bowl.GetComponent<Renderer>().sharedMaterial=bm;
+      boxRecords.Add("{\"name\":\""+pid+"_bowl\",\"kind\":\""+kind+"\",\"center\":["+bx0.ToString("F3")+",1.85,"+bz0.ToString("F3")+"],\"size\":[1.5,0.75,1.5]}");
+      np++; continue;
+    }
+    if(kind.Contains("altar")){
+      // wall niche: recess slab + ARCHED header (half-sunk horizontal cylinder).
+      float hx=exX+0.9f, hz=exZ+0.9f; bool longX = hx>=hz;
+      box(pid+"_slab",kind,new Vector3(bx0,1.0f,bz0),new Vector3(hx*2f,2.0f,hz*2f),new Color(0.60f,0.58f,0.55f));
+      hcyl(pid+"_arch",kind,new Vector3(bx0,2.35f,bz0),Mathf.Min(hx,hz)*0.75f,(longX?hx:hz)*1.9f,longX,new Color(0.62f,0.60f,0.57f));
+      np++; continue;
+    }
+    if(kind.Contains("barrel")){
+      cyl(pid,kind,new Vector3(bx0,0f,bz0),0.62f,0.62f,1.5f,new Color(0.52f,0.47f,0.40f));
+      np++; continue;
+    }
+  }
+  // remaining flat kinds (the molded block above already consumed pillar/sarcophagus/stone_well/
+  // brazier/altar/barrel and `continue`d) — plain box proxies:
+  if(kind.Contains("large_tree")){ ph=9.0f; pw=1.8f; pc=new Color(0.23f,0.29f,0.20f); }
+  else if(kind.Contains("bar")||kind.Contains("table")||kind.Contains("pew")||kind.Contains("market_stall")){ ph=2.0f; pw=1.8f; pc=new Color(0.6f,0.58f,0.55f); }
   else if(kind.Contains("campfire")){ ph=0.6f; pw=1.1f; pc=new Color(0.78f,0.43f,0.16f); }
   else if(kind.Contains("bedroll")){ ph=0.28f; pw=1.1f; pc=new Color(0.43f,0.38f,0.31f); }
   else if(kind.Contains("fallen_log")){ ph=0.8f; pw=1.1f; pc=new Color(0.35f,0.29f,0.21f); }
   else if(kind.Contains("boulder")){ ph=2.0f; pw=1.4f; pc=new Color(0.43f,0.44f,0.42f); }
   else if(kind.Contains("supply_crates")||kind.Contains("cart")){ ph=1.5f; pw=1.4f; pc=new Color(0.45f,0.43f,0.38f); }
-  else if(kind.Contains("rubble")||kind.Contains("barrel")||kind.Contains("crate")){ ph=1.4f; pw=1.5f; pc=new Color(0.45f,0.43f,0.4f); }
+  else if(kind.Contains("rubble")||kind.Contains("crate")){ ph=1.4f; pw=1.5f; pc=new Color(0.45f,0.43f,0.4f); }
   // MULTI-CELL props render as ONE box spanning their cells (a 5x2 tomb is one monument, not ten
   // cubes) — this is what makes the depth cue STRONG for low props (the crypt-escape lesson: the
   // per-cell 2x2 coffin was invisible to the CN; a single spanning box is not).
@@ -175,6 +256,31 @@ if(props!=null) foreach(var po in props){ var p=po as System.Collections.Generic
     float sx=Mathf.Max(pw,(maxX-minX)+pw), sz=Mathf.Max(pw,(maxZ-minZ)+pw);
     box(pid,kind, new Vector3(bx,ph/2f,bz), new Vector3(sx,ph,sz), pc);
     np++;
+  }
+}
+// DOOR ARCHES (owner: doors must READ as doorways, and molded — not bare gaps): jambs + a
+// horizontal arch cylinder + lintel cap over every authored door gap, oriented by its wall.
+{
+  var dcs=geo.ContainsKey("door_cells")?geo["door_cells"] as System.Collections.Generic.List<object>:null;
+  int dn=0;
+  if(dcs!=null) foreach(var dco in dcs){
+    var dc=dco as System.Collections.Generic.List<object>; if(dc==null||dc.Count<2) continue;
+    int c=System.Convert.ToInt32(dc[0]); int r=System.Convert.ToInt32(dc[1]);
+    var w=cellToWorld(c,r);
+    bool onNS = (r==0)||(r==rows-1);            // door in a north/south wall -> arch spans X
+    Color jc=new Color(0.63f,0.62f,0.59f);
+    if(onNS){
+      box("door"+dn+"_jambL","door_frame",new Vector3(w.x-1.25f,wallH*0.45f,w.z),new Vector3(0.5f,wallH*0.9f,1.3f),jc);
+      box("door"+dn+"_jambR","door_frame",new Vector3(w.x+1.25f,wallH*0.45f,w.z),new Vector3(0.5f,wallH*0.9f,1.3f),jc);
+      hcyl("door"+dn+"_arch","door_frame",new Vector3(w.x,wallH*0.82f,w.z),0.55f,2.6f,true,jc);
+      box("door"+dn+"_lintel","door_frame",new Vector3(w.x,wallH*0.98f,w.z),new Vector3(3.1f,0.45f,1.35f),jc);
+    } else {
+      box("door"+dn+"_jambL","door_frame",new Vector3(w.x,wallH*0.45f,w.z-1.25f),new Vector3(1.3f,wallH*0.9f,0.5f),jc);
+      box("door"+dn+"_jambR","door_frame",new Vector3(w.x,wallH*0.45f,w.z+1.25f),new Vector3(1.3f,wallH*0.9f,0.5f),jc);
+      hcyl("door"+dn+"_arch","door_frame",new Vector3(w.x,wallH*0.82f,w.z),0.55f,2.6f,false,jc);
+      box("door"+dn+"_lintel","door_frame",new Vector3(w.x,wallH*0.98f,w.z),new Vector3(1.35f,0.45f,3.1f),jc);
+    }
+    dn++;
   }
 }
 if(nWallRuns==0){

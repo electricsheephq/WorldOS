@@ -37,3 +37,14 @@ outside the playable floor. **crypt_v33_CANDIDATE.png = the adoption candidate**
 targeted window re-roll (optional), sweep pairing, neutral panel vs the camp 9/10 bar, in-player
 truth overlay. Arc totals: 3 geometry iterations (1 gate-rejected free), 3 bases, 3 style passes,
 87 CU. Run total 188/300.
+
+## v3.4 — MOLDED FORMS (owner: "everything is squares" → fixed at the source, 2026-07-15 ~15:00)
+build_room_unified.cs grew a SHAPE VOCABULARY: cylindrical column shafts w/ plinths+capitals,
+curved tomb-lid ridges (horizontal half-cylinders), brazier pedestal+bowl composites, arched niche
+headers, and ARCHED DOOR FRAMES (jambs + arch cylinder + lintel) auto-generated at every door gap.
+The depth map now carries CURVES → flux paints round knotwork columns, a rounded effigy lid, arched
+stone portals, ironwork fire bowls (crypt_v34_MOLDED_CANDIDATE.png). Same geometry as v3.3 (same
+collision cells); only the render vocabulary changed. Overlay (styled_v34_overlay.png): all volumes
+hold; one soft spot — the SW column paints weakly behind its NW neighbor at this camera (watch in
+panel). Cost: 29 CU (base 9 @0.85 + Gemini 20). Arc total 116 CU; run 217/300.
+NEXT GATES unchanged: sweep pairing + neutral panel vs camp bar + in-player truth overlay.
