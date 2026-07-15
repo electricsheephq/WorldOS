@@ -1,0 +1,193 @@
+{
+  "summary": "Research Options 2 (Unity-unified 2D plates) and 3 (3D procedural + painterly texturing) for the WorldOS room pipeline",
+  "agentCount": 7,
+  "logs": [],
+  "result": {
+    "synthesis": "# ADR Synthesis: Option 2 (\"Unify the Frames\") — Decision-Ready\n\n## 1. Ranked techniques to adopt\n\n1. **One camera, multiple co-registered passes (the PoE G-buffer trick).** Render final/beauty, depth, normal, and cell-ID/occupancy from the *same* Unity ortho camera pass, pixel-aligned by construction — don't re-derive any of it after the fact. [PoE Update #79; unity-headless-render §6 \"Unity Perception\"]\n2. **Bake depth via a custom replacement shader (`SetReplacementShader`), not `DepthTextureMode`.** `DepthTextureMode.Depth/DepthNormals` silently drops objects lacking a `ShadowCaster` pass (real risk w/ 10 heterogeneous asset packs) and is lossy 8-bit/channel. Write linear-eye-depth directly to an `R16`/`RFloat` RT → `EncodeToPNG`/`EncodeToEXR(OutputAsFloat)`. [unity-headless-render §2c, §6; Google Seurat plugin as production reference]\n3. **Persist the greybox render + depth/normal/cell-ID buffers as first-class versioned assets, not disposable intermediates.** BG's loss of its 3ds Max scenes (unbacked departmental drive) permanently blocked a true remaster; don't repeat this. [infinity-engine §4]\n4. **Treat the calibrated camera (pitch/yaw/ortho-size) as one pinned constant shared by render path and grid engine's screen↔cell math** — never independently tuned in two places. Add an automated CI grid-alignment gate (render grid lines onto sample plates, fail if drift exceeds tolerance) as the machine-checkable analog of PoE's manual \"does render match blockout\" review. [infinity-engine §Implications; unity-headless-render §Implications]\n5. **Unlit/emissive material on the baked room shell; dynamic actors stay lit/shadowed normally, occluded via real depth-buffer compare against the baked geometry.** This is strictly better than PoE's own approach (PoE fakes depth-compare against a 2D plate; WorldOS's real 3D geometry gives it for free) and eliminates IE's crude 2D-dither occlusion hack entirely. [single-view-projection §Implications; infinity-engine §Implications point 6]\n6. **Fixed low-denoising-strength + fixed-seed + ControlNet weight 0.6–0.8 discipline** for reproducible re-rolls/regenerations — this is mature, documented A1111/Flux practice, not something to invent. [diffusion-3d-texturing §5]\n7. **Automated diff/QA gate comparing greybox occupancy mask to stylized plate**, flagging invented geometry (phantom pillar, shifted doorway) before promotion — the automated analog of PoE's manual \"leads review, then set up collision\" step. [infinity-engine §Implications point 5]\n8. **Verify determinism empirically before trusting plates as cacheable artifacts:** disable TAA, render same room twice, byte-diff PNGs. No source directly proves bit-identical reproducibility for this exact case — it's an inference from TAA-jitter root cause, not a citation. [unity-headless-render §5]\n9. **Validate the orthographic `Linear01Depth`/`LinearEyeDepth` correctness on Unity 6/GEX44 specifically** — reportedly patched in 2022.2+, unverified for Unity 6; don't assume. [unity-headless-render §2, §Implications]\n\n## 2. Strongest evidence-based risks + mitigations\n\n- **Pixel-space transform drift.** If flux/Gemini ever crops/pads/resizes/warps, the cell-ID buffer desyncs silently — diffusion models don't complain about a slightly-off depth map, they just paint a plausible wrong thing. *Mitigation:* log every transform, invert it before compositing; gate #4/#7 above. [infinity-engine, procedural-scale §Implications]\n- **Floor-quality gradient at pitch-30/yaw-45.** Floor is the surface most oblique to the projection axis → first place stretching/low effective resolution shows up as rooms scale. *Mitigation:* angle-based blend mask or denser floor mesh/secondary floor treatment; budget for this explicitly. [single-view-projection §Implications]\n- **UV-atlas seam risk at wall-floor/wall-wall boundaries** if projection is baked to UV rather than run live — documented as *persistent and only partially solved even in mature Maya pipelines* (Polycount thread). *Mitigation:* budget a light manual/heuristic touch-up pass; don't expect zero-seam automatic bake. [single-view-projection §4b, §Implications]\n- **Baked-lit plate double-shaded by realtime lighting** if the room mesh isn't strictly unlit — causes over-dark/over-contrasted look. *Mitigation:* hard architectural line — static room shell = unlit/emissive only; dynamic layer = normally lit. [single-view-projection §4d]\n- **Static-looking environments (PoE1's own postmortem complaint) once lighting is baked into the plate.** Deadfire's sequel work made dynamic lighting integration a \"top priority\" after player feedback. *Mitigation:* consider prompting the style pass toward flatter, less pre-lit output + a Unity-side compositing layer, mirroring PoE's own trajectory — don't repeat their v1 mistake knowingly. [infinity-engine, diffusion-3d-texturing §Implications point 3]\n- **AI-slop reputational risk independent of technical quality** (Crimson Desert backlash, Clair Obscur award-stripping for leaked placeholder AI textures, Larian's explicit zero-shipping-AI-art stance). *Mitigation:* the same consistency/alignment fix that solves the technical problem is the fix for the perception problem; keep the human/heuristic QA gate as non-negotiable, not friction to remove. [diffusion-3d-texturing §4, §Implications point 5]\n\n## 3. Option 3 maturity assessment + cheapest decisive spike\n\nFully-3D procedural rooms + painterly meshing/texturing is **research-frontier, not production-mature**, even setting aside WorldOS's fixed camera. The entire 2024–2025 research effort (SyncMVD, MVPaint, FlexPainter, StyleGaussian) exists to solve multi-view consistency — a problem WorldOS's single locked camera doesn't have. Feed-forward methods (Meta 3D TextureGen, Make-A-Texture) have compressed generation to 3–20 seconds, but every source still assumes a human finishing pass, and 3DGS has **no native collision in any production engine surveyed** (Unity/Unreal both fall back to mesh-for-collision + splat-for-backdrop — i.e. even that ecosystem re-derives WorldOS's own art/collision split). Given the single-fixed-camera advantage, Option 3's entire value proposition (view-independent texture/geometry) is largely wasted on WorldOS's use case — you'd be paying the frontier-research tax (multi-view consistency machinery, PBR extraction, mesh-UV seam handling) for a capability (viewing from arbitrary angles) the product doesn't need. This raises the honest prior against Option 3 above the stated 10% for *near-term* viability, though it could still be right long-term if camera-rotation becomes a product requirement.\n\n**Cheapest decisive spike:** don't build a mesh-texturing pipeline to test this — instead, spend one day trying to break Option 2's single-fixed-camera assumption: prototype one room with a 15–20° camera nudge (not full rotation) through the existing greybox→depth-ControlNet→style pipeline and see whether the plate still reads as coherent/reusable. If yes, Option 2's fixed-camera constraint has slack and Option 3 buys nothing yet. If the plate breaks badly at even small angle changes, that's the concrete evidence for how camera-locked the whole genre's craft actually is (Octopath II's own team \"struggled to keep sprites looking natural\" pushing toward 90–180° rotation) — cheaper than standing up SceneTex/RoomTex-class tooling to find out the same thing. [diffusion-3d-texturing §3, §5, §Implications 1&4; hd2d-modern §1]\n\n## 4. Surprising findings that change how we build\n\n- **The projection/occlusion technique (camera-project the plate back onto real geometry) is a named, decades-old VFX discipline (\"camera mapping\"/2.5D) used at ILM/MPC/DNEG today** — not novel, and Unity's legacy `Projector` + `tex2Dproj`/`SetGlobalMatrix` are both Built-in-RP-compatible (confirmed; the newer Decal Projector is not). This means dynamic actors get correct per-pixel depth occlusion **for free** from real mesh z-buffer — a strictly better position than the entire pre-rendered-background genre (IE, PS1-era RE/FF7) ever had, since they needed hand-authored depth/occlusion masks per camera per scene. [single-view-projection §2, §4, §Implications]\n- **`DepthTextureMode` silently drops objects without a `ShadowCaster` pass** — a real, non-obvious risk given 10 heterogeneous purchased asset packs; must use replacement-shader depth capture instead. [unity-headless-render §2a]\n- **Orthographic depth is already linear** — applying `Linear01Depth()` on top double-converts. Version-dependent correctness (patched 2022.2+, unverified Unity 6) — must be spot-checked on GEX44, not assumed. [unity-headless-render §2]\n- **Flux/ControlNet depth convention (near=white) is the opposite polarity of Unity's raw hardware depth (near=0)** — a concrete interop trap that will silently miscalibrate conditioning if not explicitly inverted/normalized in the export shader. [unity-headless-render §6]\n- **`-nographics` and GPU-backed render/readback are mutually exclusive** — moot today since GEX44 is headed, but a landmine if WorldOS ever moves to a headless cloud render lane. [unity-headless-render §4]\n- **TAA jitter breaks bit-identical reproducibility** — must be disabled for deterministic single-shot captures; not verified as bit-identical even then, just inferred. [unity-headless-render §5]\n\n## 5. What Infinity Engine/PoE history validates vs. contradicts\n\n**Validates:** (a) collision as a separate, camera-locked authored layer over the art — exactly WorldOS's grid-as-sole-writer invariant, and the one thing IE got structurally right despite manual tooling. (b) PoE's blockout-first order (Unity gameplay geometry before the art pass) is the closer analogue to WorldOS's design than IE's art-first order — lean into it. (c) PoE's 4-pass bake (beauty/depth/normal/albedo from one camera) is precisely the pattern to replicate for cell-ID/occupancy. (d) The fixed-camera constraint is a *feature*, validated by PoE's own team (\"illusion comes together only when the ortho camera is placed at the perfect angle\") and by IE modders spending months reverse-engineering a lost ~35° angle — the tolerance is razor-thin and worth protecting as a pinned constant. (e) Even a fully-3D-source pipeline (PoE/Maya) still kept a **manual** Unity collision-authoring step timed after the first art review, rather than trusting auto-navmesh-from-geometry — argues for keeping WorldOS's automated diff-gate (#7 above) rather than assuming grid-truth auto-propagates cleanly.\n\n**Contradicts / warns against:** (a) IE's brute-force, non-automated culture (\"we don't know how to automate things... throw humans at the problem\") is a *root cause*, not just an inefficiency — it directly enabled the catastrophic loss of BG's source art. WorldOS must not let its pipeline degrade into hand-fixing misalignments room-by-room; invest in the repeatable scripted greybox→depth→plate→verification pipeline instead. (b) IE's 2D-dither occlusion hack is the *wrong* model now that WorldOS has real 3D geometry — don't reach for it as a fallback; use real depth-compare (finding #4 above). (c) PoE's v1 static-lighting complaint (fixed by Deadfire's dynamic-lighting integration) is a known regression to avoid pre-emptively rather than discover post-launch.",
+    "reports": [
+      {
+        "key": "infinity-engine",
+        "len": 22062
+      },
+      {
+        "key": "hd2d-modern",
+        "len": 21645
+      },
+      {
+        "key": "unity-headless-render",
+        "len": 27696
+      },
+      {
+        "key": "diffusion-3d-texturing",
+        "len": 23181
+      },
+      {
+        "key": "single-view-projection",
+        "len": 25552
+      },
+      {
+        "key": "procedural-scale",
+        "len": 28357
+      }
+    ]
+  },
+  "workflowProgress": [
+    {
+      "type": "workflow_phase",
+      "index": 1,
+      "title": "Research"
+    },
+    {
+      "type": "workflow_phase",
+      "index": 2,
+      "title": "Synthesize"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 1,
+      "label": "research:infinity-engine",
+      "phaseIndex": 1,
+      "phaseTitle": "Research",
+      "agentId": "a3c665fc54b065925",
+      "model": "claude-sonnet-5",
+      "state": "done",
+      "startedAt": 1784087786981,
+      "queuedAt": 1784087786978,
+      "attempt": 1,
+      "lastToolName": "WebSearch",
+      "lastToolSummary": "Pillars of Eternity Deadfire Michael Edwards graphics progr…",
+      "promptPreview": "Research how BioWare/Black Isle actually produced Infinity Engine area art (Baldur's Gate 1/2, Icewind Dale, Planescape Torment): the 3D-scene-to-prerendered-background pipeline, how walkmaps/search maps/height maps were derived, how they kept art and collision in one reference frame, wall polygons / character occlusion, and what later postmortems said worked or failed. Also Pillars of Eternity 1/…",
+      "lastProgressAt": 1784088210464,
+      "tokens": 105055,
+      "toolCalls": 30,
+      "durationMs": 423482,
+      "resultPreview": "# INFINITY ENGINE & PILLARS OF ETERNITY BACKGROUND-ART PIPELINES: RESEARCH FINDINGS\n\n## 1. THE BIOWARE/BLACK ISLE PIPELINE (Baldur's Gate 1/2, Icewind Dale, Planescape: Torment)\n\n**Camera / projection.** The Infinity Engine used a fixed dimetric (not truly isometric) parallel projection, not a rotatable 3D camera. Because BioWare's original 3ds Max scene files are lost, the exact camera parameters…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 2,
+      "label": "research:hd2d-modern",
+      "phaseIndex": 1,
+      "phaseTitle": "Research",
+      "agentId": "a294e269700aa6a9c",
+      "model": "claude-sonnet-5",
+      "state": "done",
+      "startedAt": 1784087786985,
+      "queuedAt": 1784087786978,
+      "attempt": 1,
+      "lastToolName": "WebSearch",
+      "lastToolSummary": "Tyranny Obsidian Pathfinder Kingmaker Owlcat prerendered ba…",
+      "promptPreview": "Research modern 2.5D / hybrid pipelines: Octopath Traveler \"HD-2D\" (3D scenes + sprite integration), Dead Cells (3D-model-to-2D-frames), Darkest Dungeon, Hades' layered 2D, and any recent indie RPGs using AI-assisted pre-rendered backgrounds. For each: what is 3D vs 2D, how occlusion/walk-behind works, how collision is authored, tooling cost, team size. Use web search extensively. Return findings …",
+      "lastProgressAt": 1784088058430,
+      "tokens": 99541,
+      "toolCalls": 23,
+      "durationMs": 271445,
+      "resultPreview": "# Modern 2.5D / Hybrid Rendering Pipelines: Research Findings\n\n## 1. Octopath Traveler / HD-2D (Square Enix / Acquire, Team Asano)\n\n**3D vs 2D split:** Backgrounds are entirely 3D geometry rendered in Unreal Engine 4 (later UE5 for Octopath Traveler II); characters, monsters, and most effects are hand-drawn pixel-art sprites. Sprites are billboarded (always face camera) but cast real shadows onto …"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 3,
+      "label": "research:unity-headless-render",
+      "phaseIndex": 1,
+      "phaseTitle": "Research",
+      "agentId": "a35d63254c7b5f9eb",
+      "model": "claude-sonnet-5",
+      "state": "done",
+      "startedAt": 1784087786986,
+      "queuedAt": 1784087786979,
+      "attempt": 1,
+      "lastToolName": "WebFetch",
+      "lastToolSummary": "Extract exact API signatures and behavior for Camera.SetRep…",
+      "promptPreview": "Research the concrete Unity techniques for Option 2 (render the room source-of-truth inside Unity): orthographic camera render-to-texture at exact resolutions, capturing DEPTH (Camera.depthTextureMode / replacement shaders / SRP depth capture in Built-in RP specifically), normal-map capture, running these headless or via editor scripts (batchmode with GPU on Linux), determinism of renders across r…",
+      "lastProgressAt": 1784088085512,
+      "tokens": 101018,
+      "toolCalls": 23,
+      "durationMs": 298526,
+      "resultPreview": "# Unity Techniques for \"Render the Room Source-of-Truth Inside Unity\" (Option 2) — Research Findings\n\nScope: Built-in Render Pipeline (BiRP) specifically, not URP/HDRP, per the request. Findings below are organized by the six technique areas requested, then implications for WorldOS.\n\n---\n\n## 1. Orthographic camera render-to-texture at exact resolutions\n\n**Mechanism:** Assign a `RenderTexture` of t…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 4,
+      "label": "research:diffusion-3d-texturing",
+      "phaseIndex": 1,
+      "phaseTitle": "Research",
+      "agentId": "adb4ffe8078c55db0",
+      "model": "claude-sonnet-5",
+      "state": "done",
+      "startedAt": 1784087786987,
+      "queuedAt": 1784087786979,
+      "attempt": 1,
+      "lastToolName": "WebSearch",
+      "lastToolSummary": "diffusion texture generation quality gap vs hand-painted ar…",
+      "promptPreview": "Research the state of the art (2024-2026) in diffusion-based texturing/stylization OF 3D scenes for Option 3: TEXTure/Text2Tex/Paint3D-class mesh texturing, multi-view-consistent scene stylization, projection painting (paint one view, project onto geometry, inpaint occluded areas), StyleGaussian/gaussian-splat stylization, and any game-production uses. Assess: can a painterly Pillars-of-Eternity l…",
+      "lastProgressAt": 1784088076190,
+      "tokens": 106285,
+      "toolCalls": 22,
+      "durationMs": 289203,
+      "resultPreview": "# Diffusion-Based 3D Scene Texturing/Stylization — State of the Art (2024–2026)\n\n## 1. Mesh texturing lineage (TEXTure / Text2Tex / Paint3D and successors)\n\n**Founding pattern (2023):** All of these share one pipeline skeleton — render the mesh from a camera with a geometric conditioning map (depth or normals) → run a depth/normal-conditioned diffusion model (ControlNet-style) to synthesize a view…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 5,
+      "label": "research:single-view-projection",
+      "phaseIndex": 1,
+      "phaseTitle": "Research",
+      "agentId": "a105daebb98f2734b",
+      "model": "claude-sonnet-5",
+      "state": "done",
+      "startedAt": 1784087786987,
+      "queuedAt": 1784087786979,
+      "attempt": 1,
+      "lastToolName": "WebSearch",
+      "lastToolSummary": "Cuphead prerendered hand-painted background 3D geometry tec…",
+      "promptPreview": "Research the SPECIFIC hybrid for a fixed-camera game: paint ONE view of a 3D scene (diffusion over a render, exactly what WorldOS does today) then PROJECT that painting back onto the 3D geometry as a texture (camera-projection mapping / projective texturing in Unity Built-in RP), so the 3D geometry carries the painted look and handles occlusion/masking/depth natively while the camera never moves. …",
+      "lastProgressAt": 1784088054722,
+      "tokens": 96685,
+      "toolCalls": 18,
+      "durationMs": 267735,
+      "resultPreview": "RESEARCH FINDINGS: Camera-Projected Diffusion-Painted Textures for Fixed-Camera 3D Scenes\n\n================================================================\n1. CAMERA PROJECTION MAPPING / PROJECTIVE TEXTURING — THE TECHNIQUE\n================================================================\n\nCore math (engine-agnostic): a projected texture is sampled using the same view-projection transform used to o…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 6,
+      "label": "research:procedural-scale",
+      "phaseIndex": 1,
+      "phaseTitle": "Research",
+      "agentId": "a4e2bf0658abbb6ab",
+      "model": "claude-sonnet-5",
+      "state": "done",
+      "startedAt": 1784087786987,
+      "queuedAt": 1784087786979,
+      "attempt": 1,
+      "lastToolName": "WebSearch",
+      "lastToolSummary": "environment concept art background painting cost per piece …",
+      "promptPreview": "Research procedural room/dungeon generation approaches that preserve a consistent authored art style at scale: DunGen/Edgar-class Unity generators feeding art pipelines, wave-function-collapse set dressing, modular kit design discipline (how PoE2/Divinity built rooms from kits), and the economics: for a ~100-room game, compare (a) per-room diffusion painting of unique plates vs (b) modular 3D kit …",
+      "lastProgressAt": 1784088137645,
+      "tokens": 108376,
+      "toolCalls": 24,
+      "durationMs": 350658,
+      "resultPreview": "# Procedural Room/Dungeon Generation at Scale — Preserving Authored Art Style\n\n## 1. DunGen/Edgar-class Unity generators feeding art pipelines\n\n**DunGen** (DunGeon Design, Unity Asset Store, ~$90) is a tile-based dungeon assembler: you hand-build individual rooms as \"Tiles\" (prefabs with door/socket markers), and DunGen's rule engine stitches them together at runtime using a \"flow graph\" system th…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 7,
+      "label": "synthesize",
+      "phaseIndex": 2,
+      "phaseTitle": "Synthesize",
+      "agentId": "a2ce3a44886f742b8",
+      "model": "claude-sonnet-5",
+      "state": "done",
+      "startedAt": 1784088210480,
+      "queuedAt": 1784088210479,
+      "attempt": 1,
+      "promptPreview": "You are synthesizing research for an architecture decision record. The decision: WorldOS (context repeated in the research below) is moving its room pipeline to \"Option 2 — unify the frames\": blockout rooms in Unity, render greybox+depth from the client's own camera, diffusion-paint over that render, display in the same camera, blockout doubles as occluders/collision. \"Option 3\" (3D procedural roo…",
+      "lastProgressAt": 1784088265644,
+      "tokens": 103561,
+      "toolCalls": 0,
+      "durationMs": 55163,
+      "resultPreview": "# ADR Synthesis: Option 2 (\"Unify the Frames\") — Decision-Ready\n\n## 1. Ranked techniques to adopt\n\n1. **One camera, multiple co-registered passes (the PoE G-buffer trick).** Render final/beauty, depth, normal, and cell-ID/occupancy from the *same* Unity ortho camera pass, pixel-aligned by construction — don't re-derive any of it after the fact. [PoE Update #79; unity-headless-render §6 \"Unity Perc…"
+    }
+  ],
+  "totalTokens": 720521,
+  "totalToolCalls": 140
+}
