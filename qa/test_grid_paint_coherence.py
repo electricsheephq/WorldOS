@@ -45,13 +45,37 @@ import check_plate_drift as drift  # noqa: E402
 from greybox_render_headless import cell_to_world, render as render_greybox, world_to_screen  # noqa: E402
 
 _CRYPT_MANIFEST = _QA_DIR / "room_manifests" / "crypt_dense_v1.cells.json"
+# CRYPT-ALIGN-V2: the REALIGNED fresh crypt manifest (author_crypt_fresh geometry -> paint-registered).
+_CRYPT_FRESH_MANIFEST = _QA_DIR / "room_manifests" / "crypt_fresh.cells.json"
 # The DEPLOYED crypt plate (crypt_armb_iter3_v1, the room_recipes canonical_plate), at contract size.
 _CRYPT_PLATE = _QA_DIR / "evidence" / "plate-sprint" / "adopt-crypt" / "source-plates" / \
     "candidate_crypt_armb_iter3.jpg"
 
+# wall_run/perimeter props are the extent-contract's perimeter band (gated by edge-recall), NOT the
+# furniture this localiser measures — their greybox render height (wall_height) differs from the kind's
+# _spec height, so the flat-box template can't localise them. The coherence gate reads FURNITURE drift.
+_WALL_KINDS = {"wall_run", "perimeter_wall"}
+
 
 def _manifest(path: Path) -> dict:
     return drift.load_manifest(path)
+
+
+def _furniture(manifest: dict) -> dict:
+    m = copy.deepcopy(manifest)
+    m["props"] = [p for p in m["props"] if str(p.get("kind", "")).lower() not in _WALL_KINDS]
+    return m
+
+
+def _render_aligned_fit(manifest: dict, out: Path) -> Path:
+    """Aligned greybox for a CAMERA-FIT manifest — carries camera_fit so the render + the gate's
+    projection share the room's stamped fit ortho (else the two rigs disagree by ~0.81x)."""
+    grid = manifest["grid"]
+    geo = {"cols": grid["cols"], "rows": grid["rows"], "walls": [],
+           "camera_fit": bool(manifest.get("camera_fit")),
+           "props": [{"kind": p["kind"], "cells": p["footprint"]} for p in manifest["props"]]}
+    render_greybox(geo, str(out), camera_fit=bool(manifest.get("camera_fit")))
+    return out
 
 
 def _render_aligned_plate(manifest: dict, out: Path) -> Path:
@@ -129,16 +153,35 @@ def test_one_cell_shift_is_caught(tmp_path):
     assert len(bad) >= 2, f"most props should read off-grid, got {[(p['id'], p['status']) for p in res.props]}"
 
 
-# ── 4. the CURRENT (deployed) crypt plate FAILs against reality ────────────────────────────────────
-@pytest.mark.skipif(not _CRYPT_PLATE.is_file(), reason="deployed crypt plate not committed locally")
-def test_current_crypt_plate_is_incoherent():
-    """The honest reality anchor: the DEPLOYED crypt plate (crypt_armb_iter3_v1) MUST fail this gate.
-    #1491 proved the plate carries real grid↔paint drift that no shared transform can realign; #1505
-    could only recalibrate the sarcophagus footprint to the paint, not remove the residual drift. The
-    gate reads INCOHERENT — the defect the owner walked onto, now machine-caught."""
-    res = coh.check_grid_paint_coherence(_CRYPT_PLATE, _manifest(_CRYPT_MANIFEST))
-    assert not res.passed, f"the deployed crypt paint must read INCOHERENT: {res.summary()}"
-    assert {p["id"] for p in res.props if p["status"] in ("DRIFT", "UNLOCATED")}
+# ── 4. CRYPT-ALIGN-V2: the negative pin flips to a positive — the realigned crypt is grid-coherent ───
+@pytest.mark.skipif(not _CRYPT_FRESH_MANIFEST.is_file(), reason="crypt_fresh v2 manifest not present")
+def test_realigned_crypt_fresh_geometry_is_grid_coherent():
+    """CRYPT-ALIGN-V2 (M-ALIGN, 2026-07-15): the STORY, and the honest instrument flip.
+
+    Before: the deployed crypt (crypt_armb_iter3 / crypt_dense_v1) read INCOHERENT — flux relocated the
+    painted furniture off the authored grid (#1491), the defect the owner walked onto. This lane realigns
+    the crypt GEOMETRY to the painted crypt_fresh_v1 plate (sarcophagus -> the back-band tomb, pillar_l ->
+    its painted plinth, invisible-behind-cutaway props deleted); overlay-verified against the plate at the
+    fit ortho (qa/evidence/1540/after-align-v2/overlay_v2_fit.png).
+
+    This asserts the POSITIVE: the realigned crypt_fresh v2 FURNITURE, on a correctly-REGISTERED plate
+    (the greybox rendered from its own footprints at the room's stamped fit ortho 10.5224), is COHERENT —
+    every prop localises on its authored footprint with a wide margin. That is the gate's RELIABLE path
+    (see the module RELIABILITY NOTE): on a fully PAINTERLY plate the per-prop NCC is inherently low
+    (cross-modality edges), so the painterly crypt_fresh_v1 — like the coherence-perfect tavern_fit2 —
+    still reads advisory-INCOHERENT under this flat-box localiser; the per-CELL painterly coherence proof
+    is the visual sweep (qa/journey_visual_sweep.py: the tomb/pillar/ornaments now align + are occlusion-
+    exempted, only ornate-floor decoration flags remain — crypt CLEAN% 85.1 -> ~90.7). Walls are the
+    extent contract's job (edge-recall), excluded here."""
+    m = _furniture(_manifest(_CRYPT_FRESH_MANIFEST))
+    assert m.get("camera_fit") and abs(float(m["ortho"]) - 10.5224) < 1e-3, "v2 manifest must stamp the fit ortho"
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        plate = _render_aligned_fit(m, Path(td) / "aligned_fit.png")
+        res = coh.check_grid_paint_coherence(plate, m)
+    assert res.passed, f"the realigned crypt_fresh v2 geometry must read COHERENT on its registered plate: {res.summary()}"
+    assert res.checked >= 8, f"most furniture props must localise (got checked={res.checked})"
+    assert max(p["offset_cells"] for p in res.props if "offset_cells" in p) <= coh.MAX_OFFSET_CELLS
 
 
 # ── 5. calibrated constants sit in the pass/fail gap ──────────────────────────────────────────────

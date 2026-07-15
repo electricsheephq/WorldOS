@@ -258,29 +258,35 @@ def _needs(*paths):
 
 
 def test_red_first_fresh_crypt_dense_room_flags_drop_after_occlusion_exemption():
-    # THE #1552 FOLLOW-UP THIS PR CLOSES: #1565's fresh crypt (20 authored props, richer than the
-    # sparse incumbent's 3) scores its OWN derived manifest 15 baseline flags -- every single one a
-    # legitimate authored-occlusion silhouette (a denser room paints more up-screen silhouette, not
-    # more invented furniture). Before this fix ALL 15 count against CLEAN%; after it, ZERO do.
+    # THE #1552 FOLLOW-UP + CRYPT-ALIGN-V2 (M-ALIGN): the fresh crypt (17 authored props, richer than the
+    # sparse incumbent's 3) scores its OWN derived manifest a batch of baseline flags -- every single one
+    # a legitimate authored-occlusion silhouette (a denser room paints more up-screen silhouette, not more
+    # invented furniture). Before occlusion-exemption ALL count against CLEAN%; after it, ZERO do. This
+    # is now sampled at the manifest's stamped CAMERA-FIT ortho (10.5224) -- the room is painted at the fit
+    # scale, so sampling at the fixed 13 would shrink every quad ~0.81x toward centre (the M-ALIGN QA-stack
+    # drift this PR fixes). The count re-pinned to the measured 14 under correct fit sampling.
     _needs(_FRESH_CRYPT_PLATE, _FRESH_CRYPT_MANIFEST)
     manifest = json.loads(_FRESH_CRYPT_MANIFEST.read_text(encoding="utf-8"))
     cols, rows = manifest["grid"]["cols"], manifest["grid"]["rows"]
+    ortho = float(manifest["ortho"]) if manifest.get("camera_fit") else None
     walkable = manifest["walkable"]
     prop_cells = {(c, r) for p in manifest["props"] for (c, r) in p["footprint"]}
     live_props = [{"id": p["id"], "footprint": p["footprint"]} for p in manifest["props"]]
 
     edges = load_plate_edges(_FRESH_CRYPT_PLATE)
-    baseline = inverse_coherence_flags(edges, walkable, prop_cells, cols, rows, "crypt_fresh_baseline")
-    assert len(baseline.flagged) == 15, (
-        f"baseline (pre-fix) flag count drifted from the measured 15: {baseline.flagged}")
+    baseline = inverse_coherence_flags(edges, walkable, prop_cells, cols, rows, "crypt_fresh_baseline",
+                                       ortho=ortho)
+    assert len(baseline.flagged) == 14, (
+        f"baseline (pre-fix) flag count drifted from the measured 14 (fit ortho): {baseline.flagged}")
 
-    occlusion_cells, notes = resolve_occlusion_cells(live_props, cols, rows, manifests=[manifest])
+    occlusion_cells, notes = resolve_occlusion_cells(live_props, cols, rows, manifests=[manifest],
+                                                     preferred=manifest, ortho=ortho)
     assert len(notes) == len(live_props), "every authored prop must resolve (this IS its own manifest)"
     fixed = inverse_coherence_flags(edges, walkable, prop_cells, cols, rows, "crypt_fresh_fixed",
-                                    occlusion_cells=occlusion_cells)
+                                    occlusion_cells=occlusion_cells, ortho=ortho)
     assert fixed.flagged == [], (
-        f"every fresh-crypt flag is a verified authored-occlusion silhouette; still flagged: {fixed.flagged}")
-    assert len(fixed.exempted) == 15, f"expected all 15 baseline flags to move to exempted: {fixed.exempted}"
+        f"every fresh-crypt manifest flag is a verified authored-occlusion silhouette; still flagged: {fixed.flagged}")
+    assert len(fixed.exempted) == 14, f"expected all 14 baseline flags to move to exempted: {fixed.exempted}"
 
 
 def test_red_first_genuinely_invented_tavern_furniture_still_flags():

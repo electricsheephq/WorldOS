@@ -215,7 +215,30 @@ def author_crypt_rich() -> dict:
 
 def author_crypt_fresh() -> dict:
     """14x11 enclosed stone crypt — a BRAND-NEW crypt authored with EVERY M-ALIGN learning applied
-    (FRESH-CRYPT lane). This is NOT a regen of the deployed incumbent (``crypt_armb_iter3``, panel 8.0)
+    (FRESH-CRYPT lane).
+
+    CRYPT-ALIGN-V2 (M-ALIGN, 2026-07-15): REALIGNED to the PAINTED crypt_fresh_v1 plate. Fit-camera
+    overlay forensics (ortho=10.5224 via qa/greybox_render_headless._fit_ortho_size(14,11), CENTER
+    convention) proved flux depth-CN RELOCATED the interior furniture during the style pass: the hero
+    sarcophagus is painted as a 6x2 monumental tomb across cols 7-12 x rows 3-4 (base; the lid/effigy
+    silhouette rises up-screen over rows 2-3), NOT the authored 2x2 coffin at cols4-5 x rows7-8 — which
+    the plate paints as OPEN FLOOR. The left pillar plinth is painted at (4,2)/(4,3) (authored (3,3)/(3,4)
+    is painted floor). And pillar_r (8,9)/(9,9), skull_pile (2,9)/(3,9), urn_spill (11,9) are INVISIBLE:
+    they sit behind the wall_height=5 cutaway's near south/east wall band, and flux painted the
+    skulls/urn OUTSIDE the walls on the non-playable exterior apron — their authored cells are painted
+    clear floor. Edge-recall (0.96/0.975) passed anyway because that metric is dominated by walls/extent
+    and is structurally insensitive to small/low props (#1491); only check_grid_paint_coherence + the
+    visual sweep measured the prop-level drift. So the geometry is realigned to the PAINT: sarcophagus ->
+    cols 7-12 rows 3-4, pillar_l -> (4,2)/(4,3), pillar_r/skull_pile/urn_spill DELETED. The seed collision
+    (qa/seed_gfx_combat.py) is realigned in lock-step so pathing agrees with paint.
+
+    ONE forced deviation from the pure paint truth (door-zone gate): with the tomb foot at (12,3)/(12,4)
+    and the tavern doorway at (13,4), a sarcophagus PROP on (12,3)/(12,4) trips validate_scene_grid's
+    door-zone rule (props must keep a doorway's Chebyshev-1 landing clear). So BOTH the geometry coffin
+    AND the seed coffin are trimmed one cell at the east end to cols 7-11 (a 5x2 tomb). The plate's
+    1-cell paint overhang at col 12 is left as an ACCEPTED, DOCUMENTED residual (it flags in the visual
+    sweep at (12,4); it is NOT silently exempted). See qa/evidence/crypt-fresh/WALKSLICE-RECONCILIATION.md
+    (v2 addendum). This is NOT a regen of the deployed incumbent (``crypt_armb_iter3``, panel 8.0)
     nor of ``crypt_rich``: it is a fresh authoring that combines the RICHNESS PRINCIPLE (PR #1528 — dense
     ornament VOLUMES so the depth-CN base + Gemini style pass have surfaces to carve) with the EXTENT
     CONTRACT (#1543 — ``camera_fit`` + a CONTINUOUS ``wall_run`` perimeter band split at the doors, the
@@ -247,11 +270,11 @@ def author_crypt_fresh() -> dict:
     (the ring around the tomb + reachability of both doors) is preserved by construction."""
     sc = _load_seed("_seed_crypt", "seed_gfx_combat.py")
     props = [
-        # --- canonical layout, kept EXACTLY (pillars track the engine combat grid) ---
-        ("pillar_l", "stone_pillar", sc.PILLAR_L_CELLS),          # -> carved knotwork full-height column
-        ("pillar_r", "stone_pillar", sc.PILLAR_R_CELLS),          # -> carved knotwork full-height column
-        # TRUE 2x2 coffin, centered in the canonical cols2-7 x rows7-9 tomb region (#1505) ---
-        ("sarcophagus", "sarcophagus", [[4, 7], [5, 7], [4, 8], [5, 8]]),  # -> raised tomb, reclining effigy lid
+        # --- CRYPT-ALIGN-V2: realigned to the painted plate (pillar_l tracks the engine combat grid) ---
+        ("pillar_l", "stone_pillar", sc.PILLAR_L_CELLS),          # (4,2)/(4,3) plinth -> carved knotwork column
+        # PAINT-TRUE monumental tomb: painted base cols 7-12 x rows 3-4, trimmed to cols 7-11 for the
+        # tavern-door zone (see docstring) -> raised tomb, reclining effigy lid rising up-screen.
+        ("sarcophagus", "sarcophagus", sc.SARCOPHAGUS_CELLS),
         # --- TALL ornament volumes on the BACK band (row 1) / FAR wall (col 12) — won't occlude interior ---
         ("effigy_niche_l", "altar", [[2, 1], [3, 1]]),           # carved wall effigy niche, back-left (2-cell)
         ("torch_door_l", "brazier", [[5, 1]]),                   # lit torch bracket, left of the camp door
@@ -263,8 +286,8 @@ def author_crypt_fresh() -> dict:
         # --- LOW floor clutter, near/left corners (won't occlude, won't block circulation or doors) ---
         ("rubble_bl", "rubble", [[1, 1], [1, 2]]),               # rubble pile, back-left corner (2-cell)
         ("broken_slabs", "rubble", [[1, 6], [1, 7]]),            # heaved/broken floor slabs, left wall (2-cell)
-        ("skull_pile", "rubble", [[2, 9], [3, 9]]),              # skull-and-bone cluster, front-left (2-cell)
-        ("urn_spill", "barrel", [[11, 9]]),                      # tipped funerary urn spilling coins, front-right
+        # CRYPT-ALIGN-V2: pillar_r, skull_pile, urn_spill DELETED — painted behind the cutaway / outside
+        # the playable walls (their authored cells are painted clear floor; the flux relocation forensics).
     ]
     # continuous perimeter wall band as wall_run props, split at both doors (no crenellation, doors open)
     props += _perimeter_wall_run_props(sc.GRID_W, sc.GRID_H, door_cells=[[6, 0], [13, 4]])

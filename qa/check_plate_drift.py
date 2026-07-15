@@ -50,7 +50,7 @@ if str(_QA_DIR) not in sys.path:
 
 # Reuse the ONE verified camera rig (ortho=13, Euler(30,45,0), pull-back 80, 1344x768, cellToWorld
 # centred on (cols-1)/2) — the same transform that renders the greybox the plate is img2img'd from.
-from greybox_render_headless import PX_H, PX_W, cell_to_world, world_to_screen  # noqa: E402
+from greybox_render_headless import ORTHO_SIZE, PX_H, PX_W, cell_to_world, world_to_screen  # noqa: E402
 
 # ── Calibration constants (qa/test_plate_drift_gate.py pins the separation these encode) ───────────
 FP_GRID = 20            # fingerprint = FP_GRID x FP_GRID downsample of the bbox luma (shape-normalised)
@@ -65,30 +65,39 @@ _MANIFESTS_DIR = _QA_DIR / "room_manifests"
 
 
 # ── Camera reprojection (the #1396 recipe, at the contract greybox rig) ───────────────────────────
-def project_cell_bbox(cells: list, cols: int, rows: int) -> list:
+def project_cell_bbox(cells: list, cols: int, rows: int, *, ortho: Optional[float] = None) -> list:
     """Reproject one prop's authored logical cells to a screen-space [x0,y0,x1,y1] bbox: the bounding
     box of every cell's 4 FLOOR-plane corners (world y=0) through the contract camera. Floor-plane
     (not prop-height) keeps the bbox anchored to the authored CELL — the invariant the engine's
-    impassable set shares — independent of however tall the paint renders the prop."""
+    impassable set shares — independent of however tall the paint renders the prop.
+
+    `ortho` (M-ALIGN camera_fit-awareness): None ⇒ the fixed contract ORTHO_SIZE (13) — byte-identical
+    for every non-fit room and every legacy caller. A camera_fit room (crypt_fresh @10.5224,
+    tavern_fit2 @9.2597) is PAINTED at its fitted ortho, so its manifest bboxes must project at the
+    SAME ortho or the whole grid samples ~0.71-0.81x shrunk toward centre (the QA-stack drift #M-ALIGN
+    fixes)."""
+    o = ORTHO_SIZE if ortho is None else ortho
     xs: list = []
     ys: list = []
     for (c, r) in cells:
         for dc in (-0.5, 0.5):
             for dr in (-0.5, 0.5):
                 wx, wy, wz = cell_to_world(c + dc, r + dr, cols, rows)
-                sx, sy = world_to_screen(wx, wy, wz)
+                sx, sy = world_to_screen(wx, wy, wz, o)
                 xs.append(sx)
                 ys.append(sy)
     return [min(xs), min(ys), max(xs), max(ys)]
 
 
-def col_pitch_px(cols: int, rows: int) -> float:
+def col_pitch_px(cols: int, rows: int, *, ortho: Optional[float] = None) -> float:
     """Screen px spanned by one +column step near grid centre — the ruler that turns SEARCH_CELL_FRAC
-    (cells) into a pixel search window."""
+    (cells) into a pixel search window. `ortho` None ⇒ the fixed ORTHO_SIZE (back-compat); a camera_fit
+    room passes its fitted ortho so the pixel window scales with the room's own paint."""
+    o = ORTHO_SIZE if ortho is None else ortho
     c = cols // 2
     r = rows // 2
-    x0, y0 = world_to_screen(*cell_to_world(c, r, cols, rows))
-    x1, y1 = world_to_screen(*cell_to_world(c + 1, r, cols, rows))
+    x0, y0 = world_to_screen(*cell_to_world(c, r, cols, rows), o)
+    x1, y1 = world_to_screen(*cell_to_world(c + 1, r, cols, rows), o)
     return math.hypot(x1 - x0, y1 - y0) or 1.0
 
 
@@ -175,7 +184,10 @@ def check_plate_drift(plate_path: str | Path, manifest: dict, *,
             f"expected the contract {PX_W}x{PX_H}"])
 
     base_arr = load_luma(baseline) if baseline is not None else None
-    search_px = int(round(SEARCH_CELL_FRAC * col_pitch_px(cols, rows)))
+    # M-ALIGN: a camera_fit manifest stamps its fitted ortho — size the sub-cell search window with the
+    # SAME ortho the screen_bboxes were projected at (None ⇒ the fixed rig for every legacy manifest).
+    room_ortho = float(manifest["ortho"]) if manifest.get("camera_fit") and manifest.get("ortho") else None
+    search_px = int(round(SEARCH_CELL_FRAC * col_pitch_px(cols, rows, ortho=room_ortho)))
     result = DriftResult(True, room)
     for prop in manifest.get("props", []):
         pid = str(prop.get("id", "?"))

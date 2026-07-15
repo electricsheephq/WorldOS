@@ -57,3 +57,52 @@ incumbent's known fake-text signature (5/5); no scoped-exception re-pass needed 
 - extensions/renderers/shared/room_recipes.json rooms.crypt.canonical_plate -> crypt_fresh_v1.png (+ status).
 - qa/room_manifests/crypt_fresh.cells.json (canonical derived manifest).
 - WALKSLICE-RECONCILIATION.md — fresh geometry vs canonical combat grid delta (seed NOT edited, #1559).
+
+---
+
+## ADDENDUM — CRYPT-ALIGN-V2 (M-ALIGN, 2026-07-15): camera_fit-aware QA + paint realignment
+
+The RECIPE above adopted a beautiful plate whose EXTENT/walls were paint-correct but whose interior
+FURNITURE flux had relocated (see WALKSLICE-RECONCILIATION.md addendum). Two root causes fixed here:
+
+1. **The QA projection stack was ortho-blind.** `check_plate_drift.project_cell_bbox` (and every
+   consumer — `derive_room_manifest`, `journey_visual_sweep`, `check_grid_paint_coherence`) projected at
+   the FIXED ortho 13, written pre-#1543. A camera_fit plate is PAINTED at its own fitted ortho
+   (crypt_fresh 10.5224, tavern_fit2 9.2597), so all QA sampling on fit rooms was shrunk ~0.81×/0.71×
+   toward centre — the crypt flags happened to be robust (central), the tavern's 100% was unverified.
+   Now: `project_cell_bbox`/`col_pitch_px`/occlusion derivation/quad sampling take an `ortho=` (None ⇒
+   the fixed rig, byte-identical for non-fit rooms); `derive_room_manifest` STAMPS `camera_fit` + `ortho`
+   into the manifest as the single source of truth; the sweep resolves each room's ortho from its
+   manifest. Also fixed the sweep occlusion resolver's first-match-wins collision (crypt's pillar was
+   resolving occlusion from the stale `crypt_dense_v1` manifest) by preferring the live room's OWN
+   manifest.
+
+2. **Geometry realigned to the paint** (author_crypt_fresh v2): sarcophagus → the painted back-band tomb
+   cols 7-11 × rows 3-4, pillar_l → its painted plinth (4,2)/(4,3), pillar_r/skull_pile/urn_spill deleted
+   (painted behind the cutaway / outside the playable walls). Re-derived `crypt_fresh.cells.json` at fit
+   ortho; `tavern_fit2.cells.json` re-derived at 9.2597 (geometry unchanged).
+
+### The coherence-gate verdict (honest)
+`check_grid_paint_coherence` on crypt_fresh v2 is COHERENT on a correctly-REGISTERED plate (the greybox
+rendered from its own v2 footprints at fit ortho 10.5224 — every furniture prop localises at offset 0,
+NCC 1.0; pinned by `qa/test_grid_paint_coherence.py::test_realigned_crypt_fresh_geometry_is_grid_coherent`).
+On the fully PAINTERLY `crypt_fresh_v1.png` the gate stays advisory-INCOHERENT — the flat-box NCC localiser
+is inherently weak against painterly texture (the module's own RELIABILITY NOTE), and the coherence-perfect
+`tavern_fit2` painterly plate reads INCOHERENT identically. The per-CELL painterly coherence proof is the
+visual sweep below, not this screening gate.
+
+### Definitive fit-aware sweep (qa/evidence/1540/after-align-v2)
+| room | before (ortho-13 sampling) | AFTER (fit-aware) |
+|---|---|---|
+| crypt | 85.1% | **90.7%** (8 flags, 6 occlusion-exempted) |
+| camp_clearing_night | — | 95.6% |
+| tavern | 100.0% (unverified) | **100.0%** (re-verified under correct sampling) |
+
+reciprocal-door failures **0**, hero-position failures **0**. The tomb/pillar/all ornaments now align and
+are occlusion-exempted. The residual **8 crypt flags** `[(6,5),(5,6),(6,6),(6,4),(4,7),(5,7),(5,5),(4,4)]`
+are the ornate-floor false-positive class (same as camp's 6): the carved celtic-knot floor plaque + the low
+dais slab in front of the coffin + torch/coffin shadow-bleed on the flagstones — all WALKABLE painted floor,
+NOT invented furniture. They are deliberately NOT chased to 95% by blocking walkable-looking floor (that
+would recreate the playtest-#8 defect in reverse) nor by an ad-hoc per-cell exemption list; the honest
+number ships. Overlays: `qa/evidence/1540/after-align-v2/overlay_v2_fit.png` (footprints on plate),
+`overlay_flags_v2.png` (flagged/exempted), `blend_v2_fit.png` (greybox↔plate registration).
