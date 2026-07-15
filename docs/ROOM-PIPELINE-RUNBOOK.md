@@ -409,6 +409,16 @@ PNGs live under `extensions/renderers/unity/plates/`.
 `StreamingAssets/stage.json` copied verbatim by the same packaging step — it is not keyed per-plate
 and adding a `"stage"` key to a plate entry above is a silent no-op.
 
+**★ BOX BUILD PRE-FLIGHT (measured gap — stale manifests shipped in Box Cycles 2 AND 3, 2026-07-15):**
+the GEX44 box's Unity project (`/home/unity/worldos-unity/`) carries its OWN copies of these data
+files, and `BuildMacOSPlayer.EnsurePackaged` packages the BOX copies verbatim. A lane that deploys
+only its changed `.cs`/shader files ships whatever manifest the box happened to have. Before EVERY
+box `BuildMacOSPlayer`, sync the renderer data files from the repo main being built against:
+`plates_manifest.json`, `effects_registry.json`, `stage.json`, and `plates/*.png` → the box project
+root. The box copy is NEVER the source of truth; the repo is. (Both cycle regressions were caught by
+the post-install pin check `python3 -c "...print cameraPin per plate..."` on the installed app —
+keep running that check after every install.)
+
 **`effects[]` is the additive VFX-anchor mechanism** (PR #1525, VFX-ANCHORS): on plate load/swap,
 `CombatSurfaceClient.SpawnPlateEffects` despawns prior effect instances and spawns each entry's
 mapped prefab (via `effects_registry.json`, abstract `type` → prefab path — single source of truth
