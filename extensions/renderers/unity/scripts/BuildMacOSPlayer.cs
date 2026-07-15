@@ -91,6 +91,16 @@ public static class BuildMacOSPlayer
                     Debug.Log("[Package] plates_manifest.json + plates/*.png -> StreamingAssets (W5e item 6)");
                 }
                 else Debug.LogWarning("[Package] plates_manifest.json present but no plates/ dir at " + platesSrcDir);
+                // UNIFY-THE-FRAMES (#1575): per-plate occluder-box sidecars (boxes/*.json emitted by
+                // build_room_unified.cs) ship exactly like plates — a manifest `boxes` entry with no
+                // packaged file silently degrades to footprint proxies (the proof build hit this).
+                string boxesSrcDir = Path.Combine(projectRoot, "boxes");
+                if (Directory.Exists(boxesSrcDir))
+                {
+                    string boxesDstDir = Path.Combine(saDir, "boxes"); Directory.CreateDirectory(boxesDstDir);
+                    foreach (var f in Directory.GetFiles(boxesSrcDir, "*.json")) File.Copy(f, Path.Combine(boxesDstDir, Path.GetFileName(f)), true);
+                    Debug.Log("[Package] boxes/*.json occluder sidecars -> StreamingAssets (UNIFY-THE-FRAMES)");
+                }
             }
 
             // 1d) VFX-ANCHORS OPTIONAL effects registry -> StreamingAssets (verbatim). Present => the built

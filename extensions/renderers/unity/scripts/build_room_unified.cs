@@ -19,13 +19,15 @@ AssetDatabase.Refresh();
 var sb=new System.Text.StringBuilder();
 Camera cam=Camera.main; if(cam==null && Camera.allCameras.Length>0) cam=Camera.allCameras[0]; if(cam==null) return "no cam";
 
-string GEO="/home/unity/worldos-unity/room_geometry.json";
+// GEX44 box paths by default (this is a box-side editor tool, precedent build_room_greybox.cs);
+// env-overridable so a non-box host can point it elsewhere (evaos review, #1575).
+string GEO=System.Environment.GetEnvironmentVariable("WORLDOS_ROOM_GEO") ?? "/home/unity/worldos-unity/room_geometry.json";
 if(!System.IO.File.Exists(GEO)) return "no geometry json: "+GEO;
 var geo=MiniJson.Parse(System.IO.File.ReadAllText(GEO)) as System.Collections.Generic.Dictionary<string,object>;
 if(geo==null) return "geometry parse failed";
 int cols=geo.ContainsKey("cols")?System.Convert.ToInt32(geo["cols"]):14;
 int rows=geo.ContainsKey("rows")?System.Convert.ToInt32(geo["rows"]):11;
-bool wood = geo.ContainsKey("material") && (geo["material"] as string)=="wood";
+bool wood = geo.ContainsKey("material") && ((geo["material"] as string)??"").ToLowerInvariant().Contains("wood"); // substring: authored values are e.g. "worn wooden planks" (codex review, #1575)
 bool camFit = geo.ContainsKey("camera_fit") && geo["camera_fit"] is bool && (bool)geo["camera_fit"];
 float wallH = geo.ContainsKey("wall_height") ? System.Convert.ToSingle(geo["wall_height"]) : (camFit ? 5f : 9f);
 float cx0=(cols-1)/2.0f, cy0=(rows-1)/2.0f;
@@ -175,7 +177,16 @@ if(props!=null) foreach(var po in props){ var p=po as System.Collections.Generic
     np++;
   }
 }
-if(nWallRuns==0){ sb.AppendLine("ERROR: geometry has no wall_run props — author under the extent contract (#1543) first."); return sb.ToString(); }
+if(nWallRuns==0){
+  // cleanup before erroring: this run already hid scene renderers + destroyed lights + spawned GB_ parts —
+  // leaving them makes the ERROR path corrupt the editor scene state (codex review, #1575).
+  foreach(var g in UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsSortMode.None)){ if(g!=null && g.name.StartsWith("GB_")) UnityEngine.Object.DestroyImmediate(g); }
+  foreach(var r in UnityEngine.Object.FindObjectsByType<Renderer>(FindObjectsSortMode.None)){ if(r!=null) r.enabled=true; }
+  if(stoneAlb!=null) UnityEngine.Object.DestroyImmediate(stoneAlb);
+  if(stoneNrm!=null) UnityEngine.Object.DestroyImmediate(stoneNrm);
+  sb.AppendLine("ERROR: geometry has no wall_run props — author under the extent contract (#1543) first (scene restored).");
+  return sb.ToString();
+}
 
 // lighting (proven greybox rig from build_room_greybox.cs)
 foreach(var ln in new[]{"GB_Key","GB_Fill","GB_WallWash"}){ var o=GameObject.Find(ln); if(o!=null) UnityEngine.Object.DestroyImmediate(o); }
