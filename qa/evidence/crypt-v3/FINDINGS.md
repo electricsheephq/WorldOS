@@ -68,3 +68,12 @@ urn (10,7) painted as a burning fire pot (kind drift, position held). Scorecard 
 LESSON (instrument): floor apron-skirt boxes in a whole-scene overlay READ as global misalignment —
 always confirm with the numeric blob solve before diagnosing camera drift (my first eyeball wrongly
 suspected a client cameraPin override; the fit refuted it).
+
+### v3.5 blind panel (axis 8) — 6.2 vs incumbent 8.2 vs PoE2 control 8.8 (in-band, valid)
+ITERATE verdict, but the split is diagnostic gold: candidate WINS composition/readability (7.2 vs
+6.5) — the whole-room-legible unified layout beats the incumbent's cropped vignette — and loses on
+(1) the dead-black apron vignette read (framing/presentation, not paint), (2) carving fidelity
+(#1538 ceiling class), (3) flat lighting drama from evenly-spread braziers (the breathing-room fix
+overshot into uniformity — cluster lights asymmetrically), (4) niches painted as a wall-clipping
+dome. Levers 1+3+4 are geometry/prompt-level and FREE to iterate; 2 is the known LoRA/detail-pass
+question (owner-gated). Full verdict: crypt_v35_blind_panel.json.

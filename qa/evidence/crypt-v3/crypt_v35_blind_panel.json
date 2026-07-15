@@ -1,0 +1,21 @@
+{
+  "panel": "crypt-v35-blind-panel (workflow wf_12497d9a-907, 2026-07-15, 5 sonnet scorers, lens-diverse)",
+  "slots": {"A": "incumbent crypt_fresh_v1", "B": "control poe2_ruins_brazier_integration_01 (band 6.8-9.2)", "C": "candidate crypt_v35_SPACED_CANDIDATE"},
+  "medians": {"incumbent_A": 8.2, "control_B": 8.8, "candidate_C": 6.2},
+  "control_in_band": true,
+  "per_lens": {
+    "overall": {"A": 7.4, "B": 8.8, "C": 5.8},
+    "lighting_mood": {"A": 8.4, "B": 9.3, "C": 6.0},
+    "materials": {"A": 8.7, "B": 8.3, "C": 6.2},
+    "composition_readability": {"A": 6.5, "B": 7.6, "C": 7.2},
+    "prop_integration": {"A": 8.2, "B": 9.3, "C": 6.4}
+  },
+  "verdict": "ITERATE (candidate below 7.0 bar and -2.0 vs incumbent). NOT an adoption panel — scorecard-loop read.",
+  "named_defects": [
+    "isolated-vignette: room floats on dead black apron (2 lenses) — frame-fill + apron ambient treatment, NOT paint quality",
+    "carving fidelity: effigy armor/shield melt to soft blobs (the known #1538 ceiling class)",
+    "flat lighting drama: evenly-spaced braziers uniform the room — cluster light sources asymmetrically",
+    "niche volumes painted as a domed sarcophagus clipping the wall coping"
+  ],
+  "candidate_strength": "composition/readability 7.2 BEATS incumbent 6.5 — the full-room legible layout (unify-the-frames' goal) outscores the incumbent's cropped vignette on the playability-adjacent axis"
+}

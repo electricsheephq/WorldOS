@@ -15,7 +15,7 @@ control (axes 6-8). A candidate ships only at ≥7 on every axis.
 | 5 | Alignment (paint-vs-volumes overlay; masses in-volume) | overlay + coherence | 8 | 8 (2 props 0.05c; SW brazier 1.6c) |
 | 6 | Corner/seam integrity (walls meet cleanly) | paint eyeball | 5 | 9 |
 | 7 | Containment (nothing painted outside playable; no invented objects) | overlay eyeball | 6 | 6 (bones on apron — flux prior, open defect) |
-| 8 | PoE2-family beauty (vs real-art control) | blind panel | pending | pending |
+| 8 | PoE2-family beauty (vs real-art control) | blind panel | pending | 6.2 (incumbent 8.2, control 8.8 in-band) |
 
 ## The refinement loop (per room, ~30 min + 29-47 CU/cycle)
 author geometry → scripted spacing audit → box greybox render → DESIGN GATE (axes 1-4; REJECT is
@@ -26,9 +26,11 @@ eyeball (axes 6-7) → blind panel (axis 8) → grade the row → fix the LOWEST
 (geometry/builder/prompt — never chase paint with paint) → repeat until all ≥7.
 
 ## Known open defect classes (root-cause the generator, not the instance)
-- Bones/debris drift to the exterior apron (flux prior; 3/3 crypts) — candidate fixes: place bone
-  piles adjacent to interior wall faces w/ a wall-side backdrop volume; or mask the apron in the
-  conditioning depth (paint it far-black).
+- Bones/debris drift to the exterior apron (flux prior; 3/3 crypts). RULED OUT (2026-07-15): masking
+  the apron in the conditioning depth — it is ALREADY far-black there (zero CN signal is exactly why
+  flux decorates it freely). Live levers: (a) an explicit additions-lock clause in BOTH pass prompts
+  ("the exterior apron outside the walls stays bare ground — no bones, debris, or objects"), (b) the
+  best-of-N edge-recall selection naturally discards apron-heavy draws.
 - Ring collars on columns read as flat plates from the dimetric camera — try torus-approx (two
   stacked thin cylinders) or drop collars entirely.
 - 1-cell wall-mounted items ~0.7-1.6 cell drift (measured v3.1/v3.2) — keep ≥2-cell or wall-attached.
@@ -39,7 +41,7 @@ eyeball (axes 6-7) → blind panel (axis 8) → grade the row → fix the LOWEST
 ## Cycle log
 | date | room | cycle | verdict | CU |
 |------|------|-------|---------|----|
-| 2026-07-15 | crypt | v3.5 | candidate: axes 1-9 avg ~8; open: apron bones, SW-corner drift | 29 |
+| 2026-07-15 | crypt | v3.5 | ITERATE: axes 1-7 ~8 but panel 6.2 (vignette framing, carving softness, flat light drama); WINS readability vs incumbent 7.2>6.5 | 29 |
 | 2026-07-15 | tavern | 1 | process-refined honest negative: molded table/bar kinds + cue-mass rule (1.33h top = 0 depth delta, raised to 2.0) landed; base registration fails flat-interior class at cs0.85 single-shot -> best-of-3 selection gate next | 18 |
 
 ## Defect classes (appended)
@@ -47,3 +49,9 @@ eyeball (axes 6-7) → blind panel (axis 8) → grade the row → fix the LOWEST
   freedom (displacement, count drift, invented arches, soft finish). Levers: best-of-3 + edge-recall
   selection (proven, promoted recipe), cs 0.9-0.95 probe, taller architectural masses (chimney
   breast over hearth) so the depth carries structure.
+- Dead-black apron vignette: a room that doesn't fill the frame reads as an unshipped asset to
+  every judge (panel 2026-07-15). Levers: raise CAMERA_FIT_FILL for squarer rooms; prompt the apron
+  as faintly-lit bare ground (both passes), never void; Gemini must not shrink the room (exact-size
+  resize check already in the chain).
+- Even light spacing = flat drama: breathing-room spacing must not equalize LIGHT sources — cluster
+  braziers/candles asymmetrically around the focal point (panel lens: lighting 6.0 vs incumbent 8.4).
