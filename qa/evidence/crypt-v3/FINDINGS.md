@@ -26,3 +26,14 @@ post-paint cell realignment per prop.
 v3.2-styled is the beauty candidate. Before adoption: v3.3 geometry (pillars → 1×2 footprints per
 the rule) + one paint cycle + full gates (sweep pairing, neutral panel vs the camp 9/10 bar, truth
 overlay in-player). Nothing wired; canonical manifest untouched.
+
+## v3.3 — THE RULE CONFIRMED (2026-07-15 ~14:10)
+Pillars re-authored as 1×2 piers (the measured rule) + fat cue volumes + 0.85 control: **all four
+piers survived the Gemini style pass inside their volumes** (styled_v33_overlay.png) — first full
+chain where every collision-relevant mass held end-to-end. Tomb/braziers/torch/urn in-volume, lit.
+Residual cosmetics only: re-invented arched windows on the SW inner wall face (impassable cells —
+no walkable lie; the v3.2 prompt correction was dropped in v3.3's pass, re-add it) + apron debris
+outside the playable floor. **crypt_v33_CANDIDATE.png = the adoption candidate**; remaining gates:
+targeted window re-roll (optional), sweep pairing, neutral panel vs the camp 9/10 bar, in-player
+truth overlay. Arc totals: 3 geometry iterations (1 gate-rejected free), 3 bases, 3 style passes,
+87 CU. Run total 188/300.
