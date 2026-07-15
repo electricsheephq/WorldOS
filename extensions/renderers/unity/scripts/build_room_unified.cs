@@ -156,11 +156,11 @@ if(props!=null) foreach(var po in props){ var p=po as System.Collections.Generic
   }
   // prop kinds — heights mirror qa/greybox_render_headless._KIND_SPECS (authored intent parity).
   float ph=2.6f, pw=1.4f; Color pc=new Color(0.52f,0.5f,0.48f);
-  if(kind.Contains("pillar")||kind.Contains("column")){ ph=7.5f; pw=1.6f; pc=new Color(0.56f,0.55f,0.53f); }
+  if(kind.Contains("pillar")||kind.Contains("column")){ ph=7.5f; pw=2.4f; pc=new Color(0.62f,0.61f,0.58f); } // pw 1.6->2.4 + brighter: 1-cell pillars need a FAT, bright depth cue or flux snaps them sideways (crypt v3 measured ~0.7-cell drift + one dropped pillar at pw 1.6)
   else if(kind.Contains("large_tree")){ ph=9.0f; pw=1.8f; pc=new Color(0.23f,0.29f,0.20f); }
   else if(kind.Contains("stone_well")){ ph=3.2f; pw=1.8f; pc=new Color(0.59f,0.58f,0.55f); }
   else if(kind.Contains("sarcophagus")||kind.Contains("altar")||kind.Contains("bar")||kind.Contains("table")||kind.Contains("pew")||kind.Contains("market_stall")){ ph=2.0f; pw=1.8f; pc=new Color(0.6f,0.58f,0.55f); }
-  else if(kind.Contains("brazier")){ ph=2.2f; pw=0.8f; pc=new Color(0.38f,0.36f,0.34f); }
+  else if(kind.Contains("brazier")){ ph=2.6f; pw=1.2f; pc=new Color(0.5f,0.46f,0.4f); } // taller+fatter+brighter cue (v3 drift lesson)
   else if(kind.Contains("campfire")){ ph=0.6f; pw=1.1f; pc=new Color(0.78f,0.43f,0.16f); }
   else if(kind.Contains("bedroll")){ ph=0.28f; pw=1.1f; pc=new Color(0.43f,0.38f,0.31f); }
   else if(kind.Contains("fallen_log")){ ph=0.8f; pw=1.1f; pc=new Color(0.35f,0.29f,0.21f); }
