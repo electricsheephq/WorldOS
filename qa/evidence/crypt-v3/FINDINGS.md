@@ -77,3 +77,16 @@ ITERATE verdict, but the split is diagnostic gold: candidate WINS composition/re
 overshot into uniformity — cluster lights asymmetrically), (4) niches painted as a wall-clipping
 dome. Levers 1+3+4 are geometry/prompt-level and FREE to iterate; 2 is the known LoRA/detail-pass
 question (owner-gated). Full verdict: crypt_v35_blind_panel.json.
+
+## v3.6 (panel-lever iteration) — geometry SHIPPED, paint = honest negative that KILLED a bad rule
+Geometry (free, design-gate PASSED): focal grave-flame pair flanking the tomb + single gate accent +
+side torch (the panel's flat-drama fix), niches REMOVED (wall-clip fix + consolidation), 115
+walkable connected. Flux base (asset_d585bv1FJe7jzEazEqb1mUDB, cs0.85 seed12345 single-shot):
+STYLE COLLAPSE — chunky clay/low-poly blocks, 3 chess-piece pillars, 1 flame of 4, E door missing.
+Same params that produced the strong v3.5 base, same depth-rich room class.
+★ RULE FALSIFIED: "depth-rich rooms are safe single-shot" (written earlier TODAY) — 1/1 failure on
+exactly that class. Flux draw variance is UNIVERSAL; best-of-N + edge-recall selection is mandatory
+for EVERY room, not just flat interiors. Secondary suspect (untestable without spend): the longer
+v3.6 prompt ("crisp carved stone relief", block-wall emphasis) may bias toward the chunky prior —
+next cycle A/Bs the v3.5 prompt verbatim against the v3.6 prompt across the 3-draw set.
+CU: 9. Run total 273/300 — remaining 27 banked for next session's 3-draw chain.

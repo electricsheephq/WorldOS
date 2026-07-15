@@ -19,9 +19,9 @@ control (axes 6-8). A candidate ships only at ≥7 on every axis.
 
 ## The refinement loop (per room, ~30 min + 29-47 CU/cycle)
 author geometry → scripted spacing audit → box greybox render → DESIGN GATE (axes 1-4; REJECT is
-free) → flux base numImages=3 + PICK BY EDGE-RECALL vs greybox (the promoted-recipe selection gate
-— single-shot has no variance absorber; tavern cycle 1 failed 2/2 single-shots) → Gemini
-structure-lock pass → overlay (axis 5) +
+free) → flux base numImages=3 + PICK BY EDGE-RECALL vs greybox — MANDATORY FOR EVERY ROOM CLASS
+(tavern failed 2/2 single-shots; crypt v3.6 then failed 1/1 on the depth-RICH class, killing the
+"depth-rich rooms are safe single-shot" exemption same-day) → Gemini structure-lock pass → overlay (axis 5) +
 eyeball (axes 6-7) → blind panel (axis 8) → grade the row → fix the LOWEST axis at its root
 (geometry/builder/prompt — never chase paint with paint) → repeat until all ≥7.
 
@@ -42,6 +42,7 @@ eyeball (axes 6-7) → blind panel (axis 8) → grade the row → fix the LOWEST
 | date | room | cycle | verdict | CU |
 |------|------|-------|---------|----|
 | 2026-07-15 | crypt | v3.5 | ITERATE: axes 1-7 ~8 but panel 6.2 (vignette framing, carving softness, flat light drama); WINS readability vs incumbent 7.2>6.5 | 29 |
+| 2026-07-15 | crypt | v3.6 | geometry SHIPPED (focal light cluster, niches removed — panel levers); paint honest negative: style collapse at single-shot cs0.85 on the depth-rich class → best-of-N now universal | 9 |
 | 2026-07-15 | tavern | 1 | process-refined honest negative: molded table/bar kinds + cue-mass rule (1.33h top = 0 depth delta, raised to 2.0) landed; base registration fails flat-interior class at cs0.85 single-shot -> best-of-3 selection gate next | 18 |
 
 ## Defect classes (appended)
