@@ -469,3 +469,22 @@ gate (`check_grid_paint_coherence.py`) and journey-eval (`qa/journey_eval.py`) b
 shipped room; `qa/evidence/journey-eval-first-run/RECALL.md` documents the current instrument gap
 (the legal-path blind spot, #1523) so you know what journey-eval does and does NOT yet catch. Both
 runners have rows in `docs/RUNBOOK-INDEX.md` "Visual / render".
+
+## ★ EVIDENCE CITATION RULE (owner-caught failure class, 3× on 2026-07-15)
+Anything cited to the owner in chat MUST exist at the cited path at the moment of citation:
+- **Cite `~/worldos-session-notes/...` or a GitHub URL** (PR Files-changed view) — both are
+  branch-independent and survive checkouts.
+- **NEVER cite a repo working-tree path for an unmerged branch** — switching back to main removes
+  the folder from disk and the owner finds a dead path. Repo paths become citable ONLY after merge.
+- Mirror every owner-facing frame into `~/worldos-session-notes/morning-frames-*/` BEFORE citing.
+
+## ★ DESIGN GATE (playtest-#9, hardened after the crypt arc) — run on the GREYBOX before ANY paint
+Critique the greybox as a GAME SPACE, not a prop list. REJECT (free, before CU spend) unless:
+1. Doors read as doorways (framed/arched, not bare gaps under a floating label).
+2. Structural logic: pillars/piers placed as architecture (screen-space rhythm at the contract
+   camera, not grid symmetry — grid-symmetric pairs CLUMP on screen, measured v3.0).
+3. One focal point with negative space around it; clutter placed with narrative intent.
+4. **Silhouette vocabulary: molded forms, not all boxes** (owner, post-v3.3): round shafts,
+   arched headers, stepped/curved lids. An all-cube greybox paints as "squares, squares, squares".
+5. Freestanding props ≥2-cell footprints (1-cell props do not survive the style pass — measured
+   2/2 drops in the v3 arc; see qa/evidence/crypt-v3/FINDINGS.md).
