@@ -1,49 +1,32 @@
-# FLUX ENDPOINT REGRESSION — root cause (owner asked "figure out why", 2026-07-15)
+# "FLUX ENDPOINT REGRESSION" — CORRECTED POSTMORTEM: it was OUR call, not Scenario (2026-07-15)
 
-## Cause: CONFIRMED Scenario Modal-side, NOT our end / not GEX
-Systematic bisect (5 probes over ~2.5h, all 9 CU):
-- Byte-identical repro of this-morning's WINNING job (job_fxTssiHBxHfkSnf8TtAqjKs5: same depth
-  asset_JvC4tSTYsci5Gv53CiMUgsUi, same prompt from its metadata, seed 12345, cs0.85, 1344x768, 28
-  steps, g3.5, NO loras) → CLAY, not the painterly base it made at 09:38 UTC. Seed determinism BROKEN.
-  ⇒ same inputs, different output = the model DEPLOYMENT changed. Not our params (identical), not the
-  box (this is the Scenario API, GEX is uninvolved).
-- Params bisect (all exonerated): apron prompt sentence removed → still clay; depth-remap reverted →
-  still clay; prompt verbatim vs v3.6 → both clay. Geometry/prompt/remap all innocent.
-- BACKEND SPLIT is the tell: model_bfl-flux-1-dev (subProcessor=Modal) regressed to a pale/clay
-  prior; the interior-LoRA path model_G379 (subProcessor=Replicate) STILL paints painterly on the
-  same depth+seed. ⇒ the Modal deployment of bare flux-1-dev depth-CN changed; Replicate is fine.
+## Final verdict (owner called it; proven byte-identical)
+Scenario's flux-1-dev deployment NEVER changed. A repro with the correct parameter slot reproduces
+the morning's winning v3.5 base BYTE-FOR-BYTE (asset_nLpb == job_Hdt/job_2rD-fixed md5 05a32d314fca,
+1,014,723 bytes). Full determinism. The earlier "Modal regression" sections below the fold were a
+MISDIAGNOSIS — retract the "report to Scenario" recommendation.
 
-## The registration tradeoff (measured)
-| path | backend | beauty | registration (brazier blob-solve vs boxes) |
-|------|---------|--------|--------------------------------------------|
-| bare flux (this AM) | Modal | painterly | 0.05 cell (the gold standard) |
-| bare flux (now) | Modal | CLAY (regressed) | — |
-| flux + LoRA 0.4 | Replicate | painterly | ~1.4-3.7 cell (LoRA loosens CN) |
-| flux + LoRA 0.2 cs0.9 | Replicate | painterly, pale | structure 38px residual, braziers ~1.6 cell |
-| greybox → Gemini | — | BEST (panel 7.5) | ~0.8 cell (Gemini recomposes) |
+## The actual root cause: a parameter-SLOT swap introduced by context compaction
+model_bfl-flux-1-dev has TWO image inputs:
+- `controlImage` → ControlNet conditioning (what the registered pipeline uses)
+- `image`        → img2img reference (strength-based; controlModality/controlStrength IGNORED)
+The morning's winning calls passed `controlImage`. After the mid-session compaction, the call format
+was reconstructed from a summary as `image:` — so EVERY subsequent "flux" draw (tavern cycle-1 bases,
+all five crypt v3.6 draws, every "re-probe") was actually IMG2IMG OVER A GRAYSCALE DEPTH MAP:
+pale/washed palette (the depth map's), loose ~1-cell structure (img2img, no CN), thread artifacts,
+"deterministic failure" (same wrong slot every time). The "byte-identical repro" that indicted the
+backend was never byte-identical — the recorded job inputs differ (winning job: controlImage; failing
+repro: image). LESSON: repro claims must diff the SERVICE-RECORDED inputs, not the intended call.
 
-## Recipe map under the outage
-- BEAUTY PREVIEW / non-walkable: greybox→Gemini (best) or flux+LoRA Replicate.
-- REGISTERED shipping (0.05 cell): needs Modal bare-flux recovery — the original chain. Re-probe.
-- The brazier drift in the LoRA path is partly PROMPT-fighting-depth (prompt places braziers "flanking
-  the doorway"; the depth's brazier cells differ) — a depth-led prompt would tighten it; queued lever.
+## What this invalidates / keeps
+- INVALIDATED: "Modal regression", "registration degraded server-side", the LoRA/Replicate
+  routing theory (the LoRA path differed simply because those calls also mis-slotted differently),
+  and the afternoon's tavern + crypt-v3.6 paint verdicts (all wrong-slot; re-run correctly).
+- KEPT (independent evidence): the tavern cue-mass rule (v5 held 4/4 tables even mis-slotted);
+  molded-kind vocabulary; the greybox→Gemini beauty route (real, panel 7.5, ~0.8-cell recompose);
+  best-of-N selection (the PROMOTED recipe's own precedent, cs0.7 best-of-3).
 
-## RECOMMENDATION
-Worth a note to Scenario: their Modal flux-1-dev depth-CN deployment changed ~2026-07-15 10:00 UTC
-(a byte-identical job that worked at 09:38 now returns a different, flat result). Pipeline is otherwise
-proven; registered-beauty resumes on Modal recovery. Re-probe: bare flux, depth asset
-asset_JvC4tSTYsci5Gv53CiMUgsUi, seed 12345 — painterly return = recovered.
-
-## CORRECTION (2026-07-15 ~12:50): the Modal regression degrades REGISTRATION too, not just style
-Tested: regressed-Modal flux base (reprobe4, edge-recall 0.58 vs depth — LOOKS registered) → Gemini
-structure-lock → frame18 (reg_beauty_best_crypt.png). Result = the BEST-LOOKING crypt of the run
-(oil-painted knotwork columns, carved knight effigy, doorway braziers, warm chiaroscuro) BUT overlay
-shows ~1-cell drift of tomb+columns from boxes_v35. So the Modal regression loosened controlnet
-ADHERENCE (~1 cell), not only the painterly style — Gemini restores beauty but cannot recover the
-lost registration. My mid-experiment "not blocked" was over-optimistic.
-NET (all paths under the Modal outage cluster at ~0.8-1.4 cell):
-- greybox→Gemini: panel 7.5, ~0.8 cell
-- regressed-Modal flux→Gemini: BEST BEAUTY (frame18), ~1.0 cell
-- flux+LoRA Replicate: painterly, ~1.4 cell
-The pixel-perfect 0.05-cell registration REQUIRES Modal flux to recover its former tight CN adherence.
-Watch armed; frame18 is the best available beauty NOW (ship-candidate if ~1-cell drift acceptable).
+## The systemic fix (the owner's structural demand)
+No freehand model calls, ever: qa/paint_room.py is now THE painter — prompts/params come from
+room_recipes.json entries, the API slot is pinned (`controlImage`), every job's recorded input is
+logged next to its output. A fresh/compacted agent runs a COMMAND, not a remembered call shape.
