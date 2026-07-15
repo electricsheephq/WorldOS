@@ -64,10 +64,13 @@ The unified pipeline (geometry → build_room_unified.cs greybox+depth+boxes →
 | crypt | author_crypt_* + v3.5/v3.6 | PASS (0.04-0.05 cell registration) | v3.5 panel 6.2; gemini-restyle 7.5 (drift) |
 | tavern | /tmp/tavern_v2 (molded bar/table) | PASS | flux-blocked (endpoint regression) |
 | throne hall | throne_hall_geometry (dais/throne/banner kinds) | PASS (120 walkable, connected) | gemini-restyle painterly preview banked |
-| town (N-room) | tools/generate_town.py from a DunGen layout | per-room PASS | greybox-plated walk proven |
+| town (N-room) | tools/generate_town.py from a DunGen layout | per-room PASS (4 rooms) | greybox-plated walk proven |
+| shop interior | shop_geometry (counter/shelves/display/stock) | PASS (92 walkable) | NO new kinds — reuses bar/table/barrel/altar/brazier |
 Molded kind vocabulary in build_room_unified.cs: wall_run · stone_pillar · sarcophagus · stone_well ·
-brazier · altar · barrel · table · bar · **dais · throne · banner** (new). A new class needs geometry
-+ (0-2 new molded kinds when its furniture reads wrong as an existing kind).
+brazier · altar · barrel · table · bar · **dais · throne · banner** (new). A new class needs geometry + (0-2 new molded kinds when its furniture reads wrong as an existing
+kind). ★ VALIDATED (shop, class #5): once the vocabulary covers a domain (interiors), further classes
+need GEOMETRY ONLY — the shop reused bar(counter)/table(display)/barrel(stock)/altar(shelf niche)/
+brazier(lantern) with zero new kinds.
 
 ## THE TOWN COMMAND CHAIN (Phase E, proven end-to-end)
 ```
