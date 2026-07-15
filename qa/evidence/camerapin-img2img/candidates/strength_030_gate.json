@@ -1,0 +1,156 @@
+{
+  "plate": "qa/evidence/camerapin-img2img/candidates/strength_030.png",
+  "gate1_recall_vs_input": {
+    "value": 0.9332,
+    "bar": 0.95,
+    "pass": false
+  },
+  "gate2_inverse_coherence": {
+    "input_flagged": [],
+    "input_exempted": [
+      [
+        4,
+        4
+      ],
+      [
+        4,
+        7
+      ],
+      [
+        5,
+        2
+      ],
+      [
+        5,
+        3
+      ],
+      [
+        5,
+        5
+      ],
+      [
+        5,
+        6
+      ],
+      [
+        5,
+        7
+      ],
+      [
+        6,
+        4
+      ],
+      [
+        6,
+        5
+      ],
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ],
+      [
+        8,
+        5
+      ],
+      [
+        9,
+        5
+      ],
+      [
+        10,
+        5
+      ]
+    ],
+    "candidate_flagged": [],
+    "candidate_exempted": [
+      [
+        4,
+        7
+      ],
+      [
+        5,
+        2
+      ],
+      [
+        5,
+        3
+      ],
+      [
+        5,
+        6
+      ],
+      [
+        5,
+        7
+      ],
+      [
+        6,
+        4
+      ],
+      [
+        6,
+        5
+      ],
+      [
+        6,
+        6
+      ],
+      [
+        7,
+        5
+      ],
+      [
+        8,
+        5
+      ],
+      [
+        8,
+        6
+      ],
+      [
+        9,
+        5
+      ],
+      [
+        10,
+        5
+      ]
+    ],
+    "net_new_flagged_total": [],
+    "net_new_inside_occlusion": [],
+    "net_new_on_clear_floor": [],
+    "pass": true
+  },
+  "gate4_visual_pregate": {
+    "verdict": "FLAG",
+    "gates": [
+      {
+        "gate": "G1_frame_lit",
+        "severity": "PASS",
+        "metric": "mean_luminance",
+        "value": 0.2207
+      },
+      {
+        "gate": "G6_luma_staging_law",
+        "severity": "HIGH",
+        "metric": "staging_law_stats",
+        "value": {
+          "near_black_frac": 0.1277,
+          "lit_frac": 0.3585,
+          "median_L": 48.98
+        }
+      },
+      {
+        "gate": "G5_motion_liveness",
+        "severity": "SKIPPED",
+        "metric": "reel",
+        "value": null
+      }
+    ],
+    "pass": false
+  }
+}
