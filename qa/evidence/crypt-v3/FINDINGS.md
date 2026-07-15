@@ -56,3 +56,15 @@ breathing ring audited in code (urn adjacency = intentional grave goods), bones 
 crypt_v35_SPACED_CANDIDATE.png: corners continuous, columns clean, chamber breathes. OPEN: bones
 still painted on the apron (flux prior, 3/3 — root-cause queued in PROCEDURAL-SCORECARD.md), right
 portal paints weaker than the gate. Scorecard row recorded. 29 CU; run 246/300.
+
+### v3.5 alignment measurement (axis 5) — MEASURED, not eyeballed
+Numeric solve (brazier-flame blobs vs projected bowl centers at the sidecar ortho 11.7851):
+NE gate brazier err 3px (0.05 cells) | wall torch err 3px (0.04 cells) | greybox render itself
+fits ortho 11.7050 +/- blob bias == the stamp (2.1px residual) — the C# camera, the JSON sidecar,
+and the Python projection agree; UNIFY-THE-FRAMES registration holds to the PIXEL on the grown room.
+Defects: SW gate brazier painted ~106px (~1.6 cells) SE of its volume (the recurring SW-corner
+weak-paint class — 3rd sighting; root-cause queued: SW corner is the darkest conditioning region);
+urn (10,7) painted as a burning fire pot (kind drift, position held). Scorecard axis 5 = 8.
+LESSON (instrument): floor apron-skirt boxes in a whole-scene overlay READ as global misalignment —
+always confirm with the numeric blob solve before diagnosing camera drift (my first eyeball wrongly
+suspected a client cameraPin override; the fit refuted it).

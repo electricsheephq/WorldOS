@@ -12,7 +12,7 @@ control (axes 6-8). A candidate ships only at ≥7 on every axis.
 | 2 | Architectural logic (rhythm, focal point, negative space) | design gate | 8 | 9 |
 | 3 | Silhouette vocabulary (molded, no box salad) | design gate | 8 | 8 |
 | 4 | Spacing/breathing room (≥1 cell around freestanding masses) | geometry audit (scripted) | 5 | 9 |
-| 5 | Alignment (paint-vs-volumes overlay; masses in-volume) | overlay + coherence | 8 | pending |
+| 5 | Alignment (paint-vs-volumes overlay; masses in-volume) | overlay + coherence | 8 | 8 (2 props 0.05c; SW brazier 1.6c) |
 | 6 | Corner/seam integrity (walls meet cleanly) | paint eyeball | 5 | 9 |
 | 7 | Containment (nothing painted outside playable; no invented objects) | overlay eyeball | 6 | 6 (bones on apron — flux prior, open defect) |
 | 8 | PoE2-family beauty (vs real-art control) | blind panel | pending | pending |
