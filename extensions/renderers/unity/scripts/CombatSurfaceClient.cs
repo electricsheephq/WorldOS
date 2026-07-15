@@ -325,6 +325,7 @@ public class CombatSurfaceClient : MonoBehaviour
                        public string boxesPath; }
     // world-space occluder boxes of the ACTIVE plate ({center,size} rows, kind!=floor), null => legacy path.
     System.Collections.Generic.List<float[]> _plateBoxes;
+    string _plateBoxesLocId = "\0";  // the location _plateBoxes reflects (sentinel => unset); guards the stale-leak (#1575)
     bool _truthOverlay = System.Environment.GetEnvironmentVariable("WORLDOS_TRUTH_OVERLAY") == "1"; // G-key engine-truth overlay (playtest-#9 instrument); env=1 starts ON (QA/proof runs)
     Material _overlayMat;                                     // GL lines material (Hidden/Internal-Colored)
 
@@ -708,7 +709,13 @@ public class CombatSurfaceClient : MonoBehaviour
         // UNIFY-THE-FRAMES: the plate-box sidecar takes priority BEFORE the legacy empty-set early-out —
         // a room can have zero legacy occluder props yet a full box sidecar (walls always ship in it);
         // gating the sidecar behind _occRaw would silently drop every wall volume (codex review, #1575).
-        if ((_occRaw == null || _occRaw.Count == 0) && (_plateBoxes == null || _plateBoxes.Count == 0))
+        // STALE-LEAK GUARD (adversarial-invariant-verify, #1575): _plateBoxes is only cleared inside
+        // ApplyPlate, so entering a room with no manifest entry (or a missing plate file) leaves the
+        // PREVIOUS room's boxes live — RebuildOccluders would then place the old room's walls at the old
+        // room's world coords in the new room and discard the new room's real footprint occluders. Only
+        // trust the sidecar when it was applied FOR the current location (_plateLocId == _locId).
+        bool boxesForThisRoom = _plateBoxes != null && _plateBoxes.Count > 0 && _plateBoxesLocId == _locId;
+        if ((_occRaw == null || _occRaw.Count == 0) && !boxesForThisRoom)
         { Debug.Log("[CSC] occluders: 0 (cleared)"); return; }
 
         var mat = EnsureOccluderMaterial();
@@ -718,7 +725,7 @@ public class CombatSurfaceClient : MonoBehaviour
         // identical volumes the plate's depth conditioning was rendered from, so runtime masking and
         // painted geometry cannot disagree (walls included, which the footprint path never covered —
         // the playtest-#9 walk-through-wall class). Legacy footprint path below is untouched.
-        if (_plateBoxes != null && _plateBoxes.Count > 0)
+        if (boxesForThisRoom)
         {
             int bn = 0;
             foreach (var b in _plateBoxes)
@@ -2158,7 +2165,10 @@ public class CombatSurfaceClient : MonoBehaviour
     [System.Serializable] class QaClick { public int c = -1; public int r = -1; public float vx = float.NaN; public float vy = float.NaN; }
     struct QaCmd { public bool cell; public int c; public int r; public float vx; public float vy; }
     volatile int _qaShot;                                     // /shot countdown -> main-thread framebuffer capture
-    static readonly string _qaShotPath = System.IO.Path.Combine(Application.persistentDataPath, "wos_shot.png");
+    // NOT a field initializer: Application.persistentDataPath throws if read during type/MonoBehaviour
+    // construction (adversarial-invariant-verify, #1575). Assigned once in StartQaInput (main thread)
+    // BEFORE the listener thread starts, so the off-thread responder reads an already-set value.
+    string _qaShotPath;
     ConcurrentQueue<QaCmd> _qaClicks;
     HttpListener _qaListener;
     Thread _qaThread;
@@ -2178,6 +2188,8 @@ public class CombatSurfaceClient : MonoBehaviour
         int port = 8971;
         string p = System.Environment.GetEnvironmentVariable("WORLDOS_QA_INPUT_PORT");
         if (!string.IsNullOrEmpty(p) && int.TryParse(p, out int pv) && pv > 0) port = pv;
+        // main thread — safe to read persistentDataPath here (never in a field initializer, #1575)
+        _qaShotPath = System.IO.Path.Combine(Application.persistentDataPath, "wos_shot.png");
         _qaClicks = new ConcurrentQueue<QaCmd>();
         try
         {
@@ -3279,11 +3291,24 @@ public class CombatSurfaceClient : MonoBehaviour
         // swap; RebuildOccluders prefers these over per-cell footprint proxies. Reset the occluder signature
         // so the next ApplyJson rebuild fires even when the surface's occluder set is unchanged.
         _plateBoxes = null;
-        if (!string.IsNullOrEmpty(entry.boxesPath) && !System.IO.Path.IsPathRooted(entry.boxesPath))
+        _plateBoxesLocId = _locId;  // whatever the load yields (boxes or none), it reflects THIS room
+        if (!string.IsNullOrEmpty(entry.boxesPath))
         {
+            // SECURITY (adversarial-invariant-verify, #1575): a manifest is untrusted data. IsPathRooted
+            // only rejects ABSOLUTE paths — it does NOT stop `..` traversal, and Path.Combine does not
+            // normalize, so `"../../../etc/passwd"` would escape StreamingAssets. Reject rooted paths AND
+            // any path that, once resolved, does not stay under streamingAssetsPath. The WHOLE block is
+            // also wrapped in a broad catch so a malformed value (invalid path chars -> ArgumentException,
+            // which the old narrow filter missed) can never abort SwapPlateCo and wedge _plateSwapping.
             try
             {
-                string bpath = System.IO.Path.Combine(Application.streamingAssetsPath, entry.boxesPath);
+                string root = System.IO.Path.GetFullPath(Application.streamingAssetsPath);
+                string bpath = System.IO.Path.GetFullPath(System.IO.Path.Combine(root, entry.boxesPath));
+                bool contained = bpath.StartsWith(root + System.IO.Path.DirectorySeparatorChar,
+                                                  System.StringComparison.Ordinal) || bpath == root;
+                if (System.IO.Path.IsPathRooted(entry.boxesPath) || !contained)
+                    throw new System.Security.SecurityException(
+                        "plate boxes path escapes StreamingAssets: " + entry.boxesPath);
                 if (System.IO.File.Exists(bpath))
                 {
                     var broot = Json.Parse(System.IO.File.ReadAllText(bpath)) as System.Collections.Generic.Dictionary<string, object>;
@@ -3308,14 +3333,13 @@ public class CombatSurfaceClient : MonoBehaviour
                         Debug.Log("[CSC] plate boxes loaded: " + _plateBoxes.Count + " occluder volumes (" + entry.boxesPath + ")");
                     }
                 }
-                else Debug.LogWarning("[CSC] plate boxes file missing: " + bpath + " (falling back to footprint proxies)");
+                else Debug.LogWarning("[CSC] plate boxes file missing (falling back to footprint proxies)");
             }
-            catch (System.Exception e) when (e is System.IO.IOException || e is System.FormatException
-                                          || e is System.OverflowException || e is System.InvalidCastException)
-            { Debug.LogWarning("[CSC] plate boxes load: " + e.Message); _plateBoxes = null; }
+            // Broad catch on purpose: ANY sidecar failure (traversal, invalid chars, IO, malformed JSON)
+            // degrades to the footprint proxies and MUST NOT throw out of the swap coroutine.
+            catch (System.Exception e)
+            { Debug.LogWarning("[CSC] plate boxes load rejected/failed: " + e.Message); _plateBoxes = null; }
         }
-        else if (!string.IsNullOrEmpty(entry.boxesPath))
-            Debug.LogWarning("[CSC] plate boxes path is rooted — rejected (StreamingAssets-relative only): " + entry.boxesPath);
         // rebuild NOW (not next poll): the swap happens behind the black cover; the proxies must match
         // the revealed plate immediately, never one poll late (codex review on #1575).
         _occSigBuilt = null;
