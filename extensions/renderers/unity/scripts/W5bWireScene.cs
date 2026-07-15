@@ -45,8 +45,12 @@ public static class W5bWireScene
                 if (m != null && m.shader != occShader) { m.shader = occShader; occFixed++; }
         }
 
-        // 2) Always-Included Shaders
+        // 2) Always-Included Shaders (occluder + #1545 walk-behind silhouette). Both are resolved at runtime
+        // via Shader.Find and referenced by no asset, so without this they'd be stripped from the player build.
         bool addedAlways = EnsureAlwaysIncluded(occShader);
+        var silShader = Shader.Find("WorldOS/ActorSilhouette");
+        if (silShader != null) { if (EnsureAlwaysIncluded(silShader)) addedAlways = true; }
+        else Debug.LogWarning("[W5b] WorldOS/ActorSilhouette not found (import Assets/Shaders/ActorSilhouette.shader) — walk-behind mask will no-op in the player");
 
         // 3) attach CombatSurfaceClient (idempotent)
         var host = GameObject.Find("CombatSurfaceClient");
