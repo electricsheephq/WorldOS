@@ -181,8 +181,10 @@ if(props!=null) foreach(var po in props){ var p=po as System.Collections.Generic
     // ONE CONTINUOUS box spanning the run at wallH (never per-cell crenellation, #1539).
     float bx=(minX+maxX)/2f, bz=(minZ+maxZ)/2f;
     float sx=(maxX-minX)+2.0f, sz=(maxZ-minZ)+2.0f;
-    // thin the run along its short axis so doorway gaps read (a run is 1 cell thick).
-    if(sx>sz) sz=Mathf.Min(sz,1.2f); else sx=Mathf.Min(sx,1.2f);
+    // thin the run along its short axis so doorway gaps read (a run is 1 cell thick);
+    // EXTEND 0.6 past each end along the long axis so perpendicular runs OVERLAP at corners
+    // (owner v3.4 punch list: "the corners of the walls don't connect").
+    if(sx>sz){ sz=Mathf.Min(sz,1.2f); sx+=1.2f; } else { sx=Mathf.Min(sx,1.2f); sz+=1.2f; }
     box(pid,"wall_run", new Vector3(bx,wallH/2f,bz), new Vector3(sx,wallH,sz), new Color(0.5f,0.49f,0.48f));
     nWallRuns++;
     continue;
@@ -194,10 +196,12 @@ if(props!=null) foreach(var po in props){ var p=po as System.Collections.Generic
     float exX=(maxX-minX)/2f, exZ=(maxZ-minZ)/2f;
     if(kind.Contains("pillar")||kind.Contains("column")){
       // plinth + ELLIPTICAL shaft + capital — a molded pier, not a slab.
-      float hx=exX+1.1f, hz=exZ+1.1f;
-      box(pid+"_plinth",kind,new Vector3(bx0,0.35f,bz0),new Vector3(hx*2f,0.7f,hz*2f),new Color(0.60f,0.59f,0.56f));
-      cyl(pid+"_shaft",kind,new Vector3(bx0,0.7f,bz0),hx*0.72f,hz*0.72f,6.0f,new Color(0.64f,0.63f,0.60f));
-      box(pid+"_capital",kind,new Vector3(bx0,7.05f,bz0),new Vector3(hx*2f,0.7f,hz*2f),new Color(0.60f,0.59f,0.56f));
+      // SLIM plinth + NO slab capital (owner v3.4: "block with a pillar in the block" — the fat
+      // plinth/capital slabs read as separate blocks). Low chamfer base + a thin ring collar top.
+      float hx=exX+1.0f, hz=exZ+1.0f;
+      box(pid+"_plinth",kind,new Vector3(bx0,0.14f,bz0),new Vector3(hx*1.7f,0.28f,hz*1.7f),new Color(0.60f,0.59f,0.56f));
+      cyl(pid+"_shaft",kind,new Vector3(bx0,0.28f,bz0),hx*0.78f,hz*0.78f,6.8f,new Color(0.64f,0.63f,0.60f));
+      cyl(pid+"_collar",kind,new Vector3(bx0,6.85f,bz0),hx*0.92f,hz*0.92f,0.45f,new Color(0.60f,0.59f,0.56f));
       np++; continue;
     }
     if(kind.Contains("sarcophagus")){

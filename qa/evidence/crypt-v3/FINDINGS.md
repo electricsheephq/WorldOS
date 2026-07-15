@@ -48,3 +48,11 @@ collision cells); only the render vocabulary changed. Overlay (styled_v34_overla
 hold; one soft spot — the SW column paints weakly behind its NW neighbor at this camera (watch in
 panel). Cost: 29 CU (base 9 @0.85 + Gemini 20). Arc total 116 CU; run 217/300.
 NEXT GATES unchanged: sweep pairing + neutral panel vs camp bar + in-player truth overlay.
+
+## v3.5 — OWNER PUNCH LIST (2026-07-15 ~17:00): corners+capitals+spacing FIXED
+Builder: wall runs extended 0.6 past ends (corners now OVERLAP — seams gone); slim chamfer plinth +
+thin ring collar replaces the fat plinth/capital slabs. Geometry: 16x12 (was 14x11), >=1-cell
+breathing ring audited in code (urn adjacency = intentional grave goods), bones consolidated inside.
+crypt_v35_SPACED_CANDIDATE.png: corners continuous, columns clean, chamber breathes. OPEN: bones
+still painted on the apron (flux prior, 3/3 — root-cause queued in PROCEDURAL-SCORECARD.md), right
+portal paints weaker than the gate. Scorecard row recorded. 29 CU; run 246/300.
