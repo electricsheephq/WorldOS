@@ -1,0 +1,75 @@
+{
+ "town_id": "oldgate",
+ "rooms": [
+  {
+   "room": "room_0",
+   "location_id": "oldgate_room_0",
+   "geometry": "oldgate_room_0_geometry.json",
+   "doors": [
+    {
+     "cell": [
+      10,
+      6
+     ],
+     "to": "oldgate_room_1"
+    }
+   ]
+  },
+  {
+   "room": "room_1",
+   "location_id": "oldgate_room_1",
+   "geometry": "oldgate_room_1_geometry.json",
+   "doors": [
+    {
+     "cell": [
+      0,
+      3
+     ],
+     "to": "oldgate_room_0"
+    },
+    {
+     "cell": [
+      10,
+      3
+     ],
+     "to": "oldgate_room_2"
+    }
+   ]
+  },
+  {
+   "room": "room_2",
+   "location_id": "oldgate_room_2",
+   "geometry": "oldgate_room_2_geometry.json",
+   "doors": [
+    {
+     "cell": [
+      0,
+      6
+     ],
+     "to": "oldgate_room_1"
+    },
+    {
+     "cell": [
+      5,
+      11
+     ],
+     "to": "oldgate_room_3"
+    }
+   ]
+  },
+  {
+   "room": "room_3",
+   "location_id": "oldgate_room_3",
+   "geometry": "oldgate_room_3_geometry.json",
+   "doors": [
+    {
+     "cell": [
+      5,
+      1
+     ],
+     "to": "oldgate_room_2"
+    }
+   ]
+  }
+ ]
+}

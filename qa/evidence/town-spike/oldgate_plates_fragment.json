@@ -1,0 +1,32 @@
+{
+ "plates": {
+  "oldgate_room_0": {
+   "plate": "plates/oldgate_room_0.png",
+   "cameraPin": {
+    "ortho": 10.5224
+   },
+   "boxes": "boxes/oldgate_room_0_boxes.json"
+  },
+  "oldgate_room_1": {
+   "plate": "plates/oldgate_room_1.png",
+   "cameraPin": {
+    "ortho": 7.997
+   },
+   "boxes": "boxes/oldgate_room_1_boxes.json"
+  },
+  "oldgate_room_2": {
+   "plate": "plates/oldgate_room_2.png",
+   "cameraPin": {
+    "ortho": 10.5224
+   },
+   "boxes": "boxes/oldgate_room_2_boxes.json"
+  },
+  "oldgate_room_3": {
+   "plate": "plates/oldgate_room_3.png",
+   "cameraPin": {
+    "ortho": 10.5224
+   },
+   "boxes": "boxes/oldgate_room_3_boxes.json"
+  }
+ }
+}
