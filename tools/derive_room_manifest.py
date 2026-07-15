@@ -39,7 +39,7 @@ if str(_QA_DIR) not in sys.path:
     sys.path.insert(0, str(_QA_DIR))
 
 from greybox_render_headless import (  # noqa: E402
-    cell_to_world, world_to_screen, _spec_for_kind,
+    ORTHO_SIZE, _fit_ortho_size, cell_to_world, world_to_screen, _spec_for_kind,
 )
 from check_plate_drift import project_cell_bbox  # noqa: E402
 
@@ -51,9 +51,13 @@ _CAMERA = {
 
 
 # ── geometry: a prop's projected box silhouette (footprint extruded to the kind's height) ────────────
-def _prop_box_corners(footprint: list, kind: str, cols: int, rows: int) -> list:
+def _prop_box_corners(footprint: list, kind: str, cols: int, rows: int,
+                      *, ortho: Optional[float] = None) -> list:
     """The 8 world corners of the prop's greybox box (floor y=0 -> y=height), reproducing
-    greybox_render_headless's per-prop box (centre + padded half-extent + the kind's height)."""
+    greybox_render_headless's per-prop box (centre + padded half-extent + the kind's height). `ortho`
+    None ⇒ the fixed contract rig; a camera_fit room passes its fitted ortho so the projected silhouette
+    matches the plate it was painted at (M-ALIGN)."""
+    o = ORTHO_SIZE if ortho is None else ortho
     height, half, _ = _spec_for_kind(kind)
     xs_w = [cell_to_world(c, r, cols, rows)[0] for (c, r) in footprint]
     zs_w = [cell_to_world(c, r, cols, rows)[2] for (c, r) in footprint]
@@ -64,7 +68,7 @@ def _prop_box_corners(footprint: list, kind: str, cols: int, rows: int) -> list:
     corners = []
     for (dx, dz) in ((-hh, -hh), (hh, -hh), (hh, hh), (-hh, hh)):
         for wy in (0.0, height):
-            corners.append(world_to_screen(cx + dx, wy, cz + dz))
+            corners.append(world_to_screen(cx + dx, wy, cz + dz, o))
     return corners
 
 
@@ -104,14 +108,19 @@ def _point_in_convex(pt: tuple, hull: list) -> bool:
     return True
 
 
-def derive_occlusion_cells(footprint: list, kind: str, cols: int, rows: int) -> list:
+def derive_occlusion_cells(footprint: list, kind: str, cols: int, rows: int,
+                           *, ortho: Optional[float] = None) -> list:
     """Every grid cell whose grounded (floor-centre) projection falls under the prop's projected box
-    silhouette — the point-in-polygon derivation (#1505, generalised). Always includes the footprint."""
-    hull = _convex_hull(_prop_box_corners(footprint, kind, cols, rows))
+    silhouette — the point-in-polygon derivation (#1505, generalised). Always includes the footprint.
+    `ortho` None ⇒ the fixed rig (byte-identical for every non-fit room); a camera_fit room passes its
+    fitted ortho so both the prop's projected hull AND the grid cell-centre projections use the SAME
+    scale the plate was painted at (M-ALIGN)."""
+    o = ORTHO_SIZE if ortho is None else ortho
+    hull = _convex_hull(_prop_box_corners(footprint, kind, cols, rows, ortho=o))
     occ = set(tuple(c) for c in footprint)
     for r in range(rows):
         for c in range(cols):
-            sp = world_to_screen(*cell_to_world(c, r, cols, rows))
+            sp = world_to_screen(*cell_to_world(c, r, cols, rows), o)
             if _point_in_convex(sp, hull):
                 occ.add((c, r))
     return sorted([list(c) for c in occ], key=lambda cr: (cr[1], cr[0]))
@@ -148,6 +157,13 @@ def derive_manifest(geometry: dict, *, room: str, recipe_key: str,
                     source_geometry: Optional[str] = None) -> dict:
     source_geometry = _repo_relative(source_geometry)
     cols, rows = int(geometry["cols"]), int(geometry["rows"])
+    # M-ALIGN camera_fit-awareness: a camera_fit room is PAINTED at its own fitted ortho (crypt_fresh
+    # @10.5224, tavern_fit2 @9.2597), so every screen-space derivation here (occlusion silhouettes +
+    # screen_bboxes) must project at that SAME ortho, and the value is STAMPED into the manifest as the
+    # single source of truth for the QA consumers (check_grid_paint_coherence, journey_visual_sweep,
+    # check_plate_drift). A non-fit room stamps neither field and derives byte-identically to before.
+    camera_fit = bool(geometry.get("camera_fit", False))
+    room_ortho = _fit_ortho_size(cols, rows) if camera_fit else None
     walls = geometry.get("walls", [])
     props_in = geometry.get("props", [])
     prop_entries = []
@@ -159,24 +175,33 @@ def derive_manifest(geometry: dict, *, room: str, recipe_key: str,
         footprints.append(footprint)
         kind = p.get("kind", "prop")
         pid = str(p.get("id") or f"{kind}_{i}")
-        occlusion = derive_occlusion_cells(footprint, kind, cols, rows)
-        bbox = [round(v, 2) for v in project_cell_bbox(footprint, cols, rows)]
+        occlusion = derive_occlusion_cells(footprint, kind, cols, rows, ortho=room_ortho)
+        bbox = [round(v, 2) for v in project_cell_bbox(footprint, cols, rows, ortho=room_ortho)]
         prop_entries.append({"id": pid, "kind": kind, "footprint": footprint,
                              "occlusion": occlusion, "cells": footprint, "screen_bbox": bbox})
     walkable = derive_walkable(cols, rows, walls, footprints,
                                bool(geometry.get("cell_default_walkable", True)))
-    return {
+    camera = dict(_CAMERA)
+    if camera_fit:
+        camera["ortho_size"] = round(float(room_ortho), 4)
+        camera["camera_fit"] = True
+    manifest = {
         "manifest_version": 1,
         "room": room,
         "recipe_key": recipe_key,
         "derivation": "derived",
         "source_geometry": source_geometry,
         "grid": {"cols": cols, "rows": rows},
-        "camera": _CAMERA,
+        "camera": camera,
         "fingerprint": {"grid": 20, "metric": "mean-sub L2-normalised luma NCC"},
         "props": prop_entries,
         "walkable": walkable,
     }
+    if camera_fit:
+        # Top-level stamp the QA consumers read directly (single source of truth for the room ortho).
+        manifest["camera_fit"] = True
+        manifest["ortho"] = round(float(room_ortho), 4)
+    return manifest
 
 
 def main(argv=None) -> int:

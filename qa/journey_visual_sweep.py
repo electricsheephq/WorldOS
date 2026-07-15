@@ -102,7 +102,7 @@ from journey_click_sweep import (  # noqa: E402
 )
 # The contract camera + edge threshold — ONE definition shared with the greybox/coherence lane so this
 # instrument can never disagree with the rig the plates are registered to.
-from greybox_render_headless import PX_W, PX_H, cell_to_world, world_to_screen  # noqa: E402
+from greybox_render_headless import ORTHO_SIZE, PX_W, PX_H, cell_to_world, world_to_screen  # noqa: E402
 from plate_overlays import edge_mask  # noqa: E402  (shared FIND_EDGES->binary primitive)
 
 # tools/derive_room_manifest.derive_occlusion_cells is the ON-THE-FLY occlusion fallback (SWEEP-PRECISION,
@@ -192,34 +192,39 @@ def load_plate_edges(plate_path: str | Path, thr: int = IC_EDGE_THR) -> Image.Im
 
 
 # ── PURE geometry: the contract camera projected to floor quads (unit-tested, no engine/HTTP) ───────
-def feet_screen(c: int, r: int, cols: int, rows: int) -> tuple:
+def feet_screen(c: int, r: int, cols: int, rows: int, *, ortho: Optional[float] = None) -> tuple:
     """Screen (sx, sy) of the hero's FEET for engine cell (c, r): the cell centre at floor y=0, through
-    the contract camera. This is where a correctly-registered client draws the actor's feet."""
+    the contract camera. This is where a correctly-registered client draws the actor's feet. `ortho`
+    None ⇒ the fixed rig; a camera_fit room passes its stamped ortho (M-ALIGN)."""
+    o = ORTHO_SIZE if ortho is None else ortho
     wx, wy, wz = cell_to_world(c, r, cols, rows)
-    return world_to_screen(wx, wy, wz)
+    return world_to_screen(wx, wy, wz, o)
 
 
-def cell_floor_quad(c: int, r: int, cols: int, rows: int) -> list:
+def cell_floor_quad(c: int, r: int, cols: int, rows: int, *, ortho: Optional[float] = None) -> list:
     """The 4 screen corners of cell (c, r)'s floor quad (its 2.0-world-unit square at y=0), in winding
     order. A cell centre is at cell_to_world(c,r); the square spans +/-1.0 world unit in x and z (the
-    isotropic 2.0 cell). Convex under the iso projection."""
+    isotropic 2.0 cell). Convex under the iso projection. `ortho` None ⇒ the fixed rig (M-ALIGN)."""
+    o = ORTHO_SIZE if ortho is None else ortho
     cx, _, cz = cell_to_world(c, r, cols, rows)
     corners_world = [(cx - 1.0, 0.0, cz - 1.0), (cx + 1.0, 0.0, cz - 1.0),
                      (cx + 1.0, 0.0, cz + 1.0), (cx - 1.0, 0.0, cz + 1.0)]
-    return [world_to_screen(*w) for w in corners_world]
+    return [world_to_screen(*w, o) for w in corners_world]
 
 
 def cell_silhouette_quad(c: int, r: int, cols: int, rows: int,
-                         up0: float = 0.3, up1: float = 2.2) -> list:
+                         up0: float = 0.3, up1: float = 2.2, *, ortho: Optional[float] = None) -> list:
     """The screen quad of a cell's STANDING-SILHOUETTE band — its footprint square lifted between `up0`
     and `up1` world units of height. Under the iso projection an object standing ON a cell paints its
     body ABOVE that cell's floor quad (up-and-back); sampling this band (not just the y=0 floor quad,
     which on a dense painterly plate is dominated by plank/stone grain) is where invented FURNITURE
-    actually shows as hard edges. Convex; corners in winding order."""
+    actually shows as hard edges. Convex; corners in winding order. `ortho` None ⇒ the fixed rig
+    (M-ALIGN: a camera_fit room samples its band at its own paint scale)."""
+    o = ORTHO_SIZE if ortho is None else ortho
     cx, _, cz = cell_to_world(c, r, cols, rows)
     corners_world = [(cx - 1.0, up0, cz - 1.0), (cx + 1.0, up0, cz - 1.0),
                      (cx + 1.0, up1, cz + 1.0), (cx - 1.0, up1, cz + 1.0)]
-    return [world_to_screen(*w) for w in corners_world]
+    return [world_to_screen(*w, o) for w in corners_world]
 
 
 def point_in_quad(pt: tuple, quad: list) -> bool:
@@ -307,8 +312,35 @@ def load_static_manifests(manifests_dir: Path = _ROOM_MANIFESTS_DIR, *, refresh:
     return out
 
 
+def resolve_room_manifest(loc_id: str, registry: dict,
+                          manifests: Optional[list] = None) -> Optional[dict]:
+    """Identify the ONE committed manifest that IS this live room — the canonical one whose plate the
+    client renders — so the sweep reads the room's own stamped ortho and prefers its own occlusion.
+
+    The plate registry (plates_manifest.json) maps the live ``location.id`` -> the canonical plate
+    basename (e.g. crypt -> crypt_fresh_v1.png); the canonical manifest is the one whose ``room`` is the
+    LONGEST room-name prefix of that plate stem (crypt_fresh_v1 -> room ``crypt_fresh``, disambiguating
+    it from the stale ``crypt_dense_v1`` manifest that shares recipe_key ``crypt`` and sorts first). None
+    when the room isn't plate-registered or no manifest matches — the caller then falls back to the fixed
+    ortho + the pre-existing across-all-manifests occlusion scan (M-ALIGN; fixes the first-match-wins
+    collision measured on the crypt pillar)."""
+    manifests = load_static_manifests() if manifests is None else manifests
+    basename = registry.get(loc_id)
+    if not basename:
+        return None
+    stem = Path(basename).stem
+    best = None
+    best_len = -1
+    for m in manifests:
+        room = str(m.get("room", ""))
+        if room and stem.startswith(room) and len(room) > best_len:
+            best, best_len = m, len(room)
+    return best
+
+
 def resolve_occlusion_cells(live_props: list, cols: int, rows: int, *,
-                            manifests: Optional[list] = None) -> tuple:
+                            manifests: Optional[list] = None, preferred: Optional[dict] = None,
+                            ortho: Optional[float] = None) -> tuple:
     """For every LIVE prop ({id, footprint} off manifest_from_surface), resolve its authored OCCLUSION
     cell set — PER PROP, never per room (a room's props can straddle manifest generations: the tavern
     room today authors 14 props but only 6 of them predate the fit2 density-law upgrade, #1557/#1559):
@@ -324,11 +356,19 @@ def resolve_occlusion_cells(live_props: list, cols: int, rows: int, *,
          Never silently dropped — recorded in `notes` so a cold room (no manifest resolvable at all) is
          still visible in the report, not silently unimproved.
 
+    `preferred` (M-ALIGN collision fix): the live room's OWN manifest (resolve_room_manifest). Its props
+    are searched FIRST for the id+footprint match, so a prop that appears identically in several manifests
+    (e.g. a pillar shared by crypt_fresh and the stale crypt_dense_v1) resolves from THIS room's manifest,
+    not whichever file happens to sort first. `ortho` (None ⇒ fixed rig) is threaded into the DERIVE path
+    so an on-the-fly occlusion for a camera_fit room is computed at its own paint scale.
+
     Returns (occlusion_cells, notes): occlusion_cells is a set of (c, r) tuples (the union over every
     prop — always a superset of that prop's own footprint, though the footprint is separately excluded by
     inverse_coherence_flags already); notes is one string per prop describing how it resolved, surfaced
     in the room report so exemption stays auditable, never a silent mask."""
     manifests = load_static_manifests() if manifests is None else manifests
+    # Search the room's own manifest first (collision fix), then every other loaded manifest.
+    ordered = ([preferred] + [m for m in manifests if m is not preferred]) if preferred else manifests
     occlusion_cells: set = set()
     notes: list = []
     for prop in live_props:
@@ -337,7 +377,7 @@ def resolve_occlusion_cells(live_props: list, cols: int, rows: int, *,
         if not footprint:
             continue
         match = None
-        for m in manifests:
+        for m in ordered:
             for sp in m.get("props", []):
                 if str(sp.get("id", "?")) != pid:
                     continue
@@ -359,7 +399,7 @@ def resolve_occlusion_cells(live_props: list, cols: int, rows: int, *,
             continue
         kind = sp.get("kind")
         if kind:
-            derived = derive_occlusion_cells([list(c) for c in footprint], kind, cols, rows)
+            derived = derive_occlusion_cells([list(c) for c in footprint], kind, cols, rows, ortho=ortho)
             occlusion_cells.update((int(c), int(r)) for (c, r) in derived)
             notes.append(f"{pid}: occlusion DERIVED (kind={kind}, matched manifest has no `occlusion` "
                         f"field) ({len(derived)} cells)")
@@ -411,7 +451,8 @@ def _robust_z(v: float, med: float, mad: float) -> float:
 def inverse_coherence_flags(edge_img: Image.Image, walkable: list, prop_cells: set,
                             cols: int, rows: int, room: str = "?", *,
                             z_cut: float = Z_CUT, abs_floor: float = ABS_FLOOR,
-                            occlusion_cells: Optional[set] = None) -> InverseCoherenceResult:
+                            occlusion_cells: Optional[set] = None,
+                            ortho: Optional[float] = None) -> InverseCoherenceResult:
     """Flag every authored-WALKABLE, non-prop cell whose hard-edge STANDING-SILHOUETTE density is a robust
     outlier above the room's own floor baseline (robust-z >= z_cut AND density >= abs_floor) — i.e. the
     plate painted an object where the grid authored clear floor (invented furniture; the tavern-benches /
@@ -435,7 +476,7 @@ def inverse_coherence_flags(edge_img: Image.Image, walkable: list, prop_cells: s
     cells = [(int(c), int(r)) for (c, r) in walkable if (int(c), int(r)) not in prop_cells]
     densities: dict = {}
     for (c, r) in cells:
-        densities[(c, r)] = cell_edge_density(edge_img, cell_silhouette_quad(c, r, cols, rows))
+        densities[(c, r)] = cell_edge_density(edge_img, cell_silhouette_quad(c, r, cols, rows, ortho=ortho))
     vals = list(densities.values())
     if not vals:
         return InverseCoherenceResult(room, 0.0, 0.0, abs_floor, 0)
@@ -486,7 +527,8 @@ def reciprocal_door_check(arrival_cell: Optional[tuple], dest_doors: list, origi
 
 
 # ── Check 1: hero position ──────────────────────────────────────────────────────────────────────────
-def hero_feet_check(hero_cell: Optional[tuple], cols: int, rows: int, flagged_cells: set) -> dict:
+def hero_feet_check(hero_cell: Optional[tuple], cols: int, rows: int, flagged_cells: set,
+                    *, ortho: Optional[float] = None) -> dict:
     """Feet-in-quad (the contract camera projects the cell centre inside the cell's OWN floor quad — a
     registration-regression guard on the projection basis) AND not-on-a-flagged-cell (the hero must not
     stand on a cell the inverse-coherence pass flagged as a painted object: the 'actor inside the coffin'
@@ -494,8 +536,8 @@ def hero_feet_check(hero_cell: Optional[tuple], cols: int, rows: int, flagged_ce
     if hero_cell is None:
         return {"pass": False, "reason": "no hero token on the surface (party not projected)"}
     c, r = int(hero_cell[0]), int(hero_cell[1])
-    quad = cell_floor_quad(c, r, cols, rows)
-    feet = feet_screen(c, r, cols, rows)
+    quad = cell_floor_quad(c, r, cols, rows, ortho=ortho)
+    feet = feet_screen(c, r, cols, rows, ortho=ortho)
     in_quad = point_in_quad(feet, quad)
     on_flagged = (c, r) in flagged_cells
     passed = in_quad and not on_flagged
@@ -518,7 +560,8 @@ def composite_frame(plate_path: Optional[str | Path], hero_cell: Optional[tuple]
                     flagged_cells: list, doors: list, out_path: Path, *,
                     label: str = "", checks: Optional[list] = None,
                     reciprocal_target: Optional[list] = None,
-                    exempted_cells: Optional[list] = None) -> None:
+                    exempted_cells: Optional[list] = None,
+                    ortho: Optional[float] = None) -> None:
     """Render the human evidence frame: the registered plate (or a grey placeholder if box-only) + the
     hero marker at its projected feet + the hero cell's floor quad (green pass / red on-flagged) + every
     inverse-coherence flagged cell (orange) + every occlusion-EXEMPTED cell (dashed olive-green — would
@@ -537,24 +580,24 @@ def composite_frame(plate_path: Optional[str | Path], hero_cell: Optional[tuple]
     for d in doors or []:
         cell = d.get("cell") if isinstance(d, dict) else d
         if cell:
-            _draw_quad(draw, cell_floor_quad(int(cell[0]), int(cell[1]), cols, rows),
+            _draw_quad(draw, cell_floor_quad(int(cell[0]), int(cell[1]), cols, rows, ortho=ortho),
                        (70, 140, 255, 255), width=2)
     if reciprocal_target:
-        _draw_quad(draw, cell_floor_quad(int(reciprocal_target[0]), int(reciprocal_target[1]), cols, rows),
-                   (0, 220, 220, 255), width=3)
+        _draw_quad(draw, cell_floor_quad(int(reciprocal_target[0]), int(reciprocal_target[1]), cols, rows,
+                                         ortho=ortho), (0, 220, 220, 255), width=3)
     for cell in exempted_cells or []:
-        _draw_quad(draw, cell_floor_quad(int(cell[0]), int(cell[1]), cols, rows),
+        _draw_quad(draw, cell_floor_quad(int(cell[0]), int(cell[1]), cols, rows, ortho=ortho),
                    (150, 200, 60, 200), width=1)
     for cell in flagged_cells or []:
-        _draw_quad(draw, cell_floor_quad(int(cell[0]), int(cell[1]), cols, rows),
+        _draw_quad(draw, cell_floor_quad(int(cell[0]), int(cell[1]), cols, rows, ortho=ortho),
                    (255, 140, 0, 255), width=2, fill=(255, 140, 0, 55))
 
     if hero_cell is not None:
         c, r = int(hero_cell[0]), int(hero_cell[1])
         on_flagged = [c, r] in [list(x) for x in (flagged_cells or [])]
         col = (255, 40, 40, 255) if on_flagged else (40, 230, 90, 255)
-        _draw_quad(draw, cell_floor_quad(c, r, cols, rows), col, width=3)
-        fx, fy = feet_screen(c, r, cols, rows)
+        _draw_quad(draw, cell_floor_quad(c, r, cols, rows, ortho=ortho), col, width=3)
+        fx, fy = feet_screen(c, r, cols, rows, ortho=ortho)
         draw.ellipse([fx - 9, fy - 9, fx + 9, fy + 9], outline=col, width=3)
         draw.line([fx - 13, fy, fx + 13, fy], fill=col, width=2)
         draw.line([fx, fy - 13, fx, fy + 13], fill=col, width=2)
@@ -611,11 +654,18 @@ def run_journey(get_surface: Callable[[], dict], cross_door: Callable[[dict], di
         walkable = manifest.get("walkable", [])
         live_props = manifest.get("props", [])
         prop_cells = {(int(c), int(r)) for p in live_props for (c, r) in p.get("footprint", [])}
-        occlusion_cells, occlusion_notes = resolve_occlusion_cells(live_props, cols, rows)
+        # M-ALIGN: resolve THIS room's canonical manifest (collision fix) + its stamped fit ortho — a
+        # camera_fit room samples/derives at its own paint scale; a non-fit room falls back to ORTHO_SIZE.
+        room_manifest = resolve_room_manifest(loc_id, registry)
+        room_ortho = (float(room_manifest["ortho"])
+                      if room_manifest and room_manifest.get("camera_fit") and room_manifest.get("ortho")
+                      else None)
+        occlusion_cells, occlusion_notes = resolve_occlusion_cells(
+            live_props, cols, rows, preferred=room_manifest, ortho=room_ortho)
         plate = _plate_for(loc_id)
         if plate is not None:
             ic = inverse_coherence_flags(load_plate_edges(plate), walkable, prop_cells, cols, rows, loc_id,
-                                         occlusion_cells=occlusion_cells)
+                                         occlusion_cells=occlusion_cells, ortho=room_ortho)
             ic_dict = ic.as_dict()
             flagged_cells = [f["cell"] for f in ic.flagged]
             exempted_cells = [f["cell"] for f in ic.exempted]
@@ -635,7 +685,7 @@ def run_journey(get_surface: Callable[[], dict], cross_door: Callable[[dict], di
                      "clean_cells_flagged": [list(c) for c in clean_flagged],
                      "ok": not clean_flagged}
         rec = {"room": loc_id, "cols": cols, "rows": rows, "plate": str(plate) if plate else None,
-               "plate_status": plate_status, "inverse_coherence": ic_dict,
+               "plate_status": plate_status, "inverse_coherence": ic_dict, "ortho": room_ortho,
                "flagged_cells": flagged_cells, "exempted_cells": exempted_cells,
                "occlusion_notes": occlusion_notes, "n_walkable_floor": len(
                    [1 for (c, r) in walkable if (int(c), int(r)) not in prop_cells]),
@@ -650,8 +700,9 @@ def run_journey(get_surface: Callable[[], dict], cross_door: Callable[[dict], di
         rec = rooms.get(loc_id) or _visit_room(surface)
         flagged = rec.get("flagged_cells", [])
         exempted = rec.get("exempted_cells", [])
+        room_ortho = rec.get("ortho")
         hero = _hero_cell(surface, hero_id)
-        hero_chk = hero_feet_check(hero, cols, rows, {tuple(c) for c in flagged})
+        hero_chk = hero_feet_check(hero, cols, rows, {tuple(c) for c in flagged}, ortho=room_ortho)
         checks_txt = [f"room={loc_id}  hero_cell={hero_chk.get('cell')}  "
                       f"hero_pos={'PASS' if hero_chk['pass'] else 'FAIL'}"]
         if reciprocal is not None:
@@ -666,7 +717,7 @@ def run_journey(get_surface: Callable[[], dict], cross_door: Callable[[dict], di
         composite_frame(rec.get("plate"), hero, cols, rows, flagged,
                         surface.get("doors") or [], frames_dir / frame_name,
                         label=f"[{step_no}] {label}", checks=checks_txt, reciprocal_target=recip_target,
-                        exempted_cells=exempted)
+                        exempted_cells=exempted, ortho=room_ortho)
         step = {"step": step_no, "kind": kind, "room": loc_id, "label": label, "frame": f"frames/{frame_name}",
                 "hero_check": hero_chk, "reciprocal": reciprocal}
         steps.append(step)

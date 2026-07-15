@@ -1,9 +1,9 @@
 """WALKABLE-SLICE crypt COHERENCE (#1396 defect class): the walkslice smoke's crypt must render the
 SAME room as the combat demo, so its scene_grid REUSES the canonical combat crypt grid
 (``seed_gfx_combat._build_crypt_grid``) rather than a divergent hand-authored one. These pin that the
-only difference is the two DOORWAYS the walkslice needs, and that the reused props (the sarcophagus
-2x2 coffin footprint cols4-5 x rows7-8 + both pillars + the fresh-plate wall-band ornaments,
-WALKSLICE-CRYPT-ALIGN #1565) plus every actor spawn stay coherent.
+only difference is the two DOORWAYS the walkslice needs, and that the reused props (CRYPT-ALIGN-V2: the
+sarcophagus realigned to the painted 5x2 tomb across cols 7-11 x rows 3-4 + pillar_l (4,2)/(4,3) + the
+fresh-plate wall-band ornaments) plus every actor spawn stay coherent.
 
 Pure/unit (no server, no state dir) — exercises the ``build_crypt_grid`` helper directly.
 """
@@ -54,10 +54,11 @@ def test_walkslice_crypt_reuses_canonical_grid_minus_the_doors():
 
 
 def test_walkslice_crypt_keeps_the_canonical_props():
-    """The sarcophagus 2x2 coffin footprint (cols4-5 x rows7-8, #1565) + both pillars — the props the
-    adopted plate is painted around — are all still impassable in the walkslice crypt."""
+    """CRYPT-ALIGN-V2: the sarcophagus (5x2 tomb cols 7-11 x rows 3-4) + pillar_l (4,2)/(4,3) — the props
+    the adopted plate is painted around — are all still impassable in the walkslice crypt (pillar_r was
+    deleted: painted behind the cutaway wall band)."""
     blocked = _impassable(ws.build_crypt_grid("loc"))
-    for cell in combat.SARCOPHAGUS_CELLS + combat.PILLAR_L_CELLS + combat.PILLAR_R_CELLS:
+    for cell in combat.SARCOPHAGUS_CELLS + combat.PILLAR_L_CELLS:
         assert (cell[0], cell[1]) in blocked, f"canonical prop cell {cell} no longer impassable"
 
 

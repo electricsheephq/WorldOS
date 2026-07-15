@@ -88,33 +88,38 @@ GRID_W, GRID_H = 14, 11
 # Pillars widened from a single cell to their painted 2-cell floor base (the owner's walk-through fix);
 # pillar_r's base also runs onto the r=10 perimeter-wall row (already impassable), so only its two floor
 # cells are listed.
-PILLAR_L_CELLS = [[3, 3], [3, 4]]
-PILLAR_R_CELLS = [[8, 9], [9, 9]]
-# WALKSLICE-CRYPT-ALIGN (#1565): the FRESH crypt plate (author_crypt_fresh geometry, adopted at
-# neutral-anchor parity 7.0) paints the sarcophagus as the TRUE 2x2 coffin — the box body hugging the
-# ground at cols4-5 x rows7-8 — NOT the earlier over-large 12-cell drift blob (cols3-7 x rows6-8, the
-# #1386/#1505/owner-playtest-#5 re-measures against the SUPERSEDED crypt_armb_iter3_v1.png plate). The
-# 2x2 is a strict subset of that blob, so it frees 8 over-large drift cells
-# ((4,6),(5,6),(6,6),(7,6),(3,7),(6,7),(7,7),(6,8)) back to walkable floor while introducing no new tomb
-# blocking. Reconciliation table: qa/evidence/crypt-fresh/WALKSLICE-RECONCILIATION.md.
+# CRYPT-ALIGN-V2 (M-ALIGN, 2026-07-15): realigned to the PAINTED crypt_fresh_v1 plate (fit-camera
+# overlay forensics, ortho=10.5224). The painted LEFT pillar plinth sits at (4,2)/(4,3) — the authored
+# (3,3)/(3,4) is painted clear floor. pillar_r (8,9)/(9,9) is DELETED: it renders behind the
+# wall_height=5 cutaway's near south wall band (invisible in the greybox), and its authored cells are
+# painted clear floor.
+PILLAR_L_CELLS = [[4, 2], [4, 3]]
+# CRYPT-ALIGN-V2: flux depth-CN RELOCATED the sarcophagus during the style pass — the plate paints it as
+# a MONUMENTAL 6x2 tomb across cols 7-12 x rows 3-4 (base; the lid/effigy silhouette rises up-screen over
+# rows 2-3), NOT the authored 2x2 coffin at cols4-5 x rows7-8 (which the plate paints as OPEN FLOOR). The
+# collision is realigned to the paint. ONE forced trim: with the tavern doorway at (13,4), a prop on
+# (12,3)/(12,4) trips validate_scene_grid's door-zone rule, so the coffin is trimmed one cell at the east
+# end to cols 7-11 (a 5x2 tomb). The plate's 1-cell overhang at col 12 is an ACCEPTED, DOCUMENTED residual
+# (flags in the visual sweep at (12,4); NOT silently exempted). Reconciliation (v2 addendum):
+# qa/evidence/crypt-fresh/WALKSLICE-RECONCILIATION.md.
 SARCOPHAGUS_CELLS = [
-    [4, 7], [5, 7],
-    [4, 8], [5, 8],
+    [7, 3], [8, 3], [9, 3], [10, 3], [11, 3],
+    [7, 4], [8, 4], [9, 4], [10, 4], [11, 4],
 ]
-OBSTACLES = PILLAR_L_CELLS + PILLAR_R_CELLS + SARCOPHAGUS_CELLS
-# WALKSLICE-CRYPT-ALIGN (#1565): the fresh plate also paints 16 wall-band ornament cells the engine seed
-# never blocked, so the collision now agrees with the fresh geometry pixel-for-pixel (edge-recall 0.975,
-# flood-fill CONNECTED, both doors reachable). Each is a wall-hugging architectural element (tall niche /
-# engaged pilaster / flanking torch) or low floor clutter (rubble / skulls / a spilled urn), imported
-# verbatim from author_crypt_fresh (qa/evidence/crypt-fresh/crypt_fresh_geometry.json) per the
-# reconciliation table's section B. `(pid, kind, footprint, band, sil, occluder)`; the tall back-band
-# elements occlude (they rise against the rear wall, no actor stands behind row 1), the low clutter does
-# not (a full-height depth wall over ankle-high rubble would vanish actors behind it — the tomb "tall"
-# bug, owner playtest #5). The two door-flanking torches (5,1)/(7,1) and the tavern-door pilaster (12,3)
-# are wall-MOUNTED (against the solid perimeter the doorway is punched through), so they are authored as
-# non-walkable wall cells rather than free-standing props — impassable and painted, but NOT furniture in
-# the door landing (the door-zone gate correctly guards only free-standing props, exactly as it already
-# tolerates the perimeter wall cells that ring every door).
+OBSTACLES = PILLAR_L_CELLS + SARCOPHAGUS_CELLS
+# CRYPT-ALIGN-V2: the fresh plate paints wall-band ornament cells the engine seed blocks so collision
+# agrees with the fresh geometry. Each is a wall-hugging architectural element (tall niche / engaged
+# pilaster / flanking torch) or low floor clutter (rubble), imported verbatim from author_crypt_fresh
+# (qa/evidence/crypt-fresh/crypt_fresh_geometry.json). `(pid, kind, footprint, band, sil, occluder)`; the
+# tall back-band elements occlude (they rise against the rear wall, no actor stands behind row 1), the low
+# clutter does not (a full-height depth wall over ankle-high rubble would vanish actors behind it — the
+# tomb "tall" bug, owner playtest #5). The two door-flanking torches (5,1)/(7,1) and the tavern-door
+# pilaster (12,3) are wall-MOUNTED (against the solid perimeter the doorway is punched through), so they
+# are authored as non-walkable wall cells rather than free-standing props — impassable and painted, but
+# NOT furniture in the door landing (the door-zone gate correctly guards only free-standing props). The
+# skull_pile (2,9)/(3,9) + urn_spill (11,9) props are DELETED (CRYPT-ALIGN-V2): flux painted the
+# skulls/urn OUTSIDE the walls on the non-playable exterior apron; their authored cells are painted clear
+# floor and they render behind the south/east cutaway wall band.
 ORNAMENT_PROPS = [
     ("effigy_niche_l", "altar", [[2, 1], [3, 1]], "tall", "carved effigy niche, robed figure", True),
     ("niche_back_r", "altar", [[10, 1], [11, 1]], "tall", "recessed back-wall niche / tomb slab", True),
@@ -122,8 +127,6 @@ ORNAMENT_PROPS = [
     ("torch_far_r", "brazier", [[12, 6]], "tall", "iron wall torch, guttering flame", True),
     ("rubble_bl", "rubble", [[1, 1], [1, 2]], "low", "heaped corner rubble", False),
     ("broken_slabs", "rubble", [[1, 6], [1, 7]], "low", "toppled broken floor slabs", False),
-    ("skull_pile", "rubble", [[2, 9], [3, 9]], "low", "scattered pile of skulls", False),
-    ("urn_spill", "barrel", [[11, 9]], "low", "cracked funerary urn, spilled", False),
 ]
 # Wall-mounted ornament cells that sit in a walkslice door-zone (door + Chebyshev-1): the two braziers
 # flanking the camp door (6,0) and the engaged pilaster beside the tavern door (13,4). Authored as
@@ -133,9 +136,10 @@ ORNAMENT_WALL_CELLS = [
     [5, 1], [7, 1],  # torch_door_l / torch_door_r — flank the camp door (6,0)
     [12, 3],         # pilaster_arch — engaged column beside the tavern door (13,4)
 ]
-# hero far back-right / goblin front-left, both clear of the corrected center tomb footprint (rows 6-8)
-# and both re-measured pillars — re-verified against the deployed plate.
-HERO_CELL = [11, 3]
+# CRYPT-ALIGN-V2: the tomb moved to the BACK band (rows 3-4), so the old hero cell (11,3) now sits ON it.
+# Hero -> the open south-right floor; goblin front-left. Both clear of the realigned tomb (cols 7-11 x
+# rows 3-4), pillar_l (4,2)/(4,3), and every ornament footprint.
+HERO_CELL = [11, 8]
 GOBLIN_CELL = [1, 8]
 
 
@@ -168,14 +172,13 @@ def _build_crypt_grid(cid: str, location_id: str = ""):
         for (c0, r0) in footprint:
             cells.append(SceneCell(c=c0, r=r0, type="prop", walkable=False, prop_ref=pid))
 
-    # the THREE obstacle props — footprints == PILLAR_L_CELLS/PILLAR_R_CELLS/SARCOPHAGUS_CELLS
-    # (kept in lock-step with set_grid below via OBSTACLES).
+    # the obstacle props — footprints == PILLAR_L_CELLS/SARCOPHAGUS_CELLS (kept in lock-step with set_grid
+    # below via OBSTACLES). CRYPT-ALIGN-V2: pillar_r DELETED (painted behind the cutaway wall band).
     _prop("pillar_l", "stone_pillar", PILLAR_L_CELLS, "tall", "ancient cracked stone pillar")
-    _prop("pillar_r", "stone_pillar", PILLAR_R_CELLS, "tall", "ancient mossy stone pillar")
     # OWNER PLAYTEST #5 (occluder silhouette, task C): the tomb is a waist-high coffin, NOT a tall column
     # — its occluder proxy is "mid", so actors standing BEHIND the painted box still read above it (a
-    # "tall" band raised a full-height depth wall over the low coffin and vanished them). WALKSLICE-CRYPT-
-    # ALIGN (#1565): now the true 2x2 coffin (SARCOPHAGUS_CELLS), down from the 12-cell drift blob.
+    # "tall" band raised a full-height depth wall over the low coffin and vanished them). CRYPT-ALIGN-V2:
+    # realigned to the painted 5x2 tomb across cols 7-11 x rows 3-4 (the back band).
     _prop("sarcophagus", "sarcophagus", SARCOPHAGUS_CELLS, "mid", "carved stone sarcophagus, lid ajar")
     # WALKSLICE-CRYPT-ALIGN (#1565): the fresh-plate wall-band ornaments (reconciliation section B). Free-
     # standing ornaments become props; the door-flanking wall-mounted ones are impassable wall cells below.

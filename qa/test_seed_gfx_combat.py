@@ -53,74 +53,77 @@ def test_scene_grid_has_zero_validate_violations():
 
 
 def test_sarcophagus_footprint_is_impassable():
-    """WALKSLICE-CRYPT-ALIGN (#1565): the fresh crypt plate (author_crypt_fresh, adopted at neutral-anchor
-    parity 7.0) paints the sarcophagus as the TRUE 2x2 coffin — the box body at cols4-5 x rows7-8. This
-    replaces the over-large 12-cell drift blob (cols3-7 x rows6-8) the owner-playtest-#5 re-measure read
-    off the SUPERSEDED crypt_armb_iter3_v1.png plate. The 2x2 is a strict subset of that blob, so no actor
-    stands ON the painted box while 8 over-large drift cells return to walkable floor. See
-    qa/evidence/crypt-fresh/WALKSLICE-RECONCILIATION.md."""
+    """CRYPT-ALIGN-V2 (M-ALIGN, 2026-07-15): fit-camera overlay forensics (ortho=10.5224) proved flux
+    depth-CN RELOCATED the sarcophagus during the style pass — the crypt_fresh_v1 plate paints it as a
+    MONUMENTAL tomb across the BACK band (cols 7-12 x rows 3-4), NOT the authored 2x2 coffin at cols4-5 x
+    rows7-8 (which the plate paints as OPEN FLOOR). The collision is realigned to the paint; the coffin is
+    trimmed one cell at the east end to cols 7-11 (a 5x2 tomb) so a prop never sits in the tavern-door
+    (13,4) zone. The old coffin cells (rows 7-8) are freed back to walkable floor. See
+    qa/evidence/crypt-fresh/WALKSLICE-RECONCILIATION.md (v2 addendum)."""
     grid = _grid()
     imp = impassable_cells(grid, sg.GRID_W, sg.GRID_H)
     assert sg.SARCOPHAGUS_CELLS == [
-        [4, 7], [5, 7],
-        [4, 8], [5, 8],
+        [7, 3], [8, 3], [9, 3], [10, 3], [11, 3],
+        [7, 4], [8, 4], [9, 4], [10, 4], [11, 4],
     ]
     for cell in sg.SARCOPHAGUS_CELLS:
-        assert cell in imp, f"sarcophagus cell {cell} must be impassable (paint/grid registration gap)"
-    # the open lit floor RIGHT of the tomb (between the coffin and the right pillar) must be WALKABLE
-    # (never blocked by any coffin re-measure — the owner "cannot walk right of the tomb" regression guard).
-    for cell in ([8, 7], [9, 7], [8, 8], [9, 8]):
-        assert cell not in imp, f"floor right of the tomb {cell} must be walkable (owner playtest #5)"
-    # #1565: the 8 drift cells the old 12-cell blob over-blocked are freed to walkable floor by the 2x2.
-    for cell in ([4, 6], [5, 6], [6, 6], [7, 6], [3, 7], [6, 7], [7, 7], [6, 8]):
-        assert cell not in imp, f"freed drift cell {cell} must be walkable now (2x2 coffin, #1565)"
+        assert cell in imp, f"sarcophagus cell {cell} must be impassable (paint/grid registration)"
+    # the old authored 2x2 coffin cells (cols4-5 x rows7-8) are now painted OPEN FLOOR -> must be walkable.
+    for cell in ([4, 7], [5, 7], [4, 8], [5, 8]):
+        assert cell not in imp, f"old coffin cell {cell} is painted clear floor now — must be walkable (v2)"
+    # the tomb's trimmed east end: (12,4) is walkable (door landing); the 1-cell paint overhang residual.
+    assert [12, 4] not in imp, "coffin east end trimmed to col 11 for the tavern-door zone (v2 residual)"
 
 
 def test_pillars_match_painted_cells():
-    """OWNER PLAYTEST #5: each pillar footprint is its painted 2-cell floor base, not the single stale
-    cell (2,4)/(9,9) that missed the base entirely and let the owner walk THROUGH the columns."""
+    """CRYPT-ALIGN-V2: the painted LEFT pillar plinth sits at (4,2)/(4,3) (authored (3,3)/(3,4) is painted
+    clear floor). pillar_r (8,9)/(9,9) is DELETED — it renders behind the wall_height=5 cutaway's south
+    wall band (invisible in the greybox) and its cells are painted clear floor."""
     grid = _grid()
     imp = impassable_cells(grid, sg.GRID_W, sg.GRID_H)
-    assert sg.PILLAR_L_CELLS == [[3, 3], [3, 4]]
-    assert sg.PILLAR_R_CELLS == [[8, 9], [9, 9]]
-    for cell in sg.PILLAR_L_CELLS + sg.PILLAR_R_CELLS:
-        assert cell in imp, f"pillar base cell {cell} must be impassable (owner walk-through fix)"
-    # the STALE single-cell + pre-#1396 prop cells must no longer be authored as prop footprints.
+    assert sg.PILLAR_L_CELLS == [[4, 2], [4, 3]]
+    assert not hasattr(sg, "PILLAR_R_CELLS"), "pillar_r is deleted in CRYPT-ALIGN-V2"
+    for cell in sg.PILLAR_L_CELLS:
+        assert cell in imp, f"pillar_l base cell {cell} must be impassable"
+    # the deleted pillar_r cells + stale pre-align prop cells must no longer be authored as prop footprints.
     prop_cells = {(c0, r0) for prop in grid.props for (c0, r0) in prop.cells}
-    for stale in [(2, 4), (2, 3), (11, 3), (7, 1)]:
-        assert stale not in prop_cells
+    for stale in [(3, 3), (3, 4), (8, 9), (9, 9), (2, 9), (3, 9), (11, 9)]:
+        assert stale not in prop_cells, f"stale/deleted prop cell {stale} must not be a prop footprint (v2)"
 
 
 def test_hero_and_goblin_spawn_cells_stay_walkable():
-    """The hero(11,3)/goblin(1,8) spawn cells (far back-right / front-left, both clear of the
-    corrected front-center tomb footprint, #1505) must never collide with the prop footprints — a
-    content fix here must not accidentally trap the demo's own combatants."""
+    """The hero(11,8)/goblin(1,8) spawn cells must never collide with the prop footprints. CRYPT-ALIGN-V2:
+    the tomb moved to the back band (rows 3-4), so the old hero cell (11,3) now sits ON it — hero moved to
+    the open south-right floor."""
     grid = _grid()
     imp = impassable_cells(grid, sg.GRID_W, sg.GRID_H)
     assert sg.HERO_CELL not in imp
     assert sg.GOBLIN_CELL not in imp
-    # the 2x2 coffin's floor-footprint cells — pin a couple so a future footprint edit can't silently
-    # re-open them (an actor standing ON the painted tomb). #1565: coffin is now cols4-5 x rows7-8.
-    assert [4, 8] in imp
-    assert [5, 7] in imp
+    # the tomb's floor-footprint cells — pin a couple so a future footprint edit can't silently re-open
+    # them (an actor standing ON the painted tomb). CRYPT-ALIGN-V2: tomb is now cols7-11 x rows3-4.
+    assert [7, 3] in imp
+    assert [11, 4] in imp
 
 
 def test_obstacles_list_matches_authored_props():
     """OBSTACLES (used for the printed seed summary + kept in lock-step with set_grid) must be
-    exactly the flattened pillar/sarcophagus footprints — no silent drift between the two."""
-    assert sg.OBSTACLES == sg.PILLAR_L_CELLS + sg.PILLAR_R_CELLS + sg.SARCOPHAGUS_CELLS
+    exactly the flattened pillar_l/sarcophagus footprints — no silent drift between the two."""
+    assert sg.OBSTACLES == sg.PILLAR_L_CELLS + sg.SARCOPHAGUS_CELLS
 
 
 def test_fresh_plate_ornament_cells_are_impassable():
-    """WALKSLICE-CRYPT-ALIGN (#1565): the 16 wall-band ornament cells the fresh crypt plate paints
-    (reconciliation section B) are all impassable now, so the engine collision agrees with the fresh
-    geometry (qa/evidence/crypt-fresh/crypt_fresh_geometry.json). 13 are free-standing/floor props
-    (ORNAMENT_PROPS); the 3 door-flanking wall-mounted ones (ORNAMENT_WALL_CELLS) are impassable wall
-    cells so they never trip the free-standing-prop door-zone gate in the walkslice reuse."""
+    """CRYPT-ALIGN-V2: the fresh crypt plate's wall-band ornament cells are all impassable, so the engine
+    collision agrees with the fresh geometry (qa/evidence/crypt-fresh/crypt_fresh_geometry.json). The
+    free-standing/floor props are ORNAMENT_PROPS; the 3 door-flanking wall-mounted ones (ORNAMENT_WALL_CELLS)
+    are impassable wall cells so they never trip the free-standing-prop door-zone gate in the walkslice
+    reuse. skull_pile + urn_spill are DELETED (painted outside the playable walls)."""
     grid = _grid()
     imp = {(x, y) for (x, y) in (tuple(p) for p in impassable_cells(grid, sg.GRID_W, sg.GRID_H))}
     ornament_cells = [tuple(c) for (_pid, _k, fp, *_rest) in sg.ORNAMENT_PROPS for c in fp]
     ornament_cells += [tuple(c) for c in sg.ORNAMENT_WALL_CELLS]
-    assert len(ornament_cells) == 16, "the fresh plate contributes exactly 16 ornament cells"
+    assert len(ornament_cells) == 13, "the fresh plate contributes 13 ornament cells after v2 deletions"
     for cell in ornament_cells:
-        assert cell in imp, f"fresh-plate ornament cell {cell} must be impassable (#1565)"
+        assert cell in imp, f"fresh-plate ornament cell {cell} must be impassable (v2)"
+    # the deleted skull_pile / urn_spill cells are painted clear floor -> must be walkable.
+    for cell in [(2, 9), (3, 9), (11, 9)]:
+        assert cell not in imp, f"deleted ornament cell {cell} is painted clear floor — must be walkable (v2)"

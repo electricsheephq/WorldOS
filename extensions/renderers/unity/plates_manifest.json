@@ -4,10 +4,14 @@
   "plates": {
     "crypt": {
       "plate": "plates/crypt_fresh_v1.png",
+      "cameraPin": { "ortho": 10.5224 },
+      "_cameraPin_comment": "CRYPT-ALIGN-V2 (M-ALIGN): crypt_fresh is a camera_fit room PAINTED at ortho 10.5224 (qa/greybox_render_headless._fit_ortho_size(14,11)). CombatSurfaceClient.ApplyPlate keeps the PREVIOUS room's ortho when an entry has no cameraPin, so a fit plate would display at the crypt/camp default 13 (~24% scale error) AND leak the pin across rooms. Pinning ALL three registered rooms (crypt 10.5224, tavern 9.2597, camp_clearing_night 13.0) fixes both. No CombatSurfaceClient.cs change.",
       "_provenance": "FRESH-CRYPT (2026-07-15): brand-new crypt via author_crypt_fresh -> flux.1-dev depth-CN base (clean, no LoRA) -> Gemini-3.1 STRUCTURE+ADDITIONS-lock style pass. Adopted through promote.py visual gate (tier=canonical-candidate; candidate 7.0 / incumbent 8.0 / real-art control 8.0 in-band, delta -1.0 >= -1.2). Repo copy for QA/sweep: qa/evidence/crypt-fresh/crypt_fresh_v1.png; the box carries plates/crypt_fresh_v1.png (drop it there on the NEXT box cycle — this PR does no box deploy). WALKSLICE grid reconciliation (fresh geometry vs canonical combat seed) REPORTED, seed NOT edited this lane (#1559): qa/evidence/crypt-fresh/WALKSLICE-RECONCILIATION.md. _provenance/_effects keys are ignored by CombatSurfaceClient.LoadPlateManifest (parses only plate/planeSize/cameraPin/effects)."
     },
     "camp_clearing_night": {
       "plate": "plates/camp_clearing_night_truegrey_v1.png",
+      "cameraPin": { "ortho": 13.0 },
+      "_cameraPin_comment": "CRYPT-ALIGN-V2: camp is NOT camera_fit — it renders at the fixed contract ortho 13. Pinned EXPLICITLY anyway so it can never inherit a fit room's ortho (crypt 10.5224 / tavern 9.2597) when the party crosses in from one; without this pin ApplyPlate would leave the previous room's ortho in place and the camp would display shrunk.",
       "_effects_comment": "VFX-ANCHORS: an animated fire over the painted firepit. The campfire_pit footprint is [[4,8],[5,8]] (qa/room_manifests/camp_truegrey.cells.json props[campfire]); cell [5,8] BOX-TUNED 2026-07-11 as the flame anchor that seats in the painted pit on camp_clearing_night_truegrey_v1.png, scale 1.5 filling the pit without washing out the painted glow (the plate is the star). `type` resolves through effects_registry.json; cell=[c,r], y=ground offset. Embers/fireflies types are registered and one-line-addable here later.",
       "effects": [
         { "type": "fire_medium", "cell": [5, 8], "scale": 1.5, "y": 0.0 }
@@ -15,6 +19,8 @@
     },
     "tavern": {
       "plate": "plates/tavern_fit2_v1.png",
+      "cameraPin": { "ortho": 9.2597 },
+      "_cameraPin_comment": "CRYPT-ALIGN-V2: tavern_fit2 is a camera_fit room PAINTED at ortho 9.2597 (qa/greybox_render_headless._fit_ortho_size(12,10)). Pinned so it displays at its own paint scale and never inherits/leaks the crypt (10.5224) or camp (13.0) ortho.",
       "_effects_comment": "TAVERN-FIT2 ADOPTION (M-ALIGN wave-2 close, ruling on #1557): the canonical tavern is now the density-law fit2 plate (was plates/tavern_truegrey_v1.png). fit2 = 14 authored collision props at world-true scale, coherence-perfect, camera-fit extent, doorway PAINTED at the authored (8,0). Adopted plate = the s1111 single-pass (the exact asset the #1560-corrected panel scored 7.0/delta -1.0 in PR #1561). Repo copy for QA/sweep at qa/evidence/tavern-fit2/tavern_fit2_v1.png; the box carries the real plates/tavern_fit2_v1.png (drop it there on the NEXT box cycle — this PR does no box deploy). The hearth footprint is unchanged [[5,1],[6,1]] (qa/room_manifests/tavern_fit2.cells.json props[hearth]) — a future animated hearth fire's anchor; effects still deferred (glow is painted). Add a fire_medium here later keyed to a hearth cell, mirroring the camp entry."
     }
   }

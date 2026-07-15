@@ -71,7 +71,7 @@ from check_plate_drift import (  # noqa: E402
     col_pitch_px, fingerprint, load_manifest,
 )
 from greybox_render_headless import (  # noqa: E402
-    PX_H, PX_W, cell_to_world, render as render_greybox, world_to_screen,
+    ORTHO_SIZE, PX_H, PX_W, cell_to_world, render as render_greybox, world_to_screen,
     _spec_for_kind,
 )
 
@@ -89,12 +89,16 @@ EDGE_THRESHOLD = 24      # FIND_EDGES binarise threshold — the exact value the
 
 
 # ── Projection: the prop's FULL box footprint (floor->height), the grid's structural extent ─────────
-def prop_box_screen_bbox(cells: list, kind: str, cols: int, rows: int) -> list:
+def prop_box_screen_bbox(cells: list, kind: str, cols: int, rows: int,
+                         *, ortho: Optional[float] = None) -> list:
     """Screen [x0,y0,x1,y1] bounding box of a prop's full greybox BOX (all 8 corners, floor y=0 to
     y=height), reproducing greybox_render_headless's per-prop box (centre + padded half-extent + the
     kind's height). This is the prop's on-grid structural silhouette extent — the region a correctly
     registered plate paints the prop into. Wider than check_plate_drift's floor-only bbox on purpose:
-    the whole silhouette localises far more reliably than the thin floor sliver."""
+    the whole silhouette localises far more reliably than the thin floor sliver. `ortho` None ⇒ the
+    fixed contract rig; a camera_fit room passes its stamped ortho so the template box matches the
+    plate's own paint scale (M-ALIGN)."""
+    o = ORTHO_SIZE if ortho is None else ortho
     height, half, _ = _spec_for_kind(kind)
     xs_w = [cell_to_world(c, r, cols, rows)[0] for (c, r) in cells]
     zs_w = [cell_to_world(c, r, cols, rows)[2] for (c, r) in cells]
@@ -106,7 +110,7 @@ def prop_box_screen_bbox(cells: list, kind: str, cols: int, rows: int) -> list:
     ys: list = []
     for (dx, dz) in ((-hh, -hh), (hh, -hh), (hh, hh), (-hh, hh)):
         for wy in (0.0, height):
-            sx, sy = world_to_screen(cx + dx, wy, cz + dz)
+            sx, sy = world_to_screen(cx + dx, wy, cz + dz, o)
             xs.append(sx)
             ys.append(sy)
     return [min(xs), min(ys), max(xs), max(ys)]
@@ -131,6 +135,10 @@ def greybox_edges_from_manifest(manifest: dict) -> np.ndarray:
         "cols": int(grid.get("cols", 0)),
         "rows": int(grid.get("rows", 0)),
         "walls": [],
+        # M-ALIGN: a camera_fit manifest renders its greybox template at the SAME fitted ortho the plate
+        # was painted at (render() reads this field), so the edge-correlation template and the plate share
+        # one scale. A non-fit manifest omits it and renders under the fixed rig, byte-identical to before.
+        "camera_fit": bool(manifest.get("camera_fit", False)),
         # The correspondence prior is built from the FOOTPRINT (floor cells), so the greybox box sits on
         # the cells collision keys to — NOT the up-screen silhouette (occlusion). A coffin whose paint
         # coheres with its footprint matches this template; a drifted one does not.
@@ -204,9 +212,12 @@ def check_grid_paint_coherence(plate_path: str | Path, manifest: dict, *,
             f"plate {Path(plate_path).name} is {plate_im.size[0]}x{plate_im.size[1]}, "
             f"expected the contract {PX_W}x{PX_H} (bboxes are computed in that frame)"])
 
+    # M-ALIGN: project every prop bbox + size the search window at the room's stamped fit ortho (None ⇒
+    # the fixed rig for a legacy/non-fit manifest — byte-identical).
+    room_ortho = float(manifest["ortho"]) if manifest.get("camera_fit") and manifest.get("ortho") else None
     plate_edges = edge_luma(plate_im)
     grey_edges = edge_luma(greybox_path) if greybox_path else greybox_edges_from_manifest(manifest)
-    pitch = col_pitch_px(cols, rows)
+    pitch = col_pitch_px(cols, rows, ortho=room_ortho)
     search_px = int(round(SEARCH_CELL_FRAC * pitch))
     result = CoherenceResult(True, room)
 
@@ -220,7 +231,7 @@ def check_grid_paint_coherence(plate_path: str | Path, manifest: dict, *,
             result.props.append({"id": pid, "status": "SKIP", "reason": "no footprint/cells"})
             result.skipped += 1
             continue
-        bbox = prop_box_screen_bbox([tuple(c) for c in cells], kind, cols, rows)
+        bbox = prop_box_screen_bbox([tuple(c) for c in cells], kind, cols, rows, ortho=room_ortho)
         template = fingerprint(grey_edges, bbox)
         if not np.any(template):
             result.props.append({"id": pid, "status": "SKIP", "reason": "empty grid template"})

@@ -2,9 +2,9 @@
 """seed_gfx_walkslice.py — WALKABLE-SLICE-V1 smoke fixture, now a THREE-ROOM WORLD: a REST-mode crypt
 HUB linked by doorways to a camp clearing AND a brand-new firelit tavern, with a present NPC to talk to
 and a lurking goblin to fight. The crypt reuses the CANONICAL crypt grid
-(``seed_gfx_combat._build_crypt_grid``: the 14x11 fixture whose sarcophagus 2x2 coffin footprint
-cols4-5 x rows7-8 + pillars (3,3)/(3,4) and (8,9)/(9,9) + fresh-plate wall-band ornaments match the
-adopted ``crypt_fresh`` plate, WALKSLICE-CRYPT-ALIGN #1565) with TWO additions — a back-center doorway (6,0)
+(``seed_gfx_combat._build_crypt_grid``: the 14x11 fixture whose sarcophagus is the painted back-band tomb
+cols 7-11 x rows 3-4 + pillar_l (4,2)/(4,3) + fresh-plate wall-band ornaments match the adopted
+``crypt_fresh`` plate, CRYPT-ALIGN-V2 / M-ALIGN) with TWO additions — a back-center doorway (6,0)
 to the camp and a left-wall doorway (0,5) to the tavern — so the player renders the SAME crypt as the
 combat demo instead of a divergent hand-authored grid (the #1396 scene-grid coherence defect class). The
 camp grid comes from seed_gfx_camp; the tavern grid (``build_tavern_grid``) is authored HERE from the
@@ -34,7 +34,7 @@ DOOR = [6, 0]
 # had NO doorway painted on the plate — the label/glow floated over open floor. Re-measured against
 # crypt_armb_iter3 with the cell-lattice overlay (qa/evidence/1534/grid_crypt.png): the plate's BIG
 # right archway bases at (13,4) on the NE wall edge. Its landing ring (cols 12-13 x rows 3-5) is clear
-# of the sarcophagus (cols 2-7) and both pillars ((3,3)/(3,4), (8,9)/(9,9)). The crypt is the hub:
+# of the back-band sarcophagus (cols 7-11 x rows 3-4) and pillar_l (4,2)/(4,3). The crypt is the hub:
 # camp <-> crypt <-> tavern. (The camp door (6,0) was re-measured too — it already sits at the painted
 # left archway; unchanged.)
 TAVERN_DOOR = [13, 4]
@@ -48,8 +48,8 @@ CAMP_DOOR = [5, 0]
 
 def build_crypt_grid(loc_id: str):
     """The walkslice crypt scene_grid = the CANONICAL combat crypt (``seed_gfx_combat._build_crypt_grid``:
-    14x11, sarcophagus 2x2 coffin footprint cols4-5 x rows7-8, pillars (3,3)/(3,4) and (8,9)/(9,9) —
-    matched to the adopted crypt_fresh plate, WALKSLICE-CRYPT-ALIGN #1565) with TWO additions: a
+    14x11, sarcophagus at the painted back-band tomb cols 7-11 x rows 3-4, pillar_l (4,2)/(4,3) —
+    matched to the adopted crypt_fresh plate, CRYPT-ALIGN-V2 / M-ALIGN) with TWO additions: a
     back-center DOORWAY (6,0) to the camp and a right-wall DOORWAY (13,4) to the tavern, the party crosses to the
     camp. Reuses the canonical grid verbatim (same cells/props/impassable) so the player renders the
     SAME crypt as the combat demo. Pure (no server) — directly unit-testable, mirroring
@@ -68,9 +68,9 @@ def build_crypt_grid(loc_id: str):
         if [cell.c, cell.r] in doors:
             cell.type, cell.walkable = "door", True
     grid.door_cells = [(DOOR[0], DOOR[1]), (TAVERN_DOOR[0], TAVERN_DOOR[1])]
-    # party + Mira on the OPEN flagstone floor between the left pillar and the tomb (cols 3-4, rows
-    # 5-6) — clear painted floor, off the 2x2 coffin footprint (cols4-5 x rows7-8, #1565) and both
-    # pillars ((3,3)/(3,4) and (8,9)/(9,9)).
+    # party + Mira on the OPEN flagstone floor south of the back-band tomb (cols 3-4, rows 5-6) —
+    # clear painted floor, off the tomb footprint (cols 7-11 x rows 3-4, CRYPT-ALIGN-V2) and pillar_l
+    # (4,2)/(4,3).
     grid.spawns = {"party": [(3, 5), (4, 5)], "npcs": [(3, 6)]}
     grid.art.layout_hash = sg._layout_hash(grid)  # layout changed (added door) — refresh the hash
     return grid
