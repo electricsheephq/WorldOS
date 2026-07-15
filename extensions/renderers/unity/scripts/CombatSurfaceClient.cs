@@ -69,8 +69,16 @@ public class CombatSurfaceClient : MonoBehaviour
     // Parsed registry (StreamingAssets/registry.json), mirroring paint_combat_v1's regAssets/Defaults/Aliases.
     System.Collections.Generic.Dictionary<string, object> _regAssets, _regDefaults, _regAliases;
     bool _regTried;
-    Texture2D _blobT, _ringT;                 // procedural AO blob + selection ring, built once, shared
+    Texture2D _blobT, _ringT, _pipT;          // procedural AO blob + contact decal + feet-pip, built once, shared
+    Texture2D _decalFoe, _decalParty;         // RING-V2: per-team #1524 contact-decal textures (faction hue baked in)
+    Material _silFoe, _silParty; bool _silMatMissing; // #1545: per-team walk-behind silhouette materials (ZTest Greater)
     AnimationClip _donorIdle; bool _donorTried; // goblin.fbx embedded Idle, for clipless-humanoid retarget
+
+    // RING-V2 warm-floor port (#1515 fix 2 / #1524, from CohesionProbe.cs): a hearth-INDEPENDENT warm floor
+    // blended into the actor grounding so shadows/decals sit in the plate's warm palette instead of neutral
+    // grey. Exact ported values — do not retune here (0 = fully cool, 1 = fully warm; the ported weight is 0.35).
+    static readonly Color WarmAmb = new Color(0.55f, 0.35f, 0.18f);   // CohesionProbe _warmAmb (lit-ground warm band)
+    const float WARM_AMBIENT_FLOOR = 0.35f;                           // CohesionProbe WARM_AMBIENT_FLOOR
 
     // #1441 W5d player interactivity: grounded reposition + engine-confirmed glide + walk clips + click
     // pre-validation. GlideSpeed tunes the cell->cell walk tween; the maps below track per-actor state.
@@ -1172,13 +1180,19 @@ public class CombatSurfaceClient : MonoBehaviour
     {
         if (_blobT != null) return _blobT;
         // aiShadowSoftness=0.9, aiShadowIntensity=1.0 baseline (paint_combat_v1's no-config-file defaults).
+        // RING-V2 warm-floor port: the grounding disc RGB is lerped from the old cool-neutral (0.02,0.02,0.03,
+        // b>r — reads cool/grey over the warm plate) toward WarmAmb by WARM_AMBIENT_FLOOR, so the AO shadow
+        // sits in the plate's palette. Same Lerp(cool, warm, FLOOR) operation #1524 used for actor ambient.
         _blobT = new Texture2D(256, 256, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+        Color aoRgb = Color.Lerp(new Color(0.02f, 0.02f, 0.03f), WarmAmb, WARM_AMBIENT_FLOOR);
         var px = new Color[256 * 256]; float c = 127.5f;
-        for (int y = 0; y < 256; y++) for (int x = 0; x < 256; x++) { float d = Mathf.Clamp01(Mathf.Sqrt((x - c) * (x - c) + (y - c) * (y - c)) / c); px[y * 256 + x] = new Color(0.02f, 0.02f, 0.03f, Mathf.Clamp01(Mathf.Pow(1f - d, 0.9f))); }
+        for (int y = 0; y < 256; y++) for (int x = 0; x < 256; x++) { float d = Mathf.Clamp01(Mathf.Sqrt((x - c) * (x - c) + (y - c) * (y - c)) / c); px[y * 256 + x] = new Color(aoRgb.r, aoRgb.g, aoRgb.b, Mathf.Clamp01(Mathf.Pow(1f - d, 0.9f))); }
         _blobT.SetPixels(px); _blobT.Apply();
         return _blobT;
     }
 
+    // Hollow ring ellipse — retained for the cosmetic cell pulses (AmberPulse / FlashReject), NOT the actor
+    // grounding (RING-V2 moved actor grounding to ContactDecalTex + the feet-pip).
     Texture2D RingTex()
     {
         if (_ringT != null) return _ringT;
@@ -1187,6 +1201,71 @@ public class CombatSurfaceClient : MonoBehaviour
         for (int y = 0; y < 256; y++) for (int x = 0; x < 256; x++) { float d = Mathf.Sqrt((x - c) * (x - c) + (y - c) * (y - c)) / c; float a = (d > 0.78f && d < 0.93f) ? 1f : 0f; px[y * 256 + x] = new Color(1f, 1f, 1f, a); }
         _ringT.SetPixels(px); _ringT.Apply();
         return _ringT;
+    }
+
+    // RING-V2 (#1524 port): the subtle faction CONTACT DECAL that replaces the bright UI ellipse as the
+    // actor's grounding+selection read (the ellipse cost the #1515 cohesion panel 2.0 alone — scorers read
+    // it as a game-engine selection ring). Exact port of CohesionProbe.ContactDecalTex: a dark warm grounding
+    // disc + a low-saturation faction rim baked into the texture (faction semantics survive), alpha-blended so
+    // it darkens the plate like a muted PoE2 selection shadow. Per-team so the baked hue survives a white tint.
+    // Values are the merged #1524 evidence — do not retune.
+    Texture2D ContactDecalTex(bool foe)
+    {
+        if (foe && _decalFoe != null) return _decalFoe;
+        if (!foe && _decalParty != null) return _decalParty;
+        const int N = 256;
+        Color faction = foe ? new Color(0.55f, 0.24f, 0.19f) : new Color(0.34f, 0.52f, 0.60f);
+        Color core = new Color(0.045f, 0.035f, 0.03f);   // #1524 warm near-black grounding core
+        var t = new Texture2D(N, N, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+        var px = new Color[N * N];
+        for (int y = 0; y < N; y++) for (int x = 0; x < N; x++)
+        {
+            float dx = (x - N / 2f) / (N / 2f), dy = (y - N / 2f) / (N / 2f);
+            float d = Mathf.Sqrt(dx * dx + dy * dy);
+            float discA = Mathf.Pow(Mathf.Clamp01(1f - d / 0.98f), 1.7f) * 0.5f;   // soft grounding shadow
+            float ringA = Mathf.Exp(-Mathf.Pow((d - 0.72f) / 0.13f, 2f)) * 0.55f;  // muted faction contact rim
+            float w = ringA / (ringA + discA + 1e-4f);
+            Color rgb = Color.Lerp(core, faction, w);
+            float a = d > 1f ? 0f : Mathf.Clamp01(discA + ringA);
+            px[y * N + x] = new Color(rgb.r, rgb.g, rgb.b, a);
+        }
+        t.SetPixels(px); t.Apply();
+        if (foe) _decalFoe = t; else _decalParty = t;
+        return t;
+    }
+
+    // RING-V2: the small team-colored FEET-PIP — the PRIMARY team read (the subtle contact decal above is
+    // grounding+selection). A soft filled dot (white; the team hue comes from the quad's material tint),
+    // solid to ~0.6r then a soft falloff to the edge so it reads as a crisp pip, not a ring.
+    Texture2D PipTex()
+    {
+        if (_pipT != null) return _pipT;
+        _pipT = new Texture2D(256, 256, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Clamp };
+        var px = new Color[256 * 256]; float c = 127.5f;
+        for (int y = 0; y < 256; y++) for (int x = 0; x < 256; x++) { float d = Mathf.Sqrt((x - c) * (x - c) + (y - c) * (y - c)) / c; float a = 1f - Mathf.SmoothStep(0.6f, 1f, d); px[y * 256 + x] = new Color(1f, 1f, 1f, Mathf.Clamp01(a)); }
+        _pipT.SetPixels(px); _pipT.Apply();
+        return _pipT;
+    }
+
+    // #1545 walk-behind silhouette: the per-team material for the second (ZTest Greater) pass added to every
+    // actor renderer at spawn. Where a depth-proxy box (WorldOS/OccluderDepth, ZWrite On) has overdrawn the
+    // actor, the actor's front-face fragments are FARTHER than the buffered proxy depth, so ZTest Greater fires
+    // and paints a flat team-tinted silhouette (~0.45 alpha) instead of the actor vanishing (BG2/PoE convention;
+    // #1545 + the owner's "character disappears near doors" report). Unoccluded actors: front-face depth equals
+    // their own opaque depth -> Greater fails -> nothing drawn. Mirrors EnsureOccluderMaterial's missing-shader
+    // graceful skip (shader must be in Always-Included Shaders to resolve in the player build).
+    Material EnsureSilhouetteMaterial(bool foe)
+    {
+        if (foe && _silFoe != null) return _silFoe;
+        if (!foe && _silParty != null) return _silParty;
+        if (_silMatMissing) return null;
+        var sh = Shader.Find("WorldOS/ActorSilhouette");
+        if (sh == null) { Debug.LogWarning("[CSC] silhouette: WorldOS/ActorSilhouette not found (add to Always-Included Shaders); walk-behind mask disabled."); _silMatMissing = true; return null; }
+        // Reuse the existing runtime team colors at the #1545 ~0.45 mask alpha (no new hue invented).
+        var m = new Material(sh) { color = foe ? new Color(1f, 0.13f, 0.10f, 0.45f) : new Color(0.4f, 0.95f, 1f, 0.45f) };
+        m.renderQueue = 3000;   // Transparent: draws after all opaque geometry + proxy depth is laid
+        if (foe) _silFoe = m; else _silParty = m;
+        return m;
     }
 
     // World-space bounds of a renderer. Skinned: BakeMesh the POSED verts and transform by
@@ -1303,11 +1382,25 @@ public class CombatSurfaceClient : MonoBehaviour
             }
         }
 
-        // AO blob + selection ring siblings (Actor_<id>_AO / _Ring), laid flat on the floor. Baseline
-        // aiShadowScale=2.0, ring 2.6, no core shadow (paint's no-config defaults). MoveActorAndShadows
-        // moves these by the same delta on every reposition/glide frame, so they track the feet.
+        // #1545 walk-behind silhouette: append the ZTest-Greater team material as a SECOND pass on each actor
+        // renderer (extra materials re-render the last submesh), so an actor overdrawn by a depth-proxy box
+        // renders a flat tinted silhouette instead of vanishing. Added after the albedo assignment so it's the
+        // last material. No-ops (skips) if the shader isn't in the build (EnsureSilhouetteMaterial warns once).
+        var sil = EnsureSilhouetteMaterial(foe);
+        if (sil != null)
+            foreach (var r in rends)
+            {
+                var ms = new System.Collections.Generic.List<Material>(r.sharedMaterials);
+                ms.Add(sil); r.sharedMaterials = ms.ToArray();
+            }
+
+        // RING-V2 ground siblings, laid flat on the floor. `_AO` = warm-tinted grounding blob; `_Ring` = the
+        // #1524 subtle faction contact decal (2.6->2.3, the merged evidence size) that carries grounding +
+        // selection (UpdateTurnPulse breathes it on the active turn); `_Pip` = the small team-colored feet-pip,
+        // the PRIMARY team read (replaces the old bright ellipse). MoveActorAndShadows drags all three with the feet.
         MakeGroundQuad(nm + "_AO", p, 0.04f, 2.0f, BlobTex(), Color.white, 1950);
-        MakeGroundQuad(nm + "_Ring", p, 0.06f, 2.6f, RingTex(), foe ? new Color(1f, 0.13f, 0.10f, 1f) : new Color(0.4f, 0.95f, 1f, 1f), 1955);
+        MakeGroundQuad(nm + "_Ring", p, 0.06f, 2.3f, ContactDecalTex(foe), new Color(1f, 1f, 1f, 0.72f), 1955);
+        MakeGroundQuad(nm + "_Pip", p, 0.07f, 0.7f, PipTex(), foe ? new Color(1f, 0.13f, 0.10f, 1f) : new Color(0.4f, 0.95f, 1f, 1f), 1958);
 
         _spawned.Add(id);
         // #1441/#anim-combat: _fbxOf + _animOf were registered up-front (before the idle pose). Seed the cell
@@ -1334,7 +1427,7 @@ public class CombatSurfaceClient : MonoBehaviour
 
     void Despawn(string id)
     {
-        foreach (var suf in new[] { "", "_AO", "_Core", "_Ring" })
+        foreach (var suf in new[] { "", "_AO", "_Core", "_Ring", "_Pip" })
         {
             var g = GameObject.Find("Actor_" + id + suf);
             if (g != null) Object.Destroy(g);
@@ -1507,7 +1600,7 @@ public class CombatSurfaceClient : MonoBehaviour
     {
         Vector3 delta = newPos - a.position;
         a.position = newPos;
-        foreach (var suf in new[] { "_AO", "_Core", "_Ring" })
+        foreach (var suf in new[] { "_AO", "_Core", "_Ring", "_Pip" })
         {
             var g = GameObject.Find(a.name + suf);
             if (g != null) g.transform.position += delta;
@@ -2546,7 +2639,7 @@ public class CombatSurfaceClient : MonoBehaviour
             else if (!cd) a.rotation = startRot * Quaternion.Euler(0f, 0f, Mathf.Lerp(0f, 85f, u));   // topple when no clip (controller plays Death)
             MoveActorAndShadows(a, home + new Vector3(0f, -0.25f * u, 0f));
             float dim = Mathf.Lerp(1f, 0.35f, u);
-            FadeSibling(a.name, "_Ring", dim); FadeSibling(a.name, "_AO", dim);
+            FadeSibling(a.name, "_Ring", dim); FadeSibling(a.name, "_AO", dim); FadeSibling(a.name, "_Pip", dim);
             yield return null;
         }
         if (hg && g.IsValid()) g.Destroy();
@@ -2566,7 +2659,7 @@ public class CombatSurfaceClient : MonoBehaviour
         if (p != null) { a.localScale = p.scale; a.rotation = p.rot; }
         PoseIdle(a.gameObject);
         int[] cell; if (_cellOf.TryGetValue(id, out cell)) GroundSnap(a, cell[0], cell[1]);
-        FadeSibling(a.name, "_Ring", 1f); FadeSibling(a.name, "_AO", 1f);
+        FadeSibling(a.name, "_Ring", 0.72f); FadeSibling(a.name, "_AO", 1f); FadeSibling(a.name, "_Pip", 1f);
         EnsureHpBar(id, a);
         Debug.Log("[CSC] revived Actor_" + id);
     }
@@ -2585,7 +2678,7 @@ public class CombatSurfaceClient : MonoBehaviour
             a.localScale = Vector3.Lerp(s0, s0 * 0.05f, u);
             MoveActorAndShadows(a, p0 + new Vector3(0f, -0.6f * u, 0f));
             float dim = Mathf.Lerp(0.35f, 0f, u);
-            FadeSibling(a.name, "_Ring", dim); FadeSibling(a.name, "_AO", dim);
+            FadeSibling(a.name, "_Ring", dim); FadeSibling(a.name, "_AO", dim); FadeSibling(a.name, "_Pip", dim);
             yield return null;
         }
         Despawn(id);   // removes Actor_<id> + _AO + _Ring, clears per-actor state
@@ -2707,14 +2800,16 @@ public class CombatSurfaceClient : MonoBehaviour
         if (gone != null) foreach (var id in gone) RemoveHpBar(id);
     }
 
-    // Active-turn ring pulse: the isCurrent combatant's selection ring breathes (alpha + scale); the prior
-    // pulsed ring is reset to rest when the turn moves on.
+    // Active-turn selection pulse: the isCurrent combatant's contact decal (`_Ring`) breathes (alpha + scale)
+    // to mark the selection state (RING-V2: the feet-pip carries the always-on team read); the prior pulsed
+    // decal resets to rest when the turn moves on. Rest/selected alphas 0.72/0.98 and base scale 2.3 track the
+    // #1524 contact-decal evidence values (down from the old 2.6 UI ring).
     void UpdateTurnPulse()
     {
         if (_pulsePrev != _currentId && !string.IsNullOrEmpty(_pulsePrev))
         {
             var prev = GameObject.Find("Actor_" + _pulsePrev + "_Ring");
-            if (prev != null) { var pr = prev.GetComponent<Renderer>(); if (pr != null && pr.sharedMaterial != null) { var c = pr.sharedMaterial.color; c.a = 1f; pr.sharedMaterial.color = c; } prev.transform.localScale = new Vector3(2.6f, 2.6f, 1f); }
+            if (prev != null) { var pr = prev.GetComponent<Renderer>(); if (pr != null && pr.sharedMaterial != null) { var c = pr.sharedMaterial.color; c.a = 0.72f; pr.sharedMaterial.color = c; } prev.transform.localScale = new Vector3(2.3f, 2.3f, 1f); }
             _pulsePrev = _currentId;
         }
         _pulsePrev = _currentId;
@@ -2723,8 +2818,8 @@ public class CombatSurfaceClient : MonoBehaviour
         if (ring == null) return;
         var r = ring.GetComponent<Renderer>(); if (r == null || r.sharedMaterial == null) return;
         float p = 0.5f + 0.5f * Mathf.Sin(Time.time * 4f);
-        var col = r.sharedMaterial.color; col.a = Mathf.Lerp(0.55f, 1f, p); r.sharedMaterial.color = col;
-        float s = Mathf.Lerp(2.6f, 3.05f, p); ring.transform.localScale = new Vector3(s, s, 1f);
+        var col = r.sharedMaterial.color; col.a = Mathf.Lerp(0.72f, 0.98f, p); r.sharedMaterial.color = col;
+        float s = Mathf.Lerp(2.3f, 2.7f, p); ring.transform.localScale = new Vector3(s, s, 1f);
     }
 
     // ---- #1463 W6.4 onboarding hint layer (task 1) --------------------------------------------------
