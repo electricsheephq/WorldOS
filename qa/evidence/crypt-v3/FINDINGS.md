@@ -90,3 +90,24 @@ for EVERY room, not just flat interiors. Secondary suspect (untestable without s
 v3.6 prompt ("crisp carved stone relief", block-wall emphasis) may bias toward the chunky prior —
 next cycle A/Bs the v3.5 prompt verbatim against the v3.6 prompt across the 3-draw set.
 CU: 9. Run total 273/300 — remaining 27 banked for next session's 3-draw chain.
+
+## ★ FLUX ENDPOINT REGRESSION (2026-07-15, ~09:39→10:06 UTC window) — PROBE-VERIFIED EXTERNAL
+Byte-identical reproduction of the v3.5 winning job (same depth asset_JvC4tSTYsci5Gv53CiMUgsUi,
+same prompt verbatim, seed 12345, same params; repro job_EWHdWmJvrwecvoeAu743atMg) now returns a
+FLAT VECTOR/CLAY-MINIATURE aesthetic (repro_v35.png) instead of this morning's painterly base
+(asset_nLpbqc9sANTDCz2F2YpmWxqb, job_fxTssiHBxHfkSnf8TtAqjKs5, 09:38 UTC) — the seed-determinism
+contract is broken, so the backing deployment (subProcessor: Modal) changed under us. Fingerprint
+of the new backend: a thin "thread/cable" artifact in the dark apron, present in EVERY post-change
+draw (both tavern bases 10:06/10:13, all five crypt v3.6 draws, both bisects) and absent before.
+BISECTS RUN BEFORE THE SERVICE WAS SUSPECTED (all innocent, all 9 CU each):
+- apron prompt sentence: removed → still clay (bisect_noapron.png)
+- depth remap tightening: reverted → still fails, new mode (bisect_oldremap.png — front walls
+  became floating plinth rings)
+- tavern cycle-1 "cue-mass" fixes: real improvements (4/4 tables held) but the blur/artifacts in
+  those bases were ALREADY the new backend, not our conditioning.
+CONSEQUENCE for earlier today's conclusions: the "single-shot variance" verdict on the v3.6 style
+collapse was MISATTRIBUTED — it was the endpoint change. The universal best-of-N selection gate
+stays (it is the promoted recipe and cheap insurance) but the crypt geometry/prompt were fine.
+NEXT: (a) LoRA-routing probe (interior LoRA rides Replicate, not Modal) job_7B6uTdQzV6Vxmp9hTsBBoqtz;
+(b) re-probe the bare endpoint hourly; (c) paint-independent phases proceed; (d) registry incident
+note in the Phase C PR. numOutputs (not numImages) is the multi-draw param (schema-verified).
