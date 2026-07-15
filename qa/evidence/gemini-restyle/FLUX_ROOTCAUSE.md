@@ -33,3 +33,17 @@ Worth a note to Scenario: their Modal flux-1-dev depth-CN deployment changed ~20
 (a byte-identical job that worked at 09:38 now returns a different, flat result). Pipeline is otherwise
 proven; registered-beauty resumes on Modal recovery. Re-probe: bare flux, depth asset
 asset_JvC4tSTYsci5Gv53CiMUgsUi, seed 12345 — painterly return = recovered.
+
+## CORRECTION (2026-07-15 ~12:50): the Modal regression degrades REGISTRATION too, not just style
+Tested: regressed-Modal flux base (reprobe4, edge-recall 0.58 vs depth — LOOKS registered) → Gemini
+structure-lock → frame18 (reg_beauty_best_crypt.png). Result = the BEST-LOOKING crypt of the run
+(oil-painted knotwork columns, carved knight effigy, doorway braziers, warm chiaroscuro) BUT overlay
+shows ~1-cell drift of tomb+columns from boxes_v35. So the Modal regression loosened controlnet
+ADHERENCE (~1 cell), not only the painterly style — Gemini restores beauty but cannot recover the
+lost registration. My mid-experiment "not blocked" was over-optimistic.
+NET (all paths under the Modal outage cluster at ~0.8-1.4 cell):
+- greybox→Gemini: panel 7.5, ~0.8 cell
+- regressed-Modal flux→Gemini: BEST BEAUTY (frame18), ~1.0 cell
+- flux+LoRA Replicate: painterly, ~1.4 cell
+The pixel-perfect 0.05-cell registration REQUIRES Modal flux to recover its former tight CN adherence.
+Watch armed; frame18 is the best available beauty NOW (ship-candidate if ~1-cell drift acceptable).
