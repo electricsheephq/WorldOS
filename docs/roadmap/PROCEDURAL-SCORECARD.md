@@ -56,3 +56,32 @@ eyeball (axes 6-7) → blind panel (axis 8) → grade the row → fix the LOWEST
   resize check already in the chain).
 - Even light spacing = flat drama: breathing-room spacing must not equalize LIGHT sources — cluster
   braziers/candles asymmetrically around the focal point (panel lens: lighting 6.0 vs incumbent 8.4).
+
+## ROOM-CLASS COVERAGE (2026-07-15 procedural-world run)
+The unified pipeline (geometry → build_room_unified.cs greybox+depth+boxes → paint) now covers:
+| class | geometry | greybox design-gate | paint status |
+|-------|----------|---------------------|--------------|
+| crypt | author_crypt_* + v3.5/v3.6 | PASS (0.04-0.05 cell registration) | v3.5 panel 6.2; gemini-restyle 7.5 (drift) |
+| tavern | /tmp/tavern_v2 (molded bar/table) | PASS | flux-blocked (endpoint regression) |
+| throne hall | throne_hall_geometry (dais/throne/banner kinds) | PASS (120 walkable, connected) | gemini-restyle painterly preview banked |
+| town (N-room) | tools/generate_town.py from a DunGen layout | per-room PASS | greybox-plated walk proven |
+Molded kind vocabulary in build_room_unified.cs: wall_run · stone_pillar · sarcophagus · stone_well ·
+brazier · altar · barrel · table · bar · **dais · throne · banner** (new). A new class needs geometry
++ (0-2 new molded kinds when its furniture reads wrong as an existing kind).
+
+## THE TOWN COMMAND CHAIN (Phase E, proven end-to-end)
+```
+tools/generate_town.py <dungen_layout.json> --rooms r0,r1,r2,r3 --town-id <slug> --out-dir <d>
+  → <slug>_<room>_geometry.json ×N (unified-painter-ready) + <slug>_world.json (reciprocal door pairs,
+    door_cells[i]↔connections[i]) + <slug>_plates_fragment.json (cameraPin orthos + boxes sidecars)
+qa/seed_gfx_town.py <state_dir> <out-dir> <slug>   → engine world; cross_door walks all hops
+```
+Proven: a 4-room DunGen subgraph seeded + walked room_0→1→2→3, every cross_door landing correct.
+
+## ★ THE GREYBOX→GEMINI ROUTE (flux-outage response + a standing beauty lever)
+When flux depth-CN is unavailable/regressed: feed the pixel-registered greybox straight to
+model_google-gemini-3-1-flash (structure-lock + scene-grounding prompt, 2K, thinkingLevel HIGH,
+seed 123, NO referenceImages) → PoE2-caliber painterly in ONE call (crypt + throne panels 7.5).
+TRADEOFF: Gemini recomposes ~0.8 cell → NOT registered enough for the walkable/occluder pipeline;
+use for BEAUTY PREVIEWS + design-gate visualization. The registered path stays flux-base → Gemini
+(0.05 cell) — restore when the flux endpoint recovers. Full detail qa/evidence/gemini-restyle/.
