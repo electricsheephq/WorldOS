@@ -315,7 +315,89 @@ public class CombatSurfaceClient : MonoBehaviour
     // gameplay contact; ABSENT effects (or absent registry / bundle) => nothing spawns (byte-identical).
     class EffectSpec { public string type; public int[] cell; public float scale = 1f; public float y = 0f; }
     class PlateEntry { public string plate; public float[] planeSize; public float ortho = -1f, pitch = float.NaN, yaw = float.NaN;
-                       public System.Collections.Generic.List<EffectSpec> effects; }
+                       public System.Collections.Generic.List<EffectSpec> effects;
+                       // UNIFY-THE-FRAMES (owner-ratified 2026-07-15): optional per-plate `boxes` file
+                       // (StreamingAssets-relative, emitted by build_room_unified.cs) — the EXACT world-space
+                       // box list the plate's depth conditioning was rendered from. When present, the depth-
+                       // proxy occluders are built from THESE boxes verbatim (RebuildOccluders), so what masks
+                       // an actor at runtime is byte-derived from what shaped the paint. Absent => legacy
+                       // per-cell footprint proxies (byte-identical prior behavior).
+                       public string boxesPath; }
+    // world-space occluder boxes of the ACTIVE plate ({center,size} rows, kind!=floor), null => legacy path.
+    System.Collections.Generic.List<float[]> _plateBoxes;
+    bool _truthOverlay = System.Environment.GetEnvironmentVariable("WORLDOS_TRUTH_OVERLAY") == "1"; // G-key engine-truth overlay (playtest-#9 instrument); env=1 starts ON (QA/proof runs)
+    Material _overlayMat;                                     // GL lines material (Hidden/Internal-Colored)
+
+    // ---- UNIFY-THE-FRAMES truth overlay ---------------------------------------------------------
+    // GL-immediate wireframes drawn AFTER the scene (Built-in RP): every grid cell's floor diamond
+    // colored by live engine state (gold=walkable, red=impassable, cyan=door), plus magenta wireframes
+    // of the active occluder volumes. Pure read of state the client already holds (_impassable /
+    // _doorTo / Cols / Rows / _plateBoxes) — no engine call, no state write.
+    Material EnsureOverlayMaterial()
+    {
+        if (_overlayMat != null) return _overlayMat;
+        var sh = Shader.Find("Hidden/Internal-Colored");
+        if (sh == null) return null;
+        _overlayMat = new Material(sh) { hideFlags = HideFlags.HideAndDontSave };
+        _overlayMat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+        _overlayMat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+        _overlayMat.SetInt("_Cull", (int)UnityEngine.Rendering.CullMode.Off);
+        _overlayMat.SetInt("_ZTest", (int)UnityEngine.Rendering.CompareFunction.Always);
+        _overlayMat.SetInt("_ZWrite", 0);
+        return _overlayMat;
+    }
+
+    void OnRenderObject()
+    {
+        if (!_truthOverlay || Cols <= 0 || Rows <= 0) return;
+        var m = EnsureOverlayMaterial(); if (m == null) return;
+        m.SetPass(0);
+        GL.PushMatrix();
+        GL.Begin(GL.LINES);
+        float y = FloorY + 0.03f;
+        for (int r = 0; r < Rows; r++)
+            for (int c = 0; c < Cols; c++)
+            {
+                int key = CellKey(c, r);
+                Color col = _doorTo.ContainsKey(key) ? new Color(0.2f, 0.9f, 1f, 0.9f)
+                          : _impassable.Contains(key) ? new Color(1f, 0.25f, 0.2f, 0.85f)
+                          : new Color(1f, 0.85f, 0.3f, 0.35f);
+                GL.Color(col);
+                var w = CellToWorld(c, r);
+                float h = CellSize * 0.5f;
+                Vector3 a = new Vector3(w.x - h, y, w.z), b = new Vector3(w.x, y, w.z + h);
+                Vector3 d2 = new Vector3(w.x + h, y, w.z), e = new Vector3(w.x, y, w.z - h);
+                GL.Vertex(a); GL.Vertex(b); GL.Vertex(b); GL.Vertex(d2);
+                GL.Vertex(d2); GL.Vertex(e); GL.Vertex(e); GL.Vertex(a);
+            }
+        if (_plateBoxes != null)
+        {
+            GL.Color(new Color(1f, 0.3f, 1f, 0.9f));
+            foreach (var b in _plateBoxes)
+            {
+                Vector3 cn = new Vector3(b[0], b[1], b[2]);
+                Vector3 hs = new Vector3(b[3] / 2f, b[4] / 2f, b[5] / 2f);
+                // 12 edges of the box
+                for (int i = 0; i < 4; i++)
+                {
+                    float sx = (i == 0 || i == 3) ? -1f : 1f, sz = (i < 2) ? -1f : 1f;
+                    float sx2 = (i == 0 || i == 1) ? ((i == 0) ? 1f : -1f) : ((i == 2) ? -1f : 1f);
+                    // vertical edges
+                    GL.Vertex(cn + new Vector3(sx * hs.x, -hs.y, sz * hs.z)); GL.Vertex(cn + new Vector3(sx * hs.x, hs.y, sz * hs.z));
+                }
+                // top + bottom rectangles
+                for (int lvl = -1; lvl <= 1; lvl += 2)
+                {
+                    Vector3 p1 = cn + new Vector3(-hs.x, lvl * hs.y, -hs.z), p2 = cn + new Vector3(hs.x, lvl * hs.y, -hs.z);
+                    Vector3 p3 = cn + new Vector3(hs.x, lvl * hs.y, hs.z), p4 = cn + new Vector3(-hs.x, lvl * hs.y, hs.z);
+                    GL.Vertex(p1); GL.Vertex(p2); GL.Vertex(p2); GL.Vertex(p3);
+                    GL.Vertex(p3); GL.Vertex(p4); GL.Vertex(p4); GL.Vertex(p1);
+                }
+            }
+        }
+        GL.End();
+        GL.PopMatrix();
+    }
     System.Collections.Generic.Dictionary<string, PlateEntry> _plateManifest;
     System.Collections.Generic.Dictionary<string, string> _effectRegistry;   // type -> prefab asset path (effects_registry.json)
     System.Collections.Generic.List<GameObject> _effectInstances;            // live spawned effect instances (despawned on plate swap)
@@ -629,6 +711,30 @@ public class CombatSurfaceClient : MonoBehaviour
         var mat = EnsureOccluderMaterial();
         if (mat == null) return;                             // shader missing -> skip (never a visible box)
         _occRoot = new GameObject("OccluderProxies");
+        // UNIFY-THE-FRAMES: when the active plate ships its box sidecar, the proxies are THOSE boxes
+        // verbatim — the identical volumes the plate's depth conditioning was rendered from, so runtime
+        // masking and painted geometry cannot disagree (walls included, which the footprint path never
+        // covered — the playtest-#9 walk-through-wall class). Legacy footprint path below is untouched.
+        if (_plateBoxes != null && _plateBoxes.Count > 0)
+        {
+            int bn = 0;
+            foreach (var b in _plateBoxes)
+            {
+                var bx = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                bx.name = "Occluder_box_" + bn;
+                Destroy(bx.GetComponent<Collider>());
+                bx.transform.SetParent(_occRoot.transform, true);
+                bx.transform.position = new Vector3(b[0], b[1], b[2]);
+                bx.transform.localScale = new Vector3(b[3], b[4], b[5]);
+                var bxr = bx.GetComponent<Renderer>();
+                bxr.sharedMaterial = mat;
+                bxr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                bxr.receiveShadows = false;
+                bn++;
+            }
+            Debug.Log("[CSC] occluders: " + bn + " UNIFIED plate-box volumes (loc=" + _occLocId + ")");
+            return;
+        }
         System.Func<string, float> bandH = (b) => b == "tall" ? 7.5f : (b == "low" ? 1.4f : 3.8f);
         int occN = 0;
         foreach (var oo in _occRaw)
@@ -1843,6 +1949,11 @@ public class CombatSurfaceClient : MonoBehaviour
 
     void Update()
     {
+        // UNIFY-THE-FRAMES truth overlay (playtest-#9 instrument): G toggles engine-truth rendering over
+        // the plate — every cell's floor diamond colored by its live state (walkable/impassable/door) +
+        // wireframes of the active occluder volumes. The permanent "is paint lying?" check: no alignment
+        // claim ships without a screenshot of this overlay agreeing with the paint.
+        if (Input.GetKeyDown(KeyCode.G)) { _truthOverlay = !_truthOverlay; Debug.Log("[CSC] truth overlay " + (_truthOverlay ? "ON" : "OFF")); }
         // #idle-persist: drive every resting actor's persistent idle graph so its skinned pose renders (and
         // breathes) each frame — the walk/attack coroutines Evaluate their own graphs, so a gliding/attacking
         // actor has no idle graph here (KillIdleGraph removed it) until PoseIdle restarts it at rest.
@@ -1874,6 +1985,9 @@ public class CombatSurfaceClient : MonoBehaviour
         if (_qaClicks != null)
         {
             _screenW = Screen.width; _screenH = Screen.height;   // cache for the off-thread /health
+            // /shot: capture the app's OWN framebuffer (countdown lets the request thread return first).
+            if (_qaShot > 0 && --_qaShot == 0)
+                ScreenCapture.CaptureScreenshot("/tmp/wos_shot.png");
             if (_qaClicks.TryDequeue(out var qc))
             {
                 _dbgDeq++;
@@ -2037,6 +2151,7 @@ public class CombatSurfaceClient : MonoBehaviour
     //   GET /health          -> {"ok":true}
     [System.Serializable] class QaClick { public int c = -1; public int r = -1; public float vx = float.NaN; public float vy = float.NaN; }
     struct QaCmd { public bool cell; public int c; public int r; public float vx; public float vy; }
+    volatile int _qaShot;                                     // /shot countdown -> main-thread framebuffer capture
     ConcurrentQueue<QaCmd> _qaClicks;
     HttpListener _qaListener;
     Thread _qaThread;
@@ -2092,6 +2207,12 @@ public class CombatSurfaceClient : MonoBehaviour
                     { _qaClicks.Enqueue(new QaCmd { cell = true, c = q.c, r = q.r }); _dbgEnq++; resp = "{\"ok\":true}"; }
                     else if (q != null && !float.IsNaN(q.vx) && !float.IsNaN(q.vy))
                     { _qaClicks.Enqueue(new QaCmd { cell = false, vx = Mathf.Clamp01(q.vx), vy = Mathf.Clamp01(q.vy) }); _dbgEnq++; resp = "{\"ok\":true}"; }
+                }
+                else if (ctx.Request.Url.AbsolutePath == "/shot")
+                {
+                    // UNIFY-THE-FRAMES QA verb: in-app framebuffer capture on the MAIN thread next frame —
+                    // no desktop/SCK capture, no titlebar calibration, no privacy exposure of other windows.
+                    _qaShot = 2; resp = "{\"ok\":true,\"path\":\"/tmp/wos_shot.png\"}";
                 }
                 else if (ctx.Request.Url.AbsolutePath == "/health")
                     resp = "{\"ok\":true,\"screenW\":" + _screenW + ",\"screenH\":" + _screenH + "}";
@@ -3010,6 +3131,8 @@ public class CombatSurfaceClient : MonoBehaviour
                     if (cp.ContainsKey("yaw")) pe.yaw = System.Convert.ToSingle(cp["yaw"]);
                 }
                 // VFX-ANCHORS: OPTIONAL `effects`:[{type, cell:[c,r], scale?, y?}] anchored VFX for this plate.
+                if (row.ContainsKey("boxes") && row["boxes"] is string bp && !string.IsNullOrEmpty(bp))
+                    pe.boxesPath = bp;                       // UNIFY-THE-FRAMES: occluder boxes sidecar
                 if (row.ContainsKey("effects") && row["effects"] is System.Collections.Generic.List<object> fx)
                 {
                     pe.effects = new System.Collections.Generic.List<EffectSpec>();
@@ -3142,6 +3265,43 @@ public class CombatSurfaceClient : MonoBehaviour
         var ls = bd.transform.localScale;
         bd.transform.localScale = new Vector3(ow, oh, ls.z == 0f ? 1f : ls.z);
         Debug.Log("[CSC] plate swapped -> " + entry.plate + " (" + tex.width + "x" + tex.height + ", loc=" + _locId + ")");
+        // UNIFY-THE-FRAMES: load this plate's occluder-box sidecar (world-space {center,size} rows from
+        // build_room_unified.cs — the same boxes the depth conditioning was rendered from). Parsed once per
+        // swap; RebuildOccluders prefers these over per-cell footprint proxies. Reset the occluder signature
+        // so the next ApplyJson rebuild fires even when the surface's occluder set is unchanged.
+        _plateBoxes = null;
+        if (!string.IsNullOrEmpty(entry.boxesPath))
+        {
+            try
+            {
+                string bpath = System.IO.Path.Combine(Application.streamingAssetsPath, entry.boxesPath);
+                if (System.IO.File.Exists(bpath))
+                {
+                    var broot = Json.Parse(System.IO.File.ReadAllText(bpath)) as System.Collections.Generic.Dictionary<string, object>;
+                    var blist = (broot != null && broot.ContainsKey("boxes")) ? broot["boxes"] as System.Collections.Generic.List<object> : null;
+                    if (blist != null)
+                    {
+                        _plateBoxes = new System.Collections.Generic.List<float[]>();
+                        foreach (var bo in blist)
+                        {
+                            var bd2 = bo as System.Collections.Generic.Dictionary<string, object>; if (bd2 == null) continue;
+                            string bkind = bd2.ContainsKey("kind") ? bd2["kind"] as string : "";
+                            if (bkind == "floor") continue;  // the floor never occludes an actor
+                            var bc = bd2.ContainsKey("center") ? bd2["center"] as System.Collections.Generic.List<object> : null;
+                            var bs = bd2.ContainsKey("size") ? bd2["size"] as System.Collections.Generic.List<object> : null;
+                            if (bc == null || bs == null || bc.Count < 3 || bs.Count < 3) continue;
+                            _plateBoxes.Add(new[] {
+                                System.Convert.ToSingle(bc[0]), System.Convert.ToSingle(bc[1]), System.Convert.ToSingle(bc[2]),
+                                System.Convert.ToSingle(bs[0]), System.Convert.ToSingle(bs[1]), System.Convert.ToSingle(bs[2]) });
+                        }
+                        Debug.Log("[CSC] plate boxes loaded: " + _plateBoxes.Count + " occluder volumes (" + entry.boxesPath + ")");
+                    }
+                }
+                else Debug.LogWarning("[CSC] plate boxes file missing: " + bpath + " (falling back to footprint proxies)");
+            }
+            catch (System.Exception e) { Debug.LogWarning("[CSC] plate boxes load: " + e.Message); _plateBoxes = null; }
+        }
+        _occSigBuilt = null;
         // VFX-ANCHORS: despawn the prior plate's effect instances and spawn this plate's anchored VFX (an
         // animated fire over the painted firepit, etc.). No `effects` / no registry / no bundle => a clean
         // despawn + nothing spawned (byte-identical to the pre-VFX plate).

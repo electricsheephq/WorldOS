@@ -1,0 +1,206 @@
+[check_grid_paint_coherence] crypt_fresh: INCOHERENT (17 checked, worst offset 1.62 cell, threshold 0.5) — torch_door_l painted 1.19 cell off authored cells [[5, 1]] (> 0.5; 68px, NCC 0.240) — actor sits on the cell, paint sits elsewhere; torch_door_r painted 1.62 cell off authored cells [[7, 1]] (> 0.5; 93px, NCC 0.250) — actor sits on the cell, paint sits elsewhere; pilaster_arch painted 0.94 cell off authored cells [[12, 3]] (> 0.5; 54px, NCC 0.361) — actor sits on the cell, paint sits elsewhere; torch_near_l not locatable near authored cells [[1, 4]] (peak NCC 0.137 < 0.2) — paint put no grid-shaped structure on the footprint; rubble_bl painted 0.68 cell off authored cells [[1, 1], [1, 2]] (> 0.5; 39px, NCC 0.427) — actor sits on the cell, paint sits elsewhere; broken_slabs painted 1.50 cell off authored cells [[1, 6], [1, 7]] (> 0.5; 87px, NCC 0.647) — actor sits on the cell, paint sits elsewhere; wall_w_0 painted 1.26 cell off authored cells [[0, 1], [0, 2], [0, 3], [0, 4], [0, 5], [0, 6], [0, 7], [0, 8], [0, 9]] (> 0.5; 73px, NCC 0.630) — actor sits on the cell, paint sits elsewhere
+{
+  "passed": false,
+  "room": "crypt_fresh",
+  "max_offset_cells": 0.5,
+  "checked": 17,
+  "skipped": 0,
+  "props": [
+    {
+      "id": "pillar_l",
+      "status": "PASS",
+      "offset_cells": 0.104,
+      "offset_px": 6.0,
+      "ncc": 0.3738,
+      "peak_offset_px": [
+        0,
+        6
+      ]
+    },
+    {
+      "id": "sarcophagus",
+      "status": "PASS",
+      "offset_cells": 0.303,
+      "offset_px": 17.5,
+      "ncc": 0.3109,
+      "peak_offset_px": [
+        -9,
+        15
+      ]
+    },
+    {
+      "id": "effigy_niche_l",
+      "status": "PASS",
+      "offset_cells": 0.0,
+      "offset_px": 0.0,
+      "ncc": 0.4185,
+      "peak_offset_px": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "torch_door_l",
+      "status": "DRIFT",
+      "offset_cells": 1.186,
+      "offset_px": 68.4,
+      "ncc": 0.2397,
+      "peak_offset_px": [
+        -18,
+        66
+      ]
+    },
+    {
+      "id": "torch_door_r",
+      "status": "DRIFT",
+      "offset_cells": 1.618,
+      "offset_px": 93.3,
+      "ncc": 0.2497,
+      "peak_offset_px": [
+        66,
+        66
+      ]
+    },
+    {
+      "id": "niche_back_r",
+      "status": "PASS",
+      "offset_cells": 0.074,
+      "offset_px": 4.2,
+      "ncc": 0.498,
+      "peak_offset_px": [
+        -3,
+        -3
+      ]
+    },
+    {
+      "id": "pilaster_arch",
+      "status": "DRIFT",
+      "offset_cells": 0.936,
+      "offset_px": 54.0,
+      "ncc": 0.3615,
+      "peak_offset_px": [
+        -54,
+        0
+      ]
+    },
+    {
+      "id": "torch_near_l",
+      "status": "UNLOCATED",
+      "offset_cells": 0.187,
+      "offset_px": 10.8,
+      "ncc": 0.137,
+      "peak_offset_px": [
+        -9,
+        -6
+      ]
+    },
+    {
+      "id": "torch_far_r",
+      "status": "PASS",
+      "offset_cells": 0.0,
+      "offset_px": 0.0,
+      "ncc": 0.4762,
+      "peak_offset_px": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "rubble_bl",
+      "status": "DRIFT",
+      "offset_cells": 0.676,
+      "offset_px": 39.0,
+      "ncc": 0.4266,
+      "peak_offset_px": [
+        -15,
+        -36
+      ]
+    },
+    {
+      "id": "broken_slabs",
+      "status": "DRIFT",
+      "offset_cells": 1.5,
+      "offset_px": 86.5,
+      "ncc": 0.647,
+      "peak_offset_px": [
+        72,
+        48
+      ]
+    },
+    {
+      "id": "wall_n_0",
+      "status": "PASS",
+      "offset_cells": 0.164,
+      "offset_px": 9.5,
+      "ncc": 0.5164,
+      "peak_offset_px": [
+        -9,
+        -3
+      ]
+    },
+    {
+      "id": "wall_n_1",
+      "status": "PASS",
+      "offset_cells": 0.406,
+      "offset_px": 23.4,
+      "ncc": 0.4894,
+      "peak_offset_px": [
+        -15,
+        18
+      ]
+    },
+    {
+      "id": "wall_s_0",
+      "status": "PASS",
+      "offset_cells": 0.419,
+      "offset_px": 24.2,
+      "ncc": 0.5486,
+      "peak_offset_px": [
+        -24,
+        3
+      ]
+    },
+    {
+      "id": "wall_w_0",
+      "status": "DRIFT",
+      "offset_cells": 1.258,
+      "offset_px": 72.6,
+      "ncc": 0.6296,
+      "peak_offset_px": [
+        -72,
+        -9
+      ]
+    },
+    {
+      "id": "wall_e_0",
+      "status": "PASS",
+      "offset_cells": 0.052,
+      "offset_px": 3.0,
+      "ncc": 0.4162,
+      "peak_offset_px": [
+        -3,
+        0
+      ]
+    },
+    {
+      "id": "wall_e_1",
+      "status": "PASS",
+      "offset_cells": 0.329,
+      "offset_px": 19.0,
+      "ncc": 0.499,
+      "peak_offset_px": [
+        18,
+        -6
+      ]
+    }
+  ],
+  "reasons": [
+    "torch_door_l painted 1.19 cell off authored cells [[5, 1]] (> 0.5; 68px, NCC 0.240) \u2014 actor sits on the cell, paint sits elsewhere",
+    "torch_door_r painted 1.62 cell off authored cells [[7, 1]] (> 0.5; 93px, NCC 0.250) \u2014 actor sits on the cell, paint sits elsewhere",
+    "pilaster_arch painted 0.94 cell off authored cells [[12, 3]] (> 0.5; 54px, NCC 0.361) \u2014 actor sits on the cell, paint sits elsewhere",
+    "torch_near_l not locatable near authored cells [[1, 4]] (peak NCC 0.137 < 0.2) \u2014 paint put no grid-shaped structure on the footprint",
+    "rubble_bl painted 0.68 cell off authored cells [[1, 1], [1, 2]] (> 0.5; 39px, NCC 0.427) \u2014 actor sits on the cell, paint sits elsewhere",
+    "broken_slabs painted 1.50 cell off authored cells [[1, 6], [1, 7]] (> 0.5; 87px, NCC 0.647) \u2014 actor sits on the cell, paint sits elsewhere",
+    "wall_w_0 painted 1.26 cell off authored cells [[0, 1], [0, 2], [0, 3], [0, 4], [0, 5], [0, 6], [0, 7], [0, 8], [0, 9]] (> 0.5; 73px, NCC 0.630) \u2014 actor sits on the cell, paint sits elsewhere"
+  ]
+}
