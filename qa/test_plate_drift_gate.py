@@ -159,13 +159,16 @@ def test_geometry_only_manifest_skips_without_baseline():
 def test_gate_room_recipes_covers_camp_and_stays_green():
     """The room_recipes.json canonical_plate gate: it must find the camp room (manifest + committed
     plate), PASS it, and report the crypt as no-plate — overall green. camp_clearing_night resolves
-    to the ADOPTED camp_truegrey manifest (PANEL-ADOPT #1519), 16 props as of CAMP-TUNE (owner
-    playtest #7: wall_br split into 3 + the ruin's 3 new segments, was 12)."""
+    to the ADOPTED camp_truegrey manifest (PANEL-ADOPT #1519), 22 props as of CAMP-MANIFEST-REGEN
+    (re-derived from #1564's authored camp source, 2026-07-15: was 16 as of CAMP-TUNE owner playtest
+    #7 — wall_br split into 3 + the ruin's 3 new segments; +6 new props/+7 cells for the 7 painted
+    solids #1564's inverse-coherence sweep flagged with no footprint: firewood_tail, gear_stones,
+    camp_sack, shelter_post_r, ruin_rubble1, ruin_rubble2)."""
     report = drift.gate_room_recipes()
     assert report["passed"], report
     rooms = {r["recipe_key"]: r for r in report["rooms"]}
     assert rooms["camp_clearing_night"].get("passed") is True
-    assert rooms["camp_clearing_night"].get("checked") == 16
+    assert rooms["camp_clearing_night"].get("checked") == 22
     assert rooms["crypt"]["status"] == "no-plate"
 
 
