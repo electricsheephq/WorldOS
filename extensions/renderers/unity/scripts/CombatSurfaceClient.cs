@@ -1383,9 +1383,15 @@ public class CombatSurfaceClient : MonoBehaviour
         }
 
         // #1545 walk-behind silhouette: append the ZTest-Greater team material as a SECOND pass on each actor
-        // renderer (extra materials re-render the last submesh), so an actor overdrawn by a depth-proxy box
-        // renders a flat tinted silhouette instead of vanishing. Added after the albedo assignment so it's the
-        // last material. No-ops (skips) if the shader isn't in the build (EnsureSilhouetteMaterial warns once).
+        // renderer, so an actor overdrawn by a depth-proxy box renders a flat tinted silhouette instead of
+        // vanishing. Added after the albedo assignment so it's the last material. No-ops (skips) if the shader
+        // isn't in the build (EnsureSilhouetteMaterial warns once).
+        // NOTE (single-submesh assumption): Unity maps the extra material to the renderer's LAST submesh only,
+        // so this fully covers actors whose renderer has one submesh — which is every current actor (the albedo
+        // path above assigns a single sharedMaterial per renderer, and the box run confirmed rends=1 / one
+        // material each). A future MULTI-submesh actor (separate body/clothing/weapon materials) would silhouette
+        // only its last submesh; the general fix is a dedicated per-submesh silhouette renderer (deferred — it
+        // does not trigger with current assets and needs box re-validation).
         var sil = EnsureSilhouetteMaterial(foe);
         if (sil != null)
             foreach (var r in rends)
