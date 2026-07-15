@@ -220,6 +220,29 @@ if(props!=null) foreach(var po in props){ var p=po as System.Collections.Generic
       hcyl(pid+"_cap",kind,new Vector3(bx0,2.15f,bz0),Mathf.Min(hx,hz)*0.5f,(longX?hx:hz)*1.35f,longX,new Color(0.70f,0.68f,0.63f));
       np++; continue;
     }
+    if(kind.Contains("dais")||kind.Contains("platform")){
+      // throne-hall dais: a WIDE low stepped platform (broad flat top an actor stands on), NOT a
+      // curved-lid tomb — two chamfered stone steps. Vocabulary added Phase D (throne-hall class).
+      float hx=exX+0.95f, hz=exZ+0.95f;
+      box(pid+"_step0",kind,new Vector3(bx0,0.22f,bz0),new Vector3(hx*2.0f,0.44f,hz*2.0f),new Color(0.58f,0.57f,0.54f));
+      box(pid+"_step1",kind,new Vector3(bx0,0.62f,bz0),new Vector3(hx*1.7f,0.4f,hz*1.7f),new Color(0.62f,0.61f,0.57f));
+      box(pid+"_top",kind,new Vector3(bx0,0.92f,bz0),new Vector3(hx*1.45f,0.22f,hz*1.45f),new Color(0.66f,0.65f,0.60f));
+      np++; continue;
+    }
+    if(kind.Contains("throne")){
+      // a seat: low plinth + seat slab + a TALL vertical back (the silhouette that says "throne").
+      float hx=exX+0.55f, hz=exZ+0.55f;
+      box(pid+"_plinth",kind,new Vector3(bx0,0.3f,bz0),new Vector3(hx*1.6f,0.6f,hz*1.6f),new Color(0.60f,0.58f,0.54f));
+      box(pid+"_seat",kind,new Vector3(bx0,0.95f,bz0),new Vector3(hx*1.5f,0.35f,hz*1.5f),new Color(0.64f,0.62f,0.58f));
+      // back rises on the room-rear side (−z), tall and thin
+      box(pid+"_back",kind,new Vector3(bx0,1.9f,bz0-hz*0.55f),new Vector3(hx*1.5f,2.8f,hz*0.5f),new Color(0.62f,0.60f,0.56f));
+      np++; continue;
+    }
+    if(kind.Contains("banner")){
+      // a hanging cloth banner: a tall thin vertical panel flat against its wall cell.
+      cyl(pid,kind,new Vector3(bx0,1.5f,bz0),exX+0.3f,0.18f,5.2f,new Color(0.5f,0.28f,0.26f));
+      np++; continue;
+    }
     if(kind.Contains("table")){
       // tavern table: slim pedestal + WIDE overhanging oval top (molded — the stone_well trough
       // read failed the tavern v1 design gate; a table is pedestal+disc, not tier+lid).
@@ -346,11 +369,11 @@ _capPass("WOS/ViewNormal","room_greybox_normal.png");
 // bounding corners along the view forward, padded.
 {
   Vector3 fwd=crot*Vector3.forward;
-  // hy2 = the ACTUAL scene ceiling (wallH), not a fixed 8+ pad — padding the remap range with
-  // unused headroom flattens low furniture into a sliver of the depth band (tavern v3 base: tables
-  // at h1.3 in a 9-unit range conditioned so weakly that flux relocated/dropped them; crypt only
-  // survived because 6.8-unit pillars filled the range).
-  float hx2=(cols/2f)*2.0f, hz2=(rows/2f)*2.0f, hy2=wallH+0.5f;
+  // ⚠ REMAP RANGE IS AESTHETIC-LOAD-BEARING: tightening hy2 to wallH+0.5 (2026-07-15, ~6% contrast
+  // gain) flipped flux from painterly to a chunky clay/miniature prior on the SAME prompt/seed —
+  // 5/5 draws failed until reverted (bisect: prompt ruled out first). Furniture legibility is fixed
+  // by GEOMETRY cue heights (tables 2.0 surface, bar 2.86), never by squeezing the remap.
+  float hx2=(cols/2f)*2.0f, hz2=(rows/2f)*2.0f, hy2=Mathf.Max(wallH,8f)+1f;
   float dMin=float.MaxValue, dMax=float.MinValue;
   for(int i=0;i<8;i++){
     Vector3 p=new Vector3(((i&1)==0?-hx2:hx2), ((i&2)==0?0f:hy2), ((i&4)==0?-hz2:hz2));
