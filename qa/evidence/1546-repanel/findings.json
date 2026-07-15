@@ -1,0 +1,53 @@
+{
+  "lane": "CRYPT CORRECTED-ANCHOR RE-PANEL (#1546 non-spend half). Re-panel the #1528 best crypt candidate (iter3_a2) AND the crypt incumbent (crypt_armb_iter3) under CORRECTED NEUTRAL ANCHORING (#1560/#1561), to get de-circularized numbers. Owner ruled mid-lane (2026-07-15) that this is DATUM-ONLY: no cutover/adoption of the legacy plate; a fresh crypt through the amended pipeline is the real replacement (separate lane). This panel SETS THE BAR that fresh crypt must meet/beat.",
+  "provenance_chain_candidate": {
+    "note": "#1528 predates promotion stamping, so the chain is recorded here manually from its evidence (no registry stamp exists).",
+    "candidate": "iter3_a2 — qa/evidence/crypt-replicate/gen/iter3_a2.jpg",
+    "recipe": "recipe-a two-stage: Stage-1 base = validated iter2-f structure-locked plate; Stage-2 = Gemini 3.1 (nano-banana) img2img detail-enrichment in-place (deepen chiaroscuro + carved knotwork/runes/bones/cobwebs), STRUCTURE-LOCK + ADDITIONS-LOCK (no geometry change, no new objects/openings).",
+    "registered_base": "crypt_base_registered.png (#1514 true-greybox, correct-scale 2x2 coffin + 2-cell pillars) — qa/evidence/crypt-replicate/refs/crypt_base_registered.jpg",
+    "geometry": "qa/evidence/crypt-replicate/refs/crypt_geometry.json (14x11, 3 props: pillar_l [3,3]/[3,4], pillar_r [8,9]/[9,9], sarcophagus [5,6]/[6,6]/[5,7]/[6,7]).",
+    "overlay_recall_vs_1514_greybox": 0.8323,
+    "composition_integrity": "PASS (#1528) — 3-prop floor (brazier + 2 pillar stubs + 1 sarcophagus) held in authored cells; NO staircase/archway/2nd-tomb/opening added."
+  },
+  "protocol": "CORRECTED-ANCHORING (issue #1560/#1561) 5-scorer blind panel. Neutral anchors = disguised PoE2 real-art control (blind slot C) + DISCLOSED CAMP house-ref (non-competing room). Incumbent crypt_armb_iter3 = DISCLOSED comparison, NOT house_best. Candidate + incumbent BOTH scored. Lenses: brushwork / lighting / readability / material / holistic (fast-worker sonnet, independent, blind to slot mapping). All 6 plates normalized to identical 1344x768 PNG so identity cannot leak via resolution/crop/format.",
+  "blind_mapping": {
+    "A": "iter3_flux_s40 (recipe-b distractor)",
+    "B": "iter3_a2 (PRIMARY candidate, recipe-a)",
+    "C": "poe2_control (disguised real-art parity control, band [6.8,9.2])",
+    "D": "iter3_a1 (recipe-a variant distractor)",
+    "INCUMBENT": "crypt_armb_iter3 (disclosed comparison)"
+  },
+  "medians_corrected": {
+    "candidate_iter3_a2": 7.0,
+    "incumbent_crypt_armb_iter3": 7.0,
+    "control_poe2": 7.0,
+    "distractor_iter3_flux_s40": 7.0,
+    "distractor_iter3_a1": 7.0
+  },
+  "control_valid": true,
+  "control_band": [6.8, 9.2],
+  "headline": {
+    "gap_candidate_minus_incumbent": 0.0,
+    "delta_candidate_vs_control": 0.0
+  },
+  "gates_standing_ruling": {
+    "incumbent_band(|gap|<=1.5)": true,
+    "realart_parity(delta_vs_control>=-1.2)": true,
+    "control_valid": true,
+    "gate_verdict": "PASS on both cutover gates"
+  },
+  "anchor_correction_effect": {
+    "circular_1528": {"candidate": 7.1, "incumbent": 7.8, "control": 8.8, "delta_cand_vs_control": -1.7, "gap_cand_vs_inc": -0.7, "honesty_bar(cand>=inc-0.5)": "FAIL (7.1<7.3)"},
+    "corrected_1546": {"candidate": 7.0, "incumbent": 7.0, "control": 7.0, "delta_cand_vs_control": 0.0, "gap_cand_vs_inc": 0.0},
+    "mechanism": "The candidate's OWN absolute median held (7.1 -> 7.0). What changed: neutral anchoring de-inflated BOTH the incumbent (7.8 -> 7.0) and the real-art control (8.8 -> 7.0) down to the candidate's stable ~7.0. Net: the candidate moved from trailing the incumbent by 0.7 and real-art by 1.7 (circular) to EXACT PARITY with both. This is the #1560 thesis confirmed on the crypt — the same anchor artifact the tavern fit2 showed (+1.0 score / +2.0 delta under the fix). The suppression here landed on the ANCHORS' inflation rather than the challenger's score, but the relative-standing correction is identical: the M-ALIGN 'gap to the incumbent' was an anchor artifact, not a craft deficit."
+  },
+  "decision": "NO CUTOVER (DATUM-ONLY per owner mid-lane ruling 2026-07-15). The candidate CLEARS both standing cutover gates under corrected anchoring (within incumbent band 0.0<=1.5; real-art parity delta 0.0>=-1.2; control in-band) — under the pre-ruling playability-first standard this WOULD have been a formal promote. But the owner has ruled: stop iterating legacy plates; the fresh crypt through the fully amended pipeline is the replacement. So this result is recorded as the BAR the fresh crypt must meet/beat, not an adoption. No plates_manifest / room_recipes / walkslice changes; no promote.py run.",
+  "geometry_note": "No walkslice change (datum-only). For the record: the candidate reuses the SAME 3-prop crypt greybox geometry as the incumbent (crypt_geometry.json, canonical combat grid), composition-faithful at overlay recall 0.83 (#1528) — geometry matches, no diff. Had this been a cutover, the walkslice crypt grid check would pass unchanged.",
+  "caveats": {
+    "control_marginal": "The PoE2 control is an OUTDOOR jungle-ruins real-art frame; under the crypt-ROOM brief 2/5 scorers flagged camera_break and the holistic lens scored it 4 ('not a crypt cutaway'), pulling its median to 7.0 — in-band [6.8,9.2] but at the floor. Instrument valid, but the real-art ceiling reads softer here than in #1528's 8.8 precisely BECAUSE neutral anchoring stops auto-crediting a real screenshot. A room-matched real-art crypt control would tighten future crypt panels.",
+    "incumbent_content_drift": "Incumbent still earns the top material score (8) but the most invented_structure flags (5/5 scorers: staircase/archway/2nd-opening) — its richness embeds content the honest greybox composition cannot include; readability/holistic lenses penalized it for the extra structure blurring the single-chamber room."
+  },
+  "cu_spend": "0 CU — pure re-panel of EXISTING images (no generation). Under the 10 CU cap; no re-render needed.",
+  "adopted": false,
+  "auto_merge": "NOT armed — evidence-only PR (datum-only lane)."
+}

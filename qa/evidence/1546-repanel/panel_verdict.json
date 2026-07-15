@@ -1,0 +1,186 @@
+{
+  "panel_id": "panel-crypt-corrected-anchor-repanel-20260715",
+  "lane": "CRYPT CORRECTED-ANCHOR RE-PANEL (#1546 non-spend half; DATUM-ONLY per owner mid-lane ruling)",
+  "protocol": "CORRECTED-ANCHORING (issue #1560/#1561) 5-scorer blind panel, diverse lenses (brushwork/lighting/readability/material/holistic), fast-worker sonnet, independent, blind to slot mapping. Neutral anchors = disguised PoE2 real-art control (blind slot C) + DISCLOSED CAMP house-ref (non-competing). Incumbent crypt_armb_iter3 = DISCLOSED comparison, NOT house_best. Candidate + incumbent both scored in the same panel.",
+  "slot_identity": {
+    "A": "iter3_flux_s40 (recipe-b)",
+    "B": "iter3_a2 (PRIMARY candidate, recipe-a)",
+    "C": "poe2_control (disguised real-art)",
+    "D": "iter3_a1 (recipe-a variant)",
+    "INCUMBENT": "crypt_armb_iter3 (disclosed incumbent)"
+  },
+  "raw_scores_by_lens": {
+    "brushwork": {
+      "A": 6,
+      "B": 7,
+      "C": 8,
+      "D": 7,
+      "INCUMBENT": 8
+    },
+    "lighting": {
+      "A": 8,
+      "B": 7,
+      "C": 8,
+      "D": 7,
+      "INCUMBENT": 7
+    },
+    "readability": {
+      "A": 8,
+      "B": 7,
+      "C": 6,
+      "D": 8,
+      "INCUMBENT": 6
+    },
+    "material": {
+      "A": 5,
+      "B": 6,
+      "C": 7,
+      "D": 6,
+      "INCUMBENT": 8
+    },
+    "holistic": {
+      "A": 7,
+      "B": 8,
+      "C": 4,
+      "D": 7,
+      "INCUMBENT": 6
+    }
+  },
+  "per_slot_scores": {
+    "A": [
+      6,
+      8,
+      8,
+      5,
+      7
+    ],
+    "B": [
+      7,
+      7,
+      7,
+      6,
+      8
+    ],
+    "C": [
+      8,
+      8,
+      6,
+      7,
+      4
+    ],
+    "D": [
+      7,
+      7,
+      8,
+      6,
+      7
+    ],
+    "INCUMBENT": [
+      8,
+      7,
+      6,
+      8,
+      6
+    ]
+  },
+  "medians": {
+    "A": 7,
+    "B": 7,
+    "C": 7,
+    "D": 7,
+    "INCUMBENT": 7
+  },
+  "means": {
+    "A": 6.8,
+    "B": 7,
+    "C": 6.6,
+    "D": 7,
+    "INCUMBENT": 7
+  },
+  "stdev_pop": {
+    "A": 1.17,
+    "B": 0.63,
+    "C": 1.5,
+    "D": 0.63,
+    "INCUMBENT": 0.89
+  },
+  "defect_flag_counts": {
+    "A": {
+      "camera_break": 0,
+      "structure_incoherent": 0,
+      "invented_structure": 0
+    },
+    "B": {
+      "camera_break": 0,
+      "structure_incoherent": 0,
+      "invented_structure": 0
+    },
+    "C": {
+      "camera_break": 2,
+      "structure_incoherent": 0,
+      "invented_structure": 4
+    },
+    "D": {
+      "camera_break": 0,
+      "structure_incoherent": 0,
+      "invented_structure": 1
+    },
+    "INCUMBENT": {
+      "camera_break": 0,
+      "structure_incoherent": 0,
+      "invented_structure": 5
+    }
+  },
+  "control_median": 7,
+  "control_band": [
+    6.8,
+    9.2
+  ],
+  "control_valid": true,
+  "deltas_vs_control": {
+    "A": 0,
+    "B": 0,
+    "C": 0,
+    "D": 0,
+    "INCUMBENT": 0
+  },
+  "headline": {
+    "candidate_iter3_a2_median": 7,
+    "incumbent_crypt_armb_iter3_median": 7,
+    "control_poe2_median": 7,
+    "gap_candidate_minus_incumbent": 0,
+    "delta_candidate_vs_control": 0
+  },
+  "gates": {
+    "incumbent_band(|gap|<=1.5)": true,
+    "realart_parity(delta_vs_control>=-1.2)": true,
+    "control_valid": true,
+    "would_cutover_under_standing_ruling": true
+  },
+  "circular_vs_corrected": {
+    "circular_1528": {
+      "candidate": 7.1,
+      "incumbent": 7.8,
+      "control": 8.8,
+      "delta_cand_vs_control": -1.7,
+      "gap_cand_vs_inc": -0.7,
+      "honesty_bar(cand>=inc-0.5)": false
+    },
+    "corrected_1546": {
+      "candidate": 7,
+      "incumbent": 7,
+      "control": 7,
+      "delta_cand_vs_control": 0,
+      "gap_cand_vs_inc": 0
+    },
+    "anchor_effect": "Neutral anchoring de-inflated BOTH the incumbent (7.8->7.0) and the real-art control (8.8->7.0) down to the candidate's stable ~7.0; the candidate's own absolute median held (7.1->7.0). Result: candidate moved from trailing the incumbent by 0.7 and the control by 1.7 (circular) to EXACT PARITY with both (gap 0.0 / delta 0.0). Confirms #1560: incumbent-as-house_best + real-art-as-ceiling were suppressing the challenger's relative standing, same pattern as the tavern fit2 (+1.0 score / +2.0 delta under the anchor fix)."
+  },
+  "decision": {
+    "gate_verdict": "PASS \u2014 candidate clears BOTH cutover gates under corrected anchoring (within incumbent band: gap 0.0<=1.5; real-art parity: delta 0.0>=-1.2; control in-band).",
+    "action": "NO CUTOVER \u2014 DATUM-ONLY per owner mid-lane ruling (2026-07-15): stop iterating legacy plates; a FRESH crypt through the fully amended pipeline is the replacement (separate lane). This corrected-anchor parity result SETS THE BAR the fresh crypt must meet/beat: candidate=7.0, incumbent=7.0, control=7.0 (all at parity). Evidence-only PR; NO plates_manifest/recipes/walkslice changes."
+  },
+  "caveats": {
+    "control_marginal": "The PoE2 control is an OUTDOOR jungle-ruins real-art frame; under the crypt-ROOM brief 2/5 scorers flagged camera_break and holistic scored it 4 ('not a crypt cutaway'), pulling its median to 7.0 \u2014 in-band [6.8,9.2] but at the floor. Instrument valid but the real-art ceiling is softer here than in the #1528 panel (8.8) precisely because neutral anchoring stops auto-crediting the real screenshot. A room-matched real-art control would tighten this.",
+    "incumbent_content_drift": "Incumbent still carries the highest material score (8) but the most invented_structure flags (5/5: staircase/archway/2nd-opening) \u2014 its richness embeds content the honest greybox composition cannot include."
+  }
+}
