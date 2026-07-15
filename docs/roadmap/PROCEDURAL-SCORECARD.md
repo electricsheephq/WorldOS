@@ -17,9 +17,11 @@ control (axes 6-8). A candidate ships only at ≥7 on every axis.
 | 7 | Containment (nothing painted outside playable; no invented objects) | overlay eyeball | 6 | 6 (bones on apron — flux prior, open defect) |
 | 8 | PoE2-family beauty (vs real-art control) | blind panel | pending | pending |
 
-## The refinement loop (per room, ~30 min + 29 CU/cycle)
+## The refinement loop (per room, ~30 min + 29-47 CU/cycle)
 author geometry → scripted spacing audit → box greybox render → DESIGN GATE (axes 1-4; REJECT is
-free) → flux base @0.85 + fat/molded volumes → Gemini structure-lock pass → overlay (axis 5) +
+free) → flux base numImages=3 + PICK BY EDGE-RECALL vs greybox (the promoted-recipe selection gate
+— single-shot has no variance absorber; tavern cycle 1 failed 2/2 single-shots) → Gemini
+structure-lock pass → overlay (axis 5) +
 eyeball (axes 6-7) → blind panel (axis 8) → grade the row → fix the LOWEST axis at its root
 (geometry/builder/prompt — never chase paint with paint) → repeat until all ≥7.
 
@@ -33,3 +35,15 @@ eyeball (axes 6-7) → blind panel (axis 8) → grade the row → fix the LOWEST
 
 ## Scale-out (after crypt + tavern both pass): forest road, DunGen dungeon room, then the
 ## 2-environments-a-night cadence (HV5) with this scorecard as the promotion gate.
+
+## Cycle log
+| date | room | cycle | verdict | CU |
+|------|------|-------|---------|----|
+| 2026-07-15 | crypt | v3.5 | candidate: axes 1-9 avg ~8; open: apron bones, SW-corner drift | 29 |
+| 2026-07-15 | tavern | 1 | process-refined honest negative: molded table/bar kinds + cue-mass rule (1.33h top = 0 depth delta, raised to 2.0) landed; base registration fails flat-interior class at cs0.85 single-shot -> best-of-3 selection gate next | 18 |
+
+## Defect classes (appended)
+- FLAT-INTERIOR conditioning: rooms whose tallest furniture is ~2 units give flux compositional
+  freedom (displacement, count drift, invented arches, soft finish). Levers: best-of-3 + edge-recall
+  selection (proven, promoted recipe), cs 0.9-0.95 probe, taller architectural masses (chimney
+  breast over hearth) so the depth carries structure.
