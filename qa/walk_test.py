@@ -66,6 +66,30 @@ def contract_cam_pos() -> tuple:
     return (-fx * PULLBACK, -fy * PULLBACK, -fz * PULLBACK)
 
 
+def world_to_window_px(wx: float, wy: float, wz: float, ortho: float, w: int, h: int) -> tuple:
+    """Project a world point through the CONTRACT camera into WINDOW pixels at the live window size.
+
+    Aspect-correct by construction: the ortho camera fixes the VERTICAL half-height (ortho world
+    units); horizontal view = ortho * (w/h). This is the crop model — the plate billboard is sized by
+    TEXTURE aspect (ApplyPlate), so a 1.6 window shows a cropped 1.75 plate with uniform px/world and
+    NO stretch. The visual-registration mode below measures the actor against THESE coordinates, so a
+    systematic horizontal error growing toward the room edges would refute the crop model empirically
+    (red-team finding 3) — no arguing from theory required.
+    """
+    sys.path.insert(0, str(HERE))
+    import greybox_render_headless as G  # noqa: PLC0415
+    r, u = G._camera_ru(wx, wy, wz)
+    aspect = w / h
+    vx = 0.5 + r / (2.0 * ortho * aspect)
+    vy_up = 0.5 + u / (2.0 * ortho)
+    return (vx * w, (1.0 - vy_up) * h)   # image coords, y down
+
+
+def cell_px(ortho: float, h: int) -> float:
+    """One grid cell (2 world units) in window pixels of camera-up — the tolerance unit."""
+    return h * (2.0 / (2.0 * ortho))
+
+
 # --- PURE assertion helpers (no I/O; unit-tested in qa/test_walk_test.py) --------------------------
 def check_camera_pose(dbg: dict, ortho: float, *, deg_tol: float = 1.5,
                       vp_tol: float = 0.03, pos_tol: float = 1.5) -> list:
@@ -148,6 +172,53 @@ def orphan_cells(mask: dict, start: tuple) -> list:
     """Walkable cells NOT reachable from `start` — orphan pockets (a seed defect, or paint-invented
     'walkable-looking' space with no connection). A walkable room has ZERO orphans; any orphan is RED."""
     return sorted(set(mask["walkable"]) - bfs_reachable(mask, start))
+
+
+def diff_blobs(img_a, img_b, *, min_area_px: int = 250, thresh: int = 60) -> list:
+    """Cluster the pixel differences between two frames — the moved actor shows up as the two largest
+    blobs (departure + arrival). Returns clusters as dicts {cx, cy, bottom: (x,y), area}, area-sorted.
+    Pure (arrays in, dicts out) so it is unit-testable with synthetic frames. Animated fire/glow
+    flicker also diffs — callers match blobs BY EXPECTED POSITION and gate on distance, so unmatched
+    flicker clusters are ignored.
+    """
+    import numpy as np  # noqa: PLC0415
+
+    a = np.asarray(img_a, dtype=int)
+    b = np.asarray(img_b, dtype=int)
+    mask = (np.abs(a - b).sum(axis=2) > thresh)
+    ys, xs = np.nonzero(mask)
+    clusters: list = []
+    for x, y in zip(xs.tolist(), ys.tolist()):
+        for c in clusters:
+            if abs(x - c["sx"] / c["n"]) < 60 and abs(y - c["sy"] / c["n"]) < 60:
+                c["sx"] += x; c["sy"] += y; c["n"] += 1
+                if y > c["maxy"]:
+                    c["maxy"], c["bxs"] = y, [x]
+                elif y == c["maxy"]:
+                    c["bxs"].append(x)
+                break
+        else:
+            clusters.append({"sx": float(x), "sy": float(y), "n": 1, "maxy": y, "bxs": [x]})
+    out = []
+    for c in clusters:
+        if c["n"] < min_area_px:
+            continue
+        out.append({"cx": c["sx"] / c["n"], "cy": c["sy"] / c["n"],
+                    "bottom": (sorted(c["bxs"])[len(c["bxs"]) // 2], c["maxy"]),
+                    "area": c["n"]})
+    return sorted(out, key=lambda c: -c["area"])
+
+
+def nearest_blob_distance(blobs: list, expected_px: tuple) -> float:
+    """Distance from an expected screen point to the nearest diff blob (centroid or feet, whichever
+    is closer — the actor's centroid sits above the cell center, its feet on it). inf if no blobs."""
+    best = float("inf")
+    ex, ey = expected_px
+    for bl in blobs:
+        for px, py in ((bl["cx"], bl["cy"]), bl["bottom"]):
+            d = ((px - ex) ** 2 + (py - ey) ** 2) ** 0.5
+            best = min(best, d)
+    return best
 
 
 def path_violations(path, mask: dict) -> list:
@@ -239,8 +310,55 @@ def _room_ortho(room: str) -> float:
     return float(entry["cameraPin"]["ortho"])
 
 
+def _visual_registration(qa: str, engine: str, mask: dict, ortho: float, cells: list,
+                         out: Path, settle: float, move_timeout: float) -> dict:
+    """MEASURE the actor's rendered screen position with NO client instrumentation (sidecar synthesis,
+    adopted): walk a chain of cells; pixel-diff consecutive /shots; the diff blobs are the departure +
+    arrival actor sprites. Assert each expected cell projection (world_to_window_px at the LIVE window
+    aspect from /health) has a blob within tolerance (1.25 cell-equivalents — sprite centroid/feet +
+    glow noise; the broken-build offsets were 3-5 cells). Works on ANY build — this is also the
+    empirical answer to the aspect question: a crop model passes; a stretch model fails wide cells."""
+    from PIL import Image  # noqa: PLC0415
+
+    res = {"pass": 0, "fail": 0, "cases": [], "window": None}
+    try:
+        health = _get(f"{qa}/health")
+        w, h = int(health["screenW"]), int(health["screenH"])
+    except Exception as e:  # noqa: BLE001
+        return {"pass": 0, "fail": 0, "cases": [], "window": None, "error": f"health: {e}"}
+    res["window"] = [w, h]
+    tol = 1.25 * cell_px(ortho, h)
+    cols, rows = mask["cols"], mask["rows"]
+
+    def _proj(cell):
+        wx = (cell[0] - (cols - 1) / 2.0) * 2.0
+        wz = ((rows - 1) / 2.0 - cell[1]) * 2.0
+        return world_to_window_px(wx, 0.6, wz, ortho, w, h)   # 0.6 up = lower-torso/feet band
+
+    prev = _token_cell(_get(f"{engine}/combat-surface"))
+    shot_prev = _capture_shot(qa, out, "vis_start")
+    for i, cell in enumerate(cells):
+        ok_move, landed, _p = _drive_and_check(qa, engine, cell[0], cell[1], settle, move_timeout,
+                                               expect_move=True)
+        shot_new = _capture_shot(qa, out, f"vis_{i}_c{cell[0]}r{cell[1]}")
+        case = {"cell": list(cell), "moved": ok_move, "dist_px": None, "tol_px": round(tol, 1), "ok": False}
+        if ok_move and shot_prev and shot_new:
+            blobs = diff_blobs(Image.open(shot_prev).convert("RGB"), Image.open(shot_new).convert("RGB"))
+            d_new = nearest_blob_distance(blobs, _proj(cell))
+            d_prev = nearest_blob_distance(blobs, _proj(prev)) if prev else 0.0
+            case["dist_px"] = round(d_new, 1)
+            case["dist_prev_px"] = round(d_prev, 1)
+            case["n_blobs"] = len(blobs)
+            case["ok"] = d_new <= tol
+        res["cases"].append(case)
+        res["pass" if case["ok"] else "fail"] += 1
+        if ok_move:
+            prev, shot_prev = tuple(cell), shot_new
+    return res
+
+
 def run_gate(room: str, engine: str, qa: str, *, stride: int, out: Path,
-             settle: float, move_timeout: float) -> dict:
+             settle: float, move_timeout: float, visual: int = 0) -> dict:
     """Drive the live player through `room` and return a walk_report dict. Never raises on a cell
     failure — records it — so the report is complete; the caller decides the exit code."""
     ortho = _room_ortho(room)
@@ -309,13 +427,28 @@ def run_gate(room: str, engine: str, qa: str, *, stride: int, out: Path,
         report["doors"]["cases"].append({"cell": list(cell), "to": target, "ok": ok, "detail": detail})
         report["doors"]["pass" if ok else "fail"] += 1
 
-    # 5) OCCLUSION evidence — a /shot near an occluder for the human contact sheet (non-gating here).
+    # 5) VISUAL REGISTRATION (optional, --visual N): pixel-diff actor localization at the LIVE window
+    # aspect — the client-instrumentation-free measurement of "does the actor RENDER where the plate
+    # says the cell is". Gating when run.
+    report["visual"] = {"pass": 0, "fail": 0, "cases": []}
+    if visual > 0 and interior:
+        vis_cells = _sample(interior, max(1, len(interior) // max(1, visual)))[:visual]
+        report["visual"] = _visual_registration(qa, engine, mask, ortho, vis_cells, out,
+                                                settle, move_timeout)
+
+    # 6) OCCLUSION evidence — a /shot near an occluder for the human contact sheet (non-gating here).
     shot = _capture_shot(qa, out, f"{room}_final")
     if shot:
         report["shots"].append(shot)
 
+    # 7) RETURN HOME (sidecar adoption): leave the party where the gate found it — the campaign under
+    # test is not a scratchpad. Best-effort: only when still in the starting room.
+    if start and _location(_get(f"{engine}/combat-surface")) == (_location(surf) or room):
+        _drive_and_check(qa, engine, start[0], start[1], settle, move_timeout, expect_move=True)
+
     hard_fail = bool(cam_fails) or report["reachable"]["fail"] or report["impassable"]["fail"] \
-        or report["doors"]["fail"] or report["orphans"] or report["path"]["fail"]
+        or report["doors"]["fail"] or report["orphans"] or report["path"]["fail"] \
+        or report["visual"]["fail"]
     report["verdict"] = "RED" if hard_fail else "GREEN"
     return report
 
@@ -374,13 +507,16 @@ def main(argv=None) -> int:
     ap.add_argument("--stride", type=int, default=3, help="sample every Nth cell unless --exhaustive")
     ap.add_argument("--settle", type=float, default=0.6, help="poll interval while a move resolves")
     ap.add_argument("--move-timeout", type=float, default=6.0)
+    ap.add_argument("--visual", type=int, default=0, metavar="N",
+                    help="ALSO measure actor screen position on N sampled cells via pixel-diff "
+                         "localization (client-instrumentation-free; gating when run)")
     ap.add_argument("--out", default=str(HERE / "evidence" / "walk"))
     args = ap.parse_args(argv)
 
     out = Path(args.out) / args.room
     stride = 1 if args.exhaustive else max(1, args.stride)
     report = run_gate(args.room, args.engine, args.qa, stride=stride, out=out,
-                      settle=args.settle, move_timeout=args.move_timeout)
+                      settle=args.settle, move_timeout=args.move_timeout, visual=args.visual)
     out.mkdir(parents=True, exist_ok=True)
     (out / "walk_report.json").write_text(json.dumps(report, indent=2) + "\n")
 
@@ -388,8 +524,8 @@ def main(argv=None) -> int:
     print(f"\n=== WALK_TEST {args.room} — {report['verdict']} ===")
     print(f"camera: {'OK' if cam['ok'] else 'FAIL'}"
           + ("" if cam["ok"] else "".join(f"\n    - {m}" for m in cam["fails"])))
-    for k in ("reachable", "impassable", "doors", "path"):
-        s = report[k]
+    for k in ("reachable", "impassable", "doors", "path", "visual"):
+        s = report.get(k) or {"pass": 0, "fail": 0}
         print(f"{k:11s}: {s['pass']} pass / {s['fail']} fail")
     print(f"orphans    : {len(report['orphans'])}"
           + (f" — {report['orphans'][:6]}" if report["orphans"] else ""))

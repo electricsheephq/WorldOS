@@ -110,3 +110,36 @@ def test_clean_path_passes():
     assert W.path_violations([[1, 1], [2, 1], [2, 0], [3, 0], [4, 0], [4, 1]], m) == []
     assert W.path_violations([], m) == []          # no path recorded = nothing to flag
     assert W.path_violations(None, m) == []
+
+
+def test_world_to_window_px_origin_is_center():
+    """The contract camera aims at world origin → origin projects to the window centre at ANY aspect
+    (the crop model — a 1.6 window crops the 1.75 plate, nothing stretches)."""
+    for w, h in ((1344, 768), (1280, 800), (1920, 1080)):
+        x, y = W.world_to_window_px(0, 0, 0, ortho=11.7851, w=w, h=h)
+        assert abs(x - w / 2) < 1e-6 and abs(y - h / 2) < 1e-6
+
+
+def test_diff_blobs_finds_a_moved_square():
+    """Synthetic red-first: a 30x30 'actor' moves from (100,100) to (300,200) between frames —
+    diff_blobs must report exactly the departure + arrival blobs, bottom-centres on the squares."""
+    import numpy as np
+    a = np.zeros((400, 500, 3), dtype=np.uint8)
+    b = np.zeros((400, 500, 3), dtype=np.uint8)
+    a[100:130, 100:130] = 255   # actor at old position in frame A
+    b[200:230, 300:330] = 255   # actor at new position in frame B
+    blobs = W.diff_blobs(a, b, min_area_px=200)
+    assert len(blobs) == 2
+    centers = sorted((round(bl["cx"]), round(bl["cy"])) for bl in blobs)
+    assert centers == [(114, 114), (314, 214)]     # 100..129 → centre ~114.5
+    assert W.nearest_blob_distance(blobs, (315, 229)) < 6      # feet of the arrival square
+    assert W.nearest_blob_distance(blobs, (50, 350)) > 100     # far point matches nothing
+
+
+def test_diff_blobs_ignores_flicker_noise():
+    """Small flicker (animated fire) diffs below min_area must not produce blobs."""
+    import numpy as np
+    a = np.zeros((200, 200, 3), dtype=np.uint8)
+    b = a.copy()
+    b[10:14, 10:14] = 255   # 16 px flicker
+    assert W.diff_blobs(a, b, min_area_px=200) == []
