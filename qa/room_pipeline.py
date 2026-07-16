@@ -87,6 +87,14 @@ def stage_walk(room: str, out: Path, engine: str, qa: str, stride: int) -> dict:
     except Exception as e:  # noqa: BLE001
         return {"status": "SKIP", "detail": f"walk_test could not run (player up on {qa}?): {e}"}
     (out / "walk_report.json").write_text(json.dumps(report, indent=2))
+    # ERROR verdict = a harness/infrastructure defect (player/engine/debug/shot unreachable), NOT a
+    # walkability verdict. Map it to SKIP (which already blocks shippable) so a broken harness never
+    # reads as a RED room defect AND never certifies the room — it must be retried/investigated.
+    if report["verdict"] == "ERROR":
+        errs = report.get("harness_errors", [])
+        first = "; ".join(errs[:3]) if errs else "(unspecified)"
+        return {"status": "SKIP",
+                "detail": f"harness error — retry/investigate (never a verdict): {first}"}
     cam = report["camera"]["ok"]
     counts = {k: report[k] for k in ("reachable", "impassable", "doors")}
     return {"status": report["verdict"], "detail": {"camera_ok": cam, **counts}}
@@ -160,6 +168,18 @@ def verify_certification(room: str) -> list:
     return fails
 
 
+def _is_shippable(results: dict, gate_stages: list) -> bool:
+    """Pure ship gate. A room ships ONLY when: no RED gate, no pending MANUAL stage, at least one
+    GREEN gate, AND — whenever a walk gate ran — its verdict is GREEN. A walk=SKIP (harness ERROR /
+    player down) or coherence-alone GREEN must NEVER certify: a coherent paint says nothing about
+    whether the room is walkable, which is the entire point of the walk gate."""
+    reds = [n for n in gate_stages if results[n]["status"] == "RED"]
+    manuals = [n for (n, r) in results.items() if r["status"] == "MANUAL"]
+    walk_ok = ("walk" not in gate_stages) or (results.get("walk", {}).get("status") == "GREEN")
+    return bool(not reds and not manuals and walk_ok
+                and any(results[n]["status"] == "GREEN" for n in gate_stages))
+
+
 def run(room: str, mode: str, out: Path, engine: str, qa: str, stride: int, resume: bool) -> dict:
     out.mkdir(parents=True, exist_ok=True)
     marker = out / "stages.json"
@@ -186,9 +206,12 @@ def run(room: str, mode: str, out: Path, engine: str, qa: str, stride: int, resu
 
     results = {}
     for name, fn in stages:
-        if resume and done.get(name, {}).get("status") in ("GREEN", "SKIP"):
+        # Only a cached GREEN is terminal on --resume. A cached SKIP must RE-RUN: an ERROR-mapped walk
+        # SKIP is a harness error to retry, and re-running a deliberate MANUAL/SKIP stage is cheap and
+        # safe. (Reusing SKIP as terminal could carry a harness outage forward as if it were settled.)
+        if resume and done.get(name, {}).get("status") == "GREEN":
             results[name] = done[name]
-            _log(f"{name}: (cached {done[name]['status']})")
+            _log(f"{name}: (cached GREEN)")
             continue
         _log(f"{name}: running…")
         res = fn()
@@ -199,7 +222,7 @@ def run(room: str, mode: str, out: Path, engine: str, qa: str, stride: int, resu
     gate_stages = [n for n in ("coherence", "walk") if n in results]
     reds = [n for n in gate_stages if results[n]["status"] == "RED"]
     manuals = [n for (n, r) in results.items() if r["status"] == "MANUAL"]
-    shippable = not reds and not manuals and any(results[n]["status"] == "GREEN" for n in gate_stages)
+    shippable = _is_shippable(results, gate_stages)
     report = {"room": room, "mode": mode, "stages": results,
               "gate_stages": gate_stages, "reds": reds, "pending_manual": manuals,
               "shippable": shippable, "ts": None}
@@ -209,6 +232,22 @@ def run(room: str, mode: str, out: Path, engine: str, qa: str, stride: int, resu
             _log(f"certified -> {report['certification']}")
         except Exception as e:  # noqa: BLE001
             _log(f"certification write failed (non-fatal): {e}")
+    # Surface the walk verdict in the scores ledger (latest-per-room; honest on RED too). Only a
+    # DECIDED walk stage stamps — a MANUAL/pending stage records nothing.
+    walk_status = results.get("walk", {}).get("status")
+    if walk_status in ("GREEN", "RED"):
+        try:
+            import scores_db  # noqa: PLC0415
+            sha = subprocess.run(["git", "-C", str(REPO), "rev-parse", "--short", "HEAD"],
+                                 capture_output=True, text=True, timeout=10).stdout.strip() or None
+            scores_db.record_room_walk(
+                room, walk_status, sha=sha,
+                walk_report_path=str(out / "walk_report.json"),
+                source_path=report.get("certification"),
+                notes=f"room_pipeline --mode {mode}")
+            _log(f"walk ledger: room:{room} = {walk_status}")
+        except Exception as e:  # noqa: BLE001
+            _log(f"walk ledger stamp failed (non-fatal): {e}")
     (out / "pipeline_report.json").write_text(json.dumps(report, indent=2))
     return report
 

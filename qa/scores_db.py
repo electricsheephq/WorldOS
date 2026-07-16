@@ -231,6 +231,14 @@ def _coltype(col: str) -> str:
 # qa/visual_controls_identity.json). Adding "room" here would wrongly subject it to the 1-5 text gate.
 ARTIFACT_CLASSES: tuple[str, ...] = ("quest", "npc", "location", "encounter")
 
+# GATE-LEDGER classes: rows that carry an automated GATE VERDICT (walk_gate/walk_report_path), not a
+# rubric panel score. Deliberately NOT in ARTIFACT_CLASSES — that tuple drives the TEXT-eval
+# machinery's invariants (per-class rubric+schema files, >=2 committed disguised controls;
+# qa/test_artifact_evals.py), none of which apply to a verdict row. The beauty-gate strategy for
+# visual classes (0-10 panels vs the 1-5 text rubrics) is a separate, still-open decision; a room
+# row's `overall` stays NULL until that lands.
+GATE_LEDGER_CLASSES: tuple[str, ...] = ("room",)
+
 ARTIFACT_COLUMNS: tuple[str, ...] = (
     "class",          # one of ARTIFACT_CLASSES — selects the rubric that scored it
     "run_id",         # NULLABLE FK to runs.run_id (the run that produced the source snapshot); NULL for canon
@@ -246,6 +254,8 @@ ARTIFACT_COLUMNS: tuple[str, ...] = (
     "control_anchor", # for a control: the expected anchor band midpoint (REAL), NULL otherwise
     "source_path",    # where the artifact JSON / evidence lives (repo-relative or LEXAR)
     "notes",          # free-text context / caveats
+    "walk_gate",        # "GREEN" | "RED" — the automated walkability verdict (rooms; NULL for text classes)
+    "walk_report_path", # pointer to the walk_report.json evidence that produced walk_gate
 )
 
 _ARTIFACT_REAL_COLS = {"overall", "control_anchor"}
@@ -486,8 +496,12 @@ def add_artifact(
         )
 
     cls = fields.get("class")
-    if cls is not None and cls not in ARTIFACT_CLASSES:
-        raise ValueError(f"class {cls!r} not in {ARTIFACT_CLASSES}")
+    if cls is not None and cls not in ARTIFACT_CLASSES + GATE_LEDGER_CLASSES:
+        raise ValueError(f"class {cls!r} not in {ARTIFACT_CLASSES + GATE_LEDGER_CLASSES}")
+
+    wg = fields.get("walk_gate")
+    if wg is not None and wg not in ("GREEN", "RED"):
+        raise ValueError(f"walk_gate {wg!r} must be 'GREEN' or 'RED'")
 
     if fields.get("ts") is None:
         fields["ts"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -530,6 +544,33 @@ def add_artifact(
     finally:
         if own:
             conn.close()
+
+
+def record_room_walk(
+    room: str,
+    verdict: str,
+    *,
+    db_path: Path | str = DB_PATH,
+    sha: str | None = None,
+    walk_report_path: str | None = None,
+    source_path: str | None = None,
+    notes: str | None = None,
+) -> None:
+    """Record a room's CURRENT walkability verdict in the artifact ledger (class="room").
+
+    The artifact_id is the stable ``room:<room>`` — INSERT OR REPLACE semantics make this the
+    latest-verdict surface ("which rooms are walk-certified right now?"); history lives in git +
+    qa/certifications/. ``source_path`` should point at the certification json when one exists."""
+    add_artifact(
+        f"room:{room}",
+        db_path=db_path,
+        **{"class": "room"},
+        sha=sha,
+        walk_gate=verdict,
+        walk_report_path=walk_report_path,
+        source_path=source_path,
+        notes=notes,
+    )
 
 
 def fetch_artifacts(db_path: Path | str = DB_PATH) -> list[dict]:

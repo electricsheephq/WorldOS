@@ -5193,6 +5193,7 @@ def walk_to(campaign_id: str, character_id: str, x: int, y: int) -> dict:
         if from_cell is None:
             envelope_path = [[x, y]]  # a placement: a single-cell path at the destination
         mover.stage_cell = to_cell
+        c.combat.last_walk_path = envelope_path
         _log_combat_event(
             c,
             f"{mover.name} walks to ({x}, {y}).",
