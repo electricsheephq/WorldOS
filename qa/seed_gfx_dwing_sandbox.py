@@ -31,7 +31,11 @@ ALLOWED_UNWIRED = {("dwing_room_1", (11, 3))}
 
 def main() -> None:
     if len(sys.argv) < 2:
-        print("usage: seed_gfx_dwing_sandbox.py <state_dir>", file=sys.stderr)
+        print("usage: seed_gfx_dwing_sandbox.py <state_dir> [current_room]", file=sys.stderr)
+        sys.exit(2)
+    current = sys.argv[2] if len(sys.argv) > 2 else "dwing_room_0"
+    if current not in {r[0] for r in ROOMS}:
+        print(f"unknown current_room {current!r}", file=sys.stderr)
         sys.exit(2)
     os.environ["WORLDOS_STATE_DIR"] = sys.argv[1]
     sys.path.insert(0, str(HERE))
@@ -61,7 +65,7 @@ def main() -> None:
     for lid, _g, _d in ROOMS:
         handle[lid] = server.add_location(
             campaign_id=CID, name=lid.replace("_", " ").title(), location_id=lid,
-            make_current=(lid == "dwing_room_0"),
+            make_current=(lid == current),
             description=f"The {lid.replace('_', ' ')} (generated walk-gate fixture).")
     c = server._require(CID)
     for lid, _geofile, doors in ROOMS:
@@ -75,8 +79,8 @@ def main() -> None:
         campaign_id=CID, name="Sable", kind="player", race="human", class_name="rogue", level=3,
         abilities={"strength": 10, "dexterity": 16, "constitution": 12,
                    "intelligence": 12, "wisdom": 12, "charisma": 10},
-        apply_srd_defaults=True, add_to_party=True, location_id=handle["dwing_room_0"]["id"])
-    print(f"[dwing_sandbox] {CID}: dwing_room_0(12x13, party spawned) <-> dwing_room_1(12x7) seeded")
+        apply_srd_defaults=True, add_to_party=True, location_id=handle[current]["id"])
+    print(f"[dwing_sandbox] {CID}: current={current} (party spawned there); dwing_room_0(12x13) <-> dwing_room_1(12x7) seeded")
 
 
 if __name__ == "__main__":
