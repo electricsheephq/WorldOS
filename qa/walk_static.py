@@ -76,17 +76,27 @@ def lint_manifest_entry(key: str, entry: dict, unity_dir: Path) -> list:
         if axis in pin and abs(float(pin[axis]) - want) > 0.01:
             fails.append(f"{key}: cameraPin.{axis}={pin[axis]} != frozen contract {want}")
     plate = entry.get("plate")
-    if plate and not (unity_dir / plate).exists():
+    if not plate:
+        # codex review on #1598: LoadPlateManifest SKIPS plate-less entries — the room silently keeps
+        # the previous/baked backdrop. An entry that names a room must name its plate.
+        fails.append(f"{key}: manifest entry has no `plate` — the runtime loader skips it and the room "
+                     f"keeps the previous backdrop")
+    elif not (unity_dir / plate).exists():
         fails.append(f"{key}: plate file missing: {plate}")
     boxes = entry.get("boxes")
     if boxes:
         bp = unity_dir / boxes
         if not bp.exists():
             fails.append(f"{key}: boxes sidecar missing: {boxes} (latent zero-occluder path)")
-        elif ortho:
-            stamped = json.loads(bp.read_text()).get("ortho")
-            if stamped is None or abs(float(stamped) - float(ortho)) > 0.001:
+        else:
+            side = json.loads(bp.read_text())
+            stamped = side.get("ortho")
+            if ortho and (stamped is None or abs(float(stamped) - float(ortho)) > 0.001):
                 fails.append(f"{key}: sidecar ortho {stamped} != manifest ortho {ortho}")
+            # codex review: an ortho-only sidecar with no volumes silently degrades the runtime to
+            # footprint proxies — the room loses the exact occluders the plate was conditioned on.
+            if not side.get("boxes"):
+                fails.append(f"{key}: boxes sidecar has NO occluder volumes (empty/missing `boxes`)")
     return fails
 
 
@@ -106,7 +116,18 @@ def check_geometry(name: str, geo: dict) -> list:
     fails = []
     cols, rows = int(geo["cols"]), int(geo["rows"])
     doors = [tuple(d) for d in geo.get("door_cells", [])]
-    walls = {tuple(c) for c in geo.get("walls", [])} - set(doors)
+    # codex review: duplicate door cells break the engine's cross_door resolution
+    # (door_cells_list.index((x,y)) can only ever pick the FIRST connection).
+    if len(doors) != len(set(doors)):
+        dupes = sorted({d for d in doors if doors.count(d) > 1})
+        fails.append(f"{name}: duplicate door cells {dupes} — cross_door index() can never reach the "
+                     f"second connection")
+    # codex review: blocked = walls UNION every non-wall_run prop footprint — the seed path
+    # (build_grid_from_geometry) blocks prop cells even when a geometry (e.g. generate_town output)
+    # does NOT fold them into `walls`. Mirror the seed truth, or a barrel on a door landing passes.
+    prop_cells = {tuple(c) for p in geo.get("props", []) if p.get("kind") != "wall_run"
+                  for c in p.get("cells", [])}
+    walls = ({tuple(c) for c in geo.get("walls", [])} | prop_cells) - set(doors)
     free = {(c, r) for r in range(rows) for c in range(cols) if (c, r) not in walls}
     landings = []
     for (dc, dr) in doors:
@@ -153,6 +174,33 @@ def validate_world(rooms: list) -> list:
     return fails
 
 
+def validate_seed_doors(rooms: list, geometries: dict, allowed_unwired: set = frozenset()) -> list:
+    """codex review on #1598: the seed wires a SUBSET of the geometry's door cells and the rest become
+    plain floor — but the PLATE paints them as doorways (the depth showed an opening), so an unwired
+    authored door is a painted arch that does nothing: the paint≠world class. Fail unless each unwired
+    door is EXPLICITLY allowed (a documented future seam, e.g. the shop's town door). Also fail a
+    wired cell the geometry never authored (it would have no painted doorway at all).
+
+    rooms = [(room_id, [(door_cell, to), ...]), ...]; geometries = {room_id: geometry dict};
+    allowed_unwired = {(room_id, (c, r)), ...}."""
+    fails = []
+    for rid, doors in rooms:
+        geo = geometries.get(rid)
+        if geo is None:
+            fails.append(f"{rid}: no geometry provided to validate seed doors against")
+            continue
+        authored = {tuple(d) for d in geo.get("door_cells", [])}
+        wired = {tuple(cell) for cell, _to in doors}
+        for cell in sorted(wired - authored):
+            fails.append(f"{rid}: seed wires door {cell} the geometry never authored (no painted "
+                         f"doorway there)")
+        for cell in sorted(authored - wired):
+            if (rid, cell) not in allowed_unwired:
+                fails.append(f"{rid}: authored door {cell} is UNWIRED — the plate paints a doorway "
+                             f"that does nothing (allow it explicitly if it is a future seam)")
+    return fails
+
+
 def validate_repo(manifest_path: Path = MANIFEST, unity_dir: Path = UNITY,
                   geo_dir: Path = GEO_DIR) -> list:
     fails = []
@@ -160,9 +208,15 @@ def validate_repo(manifest_path: Path = MANIFEST, unity_dir: Path = UNITY,
     for key, entry in plates.items():
         fails += lint_manifest_entry(key, entry, unity_dir)
         geof = GEOMETRY_OF.get(key)
-        if geof and (geo_dir / geof).exists():
-            geo = json.loads((geo_dir / geof).read_text())
-            fails += check_ortho_triple(key, entry, geo)
+        if geof:
+            if (geo_dir / geof).exists():
+                geo = json.loads((geo_dir / geof).read_text())
+                fails += check_ortho_triple(key, entry, geo)
+            else:
+                # codex review: silently skipping disables the triple-check exactly when the
+                # committed geometry source went missing (rename/delete) — fail loud instead.
+                fails.append(f"{key}: mapped geometry {geof} is MISSING — the ortho triple-check "
+                             f"cannot run (restore the file or update GEOMETRY_OF)")
     for geof in sorted(geo_dir.glob("*_geometry.json")):
         fails += check_geometry(geof.name, json.loads(geof.read_text()))
     return fails

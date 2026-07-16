@@ -46,13 +46,20 @@ def main() -> None:
     import server  # noqa: PLC0415
     from models import Campaign  # noqa: PLC0415
     from seed_gfx_town import build_grid_from_geometry  # noqa: PLC0415
-    from walk_static import check_geometry, validate_world  # noqa: PLC0415
+    from walk_static import check_geometry, validate_seed_doors, validate_world  # noqa: PLC0415
 
     # ★ STATIC GATE AT THE SEED BOUNDARY (epic #1581): an invalid world never enters a campaign —
-    # door reciprocity + per-room geometry checks (blocked landings, orphan pockets) REFUSE the seed.
-    fails = validate_world([(lid, [(cell, to) for cell, to in doors]) for lid, _g, doors in ROOMS])
-    for _lid, geofile, _doors in ROOMS:
-        fails += check_geometry(geofile, json.loads((GEO / geofile).read_text()))
+    # door reciprocity + per-room geometry checks (blocked landings, orphan pockets) + seed-vs-geometry
+    # door agreement REFUSE the seed. KNOWN UNWIRED SEAMS (codex review on #1598): tavern (13,5) and
+    # throne_hall (15,6) are authored+painted doorways this 3-room world deliberately leaves unwired —
+    # future town seams (wire them when the shop/town rooms join the world). Explicit, not silent.
+    rooms_spec = [(lid, [(cell, to) for cell, to in doors]) for lid, _g, doors in ROOMS]
+    geometries = {lid: json.loads((GEO / geofile).read_text()) for lid, geofile, _d in ROOMS}
+    fails = validate_world(rooms_spec)
+    fails += validate_seed_doors(rooms_spec, geometries,
+                                 allowed_unwired={("tavern", (13, 5)), ("throne_hall", (15, 6))})
+    for lid, geofile, _doors in ROOMS:
+        fails += check_geometry(geofile, geometries[lid])
     if fails:
         for f in fails:
             print(f"[registered_world] STATIC GATE RED: {f}", file=sys.stderr)

@@ -48,7 +48,8 @@ def test_missing_sidecar_is_the_latent_zero_occluder_path(tmp_path):
 
 def test_clean_entry_passes(tmp_path):
     (tmp_path / "p.png").write_bytes(b"\x89PNG")
-    (tmp_path / "b.json").write_text(json.dumps({"ortho": 10.5224, "boxes": []}))
+    (tmp_path / "b.json").write_text(json.dumps({"ortho": 10.5224, "boxes": [
+        {"name": "pillar", "kind": "pillar", "center": [0, 3, 0], "size": [1, 6, 1]}]}))
     entry = {"plate": "p.png", "cameraPin": {"ortho": 10.5224, "pitch": 30, "yaw": 45}, "boxes": "b.json"}
     assert WS.lint_manifest_entry("x", entry, tmp_path) == []
 
@@ -100,6 +101,66 @@ def test_one_way_door_fails():
 def test_reciprocal_world_passes():
     rooms = [("a", [((1, 0), "b")]), ("b", [((3, 0), "a")])]
     assert WS.validate_world(rooms) == []
+
+
+# --- codex-review hardening (#1598, all six red-first) ----------------------------------------------
+def test_plateless_entry_fails(tmp_path):
+    """LoadPlateManifest SKIPS plate-less entries — the room keeps the previous backdrop."""
+    fails = WS.lint_manifest_entry("x", {"cameraPin": {"ortho": 10.0}}, tmp_path)
+    assert any("no `plate`" in f for f in fails)
+
+
+def test_boxless_sidecar_fails(tmp_path):
+    """An ortho-only sidecar degrades the runtime to footprint proxies — must fail loud."""
+    (tmp_path / "p.png").write_bytes(b"\x89PNG")
+    (tmp_path / "b.json").write_text(json.dumps({"ortho": 10.5}))
+    entry = {"plate": "p.png", "cameraPin": {"ortho": 10.5}, "boxes": "b.json"}
+    assert any("NO occluder volumes" in f for f in WS.lint_manifest_entry("x", entry, tmp_path))
+
+
+def test_prop_on_door_landing_fails():
+    """Prop footprints count as blocked even when the geometry does NOT fold them into walls
+    (the generate_town convention) — a barrel on the landing must go red."""
+    walls = [(c, 0) for c in range(5) if c != 2]
+    geo = _geo(5, 5, walls, [(2, 0)])
+    geo["props"] = [{"id": "barrel", "kind": "barrel", "cells": [[2, 1]]}]
+    assert any("landing" in f for f in WS.check_geometry("g", geo))
+
+
+def test_prop_partition_makes_orphans():
+    geo = _geo(5, 5, [(0, 2)], [(0, 2)])
+    geo["props"] = [{"id": "wall_of_crates", "kind": "supply_crates",
+                     "cells": [[2, r] for r in range(5)]}]
+    assert any("orphan" in f for f in WS.check_geometry("g", geo))
+
+
+def test_duplicate_door_cells_fail():
+    fails = WS.check_geometry("g", _geo(5, 5, [], [(2, 0), (2, 0)]))
+    assert any("duplicate door cells" in f.lower() for f in fails)
+
+
+def test_mapped_but_missing_geometry_fails(tmp_path):
+    (tmp_path / "m.json").write_text(json.dumps({"plates": {"crypt": {
+        "plate": "p.png", "cameraPin": {"ortho": 11.7851}}}}))
+    (tmp_path / "p.png").write_bytes(b"\x89PNG")
+    fails = WS.validate_repo(manifest_path=tmp_path / "m.json", unity_dir=tmp_path,
+                             geo_dir=tmp_path)  # crypt is mapped in GEOMETRY_OF; file absent here
+    assert any("MISSING" in f and "triple-check" in f for f in fails)
+
+
+def test_unwired_authored_door_fails_unless_allowed():
+    geo = {"cols": 5, "rows": 5, "door_cells": [[2, 0], [4, 2]], "walls": []}
+    rooms = [("tavern", [((2, 0), "crypt")])]
+    fails = WS.validate_seed_doors(rooms, {"tavern": geo})
+    assert any("UNWIRED" in f for f in fails)
+    assert WS.validate_seed_doors(rooms, {"tavern": geo},
+                                  allowed_unwired={("tavern", (4, 2))}) == []
+
+
+def test_wired_but_unauthored_door_fails():
+    geo = {"cols": 5, "rows": 5, "door_cells": [[2, 0]], "walls": []}
+    fails = WS.validate_seed_doors([("x", [((3, 0), "y")])], {"x": geo})
+    assert any("never authored" in f for f in fails)
 
 
 # --- THE CI ENFORCEMENT: the actual repo must be GREEN ----------------------------------------------
