@@ -76,3 +76,70 @@ def test_contract_cam_pos_aims_back_and_up():
     x, y, z = W.contract_cam_pos()
     assert y > 0 and x < 0 and z < 0  # pulled back-and-up along -forward (Euler 30/45)
     assert abs((x * x + y * y + z * z) ** 0.5 - 80.0) < 1e-6  # exactly PULLBACK units from origin
+
+
+def _mask(cols, rows, blocked):
+    walkable = {(c, r) for r in range(rows) for c in range(cols)} - set(blocked)
+    return {"cols": cols, "rows": rows, "walkable": walkable, "blocked": set(blocked), "doors": set()}
+
+
+def test_orphan_pocket_detected():
+    """A wall bisecting the room leaves an orphan pocket — the unreachable-paint/seed-defect class.
+    Red-first: the gate MUST flag it."""
+    wall = [(2, r) for r in range(5)]  # full vertical wall at c=2 in a 5x5 room
+    m = _mask(5, 5, wall)
+    orphans = W.orphan_cells(m, start=(0, 0))
+    assert orphans, "bisected room must yield orphans"
+    assert all(c > 2 for (c, r) in [tuple(o) for o in orphans]), "orphans are the far side of the wall"
+
+
+def test_no_orphans_in_connected_room():
+    m = _mask(5, 5, [(2, 2)])  # one prop, room stays connected
+    assert W.orphan_cells(m, start=(0, 0)) == []
+
+
+def test_path_through_a_table_flagged():
+    """The owner's ACTUAL failure: destination legal, but the route crosses a prop. Red-first."""
+    m = _mask(6, 3, [(3, 1)])  # a table at (3,1)
+    bad = W.path_violations([[1, 1], [2, 1], [3, 1], [4, 1]], m)
+    assert bad == [[3, 1]]
+
+
+def test_clean_path_passes():
+    m = _mask(6, 3, [(3, 1)])
+    assert W.path_violations([[1, 1], [2, 1], [2, 0], [3, 0], [4, 0], [4, 1]], m) == []
+    assert W.path_violations([], m) == []          # no path recorded = nothing to flag
+    assert W.path_violations(None, m) == []
+
+
+def test_world_to_window_px_origin_is_center():
+    """The contract camera aims at world origin → origin projects to the window centre at ANY aspect
+    (the crop model — a 1.6 window crops the 1.75 plate, nothing stretches)."""
+    for w, h in ((1344, 768), (1280, 800), (1920, 1080)):
+        x, y = W.world_to_window_px(0, 0, 0, ortho=11.7851, w=w, h=h)
+        assert abs(x - w / 2) < 1e-6 and abs(y - h / 2) < 1e-6
+
+
+def test_diff_blobs_finds_a_moved_square():
+    """Synthetic red-first: a 30x30 'actor' moves from (100,100) to (300,200) between frames —
+    diff_blobs must report exactly the departure + arrival blobs, bottom-centres on the squares."""
+    import numpy as np
+    a = np.zeros((400, 500, 3), dtype=np.uint8)
+    b = np.zeros((400, 500, 3), dtype=np.uint8)
+    a[100:130, 100:130] = 255   # actor at old position in frame A
+    b[200:230, 300:330] = 255   # actor at new position in frame B
+    blobs = W.diff_blobs(a, b, min_area_px=200)
+    assert len(blobs) == 2
+    centers = sorted((round(bl["cx"]), round(bl["cy"])) for bl in blobs)
+    assert centers == [(114, 114), (314, 214)]     # 100..129 → centre ~114.5
+    assert W.nearest_blob_distance(blobs, (315, 229)) < 6      # feet of the arrival square
+    assert W.nearest_blob_distance(blobs, (50, 350)) > 100     # far point matches nothing
+
+
+def test_diff_blobs_ignores_flicker_noise():
+    """Small flicker (animated fire) diffs below min_area must not produce blobs."""
+    import numpy as np
+    a = np.zeros((200, 200, 3), dtype=np.uint8)
+    b = a.copy()
+    b[10:14, 10:14] = 255   # 16 px flicker
+    assert W.diff_blobs(a, b, min_area_px=200) == []
