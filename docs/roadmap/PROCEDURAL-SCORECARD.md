@@ -60,6 +60,10 @@ eyeball (axes 6-7) → blind panel (axis 8) → grade the row → fix the LOWEST
 | 2026-07-15 | tavern | 2-restored | ★ BAR MET: panel 8.4 (Δ −1.0); the previously-unpaintable room | 29 |
 | 2026-07-15 | throne | registered-1 | panel 7.0; levers: material wash + Gemini-additions (gallery) | 29 |
 | 2026-07-16 | shop | 1 | ★ SHIPPED cycle-1: panel 6 vs control 8 Δ−2.0 IN-BAND; recall 0.9555; WALK-GREEN (#1596 sandbox, visual 5/5 ~0.3c) — the pipeline's first hands-off NEW CLASS | 47 |
+| 2026-07-16 | dwing wing (3 GENERATED rooms) | 1 | honest negative: NEW invention class — Gemini MULTIPLIES features (2 pillars→5, 1 door→5 arches); flux bases geometry-PERFECT (0.96/0.83/0.77); recall is precision-blind to additions → paint_room base→styled drop WARNING shipped | ~140 |
+| 2026-07-16 | dwing wing | 2 | EXACT-COUNT lock: rooms 0+2 structurally HONEST (eyeball-adjudicated; instrument characterized as edge-contrast-biased); room_1 RESHAPED (12x7→square, side doors→back wall). PANELS rooms 0+2: 6-vs-9 Δ−3.0 OUT OF BAND 2/2 — "no narrative focal point / empty floor" = geometry-richness on crates-only DunGen rooms | ~140 |
+| 2026-07-16 | dwing room_1 | 3 | SHAPE+DOOR-WALL locks: structurally honest (wide-shallow held, side doors correct). Lock library proven: EXACT-COUNT · ROOM-SHAPE · DOOR-WALL | 47 |
+| 2026-07-16 | dwing wing | 4 | GEOMETRY lever: dress_focal (PR #1611 — altar+braziers by door count) → re-render → focal-named recipes; LAST wing cycle this run (in-band ⇒ ship; miss ⇒ documented ceiling) | ~140 |
 | 2026-07-16 | tavern_snug | 1 | honest negative: 6 vs 9 Δ−3.0 OUT OF BAND (flat-interior class; invented post + stairs) | 47 |
 | 2026-07-16 | tavern_snug | 2 | honest negative: 6 vs 9 again = PROMPT PLATEAU (blue-violet/atmosphere levers no gain); styled recall 0.60 (drift) | 47 |
 | 2026-07-16 | tavern_snug | 3 | ★ SHIPPED via the GEOMETRY lever (2 authored timber posts): 7 vs 8 Δ−1.0 IN-BAND (+1 median); styled recall 0.8415 (best final yet); WALK-GREEN (visual 6/6 0.15-0.4c). Flat-interior class CONFIRMED with a measured intervention | 47 |
