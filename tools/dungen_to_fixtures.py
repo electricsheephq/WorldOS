@@ -333,6 +333,39 @@ def _door_landing(cell: tuple, cols: int, rows: int) -> tuple:
 
 
 _FOCAL_KINDS = {"altar", "stone_well", "brazier", "sarcophagus", "campfire", "hearth"}
+# Fire-BEARING focal kinds — the only ones qa/overlay_boxes.py::blob_solve detects as registration
+# beacons (bright fire bowls); an `altar` is a focal narrative mass but casts NO fire blob, so it does
+# NOT count toward the beacon geometry (#1618).
+_FIRE_KINDS = {"brazier", "campfire"}
+# Min area (cell²) of the triangle formed by a room's three fire beacons. Two beacons on the same row
+# are collinear (zero area): the 2-point plate-registration similarity fit is then blind to vertical
+# scale (dwing room_1: a 0.07-cell beacon error coexisted with ~1.5 cells of bottom-wall misfit). A
+# real triangle makes the solve both-axes-observable with residual redundancy (3 pts = 6 constraints
+# vs 4 dof). 2.0 is comfortably above the sub-cell jitter of adjacent placements.
+_FIRE_TRI_MIN_AREA = 2.0
+
+
+def _tri_area(a: tuple, b: tuple, c: tuple) -> float:
+    """Absolute area (cell²) of the triangle on three (col, row) cells — shoelace. 0.0 when collinear."""
+    (ax, ay), (bx, by), (cx, cy) = a, b, c
+    return abs((bx - ax) * (cy - ay) - (cx - ax) * (by - ay)) / 2.0
+
+
+def _fire_cells(geo: dict) -> list:
+    """Representative (col, row) cell per fire-bearing prop (its first/anchor cell — every dressed fire
+    beacon is a single-cell footprint, so this is exact)."""
+    return [tuple(p["cells"][0]) for p in geo.get("props", [])
+            if p.get("kind") in _FIRE_KINDS and p.get("cells")]
+
+
+def _best_tri_area(cells: list) -> float:
+    """Largest triangle area (cell²) over any three of `cells` (0.0 when fewer than three)."""
+    best = 0.0
+    for i in range(len(cells)):
+        for j in range(i + 1, len(cells)):
+            for k in range(j + 1, len(cells)):
+                best = max(best, _tri_area(cells[i], cells[j], cells[k]))
+    return best
 
 
 def dress_focal(geo: dict, *, name: str = "room") -> dict:
@@ -344,7 +377,15 @@ def dress_focal(geo: dict, *, name: str = "room") -> dict:
     two BRAZIERS by the crossing centre. Fire doubles as the paint stage's warm-core chiaroscuro
     anchor (the scorers' own lever) and the runtime's animated-VFX anchor. Skipped when the room
     already carries any focal kind. Same safety machinery as dress_tall_anchors: deterministic
-    grid-derived candidates, never on/adjacent to a door landing, flood-fill connectivity-verified."""
+    grid-derived candidates, never on/adjacent to a door landing, flood-fill connectivity-verified.
+
+    v2 (#1618): every plan's two lane/shrine braziers share a ROW — a collinear fire pair, which the
+    2-point plate-registration similarity solve reads as vertical-scale-blind (dwing room_1's plate is
+    unfixable by warping for exactly this reason). So after the plan lands, author a THIRD fire beacon
+    (a corner watch-brazier) at the connectivity-safe cell that MAXIMISES the three-beacon triangle
+    area, guaranteeing a both-axes-solvable, residually-redundant beacon field. check_dressing_bars
+    then enforces >=3 fire kinds with best triangle area >= _FIRE_TRI_MIN_AREA, so a crop that defeats
+    the placement fails LOUD rather than shipping a degenerate plate."""
     interior = [p for p in geo.get("props", []) if p.get("kind") != "wall_run"]
     if any(p.get("kind") in _FOCAL_KINDS for p in interior):
         return geo
@@ -407,6 +448,7 @@ def dress_focal(geo: dict, *, name: str = "room") -> dict:
                 ("focal_brazier_e", "brazier", 1, (cols // 2 + 2, rows // 2))]
 
     used: set = set()
+    fire_cells: list = []
     for pid, kind, footprint, ideal in plan:
         for cells in shapes(ideal, footprint):
             if any(cell in used for cell in cells):
@@ -414,7 +456,38 @@ def dress_focal(geo: dict, *, name: str = "room") -> dict:
             if connectivity_ok(used | set(cells)):
                 geo["props"].append({"id": pid, "kind": kind, "cells": [list(c) for c in cells]})
                 used |= set(cells)
+                if kind in _FIRE_KINDS:
+                    fire_cells.append(cells[0])
                 break
+
+    # THIRD fire beacon (#1618): break the collinear lane pair. Among all connectivity-safe interior
+    # candidate cells, take the one that MAXIMISES the min triangle area against every placed fire
+    # pair (with two beacons down that is a single triangle); ties broken by (row, col) for
+    # determinism. Max-area naturally lands it toward a far corner (the narrative "corner
+    # watch-brazier"). We place the best candidate even if its area is under the bar — a genuinely
+    # degenerate crop then trips check_dressing_bars and fails loud, rather than silently shipping.
+    if len(fire_cells) >= 2:
+        best = None  # (-min_area, r, c, cell)
+        for c in range(1, cols - 1):
+            for r in range(1, rows - 1):
+                cell = (c, r)
+                if (cell in used or cell in doors or cell in landing_block
+                        or cell not in base_free):
+                    continue
+                if not connectivity_ok(used | {cell}):
+                    continue
+                min_area = min(_tri_area(fa, fb, cell)
+                               for i, fa in enumerate(fire_cells)
+                               for fb in fire_cells[i + 1:])
+                key = (-min_area, r, c, cell)
+                if best is None or key < best:
+                    best = key
+        if best is not None:
+            _neg, r, c, cell = best
+            geo["props"].append({"id": "focal_brazier_n", "kind": "brazier", "cells": [[c, r]]})
+            used |= {cell}
+            fire_cells.append(cell)
+
     if used:
         wall_cells = {tuple(c) for c in geo.get("walls", [])}
         prop_cells = {tuple(c) for p in geo.get("props", []) if p.get("kind") != "wall_run"
@@ -425,13 +498,16 @@ def dress_focal(geo: dict, *, name: str = "room") -> dict:
 
 
 def check_dressing_bars(geo: dict, *, name: str = "room") -> list:
-    """Emit-time enforcement of the two DRESSING bars the generator promises (codex P2 pair,
-    #1611): (1) FLAT-INTERIOR bar — at least one interior prop with authored height >=
+    """Emit-time enforcement of the three DRESSING bars the generator promises (codex P2 pair, #1611;
+    beacon geometry #1618): (1) FLAT-INTERIOR bar — at least one interior prop with authored height >=
     _ANCHOR_MIN_TALL (a narrow crop can leave dress_tall_anchors no connectivity-safe pair AFTER
     focal placement); (2) BEAUTY-FLOOR bar — at least one _FOCAL_KINDS prop (dress_focal returns
-    silently when every candidate is rejected). Returns failure strings; empty == both bars met.
-    A silent miss here would re-ship the exact drift/generic classes the dressing exists to fix —
-    the generator must fail LOUD instead so the crop gets deliberate attention."""
+    silently when every candidate is rejected); (3) BEACON-GEOMETRY bar — at least three _FIRE_KINDS
+    props whose best triangle area >= _FIRE_TRI_MIN_AREA, so the plate-registration solve is
+    both-axes-observable (two same-row braziers register in one axis only). Returns failure strings;
+    empty == all three bars met. A silent miss here would re-ship the exact drift/generic/degenerate-
+    plate classes the dressing exists to fix — the generator must fail LOUD instead so the crop gets
+    deliberate attention."""
     fails = []
     interior = [p for p in geo.get("props", []) if p.get("kind") != "wall_run"]
     tallest = max((_KIND_HEIGHT.get(p.get("kind"), 0.0) for p in interior), default=0.0)
@@ -441,6 +517,16 @@ def check_dressing_bars(geo: dict, *, name: str = "room") -> list:
     if not any(p.get("kind") in _FOCAL_KINDS for p in interior):
         fails.append(f"{name}: NO narrative focal prop ({sorted(_FOCAL_KINDS)}) — beauty-floor bar; "
                      "focal placement found no connectivity-safe cell")
+    fire = _fire_cells(geo)
+    if len(fire) < 3:
+        fails.append(f"{name}: only {len(fire)} fire beacon(s) (<3) — beacon-geometry class; the "
+                     "2-point plate-registration fit is vertical-scale-blind without a third beacon")
+    else:
+        area = _best_tri_area(fire)
+        if area < _FIRE_TRI_MIN_AREA:
+            fails.append(f"{name}: fire beacons COLLINEAR (best triangle area {area:.2f} < "
+                         f"{_FIRE_TRI_MIN_AREA}) — beacon-geometry class; a same-row/near-collinear "
+                         "beacon field is blind to vertical scale in the similarity solve")
     return fails
 
 
