@@ -1,0 +1,593 @@
+{
+  "room": "throne_hall",
+  "ortho": 11.7851,
+  "sceneId": "camp_townslice01:walkslice_smoke01_throne_hall",
+  "grid": {
+    "cols": 16,
+    "rows": 12
+  },
+  "camera": {
+    "dbg": {
+      "ok": true,
+      "enq": 149,
+      "deq": 149,
+      "acted": 149,
+      "surf": 529,
+      "busy": false,
+      "last": "cell(15,5) rest=True foe=(-1,-1)'' imp=n occ=n",
+      "camOrtho": 11.7851,
+      "camRx": 30,
+      "camRy": 45,
+      "camRz": 0,
+      "camPx": -48.9898,
+      "camPy": 40,
+      "camPz": -48.9898,
+      "originVX": 0.5,
+      "originVY": 0.5
+    },
+    "fails": [],
+    "ok": true
+  },
+  "reachable": {
+    "pass": 30,
+    "fail": 0,
+    "cases": [
+      {
+        "cell": [
+          1,
+          1
+        ],
+        "landed": [
+          1,
+          1
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          1,
+          5
+        ],
+        "landed": [
+          1,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          1,
+          9
+        ],
+        "landed": [
+          1,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          2,
+          4
+        ],
+        "landed": [
+          2,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          2,
+          8
+        ],
+        "landed": [
+          2,
+          8
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          3,
+          2
+        ],
+        "landed": [
+          3,
+          2
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          3,
+          6
+        ],
+        "landed": [
+          3,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          3,
+          10
+        ],
+        "landed": [
+          3,
+          10
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          4,
+          6
+        ],
+        "landed": [
+          4,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          5,
+          3
+        ],
+        "landed": [
+          5,
+          3
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          5,
+          7
+        ],
+        "landed": [
+          5,
+          7
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          6,
+          3
+        ],
+        "landed": [
+          6,
+          3
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          6,
+          7
+        ],
+        "landed": [
+          6,
+          7
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          7,
+          3
+        ],
+        "landed": [
+          7,
+          3
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          7,
+          8
+        ],
+        "landed": [
+          7,
+          8
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          8,
+          5
+        ],
+        "landed": [
+          8,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          8,
+          9
+        ],
+        "landed": [
+          8,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          9,
+          5
+        ],
+        "landed": [
+          9,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          9,
+          9
+        ],
+        "landed": [
+          9,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          10,
+          4
+        ],
+        "landed": [
+          10,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          10,
+          8
+        ],
+        "landed": [
+          10,
+          8
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          11,
+          2
+        ],
+        "landed": [
+          11,
+          2
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          11,
+          10
+        ],
+        "landed": [
+          11,
+          10
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          12,
+          4
+        ],
+        "landed": [
+          12,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          12,
+          8
+        ],
+        "landed": [
+          12,
+          8
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          13,
+          2
+        ],
+        "landed": [
+          13,
+          2
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          13,
+          7
+        ],
+        "landed": [
+          13,
+          7
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          14,
+          1
+        ],
+        "landed": [
+          14,
+          1
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          14,
+          5
+        ],
+        "landed": [
+          14,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          14,
+          9
+        ],
+        "landed": [
+          14,
+          9
+        ],
+        "ok": true
+      }
+    ]
+  },
+  "impassable": {
+    "pass": 18,
+    "fail": 0,
+    "cases": [
+      {
+        "cell": [
+          0,
+          0
+        ],
+        "landed": [
+          14,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          0,
+          4
+        ],
+        "landed": [
+          14,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          0,
+          8
+        ],
+        "landed": [
+          14,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          1,
+          0
+        ],
+        "landed": [
+          14,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          2,
+          11
+        ],
+        "landed": [
+          14,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          4,
+          4
+        ],
+        "landed": [
+          14,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          4,
+          11
+        ],
+        "landed": [
+          14,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          6,
+          0
+        ],
+        "landed": [
+          14,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          7,
+          0
+        ],
+        "landed": [
+          14,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          7,
+          11
+        ],
+        "landed": [
+          14,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          8,
+          4
+        ],
+        "landed": [
+          14,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          9,
+          11
+        ],
+        "landed": [
+          14,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          11,
+          0
+        ],
+        "landed": [
+          14,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          11,
+          9
+        ],
+        "landed": [
+          14,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          13,
+          0
+        ],
+        "landed": [
+          14,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          14,
+          11
+        ],
+        "landed": [
+          14,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          15,
+          3
+        ],
+        "landed": [
+          14,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          15,
+          8
+        ],
+        "landed": [
+          14,
+          9
+        ],
+        "ok": true
+      }
+    ]
+  },
+  "doors": {
+    "pass": 1,
+    "fail": 0,
+    "cases": [
+      {
+        "cell": [
+          8,
+          11
+        ],
+        "to": "crypt",
+        "ok": true,
+        "detail": {
+          "crossed_to": "crypt",
+          "target": "crypt"
+        }
+      }
+    ]
+  },
+  "shots": [
+    "qa/evidence/walk-throne/throne_hall/shot_throne_hall_final.png"
+  ],
+  "verdict": "GREEN"
+}
