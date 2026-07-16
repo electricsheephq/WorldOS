@@ -157,7 +157,10 @@ def main() -> int:
             # The Gemini pass can silently RECOMPOSE structure (measured 3/3 on the dwing cycle:
             # pillar/doorway multiplication took base 0.96 -> styled 0.63). A big base->styled drop
             # is that signature — warn LOUD so the operator eyeballs the final before any panel.
-            base_recall = result.get("selected", {}).get("recall")
+            # winner recall from the SELECTION table (sorted desc; [0] = the adopted base).
+            # (codex #1614 catch: the old read used a nonexistent "selected" key, so base_recall
+            # was ALWAYS None and the drop guard never fired — every report showed "base None".)
+            base_recall = (result["selection"][0]["recall"] if result.get("selection") else None)
             drop = (base_recall - styled_recall) if isinstance(base_recall, (int, float)) else None
             if (drop is not None and drop > 0.15) or styled_recall < 0.60:
                 result["styled"]["registration_warning"] = (
