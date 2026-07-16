@@ -449,9 +449,23 @@ def run_gate(room: str, engine: str, qa: str, *, stride: int, out: Path,
     # says the cell is". Gating when run.
     report["visual"] = {"pass": 0, "fail": 0, "cases": []}
     if visual > 0 and interior:
-        vis_cells = _sample(interior, max(1, len(interior) // max(1, visual)))[:visual]
+        # codex review on #1600: exclude the CURRENT token cell from the pool (a zero-hop target has
+        # nothing to diff) and TOP the sample back up to N from the remaining reachable interior, so
+        # the gate always measures the requested count when enough cells exist.
+        cur = _token_cell(_get(f"{engine}/combat-surface"))
+        pool = [c for c in interior if c != cur]
+        vis_cells = _sample(pool, max(1, len(pool) // max(1, visual)))[:visual]
+        for c in pool:
+            if len(vis_cells) >= visual:
+                break
+            if c not in vis_cells:
+                vis_cells.append(c)
         report["visual"] = _visual_registration(qa, engine, mask, ortho, vis_cells, out,
                                                 settle, move_timeout)
+        # a requested visual gate that measured NOTHING must fail loud, never read as a vacuous GREEN
+        if not report["visual"]["cases"]:
+            report["visual"]["fail"] += 1
+            report["visual"]["error"] = "visual registration requested but produced no measurable cases"
 
     # 6) OCCLUSION evidence — a /shot near an occluder for the human contact sheet (non-gating here).
     shot = _capture_shot(qa, out, f"{room}_final")
