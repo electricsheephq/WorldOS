@@ -229,10 +229,15 @@ def _coltype(col: str) -> str:
 # (surface="visual", visual_overall/visual_dims_json) + panel JSONs, and promote through promote.py's
 # separate delta-anchored visual gate (GATE_STRATEGIES["room"]="visual"; registry
 # qa/visual_controls_identity.json). Adding "room" here would wrongly subject it to the 1-5 text gate.
-# "room" rows carry the WALKABILITY verdict surface (walk_gate/walk_report_path) — the beauty-gate
-# strategy for visual classes (0-10 panels vs the 1-5 text rubrics) is a separate, still-open
-# decision; a room row's `overall` stays NULL until that lands.
-ARTIFACT_CLASSES: tuple[str, ...] = ("quest", "npc", "location", "encounter", "room")
+ARTIFACT_CLASSES: tuple[str, ...] = ("quest", "npc", "location", "encounter")
+
+# GATE-LEDGER classes: rows that carry an automated GATE VERDICT (walk_gate/walk_report_path), not a
+# rubric panel score. Deliberately NOT in ARTIFACT_CLASSES — that tuple drives the TEXT-eval
+# machinery's invariants (per-class rubric+schema files, >=2 committed disguised controls;
+# qa/test_artifact_evals.py), none of which apply to a verdict row. The beauty-gate strategy for
+# visual classes (0-10 panels vs the 1-5 text rubrics) is a separate, still-open decision; a room
+# row's `overall` stays NULL until that lands.
+GATE_LEDGER_CLASSES: tuple[str, ...] = ("room",)
 
 ARTIFACT_COLUMNS: tuple[str, ...] = (
     "class",          # one of ARTIFACT_CLASSES — selects the rubric that scored it
@@ -491,8 +496,8 @@ def add_artifact(
         )
 
     cls = fields.get("class")
-    if cls is not None and cls not in ARTIFACT_CLASSES:
-        raise ValueError(f"class {cls!r} not in {ARTIFACT_CLASSES}")
+    if cls is not None and cls not in ARTIFACT_CLASSES + GATE_LEDGER_CLASSES:
+        raise ValueError(f"class {cls!r} not in {ARTIFACT_CLASSES + GATE_LEDGER_CLASSES}")
 
     wg = fields.get("walk_gate")
     if wg is not None and wg not in ("GREEN", "RED"):
