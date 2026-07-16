@@ -242,6 +242,110 @@ def path_violations(path, mask: dict) -> list:
     return bad
 
 
+# --- tri-state classification (PURE; unit-tested) --------------------------------------------------
+# A harness/infrastructure defect must NEVER read as a walkability verdict, in either direction. We
+# split every failure into a WALKABILITY class (a real room defect the gate exists to catch) vs a
+# HARNESS class (player/engine unreachable, /debug missing the camera fields, /shot capture failure,
+# drive-error exceptions). Ambiguous → classify as the side that can never certify a broken room green.
+def is_drive_error(landed) -> bool:
+    """A _drive_and_check result whose `landed` is a 'drive-error:<exc>' sentinel = a HARNESS error
+    (click/engine POST threw), NOT the room refusing/mis-resolving a move. Timeouts are NOT drive
+    errors — they stay walkability failures (they guard vacuous greens)."""
+    return isinstance(landed, str) and landed.startswith("drive-error:")
+
+
+def classify_camera_fails(dbg: dict, cam_fails: list) -> tuple:
+    """Split check_camera_pose failures → (walkability_fails, harness_errors). A wholly-absent camera
+    extension (camOrtho None) or an unreachable /debug (dbg carries `_error`) is a HARNESS error; any
+    other camera failure is a real pose MISMATCH — wrong ortho/rotation/aim — which is the 2026-07-15
+    root-cause class and a genuine walkability RED."""
+    if not cam_fails:
+        return [], []
+    if dbg.get("_error") is not None or dbg.get("camOrtho") is None:
+        return [], list(cam_fails)
+    return list(cam_fails), []
+
+
+def classify_pose_observation(dbg: dict, ortho) -> tuple:
+    """Classify a door-cross camera re-assert observation → (walkability_fails, harness_errors).
+    /debug unreachable = HARNESS; a real ortho/aim/rotation mismatch = walkability RED (the camera-
+    contract regression the gate exists to catch); no pinned ortho for the room = neither (skip)."""
+    if dbg.get("_error") is not None:
+        return [], [f"door-cross /debug unreachable: {dbg['_error']}"]
+    if ortho is None:
+        return [], []
+    return classify_camera_fails(dbg, check_camera_pose(dbg, ortho))
+
+
+def classify_verdict(report: dict) -> tuple:
+    """Pure verdict/exit-code decision → (verdict, exit_code). A WALKABILITY failure (reachable/
+    impassable/path/door/visual/orphan, OR a camera-pose mismatch, OR a door-cross pose mismatch)
+    → RED/1 — a real room fail WINS even when harness errors are also present. No walkability failure
+    but harness_errors non-empty → ERROR/2 (a harness/infra defect, never a room verdict). Clean →
+    GREEN/0. The impassable timeout-fail and visual zero-measurable-case fails are walkability fails
+    by construction (they live in the fail counters), so they correctly win over harness."""
+    walk = bool(
+        report.get("camera", {}).get("pose_mismatch")
+        or report["reachable"]["fail"]
+        or report["impassable"]["fail"]
+        or report["doors"]["fail"]
+        or report.get("orphans")
+        or report["path"]["fail"]
+        or report.get("visual", {}).get("fail")
+        or report.get("door_pose_fail")
+    )
+    if walk:
+        return "RED", 1
+    if report.get("harness_errors"):
+        return "ERROR", 2
+    return "GREEN", 0
+
+
+# --- provenance stamps (self-describing report; closes the #1607 cert traceability loop) -----------
+def _repo_sha():
+    import subprocess  # noqa: PLC0415
+    try:
+        r = subprocess.run(["git", "-C", str(REPO), "rev-parse", "--short", "HEAD"],
+                           capture_output=True, text=True, timeout=10)
+        return r.stdout.strip() or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _manifest_sha256():
+    import hashlib  # noqa: PLC0415
+    try:
+        return hashlib.sha256(MANIFEST.read_bytes()).hexdigest()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _utc_now_iso() -> str:
+    from datetime import datetime, timezone  # noqa: PLC0415
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _init_report(room: str, ortho: float, scene: str, mask: dict, engine: str, qa: str) -> dict:
+    """Build the base walk_report dict — provenance stamps + zeroed sub-structures. Factored out so
+    the provenance keys are unit-testable without a live player."""
+    return {
+        "schema_version": 1,
+        "repo_sha": _repo_sha(),
+        "manifest_sha256": _manifest_sha256(),
+        "ts": _utc_now_iso(),
+        "engine_url": engine, "qa_url": qa,
+        "room": room, "ortho": ortho, "sceneId": scene,
+        "grid": {"cols": mask["cols"], "rows": mask["rows"]},
+        "camera": {}, "orphans": [], "path": {"pass": 0, "fail": 0, "violations": []},
+        "reachable": {"pass": 0, "fail": 0, "cases": []},
+        "impassable": {"pass": 0, "fail": 0, "cases": []},
+        "doors": {"pass": 0, "fail": 0, "cases": []},
+        "visual": {"pass": 0, "fail": 0, "cases": []},
+        "harness_errors": [], "door_pose_fail": [],
+        "shots": [], "verdict": "PENDING",
+    }
+
+
 # --- live I/O helpers ------------------------------------------------------------------------------
 def _get(url: str, timeout: float = 5.0):
     with urllib.request.urlopen(url, timeout=timeout) as r:
@@ -261,9 +365,23 @@ def _location(surf: dict):
     return loc.get("id") if isinstance(loc, dict) else loc
 
 
-def _check_door_cross(qa: str, engine: str, cell, target, home, settle: float, timeout: float):
+def _debug_or_error(qa: str) -> dict:
+    """POST /debug, returning the JSON or {'_error': str} — never raises (so a pose re-assert on an
+    unreachable player is classified as a HARNESS error, not a walkability RED)."""
+    try:
+        return _post(f"{qa}/debug", {})
+    except Exception as e:  # noqa: BLE001
+        return {"_error": str(e)}
+
+
+def _check_door_cross(qa: str, engine: str, cell, target, home, settle: float, timeout: float,
+                      *, dest_ortho=None, home_ortho=None):
     """Click a door cell → assert the party CROSSES to `target` → return to `home` via the reciprocal
-    door. Verifies cross_door works both ways without stranding the party in the wrong room."""
+    door. Verifies cross_door works both ways without stranding the party in the wrong room. After the
+    cross-arrival is confirmed, re-fetch /debug and record the camera pose against the DESTINATION
+    room's pinned ortho; after the return-home leg, record it against the HOME room's ortho — a pose
+    mismatch there is the door-cross camera-contract regression (a RED); /debug unreachable is harness.
+    The raw pose observations ride `detail['pose']`; run_gate classifies them (keeps this fn I/O-only)."""
     c, r = cell
     try:
         _post(f"{qa}/click", {"c": c, "r": r})
@@ -281,8 +399,11 @@ def _check_door_cross(qa: str, engine: str, cell, target, home, settle: float, t
             crossed = loc
             break
     ok = (crossed == target) if target else bool(crossed)
-    # return home via the target room's door back to `home`
+    pose: dict = {}
+    # re-assert the DESTINATION room's camera contract on arrival
     if crossed:
+        pose["dest"] = {"ortho": dest_ortho, "dbg": _debug_or_error(qa)}
+        # return home via the target room's door back to `home`
         try:
             back = next((d for d in _get(f"{engine}/combat-surface").get("doors", [])
                          if d.get("to") == home), None)
@@ -293,9 +414,14 @@ def _check_door_cross(qa: str, engine: str, cell, target, home, settle: float, t
                     time.sleep(settle)
                     if _location(_get(f"{engine}/combat-surface")) == home:
                         break
+                # re-assert the HOME room's camera contract after the return leg
+                pose["home"] = {"ortho": home_ortho, "dbg": _debug_or_error(qa)}
         except Exception:  # noqa: BLE001
             pass
-    return ok, {"crossed_to": crossed, "target": target}
+    detail = {"crossed_to": crossed, "target": target}
+    if pose:
+        detail["pose"] = pose
+    return ok, detail
 
 
 def _token_cell(surf: dict):
@@ -315,6 +441,17 @@ def _room_ortho(room: str) -> float:
     if not entry:
         raise SystemExit(f"[walk_test] room '{room}' not in {MANIFEST} (have: {sorted(plates)[:8]})")
     return float(entry["cameraPin"]["ortho"])
+
+
+def _room_ortho_opt(room):
+    """Pinned ortho for a room, or None if the room isn't in the manifest (door targets can point at
+    rooms with no pinned plate — a missing ortho means the door-cross pose check is skipped, not RED)."""
+    if not room:
+        return None
+    try:
+        return _room_ortho(room)
+    except SystemExit:
+        return None
 
 
 def _visual_registration(qa: str, engine: str, mask: dict, ortho: float, cells: list,
@@ -390,20 +527,19 @@ def run_gate(room: str, engine: str, qa: str, *, stride: int, out: Path,
         print(f"[walk_test] WARNING: live sceneId '{scene}' does not name room '{room}' — the player "
               f"may be in a different room; cross a door first or pass the matching --room.")
     mask = walkmask_from_surface(surf)
-    report = {"room": room, "ortho": ortho, "sceneId": scene,
-              "grid": {"cols": mask["cols"], "rows": mask["rows"]},
-              "camera": {}, "orphans": [], "path": {"pass": 0, "fail": 0, "violations": []},
-              "reachable": {"pass": 0, "fail": 0, "cases": []},
-              "impassable": {"pass": 0, "fail": 0, "cases": []},
-              "doors": {"pass": 0, "fail": 0, "cases": []}, "shots": [], "verdict": "PENDING"}
+    report = _init_report(room, ortho, scene, mask, engine, qa)
 
-    # 1) CAMERA POSE — the root-cause gate.
+    # 1) CAMERA POSE — the root-cause gate. A pose MISMATCH (wrong ortho/rotation/aim) is a
+    # walkability RED; a wholly-absent camera extension or an unreachable /debug is a HARNESS error.
     try:
         dbg = _post(f"{qa}/debug", {})
     except Exception as e:  # noqa: BLE001
         dbg = {"_error": str(e)}
     cam_fails = check_camera_pose(dbg, ortho)
-    report["camera"] = {"dbg": dbg, "fails": cam_fails, "ok": not cam_fails}
+    cam_walk, cam_harness = classify_camera_fails(dbg, cam_fails)
+    report["camera"] = {"dbg": dbg, "fails": cam_fails, "ok": not cam_fails,
+                        "pose_mismatch": bool(cam_walk)}
+    report["harness_errors"].extend(cam_harness)
 
     # 1b) REACHABILITY / ORPHAN check (pure engine-truth, no driving): every walkable cell must be
     # BFS-reachable from the party's current cell. An orphan pocket = a seed defect or paint-invented
@@ -425,6 +561,10 @@ def run_gate(room: str, engine: str, qa: str, *, stride: int, out: Path,
     for (c, r) in _sample(interior, stride):
         ok, landed, path = _drive_and_check(qa, engine, c, r, settle, move_timeout, expect_move=True)
         report["reachable"]["cases"].append({"cell": [c, r], "landed": landed, "ok": ok})
+        # a drive-error exception is a HARNESS error, not the room mis-resolving a reachable move
+        if is_drive_error(landed):
+            report["harness_errors"].append(f"reachable ({c},{r}): {landed}")
+            continue
         report["reachable"]["pass" if ok else "fail"] += 1
         # audit only THIS move's route: the path's endpoint must be the clicked cell (a stale
         # lastWalkPath from a previous move is skipped, never mis-attributed to this click)
@@ -440,17 +580,39 @@ def run_gate(room: str, engine: str, qa: str, *, stride: int, out: Path,
     for (c, r) in _sample(blocked, max(1, stride)):
         ok, landed, _p = _drive_and_check(qa, engine, c, r, settle, move_timeout, expect_move=False)
         report["impassable"]["cases"].append({"cell": [c, r], "landed": landed, "ok": ok})
+        # a drive-error exception is HARNESS; a timeout (token never became (c,r)) stays a walkability
+        # PASS and a token that DID move onto the blocked cell stays a walkability FAIL (unchanged).
+        if is_drive_error(landed):
+            report["harness_errors"].append(f"impassable ({c},{r}): {landed}")
+            continue
         report["impassable"]["pass" if ok else "fail"] += 1
 
     # 4) DOORS — clicking a door CROSSES to the linked room (cross_door), it does NOT leave the token
     # on the door cell. Assert the cross lands in the door's `to` target, then return home.
     home = _location(surf) or room
+    home_ortho = _room_ortho_opt(home)
     for d in surf.get("doors", []):
         cell = tuple(d["cell"])
         target = d.get("to")
-        ok, detail = _check_door_cross(qa, engine, cell, target, home, settle, move_timeout)
+        ok, detail = _check_door_cross(qa, engine, cell, target, home, settle, move_timeout,
+                                       dest_ortho=_room_ortho_opt(target), home_ortho=home_ortho)
         report["doors"]["cases"].append({"cell": list(cell), "to": target, "ok": ok, "detail": detail})
+        # a door click that threw = HARNESS (player unreachable); a genuine cross pass/fail counts as
+        # before (existing counting preserved).
+        if isinstance(detail.get("error"), str) and detail["error"].startswith("click:"):
+            report["harness_errors"].append(f"door {list(cell)}: {detail['error']}")
+            continue
         report["doors"]["pass" if ok else "fail"] += 1
+        # classify the door-cross camera re-assert: a pose mismatch = RED (walkability), /debug
+        # unreachable = harness.
+        for leg in ("dest", "home"):
+            obs = detail.get("pose", {}).get(leg)
+            if not obs:
+                continue
+            pose_walk, pose_harness = classify_pose_observation(obs["dbg"], obs["ortho"])
+            if pose_walk:
+                report["door_pose_fail"].append({"door": list(cell), "leg": leg, "fails": pose_walk})
+            report["harness_errors"].extend(f"door {list(cell)} {leg}: {m}" for m in pose_harness)
 
     # 5) VISUAL REGISTRATION (optional, --visual N): pixel-diff actor localization at the LIVE window
     # aspect — the client-instrumentation-free measurement of "does the actor RENDER where the plate
@@ -485,10 +647,7 @@ def run_gate(room: str, engine: str, qa: str, *, stride: int, out: Path,
     if start and _location(_get(f"{engine}/combat-surface")) == (_location(surf) or room):
         _drive_and_check(qa, engine, start[0], start[1], settle, move_timeout, expect_move=True)
 
-    hard_fail = bool(cam_fails) or report["reachable"]["fail"] or report["impassable"]["fail"] \
-        or report["doors"]["fail"] or report["orphans"] or report["path"]["fail"] \
-        or report["visual"]["fail"]
-    report["verdict"] = "RED" if hard_fail else "GREEN"
+    report["verdict"], _ = classify_verdict(report)
     return report
 
 
@@ -572,8 +731,9 @@ def main(argv=None) -> int:
     out.mkdir(parents=True, exist_ok=True)
     (out / "walk_report.json").write_text(json.dumps(report, indent=2) + "\n")
 
+    verdict, exit_code = classify_verdict(report)
     cam = report["camera"]
-    print(f"\n=== WALK_TEST {args.room} — {report['verdict']} ===")
+    print(f"\n=== WALK_TEST {args.room} — {verdict} ===")
     print(f"camera: {'OK' if cam['ok'] else 'FAIL'}"
           + ("" if cam["ok"] else "".join(f"\n    - {m}" for m in cam["fails"])))
     for k in ("reachable", "impassable", "doors", "path", "visual"):
@@ -581,8 +741,13 @@ def main(argv=None) -> int:
         print(f"{k:11s}: {s['pass']} pass / {s['fail']} fail")
     print(f"orphans    : {len(report['orphans'])}"
           + (f" — {report['orphans'][:6]}" if report["orphans"] else ""))
+    if report.get("door_pose_fail"):
+        print(f"door pose  : {len(report['door_pose_fail'])} mismatch — {report['door_pose_fail'][:3]}")
+    if report.get("harness_errors"):
+        print(f"HARNESS ({len(report['harness_errors'])}) — NOT a walkability verdict:"
+              + "".join(f"\n    - {m}" for m in report["harness_errors"][:8]))
     print(f"report: {out / 'walk_report.json'}")
-    return 0 if report["verdict"] == "GREEN" else 1
+    return exit_code
 
 
 if __name__ == "__main__":

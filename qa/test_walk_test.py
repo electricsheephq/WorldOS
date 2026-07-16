@@ -151,3 +151,111 @@ def test_path_cell_cr_normalizes_both_shapes():
     assert _path_cell_cr([3, 4]) == [3, 4]
     assert _path_cell_cr((3, 4)) == [3, 4]
     assert _path_cell_cr({"c": 3, "r": 4}) == [3, 4]
+
+
+# --- tri-state verdict classification (GREEN / RED / ERROR) -----------------------------------------
+def _base_report(**over):
+    """A clean report skeleton carrying only the fields classify_verdict reads."""
+    r = {"camera": {"pose_mismatch": False}, "reachable": {"fail": 0}, "impassable": {"fail": 0},
+         "doors": {"fail": 0}, "orphans": [], "path": {"fail": 0}, "visual": {"fail": 0},
+         "door_pose_fail": [], "harness_errors": []}
+    r.update(over)
+    return r
+
+
+def test_classify_verdict_clean_is_green():
+    assert W.classify_verdict(_base_report()) == ("GREEN", 0)
+
+
+def test_classify_verdict_harness_only_is_error():
+    """A harness/infra defect with NO walkability failure = ERROR/2 — never a room verdict."""
+    r = _base_report(harness_errors=["reachable (3,4): drive-error:conn refused"])
+    assert W.classify_verdict(r) == ("ERROR", 2)
+
+
+def test_classify_verdict_walkability_fail_is_red():
+    assert W.classify_verdict(_base_report(reachable={"fail": 1})) == ("RED", 1)
+
+
+def test_classify_verdict_real_fail_wins_over_harness():
+    """A genuine walkability failure present ALONGSIDE harness errors → RED/1 (real fail wins), so a
+    partial harness outage can never downgrade a proven-broken room to a mere ERROR."""
+    r = _base_report(impassable={"fail": 2}, harness_errors=["door [4,0]: click:timeout"])
+    assert W.classify_verdict(r) == ("RED", 1)
+
+
+def test_classify_verdict_camera_pose_mismatch_is_red():
+    assert W.classify_verdict(_base_report(camera={"pose_mismatch": True})) == ("RED", 1)
+
+
+def test_classify_verdict_door_pose_mismatch_is_red():
+    r = _base_report(door_pose_fail=[{"door": [1, 2], "leg": "dest", "fails": ["camOrtho ..."]}])
+    assert W.classify_verdict(r) == ("RED", 1)
+
+
+def test_classify_verdict_orphans_and_visual_are_walkability():
+    """The visual zero-measurable-case fail and orphan pockets are walkability RED (guard vacuous
+    greens), never reclassified as harness."""
+    assert W.classify_verdict(_base_report(orphans=[[7, 3]])) == ("RED", 1)
+    assert W.classify_verdict(_base_report(visual={"fail": 1})) == ("RED", 1)
+
+
+def test_is_drive_error_only_matches_the_sentinel():
+    """A drive-error string is harness; a settled cell list or a plain None (timeout) is not."""
+    assert W.is_drive_error("drive-error:HTTPError") is True
+    assert W.is_drive_error([4, 5]) is False
+    assert W.is_drive_error(None) is False
+    assert W.is_drive_error("cell(4,5)") is False
+
+
+# --- provenance stamps -----------------------------------------------------------------------------
+def test_init_report_carries_provenance_stamps():
+    """The report self-describes its provenance (closes the #1607 cert traceability loop)."""
+    r = W._init_report("crypt", CRYPT_ORTHO, "crypt_scene",
+                       {"cols": 5, "rows": 4}, "http://engine:8766", "http://qa:8971")
+    assert r["schema_version"] == 1
+    assert "T" in r["ts"]                       # ISO8601 UTC
+    assert r["engine_url"] == "http://engine:8766" and r["qa_url"] == "http://qa:8971"
+    assert "repo_sha" in r and "manifest_sha256" in r   # present (value may be None if unavailable)
+    assert r["manifest_sha256"] and len(r["manifest_sha256"]) == 64   # real sha of the on-disk manifest
+    assert r["harness_errors"] == [] and r["door_pose_fail"] == []
+    assert r["verdict"] == "PENDING" and r["ortho"] == CRYPT_ORTHO
+
+
+# --- camera-fail + door-cross pose classification (walkability RED vs harness) ----------------------
+def test_classify_camera_fails_missing_extension_is_harness():
+    """A player build with NO /debug camera fields → harness (never a walkability verdict)."""
+    dbg = {"ok": True, "enq": 3}                 # no camOrtho
+    fails = W.check_camera_pose(dbg, CRYPT_ORTHO)
+    walk, harness = W.classify_camera_fails(dbg, fails)
+    assert walk == [] and harness and "unavailable" in harness[0]
+
+
+def test_classify_camera_fails_pose_mismatch_is_walkability():
+    """Wrong ortho/rotation/aim (fields present) = the 2026-07-15 root-cause class = walkability RED."""
+    snap = _contract_snapshot()
+    snap["originVX"], snap["originVY"] = 0.72, 0.34
+    fails = W.check_camera_pose(snap, CRYPT_ORTHO)
+    walk, harness = W.classify_camera_fails(snap, fails)
+    assert walk and harness == []
+
+
+def test_classify_pose_observation_debug_unreachable_is_harness():
+    walk, harness = W.classify_pose_observation({"_error": "connection refused"}, CRYPT_ORTHO)
+    assert walk == [] and harness and "unreachable" in harness[0]
+
+
+def test_classify_pose_observation_mismatch_is_walkability_red():
+    snap = _contract_snapshot()
+    snap["camRy"] = 60.0                          # destination camera off the frozen dimetric contract
+    walk, harness = W.classify_pose_observation(snap, CRYPT_ORTHO)
+    assert walk and harness == []
+
+
+def test_classify_pose_observation_no_ortho_skips():
+    """A door target with no pinned ortho asserts nothing — not RED, not harness."""
+    assert W.classify_pose_observation(_contract_snapshot(), None) == ([], [])
+
+
+def test_classify_pose_observation_contract_pose_is_clean():
+    assert W.classify_pose_observation(_contract_snapshot(), CRYPT_ORTHO) == ([], [])

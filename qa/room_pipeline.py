@@ -87,6 +87,14 @@ def stage_walk(room: str, out: Path, engine: str, qa: str, stride: int) -> dict:
     except Exception as e:  # noqa: BLE001
         return {"status": "SKIP", "detail": f"walk_test could not run (player up on {qa}?): {e}"}
     (out / "walk_report.json").write_text(json.dumps(report, indent=2))
+    # ERROR verdict = a harness/infrastructure defect (player/engine/debug/shot unreachable), NOT a
+    # walkability verdict. Map it to SKIP (which already blocks shippable) so a broken harness never
+    # reads as a RED room defect AND never certifies the room — it must be retried/investigated.
+    if report["verdict"] == "ERROR":
+        errs = report.get("harness_errors", [])
+        first = "; ".join(errs[:3]) if errs else "(unspecified)"
+        return {"status": "SKIP",
+                "detail": f"harness error — retry/investigate (never a verdict): {first}"}
     cam = report["camera"]["ok"]
     counts = {k: report[k] for k in ("reachable", "impassable", "doors")}
     return {"status": report["verdict"], "detail": {"camera_ok": cam, **counts}}
