@@ -32,9 +32,10 @@ _TOOLS = Path(__file__).resolve().parent
 sys.path.insert(0, str(_TOOLS))
 sys.path.insert(0, str(_TOOLS.parent / "qa"))
 
-from dungen_to_fixtures import convert, build_geometry  # noqa: E402
+from dungen_to_fixtures import convert, build_geometry, dress_tall_anchors  # noqa: E402
 from author_room_geometry import _perimeter_wall_run_props  # noqa: E402
 from greybox_render_headless import _fit_ortho_size  # noqa: E402
+from walk_static import check_geometry  # noqa: E402
 
 
 def _stamp_room(geo: dict, *, material: str, wall_height: float) -> dict:
@@ -81,15 +82,27 @@ def main(argv=None) -> int:
     # per-room geometries, unified-painter-ready
     loc_of = {rid: f"{args.town_id}_{rid}" for rid in room_ids}
     geos: dict[str, dict] = {}
+    gate_fails: list[str] = []
     for rid in room_ids:
         geo = _stamp_room(build_geometry(ctx, room=rid),
                           material=args.material, wall_height=args.wall_height)
+        geo = dress_tall_anchors(geo, name=loc_of[rid])
         geo["location"] = loc_of[rid]
+        # ★ STATIC WALKABILITY GATE (mirrors qa/seed_gfx_registered_world.py): a room geometry that
+        # fails the static gate (off-perimeter door, blocked landing, orphan pocket, duplicate door)
+        # never ships — refuse the whole run. Caught here, the three DunGen defect classes (boundary
+        # doors, prop-blocked landings, flat-interior mass) are pre-render-impossible.
+        gate_fails += [f"{loc_of[rid]}: {f}" for f in check_geometry(loc_of[rid], geo)]
         path = out / f"{args.town_id}_{rid}_geometry.json"
         path.write_text(json.dumps(geo) + "\n", encoding="utf-8")
         geos[rid] = geo
         print(f"[generate_town] {loc_of[rid]}: {geo['cols']}x{geo['rows']}, "
               f"{len(geo['props'])} props, doors {geo.get('door_cells')} -> {path.name}", file=sys.stderr)
+    if gate_fails:
+        print("[generate_town] STATIC GATE RED:", file=sys.stderr)
+        for f in gate_fails:
+            print(f"  - {f}", file=sys.stderr)
+        return 1
 
     # world wiring: per room, (door_cell, to_location) pairs matched GEOMETRICALLY — the engine
     # contract is door_cells[i] -> connections[i], and a positional zip can wire the north door to
