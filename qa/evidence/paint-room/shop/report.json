@@ -1,0 +1,49 @@
+{
+ "class": "shop",
+ "control_asset": "asset_SZa3e3ngB6ueW23ULMeyZcsz",
+ "draws": [
+  {
+   "seed": 12345,
+   "job": "job_fzJbDPKCVqzm3zq4Lcxoqp2m",
+   "asset": "asset_J8etorMyYmn34DGveGqP199g"
+  },
+  {
+   "seed": 12346,
+   "job": "job_u4EvD27Q5MdtRi3KNXgAfnRS",
+   "asset": "asset_VZ72msejHv2L5Yerp6XejyrZ"
+  },
+  {
+   "seed": 12347,
+   "job": "job_t7FvE88GhCUrPA7hCjKVffpE",
+   "asset": "asset_hc5o51rea18UtHSWKQx9RZwb"
+  }
+ ],
+ "selection": [
+  {
+   "seed": 12347,
+   "recall": 0.9555,
+   "path": "qa/evidence/paint-room/shop/shop_flux_s12347.png"
+  },
+  {
+   "seed": 12345,
+   "recall": 0.9414,
+   "path": "qa/evidence/paint-room/shop/shop_flux_s12345.png"
+  },
+  {
+   "seed": 12346,
+   "recall": 0.8992,
+   "path": "qa/evidence/paint-room/shop/shop_flux_s12346.png"
+  }
+ ],
+ "base": {
+  "seed": 12347,
+  "asset": "asset_hc5o51rea18UtHSWKQx9RZwb",
+  "path": "qa/evidence/paint-room/shop/shop_flux_s12347.png"
+ },
+ "styled": {
+  "job": "job_7xatZKoz4uLZC9tSXamHh85L",
+  "asset": "asset_URjZZaiu7osTKJEuhkAFaV3d",
+  "path": "qa/evidence/paint-room/shop/shop_final_1344.png",
+  "recall_vs_depth": 0.6276
+ }
+}

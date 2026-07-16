@@ -1,0 +1,9 @@
+{
+  "protocol": "blind 5-scorer control-anchored (VISION.md visual-critic band; Workflow wf_416df831-d37)",
+  "candidate": "qa/evidence/paint-room/shop/shop_final_1344.png",
+  "control": "/Volumes/LEXAR/WorldOS-Unity-spike/refs/poe2_ruins_brazier_integration_01.jpg (disguised, A/B order alternated per scorer)",
+  "candidate_median": 6, "control_median": 8, "delta": -2.0, "in_band": true, "tier": "stable",
+  "scores": [{"cand": 6, "ctrl": 8}, {"cand": 6, "ctrl": 9}, {"cand": 7, "ctrl": 8}, {"cand": 6, "ctrl": 9}, {"cand": 6, "ctrl": 8}],
+  "cycle2_levers": "flat/illustrative vs control; deepen cool blue-violet shadow falloff + atmospheric depth; less graphic edge handling",
+  "note": "first paint cycle of a brand-new class through the hands-off pipeline (~47 CU); Gemini invented a staircase OUTSIDE the room envelope (throne-gallery class, no grid cells, cosmetic)"
+}
