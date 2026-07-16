@@ -5,6 +5,19 @@
 > exact file/command and the decision record that ratified it. This is the TRUE-GREYBOX lane (epic
 > #1508): geometry-first, registration by construction, no paint-vs-grid drift.
 
+> **★ RESUME PROTOCOL (cold start / after compaction — read in this order):** (1) epic #1581 + its
+> OPEN sub-issues (the queue of what's left) → (2) `VISION.md` → "The Room Readiness Pipeline" +
+> the WALKABILITY / GEOMETRY-IS-GROUND-TRUTH doctrine → (3) THIS runbook → (4) the active plan's
+> STATE block → then run `qa/room_pipeline.py --resume`. The goal/queue/process/state live in the
+> repo + GitHub, never only in an agent's head — that is the fix for the #1 failure (a process that
+> lived in context died at compaction and regressed a whole feature, 2026-07-15).
+>
+> **★ THE SHIP GATE (non-negotiable): a room ships only when BOTH gates are green — the BEAUTY panel
+> AND the automated WALKABILITY test (`qa/walk_test.py`, step 11).** Beauty ≠ walkable: we shipped
+> 3 panel-8+ rooms on 2026-07-15 that were unwalkable (walk-through-walls, spawn-in-barrel, no
+> occlusion) because a walkability gate did not exist as automation. `qa/room_pipeline.py` exits
+> non-zero without walk-green; a human "ship it" no longer substitutes for it.
+
 **Preflight (do this before any command below):** read `docs/OPERATIONS.md` first — it's the
 general cold-start bootstrap (worktree discipline, box claim etiquette, the Universal Run Contract)
 this page specializes for room authoring. Verify `pwd` before running anything: you should be inside
@@ -447,6 +460,35 @@ Verify with `qa/player_smoke.sh` (free, ~30-60s, every player rebuild — `docs/
 "player smoke" row) before treating a rebuild as done. A location whose manifest key is unknown ⇒
 current plate kept (invisible-but-safe), never a crash — check `plates_manifest.json` if a room you
 just promoted doesn't appear in the player.
+
+### 11. WALKABILITY gate — `qa/walk_test.py` (THE ship gate; automated; no room ships without green)
+
+The beauty panel is BLIND to whether you can actually walk the room. After the built player is running
+(step 10) with the QA channel armed (`WORLDOS_QA_INPUT=1`, port 8971), drive it cell-by-cell and assert
+— with NO human:
+
+```
+qa/walk_test.py --room <id>          # drives :8971 /click + reads the client actor screen-pos + /shot
+```
+
+- **Actor alignment** — every reachable floor cell: `/click` it → the engine token cell must equal the
+  click AND the client's reported actor screen position (`Camera.main.WorldToScreenPoint` of the grounded
+  actor, exposed on the QA `/debug` channel) must be within N px of `world_to_screen(CellToWorld(cell),
+  ortho)`. This is the projection check that catches the camera-rig class (an offset here = the character
+  renders on a tomb / through a wall even though the engine has it on the right cell).
+- **Impassable rejection** — every wall/prop cell: `/click` → the move must REJECT (token unchanged).
+- **Doors (cosmetic)** — every `door_cell` projects onto the painted arch; `cross_door` lands on the
+  reciprocal door, not a wall/prop.
+- **Occlusion** — walk behind each tall occluder → `/shot` → the character region is partially masked.
+- **No orphan paint** — no painted walkable-looking space lacks a backing grid cell.
+
+Emits `walk_report.json` (pass/fail per cell/door/occlusion) + a `/shot` contact sheet. **GREEN =
+walkable = shippable.** The geometric asserts are CU-free (no LLM); images are only for the occlusion
+spot-check + human evidence. Root-cause reference for the failure class this gate catches:
+`CombatSurfaceClient.ApplyPlate` must reproduce `build_room_unified`'s full camera rig (Euler(30,45,0),
+pos=-(rot·fwd)·80) whenever `cameraPin.ortho` is set — not only when pitch/yaw are present (epic #1581,
+issue #1583). GEOMETRY IS GROUND TRUTH: collision/occlusion come from the grid+boxes; the plate is
+cosmetic, so a door "misalignment" is a label/arrival-cell fix, never a collision fix.
 
 ---
 
