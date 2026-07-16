@@ -79,6 +79,15 @@
     "yaw": 45
    },
    "boxes": "boxes/dwing_room_0_v1_boxes.json"
+  },
+  "dwing_room_1": {
+   "plate": "plates/dwing_room_1_v1_registered.png",
+   "cameraPin": {
+    "ortho": 7.997,
+    "pitch": 30,
+    "yaw": 45
+   },
+   "boxes": "boxes/dwing_room_1_v1_boxes.json"
   }
  }
 }
