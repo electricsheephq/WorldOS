@@ -527,12 +527,20 @@ def author_tavern_snug() -> dict:
     open, aisles rows 2 and 4-5 open); LOW props off the two NEAR walls per the 30/45 placement law;
     door (11,4) = an east seam left for town wiring (declare in the seed allowlist)."""
     props = [
-        ("kegs_back", "barrel", [[2, 1], [3, 1]]),                     # keg rack, back-west
+        ("kegs_back", "barrel", [[1, 1], [1, 2]]),                     # keg rack, WEST wall band
+        # (moved from (2,1)+(3,1): with post_w added, the back-west kegs orphaned the whole
+        # west strip — 14 unreachable cells, caught by walk_static pre-CU)
         ("bar_snug", "bar", [[4, 2], [5, 2], [6, 2], [7, 2]]),         # THE focal: back-centre bar
         ("hearth_east", "hearth", [[10, 2], [10, 3]]),                 # chimney breast, EAST wall
         # (10,4) stays clear — it is the east door (11,4)'s landing; the static gate caught the
         # original (10,3)+(10,4) placement blocking it (walk_static check_geometry, pre-CU)
         ("candle_bar", "brazier", [[8, 2]]),                           # light at the bar's east end
+        # CYCLE-3 root lever (flat-interior class, panels c1+c2 both 6-vs-9): the paint INVENTED a
+        # free-standing post in both cycles because nothing tall anchors the interior depth. Author
+        # the posts it keeps asking for — two structural TIMBER SUPPORTS (pillar kind = tall molded
+        # shaft) framing the mid-room, per the RICHNESS PRINCIPLE (paint richness follows geometry).
+        ("post_w", "pillar", [[3, 3], [3, 4]]),                        # west roof post, stone base
+        ("post_e", "pillar", [[8, 4], [8, 5]]),                        # east roof post, stone base
         ("table_sw", "table", [[3, 5], [4, 5], [3, 6], [4, 6]]),       # 2x2 communal table, SW
         ("bench_sw", "fallen_log", [[5, 5], [5, 6]]),                  # bench on the table's east side
         ("table_s", "table", [[7, 6], [8, 6], [7, 7], [8, 7]]),        # 2x2 table, south-centre
