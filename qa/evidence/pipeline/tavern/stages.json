@@ -1,0 +1,258 @@
+{
+  "walk": {
+    "status": "GREEN",
+    "detail": {
+      "camera_ok": true,
+      "reachable": {
+        "pass": 12,
+        "fail": 0,
+        "cases": [
+          {
+            "cell": [
+              1,
+              1
+            ],
+            "landed": [
+              1,
+              1
+            ],
+            "ok": true
+          },
+          {
+            "cell": [
+              1,
+              9
+            ],
+            "landed": [
+              1,
+              9
+            ],
+            "ok": true
+          },
+          {
+            "cell": [
+              3,
+              3
+            ],
+            "landed": [
+              3,
+              3
+            ],
+            "ok": true
+          },
+          {
+            "cell": [
+              4,
+              3
+            ],
+            "landed": [
+              4,
+              3
+            ],
+            "ok": true
+          },
+          {
+            "cell": [
+              5,
+              5
+            ],
+            "landed": [
+              5,
+              5
+            ],
+            "ok": true
+          },
+          {
+            "cell": [
+              6,
+              4
+            ],
+            "landed": [
+              6,
+              4
+            ],
+            "ok": true
+          },
+          {
+            "cell": [
+              7,
+              3
+            ],
+            "landed": [
+              7,
+              3
+            ],
+            "ok": true
+          },
+          {
+            "cell": [
+              8,
+              4
+            ],
+            "landed": [
+              8,
+              4
+            ],
+            "ok": true
+          },
+          {
+            "cell": [
+              9,
+              6
+            ],
+            "landed": [
+              9,
+              6
+            ],
+            "ok": true
+          },
+          {
+            "cell": [
+              10,
+              6
+            ],
+            "landed": [
+              10,
+              6
+            ],
+            "ok": true
+          },
+          {
+            "cell": [
+              11,
+              6
+            ],
+            "landed": [
+              11,
+              6
+            ],
+            "ok": true
+          },
+          {
+            "cell": [
+              12,
+              8
+            ],
+            "landed": [
+              12,
+              8
+            ],
+            "ok": true
+          }
+        ]
+      },
+      "impassable": {
+        "pass": 8,
+        "fail": 0,
+        "cases": [
+          {
+            "cell": [
+              0,
+              0
+            ],
+            "landed": [
+              12,
+              8
+            ],
+            "ok": true
+          },
+          {
+            "cell": [
+              0,
+              8
+            ],
+            "landed": [
+              12,
+              8
+            ],
+            "ok": true
+          },
+          {
+            "cell": [
+              2,
+              10
+            ],
+            "landed": [
+              12,
+              8
+            ],
+            "ok": true
+          },
+          {
+            "cell": [
+              4,
+              6
+            ],
+            "landed": [
+              12,
+              8
+            ],
+            "ok": true
+          },
+          {
+            "cell": [
+              7,
+              10
+            ],
+            "landed": [
+              12,
+              8
+            ],
+            "ok": true
+          },
+          {
+            "cell": [
+              9,
+              10
+            ],
+            "landed": [
+              12,
+              8
+            ],
+            "ok": true
+          },
+          {
+            "cell": [
+              12,
+              0
+            ],
+            "landed": [
+              12,
+              8
+            ],
+            "ok": true
+          },
+          {
+            "cell": [
+              13,
+              4
+            ],
+            "landed": [
+              12,
+              8
+            ],
+            "ok": true
+          }
+        ]
+      },
+      "doors": {
+        "pass": 1,
+        "fail": 0,
+        "cases": [
+          {
+            "cell": [
+              7,
+              0
+            ],
+            "to": "crypt",
+            "ok": true,
+            "detail": {
+              "crossed_to": "crypt",
+              "target": "crypt"
+            }
+          }
+        ]
+      }
+    }
+  }
+}
