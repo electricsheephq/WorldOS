@@ -188,3 +188,22 @@ def test_every_generated_room_has_a_narrative_focal(town):
                        for c in p["cells"]}
         assert not (focal_cells & landings), f"{rid}: focal on a door landing"
         assert check_geometry(rid, geo) == [], f"{rid}: static gate regressed after focal dressing"
+
+
+def test_plates_fragment_pins_carry_the_full_camera_contract(tmp_path):
+    """Sidecar round-4 catch: ortho-only pins were the 2026-07-15 camera-bug SHAPE. The client now
+    defaults pitch/yaw (#1591) so they're safe — but every emitter must still stamp the full
+    contract (provenance; walk_static lints pitch/yaw==30/45 when present)."""
+    import json
+    import subprocess
+    out = tmp_path / "frag"
+    out.mkdir()
+    r = subprocess.run(
+        [sys.executable, str(_ROOT / "tools" / "generate_town.py"), str(_LAYOUT),
+         "--rooms", "room_0", "--town-id", "pin", "--out-dir", str(out), "--material", "stone"],
+        capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr[-500:]
+    frag = json.loads((out / "pin_plates_fragment.json").read_text())
+    for rid, entry in frag["plates"].items():
+        pin = entry["cameraPin"]
+        assert pin.get("pitch") == 30 and pin.get("yaw") == 45, f"{rid}: ortho-only pin {pin}"

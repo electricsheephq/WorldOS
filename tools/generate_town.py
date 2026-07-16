@@ -164,7 +164,11 @@ def main(argv=None) -> int:
     # plates_manifest fragment — cameraPin.ortho from the SAME fit math as the unified render
     frag = {"plates": {loc_of[rid]: {
         "plate": f"plates/{loc_of[rid]}.png",
-        "cameraPin": {"ortho": round(_fit_ortho_size(geos[rid]["cols"], geos[rid]["rows"]), 4)},
+        "cameraPin": {"ortho": round(_fit_ortho_size(geos[rid]["cols"], geos[rid]["rows"]), 4),
+                      # pitch/yaw stamped explicitly (provenance + belt-and-suspenders): the client
+                      # DEFAULTS to the 30/45 contract rig when only ortho is pinned (#1591), but
+                      # every shipped manifest entry carries them and walk_static lints them.
+                      "pitch": 30, "yaw": 45},
         "boxes": f"boxes/{loc_of[rid]}_boxes.json",
     } for rid in room_ids}}
     (out / f"{args.town_id}_plates_fragment.json").write_text(json.dumps(frag, indent=1) + "\n", encoding="utf-8")
