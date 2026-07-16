@@ -1,0 +1,50 @@
+{
+ "class": "dwing_room_2",
+ "control_asset": "asset_PwwVmrgKoLWhrFV8qNQgRnnE",
+ "draws": [
+  {
+   "seed": 12345,
+   "job": "job_WfzWd6n1t6gP7sZibVrZ9XbM",
+   "asset": "asset_B4yaDTuVma8nQE66C5uof5UL"
+  },
+  {
+   "seed": 12346,
+   "job": "job_qTEsmYRs2A8cHRZxhBuDtpsd",
+   "asset": "asset_cSRw7vANKuNNmzDgN5ZnpC6m"
+  },
+  {
+   "seed": 12347,
+   "job": "job_eDCKaqebxqQhSn6yvpswhixQ",
+   "asset": "asset_g2Z1zKqy5MdDemksCjvpY5vh"
+  }
+ ],
+ "selection": [
+  {
+   "seed": 12346,
+   "recall": 0.9512,
+   "path": "qa/evidence/paint-room/dwing_room_2_c2/dwing_room_2_flux_s12346.png"
+  },
+  {
+   "seed": 12345,
+   "recall": 0.866,
+   "path": "qa/evidence/paint-room/dwing_room_2_c2/dwing_room_2_flux_s12345.png"
+  },
+  {
+   "seed": 12347,
+   "recall": 0.7725,
+   "path": "qa/evidence/paint-room/dwing_room_2_c2/dwing_room_2_flux_s12347.png"
+  }
+ ],
+ "base": {
+  "seed": 12346,
+  "asset": "asset_cSRw7vANKuNNmzDgN5ZnpC6m",
+  "path": "qa/evidence/paint-room/dwing_room_2_c2/dwing_room_2_flux_s12346.png"
+ },
+ "styled": {
+  "job": "job_iN7zDyn1arHLqaQkiTKAcMuM",
+  "asset": "asset_bYFzWYVpno4EyXsvKTWo8RHE",
+  "path": "qa/evidence/paint-room/dwing_room_2_c2/dwing_room_2_final_1344.png",
+  "recall_vs_depth": 0.5077,
+  "registration_warning": "styled recall 0.5077 (base None) \u2014 structure-lock likely violated (invented/multiplied features); eyeball before panel"
+ }
+}

@@ -83,6 +83,11 @@ def main() -> int:
     ap.add_argument("--seeds", default=None,
                     help="comma-separated seed override (default: recipe seeds = 3-draw selection)")
     ap.add_argument("--skip-gemini", action="store_true", help="stop after the selected flux base")
+    ap.add_argument("--boxes", default=None,
+                    help="room_boxes.json sidecar for the depth room — enables the HARD registration "
+                         "gate: a styled recall < 0.60 triggers the brazier-beacon corrective warp "
+                         "(qa/reregister_plate.py) and, if still < 0.60 after correction, FAILS the "
+                         "run non-zero. Absent: warn-only (backward-compatible).")
     args = ap.parse_args()
 
     cls = RECIPES["classes"][args.room_class]
@@ -136,6 +141,7 @@ def main() -> int:
               "selection": table, "base": {"seed": winner["seed"], "asset": base_asset,
                                            "path": base_path}}
 
+    registration_failed = False
     if not args.skip_gemini:
         print("[paint_room] gemini structure-lock pass…")
         g = _gemini_pass(headers, cls, gem, base_asset, out_dir, f"{args.room_class}_styled")
@@ -146,12 +152,72 @@ def main() -> int:
         result["styled"] = {"job": g["job_id"], "asset": g["saved"][0]["asset_id"],
                             "path": str(final_path)}
         if depth_local is not None:
-            result["styled"]["recall_vs_depth"] = round(
-                registration_recall(str(depth_local), str(final_path)), 4)
+            styled_recall = round(registration_recall(str(depth_local), str(final_path)), 4)
+            result["styled"]["recall_vs_depth"] = styled_recall
+            # The Gemini pass can silently RECOMPOSE structure (measured 3/3 on the dwing cycle:
+            # pillar/doorway multiplication took base 0.96 -> styled 0.63). A big base->styled drop
+            # is that signature — warn LOUD so the operator eyeballs the final before any panel.
+            # winner recall from the SELECTION table (sorted desc; [0] = the adopted base).
+            # (codex #1614 catch: the old read used a nonexistent "selected" key, so base_recall
+            # was ALWAYS None and the drop guard never fired — every report showed "base None".)
+            base_recall = (result["selection"][0]["recall"] if result.get("selection") else None)
+            drop = (base_recall - styled_recall) if isinstance(base_recall, (int, float)) else None
+            if (drop is not None and drop > 0.15) or styled_recall < 0.60:
+                result["styled"]["registration_warning"] = (
+                    f"styled recall {styled_recall} (base {base_recall}) — structure-lock likely "
+                    "violated (invented/multiplied features); eyeball before panel")
+                print(f"[paint_room] ⚠ REGISTRATION WARNING: {result['styled']['registration_warning']}")
+
+            # HARD GATE (#1618 upgrade): recall CANNOT gate registration — measured 2026-07-16: a
+            # draw at recall 0.6377 (above the old 0.60 floor) sat 1.45 CELLS off. With --boxes the
+            # gate is SOLVE-BASED: brazier-beacon err_cells must be <= 0.35 at the stamped ortho.
+            # Over the bar => attempt the SIMILARITY warp (rotation term — Gemini measurably rotates
+            # plates 1-4.75°), re-solve, adopt if it clears; still over => REGISTRATION FAILED
+            # (non-zero). Recall stays RECORDED (drift telemetry) but no longer gates. Without
+            # --boxes: warn-only (backward compatible).
+            if args.boxes:
+                from PIL import Image  # noqa: E402
+                from overlay_boxes import blob_solve  # noqa: E402
+                from reregister_plate import _max_err_cells, apply_similarity, fit_similarity  # noqa: E402
+                boxes_sc = json.loads(Path(args.boxes).read_text())
+                solve0 = blob_solve(boxes_sc, final_path)
+                corr = {"gate": "err_cells<=0.35 (solve-based, #1618)"}
+                if "error" in solve0:
+                    corr.update(attempted=False, error=solve0["error"])
+                    registration_failed = True  # unsolvable = ungateable = not shippable
+                else:
+                    err0 = _max_err_cells(solve0)
+                    corr["before_err_cells"] = err0
+                    if err0 > 0.35:
+                        sim = fit_similarity(solve0["matched_pairs"])
+                        if sim.get("unstable"):
+                            corr.update(attempted=True, unstable=sim)
+                            registration_failed = True
+                        else:
+                            corrected_path = out_dir / f"{args.room_class}_final_1344_reregistered.png"
+                            apply_similarity(Image.open(final_path).convert("RGB"), sim).save(corrected_path)
+                            solve1 = blob_solve(boxes_sc, corrected_path)
+                            err1 = _max_err_cells(solve1) if "error" not in solve1 else 99.0
+                            corr.update(attempted=True, rot_deg=sim["rot_deg"], scale=sim["scale"],
+                                        after_err_cells=err1, path=str(corrected_path))
+                            if err1 <= 0.35:
+                                subprocess.run(["cp", str(corrected_path), str(final_path)], check=True)
+                                corr["adopted"] = True
+                                print(f"[paint_room] similarity warp adopted: err_cells {err0} -> {err1}")
+                            else:
+                                registration_failed = True
+                result["styled"]["corrected"] = corr
+            else:
+                result["styled"]["corrected"] = {"attempted": False,
+                                                 "note": "no --boxes: warn-only (no hard gate)"}
         print(f"[paint_room] FINAL: {final_path}")
 
     (out_dir / "report.json").write_text(json.dumps(result, indent=1))
     print(f"[paint_room] report: {out_dir/'report.json'}")
+    if registration_failed:
+        print("[paint_room] ✖ REGISTRATION FAILED: beacon err_cells > 0.35 after similarity warp "
+              f"(see {out_dir/'report.json'})", file=sys.stderr)
+        return 1
     return 0
 
 

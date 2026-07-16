@@ -1,0 +1,10 @@
+{
+ "prompt": "Painterly isometric medieval stone dungeon shrine-storeroom undercroft interior, firelit, in the Pillars of Eternity 2 Deadfire hand-painted concept-art style. A sealed square store chamber kept as a shrine: back-centre a low carved stone ALTAR flanked by two standing iron BRAZIERS with glowing coals \u2014 the room's light and focal point; stacked wooden CRATES, BARRELS and supply SACKS ranged along the walls with masonry RUBBLE between them; ONE arched stone doorway set into the right-hand (east) wall exactly where the depth map shows the opening, with clear floor before it. Rough-hewn grey stone block walls and floor flags, two structural STONE PILLARS on square bases rising to the ceiling; warm amber firelight from the braziers pooled on the stone, deep cool BLUE-VIOLET shadows pooling in the corners and along the walls (never pure black), a gentle atmospheric haze falloff toward the room edges, the stone walls richly worked with visible coursing, cracked mortar and aged water stains, hand-painted texture detail, oil-painted texture, no people, no characters. FEATURE COUNTS (strict): EXACTLY TWO stone pillars, EXACTLY ONE altar, EXACTLY TWO braziers, EXACTLY ONE arched doorway (east wall); every other wall surface is unbroken solid stone \u2014 NO other doorways, arches, gates or openings, NO other pillars or columns.",
+ "controlImage": "asset_E4z83qMMjZZsdqo8ZRFYAgaU",
+ "controlModality": "depth",
+ "controlStrength": 0.85,
+ "width": 1344,
+ "height": 768,
+ "numSamples": 1,
+ "seed": 12346
+}

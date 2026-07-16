@@ -1,0 +1,10 @@
+{
+ "prompt": "Painterly isometric medieval stone dungeon storeroom undercroft interior, torchlit, in the Pillars of Eternity 2 Deadfire hand-painted concept-art style. A sealed square store chamber: stacked wooden CRATES, BARRELS and supply SACKS ranged along the back and west walls and in low island stacks across the centre and front of the floor, with masonry RUBBLE piles between them; ONE arched stone doorway set into the right-hand (east) wall exactly where the depth map shows the opening, with clear floor in front of it. Rough-hewn grey stone block walls and floor flags, two structural STONE PILLARS on square bases rising to the ceiling, one back-centre and one mid-centre of the floor; wall-mounted iron TORCH sconces with warm flames as the only light sources; warm amber torchlight pooled at the pillars and doorways, deep cool BLUE-VIOLET shadows pooling in the corners and along the walls (never pure black), a gentle atmospheric haze falloff toward the room edges, the stone walls richly worked with visible coursing, cracked mortar and aged water stains, hand-painted texture detail, oil-painted texture, no people, no characters.",
+ "controlImage": "asset_ZxdoqNkKjGLQKHQbrufKWVW5",
+ "controlModality": "depth",
+ "controlStrength": 0.85,
+ "width": 1344,
+ "height": 768,
+ "numSamples": 1,
+ "seed": 12345
+}

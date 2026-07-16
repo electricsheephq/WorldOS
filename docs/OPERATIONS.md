@@ -188,6 +188,15 @@ cost a rebuild/regeneration round, and one recovery briefly killed the owner's l
   `wt-owner-play`) carry a `.worldos-keep` file at their root. Any cleanup script or dev-loop
   finish step MUST skip any tree containing that marker — check for it before any remove, even a
   single-path one you believe is safe.
+- **★ Owner install/reseed: FAST-FORWARD `wt-owner-play` to main BEFORE reseeding (schema-skew
+  class, measured 2026-07-16).** The reseed runs from the MAIN checkout but the owner engine
+  SERVES from the `wt-owner-play` worktree — if main carries a newer snapshot field (e.g.
+  `combat.last_walk_path`, an additive model field), the seed writes it and the older worktree
+  engine then refuses every state WRITE with "snapshot is incompatible… snapshot is NEWER than
+  this engine" (reads keep working, which masks it — the symptom is silently-refused walks).
+  Order: stop agents → `git -C ~/WorldOS-worktrees/wt-owner-play pull --ff-only origin main` →
+  swap app → reseed → restart agents → probe an actual WALK (not just 200s + spawn cells; a read
+  probe cannot catch this class).
 - **Commit-and-push-early stays the recovery guarantee.** A worktree that gets swept mid-session is
   only a lost *regeneration round*, never lost work, if you've been committing and pushing as you
   go (per the `worldos-dev` dev-loop) rather than accumulating uncommitted state. **Confirmed again

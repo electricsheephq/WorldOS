@@ -49,6 +49,14 @@ eyeball (axes 6-7) → blind panel (axis 8) → grade the row → fix the LOWEST
 ## Scale-out (after crypt + tavern both pass): forest road, DunGen dungeon room, then the
 ## 2-environments-a-night cadence (HV5) with this scorecard as the promotion gate.
 
+### ★ Panel-ruler calibration (2026-07-16 — the two-anchor rule)
+A Δ-vs-control band is only comparable under the SAME scorer wording: re-scoring the SHIPPED shop +
+snug plates under a rewritten panel prompt read Δ−3.0/Δ−2.5 (they shipped at Δ−2.0/Δ−1.0) — ~1pt of
+pure ruler drift. RULE: every panel batch includes at least one SHIPPED plate as a disguised
+CALIBRATION REFERENCE; the ship verdict is "candidate Δ within ~0.5 of the calibration reference
+under the same run", not the raw band. The PoE2 control anchors the scale's top; the shipped plate
+anchors the SHIP BAR.
+
 ## Cycle log
 | date | room | cycle | verdict | CU |
 |------|------|-------|---------|----|
@@ -60,6 +68,19 @@ eyeball (axes 6-7) → blind panel (axis 8) → grade the row → fix the LOWEST
 | 2026-07-15 | tavern | 2-restored | ★ BAR MET: panel 8.4 (Δ −1.0); the previously-unpaintable room | 29 |
 | 2026-07-15 | throne | registered-1 | panel 7.0; levers: material wash + Gemini-additions (gallery) | 29 |
 | 2026-07-16 | shop | 1 | ★ SHIPPED cycle-1: panel 6 vs control 8 Δ−2.0 IN-BAND; recall 0.9555; WALK-GREEN (#1596 sandbox, visual 5/5 ~0.3c) — the pipeline's first hands-off NEW CLASS | 47 |
+| 2026-07-16 | dwing wing (3 GENERATED rooms) | 1 | honest negative: NEW invention class — Gemini MULTIPLIES features (2 pillars→5, 1 door→5 arches); flux bases geometry-PERFECT (0.96/0.83/0.77); recall is precision-blind to additions → paint_room base→styled drop WARNING shipped | ~140 |
+| 2026-07-16 | dwing wing | 2 | EXACT-COUNT lock: rooms 0+2 structurally HONEST (eyeball-adjudicated; instrument characterized as edge-contrast-biased); room_1 RESHAPED (12x7→square, side doors→back wall). PANELS rooms 0+2: 6-vs-9 Δ−3.0 OUT OF BAND 2/2 — "no narrative focal point / empty floor" = geometry-richness on crates-only DunGen rooms | ~140 |
+| 2026-07-16 | dwing room_1 | 3 | SHAPE+DOOR-WALL locks: structurally honest (wide-shallow held, side doors correct). Lock library proven: EXACT-COUNT · ROOM-SHAPE · DOOR-WALL | 47 |
+| 2026-07-16 | dwing wing | 4 | GEOMETRY lever: dress_focal (PR #1611 — altar+braziers by door count) → re-render → focal-named recipes; LAST wing cycle this run (in-band ⇒ ship; miss ⇒ documented ceiling) | ~140 |
+| 2026-07-16 | dwing room_0 | 4-verdict | ★ ADOPTED — first GENERATED room to ship-grade: Δ−3.0 == CAL_shipped_shop Δ−3.0 under the SAME panel ruler (see calibration rule below); base recall 0.9694 (focal-dressed conditions better); honest structure (altar+braziers+2 pillars as authored) | — |
+| 2026-07-16 | dwing rooms 1+2 | 4-bug | c4 CONTAMINATED for these rooms by a recipe-authoring bug: shared "ALTAR where present" grounding INVITED invented altars (2/2) + room_1 shape section diluted → c5 = bug-fix rerun (per the param-slot discipline: diff recorded inputs before declaring a ceiling) | ~94 |
+| 2026-07-16 | dwing room_1 | 5-verdict | ★ ADOPTED — c5 (bug-fix rerun) structurally perfect (shape held, side doors correct, braziers at stands, no invented altar); Δ−3.0 == CAL_shipped_shop Δ−3.0 SAME RUN = the shipped bar; base recall 0.9203 | 47 |
+| 2026-07-16 | dwing room_2 | 5-negative | HONEST NEGATIVE (parked): focal-geometry paints failed structure 2/2 — c4 invented altar (recipe bug), c5 invented a SUNKEN CISTERN + stairs-DOWN over the east door landing (dodged the upward-only vertical lock; no recall warning = precision-blind). SINGLE-FLAT-LEVEL clause shipped to the shared lock; 4-door+dense-corner class = the hardest seen | 47 |
+| 2026-07-16 | dwing wing | OWNER-FALSIFIED | ★ owner playtest falsified both adoptions: plates GLOBALLY rescaled+rotated by the Gemini pass (room_0 1.66 cells, room_1 2.61) — walk-through-paint + invisible collisions. BOTH instruments had said so (styled 0.36-0.55 < the 0.6 floor; visual gate RED) and were overridden by feature-count eyeballs. Rule banked: instruments adjudicate eyeballs | — |
+| 2026-07-16 | dwing room_0 | 6-recovery | brazier-beacon SIMILARITY warp (rotation term, #1615+wing): 1.66→0.17 cells; c6 draw proved recall CANNOT gate registration (0.6377 recall @ 1.45 cells) → err_cells is the gate; fire-masked walk re-gate = the adoption arbiter | 47 |
+| 2026-07-16 | dwing room_1 | 6-negative | PARKED: beacon pair COLLINEAR (same row) → vertical scale unsolvable (0.07-cell beacon err @ ~1.5-cell wall misfit) + Gemini relocated the pillar. Principle: BEACON GEOMETRY IS ROOM DESIGN → #1618 dress_focal v2 (≥3 non-collinear fire beacons) | — |
+| 2026-07-16 | dwing room_0 | 6-verdict | HONEST RED (de-adopted): similarity warp fixed the globals (4/5 visual cells at 0.9-18px — near-perfect) but cell (8,6) holds at 126px = LOCAL non-affine distortion on the east side; no whole-plate transform can fix it. Wing closes 0-adopted / 3 honest negatives; the yield = the instrument chain + #1618 (non-collinear beacon fields, which also enable PIECEWISE local correction) | — |
+| 2026-07-16 | STRATEGY: is the paint worth the war? | experiment | SETTLED: flux-only base = 3, raw greybox = 1, CAL_shipped_shop = 6 (same run/ruler). The Gemini pass carries +3 of the beauty value → the bulk tier CANNOT drop the paint; the lock/warp/beacon apparatus is load-bearing for ALL tiers. Ruler now versioned in qa/PANEL-PROTOCOL.md | 0 |
 | 2026-07-16 | tavern_snug | 1 | honest negative: 6 vs 9 Δ−3.0 OUT OF BAND (flat-interior class; invented post + stairs) | 47 |
 | 2026-07-16 | tavern_snug | 2 | honest negative: 6 vs 9 again = PROMPT PLATEAU (blue-violet/atmosphere levers no gain); styled recall 0.60 (drift) | 47 |
 | 2026-07-16 | tavern_snug | 3 | ★ SHIPPED via the GEOMETRY lever (2 authored timber posts): 7 vs 8 Δ−1.0 IN-BAND (+1 median); styled recall 0.8415 (best final yet); WALK-GREEN (visual 6/6 0.15-0.4c). Flat-interior class CONFIRMED with a measured intervention | 47 |

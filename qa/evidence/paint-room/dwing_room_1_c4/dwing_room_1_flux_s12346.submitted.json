@@ -1,0 +1,10 @@
+{
+ "prompt": "Painterly isometric medieval stone dungeon vault passage chamber interior, firelit, in the Pillars of Eternity 2 Deadfire hand-painted concept-art style. A low wide vault chamber linking two corridors \u2014 markedly WIDER than it is deep, roughly twice as wide as deep; preserve the input image's exact room proportions and camera framing. Two standing iron BRAZIERS with glowing fire flank the central walking lane; long rows of stacked wooden CRATES and supply SACKS along the back and front walls leaving the middle lane clear; TWO arched stone doorways, one in the LEFT (west) SIDE wall and one in the RIGHT (east) SIDE wall at mid-depth \u2014 the BACK wall is unbroken solid stone with NO openings. Rough-hewn grey stone block walls and floor flags, one structural STONE PILLAR on a square base rising to the ceiling; warm amber firelight from the braziers pooled on the stone, deep cool BLUE-VIOLET shadows pooling in the corners and along the walls (never pure black), a gentle atmospheric haze falloff toward the room edges, the stone walls richly worked with visible coursing, cracked mortar and aged water stains, hand-painted texture detail, oil-painted texture, no people, no characters. FEATURE COUNTS (strict): EXACTLY ONE stone pillar, EXACTLY TWO braziers, EXACTLY TWO arched doorways (west side wall + east side wall, NEVER the back wall); NO other openings, NO other pillars or columns.",
+ "controlImage": "asset_4dN2FjnPTBgm8LX9JMofquR9",
+ "controlModality": "depth",
+ "controlStrength": 0.85,
+ "width": 1344,
+ "height": 768,
+ "numSamples": 1,
+ "seed": 12346
+}
