@@ -165,11 +165,13 @@ credential stored (`~unity/.git-credentials`, mode 600). **Never commit `Library
   then `scp` it to `/Volumes/LEXAR/Codex/worldos-unity-backups/`. This backup does NOT depend on
   GitHub quota — it is the disaster floor if the box disk dies.
 
-**LFS quota reality:** the tracked binary payload is ~7.4 GB — over GitHub's 1 GiB free LFS tier, so
-the daily push needs a paid LFS data pack on the `100yenadmin` account (~$5/mo per 50 GB, covers
-storage + bandwidth) OR the payload trimmed. Until that's resolved the local commits + off-box
-tarball are the live save story; the push retries harmlessly and logs its failure. This is an owner
-billing decision — see the box's `worldos-autosave.log` for push state.
+**LFS payload:** the tracked binary payload is ~6.3 GB. The **initial push SUCCEEDED**
+(2026-07-16, `main` now on the remote with all 3868 LFS objects) — GitHub accepted it, so the
+`100yenadmin` account already has sufficient LFS storage budget; no data-pack decision is pending.
+Watch storage headroom over time (each new asset grows LFS usage): if a future push is rejected with
+a quota error, that is the signal to add a data pack (~$5/mo per 50 GB) or trim the payload. The
+off-box tarball on LEXAR remains the GitHub-independent disaster floor regardless. Push state is in
+the box's `worldos-autosave.log`.
 
 ## Definition of "you are done for now"
 
