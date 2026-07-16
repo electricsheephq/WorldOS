@@ -131,6 +131,46 @@ Spend the cheapest instrument that answers the question (tier table + honest sig
   building the eval IS the next task. Escalate to the owner ONLY genuine taste/priority/business
   calls — and bring a recommendation.
 
+## Unity project persistence — the box is the renderer's source of truth (owner-ratified 2026-07-16)
+
+The GEX44 Unity project (`/home/unity/worldos-unity` on `root@46.4.26.123`) is the ONLY copy of the
+renderer's scenes, prefabs, shaders, camera rig, animator wiring, and the 10 purchased asset packs.
+It is NOT the WorldOS git repo — it is its own repo (`100yenadmin/worldos-unity-2026-06-30_07-21-47`,
+private). A 2026-07-16 audit found it **242 files dirty, last commit 15 days stale, remote empty** —
+i.e. every scene/anim/shader change since #1433 lived only on the box's working disk. That is fixed;
+do not let it regress.
+
+**Git LFS is ON** (set up 2026-07-16). `.gitattributes` routes binary asset classes
+(`*.fbx/.glb/.png/.tga/.psd/.exr/.wav/.dll/.unitypackage/…` + the extensionless
+`Assets/StreamingAssets/worldos_actors` bundle) through LFS; `.gitignore` excludes build artifacts
+(`Library*/`, `AssetBundles/`, `Logs/`, `Temp/`, `obj/`, `*.bak/`). The box has the owner's push
+credential stored (`~unity/.git-credentials`, mode 600). **Never commit `Library/` or re-add the
+`*.bak` dirs** — they were the bulk of the historical bloat.
+
+**Save cadence (how often — automated + on-boundary):**
+- **Autosave cron (installed on the box, runs as `unity`):** commit-if-dirty every 4h
+  (`17 */4 * * *`), commit + best-effort LFS push daily (`12 3 * * *`), via
+  `/home/unity/worldos-unity-save.sh` → `~unity/worldos-autosave.log`. It skips a tree whose source
+  changed in the last 90s (never captures a mid-write Unity state). The LOCAL commit is the primary
+  save and always succeeds; the push is best-effort (starts working the moment LFS quota + creds are
+  green). This is the safety net — it is NOT a substitute for boundary saves.
+- **On-boundary save (every agent, every box session):** after any scene edit / prefab change /
+  animator or camera-rig change / shader edit / asset import / player build, run
+  `sudo -u unity /home/unity/worldos-unity-save.sh --push` before you release the box. A render or
+  build session that changed the project MUST end with a save — treat "did I save the box?" as part
+  of box claim-queue etiquette (§ Box claim-queue).
+- **Off-box backup (weekly, or before any risky box op — Mac/agent-initiated):** the box can't reach
+  LEXAR, so pull a working-tree tarball to the primary drive from the Mac:
+  `ssh …@box 'tar --exclude=worldos-unity/Library* --exclude=worldos-unity/.git --exclude=worldos-unity/AssetBundles -czf /home/unity/worldos-unity-backups/worktree-<date>.tgz worldos-unity'`
+  then `scp` it to `/Volumes/LEXAR/Codex/worldos-unity-backups/`. This backup does NOT depend on
+  GitHub quota — it is the disaster floor if the box disk dies.
+
+**LFS quota reality:** the tracked binary payload is ~7.4 GB — over GitHub's 1 GiB free LFS tier, so
+the daily push needs a paid LFS data pack on the `100yenadmin` account (~$5/mo per 50 GB, covers
+storage + bandwidth) OR the payload trimmed. Until that's resolved the local commits + off-box
+tarball are the live save story; the push retries harmlessly and logs its failure. This is an owner
+billing decision — see the box's `worldos-autosave.log` for push state.
+
 ## Definition of "you are done for now"
 
 There is no "done" — there is the next gate. A session ends cleanly when: the claimed issues are
@@ -221,9 +261,11 @@ tracker issue before any box op; release (comment) when done.** Concretely:
   near-mechanical when it starts (see `qa/evidence/dungen-spike/BOX-DRIVE-RECIPE.md` for the
   pattern: "repo-side is DONE + green; this is the ready-to-run box phase"). Don't idle-poll for
   the box to free up — do the next repo-side unit of work instead, and check back when you need it.
-- **Claim, do the bounded op, restore, release.** On the box: `chown -R unity:unity` any files you
-  touched, `ctrl+r` (refresh Unity), restore the scene you found, THEN comment release on the
-  claiming issue. Restoring state is part of the op, not optional cleanup.
+- **Claim, do the bounded op, restore, SAVE, release.** On the box: `chown -R unity:unity` any files
+  you touched, `ctrl+r` (refresh Unity), restore the scene you found, **then if the op changed the
+  project (scene/prefab/anim/shader/import/build) run `sudo -u unity /home/unity/worldos-unity-save.sh
+  --push`** (§ Unity project persistence), THEN comment release on the claiming issue. Saving the box
+  is part of the op — the 4h autosave cron is only a safety net, not a substitute.
 - **The Built-in-RP note:** the box's Unity project is **Built-in Render Pipeline, not URP.**
   Shader/material work that assumes URP (Shader Graph particle materials, certain post-effects)
   needs a repoint step for this box (e.g. `RepointHovlMaterials`, PR #1515/#1525) — check the
