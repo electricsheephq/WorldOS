@@ -49,6 +49,14 @@ eyeball (axes 6-7) → blind panel (axis 8) → grade the row → fix the LOWEST
 ## Scale-out (after crypt + tavern both pass): forest road, DunGen dungeon room, then the
 ## 2-environments-a-night cadence (HV5) with this scorecard as the promotion gate.
 
+### ★ Panel-ruler calibration (2026-07-16 — the two-anchor rule)
+A Δ-vs-control band is only comparable under the SAME scorer wording: re-scoring the SHIPPED shop +
+snug plates under a rewritten panel prompt read Δ−3.0/Δ−2.5 (they shipped at Δ−2.0/Δ−1.0) — ~1pt of
+pure ruler drift. RULE: every panel batch includes at least one SHIPPED plate as a disguised
+CALIBRATION REFERENCE; the ship verdict is "candidate Δ within ~0.5 of the calibration reference
+under the same run", not the raw band. The PoE2 control anchors the scale's top; the shipped plate
+anchors the SHIP BAR.
+
 ## Cycle log
 | date | room | cycle | verdict | CU |
 |------|------|-------|---------|----|
@@ -64,6 +72,8 @@ eyeball (axes 6-7) → blind panel (axis 8) → grade the row → fix the LOWEST
 | 2026-07-16 | dwing wing | 2 | EXACT-COUNT lock: rooms 0+2 structurally HONEST (eyeball-adjudicated; instrument characterized as edge-contrast-biased); room_1 RESHAPED (12x7→square, side doors→back wall). PANELS rooms 0+2: 6-vs-9 Δ−3.0 OUT OF BAND 2/2 — "no narrative focal point / empty floor" = geometry-richness on crates-only DunGen rooms | ~140 |
 | 2026-07-16 | dwing room_1 | 3 | SHAPE+DOOR-WALL locks: structurally honest (wide-shallow held, side doors correct). Lock library proven: EXACT-COUNT · ROOM-SHAPE · DOOR-WALL | 47 |
 | 2026-07-16 | dwing wing | 4 | GEOMETRY lever: dress_focal (PR #1611 — altar+braziers by door count) → re-render → focal-named recipes; LAST wing cycle this run (in-band ⇒ ship; miss ⇒ documented ceiling) | ~140 |
+| 2026-07-16 | dwing room_0 | 4-verdict | ★ ADOPTED — first GENERATED room to ship-grade: Δ−3.0 == CAL_shipped_shop Δ−3.0 under the SAME panel ruler (see calibration rule below); base recall 0.9694 (focal-dressed conditions better); honest structure (altar+braziers+2 pillars as authored) | — |
+| 2026-07-16 | dwing rooms 1+2 | 4-bug | c4 CONTAMINATED for these rooms by a recipe-authoring bug: shared "ALTAR where present" grounding INVITED invented altars (2/2) + room_1 shape section diluted → c5 = bug-fix rerun (per the param-slot discipline: diff recorded inputs before declaring a ceiling) | ~94 |
 | 2026-07-16 | tavern_snug | 1 | honest negative: 6 vs 9 Δ−3.0 OUT OF BAND (flat-interior class; invented post + stairs) | 47 |
 | 2026-07-16 | tavern_snug | 2 | honest negative: 6 vs 9 again = PROMPT PLATEAU (blue-violet/atmosphere levers no gain); styled recall 0.60 (drift) | 47 |
 | 2026-07-16 | tavern_snug | 3 | ★ SHIPPED via the GEOMETRY lever (2 authored timber posts): 7 vs 8 Δ−1.0 IN-BAND (+1 median); styled recall 0.8415 (best final yet); WALK-GREEN (visual 6/6 0.15-0.4c). Flat-interior class CONFIRMED with a measured intervention | 47 |
