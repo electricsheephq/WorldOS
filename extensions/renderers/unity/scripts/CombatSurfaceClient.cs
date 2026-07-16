@@ -814,6 +814,9 @@ public class CombatSurfaceClient : MonoBehaviour
             // only terminal signal (the stale path below).
             if (t == null) continue;
             if (!string.IsNullOrEmpty(t.id)) { present.Add(t.id); _nameOf[t.id] = string.IsNullOrEmpty(t.name) ? t.id : t.name; } // #1463: name plate source
+            // #1582: remember the first cast token as the QA channel's actor-of-interest (the party
+            // PC in rest mode) so /debug can report its viewport position for the walkability gate.
+            if (string.IsNullOrEmpty(_qaActorId) && !string.IsNullOrEmpty(t.id)) _qaActorId = t.id;
             bool foe = (t.team == "foe");
             if (foe) { _foeId = t.id; _foeX = t.x; _foeY = t.y; }
             Transform a = FindActor(t.id);
@@ -2008,10 +2011,24 @@ public class CombatSurfaceClient : MonoBehaviour
                 var _dp = _dcam.transform.position; _dbgCamPx = _dp.x; _dbgCamPy = _dp.y; _dbgCamPz = _dp.z;
                 var _dov = _dcam.WorldToViewportPoint(Vector3.zero); _dbgOriginVX = _dov.x; _dbgOriginVY = _dov.y;
                 _dbgCamValid = true;
+                // #1582: occluder count (0 == the latent zero-occluder path), plate-room match, and
+                // the party actor's own viewport point (the client-side visual-registration signal).
+                _dbgOccCount = _occRoot != null ? _occRoot.transform.childCount : 0;
+                _dbgPlateLocMatch = (_plateBoxesLocId == _locId);
+                if (!string.IsNullOrEmpty(_qaActorId))
+                {
+                    Transform _da = FindActor(_qaActorId);
+                    if (_da != null)
+                    {
+                        var _dav = _dcam.WorldToViewportPoint(_da.position);
+                        _dbgActorVX = _dav.x; _dbgActorVY = _dav.y; _dbgActorValid = true;
+                    }
+                    else _dbgActorValid = false;
+                }
             }
             // /shot: capture the app's OWN framebuffer (countdown lets the request thread return first).
             if (_qaShot > 0 && --_qaShot == 0)
-                ScreenCapture.CaptureScreenshot(_qaShotPath);
+                ScreenCapture.CaptureScreenshot(_qaShotPathNext ?? _qaShotPath);   // #1582: numbered file
             if (_qaClicks.TryDequeue(out var qc))
             {
                 _dbgDeq++;
@@ -2201,6 +2218,17 @@ public class CombatSurfaceClient : MonoBehaviour
     // unavailable' and fails LOUD) — never emitted as a misleading 0 that would read as a wrong ortho.
     volatile bool _dbgCamValid;
     volatile float _dbgCamOrtho, _dbgCamRx, _dbgCamRy, _dbgCamRz, _dbgCamPx, _dbgCamPy, _dbgCamPz, _dbgOriginVX, _dbgOriginVY;
+    // #1582 walkability-gate fattening (sidecar review): occluder count (0 == the latent
+    // zero-occluder path — an instant red for the walk gate), whether the loaded plate boxes belong
+    // to the CURRENT room, and the party actor's own viewport position (closes the visual-
+    // registration loop without pixel-diff when available). Cached main-thread like the camera pose.
+    volatile int _dbgOccCount = -1;
+    volatile bool _dbgPlateLocMatch;
+    volatile bool _dbgActorValid;
+    volatile float _dbgActorVX, _dbgActorVY;
+    volatile string _qaActorId = "";          // first cast token id (set on ApplyJson, main thread)
+    int _qaShotCounter;                        // monotonic /shot id -> numbered files, no overwrite races
+    volatile string _qaShotPathNext;           // the path the NEXT countdown capture writes
 
     void StartQaInput()
     {
@@ -2252,7 +2280,14 @@ public class CombatSurfaceClient : MonoBehaviour
                     // no desktop/SCK capture, no titlebar calibration, no privacy exposure of other windows.
                     // POST-only (parity with /click); writes under persistentDataPath, never a shared /tmp
                     // fixed path (symlink hardening — evaos review on #1575).
-                    _qaShot = 2; resp = "{\"ok\":true,\"path\":\"" + _qaShotPath.Replace("\\", "/") + "\"}";
+                    // #1582: NUMBERED files (wos_shot_<id>.png) — a fixed overwritten path races at sweep
+                    // scale (half-written/stale copies). A new numbered file appears only when written, so
+                    // callers poll its existence+size — race-free by construction. Response carries path+id.
+                    int _sid = System.Threading.Interlocked.Increment(ref _qaShotCounter);
+                    string _spath = _qaShotPath.Replace("wos_shot.png", "wos_shot_" + _sid + ".png");
+                    _qaShotPathNext = _spath;
+                    _qaShot = 2;
+                    resp = "{\"ok\":true,\"path\":\"" + _spath.Replace("\\", "/") + "\",\"id\":" + _sid + "}";
                 }
                 else if (ctx.Request.Url.AbsolutePath == "/health")
                     resp = "{\"ok\":true,\"screenW\":" + _screenW + ",\"screenH\":" + _screenH + "}";
@@ -2275,6 +2310,13 @@ public class CombatSurfaceClient : MonoBehaviour
                           .Append(",\"camPz\":").Append(_dbgCamPz.ToString("0.####", ic))
                           .Append(",\"originVX\":").Append(_dbgOriginVX.ToString("0.#####", ic))
                           .Append(",\"originVY\":").Append(_dbgOriginVY.ToString("0.#####", ic));
+                        // #1582 fattening: occluder count (0 == the latent zero-occluder path),
+                        // plate-room match, and the party actor's viewport position when known.
+                        sb.Append(",\"occCount\":").Append(_dbgOccCount)
+                          .Append(",\"plateLocMatch\":").Append(_dbgPlateLocMatch ? "true" : "false");
+                        if (_dbgActorValid)
+                            sb.Append(",\"actorVX\":").Append(_dbgActorVX.ToString("0.#####", ic))
+                              .Append(",\"actorVY\":").Append(_dbgActorVY.ToString("0.#####", ic));
                     }
                     sb.Append("}");
                     resp = sb.ToString();
