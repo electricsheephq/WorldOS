@@ -515,10 +515,42 @@ def author_shop() -> dict:
     return geo
 
 
+def author_tavern_snug() -> dict:
+    """12x10 firelit SNUG tavern — the Room Readiness Pipeline's VARIANT proof (epic #1581, #1588):
+    the SAME room class (tavern vocabulary: bar/hearth/tables/kegs) in a genuinely DIFFERENT layout,
+    proving the pipeline mints class variants without new molded kinds or recipe machinery. Where
+    tavern_v2 runs its bar along the back-left with the hearth back-right, the snug turns the plan
+    90°: the BAR spans the back wall centre, the HEARTH sits in the EAST wall, seating clusters in
+    the south-west quadrant, kegs rack behind the bar's west end.
+
+    Density-law prop set; walkability by construction (door (5,0) landing clear, front lane row 8
+    open, aisles rows 2 and 4-5 open); LOW props off the two NEAR walls per the 30/45 placement law;
+    door (11,4) = an east seam left for town wiring (declare in the seed allowlist)."""
+    props = [
+        ("kegs_back", "barrel", [[2, 1], [3, 1]]),                     # keg rack, back-west
+        ("bar_snug", "bar", [[4, 2], [5, 2], [6, 2], [7, 2]]),         # THE focal: back-centre bar
+        ("hearth_east", "hearth", [[10, 2], [10, 3]]),                 # chimney breast, EAST wall
+        # (10,4) stays clear — it is the east door (11,4)'s landing; the static gate caught the
+        # original (10,3)+(10,4) placement blocking it (walk_static check_geometry, pre-CU)
+        ("candle_bar", "brazier", [[8, 2]]),                           # light at the bar's east end
+        ("table_sw", "table", [[3, 5], [4, 5], [3, 6], [4, 6]]),       # 2x2 communal table, SW
+        ("bench_sw", "fallen_log", [[5, 5], [5, 6]]),                  # bench on the table's east side
+        ("table_s", "table", [[7, 6], [8, 6], [7, 7], [8, 7]]),        # 2x2 table, south-centre
+        ("woodpile_e", "fallen_log", [[10, 6], [10, 7]]),              # hearth-side woodpile
+        ("barrels_sw", "barrel", [[2, 7], [2, 8]]),                    # corner casks
+    ]
+    props += _perimeter_wall_run_props(12, 10, door_cells=[[5, 0], [11, 4]])
+    geo = _geometry(12, 10, "worn wooden planks", props, perimeter=False,
+                    door_cells=[[5, 0], [11, 4]], camera_fit=True)
+    geo["location"] = "The Snug (tavern variant)"
+    return geo
+
+
 _ROOMS = {"crypt": author_crypt, "crypt_rich": author_crypt_rich,
           "crypt_fresh": author_crypt_fresh,
           "camp": author_camp, "tavern": author_tavern, "tavern_fit": author_tavern_fit,
-          "tavern_fit2": author_tavern_fit2, "shop": author_shop}
+          "tavern_fit2": author_tavern_fit2, "shop": author_shop,
+          "tavern_snug": author_tavern_snug}
 
 
 def main(argv=None) -> int:
