@@ -221,6 +221,13 @@ def nearest_blob_distance(blobs: list, expected_px: tuple) -> float:
     return best
 
 
+def _path_cell_cr(cell) -> list:
+    """Normalize a path cell ([c,r] list or {c,r} dict — the two shapes path_violations accepts)."""
+    if isinstance(cell, dict):
+        return [int(cell["c"]), int(cell["r"])]
+    return [int(cell[0]), int(cell[1])]
+
+
 def path_violations(path, mask: dict) -> list:
     """Cells in an engine `lastPath` that are NOT walkable — the owner's actual 'walked through the
     table' failure class: the DESTINATION can be legal while the route crosses a prop. Empty == clean."""
@@ -419,11 +426,14 @@ def run_gate(room: str, engine: str, qa: str, *, stride: int, out: Path,
         ok, landed, path = _drive_and_check(qa, engine, c, r, settle, move_timeout, expect_move=True)
         report["reachable"]["cases"].append({"cell": [c, r], "landed": landed, "ok": ok})
         report["reachable"]["pass" if ok else "fail"] += 1
-        bad = path_violations(path, mask)
+        # audit only THIS move's route: the path's endpoint must be the clicked cell (a stale
+        # lastWalkPath from a previous move is skipped, never mis-attributed to this click)
+        route = path if (path and _path_cell_cr(path[-1]) == [c, r]) else None
+        bad = path_violations(route, mask)
         if bad:
             report["path"]["fail"] += 1
             report["path"]["violations"].append({"to": [c, r], "illegal_cells": bad})
-        elif path:
+        elif route:
             report["path"]["pass"] += 1
 
     # 3) IMPASSABLE — click each sampled blocked cell; token must NOT move onto it.
@@ -500,7 +510,9 @@ def _drive_and_check(qa: str, engine: str, c: int, r: int, settle: float, timeou
         except Exception:  # noqa: BLE001
             continue
         landed = _token_cell(surf)
-        path = surf.get("lastPath") or path
+        # combat moves ride lastPath; rest walks ride the additive lastWalkPath (#1582 — before it,
+        # rest-mode path audits were silently vacuous because the surface's lastPath is combat-only)
+        path = surf.get("lastPath") or surf.get("lastWalkPath") or path
         if expect_move and landed == (c, r):
             return True, list(landed), path
         if not expect_move and landed == (c, r):

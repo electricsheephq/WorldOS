@@ -169,6 +169,22 @@ def test_end_combat_relocates_write_back_off_a_blocked_cell(staged):
     )
 
 
+def test_walk_to_records_last_walk_path(staged):
+    """#1582: a rest walk must RETAIN its engine-confirmed route on state (combat.last_walk_path,
+    mirroring last_move_path's shape) so the surface can expose it and the walk gate can path-audit
+    rest walks — before this, rest-mode path audits were silently vacuous."""
+    cid, hero, _ally, _goblin, _loc = staged
+    out = server.walk_to(cid, hero, 4, 0)
+    assert out["walked"] is True
+    c = server._require(cid)
+    assert c.combat.last_walk_path == out["path"], (
+        "state must retain the exact envelope path walk_to returned (the wire contract the "
+        "surface's lastWalkPath re-emits)"
+    )
+    assert c.combat.last_walk_path[-1] == [4, 0]  # endpoint == the destination cell
+    assert len(c.combat.last_walk_path) >= 1  # envelope includes the from-cell (or a placement cell)
+
+
 def test_full_loop_rest_to_combat_to_rest_continuity(staged):
     """The scripted NO-TELEPORT loop end to end: rest (walk) → combat (seed) → combat move →
     rest (write-back). Assert continuity at BOTH seams with no actor jump."""
