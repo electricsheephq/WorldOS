@@ -125,8 +125,10 @@ def up(run: str, *, campaign: str, engine_port: int, qa_port: int,
                 WORLDOS_QA_INPUT="1",
                 WORLDOS_QA_INPUT_PORT=str(qa_port))
     ply_log = open(rd / "player.log", "w")  # noqa: SIM115
-    player = subprocess.Popen([str(pbin)], env=penv, stdout=ply_log, stderr=subprocess.STDOUT,
-                              start_new_session=True)
+    # caffeinate -disu: a background/occluded sandbox player can App-Nap -> throttled rendering ->
+    # delayed /shot frames and glide stalls mid-sweep (sidecar review). caffeinate exits with the child.
+    player = subprocess.Popen(["/usr/bin/caffeinate", "-disu", str(pbin)], env=penv, stdout=ply_log,
+                              stderr=subprocess.STDOUT, start_new_session=True)
     if not _wait("player QA channel", f"http://127.0.0.1:{qa_port}/debug", post=True, timeout_s=120):
         player.terminate()
         engine.terminate()

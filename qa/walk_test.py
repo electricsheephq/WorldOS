@@ -351,8 +351,6 @@ def _visual_registration(qa: str, engine: str, mask: dict, ortho: float, cells: 
         cur = nxt
     shot_prev = _capture_shot(qa, out, "vis_start")
     for i, cell in enumerate(chain):
-        if tuple(cell) == prev:
-            continue   # no-op move (party already there — e.g. the door stage's return landing)
         ok_move, landed, _p = _drive_and_check(qa, engine, cell[0], cell[1], settle, move_timeout,
                                                expect_move=True)
         hop = (abs(cell[0] - prev[0]) + abs(cell[1] - prev[1])) if prev else 3
