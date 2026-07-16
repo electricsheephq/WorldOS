@@ -484,7 +484,17 @@ qa/walk_test.py --room <id>          # drives :8971 /click + reads the client ac
 
 Emits `walk_report.json` (pass/fail per cell/door/occlusion) + a `/shot` contact sheet. **GREEN =
 walkable = shippable.** The geometric asserts are CU-free (no LLM); images are only for the occlusion
-spot-check + human evidence. Root-cause reference for the failure class this gate catches:
+spot-check + human evidence.
+
+**The STATIC half runs long before this step** — `qa/walk_static.py` (manifest lint, the
+manifest==sidecar==fit-math ortho triple-check, orphan-pocket/door-landing checks, seed↔geometry door
+agreement) runs in CI on every PR and at the seed boundary (seed scripts refuse invalid worlds), so
+most walkability defect classes never reach a live player. **The LIVE half must run in the #1596
+sandbox lane** (`qa/qa_sandbox.py up …` — cloned state, second engine :8866, second player :8972);
+small probe sets on the owner instance are acceptable, full sweeps are NOT — the owner's campaign is
+not a test rig, and walk_test returns the party home when done. Use `--visual N` to also measure the
+rendered actor against the plate-correct projection with no client instrumentation (pixel-diff
+localization; glide-settled sampling). Root-cause reference for the failure class this gate catches:
 `CombatSurfaceClient.ApplyPlate` must reproduce `build_room_unified`'s full camera rig (Euler(30,45,0),
 pos=-(rot·fwd)·80) whenever `cameraPin.ortho` is set — not only when pitch/yaw are present (epic #1581,
 issue #1583). GEOMETRY IS GROUND TRUTH: collision/occlusion come from the grid+boxes; the plate is

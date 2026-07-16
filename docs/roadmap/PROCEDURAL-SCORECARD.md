@@ -1,21 +1,28 @@
 # PROCEDURAL ROOM SCORECARD (owner directive, 2026-07-15 post-v3.4: "generate, iterate, scorecard,
 # refine until it's generating them well")
 
-Every generated room candidate is graded 0-10 on EIGHT axes before any adoption talk. Grades come
+Every generated room candidate is graded 0-10 on NINE axes before any adoption talk. Grades come
 from: (1) the orchestrator's design-gate eyeball on the greybox (axes 1-4, FREE — before paint),
 (2) the box-overlay + coherence tooling (axis 5), (3) a blind comparative panel vs a real PoE2
-control (axes 6-8). A candidate ships only at ≥7 on every axis.
+control (axes 6-8), (4) **the automated WALKABILITY gate (axis 9 — PASS/FAIL, not a score;
+epic #1581)**. A candidate ships only at ≥7 on every scored axis AND axis 9 GREEN.
 
-| # | Axis | Measured by | v3.4 | v3.5 |
-|---|------|-------------|------|------|
-| 1 | Door readability (framed arches, no phantom doors) | design gate + paint eyeball | 8 | 7 (right portal weak) |
-| 2 | Architectural logic (rhythm, focal point, negative space) | design gate | 8 | 9 |
-| 3 | Silhouette vocabulary (molded, no box salad) | design gate | 8 | 8 |
-| 4 | Spacing/breathing room (≥1 cell around freestanding masses) | geometry audit (scripted) | 5 | 9 |
-| 5 | Alignment (paint-vs-volumes overlay; masses in-volume) | overlay + coherence | 8 | 8 (2 props 0.05c; SW brazier 1.6c) |
-| 6 | Corner/seam integrity (walls meet cleanly) | paint eyeball | 5 | 9 |
-| 7 | Containment (nothing painted outside playable; no invented objects) | overlay eyeball | 6 | 6 (bones on apron — flux prior, open defect) |
-| 8 | PoE2-family beauty (vs real-art control) | blind panel | pending | 6.2 (incumbent 8.2, control 8.8 in-band) |
+| # | Axis | Measured by | v3.4 | v3.5 | shop v1 (2026-07-16) |
+|---|------|-------------|------|------|------|
+| 1 | Door readability (framed arches, no phantom doors) | design gate + paint eyeball | 8 | 7 (right portal weak) | 8 (auto door frames) |
+| 2 | Architectural logic (rhythm, focal point, negative space) | design gate | 8 | 9 | 8 (centred counter focal) |
+| 3 | Silhouette vocabulary (molded, no box salad) | design gate | 8 | 8 | 7 (shelving boxy by identity) |
+| 4 | Spacing/breathing room (≥1 cell around freestanding masses) | geometry audit (scripted) | 5 | 9 | 9 (walkable by construction) |
+| 5 | Alignment (paint-vs-volumes overlay; masses in-volume) | overlay + coherence | 8 | 8 (2 props 0.05c; SW brazier 1.6c) | 8 (recall 0.9555) |
+| 6 | Corner/seam integrity (walls meet cleanly) | paint eyeball | 5 | 9 | 8 |
+| 7 | Containment (nothing painted outside playable; no invented objects) | overlay eyeball | 6 | 6 (bones on apron — flux prior, open defect) | 6 (invented staircase OUTSIDE envelope — throne-gallery class) |
+| 8 | PoE2-family beauty (vs real-art control) | blind panel | pending | 6.2 (incumbent 8.2, control 8.8 in-band) | 6 vs control 8, Δ−2.0 IN-BAND (cycle-1) |
+| 9 | **WALKABILITY (qa/walk_test.py: camera pose + engine truth + BFS orphans + doors + visual registration)** | **automated gate — #1596 sandbox** | n/a (predates gate) | GREEN (crypt live 2026-07-16) | see walk report |
+
+**Axis 9 is a HARD FLOOR, not a score** (VISION.md TIER-0): the room does not ship without a green
+`walk_report.json`, however the other eight axes read. The static half (`qa/walk_static.py` —
+manifest lint, ortho triple-check, orphan/landing checks) runs in CI on every PR; the live half
+drives the player in the #1596 sandbox lane (never the owner's campaign).
 
 ## The refinement loop (per room, ~30 min + 29-47 CU/cycle)
 author geometry → scripted spacing audit → box greybox render → DESIGN GATE (axes 1-4; REJECT is
