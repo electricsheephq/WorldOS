@@ -18,6 +18,10 @@ only with a scorecard entry re-anchoring every shipped reference under the new w
 Mechanics: 5 independent scorers (sonnet, low effort), A/B order alternated per scorer, medians
 reported, structured output (score_a, score_b, one-paragraph notes each).
 
+**Executable ruler:** `qa/panel_workflow.mjs` — run via the Workflow tool with
+`{scriptPath: "qa/panel_workflow.mjs", args: {control: <poe2 ref>, rooms: [{id, plate}, ...]}}`
+(absolute paths). The scorer wording above is embedded there; edit BOTH together, never one.
+
 ## The two-anchor rule
 
 Every panel batch includes:

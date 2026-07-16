@@ -472,6 +472,31 @@ still land or the next build regresses.
 Tools/WorldOS/Build/macOS Player (Universal)   # Unity Editor menu item, on the box
 ```
 
+### 10b. The sandbox hot-load GATE LOOP (the proven per-room iteration cycle, 2026-07-16)
+
+```
+cp -R ~/Applications/WorldOSPlayer.app /tmp/WorldOSPlayer_hotload.app       # once per app version
+# inject candidate plate/boxes + manifest entry into the COPY's StreamingAssets (see 10 above)
+WORLDOS_PLAYER_APP=/tmp/WorldOSPlayer_hotload.app python3 qa/qa_sandbox.py up --run <qa-run-id> \
+    --campaign <fixture-campaign> --seed-cmd "uv run --directory servers/engine python \
+    /ABS/PATH/qa/seed_gfx_<fixture>.py {state} [current_room]"
+python3 qa/walk_test.py --room <room> --engine http://127.0.0.1:8866 --qa http://127.0.0.1:8972 \
+    --visual 5 --out qa/evidence/walk-<room>
+```
+
+TRAPS (each cost a real debugging round):
+- **Gate the room the party is IN.** `walk_test --room B` while the fixture spawned the party in
+  room A silently measures room A (identical counts, wrong camera). Multi-room fixtures take a
+  `current_room` argv — cycle the sandbox per room.
+- **`uv run --directory` resolves relative script paths under servers/engine** — always pass the
+  seed script by ABSOLUTE path.
+- **Verdicts are read from walk_report.json** (tri-state GREEN/RED/ERROR; ERROR = harness, never a
+  room verdict) and adjudicated per qa/PANEL-PROTOCOL.md's blinded-adjudication rule.
+- **Owner-preview hygiene (#1620):** the owner only ever sees a DEDICATED run id containing
+  gate-passed states. The QA-churn sandbox (mid-iteration plates, un-gated candidates) is never
+  announced — a half-iterated state reaching the owner manufactures alarm, true and false.
+
+
 Verify with `qa/player_smoke.sh` (free, ~30-60s, every player rebuild — `docs/RUNBOOK-INDEX.md`
 "player smoke" row) before treating a rebuild as done. A location whose manifest key is unknown ⇒
 current plate kept (invisible-but-safe), never a crash — check `plates_manifest.json` if a room you
