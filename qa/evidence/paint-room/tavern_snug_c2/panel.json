@@ -1,0 +1,7 @@
+{
+  "protocol": "blind 5-scorer control-anchored (wf_99319242-775)",
+  "candidate_median": 6, "control_median": 9, "delta": -3.0, "in_band": false, "verdict": "OUT OF BAND — does not ship",
+  "scores": [{"cand":6,"ctrl":8},{"cand":5,"ctrl":9},{"cand":6,"ctrl":8},{"cand":6,"ctrl":9},{"cand":6,"ctrl":9}],
+  "cycle_note": "c1 6-vs-9, c2 6-vs-9 after prompt levers (blue-violet/atmosphere/worked-walls) = PROMPT PLATEAU. Scorers still read flat mid-tones + repetitive planks + thin material variation. Anti-invention lock partially worked (no balcony; small stairs persist; an invented centre POST both cycles = the flat-interior class asking for tall anchors). ROOT lever next: author 2 tall timber posts (geometry cycle-3).",
+  "instrument_note": "control drew 9 in both snug panels vs 8 in the shop panel — the delta band (>= -2.0) absorbs control variance by design; verdict stands."
+}
