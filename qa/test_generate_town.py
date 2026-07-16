@@ -217,18 +217,68 @@ def test_plates_fragment_pins_carry_the_full_camera_contract(tmp_path):
 
 
 def test_dressing_bars_fail_loud_when_a_pass_places_nothing():
-    """codex P2 pair (#1611): a narrow/dense crop can defeat dress_focal (returns silently) or leave
-    dress_tall_anchors no connectivity-safe pair AFTER focal placement — either silent miss re-ships
-    the exact drift/generic class the dressing exists to fix. check_dressing_bars is the emit-time
+    """codex P2 pair (#1611) + beacon geometry (#1618): a narrow/dense crop can defeat dress_focal
+    (returns silently), leave dress_tall_anchors no connectivity-safe pair AFTER focal placement, or
+    leave the fire beacons short/collinear — any silent miss re-ships the exact drift/generic/
+    degenerate-plate class the dressing exists to fix. check_dressing_bars is the emit-time
     enforcement generate_town folds into its self-gate (escape hatch: --allow-undressed)."""
-    base = {"cols": 5, "rows": 5, "door_cells": [[0, 2]], "walls": [],
+    base = {"cols": 6, "rows": 6, "door_cells": [[0, 2]], "walls": [],
             "props": [{"id": "w", "kind": "wall_run", "cells": [[0, 0]]}]}
-    both_missing = d2f.check_dressing_bars(dict(base, props=list(base["props"])), name="bare")
-    assert len(both_missing) == 2 and any("tall" in f for f in both_missing)         and any("focal" in f for f in both_missing)
+    all_missing = d2f.check_dressing_bars(dict(base, props=list(base["props"])), name="bare")
+    # three bars: tall mass, focal presence, beacon geometry (>=3 non-collinear fire)
+    assert len(all_missing) == 3
+    assert any("tall" in f for f in all_missing)
+    assert any("focal" in f for f in all_missing)
+    assert any("beacon" in f for f in all_missing)
     tall_only = dict(base, props=base["props"] + [
         {"id": "a", "kind": "pillar", "cells": [[2, 2], [2, 3]]}])
     fails = d2f.check_dressing_bars(tall_only, name="tallonly")
-    assert len(fails) == 1 and "focal" in fails[0]
+    # tall bar met; focal + beacon still fail (no fire at all)
+    assert len(fails) == 2 and any("focal" in f for f in fails) and any("beacon" in f for f in fails)
+    # fully dressed: pillar (tall) + THREE non-collinear braziers (focal + beacon geometry)
     dressed = dict(base, props=tall_only["props"] + [
-        {"id": "b", "kind": "brazier", "cells": [[3, 2]]}])
+        {"id": "b0", "kind": "brazier", "cells": [[1, 1]]},
+        {"id": "b1", "kind": "brazier", "cells": [[4, 1]]},
+        {"id": "b2", "kind": "brazier", "cells": [[2, 4]]}])
     assert d2f.check_dressing_bars(dressed, name="ok") == []
+
+
+def test_beacon_geometry_bar_needs_three_non_collinear_fire():
+    """#1618: the focal braziers double as plate-registration beacons. The beacon-geometry bar fails
+    a room with <3 fire beacons (a 2-point similarity fit is vertical-scale-blind) OR 3+ fire beacons
+    that are collinear (zero triangle area — same failure in disguise); it passes only a real triangle
+    with area >= _FIRE_TRI_MIN_AREA. A `pillar` clears the tall bar; braziers clear the focal bar, so
+    each case isolates the beacon bar."""
+    base = {"cols": 8, "rows": 8, "door_cells": [], "walls": [],
+            "props": [{"id": "a", "kind": "pillar", "cells": [[3, 3], [3, 4]]}]}
+    two_fire = dict(base, props=base["props"] + [
+        {"id": "b0", "kind": "brazier", "cells": [[1, 1]]},
+        {"id": "b1", "kind": "brazier", "cells": [[5, 1]]}])
+    f2 = d2f.check_dressing_bars(two_fire, name="two")
+    assert any("beacon" in f and "<3" in f for f in f2), f2
+    collinear = dict(base, props=base["props"] + [
+        {"id": "b0", "kind": "brazier", "cells": [[1, 1]]},
+        {"id": "b1", "kind": "brazier", "cells": [[3, 1]]},
+        {"id": "b2", "kind": "brazier", "cells": [[5, 1]]}])  # all on row 1 -> area 0
+    fc = d2f.check_dressing_bars(collinear, name="coll")
+    assert any("beacon" in f and "COLLINEAR" in f for f in fc), fc
+    non_collinear = dict(base, props=base["props"] + [
+        {"id": "b0", "kind": "brazier", "cells": [[1, 1]]},
+        {"id": "b1", "kind": "brazier", "cells": [[5, 1]]},
+        {"id": "b2", "kind": "brazier", "cells": [[3, 5]]}])  # triangle area 8.0
+    assert d2f._best_tri_area([(1, 1), (5, 1), (3, 5)]) >= d2f._FIRE_TRI_MIN_AREA
+    assert d2f.check_dressing_bars(non_collinear, name="ok") == []
+
+
+def test_every_room_has_three_non_collinear_fire_beacons(town):
+    """#1618: the dwing recovery proved the focal braziers double as plate-registration beacons; two
+    on the same row make the 2-point similarity fit blind to vertical scale (room_1's plate was
+    unfixable by warping). Every generated room must carry >=3 fire-kind props (brazier/campfire)
+    whose best triangle area >= _FIRE_TRI_MIN_AREA, so the plate solve is observable in both axes with
+    residual redundancy."""
+    for rid, geo in town.items():
+        fire = d2f._fire_cells(geo)
+        assert len(fire) >= 3, f"{rid}: only {len(fire)} fire beacons {fire}"
+        area = d2f._best_tri_area(fire)
+        assert area >= d2f._FIRE_TRI_MIN_AREA, (
+            f"{rid}: fire beacons near-collinear, best triangle area {area} < {d2f._FIRE_TRI_MIN_AREA}")
