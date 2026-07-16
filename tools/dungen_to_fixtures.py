@@ -424,6 +424,26 @@ def dress_focal(geo: dict, *, name: str = "room") -> dict:
     return geo
 
 
+def check_dressing_bars(geo: dict, *, name: str = "room") -> list:
+    """Emit-time enforcement of the two DRESSING bars the generator promises (codex P2 pair,
+    #1611): (1) FLAT-INTERIOR bar — at least one interior prop with authored height >=
+    _ANCHOR_MIN_TALL (a narrow crop can leave dress_tall_anchors no connectivity-safe pair AFTER
+    focal placement); (2) BEAUTY-FLOOR bar — at least one _FOCAL_KINDS prop (dress_focal returns
+    silently when every candidate is rejected). Returns failure strings; empty == both bars met.
+    A silent miss here would re-ship the exact drift/generic classes the dressing exists to fix —
+    the generator must fail LOUD instead so the crop gets deliberate attention."""
+    fails = []
+    interior = [p for p in geo.get("props", []) if p.get("kind") != "wall_run"]
+    tallest = max((_KIND_HEIGHT.get(p.get("kind"), 0.0) for p in interior), default=0.0)
+    if tallest < _ANCHOR_MIN_TALL:
+        fails.append(f"{name}: NO tall interior mass (tallest {tallest} < {_ANCHOR_MIN_TALL}) — "
+                     "flat-interior class; anchor placement found no connectivity-safe footprint")
+    if not any(p.get("kind") in _FOCAL_KINDS for p in interior):
+        fails.append(f"{name}: NO narrative focal prop ({sorted(_FOCAL_KINDS)}) — beauty-floor bar; "
+                     "focal placement found no connectivity-safe cell")
+    return fails
+
+
 def dress_tall_anchors(geo: dict, *, name: str = "room") -> dict:
     """Flat-interior-class dressing (#1588): if a cropped room has NO interior prop kind with authored
     height >= _ANCHOR_MIN_TALL (heights per _KIND_HEIGHT; `pillar` qualifies), author two `pillar`

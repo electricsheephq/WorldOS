@@ -187,7 +187,8 @@ def test_every_generated_room_has_a_narrative_focal(town):
         focal_cells = {tuple(c) for p in geo["props"] if p["kind"] in d2f._FOCAL_KINDS
                        for c in p["cells"]}
         assert not (focal_cells & landings), f"{rid}: focal on a door landing"
-        assert check_geometry(rid, geo) == [], f"{rid}: static gate regressed after focal dressing"
+        assert check_geometry(f"{_TOWN}_{rid}", geo) == [], (
+            f"{rid}: static gate regressed after focal dressing")
 
 
 def test_plates_fragment_pins_carry_the_full_camera_contract(tmp_path):
@@ -207,3 +208,21 @@ def test_plates_fragment_pins_carry_the_full_camera_contract(tmp_path):
     for rid, entry in frag["plates"].items():
         pin = entry["cameraPin"]
         assert pin.get("pitch") == 30 and pin.get("yaw") == 45, f"{rid}: ortho-only pin {pin}"
+
+
+def test_dressing_bars_fail_loud_when_a_pass_places_nothing():
+    """codex P2 pair (#1611): a narrow/dense crop can defeat dress_focal (returns silently) or leave
+    dress_tall_anchors no connectivity-safe pair AFTER focal placement — either silent miss re-ships
+    the exact drift/generic class the dressing exists to fix. check_dressing_bars is the emit-time
+    enforcement generate_town folds into its self-gate (escape hatch: --allow-undressed)."""
+    base = {"cols": 5, "rows": 5, "door_cells": [[0, 2]], "walls": [],
+            "props": [{"id": "w", "kind": "wall_run", "cells": [[0, 0]]}]}
+    both_missing = d2f.check_dressing_bars(dict(base, props=list(base["props"])), name="bare")
+    assert len(both_missing) == 2 and any("tall" in f for f in both_missing)         and any("focal" in f for f in both_missing)
+    tall_only = dict(base, props=base["props"] + [
+        {"id": "a", "kind": "pillar", "cells": [[2, 2], [2, 3]]}])
+    fails = d2f.check_dressing_bars(tall_only, name="tallonly")
+    assert len(fails) == 1 and "focal" in fails[0]
+    dressed = dict(base, props=tall_only["props"] + [
+        {"id": "b", "kind": "brazier", "cells": [[3, 2]]}])
+    assert d2f.check_dressing_bars(dressed, name="ok") == []
