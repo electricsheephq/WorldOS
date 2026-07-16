@@ -143,8 +143,52 @@ def _post(url: str, body: dict, timeout: float = 5.0):
         return json.loads(r.read().decode())
 
 
+def _location(surf: dict):
+    loc = surf.get("location")
+    return loc.get("id") if isinstance(loc, dict) else loc
+
+
+def _check_door_cross(qa: str, engine: str, cell, target, home, settle: float, timeout: float):
+    """Click a door cell → assert the party CROSSES to `target` → return to `home` via the reciprocal
+    door. Verifies cross_door works both ways without stranding the party in the wrong room."""
+    c, r = cell
+    try:
+        _post(f"{qa}/click", {"c": c, "r": r})
+    except Exception as e:  # noqa: BLE001
+        return False, {"error": f"click:{e}"}
+    deadline = time.time() + timeout
+    crossed = None
+    while time.time() < deadline:
+        time.sleep(settle)
+        try:
+            loc = _location(_get(f"{engine}/combat-surface"))
+        except Exception:  # noqa: BLE001
+            continue
+        if loc and loc != home:
+            crossed = loc
+            break
+    ok = (crossed == target) if target else bool(crossed)
+    # return home via the target room's door back to `home`
+    if crossed:
+        try:
+            back = next((d for d in _get(f"{engine}/combat-surface").get("doors", [])
+                         if d.get("to") == home), None)
+            if back:
+                _post(f"{qa}/click", {"c": back["cell"][0], "r": back["cell"][1]})
+                bdl = time.time() + timeout
+                while time.time() < bdl:
+                    time.sleep(settle)
+                    if _location(_get(f"{engine}/combat-surface")) == home:
+                        break
+        except Exception:  # noqa: BLE001
+            pass
+    return ok, {"crossed_to": crossed, "target": target}
+
+
 def _token_cell(surf: dict):
-    toks = surf.get("tokens") or []
+    # combat surfaces carry the cast in top-level `tokens`; a REST surface (the registered walkable
+    # world) carries it under `stage.tokens` — check both (mirrors CombatSurfaceClient's cast pick).
+    toks = surf.get("tokens") or (surf.get("stage") or {}).get("tokens") or []
     if not toks:
         return None
     t = toks[0]
@@ -203,10 +247,14 @@ def run_gate(room: str, engine: str, qa: str, *, stride: int, out: Path,
         report["impassable"]["cases"].append({"cell": [c, r], "landed": landed, "ok": ok})
         report["impassable"]["pass" if ok else "fail"] += 1
 
-    # 4) DOORS — each door cell must be walkable (reachable). Cross-door + arch-overlay: orchestrator.
-    for (c, r) in doors:
-        ok, landed = _drive_and_check(qa, engine, c, r, settle, move_timeout, expect_move=True)
-        report["doors"]["cases"].append({"cell": [c, r], "landed": landed, "ok": ok})
+    # 4) DOORS — clicking a door CROSSES to the linked room (cross_door), it does NOT leave the token
+    # on the door cell. Assert the cross lands in the door's `to` target, then return home.
+    home = _location(surf) or room
+    for d in surf.get("doors", []):
+        cell = tuple(d["cell"])
+        target = d.get("to")
+        ok, detail = _check_door_cross(qa, engine, cell, target, home, settle, move_timeout)
+        report["doors"]["cases"].append({"cell": list(cell), "to": target, "ok": ok, "detail": detail})
         report["doors"]["pass" if ok else "fail"] += 1
 
     # 5) OCCLUSION evidence — a /shot near an occluder for the human contact sheet (non-gating here).
