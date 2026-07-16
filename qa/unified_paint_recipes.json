@@ -6,7 +6,11 @@
     "control_strength": 0.85,
     "width": 1344,
     "height": 768,
-    "seeds": [12345, 12346, 12347],
+    "seeds": [
+      12345,
+      12346,
+      12347
+    ],
     "_note": "3 seeds = the best-of-N selection gate (promoted-recipe precedent); seed[0] byte-reproduces the canonical crypt base when the depth asset matches."
   },
   "gemini": {
@@ -26,6 +30,10 @@
     "throne_hall": {
       "base_prompt": "Painterly isometric grand stone throne hall interior, firelit, in the Pillars of Eternity 2 Deadfire hand-painted concept-art style. At the back center a wide raised stone DAIS of broad carved ceremonial steps, bearing a carved stone THRONE with a tall ornate back, flanked closely by two lit iron braziers whose warm firelight makes the throne the brightest focal point; carved stone columns with weathered relief lining a central processional aisle; a carved stone offering altar before the dais; stone urns by the side walls; an arched doorway in the front wall and a second doorway in the right wall exactly where the depth map shows openings; worn flagstone floor, aged stone-block walls, the firelight falling away into deep cool shadow toward the corners, warm chiaroscuro against cool stone, oil-painted texture, high detail, clean readable architectural composition, no people, empty hall.",
       "gemini_grounding": "Repaint this image in EXACTLY the hand-painted style of a Pillars of Eternity 2: Deadfire pre-rendered isometric background: visible oil-brush strokes, muted painterly stone palette, warm-core/cool-periphery chiaroscuro pooled on the throne dais. SCENE-CONTENT GROUNDING: the wide low stepped block is a raised stone DAIS of ceremonial steps; the seat with the tall back on it is a carved stone THRONE (gilded trim welcome); the tall round shapes are carved STONE COLUMNS with weathered relief; the flame bowls are iron BRAZIERS; the small block before the dais is an offering ALTAR; worn FLAGSTONE floor, aged stone walls."
+    },
+    "shop": {
+      "base_prompt": "Painterly isometric medieval general-goods shop interior, firelit, in the Pillars of Eternity 2 Deadfire hand-painted concept-art style. A warm timber-and-fieldstone trading room: along the back-left wall a TALL WOODEN SHELVING unit stacked with jars, bolts of cloth, coils of rope and sundry goods; at the center of the room a long wooden SHOP COUNTER with a polished lighter top, scales and a ledger on it, the clear focal point with open plank floor on all sides; a small till table against the back-right wall; two goods BARRELS along the right-hand aisle; a low wooden BENCH before the counter; a square wares DISPLAY TABLE spread with folded cloth and ceramics to the south; a stack of SUPPLY CRATES in the left corner; plump grain SACKS in the right corner; one lit iron BRAZIER on a pedestal stand at the counter's end casting warm light; an arched doorway in the back wall and a second doorway in the right wall exactly where the depth map shows openings; worn wooden plank floor, solid timber walls with NO windows, rich warm amber lighting pooled on the counter, cool blue-grey shadow falloff at the room edges, hand-painted texture detail, oil-painted texture, no people, no characters, empty room.",
+      "gemini_grounding": "Repaint this image in EXACTLY the hand-painted style of a Pillars of Eternity 2: Deadfire pre-rendered isometric background: visible oil-brush strokes, warm painterly wood-and-stone palette, warm-core/cool-periphery chiaroscuro pooled on the shop counter and brazier. SCENE-CONTENT GROUNDING: the tall mass on the back-left wall is WOODEN SHELVING stacked with goods; the long central block with the light top is a wooden SHOP COUNTER; the small block on the back-right is a till table; the rounds are goods BARRELS; the low log before the counter is a wooden BENCH; the square block to the south is a wares DISPLAY TABLE; the corner stacks are SUPPLY CRATES and grain SACKS; the flame on a stand is an iron BRAZIER; worn plank FLOOR; timber walls with NO windows."
     }
   }
 }
