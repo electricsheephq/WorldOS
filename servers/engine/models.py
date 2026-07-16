@@ -1534,6 +1534,10 @@ class Combat(_StrictModel):
     # costly); impassable cells are routed around entirely.
     grid_difficult: list[list[int]] = Field(default_factory=list)
     last_move_path: list[list[int]] = Field(default_factory=list)
+    # #1582: the most-recent REST-mode walk route (walk_to's envelope path, incl. the from-cell) —
+    # mirrors last_move_path's shape so the walkability gate can path-audit rest walks the same way
+    # it audits combat moves. Presentation/QA only; empty == no rest walk yet (old snapshots round-trip).
+    last_walk_path: list[list[int]] = Field(default_factory=list)
 
     @property
     def current_combatant_id(self) -> Optional[str]:

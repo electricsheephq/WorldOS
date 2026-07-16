@@ -3863,6 +3863,9 @@ def build_combat_surface(
         # P1: the most-recent routed move path (incl. the from-cell) + the impassable cells, so the
         # read-only renderer can draw the detour around walls/props. Presentation-only; [] == none.
         "lastPath": (snapshot.get("combat") or {}).get("last_move_path") or [],
+        # #1582: the most-recent REST-mode walk route (walk_to's envelope path) — additive sibling of
+        # lastPath so the walk gate can path-audit rest walks; clients that don't know it ignore it.
+        "lastWalkPath": (snapshot.get("combat") or {}).get("last_walk_path") or [],
         # W6.2 (#1461) the walking-over-logs fix — a rest-mode branch on `impassable`. In COMBAT the
         # field stays EXACTLY the engine's `combat.grid_impassable` (byte-identical to pre-W6.2, the
         # never-clobber-explicit half of `_derive_grid_from_scene`); when combat is INACTIVE it

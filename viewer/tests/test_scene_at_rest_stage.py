@@ -47,6 +47,9 @@ _LEGACY_KEYS = {
     # presentation-only key (see build_combat_surface); folded into the established set so the
     # `stage`-is-the-only-NEW-key guard still trips on any UNEXPECTED (non-additive) key change.
     "timePhase",
+    # #1582 rest-walk path audit — the most-recent REST walk route (combat.last_walk_path), the
+    # additive sibling of lastPath (which stays combat-only). Same deliberate fold-in as timePhase.
+    "lastWalkPath",
 }
 
 

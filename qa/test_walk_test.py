@@ -143,3 +143,11 @@ def test_diff_blobs_ignores_flicker_noise():
     b = a.copy()
     b[10:14, 10:14] = 255   # 16 px flicker
     assert W.diff_blobs(a, b, min_area_px=200) == []
+
+
+def test_path_cell_cr_normalizes_both_shapes():
+    """#1582: the route-endpoint staleness guard must read both cell shapes path_violations accepts."""
+    from walk_test import _path_cell_cr
+    assert _path_cell_cr([3, 4]) == [3, 4]
+    assert _path_cell_cr((3, 4)) == [3, 4]
+    assert _path_cell_cr({"c": 3, "r": 4}) == [3, 4]
