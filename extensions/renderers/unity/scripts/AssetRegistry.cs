@@ -68,13 +68,18 @@ public static class AssetRegistry
     // and no usable default exists. Keeps the never-null / never-throw contract.
     static Ref HardcodedFloor(string kind)
     {
+        // #1601: the in-code floor (used only when registry.json is missing/corrupt) must be an
+        // ANIMATED humanoid, never the clipless Assets/painterly/models/hero.fbx that rendered a
+        // sideways T-pose for runtime-spawned rogues. patron_commoner is a rigged humanoid whose
+        // idle lives in a separate moveset fbx, so animRef names it. Mirrors asset_registry.py's
+        // _HARDCODED_FLOOR and the client's in-code ResolveAsset char default.
         return new Ref
         {
             assetId = "__floor__",
             kind = string.IsNullOrEmpty(kind) ? "character" : kind,
-            modelRef = "Assets/painterly/models/hero.fbx",
-            albedoRef = "Assets/painterly/models/hero_albedo.png",
-            animRef = "Assets/painterly/models/hero@moveset.fbx",
+            modelRef = "Assets/chars_v2/patron_commoner/rigged.fbx",
+            albedoRef = "Assets/chars_v2/patron_commoner/albedo.jpg",
+            animRef = "Assets/chars_v2/patron_commoner/anim_idle.fbx",
             genRecipe = "in-code hardcoded floor (registry.json missing or unreadable)",
             version = "0.0.0",
             defaultUsed = true,

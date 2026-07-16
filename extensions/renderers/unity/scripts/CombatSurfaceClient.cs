@@ -1249,16 +1249,24 @@ public class CombatSurfaceClient : MonoBehaviour
         return b.ToString().Trim('-');
     }
 
-    // Returns [model_ref, albedo_ref, anim_ref] — EXACTLY mirrors paint_combat_v1.cs's resolveAsset,
-    // including the in-code team default (monster->goblin / character->hero, NOT AssetRegistry's
-    // hero-for-everything floor) and the #1423 albedo nuance (only substitute the template albedo when
-    // this token fell through to a default; a real resolved row with empty albedo means "own material").
+    // Returns [model_ref, albedo_ref, anim_ref]. Mirrors paint_combat_v1.cs's resolveAsset, with the
+    // #1601 divergence below: the in-code CHARACTER default (monster still -> goblin) is an ANIMATED
+    // humanoid, NOT the clipless hero.fbx. hero.fbx is non-humanoid with no resolvable idle, so a token
+    // that fell to this floor (a runtime-spawned rogue whose name matches no asset/alias) rendered a
+    // sideways T-pose. patron_commoner is the generic rigged humanoid the rest of the cast already spawn
+    // correctly; its idle lives in a SEPARATE moveset fbx, so the char floor must ALSO name that anim_ref
+    // or FindOwnClip finds no idle. goblin.fbx carries its OWN embedded Idle, so the monster floor keeps
+    // an empty anim_ref. (This in-code floor only fires when registry.json is absent/corrupt; the normal
+    // path resolves defaults.character -> template_human, which #1601 also re-pointed at patron_commoner.)
+    // #1423 albedo nuance: only substitute the template albedo when this token fell through to a default;
+    // a real resolved row with an empty albedo means "own material".
     string[] ResolveAsset(string slug, string kind)
     {
         LoadRegistry();
-        string fbxDef = kind == "monster" ? "Assets/chars_v2/goblin/goblin.fbx" : "Assets/painterly/models/hero.fbx";
-        string albDef = kind == "monster" ? "Assets/chars_v2/goblin/albedo.png" : "Assets/painterly/models/hero_albedo.png";
-        if (_regAssets == null) return new[] { fbxDef, albDef, "" };
+        string fbxDef = kind == "monster" ? "Assets/chars_v2/goblin/goblin.fbx" : "Assets/chars_v2/patron_commoner/rigged.fbx";
+        string albDef = kind == "monster" ? "Assets/chars_v2/goblin/albedo.png" : "Assets/chars_v2/patron_commoner/albedo.jpg";
+        string animDef = kind == "monster" ? "" : "Assets/chars_v2/patron_commoner/anim_idle.fbx";
+        if (_regAssets == null) return new[] { fbxDef, albDef, animDef };
         string id = slug;
         bool exactOrAlias = _regAssets.ContainsKey(id);
         if (!exactOrAlias && _regAliases != null && _regAliases.ContainsKey(id)) { id = _regAliases[id] as string; exactOrAlias = id != null && _regAssets.ContainsKey(id); }
@@ -1275,7 +1283,7 @@ public class CombatSurfaceClient : MonoBehaviour
                 return new[] { string.IsNullOrEmpty(m) ? fbxDef : m, alOut, an ?? "" };
             }
         }
-        return new[] { fbxDef, albDef, "" };
+        return new[] { fbxDef, albDef, animDef };
     }
 
     // goblin.fbx carries its OWN embedded Idle on a HUMANOID avatar (#1408 donor). Loaded once from the
