@@ -5,7 +5,9 @@
     "crypt": {
       "plate": "plates/crypt_v36_registered.png",
       "cameraPin": {
-        "ortho": 11.7851
+        "ortho": 11.7851,
+        "pitch": 30,
+        "yaw": 45
       },
       "boxes": "boxes/crypt_v36_boxes.json",
       "_provenance": "SHIP-THREE-PLATES (2026-07-15, owner 'ship it'): crypt v3.6 16x12 via qa/paint_room.py (recipe qa/unified_paint_recipes.json; base seed 12346 recall 0.9595; Gemini structure-lock). Blind panel 8.3 vs PoE2 control 9.4 / incumbent 7.2 (qa/evidence/paint-room/restored_pipeline_panel.json). Boxes sidecar = the EXACT conditioning volumes (UNIFY-THE-FRAMES). Geometry qa/room_geometries/crypt_v36_geometry.json; ortho = _fit_ortho_size(16,12)."
@@ -32,7 +34,9 @@
     "tavern": {
       "plate": "plates/tavern_v2_registered.png",
       "cameraPin": {
-        "ortho": 10.5224
+        "ortho": 10.5224,
+        "pitch": 30,
+        "yaw": 45
       },
       "boxes": "boxes/tavern_v2_boxes.json",
       "_provenance": "SHIP-THREE-PLATES (2026-07-15): tavern v2 14x11 molded (bar/table kinds) via qa/paint_room.py. Panel 8.4. Geometry qa/room_geometries/tavern_v2_geometry.json; ortho = _fit_ortho_size(14,11). Replaces tavern_fit2_v1 (12x10, ortho 9.2597)."
@@ -40,7 +44,9 @@
     "throne_hall": {
       "plate": "plates/throne_hall_v1_registered.png",
       "cameraPin": {
-        "ortho": 11.7851
+        "ortho": 11.7851,
+        "pitch": 30,
+        "yaw": 45
       },
       "boxes": "boxes/throne_hall_v1_boxes.json",
       "_provenance": "SHIP-THREE-PLATES (2026-07-15): NEW room class (dais/throne/banner molded kinds). Panel 7.0 (cycle-2 levers documented). Geometry qa/room_geometries/throne_hall_geometry.json. World wiring: crypt (15,5) door -> throne_hall in the ship seed."
