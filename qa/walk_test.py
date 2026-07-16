@@ -336,10 +336,25 @@ def _visual_registration(qa: str, engine: str, mask: dict, ortho: float, cells: 
         return world_to_window_px(wx, 0.6, wz, ortho, w, h)   # 0.6 up = lower-torso/feet band
 
     prev = _token_cell(_get(f"{engine}/combat-surface"))
+    # Chain the sample nearest-neighbour from the current cell: SHORT hops. The engine token flips
+    # immediately but the CLIENT GLIDES the sprite over ~0.3-0.4s/cell — a /shot fired at
+    # engine-confirm captures a mid-glide sprite 2-4 cells off (measured proof2 run: settled cells
+    # register at ~0.16 cells; mid-glide arrivals read 155-727 px). Short hops + a glide-proportional
+    # wait give settled frames.
+    todo = [tuple(c) for c in cells]
+    chain: list = []
+    cur = prev or todo[0]
+    while todo:
+        nxt = min(todo, key=lambda p: abs(p[0] - cur[0]) + abs(p[1] - cur[1]))
+        chain.append(nxt)
+        todo.remove(nxt)
+        cur = nxt
     shot_prev = _capture_shot(qa, out, "vis_start")
-    for i, cell in enumerate(cells):
+    for i, cell in enumerate(chain):
         ok_move, landed, _p = _drive_and_check(qa, engine, cell[0], cell[1], settle, move_timeout,
                                                expect_move=True)
+        hop = (abs(cell[0] - prev[0]) + abs(cell[1] - prev[1])) if prev else 3
+        time.sleep(1.2 + 0.45 * hop)   # let the glide finish before measuring
         shot_new = _capture_shot(qa, out, f"vis_{i}_c{cell[0]}r{cell[1]}")
         case = {"cell": list(cell), "moved": ok_move, "dist_px": None, "tol_px": round(tol, 1), "ok": False}
         if ok_move and shot_prev and shot_new:
