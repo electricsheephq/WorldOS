@@ -21,6 +21,14 @@ jobs:
         run: uv run --directory servers/rules --group dev pytest -q --cov=. --cov-report=term-missing
       - name: Voice tests (torch-free; null backend + static metadata)
         run: uv run --directory servers/voice --group dev pytest -q --cov=. --cov-report=term-missing
+      - name: Static walkability gate (manifest lint + ortho triple-check + geometry; stdlib-only)
+        # Epic #1581: the STATIC half of the walkability gate runs on EVERY PR — a manifest entry
+        # without ortho/plate/sidecar, a drifted ortho (manifest vs sidecar vs fit-math), a blocked
+        # door landing, or an orphan walkable pocket goes RED pre-merge, with no player and no deps.
+        # Red-first units + the same repo check also run under pytest: qa/test_walk_static.py.
+        run: python3 qa/walk_static.py
+      - name: Static walkability units (red-first proofs for the gate itself)
+        run: uv run --directory servers/engine --group dev pytest -q -p no:xdist ../../qa/test_walk_static.py
       - name: Single-flight launch-guard test (scripts/launch_common.sh lock)
         # Pure bash + POSIX mkdir/kill -0/rm — no uv/claude/viewer. Proves a second concurrent
         # play_party.sh cold-open is cleanly rejected and the lock self-heals (release / dead holder).

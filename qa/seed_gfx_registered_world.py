@@ -46,6 +46,17 @@ def main() -> None:
     import server  # noqa: PLC0415
     from models import Campaign  # noqa: PLC0415
     from seed_gfx_town import build_grid_from_geometry  # noqa: PLC0415
+    from walk_static import check_geometry, validate_world  # noqa: PLC0415
+
+    # ★ STATIC GATE AT THE SEED BOUNDARY (epic #1581): an invalid world never enters a campaign —
+    # door reciprocity + per-room geometry checks (blocked landings, orphan pockets) REFUSE the seed.
+    fails = validate_world([(lid, [(cell, to) for cell, to in doors]) for lid, _g, doors in ROOMS])
+    for _lid, geofile, _doors in ROOMS:
+        fails += check_geometry(geofile, json.loads((GEO / geofile).read_text()))
+    if fails:
+        for f in fails:
+            print(f"[registered_world] STATIC GATE RED: {f}", file=sys.stderr)
+        sys.exit(1)
 
     server.save_campaign(Campaign(
         id=CID, title="Registered walkable world",
