@@ -220,3 +220,18 @@ class AssetRegistryConformanceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+def test_no_cs_twin_floors_to_the_clipless_hero_model():
+    """#1601 / evaOS #1616-P3: the Unity twins (CombatSurfaceClient.ResolveAsset,
+    paint_combat_v1.resolveAsset, AssetRegistry.HardcodedFloor) have no C# test rig, so pin the
+    anti-T-pose invariant at the source level: with comments stripped, NO .cs twin may reference
+    hero.fbx in code — after #1601 the only legitimate mentions are comments. A reappearing code
+    literal means a floor regressed to the clipless non-humanoid model."""
+    import re
+    root = Path(__file__).resolve().parents[2] / "extensions" / "renderers" / "unity" / "scripts"
+    for name in ("CombatSurfaceClient.cs", "paint_combat_v1.cs", "AssetRegistry.cs"):
+        src = (root / name).read_text(encoding="utf-8")
+        src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
+        code = "\n".join(line.split("//", 1)[0] for line in src.splitlines())
+        assert "hero.fbx" not in code, f"{name}: hero.fbx re-appeared in CODE (floor regression)"
