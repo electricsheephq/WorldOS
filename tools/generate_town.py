@@ -32,7 +32,7 @@ _TOOLS = Path(__file__).resolve().parent
 sys.path.insert(0, str(_TOOLS))
 sys.path.insert(0, str(_TOOLS.parent / "qa"))
 
-from dungen_to_fixtures import convert, build_geometry, dress_tall_anchors  # noqa: E402
+from dungen_to_fixtures import convert, build_geometry, dress_focal, dress_tall_anchors  # noqa: E402
 from author_room_geometry import _perimeter_wall_run_props  # noqa: E402
 from greybox_render_headless import _fit_ortho_size  # noqa: E402
 from walk_static import check_geometry  # noqa: E402
@@ -86,6 +86,7 @@ def main(argv=None) -> int:
     for rid in room_ids:
         geo = _stamp_room(build_geometry(ctx, room=rid),
                           material=args.material, wall_height=args.wall_height)
+        geo = dress_focal(geo, name=loc_of[rid])  # narrative focal set FIRST (an altar also satisfies the tall-anchor bar)
         geo = dress_tall_anchors(geo, name=loc_of[rid])
         geo["location"] = loc_of[rid]
         # ★ STATIC WALKABILITY GATE (mirrors qa/seed_gfx_registered_world.py): a room geometry that

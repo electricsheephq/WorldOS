@@ -332,6 +332,98 @@ def _door_landing(cell: tuple, cols: int, rows: int) -> tuple:
             r + (1 if r == 0 else -1 if r == rows - 1 else 0))
 
 
+_FOCAL_KINDS = {"altar", "stone_well", "brazier", "sarcophagus", "campfire", "hearth"}
+
+
+def dress_focal(geo: dict, *, name: str = "room") -> dict:
+    """Beauty-floor dressing (the dwing panel lesson, 2026-07-16): a generated room whose interior
+    props are pure clutter (crates/rubble/barrels) panels at "clean but generic — no narrative focal
+    point" (6 vs control 9, measured 2/2 on structurally-honest plates). Give each room ONE
+    deterministic narrative focal set chosen by door count: 1 door -> an ALTAR flanked by two
+    BRAZIERS (a sealed shrine-store); 2 doors -> two BRAZIERS flanking the through-lane; 3+ doors ->
+    two BRAZIERS by the crossing centre. Fire doubles as the paint stage's warm-core chiaroscuro
+    anchor (the scorers' own lever) and the runtime's animated-VFX anchor. Skipped when the room
+    already carries any focal kind. Same safety machinery as dress_tall_anchors: deterministic
+    grid-derived candidates, never on/adjacent to a door landing, flood-fill connectivity-verified."""
+    interior = [p for p in geo.get("props", []) if p.get("kind") != "wall_run"]
+    if any(p.get("kind") in _FOCAL_KINDS for p in interior):
+        return geo
+    cols, rows = int(geo["cols"]), int(geo["rows"])
+    doors = {tuple(d) for d in geo.get("door_cells", [])}
+    landings = {_door_landing(d, cols, rows) for d in doors}
+    landing_block = set(landings)
+    for (c, r) in landings:
+        landing_block |= {(c + 1, r), (c - 1, r), (c, r + 1), (c, r - 1)}
+
+    def free_set(extra_blocked: set) -> set:
+        prop_cells = {tuple(c) for p in geo.get("props", []) if p.get("kind") != "wall_run"
+                      for c in p.get("cells", [])} | extra_blocked
+        walls = ({tuple(c) for c in geo.get("walls", [])} | prop_cells) - doors
+        return {(c, r) for r in range(rows) for c in range(cols) if (c, r) not in walls}
+
+    base_free = free_set(set())
+
+    def connectivity_ok(blocked: set) -> bool:
+        free = free_set(blocked)
+        starts = [land for land in landings if land in free]
+        if not starts:
+            return False
+        seen, stack = {starts[0]}, [starts[0]]
+        while stack:
+            c, r = stack.pop()
+            for n in ((c + 1, r), (c - 1, r), (c, r + 1), (c, r - 1)):
+                if n in free and n not in seen:
+                    seen.add(n)
+                    stack.append(n)
+        if any(land not in seen for land in starts):
+            return False
+        interior_free = {(c, r) for (c, r) in free if 0 < c < cols - 1 and 0 < r < rows - 1}
+        return not (interior_free - seen)
+
+    def shapes(ideal: tuple, footprint: int) -> list:
+        """Candidate footprints (1-cell, or a horizontal pair) ordered toward `ideal`."""
+        out = []
+        for c in range(1, cols - 1 - (footprint - 1)):
+            for r in range(1, rows - 1):
+                cells = tuple((c + i, r) for i in range(footprint))
+                if all(cell in base_free and cell not in doors and cell not in landing_block
+                       for cell in cells):
+                    d = sum(abs(cc - ideal[0]) + abs(rr - ideal[1]) for (cc, rr) in cells)
+                    out.append((d, r, c, cells))
+        out.sort()
+        return [o[3] for o in out]
+
+    n_doors = len(doors)
+    plan: list = []  # (id, kind, footprint, ideal)
+    if n_doors <= 1:
+        plan = [("focal_altar", "altar", 2, (cols // 2, rows // 3)),
+                ("focal_brazier_w", "brazier", 1, (cols // 2 - 2, rows // 3)),
+                ("focal_brazier_e", "brazier", 1, (cols // 2 + 2, rows // 3))]
+    elif n_doors == 2:
+        plan = [("focal_brazier_w", "brazier", 1, (cols // 3, rows // 2)),
+                ("focal_brazier_e", "brazier", 1, (2 * cols // 3, rows // 2))]
+    else:
+        plan = [("focal_brazier_w", "brazier", 1, (cols // 2 - 2, rows // 2)),
+                ("focal_brazier_e", "brazier", 1, (cols // 2 + 2, rows // 2))]
+
+    used: set = set()
+    for pid, kind, footprint, ideal in plan:
+        for cells in shapes(ideal, footprint):
+            if any(cell in used for cell in cells):
+                continue
+            if connectivity_ok(used | set(cells)):
+                geo["props"].append({"id": pid, "kind": kind, "cells": [list(c) for c in cells]})
+                used |= set(cells)
+                break
+    if used:
+        wall_cells = {tuple(c) for c in geo.get("walls", [])}
+        prop_cells = {tuple(c) for p in geo.get("props", []) if p.get("kind") != "wall_run"
+                      for c in p.get("cells", [])}
+        geo["impassable"] = [list(c) for c in
+                             sorted(wall_cells | prop_cells - doors, key=lambda x: (x[1], x[0]))]
+    return geo
+
+
 def dress_tall_anchors(geo: dict, *, name: str = "room") -> dict:
     """Flat-interior-class dressing (#1588): if a cropped room has NO interior prop kind with authored
     height >= _ANCHOR_MIN_TALL (heights per _KIND_HEIGHT; `pillar` qualifies), author two `pillar`

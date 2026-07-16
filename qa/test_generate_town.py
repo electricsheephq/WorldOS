@@ -72,6 +72,7 @@ def _build_town_geometries() -> dict:
     geos = {}
     for rid in _ROOMS:
         geo = _stamp_room(d2f.build_geometry(ctx, room=rid))
+        geo = d2f.dress_focal(geo, name=f"{_TOWN}_{rid}")
         geo = d2f.dress_tall_anchors(geo, name=f"{_TOWN}_{rid}")
         geo["location"] = f"{_TOWN}_{rid}"
         geos[rid] = geo
@@ -99,18 +100,20 @@ def test_every_room_has_a_tall_prop(town):
             f"{rid} tallest interior mass {tallest} < {d2f._ANCHOR_MIN_TALL} (flat-interior class)")
 
 
-def test_flat_rooms_get_two_pillar_anchors(town):
-    # room_0 and room_1 are all-crate DunGen rooms -> dressing must author two pillar anchors each;
-    # room_2 already carries a cylinder->pillar, so it must NOT be dressed.
+def test_flat_rooms_get_pillar_anchors(town):
+    # room_0 and room_1 are all-crate DunGen rooms -> the anchor pass must author AT LEAST ONE
+    # pillar anchor each (with the focal pass running first, brazier/altar occupancy can leave room
+    # for only one connectivity-safe pair — one tall anchor still clears the flat-interior bar);
+    # room_2 already carries a cylinder->pillar, so it must NOT get anchors.
     for rid in ("room_0", "room_1"):
         anchors = [p for p in town[rid]["props"] if p.get("id") in ("anchor_a", "anchor_b")]
-        assert {p["id"] for p in anchors} == {"anchor_a", "anchor_b"}, f"{rid} needs both anchors"
+        assert anchors, f"{rid} needs at least one pillar anchor"
         for p in anchors:
             assert p["kind"] == "pillar"
             (c0, r0), (c1, r1) = p["cells"]
             assert c0 == c1 and abs(r0 - r1) == 1, "each anchor is two vertically-adjacent cells"
     assert not [p for p in town["room_2"]["props"] if p.get("id", "").startswith("anchor")], \
-        "room_2 already has a tall pillar and must not be dressed"
+        "room_2 already has a tall pillar and must not get anchors"
 
 
 # ── (c) an on-perimeter door is not moved by the snap ─────────────────────────────────────────────────
@@ -170,3 +173,18 @@ def test_generator_self_gate_passes(tmp_path):
     proc = subprocess.run(cmd, capture_output=True, text=True)
     assert proc.returncode == 0, f"generator self-gate failed:\n{proc.stderr}"
     assert "STATIC GATE RED" not in proc.stderr
+
+
+def test_every_generated_room_has_a_narrative_focal(town):
+    """Beauty-floor dressing (dwing panel lesson): pure-clutter rooms panel at 'clean but generic —
+    no narrative focal point' (6 vs 9, measured 2/2). Every generated room must carry at least one
+    focal kind, placed clear of door landings, with the static gate still green."""
+    for rid, geo in town.items():
+        kinds = {p["kind"] for p in geo["props"]}
+        assert kinds & d2f._FOCAL_KINDS, f"{rid}: no focal kind in {sorted(kinds)}"
+        cols, rows = geo["cols"], geo["rows"]
+        landings = {d2f._door_landing(tuple(d), cols, rows) for d in geo["door_cells"]}
+        focal_cells = {tuple(c) for p in geo["props"] if p["kind"] in d2f._FOCAL_KINDS
+                       for c in p["cells"]}
+        assert not (focal_cells & landings), f"{rid}: focal on a door landing"
+        assert check_geometry(rid, geo) == [], f"{rid}: static gate regressed after focal dressing"
