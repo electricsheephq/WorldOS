@@ -129,6 +129,41 @@ def _sample(cells: list, stride: int) -> list:
     return cells if stride <= 1 else cells[::stride]
 
 
+def bfs_reachable(mask: dict, start: tuple) -> set:
+    """4-neighbour BFS over walkable cells from `start` — the engine-truth reachable set."""
+    walkable = mask["walkable"] if isinstance(mask["walkable"], set) else set(mask["walkable"])
+    if start not in walkable:
+        return set()
+    seen, stack = {start}, [start]
+    while stack:
+        c, r = stack.pop()
+        for nc, nr in ((c + 1, r), (c - 1, r), (c, r + 1), (c, r - 1)):
+            if (nc, nr) in walkable and (nc, nr) not in seen:
+                seen.add((nc, nr))
+                stack.append((nc, nr))
+    return seen
+
+
+def orphan_cells(mask: dict, start: tuple) -> list:
+    """Walkable cells NOT reachable from `start` — orphan pockets (a seed defect, or paint-invented
+    'walkable-looking' space with no connection). A walkable room has ZERO orphans; any orphan is RED."""
+    return sorted(set(mask["walkable"]) - bfs_reachable(mask, start))
+
+
+def path_violations(path, mask: dict) -> list:
+    """Cells in an engine `lastPath` that are NOT walkable — the owner's actual 'walked through the
+    table' failure class: the DESTINATION can be legal while the route crosses a prop. Empty == clean."""
+    if not path:
+        return []
+    walkable = mask["walkable"] if isinstance(mask["walkable"], set) else set(mask["walkable"])
+    bad = []
+    for cell in path:
+        cr = (int(cell[0]), int(cell[1])) if not isinstance(cell, dict) else (int(cell["c"]), int(cell["r"]))
+        if cr not in walkable:
+            bad.append(list(cr))
+    return bad
+
+
 # --- live I/O helpers ------------------------------------------------------------------------------
 def _get(url: str, timeout: float = 5.0):
     with urllib.request.urlopen(url, timeout=timeout) as r:
@@ -217,7 +252,8 @@ def run_gate(room: str, engine: str, qa: str, *, stride: int, out: Path,
     mask = walkmask_from_surface(surf)
     report = {"room": room, "ortho": ortho, "sceneId": scene,
               "grid": {"cols": mask["cols"], "rows": mask["rows"]},
-              "camera": {}, "reachable": {"pass": 0, "fail": 0, "cases": []},
+              "camera": {}, "orphans": [], "path": {"pass": 0, "fail": 0, "violations": []},
+              "reachable": {"pass": 0, "fail": 0, "cases": []},
               "impassable": {"pass": 0, "fail": 0, "cases": []},
               "doors": {"pass": 0, "fail": 0, "cases": []}, "shots": [], "verdict": "PENDING"}
 
@@ -229,21 +265,37 @@ def run_gate(room: str, engine: str, qa: str, *, stride: int, out: Path,
     cam_fails = check_camera_pose(dbg, ortho)
     report["camera"] = {"dbg": dbg, "fails": cam_fails, "ok": not cam_fails}
 
-    interior = [(c, r) for (c, r) in mask["walkable"]
+    # 1b) REACHABILITY / ORPHAN check (pure engine-truth, no driving): every walkable cell must be
+    # BFS-reachable from the party's current cell. An orphan pocket = a seed defect or paint-invented
+    # "walkable-looking" space with no connection — the unreachable-paint class. Any orphan is RED.
+    start = _token_cell(surf)
+    if start:
+        report["orphans"] = [list(c) for c in orphan_cells(mask, start)]
+    reachable_set = bfs_reachable(mask, start) if start else set(mask["walkable"])
+
+    interior = [(c, r) for (c, r) in reachable_set
                 if 0 < c < mask["cols"] - 1 and 0 < r < mask["rows"] - 1]
     interior.sort()
     doors = sorted(mask["doors"])
     blocked = sorted(mask["blocked"])
 
-    # 2) REACHABLE — click each sampled reachable cell; token must resolve TO it (engine truth).
+    # 2) REACHABLE — click each sampled reachable cell; token must resolve TO it (engine truth), AND
+    # the engine's lastPath must cross ONLY walkable cells (the owner's real "walked through the
+    # table" failure class: a legal destination via an illegal route).
     for (c, r) in _sample(interior, stride):
-        ok, landed = _drive_and_check(qa, engine, c, r, settle, move_timeout, expect_move=True)
+        ok, landed, path = _drive_and_check(qa, engine, c, r, settle, move_timeout, expect_move=True)
         report["reachable"]["cases"].append({"cell": [c, r], "landed": landed, "ok": ok})
         report["reachable"]["pass" if ok else "fail"] += 1
+        bad = path_violations(path, mask)
+        if bad:
+            report["path"]["fail"] += 1
+            report["path"]["violations"].append({"to": [c, r], "illegal_cells": bad})
+        elif path:
+            report["path"]["pass"] += 1
 
     # 3) IMPASSABLE — click each sampled blocked cell; token must NOT move onto it.
     for (c, r) in _sample(blocked, max(1, stride)):
-        ok, landed = _drive_and_check(qa, engine, c, r, settle, move_timeout, expect_move=False)
+        ok, landed, _p = _drive_and_check(qa, engine, c, r, settle, move_timeout, expect_move=False)
         report["impassable"]["cases"].append({"cell": [c, r], "landed": landed, "ok": ok})
         report["impassable"]["pass" if ok else "fail"] += 1
 
@@ -263,35 +315,38 @@ def run_gate(room: str, engine: str, qa: str, *, stride: int, out: Path,
         report["shots"].append(shot)
 
     hard_fail = bool(cam_fails) or report["reachable"]["fail"] or report["impassable"]["fail"] \
-        or report["doors"]["fail"]
+        or report["doors"]["fail"] or report["orphans"] or report["path"]["fail"]
     report["verdict"] = "RED" if hard_fail else "GREEN"
     return report
 
 
 def _drive_and_check(qa: str, engine: str, c: int, r: int, settle: float, timeout: float,
                      *, expect_move: bool):
-    """Click (c,r); poll the engine token. expect_move: token must reach (c,r). else: must not."""
+    """Click (c,r); poll the engine token. expect_move: token must reach (c,r), else must not.
+    Returns (ok, landed, lastPath) — lastPath is the engine's route for the move (path-cell audit)."""
     try:
         before = _token_cell(_get(f"{engine}/combat-surface"))
         _post(f"{qa}/click", {"c": c, "r": r})
     except Exception as e:  # noqa: BLE001
-        return False, f"drive-error:{e}"
+        return False, f"drive-error:{e}", None
     deadline = time.time() + timeout
-    landed = before
+    landed, path = before, None
     while time.time() < deadline:
         time.sleep(settle)
         try:
-            landed = _token_cell(_get(f"{engine}/combat-surface"))
+            surf = _get(f"{engine}/combat-surface")
         except Exception:  # noqa: BLE001
             continue
+        landed = _token_cell(surf)
+        path = surf.get("lastPath") or path
         if expect_move and landed == (c, r):
-            return True, list(landed)
+            return True, list(landed), path
         if not expect_move and landed == (c, r):
-            return False, list(landed)  # moved onto an impassable cell — a real failure
+            return False, list(landed), path  # moved onto an impassable cell — a real failure
     if expect_move:
-        return (landed == (c, r)), (list(landed) if landed else None)
+        return (landed == (c, r)), (list(landed) if landed else None), path
     # impassable: pass iff the token never became (c,r)
-    return (landed != (c, r)), (list(landed) if landed else None)
+    return (landed != (c, r)), (list(landed) if landed else None), path
 
 
 def _capture_shot(qa: str, out: Path, label: str):
@@ -333,9 +388,11 @@ def main(argv=None) -> int:
     print(f"\n=== WALK_TEST {args.room} — {report['verdict']} ===")
     print(f"camera: {'OK' if cam['ok'] else 'FAIL'}"
           + ("" if cam["ok"] else "".join(f"\n    - {m}" for m in cam["fails"])))
-    for k in ("reachable", "impassable", "doors"):
+    for k in ("reachable", "impassable", "doors", "path"):
         s = report[k]
         print(f"{k:11s}: {s['pass']} pass / {s['fail']} fail")
+    print(f"orphans    : {len(report['orphans'])}"
+          + (f" — {report['orphans'][:6]}" if report["orphans"] else ""))
     print(f"report: {out / 'walk_report.json'}")
     return 0 if report["verdict"] == "GREEN" else 1
 

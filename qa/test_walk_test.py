@@ -76,3 +76,37 @@ def test_contract_cam_pos_aims_back_and_up():
     x, y, z = W.contract_cam_pos()
     assert y > 0 and x < 0 and z < 0  # pulled back-and-up along -forward (Euler 30/45)
     assert abs((x * x + y * y + z * z) ** 0.5 - 80.0) < 1e-6  # exactly PULLBACK units from origin
+
+
+def _mask(cols, rows, blocked):
+    walkable = {(c, r) for r in range(rows) for c in range(cols)} - set(blocked)
+    return {"cols": cols, "rows": rows, "walkable": walkable, "blocked": set(blocked), "doors": set()}
+
+
+def test_orphan_pocket_detected():
+    """A wall bisecting the room leaves an orphan pocket — the unreachable-paint/seed-defect class.
+    Red-first: the gate MUST flag it."""
+    wall = [(2, r) for r in range(5)]  # full vertical wall at c=2 in a 5x5 room
+    m = _mask(5, 5, wall)
+    orphans = W.orphan_cells(m, start=(0, 0))
+    assert orphans, "bisected room must yield orphans"
+    assert all(c > 2 for (c, r) in [tuple(o) for o in orphans]), "orphans are the far side of the wall"
+
+
+def test_no_orphans_in_connected_room():
+    m = _mask(5, 5, [(2, 2)])  # one prop, room stays connected
+    assert W.orphan_cells(m, start=(0, 0)) == []
+
+
+def test_path_through_a_table_flagged():
+    """The owner's ACTUAL failure: destination legal, but the route crosses a prop. Red-first."""
+    m = _mask(6, 3, [(3, 1)])  # a table at (3,1)
+    bad = W.path_violations([[1, 1], [2, 1], [3, 1], [4, 1]], m)
+    assert bad == [[3, 1]]
+
+
+def test_clean_path_passes():
+    m = _mask(6, 3, [(3, 1)])
+    assert W.path_violations([[1, 1], [2, 1], [2, 0], [3, 0], [4, 0], [4, 1]], m) == []
+    assert W.path_violations([], m) == []          # no path recorded = nothing to flag
+    assert W.path_violations(None, m) == []
