@@ -168,6 +168,18 @@ def verify_certification(room: str) -> list:
     return fails
 
 
+def _is_shippable(results: dict, gate_stages: list) -> bool:
+    """Pure ship gate. A room ships ONLY when: no RED gate, no pending MANUAL stage, at least one
+    GREEN gate, AND — whenever a walk gate ran — its verdict is GREEN. A walk=SKIP (harness ERROR /
+    player down) or coherence-alone GREEN must NEVER certify: a coherent paint says nothing about
+    whether the room is walkable, which is the entire point of the walk gate."""
+    reds = [n for n in gate_stages if results[n]["status"] == "RED"]
+    manuals = [n for (n, r) in results.items() if r["status"] == "MANUAL"]
+    walk_ok = ("walk" not in gate_stages) or (results.get("walk", {}).get("status") == "GREEN")
+    return bool(not reds and not manuals and walk_ok
+                and any(results[n]["status"] == "GREEN" for n in gate_stages))
+
+
 def run(room: str, mode: str, out: Path, engine: str, qa: str, stride: int, resume: bool) -> dict:
     out.mkdir(parents=True, exist_ok=True)
     marker = out / "stages.json"
@@ -194,9 +206,12 @@ def run(room: str, mode: str, out: Path, engine: str, qa: str, stride: int, resu
 
     results = {}
     for name, fn in stages:
-        if resume and done.get(name, {}).get("status") in ("GREEN", "SKIP"):
+        # Only a cached GREEN is terminal on --resume. A cached SKIP must RE-RUN: an ERROR-mapped walk
+        # SKIP is a harness error to retry, and re-running a deliberate MANUAL/SKIP stage is cheap and
+        # safe. (Reusing SKIP as terminal could carry a harness outage forward as if it were settled.)
+        if resume and done.get(name, {}).get("status") == "GREEN":
             results[name] = done[name]
-            _log(f"{name}: (cached {done[name]['status']})")
+            _log(f"{name}: (cached GREEN)")
             continue
         _log(f"{name}: running…")
         res = fn()
@@ -207,7 +222,7 @@ def run(room: str, mode: str, out: Path, engine: str, qa: str, stride: int, resu
     gate_stages = [n for n in ("coherence", "walk") if n in results]
     reds = [n for n in gate_stages if results[n]["status"] == "RED"]
     manuals = [n for (n, r) in results.items() if r["status"] == "MANUAL"]
-    shippable = not reds and not manuals and any(results[n]["status"] == "GREEN" for n in gate_stages)
+    shippable = _is_shippable(results, gate_stages)
     report = {"room": room, "mode": mode, "stages": results,
               "gate_stages": gate_stages, "reds": reds, "pending_manual": manuals,
               "shippable": shippable, "ts": None}

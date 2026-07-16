@@ -49,6 +49,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
 MANIFEST = REPO / "extensions" / "renderers" / "unity" / "plates_manifest.json"
+GEO_DIR = HERE / "room_geometries"
 
 # --- the camera contract (MIRROR qa/greybox_render_headless — build_room_unified's rig) ------------
 PITCH_DEG, YAW_DEG, PULLBACK = 30.0, 45.0, 80.0
@@ -221,6 +222,63 @@ def nearest_blob_distance(blobs: list, expected_px: tuple) -> float:
     return best
 
 
+# --- animated-fire-VFX masking (#1525): braziers/hearths spawn flame VFX whose frame-to-frame flicker
+# produces a large diff blob that can WIN the nearest-neighbour race against the actor sprite, reading
+# a walkable cell as a false visual RED. These helpers only ever REMOVE candidate blobs / deprioritize
+# fire-adjacent sample cells — they can never invent a pass (a case that masks to zero blobs stays a
+# loud fail, same as a case with no measurable actor blob).
+FIRE_KINDS = frozenset({"brazier", "campfire", "hearth"})
+
+
+def fire_anchor_cells(source: dict) -> set:
+    """Cells occupied by animated-fire props — read from a room-geometry (or surface) `props` list
+    whose entries carry {kind, cells:[[c,r],...]}. Empty set if the source has no such props."""
+    out: set = set()
+    for p in (source or {}).get("props", []):
+        if p.get("kind") in FIRE_KINDS:
+            for cr in p.get("cells", []):
+                out.add((int(cr[0]), int(cr[1])))
+    return out
+
+
+def mask_fire_blobs(blobs: list, fire_px: list, radius_px: float) -> list:
+    """Drop any diff blob whose CENTROID lies within `radius_px` of a fire-anchor screen position.
+    Additive-only: returns a (possibly empty) subset of `blobs`, never a new blob."""
+    if not fire_px:
+        return list(blobs)
+    kept = []
+    for bl in blobs:
+        cx, cy = bl["cx"], bl["cy"]
+        if any(((cx - fx) ** 2 + (cy - fy) ** 2) ** 0.5 <= radius_px for fx, fy in fire_px):
+            continue
+        kept.append(bl)
+    return kept
+
+
+def _cheby_far(cell, fire_cells, min_cheby: int) -> bool:
+    """True iff `cell` is ≥ min_cheby chebyshev-distance from EVERY fire-anchor cell (vacuously true
+    when there are no fire cells)."""
+    return all(max(abs(cell[0] - fc[0]), abs(cell[1] - fc[1])) >= min_cheby for fc in fire_cells)
+
+
+def select_visual_cells(pool: list, n: int, fire_cells, *, min_cheby: int = 2) -> list:
+    """Pick up to `n` visual-registration cells, PREFERRING cells ≥ min_cheby from any fire anchor
+    (their pixel-diff is polluted by brazier/hearth flicker). Falls back to fire-adjacent cells only
+    to top the sample up to `n` when the far pool is too small. Deterministic (strided sample of the
+    far tier, then in-order fill). `pool` must already exclude the current/zero-hop cell."""
+    if not pool or n <= 0:
+        return []
+    far = [c for c in pool if _cheby_far(c, fire_cells, min_cheby)]
+    ordered = _sample(far, max(1, len(far) // max(1, n))) if far else []
+    for src in (far, pool):   # top up: remaining far first, then fire-adjacent as a last resort
+        for c in src:
+            if len(ordered) >= n:
+                break
+            if c not in ordered:
+                ordered.append(c)
+    return ordered[:n]
+
+
 def _path_cell_cr(cell) -> list:
     """Normalize a path cell ([c,r] list or {c,r} dict — the two shapes path_violations accepts)."""
     if isinstance(cell, dict):
@@ -286,11 +344,11 @@ def classify_verdict(report: dict) -> tuple:
     by construction (they live in the fail counters), so they correctly win over harness."""
     walk = bool(
         report.get("camera", {}).get("pose_mismatch")
-        or report["reachable"]["fail"]
-        or report["impassable"]["fail"]
-        or report["doors"]["fail"]
+        or report.get("reachable", {}).get("fail")
+        or report.get("impassable", {}).get("fail")
+        or report.get("doors", {}).get("fail")
         or report.get("orphans")
-        or report["path"]["fail"]
+        or report.get("path", {}).get("fail")
         or report.get("visual", {}).get("fail")
         or report.get("door_pose_fail")
     )
@@ -400,9 +458,13 @@ def _check_door_cross(qa: str, engine: str, cell, target, home, settle: float, t
             break
     ok = (crossed == target) if target else bool(crossed)
     pose: dict = {}
-    # re-assert the DESTINATION room's camera contract on arrival
+    # re-assert the DESTINATION room's camera contract — ONLY when arrival at `target` is CONFIRMED
+    # (crossed != home only proves we left, not that we reached `target`) and the target room has a
+    # pinned ortho. An unconfirmed cross is already counted by `ok`; do not double-report as a pose
+    # fail, and never /debug an unpinned-ortho leg (there is nothing to assert it against).
     if crossed:
-        pose["dest"] = {"ortho": dest_ortho, "dbg": _debug_or_error(qa)}
+        if target and crossed == target and dest_ortho is not None:
+            pose["dest"] = {"ortho": dest_ortho, "dbg": _debug_or_error(qa)}
         # return home via the target room's door back to `home`
         try:
             back = next((d for d in _get(f"{engine}/combat-surface").get("doors", [])
@@ -410,12 +472,17 @@ def _check_door_cross(qa: str, engine: str, cell, target, home, settle: float, t
             if back:
                 _post(f"{qa}/click", {"c": back["cell"][0], "r": back["cell"][1]})
                 bdl = time.time() + timeout
+                returned_home = False
                 while time.time() < bdl:
                     time.sleep(settle)
                     if _location(_get(f"{engine}/combat-surface")) == home:
+                        returned_home = True
                         break
-                # re-assert the HOME room's camera contract after the return leg
-                pose["home"] = {"ortho": home_ortho, "dbg": _debug_or_error(qa)}
+                # re-assert the HOME room's camera contract — ONLY when the return CONFIRMED home (a
+                # timed-out return strands the party in the target room; asserting HOME's ortho there
+                # compares the wrong room = false RED) and home has a pinned ortho.
+                if returned_home and home_ortho is not None:
+                    pose["home"] = {"ortho": home_ortho, "dbg": _debug_or_error(qa)}
         except Exception:  # noqa: BLE001
             pass
     detail = {"crossed_to": crossed, "target": target}
@@ -454,8 +521,31 @@ def _room_ortho_opt(room):
         return None
 
 
+def _load_room_geometry(room: str) -> dict:
+    """Best-effort load of a room's geometry JSON (for fire-anchor masking, #1525). Returns {} when no
+    geometry file is found — fire masking is additive, never fatal. Resolves via walk_static's
+    GEOMETRY_OF map, then a `{room}_geometry.json` fallback (generated rooms land there)."""
+    candidates = []
+    try:
+        sys.path.insert(0, str(HERE))
+        import walk_static as WS  # noqa: PLC0415
+        g = WS.GEOMETRY_OF.get(room)
+        if g:
+            candidates.append(GEO_DIR / g)
+    except Exception:  # noqa: BLE001
+        pass
+    candidates.append(GEO_DIR / f"{room}_geometry.json")
+    for c in candidates:
+        try:
+            if c.is_file():
+                return json.loads(c.read_text())
+        except Exception:  # noqa: BLE001
+            continue
+    return {}
+
+
 def _visual_registration(qa: str, engine: str, mask: dict, ortho: float, cells: list,
-                         out: Path, settle: float, move_timeout: float) -> dict:
+                         out: Path, settle: float, move_timeout: float, fire_cells=frozenset()) -> dict:
     """MEASURE the actor's rendered screen position with NO client instrumentation (sidecar synthesis,
     adopted): walk a chain of cells; pixel-diff consecutive /shots; the diff blobs are the departure +
     arrival actor sprites. Assert each expected cell projection (world_to_window_px at the LIVE window
@@ -478,6 +568,12 @@ def _visual_registration(qa: str, engine: str, mask: dict, ortho: float, cells: 
         wx = (cell[0] - (cols - 1) / 2.0) * 2.0
         wz = ((rows - 1) / 2.0 - cell[1]) * 2.0
         return world_to_window_px(wx, 0.6, wz, ortho, w, h)   # 0.6 up = lower-torso/feet band
+
+    # brazier/hearth flame VFX flicker sits ON the fire cell — mask any diff blob within ~1.5 cells of
+    # a fire-anchor screen position so it cannot win the nearest-neighbour race against the actor.
+    fire_px = [_proj(fc) for fc in fire_cells]
+    fire_radius = 1.5 * cell_px(ortho, h)
+    res["fire_cells"] = [list(fc) for fc in sorted(fire_cells)]
 
     prev = _token_cell(_get(f"{engine}/combat-surface"))
     # Chain the sample nearest-neighbour from the current cell: SHORT hops. The engine token flips
@@ -502,12 +598,14 @@ def _visual_registration(qa: str, engine: str, mask: dict, ortho: float, cells: 
         shot_new = _capture_shot(qa, out, f"vis_{i}_c{cell[0]}r{cell[1]}")
         case = {"cell": list(cell), "moved": ok_move, "dist_px": None, "tol_px": round(tol, 1), "ok": False}
         if ok_move and shot_prev and shot_new:
-            blobs = diff_blobs(Image.open(shot_prev).convert("RGB"), Image.open(shot_new).convert("RGB"))
-            d_new = nearest_blob_distance(blobs, _proj(cell))
+            raw = diff_blobs(Image.open(shot_prev).convert("RGB"), Image.open(shot_new).convert("RGB"))
+            blobs = mask_fire_blobs(raw, fire_px, fire_radius)   # drop brazier-flicker blobs first
+            d_new = nearest_blob_distance(blobs, _proj(cell))    # inf when all blobs were fire-masked
             d_prev = nearest_blob_distance(blobs, _proj(prev)) if prev else 0.0
             case["dist_px"] = round(d_new, 1)
             case["dist_prev_px"] = round(d_prev, 1)
             case["n_blobs"] = len(blobs)
+            case["n_blobs_masked"] = len(raw) - len(blobs)
             case["ok"] = d_new <= tol
         res["cases"].append(case)
         res["pass" if case["ok"] else "fail"] += 1
@@ -527,6 +625,9 @@ def run_gate(room: str, engine: str, qa: str, *, stride: int, out: Path,
         print(f"[walk_test] WARNING: live sceneId '{scene}' does not name room '{room}' — the player "
               f"may be in a different room; cross a door first or pass the matching --room.")
     mask = walkmask_from_surface(surf)
+    # fire-anchor cells (brazier/hearth VFX) from the room geometry and/or the surface props — used to
+    # mask animated-flame diff blobs in visual mode and to prefer fire-distant visual sample cells.
+    fire_cells = fire_anchor_cells(_load_room_geometry(room)) | fire_anchor_cells(surf)
     report = _init_report(room, ortho, scene, mask, engine, qa)
 
     # 1) CAMERA POSE — the root-cause gate. A pose MISMATCH (wrong ortho/rotation/aim) is a
@@ -624,14 +725,11 @@ def run_gate(room: str, engine: str, qa: str, *, stride: int, out: Path,
         # the gate always measures the requested count when enough cells exist.
         cur = _token_cell(_get(f"{engine}/combat-surface"))
         pool = [c for c in interior if c != cur]
-        vis_cells = _sample(pool, max(1, len(pool) // max(1, visual)))[:visual]
-        for c in pool:
-            if len(vis_cells) >= visual:
-                break
-            if c not in vis_cells:
-                vis_cells.append(c)
+        # prefer cells ≥2 chebyshev from any brazier/hearth (their diff is polluted by flame VFX
+        # flicker); fall back to fire-adjacent cells only to fill the requested N.
+        vis_cells = select_visual_cells(pool, visual, fire_cells)
         report["visual"] = _visual_registration(qa, engine, mask, ortho, vis_cells, out,
-                                                settle, move_timeout)
+                                                settle, move_timeout, fire_cells=fire_cells)
         # a requested visual gate that measured NOTHING must fail loud, never read as a vacuous GREEN
         if not report["visual"]["cases"]:
             report["visual"]["fail"] += 1
@@ -662,12 +760,14 @@ def _drive_and_check(qa: str, engine: str, c: int, r: int, settle: float, timeou
         return False, f"drive-error:{e}", None
     deadline = time.time() + timeout
     landed, path = before, None
+    any_surface = False   # did ANY poll after the click actually read the surface?
     while time.time() < deadline:
         time.sleep(settle)
         try:
             surf = _get(f"{engine}/combat-surface")
         except Exception:  # noqa: BLE001
             continue
+        any_surface = True
         landed = _token_cell(surf)
         # combat moves ride lastPath; rest walks ride the additive lastWalkPath (#1582 — before it,
         # rest-mode path audits were silently vacuous because the surface's lastPath is combat-only)
@@ -676,6 +776,11 @@ def _drive_and_check(qa: str, engine: str, c: int, r: int, settle: float, timeou
             return True, list(landed), path
         if not expect_move and landed == (c, r):
             return False, list(landed), path  # moved onto an impassable cell — a real failure
+    # the engine died mid-probe (ZERO successful surface reads after the click) → a HARNESS error, not
+    # a verdict: an impassable check would otherwise false-PASS on the stale `before` cell and a
+    # reachable check would false-RED. Partial outages (≥1 good poll) keep the normal timeout semantics.
+    if not any_surface:
+        return False, f"drive-error:engine surface unreachable after click ({c},{r})", None
     if expect_move:
         return (landed == (c, r)), (list(landed) if landed else None), path
     # impassable: pass iff the token never became (c,r)
