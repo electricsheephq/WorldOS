@@ -24,6 +24,42 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CID = "camp_townslice01"
 
 
+def choose_spawns(cols: int, rows: int, blocked: set, door_cells: list,
+                  n_party: int = 2, n_npc: int = 1) -> dict:
+    """Place the party on the OPEN-FLOOR CENTROID as a compact cluster, clear of prop footprints and
+    door landing rings — NOT the naive first-N-free interior cells (which land the party jammed in a
+    back corner or inside a barrel: the 2026-07-15 'spawn in a barrel' bug, epic #1581 / issue #1584).
+
+    Deterministic + pure so it is unit-testable (qa/test_seed_spawns.py). GEOMETRY IS GROUND TRUTH:
+    `blocked` and `door_cells` come from the room's authored geometry, so the spawn is walkable by
+    construction. Returns {"party": [(c,r),...], "npcs": [(c,r),...]}.
+    """
+    door_ring = {(dc + dx, dr + dy) for (dc, dr) in door_cells
+                 for dx in (-1, 0, 1) for dy in (-1, 0, 1)}
+    door_set = set(door_cells)
+
+    def _free(exclude_ring: bool) -> list:
+        return [(c, r) for r in range(1, rows - 1) for c in range(1, cols - 1)
+                if (c, r) not in blocked and (c, r) not in door_set
+                and (not exclude_ring or (c, r) not in door_ring)]
+
+    free = _free(exclude_ring=True) or _free(exclude_ring=False)  # tiny rooms: relax the door ring
+    if not free:
+        return {"party": [], "npcs": []}
+    cx = sum(c for c, _ in free) / len(free)
+    cy = sum(r for _, r in free) / len(free)
+    # anchor = the open cell nearest the floor centroid (skips a blocked central monument automatically)
+    free.sort(key=lambda p: ((p[0] - cx) ** 2 + (p[1] - cy) ** 2, p[1], p[0]))
+    chosen: list = [free[0]]
+    remaining = free[1:]
+    while len(chosen) < n_party + n_npc and remaining:
+        nxt = min(remaining, key=lambda p: (min((p[0] - q[0]) ** 2 + (p[1] - q[1]) ** 2 for q in chosen),
+                                            (p[0] - cx) ** 2 + (p[1] - cy) ** 2, p[1], p[0]))
+        chosen.append(nxt)
+        remaining.remove(nxt)
+    return {"party": chosen[:n_party], "npcs": chosen[n_party:n_party + n_npc]}
+
+
 def build_grid_from_geometry(geo: dict, location_id: str, town_id: str, room: str,
                              door_pairs: list) -> "SceneGrid":
     """SceneGrid from a generate_town room geometry: perimeter/prop cells impassable, door cells
@@ -53,8 +89,6 @@ def build_grid_from_geometry(geo: dict, location_id: str, town_id: str, room: st
 
     blocked = wall_cells | {tuple(c) for p in geo.get("props", []) if p.get("kind") != "wall_run"
                             for c in p["cells"]}
-    free = [(c, r) for r in range(1, rows - 1) for c in range(1, cols - 1)
-            if (c, r) not in blocked][:4]
 
     grid = SceneGrid(
         scene_id=f"{CID}:{town_id}_{room}", location_id=location_id, kind="town_room",
@@ -66,7 +100,7 @@ def build_grid_from_geometry(geo: dict, location_id: str, town_id: str, room: st
                                mood="lantern-lit stone district"),
     )
     grid.door_cells = door_cells
-    grid.spawns = {"party": free[:2], "npcs": free[2:3]}
+    grid.spawns = choose_spawns(cols, rows, blocked, door_cells)
     grid.art.layout_hash = _layout_hash(grid)
     return grid
 
