@@ -1,0 +1,10 @@
+{
+ "prompt": "Painterly isometric medieval tavern snug interior, firelit, in the Pillars of Eternity 2 Deadfire hand-painted concept-art style. A small warm timber-and-fieldstone drinking room: along the back wall centre a long wooden BAR COUNTER with a polished lighter countertop; a rack of ale KEGS against the back wall west of the bar; set into the right-hand (east) wall an arched STONE HEARTH fireplace with glowing fire and a chimney breast; a stack of split FIREWOOD beside the hearth; one standing iron candelabra with warm flames at the bar's east end; two weathered structural TIMBER SUPPORT POSTS rising from squat stone bases to the roof beams, one mid-west and one mid-east of the room floor; a round wooden communal TABLE with a low bench in the south-west corner and a second round TABLE south-centre, both with generous walking space; two ale CASKS in the west corner; an arched doorway in the back wall and a second doorway in the right wall exactly where the depth map shows openings; worn wooden plank floor, solid timber walls with NO windows, rich warm amber lighting from hearth and candles pooled on the bar, deep cool BLUE-VIOLET shadows pooling in the corners and along the walls (never pure black), a gentle atmospheric haze falloff toward the room edges, the timber-and-fieldstone back walls richly worked with visible beam joints, stone coursing and aged plaster patches, hand-painted texture detail, oil-painted texture, no people, no characters, empty room.",
+ "controlImage": "asset_DaLsZPNzK7ZZgmH5ARSGicQL",
+ "controlModality": "depth",
+ "controlStrength": 0.85,
+ "width": 1344,
+ "height": 768,
+ "numSamples": 1,
+ "seed": 12346
+}
