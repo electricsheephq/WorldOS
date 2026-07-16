@@ -32,7 +32,8 @@ _TOOLS = Path(__file__).resolve().parent
 sys.path.insert(0, str(_TOOLS))
 sys.path.insert(0, str(_TOOLS.parent / "qa"))
 
-from dungen_to_fixtures import convert, build_geometry, dress_tall_anchors  # noqa: E402
+from dungen_to_fixtures import (convert, build_geometry, check_dressing_bars, dress_focal,  # noqa: E402
+                                dress_tall_anchors)
 from author_room_geometry import _perimeter_wall_run_props  # noqa: E402
 from greybox_render_headless import _fit_ortho_size  # noqa: E402
 from walk_static import check_geometry  # noqa: E402
@@ -66,6 +67,10 @@ def main(argv=None) -> int:
     ap.add_argument("--material", default="stone", choices=["stone", "wood"])
     ap.add_argument("--wall-height", type=float, default=5.0)
     ap.add_argument("--world-units-per-cell", type=float, default=2.0)
+    ap.add_argument("--allow-undressed", action="store_true",
+                    help="skip the dressing bars (tall-mass + focal presence) for deliberate cases "
+                         "(e.g. a bare corridor class); default is FAIL LOUD when dressing found no "
+                         "connectivity-safe placement (codex P2 pair, #1611)")
     args = ap.parse_args(argv)
 
     layout = json.loads(Path(args.layout_json).read_text(encoding="utf-8"))
@@ -86,6 +91,9 @@ def main(argv=None) -> int:
     for rid in room_ids:
         geo = _stamp_room(build_geometry(ctx, room=rid),
                           material=args.material, wall_height=args.wall_height)
+        geo = dress_focal(geo, name=loc_of[rid])  # narrative focal set FIRST (braziers/altar are LOW kinds
+        # (2.0-2.2 < the 2.6 tall bar) — dress_tall_anchors still adds pillars after; the dressing-bar
+        # self-gate below fails LOUD if either pass found no connectivity-safe placement)
         geo = dress_tall_anchors(geo, name=loc_of[rid])
         geo["location"] = loc_of[rid]
         # ★ STATIC WALKABILITY GATE (mirrors qa/seed_gfx_registered_world.py): a room geometry that
@@ -93,6 +101,8 @@ def main(argv=None) -> int:
         # never ships — refuse the whole run. Caught here, the three DunGen defect classes (boundary
         # doors, prop-blocked landings, flat-interior mass) are pre-render-impossible.
         gate_fails += [f"{loc_of[rid]}: {f}" for f in check_geometry(loc_of[rid], geo)]
+        if not args.allow_undressed:
+            gate_fails += check_dressing_bars(geo, name=loc_of[rid])
         path = out / f"{args.town_id}_{rid}_geometry.json"
         path.write_text(json.dumps(geo) + "\n", encoding="utf-8")
         geos[rid] = geo
@@ -163,7 +173,11 @@ def main(argv=None) -> int:
     # plates_manifest fragment — cameraPin.ortho from the SAME fit math as the unified render
     frag = {"plates": {loc_of[rid]: {
         "plate": f"plates/{loc_of[rid]}.png",
-        "cameraPin": {"ortho": round(_fit_ortho_size(geos[rid]["cols"], geos[rid]["rows"]), 4)},
+        "cameraPin": {"ortho": round(_fit_ortho_size(geos[rid]["cols"], geos[rid]["rows"]), 4),
+                      # pitch/yaw stamped explicitly (provenance + belt-and-suspenders): the client
+                      # DEFAULTS to the 30/45 contract rig when only ortho is pinned (#1591), but
+                      # every shipped manifest entry carries them and walk_static lints them.
+                      "pitch": 30, "yaw": 45},
         "boxes": f"boxes/{loc_of[rid]}_boxes.json",
     } for rid in room_ids}}
     (out / f"{args.town_id}_plates_fragment.json").write_text(json.dumps(frag, indent=1) + "\n", encoding="utf-8")

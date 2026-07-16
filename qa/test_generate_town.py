@@ -72,6 +72,7 @@ def _build_town_geometries() -> dict:
     geos = {}
     for rid in _ROOMS:
         geo = _stamp_room(d2f.build_geometry(ctx, room=rid))
+        geo = d2f.dress_focal(geo, name=f"{_TOWN}_{rid}")
         geo = d2f.dress_tall_anchors(geo, name=f"{_TOWN}_{rid}")
         geo["location"] = f"{_TOWN}_{rid}"
         geos[rid] = geo
@@ -99,18 +100,24 @@ def test_every_room_has_a_tall_prop(town):
             f"{rid} tallest interior mass {tallest} < {d2f._ANCHOR_MIN_TALL} (flat-interior class)")
 
 
-def test_flat_rooms_get_two_pillar_anchors(town):
-    # room_0 and room_1 are all-crate DunGen rooms -> dressing must author two pillar anchors each;
-    # room_2 already carries a cylinder->pillar, so it must NOT be dressed.
+def test_flat_rooms_get_pillar_anchors(town):
+    # room_0 and room_1 are all-crate DunGen rooms -> the anchor pass must author AT LEAST ONE
+    # pillar anchor each (with the focal pass running first, brazier/altar occupancy can leave room
+    # for only one connectivity-safe pair — one tall anchor still clears the flat-interior bar);
+    # room_2 already carries a cylinder->pillar, so it must NOT get anchors.
     for rid in ("room_0", "room_1"):
         anchors = [p for p in town[rid]["props"] if p.get("id") in ("anchor_a", "anchor_b")]
-        assert {p["id"] for p in anchors} == {"anchor_a", "anchor_b"}, f"{rid} needs both anchors"
+        # >=1 is the HARD bar (one tall mass clears the flat-interior class; check_dressing_bars +
+        # test_every_room_has_a_tall_prop enforce it end-to-end). Two anchors is BEST-EFFORT under
+        # focal occupancy: dress_focal runs first and may consume the second connectivity-safe pair,
+        # so pinning ==2 here would make the suite flake on legitimate focal layouts (evaOS P3).
+        assert len(anchors) >= 1, f"{rid} needs at least one pillar anchor"
         for p in anchors:
             assert p["kind"] == "pillar"
             (c0, r0), (c1, r1) = p["cells"]
             assert c0 == c1 and abs(r0 - r1) == 1, "each anchor is two vertically-adjacent cells"
     assert not [p for p in town["room_2"]["props"] if p.get("id", "").startswith("anchor")], \
-        "room_2 already has a tall pillar and must not be dressed"
+        "room_2 already has a tall pillar and must not get anchors"
 
 
 # ── (c) an on-perimeter door is not moved by the snap ─────────────────────────────────────────────────
@@ -170,3 +177,58 @@ def test_generator_self_gate_passes(tmp_path):
     proc = subprocess.run(cmd, capture_output=True, text=True)
     assert proc.returncode == 0, f"generator self-gate failed:\n{proc.stderr}"
     assert "STATIC GATE RED" not in proc.stderr
+
+
+def test_every_generated_room_has_a_narrative_focal(town):
+    """Beauty-floor dressing (dwing panel lesson): pure-clutter rooms panel at 'clean but generic —
+    no narrative focal point' (6 vs 9, measured 2/2). Every generated room must carry at least one
+    focal kind, placed clear of door landings, with the static gate still green."""
+    for rid, geo in town.items():
+        kinds = {p["kind"] for p in geo["props"]}
+        assert kinds & d2f._FOCAL_KINDS, f"{rid}: no focal kind in {sorted(kinds)}"
+        cols, rows = geo["cols"], geo["rows"]
+        landings = {d2f._door_landing(tuple(d), cols, rows) for d in geo["door_cells"]}
+        focal_cells = {tuple(c) for p in geo["props"] if p["kind"] in d2f._FOCAL_KINDS
+                       for c in p["cells"]}
+        assert not (focal_cells & landings), f"{rid}: focal on a door landing"
+        assert check_geometry(f"{_TOWN}_{rid}", geo) == [], (
+            f"{rid}: static gate regressed after focal dressing")
+
+
+def test_plates_fragment_pins_carry_the_full_camera_contract(tmp_path):
+    """Sidecar round-4 catch: ortho-only pins were the 2026-07-15 camera-bug SHAPE. The client now
+    defaults pitch/yaw (#1591) so they're safe — but every emitter must still stamp the full
+    contract (provenance; walk_static lints pitch/yaw==30/45 when present)."""
+    pytest.importorskip("PIL")  # generate_town imports greybox_render_headless -> PIL; skip in the
+    # minimal engine venv exactly like test_generator_self_gate_passes does for the same subprocess.
+    import json
+    import subprocess
+    out = tmp_path / "frag"
+    out.mkdir()
+    r = subprocess.run(
+        [sys.executable, str(_ROOT / "tools" / "generate_town.py"), str(_LAYOUT),
+         "--rooms", "room_0", "--town-id", "pin", "--out-dir", str(out), "--material", "stone"],
+        capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr[-500:]
+    frag = json.loads((out / "pin_plates_fragment.json").read_text())
+    for rid, entry in frag["plates"].items():
+        pin = entry["cameraPin"]
+        assert pin.get("pitch") == 30 and pin.get("yaw") == 45, f"{rid}: ortho-only pin {pin}"
+
+
+def test_dressing_bars_fail_loud_when_a_pass_places_nothing():
+    """codex P2 pair (#1611): a narrow/dense crop can defeat dress_focal (returns silently) or leave
+    dress_tall_anchors no connectivity-safe pair AFTER focal placement — either silent miss re-ships
+    the exact drift/generic class the dressing exists to fix. check_dressing_bars is the emit-time
+    enforcement generate_town folds into its self-gate (escape hatch: --allow-undressed)."""
+    base = {"cols": 5, "rows": 5, "door_cells": [[0, 2]], "walls": [],
+            "props": [{"id": "w", "kind": "wall_run", "cells": [[0, 0]]}]}
+    both_missing = d2f.check_dressing_bars(dict(base, props=list(base["props"])), name="bare")
+    assert len(both_missing) == 2 and any("tall" in f for f in both_missing)         and any("focal" in f for f in both_missing)
+    tall_only = dict(base, props=base["props"] + [
+        {"id": "a", "kind": "pillar", "cells": [[2, 2], [2, 3]]}])
+    fails = d2f.check_dressing_bars(tall_only, name="tallonly")
+    assert len(fails) == 1 and "focal" in fails[0]
+    dressed = dict(base, props=tall_only["props"] + [
+        {"id": "b", "kind": "brazier", "cells": [[3, 2]]}])
+    assert d2f.check_dressing_bars(dressed, name="ok") == []
