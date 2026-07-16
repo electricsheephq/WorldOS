@@ -143,3 +143,37 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+def fit_similarity(pairs: list) -> dict:
+    """Full 2D similarity T(z)=a·z+b (complex least squares; scale+ROTATION+translation) mapping
+    CURRENT plate px -> TARGET px, from the solve's matched blob->proj_at_stamp pairs. Two beacons
+    determine it exactly — the scale+translate-only path (3 dof) discards the rotation the same two
+    points already encode, and a slight Gemini rotation is exactly the residual it can't fix.
+    Instability guard: |rotation| > 4 deg or scale outside [0.7, 1.4] -> {"unstable": True}."""
+    import cmath
+    zs = [complex(p["blob"][0], p["blob"][1]) for p in pairs]
+    ws = [complex(p["proj_at_stamp"][0], p["proj_at_stamp"][1]) for p in pairs]
+    n = len(zs)
+    mz, mw = sum(zs) / n, sum(ws) / n
+    num = sum((w - mw) * (z - mz).conjugate() for z, w in zip(zs, ws))
+    den = sum(abs(z - mz) ** 2 for z in zs)
+    if den == 0:
+        return {"unstable": True}
+    a = num / den
+    b = mw - a * mz
+    rot_deg = abs(cmath.phase(a)) * 180.0 / 3.141592653589793
+    scale = abs(a)
+    if rot_deg > 6.0 or not (0.7 <= scale <= 1.4):  # guard vs absurd 2-point fits; the post-warp re-solve is the real acceptance
+        return {"unstable": True, "rot_deg": round(rot_deg, 2), "scale": round(scale, 4)}
+    return {"a": a, "b": b, "rot_deg": round(rot_deg, 2), "scale": round(scale, 4)}
+
+
+def apply_similarity(img, sim: dict):
+    """PIL affine apply of T(z)=a z+b. Image.transform maps OUTPUT->INPUT, so we pass T^-1:
+    z = (w - b)/a  ->  matrix [re(1/a), -im(1/a), re(-b/a) ... ] in PIL (a,b,c,d,e,f) order."""
+    from PIL import Image
+    inv_a = 1.0 / sim["a"]
+    inv_b = -sim["b"] / sim["a"]
+    coeffs = (inv_a.real, -inv_a.imag, inv_b.real, inv_a.imag, inv_a.real, inv_b.imag)
+    return img.transform(img.size, Image.AFFINE, coeffs, resample=Image.BICUBIC,
+                         fillcolor=_border_median(img))

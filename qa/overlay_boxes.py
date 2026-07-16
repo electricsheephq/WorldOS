@@ -119,6 +119,19 @@ def blob_solve(boxes: dict, image: Path) -> dict:
         cells = dmin / (768 / (boxes["ortho"] * 2)) / 2.0
         per.append({"bowl_world": [round(x, 1), round(z, 1)], "err_px": round(dmin), "err_cells": round(cells, 2)})
     best["per_bowl_at_stamp"] = per
+    # matched blob<->bowl pairs (for similarity fitting downstream). CORRESPONDENCE is decided at
+    # the FITTED ortho + offset (where blobs actually sit — matching at the stamped projection
+    # mis-pairs beacons on badly-offset plates), but the recorded TARGET is the stamped projection.
+    mp = []
+    fo, (fdx, fdy) = best["fitted_ortho"], best["screen_offset"]
+    for b in bowls:
+        x, y, z = b["center"]
+        r, u = G._camera_ru(x, y + 0.5, z)
+        fx, fy = r / (fo * A) * (W / 2) + W / 2 + fdx, H / 2 - u / fo * (H / 2) + fdy
+        sx, sy = G.world_to_screen(x, y + 0.5, z, ortho_size=boxes["ortho"])
+        bx, by = min(blobs, key=lambda t: (t[0] - fx) ** 2 + (t[1] - fy) ** 2)
+        mp.append({"blob": [float(bx), float(by)], "proj_at_stamp": [float(sx), float(sy)]})
+    best["matched_pairs"] = mp
     return best
 
 
