@@ -341,9 +341,9 @@ def _visual_registration(qa: str, engine: str, mask: dict, ortho: float, cells: 
     # engine-confirm captures a mid-glide sprite 2-4 cells off (measured proof2 run: settled cells
     # register at ~0.16 cells; mid-glide arrivals read 155-727 px). Short hops + a glide-proportional
     # wait give settled frames.
-    todo = [tuple(c) for c in cells]
+    todo = [tuple(c) for c in cells if tuple(c) != prev]   # a zero-hop target has nothing to diff
     chain: list = []
-    cur = prev or todo[0]
+    cur = prev or (todo[0] if todo else None)
     while todo:
         nxt = min(todo, key=lambda p: abs(p[0] - cur[0]) + abs(p[1] - cur[1]))
         chain.append(nxt)
@@ -351,6 +351,8 @@ def _visual_registration(qa: str, engine: str, mask: dict, ortho: float, cells: 
         cur = nxt
     shot_prev = _capture_shot(qa, out, "vis_start")
     for i, cell in enumerate(chain):
+        if tuple(cell) == prev:
+            continue   # no-op move (party already there — e.g. the door stage's return landing)
         ok_move, landed, _p = _drive_and_check(qa, engine, cell[0], cell[1], settle, move_timeout,
                                                expect_move=True)
         hop = (abs(cell[0] - prev[0]) + abs(cell[1] - prev[1])) if prev else 3
@@ -447,9 +449,23 @@ def run_gate(room: str, engine: str, qa: str, *, stride: int, out: Path,
     # says the cell is". Gating when run.
     report["visual"] = {"pass": 0, "fail": 0, "cases": []}
     if visual > 0 and interior:
-        vis_cells = _sample(interior, max(1, len(interior) // max(1, visual)))[:visual]
+        # codex review on #1600: exclude the CURRENT token cell from the pool (a zero-hop target has
+        # nothing to diff) and TOP the sample back up to N from the remaining reachable interior, so
+        # the gate always measures the requested count when enough cells exist.
+        cur = _token_cell(_get(f"{engine}/combat-surface"))
+        pool = [c for c in interior if c != cur]
+        vis_cells = _sample(pool, max(1, len(pool) // max(1, visual)))[:visual]
+        for c in pool:
+            if len(vis_cells) >= visual:
+                break
+            if c not in vis_cells:
+                vis_cells.append(c)
         report["visual"] = _visual_registration(qa, engine, mask, ortho, vis_cells, out,
                                                 settle, move_timeout)
+        # a requested visual gate that measured NOTHING must fail loud, never read as a vacuous GREEN
+        if not report["visual"]["cases"]:
+            report["visual"]["fail"] += 1
+            report["visual"]["error"] = "visual registration requested but produced no measurable cases"
 
     # 6) OCCLUSION evidence — a /shot near an occluder for the human contact sheet (non-gating here).
     shot = _capture_shot(qa, out, f"{room}_final")
