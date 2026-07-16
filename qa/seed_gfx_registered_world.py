@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seed the SHIP-THREE-PLATES registered walkable world: crypt <-> tavern <-> throne_hall.
+"""Seed the registered walkable world — THE 5-ROOM SPINE: crypt <-> tavern <-> shop <-> snug (+throne).
 
 Each room's grid is built DIRECTLY from its shipped geometry (qa/room_geometries/*.json) via the
 generic build_grid_from_geometry — so the walkable grid, the occluder boxes sidecar, and the painted
@@ -8,8 +8,9 @@ level: no 14x11-grid-under-a-16x12-plate scale mismatch. Combat (seed_gfx_combat
 this is a separate campaign for the rendered rest-world the owner walks.
 
 Door graph (crypt = hub):
-  crypt door (7,0)  <-> tavern door (7,0)
-  crypt door (15,5) <-> throne_hall door (8,11)
+  crypt (7,0)  <-> tavern (7,0)        crypt (15,5) <-> throne_hall (8,11)
+  tavern (13,5) <-> shop (6,0)         shop (12,5)  <-> tavern_snug (5,0)
+Remaining declared seams: throne_hall (15,6), tavern_snug (11,4).
 door_cells[i] <-> connections[i] ORDER is the engine cross_door contract (servers/engine/server.py).
 
 Usage: python3 qa/seed_gfx_registered_world.py <state_dir>
@@ -26,13 +27,20 @@ CID = "registered_world_v1"
 GEO = HERE / "room_geometries"
 
 # per room: (location_id, geometry file, [(door_cell, to_location), ...] in door_cells order)
+# THE 5-ROOM SPINE (epic #1581/#1588 scale-out, 2026-07-16): crypt hub <-> tavern <-> shop <-> snug,
+# plus crypt <-> throne. Wiring tavern (13,5) -> shop FIXES the previously-dead painted doorway the
+# 3-room world left unwired (validate_seed_doors had it allowlisted; now it's a real door).
 ROOMS = [
     ("crypt", "crypt_v36_geometry.json",
      [([7, 0], "tavern"), ([15, 5], "throne_hall")]),
     ("tavern", "tavern_v2_geometry.json",
-     [([7, 0], "crypt")]),
+     [([7, 0], "crypt"), ([13, 5], "shop")]),
     ("throne_hall", "throne_hall_geometry.json",
      [([8, 11], "crypt")]),
+    ("shop", "shop_geometry.json",
+     [([6, 0], "tavern"), ([12, 5], "tavern_snug")]),
+    ("tavern_snug", "tavern_snug_geometry.json",
+     [([5, 0], "shop")]),
 ]
 
 
@@ -50,14 +58,14 @@ def main() -> None:
 
     # ★ STATIC GATE AT THE SEED BOUNDARY (epic #1581): an invalid world never enters a campaign —
     # door reciprocity + per-room geometry checks (blocked landings, orphan pockets) + seed-vs-geometry
-    # door agreement REFUSE the seed. KNOWN UNWIRED SEAMS (codex review on #1598): tavern (13,5) and
-    # throne_hall (15,6) are authored+painted doorways this 3-room world deliberately leaves unwired —
-    # future town seams (wire them when the shop/town rooms join the world). Explicit, not silent.
+    # door agreement REFUSE the seed. KNOWN UNWIRED SEAMS (explicit, not silent): throne_hall (15,6)
+    # and tavern_snug (11,4) — the remaining town seams for future rooms. (tavern (13,5) was here
+    # until the 5-room spine wired it to the shop.)
     rooms_spec = [(lid, [(cell, to) for cell, to in doors]) for lid, _g, doors in ROOMS]
     geometries = {lid: json.loads((GEO / geofile).read_text()) for lid, geofile, _d in ROOMS}
     fails = validate_world(rooms_spec)
     fails += validate_seed_doors(rooms_spec, geometries,
-                                 allowed_unwired={("tavern", (13, 5)), ("throne_hall", (15, 6))})
+                                 allowed_unwired={("throne_hall", (15, 6)), ("tavern_snug", (11, 4))})
     for lid, geofile, _doors in ROOMS:
         fails += check_geometry(geofile, geometries[lid])
     if fails:
@@ -67,8 +75,9 @@ def main() -> None:
 
     server.save_campaign(Campaign(
         id=CID, title="Registered walkable world",
-        summary="crypt <-> tavern <-> throne_hall — the SHIP-THREE-PLATES registered rooms "
-                "(panel 8.3/8.4/7.0), grids derived from the same geometry as the plates + boxes.",
+        summary="The 5-room spine: crypt hub <-> tavern <-> shop <-> tavern_snug, plus throne_hall — "
+                "every room panel-in-band AND walk-certified (epic #1581); grids derived from the "
+                "same geometry as the plates + boxes.",
         is_sandbox=True,
     ))
 
@@ -95,7 +104,7 @@ def main() -> None:
         abilities={"strength": 18, "dexterity": 14, "constitution": 16,
                    "intelligence": 10, "wisdom": 12, "charisma": 10},
         apply_srd_defaults=True, add_to_party=True, location_id=handle["crypt"]["id"])
-    print(f"[registered_world] {CID}: 3 rooms seeded (crypt hub -> tavern + throne_hall); "
+    print(f"[registered_world] {CID}: {len(ROOMS)} rooms seeded (the 5-room spine); "
           f"doors {[(l, d) for l, _g, d in ROOMS]}")
 
 
