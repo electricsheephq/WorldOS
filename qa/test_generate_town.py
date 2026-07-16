@@ -107,7 +107,11 @@ def test_flat_rooms_get_pillar_anchors(town):
     # room_2 already carries a cylinder->pillar, so it must NOT get anchors.
     for rid in ("room_0", "room_1"):
         anchors = [p for p in town[rid]["props"] if p.get("id") in ("anchor_a", "anchor_b")]
-        assert anchors, f"{rid} needs at least one pillar anchor"
+        # >=1 is the HARD bar (one tall mass clears the flat-interior class; check_dressing_bars +
+        # test_every_room_has_a_tall_prop enforce it end-to-end). Two anchors is BEST-EFFORT under
+        # focal occupancy: dress_focal runs first and may consume the second connectivity-safe pair,
+        # so pinning ==2 here would make the suite flake on legitimate focal layouts (evaOS P3).
+        assert len(anchors) >= 1, f"{rid} needs at least one pillar anchor"
         for p in anchors:
             assert p["kind"] == "pillar"
             (c0, r0), (c1, r1) = p["cells"]
@@ -195,6 +199,8 @@ def test_plates_fragment_pins_carry_the_full_camera_contract(tmp_path):
     """Sidecar round-4 catch: ortho-only pins were the 2026-07-15 camera-bug SHAPE. The client now
     defaults pitch/yaw (#1591) so they're safe — but every emitter must still stamp the full
     contract (provenance; walk_static lints pitch/yaw==30/45 when present)."""
+    pytest.importorskip("PIL")  # generate_town imports greybox_render_headless -> PIL; skip in the
+    # minimal engine venv exactly like test_generator_self_gate_passes does for the same subprocess.
     import json
     import subprocess
     out = tmp_path / "frag"
