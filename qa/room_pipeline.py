@@ -209,6 +209,22 @@ def run(room: str, mode: str, out: Path, engine: str, qa: str, stride: int, resu
             _log(f"certified -> {report['certification']}")
         except Exception as e:  # noqa: BLE001
             _log(f"certification write failed (non-fatal): {e}")
+    # Surface the walk verdict in the scores ledger (latest-per-room; honest on RED too). Only a
+    # DECIDED walk stage stamps — a MANUAL/pending stage records nothing.
+    walk_status = results.get("walk", {}).get("status")
+    if walk_status in ("GREEN", "RED"):
+        try:
+            import scores_db  # noqa: PLC0415
+            sha = subprocess.run(["git", "-C", str(REPO), "rev-parse", "--short", "HEAD"],
+                                 capture_output=True, text=True, timeout=10).stdout.strip() or None
+            scores_db.record_room_walk(
+                room, walk_status, sha=sha,
+                walk_report_path=str(out / "walk_report.json"),
+                source_path=report.get("certification"),
+                notes=f"room_pipeline --mode {mode}")
+            _log(f"walk ledger: room:{room} = {walk_status}")
+        except Exception as e:  # noqa: BLE001
+            _log(f"walk ledger stamp failed (non-fatal): {e}")
     (out / "pipeline_report.json").write_text(json.dumps(report, indent=2))
     return report
 
