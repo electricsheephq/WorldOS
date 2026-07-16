@@ -96,6 +96,70 @@ def stage_manual(name: str, cmd: str, needs: str) -> dict:
     return {"status": "MANUAL", "detail": f"{name}: run `{cmd}` ({needs})"}
 
 
+# --- room certification (sidecar round-3 adoption): "is this room walk-certified?" answerable cold --
+CERT_DIR = HERE / "certifications"
+
+
+def _sha256(path: Path) -> str:
+    import hashlib  # noqa: PLC0415
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def write_certification(room: str, results: dict, out: Path) -> Path:
+    """On a SHIPPABLE verdict, pin the exact artifacts the gates certified: shas of the plate, the
+    boxes sidecar and the geometry, the manifest entry itself, and a pointer to the walk report.
+    A later consumer (promote.py, CI, a cold agent) calls verify_certification — any sha drift means
+    the certification is STALE and the room must re-gate. Compaction-proof by construction."""
+    import walk_static as WS  # noqa: PLC0415
+    sys.path.insert(0, str(HERE))
+    entry = _manifest_entry(room)
+    cert = {"room": room, "verdicts": {k: v["status"] for k, v in results.items()},
+            "manifest_entry": entry, "artifacts": {}, "walk_report": str(out / "walk_report.json")}
+    plate = REPO / "extensions" / "renderers" / "unity" / entry.get("plate", "")
+    if plate.is_file():
+        cert["artifacts"]["plate_sha256"] = _sha256(plate)
+    boxes = entry.get("boxes")
+    if boxes and (REPO / "extensions" / "renderers" / "unity" / boxes).is_file():
+        cert["artifacts"]["boxes_sha256"] = _sha256(REPO / "extensions" / "renderers" / "unity" / boxes)
+    geof = WS.GEOMETRY_OF.get(room)
+    if geof and (GEO_DIR / geof).is_file():
+        cert["artifacts"]["geometry_sha256"] = _sha256(GEO_DIR / geof)
+    CERT_DIR.mkdir(parents=True, exist_ok=True)
+    path = CERT_DIR / f"{room}.json"
+    path.write_text(json.dumps(cert, indent=2) + "\n")
+    return path
+
+
+def verify_certification(room: str) -> list:
+    """Return failure strings; EMPTY == the room's certification exists and every pinned sha still
+    matches the artifacts on disk (nothing changed since the gates ran)."""
+    import walk_static as WS  # noqa: PLC0415
+    path = CERT_DIR / f"{room}.json"
+    if not path.exists():
+        return [f"{room}: NOT CERTIFIED (no {path.name}) — run room_pipeline to walk-certify"]
+    cert = json.loads(path.read_text())
+    fails = []
+    entry = _manifest_entry(room)
+    if entry != cert.get("manifest_entry"):
+        fails.append(f"{room}: manifest entry changed since certification — re-gate")
+    unity = REPO / "extensions" / "renderers" / "unity"
+    checks = [("plate_sha256", unity / entry.get("plate", ""))]
+    if entry.get("boxes"):
+        checks.append(("boxes_sha256", unity / entry["boxes"]))
+    geof = WS.GEOMETRY_OF.get(room)
+    if geof:
+        checks.append(("geometry_sha256", GEO_DIR / geof))
+    for key, p in checks:
+        pinned = cert.get("artifacts", {}).get(key)
+        if pinned and p.is_file() and _sha256(p) != pinned:
+            fails.append(f"{room}: {key} drifted since certification ({p.name} changed) — re-gate")
+    return fails
+
+
 def run(room: str, mode: str, out: Path, engine: str, qa: str, stride: int, resume: bool) -> dict:
     out.mkdir(parents=True, exist_ok=True)
     marker = out / "stages.json"
@@ -139,6 +203,12 @@ def run(room: str, mode: str, out: Path, engine: str, qa: str, stride: int, resu
     report = {"room": room, "mode": mode, "stages": results,
               "gate_stages": gate_stages, "reds": reds, "pending_manual": manuals,
               "shippable": shippable, "ts": None}
+    if shippable:
+        try:
+            report["certification"] = str(write_certification(room, results, out))
+            _log(f"certified -> {report['certification']}")
+        except Exception as e:  # noqa: BLE001
+            _log(f"certification write failed (non-fatal): {e}")
     (out / "pipeline_report.json").write_text(json.dumps(report, indent=2))
     return report
 
@@ -151,8 +221,18 @@ def main(argv=None) -> int:
     ap.add_argument("--qa", default="http://127.0.0.1:8971")
     ap.add_argument("--stride", type=int, default=3)
     ap.add_argument("--resume", action="store_true")
+    ap.add_argument("--check-cert", action="store_true",
+                    help="only verify the room's certification (sha freshness); exit non-zero on stale/missing")
     ap.add_argument("--out", default=str(HERE / "evidence" / "pipeline"))
     args = ap.parse_args(argv)
+
+    if args.check_cert:
+        fails = verify_certification(args.room)
+        print(f"[room_pipeline] certification {args.room}: "
+              + ("FRESH" if not fails else "STALE/MISSING"))
+        for f in fails:
+            print(f"  - {f}")
+        return 0 if not fails else 1
 
     out = Path(args.out) / args.room
     report = run(args.room, args.mode, out, args.engine, args.qa, args.stride, args.resume)
