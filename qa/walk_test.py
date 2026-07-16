@@ -341,9 +341,9 @@ def _visual_registration(qa: str, engine: str, mask: dict, ortho: float, cells: 
     # engine-confirm captures a mid-glide sprite 2-4 cells off (measured proof2 run: settled cells
     # register at ~0.16 cells; mid-glide arrivals read 155-727 px). Short hops + a glide-proportional
     # wait give settled frames.
-    todo = [tuple(c) for c in cells]
+    todo = [tuple(c) for c in cells if tuple(c) != prev]   # a zero-hop target has nothing to diff
     chain: list = []
-    cur = prev or todo[0]
+    cur = prev or (todo[0] if todo else None)
     while todo:
         nxt = min(todo, key=lambda p: abs(p[0] - cur[0]) + abs(p[1] - cur[1]))
         chain.append(nxt)
@@ -351,6 +351,8 @@ def _visual_registration(qa: str, engine: str, mask: dict, ortho: float, cells: 
         cur = nxt
     shot_prev = _capture_shot(qa, out, "vis_start")
     for i, cell in enumerate(chain):
+        if tuple(cell) == prev:
+            continue   # no-op move (party already there — e.g. the door stage's return landing)
         ok_move, landed, _p = _drive_and_check(qa, engine, cell[0], cell[1], settle, move_timeout,
                                                expect_move=True)
         hop = (abs(cell[0] - prev[0]) + abs(cell[1] - prev[1])) if prev else 3
