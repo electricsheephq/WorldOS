@@ -146,8 +146,18 @@ def main() -> int:
         result["styled"] = {"job": g["job_id"], "asset": g["saved"][0]["asset_id"],
                             "path": str(final_path)}
         if depth_local is not None:
-            result["styled"]["recall_vs_depth"] = round(
-                registration_recall(str(depth_local), str(final_path)), 4)
+            styled_recall = round(registration_recall(str(depth_local), str(final_path)), 4)
+            result["styled"]["recall_vs_depth"] = styled_recall
+            # The Gemini pass can silently RECOMPOSE structure (measured 3/3 on the dwing cycle:
+            # pillar/doorway multiplication took base 0.96 -> styled 0.63). A big base->styled drop
+            # is that signature — warn LOUD so the operator eyeballs the final before any panel.
+            base_recall = result.get("selected", {}).get("recall")
+            drop = (base_recall - styled_recall) if isinstance(base_recall, (int, float)) else None
+            if (drop is not None and drop > 0.15) or styled_recall < 0.60:
+                result["styled"]["registration_warning"] = (
+                    f"styled recall {styled_recall} (base {base_recall}) — structure-lock likely "
+                    "violated (invented/multiplied features); eyeball before panel")
+                print(f"[paint_room] ⚠ REGISTRATION WARNING: {result['styled']['registration_warning']}")
         print(f"[paint_room] FINAL: {final_path}")
 
     (out_dir / "report.json").write_text(json.dumps(result, indent=1))
