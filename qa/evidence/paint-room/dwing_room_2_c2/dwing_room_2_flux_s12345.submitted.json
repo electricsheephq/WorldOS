@@ -1,0 +1,10 @@
+{
+ "prompt": "Painterly isometric medieval stone dungeon crossroads guard chamber interior, torchlit, in the Pillars of Eternity 2 Deadfire hand-painted concept-art style. A four-way crossing chamber: stacked wooden CRATES, BARRELS and masonry RUBBLE piles grouped into the four corners of the room, leaving the central cross of floor clear; FOUR arched stone doorways exactly where the depth map shows openings \u2014 one in the back wall, one in the left-hand (west) wall, one in the right-hand (east) wall and one front-centre \u2014 each with clear floor in front of it. Rough-hewn grey stone block walls and floor flags, one structural STONE PILLAR on a square base rising to the ceiling in the south-east quarter of the floor; wall-mounted iron TORCH sconces with warm flames as the only light sources; warm amber torchlight pooled at the pillars and doorways, deep cool BLUE-VIOLET shadows pooling in the corners and along the walls (never pure black), a gentle atmospheric haze falloff toward the room edges, the stone walls richly worked with visible coursing, cracked mortar and aged water stains, hand-painted texture detail, oil-painted texture, no people, no characters. FEATURE COUNTS (strict): EXACTLY ONE structural stone pillar and NO other pillars or columns anywhere; EXACTLY FOUR arched doorways (back wall, west wall, east wall, front-centre) and NO other wall openings of any kind.",
+ "controlImage": "asset_PwwVmrgKoLWhrFV8qNQgRnnE",
+ "controlModality": "depth",
+ "controlStrength": 0.85,
+ "width": 1344,
+ "height": 768,
+ "numSamples": 1,
+ "seed": 12345
+}

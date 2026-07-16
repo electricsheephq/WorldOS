@@ -1,0 +1,4 @@
+
+---STDERR---
+usage: check_grid_paint_coherence.py [-h] {check,gate-recipes} ...
+check_grid_paint_coherence.py: error: argument cmd: invalid choice: '/Users/lume/WorldOS/extensions/renderers/unity/plates/tavern_v2_registered.png' (choose from 'check', 'gate-recipes')

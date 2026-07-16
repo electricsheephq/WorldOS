@@ -165,43 +165,54 @@ def main() -> int:
                     "violated (invented/multiplied features); eyeball before panel")
                 print(f"[paint_room] ⚠ REGISTRATION WARNING: {result['styled']['registration_warning']}")
 
-            # HARD GATE: a sub-0.60 styled recall is the drift signature. If we have the boxes sidecar
-            # (brazier beacons), attempt the SAME deterministic corrective warp reregister_plate uses,
-            # re-measure recall against the depth, and adopt the corrected plate if it clears 0.60.
-            # Still < 0.60 after correction (or no --boxes to attempt it) => REGISTRATION FAILED (non-zero).
-            if styled_recall < 0.60:
-                if args.boxes:
-                    from reregister_plate import reregister  # noqa: E402  (deterministic beacon warp)
-                    boxes_sc = json.loads(Path(args.boxes).read_text())
-                    corrected_path = out_dir / f"{args.room_class}_final_1344_reregistered.png"
-                    rep = reregister(boxes_sc, final_path, corrected_path)
-                    corr = {"attempted": True, "path": str(corrected_path),
-                            "solve": {"before": rep.get("before"), "after": rep.get("after"),
-                                      "scale": rep.get("scale"), "translate": rep.get("translate")}}
-                    if "error" not in rep:
-                        corr_recall = round(registration_recall(str(depth_local), str(corrected_path)), 4)
-                        corr["recall_vs_depth"] = corr_recall
-                        if corr_recall >= 0.60:
-                            # adopt the corrected plate as the final output
-                            subprocess.run(["cp", str(corrected_path), str(final_path)], check=True)
-                            corr["adopted"] = True
-                            result["styled"]["recall_vs_depth"] = corr_recall
-                            print(f"[paint_room] corrective warp adopted: recall {styled_recall} -> {corr_recall}")
-                        else:
-                            registration_failed = True
-                    else:
-                        corr["error"] = rep["error"]
-                        registration_failed = True
-                    result["styled"]["corrected"] = corr
+            # HARD GATE (#1618 upgrade): recall CANNOT gate registration — measured 2026-07-16: a
+            # draw at recall 0.6377 (above the old 0.60 floor) sat 1.45 CELLS off. With --boxes the
+            # gate is SOLVE-BASED: brazier-beacon err_cells must be <= 0.35 at the stamped ortho.
+            # Over the bar => attempt the SIMILARITY warp (rotation term — Gemini measurably rotates
+            # plates 1-4.75°), re-solve, adopt if it clears; still over => REGISTRATION FAILED
+            # (non-zero). Recall stays RECORDED (drift telemetry) but no longer gates. Without
+            # --boxes: warn-only (backward compatible).
+            if args.boxes:
+                from PIL import Image  # noqa: E402
+                from overlay_boxes import blob_solve  # noqa: E402
+                from reregister_plate import _max_err_cells, apply_similarity, fit_similarity  # noqa: E402
+                boxes_sc = json.loads(Path(args.boxes).read_text())
+                solve0 = blob_solve(boxes_sc, final_path)
+                corr = {"gate": "err_cells<=0.35 (solve-based, #1618)"}
+                if "error" in solve0:
+                    corr.update(attempted=False, error=solve0["error"])
+                    registration_failed = True  # unsolvable = ungateable = not shippable
                 else:
-                    result["styled"]["corrected"] = {"attempted": False,
-                                                     "note": "no --boxes: warn-only (no hard gate)"}
+                    err0 = _max_err_cells(solve0)
+                    corr["before_err_cells"] = err0
+                    if err0 > 0.35:
+                        sim = fit_similarity(solve0["matched_pairs"])
+                        if sim.get("unstable"):
+                            corr.update(attempted=True, unstable=sim)
+                            registration_failed = True
+                        else:
+                            corrected_path = out_dir / f"{args.room_class}_final_1344_reregistered.png"
+                            apply_similarity(Image.open(final_path).convert("RGB"), sim).save(corrected_path)
+                            solve1 = blob_solve(boxes_sc, corrected_path)
+                            err1 = _max_err_cells(solve1) if "error" not in solve1 else 99.0
+                            corr.update(attempted=True, rot_deg=sim["rot_deg"], scale=sim["scale"],
+                                        after_err_cells=err1, path=str(corrected_path))
+                            if err1 <= 0.35:
+                                subprocess.run(["cp", str(corrected_path), str(final_path)], check=True)
+                                corr["adopted"] = True
+                                print(f"[paint_room] similarity warp adopted: err_cells {err0} -> {err1}")
+                            else:
+                                registration_failed = True
+                result["styled"]["corrected"] = corr
+            else:
+                result["styled"]["corrected"] = {"attempted": False,
+                                                 "note": "no --boxes: warn-only (no hard gate)"}
         print(f"[paint_room] FINAL: {final_path}")
 
     (out_dir / "report.json").write_text(json.dumps(result, indent=1))
     print(f"[paint_room] report: {out_dir/'report.json'}")
     if registration_failed:
-        print("[paint_room] ✖ REGISTRATION FAILED: styled recall < 0.60 after corrective warp "
+        print("[paint_room] ✖ REGISTRATION FAILED: beacon err_cells > 0.35 after similarity warp "
               f"(see {out_dir/'report.json'})", file=sys.stderr)
         return 1
     return 0

@@ -1,0 +1,726 @@
+{
+  "room": "dwing_room_1",
+  "ortho": 7.997,
+  "sceneId": "camp_townslice01:dwing_sandbox_v1_dwing_room_0",
+  "grid": {
+    "cols": 12,
+    "rows": 13
+  },
+  "camera": {
+    "dbg": {
+      "ok": true,
+      "enq": 61,
+      "deq": 61,
+      "acted": 167,
+      "surf": 231,
+      "busy": false,
+      "last": "cell(7,6) rest=True foe=(-1,-1)'' imp=n occ=n",
+      "camOrtho": 10.5224,
+      "camRx": 30,
+      "camRy": 45,
+      "camRz": 0,
+      "camPx": -48.9898,
+      "camPy": 40,
+      "camPz": -48.9898,
+      "originVX": 0.5,
+      "originVY": 0.5
+    },
+    "fails": [
+      "camOrtho 10.5224 != pinned 7.9970"
+    ],
+    "ok": false
+  },
+  "orphans": [],
+  "path": {
+    "pass": 0,
+    "fail": 0,
+    "violations": []
+  },
+  "reachable": {
+    "pass": 19,
+    "fail": 0,
+    "cases": [
+      {
+        "cell": [
+          2,
+          2
+        ],
+        "landed": [
+          2,
+          2
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          2,
+          5
+        ],
+        "landed": [
+          2,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          2,
+          8
+        ],
+        "landed": [
+          2,
+          8
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          3,
+          2
+        ],
+        "landed": [
+          3,
+          2
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          3,
+          5
+        ],
+        "landed": [
+          3,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          3,
+          8
+        ],
+        "landed": [
+          3,
+          8
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          4,
+          5
+        ],
+        "landed": [
+          4,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          4,
+          10
+        ],
+        "landed": [
+          4,
+          10
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          5,
+          8
+        ],
+        "landed": [
+          5,
+          8
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          6,
+          2
+        ],
+        "landed": [
+          6,
+          2
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          6,
+          9
+        ],
+        "landed": [
+          6,
+          9
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          7,
+          3
+        ],
+        "landed": [
+          7,
+          3
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          7,
+          6
+        ],
+        "landed": [
+          7,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          8,
+          2
+        ],
+        "landed": [
+          8,
+          2
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          8,
+          6
+        ],
+        "landed": [
+          8,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          9,
+          2
+        ],
+        "landed": [
+          9,
+          2
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          9,
+          5
+        ],
+        "landed": [
+          9,
+          5
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          9,
+          8
+        ],
+        "landed": [
+          9,
+          8
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          10,
+          6
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      }
+    ]
+  },
+  "impassable": {
+    "pass": 34,
+    "fail": 0,
+    "cases": [
+      {
+        "cell": [
+          0,
+          0
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          0,
+          3
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          0,
+          6
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          0,
+          9
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          0,
+          12
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          1,
+          2
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          1,
+          5
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          1,
+          8
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          1,
+          11
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          2,
+          1
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          3,
+          0
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          3,
+          12
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          4,
+          2
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          4,
+          6
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          4,
+          12
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          5,
+          4
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          5,
+          7
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          6,
+          0
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          6,
+          5
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          6,
+          11
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          7,
+          1
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          7,
+          11
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          8,
+          1
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          8,
+          8
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          9,
+          0
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          9,
+          12
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          10,
+          2
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          10,
+          5
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          10,
+          9
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          10,
+          12
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          11,
+          2
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          11,
+          5
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          11,
+          9
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          11,
+          12
+        ],
+        "landed": [
+          10,
+          6
+        ],
+        "ok": true
+      }
+    ]
+  },
+  "doors": {
+    "pass": 1,
+    "fail": 0,
+    "cases": [
+      {
+        "cell": [
+          11,
+          6
+        ],
+        "to": "dwing_room_1",
+        "ok": true,
+        "detail": {
+          "crossed_to": "dwing_room_1",
+          "target": "dwing_room_1"
+        }
+      }
+    ]
+  },
+  "shots": [
+    "qa/evidence/walk-dwing_room_1/dwing_room_1/shot_dwing_room_1_final.png"
+  ],
+  "verdict": "RED",
+  "visual": {
+    "pass": 3,
+    "fail": 2,
+    "cases": [
+      {
+        "cell": [
+          8,
+          3
+        ],
+        "moved": true,
+        "dist_px": 23.5,
+        "tol_px": 125.0,
+        "ok": true,
+        "dist_prev_px": 97.1,
+        "n_blobs": 2
+      },
+      {
+        "cell": [
+          3,
+          3
+        ],
+        "moved": true,
+        "dist_px": 357.0,
+        "tol_px": 125.0,
+        "ok": false,
+        "dist_prev_px": 23.5,
+        "n_blobs": 2
+      },
+      {
+        "cell": [
+          2,
+          2
+        ],
+        "moved": true,
+        "dist_px": 132.3,
+        "tol_px": 125.0,
+        "ok": false,
+        "dist_prev_px": 29.2,
+        "n_blobs": 3
+      },
+      {
+        "cell": [
+          4,
+          9
+        ],
+        "moved": true,
+        "dist_px": 27.2,
+        "tol_px": 125.0,
+        "ok": true,
+        "dist_prev_px": 132.3,
+        "n_blobs": 3
+      },
+      {
+        "cell": [
+          6,
+          9
+        ],
+        "moved": true,
+        "dist_px": 53.9,
+        "tol_px": 125.0,
+        "ok": true,
+        "dist_prev_px": 27.2,
+        "n_blobs": 2
+      }
+    ],
+    "window": [
+      1280,
+      800
+    ]
+  }
+}
