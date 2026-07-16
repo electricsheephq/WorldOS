@@ -38,10 +38,15 @@ KINDS = ("character", "monster", "room", "effect", "sound")
 # requested kind has no usable default. Keeps the never-null / never-throw
 # guarantee even with no data on disk. Points at the proven hero template paths.
 _HARDCODED_FLOOR: Dict[str, Any] = {
+    # #1601: the in-code floor (used only when registry.json is missing/corrupt) must be an
+    # ANIMATED humanoid, never the clipless Assets/painterly/models/hero.fbx that rendered a
+    # sideways T-pose for runtime-spawned rogues. patron_commoner is a rigged humanoid whose
+    # idle lives in a separate moveset fbx, so anim_ref names it. Mirrors AssetRegistry.cs's
+    # HardcodedFloor and the client's in-code ResolveAsset char default.
     "kind": "character",
-    "model_ref": "Assets/painterly/models/hero.fbx",
-    "albedo_ref": "Assets/painterly/models/hero_albedo.png",
-    "anim_ref": "Assets/painterly/models/hero@moveset.fbx",
+    "model_ref": "Assets/chars_v2/patron_commoner/rigged.fbx",
+    "albedo_ref": "Assets/chars_v2/patron_commoner/albedo.jpg",
+    "anim_ref": "Assets/chars_v2/patron_commoner/anim_idle.fbx",
     "gen_recipe": "in-code hardcoded floor (registry.json missing or unreadable)",
     "version": "0.0.0",
     "critic_score": None,

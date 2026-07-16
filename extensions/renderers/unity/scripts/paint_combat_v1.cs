@@ -328,9 +328,14 @@ System.Func<string,string> slugify=(s)=>{ if(string.IsNullOrEmpty(s)) return "";
 // this asset (e.g. the static hero.fbx entry, which documents no clips) so the caller can fall
 // back to the prior mesh-as-poseClip behavior for those assets.
 System.Func<string,string,string[]> resolveAsset=(slug,kind)=>{
-  string fbxDef=kind=="monster"?"Assets/chars_v2/goblin/goblin.fbx":"Assets/painterly/models/hero.fbx";
-  string albDef=kind=="monster"?"Assets/chars_v2/goblin/albedo.png":"Assets/painterly/models/hero_albedo.png";
-  if(regAssets==null) return new string[]{fbxDef,albDef,""};
+  // #1601: the character floor must be an ANIMATED humanoid — hero.fbx is the one non-humanoid
+  // model (isHuman=false, no clips): it fails the controller gate into a frozen sideways T-pose.
+  // Mirrors CombatSurfaceClient.ResolveAsset's patron_commoner floor exactly (the two must not
+  // silently diverge — evaOS #1616 P2 caught this copy still flooring to hero.fbx).
+  string fbxDef=kind=="monster"?"Assets/chars_v2/goblin/goblin.fbx":"Assets/chars_v2/patron_commoner/rigged.fbx";
+  string albDef=kind=="monster"?"Assets/chars_v2/goblin/albedo.png":"Assets/chars_v2/patron_commoner/albedo.jpg";
+  string animDef=kind=="monster"?"":"Assets/chars_v2/patron_commoner/anim_idle.fbx";
+  if(regAssets==null) return new string[]{fbxDef,albDef,animDef};
   string id=slug; bool exactOrAlias=regAssets.ContainsKey(id);
   if(!exactOrAlias && regAliases!=null && regAliases.ContainsKey(id)){ id=regAliases[id] as string; exactOrAlias = id!=null && regAssets.ContainsKey(id); }
   if(!exactOrAlias && regDefaults!=null){ if(regDefaults.ContainsKey(kind)) id=regDefaults[kind] as string; else if(regDefaults.ContainsKey("__any__")) id=regDefaults["__any__"] as string; }
@@ -342,8 +347,12 @@ System.Func<string,string,string[]> resolveAsset=(slug,kind)=>{
     // an UNRELATED default mesh's texture (mismatched UVs) onto a real, distinct asset is WORSE than leaving
     // its native material: this exact substitution produced the garbled "camo" read on the fighter (#1423).
     string alOut = string.IsNullOrEmpty(al) ? (exactOrAlias ? null : albDef) : al;
-    return new string[]{ string.IsNullOrEmpty(m)?fbxDef:m, alOut, an??"" }; } }
-  return new string[]{fbxDef,albDef,""};
+    // #1601: same template-vs-real split for anim_ref — a REAL asset row with no anim_ref keeps the
+    // documented mesh-as-poseClip fallback (""), but a TEMPLATE-DEFAULT fall-through takes the
+    // animated floor's idle so an unknown name can never render clipless.
+    string anOut = string.IsNullOrEmpty(an) ? (exactOrAlias ? "" : animDef) : an;
+    return new string[]{ string.IsNullOrEmpty(m)?fbxDef:m, alOut, anOut }; } }
+  return new string[]{fbxDef,albDef,animDef};
 };
 foreach(var o in toks){ var t=o as System.Collections.Generic.Dictionary<string,object>; if(t==null||!t.ContainsKey("x")||t["x"]==null) continue;
   int cx=System.Convert.ToInt32(t["x"]); int cy=System.Convert.ToInt32(t["y"]); string team=t["team"] as string; string nm=t["name"] as string;

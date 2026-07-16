@@ -115,16 +115,15 @@
     },
     "template_human": {
       "kind": "character",
-      "model_ref": "Assets/painterly/models/hero.fbx",
-      "albedo_ref": "Assets/painterly/models/hero_albedo.png",
-      "anim_ref": "Assets/painterly/models/hero@moveset.fbx",
-      "gen_recipe": "DEFAULT TEMPLATE: any character without a model resolves here. #anim-pack (#1408): hero.fbx has a GENERIC (non-humanoid) rig — anim_pack_avatar_gate.cs re-imported it as Humanoid/CreateFromThisModel but auto-mapping could not produce a valid humanoid avatar (isHuman=false, isValid=true), so it CANNOT retarget the shared RPG-pack controller. It stays on the per-frame idle/donor graph fallback (its own embedded idle clip) and is flagged needs_remodel pending a proper humanoid rig.",
-      "version": "1.0.0",
-      "critic_score": 7.4,
+      "model_ref": "Assets/chars_v2/patron_commoner/rigged.fbx",
+      "albedo_ref": "Assets/chars_v2/patron_commoner/albedo.jpg",
+      "anim_ref": "Assets/chars_v2/patron_commoner/anim_idle.fbx",
+      "gen_recipe": "DEFAULT TEMPLATE: any character without a dedicated model resolves here (defaults.character and __any__ both point here). #1601: RE-POINTED off the clipless Assets/painterly/models/hero.fbx. hero.fbx has a GENERIC non-humanoid rig (isHuman=false) with no resolvable idle clip, so a runtime-spawned character that fell to this floor -- e.g. the rogues 'Gauge' (shop sandbox) and 'Sable' (dwing sandbox), whose in-game NAME slugifies to a key that is neither an asset nor an alias -- landed on hero.fbx: it failed the humanoid-controller gate AND PlayIdleGraph got a null clip, so it rendered a SIDEWAYS T-POSE (a non-skinned import takes the -90 pitch stand-up, then never animates). Meanwhile 'Aldric' animates because 'aldric' aliases to the Humanoid 'fighter'. The floor is now patron_commoner -- the generic reusable NPC the tavern/camp cast already spawn correctly -- a rigged humanoid whose meshy 9-clip idle lives in anim_idle.fbx, so it animates via the SAME per-frame idle-graph fallback every Generic-import character uses (FindOwnClip resolves 'idle' from the anim_ref moveset). This kills the T-pose class at the floor rather than adding a code branch, exactly like the #1423 wren/camp-scout alias fix. A dedicated painterly 'template human' remodel can repoint this later; until then the character floor is a real animated humanoid.",
+      "version": "2.0.0",
+      "critic_score": 0.0,
       "default_used": false,
       "is_template": true,
-      "humanoid": false,
-      "needs_remodel": true
+      "humanoid": true
     },
     "template_demon": {
       "kind": "monster",
