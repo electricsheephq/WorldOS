@@ -63,7 +63,7 @@ def main() -> None:
             make_current=(lid == "tavern_snug"),
             description=f"The {lid.replace('_', ' ')} (walk-gate fixture).")
     c = server._require(CID)
-    for lid, geofile, doors in ROOMS:
+    for lid, _geofile, doors in ROOMS:
         eid = handle[lid]["id"]
         c.locations[eid].connections = [handle[to]["id"] for _cell, to in doors]
         door_pairs = [{"cell": cell, "to": lid} for cell, _to in doors]
