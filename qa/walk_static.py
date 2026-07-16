@@ -42,6 +42,7 @@ GEOMETRY_OF = {
     "tavern": "tavern_v2_geometry.json",
     "throne_hall": "throne_hall_geometry.json",
     "shop": "shop_geometry.json",
+    "tavern_snug": "tavern_snug_geometry.json",
 }
 CONTRACT_PITCH, CONTRACT_YAW = 30.0, 45.0
 # mirror greybox_render_headless (kept dependency-free so CI needs no PIL/numpy)
