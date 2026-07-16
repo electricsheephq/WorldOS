@@ -74,6 +74,13 @@ _KIND_HEIGHT = {
 # Fallback proxy per shape class when kind_hint names nothing known.
 _SHAPE_DEFAULT_KIND = {"box": "crate", "cylinder": "pillar", "cone": "large_tree"}
 
+# A prop whose exported bounds have (near-)zero vertical extent is a structural surface (floor/ceiling
+# plane), not an obstacle — see _prop_entries.
+_PLANE_EPS = 1e-3
+# Flat-interior-class threshold (#1588): a room whose tallest INTERIOR mass is below this drifts the
+# paint stage; a `pillar` (authored height 7.5) clears it — see dress_tall_anchors.
+_ANCHOR_MIN_TALL = 2.6
+
 
 def _resolve_kind(shape_class: str, kind_hint: str) -> str:
     hint = (kind_hint or "").lower()
@@ -157,6 +164,11 @@ def _prop_entries(layout: dict, proj: Projector, floor: set) -> list:
         if anchor not in cells:
             anchor = cells[0]
         band = _height_band(kind)
+        # A DunGen "Ground Plane"/"Ceiling Plane" is a zero-height rendered surface that covers the whole
+        # room footprint — never a collidable obstacle. Tag it so the per-room greybox crop can drop it
+        # (folding it into walls would crate the entire interior). Additive field; build_scenegrid picks
+        # its output keys explicitly, so the emitted SceneGrid fixture is unaffected.
+        y_extent = (float(bmax[1]) - float(bmin[1])) if (bmin and bmax) else 1.0
         entries.append({
             "id": str(p.get("id") or f"prop_{i}"),
             "kind": kind,
@@ -165,6 +177,7 @@ def _prop_entries(layout: dict, proj: Projector, floor: set) -> list:
             "height_band": band,
             "occluder": band in ("mid", "tall"),
             "kind_hint": p.get("kind_hint", ""),
+            "structural_plane": y_extent <= _PLANE_EPS,
         })
     return entries
 
@@ -285,6 +298,117 @@ def build_scenegrid(ctx: dict, *, location_id: str) -> dict:
     }
 
 
+# ── door perimeter snap + landing helpers (per-room crop path) ──────────────────────────────────────
+def _on_perimeter(c: int, r: int, cols: int, rows: int) -> bool:
+    return c in (0, cols - 1) or r in (0, rows - 1)
+
+
+def _snap_door_to_perimeter(cell: tuple, cols: int, rows: int, forward=None) -> tuple:
+    """A doorway that projects onto the room-tile boundary lands one cell inside the crop's padded wall
+    ring (on the floor edge), not on the grid perimeter check_geometry requires. Move it OUTWARD to the
+    adjacent perimeter cell: direction = the nearest grid edge; the doorway's world `forward` breaks a
+    tie. On-perimeter doors are returned unchanged. Col grows with +x, row grows with -z (row =
+    (max_z - wz)/upc), so the outward direction of each edge dots with forward as scored below."""
+    c, r = cell
+    if _on_perimeter(c, r, cols, rows):
+        return (c, r)
+    fx = float(forward[0]) if forward else 0.0
+    fz = float(forward[2]) if forward and len(forward) > 2 else 0.0
+    # (distance-to-edge, target perimeter cell, forward alignment) — nearest edge wins, best align breaks
+    cands = [
+        (c,            (0, r),         -fx),  # left  edge (outward -x)
+        (cols - 1 - c, (cols - 1, r),   fx),  # right edge (outward +x)
+        (r,            (c, 0),          fz),  # top   edge (outward +z -> row 0)
+        (rows - 1 - r, (c, rows - 1),  -fz),  # bottom edge (outward -z)
+    ]
+    _dist, target, _align = min(cands, key=lambda x: (x[0], -x[2]))
+    return target
+
+
+def _door_landing(cell: tuple, cols: int, rows: int) -> tuple:
+    """The interior cell a perimeter door opens onto (mirrors walk_static.check_geometry's `inward`)."""
+    c, r = cell
+    return (c + (1 if c == 0 else -1 if c == cols - 1 else 0),
+            r + (1 if r == 0 else -1 if r == rows - 1 else 0))
+
+
+def dress_tall_anchors(geo: dict, *, name: str = "room") -> dict:
+    """Flat-interior-class dressing (#1588): if a cropped room has NO interior prop kind with authored
+    height >= _ANCHOR_MIN_TALL (heights per _KIND_HEIGHT; `pillar` qualifies), author two `pillar`
+    anchors (`anchor_a`/`anchor_b`, each two vertically-adjacent cells, mirroring author_tavern_snug's
+    post_w/post_e convention) so the paint stage has a tall mass to anchor architecture on. Placement is
+    DETERMINISTIC (grid-derived candidate order, no random module): cells that are floor, not door cells,
+    not a door landing or adjacent to one, not already prop cells, ordered toward the interior
+    third-points. Each candidate is flood-fill-verified to keep the walkable floor fully connected with no
+    orphan pocket before it is kept; a candidate that breaks connectivity is skipped."""
+    interior = [p for p in geo.get("props", []) if p.get("kind") != "wall_run"]
+    if any(_KIND_HEIGHT.get(p.get("kind"), 0.0) >= _ANCHOR_MIN_TALL for p in interior):
+        return geo
+    cols, rows = int(geo["cols"]), int(geo["rows"])
+    doors = {tuple(d) for d in geo.get("door_cells", [])}
+    landings = {_door_landing(d, cols, rows) for d in doors}
+    landing_block = set(landings)
+    for (c, r) in landings:
+        landing_block |= {(c + 1, r), (c - 1, r), (c, r + 1), (c, r - 1)}
+
+    def free_set(extra_blocked: set) -> set:
+        prop_cells = {tuple(c) for p in geo.get("props", []) if p.get("kind") != "wall_run"
+                      for c in p.get("cells", [])} | extra_blocked
+        walls = ({tuple(c) for c in geo.get("walls", [])} | prop_cells) - doors
+        return {(c, r) for r in range(rows) for c in range(cols) if (c, r) not in walls}
+
+    base_free = free_set(set())
+
+    def connectivity_ok(blocked: set) -> bool:
+        free = free_set(blocked)
+        starts = [land for land in landings if land in free]
+        if not starts:
+            return False
+        seen, stack = {starts[0]}, [starts[0]]
+        while stack:
+            c, r = stack.pop()
+            for n in ((c + 1, r), (c - 1, r), (c, r + 1), (c, r - 1)):
+                if n in free and n not in seen:
+                    seen.add(n)
+                    stack.append(n)
+        if any(land not in seen for land in starts):
+            return False
+        interior_free = {(c, r) for (c, r) in free if 0 < c < cols - 1 and 0 < r < rows - 1}
+        return not (interior_free - seen)
+
+    def candidates(ideal: tuple) -> list:
+        pairs = []
+        for c in range(1, cols - 1):
+            for r in range(1, rows - 2):  # r and r+1 both strictly interior
+                pair = ((c, r), (c, r + 1))
+                if all(cell in base_free and cell not in doors and cell not in landing_block
+                       for cell in pair):
+                    d = sum(abs(cc - ideal[0]) + abs(rr - ideal[1]) for (cc, rr) in pair)
+                    pairs.append((d, r, c, pair))
+        pairs.sort()
+        return [p[3] for p in pairs]
+
+    ideals = [(cols // 3, rows // 3), (2 * cols // 3, 2 * rows // 3)]
+    placed: list = []
+    used: set = set()
+    for ideal in ideals:
+        for pair in candidates(ideal):
+            if any(cell in used for cell in pair):
+                continue
+            if connectivity_ok(used | set(pair)):
+                placed.append(pair)
+                used |= set(pair)
+                break
+    for pid, pair in zip(("anchor_a", "anchor_b"), placed):
+        geo["props"].append({"id": pid, "kind": "pillar", "cells": [list(pair[0]), list(pair[1])]})
+    # recompute impassable to fold in the new anchors (walls stay perimeter-only, matching _stamp_room)
+    wall_cells = {tuple(c) for c in geo.get("walls", [])}
+    prop_cells = {tuple(c) for p in geo.get("props", []) if p.get("kind") != "wall_run"
+                  for c in p.get("cells", [])}
+    geo["impassable"] = [list(c) for c in sorted(wall_cells | prop_cells - doors, key=lambda x: (x[1], x[0]))]
+    return geo
+
+
 # ── (b) greybox geometry json (whole dungeon or one cropped room) ───────────────────────────────────
 def build_geometry(ctx: dict, *, room: Optional[str] = None) -> dict:
     proj: Projector = ctx["_projector"]
@@ -310,9 +434,26 @@ def build_geometry(ctx: dict, *, room: Optional[str] = None) -> dict:
         window = {(c, r) for r in range(r0, r1 + 1) for c in range(c0, c1 + 1)}
         floor_w = {shift(cr) for cr in (room_floor | (door_set & window)) if cr in window}
         door_w = {shift(cr) for cr in door_set if cr in window}
-        props = [p for p in props_all if any(tuple(c) in room_floor for c in p["cells"])]
+        # Drop DunGen structural surface planes (zero-height Ground/Ceiling planes) — a rendered floor/
+        # ceiling covers the whole footprint and would crate the entire interior, orphaning it.
+        props = [p for p in props_all if not p.get("structural_plane")
+                 and any(tuple(c) in room_floor for c in p["cells"])]
         props_w = [{"kind": p["kind"], "cells": [list(shift(tuple(c))) for c in p["cells"]
                                                  if shift(tuple(c)) in floor_w]} for p in props]
+        props_w = [p for p in props_w if p["cells"]]
+        # DOOR PERIMETER SNAP: a doorway on the room-tile boundary projects one cell inside the padded
+        # wall ring (on the floor edge). Move each off-perimeter door OUTWARD to the adjacent perimeter
+        # cell (carved walkable, listed in door_cells); the old floor-edge cell stays floor and becomes
+        # the landing. On-perimeter doors are left untouched. Door count is preserved (1:1 snap), so the
+        # world/seed door_cells[i] <-> connections[i] contract is unchanged.
+        forward_of = {shift(gcell): tuple(d.get("forward") or (0, 0, 0))
+                      for (gcell, d) in ctx["_doors"] if gcell in window}
+        door_w = {_snap_door_to_perimeter(dc, cols, rows, forward_of.get(dc)) for dc in door_w}
+        floor_w |= door_w  # the snapped perimeter cell is carved walkable floor
+        # LANDING CLEARANCE: each door's interior landing must stay walkable — drop any prop cell on it.
+        landings = {_door_landing(dc, cols, rows) for dc in door_w}
+        for p in props_w:
+            p["cells"] = [c for c in p["cells"] if tuple(c) not in landings]
         props_w = [p for p in props_w if p["cells"]]
     else:
         cols, rows = proj.cols, proj.rows
