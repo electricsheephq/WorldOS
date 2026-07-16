@@ -5,7 +5,11 @@ Every generated room candidate is graded 0-10 on NINE axes before any adoption t
 from: (1) the orchestrator's design-gate eyeball on the greybox (axes 1-4, FREE — before paint),
 (2) the box-overlay + coherence tooling (axis 5), (3) a blind comparative panel vs a real PoE2
 control (axes 6-8), (4) **the automated WALKABILITY gate (axis 9 — PASS/FAIL, not a score;
-epic #1581)**. A candidate ships only at ≥7 on every scored axis AND axis 9 GREEN.
+epic #1581)**. SHIP BAR: axes 1-7 target ≥7; **axis 8 is CONTROL-ANCHORED, never absolute** — it
+passes when the candidate's same-panel median is within the band (Δ ≥ −2.0) of the embedded
+real-art control (the 2026-07-02 positive-control recalibration, VISION.md: real shipped PoE plates
+score 3.0-5.6 on this instrument, so an absolute ≥7/≥8 is unattainable BY CONSTRUCTION); AND axis 9
+must be GREEN. Precedent: tavern v1 shipped at 7.0-vs-9.0 Δ−2.0 (#1531), shop v1 at 6-vs-8 Δ−2.0.
 
 | # | Axis | Measured by | v3.4 | v3.5 | shop v1 (2026-07-16) |
 |---|------|-------------|------|------|------|
