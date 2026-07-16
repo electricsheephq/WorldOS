@@ -477,10 +477,48 @@ def author_tavern_fit2() -> dict:
     return geo
 
 
+def author_shop() -> dict:
+    """13x10 firelit GENERAL-GOODS SHOP — the Room Readiness Pipeline's scale-proof class (epic #1581,
+    issue #1588): a brand-new interior class authored to run the WHOLE chain (geometry → unified render
+    → pinned paint → beauty gate → WALK gate) hands-off, proving the pipeline generalises past the
+    shipped crypt/tavern/throne trio.
+
+    Authored under the EXTENT CONTRACT + the DENSITY LAW (tavern_fit2 pattern): explicit continuous
+    ``wall_run`` perimeter band with the two doors left open; a rich prop set so the depth-CN base has
+    real surfaces to carve (RICHNESS PRINCIPLE) and every solid object maps to an authored impassable
+    cell (paint == world). Focal point: the 4-cell COUNTER mid-room with open floor on every side; a
+    tall SHELVING run against the back wall (unknown kind ⇒ the 2.6 default mass — shelving IS boxy);
+    barrels/crates/sacks as short 2-cell mid/low runs; a customer bench (low log silhouette); one
+    brazier hugging the counter end for the warm key light. Identity (shelves vs crates vs sacks) is
+    carried by the style-pass prompt, not the greybox.
+
+    Walkability by construction: back door (6,0) landing (6,1) clear; east door (12,5) landing (11,5)
+    clear; row 8 = the fully open front lane; rows 2 and 4 = open aisles around the counter. LOW props
+    stay in cols 2-11 / rows 1-7, off the two NEAR walls (col0, the front wall) per the 30/45 dimetric
+    placement law; only the tall shelving sits on the back band. Doors: (6,0) = the world seam
+    (crypt/tavern side), (12,5) = a second seam for town wiring."""
+    props = [
+        ("shelves_back", "shelf", [[2, 1], [3, 1], [4, 1], [5, 1]]),   # tall back-wall shelving run
+        ("till_table", "table", [[10, 1], [11, 1]]),                   # till/wrapping table, right band
+        ("counter", "bar", [[5, 3], [6, 3], [7, 3], [8, 3]]),          # THE focal: centred shop counter
+        ("brazier_counter", "brazier", [[9, 3]]),                      # warm key light at the counter end
+        ("barrels_e", "barrel", [[10, 4], [10, 5]]),                   # goods barrels, east aisle
+        ("bench_front", "fallen_log", [[5, 5], [6, 5]]),               # low customer bench, counter front
+        ("display_table", "table", [[7, 6], [8, 6], [7, 7], [8, 7]]),  # 2x2 wares display, SE-centre
+        ("crates_sw", "supply_crates", [[2, 6], [3, 6], [2, 7], [3, 7]]),  # crate stack, SW interior
+        ("sacks_se", "crate", [[10, 7], [11, 7]]),                     # grain sacks/crates, SE corner
+    ]
+    props += _perimeter_wall_run_props(13, 10, door_cells=[[6, 0], [12, 5]])
+    geo = _geometry(13, 10, "worn wooden planks", props, perimeter=False,
+                    door_cells=[[6, 0], [12, 5]], camera_fit=True)
+    geo["location"] = "General Goods Shop"
+    return geo
+
+
 _ROOMS = {"crypt": author_crypt, "crypt_rich": author_crypt_rich,
           "crypt_fresh": author_crypt_fresh,
           "camp": author_camp, "tavern": author_tavern, "tavern_fit": author_tavern_fit,
-          "tavern_fit2": author_tavern_fit2}
+          "tavern_fit2": author_tavern_fit2, "shop": author_shop}
 
 
 def main(argv=None) -> int:

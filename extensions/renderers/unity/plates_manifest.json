@@ -17,7 +17,7 @@
       "cameraPin": {
         "ortho": 13.0
       },
-      "_cameraPin_comment": "CRYPT-ALIGN-V2: camp is NOT camera_fit \u2014 it renders at the fixed contract ortho 13. Pinned EXPLICITLY anyway so it can never inherit a fit room's ortho (crypt 10.5224 / tavern 9.2597) when the party crosses in from one; without this pin ApplyPlate would leave the previous room's ortho in place and the camp would display shrunk.",
+      "_cameraPin_comment": "CRYPT-ALIGN-V2: camp is NOT camera_fit — it renders at the fixed contract ortho 13. Pinned EXPLICITLY anyway so it can never inherit a fit room's ortho (crypt 10.5224 / tavern 9.2597) when the party crosses in from one; without this pin ApplyPlate would leave the previous room's ortho in place and the camp would display shrunk.",
       "_effects_comment": "VFX-ANCHORS: an animated fire over the painted firepit. The campfire_pit footprint is [[4,8],[5,8]] (qa/room_manifests/camp_truegrey.cells.json props[campfire]); cell [5,8] BOX-TUNED 2026-07-11 as the flame anchor that seats in the painted pit on camp_clearing_night_truegrey_v1.png, scale 1.5 filling the pit without washing out the painted glow (the plate is the star). `type` resolves through effects_registry.json; cell=[c,r], y=ground offset. Embers/fireflies types are registered and one-line-addable here later.",
       "effects": [
         {
@@ -50,6 +50,16 @@
       },
       "boxes": "boxes/throne_hall_v1_boxes.json",
       "_provenance": "SHIP-THREE-PLATES (2026-07-15): NEW room class (dais/throne/banner molded kinds). Panel 7.0 (cycle-2 levers documented). Geometry qa/room_geometries/throne_hall_geometry.json. World wiring: crypt (15,5) door -> throne_hall in the ship seed."
+    },
+    "shop": {
+      "plate": "plates/shop_v1_registered.png",
+      "cameraPin": {
+        "ortho": 9.6806,
+        "pitch": 30,
+        "yaw": 45
+      },
+      "boxes": "boxes/shop_v1_boxes.json",
+      "_provenance": "ROOM-READINESS SCALE PROOF (2026-07-16, epic #1581/#1588): the first room authored AFTER the pipeline existed, run hands-off end-to-end — author_shop() 13x10 (design-gated 2x locally) -> build_room_unified on the box (ortho 9.6806, 49 boxes incl. auto door frames) -> qa/paint_room.py shop (base seed 12347 recall 0.9555; Gemini structure-lock) -> blind panel 6 vs PoE2 control 8, delta -2.0 IN-BAND (tier=stable, cycle-2 levers in qa/evidence/paint-room/shop/panel.json). Geometry qa/room_geometries/shop_geometry.json; ortho = _fit_ortho_size(13,10). Walk gate: #1596 sandbox lane after the player rebuild packages this entry."
     }
   }
 }
