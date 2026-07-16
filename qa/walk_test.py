@@ -511,16 +511,27 @@ def _drive_and_check(qa: str, engine: str, c: int, r: int, settle: float, timeou
     return (landed != (c, r)), (list(landed) if landed else None), path
 
 
-def _capture_shot(qa: str, out: Path, label: str):
+def _capture_shot(qa: str, out: Path, label: str, timeout: float = 6.0):
+    """POST /shot and poll the RETURNED path for existence + size-stability — race-free with the
+    numbered-shot client (#1582: a new wos_shot_<id>.png appears only when written) and correct on
+    the legacy fixed-path client too (stability guards a half-written overwrite)."""
     try:
         resp = _post(f"{qa}/shot", {})
-        time.sleep(2.2)
         src = Path(resp.get("path", "")) if resp.get("path") else None
-        if src and src.exists():
-            out.mkdir(parents=True, exist_ok=True)
-            dst = out / f"shot_{label}.png"
-            shutil.copy(src, dst)
-            return str(dst)
+        if not src:
+            return None
+        deadline = time.time() + timeout
+        last = -1
+        while time.time() < deadline:
+            time.sleep(0.4)
+            if src.exists():
+                size = src.stat().st_size
+                if size > 0 and size == last:
+                    out.mkdir(parents=True, exist_ok=True)
+                    dst = out / f"shot_{label}.png"
+                    shutil.copy(src, dst)
+                    return str(dst)
+                last = size
     except Exception:  # noqa: BLE001
         pass
     return None
