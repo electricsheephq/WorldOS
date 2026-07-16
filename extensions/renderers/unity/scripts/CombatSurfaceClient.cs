@@ -1998,6 +1998,17 @@ public class CombatSurfaceClient : MonoBehaviour
         if (_qaClicks != null)
         {
             _screenW = Screen.width; _screenH = Screen.height;   // cache for the off-thread /health
+            // #1583: cache the camera pose + origin viewport for the off-thread /debug walkability probe
+            // (Camera is main-thread only). Runs every QA frame so /debug is fresh even before any click.
+            var _dcam = Camera.main;
+            if (_dcam != null)
+            {
+                _dbgCamOrtho = _dcam.orthographic ? _dcam.orthographicSize : -1f;
+                var _de = _dcam.transform.eulerAngles; _dbgCamRx = _de.x; _dbgCamRy = _de.y; _dbgCamRz = _de.z;
+                var _dp = _dcam.transform.position; _dbgCamPx = _dp.x; _dbgCamPy = _dp.y; _dbgCamPz = _dp.z;
+                var _dov = _dcam.WorldToViewportPoint(Vector3.zero); _dbgOriginVX = _dov.x; _dbgOriginVY = _dov.y;
+                _dbgCamValid = true;
+            }
             // /shot: capture the app's OWN framebuffer (countdown lets the request thread return first).
             if (_qaShot > 0 && --_qaShot == 0)
                 ScreenCapture.CaptureScreenshot(_qaShotPath);
@@ -2182,6 +2193,14 @@ public class CombatSurfaceClient : MonoBehaviour
     // + surface-derived state). Single-writer per field in practice; volatile is enough for a QA probe.
     volatile int _dbgEnq, _dbgDeq, _dbgActed, _dbgSurf;
     volatile string _dbgLast = "none";
+    // #1583 walkability gate: the /debug channel also reports the runtime CAMERA POSE + the viewport
+    // position of world origin, so qa/walk_test.py can assert Camera.main == build_room_unified's
+    // contract rig (Euler(30,45,0), pos=-(fwd)*80, aim at origin, pinned ortho). Cached on the MAIN
+    // thread each QA frame (Camera is main-thread only), read by the off-thread /debug responder. The
+    // valid-flag means an un-cached field is OMITTED from the JSON (walk_test then reads 'camera pose
+    // unavailable' and fails LOUD) — never emitted as a misleading 0 that would read as a wrong ortho.
+    volatile bool _dbgCamValid;
+    volatile float _dbgCamOrtho, _dbgCamRx, _dbgCamRy, _dbgCamRz, _dbgCamPx, _dbgCamPy, _dbgCamPz, _dbgOriginVX, _dbgOriginVY;
 
     void StartQaInput()
     {
@@ -2238,8 +2257,28 @@ public class CombatSurfaceClient : MonoBehaviour
                 else if (ctx.Request.Url.AbsolutePath == "/health")
                     resp = "{\"ok\":true,\"screenW\":" + _screenW + ",\"screenH\":" + _screenH + "}";
                 else if (ctx.Request.Url.AbsolutePath == "/debug")
-                    resp = "{\"ok\":true,\"enq\":" + _dbgEnq + ",\"deq\":" + _dbgDeq + ",\"acted\":" + _dbgActed
-                         + ",\"surf\":" + _dbgSurf + ",\"busy\":" + (_busy ? "true" : "false") + ",\"last\":\"" + _dbgLast + "\"}";
+                {
+                    var sb = new System.Text.StringBuilder();
+                    sb.Append("{\"ok\":true,\"enq\":").Append(_dbgEnq).Append(",\"deq\":").Append(_dbgDeq)
+                      .Append(",\"acted\":").Append(_dbgActed).Append(",\"surf\":").Append(_dbgSurf)
+                      .Append(",\"busy\":").Append(_busy ? "true" : "false")
+                      .Append(",\"last\":\"").Append(_dbgLast).Append("\"");
+                    if (_dbgCamValid)  // #1583: camera pose for qa/walk_test.py (omitted on an old build)
+                    {
+                        var ic = System.Globalization.CultureInfo.InvariantCulture;
+                        sb.Append(",\"camOrtho\":").Append(_dbgCamOrtho.ToString("0.####", ic))
+                          .Append(",\"camRx\":").Append(_dbgCamRx.ToString("0.####", ic))
+                          .Append(",\"camRy\":").Append(_dbgCamRy.ToString("0.####", ic))
+                          .Append(",\"camRz\":").Append(_dbgCamRz.ToString("0.####", ic))
+                          .Append(",\"camPx\":").Append(_dbgCamPx.ToString("0.####", ic))
+                          .Append(",\"camPy\":").Append(_dbgCamPy.ToString("0.####", ic))
+                          .Append(",\"camPz\":").Append(_dbgCamPz.ToString("0.####", ic))
+                          .Append(",\"originVX\":").Append(_dbgOriginVX.ToString("0.#####", ic))
+                          .Append(",\"originVY\":").Append(_dbgOriginVY.ToString("0.#####", ic));
+                    }
+                    sb.Append("}");
+                    resp = sb.ToString();
+                }
                 byte[] buf = System.Text.Encoding.UTF8.GetBytes(resp);
                 ctx.Response.ContentType = "application/json";
                 ctx.Response.ContentLength64 = buf.Length;
@@ -3268,15 +3307,27 @@ public class CombatSurfaceClient : MonoBehaviour
         rend.material.mainTexture = tex;                 // instance material -> per-scene, never edits a shared asset
 
         var cam = Camera.main;
-        // optional camera pin FIRST (so orthographicSize is current when we derive the plane height).
+        // camera pin FIRST (so orthographicSize is current when we derive the plane height).
         if (cam != null)
         {
-            if (entry.ortho > 0f) cam.orthographicSize = entry.ortho;
-            if (!float.IsNaN(entry.pitch) && !float.IsNaN(entry.yaw))
+            if (entry.ortho > 0f)
             {
-                Quaternion rot = Quaternion.Euler(entry.pitch, entry.yaw, 0f);
+                cam.orthographicSize = entry.ortho;
+                // ★ CAMERA-RIG FIX (#1583, epic #1581): reproduce build_room_unified's FULL rig, not just
+                // ortho. The plate was painted by a camera at Euler(30,45,0), pulled back 80 units, AIMING AT
+                // WORLD ORIGIN. Actors AND occluders are world-placed (CellToWorld / box centers) and projected
+                // through THIS camera. The pre-fix code only re-set rotation/position when the manifest carried
+                // pitch+yaw — but the shipped pins carry only `ortho`, so the runtime camera kept its
+                // baked/previous-room POSITION and EVERYTHING projected offset from the plate: walk-on-tomb,
+                // walk-through-wall, and no pillar occlusion (the 2026-07-15 walkability failure — all one
+                // projection mismatch). Set the contract rig UNCONDITIONALLY whenever ortho is pinned, so every
+                // room is self-healing and no future room can regress by omitting a pin. pitch/yaw default to the
+                // frozen dimetric contract (CANONICAL.md: elevation 30, yaw 45); a manifest may still override.
+                float pitch = float.IsNaN(entry.pitch) ? 30f : entry.pitch;
+                float yaw = float.IsNaN(entry.yaw) ? 45f : entry.yaw;
+                Quaternion rot = Quaternion.Euler(pitch, yaw, 0f);
                 cam.transform.rotation = rot;
-                cam.transform.position = -(rot * Vector3.forward) * 80f;   // mirror paint_combat_v1's rig distance
+                cam.transform.position = -(rot * Vector3.forward) * 80f;   // aim at world origin (room center)
             }
         }
         // re-size the backdrop quad: explicit planeSize wins, else derive from the plate aspect + ortho (the bake).
