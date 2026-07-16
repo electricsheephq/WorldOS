@@ -447,10 +447,26 @@ is what keeps the renderer a pure consumer (the sole-writer invariant, restated 
 `BuildMacOSPlayer.EnsurePackaged` copies `plates_manifest.json` + every referenced plate PNG +
 `effects_registry.json` into `StreamingAssets/` at build time.
 
-### 10. Player pickup — box rebuild
+### 10. Player pickup — hot-load for ITERATION, box rebuild for SHIP
 
-The client (`CombatSurfaceClient.cs`) picks up a new/changed plate only after a rebuild bakes the
-updated `StreamingAssets` into the shipped app:
+**★ Hot-load (empirically confirmed 2026-07-16, dwing gates):** on macOS, `StreamingAssets` is
+plain disk files inside the built .app that Unity reads at RUNTIME — so for ITERATION (sandbox walk
+gates on candidate plates) you do NOT need a box rebuild. Copy the installed app, inject the
+candidate artifacts into the COPY, and gate against it:
+
+```
+cp -R ~/Applications/WorldOSPlayer.app /tmp/WorldOSPlayer_hotload.app
+SA=/tmp/WorldOSPlayer_hotload.app/Contents/Resources/Data/StreamingAssets
+cp <plate>.png "$SA/plates/"; cp <boxes>.json "$SA/boxes/"    # + edit $SA/plates_manifest.json
+WORLDOS_PLAYER_APP=/tmp/WorldOSPlayer_hotload.app qa/qa_sandbox.py up ...
+```
+
+Proof: the dwing gates read `camOrtho 10.5224` (the hot-loaded pin) exactly. Caveats: NEVER edit the
+owner's installed app (copies only — editing breaks the code seal; local non-notarized copies still
+launch); the hot-patch is never the durable state — the repo manifest + a SHIP-time box rebuild must
+still land or the next build regresses.
+
+**Box rebuild (ship time only)** — the distributed app's `StreamingAssets` are baked at build:
 
 ```
 Tools/WorldOS/Build/macOS Player (Universal)   # Unity Editor menu item, on the box
