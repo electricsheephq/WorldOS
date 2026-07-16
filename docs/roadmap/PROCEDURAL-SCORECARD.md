@@ -55,6 +55,10 @@ eyeball (axes 6-7) → blind panel (axis 8) → grade the row → fix the LOWEST
 | 2026-07-15 | crypt | v3.6-restored | ★ BAR MET: panel 8.3 (Δ control −1.1; incumbent 7.2) via paint_room one-command chain; draw recall 0.9595 | 29 |
 | 2026-07-15 | tavern | 2-restored | ★ BAR MET: panel 8.4 (Δ −1.0); the previously-unpaintable room | 29 |
 | 2026-07-15 | throne | registered-1 | panel 7.0; levers: material wash + Gemini-additions (gallery) | 29 |
+| 2026-07-16 | shop | 1 | ★ SHIPPED cycle-1: panel 6 vs control 8 Δ−2.0 IN-BAND; recall 0.9555; WALK-GREEN (#1596 sandbox, visual 5/5 ~0.3c) — the pipeline's first hands-off NEW CLASS | 47 |
+| 2026-07-16 | tavern_snug | 1 | honest negative: 6 vs 9 Δ−3.0 OUT OF BAND (flat-interior class; invented post + stairs) | 47 |
+| 2026-07-16 | tavern_snug | 2 | honest negative: 6 vs 9 again = PROMPT PLATEAU (blue-violet/atmosphere levers no gain); styled recall 0.60 (drift) | 47 |
+| 2026-07-16 | tavern_snug | 3 | ★ SHIPPED via the GEOMETRY lever (2 authored timber posts): 7 vs 8 Δ−1.0 IN-BAND (+1 median); styled recall 0.8415 (best final yet); WALK-GREEN (visual 6/6 0.15-0.4c). Flat-interior class CONFIRMED with a measured intervention | 47 |
 
 ## Defect classes (appended)
 - FLAT-INTERIOR conditioning: rooms whose tallest furniture is ~2 units give flux compositional
