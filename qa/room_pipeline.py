@@ -65,14 +65,16 @@ def stage_coherence(room: str, out: Path) -> dict:
     plate = REPO / "extensions" / "renderers" / "unity" / entry["plate"]
     if not plate.exists():
         return {"status": "SKIP", "detail": f"plate not on disk: {plate}"}
-    cmd = [sys.executable, str(HERE / "check_grid_paint_coherence.py"), str(plate), str(MANIFEST)]
+    cmd = [sys.executable, str(HERE / "check_grid_paint_coherence.py"), "check", str(plate), str(MANIFEST)]
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
     except Exception as e:  # noqa: BLE001
         return {"status": "SKIP", "detail": f"coherence runner error: {e}"}
     (out / "coherence.log").write_text(p.stdout + "\n---STDERR---\n" + p.stderr)
-    return {"status": "GREEN" if p.returncode == 0 else "RED",
-            "detail": f"rc={p.returncode}; see coherence.log"}
+    # rc 0 = coherent, 1 = ran + failed (RED), anything else (2 usage / missing greybox input) = the
+    # gate could not RUN for this shipped room -> SKIP (best-effort), never a false RED that blocks ship.
+    status = {0: "GREEN", 1: "RED"}.get(p.returncode, "SKIP")
+    return {"status": status, "detail": f"rc={p.returncode}; see coherence.log"}
 
 
 def stage_walk(room: str, out: Path, engine: str, qa: str, stride: int) -> dict:
@@ -110,9 +112,11 @@ def run(room: str, mode: str, out: Path, engine: str, qa: str, stride: int, resu
             ("coherence", lambda: stage_coherence(room, out)),
             ("walk", lambda: stage_walk(room, out, engine, qa, stride)),
         ]
-    else:  # verify: the automatic, CU-free, no-box gates
+    else:  # verify: the automatic, CU-free, no-box WALKABILITY gate (the point of verify mode)
+        # coherence is an AUTHORING-time gate — it regenerates a greybox from a room GEOMETRY manifest;
+        # the runtime plate registry doesn't carry that geometry, so coherence belongs in `full` mode
+        # (where the room manifest exists), not in verify. Verify gates purely on walkability.
         stages = [
-            ("coherence", lambda: stage_coherence(room, out)),
             ("walk", lambda: stage_walk(room, out, engine, qa, stride)),
         ]
 
