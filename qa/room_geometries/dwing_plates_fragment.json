@@ -1,0 +1,31 @@
+{
+ "plates": {
+  "dwing_room_0": {
+   "plate": "plates/dwing_room_0.png",
+   "cameraPin": {
+    "ortho": 10.5224,
+    "pitch": 30,
+    "yaw": 45
+   },
+   "boxes": "boxes/dwing_room_0_boxes.json"
+  },
+  "dwing_room_1": {
+   "plate": "plates/dwing_room_1.png",
+   "cameraPin": {
+    "ortho": 7.997,
+    "pitch": 30,
+    "yaw": 45
+   },
+   "boxes": "boxes/dwing_room_1_boxes.json"
+  },
+  "dwing_room_2": {
+   "plate": "plates/dwing_room_2.png",
+   "cameraPin": {
+    "ortho": 10.5224,
+    "pitch": 30,
+    "yaw": 45
+   },
+   "boxes": "boxes/dwing_room_2_boxes.json"
+  }
+ }
+}
