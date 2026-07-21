@@ -17,6 +17,9 @@ Chain (the canonical registered pipeline):
 Usage:
   python3 qa/paint_room.py crypt --depth /tmp/cryptv36/depth_v36b.png --out-dir /tmp/paint/crypt
   python3 qa/paint_room.py tavern --depth <path-or-asset_id> [--skip-gemini] [--seeds 12345]
+  python3 qa/paint_room.py dwing_room_1 --depth <path> --geometry qa/room_geometries/dwing_room_1_geometry.json
+      # ^ #1619: compose flavor + GENERATED structural block from the geometry JSON.
+      #   Without --geometry the static recipe is used verbatim (today's behavior).
 """
 from __future__ import annotations
 
@@ -37,6 +40,28 @@ from scenario_gen import (  # noqa: E402  (the PROVEN helpers — auth/upload/po
 from plate_overlays import registration_recall  # noqa: E402
 
 RECIPES = json.loads((QA / "unified_paint_recipes.json").read_text())
+
+
+def resolve_recipe(cls: dict, geometry_path: str | None) -> dict:
+    """#1619 (additive): WITH a geometry JSON, return a copy of the recipe class whose
+    base_prompt/gemini_grounding are composed as per-class flavor + the DETERMINISTIC
+    structural block generated from the geometry (render_recipe) — nobody freehands what a
+    program can pin. WITHOUT --geometry, return the class dict UNCHANGED (byte-identical to
+    today; VISION additive invariant). Never mutates the loaded recipes.
+    """
+    if geometry_path is None:
+        return cls
+    from render_recipe import render_recipe  # local import: the default path stays untouched
+    geometry = json.loads(Path(geometry_path).read_text())
+    flavor, gemini_flavor = cls.get("flavor"), cls.get("gemini_flavor")
+    if not flavor or not gemini_flavor:
+        raise SystemExit(
+            "--geometry requires 'flavor' + 'gemini_flavor' keys on the recipe class (the only "
+            "hand-authored prose left — the structural block is generated). This class lacks "
+            "them; add the flavor sentence or paint without --geometry.")
+    rendered = render_recipe(geometry, flavor=flavor, gemini_flavor=gemini_flavor)
+    return {**cls, "base_prompt": rendered["base_prompt"],
+            "gemini_grounding": rendered["gemini_grounding"]}
 
 
 def _flux_draw(headers: dict, cls: dict, flux: dict, control_asset: str, seed: int,
@@ -83,6 +108,12 @@ def main() -> int:
     ap.add_argument("--seeds", default=None,
                     help="comma-separated seed override (default: recipe seeds = 3-draw selection)")
     ap.add_argument("--skip-gemini", action="store_true", help="stop after the selected flux base")
+    ap.add_argument("--geometry", default=None,
+                    help="room geometry JSON (qa/room_geometries/*.json) — composes the recipe "
+                         "as per-class flavor + the DETERMINISTIC structural block generated "
+                         "from the geometry (render_recipe, #1619): feature counts, room "
+                         "shape, door walls, focal placement, negatives. Absent: the static "
+                         "recipe is used verbatim (today's behavior).")
     ap.add_argument("--boxes", default=None,
                     help="room_boxes.json sidecar for the depth room — enables the HARD registration "
                          "gate: a styled recall < 0.60 triggers the brazier-beacon corrective warp "
@@ -91,6 +122,9 @@ def main() -> int:
     args = ap.parse_args()
 
     cls = RECIPES["classes"][args.room_class]
+    if args.geometry:
+        cls = resolve_recipe(cls, args.geometry)
+        print(f"[paint_room] --geometry: structural recipe block generated from {args.geometry} (#1619)")
     flux, gem = RECIPES["flux"], RECIPES["gemini"]
     seeds = ([int(s) for s in args.seeds.split(",")] if args.seeds else flux["seeds"])
     out_dir = Path(args.out_dir or f"/tmp/paint/{args.room_class}")
