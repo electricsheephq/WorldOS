@@ -248,7 +248,9 @@ def load_trace(path: str) -> dict:
                 data.setdefault("stamps", [])
                 return data
         except (OSError, ValueError):
-            pass
+            # Corrupt/unreadable trace: fall through to a fresh trace rather than
+            # aborting telemetry — stamps are re-derivable from engine state next poll.
+            return {"stamps": []}
     return {"stamps": []}
 
 
