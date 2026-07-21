@@ -411,8 +411,15 @@ def test_select_visual_cells_deprioritizes_fire_but_fills_to_n():
     assert set(picked) <= {(1, 1), (2, 2), (3, 3), (8, 8)}           # no fire-adjacent cell chosen
 
 
-def test_select_visual_cells_falls_back_to_fire_adjacent_when_needed():
+def test_select_visual_cells_never_samples_mask_covered_cells():
+    # CONTRACT CHANGE (measured false-fail class): cells within the fire-MASK radius (< 2 chebyshev)
+    # are UNMEASURABLE BY CONSTRUCTION — the mask swallows the actor's own diff (n_blobs=0 with 4
+    # masked on a 6-cell room). They are EXCLUDED absolutely; the sample may honestly be smaller
+    # than n. Cells at 2 (measurable, mask-border) remain a top-up tier; ≥3 preferred.
     fire = {(5, 5)}
-    pool = [(5, 5), (5, 6), (1, 1)]                                  # only ONE far cell; need 3
+    pool = [(5, 5), (5, 6), (7, 7), (1, 1)]
     picked = W.select_visual_cells(pool, 3, fire, min_cheby=2)
-    assert len(picked) == 3 and (1, 1) in picked                     # fills to N incl. fire-adjacent
+    assert (5, 5) not in picked and (5, 6) not in picked             # mask-covered: never sampled
+    assert (1, 1) in picked                                          # far cell always in
+    assert (7, 7) in picked                                          # chebyshev-2: measurable top-up
+    assert len(picked) == 2                                          # honestly smaller than n=3

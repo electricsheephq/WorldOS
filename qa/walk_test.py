@@ -268,9 +268,15 @@ def select_visual_cells(pool: list, n: int, fire_cells, *, min_cheby: int = 2) -
     far tier, then in-order fill). `pool` must already exclude the current/zero-hop cell."""
     if not pool or n <= 0:
         return []
-    far = [c for c in pool if _cheby_far(c, fire_cells, min_cheby)]
+    # HARD exclusion first: a cell within the fire-MASK radius (< 2 chebyshev of a fire anchor) is
+    # UNMEASURABLE BY CONSTRUCTION — the mask that suppresses flicker also swallows the actor's own
+    # diff there (measured: n_blobs=0 with 4 masked -> guaranteed false fail on a tiny-pool room).
+    # An honestly smaller sample beats sampling cells that cannot pass. The room-level
+    # zero-measurable protection still applies if nothing measurable remains.
+    measurable = [c for c in pool if _cheby_far(c, fire_cells, 2)]
+    far = [c for c in measurable if _cheby_far(c, fire_cells, max(min_cheby, 3))]
     ordered = _sample(far, max(1, len(far) // max(1, n))) if far else []
-    for src in (far, pool):   # top up: remaining far first, then fire-adjacent as a last resort
+    for src in (far, measurable):  # top up: far tier first, then measurable-but-nearer
         for c in src:
             if len(ordered) >= n:
                 break
