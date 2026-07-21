@@ -223,7 +223,9 @@ def test_dwing_recipes_carry_hand_authored_flavor_keys():
     # Legacy STATIC base_prompt/gemini_grounding keys (all classes) still hand-author feature
     # prose — they are the no-`--geometry` fallback, superseded by the geometry path; the one
     # measured-dangerous pattern there ('altar WHERE PRESENT', the shareable hedge) is gone.
-    for name in ("dwing_room_0", "dwing_room_1"):
+    flavored = [n for n, c in _RECIPES["classes"].items() if c.get("flavor") or c.get("gemini_flavor")]
+    assert set(flavored) >= {"dwing_room_0", "dwing_room_1"}, "known geometry-driven classes missing"
+    for name in flavored:  # derived, not hand-listed — the guard auto-extends to future classes
         cls = _RECIPES["classes"][name]
         assert cls.get("flavor"), name
         assert cls.get("gemini_flavor"), name
