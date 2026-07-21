@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "repo_sha": "ca18be46",
+  "repo_sha": "ed0c2805",
   "manifest_sha256": "49eb0987c40db98d0a8e628069156b157833497952a75ba1eaf460b7ae6d7f84",
-  "ts": "2026-07-21T17:24:51.173618+00:00",
+  "ts": "2026-07-21T17:47:50.032765+00:00",
   "engine_url": "http://127.0.0.1:8866",
   "qa_url": "http://127.0.0.1:8972",
   "room": "dwing_room_1",
@@ -15,10 +15,10 @@
   "camera": {
     "dbg": {
       "ok": true,
-      "enq": 36,
-      "deq": 36,
-      "acted": 36,
-      "surf": 255,
+      "enq": 71,
+      "deq": 71,
+      "acted": 71,
+      "surf": 1171,
       "busy": false,
       "last": "cell(6,3) rest=True foe=(-1,-1)'' imp=n occ=n",
       "camOrtho": 7.997,
@@ -380,10 +380,10 @@
               "ortho": 7.997,
               "dbg": {
                 "ok": true,
-                "enq": 66,
-                "deq": 66,
-                "acted": 66,
-                "surf": 355,
+                "enq": 101,
+                "deq": 101,
+                "acted": 101,
+                "surf": 1269,
                 "busy": false,
                 "last": "cell(11,6) rest=True foe=(-1,-1)'' imp=n occ=n",
                 "camOrtho": 7.997,
@@ -416,7 +416,7 @@
         "tol_px": 125.0,
         "ok": true,
         "dist_prev_px": 27.8,
-        "n_blobs": 2,
+        "n_blobs": 1,
         "n_blobs_masked": 3
       },
       {
