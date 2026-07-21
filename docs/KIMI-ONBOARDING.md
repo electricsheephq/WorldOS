@@ -1,7 +1,7 @@
 # KIMI-ONBOARDING — Kimi's routing doc into WorldOS
 
 > Written 2026-07-20 by the Kimi orchestrator after a full 8-agent recon sweep.
-> **Status: tracked (landed via the #1623 PR).** It is the Kimi-side entry point; Claude-side agents
+> **Status: tracked — landed via PR #1624 (closes issue #1623).** It is the Kimi-side entry point; Claude-side agents
 > can read it as-is.
 > **Decision (owner-asked):** we *use and link to* the existing Claude-side documentation — it is live-edited
 > within days, so duplicating it would stale immediately. This file is routing + interop glue only.
@@ -30,7 +30,7 @@
 6. `docs/ROOM-PIPELINE-RUNBOOK.md` (Jul 16) — the 11-step room pipeline; §10b sandbox hot-load gate loop; §11 walkability ship gate (BOTH beauty panel AND `qa/walk_test.py` GREEN to ship).
 7. `qa/PANEL-PROTOCOL.md` (Jul 16) — the versioned blind-panel ruler; nobody freehands the ruler; author never renders own verdict.
 8. Active sprint charter: GitHub issue **#1386** (Act II close-out, Rendered Felt) — box claim queue lives in its comments.
-9. ⚠ `docs/roadmap/NOW.md` is **STALE (Jul 9)** — it predates the whole generator chain; its "Blockers: None" is unverified. Treat the live plan (below) + PROCEDURAL-SCORECARD as the you-are-here until NOW.md is refreshed.
+9. `docs/roadmap/NOW.md` — **refreshed to the 2026-07-20 truth in PR #1624** (the Jul-9 staleness is resolved); it is again the you-are-here surface. Keep it current per its session-close contract (update at every session close / charter transition).
 10. Live plan (Claude-side but plain markdown): `~/.claude/plans/bubbly-cooking-stallman.md` — read **lines 596–668 first** (final log + queue); the CURRENT STATE block at 669+ is an older anchor.
 
 ## 3. Live state snapshot (verified 2026-07-20)
@@ -47,14 +47,14 @@
 Source: `~/.claude/tasks/237280f0-e8fe-4529-bb6e-72957d537c61/76.json` (status: pending) + GitHub issues #1618/#1619/#1620 + plan STATE block. All paths verified to exist.
 
 1. **Regen** the wing with dress_focal v2 via `tools/generate_town.py` (staged on main @ `fd23e972`).
-2. **Box render ×3** per ROOM-PIPELINE-RUNBOOK §5 + `~/.claude/skills/gex44-unity-host/SKILL.md`; batch the #1616 T-pose registry-sync + player rebuild into the same box build; end the box session with `/home/unity/worldos-unity-save.sh`.
+2. **Box render ×3** per ROOM-PIPELINE-RUNBOOK §3 (greybox render — the shaded base + optional depth/normal sidecars) + `~/.claude/skills/gex44-unity-host/SKILL.md`; batch the #1616 T-pose registry-sync + player rebuild into the same box build; end the box session with `/home/unity/worldos-unity-save.sh`.
 3. **Paint** via `qa/paint_room.py --boxes` (err_cells hard gate auto-warps via the similarity fit).
 4. **Hot-load sandbox gates** per runbook §10b (fire-masked, tri-state; cycle `current_room` per room).
 5. **Blind-adjudicated verdicts** per `qa/PANEL-PROTOCOL.md` — panels via `qa/panel_workflow.mjs` with `CAL_shipped_shop` calibration reference.
 6. Adopt or park per verdict; certifications + `record_room_walk` on adoption.
 
 - Companions: **#1619 render_recipe** (zero-CU code; consider landing BEFORE the repaint — it kills recipe-authoring bugs) and **#1620** experience gates.
-- **Budget gate**: the cycle costs ~140 Scenario CU; ~160 CU remained as of 2026-07-16 19:00 local with a measured 2/6 bug-fix-repaint base rate → the previous orchestrator deliberately handed off rather than strand it mid-budget. **Confirm/top up Scenario CU before starting step 3.**
+- **Budget gate**: the cycle costs ~140 Scenario CU; ~160 CU remained as of 2026-07-16 19:00 local with a measured 2/6 bug-fix-repaint base rate → the previous orchestrator deliberately handed off rather than strand it mid-budget. **Update 2026-07-20: Scenario CU refilled (5k+) — the "needs fresh budget" blocker is cleared; still confirm the balance before starting step 3.**
 
 ## 5. GEX44 access (probed working 2026-07-20)
 
@@ -94,22 +94,22 @@ Shared surfaces that make either side's work visible to the other:
 1. **git + GitHub** — the trunk truth; PR loop per OPERATIONS.md (worktree off main → additive change → focused pytest + `qa/fast_gate.sh` → PR → review-gated merge; shepherd every PR to merged/parked; `gh pr merge <n> --squash --auto`).
 2. **Routing ledger** — both sides append (`~/.claude/routing-ledger.jsonl`).
 3. **Scores ledger** — every scored run to `qa/scores_db.py` with provider/methodology stamps.
-4. **POINTER step** — update the lane's charter/issue + `docs/roadmap/NOW.md` at session close (NOW.md is currently stale — first Kimi-side candidate task).
+4. **POINTER step** — update the lane's charter/issue + `docs/roadmap/NOW.md` at session close (NOW.md refreshed in #1624; the POINTER step keeps it current).
 5. **Universal Run Contract** — HEALTH → EVIDENCE → SCORE → VERDICT → POINTER, every run type.
 6. **Box claim queue** — charter #1386 comments, regardless of which agent drives.
 
 ## 8. Where Kimi can add value now (ordered, cheapest-first)
 
-1. **Doc-hygiene PR** (zero CU, zero box): refresh `docs/roadmap/NOW.md` to the Jul-16 truth + add RUNBOOK-INDEX rows for `qa/walk_test.py` / `tools/generate_town.py` chain + consider landing this file. Pure repo loop.
-2. **#1619 render_recipe** (zero CU): the code half that kills recipe-authoring bugs — the previous session recommended landing it BEFORE the repaint.
+1. **Doc-hygiene PR — DONE (landed via #1624, 2026-07-21)** (zero CU, zero box): refreshed `docs/roadmap/NOW.md` to the 2026-07-20 truth + added RUNBOOK-INDEX rows for the `qa/walk_test.py` / `tools/generate_town.py` chain + landed this file. Pure repo loop.
+2. **#1619 render_recipe** (zero CU): the code half that kills recipe-authoring bugs — the previous session recommended landing it BEFORE the repaint. **Update: render_recipe PR #1626 opened, in review.**
 3. **Task #76 next cycle** (needs Scenario CU confirmation + GEX44 box claim): the full regen → render → paint → gate → adjudicate loop, §4 above.
 4. **#1620 experience gates** and the open companions of #1618.
 5. Later/larger: a valid 5-persona RRI sweep to replace the contaminated f5500ac row; dist/WorldOS.app rebuild; towns beyond the 4-room proof (exteriors/streetscape generator is the known gap; TILED-SPACE-SPIKE ruling says towns = layout problem).
 
 ## 9. Open questions for the owner
 
-1. Scenario CU balance now — top up before Task #76 step 3, or land #1619 first and defer paint?
+1. Scenario CU balance — **refilled 2026-07-20 (5k+)**; the "needs fresh budget" framing is stale. Open remainder: land #1619 (PR #1626, in review) first and defer paint?
 2. GitHub LFS data pack for the box repo (~$5/mo) — buy, or keep tarball-only saves?
 3. GitNexus: explicit waiver for CLI-fallback, or wire the MCP for Kimi?
-4. PR this onboarding doc (+ NOW.md refresh) through the normal loop?
+4. PR this onboarding doc (+ NOW.md refresh) through the normal loop? — **RESOLVED: landed via #1624.**
 5. Green-light to claim the box on #1386 and start Task #76 when 1 is answered?
