@@ -165,6 +165,7 @@ def main() -> int:
     else:
         print("[paint_room] WARNING: depth given as asset_id, no local file — selection skipped (seed[0]).")
 
+    base_beacon_advisory = None
     # ★ BASE-STAGE BEACON GATE (with --boxes): the styled pass can only KEEP fire it inherits —
     # a base that drew the braziers UNLIT leaves the beacons undetectable, and Gemini then INVENTS
     # the fire with count/position liberties (measured: b1 grew a 4th brazier; b2 bases had no
@@ -211,7 +212,7 @@ def main() -> int:
                     print("[paint_room] ⚠ base beacons not detector-visible after redraws "
                           "(advisory — flux fire is often too dim for the detector; the styled-"
                           "stage err_cells gate adjudicates)")
-                    result["base_beacon_gate"] = "advisory-undetectable"
+                    base_beacon_advisory = "advisory-undetectable"
 
     base_asset = winner["saved"][0]["asset_id"]
     base_path = winner["saved"][0]["path"]
@@ -222,6 +223,8 @@ def main() -> int:
                          "asset": d["saved"][0]["asset_id"]} for d in draws],
               "selection": table, "base": {"seed": winner["seed"], "asset": base_asset,
                                            "path": base_path}}
+    if base_beacon_advisory:
+        result["base_beacon_gate"] = base_beacon_advisory
 
     registration_failed = False
     if not args.skip_gemini:

@@ -200,9 +200,13 @@ def reregister_iterative(boxes: dict, plate_path, out_path, max_iters: int = 2, 
             best_err = err
             img.save(out_path)
         if err <= bar:
+            for t in Path(str(out_path)).parent.glob(Path(str(out_path)).name + ".*.png"):
+                t.unlink(missing_ok=True)
             return {"passed": True, "iters": it, "err_cells": err}
         sim = fit_similarity(solve["matched_pairs"])
         if sim.get("unstable"):
+            for t in Path(str(out_path)).parent.glob(Path(str(out_path)).name + ".*.png"):
+                t.unlink(missing_ok=True)
             return {"passed": False, "iters": it, "err_cells": err, "unstable": sim}
         img = apply_similarity(img, sim)
     # final measure
@@ -212,4 +216,8 @@ def reregister_iterative(boxes: dict, plate_path, out_path, max_iters: int = 2, 
     err = _max_err_cells(solve) if "error" not in solve else 99.0
     if best_err is None or err < best_err:
         img.save(out_path); best_err = err
+    # evidence-dir hygiene: the .itN/.final temp plates look like extra registered plates to
+    # glob-based samplers — remove them before returning.
+    for t in Path(str(out_path)).parent.glob(Path(str(out_path)).name + ".*.png"):
+        t.unlink(missing_ok=True)
     return {"passed": best_err <= bar, "iters": max_iters, "err_cells": best_err}
