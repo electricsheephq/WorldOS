@@ -1082,6 +1082,32 @@ def get_state(campaign_id: str) -> dict:
 
 
 @mcp.tool()
+def get_quests(campaign_id: str) -> dict:
+    """Read EVERY quest regardless of status (get_state lists active only). Read-only
+    telemetry poll surface. Entries: id, title, status, objectives, completed_objectives,
+    giver_id, location_id, milestone_awarded, last_progress_day, last_progress_beat.
+    """
+    c = _require(campaign_id)
+    return {
+        "quests": [
+            {
+                "id": q.id,
+                "title": q.title,
+                "status": q.status,
+                "objectives": list(q.objectives),
+                "completed_objectives": list(q.completed_objectives),
+                "giver_id": q.giver_id,
+                "location_id": q.location_id,
+                "milestone_awarded": q.milestone_awarded,
+                "last_progress_day": q.last_progress_day,
+                "last_progress_beat": q.last_progress_beat,
+            }
+            for q in c.quests.values()
+        ]
+    }
+
+
+@mcp.tool()
 def look_around(campaign_id: str) -> dict:
     """Describe the party's current location and the exits they can take."""
     c = _require(campaign_id)
