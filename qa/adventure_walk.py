@@ -176,10 +176,13 @@ def score_stage_frame(frame_path: Optional[str], stage: Stage, scorer: FrameScor
     want = {q["flag"] for q in stage_questions(stage)}
     missing = want - flags.keys()
     if missing:
-        # A scorer that skipped a question must never read as clean — surface it as a defect.
+        # A scorer that skipped a question must never read as clean — but a SKIPPED answer is scorer
+        # infra, not evidence of the content defect itself: keep the missing flag NAMES out of
+        # `defects` (else classify_stage_verdict reads them as real content defects → false RED) and
+        # record them separately. Only flags the scorer actually answered True stay as content defects.
         return {"frames_checked": 1, "flags": flags,
-                "defects": sorted(list(missing) + [k for k, v in flags.items() if v]) + ["vqa_incomplete"],
-                "passed": False}
+                "defects": sorted(k for k, v in flags.items() if v) + ["vqa_incomplete"],
+                "missing": sorted(missing), "passed": False}
     defects = sorted(k for k, v in flags.items() if v)
     return {"frames_checked": 1, "flags": flags, "defects": defects, "passed": not defects}
 
@@ -196,7 +199,7 @@ def classify_stage_verdict(stage_rec: dict) -> str:
     # A CLEAN walk failure (the door exists but the party never crossed, or a VQA content defect) is a
     # real arc RED and WINS over any harness noise. `stuck` is set ONLY on a clean cross failure — never
     # when the engine/player was unreachable — so it can never carry an infra defect into a RED verdict.
-    if stage_rec.get("stuck") or _content_defects(stage_rec):
+    if stage_rec.get("stuck") or stage_rec.get("action_failed") or _content_defects(stage_rec):
         return "RED"
     # Everything else that isn't a clean arrival is HARNESS: a cross that couldn't even be attempted
     # (engine/player unreachable → not arrived, not stuck), an explicit harness error, or a VQA
@@ -396,12 +399,22 @@ def walk_stage(qa: str, engine: str, stage: Stage, out_dir: Path, scorer: FrameS
             wf = _walk_floor(qa, engine, stage.room, settle, timeout)
             rec["attempts"] += wf["attempts"]; rec["dead_clicks"] += wf["dead_clicks"]
             rec["harness_errors"].extend(wf["harness_errors"])
+            # A majority-dead floor (clicks landed, token never arrived on BFS-reachable cells) is a
+            # REAL walkability failure — one dead cell of several stays sub-verdict noise (settle
+            # budget), but most-dead means the floor does not walk.
+            if wf["attempts"] > 0 and wf["dead_clicks"] * 2 >= wf["attempts"] and not wf["harness_errors"]:
+                rec["action_failed"] = f"walk_floor: {wf['dead_clicks']}/{wf['attempts']} sampled cells dead"
         elif stage.kind == "approach" and stage.actor:
             ap = _approach_actor(qa, engine, stage.actor, settle, timeout)
             rec["attempts"] += ap["attempts"]; rec["dead_clicks"] += ap["dead_clicks"]
             rec["adjacent"] = ap["adjacent"]; rec["talked"] = ap["talked"]
             rec["actor_cell"] = ap.get("actor_cell")
             rec["harness_errors"].extend(ap["harness_errors"])
+            # A KNOWN actor cell we cleanly failed to reach is a real approach failure (RED). An
+            # UNKNOWN cell stays proximity-unknown — the surface may not expose NPCs (#1639); VQA
+            # owns actor-presence there.
+            if ap.get("actor_cell") and not ap["adjacent"] and not ap["harness_errors"]:
+                rec["action_failed"] = f"approach {stage.actor}: never reached a cell adjacent to {ap['actor_cell']}"
 
     # 3) capture a frame + score its VQA (a missing frame is a HARNESS defect, never a silent green).
     shot = W._capture_shot(qa, out_dir, stage.id)

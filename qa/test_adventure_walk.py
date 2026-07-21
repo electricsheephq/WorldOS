@@ -267,3 +267,26 @@ def test_scorer_crash_is_stage_harness_error_never_a_run_killer():
     assert "vqa_scorer_error" in VQA_HARNESS_FLAGS
     rec = {"arrived": True, "stuck": False, "harness_errors": [], "vqa": vqa}
     assert classify_stage_verdict(rec) == "ERROR"
+
+
+def test_incomplete_vqa_missing_names_never_become_content_defects():
+    """A scorer that SKIPS a question is infra: the missing flag names must not appear in `defects`
+    (they would classify as content → false RED); the stage reads ERROR via vqa_incomplete."""
+    from adventure_walk import score_stage_frame, classify_stage_verdict, build_route
+
+    stage = build_route("camp_clearing")[0]
+    vqa = score_stage_frame("f.png", stage, lambda _f, _q: {})  # answers nothing
+    assert vqa["defects"] == ["vqa_incomplete"] and vqa.get("missing")
+    rec = {"arrived": True, "stuck": False, "harness_errors": [], "vqa": vqa}
+    assert classify_stage_verdict(rec) == "ERROR"
+
+
+def test_clean_action_failure_is_red():
+    """A stage that ARRIVED but cleanly failed its per-kind action (majority-dead floor / unreached
+    known actor cell) must be RED — never a silent GREEN on clean VQA."""
+    from adventure_walk import classify_stage_verdict
+
+    rec = {"arrived": True, "stuck": False, "harness_errors": [],
+           "action_failed": "walk_floor: 2/3 sampled cells dead",
+           "vqa": {"frames_checked": 1, "flags": {}, "defects": [], "passed": True}}
+    assert classify_stage_verdict(rec) == "RED"
