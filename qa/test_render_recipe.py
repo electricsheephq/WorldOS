@@ -37,6 +37,15 @@ import render_recipe  # noqa: E402  (the module under test — RED until impleme
 _GEOMS = _QA_DIR / "room_geometries"
 _RECIPES = json.loads((_QA_DIR / "unified_paint_recipes.json").read_text())
 
+# Structural markers the generator (qa/render_recipe.py) SOLELY owns. If any of these creep back
+# into a hand-authored flavor key, the flavor is duplicating — and will eventually contradict —
+# the generated structural block (the exact P1 the review caught on dwing_room_0/1). Compared
+# case-insensitively: the generated block writes them lower-case, the old prose SHOUTED them.
+_FLAVOR_STRUCTURAL_KEYWORDS = (
+    "FEATURE COUNTS", "doorway", "brazier", "BRAZIER", "pillar", "PILLAR",
+    "flank", "as wide", "as deep", "wall", "door",
+)
+
 
 def _geom(name: str) -> dict:
     return json.loads((_GEOMS / name).read_text())
@@ -206,13 +215,20 @@ def test_every_recipe_class_keeps_its_static_prompt_keys():
 
 
 def test_dwing_recipes_carry_hand_authored_flavor_keys():
-    # The ONLY prose left to hand-author: the per-class flavor sentence (#1619).
+    # The ONLY prose left to hand-author: the per-class flavor sentence (#1619) — style/mood/
+    # atmosphere ONLY. Counts, shape, door walls and placement belong to the generator.
     for name in ("dwing_room_0", "dwing_room_1"):
         cls = _RECIPES["classes"][name]
         assert cls.get("flavor"), name
         assert cls.get("gemini_flavor"), name
         assert "FEATURE COUNTS" not in cls["flavor"], "structure belongs to the generator"
         assert "FEATURE COUNTS" not in cls["gemini_flavor"], "structure belongs to the generator"
+        lowered = cls["flavor"].lower()
+        for keyword in _FLAVOR_STRUCTURAL_KEYWORDS:
+            assert keyword.lower() not in lowered, (
+                f"{name}.flavor carries generator-owned structure ({keyword.lower()!r}) — "
+                "flavor is style/mood only; render_recipe.py owns counts/shape/doors/placement"
+            )
 
 
 def test_paint_room_composes_from_geometry_without_mutating_the_recipe():
