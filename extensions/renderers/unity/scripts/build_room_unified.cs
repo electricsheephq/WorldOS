@@ -272,6 +272,17 @@ if(props!=null) foreach(var po in props){ var p=po as System.Collections.Generic
       boxRecords.Add("{\"name\":\""+pid+"_bowl\",\"kind\":\""+kind+"\",\"center\":["+bx0.ToString("F3")+",1.85,"+bz0.ToString("F3")+"],\"size\":[1.5,0.75,1.5]}");
       np++; continue;
     }
+    if(kind.Contains("campfire")){
+      // stone fire-ring + ground FIRE — the camp's PRIMARY registration beacon: the blob solver
+      // needs a bright fire mass here (the flat low-box fallback rendered dull and unsolvable).
+      cyl(pid+"_ring",kind,new Vector3(bx0,0f,bz0),1.15f,1.15f,0.4f,new Color(0.48f,0.46f,0.43f));
+      var fire=GameObject.CreatePrimitive(PrimitiveType.Sphere); fire.name="GB_"+pid+"_fire"; UnityEngine.Object.DestroyImmediate(fire.GetComponent<Collider>());
+      fire.transform.position=new Vector3(bx0,0.62f,bz0); fire.transform.localScale=new Vector3(1.6f,0.95f,1.6f);
+      var fm=new Material(Shader.Find("Standard")); fm.color=new Color(0.86f,0.62f,0.30f); fm.SetFloat("_Glossiness",0.15f);
+      fire.GetComponent<Renderer>().sharedMaterial=fm;
+      boxRecords.Add("{\"name\":\""+pid+"_fire\",\"kind\":\""+kind+"\",\"center\":["+bx0.ToString("F3")+",0.62,"+bz0.ToString("F3")+"],\"size\":[1.6,0.95,1.6]}");
+      np++; continue;
+    }
     if(kind.Contains("altar")){
       // wall niche: recess slab + ARCHED header (half-sunk horizontal cylinder).
       float hx=exX+0.9f, hz=exZ+0.9f; bool longX = hx>=hz;
@@ -293,7 +304,8 @@ if(props!=null) foreach(var po in props){ var p=po as System.Collections.Generic
   else if(kind.Contains("fallen_log")){ ph=0.8f; pw=1.1f; pc=new Color(0.35f,0.29f,0.21f); }
   else if(kind.Contains("boulder")){ ph=2.0f; pw=1.4f; pc=new Color(0.43f,0.44f,0.42f); }
   else if(kind.Contains("supply_crates")||kind.Contains("cart")){ ph=1.5f; pw=1.4f; pc=new Color(0.45f,0.43f,0.38f); }
-  else if(kind.Contains("rubble")||kind.Contains("crate")){ ph=1.4f; pw=1.5f; pc=new Color(0.45f,0.43f,0.4f); }
+  else if(kind.Contains("rubble")){ ph=0.8f; pw=1.5f; pc=new Color(0.45f,0.43f,0.4f); } // low broken-stone field, never a bastion mass
+  else if(kind.Contains("crate")){ ph=1.4f; pw=1.5f; pc=new Color(0.45f,0.43f,0.4f); }
   // MULTI-CELL props render as ONE box spanning their cells (a 5x2 tomb is one monument, not ten
   // cubes) — this is what makes the depth cue STRONG for low props (the crypt-escape lesson: the
   // per-cell 2x2 coffin was invisible to the CN; a single spanning box is not).
