@@ -152,7 +152,6 @@ def test_camp_manifest_entries_stay_in_sync():
     namespaces key the same hub). A byte-duplicate drifts silently; this lint pins them identical
     (modulo the cross-reference comment keys) so a VFX-anchor or ortho change to one without the
     other fails loud."""
-    import json
     m = json.loads((_ROOT / "extensions" / "renderers" / "unity" / "plates_manifest.json").read_text())
     a = {k: v for k, v in m["plates"]["camp_clearing"].items() if k != "_sync_comment"}
     b = {k: v for k, v in m["plates"]["camp_clearing_night"].items() if k != "_sync_comment"}
