@@ -20,11 +20,11 @@ hub door cells and one ruin-rubble prop closing the ruins' orphan pocket (11,10)
 an unmodified certified geometry.
 
 Usage (set WORLDOS_STATE_DIR to override the state dir; default current_room = camp_clearing):
-  WORLDOS_STATE_DIR=<dir> uv run --directory servers/engine python qa/seed_adventure_demo.py <state_dir> [current_room]
+  WORLDOS_STATE_DIR=<dir> uv run --directory servers/engine python /ABS/PATH/WorldOS/qa/seed_adventure_demo.py <state_dir> [current_room]
   # in the sandbox lane:
   WORLDOS_PLAYER_APP=/tmp/WorldOSPlayer_hotload.app qa/qa_sandbox.py up --run adventure \
       --campaign adventure_demo_v1 \
-      --seed-cmd "uv run --directory servers/engine python qa/seed_adventure_demo.py {state}"
+      --seed-cmd "uv run --directory servers/engine python /ABS/PATH/WorldOS/qa/seed_adventure_demo.py {state}"
 
 Prints the campaign_id on the LAST line (the contract other harnesses read).
 """
