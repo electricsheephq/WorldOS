@@ -219,6 +219,10 @@ def test_every_recipe_class_keeps_its_static_prompt_keys():
 def test_dwing_recipes_carry_hand_authored_flavor_keys():
     # The ONLY prose left to hand-author: the per-class flavor sentence (#1619) — style/mood/
     # atmosphere ONLY. Counts, shape, door walls and placement belong to the generator.
+    # SCOPE (evaOS #1629): this guard covers the FLAVOR KEYS of geometry-driven classes only.
+    # Legacy STATIC base_prompt/gemini_grounding keys (all classes) still hand-author feature
+    # prose — they are the no-`--geometry` fallback, superseded by the geometry path; the one
+    # measured-dangerous pattern there ('altar WHERE PRESENT', the shareable hedge) is gone.
     for name in ("dwing_room_0", "dwing_room_1"):
         cls = _RECIPES["classes"][name]
         assert cls.get("flavor"), name
