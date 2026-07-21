@@ -29,6 +29,8 @@ CLI:
   python3 qa/scoring_config_version.py --files     # list the files that define the full ruler
   python3 qa/scoring_config_version.py --artifact  # print the ARTIFACT ruler hash (ac_…, HV1 #1323)
   python3 qa/scoring_config_version.py --artifact-files  # list the artifact-ruler files
+  python3 qa/scoring_config_version.py --adventure  # print the ADVENTURE ruler hash (av_…, A-series A-T)
+  python3 qa/scoring_config_version.py --adventure-files  # list the adventure-ruler files
 """
 from __future__ import annotations
 
@@ -79,6 +81,28 @@ ARTIFACT_CONFIG_FILES: list[str] = [
     "score_schema_artifact_encounter.json",
 ]
 
+# The ADVENTURE ruler (A-series A-T, adventure_eval.py): a SEPARATE hash family (``av_…``) for the
+# N-run adventure aggregator. Same discipline as ARTIFACT_CONFIG_FILES — a DELIBERATELY DISTINCT list
+# that MUST NOT be folded into SCORING_CONFIG_FILES (appending there would silently re-version the
+# ``sc_``/``lc_`` engine-duo rulers, breaking the ledger's comparability of every existing
+# story/mech/angry number — the exact trap this module exists to prevent). The adventure ruler fences
+# the aggregator's WEAKEST-LINK verdict + per-dimension thresholds on their OWN axis: edit
+# ``adventure_eval_config.json`` and every FUTURE adventure aggregate re-versions, while the engine-duo
+# ``sc_``/``lc_`` and artifact ``ac_`` trends stay byte-identical. Absent files hash as a sentinel
+# (same as the other families) so a rename/delete also re-versions. NOTE: the adventure row's per-lens
+# story/mech/angry numbers still carry the engine-duo ``lc_`` stamp (they are the SAME lens rubrics);
+# ``av_`` fences only the aggregation/verdict config that is unique to this eval.
+#
+# ``adventure_eval.py`` itself is INCLUDED so the ruler fences the aggregation FORMULAS too, not just
+# the JSON thresholds: a change to how a dimension is computed (completion honesty, the pass/behavioral
+# derivation, the weakest-link pick) re-versions the adventure trend the same way a threshold edit does.
+# This OVER-versions on a pure comment edit — an accepted, honest-direction tradeoff (a stale hash that
+# claimed comparability across a formula change would be the worse failure).
+ADVENTURE_CONFIG_FILES: list[str] = [
+    "adventure_eval_config.json",
+    "adventure_eval.py",
+]
+
 
 def _content_hash(files: list[str], prefix: str, qa_dir: Path | None = None) -> str:
     """Order-stable sha256 over (name, content) pairs; absent files hash as a sentinel."""
@@ -117,6 +141,17 @@ def artifact_config_version(qa_dir: Path | None = None) -> str:
     return _content_hash(ARTIFACT_CONFIG_FILES, "ac_", qa_dir)
 
 
+def adventure_config_version(qa_dir: Path | None = None) -> str:
+    """Return a stable short hash (``av_xxxxxxxxxxxx``) of the ADVENTURE ruler's contents (A-T).
+
+    Distinct ``av_`` prefix so an adventure-ruler hash can never be mistaken for (or checked against)
+    a full-ruler ``sc_``, lens ``lc_``, or artifact ``ac_`` hash. Fences the N-run adventure
+    aggregator's weakest-link verdict + per-dimension thresholds on their own axis, independent of the
+    engine-duo and artifact rulers.
+    """
+    return _content_hash(ADVENTURE_CONFIG_FILES, "av_", qa_dir)
+
+
 def scoring_config_label(qa_dir: Path | None = None) -> str:
     """A human-readable label + the hash, e.g. ``ruler@sc_a1b2c3d4e5f6 (9 files)``."""
     root = qa_dir or _QA_DIR
@@ -131,6 +166,11 @@ if __name__ == "__main__":
     elif "--artifact-files" in sys.argv:
         for n in sorted(ARTIFACT_CONFIG_FILES):
             print(n)
+    elif "--adventure-files" in sys.argv:
+        for n in sorted(ADVENTURE_CONFIG_FILES):
+            print(n)
+    elif "--adventure" in sys.argv:
+        print(adventure_config_version())
     elif "--label" in sys.argv:
         print(scoring_config_label())
     elif "--lens" in sys.argv:

@@ -32,6 +32,12 @@ SURFACE TAXONOMY (the crux of the forensics — classify EVERY run precisely)
                            ``scorer_model`` = the panel model; ``methodology`` = the lens set + round,
                            e.g. "vc-panel-6lens round=2". The visual quality numbers live in the
                            visual_* columns, NOT story/mech/angry (which stay NULL).
+* ``adventure``          — the A-series adventure-loop eval (``qa/adventure_eval.py``): an AGGREGATE
+                           over N arc-directed ``qa/run_adventure.sh`` runs against the one-call
+                           adventure fixture. ``methodology`` = "arc-duo N=<n>"; the row's
+                           story/mech/angry/behavioral/engagement columns are the per-dimension
+                           aggregate (median lenses, green-rate, etc.) and ``notes`` carries the
+                           WEAKEST-LINK verdict line (the routing instrument for the next sprint).
 
 USAGE
 -----
@@ -84,7 +90,7 @@ DB_PATH = QA_DIR / "scores.db"
 MD_PATH = QA_DIR / "scores_ledger.md"
 
 # Allowed surface values (validated on insert; the crux of the forensic story).
-SURFACES = ("engine-duo", "GUI-built-app", "GUI-headless-proxy", "smoke-only", "visual")
+SURFACES = ("engine-duo", "GUI-built-app", "GUI-headless-proxy", "smoke-only", "visual", "adventure")
 
 # Column order is the canonical schema. Adding a column is additive: bump this list and
 # _ensure_schema() will ALTER TABLE ADD COLUMN on an existing db (old rows read NULL).
@@ -108,6 +114,10 @@ COLUMNS: tuple[str, ...] = (
                                # Fences the engine-duo quality trend. NULL on rows recorded before
                                # lens stamping (compare falls back to scoring_config_version).
     "rubric_label",       # human label for the ruler, e.g. "ruler@sc_a1b2c3d4e5f6 (9/9 files)"
+    "adventure_config_version",  # content hash of the ADVENTURE ruler (av_…) — the N-run adventure
+                               # aggregator's OWN hash family (see scoring_config_version.py
+                               # ADVENTURE_CONFIG_FILES). Stamped ONLY on surface="adventure" rows;
+                               # NULL on every other row (additive, migration-free — mirrors ac_ruler).
     "rc_label",           # release candidate this run scored, e.g. "v1.0.4-rc1" (NULL = ad-hoc)
     "story_overall",      # Tolkien/story-craft lens (0-5), NULL if not scored
     "mech_overall",       # Mechanical lens (0-5), NULL if not scored
@@ -430,7 +440,8 @@ def add_run(
     notes = fields.get("notes")
     if notes:
         for pattern, col in ((r"\bsc_[0-9a-f]{12}\b", "scoring_config_version"),
-                             (r"\blc_[0-9a-f]{12}\b", "lens_config_version")):
+                             (r"\blc_[0-9a-f]{12}\b", "lens_config_version"),
+                             (r"\bav_[0-9a-f]{12}\b", "adventure_config_version")):
             mismatched = sorted({h for h in re.findall(pattern, notes) if h != fields.get(col)})
             if mismatched:
                 raise ValueError(
