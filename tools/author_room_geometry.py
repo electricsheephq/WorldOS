@@ -318,8 +318,10 @@ def author_camp_v2() -> dict:
     # geometry-first lets us design it out instead of rubble-filling after the fact):
     # 1. SOUTH FIELD: shorten the log pile by one cell (8,9) — reconnects the whole 6-cell south
     #    pocket through (9,9) as real play space.
+    #    Also (3,9): the treeline perimeter closes the old open map edge, so the SW field needs a
+    #    walk-through gap in the bedroll line — campsites have gaps between bedrolls.
     for prop in g["props"]:
-        prop["cells"] = [c for c in prop["cells"] if tuple(c) != (8, 9)]
+        prop["cells"] = [c for c in prop["cells"] if tuple(c) not in {(8, 9), (3, 9)}]
     g["props"] = [prop for prop in g["props"] if prop["cells"]]
     # 2. SHELTER INTERIOR: enclosed by the frame — honest bedding, never walkable-looking dead cells.
     g["props"].append({"id": "shelter_bedding", "kind": "bedroll",
@@ -330,11 +332,24 @@ def author_camp_v2() -> dict:
                        "cells": [[12, 7], [13, 5], [13, 6], [13, 7], [13, 8], [13, 9],
                                  [14, 6], [14, 7], [14, 8]]})
     g["props"].append({"id": "ruin_slot_debris", "kind": "rubble", "cells": [[11, 10], [11, 11]]})
+    # EXTENT CONTRACT (#1543): the unified builder requires wall_run props. An outdoor clearing's
+    # perimeter IS the forest treeline (the old painting shows exactly this) — honest impassable
+    # boundary, minus the two door paths. Cells already held by props (ruin towers etc.) stay theirs.
+    taken = {tuple(c) for prop in g["props"] for c in prop["cells"]}
+    doors_set = {tuple(d) for d in g["door_cells"]}
+    cols, rows = g["cols"], g["rows"]
+    perim = ([(c, 0) for c in range(cols)] + [(c, rows - 1) for c in range(cols)]
+             + [(0, r) for r in range(rows)] + [(cols - 1, r) for r in range(rows)])
+    tree_cells = [list(c) for c in dict.fromkeys(perim) if c not in taken and c not in doors_set]
+    # The pocket BEHIND the lean-to (sealed by shelter + torch + perimeter) is forest undergrowth
+    # creeping into the clearing's NE corner — honest treeline, not walkable-looking dead space.
+    tree_cells += [[13, 1], [13, 2], [14, 1], [14, 2], [14, 3]]
+    g["props"].append({"id": "treeline", "kind": "wall_run", "cells": tree_cells})
     # Render-contract schema (mirror qa/room_geometries/*_geometry.json consumers).
     prop_cells = sorted({tuple(c) for prop in g["props"] for c in prop["cells"]})
     doors = {tuple(d) for d in g["door_cells"]}
     g["impassable"] = [list(c) for c in prop_cells if c not in doors]
-    g["walls"] = []
+    g["walls"] = [c for c in tree_cells]
     g["cell_default_walkable"] = True
     g["location"] = "camp_clearing"
     g["material"] = "forest_floor"
