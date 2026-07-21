@@ -65,9 +65,17 @@ def seeded(tmp_path_factory):
     last = [ln for ln in proc.stdout.splitlines() if ln.strip()][-1]
     assert last == sad.CID, f"last stdout line {last!r} != campaign id {sad.CID!r}"
 
+    # evaOS #1632 P3: save/restore the env var — a module-scoped fixture that leaves
+    # WORLDOS_STATE_DIR pointing at a throwaway dir contaminates sibling test modules in the
+    # same pytest process (flaky, collection-order-dependent).
+    prev = os.environ.get("WORLDOS_STATE_DIR")
     os.environ["WORLDOS_STATE_DIR"] = str(state)  # store.state_dir() reads this per call
     c = server._require(sad.CID)
-    return c
+    yield c
+    if prev is None:
+        os.environ.pop("WORLDOS_STATE_DIR", None)
+    else:
+        os.environ["WORLDOS_STATE_DIR"] = prev
 
 
 def _by_kind(c, kind):
@@ -137,3 +145,15 @@ def test_quest_active_with_four_objectives_and_giver(seeded):
     assert loc[q.location_id].name == "Crypt", "quest is not anchored to the crypt"
     # the reward is staged on the giver (handed over on 'Return to Maera')
     assert any(i.name == "Ring of Protection" for i in maera.inventory)
+
+
+def test_camp_manifest_entries_stay_in_sync():
+    """evaOS #1632 P3: camp_clearing is a deliberate MIRROR of camp_clearing_night (two campaign
+    namespaces key the same hub). A byte-duplicate drifts silently; this lint pins them identical
+    (modulo the cross-reference comment keys) so a VFX-anchor or ortho change to one without the
+    other fails loud."""
+    import json
+    m = json.loads((_ROOT / "extensions" / "renderers" / "unity" / "plates_manifest.json").read_text())
+    a = {k: v for k, v in m["plates"]["camp_clearing"].items() if k != "_sync_comment"}
+    b = {k: v for k, v in m["plates"]["camp_clearing_night"].items() if k != "_sync_comment"}
+    assert a == b, "camp_clearing and camp_clearing_night drifted — edit BOTH (they mirror one hub)"

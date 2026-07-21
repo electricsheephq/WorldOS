@@ -29,7 +29,8 @@
      "scale": 1.5,
      "y": 0.0
     }
-   ]
+   ],
+   "_sync_comment": "MIRRORED as camp_clearing for the adventure fixture \u2014 see that entry; the sync lint in test_seed_adventure_demo pins them identical."
   },
   "tavern": {
    "plate": "plates/tavern_v2_registered.png",
@@ -88,7 +89,8 @@
      "scale": 1.5,
      "y": 0.0
     }
-   ]
+   ],
+   "_sync_comment": "MIRROR of camp_clearing_night (the adventure fixture keys the hub as camp_clearing; walkslice/camp_smoke key it as camp_clearing_night). test_seed_adventure_demo pins the two entries identical \u2014 edit BOTH or the sync lint fails."
   }
  }
 }
