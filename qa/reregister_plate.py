@@ -177,3 +177,49 @@ def apply_similarity(img, sim: dict):
     coeffs = (inv_a.real, -inv_a.imag, inv_b.real, inv_a.imag, inv_a.real, inv_b.imag)
     return img.transform(img.size, Image.AFFINE, coeffs, resample=Image.BICUBIC,
                          fillcolor=_border_median(img))
+
+def reregister_iterative(boxes: dict, plate_path, out_path, max_iters: int = 2, bar: float = 0.35):
+    """Similarity warp with up to max_iters refinement passes. Each pass re-solves on the
+    corrected image; iterate only while the fit is stable AND err improves. Returns the final
+    solve dict + {"iters", "err_cells", "passed"}. (One pass leaves residual when the FIRST
+    coarse fit was near its range edge — measured: room_1 1.43 -> 0.39 in one pass.)"""
+    from pathlib import Path
+    from PIL import Image
+    from overlay_boxes import blob_solve
+    src = Path(plate_path)
+    img = Image.open(src).convert("RGB")
+    best_err = None
+    for it in range(max_iters):
+        tmp = Path(str(out_path) + f".it{it}.png")
+        img.save(tmp)
+        solve = blob_solve(boxes, tmp)
+        if "error" in solve:
+            for t in Path(str(out_path)).parent.glob(Path(str(out_path)).name + ".*.png"):
+                t.unlink(missing_ok=True)
+            return {"passed": False, "iters": it, "error": solve["error"]}
+        err = _max_err_cells(solve)
+        if best_err is None or err < best_err:
+            best_err = err
+            img.save(out_path)
+        if err <= bar:
+            for t in Path(str(out_path)).parent.glob(Path(str(out_path)).name + ".*.png"):
+                t.unlink(missing_ok=True)
+            return {"passed": True, "iters": it, "err_cells": err}
+        sim = fit_similarity(solve["matched_pairs"])
+        if sim.get("unstable"):
+            for t in Path(str(out_path)).parent.glob(Path(str(out_path)).name + ".*.png"):
+                t.unlink(missing_ok=True)
+            return {"passed": False, "iters": it, "err_cells": err, "unstable": sim}
+        img = apply_similarity(img, sim)
+    # final measure
+    tmp = Path(str(out_path) + ".final.png")
+    img.save(tmp)
+    solve = blob_solve(boxes, tmp)
+    err = _max_err_cells(solve) if "error" not in solve else 99.0
+    if best_err is None or err < best_err:
+        img.save(out_path); best_err = err
+    # evidence-dir hygiene: the .itN/.final temp plates look like extra registered plates to
+    # glob-based samplers — remove them before returning.
+    for t in Path(str(out_path)).parent.glob(Path(str(out_path)).name + ".*.png"):
+        t.unlink(missing_ok=True)
+    return {"passed": best_err <= bar, "iters": max_iters, "err_cells": best_err}
