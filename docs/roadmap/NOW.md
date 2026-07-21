@@ -23,6 +23,9 @@ _Last updated: 2026-07-21 (UTC) — Jul-16 generator chain merged; Task #76 in f
   2026-07-20). Stage 1 (beacon regen) = PR #1625; #1619 render_recipe = PR #1626;
   doc hygiene = PR #1624. Box claim via #1386 comments; packet in docs/KIMI-ONBOARDING.md §4.
 - **Companions:** #1620 experience gates (open).
+- **★ A-SERIES ACTIVE (2026-07-21, plan-approved):** the Adventure Loop — PRODUCT-ROADMAP §4d.
+  A0 lanes (get_quests RPC + seed_adventure_demo fixture) dispatched; A-T and A-G build in
+  PARALLEL after A0; the adventure eval's weakest-link verdict routes every subsequent sprint.
 
 ## Live lanes
 

@@ -270,6 +270,46 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
   native-bridge.js handoff); input = existing POST /move kinds ONLY. **EVAL = the T3 gate:** a
   blind AI playtester completes a quest loop IN the rendered surface (extend the GUI harness).
 
+## 4d. THE A-SERIES — The Adventure Loop (the organizing spine from 2026-07-21; plan-approved)
+
+> The question this series answers: the subsystems all exist and gate individually — rooms walk,
+> the DM plays, panels score, the harvest promotes. The A-series composes them into ONE evaluated
+> PLAYABLE LOOP (a Diablo-1-grade quest) and turns its eval into the routing instrument for
+> everything else: **each cycle, the weakest dimension gets the next sprint.** S8 (Demo Assembly)
+> is absorbed by this series — its gate becomes A-G's gate.
+
+- **A0 — Compose** *(two units, parallel)*: `get_quests` full-read RPC (engine additive; get_state
+  lists active only) + `qa/seed_adventure_demo.py` — the one-call fixture: camp ↔ tavern_snug
+  (Keeper/giver) ↔ shop (merchant), camp ↔ crypt (goblins) ↔ throne_hall (Goblin Boss); add_quest
+  4-objective arc; reward staged; full static stack at seed. Every room class is already
+  walk-green certified — composition, zero new geometry.
+- **A-T — The text-arc eval** *(parallel with A-G)*: `qa/run_adventure.sh` (duo-derivative,
+  arc-directed persona, ~15-beat budget, completion short-circuit) + `qa/quest_progress.py`
+  (per-beat get_quests polling → quest_trace.json: reached_giver / quest_accepted /
+  entered_dungeon / boss_dead / reward_received / quest_completed) + `qa/adventure_eval.py`
+  (N runs via the run_parallel pattern → completion_rate · beats/wall-time · stuck (dead beats +
+  stage-gap outliers) · engagement · 3 lenses · behavioral gate → scores_db surface="adventure"
+  + a WEAKEST-LINK verdict line). Ruler: new ac_-family config list per HV1's
+  scoring_config_version rule.
+- **A-G — The walked eval** *(parallel with A-T; absorbs S8's gate)*: `qa/adventure_walk.py`
+  drives the SANDBOX player through the arc route on the :8972 channel (walk_test door-graph
+  machinery + journey_eval VQA per stage + ui_playtest-style stuck/dead-click accounting), feeding
+  the same aggregator (modality column). Prereq: ONE box build batching the #1616 T-pose
+  registry-sync + any #76-adopted plates. Gate (from S8, upgraded): the full quest loop completes
+  walked, in-app semantics, tri-state gates green, per-room backdrop scorecard PASS.
+- **A2 — The flywheel protocol**: each autonomous run = 1 full adventure eval (N≥3 arc + ≥1
+  walked) + 1 improvement cycle on the weakest dimension, then re-eval. The two-anchor panel
+  ruler RATCHETS: when a flagship room is hand-elevated past the calibration reference, the
+  reference upgrades and pulls the bulk tier on the next cycle. Variation breadth (bar variants,
+  dungeon variants) = re-running Loop 0 (the room pipeline) per seed — the `library/` is the
+  accumulation of gate-passed artifacts (HV3 promote is its sole writer).
+- **A3 — Proceduralization gate**: only when the A-eval holds green across N seeds do we
+  parameterize — adventure templates × universe skins (the DM pulls a world), background
+  generation on library cache-miss via the StreamingAssets HOT-LOAD mechanism (camOrtho-proven;
+  box builds are ship-time only) with the never-T-pose floor as the immediate stand-in.
+  Proceduralizing an ungated loop generates infinite mediocrity; gating first generates infinite
+  shippable.
+
 ## 4c. THE HV-SERIES — The Harvest Loop (Act II; the flywheel)
 
 > The mechanism: every scored QA run is ALSO a harvest candidate — no new run types. Content flows
