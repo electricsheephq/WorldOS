@@ -26,7 +26,7 @@
 2. `VISION.md` — pillars + load-bearing invariants + decision-by-eval.
 3. `docs/ACTIVE-GOAL.md` — the standing driver + blocker law (policy is ageless, blocker table stale by construction).
 4. `docs/roadmap/PRODUCT-ROADMAP.md` — the plan (durable); its §4b execution-state block is stale (Jul 8).
-5. **`docs/roadmap/PROCEDURAL-SCORECARD.md` (Jul 16) — the freshest narrative truth** for the generator chain; narrates tip commits #1611/#1614/#1618/#1621 and the dwing-wing 0-adopted close-out.
+5. **`docs/roadmap/PROCEDURAL-SCORECARD.md` (Jul 16) — the freshest narrative truth** for the generator chain; narrates the tip events (dress_focal v2/#1618, the wing hardening, the dwing-wing 0-adopted close-out).
 6. `docs/ROOM-PIPELINE-RUNBOOK.md` (Jul 16) — the 11-step room pipeline; §10b sandbox hot-load gate loop; §11 walkability ship gate (BOTH beauty panel AND `qa/walk_test.py` GREEN to ship).
 7. `qa/PANEL-PROTOCOL.md` (Jul 16) — the versioned blind-panel ruler; nobody freehands the ruler; author never renders own verdict.
 8. Active sprint charter: GitHub issue **#1386** (Act II close-out, Rendered Felt) — box claim queue lives in its comments.
@@ -35,8 +35,8 @@
 
 ## 3. Live state snapshot (verified 2026-07-20)
 
-- **Generator chain merged & staged on main**: 9 PRs (#1604–#1609 spine, #1610→#1611→#1621 generator, #1613/#1615/#1614/#1616 instruments). dress_focal v2 gives every generated room 3 non-collinear fire beacons; paint has an `err_cells ≤ 0.35` hard gate with similarity re-registration; walk gates are fire-masked tri-state (GREEN/RED/ERROR).
-- **Task #76 (next-cycle packet) is PENDING, never started** — see §4.
+- **Generator chain merged & staged on main**: 13 PRs — spine (#1604–#1609, incl. sha-pinned certifications #1607 + ledger walk surface #1608), generator (#1610/#1611/#1621), instruments (#1613–#1616). dress_focal v2 gives every generated room 3 non-collinear fire beacons; paint has an `err_cells ≤ 0.35` hard gate with similarity re-registration; walk gates are fire-masked tri-state (GREEN/RED/ERROR).
+- **Task #76 (next-cycle packet) is IN FLIGHT** — stage 1 (beacon regen) opened as PR #1625; the render → paint → gate half remains — see §4.
 - **QA truth**: `qa/RRI.json` = RRI 2.7, release_ready=false, 3/11 gates, 1-of-5 personas — partial/harness-contaminated and unsuperseded (no valid release verdict exists). Scores ledger: 117 runs, visual-only since Jul 10. Walk-GREEN: crypt, tavern, throne_hall (live) + shop, tavern_snug (pinned certs in `qa/certifications/`). dwing wing: 0-adopted / 3 honest negatives (owner-falsified adoptions → "instruments adjudicate eyeballs").
 - **Live campaign**: `play-state/app-gate-v105-b/campaigns/camp_280cfd4d22a0` — DM budget-stopped after 2 turns (Jul 8).
 - **Open PRs that matter**: #1617 (Unity persistence runbook — its OPERATIONS.md sections are NOT in base yet), #1498 (outdoor LoRA, blocked on Scenario train-model quota — owner decision), #1298 (day-plate selection, intentionally unmerged pending owner), #1012 draft (slab tiering, A/B-gated), #1622 (dependabot).
@@ -100,9 +100,9 @@ Shared surfaces that make either side's work visible to the other:
 
 ## 8. Where Kimi can add value now (ordered, cheapest-first)
 
-1. **Doc-hygiene PR — DONE (landed via #1624, 2026-07-21)** (zero CU, zero box): refreshed `docs/roadmap/NOW.md` to the 2026-07-20 truth + added RUNBOOK-INDEX rows for the `qa/walk_test.py` / `tools/generate_town.py` chain + landed this file. Pure repo loop.
+1. **Doc-hygiene PR — DONE (this file + NOW.md + RUNBOOK-INDEX land via #1624)** (zero CU, zero box): refreshed `docs/roadmap/NOW.md` to the 2026-07-20 truth + added RUNBOOK-INDEX rows for the `qa/walk_test.py` / `tools/generate_town.py` chain. Pure repo loop.
 2. **#1619 render_recipe** (zero CU): the code half that kills recipe-authoring bugs — the previous session recommended landing it BEFORE the repaint. **Update: render_recipe PR #1626 opened, in review.**
-3. **Task #76 next cycle** (needs Scenario CU confirmation + GEX44 box claim): the full regen → render → paint → gate → adjudicate loop, §4 above.
+3. **Task #76 next cycle** (CU refilled; box claim via #1386): the full regen → render → paint → gate → adjudicate loop, §4 above. **Update: stage 1 regen opened as PR #1625.**
 4. **#1620 experience gates** and the open companions of #1618.
 5. Later/larger: a valid 5-persona RRI sweep to replace the contaminated f5500ac row; dist/WorldOS.app rebuild; towns beyond the 4-room proof (exteriors/streetscape generator is the known gap; TILED-SPACE-SPIKE ruling says towns = layout problem).
 
@@ -110,6 +110,6 @@ Shared surfaces that make either side's work visible to the other:
 
 1. Scenario CU balance — **refilled 2026-07-20 (5k+)**; the "needs fresh budget" framing is stale. Open remainder: land #1619 (PR #1626, in review) first and defer paint?
 2. GitHub LFS data pack for the box repo (~$5/mo) — buy, or keep tarball-only saves?
-3. GitNexus: explicit waiver for CLI-fallback, or wire the MCP for Kimi?
+3. GitNexus — **RESOLVED 2026-07-20: the MCP is wired for Kimi** (impact/detect_changes live from the canonical checkout; index rebuild to the tip runs detached).
 4. PR this onboarding doc (+ NOW.md refresh) through the normal loop? — **RESOLVED: landed via #1624.**
-5. Green-light to claim the box on #1386 and start Task #76 when 1 is answered?
+5. Green-light to claim the box on #1386 and start Task #76 — **GRANTED 2026-07-21** (CU refilled; reviews + merge first).
