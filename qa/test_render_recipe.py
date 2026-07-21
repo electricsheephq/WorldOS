@@ -62,14 +62,14 @@ def test_feature_counts_dwing_room_0():
     assert "FEATURE COUNTS (strict)" in block
     assert "EXACTLY TWO stone pillars" in block          # anchor_a + anchor_b (kind "pillar")
     assert "EXACTLY ONE altar" in block                  # focal_altar
-    assert "EXACTLY TWO braziers" in block               # focal_brazier_w/e
+    assert "EXACTLY THREE braziers" in block             # dress_focal v2 beacon field (#1618/#1625)
     assert "EXACTLY ONE arched doorway" in block         # door_cells [[11, 6]]
 
 
 def test_feature_counts_dwing_room_1():
     block = _block(_geom("dwing_room_1_geometry.json"))
     assert "EXACTLY ONE stone pillar" in block           # anchor_a
-    assert "EXACTLY TWO braziers" in block               # focal_brazier_w/e
+    assert "EXACTLY THREE braziers" in block             # dress_focal v2 beacon field (#1618/#1625)
     assert "EXACTLY TWO arched doorways" in block        # door_cells [[0,3],[11,3]]
     assert "altar" not in block.split("NEGATIVE")[0].lower().replace("no altar", ""), \
         "the counts block must not claim an altar that the geometry does not have"
@@ -136,10 +136,12 @@ def test_room_shape_roughly_square_dwing_room_0():
 
 # ── FOCAL PLACEMENT (strict) — brazier/altar cells ──────────────────────────────
 
-def test_brazier_placement_dwing_room_1_flanks_central_lane():
+def test_brazier_placement_dwing_room_1_three_beacons_enumerated():
+    # dress_focal v2 (#1618/#1625) gives the room THREE non-collinear braziers —
+    # the n==2 "flanking" special case must NOT fire; the clause enumerates zones.
     block = _block(_geom("dwing_room_1_geometry.json"))
     assert "BRAZIER PLACEMENT (strict)" in block
-    assert "flanking the central walking lane" in block  # one west-of-centre + one east-of-centre
+    assert "flanking the central walking lane" not in block
     assert "west-of-centre" in block
     assert "east-of-centre" in block
     assert "do NOT move them" in block
