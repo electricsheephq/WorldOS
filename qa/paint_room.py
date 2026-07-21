@@ -202,12 +202,16 @@ def main() -> int:
                         winner = nd
                         break
                 else:
-                    print("[paint_room] ✖ BASE BEACONS UNDETECTABLE after redraws — the styled pass "
-                          "would have to invent fire; failing before the Gemini spend.",
-                          file=sys.stderr)
-                    (out_dir / "report.json").write_text(json.dumps(
-                        {**result, "base_beacon_gate": "FAILED"}, indent=1))
-                    return 1
+                    # ADVISORY ONLY (calibration 2026-07-22): room_1's KNOWN-GOOD base — the chain
+                    # that passed err_cells, panel, blind adjudication AND the walk gate — ALSO
+                    # fails this detector (err 1.13, 2 blobs): flux fire is too dim for a blob
+                    # detector tuned on styled brightness. A hard fail here blocks good chains.
+                    # The styled-stage err_cells gate remains the authoritative adjudicator
+                    # (it passed the good chain and failed every invented one).
+                    print("[paint_room] ⚠ base beacons not detector-visible after redraws "
+                          "(advisory — flux fire is often too dim for the detector; the styled-"
+                          "stage err_cells gate adjudicates)")
+                    result["base_beacon_gate"] = "advisory-undetectable"
 
     base_asset = winner["saved"][0]["asset_id"]
     base_path = winner["saved"][0]["path"]
