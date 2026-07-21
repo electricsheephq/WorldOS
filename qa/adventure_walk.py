@@ -166,7 +166,13 @@ def score_stage_frame(frame_path: Optional[str], stage: Stage, scorer: FrameScor
     empty-capture rule)."""
     if not frame_path:
         return {"frames_checked": 0, "flags": {}, "defects": ["vqa_no_frame"], "passed": False}
-    flags = {k: bool(v) for k, v in scorer(frame_path, stage_questions(stage)).items()}
+    try:
+        raw = scorer(frame_path, stage_questions(stage))
+    except Exception as e:  # noqa: BLE001 — a scorer-infra crash is a HARNESS defect for THIS stage,
+        # never a run-killer: the arc must finish and the report must land with prior stages intact.
+        return {"frames_checked": 0, "flags": {}, "defects": ["vqa_scorer_error"],
+                "passed": False, "error": str(e)[:200]}
+    flags = {k: bool(v) for k, v in raw.items()}
     want = {q["flag"] for q in stage_questions(stage)}
     missing = want - flags.keys()
     if missing:
@@ -179,7 +185,7 @@ def score_stage_frame(frame_path: Optional[str], stage: Stage, scorer: FrameScor
 
 
 # ── tri-state verdict (PURE; walk_test discipline — a harness defect is NEVER a room verdict) ───────
-VQA_HARNESS_FLAGS = frozenset({"vqa_no_frame", "vqa_incomplete"})
+VQA_HARNESS_FLAGS = frozenset({"vqa_no_frame", "vqa_incomplete", "vqa_scorer_error"})
 
 
 def classify_stage_verdict(stage_rec: dict) -> str:
@@ -347,8 +353,9 @@ def _approach_actor(qa: str, engine: str, actor: str, settle: float, timeout: fl
     try:
         W._post(f"{qa}/talk", {"target": actor})
         out["talked"] = True
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 — best-effort proximity verb; record why it failed.
         out["talked"] = None
+        out["talk_error"] = str(e)[:120]
     return out
 
 

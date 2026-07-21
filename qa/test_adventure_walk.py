@@ -251,3 +251,19 @@ def test_drive_error_is_harness_not_a_walk_red(monkeypatch, tmp_path):
     # later stages can't cross (surface unreachable) → harness. No stage should be a false RED here.
     assert report["harness_errors"]
     assert A.classify_walk_verdict(report)[0] == "ERROR"
+
+
+def test_scorer_crash_is_stage_harness_error_never_a_run_killer():
+    """A VQA scorer that RAISES (subprocess dead, non-JSON output) must degrade to a per-stage
+    vqa_scorer_error harness defect — stage verdict ERROR, never RED/GREEN, never an exception."""
+    from adventure_walk import score_stage_frame, classify_stage_verdict, VQA_HARNESS_FLAGS, build_route
+
+    def _boom(_frame, _questions):
+        raise RuntimeError("scorer subprocess exploded")
+
+    stage = build_route("camp_clearing")[0]
+    vqa = score_stage_frame("frame.png", stage, _boom)
+    assert vqa["defects"] == ["vqa_scorer_error"] and vqa["passed"] is False
+    assert "vqa_scorer_error" in VQA_HARNESS_FLAGS
+    rec = {"arrived": True, "stuck": False, "harness_errors": [], "vqa": vqa}
+    assert classify_stage_verdict(rec) == "ERROR"

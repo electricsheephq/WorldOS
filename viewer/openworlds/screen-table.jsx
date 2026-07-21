@@ -1002,9 +1002,13 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
     // `standalone` (hidden AT MOUNT — a never-focused sandbox surface) keeps polling when the tab is
     // hidden; a tab that started VISIBLE keeps the battery-friendly pause-on-background behavior so a
     // real player who tabs away still pauses the poll.
-    const standalone = document.visibilityState !== "visible";
+    let standalone = document.visibilityState !== "visible";
     const handleVisibility = () => {
       if (document.visibilityState === "visible") {
+        // A tab that has EVER been visible is a real player surface from here on — demote it out of
+        // standalone so backgrounding it again pauses the poll (only never-visible sandbox tabs keep
+        // polling forever).
+        standalone = false;
         guardedLoad();
         startPolling();
       } else if (!standalone) {

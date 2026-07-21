@@ -156,8 +156,13 @@ def test_visible_mount_still_fetches_session_surface_unchanged():
 def test_table_source_does_unconditional_initial_surface_load():
     source = (OPENWORLDS / "screen-table.jsx").read_text(encoding="utf-8")
     # The initial load + poll are armed unconditionally on mount (not behind `handleVisibility()`).
-    assert "const standalone = document.visibilityState !== \"visible\";" in source, (
+    assert "let standalone = document.visibilityState !== \"visible\";" in source, (
         "the effect must capture whether the tab was hidden AT MOUNT (the standalone-sandbox case)"
+    )
+    # Promotion rule: a tab that has EVER been visible leaves standalone (regains pause-on-background);
+    # only never-visible sandbox tabs poll forever.
+    assert "standalone = false;" in source, (
+        "first visibility must demote the tab out of standalone (background-opened real tabs must not busy-poll forever)"
     )
     # The old `handleVisibility();` mount call (which skipped the fetch when hidden) must be gone,
     # replaced by an explicit unconditional guardedLoad() + startPolling().
