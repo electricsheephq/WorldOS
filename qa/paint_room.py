@@ -223,23 +223,21 @@ def main() -> int:
                     err0 = _max_err_cells(solve0)
                     corr["before_err_cells"] = err0
                     if err0 > 0.35:
-                        sim = fit_similarity(solve0["matched_pairs"])
-                        if sim.get("unstable"):
-                            corr.update(attempted=True, unstable=sim)
-                            registration_failed = True
+                        # ITERATIVE similarity refine (proven: room_1 1.43 -> 0.31 in 2 passes).
+                        # An UNSTABLE fit here is usually STRUCTURAL (an invented/relocated fire
+                        # beacon contorts the 3-point fit — measured: an invented 4th brazier read
+                        # as rot 12-21deg @ scale 0.65) — the retry lever is a REPAINT, not a warp.
+                        from reregister_plate import reregister_iterative  # noqa: E402
+                        corrected_path = out_dir / f"{args.room_class}_final_1344_reregistered.png"
+                        res = reregister_iterative(boxes_sc, final_path, corrected_path, max_iters=3)
+                        corr.update(attempted=True, **{k: v for k, v in res.items() if k != "passed"})
+                        corr["path"] = str(corrected_path)
+                        if res.get("passed"):
+                            subprocess.run(["cp", str(corrected_path), str(final_path)], check=True)
+                            corr["adopted"] = True
+                            print(f"[paint_room] iterative warp adopted: err_cells {err0} -> {res['err_cells']}")
                         else:
-                            corrected_path = out_dir / f"{args.room_class}_final_1344_reregistered.png"
-                            apply_similarity(Image.open(final_path).convert("RGB"), sim).save(corrected_path)
-                            solve1 = blob_solve(boxes_sc, corrected_path)
-                            err1 = _max_err_cells(solve1) if "error" not in solve1 else 99.0
-                            corr.update(attempted=True, rot_deg=sim["rot_deg"], scale=sim["scale"],
-                                        after_err_cells=err1, path=str(corrected_path))
-                            if err1 <= 0.35:
-                                subprocess.run(["cp", str(corrected_path), str(final_path)], check=True)
-                                corr["adopted"] = True
-                                print(f"[paint_room] similarity warp adopted: err_cells {err0} -> {err1}")
-                            else:
-                                registration_failed = True
+                            registration_failed = True
                 result["styled"]["corrected"] = corr
             else:
                 result["styled"]["corrected"] = {"attempted": False,
