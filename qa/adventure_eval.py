@@ -10,7 +10,9 @@ the A2 flywheel reads to pick the next sprint (the weakest dimension gets the ne
 Dimensions (each normalized 0..1, higher = better; a dimension with no data is excluded from the
 weakest-link pick):
 
-  completion   — completion_rate: fraction of runs whose quest reached ``quest_completed``.
+  completion   — completion_rate: fraction of runs whose quest reached terminal status
+                 ``completed`` (a terminal ``failed`` / any other terminal status is NOT a
+                 completion — completion honesty reads the recorded status, not mere terminality).
   pace         — how fast completions land vs. the beat budget (a completed run at few beats scores
                  high; a run that never completed scores 0). Median beats-to-complete is reported.
   stuck        — 1 - stuck_rate, where a run is "stuck" if it had dead beats (>= threshold) OR a
@@ -20,6 +22,17 @@ weakest-link pick):
   story        — median Tolkien story-craft lens / 5.
   mechanics    — median of the mechanical + Angry-DM (5e-fidelity) lenses / 5.
   behavioral   — GREEN rate across runs (the deterministic gate).
+
+PERSISTED VERDICT (persist_row → one ``surface="adventure"`` scores_db row):
+  behavioral — "GREEN" iff green_rate == 1.0, "RED" iff green_rate == 0.0, "MIXED" for a split
+               run set (0 < green_rate < 1), None iff no run carried gate evidence.
+  passed     — 1 iff completion_rate >= pass_completion_rate AND green_rate is not None AND
+               green_rate >= 0.5. So a RED aggregate (green_rate == 0) fails, and MISSING
+               behavioral evidence (green_rate is None) ALSO fails — a citable passing row
+               requires gate evidence.
+  provenance — the persisted dm_model/actor_model are the models the runs RECORDED (read from
+               each run summary); a --dm-model/--actor-model CLI override wins; a default is used
+               only when nothing is recorded, annotated ``provenance:defaulted(...)`` in the notes.
 
 Per-run inputs, read from ``<prefix>.<suffix>`` (all optional; a missing file degrades that run's
 contribution to None, never an error):
@@ -44,6 +57,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import statistics
 import subprocess
 import sys
@@ -56,12 +70,25 @@ if str(HERE) not in sys.path:
 
 CONFIG_PATH = HERE / "adventure_eval_config.json"
 
-# The arc stages, mirrored from quest_progress so this module needs no engine import for the offline
-# path. quest_progress.STAGES is the authority; this is a read-only copy used for stage-gap ordering.
-STAGES: tuple[str, ...] = (
+# The arc stages, BOUND to quest_progress.STAGES (the authority) so the two can never drift — both
+# live in qa/ under the same sys.path the tests use. A literal fallback is kept ONLY for the case
+# where quest_progress can't be imported (e.g. an engine-less path scan); the module-load assertion
+# below fails LOUDLY if that fallback ever diverges from the real STAGES.
+_STAGES_FALLBACK: tuple[str, ...] = (
     "reached_giver", "quest_accepted", "entered_dungeon",
     "boss_dead", "reward_received", "quest_completed",
 )
+try:
+    from quest_progress import STAGES  # noqa: PLC0415  # the authoritative arc-stage order
+except ImportError:
+    STAGES = _STAGES_FALLBACK
+else:
+    # Drift guard: if quest_progress ever reorders/renames stages, the hand-written fallback must be
+    # updated in lockstep — surface it at import time rather than shipping a silent mismatch.
+    assert tuple(STAGES) == _STAGES_FALLBACK, (
+        f"adventure_eval._STAGES_FALLBACK {_STAGES_FALLBACK} drifted from "
+        f"quest_progress.STAGES {tuple(STAGES)} — update the fallback in lockstep"
+    )
 
 
 def load_config(path: Path | str = CONFIG_PATH) -> dict:
@@ -91,32 +118,74 @@ def _lens_overall(prefix: str, suffix: str) -> Optional[float]:
         return None
 
 
+# The header + terminal verdict qa/assert_behavioral.py prints on stdout (its pass-output contract):
+# every run prints the header; a CLEAN pass prints a terminal ``GREEN`` / ``GREEN (N warning(s))``
+# line (the RED verdict goes to stderr, so it is NOT in the tee'd gate.txt — its tell is a [FAIL] line).
+_GATE_HEADER = "=== behavioral assertions ==="
+
+
+def _gate_has_green_marker(txt: str) -> bool:
+    """True iff the gate carries assert_behavioral's POSITIVE success marker (a terminal ``GREEN``
+    verdict line), not merely the ABSENCE of a [FAIL]."""
+    for line in txt.splitlines():
+        s = line.strip()
+        if s == "GREEN" or s.startswith("GREEN ("):
+            return True
+    return False
+
+
 def _behavioral(prefix: str, summary: Optional[dict]) -> Optional[str]:
-    """GREEN / RED / None. Summary field wins; else scan the gate.txt for a [FAIL] line."""
+    """GREEN / RED / None. Summary field wins; else derive from the gate.txt with POSITIVE-evidence
+    discipline: RED iff a [FAIL] line is present; GREEN ONLY when the gate carries assert_behavioral's
+    success marker (the header + a terminal ``GREEN`` verdict). An empty / truncated / malformed gate
+    is None (unknown) — NEVER an assumed GREEN from the mere absence of [FAIL]. Per the pass semantics,
+    None ⇒ the run contributes no gate evidence ⇒ pass=0."""
     if summary and summary.get("behavioral") in ("GREEN", "RED"):
         return summary["behavioral"]
     gate = Path(f"{prefix}.gate.txt")
-    if gate.is_file():
-        try:
-            txt = gate.read_text(encoding="utf-8")
-        except OSError:
-            return None
-        return "RED" if "[FAIL]" in txt else "GREEN"
+    if not gate.is_file():
+        return None
+    try:
+        txt = gate.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    if "[FAIL]" in txt:
+        return "RED"
+    if _GATE_HEADER in txt and _gate_has_green_marker(txt):
+        return "GREEN"
     return None
 
 
 def _completion_from_trace(trace: Optional[dict]) -> tuple[bool, Optional[int], list[dict]]:
-    """(completed, beats_to_complete, stamps) from a quest_trace.json dict."""
+    """(completed, beats_to_complete, stamps) from a quest_trace.json dict.
+
+    COMPLETION HONESTY (settled): ONLY a quest that reached terminal status ``completed`` counts as
+    a completion. A terminal ``failed`` (or any other non-active terminal status) is NOT a
+    completion — quest_progress stamps ``quest_completed`` for ANY status flip off "active" (its
+    signal is ``status:<x>``), so terminality alone would over-count a failed run. We read the
+    RECORDED status (the completed stamp's ``status:<x>`` signal when present, else the trace's live
+    ``quest_status``), never mere presence of the terminal stamp."""
     if not trace:
         return False, None, []
     stamps = list(trace.get("stamps") or [])
     completed_stamp = next((s for s in stamps if s.get("stage") == "quest_completed"), None)
-    if completed_stamp is not None:
-        return True, _int_or_none(completed_stamp.get("beat")), stamps
-    # A status flip recorded outside the stamps (defensive): trust an explicit status too.
-    if str(trace.get("quest_status") or "active") not in ("active", "", "None"):
-        return True, _int_or_none(trace.get("updated_beat")), stamps
+    status = _terminal_status(trace, completed_stamp)
+    if status == "completed":
+        beat = (_int_or_none(completed_stamp.get("beat")) if completed_stamp is not None
+                else _int_or_none(trace.get("updated_beat")))
+        return True, beat, stamps
     return False, None, stamps
+
+
+def _terminal_status(trace: dict, completed_stamp: Optional[dict]) -> str:
+    """The quest's resolved terminal status, lowercased ("active" when unresolved). Prefers the
+    quest_completed stamp's recorded ``status:<x>`` signal (what the poll actually observed); falls
+    back to the trace's live ``quest_status`` (a status flip recorded outside the stamps)."""
+    if completed_stamp is not None:
+        sig = str(completed_stamp.get("signal") or "")
+        if sig.startswith("status:"):
+            return sig.split(":", 1)[1].strip().lower() or "active"
+    return str(trace.get("quest_status") or "active").strip().lower() or "active"
 
 
 def _int_or_none(v: Any) -> Optional[int]:
@@ -132,7 +201,11 @@ def _stage_gap_outlier(stamps: list[dict], threshold: int) -> bool:
     by_stage = {s.get("stage"): _int_or_none(s.get("beat")) for s in stamps}
     ordered = [by_stage[s] for s in STAGES if by_stage.get(s) is not None]
     for a, b in zip(ordered, ordered[1:]):
-        if b - a > threshold:
+        # Beats are MONOTONIC along the arc (stamp_beat only writes forward), so a healthy gap is
+        # b >= a and (b - a) is the stall length. abs() guards the pathological case — a corrupted
+        # or partially-written trace whose stamp beats went backwards — so a negative delta can't
+        # silently read as a small (non-outlier) gap; either direction past the threshold is a stall.
+        if abs(b - a) > threshold:
             return True
     return False
 
@@ -150,10 +223,22 @@ def _engagement_pct(prefix: str, summary: Optional[dict]) -> Optional[float]:
         return None
     try:
         import feature_engagement as fe  # noqa: PLC0415
-        cov = fe.engagement_coverage(state, tool_counts=None)
+        # Pass the run's beat count as session_beats: beats-keyed systems (a camp scene owed by
+        # beat N, an act advance by beat M) live in the TRANSCRIPT, not the snapshot, so without it
+        # they classify N/A and a run can degenerate to a 0/0 (expected==0) coverage → None. The
+        # runner records this in the summary (run_adventure.sh); a raw-state fallback leaves it None.
+        session_beats = _int_or_none(summary.get("session_beats")) if summary else None
+        cov = fe.engagement_coverage(state, tool_counts=None, session_beats=session_beats)
         engaged, expected = str(cov.get("coverage", "0/0")).split("/")
         expected_n = int(expected)
-        return (int(engaged) / expected_n) if expected_n else None
+        if not expected_n:
+            # Still 0/0 even with the beat count: no system had an occasion to engage. Keep None
+            # (excluded from the weakest-link pick) but NAME the run so a dark engagement dimension
+            # is traceable rather than silently absent.
+            print(f"[adventure_eval] engagement N/A for run {Path(prefix).name}: 0/0 coverage "
+                  f"(session_beats={session_beats})", file=sys.stderr)
+            return None
+        return int(engaged) / expected_n
     except Exception:
         return None
 
@@ -211,6 +296,11 @@ def read_run(prefix: str, config: dict) -> dict:
         "wall_s": wall_s,
         "s_per_beat": s_per_beat,
         "stages_reached": [s.get("stage") for s in stamps],
+        # Model PROVENANCE the run recorded (run_adventure.sh stamps the resolved DM/actor models
+        # into its summary); None when the summary predates provenance stamping. persist_row prefers
+        # a CLI override, else these recorded values, else a default (annotated in the row notes).
+        "dm_model": (summary or {}).get("dm_model") or None,
+        "actor_model": (summary or {}).get("actor_model") or None,
     }
 
 
@@ -266,7 +356,9 @@ def aggregate(prefixes: list[str], config: Optional[dict] = None) -> dict:
     story_dim = (story_med / 5.0) if story_med is not None else None
     mech_parts = [x / 5.0 for x in (mech_med, angry_med) if x is not None]
     mech_dim = round(statistics.mean(mech_parts), 3) if mech_parts else None
-    behavioral_dim = green_rate  # already 0..1 or None
+    # Round at assignment, consistent with its sibling dims (story_dim/mech_dim), so the value the
+    # weakest-link pick sees is the same 3dp value the dims map reports.
+    behavioral_dim = round(green_rate, 3) if green_rate is not None else None  # already 0..1 or None
 
     dims: dict[str, Optional[float]] = {
         "completion": round(completion_rate, 3),
@@ -275,8 +367,14 @@ def aggregate(prefixes: list[str], config: Optional[dict] = None) -> dict:
         "engagement": round(engagement, 3) if engagement is not None else None,
         "story": round(story_dim, 3) if story_dim is not None else None,
         "mechanics": mech_dim,
-        "behavioral": round(behavioral_dim, 3) if behavioral_dim is not None else None,
+        "behavioral": behavioral_dim,
     }
+
+    # Model PROVENANCE: the single model the runs recorded (first non-empty across runs). persist_row
+    # prefers a CLI override, then this, then a default — so a persisted row's dm_model/actor_model
+    # reflects what actually drove the launched runs, not a hardcoded guess.
+    dm_model_recorded = next((r["dm_model"] for r in runs if r.get("dm_model")), None)
+    actor_model_recorded = next((r["actor_model"] for r in runs if r.get("actor_model")), None)
 
     weakest, weakest_score, lever = _weakest_link(dims, config)
     verdict = (
@@ -301,6 +399,8 @@ def aggregate(prefixes: list[str], config: Optional[dict] = None) -> dict:
         "weakest_link": weakest,
         "weakest_score": weakest_score,
         "verdict": verdict,
+        "dm_model_recorded": dm_model_recorded,
+        "actor_model_recorded": actor_model_recorded,
         "runs": runs,
     }
 
@@ -322,19 +422,47 @@ def persist_row(
     run_id: str,
     db_path: Optional[str] = None,
     build_sha: str = "",
-    dm_model: str = "opus",
-    actor_model: str = "sonnet",
+    dm_model: Optional[str] = None,
+    actor_model: Optional[str] = None,
     source_path: str = "",
 ) -> dict:
-    """Write ONE ``surface="adventure"`` row to scores_db and return the field dict written."""
+    """Write ONE ``surface="adventure"`` row to scores_db and return the field dict written.
+
+    ``dm_model`` / ``actor_model`` are CLI OVERRIDES — when None (the default) the models the runs
+    RECORDED win, and a hardcoded default is used only when nothing was recorded (annotated
+    ``provenance:defaulted(...)`` in the notes)."""
     import scores_db  # noqa: PLC0415
     from scoring_config_version import adventure_config_version  # noqa: PLC0415
 
     n = agg["n"]
     green_rate = agg.get("green_rate")
-    behavioral = "GREEN" if green_rate == 1.0 else ("RED" if green_rate is not None else None)
+    # Behavioral verdict (settled): GREEN iff a full-green run set, RED iff a full-red set, MIXED for
+    # a split, None iff NO run carried gate evidence (green_rate is None).
+    if green_rate is None:
+        behavioral: Optional[str] = None
+    elif green_rate == 1.0:
+        behavioral = "GREEN"
+    elif green_rate == 0.0:
+        behavioral = "RED"
+    else:
+        behavioral = "MIXED"
+    # Pass (settled): completion above the bar AND POSITIVE gate evidence at >= 0.5 green. A RED
+    # aggregate fails; MISSING behavioral evidence (green_rate None) also fails — a citable passing
+    # row requires gate evidence.
     pass_bar = float(load_config().get("pass_completion_rate", 0.5))
-    passed = 1 if (agg["completion_rate"] >= pass_bar and (green_rate is None or green_rate >= 0.5)) else 0
+    passed = 1 if (agg["completion_rate"] >= pass_bar
+                  and green_rate is not None and green_rate >= 0.5) else 0
+
+    # Provenance: a CLI override wins, else the model the runs recorded, else a default (+ note).
+    defaulted: list[str] = []
+    resolved_dm = dm_model or agg.get("dm_model_recorded")
+    if not resolved_dm:
+        resolved_dm = "opus"
+        defaulted.append("dm")
+    resolved_actor = actor_model or agg.get("actor_model_recorded")
+    if not resolved_actor:
+        resolved_actor = "sonnet"
+        defaulted.append("actor")
 
     av = adventure_config_version()
     notes = (
@@ -342,11 +470,13 @@ def persist_row(
         f"completion={agg['completion_rate']:.2f} median_beats={agg['median_beats_to_complete']} "
         f"stuck_rate={agg['stuck_rate']:.2f}"
     )
+    if defaulted:
+        notes += f" | provenance:defaulted({'+'.join(defaulted)})"
     fields: dict[str, Any] = {
         "surface": "adventure",
         "build_sha": build_sha or None,
-        "dm_model": dm_model,
-        "actor_model": actor_model,
+        "dm_model": resolved_dm,
+        "actor_model": resolved_actor,
         "methodology": f"arc-duo N={n}",
         "story_overall": agg["story_overall"],
         "mech_overall": agg["mech_overall"],
@@ -356,6 +486,9 @@ def persist_row(
         "s_per_beat": agg["median_s_per_beat"],
         "duration_wall_s": agg["median_wall_s"],
         "pass": passed,
+        # The av_ ADVENTURE ruler stamped as a first-class column (not just free-text notes), so the
+        # adventure-score trend is fenced on its own axis the same way ac_ fences artifact scores.
+        "adventure_config_version": av,
         "source_path": source_path or None,
         "notes": notes,
     }
@@ -364,22 +497,54 @@ def persist_row(
     return fields
 
 
+# The artifacts a REAL, scored run_adventure.sh run always leaves; any missing ⇒ the run aborted
+# before it produced a citable measurement (an infra/abort exit, not a product result).
+CORE_ARTIFACT_SUFFIXES: tuple[str, ...] = ("adventure.json", "gate.txt", "quest_trace.json")
+
+
+def _validate_launched_run(prefix: str, returncode: int) -> tuple[bool, str]:
+    """(ok, reason) for one launched run. A run is INFRA-CONTAMINATED (ok=False) when it is missing
+    a core artifact, aborted with a non-behavioral exit code, or was flagged contaminated by the
+    runner (item 10's scorer-sentinel path). run_adventure.sh's exit code IS the behavioral gate
+    (0=GREEN, 1=RED) — BOTH are valid product measurements, so a RED run is NOT contamination; any
+    OTHER code (2=lock/checkpoint, 75=quota/scorer-abort) is."""
+    missing = [s for s in CORE_ARTIFACT_SUFFIXES if not Path(f"{prefix}.{s}").is_file()]
+    if missing:
+        return False, f"missing core artifact(s): {', '.join(missing)} (exit {returncode})"
+    if returncode not in (0, 1):
+        return False, f"run_adventure.sh aborted (exit {returncode})"
+    summary = _read_json(f"{prefix}.adventure.json")
+    if summary and summary.get("contaminated"):
+        return False, f"run flagged contaminated: {summary.get('contaminated_reason') or 'scorer sentinel'}"
+    return True, ""
+
+
 # ── launch (the REAL run path — never exercised by tests; LLM spend is the orchestrator's call) ──
 def launch_runs(n: int, *, beats: int, budget: str, persona: str, run_stamp: str,
-                transcripts_dir: str) -> list[str]:
-    """Launch N run_adventure.sh runs SEQUENTIALLY (isolated state dirs) and return their prefixes.
+                transcripts_dir: str) -> list[dict]:
+    """Launch N run_adventure.sh runs SEQUENTIALLY (isolated state dirs) and return a per-run result
+    list of ``{run_id, prefix, ok, reason}``. A run with ok=False is INFRA-CONTAMINATED (see
+    _validate_launched_run) — the caller excludes it from the aggregate and refuses a citable
+    persist unless every launched run is real (mirrors item 10's sentinel discipline).
 
     Deliberately sequential + foreground (each run drives two `claude -p` sessions and is
     API-bound); the run_parallel.sh staggered pattern is available for a faster lane but the
     default here is the safe sequential path. NOT invoked by the offline tests."""
     runner = str(HERE / "run_adventure.sh")
-    prefixes: list[str] = []
+    # Thread the transcripts dir to the runner so the launcher and runner can't desync on WHERE the
+    # artifacts land (the runner honors WORLDOS_TRANSCRIPTS_DIR; default qa/transcripts).
+    env = {**os.environ, "WORLDOS_TRANSCRIPTS_DIR": transcripts_dir}
+    results: list[dict] = []
     for i in range(1, n + 1):
         run_id = f"{run_stamp}-{i}"
+        prefix = str(Path(transcripts_dir) / run_id)
         cmd = ["bash", runner, run_id, str(beats), budget, persona]
-        subprocess.run(cmd, cwd=str(HERE.parent), check=False)
-        prefixes.append(str(Path(transcripts_dir) / run_id))
-    return prefixes
+        proc = subprocess.run(cmd, cwd=str(HERE.parent), check=False, env=env)
+        ok, reason = _validate_launched_run(prefix, proc.returncode)
+        if not ok:
+            print(f"[adventure_eval] REJECTED run {run_id}: {reason}", file=sys.stderr)
+        results.append({"run_id": run_id, "prefix": prefix, "ok": ok, "reason": reason})
+    return results
 
 
 def _resolve_prefixes(args) -> list[str]:
@@ -401,6 +566,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--db", default="", help="override scores.db path (testing only)")
     ap.add_argument("--build-sha", default="")
     ap.add_argument("--source-path", default="")
+    ap.add_argument("--dm-model", default="", help="override the persisted DM model (else the runs' recorded value)")
+    ap.add_argument("--actor-model", default="", help="override the persisted actor model (else the runs' recorded value)")
     # --launch: the REAL run path (spends LLM budget). Left out of the tested surface on purpose.
     ap.add_argument("--launch", type=int, default=0, help="launch N run_adventure.sh runs first")
     ap.add_argument("--beats", type=int, default=int(load_config().get("beat_budget", 15)))
@@ -410,10 +577,18 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--transcripts-dir", default="qa/transcripts")
     args = ap.parse_args(argv)
 
+    rejected: list[dict] = []
     if args.launch:
-        prefixes = launch_runs(args.launch, beats=args.beats, budget=args.budget,
+        launched = launch_runs(args.launch, beats=args.beats, budget=args.budget,
                                persona=args.persona, run_stamp=args.stamp,
                                transcripts_dir=args.transcripts_dir)
+        rejected = [r for r in launched if not r["ok"]]
+        if rejected:
+            print(f"[adventure_eval] {len(rejected)}/{len(launched)} launched run(s) REJECTED as "
+                  f"infra-contaminated: {', '.join(r['run_id'] for r in rejected)}", file=sys.stderr)
+        prefixes = [r["prefix"] for r in launched if r["ok"]]
+        if not prefixes:
+            raise SystemExit("[adventure_eval] every launched run was infra-contaminated — nothing to aggregate")
     else:
         prefixes = _resolve_prefixes(args)
 
@@ -430,9 +605,20 @@ def main(argv: list[str]) -> int:
         print(f"[adventure_eval] wrote {args.out}")
 
     if args.persist:
+        # Refuse a citable row when any LAUNCHED run was infra-contaminated (item 19) — a persisted
+        # adventure row must aggregate only real scored runs, never a partial set that silently drops
+        # the contaminated ones (the sentinel discipline from item 10). Explicit --runs/--dir
+        # aggregation is the caller's own curation and is never blocked here.
+        if rejected:
+            raise SystemExit(
+                f"[adventure_eval] refusing to persist a citable row: {len(rejected)} launched "
+                f"run(s) were infra-contaminated ({', '.join(r['run_id'] for r in rejected)}). "
+                f"Re-run them clean, or aggregate the valid prefixes explicitly via --runs."
+            )
         run_id = args.run_id or f"{args.stamp}-agg"
         persist_row(agg, run_id=run_id, db_path=args.db or None,
-                    build_sha=args.build_sha, source_path=args.source_path or (args.out or ""))
+                    build_sha=args.build_sha, source_path=args.source_path or (args.out or ""),
+                    dm_model=args.dm_model or None, actor_model=args.actor_model or None)
         print(f"[adventure_eval] persisted scores_db row run_id={run_id} surface=adventure")
     return 0
 

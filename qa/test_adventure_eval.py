@@ -178,3 +178,171 @@ def test_persist_red_and_fail_when_completion_below_bar(tmp_path):
     row = scores_db.fetch_rows(str(db))[0]
     assert row["behavioral"] == "RED"
     assert row["pass"] == 0
+
+
+# ── item 15: STAGES bound to quest_progress (no hand-mirrored drift) ─────────────────────────────
+
+def test_stages_bound_to_quest_progress():
+    import quest_progress as qp  # noqa: PLC0415
+    assert tuple(ae.STAGES) == tuple(qp.STAGES)
+    assert ae._STAGES_FALLBACK == tuple(qp.STAGES)  # the literal fallback never silently drifts
+
+
+# ── item 20: the av_ ruler fences the aggregation FORMULAS too ───────────────────────────────────
+
+def test_adventure_ruler_fences_formulas():
+    import scoring_config_version as scv  # noqa: PLC0415
+    assert "adventure_eval.py" in scv.ADVENTURE_CONFIG_FILES
+    assert "adventure_eval_config.json" in scv.ADVENTURE_CONFIG_FILES
+
+
+# ── item 3: stage-gap outlier uses abs() (guards corrupted/partial traces) ───────────────────────
+
+def test_stage_gap_outlier_uses_abs():
+    # A BACKWARDS jump (a corrupted/partial trace) beyond the threshold is still an outlier.
+    backwards = [{"stage": "reached_giver", "beat": 20}, {"stage": "quest_accepted", "beat": 2}]
+    assert ae._stage_gap_outlier(backwards, 5) is True
+    # A forward step within the threshold is NOT an outlier.
+    fwd = [{"stage": "reached_giver", "beat": 1}, {"stage": "quest_accepted", "beat": 3}]
+    assert ae._stage_gap_outlier(fwd, 5) is False
+
+
+# ── item 5: completion honesty (a terminal "failed" is NOT a completion) ─────────────────────────
+
+def test_failed_quest_is_not_a_completion(tmp_path):
+    prefix = str(tmp_path / "advfail")
+    Path(f"{prefix}.quest_trace.json").write_text(json.dumps({
+        "quest_status": "failed",
+        "stamps": [{"stage": "reached_giver", "beat": 1, "signal": "objective:x"},
+                   {"stage": "quest_completed", "beat": 4, "signal": "status:failed"}]}))
+    agg = ae.aggregate([prefix])
+    assert agg["completion_rate"] == 0.0
+    per = {r["run"]: r for r in agg["runs"]}
+    assert per["advfail"]["completed"] is False
+    assert per["advfail"]["beats_to_complete"] is None
+
+
+def test_completed_status_signal_counts(tmp_path):
+    prefix = str(tmp_path / "advok")
+    Path(f"{prefix}.quest_trace.json").write_text(json.dumps({
+        "quest_status": "completed",
+        "stamps": [{"stage": "quest_completed", "beat": 5, "signal": "status:completed"}]}))
+    agg = ae.aggregate([prefix])
+    assert agg["completion_rate"] == 1.0
+    assert agg["median_beats_to_complete"] == 5
+
+
+# ── item 17: behavioral GREEN requires POSITIVE evidence, not the absence of [FAIL] ──────────────
+
+def test_behavioral_requires_positive_green_evidence(tmp_path):
+    prefix = str(tmp_path / "advb")
+    # A truncated gate (header + a [PASS] but NO terminal GREEN marker) -> None, never assumed GREEN.
+    Path(f"{prefix}.gate.txt").write_text("=== behavioral assertions ===\n  [PASS] some_check\n")
+    assert ae._behavioral(prefix, None) is None
+    # A gate carrying the terminal GREEN verdict -> GREEN.
+    Path(f"{prefix}.gate.txt").write_text("=== behavioral assertions ===\n  [PASS] some_check\nGREEN\n")
+    assert ae._behavioral(prefix, None) == "GREEN"
+    Path(f"{prefix}.gate.txt").write_text("=== behavioral assertions ===\n  [PASS] x\nGREEN (2 warning(s))\n")
+    assert ae._behavioral(prefix, None) == "GREEN"
+    # A [FAIL] line -> RED.
+    Path(f"{prefix}.gate.txt").write_text("=== behavioral assertions ===\n  [FAIL] x\n")
+    assert ae._behavioral(prefix, None) == "RED"
+    # Empty gate -> None.
+    Path(f"{prefix}.gate.txt").write_text("")
+    assert ae._behavioral(prefix, None) is None
+
+
+# ── item 1: MIXED behavioral + pass requires gate evidence ───────────────────────────────────────
+
+def test_persist_mixed_behavioral(tmp_path):
+    prefixes = [
+        _write_run(tmp_path, "adv0", behavioral="GREEN"),
+        _write_run(tmp_path, "adv1", behavioral="RED"),
+    ]
+    agg = ae.aggregate(prefixes)
+    assert agg["green_rate"] == 0.5
+    db = tmp_path / "scores.db"
+    fields = ae.persist_row(agg, run_id="adv-mixed", db_path=str(db))
+    assert fields["behavioral"] == "MIXED"
+    row = scores_db.fetch_rows(str(db))[0]
+    assert row["behavioral"] == "MIXED"
+    assert row["pass"] == 1  # green_rate 0.5 >= 0.5 and completion 1.0 >= bar
+
+
+def test_persist_missing_behavioral_fails_pass(tmp_path):
+    # No behavioral evidence on any run -> behavioral None, pass=0 even at full completion.
+    prefixes = [_write_run(tmp_path, f"adv{i}", behavioral=None) for i in range(2)]
+    agg = ae.aggregate(prefixes)
+    assert agg["green_rate"] is None
+    db = tmp_path / "scores.db"
+    fields = ae.persist_row(agg, run_id="adv-nobehav", db_path=str(db))
+    assert fields["behavioral"] is None
+    row = scores_db.fetch_rows(str(db))[0]
+    assert row["pass"] == 0
+
+
+# ── item 14: the av_ ADVENTURE ruler round-trips as a first-class column ──────────────────────────
+
+def test_persist_stamps_adventure_config_version_column(tmp_path):
+    prefixes = [_write_run(tmp_path, f"adv{i}") for i in range(2)]
+    agg = ae.aggregate(prefixes)
+    db = tmp_path / "scores.db"
+    fields = ae.persist_row(agg, run_id="adv-avcol", db_path=str(db))
+    av = adventure_config_version()
+    assert fields["adventure_config_version"] == av
+    assert av.startswith("av_")
+    row = scores_db.fetch_rows(str(db))[0]
+    assert row["adventure_config_version"] == av
+    assert av in row["notes"]  # the notes citation matches the stamped column (guard stays happy)
+
+
+# ── item 6: model provenance (recorded > default; CLI override wins) ──────────────────────────────
+
+def test_persist_reads_model_provenance_from_summaries(tmp_path):
+    p0 = _write_run(tmp_path, "adv0")
+    s = json.loads(Path(f"{p0}.adventure.json").read_text())
+    s["dm_model"] = "gpt-5.5"
+    s["actor_model"] = "sonnet-5"
+    Path(f"{p0}.adventure.json").write_text(json.dumps(s))
+    agg = ae.aggregate([p0])
+    assert agg["dm_model_recorded"] == "gpt-5.5"
+    db = tmp_path / "scores.db"
+    fields = ae.persist_row(agg, run_id="adv-prov", db_path=str(db))
+    assert fields["dm_model"] == "gpt-5.5" and fields["actor_model"] == "sonnet-5"
+    assert "provenance:defaulted" not in fields["notes"]
+    # A CLI override wins over the recorded value.
+    fields2 = ae.persist_row(agg, run_id="adv-prov2", db_path=str(db), dm_model="opus-override")
+    assert fields2["dm_model"] == "opus-override"
+
+
+def test_persist_defaults_models_when_unrecorded(tmp_path):
+    p = _write_run(tmp_path, "adv0")  # summary carries no dm_model/actor_model
+    agg = ae.aggregate([p])
+    db = tmp_path / "scores.db"
+    fields = ae.persist_row(agg, run_id="adv-def", db_path=str(db))
+    assert fields["dm_model"] == "opus" and fields["actor_model"] == "sonnet"
+    assert "provenance:defaulted(dm+actor)" in fields["notes"]
+
+
+# ── item 19: launched-run validation (infra-contamination gate) ──────────────────────────────────
+
+def test_validate_launched_run(tmp_path):
+    prefix = str(tmp_path / "advL")
+    # No artifacts at all -> contaminated.
+    ok, reason = ae._validate_launched_run(prefix, 0)
+    assert not ok and "missing" in reason
+    # Write the core artifacts.
+    Path(f"{prefix}.adventure.json").write_text("{}")
+    Path(f"{prefix}.gate.txt").write_text("=== behavioral assertions ===\nGREEN\n")
+    Path(f"{prefix}.quest_trace.json").write_text("{}")
+    # Clean GREEN exit -> ok.
+    assert ae._validate_launched_run(prefix, 0) == (True, "")
+    # Behavioral RED exit (1) with full artifacts -> STILL ok (RED is a valid product measurement).
+    assert ae._validate_launched_run(prefix, 1)[0] is True
+    # An abort exit code (EX_TEMPFAIL) -> contaminated.
+    ok, reason = ae._validate_launched_run(prefix, 75)
+    assert not ok and "aborted" in reason
+    # A contaminated-flagged summary -> contaminated even on a clean exit.
+    Path(f"{prefix}.adventure.json").write_text(json.dumps({"contaminated": True, "contaminated_reason": "quota"}))
+    ok, reason = ae._validate_launched_run(prefix, 0)
+    assert not ok and "contaminated" in reason

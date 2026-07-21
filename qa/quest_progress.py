@@ -11,9 +11,13 @@ the quest status leaves ``active``.
 The six stages (the A-T contract, docs/roadmap §4d), in ARC ORDER:
 
   reached_giver     — the party MET the quest giver (Keeper Maera): current location is/was the
-                      giver's location, OR the session log records dialogue naming the giver.
+                      giver's location, OR a session-log DIALOGUE record voiced BY the giver (a real
+                      parley — NOT bare narration merely mentioning her name), OR (transitively) the
+                      speak-objective completed.
   quest_accepted    — the "Speak with …" giver objective is completed (the parley → job taken).
-  entered_dungeon   — current location is the quest's dungeon (the crypt).
+  entered_dungeon   — current location is the quest's dungeon (the crypt), OR (objective fallback,
+                      like the sibling stages) a later-arc signal proves the party was inside it:
+                      the "Clear the crypt" objective landed, or the boss went down.
   boss_dead         — the "Slay the … boss" objective is completed, OR the boss character is dead
                       in the snapshot (and combat over — get_state.in_combat False).
   reward_received   — the "Return … for the reward" objective is completed, OR the reward item is
@@ -146,9 +150,12 @@ def _reward_item_in_party(server, campaign_id: str, reward_hint: str = "ring of 
     return False
 
 
-def _session_log_names_giver(state_dir: str, giver_name: str) -> bool:
-    """Scan the active session log for a dialogue/narration row naming the giver (reached_giver
-    session-log fallback). Reuses dm_beat_mark's snapshot/session-log resolution. Fail-open-False."""
+def _session_log_giver_dialogue(state_dir: str, giver_name: str) -> bool:
+    """Scan the active session log for a DIALOGUE record voiced BY the giver — evidence of an actual
+    parley, NOT mere narration that happens to mention them. The old any-text-mention fallback was
+    too eager: camp narration naming "Maera" stamped reached_giver before the party had met her. So
+    require a ``kind="dialogue"`` row whose SPEAKER is the giver. Reuses dm_beat_mark's snapshot /
+    session-log resolution. Fail-open-False."""
     if not giver_name:
         return False
     try:
@@ -172,8 +179,10 @@ def _session_log_names_giver(state_dir: str, giver_name: str) -> bool:
                     row = json.loads(raw)
                 except ValueError:
                     continue
-                text = str(row.get("text") or "").lower()
-                if needle in text or (short and short in text):
+                if str(row.get("kind") or "").lower() != "dialogue":
+                    continue  # narration/system rows only MENTION; a parley is a dialogue record
+                speaker = str(row.get("speaker") or "").lower()
+                if needle in speaker or (short and short in speaker):
                     return True
     except OSError:
         return False
@@ -200,11 +209,12 @@ def detect_stages(
 
     found: dict[str, str] = {}
 
-    # reached_giver — met the giver (physically at their room, or the log names them).
+    # reached_giver — met the giver: physically at their room, OR an on-screen parley (a dialogue
+    # record voiced by the giver), OR (below) the speak-objective completed. NOT a bare text mention.
     if giver_loc and cur_loc == giver_loc:
         found["reached_giver"] = "location:at-giver"
-    elif _session_log_names_giver(state_dir, giver_name):
-        found["reached_giver"] = "session-log:giver-dialogue"
+    elif _session_log_giver_dialogue(state_dir, giver_name):
+        found["reached_giver"] = "session-log:giver-parley"
 
     # quest_accepted — the "Speak with <giver>" objective is completed.
     spoke = _objective_done(quest, "speak")
@@ -213,16 +223,27 @@ def detect_stages(
         # completing the parley objective also PROVES the giver was reached.
         found.setdefault("reached_giver", "objective:speak-completed")
 
-    # entered_dungeon — standing in the quest's dungeon room.
+    # entered_dungeon — standing in the quest's dungeon room, OR (objective fallback, like the sibling
+    # stages) a later-arc signal that proves the party WAS in the crypt: the "Clear the crypt"
+    # objective landed. A transient in-dungeon location beat can fall between polls; a downstream
+    # signal must not drop entered_dungeon just because that intermediate location beat was missed.
     if dungeon_loc and cur_loc == dungeon_loc:
         found["entered_dungeon"] = "location:in-dungeon"
+    else:
+        cleared = _objective_done(quest, "clear the crypt", "clear the")
+        if cleared:
+            found["entered_dungeon"] = f"objective:{cleared!r}"
 
-    # boss_dead — the slay objective, or a dead boss in the snapshot with combat resolved.
+    # boss_dead — the slay objective, or a dead boss in the snapshot with combat resolved. A downed
+    # boss ALSO implies the party entered the dungeon (setdefault, so an explicit location/objective
+    # signal above still wins) — the boss only dies inside the crypt's throne hall.
     slew = _objective_done(quest, "boss", "slay")
     if slew:
         found["boss_dead"] = f"objective:{slew!r}"
+        found.setdefault("entered_dungeon", "objective:boss-implies-dungeon")
     elif _boss_dead_in_snapshot(server, campaign_id) and not in_combat:
         found["boss_dead"] = "snapshot:boss-dead+combat-over"
+        found.setdefault("entered_dungeon", "snapshot:boss-implies-dungeon")
 
     # reward_received — the return objective, or the reward item is carried.
     ret = _objective_done(quest, "return", "reward")
@@ -283,6 +304,12 @@ def stamp_beat(
         if stage in already:
             continue
         if stage in found:
+            # Every stage first OBSERVED in the same poll shares this ONE beat number. So the
+            # aggregator's inter-stage gaps are measured at POLL GRANULARITY, not wall-clock: a poll
+            # that first sees several stages at once records a zero-beat gap between them even if they
+            # actually landed a beat or two apart. Coarser polling (every k beats) therefore DEFLATES
+            # gap precision — a deliberate tradeoff (the poll is a cheap between-beats telemetry hook,
+            # not a per-event clock). The stage-gap outlier threshold is set with this coarseness in mind.
             trace["stamps"].append({
                 "stage": stage,
                 "beat": int(beat),

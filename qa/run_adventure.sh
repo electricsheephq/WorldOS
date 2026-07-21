@@ -76,7 +76,11 @@ worldos_apply_glm_profile
 WORLDOS_LEAN_BEATS="${WORLDOS_LEAN_BEATS:-1}"
 WORLDOS_LEAN_TAIL="${WORLDOS_LEAN_TAIL:-8}"
 
-T="qa/transcripts"; STATE_DIR="$ROOT/qa/state/$RUN"
+# The transcripts dir is threaded via WORLDOS_TRANSCRIPTS_DIR (a REPO-RELATIVE path; default
+# qa/transcripts) so the adventure_eval launcher (--transcripts-dir) and this runner can never
+# desync on WHERE the per-run artifacts land. Keep it repo-relative: it is composed as $ROOT/$T
+# below and used relative to the $ROOT cwd during scoring.
+T="${WORLDOS_TRANSCRIPTS_DIR:-qa/transcripts}"; STATE_DIR="$ROOT/qa/state/$RUN"
 CHECKPOINT="$STATE_DIR/.adv_checkpoint.json"
 CHECKPOINT_SLOT="adv_checkpoint"
 LOCKDIR="$STATE_DIR/.adv_run.lock"
@@ -113,6 +117,26 @@ else: raise SystemExit(f"unknown slot action {action!r}")
 PY
 }
 
+# ── fresh-run hygiene (item 9) ───────────────────────────────────────────────────────────────────
+# A rerun of a COMPLETED run-id must NOT inherit the prior run's quest trace or result sidecars:
+# quest_progress stamps are idempotent, so a stale <run>.quest_trace.json carrying a quest_completed
+# stamp would make the aggregator read a FALSE completion, and stale gate/lens/summary sidecars would
+# be re-aggregated as THIS run's. Truncate them on a FRESH run only — the RESUME path deliberately
+# keeps the trace + checkpoint to continue the same run. ($COMBINED/$CHAT/$MOVES/$TOOLTIMING are
+# truncated separately below; this covers the transcripts-prefix artifacts they don't.)
+adv_clean_stale_artifacts() {
+  rm -f \
+    "$TRACE" \
+    "$T/$RUN.gate.txt" \
+    "$T/$RUN.score.json" "$T/$RUN.tolkien.json" "$T/$RUN.angrydm.json" \
+    "$T/$RUN.adventure.json" "$T/$RUN.latency.json" "$T/$RUN.state.json" \
+    "$T/$RUN.play.md" "$T/$RUN.md" \
+    "$T/$RUN.quest.log" "$T/$RUN.quest.err" "$T/$RUN.seed.err" \
+    "$T/$RUN.dm.err" "$T/$RUN.player.err" \
+    2>/dev/null || true
+  rm -f "$T/$RUN".dm.*.jsonl 2>/dev/null || true
+}
+
 # ── seed the campaign (fresh run) ───────────────────────────────────────────────────────────────
 adv_seed() {
   rm -rf "$STATE_DIR/campaigns" 2>/dev/null
@@ -128,15 +152,40 @@ adv_seed() {
 }
 
 # ── quest telemetry + completion short-circuit (between beats) ───────────────────────────────────
-# Returns the quest status on stdout ("active"/"completed"/...) and stamps the trace. Reads the
+# Prints the quest status on stdout ("active"/"completed"/...) and stamps the trace, reading the
 # machine-contract last line `quest_status=<s>` from qa/quest_progress.py.
+#
+# FAIL-OPEN, BUT LOUD (items 16 + 18): telemetry must NEVER abort a run (a dead poll must not burn
+# the LLM budget). But a silent fail-open was the trap — an empty capture was treated as "active" and
+# the loop ran on. So we VALIDATE the contract: the uv invocation must exit 0 (PIPESTATUS[0]) AND the
+# captured last line must be `quest_status=…`. On violation: warn visibly, COUNT the failure, and
+# return EMPTY with rc=1 — the beat loop still maps empty→active (never aborts), and the --dry-run
+# path reports telemetry FAILED (nonzero) instead of a false "telemetry OK".
+ADV_TELEMETRY_FAIL_FILE="$STATE_DIR/.telemetry_fails"
+rm -f "$ADV_TELEMETRY_FAIL_FILE" 2>/dev/null || true   # each run process counts its own telemetry fails
+adv_telemetry_note_fail() {
+  local n; n="$(cat "$ADV_TELEMETRY_FAIL_FILE" 2>/dev/null || echo 0)"; n="${n:-0}"
+  echo $((n + 1)) > "$ADV_TELEMETRY_FAIL_FILE"
+}
 adv_quest_poll() {
-  local beat="$1" line status
-  line="$(WORLDOS_STATE_DIR="$STATE_DIR" uv run --directory "$ROOT/servers/engine" python "$ROOT/qa/quest_progress.py" \
-      "$STATE_DIR" "$CAMPAIGN_ID" --beat "$beat" --trace "$TRACE" --quest-title "$QUEST_TITLE" 2>>"$T/$RUN.quest.err" \
-      | tee -a "$T/$RUN.quest.log" | tail -n1)"
-  status="${line#quest_status=}"
+  local beat="$1" rc out status
+  # Run the poll to a capture file (NOT through a `$(pipe)`) so PIPESTATUS[0] is the REAL uv rc and
+  # a subshell can't swallow it. Mirror stdout into the quest.log as before.
+  WORLDOS_STATE_DIR="$STATE_DIR" uv run --directory "$ROOT/servers/engine" python "$ROOT/qa/quest_progress.py" \
+      "$STATE_DIR" "$CAMPAIGN_ID" --beat "$beat" --trace "$TRACE" --quest-title "$QUEST_TITLE" \
+      >"$STATE_DIR/.quest_poll.out" 2>>"$T/$RUN.quest.err"
+  rc=$?
+  cat "$STATE_DIR/.quest_poll.out" >> "$T/$RUN.quest.log" 2>/dev/null || true
+  out="$(tail -n1 "$STATE_DIR/.quest_poll.out" 2>/dev/null)"
+  if [ "$rc" -ne 0 ] || [ "${out#quest_status=}" = "$out" ]; then
+    adv_telemetry_note_fail
+    echo "[adventure] WARN beat $beat: quest telemetry unparseable (uv rc=$rc; missing quest_status= contract line; see $T/$RUN.quest.err) — treating as active" >&2
+    printf '%s' ""
+    return 1
+  fi
+  status="${out#quest_status=}"
   printf '%s' "$status"
+  return 0
 }
 
 adv_acquire_lock
@@ -154,11 +203,16 @@ if [ -s "$CHECKPOINT" ] && jq -e . "$CHECKPOINT" >/dev/null 2>&1; then
     START_BEAT=$((LAST_COMPLETED_BEAT + 1))
     echo "[adventure] resuming: last_completed=$LAST_COMPLETED_BEAT next=$START_BEAT"
   else
-    echo "[adventure] checkpoint mismatch (sha/beats/persona) — delete $CHECKPOINT to restart" >&2; exit 2
+    echo "[adventure] checkpoint mismatch (sha/beats/persona differ from this invocation). The run" >&2
+    echo "[adventure]   dir + lock are SAFE to reuse — the lock auto-releases on exit (trap), so no" >&2
+    echo "[adventure]   cleanup is needed. To restart this run-id from scratch, delete the checkpoint:" >&2
+    echo "[adventure]   rm -f $CHECKPOINT" >&2
+    exit 2
   fi
 fi
 
 if [ "$RESUME_MODE" != "1" ]; then
+  adv_clean_stale_artifacts   # fresh run: a rerun of a completed run-id must not inherit stale state
   adv_seed
 fi
 
@@ -234,7 +288,13 @@ echo "[adventure] run=$RUN campaign=$CAMPAIGN_ID beats=$BEATS budget=\$$BUDGET p
 # wiring end-to-end WITHOUT spending any LLM budget. Runs the real engine (local-allowed) only.
 if [ "$DRY_RUN" = "1" ]; then
   echo "[adventure] DRY RUN — seeded + configs built; polling quest telemetry once (no claude)…"
-  status="$(adv_quest_poll 0)"
+  status="$(adv_quest_poll 0)"; poll_rc=$?
+  # Item 18: a smoke check must FAIL LOUD when the telemetry contract is violated — otherwise a
+  # broken poll ships as "telemetry OK". Report FAILED + exit nonzero instead of the OK banner.
+  if [ "$poll_rc" -ne 0 ]; then
+    echo "[adventure] DRY-RUN FAILED: quest telemetry violated its contract (see $T/$RUN.quest.err)" >&2
+    exit 1
+  fi
   echo "[adventure] dry-run quest status: ${status:-<unknown>}  (trace: $TRACE)"
   [ -s "$DM_CFG" ] && echo "[adventure] dry-run OK: dm.mcp.json + player.mcp.json written"
   echo "[adventure] dry-run plan: intro -> DM ground -> $BEATS beats (short-circuit on quest!=active) -> score"
@@ -427,31 +487,102 @@ if [ -n "$SNAP" ]; then cp "$SNAP" "$T/$RUN.state.json"; else echo '{"warning":"
 [ -s "$PLAY" ] && "$SCORE_SCRIPT" "$PLAY" "$T/$RUN.state.json" qa/rubric_tolkien.md qa/score_schema_tolkien.json "$T/$RUN.tolkien.json" 1.50 &
 wait
 [ -f "$T/$RUN.md" ] && "$SCORE_SCRIPT" "$T/$RUN.md" "$T/$RUN.state.json" qa/rubric_angry_dm.md qa/score_schema_angry_dm.json "$T/$RUN.angrydm.json" 1.50
+
+# ── scorer-sentinel guard (item 10; mirrors run_duo's Fix F / #1404) ─────────────────────────────
+# score.sh fails FAST on a 429 (writes {"quota_exhausted":true,…}) or an expired/invalid credential
+# (writes {"error":"scorer_auth_expired",…}) instead of a real scorecard. A run scored on top of an
+# INFRA fault is NOT a clean product measurement — flag it CONTAMINATED (a contaminated summary +
+# nonzero EX_TEMPFAIL exit) so adventure_eval excludes it and never persists it as a scored run,
+# rather than aggregating a quota/auth corpse as clean.
+adv_write_contaminated_summary() {  # $1 = reason
+  python3 - "$T/$RUN.adventure.json" "$RUN" "$LAST_COMPLETED_BEAT" "$1" <<'PY'
+import json,sys
+from pathlib import Path
+out,run,last_beat,reason = sys.argv[1:5]
+Path(out).write_text(json.dumps({"run":run,"contaminated":True,"contaminated_reason":reason,
+  "behavioral":"CONTAMINATED","completed":False,
+  "last_completed_beat":int(last_beat) if str(last_beat).lstrip("-").isdigit() else None},indent=2)+"\n")
+PY
+}
+for _scf in "$T/$RUN.tolkien.json" "$T/$RUN.score.json" "$T/$RUN.angrydm.json"; do
+  [ -f "$_scf" ] || continue
+  if jq -e '.quota_exhausted == true' "$_scf" >/dev/null 2>&1; then
+    echo "[adventure] SCORER QUOTA ABORT — $(basename "$_scf") is a 429 quota sentinel, not a scorecard. Marking this run infra-CONTAMINATED (skipping gate/scoring aggregation)." >&2
+    adv_write_contaminated_summary "SCORER QUOTA ABORT (HTTP 429) on $(basename "$_scf")"
+    rm -f "$CHECKPOINT" "$CHECKPOINT.tmp" 2>/dev/null || true
+    exit "$EX_TEMPFAIL"
+  fi
+  if jq -e '.error == "scorer_auth_expired"' "$_scf" >/dev/null 2>&1; then
+    echo "[adventure] SCORER AUTH ABORT — $(basename "$_scf") is an expired/invalid-credential sentinel, not a scorecard. Marking this run infra-CONTAMINATED." >&2
+    adv_write_contaminated_summary "SCORER AUTH ABORT (scorer_auth_expired) on $(basename "$_scf")"
+    rm -f "$CHECKPOINT" "$CHECKPOINT.tmp" 2>/dev/null || true
+    exit "$EX_TEMPFAIL"
+  fi
+done
+
 python3 "$ASSERT_BEHAVIORAL_SCRIPT" "$COMBINED" "$T/$RUN.state.json" "$T/$RUN.chat.jsonl" "$MOVES" | tee "$T/$RUN.gate.txt"; GATE=${PIPESTATUS[0]}
+# ── honest scoring on a RED gate (item 11; mirrors run_duo) ──────────────────────────────────────
+# A structurally broken (gate-RED) run must not persist high lens medians — CAP the three lens files
+# to <= 2.5 / INVALID via the SHARED worldos_cap_score_red helper (qa/lib_beat_driver.sh), annotated
+# with the failed checks, so a dead scene can't masquerade as prestige play in the aggregate.
+if [ "${GATE:-0}" != "0" ]; then
+  GATE_REASON="$(grep -E '^\s*\[(FAIL)\]' "$T/$RUN.gate.txt" 2>/dev/null | sed 's/^[[:space:]]*//' | paste -sd'; ' - 2>/dev/null)"
+  GATE_REASON="${GATE_REASON:-behavioral gate RED}"
+  worldos_cap_score_red "$T/$RUN.tolkien.json" "$GATE_REASON" story
+  worldos_cap_score_red "$T/$RUN.score.json" "$GATE_REASON" story
+  worldos_cap_score_red "$T/$RUN.angrydm.json" "$GATE_REASON"
+fi
 LATENCY_JSON="$T/$RUN.latency.json"
 python3 qa/latency_rollup.py --dir "$T" --run "$RUN" --tooltiming "$TOOLTIMING_PATH" --out "$LATENCY_JSON" >/dev/null 2>&1 || true
 
 # ── the per-run adventure summary (self-describing; adventure_eval also falls back to raw files) ─
-python3 - "$T/$RUN.adventure.json" "$TRACE" "$T/$RUN.gate.txt" "$RUN" "$LAST_COMPLETED_BEAT" "$LATENCY_JSON" <<'PY'
+# Carries the resolved DM/actor MODELS (item 6 provenance) + session_beats (item 4 engagement) so the
+# aggregator reads provenance/beats from the summary rather than guessing. Completion + behavioral use
+# the SAME honest semantics as adventure_eval (items 5 + 17): only a "completed" terminal status is a
+# completion; GREEN requires the assert_behavioral success marker, not the mere absence of [FAIL].
+python3 - "$T/$RUN.adventure.json" "$TRACE" "$T/$RUN.gate.txt" "$RUN" "$LAST_COMPLETED_BEAT" "$LATENCY_JSON" "$WORLDOS_DM_MODEL" "$WORLDOS_ACTOR_MODEL" <<'PY'
 import json,sys
 from pathlib import Path
-out,trace,gate,run,last_beat,lat = sys.argv[1:7]
+out,trace,gate,run,last_beat,lat,dm_model,actor_model = sys.argv[1:9]
 def rj(p):
     try: return json.loads(Path(p).read_text())
     except Exception: return {}
 tr=rj(trace); stamps=tr.get("stamps") or []
-completed=any(s.get("stage")=="quest_completed" for s in stamps) or str(tr.get("quest_status") or "active") not in ("active","","None")
-btc=next((s.get("beat") for s in stamps if s.get("stage")=="quest_completed"),None)
+completed_stamp=next((s for s in stamps if s.get("stage")=="quest_completed"),None)
+# Terminal status: prefer the completed stamp's recorded status:<x> signal, else the live status.
+status=""
+if completed_stamp:
+    sig=str(completed_stamp.get("signal") or "")
+    if sig.startswith("status:"): status=sig.split(":",1)[1].strip().lower()
+if not status: status=str(tr.get("quest_status") or "active").strip().lower()
+completed=(status=="completed")   # completion HONESTY — a terminal "failed"/other is NOT a completion
+btc=completed_stamp.get("beat") if (completed and completed_stamp) else None
 gate_txt=""
 try: gate_txt=Path(gate).read_text()
 except Exception: pass
-behavioral="RED" if "[FAIL]" in gate_txt else ("GREEN" if gate_txt.strip() else None)
+def _green_marker(txt):
+    return any(l.strip()=="GREEN" or l.strip().startswith("GREEN (") for l in txt.splitlines())
+if "[FAIL]" in gate_txt:
+    behavioral="RED"
+elif "=== behavioral assertions ===" in gate_txt and _green_marker(gate_txt):
+    behavioral="GREEN"
+else:
+    behavioral=None   # empty/truncated/malformed gate — never an assumed GREEN
 dead=rj(lat).get("failed_beats")
+lb=int(last_beat) if str(last_beat).lstrip("-").isdigit() else None
+session_beats=lb if (lb is not None and lb>=0) else None
 Path(out).write_text(json.dumps({"run":run,"campaign_id":tr.get("campaign_id"),"quest_status":tr.get("quest_status"),
-  "completed":bool(completed),"beats_to_complete":btc,"last_completed_beat":int(last_beat) if str(last_beat).lstrip("-").isdigit() else None,
+  "completed":bool(completed),"beats_to_complete":btc,"last_completed_beat":lb,"session_beats":session_beats,
+  "dm_model":dm_model or None,"actor_model":actor_model or None,
   "dead_beats":dead,"behavioral":behavioral,"stages_reached":[s.get("stage") for s in stamps]},indent=2)+"\n")
-print(f"[adventure] summary: completed={completed} beats_to_complete={btc} behavioral={behavioral}")
+print(f"[adventure] summary: completed={completed} beats_to_complete={btc} behavioral={behavioral} dm={dm_model} actor={actor_model}")
 PY
+
+# Item 16: surface a run-level telemetry-health summary if any quest poll failed its contract.
+ADV_TELEMETRY_FAILS="$(cat "$ADV_TELEMETRY_FAIL_FILE" 2>/dev/null || echo 0)"; ADV_TELEMETRY_FAILS="${ADV_TELEMETRY_FAILS:-0}"
+if [ "$ADV_TELEMETRY_FAILS" -gt 0 ]; then
+  echo "[adventure] WARN: quest telemetry failed its contract on $ADV_TELEMETRY_FAILS poll(s) this run — stage stamps / the completion signal may be incomplete (see $T/$RUN.quest.err)." >&2
+fi
 
 echo "[adventure] done. run=$RUN behavioral=$([ "${GATE:-0}" = 0 ] && echo GREEN || echo RED) quest=${COMPLETED_STATUS:-active} trace=$TRACE"
 rm -f "$CHECKPOINT" "$CHECKPOINT.tmp" 2>/dev/null || true

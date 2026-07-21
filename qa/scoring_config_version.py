@@ -92,8 +92,15 @@ ARTIFACT_CONFIG_FILES: list[str] = [
 # (same as the other families) so a rename/delete also re-versions. NOTE: the adventure row's per-lens
 # story/mech/angry numbers still carry the engine-duo ``lc_`` stamp (they are the SAME lens rubrics);
 # ``av_`` fences only the aggregation/verdict config that is unique to this eval.
+#
+# ``adventure_eval.py`` itself is INCLUDED so the ruler fences the aggregation FORMULAS too, not just
+# the JSON thresholds: a change to how a dimension is computed (completion honesty, the pass/behavioral
+# derivation, the weakest-link pick) re-versions the adventure trend the same way a threshold edit does.
+# This OVER-versions on a pure comment edit — an accepted, honest-direction tradeoff (a stale hash that
+# claimed comparability across a formula change would be the worse failure).
 ADVENTURE_CONFIG_FILES: list[str] = [
     "adventure_eval_config.json",
+    "adventure_eval.py",
 ]
 
 

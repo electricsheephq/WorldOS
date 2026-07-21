@@ -114,6 +114,10 @@ COLUMNS: tuple[str, ...] = (
                                # Fences the engine-duo quality trend. NULL on rows recorded before
                                # lens stamping (compare falls back to scoring_config_version).
     "rubric_label",       # human label for the ruler, e.g. "ruler@sc_a1b2c3d4e5f6 (9/9 files)"
+    "adventure_config_version",  # content hash of the ADVENTURE ruler (av_…) — the N-run adventure
+                               # aggregator's OWN hash family (see scoring_config_version.py
+                               # ADVENTURE_CONFIG_FILES). Stamped ONLY on surface="adventure" rows;
+                               # NULL on every other row (additive, migration-free — mirrors ac_ruler).
     "rc_label",           # release candidate this run scored, e.g. "v1.0.4-rc1" (NULL = ad-hoc)
     "story_overall",      # Tolkien/story-craft lens (0-5), NULL if not scored
     "mech_overall",       # Mechanical lens (0-5), NULL if not scored
@@ -436,7 +440,8 @@ def add_run(
     notes = fields.get("notes")
     if notes:
         for pattern, col in ((r"\bsc_[0-9a-f]{12}\b", "scoring_config_version"),
-                             (r"\blc_[0-9a-f]{12}\b", "lens_config_version")):
+                             (r"\blc_[0-9a-f]{12}\b", "lens_config_version"),
+                             (r"\bav_[0-9a-f]{12}\b", "adventure_config_version")):
             mismatched = sorted({h for h in re.findall(pattern, notes) if h != fields.get(col)})
             if mismatched:
                 raise ValueError(
