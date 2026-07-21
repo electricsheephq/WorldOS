@@ -1,0 +1,70 @@
+{
+ "class": "dwing_room_1",
+ "control_asset": "asset_yBpBidegRc7Bz1wPZuecHNQt",
+ "draws": [
+  {
+   "seed": 12345,
+   "job": "job_wYqZM3vRs1kWKUyHp1BEi18o",
+   "asset": "asset_nkkKsHBR19f6VD5pc2TwyXdT"
+  },
+  {
+   "seed": 12346,
+   "job": "job_WpLBBnC5N71o5vwAj5xBEyKL",
+   "asset": "asset_kowyu3HHqKZfNW37wrd52zfk"
+  },
+  {
+   "seed": 12347,
+   "job": "job_bNpDBESH38FsvHy3ricviYDo",
+   "asset": "asset_6NJ3EvAmcpQezKBvRG7a27hR"
+  }
+ ],
+ "selection": [
+  {
+   "seed": 12346,
+   "recall": 0.9451,
+   "path": "qa/evidence/paint-room/dwing_room_1_b1/dwing_room_1_flux_s12346.png"
+  },
+  {
+   "seed": 12345,
+   "recall": 0.8697,
+   "path": "qa/evidence/paint-room/dwing_room_1_b1/dwing_room_1_flux_s12345.png"
+  },
+  {
+   "seed": 12347,
+   "recall": 0.857,
+   "path": "qa/evidence/paint-room/dwing_room_1_b1/dwing_room_1_flux_s12347.png"
+  }
+ ],
+ "base": {
+  "seed": 12346,
+  "asset": "asset_kowyu3HHqKZfNW37wrd52zfk",
+  "path": "qa/evidence/paint-room/dwing_room_1_b1/dwing_room_1_flux_s12346.png"
+ },
+ "styled": {
+  "job": "job_Z9FbsnYEiDzPr8AaeHM7Tin5",
+  "asset": "asset_vyQyHeg2Vm5HWyJYtPAVNz5r",
+  "path": "qa/evidence/paint-room/dwing_room_1_b1/dwing_room_1_final_1344.png",
+  "recall_vs_depth": 0.6428,
+  "registration_warning": "styled recall 0.6428 (base 0.9451) \u2014 structure-lock likely violated (invented/multiplied features); eyeball before panel",
+  "corrected": {
+   "gate": "err_cells<=0.35 (solve-based, #1618)",
+   "before_err_cells": 1.43,
+   "attempted": true,
+   "path": "qa/evidence/paint-room/dwing_room_1_b1/dwing_room_1_final_1344_reregistered.png",
+   "post_run_correction": {
+    "method": "reregister_iterative (3-point similarity, 2 refine passes) \u2014 run out-of-band after the original single-pass gate failed at 0.39; the iterative gate was then wired into paint_room in the same PR",
+    "err_cells": 0.31,
+    "adopted": true,
+    "adopted_plate": "extensions/renderers/unity/plates/dwing_room_1_v1_registered.png"
+   },
+   "single_pass_attempt": {
+    "after_err_cells": 0.39,
+    "rot_deg": 5.35,
+    "scale": 0.7425,
+    "note": "the original single-pass warp \u2014 failed the 0.35 bar"
+   },
+   "after_err_cells": 0.31,
+   "adopted": true
+  }
+ }
+}

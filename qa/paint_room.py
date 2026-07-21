@@ -165,15 +165,75 @@ def main() -> int:
     else:
         print("[paint_room] WARNING: depth given as asset_id, no local file — selection skipped (seed[0]).")
 
+    base_beacon_advisory = None
+    # ★ BASE-STAGE BEACON GATE (with --boxes): the styled pass can only KEEP fire it inherits —
+    # a base that drew the braziers UNLIT leaves the beacons undetectable, and Gemini then INVENTS
+    # the fire with count/position liberties (measured: b1 grew a 4th brazier; b2 bases had no
+    # detectable fire at all). The base is depth-registered by construction, so when fire IS lit
+    # the solve must be stable and tight; if not, redraw with extra seeds (flux is the cheap stage).
+    if args.boxes:
+        from overlay_boxes import blob_solve as _bs  # noqa: E402
+        from reregister_plate import _max_err_cells as _mec, fit_similarity as _fs  # noqa: E402
+        _bx = json.loads(Path(args.boxes).read_text())
+        def _base_beacons_ok(path: str) -> bool:
+            sv = _bs(_bx, Path(path))
+            if "error" in sv or "matched_pairs" not in sv:
+                return False
+            return (not _fs(sv["matched_pairs"]).get("unstable")) and _mec(sv) <= 0.5
+        if not _base_beacons_ok(winner["saved"][0]["path"]):
+            others = sorted((d for d in draws if d is not winner),
+                            key=lambda d: -next((t["recall"] for t in table if t["seed"] == d["seed"]), 0))
+            for alt in others:
+                if _base_beacons_ok(alt["saved"][0]["path"]):
+                    print(f"[paint_room] base-beacon gate: seed {winner['seed']} unlit/undetectable -> "
+                          f"switching to seed {alt['seed']} (lit beacons)")
+                    winner = alt
+                    break
+            else:
+                for extra_seed in (12348, 12349, 12350):
+                    stem = f"{args.room_class}_flux_s{extra_seed}"
+                    print(f"[paint_room] base-beacon gate: redrawing seed={extra_seed}")
+                    nd = _flux_draw(headers, cls, flux, control_asset, extra_seed, out_dir, stem)
+                    draws.append(nd)
+                    if depth_local is not None:
+                        r = registration_recall(str(depth_local), nd["saved"][0]["path"])
+                        table.append({"seed": extra_seed, "recall": round(r, 4),
+                                      "path": nd["saved"][0]["path"]})
+                    if _base_beacons_ok(nd["saved"][0]["path"]):
+                        winner = nd
+                        break
+                else:
+                    # ADVISORY ONLY (calibration 2026-07-22): room_1's KNOWN-GOOD base — the chain
+                    # that passed err_cells, panel, blind adjudication AND the walk gate — ALSO
+                    # fails this detector (err 1.13, 2 blobs): flux fire is too dim for a blob
+                    # detector tuned on styled brightness. A hard fail here blocks good chains.
+                    # The styled-stage err_cells gate remains the authoritative adjudicator
+                    # (it passed the good chain and failed every invented one).
+                    print("[paint_room] ⚠ base beacons not detector-visible after redraws "
+                          "(advisory — flux fire is often too dim for the detector; the styled-"
+                          "stage err_cells gate adjudicates)")
+                    base_beacon_advisory = "advisory-undetectable"
+
     base_asset = winner["saved"][0]["asset_id"]
     base_path = winner["saved"][0]["path"]
     print(f"[paint_room] BASE = seed {winner['seed']} ({base_asset})")
 
-    result = {"class": args.room_class, "control_asset": control_asset,
+    import subprocess as _sp
+    from datetime import datetime, timezone
+    try:
+        _sha = _sp.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True,
+                       text=True, cwd=str(QA.parent)).stdout.strip() or None
+    except Exception:
+        _sha = None
+    result = {"schema_version": 1, "repo_sha": _sha,
+              "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+              "class": args.room_class, "control_asset": control_asset,
               "draws": [{"seed": d["seed"], "job": d["job_id"],
                          "asset": d["saved"][0]["asset_id"]} for d in draws],
               "selection": table, "base": {"seed": winner["seed"], "asset": base_asset,
                                            "path": base_path}}
+    if base_beacon_advisory:
+        result["base_beacon_gate"] = base_beacon_advisory
 
     registration_failed = False
     if not args.skip_gemini:
@@ -194,7 +254,10 @@ def main() -> int:
             # winner recall from the SELECTION table (sorted desc; [0] = the adopted base).
             # (codex #1614 catch: the old read used a nonexistent "selected" key, so base_recall
             # was ALWAYS None and the drop guard never fired — every report showed "base None".)
-            base_recall = (result["selection"][0]["recall"] if result.get("selection") else None)
+            # the base-beacon gate may RESELECT the winner (other draw / extra seed) — the drop
+            # baseline must be the FINAL winner's recall, not the original top of the table.
+            base_recall = next((t["recall"] for t in result.get("selection", [])
+                                if t["seed"] == result["base"]["seed"]), None)
             drop = (base_recall - styled_recall) if isinstance(base_recall, (int, float)) else None
             if (drop is not None and drop > 0.15) or styled_recall < 0.60:
                 result["styled"]["registration_warning"] = (
@@ -223,23 +286,21 @@ def main() -> int:
                     err0 = _max_err_cells(solve0)
                     corr["before_err_cells"] = err0
                     if err0 > 0.35:
-                        sim = fit_similarity(solve0["matched_pairs"])
-                        if sim.get("unstable"):
-                            corr.update(attempted=True, unstable=sim)
-                            registration_failed = True
+                        # ITERATIVE similarity refine (proven: room_1 1.43 -> 0.31 in 2 passes).
+                        # An UNSTABLE fit here is usually STRUCTURAL (an invented/relocated fire
+                        # beacon contorts the 3-point fit — measured: an invented 4th brazier read
+                        # as rot 12-21deg @ scale 0.65) — the retry lever is a REPAINT, not a warp.
+                        from reregister_plate import reregister_iterative  # noqa: E402
+                        corrected_path = out_dir / f"{args.room_class}_final_1344_reregistered.png"
+                        res = reregister_iterative(boxes_sc, final_path, corrected_path, max_iters=3)
+                        corr.update(attempted=True, **{k: v for k, v in res.items() if k != "passed"})
+                        corr["path"] = str(corrected_path)
+                        if res.get("passed"):
+                            subprocess.run(["cp", str(corrected_path), str(final_path)], check=True)
+                            corr["adopted"] = True
+                            print(f"[paint_room] iterative warp adopted: err_cells {err0} -> {res['err_cells']}")
                         else:
-                            corrected_path = out_dir / f"{args.room_class}_final_1344_reregistered.png"
-                            apply_similarity(Image.open(final_path).convert("RGB"), sim).save(corrected_path)
-                            solve1 = blob_solve(boxes_sc, corrected_path)
-                            err1 = _max_err_cells(solve1) if "error" not in solve1 else 99.0
-                            corr.update(attempted=True, rot_deg=sim["rot_deg"], scale=sim["scale"],
-                                        after_err_cells=err1, path=str(corrected_path))
-                            if err1 <= 0.35:
-                                subprocess.run(["cp", str(corrected_path), str(final_path)], check=True)
-                                corr["adopted"] = True
-                                print(f"[paint_room] similarity warp adopted: err_cells {err0} -> {err1}")
-                            else:
-                                registration_failed = True
+                            registration_failed = True
                 result["styled"]["corrected"] = corr
             else:
                 result["styled"]["corrected"] = {"attempted": False,

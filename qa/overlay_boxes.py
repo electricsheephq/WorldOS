@@ -92,7 +92,11 @@ def blob_solve(boxes: dict, image: Path) -> dict:
 
     W, H, A = 1344, 768, 1344 / 768
     best = None
-    for o in np.arange(max(4.0, boxes["ortho"] - 3), boxes["ortho"] + 3, 0.005):
+    # sweep range: -3 .. +0.8*stamped above (a plate Gemini shrank to ~0.55 scale needs
+    # fitted_ortho ~1.8x stamped; the old +3 cap SATURATED on heavily-shrunk plates -> wrong
+    # coarse offsets -> mis-paired beacons -> spurious "unstable" similarity fits, measured
+    # 2/3 rooms on the first beacon-paint cycle)
+    for o in np.arange(max(4.0, boxes["ortho"] - 3), boxes["ortho"] * 1.8, 0.005):
         proj = []
         for b in bowls:
             r, u = G._camera_ru(*b["center"])
