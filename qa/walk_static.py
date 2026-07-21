@@ -43,6 +43,7 @@ GEOMETRY_OF = {
     "throne_hall": "throne_hall_geometry.json",
     "shop": "shop_geometry.json",
     "tavern_snug": "tavern_snug_geometry.json",
+    "camp_clearing": "camp_clearing_geometry.json",
     "dwing_room_0": "dwing_room_0_geometry.json",
     "dwing_room_1": "dwing_room_1_geometry.json",
 }
