@@ -32,6 +32,12 @@ SURFACE TAXONOMY (the crux of the forensics — classify EVERY run precisely)
                            ``scorer_model`` = the panel model; ``methodology`` = the lens set + round,
                            e.g. "vc-panel-6lens round=2". The visual quality numbers live in the
                            visual_* columns, NOT story/mech/angry (which stay NULL).
+* ``adventure``          — the A-series adventure-loop eval (``qa/adventure_eval.py``): an AGGREGATE
+                           over N arc-directed ``qa/run_adventure.sh`` runs against the one-call
+                           adventure fixture. ``methodology`` = "arc-duo N=<n>"; the row's
+                           story/mech/angry/behavioral/engagement columns are the per-dimension
+                           aggregate (median lenses, green-rate, etc.) and ``notes`` carries the
+                           WEAKEST-LINK verdict line (the routing instrument for the next sprint).
 
 USAGE
 -----
@@ -84,7 +90,7 @@ DB_PATH = QA_DIR / "scores.db"
 MD_PATH = QA_DIR / "scores_ledger.md"
 
 # Allowed surface values (validated on insert; the crux of the forensic story).
-SURFACES = ("engine-duo", "GUI-built-app", "GUI-headless-proxy", "smoke-only", "visual")
+SURFACES = ("engine-duo", "GUI-built-app", "GUI-headless-proxy", "smoke-only", "visual", "adventure")
 
 # Column order is the canonical schema. Adding a column is additive: bump this list and
 # _ensure_schema() will ALTER TABLE ADD COLUMN on an existing db (old rows read NULL).
