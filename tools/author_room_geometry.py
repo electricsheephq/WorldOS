@@ -297,6 +297,55 @@ def author_crypt_fresh() -> dict:
     return geo
 
 
+def author_camp_v2() -> dict:
+    """CAMP REGEN (#1644, owner-directed retirement of the paint-first camp plates): the modern
+    geometry-FIRST camp. author_camp()'s owner-playtest-tuned footprints stay VERBATIM as ground
+    truth, plus:
+    - DOORS at the adventure-fixture wire contract: (8,0) north -> tavern_snug, (0,6) west -> crypt
+      (seed_adventure_demo ROOMS adjacency — the fixture discovers cells live, but the authored
+      geometry must carry them for the greybox door cues + landing checks).
+    - 3 NON-COLLINEAR FIRE BEACONS (the #1621 registration bar): the campfire (4,8)-(5,8) plus two
+      1-cell standing torches — torch_shelter (12,1) against the shelter frame, torch_ruin (14,9)
+      in the ruin courtyard. Triangle area 37 cell^2 (bar: >=2.0). Beacon geometry IS room design:
+      these give the blob solver both axes on an outdoor plate with no wall lattice.
+    The paint-first camp_clearing/_night plates are RETIRED — never patch geometry under them."""
+    g = author_camp()
+    g["door_cells"] = [[8, 0], [0, 6]]
+    g.pop("doors", None)
+    g["props"].append({"id": "torch_shelter", "kind": "brazier", "cells": [[12, 1]]})
+    g["props"].append({"id": "torch_ruin", "kind": "brazier", "cells": [[14, 9]]})
+    # ORPHAN-POCKET design pass (the invisible-wall class the owner flagged on the OLD paint —
+    # geometry-first lets us design it out instead of rubble-filling after the fact):
+    # 1. SOUTH FIELD: shorten the log pile by one cell (8,9) — reconnects the whole 6-cell south
+    #    pocket through (9,9) as real play space.
+    for prop in g["props"]:
+        prop["cells"] = [c for c in prop["cells"] if tuple(c) != (8, 9)]
+    g["props"] = [prop for prop in g["props"] if prop["cells"]]
+    # 2. SHELTER INTERIOR: enclosed by the frame — honest bedding, never walkable-looking dead cells.
+    g["props"].append({"id": "shelter_bedding", "kind": "bedroll",
+                       "cells": [[11, 4], [11, 5], [12, 4], [12, 5]]})
+    # 3. RUIN COURTYARD: enclosed by walls/towers — debris-choked interior (the torch stands amid it;
+    #    beacons need VISIBILITY, not reachability). 2-cell crate/ruin slot likewise.
+    g["props"].append({"id": "ruin_debris", "kind": "rubble",
+                       "cells": [[12, 7], [13, 5], [13, 6], [13, 7], [13, 8], [13, 9],
+                                 [14, 6], [14, 7], [14, 8]]})
+    g["props"].append({"id": "ruin_slot_debris", "kind": "rubble", "cells": [[11, 10], [11, 11]]})
+    # Render-contract schema (mirror qa/room_geometries/*_geometry.json consumers).
+    prop_cells = sorted({tuple(c) for prop in g["props"] for c in prop["cells"]})
+    doors = {tuple(d) for d in g["door_cells"]}
+    g["impassable"] = [list(c) for c in prop_cells if c not in doors]
+    g["walls"] = []
+    g["cell_default_walkable"] = True
+    g["location"] = "camp_clearing"
+    g["material"] = "forest_floor"
+    landings = sorted({(dc + oc, dr + orr) for (dc, dr) in doors
+                       for (oc, orr) in ((0, 1), (0, -1), (1, 0), (-1, 0))
+                       if 0 <= dc + oc < g["cols"] and 0 <= dr + orr < g["rows"]
+                       and (dc + oc, dr + orr) not in {tuple(x) for x in prop_cells}})
+    g["protected_lane_cells"] = [list(c) for c in landings]
+    return g
+
+
 def author_camp() -> dict:
     """16x12 open-air night campfire clearing: NO perimeter (outdoor). The camp's error is the opposite
     of the crypt's — the SCENE is painted ~25% too small while the seed prop footprints are already
