@@ -165,6 +165,50 @@ def main() -> int:
     else:
         print("[paint_room] WARNING: depth given as asset_id, no local file — selection skipped (seed[0]).")
 
+    # ★ BASE-STAGE BEACON GATE (with --boxes): the styled pass can only KEEP fire it inherits —
+    # a base that drew the braziers UNLIT leaves the beacons undetectable, and Gemini then INVENTS
+    # the fire with count/position liberties (measured: b1 grew a 4th brazier; b2 bases had no
+    # detectable fire at all). The base is depth-registered by construction, so when fire IS lit
+    # the solve must be stable and tight; if not, redraw with extra seeds (flux is the cheap stage).
+    if args.boxes:
+        from overlay_boxes import blob_solve as _bs  # noqa: E402
+        from reregister_plate import _max_err_cells as _mec, fit_similarity as _fs  # noqa: E402
+        _bx = json.loads(Path(args.boxes).read_text())
+        def _base_beacons_ok(path: str) -> bool:
+            sv = _bs(_bx, Path(path))
+            if "error" in sv or "matched_pairs" not in sv:
+                return False
+            return (not _fs(sv["matched_pairs"]).get("unstable")) and _mec(sv) <= 0.5
+        if not _base_beacons_ok(winner["saved"][0]["path"]):
+            others = sorted((d for d in draws if d is not winner),
+                            key=lambda d: -next((t["recall"] for t in table if t["seed"] == d["seed"]), 0))
+            for alt in others:
+                if _base_beacons_ok(alt["saved"][0]["path"]):
+                    print(f"[paint_room] base-beacon gate: seed {winner['seed']} unlit/undetectable -> "
+                          f"switching to seed {alt['seed']} (lit beacons)")
+                    winner = alt
+                    break
+            else:
+                for extra_seed in (12348, 12349, 12350):
+                    stem = f"{args.room_class}_flux_s{extra_seed}"
+                    print(f"[paint_room] base-beacon gate: redrawing seed={extra_seed}")
+                    nd = _flux_draw(headers, cls, flux, control_asset, extra_seed, out_dir, stem)
+                    draws.append(nd)
+                    if depth_local is not None:
+                        r = registration_recall(str(depth_local), nd["saved"][0]["path"])
+                        table.append({"seed": extra_seed, "recall": round(r, 4),
+                                      "path": nd["saved"][0]["path"]})
+                    if _base_beacons_ok(nd["saved"][0]["path"]):
+                        winner = nd
+                        break
+                else:
+                    print("[paint_room] ✖ BASE BEACONS UNDETECTABLE after redraws — the styled pass "
+                          "would have to invent fire; failing before the Gemini spend.",
+                          file=sys.stderr)
+                    (out_dir / "report.json").write_text(json.dumps(
+                        {**result, "base_beacon_gate": "FAILED"}, indent=1))
+                    return 1
+
     base_asset = winner["saved"][0]["asset_id"]
     base_path = winner["saved"][0]["path"]
     print(f"[paint_room] BASE = seed {winner['seed']} ({base_asset})")
