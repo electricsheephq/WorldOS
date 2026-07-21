@@ -4,26 +4,35 @@
 > a bootstrapping agent reads after OPERATIONS.md. Keep it under a screen. History belongs in
 > git, not here.
 
-_Last updated: 2026-07-09 (UTC) — Goal Mode active; W5 night._
+_Last updated: 2026-07-21 (UTC) — Jul-16 generator chain merged; Task #76 in flight (wave-1 PRs up)._
+
+> Depth: `docs/roadmap/PROCEDURAL-SCORECARD.md` (generator-chain narrative) ·
+> `docs/ROOM-PIPELINE-RUNBOOK.md` (11-step room pipeline; §11 walk ship gate) ·
+> `docs/KIMI-ONBOARDING.md` (Kimi-side routing + the full Task #76 packet).
 
 ## Active sprint
 
 - **ACTIVE charter: #1386** (label `active-sprint`) — Act II close-out, "Rendered Felt".
-  Items 1 (#1284 grounding), 2 (#1397 pose), 5 (#1378 + extractor pass 2) CLOSED.
-  Item 3 (#1398 rest-scene demo): composed scene at panel 5.88 (frames in qa/evidence/1423/) —
-  owner-taste gate pending; polish trackers #1403 (framing) + Meshy-atlas quality remain.
-  Item 4 (W5): **the macOS player RUNS on the Mac** — build+handoff+shaders+live client merged
-  (PRs #1430/#1432/#1435; evidence felt-frames/w5a-smoke/). Remaining: **#1436 W5c** runtime
-  spawning (IN FLIGHT) + T3 harness extension, then the T3 gate run closes Act II.
-- **Next charters queued:** S2 (#1309, entry gate satisfied) → S3 (#1310).
+- **Jul-16 generator chain MERGED at tip `fd23e972`** — 5-room spine (#1604–#1609,
+  incl. sha-pinned certifications #1607 + ledger walk surface #1608); generate_town /
+  dress_focal v2 generator (#1610/#1611/#1621 — 3 non-collinear fire beacons per room);
+  instruments #1613–#1616 (walk-gate tri-state, T-pose roster fix, wing hardening).
+  Paint runs under an `err_cells ≤ 0.35` hard gate with similarity re-registration.
+- **Task #76 next cycle IN FLIGHT** — regen → box render ×3 → paint under the err_cells
+  gate → hot-load walk gates → blind-adjudicated panels (~140 Scenario CU; refilled
+  2026-07-20). Stage 1 (beacon regen) = PR #1625; #1619 render_recipe = PR #1626;
+  doc hygiene = PR #1624. Box claim via #1386 comments; packet in docs/KIMI-ONBOARDING.md §4.
+- **Companions:** #1620 experience gates (open).
 
 ## Live lanes
 
-- **#1436 W5c runtime spawning** — coder on the box (claim via #1386).
-- **Flywheel:** quest-authoring cues LIVE (#1409); visual promotion gate LIVE (two-tier,
-  calibrated — docs/roadmap/VISUAL-PROMOTION-GATE-DECISION.md); backdrop cadence restarted
-  (camp_clearing_night adopted tier=stable; market_square honestly REJECTED at delta −5.0,
-  needs iteration); demo cast at ~10 (wave-2 monsters merged #1428).
+- **Walk-GREEN rooms:** crypt / tavern / throne_hall live + shop / tavern_snug certified
+  (sha-pinned certs in `qa/certifications/`).
+- **dwing wing CLOSED:** 0 adopted / 3 honest negatives — instruments adjudicate eyeballs.
+- **Release truth:** `qa/RRI.json` = 2.7 partial/harness-contaminated — **NO valid release
+  verdict exists.** `dist/` is EMPTY (no built app).
+- **Open PRs (notable):** #1624/#1625/#1626 (this wave's drafts) · #1617 (Unity persistence docs) · #1498 (outdoor LoRA — CU now refilled) · #1298 (owner-held) · #1012/#1102/#573 (drafts) · #1622 (dependabot).
+- **Next charters queued:** S2 (#1309) → S3 (#1310), both open.
 
 ## Blockers
 
@@ -31,8 +40,9 @@ None. (Blocker Law: fresh-probe row in docs/ACTIVE-GOAL.md or it isn't a blocker
 
 ## Known frictions (not blockers)
 
-- Auto-merge hangs repo-wide → `gh pr merge --admin --squash` after green+resolved (#1389).
+- Auto-merge fires normally (the #1389 "hang" was a stale ruler pin — resolved by #1431/#1434);
+  `--admin` is emergency-only (declare why in a PR comment + file a follow-up).
 - qa-release-gate-tests was RED repo-wide (stale ruler pin) — FIXED by #1431; if it re-reds,
   check SCORING_CONFIG_FILES drift first.
-- Ruler duos: SOLO-TENANT only; scorer keychain token may need re-derivation per
-  reference_claude_p_automation_auth.
+- GitHub LFS push for the box Unity repo blocked on a paid data pack (~$5/mo owner decision);
+  local commits + LEXAR tarball are the save story meanwhile.
