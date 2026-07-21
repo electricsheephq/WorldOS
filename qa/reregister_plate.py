@@ -194,6 +194,8 @@ def reregister_iterative(boxes: dict, plate_path, out_path, max_iters: int = 2, 
         img.save(tmp)
         solve = blob_solve(boxes, tmp)
         if "error" in solve:
+            for t in Path(str(out_path)).parent.glob(Path(str(out_path)).name + ".*.png"):
+                t.unlink(missing_ok=True)
             return {"passed": False, "iters": it, "error": solve["error"]}
         err = _max_err_cells(solve)
         if best_err is None or err < best_err:

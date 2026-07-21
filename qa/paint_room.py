@@ -218,7 +218,16 @@ def main() -> int:
     base_path = winner["saved"][0]["path"]
     print(f"[paint_room] BASE = seed {winner['seed']} ({base_asset})")
 
-    result = {"class": args.room_class, "control_asset": control_asset,
+    import subprocess as _sp
+    from datetime import datetime, timezone
+    try:
+        _sha = _sp.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True,
+                       text=True, cwd=str(QA.parent)).stdout.strip() or None
+    except Exception:
+        _sha = None
+    result = {"schema_version": 1, "repo_sha": _sha,
+              "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+              "class": args.room_class, "control_asset": control_asset,
               "draws": [{"seed": d["seed"], "job": d["job_id"],
                          "asset": d["saved"][0]["asset_id"]} for d in draws],
               "selection": table, "base": {"seed": winner["seed"], "asset": base_asset,
@@ -245,7 +254,10 @@ def main() -> int:
             # winner recall from the SELECTION table (sorted desc; [0] = the adopted base).
             # (codex #1614 catch: the old read used a nonexistent "selected" key, so base_recall
             # was ALWAYS None and the drop guard never fired — every report showed "base None".)
-            base_recall = (result["selection"][0]["recall"] if result.get("selection") else None)
+            # the base-beacon gate may RESELECT the winner (other draw / extra seed) — the drop
+            # baseline must be the FINAL winner's recall, not the original top of the table.
+            base_recall = next((t["recall"] for t in result.get("selection", [])
+                                if t["seed"] == result["base"]["seed"]), None)
             drop = (base_recall - styled_recall) if isinstance(base_recall, (int, float)) else None
             if (drop is not None and drop > 0.15) or styled_recall < 0.60:
                 result["styled"]["registration_warning"] = (
