@@ -1082,6 +1082,39 @@ def get_state(campaign_id: str) -> dict:
 
 
 @mcp.tool()
+def get_quests(campaign_id: str) -> dict:
+    """Read the FULL quest set, machine-readably — every quest regardless of status
+    (active | completed | failed), not just the active ones get_state projects. This
+    is the poll surface for external telemetry (the adventure-eval quest_trace stage):
+    it lets an eval watch an objective advance -> the quest progress -> the resolution,
+    which get_state's active-only slice hides the moment a quest completes or fails.
+
+    READ-ONLY — pure projection, no state mutation or side effects. Each entry mirrors
+    the quest fields get_state projects plus the resolution/progress fields an eval needs
+    to compute progress: id, title, status, objectives, completed_objectives, giver_id,
+    location_id, milestone_awarded, last_progress_day, last_progress_beat.
+    """
+    c = _require(campaign_id)
+    return {
+        "quests": [
+            {
+                "id": q.id,
+                "title": q.title,
+                "status": q.status,
+                "objectives": list(q.objectives),
+                "completed_objectives": list(q.completed_objectives),
+                "giver_id": q.giver_id,
+                "location_id": q.location_id,
+                "milestone_awarded": q.milestone_awarded,
+                "last_progress_day": q.last_progress_day,
+                "last_progress_beat": q.last_progress_beat,
+            }
+            for q in c.quests.values()
+        ]
+    }
+
+
+@mcp.tool()
 def look_around(campaign_id: str) -> dict:
     """Describe the party's current location and the exits they can take."""
     c = _require(campaign_id)

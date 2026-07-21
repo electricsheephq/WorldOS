@@ -408,3 +408,61 @@ class TestF05_10_PreludeMeetable:
                 bound.add(meeting.ref_id)
         # Both eligible npcs can still be bound (distribution unchanged / not collapsed).
         assert bound == {"npc-a", "npc-b"}
+
+
+# ── A0.1 — get_quests exposes the FULL quest set for the adventure-eval telemetry ─
+
+
+class TestA0_1_GetQuestsFullSet:
+    def test_returns_all_quests_regardless_of_status(self, cid):
+        # Seed two quests, then resolve one fully and advance one objective of the other.
+        done_qid = _add_active_quest(cid, "Deliver the Relic", ["reach the temple"])
+        active_qid = _add_active_quest(cid, "Two-Step Errand", ["step one", "step two"])
+        server.complete_quest(cid, done_qid, "completed")
+        server.complete_objective(cid, active_qid, "step one")
+
+        out = server.get_quests(cid)
+        assert set(out.keys()) == {"quests"}
+        by_id = {q["id"]: q for q in out["quests"]}
+
+        # BOTH quests are present — the completed one does NOT drop out (the get_state gap).
+        assert set(by_id) == {done_qid, active_qid}, \
+            "get_quests must return every quest regardless of status"
+
+        done = by_id[done_qid]
+        assert done["status"] == "completed"
+        # The milestone-award idempotency flag is exposed so an eval can read it (its value
+        # tracks leveling_mode — only stamped in xp-mode — so we assert presence, not value).
+        assert isinstance(done["milestone_awarded"], bool)
+
+        active = by_id[active_qid]
+        assert active["status"] == "active"
+        # The objective split lets an eval compute progress: one done, one outstanding.
+        assert active["objectives"] == ["step one", "step two"]
+        assert active["completed_objectives"] == ["step one"]
+
+    def test_get_state_active_quests_unchanged(self, cid):
+        # The pinned invariant: get_state still projects ONLY the active quest — get_quests
+        # is purely additive and does not alter get_state's active-only slice.
+        done_qid = _add_active_quest(cid, "Slay the Beast", ["find the lair"])
+        active_qid = _add_active_quest(cid, "Ongoing Watch", ["hold the line"])
+        server.complete_quest(cid, done_qid, "completed")
+
+        active_from_state = server.get_state(cid)["active_quests"]
+        assert [q["id"] for q in active_from_state] == [active_qid], \
+            "get_state.active_quests must still show only the active quest"
+
+    def test_read_only_no_mutation(self, cid):
+        # get_quests is pure projection — calling it must not mutate persisted state.
+        qid = _add_active_quest(cid, "Untouched", ["a", "b"])
+        before = store.load_campaign(cid).model_dump()
+        server.get_quests(cid)
+        after = store.load_campaign(cid).model_dump()
+        assert before == after, "get_quests must not mutate campaign state"
+        # Sanity: the projected entry carries the full field set an eval needs.
+        entry = next(q for q in server.get_quests(cid)["quests"] if q["id"] == qid)
+        assert set(entry) == {
+            "id", "title", "status", "objectives", "completed_objectives",
+            "giver_id", "location_id", "milestone_awarded",
+            "last_progress_day", "last_progress_beat",
+        }
