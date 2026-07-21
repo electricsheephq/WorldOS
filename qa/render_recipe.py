@@ -103,8 +103,13 @@ def _feature_counts(counts: dict, door_walls: list) -> str:
         parts.append(f"EXACTLY {_num(counts['altar'])} "
                      f"{_plural(counts['altar'], 'altar')}")
     if counts["brazier"]:
+        # "BLAZING" is load-bearing, not flavor: the flux base must DRAW the fire lit for the
+        # brazier beacons to be detectable — a base with unlit bowls forces the styled pass to
+        # INVENT fire with count/position liberties (measured b1-b3: 6/6 unlit bases on two rooms
+        # until the fire attribute was restored; the hand statics always said "glowing coals").
         parts.append(f"EXACTLY {_num(counts['brazier'])} "
-                     f"{_plural(counts['brazier'], 'brazier')}")
+                     f"{_plural(counts['brazier'], 'brazier')}, each holding a BLAZING FIRE "
+                     "with bright flames and glowing coals")
     n_doors = len(door_walls)
     if n_doors:
         sides = " + ".join(f"{w} wall" for w in door_walls)
@@ -163,8 +168,8 @@ def _focal_clause(geometry: dict, counts: dict) -> str | None:
             detail = "; ".join(f"{v}, {h}" for h, v in positions)
             sentences.append(f"the {_num(n)} {_plural(n, 'brazier')} {verb}: {detail}")
     title = "FOCAL PLACEMENT (strict)" if focus.get("altar") else "BRAZIER PLACEMENT (strict)"
-    return (f"{title}: {'; '.join(sentences)} — exactly where the input image shows them; "
-            "do NOT move them.")
+    return (f"{title}: {'; '.join(sentences)} — exactly where the input image shows them, "
+            "every brazier LIT with visible bright flames; do NOT move them and do NOT add more.")
 
 
 def structural_block(geometry: dict) -> str:
