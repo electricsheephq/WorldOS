@@ -53,7 +53,13 @@
    "rot_deg": 5.35,
    "scale": 0.7425,
    "after_err_cells": 0.39,
-   "path": "qa/evidence/paint-room/dwing_room_1_b1/dwing_room_1_final_1344_reregistered.png"
+   "path": "qa/evidence/paint-room/dwing_room_1_b1/dwing_room_1_final_1344_reregistered.png",
+   "post_run_correction": {
+    "method": "reregister_iterative (3-point similarity, 2 refine passes) \u2014 run out-of-band after the original single-pass gate failed at 0.39; the iterative gate was then wired into paint_room in the same PR",
+    "err_cells": 0.31,
+    "adopted": true,
+    "adopted_plate": "extensions/renderers/unity/plates/dwing_room_1_v1_registered.png"
+   }
   }
  }
 }
