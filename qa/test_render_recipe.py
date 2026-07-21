@@ -219,7 +219,13 @@ def test_every_recipe_class_keeps_its_static_prompt_keys():
 def test_dwing_recipes_carry_hand_authored_flavor_keys():
     # The ONLY prose left to hand-author: the per-class flavor sentence (#1619) — style/mood/
     # atmosphere ONLY. Counts, shape, door walls and placement belong to the generator.
-    for name in ("dwing_room_0", "dwing_room_1"):
+    # SCOPE (evaOS #1629): this guard covers the FLAVOR KEYS of geometry-driven classes only.
+    # Legacy STATIC base_prompt/gemini_grounding keys (all classes) still hand-author feature
+    # prose — they are the no-`--geometry` fallback, superseded by the geometry path; the one
+    # measured-dangerous pattern there ('altar WHERE PRESENT', the shareable hedge) is gone.
+    flavored = [n for n, c in _RECIPES["classes"].items() if c.get("flavor") or c.get("gemini_flavor")]
+    assert set(flavored) >= {"dwing_room_0", "dwing_room_1"}, "known geometry-driven classes missing"
+    for name in flavored:  # derived, not hand-listed — the guard auto-extends to future classes
         cls = _RECIPES["classes"][name]
         assert cls.get("flavor"), name
         assert cls.get("gemini_flavor"), name
@@ -231,6 +237,15 @@ def test_dwing_recipes_carry_hand_authored_flavor_keys():
                 f"{name}.flavor carries generator-owned structure ({keyword.lower()!r}) — "
                 "flavor is style/mood only; render_recipe.py owns counts/shape/doors/placement"
             )
+        # Room-SPECIFIC feature nouns are generator-owned too: a flavor key asserting an altar
+        # while the geometry has none puts the flavor in direct CONFLICT with the generated
+        # NEGATIVE clause — the exact contradiction class #1619 exists to kill. Altar presence/
+        # position is always derived (FOCAL clause / NEGATIVE), so no flavor key may name it.
+        assert "altar" not in lowered, f"{name}.flavor names an altar (generator-owned feature)"
+        assert "altar" not in cls["gemini_flavor"].lower(), (
+            f"{name}.gemini_flavor names an altar — room-specific features are generator-owned "
+            "(caught live: room_0's flavor asserted the altar the NEGATIVE clause must own)"
+        )
 
 
 def test_paint_room_composes_from_geometry_without_mutating_the_recipe():
