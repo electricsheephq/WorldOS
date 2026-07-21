@@ -65,7 +65,6 @@ def _obj(server, cid: str, needle: str) -> str:
 
 
 def _stages(trace_path: str) -> list[str]:
-    import json
     data = json.loads(Path(trace_path).read_text())
     return [s["stage"] for s in data["stamps"]]
 

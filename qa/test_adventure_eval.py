@@ -18,7 +18,7 @@ sys.path.insert(0, str(QA))
 
 import adventure_eval as ae  # noqa: E402
 import scores_db  # noqa: E402
-from scoring_config_version import adventure_config_version  # noqa: E402
+from scoring_config_version import ADVENTURE_CONFIG_FILES, adventure_config_version  # noqa: E402
 
 
 def _write_run(
@@ -191,9 +191,8 @@ def test_stages_bound_to_quest_progress():
 # ── item 20: the av_ ruler fences the aggregation FORMULAS too ───────────────────────────────────
 
 def test_adventure_ruler_fences_formulas():
-    import scoring_config_version as scv  # noqa: PLC0415
-    assert "adventure_eval.py" in scv.ADVENTURE_CONFIG_FILES
-    assert "adventure_eval_config.json" in scv.ADVENTURE_CONFIG_FILES
+    assert "adventure_eval.py" in ADVENTURE_CONFIG_FILES
+    assert "adventure_eval_config.json" in ADVENTURE_CONFIG_FILES
 
 
 # ── item 3: stage-gap outlier uses abs() (guards corrupted/partial traces) ───────────────────────
