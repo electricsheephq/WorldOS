@@ -1083,16 +1083,9 @@ def get_state(campaign_id: str) -> dict:
 
 @mcp.tool()
 def get_quests(campaign_id: str) -> dict:
-    """Read the FULL quest set, machine-readably — every quest regardless of status
-    (active | completed | failed), not just the active ones get_state projects. This
-    is the poll surface for external telemetry (the adventure-eval quest_trace stage):
-    it lets an eval watch an objective advance -> the quest progress -> the resolution,
-    which get_state's active-only slice hides the moment a quest completes or fails.
-
-    READ-ONLY — pure projection, no state mutation or side effects. Each entry mirrors
-    the quest fields get_state projects plus the resolution/progress fields an eval needs
-    to compute progress: id, title, status, objectives, completed_objectives, giver_id,
-    location_id, milestone_awarded, last_progress_day, last_progress_beat.
+    """Read EVERY quest regardless of status (get_state lists active only). Read-only
+    telemetry poll surface. Entries: id, title, status, objectives, completed_objectives,
+    giver_id, location_id, milestone_awarded, last_progress_day, last_progress_beat.
     """
     c = _require(campaign_id)
     return {
