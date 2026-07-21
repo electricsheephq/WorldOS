@@ -231,6 +231,15 @@ def test_dwing_recipes_carry_hand_authored_flavor_keys():
                 f"{name}.flavor carries generator-owned structure ({keyword.lower()!r}) — "
                 "flavor is style/mood only; render_recipe.py owns counts/shape/doors/placement"
             )
+        # Room-SPECIFIC feature nouns are generator-owned too: a flavor key asserting an altar
+        # while the geometry has none puts the flavor in direct CONFLICT with the generated
+        # NEGATIVE clause — the exact contradiction class #1619 exists to kill. Altar presence/
+        # position is always derived (FOCAL clause / NEGATIVE), so no flavor key may name it.
+        assert "altar" not in lowered, f"{name}.flavor names an altar (generator-owned feature)"
+        assert "altar" not in cls["gemini_flavor"].lower(), (
+            f"{name}.gemini_flavor names an altar — room-specific features are generator-owned "
+            "(caught live: room_0's flavor asserted the altar the NEGATIVE clause must own)"
+        )
 
 
 def test_paint_room_composes_from_geometry_without_mutating_the_recipe():
