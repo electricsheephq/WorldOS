@@ -990,16 +990,39 @@ function ScreenTable({ onNavigate, state, setState, liveSession }) {
         timer = window.setInterval(guardedLoad, 5000);
       }
     };
+    // #1636: a STANDALONE-SANDBOX / headless surface (the A-G walked eval, an eyes-on preview via
+    // viewer/server.py with no native DM attached) mounts this screen in a tab that reports
+    // `visibilityState === "hidden"` for its whole life. The old gate only fetched /session-surface
+    // when the tab was VISIBLE, so in that context the surface was requested ZERO times and the play
+    // screen sat on "Loading session surface." forever with empty party/quest/action panels — while
+    // the app-level campaigns.json poll (never visibility-gated) looped. The backend was fine the
+    // whole time (`curl /session-surface?campaign=<id>` returns the complete surface). Fix (additive;
+    // the live/visible player path is byte-for-byte unchanged): ALWAYS do the initial load and start
+    // polling on mount regardless of visibility, so the surface binds and stays fresh even hidden.
+    // `standalone` (hidden AT MOUNT — a never-focused sandbox surface) keeps polling when the tab is
+    // hidden; a tab that started VISIBLE keeps the battery-friendly pause-on-background behavior so a
+    // real player who tabs away still pauses the poll.
+    let standalone = document.visibilityState !== "visible";
     const handleVisibility = () => {
       if (document.visibilityState === "visible") {
+        // A tab that has EVER been visible is a real player surface from here on — demote it out of
+        // standalone so backgrounding it again pauses the poll (only never-visible sandbox tabs keep
+        // polling forever).
+        standalone = false;
         guardedLoad();
         startPolling();
-      } else {
+      } else if (!standalone) {
+        // A real player backgrounded a foreground session — pause the poll to save requests.
         stopPolling();
       }
+      // standalone (hidden at mount): keep polling; the sandbox surface must stay bound + fresh.
     };
     document.addEventListener("visibilitychange", handleVisibility);
-    handleVisibility();
+    // Unconditional initial load + poll: the surface must bind even in a permanently-hidden sandbox
+    // tab (the old `handleVisibility()` on mount skipped the fetch entirely when hidden). This is the
+    // plain /session-surface polling fallback for a context with no live-channel attach (#1636).
+    guardedLoad();
+    startPolling();
     return () => {
       cancelled = true;
       stopPolling();
