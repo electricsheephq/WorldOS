@@ -91,6 +91,15 @@
     }
    ],
    "_sync_comment": "MIRROR of camp_clearing_night (the adventure fixture keys the hub as camp_clearing; walkslice/camp_smoke key it as camp_clearing_night). test_seed_adventure_demo pins the two entries identical \u2014 edit BOTH or the sync lint fails."
+  },
+  "dwing_room_1": {
+   "plate": "plates/dwing_room_1_v1_registered.png",
+   "cameraPin": {
+    "ortho": 7.997,
+    "pitch": 30,
+    "yaw": 45
+   },
+   "boxes": "boxes/dwing_room_1_v1_boxes.json"
   }
  }
 }
