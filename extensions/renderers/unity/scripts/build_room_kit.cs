@@ -29,6 +29,16 @@
 // to a dark bowl + narrow stem + ember-orange emissive disc (were glowing mushroom orbs); (5) sarcophagus
 // raised to waist-high mass. Deterministic, material-defensive, SaveScene — all preserved.
 //
+// r5 (#83 r4-probe fixes, measured live on the box): the r3/r4 pillar scaler produced wide thin SLABS —
+// SM_Bld_Base_Pillar_01 natural bounds (0.43,3.02,0.43) went to world (1.80,5.00,0.90), x/z asymmetric (z
+// half x) and default GREY. r5 — (1) PILLAR SCALING switched to the proven MEASURED-MULTIPLIER method:
+// measure the instance's own renderer world bounds, multiply localScale per-axis by target/measured for a
+// world target (1.2,4.0,1.2), then RE-MEASURE and Debug.Log the achieved size + loud warning if any axis
+// is off >10% (both x/z share one target → asymmetry gone); (2) PILLAR MATERIAL — force the stone/brick
+// material onto pillars (they shipped a valid-but-grey material FixMaterials would skip, so r4b left them
+// default grey); (3) WALL HEIGHT baked to 1.5× the r3 value (kit_crypt_r4b.png read RIGHT at 1.5×). r3
+// lighting / braziers / tomb unchanged.
+//
 // SELF-CONTAINED: no new dependencies. Reads MiniJson (same assembly). Geometry path + capture dir are the
 // same box defaults build_room_unified.cs uses (L24), env-overridable so a non-box host can point elsewhere.
 // C# is uncompilable on the authoring Mac — this is authored to mirror the proven sibling idioms exactly and
@@ -48,11 +58,13 @@ public static class BuildRoomKit
     // CellSize=2 — the plate contract (build_room_unified.cs L34 uses (c-cx0)*2.0 / (cy0-r)*2.0).
     const float CELL = 2.0f;
     // r3 mass targets (world units) — see round-3 defect notes in the header, keyed to kit_crypt_r1/r2.png.
-    const float WALL_H = 3.6f;       // wall height target (r1/r2 walls were barely person-height planes)
+    const float WALL_H = 5.4f;       // r5: wall height baked to 1.5× the r3 value (3.6→5.4) — r4b frame read RIGHT at 1.5×
     const float WALL_T = 0.8f;       // wall thickness target (r1/r2 walls were paper-thin)
-    const float PILLAR_FOOT = 1.8f;  // pillar footprint width ≈0.9 cell (fat carved column, not a post)
-    const float PILLAR_H_MIN = 3.5f; // pillar height band low (r1/r2 pillars were toothpicks)
-    const float PILLAR_H_MAX = 5.0f; // pillar height band high
+    // r5 pillar targets (world units) — measured-multiplier method (#83 r4 probe). SM_Bld_Base_Pillar_01
+    // natural bounds (0.43,3.02,0.43); the r3 uniform-footprint scaler produced world (1.80,5.00,0.90) —
+    // wide thin SLABS with z≈half x. r5 targets a SYMMETRIC fat column and re-measures to assert the size.
+    const float PILLAR_TGT_XZ = 1.2f; // pillar world footprint on BOTH x and z (fixes the r3 z-half-x asymmetry)
+    const float PILLAR_TGT_H  = 4.0f; // pillar world height target
 
     // ── fallback-material cache (material-defensive rule) ──────────────────────────────────────────
     static Material _stoneMat;                 // PolygonGeneric stone-ish (structure / tombs)
@@ -506,27 +518,39 @@ public static class BuildRoomKit
         FixMaterials(inst, false, ref matFix);
     }
 
-    // r3 PILLAR PLACER — the painted crypt's columns are FAT carved masses, not slender posts. Widen the
-    // pillar's horizontal footprint to ~PILLAR_FOOT (≈0.9 cell, keeping its round X/Z proportion) and land
-    // its height in the PILLAR_H_MIN..MAX band; seat the base on the floor. (r1/r2 placed pillars at native
-    // slender scale → toothpicks.) Deterministic, material-defensive.
+    // r5 PILLAR PLACER — MEASURED-MULTIPLIER method (#83 r4 probe). The r3 placer scaled the footprint by a
+    // single max(x,z) factor, which on the box produced world (1.80,5.00,0.90) — wide thin SLABS with z≈half
+    // x. r5 measures the instance's OWN renderer world bounds at localScale=1, then multiplies localScale
+    // PER-AXIS by target/measured so world lands ≈(PILLAR_TGT_XZ, PILLAR_TGT_H, PILLAR_TGT_XZ) — a fat column
+    // that is x/z-SYMMETRIC by construction. Then RE-MEASURE, Debug.Log the achieved world size, and warn
+    // loudly if any axis is off target by >10%. Pillars shipped a valid-but-grey material (FixMaterials only
+    // replaces null/error slots), so r4b left them default grey → force the stone/brick material on. Seat the
+    // base on the floor at the run centroid. Deterministic.
     static GameObject PlacePillar(GameObject prefab, string name, GameObject parent, Vector3 center, ref int matFix)
     {
         if (prefab == null) return null;
         var inst = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
         inst.name = name; inst.transform.SetParent(parent.transform, true);
         inst.transform.position = Vector3.zero; inst.transform.rotation = Quaternion.identity; inst.transform.localScale = Vector3.one;
+        // measure THIS instance's renderer world bounds, then per-axis multiply localScale by target/measured
         var b0 = WorldBounds(inst);
-        float footW = Mathf.Max(b0.size.x, b0.size.z);
-        float sxz = footW > 1e-4f ? (PILLAR_FOOT / footW) : 1f;                   // widen footprint to a fat column
-        float hUni = (b0.size.y > 1e-4f) ? b0.size.y * sxz : PILLAR_H_MIN;        // height if scaled uniformly
-        float hTgt = Mathf.Clamp(hUni, PILLAR_H_MIN, PILLAR_H_MAX);               // keep it fat, land 3.5–5u tall
-        float sy   = (b0.size.y > 1e-4f) ? (hTgt / b0.size.y) : sxz;
-        inst.transform.localScale = new Vector3(sxz, sy, sxz);
+        float sx = b0.size.x > 1e-4f ? PILLAR_TGT_XZ / b0.size.x : 1f;
+        float sy = b0.size.y > 1e-4f ? PILLAR_TGT_H  / b0.size.y : 1f;
+        float sz = b0.size.z > 1e-4f ? PILLAR_TGT_XZ / b0.size.z : 1f;
+        inst.transform.localScale = new Vector3(sx, sy, sz);
+        // RE-MEASURE and assert the achieved world size is within ±10% of target on every axis
         var b1 = WorldBounds(inst);
+        Debug.Log($"[KitRoom] pillar '{name}': measured world=({b0.size.x:F2},{b0.size.y:F2},{b0.size.z:F2}) " +
+                  $"scale=({sx:F2},{sy:F2},{sz:F2}) → achieved world=({b1.size.x:F2},{b1.size.y:F2},{b1.size.z:F2}) " +
+                  $"target=({PILLAR_TGT_XZ:F1},{PILLAR_TGT_H:F1},{PILLAR_TGT_XZ:F1})");
+        if (Mathf.Abs(b1.size.x - PILLAR_TGT_XZ) > 0.1f * PILLAR_TGT_XZ ||
+            Mathf.Abs(b1.size.y - PILLAR_TGT_H)  > 0.1f * PILLAR_TGT_H  ||
+            Mathf.Abs(b1.size.z - PILLAR_TGT_XZ) > 0.1f * PILLAR_TGT_XZ)
+            Debug.LogWarning($"[KitRoom] ⚠⚠ pillar '{name}' achieved world=({b1.size.x:F2},{b1.size.y:F2},{b1.size.z:F2}) " +
+                             $"is OFF target ({PILLAR_TGT_XZ:F1},{PILLAR_TGT_H:F1},{PILLAR_TGT_XZ:F1}) by >10% — check prefab bounds/pivot.");
         Vector3 pivotOffset = inst.transform.position - b1.center;
         inst.transform.position = new Vector3(center.x + pivotOffset.x, pivotOffset.y - b1.min.y, center.z + pivotOffset.z);
-        FixMaterials(inst, false, ref matFix);
+        FixMaterials(inst, false, ref matFix, force: true);   // r5: pillars shipped grey → force stone/brick
         return inst;
     }
 
@@ -550,7 +574,10 @@ public static class BuildRoomKit
     // instantiating ANY kit piece, walk its renderers; every null / missing / error-shader material slot is
     // reassigned a working PolygonGeneric material (stone-ish for structure/tombs, wood-ish for furniture).
     // Lookups are cached; each distinct bad material is logged ONCE.
-    static void FixMaterials(GameObject inst, bool woodish, ref int matFix)
+    // r5: `force` also overrides VALID-but-default-grey slots — the pillar prefabs ship a legit (non-error)
+    // grey material FixMaterials would otherwise skip, leaving them default grey (r4b). Force=true assigns the
+    // stone/brick material to every slot regardless, so pillars read stone like the walls.
+    static void FixMaterials(GameObject inst, bool woodish, ref int matFix, bool force = false)
     {
         ResolveFallbackMaterials();
         Material repl = woodish ? _woodMat : _stoneMat;
@@ -563,7 +590,8 @@ public static class BuildRoomKit
             {
                 var m = mats[i];
                 bool bad = m == null || m.shader == null || m.shader.name == "Hidden/InternalErrorShader";
-                if (!bad) continue;
+                if (!bad && !force) continue;          // default: only touch null/error-shader slots
+                if (!bad && force && m == repl) continue;   // force: already the replacement — leave it
                 string key = (m == null) ? "<null>" : m.name;
                 mats[i] = repl; changed = true; matFix++;
                 if (_loggedBadMats.Add(key))
