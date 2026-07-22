@@ -120,6 +120,54 @@ def test_world_to_window_px_origin_is_center():
         assert abs(x - w / 2) < 1e-6 and abs(y - h / 2) < 1e-6
 
 
+# --- #1585/#1647 painted-door hotspot pure math (twin of C# WindowToPlatePx / TryDoorHotspot) ---------
+def test_window_plate_px_round_trips():
+    """screen px -> plate px -> screen px is identity at any aspect (the crop model is a bijection on the
+    displayed region). Guards the C# hit-test against a sign/flip/scale regression it can't unit-test."""
+    for w, h in ((1344, 768), (1280, 800), (1920, 1080)):
+        for sx, sy in ((10, 10), (w / 2, h / 2), (w - 3, h - 7), (417, 605)):
+            px, py = W.window_px_to_plate_px(sx, sy, w, h, 1344, 768)
+            bx, by = W.plate_px_to_screen_px(px, py, w, h, 1344, 768)
+            assert abs(bx - sx) < 1e-4 and abs(by - sy) < 1e-4
+
+
+def test_window_to_plate_px_native_window_is_identity():
+    """When the window IS the plate's native resolution, a screen click maps to the same plate pixel
+    (modulo the bottom-left->top-left y flip) — the space the hotspot px are authored in."""
+    px, py = W.window_px_to_plate_px(900, 768 - 275, 1344, 768, 1344, 768)
+    assert abs(px - 900) < 1e-6 and abs(py - 275) < 1e-6
+
+
+def test_plate_center_maps_to_window_center():
+    """The plate is centered in the window, so its pixel centre projects to the screen centre at any aspect."""
+    for w, h in ((1344, 768), (1600, 900), (1200, 1000)):
+        sx, sy = W.plate_px_to_screen_px(672, 384, w, h, 1344, 768)
+        assert abs(sx - w / 2) < 1e-6 and abs(sy - h / 2) < 1e-6
+
+
+def test_door_hotspot_hit_inside_and_outside():
+    """The circular hit-test: inside the radius fires, just outside does not (mirror of TryDoorHotspot)."""
+    hs, rad = (900, 275), 85
+    assert W.door_hotspot_hit((900, 275), hs, rad)          # dead centre
+    assert W.door_hotspot_hit((900 + 60, 275 - 60), hs, rad)  # within (dist ~84.9)
+    assert not W.door_hotspot_hit((900 + 61, 275 - 61), hs, rad)  # just outside (dist ~86.3)
+    assert not W.door_hotspot_hit((900, 275 + 86), hs, rad)
+
+
+def test_shop_arch_click_routes_to_authored_door():
+    """End-to-end pure path for the shipped shop hotspot: a click ON the painted arch (screen px at the
+    native window) converts to the measured plate px and lands inside the {door_cell:[12,5]} hotspot —
+    while a click at the projected door-cell base (px 1037,230, the wall the paint drifted off) misses."""
+    w, h, tw, th = 1344, 768, 1344, 768
+    hs_px, rad = (900, 275), 85
+    # click on the painted arch centroid (screen y = h - plate_py)
+    click = W.window_px_to_plate_px(900, h - 275, w, h, tw, th)
+    assert W.door_hotspot_hit(click, hs_px, rad)
+    # a click at the authored door_cell's projected base is off the painted arch -> no hotspot
+    off = W.window_px_to_plate_px(1037, h - 230, w, h, tw, th)
+    assert not W.door_hotspot_hit(off, hs_px, rad)
+
+
 def test_diff_blobs_finds_a_moved_square():
     """Synthetic red-first: a 30x30 'actor' moves from (100,100) to (300,200) between frames —
     diff_blobs must report exactly the departure + arrival blobs, bottom-centres on the squares."""

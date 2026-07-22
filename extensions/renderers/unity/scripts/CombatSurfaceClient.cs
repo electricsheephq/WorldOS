@@ -72,6 +72,9 @@ public class CombatSurfaceClient : MonoBehaviour
     Texture2D _blobT, _ringT, _pipT;          // procedural AO blob + contact decal + feet-pip, built once, shared
     Texture2D _decalFoe, _decalParty;         // RING-V2: per-team #1524 contact-decal textures (faction hue baked in)
     Material _silFoe, _silParty; bool _silMatMissing; // #1545: per-team walk-behind silhouette materials (ZTest Greater)
+    // #1647 item 2 / #1572: the walk-behind silhouette (ON by default; WORLDOS_SILHOUETTE=0 kills it — a beauty-
+    // capture / debug escape hatch). Read once at construction (env-field-initializer idiom, mirrors _truthOverlay).
+    readonly bool _silhouetteOn = System.Environment.GetEnvironmentVariable("WORLDOS_SILHOUETTE") != "0";
     AnimationClip _donorIdle; bool _donorTried; // goblin.fbx embedded Idle, for clipless-humanoid retarget
 
     // RING-V2 warm-floor port (#1515 fix 2 / #1524, from CohesionProbe.cs): a hearth-INDEPENDENT warm floor
@@ -134,6 +137,18 @@ public class CombatSurfaceClient : MonoBehaviour
     GameObject _doorRoot;                 // parent of the glow quads + labels (one-call teardown/rebuild)
     System.Collections.Generic.List<Material> _doorGlowMats;  // per-door glow material (per-frame alpha pulse)
     string _doorSig = "\0";               // signature of the door set the affordance was last built for
+    // #1585/#1647 item 3 PAINTED-DOOR HOTSPOTS: the engine door CELL is authored; the painted archway on the
+    // plate can sit a cell or two off it (Flux/Gemini place the arch by composition, not by the geometry). So a
+    // click on the VISIBLE arch lands on a wall/prop cell and flash-rejects -> "no functional doors" (#1585 P1).
+    // A hotspot maps a circular region of PLATE PIXELS (px + radius_px, the space the arch is measured in) to a
+    // door_cell; a click inside it routes EXACTLY like clicking that door_cell (HandleCell -> cross_door). Data
+    // rides plates_manifest.json per-plate `door_hotspots`; absent field => zero behavior change. Set on the plate
+    // swap (ApplyPlate), so the hit-test + glow markers only ever run for the room whose plate is showing.
+    struct DoorHotspot { public int c, r; public float px, py, radius; }
+    System.Collections.Generic.List<DoorHotspot> _doorHotspots;   // active plate's hotspots (null/empty => none)
+    float _plateTexW, _plateTexH;                                 // active plate pixel dims (the hotspot px space)
+    GameObject _doorHotspotRoot;                                  // parent of the arch glow markers (rebuilt per swap)
+    System.Collections.Generic.List<Material> _doorHotspotMats;   // per-marker glow material (per-frame alpha pulse)
     // WALKABLE-SLICE-V1 (item 2): rest-mode NPC talk-targets by cell (rest_role:"npc" stage tokens). A
     // click on an NPC's cell POSTs `parley_approach` (the engine walks the lead PC adjacent + opens the
     // parley) instead of a walk. cellKey -> npc id. Rebuilt each ParseSurfaceExtras from the stage block.
@@ -322,7 +337,9 @@ public class CombatSurfaceClient : MonoBehaviour
                        // proxy occluders are built from THESE boxes verbatim (RebuildOccluders), so what masks
                        // an actor at runtime is byte-derived from what shaped the paint. Absent => legacy
                        // per-cell footprint proxies (byte-identical prior behavior).
-                       public string boxesPath; }
+                       public string boxesPath;
+                       // #1585/#1647: optional painted-door hotspots (plate-pixel click targets -> door_cell).
+                       public System.Collections.Generic.List<DoorHotspot> doorHotspots; }
     // world-space occluder boxes of the ACTIVE plate ({center,size} rows, kind!=floor), null => legacy path.
     System.Collections.Generic.List<float[]> _plateBoxes;
     string _plateBoxesLocId = "\0";  // the location _plateBoxes reflects (sentinel => unset); guards the stale-leak (#1575)
@@ -1131,17 +1148,67 @@ public class CombatSurfaceClient : MonoBehaviour
     // doors. Called from Update.
     void UpdateDoorGlow()
     {
+        float pulse = 0.30f + 0.32f * (0.5f + 0.5f * Mathf.Sin(Time.time * 3.0f));  // ~0.30..0.62 alpha
+        // #1585/#1647: pulse the painted-arch hotspot markers on the SAME cadence (independent of _doorRoot — a
+        // hotspot can exist without a rebuilt door-cell affordance this frame).
+        if (_doorHotspotMats != null)
+            for (int i = 0; i < _doorHotspotMats.Count; i++)
+                if (_doorHotspotMats[i] != null) { var hc = DoorGlowCol; hc.a = pulse; _doorHotspotMats[i].color = hc; }
         if (_doorRoot == null) return;
         if (_doorGlowMats != null)
-        {
-            float pulse = 0.30f + 0.32f * (0.5f + 0.5f * Mathf.Sin(Time.time * 3.0f));  // ~0.30..0.62 alpha
             for (int i = 0; i < _doorGlowMats.Count; i++)
                 if (_doorGlowMats[i] != null) { var col = DoorGlowCol; col.a = pulse; _doorGlowMats[i].color = col; }
-        }
         var cam = Camera.main;
         if (cam != null)
             foreach (Transform t in _doorRoot.transform)
                 if (t.GetComponent<TextMesh>() != null) t.rotation = cam.transform.rotation;
+    }
+
+    // #1585/#1647: (re)build a soft gold glow marker on the floor under each painted-door hotspot, so the player
+    // sees an affordance ON the arch (the door-cell glow can sit a couple cells off it). Rebuilt each plate swap
+    // (ApplyPlate). Reuses the door-glow idiom (a flat GlowTex quad, queue 1949, alpha pulsed in UpdateDoorGlow).
+    // The marker sits at the arch's projected FLOOR point, so in the iso view it reads at the arch's screen spot.
+    void BuildDoorHotspots()
+    {
+        if (_doorHotspotRoot != null) { Object.Destroy(_doorHotspotRoot); _doorHotspotRoot = null; }
+        _doorHotspotMats = null;
+        if (_doorHotspots == null || _doorHotspots.Count == 0) return;
+        var cam = Camera.main; if (cam == null) return;
+        _doorHotspotRoot = new GameObject("DoorHotspots");
+        _doorHotspotMats = new System.Collections.Generic.List<Material>();
+        foreach (var hs in _doorHotspots)
+        {
+            if (!HotspotFloorPoint(hs, cam, out Vector3 wp)) continue;
+            var q = GameObject.CreatePrimitive(PrimitiveType.Quad); q.name = "DoorHotspotGlow_" + hs.c + "_" + hs.r;
+            Object.DestroyImmediate(q.GetComponent<Collider>());
+            q.transform.SetParent(_doorHotspotRoot.transform, false);
+            q.transform.position = new Vector3(wp.x, FloorY + 0.035f, wp.z);
+            q.transform.localEulerAngles = new Vector3(90f, 0f, 0f);
+            q.transform.localScale = new Vector3(CellSize * 1.4f, CellSize * 1.4f, 1f);
+            var m = new Material(Shader.Find("Sprites/Default")); m.mainTexture = GlowTex();
+            m.color = DoorGlowCol; m.renderQueue = 1949;
+            var rend = q.GetComponent<Renderer>(); rend.sharedMaterial = m; rend.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            _doorHotspotMats.Add(m);
+        }
+    }
+
+    // Project a hotspot's plate pixel onto the floor plane (y=FloorY): plate px -> window px (crop model, the
+    // inverse of WindowToPlatePx) -> viewport -> a camera ray -> the floor intersection. Returns false when the
+    // window/plate dims are unset or the ray runs parallel to the floor. Camera must be in its final plate rig.
+    bool HotspotFloorPoint(DoorHotspot hs, Camera cam, out Vector3 world)
+    {
+        world = Vector3.zero;
+        if (_plateTexH <= 0f) return false;
+        float w = Screen.width, h = Screen.height;
+        if (w <= 0f || h <= 0f) return false;
+        float s = h / _plateTexH;                                  // crop-model uniform px scale (mirrors WindowToPlatePx)
+        float winX = 0.5f * w + (hs.px - 0.5f * _plateTexW) * s;   // plate px -> window px (bottom-left screen origin)
+        float winYimg = hs.py * s;                                 // top-left image y in window px
+        Ray ray = cam.ViewportPointToRay(new Vector3(winX / w, 1f - winYimg / h, 0f));
+        if (Mathf.Abs(ray.direction.y) < 1e-4f) return false;
+        float tt = (FloorY - ray.origin.y) / ray.direction.y; if (tt < 0f) return false;
+        world = ray.origin + ray.direction * tt;
+        return true;
     }
 
     // Toggle (G): first turn-on builds the pool lazily and repaints; turn-off just hides the root (kept for a
@@ -1395,6 +1462,66 @@ public class CombatSurfaceClient : MonoBehaviour
         return m;
     }
 
+    // #1572 (the #1545 multi-submesh fix): attach the walk-behind silhouette as a DEDICATED renderer that mirrors
+    // EVERY submesh of EVERY source renderer, rather than one extra material on the source. THE REGRESSION:
+    // #1545 appended the silhouette material to r.sharedMaterials, and Unity maps a material BEYOND the submesh
+    // count to the LAST submesh ONLY. That fully covered the single-submesh actors of the day (5bea5857 documented
+    // the assumption; the box run confirmed rends=1). When the roster changed to anim-pack rigged / Meshy FBX
+    // humanoids (multiple submeshes: body/clothing/hair/…), the extra pass silhouetted only the last submesh, so
+    // the owner saw the actor still vanish behind occluders — "invisible half the time." No gate asserted whole-
+    // actor coverage, so it decayed silently (#1572, deferred). This clone builds a sibling SkinnedMeshRenderer
+    // (SAME mesh + bones + rootBone => it skins identically every frame, zero per-frame sync) or MeshRenderer with
+    // the silhouette material filled across ALL submeshes, so the tint covers the whole actor regardless of how
+    // many materials the source model carries. The clone shares the source's exact mesh + bounds, so it is
+    // transparent to Measure/GroundedPivot (bounds-encapsulation no-op) and moves with the actor as a child.
+    // WORLDOS_SILHOUETTE=0 or a stripped/absent shader (Always-Included via Tools/WorldOS/W5b; EnsureSilhouette-
+    // Material warns once) => no clone spawned, byte-identical to a silhouette-off scene.
+    void AttachSilhouette(GameObject go, Renderer[] rends, bool foe)
+    {
+        if (!_silhouetteOn) return;
+        var sil = EnsureSilhouetteMaterial(foe);
+        if (sil == null) return;
+        foreach (var r in rends)
+        {
+            if (r == null || r is ParticleSystemRenderer) continue;
+            var smr = r as SkinnedMeshRenderer;
+            if (smr != null)
+            {
+                if (smr.sharedMesh == null) continue;
+                var host = new GameObject(r.gameObject.name + "__silclone");
+                host.transform.SetParent(r.transform, false);   // identity local; skinning is driven by the shared bones
+                var s2 = host.AddComponent<SkinnedMeshRenderer>();
+                s2.sharedMesh = smr.sharedMesh;
+                s2.bones = smr.bones;                            // SAME bone transforms -> deforms identically, no sync
+                s2.rootBone = smr.rootBone;
+                s2.localBounds = smr.localBounds;
+                s2.updateWhenOffscreen = true;                   // mirrors the source; never freeze the silhouette pose
+                s2.sharedMaterials = FillSilMats(sil, smr.sharedMesh.subMeshCount);
+                s2.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; s2.receiveShadows = false;
+            }
+            else
+            {
+                var mf = r.GetComponent<MeshFilter>();
+                if (mf == null || mf.sharedMesh == null) continue;
+                var host = new GameObject(r.gameObject.name + "__silclone");
+                host.transform.SetParent(r.transform, false);   // identity local -> same world pose as the source mesh
+                host.AddComponent<MeshFilter>().sharedMesh = mf.sharedMesh;
+                var mr2 = host.AddComponent<MeshRenderer>();
+                mr2.sharedMaterials = FillSilMats(sil, mf.sharedMesh.subMeshCount);
+                mr2.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off; mr2.receiveShadows = false;
+            }
+        }
+    }
+
+    // One silhouette material per submesh, so the clone tints the WHOLE mesh (every submesh), not just the last.
+    static Material[] FillSilMats(Material sil, int subMeshCount)
+    {
+        int n = subMeshCount > 0 ? subMeshCount : 1;
+        var a = new Material[n];
+        for (int i = 0; i < n; i++) a[i] = sil;
+        return a;
+    }
+
     // World-space bounds of a renderer. Skinned: BakeMesh the POSED verts and transform by
     // TRS(pos,rot,Vector3.one) — scale is DROPPED (#1412: BakeMesh already reflects lossyScale, so the
     // full matrix double-applies it). MeshRenderer.bounds is accurate as-is. Mirrors paint_combat_v1.
@@ -1414,7 +1541,15 @@ public class CombatSurfaceClient : MonoBehaviour
     static Bounds Measure(GameObject go, Renderer[] rends)
     {
         Bounds b = new Bounds(go.transform.position, Vector3.zero); bool a = false;
-        foreach (var r in rends) { var rb = WorldBounds(r); if (!a) { b = rb; a = true; } else b.Encapsulate(rb); }
+        foreach (var r in rends)
+        {
+            // Skip the #1572 "__silclone" silhouette clones: they share the source mesh/bounds (encapsulation
+            // no-op) but WorldBounds would still BakeMesh each one, doubling the per-actor bake+GC on every
+            // GroundSnap/GlideTo/room-swap settle. Mirrors AttachSilhouette's own null/particle skip.
+            if (r == null || r.gameObject.name.EndsWith("__silclone")) continue;  // distinctive sentinel:
+            // AttachSilhouette names its clones "<src>__silclone" — far less collision-prone than a bare "_sil"
+            var rb = WorldBounds(r); if (!a) { b = rb; a = true; } else b.Encapsulate(rb);
+        }
         return b;
     }
 
@@ -1509,23 +1644,12 @@ public class CombatSurfaceClient : MonoBehaviour
             }
         }
 
-        // #1545 walk-behind silhouette: append the ZTest-Greater team material as a SECOND pass on each actor
-        // renderer, so an actor overdrawn by a depth-proxy box renders a flat tinted silhouette instead of
-        // vanishing. Added after the albedo assignment so it's the last material. No-ops (skips) if the shader
-        // isn't in the build (EnsureSilhouetteMaterial warns once).
-        // NOTE (single-submesh assumption): Unity maps the extra material to the renderer's LAST submesh only,
-        // so this fully covers actors whose renderer has one submesh — which is every current actor (the albedo
-        // path above assigns a single sharedMaterial per renderer, and the box run confirmed rends=1 / one
-        // material each). A future MULTI-submesh actor (separate body/clothing/weapon materials) would silhouette
-        // only its last submesh; the general fix is a dedicated per-submesh silhouette renderer (deferred — it
-        // does not trigger with current assets and needs box re-validation).
-        var sil = EnsureSilhouetteMaterial(foe);
-        if (sil != null)
-            foreach (var r in rends)
-            {
-                var ms = new System.Collections.Generic.List<Material>(r.sharedMaterials);
-                ms.Add(sil); r.sharedMaterials = ms.ToArray();
-            }
+        // #1545/#1572 walk-behind silhouette: a flat ZTest-Greater team tint that renders where a depth-proxy
+        // box has overdrawn the actor, so a character behind a wall/prop stays a readable silhouette instead of
+        // vanishing (BG2/PoE convention; the owner's "character invisible half the time" report). AttachSilhouette
+        // mirrors EVERY submesh of EVERY renderer (#1572 fix), covering today's MULTI-submesh Meshy/anim-pack
+        // humanoids that the old single-extra-material trick left mostly untinted. No-op if disabled or stripped.
+        AttachSilhouette(go, rends, foe);
 
         // RING-V2 ground siblings, laid flat on the floor. `_AO` = warm-tinted grounding blob; `_Ring` = the
         // #1524 subtle faction contact decal (2.6->2.3, the merged evidence size) that carries grounding +
@@ -2139,12 +2263,53 @@ public class CombatSurfaceClient : MonoBehaviour
     void HandleClickAt(Vector3 screenPoint)
     {
         var cam = Camera.main; if (cam == null) return;
+        // #1585/#1647: a click inside a painted-door hotspot routes EXACTLY like clicking its door_cell. Checked
+        // BEFORE the floor raycast so a click on the VISIBLE arch (which projects to a wall/prop cell off the
+        // authored door) crosses instead of flash-rejecting. No hotspots for this plate => straight to the raycast.
+        if (TryDoorHotspot(screenPoint)) return;
         Ray ray = cam.ScreenPointToRay(screenPoint);
         if (Mathf.Abs(ray.direction.y) < 1e-4f) return;
         float tt = (FloorY - ray.origin.y) / ray.direction.y; if (tt < 0) return;
         Vector3 hit = ray.origin + ray.direction * tt;
         if (!WorldToCell(hit, out int c, out int r)) return;
         HandleCell(c, r);
+    }
+
+    // #1585/#1647: test a screen click against the active plate's door hotspots; on a hit, route to that
+    // hotspot's door_cell via HandleCell (so it inherits the exact rest-vs-combat + cross_door path a real
+    // door-cell click takes) and return true. No hotspots / no plate dims => false (the caller raycasts normally).
+    bool TryDoorHotspot(Vector3 screenPoint)
+    {
+        if (_doorHotspots == null || _doorHotspots.Count == 0 || _plateTexH <= 0f || _plateTexW <= 0f) return false;
+        float w = Screen.width, h = Screen.height;
+        if (w <= 0f || h <= 0f) return false;
+        WindowToPlatePx(screenPoint.x, screenPoint.y, w, h, _plateTexW, _plateTexH, out float px, out float py);
+        foreach (var hs in _doorHotspots)
+        {
+            // The hotspot is a REST-mode cross-door affordance. `_doorHotspots` comes from the plate manifest
+            // and outlives a mode change (a rest plate shown for a combat surface keeps its arches), so gate
+            // consumption on the door being ACTIVE for THIS surface — exactly HandleCell's own cross_door
+            // guard (_restMode + _doorTo). Otherwise fall through to the raycast instead of hijacking the
+            // click into a combat move to the hard door cell.
+            if (!_restMode || !_doorTo.ContainsKey(CellKey(hs.c, hs.r))) continue;
+            float dx = px - hs.px, dy = py - hs.py;
+            if (dx * dx + dy * dy <= hs.radius * hs.radius) { HandleCell(hs.c, hs.r); return true; }
+        }
+        return false;
+    }
+
+    // PURE hit-test math (mirror twin: qa/walk_test.window_px_to_plate_px, unit-tested in qa/test_walk_test.py).
+    // Window pixel -> plate pixel under the CROP model ApplyPlate renders: the ortho camera fixes the vertical
+    // half-height (plate spans oh = 2*ortho == full frustum height), and the plate billboard is sized by TEXTURE
+    // aspect (ow = oh*texW/texH), centered horizontally -> a uniform px/px scale s = h/texH on BOTH axes (plate
+    // pixels are square on the billboard), with the plate cropped/centered when the window aspect != plate aspect.
+    // screenX/screenY are Unity screen pixels (BOTTOM-LEFT origin); plate px is top-left origin (image space).
+    // Static + no Unity types => the python twin can round-trip it.
+    static void WindowToPlatePx(float screenX, float screenY, float w, float h, float texW, float texH, out float px, out float py)
+    {
+        float s = h / texH;                            // window px per plate px (uniform; plate pixels are square)
+        px = 0.5f * texW + (screenX - 0.5f * w) / s;   // plate centered horizontally in the window
+        py = (h - screenY) / s;                        // flip bottom-left (screen) -> top-left (plate image) origin
     }
 
     // The cell-level half of a click: identical rest-vs-combat pre-validation + POST whether the cell
@@ -3258,6 +3423,27 @@ public class CombatSurfaceClient : MonoBehaviour
                         if (!string.IsNullOrEmpty(es.type) && es.cell != null) pe.effects.Add(es);
                     }
                 }
+                // #1585/#1647: OPTIONAL `door_hotspots`:[{door_cell:[c,r], px:[x,y], radius_px}] painted-arch
+                // click targets in PLATE pixel space. Absent => pe.doorHotspots null => hit-test + markers no-op.
+                if (row.ContainsKey("door_hotspots") && row["door_hotspots"] is System.Collections.Generic.List<object> dh)
+                {
+                    pe.doorHotspots = new System.Collections.Generic.List<DoorHotspot>();
+                    foreach (var he in dh)
+                    {
+                        var hr = he as System.Collections.Generic.Dictionary<string, object>; if (hr == null) continue;
+                        var dc = hr.ContainsKey("door_cell") ? hr["door_cell"] as System.Collections.Generic.List<object> : null;
+                        var pxo = hr.ContainsKey("px") ? hr["px"] as System.Collections.Generic.List<object> : null;
+                        if (dc == null || dc.Count < 2 || pxo == null || pxo.Count < 2) continue;
+                        var hs = new DoorHotspot
+                        {
+                            c = System.Convert.ToInt32(dc[0]), r = System.Convert.ToInt32(dc[1]),
+                            px = System.Convert.ToSingle(pxo[0]), py = System.Convert.ToSingle(pxo[1]),
+                            radius = hr.ContainsKey("radius_px") ? System.Convert.ToSingle(hr["radius_px"]) : 48f
+                        };
+                        if (hs.radius > 0f) pe.doorHotspots.Add(hs);
+                    }
+                    if (pe.doorHotspots.Count == 0) pe.doorHotspots = null;
+                }
                 _plateManifest[kv.Key] = pe;
             }
             Debug.Log("[CSC] plates_manifest.json loaded: " + _plateManifest.Count + " plate(s)");
@@ -3387,6 +3573,12 @@ public class CombatSurfaceClient : MonoBehaviour
         var ls = bd.transform.localScale;
         bd.transform.localScale = new Vector3(ow, oh, ls.z == 0f ? 1f : ls.z);
         Debug.Log("[CSC] plate swapped -> " + entry.plate + " (" + tex.width + "x" + tex.height + ", loc=" + _locId + ")");
+        // #1585/#1647 painted-door hotspots: record THIS plate's pixel dims (the space the hotspot px are
+        // measured in) + its hotspot set, then (re)build the arch glow markers. The camera rig above is final,
+        // so the px->floor projection the markers use is correct. No hotspots => cleared markers (byte-identical).
+        _plateTexW = tex.width; _plateTexH = tex.height;
+        _doorHotspots = entry.doorHotspots;
+        BuildDoorHotspots();
         // UNIFY-THE-FRAMES: load this plate's occluder-box sidecar (world-space {center,size} rows from
         // build_room_unified.cs — the same boxes the depth conditioning was rendered from). Parsed once per
         // swap; RebuildOccluders prefers these over per-cell footprint proxies. Reset the occluder signature
