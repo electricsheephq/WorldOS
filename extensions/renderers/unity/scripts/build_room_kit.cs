@@ -381,19 +381,24 @@ public static class BuildRoomKit
         foreach (var ll in UnityEngine.Object.FindObjectsByType<Light>(FindObjectsSortMode.None))
         { if (ll == null || ll.transform.IsChildOf(root.transform)) continue; if (ll.enabled) { ll.enabled = false; disLights.Add(ll); } }
 
-        string outPath = null;
+        string outPath = null; string contractPath = null;
         try
         {
             string stamp = DateTime.UtcNow.ToString("yyyyMMdd'T'HHmm'Z'", CultureInfo.InvariantCulture);
             outPath = Path.Combine(CaptureDir(), $"kit_{roomId}_{stamp}.png");
             RenderToPng(cam, W, H, outPath);
+            // r6: ALSO emit the 1344x768 CONTRACT frame — qa/registration_score.py refuses any other
+            // size (its projection math is defined in that frame), so every capture yields both.
+            contractPath = Path.Combine(CaptureDir(), $"kit_{roomId}_{stamp}_contract.png");
+            SetupContractCamera(cam, cols, rows, camFit, 1344f / 768f);
+            RenderToPng(cam, 1344, 768, contractPath);
         }
         finally
         {
             foreach (var rr in hidRends) if (rr != null) rr.enabled = true;
             foreach (var ll in disLights) if (ll != null) ll.enabled = true;
         }
-        Debug.Log($"[KitRoom] captured {W}x{H} → {outPath}");
+        Debug.Log($"[KitRoom] captured {W}x{H} → {outPath} + contract 1344x768 → {contractPath}");
     }
 
     // ════════════════════════════════════════════════════════════════════════════════════════════════
@@ -549,7 +554,9 @@ public static class BuildRoomKit
             Debug.LogWarning($"[KitRoom] ⚠⚠ pillar '{name}' achieved world=({b1.size.x:F2},{b1.size.y:F2},{b1.size.z:F2}) " +
                              $"is OFF target ({PILLAR_TGT_XZ:F1},{PILLAR_TGT_H:F1},{PILLAR_TGT_XZ:F1}) by >10% — check prefab bounds/pivot.");
         Vector3 pivotOffset = inst.transform.position - b1.center;
-        inst.transform.position = new Vector3(center.x + pivotOffset.x, pivotOffset.y - b1.min.y, center.z + pivotOffset.z);
+        // r6: ground on min.y alone — the pivotOffset.y term double-counts the bounds centre for
+        // base-pivot meshes (measured: pillars sat at pos.y=-1.98, bounds -1.99..2.01, half underground).
+        inst.transform.position = new Vector3(center.x + pivotOffset.x, inst.transform.position.y - b1.min.y, center.z + pivotOffset.z);
         FixMaterials(inst, false, ref matFix, force: true);   // r5: pillars shipped grey → force stone/brick
         return inst;
     }
