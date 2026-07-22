@@ -1538,6 +1538,32 @@ class Combat(_StrictModel):
     # mirrors last_move_path's shape so the walkability gate can path-audit rest walks the same way
     # it audits combat moves. Presentation/QA only; empty == no rest walk yet (old snapshots round-trip).
     last_walk_path: list[list[int]] = Field(default_factory=list)
+    # #1645: consecutive next_turn advances observed with NO living hostile left in the order —
+    # the inverse of end_combat's live-hostile guard. Drives the DM-visible `pending_resolution`
+    # nudge in _combat_view (surfaced immediately once no hostile is up; escalated to URGENT once
+    # this streak crosses _COMBAT_RESOLUTION_NUDGE_TURNS). The engine NEVER auto-ends combat
+    # (questgen.py:7 invariant — the DM owns the end_combat predicate); this only makes an
+    # un-closed fight progressively LOUDER. ADDITIVE: default 0 == today; reset to 0 the moment a
+    # living hostile is seen, cleared wholesale when end_combat replaces c.combat with a fresh
+    # Combat(). Omitted from the dump when 0 (the serializer below) so a pre-#1645 snapshot
+    # round-trips BYTE-IDENTICALLY and the store's dirty-skip never bumps updated_at on a pure
+    # load->save.
+    no_hostile_turns: int = 0
+
+    @model_serializer(mode="wrap")
+    def _ser_omit_default_no_hostile_turns(self, handler):
+        """OMIT ``no_hostile_turns`` from the dump when it is 0 so a combat carrying no pending-
+        resolution streak (the overwhelming majority — every out-of-combat campaign holds a fresh
+        Combat()) serializes BYTE-IDENTICALLY to a pre-#1645 snapshot that never carried the key.
+        Without this the store's F08-2 dirty-skip (store.py:145 byte-compares the dump to disk)
+        would see a new key on EVERY load->save and bump updated_at / steal the #640 live pointer
+        — the same narrowly-scoped guard as Consequence._ser_omit_empty_quest_id, for the same
+        reason. A fight actively carrying the streak (>0) is mid-mutation anyway, so emitting the
+        key then is free; all other keys/order are unchanged."""
+        data = handler(self)
+        if not self.no_hostile_turns:
+            data.pop("no_hostile_turns", None)
+        return data
 
     @property
     def current_combatant_id(self) -> Optional[str]:

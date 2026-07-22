@@ -481,6 +481,26 @@ def _backlog_dict(item: BacklogItem) -> dict:
     }
 
 
+# #1645: consecutive next_turn advances with NO living hostile left before the combat-closure
+# nudge escalates from advisory to URGENT in the DM-visible combat surface. The DM stays the SOLE
+# resolver — the engine NEVER auto-ends combat (questgen.py:7 invariant); this only makes an
+# un-closed fight progressively louder in the state the DM reads.
+_COMBAT_RESOLUTION_NUDGE_TURNS = 2
+
+
+def _living_hostiles(c: Campaign) -> list[Character]:
+    """The monsters still IN the combat order at >0 HP and not dead — the engine's canonical
+    'is the fight still on' set, matching end_combat's live_hostiles guard (~server.py:7490)
+    and the combat_left_hanging cue (~server.py:14174). A fled monster was removed from the
+    order; a killed one is dead. Pure read (no mutation)."""
+    out: list[Character] = []
+    for cb in c.combat.order:
+        ch = c.characters.get(cb.character_id)
+        if ch is not None and ch.kind == "monster" and ch.current_hp > 0 and not ch.dead:
+            out.append(ch)
+    return out
+
+
 def _combat_view(c: Campaign) -> dict:
     order = []
     for cb in c.combat.order:
@@ -519,6 +539,29 @@ def _combat_view(c: Campaign) -> dict:
             "cell_size": c.combat.grid_cell_size,
             "diagonal_mode": c.combat.diagonal_mode,
         }
+    # #1645 COMBAT-CLOSURE NUDGE (advisory ONLY; the engine NEVER auto-ends — the DM owns the
+    # end_combat predicate, questgen.py:7). When the fight is active but NO living hostile remains
+    # in the order, the encounter is over in FACT yet the engine still reads active — surface a
+    # LOUD, DM-visible pending_resolution flag telling the DM to close it (end_combat resets
+    # initiative/HP and, in xp mode, auto-awards the defeated foes' XP). Escalates to URGENT once
+    # the no-hostile state has persisted across _COMBAT_RESOLUTION_NUDGE_TURNS consecutive
+    # next_turn advances (combat.no_hostile_turns). ADDITIVE: every key here is ABSENT while a
+    # hostile still lives (or combat is inactive), so an ongoing fight's view is byte-for-byte
+    # unchanged; the nudge clears wholesale when end_combat replaces c.combat with a fresh Combat().
+    if c.combat.active and not _living_hostiles(c):
+        streak = c.combat.no_hostile_turns
+        view["pending_resolution"] = True
+        view["living_hostiles"] = 0
+        if streak:
+            view["pending_resolution_turns"] = streak
+        view["resolution_nudge"] = (
+            ("URGENT: " if streak >= _COMBAT_RESOLUTION_NUDGE_TURNS else "")
+            + "no living hostile remains — the fight is over in fact but combat still reads "
+            "active. Call end_combat(resolution='...') to close it: it resets initiative/HP and, "
+            "in xp mode, auto-awards the defeated foes' XP. The engine will NOT end the fight for "
+            "you (you are the sole resolver) — a fight left active leaks into the next beat as a "
+            "phantom encounter."
+        )
     return view
 
 
@@ -5691,6 +5734,14 @@ def next_turn(campaign_id: str) -> dict:
                 },
                 speaker=cur.name,
             )
+        # #1645: track how many consecutive turn-advances have passed with NO living hostile left,
+        # so _combat_view's pending_resolution nudge escalates to URGENT on a fight the DM keeps
+        # cycling turns in without closing. Reset the moment a hostile is still up. This NEVER ends
+        # combat — the DM owns the end_combat predicate (questgen.py:7 invariant).
+        if _living_hostiles(c):
+            c.combat.no_hostile_turns = 0
+        else:
+            c.combat.no_hostile_turns += 1
         view = _combat_view(c)
         view["current_name"] = cur.name if cur else None
         view["death_save_due"] = bool(cur and cur.current_hp == 0 and not cur.dead and not cur.stable)
