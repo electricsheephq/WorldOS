@@ -39,6 +39,22 @@
 // default grey); (3) WALL HEIGHT baked to 1.5× the r3 value (kit_crypt_r4b.png read RIGHT at 1.5×). r3
 // lighting / braziers / tomb unchanged.
 //
+// r7 (#83 r6-measurement fixes; kit_crypt_r6 scored 58.85% vs the 99% bar — 60 invisible-wall + 19
+// walk-through cells): six placement/lighting fixes driven by qa/registration_score.py per-cell attribution.
+// (1) IMPASSABLE COVERAGE — after walls/doors/props, every geometry `impassable` cell the builder left
+// visually OPEN (interior buttress cells (2,1),(3,1),(9,1),(11,1),(12,1) that live in walls/impassable ONLY,
+// never in a wall_run prop) gets a deterministic stone mass: a BUTTRESS if orthogonally adjacent to a
+// wall_run cell, else a low rubble PLINTH. (2) WALL BASE — walls thickened to ≥1.4u and CENTERED on their
+// cell so the perimeter cell floor no longer shows bare (was a thin outer-edge skin). (3) CAMERA-SIDE
+// PARAPET — the cut-away near (front/left) perimeter walls now render a LOW 0.55u parapet so those edge
+// cells read blocked while the interior stays visible. (4) PILLAR FOOTPRINT-DRIVEN SIZE — pillar world x/z
+// derived from the authored footprint (span × 0.85, floored 1.2) so a 1×2 footprint reads covered on BOTH
+// cells (was a fixed 1.2×1.2 covering ~one cell). (5) DOORWAYS OPEN — any closed door LEAF in a door cell is
+// disabled so the doorway reads walkable (r6 walk-through at (15,5)). (6) FLAT-LIGHT SCORE FRAME — CaptureRoom
+// emits a THIRD 1344x768 contract PNG (kit_<room>_<ts>_score.png) with the room lights off + flat grey
+// ambient, so registration reads object PLACEMENT not brazier LIGHT POOLS (the r6 19 walk-through false
+// positives). r3/r5 lighting / braziers / tomb otherwise unchanged; still deterministic + material-defensive.
+//
 // SELF-CONTAINED: no new dependencies. Reads MiniJson (same assembly). Geometry path + capture dir are the
 // same box defaults build_room_unified.cs uses (L24), env-overridable so a non-box host can point elsewhere.
 // C# is uncompilable on the authoring Mac — this is authored to mirror the proven sibling idioms exactly and
@@ -59,12 +75,15 @@ public static class BuildRoomKit
     const float CELL = 2.0f;
     // r3 mass targets (world units) — see round-3 defect notes in the header, keyed to kit_crypt_r1/r2.png.
     const float WALL_H = 5.4f;       // r5: wall height baked to 1.5× the r3 value (3.6→5.4) — r4b frame read RIGHT at 1.5×
-    const float WALL_T = 0.8f;       // wall thickness target (r1/r2 walls were paper-thin)
-    // r5 pillar targets (world units) — measured-multiplier method (#83 r4 probe). SM_Bld_Base_Pillar_01
-    // natural bounds (0.43,3.02,0.43); the r3 uniform-footprint scaler produced world (1.80,5.00,0.90) —
-    // wide thin SLABS with z≈half x. r5 targets a SYMMETRIC fat column and re-measures to assert the size.
-    const float PILLAR_TGT_XZ = 1.2f; // pillar world footprint on BOTH x and z (fixes the r3 z-half-x asymmetry)
-    const float PILLAR_TGT_H  = 4.0f; // pillar world height target
+    const float WALL_T = 1.4f;       // r7: wall thickness ≥1.4u so a wall occupies its CELL row (r6: thin skin left the cell floor bare)
+    const float PARAPET_H = 0.55f;   // r7: camera-side cut-away walls render a LOW parapet at this height (edge reads blocked, interior visible)
+    // r7 pillar targets — FOOTPRINT-DRIVEN (was the fixed r5 symmetric 1.2×1.2, which covered ~one cell of a
+    // 1×2 footprint → the second footprint cell read open). r7 derives the world x/z target from the authored
+    // footprint span (× PILLAR_FOOT_FILL, floored at PILLAR_MIN_XZ) so both footprint cells read covered; the
+    // r5 measured-multiplier scaling + min.y grounding + achieved-size log/warning are all preserved.
+    const float PILLAR_FOOT_FILL = 0.85f; // fraction of the authored footprint span the pillar fills on x and z
+    const float PILLAR_MIN_XZ    = 1.2f;  // floor for the per-axis pillar world target (preserves the r5 minimum)
+    const float PILLAR_TGT_H     = 4.0f;  // pillar world height target (unchanged)
 
     // ── fallback-material cache (material-defensive rule) ──────────────────────────────────────────
     static Material _stoneMat;                 // PolygonGeneric stone-ish (structure / tombs)
@@ -137,14 +156,16 @@ public static class BuildRoomKit
         }
         else Debug.LogWarning("[KitRoom] SM_Bld_Base_Floor_01 missing — floor omitted (no primitive fallback for the base tile).");
 
-        // ── WALLS from the wall_run props (CUTAWAY iso-CRPG rule) ──────────────────────────────────
+        // ── WALLS from the wall_run props (CUTAWAY iso-CRPG rule + r7 parapet) ──────────────────────
         // build_room_unified.cs renders EVERY wall_run as a full box (it is a depth/normal greybox). A
         // BEAUTY room viewed from the contract camera (which sits at the −x,−z near corner, Euler 30/45)
         // would be occluded by its own near walls, so we borrow build_atelier_crypt.cs's cutaway (L125-163):
-        // keep only the FAR walls the camera sees — the +z BACK row (grid r==0) and the +x RIGHT col
-        // (grid c==cols-1) — and omit the −z FRONT row and −x LEFT col. Registration is unaffected: the
-        // engine's collision still blocks the full ring; the renderer merely doesn't DRAW the near walls
-        // (standard iso convention). Door cells stay GAPS; framed doorways are placed in the pass below.
+        // draw FULL walls only on the FAR sides the camera sees — the +z BACK row (grid r==0) and the +x
+        // RIGHT col (grid c==cols-1). r7: the −z FRONT row and −x LEFT col are NO LONGER fully omitted — they
+        // render a LOW parapet (PARAPET_H) so those edge cells read BLOCKED for registration while the
+        // interior stays unoccluded. r7 also CENTERS every wall on its cell (was outer-edge, which left the
+        // perimeter cell floor bare) and thickens it to ≥ WALL_T. Registration is unaffected by the cutaway:
+        // the engine's collision still blocks the full ring. Door cells stay GAPS; framed doorways below.
         var wallParent = Child(root, "Walls");
         var props = GetList(geo, "props");
         if (props != null && pWall != null)
@@ -166,9 +187,12 @@ public static class BuildRoomKit
                     bool isBack = (r == 0), isRight = (c == cols - 1);
                     bool isNearEdge = (c == 0) || (r == rows - 1);
                     var w = CellToWorld(c, r, cols, rows);
-                    if (isBack)       PlaceWall(pWall, $"WallBack_{c}",  wallParent, new Vector3(w.x, 0f, w.z + CELL * 0.5f), 0f,  ref nMatFix);   // yaw 0: face −z inward
-                    else if (isRight) PlaceWall(pWall, $"WallRight_{r}", wallParent, new Vector3(w.x + CELL * 0.5f, 0f, w.z), 90f, ref nMatFix);   // yaw 90: face −x inward
-                    else if (isNearEdge) continue;                             // cutaway: omit near (front/left) perimeter walls
+                    // r7: CENTER perimeter walls on their cell (was offset to the outer edge, which left the
+                    // cell floor bare — r6 read those cells painted-OPEN). Near (camera-side) walls are no
+                    // longer cut away — they render a LOW parapet so the edge reads blocked, interior visible.
+                    if (isBack)       PlaceWall(pWall, $"WallBack_{c}",  wallParent, new Vector3(w.x, 0f, w.z), 0f,  ref nMatFix);   // yaw 0: face −z inward
+                    else if (isRight) PlaceWall(pWall, $"WallRight_{r}", wallParent, new Vector3(w.x, 0f, w.z), 90f, ref nMatFix);   // yaw 90: face −x inward
+                    else if (isNearEdge) PlaceWall(pWall, $"Parapet_{c}_{r}", wallParent, new Vector3(w.x, 0f, w.z), (c == 0) ? 90f : 0f, ref nMatFix, PARAPET_H, true); // r7 camera-side low parapet
                     else PlaceWall(pWall, $"Wall_{c}_{r}", wallParent, new Vector3(w.x, 0f, w.z), runAlongX ? 0f : 90f, ref nMatFix); // interior wall
                     nWall++;
                 }
@@ -190,8 +214,10 @@ public static class BuildRoomKit
                 bool isBack = (r == 0), isRight = (c == cols - 1);
                 if (!(isBack || isRight)) continue;                            // near-wall doors are already cut away
                 var w = CellToWorld(c, r, cols, rows);
-                if (isBack)  PlaceWall(pDoor, $"Door_{dn}", doorParent, new Vector3(w.x, 0f, w.z + CELL * 0.5f), 0f,  ref nMatFix);
-                else         PlaceWall(pDoor, $"Door_{dn}", doorParent, new Vector3(w.x + CELL * 0.5f, 0f, w.z), 90f, ref nMatFix);
+                // r7: center the doorway on its cell (matches the r7 wall centering) and STRIP any closed door
+                // LEAF so the opening reads WALKABLE (packet item 5; r6 walk-through at (15,5) was a leaf).
+                var dInst = PlaceWall(pDoor, $"Door_{dn}", doorParent, new Vector3(w.x, 0f, w.z), isBack ? 0f : 90f, ref nMatFix);
+                StripDoorLeaf(dInst);
                 dn++; nDoor++;
             }
         }
@@ -213,14 +239,18 @@ public static class BuildRoomKit
 
                 if (kind.Contains("pillar") || kind.Contains("column"))
                 {
-                    // cycle SM_Bld_Base_Pillar_01..05 DETERMINISTICALLY by cell coords (no RNG). r3: the
-                    // painted crypt's columns read as FAT carved masses, not posts (r1/r2 pillars were
-                    // toothpicks — footprint far too slender). PlacePillar widens the footprint to ~0.9 cell
-                    // (≈1.8u) and lands height in the 3.5–5u band, seated on the floor at the run centroid.
+                    // cycle SM_Bld_Base_Pillar_01..05 DETERMINISTICALLY by cell coords (no RNG). r7: the pillar
+                    // world x/z target is FOOTPRINT-DRIVEN — the authored footprint span × PILLAR_FOOT_FILL
+                    // (floored at PILLAR_MIN_XZ) — so a 1×2 authored footprint reads covered on BOTH cells (r5's
+                    // fixed 1.2×1.2 covered ~one cell → the other read open). Height stays PILLAR_TGT_H.
+                    // (Footprint.spanX/spanZ are the FULL world spans of the footprint; the packet's "span×2×0.85"
+                    // is the same target expressed from the half-span — see the deviation note in the PR.)
                     int idx = Mathf.Abs(fp.anchorC * 7 + fp.anchorR * 13) % 5;
                     var pf = pillars[idx];
                     if (pf == null) { for (int k = 0; k < 5 && pf == null; k++) pf = pillars[k]; }   // first available
-                    if (pf != null && PlacePillar(pf, $"{pid}_Pillar0{idx + 1}", propParent, fp.center, ref nMatFix) != null) nPillar++;
+                    float ptx = Mathf.Max(PILLAR_MIN_XZ, fp.spanX * PILLAR_FOOT_FILL);
+                    float ptz = Mathf.Max(PILLAR_MIN_XZ, fp.spanZ * PILLAR_FOOT_FILL);
+                    if (pf != null && PlacePillar(pf, $"{pid}_Pillar0{idx + 1}", propParent, fp.center, ptx, ptz, PILLAR_TGT_H, ref nMatFix) != null) nPillar++;
                     else if (FallbackBox($"{pid}_pillar", propParent, fp, 4.2f, false, ref nMatFix)) nFallback++;   // r3: taller fat fallback
                     continue;
                 }
@@ -297,6 +327,62 @@ public static class BuildRoomKit
             }
         }
 
+        // ── r7 IMPASSABLE COVERAGE: render every ENGINE-collision cell the passes above left visually OPEN ─
+        // PACKET item 1. The geometry `impassable` array is the ENGINE truth for what blocks movement, but the
+        // builder only draws wall_runs + prop footprints + door frames — interior buttress cells like
+        // (2,1),(9,1),(12,1) live in walls/impassable ONLY, so registration reads them as invisible walls
+        // (r6: 60 invisible-wall cells → 58.85%). Compute the set of cells the passes above visually COVER
+        // (every wall_run cell ∪ every prop footprint cell ∪ every door cell), then for each impassable cell
+        // NOT covered place a deterministic stone mass: a BUTTRESS if orthogonally adjacent to a wall_run cell,
+        // else a low rubble PLINTH. Fallback to `walls` if `impassable` is absent. Idempotent: masses are
+        // children of the room root, which is destroyed+rebuilt each run.
+        int nButtress = 0, nPlinth = 0;
+        {
+            var covered = new HashSet<long>();
+            var wallRunCells = new HashSet<long>();
+            if (props != null)
+                foreach (var po in props)
+                {
+                    var p = po as Dictionary<string, object>; if (p == null) continue;
+                    var cells = GetList(p, "cells"); if (cells == null) continue;
+                    bool isWallRun = (GetStr(p, "kind", "") ?? "").ToLowerInvariant() == "wall_run";
+                    foreach (var co in cells)
+                    {
+                        if (!TryCell(co, out int c, out int r)) continue;
+                        covered.Add(CellKey(c, r));
+                        if (isWallRun) wallRunCells.Add(CellKey(c, r));
+                    }
+                }
+            foreach (var dk in doorSet) covered.Add(dk);                       // door frames occupy the doorway cell
+
+            var impassable = GetList(geo, "impassable") ?? GetList(geo, "walls");
+            if (impassable != null)
+            {
+                var impParent = Child(root, "Impassable");
+                foreach (var ico in impassable)
+                {
+                    if (!TryCell(ico, out int c, out int r)) continue;
+                    if (covered.Contains(CellKey(c, r))) continue;
+                    var w = CellToWorld(c, r, cols, rows);
+                    bool adjWall = wallRunCells.Contains(CellKey(c - 1, r)) || wallRunCells.Contains(CellKey(c + 1, r))
+                                || wallRunCells.Contains(CellKey(c, r - 1)) || wallRunCells.Contains(CellKey(c, r + 1));
+                    if (adjWall)
+                    {
+                        PlaceMassBox($"Buttress_{c}_{r}", impParent, w, 1.7f, 2.2f);   // brick/stone buttress against the wall
+                        nButtress++;
+                        Debug.Log($"[KitRoom] impassable buttress @ ({c},{r})");
+                    }
+                    else
+                    {
+                        PlaceMassBox($"Plinth_{c}_{r}", impParent, w, 1.6f, 0.9f);      // low rubble/plinth mass
+                        nPlinth++;
+                        Debug.Log($"[KitRoom] impassable plinth @ ({c},{r})");
+                    }
+                }
+                Debug.Log($"[KitRoom] impassable coverage: +{nButtress} buttress +{nPlinth} plinth (uncovered impassable cells)");
+            }
+        }
+
         // ── LIGHTING (r3): baked warm-pool-on-cool-stone rig matching the painted crypt read ──────────────
         // r1/r2 were far too dark (near-black floor, no ambient fill, weak cool key). r3 raises the flat
         // ambient, gives the cool directional key real presence, brightens the fire pools, and adds a low
@@ -345,7 +431,8 @@ public static class BuildRoomKit
         else Debug.LogWarning("[KitRoom] active scene is untitled — MarkSceneDirty only; save the scene once to persist the kit room.");
 
         Debug.Log($"[KitRoom] BUILT {rootName} @ {cols}x{rows}: floor={nFloor} walls={nWall} doors={nDoor} " +
-                  $"pillars={nPillar} sarcophagi={nSarc} braziers={nBrazier} kit_props={nKit} fallbacks={nFallback} material_fixes={nMatFix}");
+                  $"pillars={nPillar} sarcophagi={nSarc} braziers={nBrazier} buttresses={nButtress} plinths={nPlinth} " +
+                  $"kit_props={nKit} fallbacks={nFallback} material_fixes={nMatFix}");
     }
 
     // ════════════════════════════════════════════════════════════════════════════════════════════════
@@ -381,7 +468,7 @@ public static class BuildRoomKit
         foreach (var ll in UnityEngine.Object.FindObjectsByType<Light>(FindObjectsSortMode.None))
         { if (ll == null || ll.transform.IsChildOf(root.transform)) continue; if (ll.enabled) { ll.enabled = false; disLights.Add(ll); } }
 
-        string outPath = null; string contractPath = null;
+        string outPath = null; string contractPath = null; string scorePath = null;
         try
         {
             string stamp = DateTime.UtcNow.ToString("yyyyMMdd'T'HHmm'Z'", CultureInfo.InvariantCulture);
@@ -392,13 +479,38 @@ public static class BuildRoomKit
             contractPath = Path.Combine(CaptureDir(), $"kit_{roomId}_{stamp}_contract.png");
             SetupContractCamera(cam, cols, rows, camFit, 1344f / 768f);
             RenderToPng(cam, 1344, 768, contractPath);
+
+            // r7 FLAT-LIGHT SCORING FRAME (packet item 6): a THIRD 1344x768 contract frame with the room's
+            // OWN lights OFF and a flat grey ambient. Rationale: registration measures object PLACEMENT, not
+            // luminance — the r6 19 walk-through false positives were brazier LIGHT POOLS (bright floor read
+            // as objects). Disable ALL lights under the room root, force Flat ambient (0.6,0.6,0.6), render,
+            // then RESTORE the ambient settings + lights in a finally block so the capture stays side-effect-free.
+            scorePath = Path.Combine(CaptureDir(), $"kit_{roomId}_{stamp}_score.png");
+            var roomLights = new List<Light>();
+            foreach (var ll in root.GetComponentsInChildren<Light>(true))
+                if (ll != null && ll.enabled) { ll.enabled = false; roomLights.Add(ll); }
+            var savedAmbMode = RenderSettings.ambientMode;
+            var savedAmbLight = RenderSettings.ambientLight;
+            try
+            {
+                RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
+                RenderSettings.ambientLight = new Color(0.6f, 0.6f, 0.6f);
+                SetupContractCamera(cam, cols, rows, camFit, 1344f / 768f);
+                RenderToPng(cam, 1344, 768, scorePath);
+            }
+            finally
+            {
+                RenderSettings.ambientMode = savedAmbMode;
+                RenderSettings.ambientLight = savedAmbLight;
+                foreach (var ll in roomLights) if (ll != null) ll.enabled = true;
+            }
         }
         finally
         {
             foreach (var rr in hidRends) if (rr != null) rr.enabled = true;
             foreach (var ll in disLights) if (ll != null) ll.enabled = true;
         }
-        Debug.Log($"[KitRoom] captured {W}x{H} → {outPath} + contract 1344x768 → {contractPath}");
+        Debug.Log($"[KitRoom] captured {W}x{H} → {outPath} + contract 1344x768 → {contractPath} + flat-light score → {scorePath}");
     }
 
     // ════════════════════════════════════════════════════════════════════════════════════════════════
@@ -499,12 +611,16 @@ public static class BuildRoomKit
     // Wall placer — r3 MASS fix. r1/r2 walls read as paper-thin planes barely taller than a person because
     // the old placer kept native height + thickness and only scaled length (and assumed length==local-x).
     // r3: detect which local axis is the length, fit it to one CELL edge, and give the wall real MASS —
-    // scale HEIGHT up to ~WALL_H (never shrink a natively-taller wall) and thicken the short horizontal axis
-    // up to ~WALL_T (a thin panel gets bulked ≈3–4×; a natively-thick wall is left alone). Yaw so the face
+    // scale HEIGHT up to ~heightTarget (never shrink a natively-taller wall) and thicken the short horizontal
+    // axis up to ~WALL_T (a thin panel gets bulked; a natively-thick wall is left alone). Yaw so the face
     // points inward, then seat base on the floor at edgePos. (build_atelier_crypt.cs L140-153 + r3 mass.)
-    static void PlaceWall(GameObject prefab, string name, GameObject parent, Vector3 edgePos, float yaw, ref int matFix)
+    // r7: WALL_T raised to 1.4u so the wall occupies its cell row; a `parapet` call (heightTarget=PARAPET_H)
+    // is ALLOWED to shrink the height below native so the camera-side low parapet actually reads low. Returns
+    // the instance so callers (the door pass) can post-process it (leaf-strip).
+    static GameObject PlaceWall(GameObject prefab, string name, GameObject parent, Vector3 edgePos, float yaw,
+                               ref int matFix, float heightTarget = WALL_H, bool parapet = false)
     {
-        if (prefab == null) return;
+        if (prefab == null) return null;
         var inst = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
         inst.name = name; inst.transform.SetParent(parent.transform, true);
         inst.transform.position = Vector3.zero; inst.transform.rotation = Quaternion.identity; inst.transform.localScale = Vector3.one;
@@ -514,24 +630,52 @@ public static class BuildRoomKit
         float thkSize = xLong ? b0.size.z : b0.size.x;
         float sLen = lenSize > 1e-4f ? CELL / lenSize : 1f;                       // length → one CELL edge
         float sThk = thkSize > 1e-4f ? Mathf.Max(1f, WALL_T / thkSize) : 3f;      // bulk thin walls to ≈WALL_T (never shrink)
-        float sy   = b0.size.y > 1e-4f ? Mathf.Max(1f, WALL_H / b0.size.y) : 1f;  // raise height to wall-mass (never shrink)
+        // full walls raise height to wall-mass and never shrink; a parapet is allowed to shrink to heightTarget
+        float sy   = b0.size.y > 1e-4f ? (parapet ? heightTarget / b0.size.y : Mathf.Max(1f, heightTarget / b0.size.y)) : 1f;
         inst.transform.localScale = xLong ? new Vector3(sLen, sy, sThk) : new Vector3(sThk, sy, sLen);
         inst.transform.rotation = Quaternion.Euler(0f, yaw, 0f);
         var b1 = WorldBounds(inst);
         Vector3 pivotOffset = inst.transform.position - b1.center;
         inst.transform.position = new Vector3(edgePos.x + pivotOffset.x, pivotOffset.y - b1.min.y, edgePos.z + pivotOffset.z);
         FixMaterials(inst, false, ref matFix);
+        return inst;
     }
 
-    // r5 PILLAR PLACER — MEASURED-MULTIPLIER method (#83 r4 probe). The r3 placer scaled the footprint by a
-    // single max(x,z) factor, which on the box produced world (1.80,5.00,0.90) — wide thin SLABS with z≈half
-    // x. r5 measures the instance's OWN renderer world bounds at localScale=1, then multiplies localScale
-    // PER-AXIS by target/measured so world lands ≈(PILLAR_TGT_XZ, PILLAR_TGT_H, PILLAR_TGT_XZ) — a fat column
-    // that is x/z-SYMMETRIC by construction. Then RE-MEASURE, Debug.Log the achieved world size, and warn
-    // loudly if any axis is off target by >10%. Pillars shipped a valid-but-grey material (FixMaterials only
-    // replaces null/error slots), so r4b left them default grey → force the stone/brick material on. Seat the
-    // base on the floor at the run centroid. Deterministic.
-    static GameObject PlacePillar(GameObject prefab, string name, GameObject parent, Vector3 center, ref int matFix)
+    // r7: strip any closed door LEAF/panel so the doorway reads as an OPENING (packet item 5). The Synty
+    // door-wall prefab may include a swinging leaf mesh that fills the opening → the door cell reads
+    // painted-BLOCKED but is WALKABLE in the engine (r6 walk-through at (15,5)). Keep frame/jamb/arch/lintel;
+    // disable only leaf/panel children. Heuristic by name (prefab internals are unknown on the authoring Mac):
+    // a child is a leaf if its name contains "leaf"/"panel", or "door" WITHOUT any structural qualifier.
+    // Disabling (not destroying) the GameObject removes it from the render and stays reversible.
+    static int StripDoorLeaf(GameObject doorInst)
+    {
+        if (doorInst == null) return 0;
+        int stripped = 0;
+        foreach (var t in doorInst.GetComponentsInChildren<Transform>(true))
+        {
+            if (t == null || t.gameObject == doorInst) continue;
+            string n = t.gameObject.name.ToLowerInvariant();
+            bool isLeaf = n.Contains("leaf") || n.Contains("panel")
+                       || (n.Contains("door") && !n.Contains("wall") && !n.Contains("frame")
+                           && !n.Contains("jamb") && !n.Contains("arch") && !n.Contains("lintel"));
+            if (isLeaf && t.gameObject.activeSelf) { t.gameObject.SetActive(false); stripped++; }
+        }
+        if (stripped > 0) Debug.Log($"[KitRoom] door leaf stripped: {stripped} child(ren) disabled on '{doorInst.name}' (doorway reads open)");
+        else Debug.Log($"[KitRoom] door '{doorInst.name}': no leaf/panel child matched — doorway already open (or prefab is a bare frame).");
+        return stripped;
+    }
+
+    // r5/r7 PILLAR PLACER — MEASURED-MULTIPLIER method (#83 r4 probe). Measure the instance's OWN renderer
+    // world bounds at localScale=1, then multiply localScale PER-AXIS by target/measured so world lands
+    // ≈(tgtX, tgtH, tgtZ). r7: the x/z targets are FOOTPRINT-DRIVEN and per-axis (was the r5 symmetric
+    // 1.2×1.2), so a 1×2 authored footprint yields a DEEPER column that covers BOTH footprint cells; the
+    // per-axis multiply handles the asymmetry by construction (no return of the r3 z≈half-x slab — that was a
+    // scaling bug, this is a deliberate footprint match). RE-MEASURE, Debug.Log the achieved world size, and
+    // warn loudly if any axis is off target by >10%. Pillars ship a valid-but-grey material (FixMaterials only
+    // replaces null/error slots), so force the stone/brick material on. Seat the base on the floor at the run
+    // centroid via min.y (r6: the pivotOffset.y term double-counted the bounds centre for base-pivot meshes).
+    static GameObject PlacePillar(GameObject prefab, string name, GameObject parent, Vector3 center,
+                                  float tgtX, float tgtZ, float tgtH, ref int matFix)
     {
         if (prefab == null) return null;
         var inst = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
@@ -539,20 +683,20 @@ public static class BuildRoomKit
         inst.transform.position = Vector3.zero; inst.transform.rotation = Quaternion.identity; inst.transform.localScale = Vector3.one;
         // measure THIS instance's renderer world bounds, then per-axis multiply localScale by target/measured
         var b0 = WorldBounds(inst);
-        float sx = b0.size.x > 1e-4f ? PILLAR_TGT_XZ / b0.size.x : 1f;
-        float sy = b0.size.y > 1e-4f ? PILLAR_TGT_H  / b0.size.y : 1f;
-        float sz = b0.size.z > 1e-4f ? PILLAR_TGT_XZ / b0.size.z : 1f;
+        float sx = b0.size.x > 1e-4f ? tgtX / b0.size.x : 1f;
+        float sy = b0.size.y > 1e-4f ? tgtH / b0.size.y : 1f;
+        float sz = b0.size.z > 1e-4f ? tgtZ / b0.size.z : 1f;
         inst.transform.localScale = new Vector3(sx, sy, sz);
         // RE-MEASURE and assert the achieved world size is within ±10% of target on every axis
         var b1 = WorldBounds(inst);
         Debug.Log($"[KitRoom] pillar '{name}': measured world=({b0.size.x:F2},{b0.size.y:F2},{b0.size.z:F2}) " +
                   $"scale=({sx:F2},{sy:F2},{sz:F2}) → achieved world=({b1.size.x:F2},{b1.size.y:F2},{b1.size.z:F2}) " +
-                  $"target=({PILLAR_TGT_XZ:F1},{PILLAR_TGT_H:F1},{PILLAR_TGT_XZ:F1})");
-        if (Mathf.Abs(b1.size.x - PILLAR_TGT_XZ) > 0.1f * PILLAR_TGT_XZ ||
-            Mathf.Abs(b1.size.y - PILLAR_TGT_H)  > 0.1f * PILLAR_TGT_H  ||
-            Mathf.Abs(b1.size.z - PILLAR_TGT_XZ) > 0.1f * PILLAR_TGT_XZ)
+                  $"target=({tgtX:F1},{tgtH:F1},{tgtZ:F1})");
+        if (Mathf.Abs(b1.size.x - tgtX) > 0.1f * tgtX ||
+            Mathf.Abs(b1.size.y - tgtH) > 0.1f * tgtH ||
+            Mathf.Abs(b1.size.z - tgtZ) > 0.1f * tgtZ)
             Debug.LogWarning($"[KitRoom] ⚠⚠ pillar '{name}' achieved world=({b1.size.x:F2},{b1.size.y:F2},{b1.size.z:F2}) " +
-                             $"is OFF target ({PILLAR_TGT_XZ:F1},{PILLAR_TGT_H:F1},{PILLAR_TGT_XZ:F1}) by >10% — check prefab bounds/pivot.");
+                             $"is OFF target ({tgtX:F1},{tgtH:F1},{tgtZ:F1}) by >10% — check prefab bounds/pivot.");
         Vector3 pivotOffset = inst.transform.position - b1.center;
         // r6: ground on min.y alone — the pivotOffset.y term double-counts the bounds centre for
         // base-pivot meshes (measured: pillars sat at pos.y=-1.98, bounds -1.99..2.01, half underground).
@@ -669,6 +813,21 @@ public static class BuildRoomKit
         // empty anchor child at the flame (runtime fire-VFX / glow-quad attach point)
         var anchor = new GameObject("FireAnchor"); anchor.transform.SetParent(g.transform, false); anchor.transform.localPosition = new Vector3(0f, 2.05f, 0f);
         return g;
+    }
+
+    // r7: place a single-cell impassable MASS — a stone primitive cube seated base-on-floor at a cell center,
+    // with explicit world dims (buttress ~1.7×2.2×1.7, plinth ~1.6×0.9×1.6). Mirrors the FallbackBox
+    // primitive-fallback idiom (cube + stone material + collider stripped); a primitive cube's pivot is
+    // centred so grounding the base is simply y = height*0.5 (min.y → 0), matching the r6 grounding intent.
+    static void PlaceMassBox(string name, GameObject parent, Vector3 center, float sizeXZ, float height)
+    {
+        var b = GameObject.CreatePrimitive(PrimitiveType.Cube); b.name = name;
+        UnityEngine.Object.DestroyImmediate(b.GetComponent<Collider>());
+        b.transform.SetParent(parent.transform, true);
+        b.transform.localScale = new Vector3(sizeXZ, height, sizeXZ);
+        b.transform.position = new Vector3(center.x, height * 0.5f, center.z);
+        ResolveFallbackMaterials();
+        b.GetComponent<Renderer>().sharedMaterial = _stoneMat;   // wall/stone material
     }
 
     static bool FallbackBox(string pid, GameObject parent, Footprint fp, float height, bool woodish, ref int matFix)
