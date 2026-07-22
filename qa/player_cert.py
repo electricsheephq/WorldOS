@@ -71,6 +71,22 @@ VERIFIED_OCCLUDER_CELLS = {
     "crypt": [(13, 3), (13, 2), (14, 2), (14, 1)],   # NE corner, behind pillar_ne + the east wall
 }
 
+# ── #1677 counter-assert calibration: the party walk-behind silhouette is party-CYAN (the shader tint
+# Color(0.4,0.95,1.0) @ ~0.45 alpha). Composited over the actor it reads with G and B clearly ABOVE R.
+# The g4 ghost-in-the-open defect (the ZTest-Greater clone tinting the actor against its OWN body depth)
+# paints that cyan over the WHOLE unoccluded figure; a correctly occluder-SCOPED build (the #1677 stencil
+# fix) shows a normal actor there (skin/armor/hair — no cyan dominance). The FOE tint is red (r-dominant)
+# and is deliberately NOT matched — this counter-assert targets the party ghost-cyan of #1677.
+# Thresholds calibrated 2026-07-22 against the g4 frames (LEXAR session-notes 2026-07-22/g4-build): the
+# ghost frames (snug_g4b, throne_g4) peak at densest-window ghost-cyan shares of 0.092 / 0.066; the
+# pre-#1676 cert_green baseline (a normal actor) and a non-ghost capture read <= 0.011 — 0.03 separates.
+CYAN_DR = 20                   # g must exceed r by this (cyan/greenish, not warm)
+CYAN_DB = 30                   # b must exceed r by this (bluish)
+CYAN_FLOOR = 70                # (g+b)/2 must clear this (a real lit tint, not near-black noise)
+GHOST_WINDOW = 80              # px side of the densest-window ghost-cyan scan
+GHOST_STEP = 40                # px stride of the scan
+MAX_GHOST_TINT_SHARE = 0.03    # <= this densest-window ghost-cyan share == no overlay in the open (GREEN)
+
 
 # ── cell<->world geometry (the build_room_unified contract, mirror walk_test._visual_registration) ──
 def cell_to_world(cell: tuple, cols: int, rows: int) -> tuple:
@@ -237,6 +253,74 @@ def silhouette_verdict(rec: dict) -> str:
     if rec.get("frames_identical"):
         return "ERROR"      # two identical frames — no evidence about the silhouette
     return "GREEN" if density >= min_density else "RED"
+
+
+# ── #1677 counter-assert cores: the ghost-cyan tint must be ABSENT on an UNOCCLUDED actor (PURE) ─────
+def ghost_cyan_mask(img):
+    """Boolean HxW mask of pixels that read as the party ghost-cyan silhouette tint (G,B >> R, lit).
+    Pure (array/Image in, mask out). The party silhouette is cyan; the FOE tint is red (r-dominant) and
+    is deliberately NOT matched — this targets the #1677 party ghost-in-the-open."""
+    import numpy as np  # noqa: PLC0415
+    a = np.asarray(img, dtype=int)
+    r, g, b = a[..., 0], a[..., 1], a[..., 2]
+    return (g > r + CYAN_DR) & (b > r + CYAN_DB) & (((g + b) // 2) > CYAN_FLOOR)
+
+
+def ghost_tint_share(img, center_px: tuple, radius: int) -> float:
+    """Fraction of pixels in a square window around `center_px` that read as the ghost-cyan tint — the
+    single-frame analogue of head_window_diff_density (the LIVE probe reads it at the unoccluded actor's
+    head projection). Pure (array in, float out)."""
+    m = ghost_cyan_mask(img)
+    h, w = m.shape[0], m.shape[1]
+    x, y = int(center_px[0]), int(center_px[1])
+    ya, yb = max(0, y - radius), min(h, y + radius)
+    xa, xb = max(0, x - radius), min(w, x + radius)
+    if ya >= yb or xa >= xb:
+        return 0.0
+    return float(m[ya:yb, xa:xb].mean())
+
+
+def peak_ghost_tint_share(img, *, window: int = GHOST_WINDOW, step: int = GHOST_STEP,
+                          region: Optional[tuple] = None) -> float:
+    """The MAX ghost-cyan share over any window-sized box — position-agnostic (no actor projection
+    needed). `region` = (x0,y0,x1,y1) restricts the scan (the live probe bounds it to the figure so an
+    unrelated cyan prop/UI elsewhere cannot trip it); None scans the whole frame (the whole-PNG unit
+    tests). Pure (array in, float out)."""
+    m = ghost_cyan_mask(img)
+    h, w = m.shape[0], m.shape[1]
+    x0, y0, x1, y1 = (0, 0, w, h) if region is None else region
+    x0, y0 = max(0, int(x0)), max(0, int(y0))
+    x1, y1 = min(w, int(x1)), min(h, int(y1))
+    best = 0.0
+    yy = y0
+    while yy < y1 - 1:
+        xx = x0
+        while xx < x1 - 1:
+            ye, xe = min(yy + window, h), min(xx + window, w)
+            if ye > yy and xe > xx:
+                d = float(m[yy:ye, xx:xe].mean())
+                if d > best:
+                    best = d
+            xx += step
+        yy += step
+    return best
+
+
+def silhouette_absent_verdict(rec: dict) -> str:
+    """PURE tri-state for the #1677 counter-assert (silhouette_absent_when_visible). ERROR (harness —
+    never a certification verdict) when the open-cell frame could not be captured or measured. Otherwise
+    GREEN when the UNOCCLUDED actor shows NO ghost-cyan overlay (peak ghost-cyan share <= threshold), RED
+    when the ghost overlay IS present in the open (share above threshold — the g4 install-blocker the
+    occluder-scoping stencil fix removes). The complement of silhouette_verdict: that one demands the tint
+    WHERE occluded, this one forbids it WHERE VISIBLE."""
+    if rec.get("harness_errors"):
+        return "ERROR"
+    if not rec.get("captured"):
+        return "ERROR"
+    share, thresh = rec.get("tint_share"), rec.get("max_tint_share")
+    if share is None or thresh is None:
+        return "ERROR"
+    return "GREEN" if share <= thresh else "RED"
 
 
 # ── Primitive B helpers: spawn/arrival cells reachable, prop-clear, coherence-open (PURE) ───────────
@@ -469,6 +553,79 @@ def _silhouette_row(ctx: dict) -> dict:
             "harness_errors": rec.get("harness_errors", [])}
 
 
+def probe_silhouette_absent(ctx: dict) -> dict:
+    """PRIMITIVE A COUNTER-ASSERT (#1677) — capture the party actor on its UNOCCLUDED start cell and
+    prove it does NOT wear the walk-behind silhouette tint in the open. Captures ONE /shot (no move),
+    measures the PEAK ghost-cyan share in a window bounded to the actor's projected figure (so an
+    unrelated cyan prop/UI elsewhere on the plate can't trip it), and reads the verdict: a ghost overlay
+    (share above threshold) is RED (the g4 ghost-in-the-open install-blocker), a normal actor is GREEN.
+    Deterministic, no LLM / no image model — the complement of probe_silhouette."""
+    engine, qa, out = ctx["engine"], ctx["qa"], ctx["out"]
+    rec = {"harness_errors": [], "captured": False, "max_tint_share": MAX_GHOST_TINT_SHARE}
+    try:
+        surf = W._get(f"{engine}/combat-surface")
+    except Exception as e:  # noqa: BLE001
+        rec["harness_errors"].append(f"surface: {e}")
+        return rec
+    room = _room_of(surf) or ctx.get("room") or ""
+    rec["room"] = room
+    mask = W.walkmask_from_surface(surf)
+    cols, rows = mask["cols"], mask["rows"]
+    start = W._token_cell(surf)
+    if not start:
+        rec["harness_errors"].append("no party token cell on the surface")
+        return rec
+    rec["start_cell"] = list(start)
+    try:
+        health = W._get(f"{qa}/health")
+        w, h = int(health["screenW"]), int(health["screenH"])
+    except Exception as e:  # noqa: BLE001
+        rec["harness_errors"].append(f"health: {e}")
+        return rec
+    try:
+        boxes = _boxes_for_room(room)
+        ortho = float((boxes or {}).get("ortho") or W._room_ortho(room))
+    except Exception:  # noqa: BLE001
+        ortho = 11.0
+    rec["window"] = [w, h]
+
+    # bound the ghost scan to the actor's projected figure (head..feet at the unoccluded start cell).
+    wx, wz = cell_to_world(start, cols, rows)
+    head_px = W.world_to_window_px(wx, 2.4, wz, ortho, w, h)
+    torso_px = W.world_to_window_px(wx, 1.2, wz, ortho, w, h)
+    rec["head_px"] = [round(v) for v in head_px]
+    cpx = W.cell_px(ortho, h)
+    half = max(GHOST_WINDOW, int(round(1.2 * cpx)))
+    cx_px = (head_px[0] + torso_px[0]) / 2.0
+    region = (cx_px - half, head_px[1] - 0.4 * cpx, cx_px + half, torso_px[1] + 1.4 * cpx)
+    rec["region"] = [round(v) for v in region]
+
+    shot = W._capture_shot(qa, out, "sil_open")
+    rec["frames"] = {"open": shot}
+    if not shot:
+        rec["harness_errors"].append("shot capture failed (open frame missing)")
+        return rec
+    from PIL import Image  # noqa: PLC0415
+    im = Image.open(shot).convert("RGB")
+    rec["tint_share"] = round(peak_ghost_tint_share(im, region=region), 4)
+    rec["head_tint_share"] = round(
+        ghost_tint_share(im, head_px, max(GHOST_WINDOW // 2, int(round(0.55 * cpx)))), 4)
+    rec["captured"] = True
+    return rec
+
+
+def _silhouette_absent_row(ctx: dict) -> dict:
+    rec = probe_silhouette_absent(ctx)
+    verdict = silhouette_absent_verdict(rec)
+    detail = rec.get("detail")
+    if verdict in ("GREEN", "RED"):
+        detail = (f"open_cell={rec.get('start_cell')} tint_share={rec.get('tint_share')} "
+                  f"head_tint_share={rec.get('head_tint_share')} max={rec.get('max_tint_share')} "
+                  f"head_px={rec.get('head_px')}")
+    return {"verdict": verdict, "detail": detail, "record": rec,
+            "harness_errors": rec.get("harness_errors", [])}
+
+
 def _spawn_row(ctx: dict) -> dict:
     engine = ctx["engine"]
     try:
@@ -511,6 +668,13 @@ REGISTRY: list = [
         probe=_silhouette_row,
         doc="Primitive A — the party actor placed BEHIND a tall occluder still renders its walk-behind "
             "silhouette (#1572 per-submesh clone; WORLDOS_SILHOUETTE=0 turns this RED)."),
+    Assertion(
+        id="silhouette_absent_when_visible", scope="live_party", needs=("engine", "player"),
+        probe=_silhouette_absent_row,
+        doc="Primitive A COUNTER-assert — the party actor on its UNOCCLUDED cell shows NO walk-behind "
+            "silhouette tint (#1677 ghost-in-the-open: the ZTest-Greater clone tinting the actor against "
+            "its OWN body depth). A ghost-cyan overlay in the open turns this RED — the occluder-scoping "
+            "stencil fix keeps it GREEN."),
 ]
 
 
