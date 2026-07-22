@@ -346,6 +346,40 @@ fi
 # `claude -p` below. Defined in qa/lib_beat_driver.sh (sourced above). Never fails the run.
 worldos_isolate_claude_auth
 
+# ── HERMETIC SESSIONS (#1656 root cause; ported from run_adventure.sh) ─────────────────────────────
+# The duo `claude -p` sessions inherit the USER-level ~/.claude config — including the claude-mem
+# plugin, whose SessionStart hook injects OLD WorldOS session observations (measured on adv_live2:
+# the DM carried a FOREIGN campaign's beats and "closed" that story mid-run). Fix = per-run
+# CLAUDE_CONFIG_DIR with empty settings + an explicit credential. Built as an ARRAY headed by env
+# (a real executable), never a shell function: worldos_timeout execs timeout(1), which cannot exec
+# a function (rc=127, measured). The repo plugin + MCP servers are flag-scoped and unaffected.
+# GLM lane: the profile injects ANTHROPIC_BASE_URL/credential/its own isolated CLAUDE_CONFIG_DIR —
+# scrubbing those would silently re-route a GLM run to Anthropic, so the scrub is Claude-path-only.
+DUO_CFG="$(mktemp -d "${TMPDIR:-/tmp}/worldos-duo-config.XXXXXX")"
+printf '{}' > "$DUO_CFG/settings.json"
+DUO_ENV=(env -u CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH -u CLAUDE_CODE_SDK_HAS_OAUTH_REFRESH -u CLAUDE_CODE_SESSION_ID)
+if _worldos_is_glm_model "$WORLDOS_DM_MODEL"; then
+  # Keep the GLM profile's endpoint/credential; its CLAUDE_CONFIG_DIR is already isolated. Fall
+  # back to the per-run empty config only if the profile somehow left none.
+  DUO_ENV+=(CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$DUO_CFG}")
+else
+  DUO_TOK="${CLAUDE_CODE_OAUTH_TOKEN:-}"
+  if [ -z "$DUO_TOK" ] && [ -z "${ANTHROPIC_API_KEY:-}" ] && [ "$(uname)" = "Darwin" ]; then
+    _blob="$(security find-generic-password -s 'Claude Code-credentials' -a "$USER" -w 2>/dev/null || true)"
+    [ -n "$_blob" ] && DUO_TOK="$(printf '%s' "$_blob" | python3 -c 'import json,sys
+try: d=json.load(sys.stdin).get("claudeAiOauth",{})
+except Exception: d={}
+sys.stdout.write(d.get("accessToken") or "")' 2>/dev/null || true)"
+  fi
+  DUO_ENV+=(-u ANTHROPIC_BASE_URL -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN CLAUDE_CONFIG_DIR="$DUO_CFG")
+  if [ -n "${DUO_TOK:-}" ]; then
+    DUO_ENV+=(CLAUDE_CODE_OAUTH_TOKEN="$DUO_TOK")
+  elif [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+    # worldos_isolate_claude_auth resolved a legitimate sk-ant credential (env or file) — keep it.
+    DUO_ENV+=(ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY")
+  fi
+fi
+
 # DM gets the engine (state dir patched in); the player gets an EMPTY strict config.
 DM_CFG="$STATE_DIR/dm.mcp.json"; PLAYER_CFG="$STATE_DIR/player.mcp.json"
 MOVES="$STATE_DIR/player_moves.jsonl"
@@ -477,7 +511,7 @@ turn() {
     worldos_stream_flag_arg
     worldos_stream_tailer_start "$out" "$STATE_DIR"
     worldos_timeout "$beat_timeout" \
-      claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
+      "${DUO_ENV[@]}" claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
         --model "$WORLDOS_DM_MODEL" ${WORLDOS_DM_EFFORT[@]+"${WORLDOS_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
         ${WORLDOS_STREAM_FLAG[@]+"${WORLDOS_STREAM_FLAG[@]}"} \
         --output-format stream-json --verbose > "$out" 2>> "$T/$RUN.dm.err"
@@ -500,7 +534,7 @@ turn() {
     # now fires on error results too instead of chatting them as DM prose.
     worldos_dm_final_text "$out" "$STATE_DIR" "$rc"
   else
-    claude -p "$msg" "${resume[@]}" --mcp-config "$PLAYER_CFG" --strict-mcp-config \
+    "${DUO_ENV[@]}" claude -p "$msg" "${resume[@]}" --mcp-config "$PLAYER_CFG" --strict-mcp-config \
       --model "$WORLDOS_ACTOR_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
       --output-format json 2>> "$T/$RUN.player.err" \
       | jq -r '.result // ""' 2>/dev/null
