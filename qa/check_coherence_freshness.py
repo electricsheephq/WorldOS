@@ -55,8 +55,13 @@ def _last_commit_touching(rel_path: str) -> str | None:
 
 def _working_tree_sha(path: Path) -> str | None:
     """git's blob sha of the file AS IT SITS ON DISK NOW (catches an uncommitted local plate edit that
-    HEAD-only comparison would miss)."""
-    rc, out = _git("hash-object", str(path))
+    HEAD-only comparison would miss). --no-filters is load-bearing: the plates/*.png paths match a
+    `filter=lfs` rule in .gitattributes, and on a runner with git-lfs installed, a filtered
+    `git hash-object` re-cleans the (already-real, non-pointer) bytes into a FRESH LFS pointer and hashes
+    THAT — a spurious mismatch against the real blob sha that has nothing to do with plate drift (caught
+    on the actual GitHub Actions runner, which has git-lfs; this repo's committed plate blobs are real
+    bytes, not pointers, so no filter should touch them at all)."""
+    rc, out = _git("hash-object", "--no-filters", str(path))
     return out if rc == 0 and out else None
 
 
