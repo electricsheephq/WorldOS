@@ -273,9 +273,22 @@ that opens onto a throne hall where the Goblin Boss waits. The quest \"$QUEST_TI
 objectives — Speak with Keeper Maera, Clear the crypt of goblins, Slay the goblin boss, Return to
 Maera for the reward. As the party achieves each, call complete_objective so the engine records it
 (the last one auto-resolves the quest and hands over the reward via complete_quest). Run real combat
-in the crypt and the throne hall (start_combat / attack / end_combat). Keep the arc MOVING toward the
-crypt and the boss; the player is here to finish this job, not to linger. The player is the seeded PC
-already in the party — do NOT seat a new character."
+in the crypt and the throne hall THROUGH THE ENGINE, and CLOSE it — an unclosed fight is this arc's
+#1 failure mode: it eats the whole beat budget and flips the behavioral gate RED before the boss is
+ever reached. COMBAT-CLOSURE DISCIPLINE, non-negotiable and enforced by the QA gate:
+  (1) DRIVE EVERY ATTACK THROUGH THE ACTION ECONOMY, not prose — start_combat on the foe ids, then
+      each round resolve the strikes with attack() (or cast_spell / use_action) and advance with
+      next_turn. Narrating 'you cut the goblin down' with no attack() call leaves action_used=False
+      and 0 attacks (an action_economy WARN): the blow never landed in engine state.
+  (2) THE BEAT THE LAST HOSTILE DROPS, CALL end_combat(resolution='...'). The engine surfaces a LOUD
+      pending_resolution nudge in the combat state the moment no living hostile remains — obey it.
+      end_combat auto-awards the defeated foes' XP in xp mode (so a clean fight needs no separate
+      award_xp); a fight left active is a combat_ended + xp_awarded WARN and its XP never lands.
+  (3) ADVANCE THE CLOCK after significant beats — a resolved fight, a cleared room, reaching the
+      throne hall — via advance_time / long_rest / travel_to(advance_time=True). An arc where the
+      clock never moves is a dm_advanced_time WARN.
+Keep the arc MOVING toward the crypt and the boss; the player is here to finish this job, not to
+linger. The player is the seeded PC already in the party — do NOT seat a new character."
 PLAYER_BRIEF="$(cat "$PLAYER_PROMPT_FILE")"
 
 COMBINED="$T/$RUN.jsonl"; [ "$RESUME_MODE" = "1" ] || : > "$COMBINED"
