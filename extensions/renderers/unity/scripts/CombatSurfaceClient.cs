@@ -74,7 +74,7 @@ public class CombatSurfaceClient : MonoBehaviour
     Material _silFoe, _silParty; bool _silMatMissing; // #1545: per-team walk-behind silhouette materials (ZTest Greater)
     // #1647 item 2 / #1572: the walk-behind silhouette (ON by default; WORLDOS_SILHOUETTE=0 kills it — a beauty-
     // capture / debug escape hatch). Read once at construction (env-field-initializer idiom, mirrors _truthOverlay).
-    bool _silhouetteOn = System.Environment.GetEnvironmentVariable("WORLDOS_SILHOUETTE") != "0";
+    readonly bool _silhouetteOn = System.Environment.GetEnvironmentVariable("WORLDOS_SILHOUETTE") != "0";
     AnimationClip _donorIdle; bool _donorTried; // goblin.fbx embedded Idle, for clipless-humanoid retarget
 
     // RING-V2 warm-floor port (#1515 fix 2 / #1524, from CohesionProbe.cs): a hearth-INDEPENDENT warm floor
@@ -1541,7 +1541,14 @@ public class CombatSurfaceClient : MonoBehaviour
     static Bounds Measure(GameObject go, Renderer[] rends)
     {
         Bounds b = new Bounds(go.transform.position, Vector3.zero); bool a = false;
-        foreach (var r in rends) { var rb = WorldBounds(r); if (!a) { b = rb; a = true; } else b.Encapsulate(rb); }
+        foreach (var r in rends)
+        {
+            // Skip the #1572 "_sil" silhouette clones: they share the source mesh/bounds (encapsulation is a
+            // no-op) but WorldBounds would still BakeMesh each one, doubling the per-actor bake+GC on every
+            // GroundSnap/GlideTo/room-swap settle. Mirrors AttachSilhouette's own null/particle skip.
+            if (r == null || r.gameObject.name.EndsWith("_sil")) continue;
+            var rb = WorldBounds(r); if (!a) { b = rb; a = true; } else b.Encapsulate(rb);
+        }
         return b;
     }
 
@@ -2278,6 +2285,12 @@ public class CombatSurfaceClient : MonoBehaviour
         WindowToPlatePx(screenPoint.x, screenPoint.y, w, h, _plateTexW, _plateTexH, out float px, out float py);
         foreach (var hs in _doorHotspots)
         {
+            // The hotspot is a REST-mode cross-door affordance. `_doorHotspots` comes from the plate manifest
+            // and outlives a mode change (a rest plate shown for a combat surface keeps its arches), so gate
+            // consumption on the door being ACTIVE for THIS surface — exactly HandleCell's own cross_door
+            // guard (_restMode + _doorTo). Otherwise fall through to the raycast instead of hijacking the
+            // click into a combat move to the hard door cell.
+            if (!_restMode || !_doorTo.ContainsKey(CellKey(hs.c, hs.r))) continue;
             float dx = px - hs.px, dy = py - hs.py;
             if (dx * dx + dy * dy <= hs.radius * hs.radius) { HandleCell(hs.c, hs.r); return true; }
         }
