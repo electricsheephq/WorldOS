@@ -212,6 +212,14 @@ def test_deterministic_ambiguous_count_survives_vqa(geo, ortho, tmp_path):
 
 
 # ── VQA adjudication (injected stub scorer; ONE batched call) ────────────────────────────────────────
+# NOTE on covered_t=99 / injected-ambiguous below: the synthetic fixtures are deliberately BIMODAL — a
+# fine high-contrast checker (clearly covered) over a smooth floor (clearly open) — so the DETERMINISTIC
+# classifier is unambiguous by construction and its open/covered separation is what these unit tests pin.
+# The REAL ambiguous band is a property of the production thresholds (OPEN_T/COVERED_T) against painterly
+# plates and is calibration-dependent; it is evidenced by the committed real-room reports
+# (qa/evidence/paint-coherence/gate_rooms_deterministic.json shows the per-room ambiguous cells), NOT
+# synthesized here. These tests therefore widen covered_t (or inject an ambiguous verdict) to exercise the
+# ADJUDICATOR MECHANICS deterministically, without coupling the unit suite to threshold calibration.
 def test_vqa_resolves_ambiguous_with_stub(geo, ortho, tmp_path):
     # Force an ambiguous cell by classifying at thresholds that leave a band, then adjudicate.
     m = P.derive_room(geo)

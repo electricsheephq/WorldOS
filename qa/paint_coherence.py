@@ -491,18 +491,23 @@ def gate_owner_rooms(*, vqa: bool = False, scorer: Optional[VqaScorer] = None,
                                     "have_entry": bool(entry), "geometry": geo_path.name})
             report["errored"] = True
             continue
-        plate_path = _PLATES_DIR / Path(entry["plate"]).name
-        ortho = float((entry.get("cameraPin") or {}).get("ortho", 0) or 0)
-        if not plate_path.is_file() or ortho <= 0:
-            report["rooms"].append({"room": reg_key, "status": "missing", "plate": str(plate_path),
-                                    "ortho": ortho})
+        plate_name = entry.get("plate")               # a registry entry may lack 'plate' — treat as missing,
+        ortho = float((entry.get("cameraPin") or {}).get("ortho", 0) or 0)   # never a bare KeyError
+        plate_path = _PLATES_DIR / Path(plate_name).name if plate_name else None
+        if not plate_path or not plate_path.is_file() or ortho <= 0:
+            report["rooms"].append({"room": reg_key, "status": "missing",
+                                    "plate": str(plate_path) if plate_path else None, "ortho": ortho})
             report["errored"] = True
             continue
         try:
             res = run_room(plate_path, json.loads(geo_path.read_text()), ortho, vqa=vqa, scorer=scorer,
                            overlay_dir=overlay_dir, fail_on_walkable=fail_on_walkable)
-        except HarnessError as exc:
-            report["rooms"].append({"room": reg_key, "status": "error", "error": str(exc)})
+        # Isolation contract: a malformed geometry JSON (ValueError), a present-but-corrupt plate (OSError),
+        # or a malformed registry entry (KeyError) is THIS room's error — record it and keep gating the rest
+        # of the batch, never let one bad room poison the other four.
+        except (HarnessError, OSError, ValueError, KeyError) as exc:
+            report["rooms"].append({"room": reg_key, "status": "error",
+                                    "error": f"{type(exc).__name__}: {exc}"})
             report["errored"] = True
             continue
         report["rooms"].append({"registry_key": reg_key, "plate": plate_path.name, **res.as_dict()})

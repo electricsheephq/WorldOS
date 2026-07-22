@@ -200,7 +200,8 @@ def main() -> None:
         c.locations[lid].connections = conn
         geo = json.loads((town_dir / r["geometry"]).read_text())
         c.locations[lid].scene_grid = build_grid_from_geometry(
-            geo, lid, town_id, r["room"], r["doors"])
+            geo, lid, town_id, r["room"], r["doors"],
+            coherence_reports_dir=DEFAULT_COHERENCE_DIR)  # #1647: spawn on OPEN floor (no-op without a report)
     server.save_campaign(c)
     server.start_session(CID, title=f"Town slice {town_id}")
 
