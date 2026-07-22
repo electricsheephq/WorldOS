@@ -4,6 +4,7 @@ using System.IO;
 using UnityEditor;
 using UnityEditor.Build.Reporting;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 /// <summary>
 /// W5a (#1322) — macOS standalone PLAYER build, batch-mode-free (the box forbids `-batchmode`,
@@ -219,6 +220,14 @@ public static class BuildMacOSPlayer
         var scenes = new[] { new EditorBuildSettingsScene(SceneToBuild, true) };
         EditorBuildSettings.scenes = scenes;
 
+        // #1674: GUARANTEE the runtime-resolved shaders (Shader.Find, referenced by no asset) survive
+        // player-build variant stripping. Previously ONLY the manual Tools/WorldOS/W5b menu item added these
+        // to Always-Included; a box rebuild that skipped W5b shipped WITHOUT WorldOS/ActorSilhouette, so
+        // CombatSurfaceClient.EnsureSilhouetteMaterial warned once and the walk-behind mask silently no-op'd
+        // (#1674 / #1651 player_cert). Baking the registration into the build itself means the class can never
+        // ship silently again; qa/check_always_included_shaders.py is the pre-flight hard gate on the source.
+        string[] includedShaders = EnsureAlwaysIncludedShaders();
+
         string projectRoot = Directory.GetParent(Application.dataPath).FullName;
         string outDir = Path.Combine(projectRoot, OutputDir);
         Directory.CreateDirectory(outDir);
@@ -249,10 +258,46 @@ public static class BuildMacOSPlayer
             "buildEndedAt=" + s.buildEndedAt + "\n" +
             "platform=" + s.platform + "\n" +
             "architecture=" + archResult + "\n" +
+            "alwaysIncludedShaders=" + string.Join(",", includedShaders) + "\n" +
             "scenesBuilt=" + string.Join(",", options.scenes) + "\n");
 
         Debug.Log("[BuildMacOSPlayer] DONE result=" + s.result + " errors=" + s.totalErrors
             + " warnings=" + s.totalWarnings + " size=" + s.totalSize + " time=" + s.totalTime
             + " report=" + reportPath);
+    }
+
+    // #1674: shaders CombatSurfaceClient resolves at runtime via Shader.Find and that NO asset references, so
+    // the player build strips them unless they are listed in Graphics -> Always-Included Shaders. The player
+    // build MUST carry both or the runtime feature (occluder proxies / walk-behind silhouette) silently no-ops
+    // in the shipped .app. Keep this list in sync with qa/check_always_included_shaders.py (the pre-flight gate).
+    static readonly string[] RequiredAlwaysIncluded = { "WorldOS/OccluderDepth", "WorldOS/ActorSilhouette" };
+
+    // Ensure every RequiredAlwaysIncluded shader is registered in Graphics -> Always-Included Shaders
+    // (idempotent — mirrors W5bWireScene.EnsureAlwaysIncluded). Returns the resolved list for the build-report
+    // evidence. A shader missing from the project (not yet imported) is logged but does NOT abort the build;
+    // qa/check_always_included_shaders.py is the hard gate that fails the box build pre-flight in that case.
+    static string[] EnsureAlwaysIncludedShaders()
+    {
+        var so = new SerializedObject(GraphicsSettings.GetGraphicsSettings());
+        var arr = so.FindProperty("m_AlwaysIncludedShaders");
+        var present = new List<string>();
+        foreach (var name in RequiredAlwaysIncluded)
+        {
+            var sh = Shader.Find(name);
+            if (sh == null) { Debug.LogWarning("[BuildMacOSPlayer] #1674 required shader NOT FOUND (import it before ship): " + name); continue; }
+            bool already = false;
+            for (int i = 0; i < arr.arraySize; i++)
+                if (arr.GetArrayElementAtIndex(i).objectReferenceValue == sh) { already = true; break; }
+            if (!already)
+            {
+                arr.InsertArrayElementAtIndex(arr.arraySize);
+                arr.GetArrayElementAtIndex(arr.arraySize - 1).objectReferenceValue = sh;
+                Debug.Log("[BuildMacOSPlayer] #1674 +Always-Included " + name);
+            }
+            present.Add(name);
+        }
+        so.ApplyModifiedProperties();
+        AssetDatabase.SaveAssets();
+        return present.ToArray();
     }
 }
