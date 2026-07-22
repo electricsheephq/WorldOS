@@ -46,24 +46,34 @@ def load_cell_verdicts(reports_dir, room: str) -> dict | None:
     return out
 
 
-def _prefer_open(free: list, cell_verdicts: dict) -> list:
-    """Restrict candidate spawn cells to those the coherence report classifies OPEN. Falls back to
-    ambiguous/unclassified cells (NEVER covered) with a loud warning when no open cell exists, and to
-    the full geometry-free list (still loud) only if every candidate is covered — so a mis-locked plate
-    degrades the spawn instead of crashing the seed."""
+def _prefer_open(free: list, cell_verdicts: dict, min_count: int = 1) -> list:
+    """Restrict candidate spawn cells to those the coherence report classifies OPEN. When there are FEWER
+    than `min_count` open cells (so open floor alone can't seat every requested spawn), the open cells are
+    kept first and the remaining ambiguous/unclassified cells (NEVER covered) are appended — so a partially
+    adjudicated/mis-locked room degrades a slot to ambiguous rather than silently dropping a spawn anchor.
+    Falls back to ambiguous-only (loud) when no open cell exists, and to the full geometry-free list (still
+    loud) only if every candidate is covered — a mis-locked plate degrades the spawn, never crashes."""
     open_cells = [p for p in free if cell_verdicts.get(p) == "open"]
-    if open_cells:
+    if len(open_cells) >= min_count:
         return open_cells
     non_covered = [p for p in free if cell_verdicts.get(p) != "covered"]
-    if non_covered:
-        print(f"WARNING [choose_spawns]: no OPEN cell among {len(free)} candidates — falling back to "
-              f"{len(non_covered)} ambiguous/unclassified cell(s) (paint coherence: relock this plate)",
+    if not non_covered:
+        print(f"WARNING [choose_spawns]: ALL {len(free)} candidate cells are paint-COVERED — falling back "
+              f"to bare geometry floor; the party will render inside furniture until this plate is relocked",
               file=sys.stderr)
-        return non_covered
-    print(f"WARNING [choose_spawns]: ALL {len(free)} candidate cells are paint-COVERED — falling back "
-          f"to bare geometry floor; the party will render inside furniture until this plate is relocked",
+        return free
+    tail = [p for p in non_covered if cell_verdicts.get(p) != "open"]   # ambiguous/unclassified, not open
+    if open_cells and tail:
+        print(f"WARNING [choose_spawns]: only {len(open_cells)} OPEN cell(s) for {min_count} spawn slot(s) "
+              f"— keeping them first, filling from {len(tail)} ambiguous/unclassified cell(s) (paint "
+              f"coherence: relock this plate)", file=sys.stderr)
+        return open_cells + tail
+    if open_cells:                                    # every non-covered candidate is already open; nothing
+        return open_cells                             # more to add — seat what open floor exists
+    print(f"WARNING [choose_spawns]: no OPEN cell among {len(free)} candidates — falling back to "
+          f"{len(non_covered)} ambiguous/unclassified cell(s) (paint coherence: relock this plate)",
           file=sys.stderr)
-    return free
+    return non_covered
 
 
 def choose_spawns(cols: int, rows: int, blocked: set, door_cells: list,
@@ -97,7 +107,7 @@ def choose_spawns(cols: int, rows: int, blocked: set, door_cells: list,
     if not free:
         return {"party": [], "npcs": []}
     if cell_verdicts is not None:
-        free = _prefer_open(free, cell_verdicts)
+        free = _prefer_open(free, cell_verdicts, min_count=n_party + n_npc)
     cx = sum(c for c, _ in free) / len(free)
     cy = sum(r for _, r in free) / len(free)
     # anchor = the open cell nearest the floor centroid (skips a blocked central monument automatically)

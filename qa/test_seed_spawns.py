@@ -142,6 +142,23 @@ def test_ambiguous_only_fallback_prefers_ambiguous_over_covered(capsys):
     assert "WARNING" in capsys.readouterr().err.upper()
 
 
+def test_insufficient_open_cells_fill_from_ambiguous(capsys):
+    """#1648 review: with fewer OPEN cells than spawn slots, open cells come FIRST but the remaining slots
+    are filled from ambiguous/unclassified (never covered) — a mis-locked room must not silently drop a
+    party anchor. n_party=2 + n_npc=1 needs 3 cells; only 1 is open here."""
+    cols, rows = 9, 9
+    open_one = {(4, 4)}
+    ambiguous = {(3, 3), (5, 5), (6, 6)}
+    verdicts = _all_verdicts(cols, rows, default="covered", open_=open_one, ambiguous_=ambiguous)
+    sp = choose_spawns(cols, rows, blocked=set(), door_cells=[(0, 4)], cell_verdicts=verdicts)
+    placed = [tuple(c) for c in sp["party"] + sp["npcs"]]
+    assert len(placed) == 3, f"all three spawn slots must be seated, got {placed}"
+    assert (4, 4) in placed, "the single OPEN cell must be used"
+    assert all(verdicts.get(c) in ("open", "ambiguous") for c in placed), \
+        f"no spawn may land on a covered cell: {[(c, verdicts.get(c)) for c in placed]}"
+    assert "WARNING" in capsys.readouterr().err.upper()
+
+
 def test_load_cell_verdicts_reads_a_real_report():
     """load_cell_verdicts parses a shipped coherence report into tuple-keyed verdicts; a missing report
     (or None dir) returns None so the seed path stays geometry-only."""

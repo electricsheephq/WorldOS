@@ -259,6 +259,13 @@ def classify_cells(model: RoomModel, ortho: float, plate_im: Image.Image, *,
         scales = _robust_scales(b["rgb"], b["edge"], b["luma_std"], clean)
 
     doors, spawns = model.doors, set(model.spawns)
+    # KNOWN LIMITATION (#1648 review): the arrival hard-gate keys on the DOOR/threshold cell as a
+    # conservative proxy. The runtime arrival seeder (server._seed_stage_cells_on_arrival) stages the party
+    # on the door's reachable ring — `combat_grid.reachable` EXCLUDES the start cell — so members actually
+    # land on the door's walkable neighbours, not the threshold. Gating the door cell is a close proxy
+    # (door + landing ring are adjacent) but can miss a door-open / landing-covered case. Re-deriving
+    # arrival_covered from the exact landing candidates is a tracked follow-up: it changes the instrument's
+    # measured cells and would regenerate every committed real-room report, so it is its own change.
     results: dict = {}
     for cell, s in stats_by_cell.items():
         score, comps = coverage_score(s, b["rgb"], b["edge"], b["luma_std"], scales)
@@ -539,11 +546,12 @@ def main(argv=None) -> int:
 
     if args.cmd == "check":
         try:
-            res = run_room(args.plate, json.loads(Path(args.geometry).read_text()), args.ortho,
+            geo = json.loads(Path(args.geometry).read_text())   # a missing/malformed geometry JSON is a
+            res = run_room(args.plate, geo, args.ortho,          # HARNESS error (exit 2), not a verdict
                            vqa=args.vqa, overlay_dir=Path(args.overlay_dir) if args.overlay_dir else None,
                            fail_on_walkable=args.fail_on_walkable)
-        except HarnessError as exc:
-            print(f"[paint_coherence] ERROR: {exc}", file=sys.stderr)
+        except (HarnessError, OSError, ValueError) as exc:       # OSError: bad path; ValueError: bad JSON
+            print(f"[paint_coherence] ERROR: {type(exc).__name__}: {exc}", file=sys.stderr)
             return 2
         print(res.summary())
         payload = json.dumps(res.as_dict(), indent=2)
