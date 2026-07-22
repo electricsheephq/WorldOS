@@ -74,6 +74,29 @@ worldos_apply_glm_profile
 
 # Lean-per-beat context (default ON, byte-identical to run_duo).
 WORLDOS_LEAN_BEATS="${WORLDOS_LEAN_BEATS:-1}"
+
+# ── HERMETIC SESSIONS (#1656 root cause) ───────────────────────────────────────────────────────────
+# The DM/player `claude -p` sessions previously inherited the USER-level ~/.claude config — including
+# the claude-mem plugin, whose SessionStart hook injects OLD WorldOS session observations. Measured on
+# adv_live2: the FIRST DM session carried 39 claude-mem refs incl. a FOREIGN campaign's beats, and the
+# DM ultimately "closed" THAT story mid-fight ("the standoff at the bonesetter's door"). Both live
+# runs died this way at depth ~7. Fix = the #1260-proven isolation: a per-run CLAUDE_CONFIG_DIR with
+# empty settings (no user plugins/hooks/CLAUDE.md) + an explicit keychain OAuth token. The repo plugin
+# and MCP servers are unaffected (flag-scoped: --plugin-dir / --mcp-config --strict-mcp-config).
+DUO_CFG="$(mktemp -d "${TMPDIR:-/tmp}/worldos-duo-config.XXXXXX")"
+printf '{}' > "$DUO_CFG/settings.json"
+DUO_TOK="${CLAUDE_CODE_OAUTH_TOKEN:-}"
+if [ -z "$DUO_TOK" ] && [ "$(uname)" = "Darwin" ]; then
+  _blob="$(security find-generic-password -s 'Claude Code-credentials' -a "$USER" -w 2>/dev/null || true)"
+  [ -n "$_blob" ] && DUO_TOK="$(printf '%s' "$_blob" | python3 -c 'import json,sys
+try: d=json.load(sys.stdin).get("claudeAiOauth",{})
+except Exception: d={}
+sys.stdout.write(d.get("accessToken") or "")' 2>/dev/null || true)"
+fi
+# Wrapper: every duo claude -p goes through this — isolated config, no inherited SDK session markers.
+duo_claude() {
+  env -u ANTHROPIC_BASE_URL -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN       -u CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH -u CLAUDE_CODE_SDK_HAS_OAUTH_REFRESH -u CLAUDE_CODE_SESSION_ID       CLAUDE_CONFIG_DIR="$DUO_CFG" ${DUO_TOK:+CLAUDE_CODE_OAUTH_TOKEN="$DUO_TOK"}       claude "$@"
+}
 WORLDOS_LEAN_TAIL="${WORLDOS_LEAN_TAIL:-8}"
 
 # The transcripts dir is threaded via WORLDOS_TRANSCRIPTS_DIR (a REPO-RELATIVE path; default
@@ -328,7 +351,7 @@ turn() {  # $1=role $2=sid $3=first? $4=msg ; echoes the reply text (mirrors run
     worldos_stream_flag_arg
     worldos_stream_tailer_start "$out" "$STATE_DIR"
     worldos_timeout "$beat_timeout" \
-      claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
+      duo_claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
         --model "$WORLDOS_DM_MODEL" ${WORLDOS_DM_EFFORT[@]+"${WORLDOS_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
         ${WORLDOS_STREAM_FLAG[@]+"${WORLDOS_STREAM_FLAG[@]}"} \
         --output-format stream-json --verbose > "$out" 2>> "$T/$RUN.dm.err"
@@ -338,7 +361,7 @@ turn() {  # $1=role $2=sid $3=first? $4=msg ; echoes the reply text (mirrors run
     if [ "$rc" -ne 0 ] && ! worldos_dm_result_is_error "$out"; then worldos_report_attempt_failure "$out" "$rc"; fi
     worldos_dm_final_text "$out" "$STATE_DIR" "$rc"
   else
-    claude -p "$msg" "${resume[@]}" --mcp-config "$PLAYER_CFG" --strict-mcp-config \
+    duo_claude -p "$msg" "${resume[@]}" --mcp-config "$PLAYER_CFG" --strict-mcp-config \
       --model "$WORLDOS_ACTOR_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
       --output-format json 2>> "$T/$RUN.player.err" | jq -r '.result // ""' 2>/dev/null
   fi
