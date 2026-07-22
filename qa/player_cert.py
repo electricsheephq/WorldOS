@@ -87,6 +87,24 @@ GHOST_WINDOW = 80              # px side of the densest-window ghost-cyan scan
 GHOST_STEP = 40                # px stride of the scan
 MAX_GHOST_TINT_SHARE = 0.03    # <= this densest-window ghost-cyan share == no overlay in the open (GREEN)
 
+# ── #1666 cast-full-figure calibration: a fragment-rendered token (only an accessory mesh drew; the body
+# renderers never initialized — the g5 crypt residual, the first-spawned goblin over the west stairs) shows
+# almost NO coherent body figure where a healthy foe shows a tall one. Discriminator: the vertical EXTENT of
+# bright yellow-green goblin-BODY pixels (g high, g within BODY_GR_SLACK of r, b well below g) inside a window
+# bounded to the token's projected figure, as a fraction of that window's height. A GLOBAL color mask is
+# useless here — the brazier-lit stone + flames read warm — so the extent is only ever measured inside a
+# per-token projected box (never at a brazier/wall). Calibrated 2026-07-22 against crypt_g5.png (LEXAR
+# session-notes 2026-07-22/g4-build/artifacts): the fragment goblin's body extent = 0.08-0.17 (box-jitter
+# range); the two full goblins = 0.47-0.82. Floor 0.35 sits in the (0.17, 0.47) gap: RED-FIRST — a fragment
+# turns the suite RED, a healthy figure stays GREEN.
+BODY_G_FLOOR = 130             # goblin-body pixels are bright (green channel)
+BODY_GR_SLACK = 30             # ...with g within this of r (yellow-green, not warm-red stone)
+BODY_GB_MARGIN = 55            # ...and b well below g (excludes grey/brown floor + blue-grey wall)
+FIGURE_MIN_EXTENT = 0.35       # body extent >= this fraction of the projected figure window == a full figure
+FIGURE_HEAD_WORLD_Y = 2.4      # projected figure top (world y) — the head band the silhouette probe also uses
+FIGURE_FEET_WORLD_Y = 0.15     # projected figure bottom (world y) — just above the floor
+BODY_HALF_WIDTH_PX = 40        # min half-width of the per-token projected figure box (px)
+
 
 # ── cell<->world geometry (the build_room_unified contract, mirror walk_test._visual_registration) ──
 def cell_to_world(cell: tuple, cols: int, rows: int) -> tuple:
@@ -321,6 +339,55 @@ def silhouette_absent_verdict(rec: dict) -> str:
     if share is None or thresh is None:
         return "ERROR"
     return "GREEN" if share <= thresh else "RED"
+
+
+# ── #1666 cast-full-figure cores: a token's rendered BODY must span a real figure, not a fragment (PURE) ─
+def foe_body_mask(img):
+    """Boolean HxW mask of bright yellow-green goblin-BODY pixels (g > BODY_G_FLOOR, g within BODY_GR_SLACK of
+    r, b at least BODY_GB_MARGIN below g). Pure (Image/array in, mask out). This is the foe-BODY detector: the
+    warm brazier-lit stone reads r-dominant (excluded), the walk-behind foe silhouette + ground decal read
+    pure red (excluded) — only the lit goblin body matches, so its vertical EXTENT is the figure-present
+    signal (a fragment token is red-dominant with the body mesh absent → near-zero body extent)."""
+    import numpy as np  # noqa: PLC0415
+    a = np.asarray(img, dtype=int)
+    r, g, b = a[..., 0], a[..., 1], a[..., 2]
+    return (g > BODY_G_FLOOR) & (g >= r - BODY_GR_SLACK) & (g > b + BODY_GB_MARGIN)
+
+
+def figure_body_extent_frac(img, region: tuple) -> float:
+    """Fraction of ROWS in `region` (x0,y0,x1,y1) that fall within the foe-body span — the vertical extent of
+    the rendered body figure as a fraction of the window height. A full figure fills most of its projected box
+    (~0.5-0.8); a fragment (body renderers never initialized) fills almost none (~0.1). Pure (array in, float
+    out). The region MUST be bounded to a token's projected figure so unrelated warm props never contribute."""
+    import numpy as np  # noqa: PLC0415
+    m = foe_body_mask(img)
+    h, w = m.shape[0], m.shape[1]
+    x0, y0, x1, y1 = region
+    x0, y0 = max(0, int(x0)), max(0, int(min(y0, y1)))
+    x1, y1 = min(w, int(x1)), min(h, int(max(y0, y1)))
+    if y1 - y0 < 2 or x1 - x0 < 1:
+        return 0.0
+    sub = m[y0:y1, x0:x1]
+    rows = np.where(sub.any(axis=1))[0]
+    if len(rows) == 0:
+        return 0.0
+    return float(rows.max() - rows.min() + 1) / float(y1 - y0)
+
+
+def cast_figure_verdict(rec: dict) -> str:
+    """PURE tri-state for the #1666 cast-full-figure assert. ERROR (harness — never a certification verdict)
+    when the frame could not be captured or no FOE token was on the surface to measure. Otherwise RED when ANY
+    foe's rendered body extent falls below the floor (a fragment-rendered token — the g5 crypt residual), GREEN
+    when every foe renders a full body figure."""
+    if rec.get("harness_errors"):
+        return "ERROR"
+    if not rec.get("captured"):
+        return "ERROR"
+    foes = rec.get("foes") or []
+    if not foes or any(f.get("extent") is None for f in foes):
+        return "ERROR"      # no foe / an unmeasured foe — no evidence, never a vacuous GREEN
+    floor = rec.get("min_extent", FIGURE_MIN_EXTENT)
+    return "RED" if any(f["extent"] < floor for f in foes) else "GREEN"
 
 
 # ── Primitive B helpers: spawn/arrival cells reachable, prop-clear, coherence-open (PURE) ───────────
@@ -648,6 +715,74 @@ def _spawn_row(ctx: dict) -> dict:
             "harness_errors": res.get("harness_errors", [])}
 
 
+def probe_cast_figures(ctx: dict) -> dict:
+    """PRIMITIVE C (#1666) — capture ONE /shot of the live board and prove every FOE token renders a full BODY
+    figure, not a fragment. For each foe token: project its cell's feet + head (world y = FIGURE_FEET/HEAD) to
+    window px, bound a box to that projected figure, and measure the vertical extent of foe-body pixels in it
+    (figure_body_extent_frac). A fragment-rendered token (only an accessory mesh drew; the body renderers never
+    initialized — the g5 crypt first-spawn residual) measures far below FIGURE_MIN_EXTENT and turns this RED.
+    Deterministic, no LLM / no image model — red-first, calibrated against crypt_g5.png (see the constants)."""
+    engine, qa, out = ctx["engine"], ctx["qa"], ctx["out"]
+    rec = {"harness_errors": [], "captured": False, "min_extent": FIGURE_MIN_EXTENT, "foes": []}
+    try:
+        surf = W._get(f"{engine}/combat-surface")
+    except Exception as e:  # noqa: BLE001
+        rec["harness_errors"].append(f"surface: {e}")
+        return rec
+    room = _room_of(surf) or ctx.get("room") or ""
+    rec["room"] = room
+    mask = W.walkmask_from_surface(surf)
+    cols, rows = mask["cols"], mask["rows"]
+    foes = [t for t in _actor_tokens(surf) if t["team"] == "foe"]
+    if not foes:
+        rec["harness_errors"].append("no foe token on the surface to measure")
+        return rec
+    try:
+        health = W._get(f"{qa}/health")
+        w, h = int(health["screenW"]), int(health["screenH"])
+    except Exception as e:  # noqa: BLE001
+        rec["harness_errors"].append(f"health: {e}")
+        return rec
+    try:
+        boxes = _boxes_for_room(room)
+        ortho = float((boxes or {}).get("ortho") or W._room_ortho(room))
+    except Exception:  # noqa: BLE001
+        ortho = 11.0
+    rec["window"] = [w, h]
+    cpx = W.cell_px(ortho, h)
+    shot = W._capture_shot(qa, out, "cast_figures")
+    rec["frames"] = {"open": shot}
+    if not shot:
+        rec["harness_errors"].append("shot capture failed (frame missing)")
+        return rec
+    from PIL import Image  # noqa: PLC0415
+    im = Image.open(shot).convert("RGB")
+    half = max(BODY_HALF_WIDTH_PX, int(round(0.55 * cpx)))
+    for tok in foes:
+        wx, wz = cell_to_world(tok["cell"], cols, rows)
+        feet_px = W.world_to_window_px(wx, FIGURE_FEET_WORLD_Y, wz, ortho, w, h)
+        head_px = W.world_to_window_px(wx, FIGURE_HEAD_WORLD_Y, wz, ortho, w, h)
+        cx_px = (feet_px[0] + head_px[0]) / 2.0
+        region = (cx_px - half, head_px[1], cx_px + half, feet_px[1])
+        extent = round(figure_body_extent_frac(im, region), 4)
+        rec["foes"].append({"name": tok["name"], "cell": list(tok["cell"]),
+                            "extent": extent, "region": [round(v) for v in region]})
+    rec["captured"] = True
+    return rec
+
+
+def _cast_figure_row(ctx: dict) -> dict:
+    rec = probe_cast_figures(ctx)
+    verdict = cast_figure_verdict(rec)
+    detail = None
+    if verdict in ("GREEN", "RED"):
+        worst = min((f["extent"] for f in rec.get("foes", []) if f.get("extent") is not None), default=None)
+        detail = (f"n_foes={len(rec.get('foes', []))} worst_extent={worst} "
+                  f"min={rec.get('min_extent')} room={rec.get('room')}")
+    return {"verdict": verdict, "detail": detail, "record": rec,
+            "harness_errors": rec.get("harness_errors", [])}
+
+
 # ── assertion registry ─────────────────────────────────────────────────────────────────────────────
 @dataclass
 class Assertion:
@@ -675,6 +810,13 @@ REGISTRY: list = [
             "silhouette tint (#1677 ghost-in-the-open: the ZTest-Greater clone tinting the actor against "
             "its OWN body depth). A ghost-cyan overlay in the open turns this RED — the occluder-scoping "
             "stencil fix keeps it GREEN."),
+    Assertion(
+        id="cast_renders_full_figure", scope="live_party", needs=("engine", "player"),
+        probe=_cast_figure_row,
+        doc="Primitive C (#1666) — every FOE token renders a full BODY figure, not a fragment. A "
+            "fragment-rendered token (body renderers never initialized; only an accessory mesh drew — the "
+            "g5 crypt first-spawn residual) whose projected-figure body extent falls below the floor turns "
+            "this RED; the bundle/skinning pre-warm + the render-coverage rebind guard keep it GREEN."),
 ]
 
 
