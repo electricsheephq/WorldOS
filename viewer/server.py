@@ -3646,8 +3646,10 @@ def _scene_stage(snapshot: dict, combat_active: bool) -> dict:
 
     Rest tokens = the party (``snapshot.party``) on the ``party`` spawn cells, plus present NPCs
     (characters whose ``location_id`` == the current location and whose kind is npc/companion, and
-    who are NOT already party) on the ``npcs`` spawn cells. Cells fall back to ``zone_anchors``
-    values, then the party cells, when a bucket is short.
+    who are NOT already party) on the ``npcs`` spawn cells, plus resident LIVE monsters (#1639 —
+    kind ``monster`` at the current location with hp>0) on the ``foes`` spawn cells, so the walked
+    world shows its cast (the quest giver AND the boss), not just the party. Cells fall back to
+    ``zone_anchors`` values, then the party cells, when a bucket is short.
 
     NO DOUBLE-PAINT: during active combat the authoritative tokens live in the top-level
     ``tokens`` (the tactical board); ``stage.tokens`` is therefore EMPTY in combat mode so a
@@ -3696,6 +3698,11 @@ def _scene_stage(snapshot: dict, combat_active: bool) -> dict:
 
     party_cells = [c for c in _cells(spawns.get("party")) if c not in blocked]
     npc_cells = [c for c in _cells(spawns.get("npcs")) if c not in blocked]
+    # #1639: live monsters resident at this location get placed too (the walked world must show its
+    # cast — the boss on his throne, not just the party). Foes fall back to the `foes` spawn bucket
+    # the generators author (scene_grid.py) when they carry no seeded stage_cell; drop any that sit
+    # on a blocking prop/wall, same discipline as the party/npc buckets.
+    foe_cells = [c for c in _cells(spawns.get("foes")) if c not in blocked]
     # Deterministic fallback pool: the zone anchors (id-sorted) then the party cells, so a bucket
     # that ran short still lands its actors on a walkable in-world spot rather than off-board. Drop
     # any anchor that lands on a blocking prop/wall — a fallback actor must not stand on a column.
@@ -3728,6 +3735,23 @@ def _scene_stage(snapshot: dict, combat_active: bool) -> dict:
         # a DEAD or DOWNED (0 HP, not yet dead) character never stands in the rest scene — a
         # corpse or an unconscious companion casually standing at the hearth breaks the inhabited
         # read this projection exists to create (and combat handles the fallen).
+        and not _is_dead_or_downed(ch)
+    )
+
+    # #1639 CAST PRESENCE: live monsters (kind=monster) resident at the current location, ALIVE
+    # (hp>0 — the SAME _is_dead_or_downed predicate the party/NPC branches use, so a cleared/dead
+    # foe never re-stands in the walked scene; combat handles the fallen). id-sorted for a
+    # deterministic order, and excludes anyone already in `party` (a charmed/allied monster the DM
+    # folded into the party keeps its party seat). Monsters surfaced ONLY in combat before this —
+    # so the walked world rendered empty of its cast (the Goblin Boss in the throne hall). ADDITIVE:
+    # a location with no resident live monster projects EXACTLY as before.
+    present_monsters = sorted(
+        cid
+        for cid, ch in chars.items()
+        if isinstance(cid, str) and isinstance(ch, dict)
+        and cid not in party_set
+        and _text(ch.get("kind")).lower() == "monster"
+        and _text(ch.get("location_id")) == loc_id and loc_id
         and not _is_dead_or_downed(ch)
     )
 
@@ -3783,6 +3807,14 @@ def _scene_stage(snapshot: dict, combat_active: bool) -> dict:
         fb += 1
     for j, cid in enumerate(present_npcs):
         _emit(cid, npc_cells, j, fb, "npc")
+        fb += 1
+    # #1639: emit resident live monsters after the party + NPCs. rest_role "foe" (team "foe" via
+    # _combat_team) — distinct from "npc" so the client's click-to-TALK path (rest_role == "npc")
+    # never opens a parley on a monster; a foe token renders in the walked scene but is not a talk
+    # target. Placement: the engine-authoritative stage_cell when set (walk-in / seeded), else the
+    # `foes` spawn bucket, then the shared anchor/party fallback (all inside _emit).
+    for k, cid in enumerate(present_monsters):
+        _emit(cid, foe_cells, k, fb, "foe")
         fb += 1
 
     return {"mode": mode, "tokens": tokens}
