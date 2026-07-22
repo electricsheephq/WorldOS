@@ -420,7 +420,7 @@ quest_completed — with ZERO user-truth defects. Demo completion proves the sys
 
 **Proven by four gates (checkable, never narrative):**
 - G1 — the certification gates that EXIST run green against the INSTALLED build, verified by
-  build identity: the app self-reports its build stamp (/debug), and the gate evidence records the
+  build identity: the app self-reports its build stamp via the /app-status contract (WorldOS-GUI-RUNBOOK §app-status; viewer/server.py), and the gate evidence records the
   SAME stamp — a mismatch is a G1 FAIL (the certified-build ≠ installed-build class, #1651).
   Today that means walk_static (CI) + the paint-coherence gate + the A-T/A-G evals run against the
   installed pair; G1 UPGRADES to the full `player_cert` suite when §9.2 lands (a proof clause may
