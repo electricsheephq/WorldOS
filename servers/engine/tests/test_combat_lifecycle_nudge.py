@@ -182,3 +182,19 @@ def test_next_turn_streak_ticks_through_the_pc_skip_path(_state):
     assert view["pending_resolution"] is True
     reloaded = store.load_campaign(c.id)
     assert reloaded.combat.no_hostile_turns == 1
+
+
+def test_killing_blow_return_carries_the_nudge(_state):
+    # codex #1654 round: attack() returns its own dict (no combat view) — the closure advisory
+    # must ride the killing blow's OWN return, not just the next view read.
+    living = _monster(name="Last Goblin", dead=False)
+    c = _campaign_in_combat(living, _pc(), no_hostile_turns=0, turn_index=1)
+    living_id = c.combat.order[0].character_id
+    ch = c.characters[living_id]
+    ch.current_hp = 1
+    pc_id = c.combat.order[1].character_id
+    store.save_campaign(c)
+    result = server.attack(c.id, attacker_id=pc_id, target_id=living_id,
+                           attack_bonus=100, damage_dice="1d1+100", damage_type="slashing")
+    assert result.get("pending_resolution") is True
+    assert result.get("living_hostiles") == 0

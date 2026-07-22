@@ -501,6 +501,33 @@ def _living_hostiles(c: Campaign) -> list[Character]:
     return out
 
 
+def _apply_resolution_nudge(c: Campaign, out: dict) -> None:
+    """ADDITIVE pending-resolution advisory (#1645): attached by _combat_view AND by the killing
+    tools' own returns (attack), so the DM sees the nudge at the exact moment the last hostile
+    drops — not only on the next view read. Every key is ABSENT while a hostile lives."""
+    # LOUD, DM-visible pending_resolution flag telling the DM to close it (end_combat resets
+    # initiative/HP and, in xp mode, auto-awards the defeated foes' XP). Escalates to URGENT once
+    # the no-hostile state has persisted across _COMBAT_RESOLUTION_NUDGE_TURNS consecutive
+    # next_turn advances (combat.no_hostile_turns). ADDITIVE: every key here is ABSENT while a
+    # hostile still lives (or combat is inactive), so an ongoing fight's view is byte-for-byte
+    # unchanged; the nudge clears wholesale when end_combat replaces c.combat with a fresh Combat().
+    if c.combat.active and not _living_hostiles(c):
+        streak = c.combat.no_hostile_turns
+        out["pending_resolution"] = True
+        out["living_hostiles"] = 0
+        if streak:
+            out["pending_resolution_turns"] = streak
+        out["resolution_nudge"] = (
+            ("URGENT: " if streak >= _COMBAT_RESOLUTION_NUDGE_TURNS else "")
+            + "no living hostile remains — the fight is over in fact but combat still reads "
+            "active. Call end_combat(resolution='...') to close it: it resets initiative/HP and, "
+            "in xp mode, auto-awards the defeated foes' XP. The engine will NOT end the fight for "
+            "you (you are the sole resolver) — a fight left active leaks into the next beat as a "
+            "phantom encounter."
+        )
+
+
+
 def _combat_view(c: Campaign) -> dict:
     order = []
     for cb in c.combat.order:
@@ -542,26 +569,7 @@ def _combat_view(c: Campaign) -> dict:
     # #1645 COMBAT-CLOSURE NUDGE (advisory ONLY; the engine NEVER auto-ends — the DM owns the
     # end_combat predicate, questgen.py:7). When the fight is active but NO living hostile remains
     # in the order, the encounter is over in FACT yet the engine still reads active — surface a
-    # LOUD, DM-visible pending_resolution flag telling the DM to close it (end_combat resets
-    # initiative/HP and, in xp mode, auto-awards the defeated foes' XP). Escalates to URGENT once
-    # the no-hostile state has persisted across _COMBAT_RESOLUTION_NUDGE_TURNS consecutive
-    # next_turn advances (combat.no_hostile_turns). ADDITIVE: every key here is ABSENT while a
-    # hostile still lives (or combat is inactive), so an ongoing fight's view is byte-for-byte
-    # unchanged; the nudge clears wholesale when end_combat replaces c.combat with a fresh Combat().
-    if c.combat.active and not _living_hostiles(c):
-        streak = c.combat.no_hostile_turns
-        view["pending_resolution"] = True
-        view["living_hostiles"] = 0
-        if streak:
-            view["pending_resolution_turns"] = streak
-        view["resolution_nudge"] = (
-            ("URGENT: " if streak >= _COMBAT_RESOLUTION_NUDGE_TURNS else "")
-            + "no living hostile remains — the fight is over in fact but combat still reads "
-            "active. Call end_combat(resolution='...') to close it: it resets initiative/HP and, "
-            "in xp mode, auto-awards the defeated foes' XP. The engine will NOT end the fight for "
-            "you (you are the sole resolver) — a fight left active leaks into the next beat as a "
-            "phantom encounter."
-        )
+    _apply_resolution_nudge(c, view)
     return view
 
 
@@ -7051,7 +7059,11 @@ def attack(
         # Persist regardless of hit/miss: a miss still consumed the action/reaction
         # economy above, and that bookkeeping must survive (sole-writer discipline).
         save_campaign(c)
-        return result
+        # #1645 codex round: the KILLING BLOW itself must surface the closure nudge — attack() returns
+    # its own result dict (no _combat_view), so without this the DM only saw the nudge on the NEXT
+    # combat-tool read.
+    _apply_resolution_nudge(c, result)
+    return result
 
 
 @mcp.tool()
