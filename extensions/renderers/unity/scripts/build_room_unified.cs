@@ -188,8 +188,17 @@ if(props!=null) foreach(var po in props){ var p=po as System.Collections.Generic
       // use the one-bounding-box merge below (it would collapse the whole perimeter into one slab).
       foreach(var co2 in cells){ var cc2=co2 as System.Collections.Generic.List<object>; if(cc2==null||cc2.Count<2) continue;
         int c2=System.Convert.ToInt32(cc2[0]); int r2=System.Convert.ToInt32(cc2[1]); var w2=cellToWorld(c2,r2);
-        float th=7.0f+((c2*7+r2*13)%5)*0.7f;
         float g=0.24f+((c2*3+r2*5)%3)*0.02f;
+        // CUTAWAY (same rule as interior front walls): CAMERA-SIDE treeline (south row + west col
+        // under the 30/45 contract rig) renders as LOW BRUSH so the clearing floor + the campfire
+        // stay visible in the plate — full trees there hid the playfield (and would occlude actors
+        // at runtime). Back/east treeline keeps full trunk+canopy trees.
+        bool frontSide=(r2==rows-1)||(c2==0);
+        if(frontSide){
+          cyl(pid+"_b"+c2+"_"+r2,"treeline",new Vector3(w2.x,0f,w2.z),0.85f,0.75f,0.9f,new Color(0.20f,g,0.17f));
+          continue;
+        }
+        float th=7.0f+((c2*7+r2*13)%5)*0.7f;
         cyl(pid+"_t"+c2+"_"+r2,"treeline",new Vector3(w2.x,0f,w2.z),0.55f,0.55f,th*0.45f,new Color(0.30f,0.26f,0.20f));
         cyl(pid+"_c"+c2+"_"+r2,"treeline",new Vector3(w2.x,th*0.35f,w2.z),1.05f,0.85f,th*0.65f,new Color(0.19f,g,0.17f));
       }
