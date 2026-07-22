@@ -1488,7 +1488,7 @@ public class CombatSurfaceClient : MonoBehaviour
             if (smr != null)
             {
                 if (smr.sharedMesh == null) continue;
-                var host = new GameObject(r.gameObject.name + "_sil");
+                var host = new GameObject(r.gameObject.name + "__silclone");
                 host.transform.SetParent(r.transform, false);   // identity local; skinning is driven by the shared bones
                 var s2 = host.AddComponent<SkinnedMeshRenderer>();
                 s2.sharedMesh = smr.sharedMesh;
@@ -1503,7 +1503,7 @@ public class CombatSurfaceClient : MonoBehaviour
             {
                 var mf = r.GetComponent<MeshFilter>();
                 if (mf == null || mf.sharedMesh == null) continue;
-                var host = new GameObject(r.gameObject.name + "_sil");
+                var host = new GameObject(r.gameObject.name + "__silclone");
                 host.transform.SetParent(r.transform, false);   // identity local -> same world pose as the source mesh
                 host.AddComponent<MeshFilter>().sharedMesh = mf.sharedMesh;
                 var mr2 = host.AddComponent<MeshRenderer>();
@@ -1543,10 +1543,11 @@ public class CombatSurfaceClient : MonoBehaviour
         Bounds b = new Bounds(go.transform.position, Vector3.zero); bool a = false;
         foreach (var r in rends)
         {
-            // Skip the #1572 "_sil" silhouette clones: they share the source mesh/bounds (encapsulation is a
+            // Skip the #1572 "__silclone" silhouette clones: they share the source mesh/bounds (encapsulation
             // no-op) but WorldBounds would still BakeMesh each one, doubling the per-actor bake+GC on every
             // GroundSnap/GlideTo/room-swap settle. Mirrors AttachSilhouette's own null/particle skip.
-            if (r == null || r.gameObject.name.EndsWith("_sil")) continue;
+            if (r == null || r.gameObject.name.EndsWith("__silclone")) continue;  // distinctive sentinel:
+            // AttachSilhouette names its clones "<src>__silclone" — far less collision-prone than a bare "_sil"
             var rb = WorldBounds(r); if (!a) { b = rb; a = true; } else b.Encapsulate(rb);
         }
         return b;
