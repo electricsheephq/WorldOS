@@ -1,4 +1,4 @@
-# Paint-coverage coherence — 5 owner-room measurement (deterministic pass)
+# Paint-coverage coherence — 5 owner-room DETERMINISTIC MEASUREMENT (gate FAILS pending VQA adjudication)
 
 Method: geometry-truth walkable cells projected to plate pixels (contract dimetric rig at the room's
 pinned cameraPin ortho); per-cell edge-dominant coverage score vs a robust majority-floor baseline.

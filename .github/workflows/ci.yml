@@ -206,6 +206,13 @@ jobs:
         # greybox from the manifest geometry); single-process. Reliable for hard-silhouette architectural
         # props — the crypt reality anchor here is the validated red-first-against-reality case.
         run: python -m pytest qa/test_grid_paint_coherence.py -q -p no:xdist
+      - name: Paint-coverage coherence instrument (#1647 — per-cell open-vs-covered gate; deterministic core + VQA stub)
+        # The COMPLEMENT of the grid<->paint gate above: check_grid_paint_coherence asks "does a prop's paint
+        # sit on its own footprint?"; paint_coherence asks "is a WALKABLE cell visually open floor, or under a
+        # tall prop's painted silhouette?" (the crypt spawn-in-sarcophagus / shop-shelf defects). Deterministic
+        # per-cell classifier + tri-state gate + the VQA adjudicator exercised with an injected stub (no LLM /
+        # box / player). Shares this lane's Pillow+numpy stack; single-process.
+        run: python -m pytest qa/test_paint_coherence.py -q -p no:xdist
       - name: Room-manifest DERIVATION from greybox geometry (regeneratable + loop-closed on forest_road)
         # Owner playtest #5: manifests are DERIVED from greybox geometry (single source of truth for
         # footprint + occlusion + walkable) via tools/derive_room_manifest.py. Pins the derivation math,

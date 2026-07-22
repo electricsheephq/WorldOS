@@ -239,6 +239,14 @@ def classify_cells(model: RoomModel, ortho: float, plate_im: Image.Image, *,
             stats_by_cell[(c, r)] = s
     if not stats_by_cell:
         raise HarnessError(f"{model.room}: no walkable cell projected on-image — bad ortho/geometry pin")
+    # A hard-gate cell (spawn / door-arrival) that projects off-image would be silently dropped from the
+    # measured set and could never fail the spawn/arrival check — a clipped room would read cleaner than it
+    # is. Tri-state: an unmeasurable hard-gate cell is a HARNESS error, not a (missing) pass.
+    hard_gate = (set(model.spawns) | model.doors) & set(model.walkable)
+    off_frame = sorted(cell for cell in hard_gate if cell not in stats_by_cell)
+    if off_frame:
+        raise HarnessError(f"{model.room}: spawn/arrival cell(s) projected off-image "
+                           f"(bad ortho/geometry pin): {off_frame}")
 
     all_stats = list(stats_by_cell.values())
     b = _median_baseline(all_stats)
@@ -316,6 +324,14 @@ def adjudicate_ambiguous(results: dict, plate_im: Image.Image, model: RoomModel,
     label_map = build_lattice_overlay(plate_im, model, ortho, ambiguous, overlay_path)
     questions = _vqa_questions(label_map)
     flags = scorer(str(overlay_path), questions)          # {cell_<lab>_covered: bool}
+    # The scorer MUST answer exactly the requested flags (mirrors journey_eval._shell_scorer): a missing
+    # answer is a HARNESS error, never a silent default to "open" — an unadjudicated ambiguous spawn/arrival
+    # cell must not read clean just because the scorer dropped its flag.
+    want = {q["flag"] for q in questions}
+    absent = sorted(want - set(flags))
+    if absent:
+        raise HarnessError(f"{model.room}: VQA scorer did not answer {absent} (got {sorted(flags)}) — "
+                           f"a missing flag must never read as open")
     for lab, cell in label_map.items():
         covered = bool(flags.get(f"cell_{lab}_covered", False))
         cr = results[cell]
@@ -354,7 +370,8 @@ class CoherenceReport:
 
 
 def build_report(model: RoomModel, results: dict, baseline_meta: dict, ortho: float, *,
-                 used_vqa: bool, fail_on_walkable: bool = False) -> CoherenceReport:
+                 used_vqa: bool, fail_on_walkable: bool = False,
+                 deterministic_ambiguous: Optional[list] = None) -> CoherenceReport:
     """Assemble the per-room report + gate verdict. HARD fail: any spawn or door-arrival cell not OPEN
     (you cannot spawn/arrive inside painted furniture). Walkable-covered cells are listed; they fail the
     gate only under --fail-on-walkable (the block-cell-vs-relock-plate fix is the orchestrator's call)."""
@@ -380,8 +397,14 @@ def build_report(model: RoomModel, results: dict, baseline_meta: dict, ortho: fl
     if fail_on_walkable and walkable_covered:
         reasons.append(f"{len(walkable_covered)} walkable cell(s) under painted furniture (strict)")
     passed = not spawn_covered and not arrival_covered and not (fail_on_walkable and walkable_covered)
+    # `ambiguous_cells` is the POST-adjudication residue (empty after a VQA run, which resolves every
+    # ambiguous cell). `deterministic_ambiguous_cells` preserves the PRE-VQA count — how large the
+    # ambiguous band was before the LLM adjudicated it — so a VQA-gated report stays as auditable as a
+    # deterministic one. Defaults to the deterministic residue when no VQA pass ran.
+    det_ambiguous = deterministic_ambiguous if deterministic_ambiguous is not None else ambiguous
     method = {"deterministic": True, "vqa": used_vqa, "ortho": ortho,
               "walkable_cells": len(results), "ambiguous_cells": ambiguous,
+              "deterministic_ambiguous_cells": det_ambiguous,
               "thresholds": {"open_t": OPEN_T, "covered_t": COVERED_T, "quad_inset": QUAD_INSET,
                              "weights": {"color": W_COLOR, "edge": W_EDGE, "var": W_VAR}},
               "baseline": baseline_meta}
@@ -394,7 +417,11 @@ def run_room(plate_path: str | Path, geo: dict, ortho: float, *, vqa: bool = Fal
              fail_on_walkable: bool = False) -> CoherenceReport:
     """Classify one room's plate FILE and gate it. Thin wrapper over run_room_image that opens the plate.
     Raises HarnessError for any measurement failure (never returns a verdict on a broken harness)."""
-    return run_room_image(Image.open(plate_path), geo, ortho, vqa=vqa, scorer=scorer,
+    try:                                               # a missing/unreadable plate path is a HARNESS error,
+        plate_im = Image.open(plate_path)              # not a coherence verdict — tri-state: exit 2, never 1
+    except (OSError, ValueError) as exc:               # FileNotFoundError / UnidentifiedImageError / decode
+        raise HarnessError(f"cannot open plate {plate_path}: {exc}") from exc
+    return run_room_image(plate_im, geo, ortho, vqa=vqa, scorer=scorer,
                           overlay_dir=overlay_dir, fail_on_walkable=fail_on_walkable,
                           plate_name=Path(plate_path).name)
 
@@ -412,6 +439,9 @@ def run_room_image(plate_im: Image.Image, geo: dict, ortho: float, *, vqa: bool 
     if not model.walkable:
         raise HarnessError(f"{model.room}: geometry has no walkable cells")
     results, meta = classify_cells(model, ortho, plate_im, open_t=open_t, covered_t=covered_t)
+    # Snapshot the ambiguous band BEFORE VQA adjudication mutates every ambiguous cell to open/covered, so
+    # the report can record how large the deterministic band was (lost otherwise on the VQA path).
+    det_ambiguous = sorted([c, r] for (c, r), cr in results.items() if cr.verdict == "ambiguous")
     used_vqa = False
     if vqa:
         overlay = Path(overlay_dir or _QA_DIR) / f"vqa_overlay_{_slug(model.room)}.png"
@@ -423,7 +453,7 @@ def run_room_image(plate_im: Image.Image, geo: dict, ortho: float, *, vqa: bool 
             raise HarnessError(f"{model.room}: VQA adjudication failed: {exc}") from exc
         used_vqa = n > 0
     return build_report(model, results, meta, ortho, used_vqa=used_vqa,
-                        fail_on_walkable=fail_on_walkable)
+                        fail_on_walkable=fail_on_walkable, deterministic_ambiguous=det_ambiguous)
 
 
 def _slug(name: str) -> str:
@@ -448,26 +478,32 @@ def gate_owner_rooms(*, vqa: bool = False, scorer: Optional[VqaScorer] = None,
     whose plate/geometry/ortho is missing is reported (never silently skipped); a HarnessError on one room
     is captured as that room's 'error' and does not read as a pass or a fail for the batch."""
     registry = _load_registry()
-    report = {"passed": True, "rooms": []}
+    # Tri-state: `passed` tracks MEASURED coherence (a room that ran and failed the gate); `errored` tracks
+    # INDETERMINATE outcomes (a missing artifact or a HarnessError) that must never read as pass OR fail —
+    # `main` surfaces `errored` as exit 2, so a batch that couldn't measure a room can't go green (missing)
+    # or be mistaken for an incoherent verdict (harness failure).
+    report = {"passed": True, "errored": False, "rooms": []}
     for reg_key, geo_stem in _OWNER_ROOMS.items():
         entry = registry.get(reg_key)
         geo_path = _GEO_DIR / f"{geo_stem}_geometry.json"
         if not entry or not geo_path.is_file():
             report["rooms"].append({"room": reg_key, "status": "missing",
                                     "have_entry": bool(entry), "geometry": geo_path.name})
+            report["errored"] = True
             continue
         plate_path = _PLATES_DIR / Path(entry["plate"]).name
         ortho = float((entry.get("cameraPin") or {}).get("ortho", 0) or 0)
         if not plate_path.is_file() or ortho <= 0:
             report["rooms"].append({"room": reg_key, "status": "missing", "plate": str(plate_path),
                                     "ortho": ortho})
+            report["errored"] = True
             continue
         try:
             res = run_room(plate_path, json.loads(geo_path.read_text()), ortho, vqa=vqa, scorer=scorer,
                            overlay_dir=overlay_dir, fail_on_walkable=fail_on_walkable)
         except HarnessError as exc:
             report["rooms"].append({"room": reg_key, "status": "error", "error": str(exc)})
-            report["passed"] = False
+            report["errored"] = True
             continue
         report["rooms"].append({"registry_key": reg_key, "plate": plate_path.name, **res.as_dict()})
         if not res.passed:
@@ -519,6 +555,10 @@ def main(argv=None) -> int:
         Path(args.out).write_text(payload, encoding="utf-8")
     else:
         print(payload)
+    if report.get("errored"):                          # missing artifact / HarnessError → INDETERMINATE
+        print("[paint_coherence] ERROR: harness failure or missing owner room(s) in gate-rooms — "
+              "batch is indeterminate, not a coherence verdict", file=sys.stderr)
+        return 2
     return 0 if report["passed"] else 1
 
 

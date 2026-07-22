@@ -11,8 +11,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
-from PIL import Image, ImageDraw
+from PIL import Image
 
 import paint_coherence as P
 from greybox_render_headless import _fit_ortho_size, PX_W, PX_H
@@ -34,22 +35,24 @@ def _synthetic_geometry(cols: int = 9, rows: int = 9) -> dict:
 
 def _paint_plate(geo: dict, ortho: float, covered_cells) -> Image.Image:
     """A contract-frame plate: smooth mid-grey floor everywhere, a fine high-contrast checker (many edges)
-    over each `covered_cells` quad so those cells read as furniture-covered, everything else as open floor."""
-    im = Image.new("RGB", (PX_W, PX_H), (118, 112, 104))
-    dr = ImageDraw.Draw(im)
+    over each `covered_cells` quad so those cells read as furniture-covered, everything else as open floor.
+    Vectorized with a numpy checker mask (identical pixel output to the per-pixel loop) so painting a full
+    cast/door set doesn't issue tens of thousands of PIL point() calls per plate on the qa/CI image lane."""
+    arr = np.full((PX_H, PX_W, 3), (118, 112, 104), dtype=np.uint8)
     cols, rows = geo["cols"], geo["rows"]
     for (c, r) in covered_cells:
         quad = P.cell_quad_px(c, r, cols, rows, ortho, inset=0.0)
         xs = [p[0] for p in quad]
         ys = [p[1] for p in quad]
         x0, y0, x1, y1 = int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))
-        for yy in range(y0, y1):
-            for xx in range(x0, x1):
-                if ((xx // 4) + (yy // 4)) % 2 == 0:
-                    dr.point((xx, yy), fill=(20, 18, 16))
-                else:
-                    dr.point((xx, yy), fill=(235, 228, 210))
-    return im
+        if x1 <= x0 or y1 <= y0:
+            continue
+        yy, xx = np.mgrid[y0:y1, x0:x1]                 # GLOBAL pixel coords (the checker keys off them)
+        dark = ((xx // 4) + (yy // 4)) % 2 == 0
+        block = arr[y0:y1, x0:x1]
+        block[dark] = (20, 18, 16)
+        block[~dark] = (235, 228, 210)
+    return Image.fromarray(arr, "RGB")
 
 
 @pytest.fixture
@@ -172,6 +175,40 @@ def test_vqa_scorer_crash_is_harness_error_not_verdict(geo, ortho, tmp_path):
     # covered_t high enough that the checker cell lands in the ambiguous band ⇒ the scorer IS invoked.
     with pytest.raises(P.HarnessError):
         P.run_room_image(im, geo, ortho, vqa=True, scorer=boom, covered_t=99.0, overlay_dir=tmp_path)
+
+
+def test_missing_plate_path_is_harness_error(tmp_path, geo, ortho):
+    # #1648 review (unreadable/missing plate path): Image.open must be wrapped as a HarnessError, not a
+    # bare traceback the CLI reads as an incoherent (exit 1) verdict.
+    with pytest.raises(P.HarnessError):
+        P.run_room(tmp_path / "does_not_exist.png", geo, ortho)
+
+
+def test_incomplete_vqa_answer_is_harness_error(geo, ortho, tmp_path):
+    # #1648 review: a scorer that drops a requested flag must ERROR (never silently default the missing
+    # cell to "open"), mirroring journey_eval._shell_scorer.
+    m = P.derive_room(geo)
+    im = _paint_plate(geo, ortho, covered_cells=[])
+    results, _ = P.classify_cells(m, ortho, im)
+    results[(6, 6)].verdict = "ambiguous"
+
+    def drops_flag(_img, _questions):
+        return {}                                       # answers nothing
+    with pytest.raises(P.HarnessError):
+        P.adjudicate_ambiguous(results, im, m, ortho, drops_flag, tmp_path / "ov.png")
+
+
+def test_deterministic_ambiguous_count_survives_vqa(geo, ortho, tmp_path):
+    # #1648 review: the VQA path resolves every ambiguous cell before build_report, so ambiguous_cells is
+    # [] afterward — deterministic_ambiguous_cells must preserve the pre-adjudication band for auditability.
+    im = _paint_plate(geo, ortho, covered_cells=[(4, 4)])
+
+    def all_open(_img, questions):
+        return {q["flag"]: False for q in questions}
+    rep = P.run_room_image(im, geo, ortho, vqa=True, scorer=all_open, covered_t=99.0, overlay_dir=tmp_path)
+    assert rep.method["vqa"] is True
+    assert rep.method["ambiguous_cells"] == []          # every ambiguous cell resolved by VQA
+    assert rep.method["deterministic_ambiguous_cells"], "the pre-VQA ambiguous band must be preserved"
 
 
 # ── VQA adjudication (injected stub scorer; ONE batched call) ────────────────────────────────────────
