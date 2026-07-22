@@ -1,0 +1,63 @@
+{
+ "class": "dwing_room_2",
+ "control_asset": "asset_8qQXBoT2YvtvK9kmiLunTtpp",
+ "draws": [
+  {
+   "seed": 12345,
+   "job": "job_sPc7eZ9KPWcjJW9LfxexDFJz",
+   "asset": "asset_hNLhABJbkMDTfh6K6km5qCv5"
+  },
+  {
+   "seed": 12346,
+   "job": "job_fPsceNjeYihvXce1GMvvETgS",
+   "asset": "asset_y4HQaQLYafmwj587e7MzNsY7"
+  },
+  {
+   "seed": 12347,
+   "job": "job_M9LkGPYnfESiRPVoMopGdRtb",
+   "asset": "asset_pTLDUVQ9ixRuWfR3pNDomWWK"
+  }
+ ],
+ "selection": [
+  {
+   "seed": 12346,
+   "recall": 0.9613,
+   "path": "qa/evidence/paint-room/dwing_room_2_b2/dwing_room_2_flux_s12346.png"
+  },
+  {
+   "seed": 12345,
+   "recall": 0.878,
+   "path": "qa/evidence/paint-room/dwing_room_2_b2/dwing_room_2_flux_s12345.png"
+  },
+  {
+   "seed": 12347,
+   "recall": 0.814,
+   "path": "qa/evidence/paint-room/dwing_room_2_b2/dwing_room_2_flux_s12347.png"
+  }
+ ],
+ "base": {
+  "seed": 12346,
+  "asset": "asset_y4HQaQLYafmwj587e7MzNsY7",
+  "path": "qa/evidence/paint-room/dwing_room_2_b2/dwing_room_2_flux_s12346.png"
+ },
+ "styled": {
+  "job": "job_4xW7zDDHoZqShPt3GrTbgGPE",
+  "asset": "asset_wVFYaUxns4QRAHwF8zPqGTdW",
+  "path": "qa/evidence/paint-room/dwing_room_2_b2/dwing_room_2_final_1344.png",
+  "recall_vs_depth": 0.6648,
+  "registration_warning": "styled recall 0.6648 (base 0.9613) \u2014 structure-lock likely violated (invented/multiplied features); eyeball before panel",
+  "corrected": {
+   "gate": "err_cells<=0.35 (solve-based, #1618)",
+   "before_err_cells": 1.7,
+   "attempted": true,
+   "iters": 0,
+   "err_cells": 1.7,
+   "unstable": {
+    "unstable": true,
+    "rot_deg": 20.76,
+    "scale": 0.9312
+   },
+   "path": "qa/evidence/paint-room/dwing_room_2_b2/dwing_room_2_final_1344_reregistered.png"
+  }
+ }
+}

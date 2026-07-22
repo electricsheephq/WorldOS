@@ -351,6 +351,7 @@ def author_camp_v2() -> dict:
     g["impassable"] = [list(c) for c in prop_cells if c not in doors]
     g["walls"] = [c for c in tree_cells]
     g["cell_default_walkable"] = True
+    g["outdoor"] = True
     g["location"] = "camp_clearing"
     g["material"] = "forest_floor"
     landings = sorted({(dc + oc, dr + orr) for (dc, dr) in doors

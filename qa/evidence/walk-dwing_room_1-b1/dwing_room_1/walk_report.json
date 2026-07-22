@@ -1,0 +1,500 @@
+{
+  "schema_version": 1,
+  "repo_sha": "f08ea970",
+  "manifest_sha256": "49eb0987c40db98d0a8e628069156b157833497952a75ba1eaf460b7ae6d7f84",
+  "ts": "2026-07-21T17:19:29.366778+00:00",
+  "engine_url": "http://127.0.0.1:8866",
+  "qa_url": "http://127.0.0.1:8972",
+  "room": "dwing_room_1",
+  "ortho": 7.997,
+  "sceneId": "camp_townslice01:dwing_sandbox_v1_dwing_room_1",
+  "grid": {
+    "cols": 12,
+    "rows": 7
+  },
+  "camera": {
+    "dbg": {
+      "ok": true,
+      "enq": 0,
+      "deq": 0,
+      "acted": 0,
+      "surf": 31,
+      "busy": false,
+      "last": "none",
+      "camOrtho": 7.997,
+      "camRx": 30,
+      "camRy": 45,
+      "camRz": 0,
+      "camPx": -48.9898,
+      "camPy": 40,
+      "camPz": -48.9898,
+      "originVX": 0.5,
+      "originVY": 0.5
+    },
+    "fails": [],
+    "ok": true,
+    "pose_mismatch": false
+  },
+  "orphans": [],
+  "path": {
+    "pass": 6,
+    "fail": 0,
+    "violations": []
+  },
+  "reachable": {
+    "pass": 6,
+    "fail": 0,
+    "cases": [
+      {
+        "cell": [
+          1,
+          3
+        ],
+        "landed": [
+          1,
+          3
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          3,
+          2
+        ],
+        "landed": [
+          3,
+          2
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          4,
+          3
+        ],
+        "landed": [
+          4,
+          3
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          6,
+          4
+        ],
+        "landed": [
+          6,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          8,
+          4
+        ],
+        "landed": [
+          8,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          9,
+          4
+        ],
+        "landed": [
+          9,
+          4
+        ],
+        "ok": true
+      }
+    ]
+  },
+  "impassable": {
+    "pass": 22,
+    "fail": 0,
+    "cases": [
+      {
+        "cell": [
+          0,
+          0
+        ],
+        "landed": [
+          9,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          0,
+          4
+        ],
+        "landed": [
+          9,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          1,
+          0
+        ],
+        "landed": [
+          9,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          1,
+          4
+        ],
+        "landed": [
+          9,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          2,
+          0
+        ],
+        "landed": [
+          9,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          2,
+          5
+        ],
+        "landed": [
+          9,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          3,
+          1
+        ],
+        "landed": [
+          9,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          4,
+          0
+        ],
+        "landed": [
+          9,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          4,
+          4
+        ],
+        "landed": [
+          9,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          5,
+          0
+        ],
+        "landed": [
+          9,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          5,
+          4
+        ],
+        "landed": [
+          9,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          6,
+          0
+        ],
+        "landed": [
+          9,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          6,
+          5
+        ],
+        "landed": [
+          9,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          7,
+          1
+        ],
+        "landed": [
+          9,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          7,
+          5
+        ],
+        "landed": [
+          9,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          8,
+          1
+        ],
+        "landed": [
+          9,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          8,
+          6
+        ],
+        "landed": [
+          9,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          9,
+          5
+        ],
+        "landed": [
+          9,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          10,
+          1
+        ],
+        "landed": [
+          9,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          10,
+          5
+        ],
+        "landed": [
+          9,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          11,
+          1
+        ],
+        "landed": [
+          9,
+          4
+        ],
+        "ok": true
+      },
+      {
+        "cell": [
+          11,
+          5
+        ],
+        "landed": [
+          9,
+          4
+        ],
+        "ok": true
+      }
+    ]
+  },
+  "doors": {
+    "pass": 1,
+    "fail": 0,
+    "cases": [
+      {
+        "cell": [
+          0,
+          3
+        ],
+        "to": "dwing_room_0",
+        "ok": true,
+        "detail": {
+          "crossed_to": "dwing_room_0",
+          "target": "dwing_room_0",
+          "pose": {
+            "home": {
+              "ortho": 7.997,
+              "dbg": {
+                "ok": true,
+                "enq": 30,
+                "deq": 30,
+                "acted": 30,
+                "surf": 131,
+                "busy": false,
+                "last": "cell(11,6) rest=True foe=(-1,-1)'' imp=n occ=n",
+                "camOrtho": 7.997,
+                "camRx": 30,
+                "camRy": 45,
+                "camRz": 0,
+                "camPx": -48.9898,
+                "camPy": 40,
+                "camPz": -48.9898,
+                "originVX": 0.5,
+                "originVY": 0.5
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "visual": {
+    "pass": 3,
+    "fail": 2,
+    "cases": [
+      {
+        "cell": [
+          2,
+          3
+        ],
+        "moved": true,
+        "dist_px": Infinity,
+        "tol_px": 125.0,
+        "ok": false,
+        "dist_prev_px": Infinity,
+        "n_blobs": 0,
+        "n_blobs_masked": 4
+      },
+      {
+        "cell": [
+          2,
+          2
+        ],
+        "moved": true,
+        "dist_px": 148.5,
+        "tol_px": 125.0,
+        "ok": false,
+        "dist_prev_px": 170.9,
+        "n_blobs": 1,
+        "n_blobs_masked": 4
+      },
+      {
+        "cell": [
+          6,
+          3
+        ],
+        "moved": true,
+        "dist_px": 21.7,
+        "tol_px": 125.0,
+        "ok": true,
+        "dist_prev_px": 24.4,
+        "n_blobs": 2,
+        "n_blobs_masked": 2
+      },
+      {
+        "cell": [
+          6,
+          4
+        ],
+        "moved": true,
+        "dist_px": 44.1,
+        "tol_px": 125.0,
+        "ok": true,
+        "dist_prev_px": 48.1,
+        "n_blobs": 1,
+        "n_blobs_masked": 3
+      },
+      {
+        "cell": [
+          10,
+          3
+        ],
+        "moved": true,
+        "dist_px": 8.3,
+        "tol_px": 125.0,
+        "ok": true,
+        "dist_prev_px": 269.8,
+        "n_blobs": 2,
+        "n_blobs_masked": 3
+      }
+    ],
+    "window": [
+      1280,
+      800
+    ],
+    "fire_cells": [
+      [
+        2,
+        4
+      ],
+      [
+        4,
+        2
+      ],
+      [
+        8,
+        3
+      ]
+    ]
+  },
+  "harness_errors": [],
+  "door_pose_fail": [],
+  "shots": [
+    "qa/evidence/walk-dwing_room_1-b1/dwing_room_1/shot_dwing_room_1_final.png"
+  ],
+  "verdict": "RED"
+}

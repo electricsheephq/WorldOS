@@ -1,0 +1,10 @@
+{
+ "prompt": "Painterly isometric medieval stone dungeon shrine-storeroom undercroft interior, firelit, in the Deadfire hand-painted concept-art style. Rough-hewn grey stone block and worn floor flags richly worked with visible coursing, cracked mortar and aged water stains; warm amber firelight pooled on the stone, deep cool BLUE-VIOLET shadows in the corners and at the room edges (never pure black), a gentle atmospheric haze falloff, hand-painted texture detail, oil-painted texture, no people, no characters. FEATURE COUNTS (strict): EXACTLY TWO stone pillars, EXACTLY ONE altar, EXACTLY THREE braziers, EXACTLY ONE arched doorway (RIGHT (east) wall); every other wall surface is unbroken solid \u2014 NO other doorways, arches, gates or openings, NO other pillars or columns. SINGLE FLAT LEVEL (strict): the floor is ONE SINGLE FLAT LEVEL \u2014 NO sunken areas, NO water channels, cisterns, pools or canals, NO staircases DOWN, NO pits or lower levels; every floor cell shown in the input stays dry, flat walkable floor. ROOM SHAPE (strict): the chamber is roughly SQUARE \u2014 about as wide as it is deep; preserve the input image's exact room proportions, floor extent and camera framing (the output must overlay the input). DOOR WALLS (strict): the ONE arched doorway is in the RIGHT (east) wall; every other wall surface is unbroken solid with NO openings. FOCAL PLACEMENT (strict): the altar stands back half, centre; the THREE braziers stand: back half, west-of-centre; back half, east-of-centre; front half, west-of-centre \u2014 exactly where the input image shows them; do NOT move them.",
+ "controlImage": "asset_zcFP3736G4GF6R4UkvKY2RAM",
+ "controlModality": "depth",
+ "controlStrength": 0.85,
+ "width": 1344,
+ "height": 768,
+ "numSamples": 1,
+ "seed": 12347
+}

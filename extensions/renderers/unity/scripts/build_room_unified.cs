@@ -163,6 +163,7 @@ System.Func<string,string,Vector3,float,float,bool,Color,GameObject> hcyl=(nm,ki
 // The old script built its own monolithic walls + pilasters; under the extent contract (#1543) the
 // geometry's wall_run props ARE the walls (continuous per-run boxes, cutaway height, split at
 // doors). No wall_runs in the geometry -> ERROR (fix the geometry, don't invent walls here).
+bool outdoor=geo.ContainsKey("outdoor")&&System.Convert.ToBoolean(geo["outdoor"]);
 var props=geo.ContainsKey("props")?geo["props"] as System.Collections.Generic.List<object>:null;
 int np=0, nWallRuns=0;
 if(props!=null) foreach(var po in props){ var p=po as System.Collections.Generic.Dictionary<string,object>; if(p==null) continue;
@@ -178,6 +179,23 @@ if(props!=null) foreach(var po in props){ var p=po as System.Collections.Generic
     rSum+=r; nC++; }
   if(nC==0) continue;
   if(kind=="wall_run"){
+    if(outdoor){
+      // OUTDOOR EXTENT (#1644 camp regen cycle-1 lesson): stone-textured wall runs made the CN
+      // read MASONRY -> the styled pass painted a walled ruin courtyard (arches/stairs/dais, 8+
+      // fires) over the authored clearing. The perimeter of an outdoor room is a TREELINE: render
+      // each cell as a deterministic irregular TREE mass (trunk+canopy cylinders, varied height
+      // from cell coords — no RNG) so depth+greybox read ORGANIC. Also: a ring-shaped run cannot
+      // use the one-bounding-box merge below (it would collapse the whole perimeter into one slab).
+      foreach(var co2 in cells){ var cc2=co2 as System.Collections.Generic.List<object>; if(cc2==null||cc2.Count<2) continue;
+        int c2=System.Convert.ToInt32(cc2[0]); int r2=System.Convert.ToInt32(cc2[1]); var w2=cellToWorld(c2,r2);
+        float th=7.0f+((c2*7+r2*13)%5)*0.7f;
+        float g=0.24f+((c2*3+r2*5)%3)*0.02f;
+        cyl(pid+"_t"+c2+"_"+r2,"treeline",new Vector3(w2.x,0f,w2.z),0.55f,0.55f,th*0.45f,new Color(0.30f,0.26f,0.20f));
+        cyl(pid+"_c"+c2+"_"+r2,"treeline",new Vector3(w2.x,th*0.35f,w2.z),1.05f,0.85f,th*0.65f,new Color(0.19f,g,0.17f));
+      }
+      nWallRuns++;
+      continue;
+    }
     // ONE CONTINUOUS box spanning the run at wallH (never per-cell crenellation, #1539).
     float bx=(minX+maxX)/2f, bz=(minZ+maxZ)/2f;
     float sx=(maxX-minX)+2.0f, sz=(maxZ-minZ)+2.0f;
@@ -318,7 +336,9 @@ if(props!=null) foreach(var po in props){ var p=po as System.Collections.Generic
 }
 // DOOR ARCHES (owner: doors must READ as doorways, and molded — not bare gaps): jambs + a
 // horizontal arch cylinder + lintel cap over every authored door gap, oriented by its wall.
-{
+// OUTDOOR rooms skip the frames entirely — a forest-path opening is a bare gap in the treeline
+// (stone jambs/arches at the openings were half of the cycle-1 masonry-courtyard misread).
+if(!outdoor){
   var dcs=geo.ContainsKey("door_cells")?geo["door_cells"] as System.Collections.Generic.List<object>:null;
   int dn=0;
   if(dcs!=null) foreach(var dco in dcs){
