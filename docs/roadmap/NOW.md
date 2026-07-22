@@ -29,9 +29,8 @@ _Last updated: 2026-07-21 (UTC) — Jul-16 generator chain merged; Task #76 in f
   known-hole SLA + rebuild-not-patch) in §9.2. The A-series evals below are its instruments.
 - **A-SERIES SHIPPED (2026-07-22):** the Adventure Loop — PRODUCT-ROADMAP §4d. Both eval
   modalities live (#1637/#1638 merged); first weakest-link verdicts: #1645 (combat lifecycle),
-  #1639 (cast presence), #1647 (user-truth gates epic).
-  A0 lanes (get_quests RPC + seed_adventure_demo fixture) dispatched; A-T and A-G build in
-  PARALLEL after A0; the adventure eval's weakest-link verdict routes every subsequent sprint.
+  #1639 (cast presence), #1647 (user-truth gates epic). The weakest-link verdict routes every
+  subsequent sprint (first verdict: behavioral → #1645).
 
 ## Live lanes
 
