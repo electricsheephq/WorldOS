@@ -32,7 +32,7 @@ import json
 import random
 from typing import Literal, Optional
 
-from pydantic import Field
+from pydantic import Field, model_serializer
 
 from models import _StrictModel
 
@@ -131,8 +131,35 @@ class SceneGrid(_StrictModel):
     # docs/roadmap/ROOM-OCCLUSION-PATHING-SPRINTS.md.
     door_cells: list[Cell] = Field(default_factory=list)
     protected_lane_cells: list[Cell] = Field(default_factory=list)
+    # ARRIVAL HINTS (#1647 wave-2; additive, empty == today): world-data-baked, coherence-aware
+    # preferred arrival cells so a cross_door arrival never lands the party on a grid-open cell that
+    # the player SEES as under painted furniture (the "Aldric on the tavern bar" bug). Keyed by the
+    # ARRIVAL-DOOR cell string ``f"{c},{r}"`` (the same door cell ``_seed_stage_cells_on_arrival``
+    # resolves); the value is an ORDERED list of ``[c, r]`` preferred cells (visually-OPEN, nearest
+    # the door first). The engine stays PAINT-BLIND — it merely PREFERS the first hinted cell that is
+    # reachable + free, then falls back to today's nearest-free logic. The seed side
+    # (qa/seed_gfx_town.build_grid_from_geometry) computes these from the paint-coherence reports;
+    # a room with no report gets ``{}`` and behaves BYTE-IDENTICALLY to the pre-#1647 world (the wrap
+    # serializer below OMITS the key when empty, so a hint-less grid dumps exactly as before).
+    arrival_hints: dict[str, list[Cell]] = Field(default_factory=dict)
     lighting: SceneLighting = Field(default_factory=SceneLighting)
     art: SceneArt = Field(default_factory=SceneArt)
+
+    @model_serializer(mode="wrap")
+    def _ser_omit_empty_arrival_hints(self, handler):
+        """OMIT ``arrival_hints`` from the dump when empty so a grid the seed never computed hints
+        for serializes BYTE-IDENTICALLY to a pre-#1647-wave-2 snapshot (which never carried the key).
+        Narrowly scoped to ONE key (NOT a blanket ``exclude_defaults``) for the SAME reason
+        Location._ser_omit_none_scene_grid / Character._ser_omit_none_stage_cell are: the store's
+        dirty-skip byte-compares the candidate dump to disk, so emitting ``"arrival_hints": {}`` for
+        every hint-less grid (a key old snapshots lack) would defeat the no-op-save guard and silently
+        rewrite files on a pure load->save. A grid WITH hints serializes them normally; all other
+        keys/order are preserved exactly. Respects any ``include``/``exclude`` the caller passed (e.g.
+        ``_layout_hash``'s ``include=`` set, which never lists ``arrival_hints``)."""
+        data = handler(self)
+        if not self.arrival_hints:
+            data.pop("arrival_hints", None)
+        return data
 
 
 # ── Deterministic seed derivation ───────────────────────────────────────────────────

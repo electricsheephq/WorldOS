@@ -122,6 +122,39 @@ def choose_spawns(cols: int, rows: int, blocked: set, door_cells: list,
     return {"party": chosen[:n_party], "npcs": chosen[n_party:n_party + n_npc]}
 
 
+def compute_arrival_hints(door_cells: list, blocked: set, cols: int, rows: int,
+                          cell_verdicts: dict | None, max_per_door: int = 6) -> dict:
+    """Coherence-aware ARRIVAL HINTS (#1647 wave-2) baked into world data: for EACH door, an ordered
+    list of the visually-OPEN cells nearest that door — the cells a cross_door arrival should PREFER
+    so the party never lands on a grid-open cell the player SEES as under painted furniture (the
+    "Aldric on the tavern bar" bug). Keyed by the door cell string ``f"{c},{r}"`` (the same key
+    ``_seed_stage_cells_on_arrival`` looks the arrival door up by); value = list of ``[c, r]`` cells,
+    nearest-the-door first (Chebyshev, stable (r, c) tiebreak).
+
+    DOOR-RING-SAFE: a hint is never a door cell itself (arriving ON a threshold) and never a `blocked`
+    wall/prop cell — the engine additionally re-checks reachability + freeness at arrival time, so a
+    hint is only ever a PREFERENCE, never a forced placement. Requires a coherence report: with
+    ``cell_verdicts is None`` (no report for this room) it returns ``{}`` — the grid then behaves
+    BYTE-IDENTICALLY to the pre-#1647 world (the SceneGrid serializer omits an empty ``arrival_hints``).
+    Deterministic + pure, so it is unit-testable."""
+    if not cell_verdicts:
+        return {}
+    door_set = {tuple(d) for d in door_cells}
+    open_cells = [
+        (c, r)
+        for r in range(rows) for c in range(cols)
+        if cell_verdicts.get((c, r)) == "open" and (c, r) not in blocked and (c, r) not in door_set
+    ]
+    hints: dict = {}
+    for d in door_cells:
+        dc, dr = int(d[0]), int(d[1])
+        ranked = sorted(open_cells, key=lambda p: (max(abs(p[0] - dc), abs(p[1] - dr)), p[1], p[0]))
+        picked = ranked[:max_per_door]  # tuples — the same Cell convention door_cells/spawns use
+        if picked:
+            hints[f"{dc},{dr}"] = picked
+    return hints
+
+
 def build_grid_from_geometry(geo: dict, location_id: str, town_id: str, room: str,
                              door_pairs: list, coherence_reports_dir=None) -> "SceneGrid":
     """SceneGrid from a generate_town room geometry: perimeter/prop cells impassable, door cells
@@ -166,8 +199,10 @@ def build_grid_from_geometry(geo: dict, location_id: str, town_id: str, room: st
                                mood="lantern-lit stone district"),
     )
     grid.door_cells = door_cells
-    grid.spawns = choose_spawns(cols, rows, blocked, door_cells,
-                                cell_verdicts=load_cell_verdicts(coherence_reports_dir, room))
+    verdicts = load_cell_verdicts(coherence_reports_dir, room)
+    grid.spawns = choose_spawns(cols, rows, blocked, door_cells, cell_verdicts=verdicts)
+    # #1647 wave-2: bake coherence-aware arrival hints (no-op → {} without a report; omitted on dump).
+    grid.arrival_hints = compute_arrival_hints(door_cells, blocked, cols, rows, verdicts)
     grid.art.layout_hash = _layout_hash(grid)
     return grid
 
