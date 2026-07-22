@@ -39,7 +39,7 @@ def main() -> None:
     sys.path.insert(0, str(HERE.parent / "servers" / "engine"))
     import server  # noqa: PLC0415
     from models import Campaign  # noqa: PLC0415
-    from seed_gfx_town import build_grid_from_geometry  # noqa: PLC0415
+    from seed_gfx_town import DEFAULT_COHERENCE_DIR, build_grid_from_geometry  # noqa: PLC0415
 
     server.save_campaign(Campaign(
         id=CID, title="Shop walk-gate sandbox",
@@ -58,7 +58,8 @@ def main() -> None:
         c.locations[eid].connections = [handle[to]["id"] for _cell, to in doors]
         geo = json.loads((GEO / geofile).read_text())
         door_pairs = [{"cell": cell, "to": lid} for cell, _to in doors]
-        c.locations[eid].scene_grid = build_grid_from_geometry(geo, eid, CID, lid, door_pairs)
+        c.locations[eid].scene_grid = build_grid_from_geometry(geo, eid, CID, lid, door_pairs,
+            coherence_reports_dir=DEFAULT_COHERENCE_DIR)  # #1647: spawn on OPEN floor (no-op without a report)
     server.save_campaign(c)
     server.start_session(CID, title="Shop walk-gate sandbox")
     server.create_character(

@@ -23,9 +23,61 @@ from pathlib import Path
 HERE = os.path.dirname(os.path.abspath(__file__))
 CID = "camp_townslice01"
 
+# The paint-coverage coherence reports (qa/paint_coherence.py, epic #1647): per-cell open/covered/
+# ambiguous verdicts a spawn can consult so the party is never placed on a cell the player SEES as
+# under painted furniture (grid-open yet visually covered — the crypt-sarcophagus / shop-counter bug).
+DEFAULT_COHERENCE_DIR = os.path.join(HERE, "evidence", "paint-coherence")
+
+
+def load_cell_verdicts(reports_dir, room: str) -> dict | None:
+    """The per-cell coherence verdicts for `room`, or None when no report exists (⇒ spawns fall back to
+    geometry-only placement, byte-identical to the pre-#1647 behaviour). Reads `<room>_coherence_report`
+    from `reports_dir` and returns {(c, r): "open"|"covered"|"ambiguous"} keyed by cell tuple."""
+    if reports_dir is None:
+        return None
+    path = Path(reports_dir) / f"{room}_coherence_report.json"
+    if not path.is_file():
+        return None
+    cells = json.loads(path.read_text(encoding="utf-8")).get("cells", {})
+    out: dict = {}
+    for key, verdict in cells.items():
+        c, r = key.split(",")
+        out[(int(c), int(r))] = verdict
+    return out
+
+
+def _prefer_open(free: list, cell_verdicts: dict, min_count: int = 1) -> list:
+    """Restrict candidate spawn cells to those the coherence report classifies OPEN. When there are FEWER
+    than `min_count` open cells (so open floor alone can't seat every requested spawn), the open cells are
+    kept first and the remaining ambiguous/unclassified cells (NEVER covered) are appended — so a partially
+    adjudicated/mis-locked room degrades a slot to ambiguous rather than silently dropping a spawn anchor.
+    Falls back to ambiguous-only (loud) when no open cell exists, and to the full geometry-free list (still
+    loud) only if every candidate is covered — a mis-locked plate degrades the spawn, never crashes."""
+    open_cells = [p for p in free if cell_verdicts.get(p) == "open"]
+    if len(open_cells) >= min_count:
+        return open_cells
+    non_covered = [p for p in free if cell_verdicts.get(p) != "covered"]
+    if not non_covered:
+        print(f"WARNING [choose_spawns]: ALL {len(free)} candidate cells are paint-COVERED — falling back "
+              f"to bare geometry floor; the party will render inside furniture until this plate is relocked",
+              file=sys.stderr)
+        return free
+    tail = [p for p in non_covered if cell_verdicts.get(p) != "open"]   # ambiguous/unclassified, not open
+    if open_cells and tail:
+        print(f"WARNING [choose_spawns]: only {len(open_cells)} OPEN cell(s) for {min_count} spawn slot(s) "
+              f"— keeping them first, filling from {len(tail)} ambiguous/unclassified cell(s) (paint "
+              f"coherence: relock this plate)", file=sys.stderr)
+        return open_cells + tail
+    if open_cells:                                    # every non-covered candidate is already open; nothing
+        return open_cells                             # more to add — seat what open floor exists
+    print(f"WARNING [choose_spawns]: no OPEN cell among {len(free)} candidates — falling back to "
+          f"{len(non_covered)} ambiguous/unclassified cell(s) (paint coherence: relock this plate)",
+          file=sys.stderr)
+    return non_covered
+
 
 def choose_spawns(cols: int, rows: int, blocked: set, door_cells: list,
-                  n_party: int = 2, n_npc: int = 1) -> dict:
+                  n_party: int = 2, n_npc: int = 1, cell_verdicts: dict | None = None) -> dict:
     """Place the party on the OPEN-FLOOR CENTROID as a compact cluster, clear of prop footprints and
     door landing rings — NOT the naive first-N-free interior cells (which land the party jammed in a
     back corner or inside a barrel: the 2026-07-15 'spawn in a barrel' bug, epic #1581 / issue #1584).
@@ -33,6 +85,14 @@ def choose_spawns(cols: int, rows: int, blocked: set, door_cells: list,
     Deterministic + pure so it is unit-testable (qa/test_seed_spawns.py). GEOMETRY IS GROUND TRUTH:
     `blocked` and `door_cells` come from the room's authored geometry, so the spawn is walkable by
     construction. Returns {"party": [(c,r),...], "npcs": [(c,r),...]}.
+
+    When `cell_verdicts` is supplied (a paint-coherence report, #1647), candidates are restricted to
+    cells the player SEES as OPEN floor — a grid-open cell that sits under a tall prop's painted
+    silhouette (crypt sarcophagus, shop counter) is `covered` and must never host a spawn. The
+    open-floor-centroid + door-clear ranking then runs AMONG the open cells. If a room has NO open
+    candidate the placement falls back to ambiguous (never covered) with a loud warning, and only if
+    even that is empty does it fall back to bare geometry floor — it warns rather than crashing.
+    `cell_verdicts=None` ⇒ behaviour unchanged (additive).
     """
     door_ring = {(dc + dx, dr + dy) for (dc, dr) in door_cells
                  for dx in (-1, 0, 1) for dy in (-1, 0, 1)}
@@ -46,6 +106,8 @@ def choose_spawns(cols: int, rows: int, blocked: set, door_cells: list,
     free = _free(exclude_ring=True) or _free(exclude_ring=False)  # tiny rooms: relax the door ring
     if not free:
         return {"party": [], "npcs": []}
+    if cell_verdicts is not None:
+        free = _prefer_open(free, cell_verdicts, min_count=n_party + n_npc)
     cx = sum(c for c, _ in free) / len(free)
     cy = sum(r for _, r in free) / len(free)
     # anchor = the open cell nearest the floor centroid (skips a blocked central monument automatically)
@@ -61,9 +123,13 @@ def choose_spawns(cols: int, rows: int, blocked: set, door_cells: list,
 
 
 def build_grid_from_geometry(geo: dict, location_id: str, town_id: str, room: str,
-                             door_pairs: list) -> "SceneGrid":
+                             door_pairs: list, coherence_reports_dir=None) -> "SceneGrid":
     """SceneGrid from a generate_town room geometry: perimeter/prop cells impassable, door cells
-    punched walkable, door_cells ORDERED to match the room's connection pair order."""
+    punched walkable, door_cells ORDERED to match the room's connection pair order.
+
+    When `coherence_reports_dir` is given and holds a `<room>_coherence_report.json`, the party spawn
+    is placed only on cells that report classifies as OPEN floor (#1647) — otherwise spawn placement is
+    geometry-only, unchanged."""
     from scene_grid import (  # noqa: PLC0415
         SceneGrid, SceneGridSpec, SceneCell, SceneCellDefault, SceneProp, SceneLighting, _layout_hash,
     )
@@ -100,7 +166,8 @@ def build_grid_from_geometry(geo: dict, location_id: str, town_id: str, room: st
                                mood="lantern-lit stone district"),
     )
     grid.door_cells = door_cells
-    grid.spawns = choose_spawns(cols, rows, blocked, door_cells)
+    grid.spawns = choose_spawns(cols, rows, blocked, door_cells,
+                                cell_verdicts=load_cell_verdicts(coherence_reports_dir, room))
     grid.art.layout_hash = _layout_hash(grid)
     return grid
 
@@ -143,7 +210,8 @@ def main() -> None:
         c.locations[lid].connections = conn
         geo = json.loads((town_dir / r["geometry"]).read_text())
         c.locations[lid].scene_grid = build_grid_from_geometry(
-            geo, lid, town_id, r["room"], r["doors"])
+            geo, lid, town_id, r["room"], r["doors"],
+            coherence_reports_dir=DEFAULT_COHERENCE_DIR)  # #1647: spawn on OPEN floor (no-op without a report)
     server.save_campaign(c)
     server.start_session(CID, title=f"Town slice {town_id}")
 
