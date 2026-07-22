@@ -18,6 +18,23 @@ rooms 'no-plate: skipped'): EVERY room in extensions/renderers/unity/plates_mani
 (only the 5 _OWNER_ROOMS are wired today) still gets checked here — a missing report is a FAILURE, not a
 scope exclusion. Rooms that fail today are legitimate roadmap gaps, not a "not applicable" skip.
 
+Beyond the plate-blob check, three more real, cheap freshness signals (adversarial-review adds,
+2026-07-22 — validated against ground truth first, each is either a real existing field or the same
+git-blob technique, never a new invented field):
+  - the report file must actually PARSE and carry the expected top-level keys — a present-but-empty or
+    wrong-room report must not silently count as evidence just because a file exists at that path;
+  - `method.ortho` (a field paint_coherence.py already writes) must match the manifest's current
+    cameraPin.ortho — a room resize/re-fit can change ortho without touching the plate's bytes, and the
+    per-cell projection is keyed on ortho;
+  - for the 5 _OWNER_ROOMS, the room's geometry JSON (qa/room_geometries/) gets the SAME git-blob
+    freshness check as the plate — classify_cells() projects the plate through that geometry, so a
+    walls/props/doors/spawns edit stales the report exactly like a plate edit does.
+Known residual limitation (not fixed — would need paint_coherence.py to stamp real provenance, which the
+charter's "do not invent fields" rules out): freshness keys off the LAST COMMIT TOUCHING the report file,
+which is a proxy for "the classifier was re-run," not a guarantee — a commit that edits the report file
+without regenerating it (reformatting, a bulk edit) would advance that proxy without truly re-running
+the classifier. Full closure needs the report to record its own generation provenance.
+
 Exit codes (tri-state, matching the sibling qa gates): 0 clean, 1 findings (missing/stale reports),
 2 harness error (manifest/report unreadable, git unavailable).
 
@@ -35,6 +52,12 @@ REPO = HERE.parent
 MANIFEST = REPO / "extensions" / "renderers" / "unity" / "plates_manifest.json"
 PLATES_DIR = REPO / "extensions" / "renderers" / "unity" / "plates"
 EVIDENCE_DIR = HERE / "evidence" / "paint-coherence"
+GEO_DIR = HERE / "room_geometries"
+
+sys.path.insert(0, str(HERE))
+from paint_coherence import _OWNER_ROOMS  # noqa: E402  (registry_key -> geometry stem; the SAME mapping
+                                          # gate_owner_rooms() uses — reused, not re-derived, so the two
+                                          # can't silently drift apart)
 
 
 def _git(*args: str) -> tuple[int, str]:
@@ -65,11 +88,48 @@ def _working_tree_sha(path: Path) -> str | None:
     return out if rc == 0 and out else None
 
 
-def check_room(reg_key: str, plate_rel_from_unity: str) -> list[str]:
+def _drift_check(reg_key: str, label: str, file_path: Path, report_commit: str) -> list[str]:
+    """Shared plate/geometry drift check: does `file_path`'s content at `report_commit` (when the report
+    was last touched) still match its content now (HEAD + working tree)? Empty == fresh."""
+    if not file_path.is_file():
+        return [f"{reg_key}: {label} {file_path} is missing on disk — harness cannot check its freshness"]
+    rel = str(file_path.relative_to(REPO))
+    recorded_sha = _blob_sha_at(report_commit, rel)
+    current_sha = _blob_sha_at("HEAD", rel)
+    working_sha = _working_tree_sha(file_path)
+    if recorded_sha is None or current_sha is None:
+        return [f"{reg_key}: could not resolve a git blob sha for {label} {file_path.name} "
+                f"(report_commit={report_commit}) — harness error, not a verdict"]
+    if recorded_sha != current_sha:
+        return [f"{reg_key}: {label} drifted since the coherence report was last generated in "
+                f"{report_commit[:12]} ({label} blob {recorded_sha[:12]} then vs {current_sha[:12]} at "
+                "HEAD now) — re-run qa/paint_coherence.py gate-rooms and commit the refreshed report"]
+    if working_sha and working_sha != current_sha:
+        return [f"{reg_key}: {label} has UNCOMMITTED local changes since the coherence report was "
+                f"generated (working tree blob {working_sha[:12]} vs committed {current_sha[:12]}) — "
+                "re-run qa/paint_coherence.py gate-rooms before committing"]
+    return []
+
+
+def _load_report(reg_key: str, report_path: Path) -> tuple[dict | None, list[str]]:
+    """Parse + sanity-check the report JSON. A report file existing is not enough evidence on its own —
+    an empty/malformed file, or a report copy-pasted for the wrong room, must not silently pass."""
+    try:
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return None, [f"{reg_key}: {report_path.name} exists but is not valid JSON ({exc}) — a report "
+                      "that can't be parsed is a FAILURE, never a silent pass"]
+    missing_keys = {"room", "passed", "cells", "violations", "method"} - set(report)
+    if missing_keys:
+        return None, [f"{reg_key}: {report_path.name} is missing expected key(s) {sorted(missing_keys)} "
+                      "— not a real paint_coherence.py report (or from an incompatible tool version)"]
+    return report, []
+
+
+def check_room(reg_key: str, plate_rel_from_unity: str, entry: dict) -> list[str]:
     """Failure strings for one manifest-shipped room; empty == fresh."""
     plate_path = PLATES_DIR / Path(plate_rel_from_unity).name
     report_path = EVIDENCE_DIR / f"{reg_key}_coherence_report.json"
-    fails: list[str] = []
 
     if not plate_path.is_file():
         return [f"{reg_key}: shipped plate {plate_path.relative_to(REPO)} is missing on disk "
@@ -81,32 +141,42 @@ def check_room(reg_key: str, plate_rel_from_unity: str) -> list[str]:
                 "(run `qa/paint_coherence.py gate-rooms` and commit the report — a missing report is a "
                 "FAILURE here, never a silent skip)"]
 
-    plate_rel = str(plate_path.relative_to(REPO))
-    report_rel = str(report_path.relative_to(REPO))
+    report, fails = _load_report(reg_key, report_path)
+    if fails:
+        return fails
 
+    report_rel = str(report_path.relative_to(REPO))
     report_commit = _last_commit_touching(report_rel)
     if report_commit is None:
         return [f"{reg_key}: {report_path.name} is not tracked by git — cannot establish when it was "
                 "last generated, so freshness can't be verified (commit it or regenerate + commit)"]
 
-    recorded_sha = _blob_sha_at(report_commit, plate_rel)
-    current_sha = _blob_sha_at("HEAD", plate_rel)
-    working_sha = _working_tree_sha(plate_path)
+    fails = _drift_check(reg_key, "plate", plate_path, report_commit)
+    if fails:
+        return fails
 
-    if recorded_sha is None or current_sha is None:
-        return [f"{reg_key}: could not resolve a git blob sha for {plate_path.name} "
-                f"(report_commit={report_commit}) — harness error, not a verdict"]
+    # ortho freshness: a REAL, already-existing report field (method.ortho — no invention needed here)
+    # vs the manifest's current cameraPin.ortho. A room resize/re-fit changes ortho without necessarily
+    # touching the plate PNG's bytes, and the per-cell projection paint_coherence.py classified against
+    # is keyed on ortho — so an ortho drift alone stales the report just as much as a plate-byte drift.
+    manifest_ortho = (entry.get("cameraPin") or {}).get("ortho")
+    report_ortho = (report.get("method") or {}).get("ortho")
+    if manifest_ortho is not None and report_ortho is not None:
+        if round(float(manifest_ortho), 4) != round(float(report_ortho), 4):
+            return [f"{reg_key}: manifest cameraPin.ortho ({manifest_ortho}) no longer matches the "
+                    f"ortho the coherence report was classified against ({report_ortho}) — re-run "
+                    "qa/paint_coherence.py gate-rooms and commit the refreshed report"]
 
-    if recorded_sha != current_sha:
-        fails.append(f"{reg_key}: plate drifted since {report_path.name} was last generated in "
-                     f"{report_commit[:12]} (plate blob {recorded_sha[:12]} then vs {current_sha[:12]} "
-                     "at HEAD now) — re-run qa/paint_coherence.py gate-rooms and commit the refreshed "
-                     "report")
-    elif working_sha and working_sha != current_sha:
-        fails.append(f"{reg_key}: plate has UNCOMMITTED local changes since {report_path.name} was "
-                     f"generated (working tree blob {working_sha[:12]} vs committed {current_sha[:12]}) "
-                     "— re-run qa/paint_coherence.py gate-rooms before committing")
-    return fails
+    # geometry freshness: only the 5 _OWNER_ROOMS have a known geometry file (paint_coherence.py's own
+    # registry — reused, not re-derived). classify_cells() projects the plate through THIS geometry, so
+    # a geometry edit (walls/props/doors/spawns) stales the report exactly like a plate edit does.
+    geo_stem = _OWNER_ROOMS.get(reg_key)
+    if geo_stem:
+        geo_path = GEO_DIR / f"{geo_stem}_geometry.json"
+        fails = _drift_check(reg_key, "geometry", geo_path, report_commit)
+        if fails:
+            return fails
+    return []
 
 
 def main() -> int:
@@ -129,7 +199,7 @@ def main() -> int:
         if not plate_rel:
             continue   # not a plate-shipping manifest entry — nothing for this lint to check
         checked += 1
-        all_fails.extend(check_room(reg_key, plate_rel))
+        all_fails.extend(check_room(reg_key, plate_rel, entry))
 
     if not all_fails:
         print(f"[check_coherence_freshness] {checked} manifest-shipped room(s) all have a fresh "
