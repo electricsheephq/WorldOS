@@ -580,7 +580,10 @@ public static class BuildRoomKit
             try
             {
                 RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
-                RenderSettings.ambientLight = new Color(0.6f, 0.6f, 0.6f);
+                // r8b: ambient 1.0 so surfaces render AT their albedo — 0.6 crushed the frame into a
+                // narrow dim band and the coverage stat (calibrated on bright painterly plates)
+                // under-read every mass (measured: flat score DROPPED 67.19→59.90 despite separation).
+                RenderSettings.ambientLight = new Color(1.0f, 1.0f, 1.0f);
                 SetupContractCamera(cam, cols, rows, camFit, 1344f / 768f);
                 RenderToPng(cam, 1344, 768, scorePath);
             }
