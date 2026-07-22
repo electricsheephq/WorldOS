@@ -72,28 +72,14 @@
    "_sync_comment": "MIRRORED as camp_clearing for the adventure fixture \u2014 see that entry; the sync lint in test_seed_adventure_demo pins them identical."
   },
   "tavern": {
-   "plate": "plates/tavern_v2_registered.png",
+   "plate": "plates/tavern_kit_v1_registered.png",
    "cameraPin": {
     "ortho": 10.5224,
     "pitch": 30,
     "yaw": 45
    },
    "boxes": "boxes/tavern_v2_boxes.json",
-   "_door_hotspots_comment": "#1585/#1647 PAINTED-DOOR HOTSPOTS (plate-pixel click targets in the 1344x768 registered plate). Measured 2026-07-22 by overlaying the contract-camera cell projection (qa/walk_test.world_to_window_px at texW/texH) on tavern_v2_registered.png and reading the PAINTED arch centroid off a 50px grid (artifacts/zoom_tavern_left.png). door_cell (7,0) projects to px (440,242) at the bar, but the room's one painted STONE ARCHWAY (dark interior) sits on the SAME back-left (r=0) wall with its opening centroid at ~(210,320) \u2014 a large ~4.5-cell #1585 divergence, the exact 'no functional doors' case: clicking the visible arch now crosses at (7,0). door_cell (13,5) lands on the painted fireplace/hearth (no arch) -> intentionally omitted (TODO, see PR body).",
-   "door_hotspots": [
-    {
-     "door_cell": [
-      7,
-      0
-     ],
-     "px": [
-      210,
-      320
-     ],
-     "radius_px": 85
-    }
-   ],
-   "_provenance": "SHIP-THREE-PLATES (2026-07-15): tavern v2 14x11 molded (bar/table kinds) via qa/paint_room.py. Panel 8.4. Geometry qa/room_geometries/tavern_v2_geometry.json; ortho = _fit_ortho_size(14,11). Replaces tavern_fit2_v1 (12x10, ortho 9.2597)."
+   "_provenance": "KIT-TAVERN v1 (2026-07-23, #83 replication proof): SAME certified chain as KIT-CRYPT v1 \u2014 geometry tavern_v2 -> kit scene (seg gate 100.00% FIRST TRY, 0/154) -> kit 3D depth -> flux base seed 12345 (recall 0.9737+, asset_G5UBNVwMchoG84wPSFiBEsAZ) -> Gemini 3.0 Pro edit c2 w/ FURNITURE-IDENTITY grounding (job_UTwT9WJkbvZpuveXDoMso8Eh) -> phase-corr ALIGNED dx=0 -> seg-mask void composite. Blind panel 7 vs control 8 (delta -1.0 in-band; c1 without furniture grounding was 6/-2.0 \u2014 the grounding clause is load-bearing). Collision truth UNCHANGED (tavern_v2 geometry/walkmask/boxes)."
   },
   "throne_hall": {
    "plate": "plates/throne_hall_v1_registered.png",
