@@ -577,18 +577,37 @@ public static class BuildRoomKit
                 if (ll != null && ll.enabled) { ll.enabled = false; roomLights.Add(ll); }
             var savedAmbMode = RenderSettings.ambientMode;
             var savedAmbLight = RenderSettings.ambientLight;
+            // r8c: SEGMENTATION score frame — albedo tints could not separate floor from mass (kit
+            // textures converge everything to warm brown; measured flat 67.19→59.90 across r7→r8).
+            // The gate question is purely "which floor quads are covered by mass through the contract
+            // camera", so render it as one: floor renderers flat near-white, every other renderer flat
+            // near-black, unlit, lights off. Materials restored in finally; beauty lives in the lit frame.
+            var segRends = new List<Renderer>();
+            var segMats = new List<Material[]>();
+            var segWhite = new Material(Shader.Find("Unlit/Color")); segWhite.color = new Color(0.92f, 0.92f, 0.92f);
+            var segDark = new Material(Shader.Find("Unlit/Color")); segDark.color = new Color(0.06f, 0.06f, 0.06f);
+            var floorGroup = root.transform.Find("Floor");
             try
             {
+                foreach (var rr in root.GetComponentsInChildren<Renderer>())
+                {
+                    if (rr == null) continue;
+                    segRends.Add(rr); segMats.Add(rr.sharedMaterials);
+                    bool isFloor = floorGroup != null && rr.transform.IsChildOf(floorGroup);
+                    var seg = isFloor ? segWhite : segDark;
+                    var arr = new Material[rr.sharedMaterials.Length];
+                    for (int i = 0; i < arr.Length; i++) arr[i] = seg;
+                    rr.sharedMaterials = arr;
+                }
                 RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
-                // r8b: ambient 1.0 so surfaces render AT their albedo — 0.6 crushed the frame into a
-                // narrow dim band and the coverage stat (calibrated on bright painterly plates)
-                // under-read every mass (measured: flat score DROPPED 67.19→59.90 despite separation).
                 RenderSettings.ambientLight = new Color(1.0f, 1.0f, 1.0f);
                 SetupContractCamera(cam, cols, rows, camFit, 1344f / 768f);
                 RenderToPng(cam, 1344, 768, scorePath);
             }
             finally
             {
+                for (int i = 0; i < segRends.Count; i++) if (segRends[i] != null) segRends[i].sharedMaterials = segMats[i];
+                UnityEngine.Object.DestroyImmediate(segWhite); UnityEngine.Object.DestroyImmediate(segDark);
                 RenderSettings.ambientMode = savedAmbMode;
                 RenderSettings.ambientLight = savedAmbLight;
                 foreach (var ll in roomLights) if (ll != null) ll.enabled = true;
