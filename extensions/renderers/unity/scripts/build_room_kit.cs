@@ -549,7 +549,9 @@ public static class BuildRoomKit
             Debug.LogWarning($"[KitRoom] ⚠⚠ pillar '{name}' achieved world=({b1.size.x:F2},{b1.size.y:F2},{b1.size.z:F2}) " +
                              $"is OFF target ({PILLAR_TGT_XZ:F1},{PILLAR_TGT_H:F1},{PILLAR_TGT_XZ:F1}) by >10% — check prefab bounds/pivot.");
         Vector3 pivotOffset = inst.transform.position - b1.center;
-        inst.transform.position = new Vector3(center.x + pivotOffset.x, pivotOffset.y - b1.min.y, center.z + pivotOffset.z);
+        // r6: ground on min.y alone — the pivotOffset.y term double-counts the bounds centre for
+        // base-pivot meshes (measured: pillars sat at pos.y=-1.98, bounds -1.99..2.01, half underground).
+        inst.transform.position = new Vector3(center.x + pivotOffset.x, inst.transform.position.y - b1.min.y, center.z + pivotOffset.z);
         FixMaterials(inst, false, ref matFix, force: true);   // r5: pillars shipped grey → force stone/brick
         return inst;
     }
