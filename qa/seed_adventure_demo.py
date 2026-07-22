@@ -57,17 +57,27 @@ N_GOBLINS = 3
 BOSS_NAME = "Goblin Boss"
 
 
-def open_floor(geo: dict, door_cells: list) -> list:
+def open_floor(geo: dict, door_cells: list, cell_verdicts: dict | None = None) -> list:
     """Sorted open interior floor cells clear of walls/props and the door landing ring — the same
-    walkable truth choose_spawns uses, so every NPC/monster placement is walkable by construction."""
+    walkable truth choose_spawns uses, so every NPC/monster placement is walkable by construction.
+
+    When `cell_verdicts` (a paint-coherence report, #1647) is supplied, the list is further restricted to
+    cells the player SEES as OPEN floor, via the SAME `_prefer_open` discipline the party spawn uses — so a
+    staged NPC/monster is never placed on a grid-open cell that sits under painted furniture (Keeper Maera
+    in the snug, the boss on a throne dais). Absent verdicts ⇒ geometry-only, byte-identical to before."""
+    from seed_gfx_town import _prefer_open  # noqa: PLC0415  (shared open-preference + fallback discipline)
+
     cols, rows = int(geo["cols"]), int(geo["rows"])
     doors = {tuple(d) for d in door_cells}
     props = {tuple(c) for p in geo.get("props", []) if p.get("kind") != "wall_run"
              for c in p.get("cells", [])}
     walls = ({tuple(c) for c in geo.get("walls", [])} | props) - doors
     ring = {(dc + dx, dr + dy) for (dc, dr) in doors for dx in (-1, 0, 1) for dy in (-1, 0, 1)}
-    return [(c, r) for r in range(1, rows - 1) for c in range(1, cols - 1)
-            if (c, r) not in walls and (c, r) not in doors and (c, r) not in ring]
+    cells = [(c, r) for r in range(1, rows - 1) for c in range(1, cols - 1)
+             if (c, r) not in walls and (c, r) not in doors and (c, r) not in ring]
+    if cell_verdicts is not None and cells:
+        cells = _prefer_open(cells, cell_verdicts)
+    return cells
 
 
 def main() -> None:
@@ -84,7 +94,7 @@ def main() -> None:
     sys.path.insert(0, str(HERE.parent / "servers" / "engine"))
     import server  # noqa: PLC0415
     from models import Campaign  # noqa: PLC0415
-    from seed_gfx_town import DEFAULT_COHERENCE_DIR, build_grid_from_geometry  # noqa: PLC0415
+    from seed_gfx_town import DEFAULT_COHERENCE_DIR, build_grid_from_geometry, load_cell_verdicts  # noqa: PLC0415
     from walk_static import check_geometry, validate_seed_doors, validate_world  # noqa: PLC0415
 
     # --- full static gate (validate_world + validate_seed_doors + check_geometry) BEFORE seeding ---
@@ -131,8 +141,11 @@ def main() -> None:
         apply_srd_defaults=True, add_to_party=True, location_id=handle[current]["id"])
 
     # --- NPCs: Keeper Maera (quest giver) in the tavern; Merchant Oswin in the shop -----------------
-    tavern_open = open_floor(geometries["tavern_snug"], [d for d, _t in ROOMS[1][2]])
-    shop_open = open_floor(geometries["shop"], [d for d, _t in ROOMS[2][2]])
+    # #1647: stage NPCs on cells the player SEES as OPEN, same coherence discipline as the party spawn.
+    tavern_open = open_floor(geometries["tavern_snug"], [d for d, _t in ROOMS[1][2]],
+                             cell_verdicts=load_cell_verdicts(DEFAULT_COHERENCE_DIR, "tavern_snug"))
+    shop_open = open_floor(geometries["shop"], [d for d, _t in ROOMS[2][2]],
+                           cell_verdicts=load_cell_verdicts(DEFAULT_COHERENCE_DIR, "shop"))
     maera = server.create_character(
         campaign_id=CID, name="Keeper Maera", kind="npc", race="human", location_id=handle["tavern_snug"]["id"],
         biography="The keeper of the snug tavern by the camp — she has watched the crypt's goblins "
@@ -153,8 +166,10 @@ def main() -> None:
 
     # spawn_monster leaves monsters location-less; anchor the boss in the throne hall and the goblins
     # in the crypt, each on an open floor cell (walkable by construction) via the stage_cell field.
-    crypt_open = open_floor(geometries["crypt"], [d for d, _t in ROOMS[3][2]])
-    throne_open = open_floor(geometries["throne_hall"], [d for d, _t in ROOMS[4][2]])
+    crypt_open = open_floor(geometries["crypt"], [d for d, _t in ROOMS[3][2]],
+                            cell_verdicts=load_cell_verdicts(DEFAULT_COHERENCE_DIR, "crypt"))
+    throne_open = open_floor(geometries["throne_hall"], [d for d, _t in ROOMS[4][2]],
+                             cell_verdicts=load_cell_verdicts(DEFAULT_COHERENCE_DIR, "throne_hall"))
     c = server._require(CID)
     c.characters[maera["id"]].stage_cell = tavern_open[len(tavern_open) // 2]
     c.characters[oswin["id"]].stage_cell = shop_open[len(shop_open) // 2]
