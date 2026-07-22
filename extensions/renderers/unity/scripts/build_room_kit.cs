@@ -22,6 +22,13 @@
 //   Tools/WorldOS/Kit/Capture Kit Room      — render the room through the CONTRACT camera to a 2560x1600
 //                                             PNG at <CaptureDir>/kit_<roomId>_<yyyyMMddTHHmmZ>.png.
 //
+// r3 (round-3 beauty pass, #83): fixes measured against evidence frames kit_crypt_r1.png / kit_crypt_r2.png
+// vs plates/crypt_v36_registered.png — (1) walls given real height+thickness MASS (were paper-thin, person-
+// height planes); (2) pillars widened to fat carved columns (were toothpicks); (3) lighting rebaked brighter
+// (raised ambient, real cool key, warm fire pools, + a warm sarcophagus centre glow); (4) braziers reshaped
+// to a dark bowl + narrow stem + ember-orange emissive disc (were glowing mushroom orbs); (5) sarcophagus
+// raised to waist-high mass. Deterministic, material-defensive, SaveScene — all preserved.
+//
 // SELF-CONTAINED: no new dependencies. Reads MiniJson (same assembly). Geometry path + capture dir are the
 // same box defaults build_room_unified.cs uses (L24), env-overridable so a non-box host can point elsewhere.
 // C# is uncompilable on the authoring Mac — this is authored to mirror the proven sibling idioms exactly and
@@ -40,6 +47,12 @@ public static class BuildRoomKit
 {
     // CellSize=2 — the plate contract (build_room_unified.cs L34 uses (c-cx0)*2.0 / (cy0-r)*2.0).
     const float CELL = 2.0f;
+    // r3 mass targets (world units) — see round-3 defect notes in the header, keyed to kit_crypt_r1/r2.png.
+    const float WALL_H = 3.6f;       // wall height target (r1/r2 walls were barely person-height planes)
+    const float WALL_T = 0.8f;       // wall thickness target (r1/r2 walls were paper-thin)
+    const float PILLAR_FOOT = 1.8f;  // pillar footprint width ≈0.9 cell (fat carved column, not a post)
+    const float PILLAR_H_MIN = 3.5f; // pillar height band low (r1/r2 pillars were toothpicks)
+    const float PILLAR_H_MAX = 5.0f; // pillar height band high
 
     // ── fallback-material cache (material-defensive rule) ──────────────────────────────────────────
     static Material _stoneMat;                 // PolygonGeneric stone-ish (structure / tombs)
@@ -174,6 +187,7 @@ public static class BuildRoomKit
         // ── PROPS: pillars / sarcophagus / braziers / kit-or-fallback ──────────────────────────────
         var propParent = Child(root, "Props");
         var braziers = new List<Vector3>();       // world positions for the fire-anchor point lights
+        Vector3 sarcGlowPos = Vector3.zero; bool haveSarcGlow = false;   // r3: warm centre-glow over the tomb
         if (props != null)
         {
             foreach (var po in props)
@@ -187,13 +201,15 @@ public static class BuildRoomKit
 
                 if (kind.Contains("pillar") || kind.Contains("column"))
                 {
-                    // cycle SM_Bld_Base_Pillar_01..05 DETERMINISTICALLY by cell coords (no RNG); native
-                    // footprint (a column must stay slender), seated on the floor at the run centroid.
+                    // cycle SM_Bld_Base_Pillar_01..05 DETERMINISTICALLY by cell coords (no RNG). r3: the
+                    // painted crypt's columns read as FAT carved masses, not posts (r1/r2 pillars were
+                    // toothpicks — footprint far too slender). PlacePillar widens the footprint to ~0.9 cell
+                    // (≈1.8u) and lands height in the 3.5–5u band, seated on the floor at the run centroid.
                     int idx = Mathf.Abs(fp.anchorC * 7 + fp.anchorR * 13) % 5;
                     var pf = pillars[idx];
                     if (pf == null) { for (int k = 0; k < 5 && pf == null; k++) pf = pillars[k]; }   // first available
-                    if (pf != null && Place(pf, $"{pid}_Pillar0{idx + 1}", propParent, fp.center, 0f, 0f, 0f, false, false, ref nMatFix) != null) nPillar++;
-                    else if (FallbackBox($"{pid}_pillar", propParent, fp, 3.0f, false, ref nMatFix)) nFallback++;
+                    if (pf != null && PlacePillar(pf, $"{pid}_Pillar0{idx + 1}", propParent, fp.center, ref nMatFix) != null) nPillar++;
+                    else if (FallbackBox($"{pid}_pillar", propParent, fp, 4.2f, false, ref nMatFix)) nFallback++;   // r3: taller fat fallback
                     continue;
                 }
                 if (kind.Contains("sarcophagus"))
@@ -208,6 +224,23 @@ public static class BuildRoomKit
                         if (tomb != null)
                         {
                             nSarc++;
+                            // r3: the painted sarcophagus is waist-high MASS; r1/r2's tomb read as a flat slab.
+                            // If the fitted tomb is under 1.2u tall, raise ONLY its vertical scale so it lands
+                            // ~1.3u and re-seat its base on the floor (footprint unchanged). Done BEFORE the lid
+                            // pass so the lid seats on the raised top.
+                            var tb0 = WorldBounds(tomb);
+                            if (tb0.size.y > 1e-4f && tb0.size.y < 1.2f)
+                            {
+                                float ky = 1.3f / tb0.size.y;
+                                var ls0 = tomb.transform.localScale;
+                                tomb.transform.localScale = new Vector3(ls0.x, ls0.y * ky, ls0.z);
+                                var tbR = WorldBounds(tomb);
+                                Vector3 tOff = tomb.transform.position - tbR.center;
+                                tomb.transform.position = new Vector3(tbR.center.x + tOff.x, tOff.y - tbR.min.y, tbR.center.z + tOff.z);
+                            }
+                            // remember the tomb centre for the warm rim light baked in the lighting rig below
+                            var tbNow = WorldBounds(tomb);
+                            sarcGlowPos = new Vector3(tbNow.center.x, tbNow.max.y + 1.6f, tbNow.center.z); haveSarcGlow = true;
                             if (pLid != null)
                             {
                                 var tb = WorldBounds(tomb);
@@ -235,7 +268,7 @@ public static class BuildRoomKit
                     // L3317: fire_anchors → warm glow quads + brazier-light flicker). A warm point light is
                     // added per brazier in the lighting rig below.
                     var b = BuildBrazier(pid, propParent, fp.center);
-                    braziers.Add(new Vector3(fp.center.x, 1.7f, fp.center.z));
+                    braziers.Add(new Vector3(fp.center.x, 1.9f, fp.center.z));   // r3: anchor at the ember disc
                     nBrazier++;
                     continue;
                 }
@@ -252,25 +285,37 @@ public static class BuildRoomKit
             }
         }
 
-        // ── LIGHTING: warm fire-anchor point pools (matching the brazier cells) + one dim cool directional ─
-        // Mirrors how the painted crypt reads — warm pools on cool stone (build_atelier_crypt.cs L306-332).
+        // ── LIGHTING (r3): baked warm-pool-on-cool-stone rig matching the painted crypt read ──────────────
+        // r1/r2 were far too dark (near-black floor, no ambient fill, weak cool key). r3 raises the flat
+        // ambient, gives the cool directional key real presence, brightens the fire pools, and adds a low
+        // warm point light over the sarcophagus (the painted crypt's centre glow). Lights live under the room
+        // root, which is destroyed+rebuilt each run (idempotent); PurgeStrayKitLights also sweeps any orphaned
+        // prior-build KitRoom_* lights so a re-run never doubles the rig. (build_atelier_crypt.cs L306-332.)
+        PurgeStrayKitLights(root);
         var lightParent = Child(root, "Lights");
         foreach (var bp in braziers)
         {
             var g = new GameObject("KitRoom_Fire"); g.transform.SetParent(lightParent.transform, true);
             var L = g.AddComponent<Light>(); L.type = LightType.Point;
-            L.color = new Color(1f, 0.48f, 0.18f); L.range = 8.5f; L.intensity = 3.4f;   // paint_combat_scene.cs L34 values
+            L.color = new Color(1.0f, 0.62f, 0.28f); L.range = 10f; L.intensity = 3.2f;   // r3 warm fire pool
             L.shadows = LightShadows.None; g.transform.position = bp;
+        }
+        if (haveSarcGlow)   // r3: subtle warm rim over the tomb — the painted crypt's centre glow
+        {
+            var g = new GameObject("KitRoom_TombGlow"); g.transform.SetParent(lightParent.transform, true);
+            var L = g.AddComponent<Light>(); L.type = LightType.Point;
+            L.color = new Color(1.0f, 0.66f, 0.34f); L.range = 7f; L.intensity = 1.4f;     // low warm centre rim
+            L.shadows = LightShadows.None; g.transform.position = sarcGlowPos;
         }
         {
             var g = new GameObject("KitRoom_CoolKey"); g.transform.SetParent(lightParent.transform, true);
             var L = g.AddComponent<Light>(); L.type = LightType.Directional;
-            L.color = new Color(0.55f, 0.62f, 0.80f); L.intensity = 0.35f;               // dim cool key
+            L.color = new Color(0.65f, 0.72f, 0.90f); L.intensity = 0.7f;                  // r3 cool directional key
             L.shadows = LightShadows.Soft; L.shadowStrength = 0.6f;
-            g.transform.rotation = Quaternion.Euler(50f, 205f, 0f);
+            g.transform.rotation = Quaternion.Euler(55f, 30f, 0f);
         }
         RenderSettings.ambientMode = UnityEngine.Rendering.AmbientMode.Flat;
-        RenderSettings.ambientLight = new Color(0.10f, 0.11f, 0.14f);                     // cool stone ambient
+        RenderSettings.ambientLight = new Color(0.20f, 0.22f, 0.30f);                      // r3 cool stone ambient fill
 
         // ── camera (paint contract, 1344x768 fit) so the SAVED scene carries the plate-contract rig ──
         var cam = MainCam(create: true);
@@ -434,9 +479,12 @@ public static class BuildRoomKit
         return inst;
     }
 
-    // Wall placer — build_atelier_crypt.cs L140-153: scale the LONG local axis so the footprint spans one
-    // CELL edge, keep NATIVE height + thickness (the kit is designed to tile at native height), yaw so the
-    // face points inward, then seat base on the floor at edgePos.
+    // Wall placer — r3 MASS fix. r1/r2 walls read as paper-thin planes barely taller than a person because
+    // the old placer kept native height + thickness and only scaled length (and assumed length==local-x).
+    // r3: detect which local axis is the length, fit it to one CELL edge, and give the wall real MASS —
+    // scale HEIGHT up to ~WALL_H (never shrink a natively-taller wall) and thicken the short horizontal axis
+    // up to ~WALL_T (a thin panel gets bulked ≈3–4×; a natively-thick wall is left alone). Yaw so the face
+    // points inward, then seat base on the floor at edgePos. (build_atelier_crypt.cs L140-153 + r3 mass.)
     static void PlaceWall(GameObject prefab, string name, GameObject parent, Vector3 edgePos, float yaw, ref int matFix)
     {
         if (prefab == null) return;
@@ -444,14 +492,55 @@ public static class BuildRoomKit
         inst.name = name; inst.transform.SetParent(parent.transform, true);
         inst.transform.position = Vector3.zero; inst.transform.rotation = Quaternion.identity; inst.transform.localScale = Vector3.one;
         var b0 = WorldBounds(inst);
-        float longAxis = Mathf.Max(b0.size.x, b0.size.z);
-        float s = longAxis > 1e-4f ? CELL / longAxis : 1f;
-        inst.transform.localScale = new Vector3(s, 1f, 1f);   // long axis → one CELL edge; height + thickness native
+        bool xLong = b0.size.x >= b0.size.z;
+        float lenSize = xLong ? b0.size.x : b0.size.z;
+        float thkSize = xLong ? b0.size.z : b0.size.x;
+        float sLen = lenSize > 1e-4f ? CELL / lenSize : 1f;                       // length → one CELL edge
+        float sThk = thkSize > 1e-4f ? Mathf.Max(1f, WALL_T / thkSize) : 3f;      // bulk thin walls to ≈WALL_T (never shrink)
+        float sy   = b0.size.y > 1e-4f ? Mathf.Max(1f, WALL_H / b0.size.y) : 1f;  // raise height to wall-mass (never shrink)
+        inst.transform.localScale = xLong ? new Vector3(sLen, sy, sThk) : new Vector3(sThk, sy, sLen);
         inst.transform.rotation = Quaternion.Euler(0f, yaw, 0f);
         var b1 = WorldBounds(inst);
         Vector3 pivotOffset = inst.transform.position - b1.center;
         inst.transform.position = new Vector3(edgePos.x + pivotOffset.x, pivotOffset.y - b1.min.y, edgePos.z + pivotOffset.z);
         FixMaterials(inst, false, ref matFix);
+    }
+
+    // r3 PILLAR PLACER — the painted crypt's columns are FAT carved masses, not slender posts. Widen the
+    // pillar's horizontal footprint to ~PILLAR_FOOT (≈0.9 cell, keeping its round X/Z proportion) and land
+    // its height in the PILLAR_H_MIN..MAX band; seat the base on the floor. (r1/r2 placed pillars at native
+    // slender scale → toothpicks.) Deterministic, material-defensive.
+    static GameObject PlacePillar(GameObject prefab, string name, GameObject parent, Vector3 center, ref int matFix)
+    {
+        if (prefab == null) return null;
+        var inst = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+        inst.name = name; inst.transform.SetParent(parent.transform, true);
+        inst.transform.position = Vector3.zero; inst.transform.rotation = Quaternion.identity; inst.transform.localScale = Vector3.one;
+        var b0 = WorldBounds(inst);
+        float footW = Mathf.Max(b0.size.x, b0.size.z);
+        float sxz = footW > 1e-4f ? (PILLAR_FOOT / footW) : 1f;                   // widen footprint to a fat column
+        float hUni = (b0.size.y > 1e-4f) ? b0.size.y * sxz : PILLAR_H_MIN;        // height if scaled uniformly
+        float hTgt = Mathf.Clamp(hUni, PILLAR_H_MIN, PILLAR_H_MAX);               // keep it fat, land 3.5–5u tall
+        float sy   = (b0.size.y > 1e-4f) ? (hTgt / b0.size.y) : sxz;
+        inst.transform.localScale = new Vector3(sxz, sy, sxz);
+        var b1 = WorldBounds(inst);
+        Vector3 pivotOffset = inst.transform.position - b1.center;
+        inst.transform.position = new Vector3(center.x + pivotOffset.x, pivotOffset.y - b1.min.y, center.z + pivotOffset.z);
+        FixMaterials(inst, false, ref matFix);
+        return inst;
+    }
+
+    // idempotency belt-and-suspenders (r3): the room root is destroyed+rebuilt each run, but sweep any
+    // orphaned KitRoom_* lights that may survive outside the new root so a re-run never doubles the rig.
+    static void PurgeStrayKitLights(GameObject keepRoot)
+    {
+        foreach (var L in UnityEngine.Object.FindObjectsByType<Light>(FindObjectsSortMode.None))
+        {
+            if (L == null) continue;
+            var go = L.gameObject;
+            if (keepRoot != null && go.transform.IsChildOf(keepRoot.transform)) continue;
+            if (go.name.StartsWith("KitRoom_")) UnityEngine.Object.DestroyImmediate(go);
+        }
     }
 
     // ════════════════════════════════════════════════════════════════════════════════════════════════
@@ -514,22 +603,36 @@ public static class BuildRoomKit
     // ════════════════════════════════════════════════════════════════════════════════════════════════
     //  BRAZIER + FALLBACK PRIMITIVES
     // ════════════════════════════════════════════════════════════════════════════════════════════════
+    // r3: shape the primitive-fallback brazier like the painted crypt's — a DARK metal BOWL on a NARROWER
+    // stem, topped by a flat ember-orange emissive DISC (r1/r2 rendered a glowing mushroom SPHERE that read
+    // as a floating orb). The emissive disc uses a fresh Standard material instance with _EmissionColor; the
+    // FireAnchor empty stays the runtime fire-VFX / glow-quad attach point.
     static GameObject BuildBrazier(string pid, GameObject parent, Vector3 center)
     {
         var g = new GameObject($"{pid}_Brazier"); g.transform.SetParent(parent.transform, true); g.transform.position = center;
-        var ped = GameObject.CreatePrimitive(PrimitiveType.Cylinder); ped.name = "Pedestal";
-        UnityEngine.Object.DestroyImmediate(ped.GetComponent<Collider>());
-        ped.transform.SetParent(g.transform, false); ped.transform.localPosition = new Vector3(0f, 0.85f, 0f);
-        ped.transform.localScale = new Vector3(0.7f, 0.85f, 0.7f);
-        ped.GetComponent<Renderer>().sharedMaterial = MakeStd(new Color(0.40f, 0.38f, 0.35f), 0.05f);
-        var bowl = GameObject.CreatePrimitive(PrimitiveType.Sphere); bowl.name = "Bowl";
+        // narrow stem (dark metal cylinder): height ≈1.5u, top at ~1.5
+        var stem = GameObject.CreatePrimitive(PrimitiveType.Cylinder); stem.name = "Stem";
+        UnityEngine.Object.DestroyImmediate(stem.GetComponent<Collider>());
+        stem.transform.SetParent(g.transform, false); stem.transform.localPosition = new Vector3(0f, 0.75f, 0f);
+        stem.transform.localScale = new Vector3(0.32f, 0.75f, 0.32f);
+        stem.GetComponent<Renderer>().sharedMaterial = MakeStd(new Color(0.16f, 0.15f, 0.14f), 0.10f);
+        // dark bowl (wide, shallow cylinder) seated on the stem top
+        var bowl = GameObject.CreatePrimitive(PrimitiveType.Cylinder); bowl.name = "Bowl";
         UnityEngine.Object.DestroyImmediate(bowl.GetComponent<Collider>());
-        bowl.transform.SetParent(g.transform, false); bowl.transform.localPosition = new Vector3(0f, 1.75f, 0f);
-        bowl.transform.localScale = new Vector3(1.3f, 0.7f, 1.3f);
-        var bm = MakeStd(new Color(0.86f, 0.55f, 0.28f), 0.15f); bm.EnableKeyword("_EMISSION"); bm.SetColor("_EmissionColor", new Color(1f, 0.45f, 0.15f) * 1.2f);
-        bowl.GetComponent<Renderer>().sharedMaterial = bm;
+        bowl.transform.SetParent(g.transform, false); bowl.transform.localPosition = new Vector3(0f, 1.66f, 0f);
+        bowl.transform.localScale = new Vector3(0.95f, 0.22f, 0.95f);
+        bowl.GetComponent<Renderer>().sharedMaterial = MakeStd(new Color(0.20f, 0.17f, 0.15f), 0.10f);
+        // ember-orange emissive DISC (thin cylinder) sitting inside the bowl rim
+        var ember = GameObject.CreatePrimitive(PrimitiveType.Cylinder); ember.name = "Embers";
+        UnityEngine.Object.DestroyImmediate(ember.GetComponent<Collider>());
+        ember.transform.SetParent(g.transform, false); ember.transform.localPosition = new Vector3(0f, 1.90f, 0f);
+        ember.transform.localScale = new Vector3(0.72f, 0.05f, 0.72f);
+        var em = MakeStd(new Color(0.85f, 0.42f, 0.16f), 0.20f);
+        em.EnableKeyword("_EMISSION"); em.SetColor("_EmissionColor", new Color(1.0f, 0.55f, 0.22f) * 2.0f);
+        em.globalIlluminationFlags = MaterialGlobalIlluminationFlags.RealtimeEmissive;
+        ember.GetComponent<Renderer>().sharedMaterial = em;
         // empty anchor child at the flame (runtime fire-VFX / glow-quad attach point)
-        var anchor = new GameObject("FireAnchor"); anchor.transform.SetParent(g.transform, false); anchor.transform.localPosition = new Vector3(0f, 2.0f, 0f);
+        var anchor = new GameObject("FireAnchor"); anchor.transform.SetParent(g.transform, false); anchor.transform.localPosition = new Vector3(0f, 2.05f, 0f);
         return g;
     }
 
