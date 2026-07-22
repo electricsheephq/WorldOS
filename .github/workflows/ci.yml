@@ -32,9 +32,10 @@ jobs:
       - name: Spawn-placement unit test (#1584/#1651 CI half — choose_spawns places the party on the open-floor
           centroid, never a barrel/corner/door; was ZERO CI references before this)
         run: uv run --directory servers/engine --group dev pytest -q -p no:xdist ../../qa/test_seed_spawns.py
-      - name: player_cert primitives unit test (#1651 live-half slice — the tri-state classifier, the 3D
-          occlusion / head-density silhouette detector, and the spawn/coherence-open assert. Pure cores
-          only; the live sandbox drive runs box-hosted, not in CI)
+      # #1651 live-half slice — the tri-state classifier, the 3D occlusion / head-density silhouette
+      # detector, and the spawn/coherence-open assert. Pure cores only; the live sandbox drive is
+      # box-hosted, not run in CI.
+      - name: player_cert primitives unit test (#1651 live-half slice)
         run: uv run --directory servers/engine --group dev pytest -q -p no:xdist ../../qa/test_player_cert.py
       - name: Single-flight launch-guard test (scripts/launch_common.sh lock)
         # Pure bash + POSIX mkdir/kill -0/rm — no uv/claude/viewer. Proves a second concurrent
@@ -65,11 +66,12 @@ jobs:
         run: bash qa/test_ui_playtest_heartbeat.sh
       - name: Combat-seed smoke (zero-LLM; pre_seed_combat subclass/resource/save enrichment assertions)
         run: uv run --directory servers/engine --group dev python ../../qa/smoke_pre_seed_combat.py
-      - name: Room-certification freshness test (#1651 CI half — qa/certifications pins plate/boxes/geometry
-          shas; ANY drift since certification must read STALE, never silently green). Now BLOCKING (#1668):
-          shop's manifest_entry drift (door_hotspots added by #1649) was re-certified in the sandbox lane,
-          so the gate is green and continue-on-error is removed — a red-but-non-blocking gate is the
-          audit's decay pattern (case 6: only red CI enforces the property).
+      # #1651 CI half — qa/certifications pins plate/boxes/geometry shas; ANY drift since certification
+      # must read STALE, never silently green. Now BLOCKING (#1668): shop's manifest_entry drift
+      # (door_hotspots added by #1649) was re-certified in the sandbox lane, so the gate is green and
+      # continue-on-error is removed — a red-but-non-blocking gate is the audit's decay pattern (case 6,
+      # only red CI enforces the property).
+      - name: Room-certification freshness test (#1651 CI half; now BLOCKING per #1668)
         run: uv run --directory servers/engine --group dev pytest -q -p no:xdist ../../qa/test_room_certification.py
 
   viewer-tests:
