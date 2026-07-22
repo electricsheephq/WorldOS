@@ -379,7 +379,7 @@ turn_retry() {  # transient-aware empty-output retry (mirrors run_duo)
     last_rc="$(cat "$STATE_DIR/.dm_last_rc" 2>/dev/null | tail -n1)"; last_rc="${last_rc:-0}"
     transient=0; worldos_dm_failure_is_transient "$last_out" "$last_rc" && transient=1
     if [ "$transient" != "1" ] && [ "$attempt" -ge 2 ]; then echo "[adventure] empty ($1) — REAL failure; stop retry." >&2; break; fi
-    if [ "$transient" = "1" ]; then echo "[adventure] empty ($1) — transient; retry $((attempt+1))/$max…" >&2; worldos_dm_retry_backoff "$attempt"; else echo "[adventure] empty ($1) — retry once…" >&2; fi
+    if [ "$transient" = "1" ]; then echo "[adventure] empty ($1) — transient; retry $((attempt+1))/${max}…" >&2; worldos_dm_retry_backoff "$attempt"; else echo "[adventure] empty ($1) — retry once…" >&2; fi
     if [ "${3:-}" = "1" ]; then
       worldos_dm_remint_session_on_retry --session-id "$2"; local _fresh="$2"
       [ "${#WORLDOS_DM_RETRY_SESSION[@]}" -ge 2 ] && _fresh="${WORLDOS_DM_RETRY_SESSION[1]}"
