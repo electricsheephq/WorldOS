@@ -411,7 +411,7 @@ ghoul clips · **#1306** demo dungeon authoring (room-unit graph) · **#1307** `
 **#1310** (S3 — Combat Readability, incl. the confusion-bug taxonomy). Later charters (S4+) are
 authored from §4 when their predecessor's gate passes — same template.
 
-## §5 — DEMO COMPLETION (the governing milestone; owner-set 2026-07-22)
+## 9. ★ DEMO COMPLETION — THE GOVERNING MILESTONE (owner-set 2026-07-22)
 
 **The milestone:** the owner plays "The Crypt Below" (adventure_demo_v1) end-to-end in the WorldOS
 player, unassisted: camp hub → Keeper Maera (visible, quest accepted) → crypt (visible goblins,
@@ -419,21 +419,27 @@ combat runs AND CLOSES with XP) → throne (visible boss, fight completes) → r
 quest_completed — with ZERO user-truth defects. Demo completion proves the system can build the rest.
 
 **Proven by four gates (checkable, never narrative):**
-- G1 — the certification gates that EXIST run green on the installed build: walk_static (CI) +
-  paint-coherence gate + the A-T/A-G evals; G1 UPGRADES to the full `player_cert` suite the moment
-  §5.2 lands (red-team F3: a proof clause may only reference gates that exist).
+- G1 — the certification gates that EXIST run green against the INSTALLED build, verified by
+  build identity: the app self-reports its build stamp (/debug), and the gate evidence records the
+  SAME stamp — a mismatch is a G1 FAIL (the certified-build ≠ installed-build class, #1651).
+  Today that means walk_static (CI) + the paint-coherence gate + the A-T/A-G evals run against the
+  installed pair; G1 UPGRADES to the full `player_cert` suite when §9.2 lands (a proof clause may
+  only reference gates that exist).
 - G2 — arc-duo eval: completion at bar with behavioral GREEN (surface=adventure, av_ ruler).
-- G3 — walked-arc eval GREEN (navigation + cast presence + VQA stages).
-- G4 — owner playthrough files zero new P1s (the residual unknown-unknowns absorber).
+- G3 — walked-arc eval GREEN over the FULL arc route INCLUDING the return-for-reward leg back to
+  the giver (navigation + cast presence + VQA stages at every leg).
+- G4 — owner playthrough observes ZERO user-truth defects of ANY severity (walk-through, invisible
+  actor, dead door, spawn-in-furniture, stuck UI panel) and files zero new P1s of any class (the
+  residual unknown-unknowns absorber).
 
-### 5.1 Demo-critical path (dependency-ordered; ⊘ = independent of the pipeline fork)
+### 9.1 Demo-critical path (dependency-ordered; ⊘ = independent of the pipeline fork)
 1. ⊘ #1645 combat lifecycle (M) — DM closes fights (action economy, end_combat, XP, time-advance).
 2. ⊘ #1639 cast presence (M) — rest surface emits NPC + live-monster tokens; client renders them.
 3. ⊘ #1522 parley-panel lifecycle (S) — CloseParley() from the location-change path (sits on the
    demo's FIRST beat: Maera parley → door-cross). UI/panel lifecycle is a NAMED demo property.
 4. ⊘ #1647 wave 1 (S-M) — coherence-aware spawns/arrivals (instrument merged; relocation in
    flight); silhouette fix + door hotspots (#1649); #1584 spawn test wired into CI.
-5. ⊘ ONE box build carrying the client fixes → sandbox gates → owner install (install gate = §5.2).
+5. ⊘ ONE box build carrying the client fixes → sandbox gates → owner install (install gate = §9.2).
 6. Camp HUB (fork-dependent): regen geometry is GREEN; ships as greybox-composite / #1642-lit /
    3D-first per the spike outcome.
 7. ⊘ #1642 alive plates (M) — normal pass + light composite (batch with build 5 when ready).
@@ -441,7 +447,7 @@ quest_completed — with ZERO user-truth defects. Demo completion proves the sys
    (red-team): per-actor silhouette-per-submesh + spawn-centroid assertions over the NEW crypt
    roster — the 3D re-author must not reintroduce either decayed class.
 
-### 5.2 THE HARNESS SYSTEM (the enforcement redesign, red-team-amended)
+### 9.2 THE HARNESS SYSTEM (the enforcement redesign, red-team-amended)
 - **`qa/player_cert`** — CHARTERED WORK (L), not an aspiration: fold walk_test + adventure_walk +
   journey_eval + the user-truth stages + a combat-lifecycle probe into ONE tri-state command.
   SPLIT (red-team F1): a CI-RUNNABLE static/headless half (every PR) and a BOX-HOSTED live half
@@ -459,6 +465,6 @@ quest_completed — with ZERO user-truth defects. Demo completion proves the sys
 - **Rebuild-not-patch** — rooms failing registration/coherence are REGENERATED through the current
   chain, never hand-patched; the cert-required lint (#1644) keeps retired plates unshippable.
 
-### 5.3 Ruler discipline (restated)
+### 9.3 Ruler discipline (restated)
 Two-anchor calibrated panels; av_ ruler for adventure aggregates; blind adjudication wherever an
 author would judge their own work; honest negatives are progress and get scorecard rows.

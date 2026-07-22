@@ -23,10 +23,10 @@ _Last updated: 2026-07-21 (UTC) — Jul-16 generator chain merged; Task #76 in f
   2026-07-20). Stage 1 (beacon regen) = PR #1625; #1619 render_recipe = PR #1626;
   doc hygiene = PR #1624. Box claim via #1386 comments; packet in docs/KIMI-ONBOARDING.md §4.
 - **Companions:** #1620 experience gates (open).
-- **★★ GOVERNING MILESTONE (owner, 2026-07-22): DEMO COMPLETION — PRODUCT-ROADMAP §5.** The owner
-  plays "The Crypt Below" end-to-end with zero user-truth defects, proven by the four §5 gates.
-  Demo-critical path in §5.1; the harness system (player_cert + executable feature registry +
-  known-hole SLA + rebuild-not-patch) in §5.2. The A-series evals below are its instruments.
+- **★★ GOVERNING MILESTONE (owner, 2026-07-22): DEMO COMPLETION — PRODUCT-ROADMAP §9.** The owner
+  plays "The Crypt Below" end-to-end with zero user-truth defects, proven by the four §9 gates.
+  Demo-critical path in §9.1; the harness system (player_cert + executable feature registry +
+  known-hole SLA + rebuild-not-patch) in §9.2. The A-series evals below are its instruments.
 - **A-SERIES SHIPPED (2026-07-22):** the Adventure Loop — PRODUCT-ROADMAP §4d. Both eval
   modalities live (#1637/#1638 merged); first weakest-link verdicts: #1645 (combat lifecycle),
   #1639 (cast presence), #1647 (user-truth gates epic).
