@@ -91,6 +91,40 @@ def cell_px(ortho: float, h: int) -> float:
     return h * (2.0 / (2.0 * ortho))
 
 
+# --- #1585/#1647 painted-door hotspots: the pure px<->px math the client uses to route a click on the
+# --- painted arch to its authored door_cell. TWIN of C# CombatSurfaceClient.WindowToPlatePx (+ its
+# --- BuildDoorHotspots inverse). Same CROP model as world_to_window_px above: the ortho camera fixes the
+# --- vertical half-height so the plate billboard spans the full frustum height (oh = 2*ortho), the plate
+# --- is sized by TEXTURE aspect and centered horizontally -> a uniform px/px scale s = h/tex_h on BOTH
+# --- axes (plate pixels are square on the billboard), cropped/centered when the window aspect != plate
+# --- aspect. `screen_*` are Unity screen pixels (BOTTOM-LEFT origin); plate px is top-left (image) origin.
+def plate_px_to_screen_px(px: float, py: float, w: float, h: float, tex_w: float, tex_h: float) -> tuple:
+    """Plate pixel (top-left origin) -> Unity screen pixel (bottom-left origin). Inverse of
+    window_px_to_plate_px; used by BuildDoorHotspots to place the arch glow marker."""
+    s = h / tex_h
+    sx = 0.5 * w + (px - 0.5 * tex_w) * s
+    sy = h - py * s   # top-left plate py -> bottom-left screen y
+    return (sx, sy)
+
+
+def window_px_to_plate_px(screen_x: float, screen_y: float, w: float, h: float,
+                          tex_w: float, tex_h: float) -> tuple:
+    """Unity screen pixel (bottom-left origin) -> plate pixel (top-left origin). EXACT mirror of C#
+    CombatSurfaceClient.WindowToPlatePx — the hit-test basis the door-hotspot check runs on."""
+    s = h / tex_h
+    px = 0.5 * tex_w + (screen_x - 0.5 * w) / s
+    py = (h - screen_y) / s   # bottom-left screen -> top-left plate y
+    return (px, py)
+
+
+def door_hotspot_hit(click_px: tuple, hotspot_px: tuple, radius_px: float) -> bool:
+    """The pure painted-door hit-test (mirror of the C# TryDoorHotspot distance check): a click, already
+    in plate pixels, is inside the hotspot iff it lies within radius_px of the hotspot centroid."""
+    dx = click_px[0] - hotspot_px[0]
+    dy = click_px[1] - hotspot_px[1]
+    return dx * dx + dy * dy <= radius_px * radius_px
+
+
 # --- PURE assertion helpers (no I/O; unit-tested in qa/test_walk_test.py) --------------------------
 def check_camera_pose(dbg: dict, ortho: float, *, deg_tol: float = 1.5,
                       vp_tol: float = 0.03, pos_tol: float = 1.5) -> list:
