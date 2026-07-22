@@ -382,10 +382,6 @@ def probe_silhouette(ctx: dict) -> dict:
         ortho = float(boxes.get("ortho") or 11.0)
     rec["window"] = [w, h]
 
-    def _torso(cell):       # ON the occluder column, ABOVE the visible floor + its move/selection ring
-        wx, wz = cell_to_world(cell, cols, rows)
-        return W.world_to_window_px(wx, 1.8, wz, ortho, w, h)
-
     cam = W.contract_cam_pos()
     occluders = find_tall_occluders(boxes)
     avail = (reachable - {start}) if start else reachable
