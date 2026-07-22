@@ -410,3 +410,61 @@ ghoul clips · **#1306** demo dungeon authoring (room-unit graph) · **#1307** `
 **Charters live:** **#1309** (S2 — The Felt Demo Loop, incl. the FELT control-anchored gate) ·
 **#1310** (S3 — Combat Readability, incl. the confusion-bug taxonomy). Later charters (S4+) are
 authored from §4 when their predecessor's gate passes — same template.
+
+## 9. ★ DEMO COMPLETION — THE GOVERNING MILESTONE (owner-set 2026-07-22)
+
+**The milestone:** the owner plays "The Crypt Below" (adventure_demo_v1) end-to-end in the WorldOS
+player, unassisted: camp hub → Keeper Maera (visible, quest accepted) → crypt (visible goblins,
+combat runs AND CLOSES with XP) → throne (visible boss, fight completes) → return → reward →
+quest_completed — with ZERO user-truth defects. Demo completion proves the system can build the rest.
+
+**Proven by four gates (checkable, never narrative):**
+- G1 — the certification gates that EXIST run green against the INSTALLED build, verified by
+  build identity: the app self-reports its build stamp via the /app-status contract (WorldOS-GUI-RUNBOOK §app-status; viewer/server.py), and the gate evidence records the
+  SAME stamp — a mismatch is a G1 FAIL (the certified-build ≠ installed-build class, #1651).
+  Today that means walk_static (CI) + the paint-coherence gate + the A-T/A-G evals run against the
+  installed pair; G1 UPGRADES to the full `player_cert` suite when §9.2 lands (a proof clause may
+  only reference gates that exist).
+- G2 — arc-duo eval: completion at bar with behavioral GREEN (surface=adventure, av_ ruler).
+- G3 — walked-arc eval GREEN over the FULL arc route INCLUDING the return-for-reward leg back to
+  the giver (navigation + cast presence + VQA stages at every leg).
+- G4 — owner playthrough observes ZERO user-truth defects of ANY severity (walk-through, invisible
+  actor, dead door, spawn-in-furniture, stuck UI panel) and files zero new P1s of any class (the
+  residual unknown-unknowns absorber).
+
+### 9.1 Demo-critical path (dependency-ordered; ⊘ = independent of the pipeline fork)
+1. ⊘ #1645 combat lifecycle (M) — DM closes fights (action economy, end_combat, XP, time-advance).
+2. ⊘ #1639 cast presence (M) — rest surface emits NPC + live-monster tokens; client renders them.
+3. ⊘ #1522 parley-panel lifecycle (S) — CloseParley() from the location-change path (sits on the
+   demo's FIRST beat: Maera parley → door-cross). UI/panel lifecycle is a NAMED demo property.
+4. ⊘ #1647 wave 1 (S-M) — coherence-aware spawns/arrivals (instrument merged; relocation in
+   flight); silhouette fix + door hotspots (#1649); #1584 spawn test wired into CI.
+5. ⊘ ONE box build carrying the client fixes → sandbox gates → owner install (install gate = §9.2).
+6. Camp HUB (fork-dependent): regen geometry is GREEN; ships as greybox-composite / #1642-lit /
+   3D-first per the spike outcome.
+7. ⊘ #1642 alive plates (M) — normal pass + light composite (batch with build 5 when ready).
+8. #83 THE 3D SPIKE — decides room construction FORWARD; not demo-blocking. SPIKE EXIT CRITERIA
+   (red-team): per-actor silhouette-per-submesh + spawn-centroid assertions over the NEW crypt
+   roster — the 3D re-author must not reintroduce either decayed class.
+
+### 9.2 THE HARNESS SYSTEM (the enforcement redesign, red-team-amended)
+- **`qa/player_cert`** — CHARTERED WORK (L), not an aspiration: fold walk_test + adventure_walk +
+  journey_eval + the user-truth stages + a combat-lifecycle probe into ONE tri-state command.
+  SPLIT (red-team F1): a CI-RUNNABLE static/headless half (every PR) and a BOX-HOSTED live half
+  with a NAMED trigger — scheduled box session + owning runbook step + a version-stamp the owner
+  app self-reports on launch, diffed against the latest cert run (drift is loud, not silent).
+  ROSTER-COMPLETE (F2): live properties iterate the FULL actor roster; any roster addition is a
+  trigger event re-running the applicable property set against the new member.
+  BUILD ORDER (red-team sequencing): the two shared assertion PRIMITIVES first — silhouette-per-
+  submesh and spawn-centroid — consumed by the #83 spike immediately, aggregated by player_cert.
+- **`qa/features.json` + lint** — the EXECUTABLE feature registry: every shipped capability row
+  binds to a gate assertion id; CI fails on unbound rows or orphan gates. Docs inform; only red
+  CI enforces (archaeology case 6: a written runbook rule recurred anyway).
+- **Known-hole SLA** — player-feelable holes cannot defer past the next box build; every deferral
+  names the gate that guards it meanwhile.
+- **Rebuild-not-patch** — rooms failing registration/coherence are REGENERATED through the current
+  chain, never hand-patched; the cert-required lint (#1644) keeps retired plates unshippable.
+
+### 9.3 Ruler discipline (restated)
+Two-anchor calibrated panels; av_ ruler for adventure aggregates; blind adjudication wherever an
+author would judge their own work; honest negatives are progress and get scorecard rows.
