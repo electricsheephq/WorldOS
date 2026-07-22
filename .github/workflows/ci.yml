@@ -29,6 +29,9 @@ jobs:
         run: python3 qa/walk_static.py
       - name: Static walkability units (red-first proofs for the gate itself)
         run: uv run --directory servers/engine --group dev pytest -q -p no:xdist ../../qa/test_walk_static.py
+      - name: Spawn-placement unit test (#1584/#1651 CI half — choose_spawns places the party on the open-floor
+          centroid, never a barrel/corner/door; was ZERO CI references before this)
+        run: uv run --directory servers/engine --group dev pytest -q -p no:xdist ../../qa/test_seed_spawns.py
       - name: Single-flight launch-guard test (scripts/launch_common.sh lock)
         # Pure bash + POSIX mkdir/kill -0/rm — no uv/claude/viewer. Proves a second concurrent
         # play_party.sh cold-open is cleanly rejected and the lock self-heals (release / dead holder).
@@ -58,6 +61,12 @@ jobs:
         run: bash qa/test_ui_playtest_heartbeat.sh
       - name: Combat-seed smoke (zero-LLM; pre_seed_combat subclass/resource/save enrichment assertions)
         run: uv run --directory servers/engine --group dev python ../../qa/smoke_pre_seed_combat.py
+      - name: Room-certification freshness test (#1651 CI half — qa/certifications pins plate/boxes/geometry
+          shas; ANY drift since certification must read STALE, never silently green). Placed LAST in this
+          job (not beside the other new spawn-placement step above) because it is EXPECTED RED today (see
+          the PR body — shop's manifest_entry drifted from its pinned certification) and a failing step
+          would otherwise skip every sibling step queued after it in this job.
+        run: uv run --directory servers/engine --group dev pytest -q -p no:xdist ../../qa/test_room_certification.py
 
   viewer-tests:
     # The viewer is where most recent regressions landed, but its suite was not in
@@ -185,6 +194,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # #1651 CI half: check_coherence_freshness.py below walks git history (last commit touching
+          # each paint-coherence report vs the plate's blob sha at HEAD) — needs full history, not the
+          # default shallow depth-1 clone, or every room reads as "not tracked by git" instead of a
+          # real verdict.
+          fetch-depth: 0
       - name: Install uv
         uses: astral-sh/setup-uv@v7
       - name: Create a venv with the qa image lane (Pillow + numpy + pytest)
@@ -228,6 +243,12 @@ jobs:
         # engine/HTTP/box involved (mirrors the split above); the live HTTP driving is exercised
         # on-box (see qa/journey_click_sweep.py's module docstring), deliberately not unit-tested here.
         run: python -m pytest qa/test_journey_click_sweep.py -q -p no:xdist
+      - name: Coherence-report freshness lint (#1651 CI half — every plates_manifest-shipped room must
+          have a paint-coherence report whose plate blob sha still matches the shipped plate; missing
+          report is a FAILURE, never a silent skip). Placed LAST in this job because it is EXPECTED RED
+          today (see the PR body — 3 rooms have no report yet, a real pre-existing coverage gap this
+          lint newly surfaces) and a failing step would otherwise skip every sibling step after it.
+        run: python qa/check_coherence_freshness.py
 
   license-check:
     runs-on: ubuntu-latest
