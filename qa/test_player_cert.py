@@ -359,3 +359,72 @@ def test_ghost_frames_calibration_real_pngs():
         assert share > PC.MAX_GHOST_TINT_SHARE, f"{g.name} ghost share {share} should exceed threshold (RED)"
     nshare = PC.peak_ghost_tint_share(Image.open(normal).convert("RGB"))
     assert nshare <= PC.MAX_GHOST_TINT_SHARE, f"normal actor share {nshare} should be below threshold (GREEN)"
+
+
+# ── #1666 cast-full-figure: a fragment-rendered token must turn the suite RED ─────────────────────────
+def _body_strip(side=200, top=20, bot=180, col=(200, 210, 90)):
+    """A `side`x`side` frame with a tall vertical goblin-BODY strip (chartreuse: g high, g~r, b low) — a
+    full figure. Body extent ~ (bot-top)/side."""
+    import numpy as np
+    from PIL import Image
+    a = np.full((side, side, 3), 40, dtype=np.uint8)
+    a[top:bot, side // 2 - 12:side // 2 + 12] = col
+    return Image.fromarray(a)
+
+
+def _warm_fragment(side=200):
+    """A `side`x`side` frame with only a small warm-RED cluster (r-dominant, no body-green) near the top —
+    the fragment shape: the body mesh absent, an accessory/silhouette the only draw. Body extent ~0."""
+    import numpy as np
+    from PIL import Image
+    a = np.full((side, side, 3), 40, dtype=np.uint8)
+    a[30:55, side // 2 - 12:side // 2 + 12] = (180, 40, 35)   # red, not body-green
+    return Image.fromarray(a)
+
+
+def test_figure_body_extent_high_on_full_body_strip():
+    img = _body_strip(top=20, bot=180)
+    frac = PC.figure_body_extent_frac(img, (78, 0, 122, 200))
+    assert frac >= 0.75, f"a full body strip should fill most of its box, got {frac}"
+
+
+def test_figure_body_extent_near_zero_on_warm_fragment():
+    img = _warm_fragment()
+    frac = PC.figure_body_extent_frac(img, (78, 0, 122, 200))
+    assert frac < PC.FIGURE_MIN_EXTENT, f"a red fragment has no body figure, got {frac}"
+
+
+def test_cast_figure_verdict_green_red_error():
+    green = {"captured": True, "min_extent": PC.FIGURE_MIN_EXTENT,
+             "foes": [{"extent": 0.7}, {"extent": 0.82}]}
+    red = {"captured": True, "min_extent": PC.FIGURE_MIN_EXTENT,
+           "foes": [{"extent": 0.7}, {"extent": 0.12}]}     # one fragment turns it RED
+    assert PC.cast_figure_verdict(green) == "GREEN"
+    assert PC.cast_figure_verdict(red) == "RED"
+    assert PC.cast_figure_verdict({"harness_errors": ["surface: boom"]}) == "ERROR"
+    assert PC.cast_figure_verdict({"captured": False}) == "ERROR"
+    assert PC.cast_figure_verdict({"captured": True, "foes": []}) == "ERROR"   # no foe -> no evidence
+
+
+def test_cast_figure_calibration_real_crypt_g5():
+    """RED-FIRST against the actual g5 crypt frame (#1666): the first-spawned goblin renders as a red
+    fragment (body extent << floor) while the two full goblins render a tall body figure. The three boxes
+    are the EYEBALLED projected-figure regions (the pure extent measure is decoupled from the live camera
+    projection, which the probe wires separately). Skips when LEXAR isn't mounted (CI has no LEXAR)."""
+    import pytest
+    from PIL import Image
+    frame = _lexar("g4-build", "artifacts", "crypt_g5.png")
+    if not frame:
+        pytest.skip("LEXAR crypt_g5 calibration frame not mounted")
+    im = Image.open(frame).convert("RGB")
+    fragment = PC.figure_body_extent_frac(im, (80, 330, 165, 475))
+    goblin_a = PC.figure_body_extent_frac(im, (410, 350, 500, 520))
+    goblin_b = PC.figure_body_extent_frac(im, (490, 448, 565, 582))
+    assert fragment < PC.FIGURE_MIN_EXTENT, f"fragment goblin body extent {fragment} should be RED"
+    assert goblin_a >= PC.FIGURE_MIN_EXTENT, f"full goblin A extent {goblin_a} should be GREEN"
+    assert goblin_b >= PC.FIGURE_MIN_EXTENT, f"full goblin B extent {goblin_b} should be GREEN"
+    # and the pure verdict on the assembled record reads RED (the fragment token present)
+    rec = {"captured": True, "min_extent": PC.FIGURE_MIN_EXTENT,
+           "foes": [{"extent": round(fragment, 4)}, {"extent": round(goblin_a, 4)},
+                    {"extent": round(goblin_b, 4)}]}
+    assert PC.cast_figure_verdict(rec) == "RED"

@@ -224,6 +224,10 @@ public class CombatSurfaceClient : MonoBehaviour
     const string HumanoidControllerPath = "Assets/Animations/WorldOSHumanoid.controller";
     RuntimeAnimatorController _humanoidCtrl; bool _humanoidCtrlTried;
     readonly System.Collections.Generic.HashSet<string> _ctrlDriven = new System.Collections.Generic.HashSet<string>();
+    // #1666 render-coverage rebind: ids that have already consumed their ONE re-bind attempt (a persistent
+    // degenerate partial-render bind is re-instantiated once — see RenderCoverageGuardCo). Cleared on Despawn so
+    // a genuine re-spawn re-arms; guarantees a still-degenerate re-bind can never loop.
+    readonly System.Collections.Generic.HashSet<string> _coverageRebound = new System.Collections.Generic.HashSet<string>();
     string _currentId = "";        // the isCurrent combatant this surface (active-turn ring-pulse anchor)
     string _pulsePrev = "";        // last-pulsed ring, reset to rest when the turn moves on
 
@@ -329,6 +333,15 @@ public class CombatSurfaceClient : MonoBehaviour
     const string TemplateMonsterFbx = "Assets/chars_v2/goblin/goblin.fbx";
     const string TemplateMonsterAlbedo = "Assets/chars_v2/goblin/albedo.png";
     const string TemplateMonsterAnim = "";
+    // #1666 RENDER-COVERAGE guard (the g5 crypt residual): the raw-prefab bind-height guards above measure the
+    // PREFAB (sharedMesh.bounds) — full height, so they PASS — but the first-spawned instance still rendered as a
+    // ~0.2m accessory fragment (its body SkinnedMeshRenderers never initialized; the 2nd/3rd of the SAME prefab
+    // rendered full). After an actor binds + settles, its RENDERED (BakeMesh) figure must cover at least this
+    // fraction of its scale-target height, else it is re-instantiated ONCE. Root-cause-agnostic — catches any
+    // partial-render bind (skin-init, culling, material strip), not only the first-spawn case. Floor 0.6: the g5
+    // fragment measured ~0.05x its target; a healthy figure measures ~1.0x (wide separation).
+    const float RenderCoverageFloor = 0.6f;
+    const int RenderCoverageSettleFrames = 3;   // let skinning + the idle/controller graph settle before measuring
 
     // W6.1 (#1460) RUNTIME OCCLUDER PROXIES: the runtime twin of the paint_combat_v1.cs:487-533 editor
     // bake. The engine ships `occluders` ({cells:[[c,r]...], band:"low"|"mid"|"tall"}) on /combat-surface
@@ -530,6 +543,13 @@ public class CombatSurfaceClient : MonoBehaviour
         // Option A (item 3): hide the scene's baked mannequins — the client now renders its own cast in rest
         // AND combat, so a baked actor would double-render / linger T-posed beside the live cast.
         HideBakedCast();
+
+        // #1666: warm the shared actor pipeline BEFORE the first poll can spawn, so no REAL actor is ever the
+        // first-instantiated skinned mesh / first bundle+controller access of its frame — the condition the crypt
+        // residual manifested under (the first-spawned monster rendered as a ~0.2m accessory fragment while its
+        // body renderers never initialized; the 2nd/3rd of the SAME prefab, no longer first, rendered full). The
+        // render-coverage rebind guard (RenderCoverageGuardCo) remains the guaranteed catch-all for any residual.
+        PrewarmActorPipeline();
 
         Debug.Log("[CSC] start: campaign=" + CampaignId + " url=" + ViewerUrl + " overlay=" + _overlayOn + " onboard=" + _onboard);
         StartCoroutine(PollLoop());
@@ -1282,6 +1302,31 @@ public class CombatSurfaceClient : MonoBehaviour
     // their EXACT registry asset path (see BuildMacOSPlayer.EnsurePackaged), so a registry model_ref
     // like "Assets/chars_v2/goblin/goblin.fbx" loads verbatim — zero path transform, registry invariant
     // intact. Loaded once; absent bundle (e.g. a legacy build) -> spawning no-ops, repositioning still works.
+    // #1666: fold the one-time bundle + humanoid-controller + donor-idle loads AND a hidden skinned-mesh upload
+    // out of the first SpawnActor, so the first real spawn is never also the first-ever access to any of them.
+    // The throwaway instantiate/bake/destroy of each template forces Unity to upload the skinned meshes here
+    // (never rendered — placed far below, deactivated, destroyed the same frame). All guarded: an absent bundle
+    // or missing template resolves to null and is skipped, byte-identical to a no-bundle build.
+    void PrewarmActorPipeline()
+    {
+        try
+        {
+            Bundle(); HumanoidController(); DonorIdle();
+            foreach (var fbx in new[] { TemplateMonsterFbx, TemplateCharFbx })
+            {
+                var prefab = LoadAsset<GameObject>(fbx);
+                if (prefab == null) continue;
+                var go = (GameObject)Object.Instantiate(prefab);
+                go.name = "__prewarm"; go.transform.position = new Vector3(0f, -10000f, 0f); go.SetActive(false);
+                foreach (var smr in go.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                    if (smr != null && smr.sharedMesh != null) { var bk = new Mesh(); smr.BakeMesh(bk); Object.DestroyImmediate(bk); }
+                Object.DestroyImmediate(go);
+            }
+            Debug.Log("[CSC] #1666 actor pipeline pre-warmed");
+        }
+        catch (System.Exception e) { Debug.LogWarning("[CSC] #1666 prewarm: " + e.Message); }
+    }
+
     AssetBundle Bundle()
     {
         if (_bundleTried) return _bundle;
@@ -1608,7 +1653,9 @@ public class CombatSurfaceClient : MonoBehaviour
     // spawn() lambda: registry-resolve -> load prefab from the bundle -> pitch guard -> BIND-POSE scale
     // lock -> idle pose (embedded clip, else humanoid donor retarget) -> ground+center on the cell ->
     // albedo -> AO blob + selection ring. Returns the placed transform, or null if the model is missing.
-    Transform SpawnActor(string id, string tokName, string team, int cx, int cy)
+    // #1666: armCoverageGuard=false on the ONE re-instantiate the render-coverage guard itself triggers, so a
+    // still-degenerate re-bind can never re-arm the guard and loop.
+    Transform SpawnActor(string id, string tokName, string team, int cx, int cy, bool armCoverageGuard = true)
     {
         if (string.IsNullOrEmpty(id)) return null;
         bool foe = (team == "foe");
@@ -1761,7 +1808,36 @@ public class CombatSurfaceClient : MonoBehaviour
         // graph is running steadily (a bounds-min re-snap), unless a move/down has since taken over. Cells carry
         // no elevation (CellToWorld is flat FloorY), so this is a footing re-measure, not a dais-height lookup.
         StartCoroutine(ResnapGroundedCo(id, cx, cy));
+        // #1666 render-coverage rebind guard: verify — once the actor settles — that its RENDERED figure actually
+        // covers its scale-target height; a persistent degenerate partial-render bind is re-instantiated ONCE.
+        if (armCoverageGuard && !_coverageRebound.Contains(id))
+            StartCoroutine(RenderCoverageGuardCo(id, tokName, team, height));
         return go.transform;
+    }
+
+    // #1666: measure an actor's RENDERED (BakeMesh) figure height a few frames after spawn — once skinning + the
+    // idle/controller graph have settled — and compare it to its scale-target height. A persistent degenerate
+    // partial-render bind (only an accessory mesh drew; the body SkinnedMeshRenderers never initialized) measures
+    // far below RenderCoverageFloor * expectH, while the raw-prefab bind-height guards in SpawnActor PASSED (the
+    // prefab's own bind bounds are full height). Re-instantiate the actor ONCE — a fresh bind is no longer the
+    // first-instantiated skinned mesh of its frame, which cures the first-spawn skin-init case — and log loudly.
+    // One attempt per id (_coverageRebound, consumed BEFORE the re-spawn) so a still-degenerate re-bind can never
+    // loop. Mirrors ResnapGroundedCo's downed/gliding guards; presentation-only.
+    IEnumerator RenderCoverageGuardCo(string id, string tokName, string team, float expectH)
+    {
+        for (int i = 0; i < RenderCoverageSettleFrames; i++) yield return null;
+        var a = FindActor(id); if (a == null) yield break;
+        if (_downed.Contains(id)) yield break;                              // a downed/prone actor legitimately collapses
+        if (_glide.TryGetValue(id, out var g) && g != null) yield break;    // mid-move; a settled re-measure isn't meaningful
+        var rends = a.GetComponentsInChildren<Renderer>();
+        float renderedH = Measure(a.gameObject, rends).size.y;              // BakeMesh over non-silclone renderers
+        if (expectH <= 0.001f || renderedH >= expectH * RenderCoverageFloor) yield break;   // healthy figure
+        if (!_cellOf.TryGetValue(id, out var cc) || cc == null || cc.Length != 2) yield break;
+        _coverageRebound.Add(id);   // consume the single attempt BEFORE the re-spawn (which re-enters SpawnActor)
+        Debug.LogWarning("[CSC] #1666 render-coverage rebind for token " + id + " name='" + tokName
+            + "' renderedH=" + renderedH.ToString("F2") + "m < " + RenderCoverageFloor.ToString("F2")
+            + "x expect " + expectH.ToString("F2") + "m -> re-instantiate @cell(" + cc[0] + "," + cc[1] + ")");
+        SpawnActor(id, tokName, team, cc[0], cc[1], armCoverageGuard: false);   // re-bind ONCE; no re-arm (no loop)
     }
 
     // #1665: re-ground an actor a few frames after spawn, once its idle graph has advanced past the bind/first
@@ -1807,6 +1883,7 @@ public class CombatSurfaceClient : MonoBehaviour
         _animOf.Remove(id); _topOf.Remove(id); RemoveHpBar(id);   // #anim-combat: clear combat/anim state
         _downed.Remove(id); _downRunning.Remove(id); _reviveWanted.Remove(id); _downPose.Remove(id);
         _ctrlDriven.Remove(id);   // #anim-pack: forget controller-driven state so a re-spawn re-resolves the avatar
+        _coverageRebound.Remove(id);   // #1666: a genuine re-spawn of this id re-arms the render-coverage guard
         Debug.Log("[CSC] despawned Actor_" + id);
     }
 
