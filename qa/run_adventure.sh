@@ -93,10 +93,13 @@ try: d=json.load(sys.stdin).get("claudeAiOauth",{})
 except Exception: d={}
 sys.stdout.write(d.get("accessToken") or "")' 2>/dev/null || true)"
 fi
-# Wrapper: every duo claude -p goes through this — isolated config, no inherited SDK session markers.
-duo_claude() {
-  env -u ANTHROPIC_BASE_URL -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN       -u CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH -u CLAUDE_CODE_SDK_HAS_OAUTH_REFRESH -u CLAUDE_CODE_SESSION_ID       CLAUDE_CONFIG_DIR="$DUO_CFG" ${DUO_TOK:+CLAUDE_CODE_OAUTH_TOKEN="$DUO_TOK"}       claude "$@"
-}
+# Hermetic prefix for every duo claude -p: isolated config, no inherited SDK session markers.
+# Must be an ARRAY headed by env (a real executable), not a shell function: worldos_timeout execs
+# the timeout(1) binary, which cannot exec a function (rc=127 on the DM path, adv_live3 beat 0).
+DUO_ENV=(env -u ANTHROPIC_BASE_URL -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN
+         -u CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH -u CLAUDE_CODE_SDK_HAS_OAUTH_REFRESH -u CLAUDE_CODE_SESSION_ID
+         CLAUDE_CONFIG_DIR="$DUO_CFG")
+[ -n "${DUO_TOK:-}" ] && DUO_ENV+=(CLAUDE_CODE_OAUTH_TOKEN="$DUO_TOK")
 WORLDOS_LEAN_TAIL="${WORLDOS_LEAN_TAIL:-8}"
 
 # The transcripts dir is threaded via WORLDOS_TRANSCRIPTS_DIR (a REPO-RELATIVE path; default
@@ -351,7 +354,7 @@ turn() {  # $1=role $2=sid $3=first? $4=msg ; echoes the reply text (mirrors run
     worldos_stream_flag_arg
     worldos_stream_tailer_start "$out" "$STATE_DIR"
     worldos_timeout "$beat_timeout" \
-      duo_claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
+      "${DUO_ENV[@]}" claude -p "$msg" ${resume[@]+"${resume[@]}"} ${extra[@]+"${extra[@]}"} --plugin-dir "$ROOT" --mcp-config "$DM_CFG" --strict-mcp-config \
         --model "$WORLDOS_DM_MODEL" ${WORLDOS_DM_EFFORT[@]+"${WORLDOS_DM_EFFORT[@]}"} --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
         ${WORLDOS_STREAM_FLAG[@]+"${WORLDOS_STREAM_FLAG[@]}"} \
         --output-format stream-json --verbose > "$out" 2>> "$T/$RUN.dm.err"
@@ -361,7 +364,7 @@ turn() {  # $1=role $2=sid $3=first? $4=msg ; echoes the reply text (mirrors run
     if [ "$rc" -ne 0 ] && ! worldos_dm_result_is_error "$out"; then worldos_report_attempt_failure "$out" "$rc"; fi
     worldos_dm_final_text "$out" "$STATE_DIR" "$rc"
   else
-    duo_claude -p "$msg" "${resume[@]}" --mcp-config "$PLAYER_CFG" --strict-mcp-config \
+    "${DUO_ENV[@]}" claude -p "$msg" "${resume[@]}" --mcp-config "$PLAYER_CFG" --strict-mcp-config \
       --model "$WORLDOS_ACTOR_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
       --output-format json 2>> "$T/$RUN.player.err" | jq -r '.result // ""' 2>/dev/null
   fi
