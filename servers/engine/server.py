@@ -4886,9 +4886,33 @@ def _seed_stage_cells_on_arrival(
     # Candidate rest cells: every FREE cell reachable from the door (routes around walls/props so
     # nobody lands in a walled-off pocket), ranked nearest-first with a stable (y, x) tiebreak.
     reach = combat_grid.reachable(door, width + height, set(), width, height, impassable=blocked)
-    candidates = iter(
-        sorted(reach, key=lambda cell: (combat_grid.chebyshev_cells(cell, door), cell[1], cell[0]))
-    )
+    nearest = sorted(reach, key=lambda cell: (combat_grid.chebyshev_cells(cell, door), cell[1], cell[0]))
+    # ARRIVAL HINTS (#1647 wave-2): world-data-baked preferred arrival cells for THIS arrival door.
+    # The engine stays PAINT-BLIND — it merely PREFERS a hinted cell that is reachable + free (in
+    # `reach`; `reach` already excludes the door/start cell and every `blocked` occupancy/terrain
+    # cell), in the authored order, then falls back to the nearest-free ranking below. Keyed by the
+    # resolved arrival-door cell string. ADDITIVE: no `arrival_hints` (or none for this door) ⇒
+    # `hinted` is empty ⇒ the candidate order is BYTE-IDENTICALLY today's nearest-free `sorted(reach)`.
+    hints_map = getattr(grid, "arrival_hints", None) or {}
+    hinted: list[tuple[int, int]] = []
+    if hints_map:
+        seen_h: set[tuple[int, int]] = set()
+        for entry in hints_map.get(f"{door[0]},{door[1]}") or []:
+            if not (isinstance(entry, (list, tuple)) and len(entry) == 2):
+                print(f"[arrival_hints] {dest.id}: malformed hint {entry!r} for door {door} — ignored",
+                      file=sys.stderr)
+                continue
+            try:
+                cell = (int(entry[0]), int(entry[1]))
+            except (TypeError, ValueError):
+                print(f"[arrival_hints] {dest.id}: non-int hint {entry!r} for door {door} — ignored",
+                      file=sys.stderr)
+                continue
+            if cell in reach and cell not in seen_h:  # reachable + free; dedupe repeats
+                hinted.append(cell)
+                seen_h.add(cell)
+    hinted_set = set(hinted)
+    candidates = iter(hinted + [cell for cell in nearest if cell not in hinted_set])
     # Traveling party = the members _move_party_to just co-located here (PC(s) + companions), in
     # c.characters insertion order for a deterministic seat assignment. Cells are unique + consumed
     # sequentially, so each member lands on a distinct cell (no stacking).
