@@ -587,8 +587,30 @@ public static class BuildRoomKit
             var segWhite = new Material(Shader.Find("Unlit/Color")); segWhite.color = new Color(0.92f, 0.92f, 0.92f);
             var segDark = new Material(Shader.Find("Unlit/Color")); segDark.color = new Color(0.06f, 0.06f, 0.06f);
             var floorGroup = root.transform.Find("Floor");
+            // r8d: the gate asks about FOOTPRINTS, not visual height — tall masses screen-occlude the
+            // floor quads of walkable cells BEHIND them (measured: 50 false walk-throughs once masses
+            // went seg-black). Flatten every mass to a floor slab for the seg frame (scale+pos y × 0.02
+            // preserves floor-seating for floor-seated objects) and hide door frames so lintels/arches
+            // don't drop onto their open door cells. Transforms restored in finally.
+            var flatT = new List<Transform>(); var flatS = new List<Vector3>(); var flatP = new List<Vector3>();
+            var hidRends2 = new List<Renderer>();
             try
             {
+                foreach (var gname in new[] { "Walls", "Props", "Impassable" })
+                {
+                    var g = root.transform.Find(gname);
+                    if (g == null) continue;
+                    foreach (Transform ch in g)
+                    {
+                        flatT.Add(ch); flatS.Add(ch.localScale); flatP.Add(ch.localPosition);
+                        ch.localScale = new Vector3(ch.localScale.x, ch.localScale.y * 0.02f, ch.localScale.z);
+                        ch.localPosition = new Vector3(ch.localPosition.x, ch.localPosition.y * 0.02f, ch.localPosition.z);
+                    }
+                }
+                var doorGroup = root.transform.Find("Doors");
+                if (doorGroup != null)
+                    foreach (var rr in doorGroup.GetComponentsInChildren<Renderer>())
+                        if (rr != null && rr.enabled) { rr.enabled = false; hidRends2.Add(rr); }
                 foreach (var rr in root.GetComponentsInChildren<Renderer>())
                 {
                     if (rr == null) continue;
@@ -607,6 +629,8 @@ public static class BuildRoomKit
             finally
             {
                 for (int i = 0; i < segRends.Count; i++) if (segRends[i] != null) segRends[i].sharedMaterials = segMats[i];
+                for (int i = 0; i < flatT.Count; i++) if (flatT[i] != null) { flatT[i].localScale = flatS[i]; flatT[i].localPosition = flatP[i]; }
+                foreach (var rr in hidRends2) if (rr != null) rr.enabled = true;
                 UnityEngine.Object.DestroyImmediate(segWhite); UnityEngine.Object.DestroyImmediate(segDark);
                 RenderSettings.ambientMode = savedAmbMode;
                 RenderSettings.ambientLight = savedAmbLight;
