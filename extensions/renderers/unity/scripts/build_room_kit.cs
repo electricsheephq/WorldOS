@@ -55,6 +55,24 @@
 // ambient, so registration reads object PLACEMENT not brazier LIGHT POOLS (the r6 19 walk-through false
 // positives). r3/r5 lighting / braziers / tomb otherwise unchanged; still deterministic + material-defensive.
 //
+// r8 (#83/#84 albedo separation): the r7 flat-light score frame scored 67.19% (lit 72.40%) vs the 99 bar,
+// and ALL 35 shared invisible-wall residuals were ONE class — a correctly-placed dark stone MASS on a
+// similar-toned floor, scoring 0.33-1.73 against BLOCK_T=1.85 (need ~2× contrast). The masses ARE placed;
+// they just don't SEPARATE tonally. r8 makes the flat capture ALBEDO-SEPARATED so it measures PLACEMENT:
+// (1) FLOOR ALBEDO — one shared KitFloor_PaleStone (pale warm-grey, cloned from the tile's own material so
+// the kit texture survives) on every floor tile. (2) MASS ALBEDO — one shared KitMass_DarkMasonry forced
+// onto walls / parapets / buttresses / plinths / pillars / rubble (clearly dark vs the floor). (3) BRAZIER
+// BASES — a dark stone plinth (1.3×0.45×1.3) under each brazier so the impassable brazier cell reads massed
+// (the thin stem covered almost none of the cell quad — r7 brazier cells read as floor). (4) RUBBLE raised
+// to 0.85u + dark masonry (r7 rubble read as floor). (5) wooden fallback boxes get KitProp_DarkWood (r7
+// barrel (10,7) scored 0.33). (2b) the TOMB — its natural material stays UNLESS it lands near the floor; the
+// r7 tomb footprint (7-9,5-6) was the WORST residual cluster (cells 0.13-0.84, dead-on-floor), so it is
+// darkened with KitProp_Stone (a focal-prop mid-stone, not the full mass dark). Lighting rig / braziers /
+// capture logic / pillar sizing / buttress pass are UNCHANGED from r7. The lit render now reads
+// darker-walled / paler-floored — acceptable; beauty is tuned in the painterly post stage, not here. All r8
+// materials are runtime-only shared instances created once per build (NEVER written to the AssetDatabase),
+// reset at the top of BuildRoom; still deterministic (no RNG) + material-defensive.
+//
 // SELF-CONTAINED: no new dependencies. Reads MiniJson (same assembly). Geometry path + capture dir are the
 // same box defaults build_room_unified.cs uses (L24), env-overridable so a non-box host can point elsewhere.
 // C# is uncompilable on the authoring Mac — this is authored to mirror the proven sibling idioms exactly and
@@ -85,11 +103,28 @@ public static class BuildRoomKit
     const float PILLAR_MIN_XZ    = 1.2f;  // floor for the per-axis pillar world target (preserves the r5 minimum)
     const float PILLAR_TGT_H     = 4.0f;  // pillar world height target (unchanged)
 
+    // r8 (#83/#84) ALBEDO SEPARATION targets — so the FLAT-LIGHT score frame measures PLACEMENT, not tone.
+    // r7 flat score 67.19%: ALL 35 shared invisible-wall residuals were one class — a dark stone MASS that
+    // is correctly placed but scores 0.33-1.73 against BLOCK_T=1.85 because it sits on a similar-toned floor
+    // (need ~2× contrast). r8 makes the floor pale and the masonry clearly dark so the mass reads as placed.
+    static readonly Color FLOOR_PALE = new Color(0.72f, 0.70f, 0.66f); // pale warm-grey floor (mean luminance ~0.62-0.72 flat)
+    static readonly Color MASS_DARK  = new Color(0.34f, 0.30f, 0.27f); // walls/parapets/buttresses/plinths/pillars/rubble (~0.25-0.35)
+    static readonly Color PROP_STONE = new Color(0.42f, 0.40f, 0.38f); // focal-prop stone — tomb ONLY if it lands near the pale floor
+    static readonly Color PROP_DWOOD = new Color(0.30f, 0.24f, 0.18f); // dark wood for wooden fallback boxes (barrel/crate/cart)
+    const float RUBBLE_H = 0.85f;                                      // r8: rubble raised so the pile reads as a placed mass, not floor
+
     // ── fallback-material cache (material-defensive rule) ──────────────────────────────────────────
     static Material _stoneMat;                 // PolygonGeneric stone-ish (structure / tombs)
     static Material _woodMat;                  // PolygonGeneric wood-ish (furniture / crates / barrels)
     static bool _matResolved;
     static HashSet<string> _loggedBadMats = new HashSet<string>();
+    // r8 shared albedo material instances — built ONCE per build (lazily, on first use) from an existing
+    // base material so the kit shader/texture is preserved and the color multiplies over it. Runtime-only
+    // (NEVER written to the AssetDatabase); reset each run below since the room root is rebuilt each run.
+    static Material _floorPaleMat;             // KitFloor_PaleStone
+    static Material _massDarkMat;              // KitMass_DarkMasonry
+    static Material _propStoneMat;             // KitProp_Stone   (tomb, conditional)
+    static Material _propWoodMat;              // KitProp_DarkWood (wooden fallback boxes)
 
     // ── paths (box defaults, env-overridable) — mirror build_room_unified.cs L24 ────────────────────
     static string GeoPath() =>
@@ -114,6 +149,8 @@ public static class BuildRoomKit
 
         // reset the material-defensive caches for a clean run
         _matResolved = false; _stoneMat = null; _woodMat = null; _loggedBadMats = new HashSet<string>();
+        // r8: reset the shared albedo material instances so each build creates fresh runtime materials
+        _floorPaleMat = null; _massDarkMat = null; _propStoneMat = null; _propWoodMat = null;
 
         // idempotent: drop any prior root of this room
         string rootName = "KitRoom_" + roomId;
@@ -143,9 +180,10 @@ public static class BuildRoomKit
         // ── FLOOR: one SM_Bld_Base_Floor_01 per cell, MEASURED and scaled to exactly CELL×CELL ──────
         // (task rule: measure the prefab's bounds at runtime; do NOT assume 5m.) Floor tiles may STRETCH
         // (a tile is allowed to fill its cell); everything else fits uniformly to preserve proportions.
+        GameObject floorParent = null;
         if (pFloor != null)
         {
-            var floorParent = Child(root, "Floor");
+            floorParent = Child(root, "Floor");
             for (int r = 0; r < rows; r++)
                 for (int c = 0; c < cols; c++)
                 {
@@ -155,6 +193,28 @@ public static class BuildRoomKit
                 }
         }
         else Debug.LogWarning("[KitRoom] SM_Bld_Base_Floor_01 missing — floor omitted (no primitive fallback for the base tile).");
+
+        // ── r8 item 1: PALE-STONE FLOOR ALBEDO ───────────────────────────────────────────────────────
+        // The flat score frame reads placement as CONTRAST against the floor; r7's floor was mid-grey so a
+        // dark mass barely separated. Build ONE shared material from an already-placed tile's OWN material
+        // (preserves the kit floor shader/texture — the pale color multiplies over it) and assign it to every
+        // floor renderer so the tiles render light (target mean luminance ~0.62-0.72 in the flat capture).
+        if (floorParent != null)
+        {
+            Material floorSrc = null;
+            foreach (var rend in floorParent.GetComponentsInChildren<Renderer>(true))
+                if (rend != null && rend.sharedMaterial != null) { floorSrc = rend.sharedMaterial; break; }
+            _floorPaleMat = Recolor(floorSrc, "KitFloor_PaleStone", FLOOR_PALE);
+            int nFloorMat = 0;
+            foreach (var rend in floorParent.GetComponentsInChildren<Renderer>(true))
+            {
+                if (rend == null) continue;
+                var mats = rend.sharedMaterials;
+                for (int i = 0; i < mats.Length; i++) mats[i] = _floorPaleMat;
+                rend.sharedMaterials = mats; nFloorMat++;
+            }
+            Debug.Log($"[KitRoom] floor albedo: KitFloor_PaleStone ({FLOOR_PALE.r:F2},{FLOOR_PALE.g:F2},{FLOOR_PALE.b:F2}) → {nFloorMat} tile renderer(s).");
+        }
 
         // ── WALLS from the wall_run props (CUTAWAY iso-CRPG rule + r7 parapet) ──────────────────────
         // build_room_unified.cs renders EVERY wall_run as a full box (it is a depth/normal greybox). A
@@ -190,10 +250,12 @@ public static class BuildRoomKit
                     // r7: CENTER perimeter walls on their cell (was offset to the outer edge, which left the
                     // cell floor bare — r6 read those cells painted-OPEN). Near (camera-side) walls are no
                     // longer cut away — they render a LOW parapet so the edge reads blocked, interior visible.
-                    if (isBack)       PlaceWall(pWall, $"WallBack_{c}",  wallParent, new Vector3(w.x, 0f, w.z), 0f,  ref nMatFix);   // yaw 0: face −z inward
-                    else if (isRight) PlaceWall(pWall, $"WallRight_{r}", wallParent, new Vector3(w.x, 0f, w.z), 90f, ref nMatFix);   // yaw 90: face −x inward
-                    else if (isNearEdge) PlaceWall(pWall, $"Parapet_{c}_{r}", wallParent, new Vector3(w.x, 0f, w.z), (c == 0) ? 90f : 0f, ref nMatFix, PARAPET_H, true); // r7 camera-side low parapet
-                    else PlaceWall(pWall, $"Wall_{c}_{r}", wallParent, new Vector3(w.x, 0f, w.z), runAlongX ? 0f : 90f, ref nMatFix); // interior wall
+                    // r8 item 2: force the dark-masonry albedo on every wall/parapet so the mass reads clearly
+                    // dark vs the pale floor (r7 grey-on-grey walls were the bulk of the invisible-wall residuals).
+                    if (isBack)       PlaceWall(pWall, $"WallBack_{c}",  wallParent, new Vector3(w.x, 0f, w.z), 0f,  ref nMatFix, forceMat: MassMat());   // yaw 0: face −z inward
+                    else if (isRight) PlaceWall(pWall, $"WallRight_{r}", wallParent, new Vector3(w.x, 0f, w.z), 90f, ref nMatFix, forceMat: MassMat());   // yaw 90: face −x inward
+                    else if (isNearEdge) PlaceWall(pWall, $"Parapet_{c}_{r}", wallParent, new Vector3(w.x, 0f, w.z), (c == 0) ? 90f : 0f, ref nMatFix, PARAPET_H, true, MassMat()); // r7 camera-side low parapet
+                    else PlaceWall(pWall, $"Wall_{c}_{r}", wallParent, new Vector3(w.x, 0f, w.z), runAlongX ? 0f : 90f, ref nMatFix, forceMat: MassMat()); // interior wall
                     nWall++;
                 }
             }
@@ -251,7 +313,7 @@ public static class BuildRoomKit
                     float ptx = Mathf.Max(PILLAR_MIN_XZ, fp.spanX * PILLAR_FOOT_FILL);
                     float ptz = Mathf.Max(PILLAR_MIN_XZ, fp.spanZ * PILLAR_FOOT_FILL);
                     if (pf != null && PlacePillar(pf, $"{pid}_Pillar0{idx + 1}", propParent, fp.center, ptx, ptz, PILLAR_TGT_H, ref nMatFix) != null) nPillar++;
-                    else if (FallbackBox($"{pid}_pillar", propParent, fp, 4.2f, false, ref nMatFix)) nFallback++;   // r3: taller fat fallback
+                    else if (FallbackBox($"{pid}_pillar", propParent, fp, 4.2f, false, ref nMatFix, MassMat())) nFallback++;   // r3: taller fat fallback; r8: dark-masonry albedo
                     continue;
                 }
                 if (kind.Contains("sarcophagus"))
@@ -280,6 +342,13 @@ public static class BuildRoomKit
                                 Vector3 tOff = tomb.transform.position - tbR.center;
                                 tomb.transform.position = new Vector3(tbR.center.x + tOff.x, tOff.y - tbR.min.y, tbR.center.z + tOff.z);
                             }
+                            // r8 item 2 (VERIFIED, conditional): the tomb footprint (7-9,5-6) was the WORST
+                            // residual cluster in the r7 flat frame — every cell an invisible wall scoring
+                            // 0.13-0.84 (kit_crypt_r7_registration.json), i.e. the tomb read essentially AS the
+                            // floor. Its natural material lands near the (now pale) floor, so darken it with
+                            // KitProp_Stone (a mid stone — keeps the focal-prop character, not the full mass dark)
+                            // so it reads as a placed mass. Applied to the tomb AND its lid so they read as one.
+                            FixMaterials(tomb, false, ref nMatFix, force: true, overrideMat: PropStoneMat());
                             // remember the tomb centre for the warm rim light baked in the lighting rig below
                             var tbNow = WorldBounds(tomb);
                             sarcGlowPos = new Vector3(tbNow.center.x, tbNow.max.y + 1.6f, tbNow.center.z); haveSarcGlow = true;
@@ -295,7 +364,7 @@ public static class BuildRoomKit
                                 lid.transform.localScale = new Vector3(ls, ls, ls);
                                 var lb = WorldBounds(lid); Vector3 lpo = lid.transform.position - lb.center;
                                 lid.transform.position = new Vector3(tb.center.x + lpo.x, (lpo.y - lb.min.y) + tb.max.y - 0.02f, tb.center.z + lpo.z);
-                                FixMaterials(lid, false, ref nMatFix);
+                                FixMaterials(lid, false, ref nMatFix, force: true, overrideMat: PropStoneMat());   // r8 item 2: match the tomb (one mass)
                             }
                         }
                     }
@@ -310,20 +379,37 @@ public static class BuildRoomKit
                     // L3317: fire_anchors → warm glow quads + brazier-light flicker). A warm point light is
                     // added per brazier in the lighting rig below.
                     var b = BuildBrazier(pid, propParent, fp.center);
+                    // r8 item 3: a dark stone plinth (1.3 × 0.45h × 1.3) centered on the brazier cell, seated on
+                    // the floor. The brazier cell is impassable but the thin stem covers almost none of the cell
+                    // quad in the flat view (r7 brazier cells read as floor); the plinth gives the cell a mass.
+                    PlaceMassBox($"{pid}_BrazierBase", propParent, fp.center, 1.3f, 0.45f);
                     braziers.Add(new Vector3(fp.center.x, 1.9f, fp.center.z));   // r3: anchor at the ember disc
                     nBrazier++;
+                    continue;
+                }
+
+                if (kind.Contains("rubble") || kind.Contains("debris"))
+                {
+                    // r8 item 4: r7 rubble read as floor (cells (2,9),(2,10),(3,10) scored 0.92-1.49) — too low
+                    // and stone-grey. Raise the pile to RUBBLE_H and force the dark-masonry albedo so it reads as
+                    // a placed mass in the flat gate (a deterministic primitive mass; any kit rubble mesh is not
+                    // used here, so the height + contrast are guaranteed regardless of the pack contents).
+                    if (FallbackBox($"{pid}_rubble", propParent, fp, RUBBLE_H, false, ref nMatFix, MassMat())) nFallback++;
                     continue;
                 }
 
                 // ── other prop kinds: plausible PolygonGeneric prefab IF present, else primitive fallback ─
                 var kit = LoadFirst(Candidates(kind));
                 bool woodish = kind.Contains("barrel") || kind.Contains("crate") || kind.Contains("wood") || kind.Contains("cart");
+                // r8 item 5: wooden fallback BOXES (e.g. barrel (10,7) scored 0.33) get the dark-wood albedo so
+                // they read as a placed prop, not floor. Non-wood fallbacks keep the material-defensive stone default.
+                Material fbMat = woodish ? PropWoodMat() : null;
                 if (kit != null)
                 {
                     if (Place(kit, $"{pid}_{kit.name}", propParent, fp.center, fp.spanX, fp.spanZ, 0f, false, woodish, ref nMatFix) != null) nKit++;
-                    else if (FallbackBox(pid, propParent, fp, KindHeight(kind), woodish, ref nMatFix)) nFallback++;
+                    else if (FallbackBox(pid, propParent, fp, KindHeight(kind), woodish, ref nMatFix, fbMat)) nFallback++;
                 }
-                else if (FallbackBox(pid, propParent, fp, KindHeight(kind), woodish, ref nMatFix)) nFallback++;
+                else if (FallbackBox(pid, propParent, fp, KindHeight(kind), woodish, ref nMatFix, fbMat)) nFallback++;
             }
         }
 
@@ -617,8 +703,10 @@ public static class BuildRoomKit
     // r7: WALL_T raised to 1.4u so the wall occupies its cell row; a `parapet` call (heightTarget=PARAPET_H)
     // is ALLOWED to shrink the height below native so the camera-side low parapet actually reads low. Returns
     // the instance so callers (the door pass) can post-process it (leaf-strip).
+    // r8: `forceMat` (item 2) force-assigns the dark-masonry albedo to every renderer via the FixMaterials
+    // force path; null (the door pass) keeps the material-defensive default so doorways keep their natural look.
     static GameObject PlaceWall(GameObject prefab, string name, GameObject parent, Vector3 edgePos, float yaw,
-                               ref int matFix, float heightTarget = WALL_H, bool parapet = false)
+                               ref int matFix, float heightTarget = WALL_H, bool parapet = false, Material forceMat = null)
     {
         if (prefab == null) return null;
         var inst = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
@@ -637,7 +725,7 @@ public static class BuildRoomKit
         var b1 = WorldBounds(inst);
         Vector3 pivotOffset = inst.transform.position - b1.center;
         inst.transform.position = new Vector3(edgePos.x + pivotOffset.x, pivotOffset.y - b1.min.y, edgePos.z + pivotOffset.z);
-        FixMaterials(inst, false, ref matFix);
+        FixMaterials(inst, false, ref matFix, force: forceMat != null, overrideMat: forceMat);   // r8: force mass albedo when supplied
         return inst;
     }
 
@@ -701,7 +789,7 @@ public static class BuildRoomKit
         // r6: ground on min.y alone — the pivotOffset.y term double-counts the bounds centre for
         // base-pivot meshes (measured: pillars sat at pos.y=-1.98, bounds -1.99..2.01, half underground).
         inst.transform.position = new Vector3(center.x + pivotOffset.x, inst.transform.position.y - b1.min.y, center.z + pivotOffset.z);
-        FixMaterials(inst, false, ref matFix, force: true);   // r5: pillars shipped grey → force stone/brick
+        FixMaterials(inst, false, ref matFix, force: true, overrideMat: MassMat());   // r5 forced stone; r8 forces the dark-masonry albedo (pillars were invisible-wall residuals)
         return inst;
     }
 
@@ -728,10 +816,12 @@ public static class BuildRoomKit
     // r5: `force` also overrides VALID-but-default-grey slots — the pillar prefabs ship a legit (non-error)
     // grey material FixMaterials would otherwise skip, leaving them default grey (r4b). Force=true assigns the
     // stone/brick material to every slot regardless, so pillars read stone like the walls.
-    static void FixMaterials(GameObject inst, bool woodish, ref int matFix, bool force = false)
+    // r8: `overrideMat` lets a caller name the exact replacement (e.g. KitMass_DarkMasonry for walls/pillars,
+    // KitProp_Stone for the tomb) instead of the woodish/stone default — the packet's "FixMaterials force path".
+    static void FixMaterials(GameObject inst, bool woodish, ref int matFix, bool force = false, Material overrideMat = null)
     {
         ResolveFallbackMaterials();
-        Material repl = woodish ? _woodMat : _stoneMat;
+        Material repl = overrideMat ?? (woodish ? _woodMat : _stoneMat);
         if (repl == null) return;
         foreach (var rend in inst.GetComponentsInChildren<Renderer>(true))
         {
@@ -778,6 +868,26 @@ public static class BuildRoomKit
         }
         return first;
     }
+
+    // r8 ALBEDO HELPERS (#83/#84). Clone a base material (preserving its shader + any albedo texture) and set
+    // its color so the color MULTIPLIES over the texture. Runtime-only instances (never written to the
+    // AssetDatabase); each shared instance is created ONCE per build (lazily) and reset at the top of BuildRoom.
+    static Material Recolor(Material src, string nm, Color col)
+    {
+        Material m = (src != null && src.shader != null && src.shader.name != "Hidden/InternalErrorShader")
+            ? new Material(src) : new Material(Shader.Find("Standard"));
+        m.name = nm; m.color = col;
+        return m;
+    }
+    // KitMass_DarkMasonry — walls / parapets / buttresses / plinths / pillars / rubble (item 2, based on the brick/stone base).
+    static Material MassMat()
+    { if (_massDarkMat == null) { ResolveFallbackMaterials(); _massDarkMat = Recolor(_stoneMat, "KitMass_DarkMasonry", MASS_DARK); } return _massDarkMat; }
+    // KitProp_Stone — focal-prop stone, applied to the tomb ONLY (item 2 conditional; verified vs r7 evidence below).
+    static Material PropStoneMat()
+    { if (_propStoneMat == null) { ResolveFallbackMaterials(); _propStoneMat = Recolor(_stoneMat, "KitProp_Stone", PROP_STONE); } return _propStoneMat; }
+    // KitProp_DarkWood — wooden fallback boxes (item 5, based on the wood base).
+    static Material PropWoodMat()
+    { if (_propWoodMat == null) { ResolveFallbackMaterials(); _propWoodMat = Recolor(_woodMat, "KitProp_DarkWood", PROP_DWOOD); } return _propWoodMat; }
 
     // ════════════════════════════════════════════════════════════════════════════════════════════════
     //  BRAZIER + FALLBACK PRIMITIVES
@@ -826,11 +936,12 @@ public static class BuildRoomKit
         b.transform.SetParent(parent.transform, true);
         b.transform.localScale = new Vector3(sizeXZ, height, sizeXZ);
         b.transform.position = new Vector3(center.x, height * 0.5f, center.z);
-        ResolveFallbackMaterials();
-        b.GetComponent<Renderer>().sharedMaterial = _stoneMat;   // wall/stone material
+        b.GetComponent<Renderer>().sharedMaterial = MassMat();   // r8: dark-masonry albedo (buttresses / plinths / brazier bases)
     }
 
-    static bool FallbackBox(string pid, GameObject parent, Footprint fp, float height, bool woodish, ref int matFix)
+    // r8: `overrideMat` (items 4/5) names the exact material for the box — dark-masonry for rubble, dark-wood
+    // for wooden props — instead of the woodish/stone default. null keeps the prior material-defensive default.
+    static bool FallbackBox(string pid, GameObject parent, Footprint fp, float height, bool woodish, ref int matFix, Material overrideMat = null)
     {
         var b = GameObject.CreatePrimitive(PrimitiveType.Cube); b.name = $"{pid}_fallback";
         UnityEngine.Object.DestroyImmediate(b.GetComponent<Collider>());
@@ -838,7 +949,7 @@ public static class BuildRoomKit
         b.transform.position = new Vector3(fp.center.x, height * 0.5f, fp.center.z);
         b.transform.localScale = new Vector3(Mathf.Max(1.2f, fp.spanX * 0.9f), height, Mathf.Max(1.2f, fp.spanZ * 0.9f));
         ResolveFallbackMaterials();
-        b.GetComponent<Renderer>().sharedMaterial = woodish ? _woodMat : _stoneMat;
+        b.GetComponent<Renderer>().sharedMaterial = overrideMat ?? (woodish ? _woodMat : _stoneMat);
         Debug.Log($"[KitRoom] no kit prefab for '{pid}' — primitive fallback ({fp.spanX:F1}x{fp.spanZ:F1}, h={height:F1}).");
         return true;
     }
