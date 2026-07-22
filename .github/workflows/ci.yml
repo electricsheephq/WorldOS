@@ -234,6 +234,29 @@ jobs:
         # per-cell classifier + tri-state gate + the VQA adjudicator exercised with an injected stub (no LLM /
         # box / player). Shares this lane's Pillow+numpy stack; single-process.
         run: python -m pytest qa/test_paint_coherence.py -q -p no:xdist
+      - name: Registration instrument cores (#1680 — per-room paint<->collision agreement; deterministic)
+        # The SHIP RULER (qa/registration_score.py): for each room, the screen-space agreement between the
+        # PAINTED-object mask (paint_coherence's per-cell coverage machinery) and the COLLISION set
+        # (walkmask + boxes-sidecar footprints, projected through the contract camera). Names the two
+        # navigation-truth defects per cell — invisible walls (painted open, collides) and walk-through
+        # furniture (painted blocked, walkable). Deterministic synthetic-plate + pure-math cores; no LLM /
+        # box / player. Shares this lane's Pillow+numpy stack; single-process.
+        run: python -m pytest qa/test_registration_score.py -q -p no:xdist
+      - name: Registration BASELINE over every manifest room (#1680 — the honest paint<->collision score)
+        # The instrument run over ALL plates_manifest rooms. NON-BLOCKING (continue-on-error) like the
+        # coherence-freshness lint below: the baseline is EXPECTED RED today (per #1680 the owner's '98%
+        # mismatch' — every existing room is below the 0.99 ship bar; that is the finding, not a
+        # regression). The uploaded summary + per-room heatmaps are the acceptance ruler for the #83
+        # 3D-first rebuild chain; a room only clears this once rebuilt.
+        continue-on-error: true
+        run: python qa/registration_score.py score-rooms --evidence-dir "$RUNNER_TEMP/registration" -o "$RUNNER_TEMP/registration/summary.json"
+      - name: Upload registration baseline (summary JSON + per-room heatmaps)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: registration-baseline
+          path: ${{ runner.temp }}/registration
+          if-no-files-found: warn
       - name: Room-manifest DERIVATION from greybox geometry (regeneratable + loop-closed on forest_road)
         # Owner playtest #5: manifests are DERIVED from greybox geometry (single source of truth for
         # footprint + occlusion + walkable) via tools/derive_room_manifest.py. Pins the derivation math,
