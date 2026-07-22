@@ -1,0 +1,2192 @@
+{
+  "room": "Forest Camp Clearing (adventure hub)",
+  "plate": "camp_clearing_night_truegrey_v1.png",
+  "ortho": 13.0,
+  "bar": 0.99,
+  "block_threshold": 1.85,
+  "agreement_pct": 69.271,
+  "passed": false,
+  "scored_cells": 192,
+  "box_cells": 0,
+  "invisible_wall_cells": [
+    [
+      2,
+      4
+    ],
+    [
+      2,
+      8
+    ],
+    [
+      5,
+      2
+    ],
+    [
+      5,
+      10
+    ],
+    [
+      6,
+      2
+    ],
+    [
+      6,
+      3
+    ],
+    [
+      7,
+      3
+    ],
+    [
+      8,
+      3
+    ],
+    [
+      8,
+      4
+    ],
+    [
+      8,
+      8
+    ],
+    [
+      8,
+      9
+    ],
+    [
+      9,
+      10
+    ],
+    [
+      10,
+      10
+    ],
+    [
+      10,
+      11
+    ],
+    [
+      11,
+      6
+    ],
+    [
+      11,
+      7
+    ],
+    [
+      11,
+      10
+    ],
+    [
+      12,
+      3
+    ],
+    [
+      12,
+      10
+    ],
+    [
+      13,
+      10
+    ],
+    [
+      14,
+      10
+    ],
+    [
+      14,
+      11
+    ],
+    [
+      15,
+      6
+    ],
+    [
+      15,
+      7
+    ],
+    [
+      15,
+      8
+    ],
+    [
+      15,
+      11
+    ]
+  ],
+  "walkthrough_cells": [
+    [
+      1,
+      10
+    ],
+    [
+      1,
+      11
+    ],
+    [
+      2,
+      3
+    ],
+    [
+      2,
+      10
+    ],
+    [
+      2,
+      11
+    ],
+    [
+      3,
+      8
+    ],
+    [
+      3,
+      10
+    ],
+    [
+      4,
+      1
+    ],
+    [
+      4,
+      2
+    ],
+    [
+      4,
+      7
+    ],
+    [
+      4,
+      9
+    ],
+    [
+      4,
+      10
+    ],
+    [
+      4,
+      11
+    ],
+    [
+      5,
+      3
+    ],
+    [
+      5,
+      4
+    ],
+    [
+      5,
+      5
+    ],
+    [
+      5,
+      9
+    ],
+    [
+      5,
+      11
+    ],
+    [
+      6,
+      5
+    ],
+    [
+      6,
+      8
+    ],
+    [
+      6,
+      9
+    ],
+    [
+      7,
+      0
+    ],
+    [
+      7,
+      9
+    ],
+    [
+      8,
+      0
+    ],
+    [
+      10,
+      4
+    ],
+    [
+      12,
+      0
+    ],
+    [
+      12,
+      6
+    ],
+    [
+      12,
+      11
+    ],
+    [
+      13,
+      2
+    ],
+    [
+      14,
+      0
+    ],
+    [
+      14,
+      2
+    ],
+    [
+      14,
+      3
+    ],
+    [
+      15,
+      4
+    ]
+  ],
+  "counts": {
+    "invisible_wall": 26,
+    "walkthrough": 33
+  },
+  "baseline": {
+    "base_rgb": [
+      50.8,
+      45.8,
+      52.6
+    ],
+    "base_edge": 0.1206,
+    "base_luma_std": 10.82,
+    "clean_floor_cells": 101,
+    "scales": {
+      "color": 16.9749,
+      "edge": 0.035,
+      "var": 7.0
+    }
+  },
+  "per_cell": [
+    {
+      "cell": [
+        0,
+        0
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.407,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        0,
+        1
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.564,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        0,
+        2
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.869,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        0,
+        3
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.463,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        0,
+        4
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.209,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        0,
+        5
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.145,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        0,
+        6
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.604,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        0,
+        7
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.09,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        0,
+        8
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.335,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        0,
+        9
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.634,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        0,
+        10
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.272,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        0,
+        11
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.088,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        1,
+        0
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.503,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        1,
+        1
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.503,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        1,
+        2
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.405,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        1,
+        3
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.321,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        1,
+        4
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.532,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        1,
+        5
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.065,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        1,
+        6
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.29,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        1,
+        7
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.12,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        1,
+        8
+      ],
+      "collision": true,
+      "painted_blocking": true,
+      "score": 2.528,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        1,
+        9
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.767,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        1,
+        10
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 1.936,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        1,
+        11
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 2.273,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        2,
+        0
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.509,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        2,
+        1
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.504,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        2,
+        2
+      ],
+      "collision": true,
+      "painted_blocking": true,
+      "score": 3.768,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        2,
+        3
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 2.047,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        2,
+        4
+      ],
+      "collision": true,
+      "painted_blocking": false,
+      "score": 1.368,
+      "class": "invisible_wall"
+    },
+    {
+      "cell": [
+        2,
+        5
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.123,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        2,
+        6
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.503,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        2,
+        7
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.979,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        2,
+        8
+      ],
+      "collision": true,
+      "painted_blocking": false,
+      "score": 1.699,
+      "class": "invisible_wall"
+    },
+    {
+      "cell": [
+        2,
+        9
+      ],
+      "collision": true,
+      "painted_blocking": true,
+      "score": 2.571,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        2,
+        10
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 3.543,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        2,
+        11
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 2.904,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        3,
+        0
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.579,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        3,
+        1
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.359,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        3,
+        2
+      ],
+      "collision": true,
+      "painted_blocking": true,
+      "score": 4.785,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        3,
+        3
+      ],
+      "collision": true,
+      "painted_blocking": true,
+      "score": 4.537,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        3,
+        4
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.638,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        3,
+        5
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.272,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        3,
+        6
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.85,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        3,
+        7
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.215,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        3,
+        8
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 2.162,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        3,
+        9
+      ],
+      "collision": true,
+      "painted_blocking": true,
+      "score": 2.417,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        3,
+        10
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 3.113,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        3,
+        11
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.981,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        4,
+        0
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.073,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        4,
+        1
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 2.421,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        4,
+        2
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 2.885,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        4,
+        3
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.027,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        4,
+        4
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.587,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        4,
+        5
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.656,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        4,
+        6
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.764,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        4,
+        7
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 2.922,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        4,
+        8
+      ],
+      "collision": true,
+      "painted_blocking": true,
+      "score": 4.655,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        4,
+        9
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 6.942,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        4,
+        10
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 3.37,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        4,
+        11
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 1.911,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        5,
+        0
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.684,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        5,
+        1
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.236,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        5,
+        2
+      ],
+      "collision": true,
+      "painted_blocking": false,
+      "score": 0.652,
+      "class": "invisible_wall"
+    },
+    {
+      "cell": [
+        5,
+        3
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 2.43,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        5,
+        4
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 2.075,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        5,
+        5
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 2.29,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        5,
+        6
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.854,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        5,
+        7
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.499,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        5,
+        8
+      ],
+      "collision": true,
+      "painted_blocking": true,
+      "score": 3.683,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        5,
+        9
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 5.168,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        5,
+        10
+      ],
+      "collision": true,
+      "painted_blocking": false,
+      "score": 1.452,
+      "class": "invisible_wall"
+    },
+    {
+      "cell": [
+        5,
+        11
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 2.174,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        6,
+        0
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.365,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        6,
+        1
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.314,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        6,
+        2
+      ],
+      "collision": true,
+      "painted_blocking": false,
+      "score": 0.171,
+      "class": "invisible_wall"
+    },
+    {
+      "cell": [
+        6,
+        3
+      ],
+      "collision": true,
+      "painted_blocking": false,
+      "score": 0.074,
+      "class": "invisible_wall"
+    },
+    {
+      "cell": [
+        6,
+        4
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.059,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        6,
+        5
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 2.051,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        6,
+        6
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.51,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        6,
+        7
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.195,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        6,
+        8
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 2.832,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        6,
+        9
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 5.916,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        6,
+        10
+      ],
+      "collision": true,
+      "painted_blocking": true,
+      "score": 3.299,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        6,
+        11
+      ],
+      "collision": true,
+      "painted_blocking": true,
+      "score": 2.5,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        7,
+        0
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 1.907,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        7,
+        1
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.663,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        7,
+        2
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.135,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        7,
+        3
+      ],
+      "collision": true,
+      "painted_blocking": false,
+      "score": 0.049,
+      "class": "invisible_wall"
+    },
+    {
+      "cell": [
+        7,
+        4
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.075,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        7,
+        5
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.209,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        7,
+        6
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.835,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        7,
+        7
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.725,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        7,
+        8
+      ],
+      "collision": true,
+      "painted_blocking": true,
+      "score": 6.878,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        7,
+        9
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 3.653,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        7,
+        10
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.349,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        7,
+        11
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.272,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        8,
+        0
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 1.939,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        8,
+        1
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.241,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        8,
+        2
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.076,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        8,
+        3
+      ],
+      "collision": true,
+      "painted_blocking": false,
+      "score": 0.149,
+      "class": "invisible_wall"
+    },
+    {
+      "cell": [
+        8,
+        4
+      ],
+      "collision": true,
+      "painted_blocking": false,
+      "score": 0.188,
+      "class": "invisible_wall"
+    },
+    {
+      "cell": [
+        8,
+        5
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.376,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        8,
+        6
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.025,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        8,
+        7
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.563,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        8,
+        8
+      ],
+      "collision": true,
+      "painted_blocking": false,
+      "score": 0.204,
+      "class": "invisible_wall"
+    },
+    {
+      "cell": [
+        8,
+        9
+      ],
+      "collision": true,
+      "painted_blocking": false,
+      "score": 0.065,
+      "class": "invisible_wall"
+    },
+    {
+      "cell": [
+        8,
+        10
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.162,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        8,
+        11
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.072,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        9,
+        0
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.307,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        9,
+        1
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.171,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        9,
+        2
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.284,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        9,
+        3
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.22,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        9,
+        4
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.171,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        9,
+        5
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.251,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        9,
+        6
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.33,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        9,
+        7
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.035,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        9,
+        8
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.257,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        9,
+        9
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.17,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        9,
+        10
+      ],
+      "collision": true,
+      "painted_blocking": false,
+      "score": 1.048,
+      "class": "invisible_wall"
+    },
+    {
+      "cell": [
+        9,
+        11
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.173,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        10,
+        0
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.314,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        10,
+        1
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.3,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        10,
+        2
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.704,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        10,
+        3
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.153,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        10,
+        4
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 3.276,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        10,
+        5
+      ],
+      "collision": true,
+      "painted_blocking": true,
+      "score": 1.882,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        10,
+        6
+      ],
+      "collision": true,
+      "painted_blocking": true,
+      "score": 1.98,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        10,
+        7
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.49,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        10,
+        8
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.344,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        10,
+        9
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.334,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        10,
+        10
+      ],
+      "collision": true,
+      "painted_blocking": false,
+      "score": 0.038,
+      "class": "invisible_wall"
+    },
+    {
+      "cell": [
+        10,
+        11
+      ],
+      "collision": true,
+      "painted_blocking": false,
+      "score": 0.072,
+      "class": "invisible_wall"
+    },
+    {
+      "cell": [
+        11,
+        0
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.337,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        11,
+        1
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.623,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        11,
+        2
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.5,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        11,
+        3
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.529,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        11,
+        4
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.237,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        11,
+        5
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.209,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        11,
+        6
+      ],
+      "collision": true,
+      "painted_blocking": false,
+      "score": 1.663,
+      "class": "invisible_wall"
+    },
+    {
+      "cell": [
+        11,
+        7
+      ],
+      "collision": true,
+      "painted_blocking": false,
+      "score": 0.957,
+      "class": "invisible_wall"
+    },
+    {
+      "cell": [
+        11,
+        8
+      ],
+      "collision": true,
+      "painted_blocking": true,
+      "score": 2.007,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        11,
+        9
+      ],
+      "collision": true,
+      "painted_blocking": true,
+      "score": 1.938,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        11,
+        10
+      ],
+      "collision": true,
+      "painted_blocking": false,
+      "score": 1.743,
+      "class": "invisible_wall"
+    },
+    {
+      "cell": [
+        11,
+        11
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.822,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        12,
+        0
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 1.945,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        12,
+        1
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.545,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        12,
+        2
+      ],
+      "collision": true,
+      "painted_blocking": true,
+      "score": 2.057,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        12,
+        3
+      ],
+      "collision": true,
+      "painted_blocking": false,
+      "score": 0.651,
+      "class": "invisible_wall"
+    },
+    {
+      "cell": [
+        12,
+        4
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.372,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        12,
+        5
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.967,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        12,
+        6
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 2.068,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        12,
+        7
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.588,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        12,
+        8
+      ],
+      "collision": true,
+      "painted_blocking": true,
+      "score": 3.932,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        12,
+        9
+      ],
+      "collision": true,
+      "painted_blocking": true,
+      "score": 3.64,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        12,
+        10
+      ],
+      "collision": true,
+      "painted_blocking": false,
+      "score": 0.289,
+      "class": "invisible_wall"
+    },
+    {
+      "cell": [
+        12,
+        11
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 2.178,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        13,
+        0
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.35,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        13,
+        1
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.211,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        13,
+        2
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 4.38,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        13,
+        3
+      ],
+      "collision": true,
+      "painted_blocking": true,
+      "score": 2.514,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        13,
+        4
+      ],
+      "collision": true,
+      "painted_blocking": true,
+      "score": 2.545,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        13,
+        5
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.915,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        13,
+        6
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.351,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        13,
+        7
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.629,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        13,
+        8
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.463,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        13,
+        9
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.959,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        13,
+        10
+      ],
+      "collision": true,
+      "painted_blocking": false,
+      "score": 1.511,
+      "class": "invisible_wall"
+    },
+    {
+      "cell": [
+        13,
+        11
+      ],
+      "collision": true,
+      "painted_blocking": true,
+      "score": 2.584,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        14,
+        0
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 2.292,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        14,
+        1
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.81,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        14,
+        2
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 2.552,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        14,
+        3
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 3.569,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        14,
+        4
+      ],
+      "collision": true,
+      "painted_blocking": true,
+      "score": 2.615,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        14,
+        5
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.859,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        14,
+        6
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.402,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        14,
+        7
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.784,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        14,
+        8
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.185,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        14,
+        9
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.012,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        14,
+        10
+      ],
+      "collision": true,
+      "painted_blocking": false,
+      "score": 0.941,
+      "class": "invisible_wall"
+    },
+    {
+      "cell": [
+        14,
+        11
+      ],
+      "collision": true,
+      "painted_blocking": false,
+      "score": 1.626,
+      "class": "invisible_wall"
+    },
+    {
+      "cell": [
+        15,
+        0
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.355,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        15,
+        1
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.306,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        15,
+        2
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.288,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        15,
+        3
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 0.332,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        15,
+        4
+      ],
+      "collision": false,
+      "painted_blocking": true,
+      "score": 2.285,
+      "class": "walkthrough"
+    },
+    {
+      "cell": [
+        15,
+        5
+      ],
+      "collision": false,
+      "painted_blocking": false,
+      "score": 1.236,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        15,
+        6
+      ],
+      "collision": true,
+      "painted_blocking": false,
+      "score": 0.426,
+      "class": "invisible_wall"
+    },
+    {
+      "cell": [
+        15,
+        7
+      ],
+      "collision": true,
+      "painted_blocking": false,
+      "score": 0.743,
+      "class": "invisible_wall"
+    },
+    {
+      "cell": [
+        15,
+        8
+      ],
+      "collision": true,
+      "painted_blocking": false,
+      "score": 1.141,
+      "class": "invisible_wall"
+    },
+    {
+      "cell": [
+        15,
+        9
+      ],
+      "collision": true,
+      "painted_blocking": true,
+      "score": 2.152,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        15,
+        10
+      ],
+      "collision": true,
+      "painted_blocking": true,
+      "score": 2.877,
+      "class": "agree"
+    },
+    {
+      "cell": [
+        15,
+        11
+      ],
+      "collision": true,
+      "painted_blocking": false,
+      "score": 0.89,
+      "class": "invisible_wall"
+    }
+  ]
+}
