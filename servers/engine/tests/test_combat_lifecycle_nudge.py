@@ -7,7 +7,7 @@ left OPEN, so no XP landed and the arc's beat budget was eaten before the boss w
 The engine assist (secondary lever): when a fight is ACTIVE but NO living hostile remains, the
 DM-visible combat surface (`_combat_view`, returned by every combat tool) surfaces a LOUD
 `pending_resolution` nudge suggesting `end_combat` — and ESCALATES to URGENT once the no-hostile
-state has persisted across `_COMBAT_RESOLUTION_NUDGE_TURNS` consecutive `next_turn` advances.
+state has persisted across `server._COMBAT_RESOLUTION_NUDGE_TURNS` consecutive `next_turn` advances.
 The engine NEVER auto-ends combat (questgen.py:7 invariant — the DM owns the end_combat
 predicate); this only makes an un-closed fight progressively louder.
 
@@ -22,7 +22,6 @@ import pytest
 import server
 import store
 from models import Campaign, Character, Combat, Combatant
-from server import _COMBAT_RESOLUTION_NUDGE_TURNS
 
 
 # --- helpers ----------------------------------------------------------------
@@ -92,21 +91,21 @@ def test_flag_absent_when_combat_inactive():
 
 
 def test_nudge_escalates_to_urgent_at_the_streak_threshold():
-    """Once the no-hostile state persists across _COMBAT_RESOLUTION_NUDGE_TURNS advances,
+    """Once the no-hostile state persists across server._COMBAT_RESOLUTION_NUDGE_TURNS advances,
     the nudge escalates to URGENT and reports the streak."""
     c = _campaign_in_combat(_pc(), _monster(dead=True),
-                            no_hostile_turns=_COMBAT_RESOLUTION_NUDGE_TURNS)
+                            no_hostile_turns=server._COMBAT_RESOLUTION_NUDGE_TURNS)
     view = server._combat_view(c)
     assert view["pending_resolution"] is True
-    assert view["pending_resolution_turns"] == _COMBAT_RESOLUTION_NUDGE_TURNS
+    assert view["pending_resolution_turns"] == server._COMBAT_RESOLUTION_NUDGE_TURNS
     assert view["resolution_nudge"].startswith("URGENT")
 
 
 def test_nudge_is_advisory_one_below_the_threshold():
     c = _campaign_in_combat(_pc(), _monster(dead=True),
-                            no_hostile_turns=_COMBAT_RESOLUTION_NUDGE_TURNS - 1)
+                            no_hostile_turns=server._COMBAT_RESOLUTION_NUDGE_TURNS - 1)
     view = server._combat_view(c)
-    assert view["pending_resolution_turns"] == _COMBAT_RESOLUTION_NUDGE_TURNS - 1
+    assert view["pending_resolution_turns"] == server._COMBAT_RESOLUTION_NUDGE_TURNS - 1
     assert not view["resolution_nudge"].startswith("URGENT")
 
 
@@ -168,3 +167,18 @@ def test_no_hostile_turns_emitted_when_nonzero_and_round_trips():
     assert dumped["no_hostile_turns"] == 4
     restored = Combat.model_validate(dumped)
     assert restored.no_hostile_turns == 4
+
+
+def test_next_turn_streak_ticks_through_the_pc_skip_path(_state):
+    # evaOS #1654 round: the prior streak tests put the MONSTER at turn_index=0, bypassing
+    # next_turn's PC-skip guard (server.py ~5476). Here the PC is the OUTGOING combatant —
+    # the guard path runs — and the no-hostile streak must still tick and surface the nudge.
+    c = _campaign_in_combat(_monster(dead=True), _pc(), no_hostile_turns=0, turn_index=1)
+    store.save_campaign(c)
+    # The guard requires the outgoing PC to have acted — declare a pass, then advance.
+    pc_id = c.combat.order[1].character_id
+    server.use_action(c.id, pc_id, kind="skip")
+    view = server.next_turn(c.id)
+    assert view["pending_resolution"] is True
+    reloaded = store.load_campaign(c.id)
+    assert reloaded.combat.no_hostile_turns == 1

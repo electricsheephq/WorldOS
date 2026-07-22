@@ -7540,9 +7540,7 @@ def end_combat(campaign_id: str, resolution: str = "") -> dict:
         # extra_attack_reminder advisory pattern. Computed from the order BEFORE the reset.
         live_hostiles = [
             {"id": ch.id, "name": ch.name, "hp": f"{ch.current_hp}/{ch.max_hp}"}
-            for cb in c.combat.order
-            if (ch := c.characters.get(cb.character_id)) is not None
-            and ch.kind == "monster" and ch.current_hp > 0 and not ch.dead
+            for ch in _living_hostiles(c)  # the ONE canonical predicate (#1654 review dedup)
         ]
         res = (resolution or "").strip()
         if res:
