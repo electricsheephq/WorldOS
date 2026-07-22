@@ -472,6 +472,23 @@ still land or the next build regresses.
 Tools/WorldOS/Build/macOS Player (Universal)   # Unity Editor menu item, on the box
 ```
 
+**★ ALWAYS-INCLUDED SHADERS pre-flight (#1674 — walk-behind silhouette shipped disabled, 2026-07-22):**
+`WorldOS/ActorSilhouette` (walk-behind mask) and `WorldOS/OccluderDepth` (occluder proxies) are resolved
+at runtime via `Shader.Find` and referenced by NO asset, so a player build strips them unless they are in
+Graphics → Always-Included Shaders. `BuildMacOSPlayer.Build()` now bakes both in itself (via
+`EnsureAlwaysIncludedShaders()`, no longer only the manual `Tools/WorldOS/W5b`), and records the resolved
+list on the report's `alwaysIncludedShaders=` line. Run the repo pre-flight BEFORE the box rebuild — it
+FAILS if the build source stops guaranteeing a required shader:
+
+```
+python3 qa/check_always_included_shaders.py                                   # source guarantee (pre-build)
+python3 qa/check_always_included_shaders.py --build-report BuildOutput/build-report.txt   # post-build confirm
+```
+
+Sync the shader files (`extensions/renderers/unity/shaders/ActorSilhouette.shader`,
+`OccluderDepth.shader`) to the box project's `Assets/Shaders/` before the rebuild; then `player_cert`'s
+silhouette assert flips GREEN and `WORLDOS_SILHOUETTE=0` reproduces the RED as the deliberate-regression proof.
+
 ### 10b. The sandbox hot-load GATE LOOP (the proven per-room iteration cycle, 2026-07-16)
 
 ```

@@ -296,6 +296,21 @@ public class CombatSurfaceClient : MonoBehaviour
     const float ActorHeightFoe = 4.2f;
     const float ActorHeightChar = 3.2f;
 
+    // #1665: cap a runtime-spawned MONSTER's height to the room's cell scale (<=2 cells) so an imposing
+    // foe (the throne_hall Goblin Boss, #1662) stays grounded-and-readable rather than looming ~2x the
+    // room props. Expressed in cells * CellSize so it tracks any room's cell scale (not a bare unit).
+    const float MonsterMaxCells = 2f;
+    // #1666: a resolved CHARACTER whose bind-pose figure is shorter than this (metres, model units) is a
+    // degenerate fragment (a disembodied hand/glove/prop mesh), not a humanoid — rebind to the template so
+    // the party can never render as a floating hand. A humanoid FBX imports at ~1.4-2.2m; a hand fragment
+    // <~0.4m. Character-scoped (monsters legitimately vary in size), matching the #1666 report (party PC).
+    const float MinBindHeight = 0.6f;
+    // #1666 template-humanoid fallback targets — mirror ResolveAsset's character defaults (fbxDef/albDef/
+    // animDef) so the guard rebinds to the SAME generic rigged humanoid the rest of the cast spawn correctly.
+    const string TemplateCharFbx = "Assets/chars_v2/patron_commoner/rigged.fbx";
+    const string TemplateCharAlbedo = "Assets/chars_v2/patron_commoner/albedo.jpg";
+    const string TemplateCharAnim = "Assets/chars_v2/patron_commoner/anim_idle.fbx";
+
     // W6.1 (#1460) RUNTIME OCCLUDER PROXIES: the runtime twin of the paint_combat_v1.cs:487-533 editor
     // bake. The engine ships `occluders` ({cells:[[c,r]...], band:"low"|"mid"|"tall"}) on /combat-surface
     // (viewer/server.py _combat_occluders) — the OCCLUDER props (columns/statues) with footprint cells +
@@ -1553,6 +1568,23 @@ public class CombatSurfaceClient : MonoBehaviour
         return b;
     }
 
+    // #1666: the tallest local BIND-pose extent across a prefab's mesh renderers, in the prefab's own units
+    // — read from sharedMesh.bounds (no Instantiate / BakeMesh, so it is a pure, edit-mode-testable measure).
+    // A humanoid FBX reports ~1.4-2.2m here; a disembodied hand/glove/prop fragment <~0.4m. SpawnActor uses
+    // this to reject a degenerate CHARACTER bind and fall back to the template humanoid (the floating-hand fix).
+    static float PrefabBindHeight(GameObject prefab)
+    {
+        if (prefab == null) return 0f;
+        float h = 0f;
+        foreach (var smr in prefab.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            if (smr != null && smr.sharedMesh != null)
+                h = Mathf.Max(h, smr.sharedMesh.bounds.size.y * Mathf.Abs(smr.transform.lossyScale.y));
+        foreach (var mf in prefab.GetComponentsInChildren<MeshFilter>(true))
+            if (mf != null && mf.sharedMesh != null)
+                h = Mathf.Max(h, mf.sharedMesh.bounds.size.y * Mathf.Abs(mf.transform.lossyScale.y));
+        return h;
+    }
+
     // Spawn one actor for a token that has no baked/prior GameObject. Mirrors paint_combat_v1.cs's
     // spawn() lambda: registry-resolve -> load prefab from the bundle -> pitch guard -> BIND-POSE scale
     // lock -> idle pose (embedded clip, else humanoid donor retarget) -> ground+center on the cell ->
@@ -1566,6 +1598,25 @@ public class CombatSurfaceClient : MonoBehaviour
         string fbx = aref[0], alb = aref[1];
         var prefab = LoadAsset<GameObject>(fbx);
         if (prefab == null) { Debug.LogWarning("[CSC] spawn MISSING model " + fbx + " for token " + id + " (bundle stale?)"); return null; }
+
+        // #1666 MESH-BINDING GUARD: reject a degenerate CHARACTER bind. The party PC rendered as a tiny
+        // disembodied hand floating over its marker ring in BOTH tavern_snug (rest) and crypt (combat) while
+        // the body meshes never appeared — a resolved model that is a hand/glove/prop fragment, not a figure.
+        // Measured on the RAW prefab bind (BEFORE the height normalization below, which would otherwise scale
+        // a fragment UP to human height and mask the defect). On a degenerate bind, rebind to the template
+        // humanoid so the party can never be invisible-but-for-a-hand, and log loudly (token+name+model+height)
+        // so the box session can repair the registry/asset that resolved a character to a fragment.
+        float bindH = kind == "character" ? PrefabBindHeight(prefab) : 0f;
+        if (kind == "character" && bindH < MinBindHeight && fbx != TemplateCharFbx)
+        {
+            Debug.LogWarning("[CSC] #1666 degenerate character bind for token " + id + " name='" + tokName
+                + "' model=" + fbx + " bindH=" + bindH.ToString("F2") + "m < " + MinBindHeight
+                + "m -> template humanoid fallback " + TemplateCharFbx);
+            fbx = TemplateCharFbx; alb = TemplateCharAlbedo;
+            aref = new[] { fbx, alb, TemplateCharAnim };
+            prefab = LoadAsset<GameObject>(fbx);
+            if (prefab == null) { Debug.LogWarning("[CSC] #1666 template model MISSING " + fbx + " for token " + id + " (bundle stale?)"); return null; }
+        }
 
         // #idle-fix: register the model + moveset fbx BEFORE the idle pose so the idle resolver (FindOwnClip)
         // can search this actor's OWN clips in EITHER source — a rigged char whose idle lives in a separate
@@ -1602,6 +1653,7 @@ public class CombatSurfaceClient : MonoBehaviour
         // idle first frame can't inflate curH and over-scale the actor.
         Bounds bb = Measure(go, rends); float curH = bb.size.y > 0.001f ? bb.size.y : 1f;
         float height = foe ? ActorHeightFoe : ActorHeightChar;   // #1441: named, single-source heights
+        if (foe) height = Mathf.Min(height, MonsterMaxCells * CellSize);   // #1665: cap a monster to <=2 cells (room-scaled, not looming ~2x the props)
         float sc = height / curH; go.transform.localScale = go.transform.localScale * sc;
 
         // #anim-pack: a VALID humanoid avatar retargets the shared RPG-pack controller (idle/walk/run +
@@ -1640,6 +1692,12 @@ public class CombatSurfaceClient : MonoBehaviour
             if (al != null)
             {
                 var mm = new Material(Shader.Find("Standard")); mm.mainTexture = al; mm.SetFloat("_Glossiness", 0.2f); mm.SetFloat("_Metallic", 0f);
+                // #1665: warm a runtime MONSTER toward the room's lit-ground ambient so a spawned foe reads
+                // integrated with the brazier-lit plate instead of pale/flat. The baked path bakes this warmth
+                // into the PainterlyActor _AmbientColor (#1524); here a conservative warm multiply on the
+                // Standard albedo tint, reusing the SAME WarmAmb/WARM_AMBIENT_FLOOR floor the grounding decals
+                // already use. Foe-scoped: party actors are intentionally untouched (not in the #1665 report).
+                if (foe) mm.color = Color.Lerp(mm.color, WarmAmb, WARM_AMBIENT_FLOOR);
                 foreach (var r in rends) r.sharedMaterial = mm;
             }
         }
@@ -2038,7 +2096,12 @@ public class CombatSurfaceClient : MonoBehaviour
         var anim = go.GetComponentInChildren<Animator>();
         if (anim == null || anim.avatar == null) { SampleClipRuntime(go, clip, 0f); return; }   // legacy rig
         KillIdleGraph(id);
-        anim.enabled = true; anim.Rebind();   // clear stale binding so the fresh graph output applies
+        // #1665 FLOAT FIX: the idle graph is re-evaluated every frame with Time.deltaTime (Update loop). If the
+        // idle clip carries ROOT MOTION and the Animator applies it, that per-frame root delta accumulates and
+        // drifts the actor UP off its grounded feet — the runtime monster "floating ~half a cell above the ring."
+        // Disable root motion so the idle breathes IN PLACE (mirrors the ctrlDriven path's applyRootMotion=false
+        // and the baked one-shot Evaluate, which never accumulates). Keeps feet planted at the grounded FloorY.
+        anim.enabled = true; anim.applyRootMotion = false; anim.Rebind();   // clear stale binding so the fresh graph output applies
         var g = UnityEngine.Playables.PlayableGraph.Create("Idle_" + go.name);
         var cp = UnityEngine.Animations.AnimationClipPlayable.Create(g, clip);
         var op = UnityEngine.Animations.AnimationPlayableOutput.Create(g, "Out", anim);
