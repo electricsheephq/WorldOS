@@ -83,6 +83,15 @@ public class CombatSurfaceClient : MonoBehaviour
     static readonly Color WarmAmb = new Color(0.55f, 0.35f, 0.18f);   // CohesionProbe _warmAmb (lit-ground warm band)
     const float WARM_AMBIENT_FLOOR = 0.35f;                           // CohesionProbe WARM_AMBIENT_FLOOR
 
+    // #1665 FOE-TINT POLISH: the runtime monster albedo warmth must NOT reuse WarmAmb/WARM_AMBIENT_FLOOR.
+    // WarmAmb (0.55,0.35,0.18) is a DARK, RED-DOMINANT grounding-blob color; Lerp(albedo, WarmAmb, 0.35) on
+    // a full-body albedo washed the goblins + boss to saturated BLOOD-RED (owner eyeball, throne_g4 /
+    // shot_sil_behind). A full-body tint wants a LIGHT, warm-NEUTRAL target (r≈g, only slightly > b — a
+    // hearth-lit skin warmth, not a red overlay) applied at a much lower weight so the foe reads integrated
+    // with the brazier-lit plate the way the party actors do, not stained red.
+    static readonly Color MonsterWarmTint = new Color(1.0f, 0.88f, 0.72f);   // light warm-neutral (candle/hearth)
+    const float MONSTER_WARM_FLOOR = 0.12f;                                  // subtle: a nudge, not an overlay
+
     // #1441 W5d player interactivity: grounded reposition + engine-confirmed glide + walk clips + click
     // pre-validation. GlideSpeed tunes the cell->cell walk tween; the maps below track per-actor state.
     [Header("Glide (#1441 W5d)")]
@@ -310,6 +319,16 @@ public class CombatSurfaceClient : MonoBehaviour
     const string TemplateCharFbx = "Assets/chars_v2/patron_commoner/rigged.fbx";
     const string TemplateCharAlbedo = "Assets/chars_v2/patron_commoner/albedo.jpg";
     const string TemplateCharAnim = "Assets/chars_v2/patron_commoner/anim_idle.fbx";
+    // #1666 MONSTER path: the character guard is scoped OUT of monsters (they legitimately vary in size),
+    // so a degenerate MONSTER bind (the g4 crypt goblin that rendered as a ~0.2m foe-red hand fragment over
+    // the west stairs) was uncovered. Guard monsters too, with a LOWER floor — even a small goblin's bind
+    // figure clears ~0.3m, while a hand/glove/prop fragment sits well under it. Rebind to the SAME generic
+    // goblin monster the rest of the foe cast resolve to (ResolveAsset's monster default), so a fragment
+    // never renders as a floating hand instead of a foe.
+    const float MinMonsterBindHeight = 0.3f;
+    const string TemplateMonsterFbx = "Assets/chars_v2/goblin/goblin.fbx";
+    const string TemplateMonsterAlbedo = "Assets/chars_v2/goblin/albedo.png";
+    const string TemplateMonsterAnim = "";
 
     // W6.1 (#1460) RUNTIME OCCLUDER PROXIES: the runtime twin of the paint_combat_v1.cs:487-533 editor
     // bake. The engine ships `occluders` ({cells:[[c,r]...], band:"low"|"mid"|"tall"}) on /combat-surface
@@ -1606,7 +1625,7 @@ public class CombatSurfaceClient : MonoBehaviour
         // a fragment UP to human height and mask the defect). On a degenerate bind, rebind to the template
         // humanoid so the party can never be invisible-but-for-a-hand, and log loudly (token+name+model+height)
         // so the box session can repair the registry/asset that resolved a character to a fragment.
-        float bindH = kind == "character" ? PrefabBindHeight(prefab) : 0f;
+        float bindH = PrefabBindHeight(prefab);   // #1666: pure read (sharedMesh.bounds); cheap for both kinds
         if (kind == "character" && bindH < MinBindHeight && fbx != TemplateCharFbx)
         {
             Debug.LogWarning("[CSC] #1666 degenerate character bind for token " + id + " name='" + tokName
@@ -1616,6 +1635,16 @@ public class CombatSurfaceClient : MonoBehaviour
             aref = new[] { fbx, alb, TemplateCharAnim };
             prefab = LoadAsset<GameObject>(fbx);
             if (prefab == null) { Debug.LogWarning("[CSC] #1666 template model MISSING " + fbx + " for token " + id + " (bundle stale?)"); return null; }
+        }
+        else if (kind == "monster" && bindH < MinMonsterBindHeight && fbx != TemplateMonsterFbx)
+        {
+            Debug.LogWarning("[CSC] #1666 degenerate monster bind for token " + id + " name='" + tokName
+                + "' model=" + fbx + " bindH=" + bindH.ToString("F2") + "m < " + MinMonsterBindHeight
+                + "m -> monster template fallback " + TemplateMonsterFbx);
+            fbx = TemplateMonsterFbx; alb = TemplateMonsterAlbedo;
+            aref = new[] { fbx, alb, TemplateMonsterAnim };
+            prefab = LoadAsset<GameObject>(fbx);
+            if (prefab == null) { Debug.LogWarning("[CSC] #1666 monster template model MISSING " + fbx + " for token " + id + " (bundle stale?)"); return null; }
         }
 
         // #idle-fix: register the model + moveset fbx BEFORE the idle pose so the idle resolver (FindOwnClip)
@@ -1694,10 +1723,11 @@ public class CombatSurfaceClient : MonoBehaviour
                 var mm = new Material(Shader.Find("Standard")); mm.mainTexture = al; mm.SetFloat("_Glossiness", 0.2f); mm.SetFloat("_Metallic", 0f);
                 // #1665: warm a runtime MONSTER toward the room's lit-ground ambient so a spawned foe reads
                 // integrated with the brazier-lit plate instead of pale/flat. The baked path bakes this warmth
-                // into the PainterlyActor _AmbientColor (#1524); here a conservative warm multiply on the
-                // Standard albedo tint, reusing the SAME WarmAmb/WARM_AMBIENT_FLOOR floor the grounding decals
-                // already use. Foe-scoped: party actors are intentionally untouched (not in the #1665 report).
-                if (foe) mm.color = Color.Lerp(mm.color, WarmAmb, WARM_AMBIENT_FLOOR);
+                // into the PainterlyActor _AmbientColor (#1524); here a subtle warm nudge on the Standard albedo
+                // tint toward a LIGHT warm-neutral (MonsterWarmTint) at a low weight (MONSTER_WARM_FLOOR) — the
+                // g4 polish fix: the prior Lerp toward the dark red-dominant WarmAmb @0.35 stained goblins +
+                // boss blood-red. Foe-scoped: party actors are intentionally untouched (not in the #1665 report).
+                if (foe) mm.color = Color.Lerp(mm.color, MonsterWarmTint, MONSTER_WARM_FLOOR);
                 foreach (var r in rends) r.sharedMaterial = mm;
             }
         }
@@ -1724,7 +1754,28 @@ public class CombatSurfaceClient : MonoBehaviour
         _topOf[id] = height + 1.4f;
         _cellOf[id] = new[] { cx, cy };
         Debug.Log("[CSC] spawned " + nm + " model=" + fbx + " x" + sc.ToString("F2") + " @cell(" + cx + "," + cy + ") rends=" + rends.Length);
+        // #1665 residual-float re-snap: the ctrl-driven humanoid idle graph (and the avatar retarget) resolves
+        // its STEADY pose over the first few frames after spawn, so the frame-0 grounding above (measured right
+        // after animC.Update(0f)) can land on a transient pose whose bounds.min.y sits below the settled feet —
+        // leaving the throne boss hovering ~1/3 cell above its ring (#1665 residual). Re-ground once the idle
+        // graph is running steadily (a bounds-min re-snap), unless a move/down has since taken over. Cells carry
+        // no elevation (CellToWorld is flat FloorY), so this is a footing re-measure, not a dais-height lookup.
+        StartCoroutine(ResnapGroundedCo(id, cx, cy));
         return go.transform;
+    }
+
+    // #1665: re-ground an actor a few frames after spawn, once its idle graph has advanced past the bind/first
+    // frame the initial grounding measured. Presentation-only; skips a downed or already-gliding actor (whose
+    // own arrival re-grounds) and grounds to the actor's CURRENT engine cell if the poll moved it meanwhile.
+    IEnumerator ResnapGroundedCo(string id, int cx, int cy)
+    {
+        for (int i = 0; i < 4; i++) yield return null;   // let the idle graph settle its steady pose
+        var a = FindActor(id); if (a == null) yield break;
+        if (_downed.Contains(id)) yield break;
+        if (_glide.TryGetValue(id, out var g) && g != null) yield break;   // a move started; its arrival re-grounds
+        int gx = cx, gy = cy;
+        if (_cellOf.TryGetValue(id, out var cc) && cc != null && cc.Length == 2) { gx = cc[0]; gy = cc[1]; }
+        GroundSnap(a, gx, gy);
     }
 
     void MakeGroundQuad(string name, Vector3 p, float yOff, float scale, Texture2D tex, Color col, int queue)

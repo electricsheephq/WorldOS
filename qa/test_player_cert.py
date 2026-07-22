@@ -275,3 +275,87 @@ def test_run_cert_live_silhouette_red_makes_suite_red(monkeypatch, tmp_path):
     ids = {a["id"]: a["verdict"] for a in rep["assertions"]}
     assert ids["silhouette_behind_occluder"] == "RED"
     assert rep["verdict"] == "RED"
+
+
+# ── #1677 counter-assert: the ghost-cyan tint must be ABSENT on an UNOCCLUDED actor ─────────────────
+def _cyan_block(bg=60, block=110, side=240, box=160):
+    """A `side`x`side` grey frame with a centered `box`x`box` party-ghost-cyan patch (G,B >> R) — the
+    #1677 ghost-in-the-open shape. RGB ~ (block, block+65, block+65) matches the measured g4 ghost mean."""
+    import numpy as np
+    from PIL import Image
+    a = np.full((side, side, 3), bg, dtype=np.uint8)
+    lo = (side - box) // 2
+    a[lo:lo + box, lo:lo + box] = (block, block + 65, block + 65)
+    return Image.fromarray(a)
+
+
+def _normal_block(side=200, box=90):
+    """A `side`x`side` frame with a centered r-dominant skin/armor patch (no cyan dominance) — a normal
+    unoccluded actor. Must read as ZERO ghost-cyan share (GREEN)."""
+    import numpy as np
+    from PIL import Image
+    a = np.full((side, side, 3), 40, dtype=np.uint8)
+    lo = (side - box) // 2
+    a[lo:lo + box, lo:lo + box] = (150, 120, 100)   # warm skin/armor, r >= g >= b
+    return Image.fromarray(a)
+
+
+def test_peak_ghost_tint_share_high_on_cyan_block():
+    """A solid cyan patch fills a scan window -> peak share ~1.0, well above MAX_GHOST_TINT_SHARE."""
+    share = PC.peak_ghost_tint_share(_cyan_block())
+    assert share > PC.MAX_GHOST_TINT_SHARE
+    assert share > 0.9
+
+
+def test_peak_ghost_tint_share_zero_on_normal_actor():
+    """A warm r-dominant actor patch has no cyan -> peak share 0.0, below threshold."""
+    assert PC.peak_ghost_tint_share(_normal_block()) == 0.0
+
+
+def test_ghost_tint_share_window_reads_cyan_center():
+    """ghost_tint_share is high in a window over the cyan patch, zero over the grey corner."""
+    img = _cyan_block()
+    assert PC.ghost_tint_share(img, (100, 100), 40) > 0.9   # centered on the patch
+    assert PC.ghost_tint_share(img, (10, 10), 8) == 0.0     # grey corner
+
+
+def test_silhouette_absent_verdict_green_when_no_tint():
+    """No ghost overlay in the open (share <= threshold) -> GREEN (the occluder-scoped build)."""
+    rec = {"captured": True, "tint_share": 0.004, "max_tint_share": PC.MAX_GHOST_TINT_SHARE}
+    assert PC.silhouette_absent_verdict(rec) == "GREEN"
+
+
+def test_silhouette_absent_verdict_red_when_ghost_overlay():
+    """A ghost-cyan overlay on the unoccluded actor (share above threshold) -> RED — the #1677 defect."""
+    rec = {"captured": True, "tint_share": 0.09, "max_tint_share": PC.MAX_GHOST_TINT_SHARE}
+    assert PC.silhouette_absent_verdict(rec) == "RED"
+
+
+def test_silhouette_absent_verdict_error_paths():
+    assert PC.silhouette_absent_verdict({"harness_errors": ["surface: boom"]}) == "ERROR"
+    assert PC.silhouette_absent_verdict({"captured": False}) == "ERROR"
+    assert PC.silhouette_absent_verdict({"captured": True, "max_tint_share": 0.03}) == "ERROR"  # no share
+
+
+# Real g4 frame calibration (skips when the LEXAR evidence isn't mounted — CI has no LEXAR). The very
+# frames the owner eyeballed: the ghost frames must go RED and the normal baseline GREEN, proving the
+# counter-assert is red-first against the actual ghost-in-the-open pixels (#1677), not just synthetics.
+def _lexar(*parts):
+    from pathlib import Path
+    p = Path("/Volumes/LEXAR/Codex/session-notes/2026-07-22").joinpath(*parts)
+    return p if p.is_file() else None
+
+
+def test_ghost_frames_calibration_real_pngs():
+    import pytest
+    from PIL import Image
+    ghost_a = _lexar("g4-build", "artifacts", "snug_g4b.png")
+    ghost_b = _lexar("g4-build", "artifacts", "throne_g4.png")
+    normal = _lexar("player-cert-live", "artifacts", "cert_green", "shot_sil_baseline.png")
+    if not (ghost_a and ghost_b and normal):
+        pytest.skip("LEXAR g4 calibration frames not mounted")
+    for g in (ghost_a, ghost_b):
+        share = PC.peak_ghost_tint_share(Image.open(g).convert("RGB"))
+        assert share > PC.MAX_GHOST_TINT_SHARE, f"{g.name} ghost share {share} should exceed threshold (RED)"
+    nshare = PC.peak_ghost_tint_share(Image.open(normal).convert("RGB"))
+    assert nshare <= PC.MAX_GHOST_TINT_SHARE, f"normal actor share {nshare} should be below threshold (GREEN)"
