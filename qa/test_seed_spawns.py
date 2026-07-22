@@ -13,7 +13,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from seed_gfx_town import choose_spawns  # noqa: E402
+from seed_gfx_town import choose_spawns, load_cell_verdicts  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 GEO = REPO / "qa" / "room_geometries"
@@ -76,3 +76,77 @@ def test_avoids_door_landing_ring():
     sp = choose_spawns(16, 12, blocked=set(), door_cells=doors)
     for cell in sp["party"] + sp["npcs"]:
         assert tuple(cell) not in ring, f"spawn {cell} in the door landing ring"
+
+
+# ── coherence-aware spawn placement (#1647): a cell the player SEES as under painted furniture is
+# grid-open yet must never host a spawn. choose_spawns consults a paint_coherence report's per-cell
+# verdicts when one is supplied; absent verdicts, behaviour is byte-identical to the geometry path. ──
+def _all_verdicts(cols, rows, default="covered", **overrides):
+    """A dense verdict map for every interior cell (default `covered`) with per-cell `overrides` — e.g.
+    _all_verdicts(9, 9, open_={(2, 2)}) marks (2,2) open and everything else covered."""
+    v = {(c, r): default for r in range(1, rows - 1) for c in range(1, cols - 1)}
+    for verdict, cells in overrides.items():
+        for cell in cells:
+            v[cell] = verdict.rstrip("_")   # open_ -> open, ambiguous_ -> ambiguous
+    return v
+
+
+def test_covered_centroid_moves_spawn_to_open_cell():
+    """The red-first case: a report marking the geometry-centroid cells COVERED must relocate every
+    spawn onto cells the report classifies OPEN (never covered)."""
+    cols, rows = 16, 12
+    geom = choose_spawns(cols, rows, blocked=set(), door_cells=[])   # geometry-only placement
+    covered = {tuple(c) for c in geom["party"] + geom["npcs"]}       # exactly what sits on the centroid
+    open_region = {(2, 2), (2, 3), (3, 2), (3, 3), (4, 2)}           # the only OPEN floor in this plate
+    verdicts = _all_verdicts(cols, rows, open_=open_region)
+    for cell in covered:                                            # ensure the old anchor reads covered
+        verdicts[cell] = "covered"
+    sp = choose_spawns(cols, rows, blocked=set(), door_cells=[], cell_verdicts=verdicts)
+    placed = [tuple(c) for c in sp["party"] + sp["npcs"]]
+    assert placed, "coherence-aware placement produced no spawn"
+    for cell in placed:
+        assert cell not in covered, f"spawn {cell} stayed on a covered centroid cell"
+        assert verdicts.get(cell) == "open", f"spawn {cell} is not on an OPEN cell ({verdicts.get(cell)})"
+
+
+def test_absent_report_is_byte_identical():
+    """No report present ⇒ additive no-op: cell_verdicts=None reproduces the geometry-only spawn exactly."""
+    for room, geofile, doors in ROOMS:
+        geo = json.loads((GEO / geofile).read_text())
+        blocked = _blocked(geo, doors)
+        base = choose_spawns(geo["cols"], geo["rows"], blocked, doors)
+        same = choose_spawns(geo["cols"], geo["rows"], blocked, doors, cell_verdicts=None)
+        assert base == same, f"{room}: cell_verdicts=None changed the spawn"
+
+
+def test_no_open_cells_warns_and_falls_back(capsys):
+    """Every candidate covered (a fully mis-locked plate) ⇒ a LOUD warning + a geometry fallback, never
+    a crash or an empty spawn."""
+    cols, rows = 9, 9
+    verdicts = _all_verdicts(cols, rows, default="covered")          # nothing open, nothing ambiguous
+    sp = choose_spawns(cols, rows, blocked=set(), door_cells=[(0, 4)], cell_verdicts=verdicts)
+    assert sp["party"], "fallback must still place a party rather than crash/return empty"
+    assert sp == choose_spawns(cols, rows, blocked=set(), door_cells=[(0, 4)]), \
+        "the all-covered fallback must equal the geometry-only placement"
+    assert "WARNING" in capsys.readouterr().err.upper(), "an all-covered fallback must warn loudly"
+
+
+def test_ambiguous_only_fallback_prefers_ambiguous_over_covered(capsys):
+    """No OPEN cell but some ambiguous ⇒ warn and place on ambiguous cells, NEVER on covered ones."""
+    cols, rows = 9, 9
+    ambiguous = {(3, 3), (4, 4), (5, 5)}
+    verdicts = _all_verdicts(cols, rows, default="covered", ambiguous_=ambiguous)
+    sp = choose_spawns(cols, rows, blocked=set(), door_cells=[(0, 4)], cell_verdicts=verdicts)
+    placed = [tuple(c) for c in sp["party"] + sp["npcs"]]
+    assert placed and all(c in ambiguous for c in placed), f"spawn not confined to ambiguous cells: {placed}"
+    assert "WARNING" in capsys.readouterr().err.upper()
+
+
+def test_load_cell_verdicts_reads_a_real_report():
+    """load_cell_verdicts parses a shipped coherence report into tuple-keyed verdicts; a missing report
+    (or None dir) returns None so the seed path stays geometry-only."""
+    reports = REPO / "qa" / "evidence" / "paint-coherence"
+    crypt = load_cell_verdicts(reports, "crypt")
+    assert crypt is not None and crypt.get((7, 7)) == "covered", "crypt (7,7) should read as covered"
+    assert load_cell_verdicts(reports, "no_such_room") is None, "missing report ⇒ None"
+    assert load_cell_verdicts(None, "crypt") is None, "no dir ⇒ None"
