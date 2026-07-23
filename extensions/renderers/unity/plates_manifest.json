@@ -9,7 +9,7 @@
     "pitch": 30,
     "yaw": 45
    },
-   "boxes": "boxes/crypt_v36_boxes.json",
+   "boxes": "boxes/crypt_kit_v1_boxes.json",
    "effects": [
     {
      "type": "fire_medium",
@@ -49,7 +49,7 @@
     }
    ],
    "_effects_comment": "Animated fire over the four painted brazier fires (geometry brazier cells; bowls sit ~1.2u up the stem). Tune scale/y at the sandbox eyeball if the flame floats or washes the paint.",
-   "_provenance": "KIT-CRYPT v1 (2026-07-23, #83/#84 nav-truth spike): 3D-FIRST CERTIFIED CHAIN \u2014 geometry crypt_v36 -> build_room_kit scene (footprint SEG GATE 100.00%, 0/192 disagreements, qa/evidence/kit-crypt/) -> kit 3D depth -> flux depth-CN base seed 12346 (recall 0.9752, asset_qM9R3tuRH4sceUrVjCoLdPRk) -> Gemini 3.0 Pro edit (model_google-gemini-pro-image-editing, critique-targeted detail prompt, job_Lmhssjh7iWnHsUKY1dhnHB4m) -> phase-corr ALIGNED dx=0,dy=0 vs base (qa/styled_align_check.py) -> geometric void composite (seg-frame mask). Blind panel 7 vs control 8 (delta -1.0, in-band; wf_89967920). Collision truth UNCHANGED (same geometry/walkmask/boxes as crypt_v36). NOTE: model_google-gemini-pro-image-editing pending model-registry allowlist (owner sign-off)."
+   "_provenance": "KIT-CRYPT v1 (2026-07-23, #83/#84 nav-truth spike): 3D-FIRST CERTIFIED CHAIN \u2014 geometry crypt_v36 -> build_room_kit scene (footprint SEG GATE 100.00%, 0/192 disagreements, qa/evidence/kit-crypt/) -> kit 3D depth -> flux depth-CN base seed 12346 (recall 0.9752, asset_qM9R3tuRH4sceUrVjCoLdPRk) -> Gemini 3.0 Pro edit (model_google-gemini-pro-image-editing, critique-targeted detail prompt, job_Lmhssjh7iWnHsUKY1dhnHB4m) -> phase-corr ALIGNED dx=0,dy=0 vs base (qa/styled_align_check.py) -> geometric void composite (seg-frame mask). Blind panel 7 vs control 8 (delta -1.0, in-band; wf_89967920). Collision truth UNCHANGED (same geometry/walkmask/boxes as crypt_v36). NOTE: model_google-gemini-pro-image-editing pending model-registry allowlist (owner sign-off). SIDECAR 2026-07-23: kit-derived boxes (ExportBoxes, 73 per-mass true bounds: parapets 0.55u, pillars/tomb/buttresses at real heights) replacing the authored crypt_v36 volumes -- silhouette bands now hug the paint."
   },
   "camp_clearing_night": {
    "plate": "plates/camp_clearing_night_truegrey_v1.png",
