@@ -79,6 +79,26 @@ def _meta_path(run: str) -> Path:
     return _rundir(run) / "sandbox.json"
 
 
+def _qa_roots_in_app(app: Path) -> set:
+    """Names of QA kit-scene roots (KitRoom_*) baked into the app's level files.
+
+    build_room_kit.cs assembles kit rooms in the open scene; a capture flow that saves the scene
+    bakes them into the next build, which then draws grey kit masses in front of every plate.
+    Unity level files store GameObject names as plain bytes, so a byte scan is a reliable,
+    dependency-free detector (the same check as `strings level0 | grep KitRoom_`).
+    """
+    import re
+    found: set = set()
+    data_dir = app / "Contents" / "Resources" / "Data"
+    for lvl in sorted(data_dir.glob("level*")):
+        try:
+            found.update(m.decode() for m in re.findall(rb"KitRoom_[A-Za-z0-9_]+", lvl.read_bytes()))
+        except OSError:
+            continue
+    # child helper objects (KitRoom_Fire etc.) ride along with a real root; the root name is the signal
+    return {n for n in found if not n.startswith(("KitRoom_Fire", "KitRoom_TombGlow", "KitRoom_CoolKey"))} or found
+
+
 def up(run: str, *, campaign: str, engine_port: int, qa_port: int,
        seed_cmd: str, app: Path) -> dict:
     rd = _rundir(run)
@@ -119,6 +139,14 @@ def up(run: str, *, campaign: str, engine_port: int, qa_port: int,
     if not pbin.exists():
         engine.terminate()
         raise SystemExit(f"[sandbox] player binary missing: {pbin}")
+    contaminated = _qa_roots_in_app(app)
+    if contaminated:
+        engine.terminate()
+        raise SystemExit(
+            f"[sandbox] app CONTAMINATED — QA kit roots baked into the build: {sorted(contaminated)} "
+            f"({app}). A KitRoom_* scene root was saved into the canonical scene at build time; it "
+            f"renders grey kit masses over every plate (kit-tavern 2026-07-23). Rebuild via "
+            f"BuildMacOSPlayer (auto-strips + reports strippedQARoots in build-report.txt).")
     penv = dict(os.environ,
                 WORLDOS_ENGINE_BASE_URL=f"http://127.0.0.1:{engine_port}",
                 WORLDOS_CAMPAIGN_ID=campaign,

@@ -188,6 +188,10 @@ public static class BuildMacOSPlayer
         // player can runtime-spawn actors for any campaign (not just the baked scene's cast).
         EnsurePackaged();
 
+        // Kit rooms (build_room_kit.cs) are QA constructions; a capture flow that saves the scene while
+        // one exists would otherwise ship it inside the player, drawing grey kit masses over every plate.
+        string[] strippedQARoots = StripQAConstructions();
+
         // --- Player identity (was DefaultCompany/WorldOS-Unity-spike) ---
         PlayerSettings.companyName = "worldos";
         PlayerSettings.productName = "WorldOSPlayer";
@@ -259,11 +263,42 @@ public static class BuildMacOSPlayer
             "platform=" + s.platform + "\n" +
             "architecture=" + archResult + "\n" +
             "alwaysIncludedShaders=" + string.Join(",", includedShaders) + "\n" +
+            "strippedQARoots=" + (strippedQARoots.Length == 0 ? "(none)" : string.Join(",", strippedQARoots)) + "\n" +
             "scenesBuilt=" + string.Join(",", options.scenes) + "\n");
 
         Debug.Log("[BuildMacOSPlayer] DONE result=" + s.result + " errors=" + s.totalErrors
             + " warnings=" + s.totalWarnings + " size=" + s.totalSize + " time=" + s.totalTime
             + " report=" + reportPath);
+    }
+
+    // QA-construction roots that must NEVER ship inside a player build. build_room_kit.cs assembles
+    // kit rooms as "KitRoom_<roomId>" roots in whatever scene is open; a capture/lighting flow that
+    // saves the scene mid-session bakes them in, and the built player then renders grey kit masses
+    // (fallback boxes, brazier plinths, parapets) in front of every plate. Measured three times
+    // (kit-crypt cleankit trap ×2, kit-tavern 2026-07-23 — the withheld tavern install). The build
+    // opens the canonical scene EXPLICITLY (also killing the wrong-open-scene trap), strips matching
+    // roots, saves, and reports them in build-report.txt (strippedQARoots=...).
+    const string QARootPrefix = "KitRoom_";
+
+    static string[] StripQAConstructions()
+    {
+        var scene = UnityEditor.SceneManagement.EditorSceneManager.OpenScene(SceneToBuild);
+        var stripped = new List<string>();
+        foreach (var go in scene.GetRootGameObjects())
+        {
+            if (go != null && go.name.StartsWith(QARootPrefix, StringComparison.Ordinal))
+            {
+                stripped.Add(go.name);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+        if (stripped.Count > 0)
+        {
+            UnityEditor.SceneManagement.EditorSceneManager.SaveScene(scene);
+            Debug.LogWarning("[BuildMacOSPlayer] stripped QA construction roots from " + SceneToBuild
+                + ": " + string.Join(",", stripped));
+        }
+        return stripped.ToArray();
     }
 
     // #1674: shaders CombatSurfaceClient resolves at runtime via Shader.Find and that NO asset references, so
