@@ -135,6 +135,78 @@ public static class BuildRoomKit
     // ════════════════════════════════════════════════════════════════════════════════════════════════
     //  BUILD
     // ════════════════════════════════════════════════════════════════════════════════════════════════
+    // Occluder-sidecar export DERIVED from the built kit scene: per-mass true renderer bounds instead of
+    // hand-authored chunky volumes. The felt-truth failure this kills (owner playtest 2026-07-23): the
+    // authored tavern sidecar carried 5.0u camera-side walls where the paint shows 0.55u cutaway parapets
+    // and square slabs around round tables, so the walk-behind silhouette fired far outside every painted
+    // object and legal moves read as walking through furniture. The kit scene IS the plate's geometry
+    // (seg-gate + alignment certified), so bounds measured off the placed objects match the paint by
+    // construction. Requires BuildRoom to have run for the same geometry this editor session.
+    [MenuItem("Tools/WorldOS/Kit/Export Kit Boxes")]
+    public static void ExportBoxes()
+    {
+        string geoPath = GeoPath();
+        if (!File.Exists(geoPath)) { Debug.LogError($"[KitBoxes] no geometry json: {geoPath}"); return; }
+        var geo = MiniJson.Parse(File.ReadAllText(geoPath)) as Dictionary<string, object>;
+        if (geo == null) { Debug.LogError("[KitBoxes] geometry parse failed"); return; }
+        int cols = GetInt(geo, "cols", 14), rows = GetInt(geo, "rows", 11);
+        bool camFit = GetBool(geo, "camera_fit");
+        string roomId = RoomId(geo, geoPath);
+
+        var root = GameObject.Find("KitRoom_" + roomId);
+        if (root == null) { Debug.LogError($"[KitBoxes] KitRoom_{roomId} not in scene — run Build Room From Kit first."); return; }
+
+        // the CONTRACT ortho (same math as SetupContractCamera at the 1344x768 contract aspect)
+        float aspect = 1344f / 768f, FILL = 0.96f, ortho = 13f;
+        if (camFit)
+        {
+            Quaternion crot = Quaternion.Euler(30f, 45f, 0f);
+            Vector3 rightAx = crot * Vector3.right, upAx = crot * Vector3.up;
+            float maxR = 0f, maxU = 0f, hx = (cols / 2f) * CELL, hz = (rows / 2f) * CELL;
+            foreach (var sgn in new[] { new Vector2(1, 1), new Vector2(1, -1), new Vector2(-1, 1), new Vector2(-1, -1) })
+            {
+                Vector3 corner = new Vector3(hx * sgn.x, 0f, hz * sgn.y);
+                maxR = Mathf.Max(maxR, Mathf.Abs(Vector3.Dot(corner, rightAx)));
+                maxU = Mathf.Max(maxU, Mathf.Abs(Vector3.Dot(corner, upAx)));
+            }
+            ortho = Mathf.Max(maxR / (aspect * FILL), maxU / FILL);
+        }
+
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var sb = new System.Text.StringBuilder();
+        sb.Append("{\n  \"version\": 1,\n");
+        sb.Append(string.Format(inv, "  \"ortho\": {0:0.####},\n", ortho));
+        sb.Append(string.Format(inv, "  \"cols\": {0}, \"rows\": {1},\n", cols, rows));
+        sb.Append("  \"provenance\": \"kit-derived (build_room_kit ExportBoxes): per-mass renderer bounds of KitRoom_" + roomId + "\",\n");
+        sb.Append("  \"boxes\": [\n");
+        int nBoxes = 0;
+        foreach (var groupName in new[] { "Walls", "Props", "Impassable" })
+        {
+            var group = root.transform.Find(groupName);
+            if (group == null) continue;
+            foreach (Transform child in group)
+            {
+                var rends = child.GetComponentsInChildren<Renderer>(false);
+                if (rends.Length == 0) continue;
+                Bounds b = rends[0].bounds;
+                for (int i = 1; i < rends.Length; i++) b.Encapsulate(rends[i].bounds);
+                if (b.size.y < 0.15f) continue;                       // flat decals never occlude
+                string kind = child.name.ToLowerInvariant();
+                int cut = kind.IndexOf('_'); if (cut > 0) kind = kind.Substring(0, cut);
+                if (nBoxes > 0) sb.Append(",\n");
+                sb.Append(string.Format(inv,
+                    "    {{\"kind\": \"{0}\", \"size\": [{1:0.###}, {2:0.###}, {3:0.###}], \"center\": [{4:0.###}, {5:0.###}, {6:0.###}]}}",
+                    kind, b.size.x, b.size.y, b.size.z, b.center.x, b.center.y, b.center.z));
+                nBoxes++;
+            }
+        }
+        sb.Append("\n  ]\n}\n");
+        string projectRoot = Directory.GetParent(Application.dataPath).FullName;
+        string outPath = Path.Combine(projectRoot, "room_kit_boxes.json");
+        File.WriteAllText(outPath, sb.ToString());
+        Debug.Log($"[KitBoxes] wrote {nBoxes} kit-derived boxes (ortho {ortho:0.####}) -> {outPath}");
+    }
+
     [MenuItem("Tools/WorldOS/Kit/Build Room From Kit")]
     public static void BuildRoom()
     {
