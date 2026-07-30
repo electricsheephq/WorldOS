@@ -1,0 +1,40 @@
+Section "ServerLayout"
+    Identifier "layout"
+    Screen 0 "nvidia"
+EndSection
+
+Section "Monitor"
+    Identifier "GEX44Virtual4K"
+    VendorName "GEX44"
+    ModelName "Virtual 4K Readable"
+    HorizSync 30.0 - 140.0
+    VertRefresh 50.0 - 75.0
+    Option "DPMS" "false"
+    Modeline "3840x2160R" 533.00 3840 3888 3920 4000 2160 2163 2168 2222 +hsync -vsync
+    Modeline "2560x1440R" 241.50 2560 2608 2640 2720 1440 1443 1448 1481 +hsync -vsync
+    Modeline "1920x1080_60.00" 173.00 1920 2048 2248 2576 1080 1083 1088 1120 -hsync +vsync
+EndSection
+
+Section "Device"
+    Identifier "nvidia"
+    Driver "nvidia"
+    BusID "PCI:1:0:0"
+    Option "AllowEmptyInitialConfiguration" "true"
+    Option "HardDPMS" "false"
+    Option "ConnectedMonitor" "DFP-0"
+    Option "UseDisplayDevice" "DFP-0"
+    Option "ModeValidation" "NoEdidModes, NoMaxPClkCheck, NoEdidMaxPClkCheck, NoHorizSyncCheck, NoVertRefreshCheck, NoVirtualSizeCheck, AllowNonEdidModes"
+EndSection
+
+Section "Screen"
+    Identifier "nvidia"
+    Device "nvidia"
+    Monitor "GEX44Virtual4K"
+    DefaultDepth 24
+    Option "MetaModes" "DFP-0: 3840x2160R +0+0; DFP-0: 2560x1440R +0+0; DFP-0: 1920x1080_60.00 +0+0"
+    SubSection "Display"
+        Depth 24
+        Modes "3840x2160R" "2560x1440R" "1920x1080_60.00"
+        Virtual 3840 2160
+    EndSubSection
+EndSection
