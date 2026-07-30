@@ -1,0 +1,8 @@
+[Settings]
+gtk-font-name=Sans 16
+gtk-xft-antialias=1
+gtk-xft-hinting=1
+gtk-xft-hintstyle=hintslight
+gtk-xft-rgba=rgb
+gtk-xft-dpi=196608
+gtk-cursor-theme-size=48

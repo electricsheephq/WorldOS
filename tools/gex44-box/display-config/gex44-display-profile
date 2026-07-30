@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+profile="${1:-4k-readable}"
+export DISPLAY="${DISPLAY:-:0}"
+export XAUTHORITY="${XAUTHORITY:-/home/unity/.Xauthority}"
+export HOME="${HOME:-/home/unity}"
+
+case "$profile" in
+  4k-readable)
+    mode="3840x2160R"
+    fallback_fb="3840x2160"
+    dpi="192"
+    resources="/home/unity/.config/gex44-display-profiles/4k-readable.Xresources"
+    ;;
+  4k-workspace)
+    mode="3840x2160R"
+    fallback_fb="3840x2160"
+    dpi="144"
+    resources="/home/unity/.config/gex44-display-profiles/4k-workspace.Xresources"
+    ;;
+  1440-fallback)
+    mode="2560x1440R"
+    fallback_fb="2560x1440"
+    dpi="120"
+    resources="/home/unity/.config/gex44-display-profiles/1440-fallback.Xresources"
+    ;;
+  *)
+    echo "Usage: gex44-display-profile [4k-readable|4k-workspace|1440-fallback]" >&2
+    exit 64
+    ;;
+esac
+
+output="$(xrandr --query | awk '/ connected/{print $1; exit}')"
+
+if [[ -n "${output:-}" ]] && xrandr --query | grep -qE "(^| )${mode}( |$)"; then
+  xrandr --output "$output" --mode "$mode" --primary --dpi "$dpi"
+else
+  xrandr --fb "$fallback_fb" --dpi "$dpi"
+fi
+
+if [[ -f "$resources" ]]; then
+  xrdb -merge "$resources"
+fi
+
+if command -v openbox >/dev/null 2>&1; then
+  openbox --reconfigure >/dev/null 2>&1 || true
+fi
+
+xdpyinfo 2>/dev/null | grep -E 'dimensions|resolution' || true

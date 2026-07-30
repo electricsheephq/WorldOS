@@ -1,0 +1,50 @@
+{
+  "env": {
+    "PATH": "$(PATH):$(HOME)/.local/bin"
+  },
+  "apps": [
+    {
+      "name": "Readable Desktop 4K",
+      "image-path": "desktop.png",
+      "prep-cmd": [
+        {
+          "do": "/usr/local/bin/gex44-display-profile 4k-readable",
+          "undo": "/usr/local/bin/gex44-display-profile 4k-readable"
+        }
+      ]
+    },
+    {
+      "name": "Workspace Desktop 4K",
+      "image-path": "desktop.png",
+      "prep-cmd": [
+        {
+          "do": "/usr/local/bin/gex44-display-profile 4k-workspace",
+          "undo": "/usr/local/bin/gex44-display-profile 4k-readable"
+        }
+      ]
+    },
+    {
+      "name": "Desktop",
+      "image-path": "desktop.png",
+      "prep-cmd": [
+        {
+          "do": "/usr/local/bin/gex44-display-profile 4k-readable",
+          "undo": "/usr/local/bin/gex44-display-profile 4k-readable"
+        }
+      ]
+    },
+    {
+      "name": "Steam Big Picture",
+      "detached": [
+        "setsid steam steam://open/bigpicture"
+      ],
+      "prep-cmd": [
+        {
+          "do": "/usr/local/bin/gex44-display-profile 4k-readable",
+          "undo": "setsid steam steam://close/bigpicture; /usr/local/bin/gex44-display-profile 4k-readable"
+        }
+      ],
+      "image-path": "steam.png"
+    }
+  ]
+}
