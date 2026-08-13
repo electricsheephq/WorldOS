@@ -73,7 +73,7 @@ def _prop_box_corners(footprint: list, kind: str, cols: int, rows: int,
 
 
 def _convex_hull(points: list) -> list:
-    """Andrew's monotone-chain convex hull (CCW). The prop box silhouette is convex under the ortho
+    """monotone-chain convex hull (CCW). The prop box silhouette is convex under the ortho
     dimetric camera, so its hull is exactly the silhouette outline."""
     pts = sorted(set((round(x, 3), round(y, 3)) for (x, y) in points))
     if len(pts) <= 2:

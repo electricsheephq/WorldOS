@@ -142,7 +142,7 @@ def blob_solve(boxes: dict, image: Path) -> dict:
 
 
 def _hull(points: list) -> list:
-    """Convex hull (Andrew monotone chain) of projected box corners."""
+    """Convex hull (monotone-chain) of projected box corners."""
     pts = sorted(set((round(x, 1), round(y, 1)) for x, y in points))
     if len(pts) <= 2:
         return pts
