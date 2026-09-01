@@ -1,0 +1,97 @@
+{
+ "schema_version": 1,
+ "repo_sha": "1bc59deb",
+ "ts": "2026-07-22T03:51:02+00:00",
+ "class": "camp_clearing_v2",
+ "control_asset": "asset_V4A5SVJ4Ga3esqPckahd1g8D",
+ "draws": [
+  {
+   "seed": 12345,
+   "job": "job_ZCDq3bosECcqGmEUd9i24KTW",
+   "asset": "asset_EH8V336ewsRm1qUusCPvgqb6"
+  },
+  {
+   "seed": 12346,
+   "job": "job_ZWLCnjthRmASB6p3udskH8yW",
+   "asset": "asset_zEy5h23ufwkod64yxLPM2UGJ"
+  },
+  {
+   "seed": 12347,
+   "job": "job_sRqMw2jNie63toDzybPTQdoF",
+   "asset": "asset_1MWVuVR1VH1t3GfcUNii69yc"
+  },
+  {
+   "seed": 12348,
+   "job": "job_8uJFCKNUWGdVLWPiYTqcpQBV",
+   "asset": "asset_C8xrmKxhv8Xb69xeKDjmv3Vd"
+  },
+  {
+   "seed": 12349,
+   "job": "job_tzBC5G4sMWJb8Zh5WMUMbHtT",
+   "asset": "asset_McJocAvexyiW1a6Ycki2rjsT"
+  },
+  {
+   "seed": 12350,
+   "job": "job_yR9WHwvJ264F169VvgBsqPJr",
+   "asset": "asset_3uLWrJmQHF2AzeVJRX1uq1ME"
+  }
+ ],
+ "selection": [
+  {
+   "seed": 12345,
+   "recall": 0.8953,
+   "path": "qa/evidence/paint-room/camp_clearing_v2_c2/camp_clearing_v2_flux_s12345.png"
+  },
+  {
+   "seed": 12347,
+   "recall": 0.8509,
+   "path": "qa/evidence/paint-room/camp_clearing_v2_c2/camp_clearing_v2_flux_s12347.png"
+  },
+  {
+   "seed": 12346,
+   "recall": 0.6552,
+   "path": "qa/evidence/paint-room/camp_clearing_v2_c2/camp_clearing_v2_flux_s12346.png"
+  },
+  {
+   "seed": 12348,
+   "recall": 0.9772,
+   "path": "qa/evidence/paint-room/camp_clearing_v2_c2/camp_clearing_v2_flux_s12348.png"
+  },
+  {
+   "seed": 12349,
+   "recall": 0.8043,
+   "path": "qa/evidence/paint-room/camp_clearing_v2_c2/camp_clearing_v2_flux_s12349.png"
+  },
+  {
+   "seed": 12350,
+   "recall": 0.878,
+   "path": "qa/evidence/paint-room/camp_clearing_v2_c2/camp_clearing_v2_flux_s12350.png"
+  }
+ ],
+ "base": {
+  "seed": 12345,
+  "asset": "asset_EH8V336ewsRm1qUusCPvgqb6",
+  "path": "qa/evidence/paint-room/camp_clearing_v2_c2/camp_clearing_v2_flux_s12345.png"
+ },
+ "base_beacon_gate": "advisory-undetectable",
+ "styled": {
+  "job": "job_APhGdWMTAmYsKvxyVZhyFqNN",
+  "asset": "asset_HwUXbE2H39TENvQWyAFKHxBv",
+  "path": "qa/evidence/paint-room/camp_clearing_v2_c2/camp_clearing_v2_final_1344.png",
+  "recall_vs_depth": 0.6099,
+  "registration_warning": "styled recall 0.6099 (base 0.8953) \u2014 structure-lock likely violated (invented/multiplied features); eyeball before panel",
+  "corrected": {
+   "gate": "err_cells<=0.35 (solve-based, #1618)",
+   "before_err_cells": 6.55,
+   "attempted": true,
+   "iters": 0,
+   "err_cells": 6.55,
+   "unstable": {
+    "unstable": true,
+    "rot_deg": 30.03,
+    "scale": 1.7138
+   },
+   "path": "qa/evidence/paint-room/camp_clearing_v2_c2/camp_clearing_v2_final_1344_reregistered.png"
+  }
+ }
+}
