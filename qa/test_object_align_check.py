@@ -10,6 +10,7 @@ pre-merge.
 Run: uv run --directory servers/engine python -m pytest qa/test_object_align_check.py -q -p no:xdist
 """
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -117,6 +118,50 @@ def test_shifted_textured_square_measures_its_offset(capsys, tmp_path):
     assert "LOW-CONFIDENCE" not in line, line
     # 7.2px at ~73 px/cell is ~0.1 cells — inside the default 0.35 budget.
     assert code == 0, out
+
+
+# --- finding 3: cell error must go through the ground-plane basis, not a scalar --------------------
+def test_ground_plane_basis_round_trips_a_one_cell_step():
+    """A one-cell step along +X must invert back to exactly (1, 0) cells, and along +Z to (0, 1)."""
+    basis = OAC.ground_plane_basis(ORTHO)
+    (ux, uy), (vx, vy) = basis
+    cx, cz = OAC.screen_to_cells(ux, uy, basis)
+    assert abs(cx - 1.0) < 1e-6 and abs(cz) < 1e-6, (cx, cz)
+    cx, cz = OAC.screen_to_cells(vx, vy, basis)
+    assert abs(cx) < 1e-6 and abs(cz - 1.0) < 1e-6, (cx, cz)
+
+
+def test_the_scalar_px_per_cell_understated_drift():
+    """The old scalar was (PX_H / 2*ortho) * 2 — the LARGER of the two ground-plane cell spans, so it
+    divided every offset by the most generous number available. These two screen offsets both scored
+    under a 0.35-cell budget under the scalar and are over it through the basis."""
+    basis = OAC.ground_plane_basis(ORTHO)
+    scalar = (OAC.PX_H / (2.0 * ORTHO)) * 2.0
+    for dx, dy in ((21, -10), (0, -15)):
+        old = math.hypot(dx, dy) / scalar
+        cx, cz = OAC.screen_to_cells(dx, dy, basis)
+        new = math.hypot(cx, cz)
+        assert old < 0.35 < new, f"screen({dx},{dy}): old={old:.3f} new={new:.3f}"
+
+
+@pytest.mark.parametrize("shift_x,shift_y,label", [(21, -10, "screen-horizontal"), (0, -15, "screen-vertical")])
+def test_over_budget_shift_is_drifted_on_both_axes(capsys, tmp_path, shift_x, shift_y, label):
+    """The boundary case on both projected axes: an over-budget displacement must FAIL, including the
+    screen-vertical direction where the ground plane is most foreshortened (~36px/cell, half the
+    horizontal span) and the scalar was most wrong."""
+    box = {"kind": "table", "center": [0.0, 0.4, 0.0], "size": [2.8, 0.8, 2.8]}
+    x0, y0, x1, y1 = OAC.box_screen_bbox(box, ORTHO, 40)
+    patch = _textured_patch(y1 - y0, x1 - x0)
+    base = _flat_frame()
+    base[y0:y1, x0:x1] = patch
+    styled = _flat_frame()
+    styled[y0 + shift_y:y1 + shift_y, x0 + shift_x:x1 + shift_x] = patch
+
+    code, out = _run_capture(capsys, tmp_path, [box], base, styled)
+
+    line = next(ln for ln in out.splitlines() if "table#0" in ln)
+    assert "DRIFTED" in line, f"{label}: {line}"
+    assert code == 1, out
 
 
 # --- finding 2: unmeasured objects must be reported, never silently exempted -----------------------

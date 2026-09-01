@@ -20,6 +20,13 @@ wall/parapet/floor/door runs have no localisable feature for a local phase corre
 whose projected bbox is smaller than the FFT window has no stable spectrum. Both counts (and the
 skipped kinds) appear in the verdict line so a green verdict can never hide an empty check.
 
+KNOWN LIMITATION (review finding, 2026-09-02 — deliberately not closed here): the response floor
+catches an object that vanished into FEATURELESS surroundings, but each crop is padded by --pad for
+context, and an object deleted from a richly TEXTURED surround can still correlate strongly on that
+surviving context and report a confident dx=dy=0. Closing that needs a presence/appearance check on
+the projected footprint itself rather than an offset measurement on the padded crop; tracked in #1704.
+Until then this gate proves objects have not MOVED, and only partially that they still EXIST.
+
 Usage:
   python qa/object_align_check.py <boxes.json> <base.png> <styled.png> [--budget-cells 0.35]
                                   [--min-resp 0.05]
@@ -78,6 +85,38 @@ def local_phasecorr(a, b):
     return int(dx), int(dy), float(r.max())
 
 
+def ground_plane_basis(ortho):
+    """Screen vectors of a ONE-CELL (2 world unit) step along +X and along +Z, on the ground plane.
+
+    Review finding, 2026-09-02: a scalar px-per-cell is wrong here. The contract camera is dimetric
+    (pitch 30 / yaw 45), so the ground plane projects anisotropically — measured on the shipped tavern
+    pin, a one-cell step spans 72.99px along the screen-horizontal diagonal but only 36.49px along the
+    screen-vertical one. The old scalar was the LARGER of those, so every offset was divided by the
+    most generous number available and the gate under-reported drift by up to 2x: a true 0.41-cell
+    displacement reported 0.21 cells and passed a 0.35-cell budget.
+    """
+    ox, oy = world_to_screen(0.0, 0.0, 0.0, ortho)
+    ax, ay = world_to_screen(2.0, 0.0, 0.0, ortho)
+    bx, by = world_to_screen(0.0, 0.0, 2.0, ortho)
+    return (ax - ox, ay - oy), (bx - ox, by - oy)
+
+
+def screen_to_cells(dx, dy, basis):
+    """Invert the 2x2 [x-step | z-step] basis: a screen offset in px -> (cells_x, cells_z).
+
+    Assumes the displacement lies in the ground plane — the same assumption the scalar made, only
+    now stated. A drift with a real vertical (world-Y) component is reported as the in-plane
+    displacement that would produce the same screen offset.
+    """
+    (ux, uy), (vx, vy) = basis
+    det = ux * vy - vx * uy
+    if abs(det) < 1e-9:                      # degenerate camera; caller falls back
+        return None
+    cx = (dx * vy - vx * dy) / det
+    cz = (-dx * uy + ux * dy) / det
+    return cx, cz
+
+
 def box_screen_bbox(box, ortho, pad):
     cx, cy, cz = box["center"]
     sx, sy, sz = box["size"]
@@ -110,8 +149,9 @@ def main():
     sidecar = json.loads(Path(args.boxes).read_text())
     ortho = float(sidecar["ortho"])
     base, styled = luma(args.base), luma(args.styled)
-    # px per cell along a screen-aligned world unit: 2 world units/cell at 768px over 2*ortho world units
-    px_per_cell = (PX_H / (2.0 * ortho)) * 2.0
+    basis = ground_plane_basis(ortho)
+    (ux, uy), (vx, vy) = basis
+    px_x, px_z = math.hypot(ux, uy), math.hypot(vx, vy)
 
     drifted = 0
     low_conf = 0
@@ -132,7 +172,9 @@ def main():
                   f"bbox={x1 - x0}x{y1 - y0}px -> SKIPPED-TOO-SMALL (< {MIN_WINDOW_PX}px window)")
             continue
         dx, dy, resp = local_phasecorr(styled[y0:y1, x0:x1], base[y0:y1, x0:x1])
-        err_cells = math.hypot(dx, dy) / px_per_cell
+        cells = screen_to_cells(dx, dy, basis)
+        cx, cz = cells if cells else (dx / px_x, dy / px_z)
+        err_cells = math.hypot(cx, cz)
         checked += 1
         if resp < args.min_resp:
             # A featureless / missing / unrendered object correlates to (0,0) with a dead peak. Trust
@@ -155,7 +197,7 @@ def main():
     else:
         verdict = f"OBJECT-GATE-FAIL ({drifted} drifted, {low_conf} low-confidence of {checked} checked)"
     print(f"{verdict} budget={args.budget_cells} cells, min_resp={args.min_resp}, "
-          f"px/cell={px_per_cell:.1f}, checked={checked}, "
+          f"px/cell(x,z)={px_x:.1f},{px_z:.1f}, checked={checked}, "
           f"skipped_kinds={sum(skipped_kinds.values())} [{kinds_note}], skipped_too_small={skipped_small}")
     sys.exit(0 if failures == 0 else 1)
 
