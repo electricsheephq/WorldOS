@@ -504,12 +504,17 @@ python3 qa/walk_test.py --room <room> --engine http://127.0.0.1:8866 --qa http:/
 **★ The rig is WINDOWED and refuses to launch over you (#1672 — incident 2026-09-02).** `up` exits
 **75** with `SANDBOX-DEFERRED (owner active)` if you touched the Mac in the last 120 s
 (`FORCE_PLAYER_QA=1` overrides; `WORLDOS_PLAYER_IDLE_THRESHOLD` retunes). The player launches
-`-screen-fullscreen 0 -screen-width 1280 -screen-height 697`, is watchdogged against fullscreen /
-offscreen from the window server's own bounds, and hands keyboard focus back afterwards. Size knobs:
-`WORLDOS_PLAYER_WIN_W` / `_WIN_H` (fit-clamped; never below the display's aspect, or sample cells
-crop out of the ortho frame). `down` leak-checks and restores the SHARED
-`com.worldos.WorldOSPlayer` plist and writes `<rundir>/prefs_leak.json`; `qa/qa_sandbox.py orphans`
-finds a rig stranded by a crashed run. The rig's window TITLE is still `WorldOSPlayer` until the
+`-screen-fullscreen 0 -screen-width 1280 -screen-height 700` (a Unity RESOLUTION, i.e. **backing
+pixels** — on this 2x host, 1512x835 points / 3024x1670 pixels, that is a 640x382 point window), is
+watchdogged against fullscreen / offscreen from the window server's own bounds on every readiness
+poll, and hands keyboard focus back **by pid** afterwards. Run `qa/qa_sandbox.py watchdog --run
+<run>` periodically during a long sweep: a fullscreen verdict kills the rig player and exits **3**.
+Size knobs: `WORLDOS_PLAYER_WIN_W` / `_WIN_H` (fit-clamped; never below the display's aspect, or
+sample cells crop out of the ortho frame). The rig gets its own `CFFIXED_USER_HOME=<rundir>/home`, so
+its `/shot` frames cannot collide with the owner instance's. `down` leak-checks the SHARED
+`com.worldos.WorldOSPlayer` plist and restores only keys that still hold the value this rig writes
+(everything else is reported, never rewritten) into `<rundir>/prefs_leak.json`; `qa/qa_sandbox.py
+orphans` finds a rig stranded by a crashed run. The rig's window TITLE is still `WorldOSPlayer` until the
 Phase 2 badge lands — `docs/qa/QA-RIG-WINDOW-BADGE.md`.
 
 TRAPS (each cost a real debugging round):

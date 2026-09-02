@@ -13,19 +13,31 @@ operator-facing summary. In brief:
 
 | Fence | Where |
 |---|---|
-| `-screen-fullscreen 0 -screen-width 1280 -screen-height 697 -logFile <rundir>/unity_player.log` | `qa_sandbox._player_windowed_args()` |
+| `-screen-fullscreen 0 -screen-width 1280 -screen-height 700 -logFile <rundir>/unity_player.log` (a Unity RESOLUTION, i.e. **backing pixels**) | `qa_sandbox._player_windowed_args()` |
+| per-run `CFFIXED_USER_HOME=<rundir>/home` (own `Application Support`; `/shot` cannot collide) | `qa_sandbox.up()` |
 | owner-active guard (ioreg `HIDIdleTime`, `FORCE_PLAYER_QA=1`, exit `75`) | `qa_sandbox.owner_active_guard()` |
 | player is its own `Popen`; `caffeinate -is -w <pid>` is a **sibling** watcher | `qa_sandbox.up()` |
 | `sandbox.json` written **before** the readiness wait (anti-orphan fence) | `qa_sandbox.up()` |
-| CGWindowList fullscreen/offscreen watchdog (~25 s, permission-free) | `lib_qa_window.{fullscreen,offscreen}_verdict()` |
-| `/health` achieved-geometry assertion (polled; accepts 1x and 2x) | `qa_sandbox._assert_windowed()` |
-| focus restored via `open -a <frontmost-before>` (Launch Services, no TCC/AX) | `lib_qa_window.restore_front()` |
-| shared-plist snapshot → diff → restore, and a two-sensor orphan scan | `qa_sandbox.down()` |
+| CGWindowList fullscreen/offscreen watchdog on EVERY readiness poll + `qa_sandbox.py watchdog` (permission-free; fullscreen ⇒ kill the rig player, exit `3`) | `qa_sandbox._watchdog()` |
+| `/health` coverage bound (polled; < 60 % of the display's backing-pixel area — not an exact size) | `qa_sandbox._assert_windowed()` |
+| focus restored **by pid** via System Events (never `open -a`, which would LAUNCH a player) | `lib_qa_window.restore_front()` |
+| whole-domain plist snapshot → diff → **attribution-safe** restore, and a two-sensor orphan scan | `qa_sandbox.down()` |
+| recorded pgid re-verified before anything is signalled (pid reuse) | `qa_sandbox._kill_group()` |
 
-**Size rationale.** The display is one screen, 2984x1634 backing / **1492x817 points** (aspect
-1.826), ~792 usable after the menu bar — so the shell lane's 1280x**800** does not fit. 1280x**700**
-is aspect 1.829 ≥ 1.826, so the ortho crop (`walk_test.world_to_window_px`) shows *at least as much*
-horizontal world as the fullscreen baseline and no sample cell that was in frame falls out.
+**Size rationale + UNITS.** `-screen-width/-screen-height` are a Unity RESOLUTION — *backing
+pixels* — while the desktop budget and every CGWindowList bound are *points*, so the fit clamp
+converts the point budget with the display's backing scale before comparing. Measured 2026-09-02:
+**1512x835 points / 3024x1670 pixels, scale 2**; the 1280x700 request produced a **640x382 point**
+window and `/health` reported `1280x700`. 1280x700 is aspect 1.829 ≥ the display's, so the ortho crop
+(`walk_test.world_to_window_px`) shows *at least as much* horizontal world as the fullscreen baseline
+and no sample cell that was in frame falls out.
+
+**Restore rule (what `down` will and will not write).** The domain is SHARED, so a blind restore
+would silently revert the owner's own settings. A key is rewritten only when it changed since `up`
+AND still holds the exact value this rig deterministically writes — `Screenmanager Fullscreen mode`
+`3`, `Screenmanager Resolution Width/Height` = the size actually requested, `Screenmanager Resolution
+Use Native` `0` — and only after integer validation. `Screenmanager Window Position X/Y` (cosmetic),
+any key the owner wrote last, and the `unity.player_*` churn keys are reported and left alone.
 
 **What Phase 1 does NOT do.** The rig's macOS window title is still `WorldOSPlayer`
 (`ProjectSettings.asset:16 productName`, re-asserted in `BuildMacOSPlayer.cs`). Today the rig is

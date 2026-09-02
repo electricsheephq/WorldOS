@@ -501,14 +501,29 @@ reverts the goal to "fix" and outranks new work.
 it launched with no Unity window args, inherited the shared plist's fullscreen + native resolution,
 took over the developer's only display and the Mac had to be rebooted. Now:
 
-- Every sandbox launch is **windowed** (`-screen-fullscreen 0 -screen-width 1280 -screen-height 697
+- Every sandbox launch is **windowed** (`-screen-fullscreen 0 -screen-width 1280 -screen-height 700
   -logFile <rundir>/unity_player.log`) and fitted to the real desktop. Never fullscreen.
+  **Units:** `-screen-width/-screen-height` are a Unity RESOLUTION — *backing pixels* — while the
+  desktop budget and every CGWindowList bound are *points*. Measured host: **1512x835 points,
+  3024x1670 pixels, scale 2**; the 1280x700 request rendered a **640x382 point** window and `/health`
+  reported `1280x700`.
 - An **owner-active guard** (ioreg `HIDIdleTime` < 120 s) refuses to launch and exits **75** with
   `SANDBOX-DEFERRED (owner active)`. Override with `FORCE_PLAYER_QA=1` when you are not at the Mac.
-- A permission-free CGWindowList **watchdog** tears the run down within ~25 s if the window comes up
-  fullscreen or effectively offscreen. `/health` geometry is then asserted (1x or 2x HiDPI).
-- The bundle id is SHARED, so the rig never writes the plist; `down` snapshots → diffs → **restores**
-  `~/Library/Preferences/com.worldos.WorldOSPlayer.plist` and writes `<rundir>/prefs_leak.json`.
+- A permission-free CGWindowList **watchdog** runs on every readiness poll — and on demand via
+  `qa/qa_sandbox.py watchdog --run <run>`, which is what you run periodically during a long sweep. A
+  fullscreen verdict kills the rig's own player immediately and exits **3**; an offscreen one tears
+  the run down. `/health` is then held to a coverage bound (< 60 % of the display's backing-pixel
+  area), not to an exact size — Unity is allowed to adjust the resolution it was asked for.
+- `CFFIXED_USER_HOME=<rundir>/home` gives the rig its own `Application Support`, so its `/shot`
+  frames land under the run dir instead of racing the owner's instance in the shared shot directory.
+  Consumers need no change (`walk_test._capture_shot`, and `adventure_walk` / `player_cert` through
+  it, copy the absolute path `/shot` returns). It does **not** redirect PlayerPrefs.
+- The bundle id is SHARED, so the rig never writes the plist itself — Unity does, on quit. `down`
+  snapshots the whole domain, diffs it, and restores **attribution-safely**: a key is rewritten only
+  if it changed AND still holds the exact value this rig writes (`Fullscreen mode`=3, the requested
+  `Resolution Width/Height`, `Use Native`=0). The cosmetic `Window Position X/Y`, anything the owner
+  wrote last, and any non-integer value are REPORTED and left alone. See `<rundir>/prefs_leak.json`
+  and the `stopped` block in `sandbox.json.stopped`.
 - **Telling them apart today:** window geometry, `lsof -nP -iTCP:8972 -sTCP:LISTEN -t` (owner = 8971),
   and `sandbox.json`. The rig's window TITLE is still `WorldOSPlayer` — the badge is Phase 2,
   `docs/qa/QA-RIG-WINDOW-BADGE.md`.
