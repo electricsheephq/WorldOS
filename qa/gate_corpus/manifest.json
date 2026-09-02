@@ -217,6 +217,12 @@
       "reason": "seeded-arc lens: opt-in via WORLDOS_GATE_ARC (+ WORLDOS_ARC_SEED_SPECIES for the species rule) \u2014 env toggles and a 5th artifact path that _write_case's 4 positional argv artifacts cannot express, and no synthetic arc bundle can isolate one arc row from the baseline session gates \u2014 covered by qa/test_arc_gate.py (red-first, per-row, per-beat)"
     },
     {
+      "case_dir": "TODO__arc_no_create_character",
+      "expected_red_check": "arc_no_create_character",
+      "todo": true,
+      "reason": "seeded-arc lens: opt-in via WORLDOS_GATE_ARC (+ WORLDOS_ARC_SEED_SPECIES for the species rule) \u2014 env toggles and a 5th artifact path that _write_case's 4 positional argv artifacts cannot express, and no synthetic arc bundle can isolate one arc row from the baseline session gates \u2014 covered by qa/test_arc_gate.py (red-first, per-row, per-beat)"
+    },
+    {
       "case_dir": "TODO__arc_no_reroll_character",
       "expected_red_check": "arc_no_reroll_character",
       "todo": true,

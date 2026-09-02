@@ -34,14 +34,21 @@ import artifact_calibration_panel as panel  # noqa: E402
 # would silently re-version every historical engine-duo score. These pin the exact current hashes
 # (origin/main @ the HV1 branch point). If a future edit changes them, this test goes RED and forces a
 # conscious re-baseline (the same discipline test_scores_db_comparability enforces for content edits).
-EXPECTED_SC = "sc_191aeb7c0450"  # re-baselined 2026-09-02 (arc-addendum-v2): the SEEDED-ARC lens
-# added six FATAL rows to assert_behavioral.py, which is in SCORING_CONFIG_FILES. The rows are
-# OPT-IN (WORLDOS_GATE_ARC, set only by qa/run_adventure.sh), so no engine-duo run's verdict can
-# change — but the gate file's bytes did, and sc_ hashes bytes. A deliberate restamp of an
-# additive, opt-in change, not a ruler recalibration.
+EXPECTED_SC = "sc_903cf42f4e49"  # re-baselined 2026-09-02 (arc-addendum-v2, bot round 2): the arc
+# lens gained a SEVENTH FATAL row (arc_no_create_character) and three correctness fixes — the
+# manifest SHAPE guard, the engine's downed-vs-dead predicate, and standing the essential-cast rows
+# down once no quest is unresolved. Still OPT-IN (WORLDOS_GATE_ARC, set only by qa/run_adventure.sh
+# and qa/agent_play.sh, never by a run_duo runner), so no engine-duo run's verdict can change — but
+# the gate file's bytes did, and sc_ hashes bytes. A deliberate restamp of an additive, opt-in
+# change, not a ruler recalibration.
+# (prior: sc_191aeb7c0450 — the same lens's first six FATAL rows, re-baselined earlier the same day)
 # (prior: sc_38b768e2fd1b — re-baselined #1427: release_readiness.py touched by #1417/#1414)
-EXPECTED_LC = "lc_04e90e3b56d3"  # re-baselined 2026-09-02 with sc_ above: assert_behavioral.py is in
-# LENS_CONFIG_FILES too, so the same opt-in-lens byte change moves lc_ by construction.
+EXPECTED_LC = "lc_5e2170acc38d"  # re-baselined 2026-09-02 with sc_ above: assert_behavioral.py is in
+# LENS_CONFIG_FILES too, so the same opt-in-lens byte change moves lc_ by construction. This is also
+# what fences the ADVENTURE trend across this change: scores_db.add_run auto-stamps
+# lens_config_version on every row and _BASELINE_KEY includes it, so pre- and post-change adventure
+# aggregates cannot be compared as one trend — which is why av_ is deliberately NOT bumped here.
+# (prior: lc_04e90e3b56d3 — the same lens's first six FATAL rows)
 # (prior: lc_b031bd9f47e1 — "qa: auto-persist scores rows for the manual-append bucket",
 # commit 9f244613) — that PR only ADDS a new --scores-db CLI arg and an auto-persist call for the
 # RRI row AFTER `result` is computed and written to --out; it does not touch any of the 11 RRI
