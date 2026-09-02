@@ -40,7 +40,7 @@
 - **QA truth**: `qa/RRI.json` = RRI 2.7, release_ready=false, 3/11 gates, 1-of-5 personas — partial/harness-contaminated and unsuperseded (no valid release verdict exists). Scores ledger: 117 runs, visual-only since Jul 10. Walk-GREEN: crypt, tavern, throne_hall (live) + shop, tavern_snug (pinned certs in `qa/certifications/`). dwing wing: 0-adopted / 3 honest negatives (owner-falsified adoptions → "instruments adjudicate eyeballs").
 - **Live campaign**: `play-state/app-gate-v105-b/campaigns/camp_280cfd4d22a0` — DM budget-stopped after 2 turns (Jul 8).
 - **Open PRs that matter**: #1617 (Unity persistence runbook — its OPERATIONS.md sections are NOT in base yet), #1498 (outdoor LoRA, blocked on Scenario train-model quota — owner decision), #1298 (day-plate selection, intentionally unmerged pending owner), #1012 draft (slab tiering, A/B-gated), #1622 (dependabot).
-- **GEX44**: reachable, up 19 days, near-idle (probed 2026-07-20). Unity project saved via LFS + autosave cron; **GitHub LFS push blocked on paid data pack (~$5/mo owner billing decision)** — local commits + LEXAR tarball are the save story meanwhile.
+- **GEX44**: **RETIRED 2026-08-06 — the box was thrown away and is not a lane** (the 2026-07-20 "reachable, up 19 days, near-idle" reading is dead history; its LFS/autosave-cron save story died with it). Unity now runs locally — see §5. **GitHub LFS push is still blocked on a paid data pack (~$5/mo owner billing decision)**; local commits + the `/Users/m1/Codex/worldos-unity-mirror` mirror are the save story meanwhile.
 
 ## 4. The next-cycle packet (Task #76 — the staged opener)
 

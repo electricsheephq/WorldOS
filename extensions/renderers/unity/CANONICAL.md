@@ -39,8 +39,11 @@ each unit has its own `scene_grid` (door_cells, #1214) → own greybox → own p
 - **Cross (engine):** `server.cross_door(cid, x, y)` (#1225) — (x,y) is a door cell → travels to the
   connection (delegates to `travel_to`, co-locates the party). INTERNAL verb (not an MCP tool). The
   combat-surface surfaces `doors` (#1224: door_cells × connections) so the renderer/UI can offer to cross.
-- **Render:** swap `_active_combat.txt` to the new unit's plate (`deploy_room.sh`); the room-agnostic
-  `paint_combat_v1.cs` follows. The viewer re-reads snapshot.json per /combat-surface (NO restart needed).
+- **Render:** swap `_active_combat.txt` to the new unit's plate; the room-agnostic `paint_combat_v1.cs`
+  follows. The viewer re-reads snapshot.json per /combat-surface (NO restart needed). ⚠ HISTORICAL:
+  `qa/deploy_room.sh` is the box-era deploy — it hard-codes `root@46.4.26.123`, `/tmp/gex44-cm.sock` and
+  `/home/unity/worldos-unity` and will contact the retired host; do NOT run it. On the local lane write
+  the plate + `_active_combat.txt` into `/Users/m1/worldos-unity/Assets/painterly/backdrops/` directly.
 - **PROVEN:** `renders/TRANSITION_stair_to_tomb.png` (same hero crosses crypt stair→tomb) +
   `renders/cc2_nave_combat.png` (live 3D combat in the cathedral nave). Driver `qa/drive_room_transition.py`.
 - **Live machinery:** viewer and Unity run locally on this Mac; drive the headed editor via

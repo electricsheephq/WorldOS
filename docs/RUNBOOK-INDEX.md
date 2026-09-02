@@ -68,8 +68,10 @@
 3. Half-wired, #1415 update: `felt_rest_panel`'s non-rest write path was VERIFIED — the row was
    never skipped (add_run fires unconditionally per frame), but the REST_LENSES-only dims filter
    silently dropped a non-rest panel's per-lens scores; fixed to pass through arbitrary dims for a
-   non-`rest:` scene. `motion_reel.py`'s Unity-capture hook is now wired against the documented
-   `manage_camera` pattern (env-gated on `WORLDOS_UNITY_MCP_URL`, mockable via `mcp_call=`) but its
-   live Stdio MCP round-trip is the local capture path; validate it before citing live frames. Still
-   open: the engine-fetch half of motion_reel (TODO hook, separate scope) and the stale `--layered`
-   naming.
+   non-`rest:` scene. `motion_reel.py`'s Unity-capture hook is wired against the documented
+   `manage_camera` pattern (env-gated on `WORLDOS_UNITY_MCP_URL`, mockable via `mcp_call=`) but it is an
+   **HTTP-only gap; not yet on the Stdio bridge** — `qa/motion_reel.py:481-486` still requires
+   `WORLDOS_UNITY_MCP_URL` and posts to that HTTP endpoint via `_default_unity_mcp_call`; it never
+   invokes `mcp_stdio_exec.py`, so on the documented local Stdio setup the default path returns
+   `no_render`. Still open: migrating that hook to the Stdio bridge, the engine-fetch half of
+   motion_reel (TODO hook, separate scope), and the stale `--layered` naming.
