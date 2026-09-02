@@ -167,3 +167,16 @@ for the arc. Evidence root: `session-notes/2026-09-02/worldos-refresh/artifacts/
 Instruments added this pass: packaged-pin check (`step56_measure.sh pins` → repo tool in flight, #1651 family); the adventure-fixture
 crypt gate RED (110/3 · visual 3/1) was fully explained by goblin-occupied cells → walk_test occupied-cell handling filed (#1709 item 6).
 Standing rule: PIXELS BEFORE CREDIT — the 3-tables-vs-4 eyeball is what exposed the stale packaged data under a green build.
+
+### 2026-09-02 — §9 G2 arc-duo N=3: **FAIL** (blind-adjudicated) — completion 0/3
+Runs (all `dm=opus actor=sonnet`, 15-beat budget, fixture `adventure_demo_v1`): `adv_reboot1` quest **FAILED** @14 (PC downed in the
+crypt fight; 1/4 objectives) · `adv_reboot3` quest active @15, `boss_dead`@15, no return leg (3/4) · `adv_reboot4` quest active @15,
+last stamp `entered_dungeon`@2, no boss kill (1/4; WARN `action_economy_engaged`: start_combat fired, 0 attacks consumed; WARN
+`combat_not_left_active`; 5 engine-guard rejections). Behavioral GREEN on every run. `adv_reboot2` = harness abort (expired CLI
+credential), excluded. Aggregate `adv_agg_n3_20260902` (scores.db, surface=adventure): completion 0.00 · pace 0.00 · stuck 1.00 ·
+lenses n/a. Bar: N≥3 AND completion ≥ 0.67 AND behavioral GREEN → **FAIL by the full margin** (July's `adv_agg_n3_20260722` was 3/3).
+Weakest link = **completion** (the fight consumes the budget or stalls). Instrument flags from the adjudicator: the aggregate's
+`green_rate` / `stages_reached` / lens fields are empty although the per-run logs carry them (aggregator gap, #1709 family); a
+`quest_completed` stamp is emitted with `status:failed` (labeling trap, #1670 family). Root cause under investigation (transcripts);
+charter order to be re-ranked on it. Evidence: `session-notes/2026-09-02/worldos-refresh/artifacts/adventure_eval_n3*.json`,
+`qa/transcripts/adv_reboot{1,3,4}.*`.
