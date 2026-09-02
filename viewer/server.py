@@ -2226,6 +2226,47 @@ def _clamp_to_board(x: object, y: object, extents: tuple[int, int]) -> tuple[int
     return max(0, min(cols - 1, xi)), max(0, min(rows - 1, yi))
 
 
+def _blocked_cells(snapshot: dict, combat_active: bool) -> set[tuple[int, int]]:
+    """The cells a token must not stand on — the SAME collision truth this surface publishes as
+    ``impassable`` (engine ``combat.grid_impassable`` in combat, the geometry-derived rest set
+    otherwise). Reading the published field rather than re-deriving one keeps the placement picture
+    from drifting off the collision picture; a drift IS this class of bug."""
+    raw = ((snapshot.get("combat") or {}).get("grid_impassable") or []) if combat_active \
+        else _rest_impassable(snapshot)
+    out: set[tuple[int, int]] = set()
+    for item in raw if isinstance(raw, list) else []:
+        if isinstance(item, (list, tuple)) and len(item) == 2:
+            cx, cy = _num(item[0]), _num(item[1])
+            if cx is not None and cy is not None:
+                out.add((int(cx), int(cy)))
+    return out
+
+
+def _free_cell(cell: tuple[int, int], extents: tuple[int, int],
+               blocked: set[tuple[int, int]], claimed: set[tuple[int, int]]) -> tuple[int, int]:
+    """Resolve a DERIVED cell to the nearest in-bounds cell that is neither impassable nor already
+    taken (#1751). Clamping alone is not enough: on the canonical 14x11 crypt the zone layout's
+    fourth bucket clamps x=15 down to 13, which IS the east perimeter wall — the reported ghost
+    became in-bounds but stayed inside the wall, and two occupants collapsed onto the same column.
+
+    Deterministic outward ring search (increasing Chebyshev radius, then row-major within a ring),
+    so the same snapshot always yields the same board. Returns the clamped candidate unchanged when
+    the room offers nothing free — a token the client can still draw beats no token at all. ONLY
+    derived cells come here; an engine-supplied cell is truth and is never relocated."""
+    cols, rows = extents
+    start = _clamp_to_board(*cell, extents)
+    for radius in range(max(cols, rows) + 1):
+        ring = [(start[0] + dx, start[1] + dy)
+                for dy in range(-radius, radius + 1)
+                for dx in range(-radius, radius + 1)
+                if max(abs(dx), abs(dy)) == radius]
+        for cand in sorted(ring, key=lambda c: (c[1], c[0])):
+            if 0 <= cand[0] < cols and 0 <= cand[1] < rows \
+                    and cand not in blocked and cand not in claimed:
+                return cand
+    return start
+
+
 def _scene_grid_block(snapshot: dict, mode: str) -> dict:
     """The combat board's grid extents (A1). When the party's current location carries an
     engine-authored ``scene_grid``, use ITS extents + cells; otherwise fall back to the
@@ -2846,6 +2887,7 @@ def _combat_display_position(
     board_extents: tuple[int, int] | None = None,
     character: dict | None = None,
     claimed: set[tuple[int, int]] | None = None,
+    blocked: set[tuple[int, int]] | None = None,
 ) -> tuple[int, int, str]:
     # Read the engine's authoritative grid coords. Use a None-coalesce (NOT `or`): a cell of 0
     # is a VALID coordinate (origin column/row), and `x or col` would treat 0 as missing and
@@ -2882,24 +2924,33 @@ def _combat_display_position(
         if isinstance(sc, (list, tuple)) and len(sc) == 2:
             sx, sy = _num(sc[0]), _num(sc[1])
             if sx is not None and sy is not None:
-                cell = _clamp_to_board(sx, sy, board_extents)
-                # never stack two tokens on one cell — a collision falls through to the zone slot
-                if claimed is None or cell not in claimed:
-                    if claimed is not None:
-                        claimed.add(cell)
-                    return (*cell, "stage")
+                # a rest cell is already walkable, but resolve anyway: the room's collision set can
+                # differ in combat (grid_impassable folds in prop footprints), and two actors must
+                # never share a cell.
+                cell = _free_cell((int(sx), int(sy)), board_extents,
+                                  blocked or set(), claimed or set())
+                if claimed is not None:
+                    claimed.add(cell)
+                return (*cell, "stage")
     zone_name = _text(row.get("zone"))
     zone_index = next((i for i, z in enumerate(zones) if z.get("name") == zone_name), idx)
     offset = zone_offsets.get(zone_name, 0)
     zone_offsets[zone_name] = offset + 1
     base_x = 3 + (zone_index % 4) * 4
     base_y = 3 + (zone_index // 4) * 3
-    # #1751: clamp the synthesized zone layout into the board the client actually renders. The
-    # old fixed `min(16, ...)` / `min(10, ...)` was a legacy 16x10 assumption AND off by one (a
-    # 16-column board's last cell is 15) — a fourth zone put its second occupant at column 16,
-    # off-grid, which is exactly the cyan-ghost-in-the-east-wall bug. Cell 0 stays reachable.
+    # #1751: resolve the synthesized zone layout onto a cell the client can actually draw. The old
+    # fixed `min(16, ...)` / `min(10, ...)` was a legacy 16x10 assumption AND off by one (a
+    # 16-column board's last cell is 15), so a fourth zone put its second occupant at column 16 —
+    # off-grid, the cyan-ghost-in-the-east-wall bug. Clamping alone only half-fixes it: on the
+    # canonical 14x11 crypt that same slot clamps to column 13, which IS the east wall. `_free_cell`
+    # takes the board extents AND the published collision set, so the token lands on a free,
+    # walkable, unclaimed cell. Cell 0 stays reachable.
     if board_extents is not None:
-        return (*_clamp_to_board(base_x + offset, base_y + (offset % 2), board_extents), "zone")
+        cell = _free_cell((base_x + offset, base_y + (offset % 2)), board_extents,
+                          blocked or set(), claimed or set())
+        if claimed is not None:
+            claimed.add(cell)
+        return (*cell, "zone")
     return max(1, min(15, base_x + offset)), max(1, min(9, base_y + (offset % 2))), "zone"
 
 
@@ -2925,6 +2976,9 @@ def _combat_tokens(snapshot: dict, combat_view: dict) -> tuple[list[dict], list[
     board_extents = _board_extents(snapshot)
     # cells already taken by a placed/stage-derived token, so a derived position never stacks.
     claimed_cells: set[tuple[int, int]] = set()
+    # the collision truth this surface publishes as `impassable` — a derived token must not be
+    # placed inside a wall or a prop footprint (#1751).
+    blocked_cells = _blocked_cells(snapshot, True)
     tokens: list[dict] = []
     initiative: list[dict] = []
     position_sources: set[str] = set()
@@ -2958,9 +3012,13 @@ def _combat_tokens(snapshot: dict, combat_view: dict) -> tuple[list[dict], list[
         x, y, source = _combat_display_position(
             raw, idx=idx, zones=zones, zone_offsets=zone_offsets, grid_extents=grid_extents,
             board_extents=board_extents, character=chars.get(cid), claimed=claimed_cells,
+            blocked=blocked_cells,
         )
         token["x"] = x
         token["y"] = y
+        # An ENGINE-supplied cell is truth and is never relocated, but it still occupies the square —
+        # claim it so a later DERIVED token is not resolved on top of it.
+        claimed_cells.add((x, y))
         # #432 (graphics M0): x/y here are a DERIVED render-hint, never authoritative state.
         # On the "zone" path they are synthesized from the engine's named zone (the engine
         # has no per-combatant coordinates — Combatant.zone is the only spatial truth). A
@@ -3937,7 +3995,10 @@ def _scene_stage(snapshot: dict, combat_active: bool, combat_tokens: list[dict] 
                 # the combat board already declares whether ITS coords are engine truth or a
                 # derived zone hint — carry that verdict through rather than re-asserting one.
                 "positionAuthority": _text(ct.get("positionAuthority"), "derived"),
-                "pose": "down" if (_num(ct.get("hp")) or 1) <= 0 else "idle",
+                # None-coalesce, NOT `or`: 0 HP is the DOWNED case and the whole point of the pose.
+                # `(_num(hp) or 1) <= 0` turned a valid 0 into 1, so an unconscious actor rendered
+                # standing while its own `hp` field read 0. Unknown HP (a foe) stays upright.
+                "pose": "down" if (_hp := _num(ct.get("hp"))) is not None and _hp <= 0 else "idle",
                 "is_turn": bool(ct.get("isCurrent")),
                 "hp": int(hp) if hp is not None else None,
                 "max_hp": int(mx) if mx is not None else None,

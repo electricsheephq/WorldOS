@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -219,3 +218,39 @@ def test_in_bounds_holds_on_the_real_painted_crypt(painted_crypt_fight):
     assert all(0 <= x < cols and 0 <= y < rows for x, y in cells), (cells, cols, rows)
     assert len(set(cells)) == len(cells), cells
     assert {(t["x"], t["y"]) for t in surface["stage"]["tokens"]} >= set(cells)
+
+
+def test_zone_derived_cells_are_walkable_on_the_canonical_crypt(painted_crypt_fight):
+    """#1751 REGRESSION (PR #1778 bot round, P1): clamping to the board is NOT enough. The canonical
+    walkslice crypt is 14x11, and the zone layout's fourth bucket yields x=15/16 — which a pure
+    clamp maps to column 13, the east PERIMETER WALL. The reported ghost would become in-bounds and
+    stay inside the wall, and both of that bucket's occupants would collapse onto column 13.
+
+    Placement must therefore resolve onto a free WALKABLE cell using the collision set the surface
+    itself publishes, not merely clamp coordinates. Asserted against `impassable` — the same field
+    the client renders collision from, so the two pictures cannot drift."""
+    cid, crypt, pc, foes = painted_crypt_fight
+    surface = _surface(cid)
+    cols, rows = surface["grid"]["cols"], surface["grid"]["rows"]
+    assert (cols, rows) == (14, 11), "the canonical crypt the bot's counter-example cites"
+    blocked = {(int(x), int(y)) for x, y in surface["impassable"]}
+    assert blocked, "the fixture must actually publish a collision set, or this proves nothing"
+    for tok in surface["tokens"] + surface["stage"]["tokens"]:
+        cell = (tok["x"], tok["y"])
+        assert cell not in blocked, f"{tok['name']} placed inside a wall/prop at {cell}"
+        assert 0 <= cell[0] < cols and 0 <= cell[1] < rows, f"{tok['name']} off-grid at {cell}"
+    cells = [(t["x"], t["y"]) for t in surface["tokens"]]
+    assert len(set(cells)) == len(cells), f"two combatants collapsed onto one cell: {cells}"
+
+
+def test_downed_combatant_gets_the_down_pose_at_exactly_zero_hp(crypt_fight):
+    """#1752 REGRESSION (PR #1778 bot round, P2): the pose used `(_num(hp) or 1) <= 0`, which turns
+    a VALID 0 into 1 — so an actor at exactly 0 HP (the downed case the pose exists for) rendered
+    `idle` while its own `hp` field on the same token read 0."""
+    cid, crypt, pc, foes = crypt_fight
+    c = server._require(cid)
+    c.characters[pc].current_hp = 0
+    server.save_campaign(c)
+    stage = {t["id"]: t for t in _surface(cid)["stage"]["tokens"]}
+    assert stage[pc]["hp"] == 0
+    assert stage[pc]["pose"] == "down", "0 HP is downed, not idle"
