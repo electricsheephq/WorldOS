@@ -15,7 +15,7 @@ model, training-data class, measured results, ROLE, and a verdict.
 1. **The adopted canonical plates use NO trained WorldOS LoRA.** camp (truegrey), tavern, and the crypt
    incumbent (`crypt_armb_iter3`, panel 8.0) are all **plain `model_bfl-flux-1-dev` + depth-ControlNet
    base → `model_google-gemini-3-1-flash` style pass.** The base geometry lock is flux.1-dev; the paint
-   quality is Gemini 3.1. That two-model chain *is* the canonical pipeline.
+   quality is Gemini 3.1. That two-model chain *is* the canonical pipeline. (paint-first era. For the 3D-first KIT chain the edit model is `model_google-gemini-pro-image-editing` — see the 2026-09-02 adoption record at the end of this file.)
 2. **The Architectural FLUX LoRA (`model_G379…`) is trained AI-on-AI.** 8 of its 10 training images are
    our OWN generated plates (`camp_clearing_night_v1/v2`, `crypt_dense_v1`, `crypt_firelit_v2`,
    `church_firelit_v1`, `cc2_nave`, `tavern_firelit_v1`, `seedream_undercroft`). A quality ceiling is
@@ -164,3 +164,14 @@ instrument validity rests on the anchor this round — full caveat in RANKED.md.
 **When you train/adopt/deprecate a model:** update BOTH `qa/model_registry.json` (the allowlist the gate
 reads) and this file (the human rationale). A DEPRECATED model stays in the allowlist so old plates that
 used it remain promotable; the `verdict` is advisory to humans, membership is the gate.
+
+## 2026-09-02 adoption record — the kit-chain edit model (refresh charter #1702, step 7)
+`model_google-gemini-pro-image-editing` (Gemini 3.0 Pro image edit) is the CANONICAL edit pass of the **3D-first kit chain**:
+geometry → `build_room_kit` → seg-registration ≥ 0.99 → the kit scene's own depth → flux depth-CN base → **structure-holding,
+critique-targeted Gemini 3 Pro edit** → `qa/styled_align_check.py` (phase-corr ALIGNED ≤ 1 px) → `qa/object_align_check.py`
+(per-object) → two-anchor blind panel. It produced the adopted **kit crypt v1** (#1688, 2026-07-23; panel 7 vs 8, Δ−1.0 in-band,
+dx=0) and **kit tavern v1/v2** (#1689, #1690 → #1703). The plates' manifest provenance had carried this model as "pending owner
+allowlist"; this record + the `qa/model_registry.json` entry close that. `model_google-gemini-3-1-flash` stays registered as the
+paint-first-era style pass (historical plates); it is not used by the kit chain. Known gap: this editor exposes no seed
+(determinism), and one edit deleted a table (fixed by the per-object gate + composite) — the 2026-09 Track B head-to-head
+(Gemini 4K refs · Qwen Image 3.0 Pro · FLUX.2 seeded) is the measured route to a successor, never a silent swap.
