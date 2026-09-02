@@ -297,6 +297,7 @@ def read_run(prefix: str, config: dict) -> dict:
     dead_thr = int(config.get("dead_beat_stuck_threshold", 2))
     stuck = bool((dead is not None and dead >= dead_thr) or gap_outlier)
     wall_s, s_per_beat = _wall_and_pace(prefix)
+    resolved_models = _resolved_models(prefix, summary)
     return {
         "run": Path(prefix).name,
         "prefix": prefix,
@@ -324,8 +325,8 @@ def read_run(prefix: str, config: dict) -> dict:
         # The CONCRETE ids. The summary wins when the run recorded them (run_adventure.sh resolves
         # them at write time); otherwise they are resolved HERE from the run's own transcripts, so a
         # run predating provenance stamping still ledgers a real model id instead of a drifting alias.
-        **_resolved_models(prefix, summary),
-        "measured": bool((summary or {}).get("measured", False)),
+        **resolved_models,
+        "measured": resolved_models["dm_model_resolved"] == config.get("measured_dm_model"),
     }
 
 

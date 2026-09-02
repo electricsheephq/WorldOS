@@ -30,6 +30,10 @@ sys.path.insert(0, str(REPO / "servers" / "engine"))
 import quest_progress as qp  # noqa: E402
 
 
+def test_runner_fails_closed_when_seed_snapshot_cannot_be_frozen():
+    assert 'if ! adv_quest_poll 0 >/dev/null; then' in RUNNER.read_text()
+
+
 def _seed(state_dir: Path) -> str:
     """Seed the adventure fixture into ``state_dir`` via the real seeder; return the campaign id."""
     os.environ["WORLDOS_STATE_DIR"] = str(state_dir)
