@@ -219,6 +219,8 @@ def _plist_snapshot() -> dict | None:
         return None
     if not isinstance(data, dict):
         return None
+    if not data and (Path.home() / "Library/Preferences" / f"{PLIST_DOMAIN}.plist").exists():
+        return None
     return {str(k): str(v) for k, v in sorted(data.items()) if not _is_churn(str(k))}
 
 
@@ -762,15 +764,21 @@ def down(run: str) -> int:
     # state and an earlier restore is silently clobbered.
     time.sleep(2.0)
     before = meta.get("plist_before")
-    after = _plist_snapshot() if before is not None else None
-    snapshot_ok = before is not None and after is not None
-    diff = _plist_diff(before, after) if snapshot_ok else {}
+    legacy_meta = before is None
+    after = None if legacy_meta else _plist_snapshot()
+    snapshot_ok = legacy_meta or after is not None
+    diff = _plist_diff(before, after) if snapshot_ok and not legacy_meta else {}
     foreign = _player_pids() - set(pids.values())
     win = meta.get("win") or []
     rig_values = _rig_written_values(*win[:2]) if len(win) >= 2 else {}
-    report = (_plist_restore(diff, foreign_alive=bool(foreign), rig_values=rig_values)
-              if snapshot_ok else {"restored": {}, "skipped": {},
-                                   "note": "shared plist snapshot unavailable — NOT restored"})
+    if legacy_meta:
+        report = {"restored": {}, "skipped": {},
+                  "note": "legacy metadata has no plist_before — nothing to restore"}
+    elif snapshot_ok:
+        report = _plist_restore(diff, foreign_alive=bool(foreign), rig_values=rig_values)
+    else:
+        report = {"restored": {}, "skipped": {},
+                  "note": "shared plist snapshot unavailable — NOT restored"}
     report.update({"domain": PLIST_DOMAIN, "before": before, "after": after, "changed": diff,
                    "rig_values": rig_values, "foreign_player_pids": sorted(foreign)})
     (_rundir(run) / "prefs_leak.json").write_text(json.dumps(report, indent=2) + "\n")
@@ -801,13 +809,15 @@ def down(run: str) -> int:
     # the teardown ledger travels WITH the run metadata, not only in prefs_leak.json
     meta["stopped"] = {"plist": report, "orphans": stray["lines"], "leaks": leaks}
     mp.write_text(json.dumps(meta, indent=2) + "\n")
-    if leaks or foreign or not snapshot_ok:
-        print("[sandbox] cleanup INCOMPLETE — keeping sandbox.json; re-run `down --run <run>`",
+    keep_meta = bool(leaks or not snapshot_ok or (foreign and diff))
+    if keep_meta:
+        print(f"[sandbox] cleanup INCOMPLETE ({len(leaks)} leak(s), foreign {sorted(foreign)}, "
+              f"snapshot_ok={snapshot_ok}) — keeping {mp}; re-run `down --run {run}`",
               file=sys.stderr)
     else:
         mp.rename(mp.with_suffix(".json.stopped"))
     print(f"[sandbox] DOWN — state/logs kept at {_rundir(run)} for evidence")
-    return 1 if leaks else 0
+    return 1 if keep_meta else 0
 
 
 def _listeners(port: int) -> set:

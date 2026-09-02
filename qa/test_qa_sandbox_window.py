@@ -224,6 +224,16 @@ def test_plist_snapshot_failure_is_unknown(monkeypatch):
     assert qa_sandbox._plist_snapshot() is None
 
 
+def test_plist_snapshot_empty_export_of_existing_domain_is_unreadable(monkeypatch, tmp_path):
+    prefs = tmp_path / "Library" / "Preferences"
+    prefs.mkdir(parents=True)
+    (prefs / f"{qa_sandbox.PLIST_DOMAIN}.plist").write_bytes(plistlib.dumps({"stale": 1}))
+    monkeypatch.setattr(qa_sandbox.Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.setattr(qa_sandbox.subprocess, "run",
+                        lambda *args, **kwargs: _proc(stdout=plistlib.dumps({})))
+    assert qa_sandbox._plist_snapshot() is None
+
+
 def test_plist_diff_reports_added_removed_and_changed():
     before = {"a": "1", "gone": "2"}
     after = {"a": "3", "new": "9", "unity.player_session_count": "42"}
@@ -333,9 +343,9 @@ def test_down_skips_restore_when_plist_snapshot_is_unavailable(monkeypatch, tmp_
     rd = tmp_path / "r1"
     rd.mkdir()
     (rd / "sandbox.json").write_text(json.dumps({
-        "run": "r1", "win": [1280, 700], "pids": {}, "plist_before": None}))
-    monkeypatch.setattr(qa_sandbox, "_plist_snapshot",
-                        lambda: {"Screenmanager Resolution Width": "1280"})
+        "run": "r1", "win": [1280, 700], "pids": {},
+        "plist_before": {"Screenmanager Resolution Width": "3024"}}))
+    monkeypatch.setattr(qa_sandbox, "_plist_snapshot", lambda: None)
     monkeypatch.setattr(qa_sandbox, "_player_pids", lambda exe="WorldOSPlayer": set())
     monkeypatch.setattr(qa_sandbox, "_orphan_report",
                         lambda **kwargs: {"lines": [], "leaks": [], "port": 8972, "port_pids": []})
@@ -343,12 +353,73 @@ def test_down_skips_restore_when_plist_snapshot_is_unavailable(monkeypatch, tmp_
     log: list = []
     _fake_defaults(monkeypatch, {}, log)
 
-    assert qa_sandbox.down("r1") == 0
+    assert qa_sandbox.down("r1") == 1
     assert _writes(log) == [], "an unavailable snapshot must never turn into a delete"
     report = json.loads((rd / "prefs_leak.json").read_text())
     assert "unavailable" in report["note"]
     assert (rd / "sandbox.json").exists()
     assert not (rd / "sandbox.json.stopped").exists()
+
+
+def test_down_renames_meta_for_foreign_player_when_diff_is_empty(monkeypatch, tmp_path):
+    monkeypatch.setattr(qa_sandbox, "ROOT", tmp_path)
+    rd = tmp_path / "r1"
+    rd.mkdir()
+    (rd / "sandbox.json").write_text(json.dumps({
+        "run": "r1", "win": [1280, 700], "pids": {},
+        "plist_before": {"SomeOwnerSetting": "7"}}))
+    monkeypatch.setattr(qa_sandbox, "_plist_snapshot", lambda: {"SomeOwnerSetting": "7"})
+    monkeypatch.setattr(qa_sandbox, "_player_pids", lambda exe="WorldOSPlayer": {999})
+    monkeypatch.setattr(qa_sandbox, "_orphan_report",
+                        lambda **kwargs: {"lines": [], "leaks": [], "port": 8972,
+                                          "port_pids": []})
+    monkeypatch.setattr(qa_sandbox.time, "sleep", lambda *_: None)
+
+    assert qa_sandbox.down("r1") == 0
+    assert not (rd / "sandbox.json").exists()
+    assert (rd / "sandbox.json.stopped").exists()
+
+
+def test_down_keeps_meta_and_returns_one_for_foreign_player_with_diff(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(qa_sandbox, "ROOT", tmp_path)
+    rd = tmp_path / "r1"
+    rd.mkdir()
+    (rd / "sandbox.json").write_text(json.dumps({
+        "run": "r1", "win": [1280, 700], "pids": {},
+        "plist_before": {"Screenmanager Fullscreen mode": "1"}}))
+    monkeypatch.setattr(qa_sandbox, "_plist_snapshot",
+                        lambda: {"Screenmanager Fullscreen mode": "3"})
+    monkeypatch.setattr(qa_sandbox, "_player_pids", lambda exe="WorldOSPlayer": {999})
+    monkeypatch.setattr(qa_sandbox, "_orphan_report",
+                        lambda **kwargs: {"lines": [], "leaks": [], "port": 8972,
+                                          "port_pids": []})
+    monkeypatch.setattr(qa_sandbox.time, "sleep", lambda *_: None)
+
+    assert qa_sandbox.down("r1") == 1
+    assert (rd / "sandbox.json").exists()
+    assert not (rd / "sandbox.json.stopped").exists()
+    err = capsys.readouterr().err
+    assert ("cleanup INCOMPLETE (0 leak(s), foreign [999], snapshot_ok=True)"
+            in err)
+    assert f"keeping {rd / 'sandbox.json'}" in err
+    assert "re-run `down --run r1`" in err
+
+
+def test_down_renames_legacy_meta_without_plist_snapshot(monkeypatch, tmp_path):
+    monkeypatch.setattr(qa_sandbox, "ROOT", tmp_path)
+    rd = tmp_path / "r1"
+    rd.mkdir()
+    (rd / "sandbox.json").write_text(json.dumps({"run": "r1", "pids": {}}))
+    monkeypatch.setattr(qa_sandbox, "_plist_snapshot",
+                        lambda: pytest.fail("legacy metadata must not snapshot"))
+    monkeypatch.setattr(qa_sandbox, "_player_pids", lambda exe="WorldOSPlayer": set())
+    monkeypatch.setattr(qa_sandbox, "_orphan_report",
+                        lambda **kwargs: {"lines": [], "leaks": [], "port": 8972,
+                                          "port_pids": []})
+    monkeypatch.setattr(qa_sandbox.time, "sleep", lambda *_: None)
+
+    assert qa_sandbox.down("r1") == 0
+    assert (rd / "sandbox.json.stopped").exists()
 
 
 def test_restore_gating_foreign_player_and_opt_out(monkeypatch):

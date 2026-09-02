@@ -743,6 +743,10 @@ public class CombatSurfaceClient : MonoBehaviour
                 _locId = (loc["id"] as string) ?? _locId;
         }
         catch (System.Exception e) { Debug.LogWarning("[CSC] surface-extras parse: " + e.Message); }
+        // #1522: `location.id` has just been refreshed above — this is the one seam BOTH surface consumers
+        // cross (ApplyJson's poll and Post's /move re-render), so the parley dismissal hangs here rather
+        // than on the plate swap (which no-ops when the manifest has no entry for the destination room).
+        MaybeCloseParleyOnLocationChange();
     }
 
     // W6.1 (#1460): a cheap order-preserving fingerprint of the occluder set + its location, so
@@ -2661,7 +2665,11 @@ public class CombatSurfaceClient : MonoBehaviour
                     sb.Append("{\"ok\":true,\"enq\":").Append(_dbgEnq).Append(",\"deq\":").Append(_dbgDeq)
                       .Append(",\"acted\":").Append(_dbgActed).Append(",\"surf\":").Append(_dbgSurf)
                       .Append(",\"busy\":").Append(_busy ? "true" : "false")
-                      .Append(",\"last\":\"").Append(_dbgLast).Append("\"");
+                      .Append(",\"last\":\"").Append(_dbgLast).Append("\"")
+                      // #1522: parley panel open/closed, so the journey gate can assert the panel is
+                      // dismissed after a cross_door without reading pixels. Unconditional (outside the
+                      // camera-pose block) — an absent field means an OLD build, never "closed".
+                      .Append(",\"parleyOpen\":").Append(_parleyOpen ? "true" : "false");
                     if (_dbgCamValid)  // #1583: camera pose for qa/walk_test.py (omitted on an old build)
                     {
                         var ic = System.Globalization.CultureInfo.InvariantCulture;
@@ -2899,7 +2907,11 @@ public class CombatSurfaceClient : MonoBehaviour
     // /move `say` lane the browser dialogue uses. Pure consumer; scrolling text + one input, parchment-
     // styled to match the onboarding HUD. Closed with Esc or the Leave button.
     string _parleyNpc = "";
-    bool _parleyOpen = false;
+    // #1522: volatile — the off-thread QA /debug responder reads this flag to report `parleyOpen`.
+    volatile bool _parleyOpen = false;
+    // #1522: the location.id the panel was opened in. The parley binds to an NPC in ONE room, so a
+    // surface whose location.id no longer matches this latch dismisses the panel (MaybeCloseParleyOnLocationChange).
+    string _parleyLocId = "";
     string _parleyHeader = "";
     string _parleyBody = "";
     string _parleyReply = "";
@@ -2911,6 +2923,7 @@ public class CombatSurfaceClient : MonoBehaviour
     {
         _parleyNpc = npcId;
         _parleyOpen = true;
+        _parleyLocId = _locId;   // #1522: the room this panel belongs to; a location change closes it
         _parleyReply = "";
         _parleyScroll = Vector2.zero;
         // Speaker name from the surface's name cache (populated in ApplySurf); the fetch enriches the header.
@@ -2919,7 +2932,31 @@ public class CombatSurfaceClient : MonoBehaviour
         StartCoroutine(LoadParleySurface(npcId));
     }
 
-    void CloseParley() { _parleyOpen = false; _parleyNpc = ""; }
+    // The ONE close path (Esc, the Leave button, and the #1522 location-change dismissal all land here).
+    // #1522: clears the bound NPC, the room latch, the fetched header/body and the pending reply, so a
+    // reopened panel never shows a previous conversation's text. Idempotent — safe to call when closed.
+    void CloseParley()
+    {
+        _parleyOpen = false; _parleyNpc = ""; _parleyLocId = "";
+        _parleyHeader = ""; _parleyBody = ""; _parleyReply = ""; _parleyScroll = Vector2.zero;
+    }
+
+    // #1522: the parley panel is CLIENT-ONLY state (the engine has no parley state — only
+    // generate_parley_options), so nothing else dismisses it when the party leaves the NPC's room. Every
+    // surface parse (the poll AND the /move re-render that follows a cross_door) checks the freshly parsed
+    // location.id against the latch OpenParley took, and closes through the SAME CloseParley path the Leave
+    // button uses — no second close path to drift. Idempotent: CloseParley clears the flag, so the next
+    // poll's check is a no-op. An EMPTY latch (the panel opened before any surface carried a location
+    // block) ADOPTS the first id seen rather than closing on it.
+    void MaybeCloseParleyOnLocationChange()
+    {
+        if (!_parleyOpen || string.IsNullOrEmpty(_locId)) return;
+        if (string.IsNullOrEmpty(_parleyLocId)) { _parleyLocId = _locId; return; }
+        if (_parleyLocId == _locId) return;
+        string npc = _parleyNpc, from = _parleyLocId;
+        CloseParley();
+        Debug.Log("[CSC] parley closed on location change (" + from + " -> " + _locId + ", npc=" + npc + ")");
+    }
 
     // Fetch GET /parley-surface?npc=<id> and read a display header + any prompt defensively (the parley
     // surface is a skill/DC menu, not a chat log — so this reads a name/header if present and otherwise
@@ -2931,6 +2968,9 @@ public class CombatSurfaceClient : MonoBehaviour
         {
             req.timeout = 8;
             yield return req.SendWebRequest();
+            // #1522: the panel may have been dismissed mid-flight (a cross_door location change) — a stale
+            // response must not repopulate the state CloseParley cleared.
+            if (!_parleyOpen || _parleyNpc != npcId) yield break;
             if (!Ok(req)) { _parleyBody = "You approach " + _parleyHeader + "."; yield break; }
             try
             {
@@ -2963,6 +3003,7 @@ public class CombatSurfaceClient : MonoBehaviour
         _busy = true;
         yield return PostSimple("{\"kind\":\"say\",\"text\":\"" + JsonEsc(text) + "\",\"campaign\":\"" + CampaignId + "\"}", "say");
         _busy = false;
+        if (!_parleyOpen) yield break;   // #1522: closed mid-flight (a location change) — leave it cleared
         _parleyReply = "";
         _parleyBody = "You said: “" + text + "”";
     }

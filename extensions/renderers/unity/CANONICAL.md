@@ -49,7 +49,25 @@ each unit has its own `scene_grid` (door_cells, #1214) → own greybox → own p
 - **Open (next):** the in-app UI "cross" button (a post-combat cross_door intent + jsx affordance) is the
   player-triggered completion — needs its own resolution lane (cross_door is post-combat, not a combat turn).
 
-## Current-best per surface (2026-06-28)
+## Current-best per surface (2026-09-02 — the 3D-FIRST KIT CHAIN; PROPOSED, owner-reviewed diff)
+> Registered from the 2026-09 refresh (charter #1702, Track A step 6). The camera contract above is unchanged (ONE).
+> Correctness lives in the builder + gates, not in the paint: collision/occlusion are true by construction (kit scene),
+> the paint is a structure-holding edit over the kit's own depth, and every plate carries gate evidence.
+
+| Surface | CURRENT-BEST asset | Chain | Gate evidence | Status |
+|---|---|---|---|---|
+| Room plate — **crypt** | `plates/crypt_kit_v1_registered.png` + sidecar `boxes/crypt_kit_v1_boxes.json` (kit-derived, `build_room_kit` ExportBoxes) | geometry `crypt_v36` → `build_room_kit.cs` (Synty kit + fallback masses) → seg-registration **100.00%** (192/192, `qa/registration_score.py`) → kit depth → Flux depth-CN base → Gemini 3 Pro structure-holding edit (d8) → `qa/styled_align_check.py` ALIGNED dx=0 → two-anchor panel 7 vs 8 (Δ−1.0 in-band) | walk_test exhaustive GREEN 2026-09-02 (camera 11.7851 exact · 113/0 · 77/0 · doors 2/0 · path 113/0 · visual 4/0); player_cert live GREEN (spawn, silhouette-behind 0.274, silhouette-absent-when-visible 0.0) | ADOPTED (#1688); sha-pinned cert pending the re-gate on the PINS-GREEN build |
+| Room plate — **tavern** | `plates/tavern_kit_v2_registered.png` + `boxes/tavern_kit_v1_boxes.json` (56 boxes: 0.55u parapets, true table footprints) | same chain (tavern_v2 geometry, seg 154/154 = 100.00%) + the per-object repair: the c2 edit had DELETED table#51 → reference-conditioned re-add → feathered diff-mask composite (7.3% of frame) → global identity dx=0 resp 0.80 + `qa/object_align_check.py` PER-OBJECT-ALIGNED 12/12 | walk_test exhaustive GREEN 2026-09-02 (10.5224 · 90/0 · 62/0 · 2/0 · 90/0 · visual 4/0) | ADOPTED (#1690→#1703/#1705) |
+| Certification gates (what "adopted" now means) | — | seg-registration ≥ 0.99 · styled_align ≤ 1 px · per-object align (`--min-resp` floor) · walk_test exhaustive + visual · player_cert live · **packaged-pin check** (packaged plate/boxes == repo) · two-anchor blind panel with the OFF-repo PoE2 control (`/Users/m1/Codex/worldos-refs/`) | qa/SCORECARD.md 2026-09-02 G1-G4 table | the paint-first plates below do NOT meet this bar |
+| Build + packaging | `BuildMacOSPlayer.cs` (in-memory KitRoom_ strip, `strippedQARoots=` in build-report; `EnsurePackaged` copies the Unity project ROOT `plates/ boxes/ plates_manifest.json registry.json` into StreamingAssets) | local Editor 6000.5.6f1 | `strings level0 \| grep -c KitRoom_` = 0; `qa_sandbox` refuses contaminated apps; pins check GREEN | the pre-flight sync target is the project ROOT, never Assets/StreamingAssets (2026-09-02 lesson) |
+
+### Superseded by the kit chain (rebuild-not-patch)
+The paint-first plates still in the manifest — `throne_hall_v1`, `shop_v1`, `tavern_snug_v1`, `camp_clearing*`, `dwing_room_1` — fail the
+0.99 registration bar (28.6-69.3% measured 2026-07-22) and their authored sidecars are the "chunky" class the owner rejected live;
+each is to be REGENERATED through the kit chain, not patched. The 2026-06-28 table below is HISTORY (the paint-first era) — keep it
+for provenance, do not resume from it.
+
+## Previous current-best (2026-06-28 — paint-first era; SUPERSEDED by the kit chain above)
 | Surface | CURRENT-BEST asset | Build script | Best capture / score | Status |
 |---|---|---|---|---|
 | Room plate | `Assets/painterly/backdrops/crypt_dense_v1.png` (density crypt via the **Gemini polish+populate pass** on a painterly base — crisp de-cloned columns + carved knight effigy + lived-in clutter; **~6.2** on an anchored 5-scorer harsh panel = best STATIC crypt to date, +0.4 over the pre-polish baseline; still <8 — see the ≥8 row + `room_recipes.json:gemini_polish_populate_pass_2026_07_01`) | `generate_room.py` + the polish+populate pass (`extensions/renderers/shared/room_recipes.json`) | `~/worldos-session-notes/renders/gbuf/combat_on_density_crypt.png` (VALIDATED in LIVE combat 2026-07-02) | ✅ canonical (crypt_firelit_v2 "7.4" was inflated vs the harsh panel; crypt_firelit_v2 / crypt_pinned_v1 = prior) |
@@ -95,18 +113,31 @@ contact shadows, `light_tint`/`warmth` to tint actor mats toward the plate's war
 for pose variety); an absent file leaves every value at today's byte-identical baseline.
 
 ## DEPRECATED (do NOT resume from these)
+- **Paint-first plate generation for NEW rooms** (2026-09-02): retired — the kit chain is the shipping surface; the
+  paint-first plates listed under "Superseded" above are regeneration targets, not bases. Evidence paths under
+  `/Users/lume/...`, `/Volumes/LEXAR/...` and `/home/unity/...` (GEX44) in this file are historical; current evidence
+  lives in the repo (`qa/evidence/`, `qa/SCORECARD.md`) and `/Users/m1/Codex/session-notes/`.
 - `TavernTier1.unity` + `Captures/combat_0[1-4]_*.png` (06-23) — week-old tavern; floating dark actors,
   no rings/VFX/goblin. Visual-critic 2026-06-28: **L5=3.5 CRITICAL, L2=4.5/L1=5.5 HIGH (~overall 4-5)**.
   Superseded by the crypt 3D-actor pipeline.
 - 8-facing **billboard** hero sprites (`Assets/painterly/sprites/hero/hero_*.png`) — the billboard approach
   (capped ~4/10 "pasted sticker"); superseded by the real 3D actor (the PoE2 pivot).
 
-## Rebuild the current-best (deterministic)
+## Rebuild the current-best (deterministic, LOCAL — the GEX44 box is gone)
 ```bash
-# on the GEX44 box (gex44-unity-host skill); scripts live in this dir, deploy then:
-~/.local/bin/unity-mcp code execute --no-safety-checks -f paint_3d_spike.cs
-#   -> /home/unity/worldos-unity/Captures-Durable/m10_spike.png  (crypt + textured/lit/grounded 3D hero)
+# 1) data pre-flight: repo -> Unity project ROOT (EnsurePackaged's source; NOT Assets/StreamingAssets)
+cp extensions/renderers/unity/plates_manifest.json /Users/m1/worldos-unity/ && cp extensions/renderers/unity/plates/*.png /Users/m1/worldos-unity/plates/ && cp extensions/renderers/unity/boxes/*.json /Users/m1/worldos-unity/boxes/ && cp extensions/renderers/unity/registry.json extensions/renderers/unity/effects_registry.json /Users/m1/worldos-unity/   # EVERY EnsurePackaged input: manifest, plates, boxes, registry, effects_registry
+# 2) Editor (headed; never -nographics) with the MCP bridge: native unityMCP tools, or the stdio driver
+export MCP_BIN=$(ps -o command= -p "$(cat /Users/m1/worldos-unity/Library/MCPForUnity/RunState/mcp_http_8080.pid)" | awk '{print $2}')
+python3 extensions/renderers/unity/tools/mcp_stdio_exec.py call execute_menu_item '{"menu_path":"Tools/WorldOS/Build/macOS Player (Universal)"}'
+# 3) proof: BuildOutput/build-report.txt (result, strippedQARoots, scenesBuilt) · strings level0 | grep -c KitRoom_ == 0 · packaged pins == repo
+# 4) gates on the QA sandbox (windowed player; ports 8866/8972 are the sandbox pair — never the owner's 8776/8981, never 8766):
+uv run --directory servers/engine python "$PWD/qa/qa_sandbox.py" up --run g1 --campaign registered_world_v1 --app BuildOutput/WorldOSPlayer.app --seed-cmd "uv run --directory servers/engine python $PWD/qa/seed_gfx_registered_world.py {state}"
+uv run --directory servers/engine python "$PWD/qa/walk_test.py" --room crypt --exhaustive --visual 4 --engine http://127.0.0.1:8866 --qa http://127.0.0.1:8972 --out qa/evidence/walk-crypt
+uv run --directory servers/engine python "$PWD/qa/player_cert.py" --live --engine http://127.0.0.1:8866 --qa http://127.0.0.1:8972 --campaign registered_world_v1 --app BuildOutput/WorldOSPlayer.app --out qa/evidence/player_cert
+# (full recipe incl. the tavern door crossing + packaged pins: docs/ROOM-PIPELINE-RUNBOOK.md "G1 GATE RECIPE")
 ```
+Historical: the box-era `paint_3d_spike.cs` / `Captures-Durable/m10_spike.png` recipe ran on GEX44 (retired 2026-08-06).
 
 ## ITERATION DISCIPLINE — an iteration is NOT done until ALL of these
 1. **Persist:** the build script ends with `EditorSceneManager.SaveScene(...)` (not render-and-forget) AND
