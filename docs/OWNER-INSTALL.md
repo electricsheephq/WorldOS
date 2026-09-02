@@ -32,7 +32,7 @@ Stopping before any write is load-bearing: a viewer still accepting `POST /move`
    `extensions/renderers/unity/plates_manifest.json`. The result and elapsed seconds are written to
    the install ledger.
 
-Refuse-on-red means packaged pins GREEN, zero `KitRoom_` strings in `level0`, FRESH crypt and tavern certifications, and a build identity that is either `--build-sha` or a sibling `build-report.txt` **stamped `result=Succeeded`**. `BuildMacOSPlayer.StampFailedReport` writes a nonempty `result=Failed` report beside a possibly stale app, so nonempty is not identity. Any RED or ERROR exits 1 before a write.
+Refuse-on-red means packaged pins GREEN, zero `KitRoom_` strings in `level0`, FRESH crypt and tavern certifications, and a sibling `build-report.txt` **stamped `result=Succeeded` and naming both required shaders**. `--build-sha` is supplemental provenance; it cannot replace the shader-bearing report. `BuildMacOSPlayer.StampFailedReport` writes a nonempty `result=Failed` report beside a possibly stale app, so nonempty is not identity. Any RED or ERROR exits 1 before a write.
 
 ## Refresh and removal
 

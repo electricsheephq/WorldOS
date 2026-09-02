@@ -91,6 +91,17 @@ def test_build_report_missing_required_shader_is_refused_with_the_line():
         OIV.check_build_report(f"result=Succeeded\n{line}\n")
 
 
+def test_build_sha_cannot_bypass_the_required_shader_report(tmp_path):
+    app = _fake_app(tmp_path, report=None)
+    body = f'''BUILD_SHA=deadbeef
+python3() {{ echo "PINS GREEN"; }}
+preflight {shlex.quote(str(app))}
+'''
+    out = _owner_shell(tmp_path, body)
+    assert out.returncode == 1
+    assert "build-report.txt is required" in out.stderr
+
+
 def _debug(**over):
     base = {"ok": True, "surf": 4, "plateLocMatch": True, "camOrtho": 13.0}
     return {**base, **over}

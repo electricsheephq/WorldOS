@@ -89,13 +89,10 @@ preflight(){
   # Unity's StampFailedReport writes a nonempty result=Failed report beside a stale .app,
   # so "readable and nonempty" is not build identity — require the stamped success.
   BUILD_REPORT="$(dirname "$app")/build-report.txt"
-  if [[ -r "$BUILD_REPORT" && -s "$BUILD_REPORT" ]]; then
-    python3 "$ROOT/qa/owner_install_verify.py" build-report "$BUILD_REPORT" || die "build-report.txt beside $app does not record a successful build"
-  else
-    BUILD_REPORT=; [[ -n "$BUILD_SHA" ]] || die "no successful build-report.txt beside $app and no --build-sha"
-  fi
+  [[ -r "$BUILD_REPORT" && -s "$BUILD_REPORT" ]] || die "build-report.txt is required beside $app (a --build-sha cannot prove the built shaders)"
+  python3 "$ROOT/qa/owner_install_verify.py" build-report "$BUILD_REPORT" || die "build-report.txt beside $app does not record a successful build with both required shaders"
   [[ -f "$ROOT/$DM_SCRIPT" ]] || echo "OWNER INSTALL NOTE: $ROOT/$DM_SCRIPT is absent; install will refuse until the DM loop lands." >&2
-  echo "OWNER INSTALL PREFLIGHT GREEN (pins GREEN; KitRoom_=0; crypt+tavern FRESH; build identity ${BUILD_REPORT:+build-report result=Succeeded}${BUILD_REPORT:+ }${BUILD_REPORT:-via --build-sha $BUILD_SHA})"
+  echo "OWNER INSTALL PREFLIGHT GREEN (pins GREEN; KitRoom_=0; crypt+tavern FRESH; build identity build-report result=Succeeded $BUILD_REPORT)"
 }
 
 receipt_dir(){ echo "/Users/m1/Codex/session-notes/$(date -u +%F)/worldos-refresh/artifacts/owner-install/backup-$(date -u +%Y%m%dT%H%M%SZ)"; }
