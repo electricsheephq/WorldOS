@@ -1366,7 +1366,14 @@ class OpenWorldsStaticRouteTests(unittest.TestCase):
         self.assertEqual(campaign["dashboardUrl"], "/openworlds/?campaign=camp_live")
         self.assertEqual(campaign["legacyDashboardUrl"], "/dashboard?campaign=camp_live")
         self.assertEqual([p["name"] for p in campaign["party"]], ["Tav", "Jaheira"])
-        self.assertEqual(campaign["recap"], "The party reached the inn and caught its breath.")
+        # #1764: "Where last we stood" is a SESSION recap, so a campaign that HAS a session log
+        # (this fixture writes sessions/sess_1.jsonl) must never be recapped with the seed's
+        # authoring `summary` — the launcher falls back to a session-derived line instead. The
+        # fixture's session row carries no projectable prose, so the quest line is used.
+        self.assertEqual(campaign["recap"], "1 active quest remain in motion.")
+        self.assertEqual(campaign["recapSource"], "session")
+        self.assertEqual(campaign["recapLabel"], "Where last we stood")
+        self.assertNotEqual(campaign["recap"], "The party reached the inn and caught its breath.")
         encoded = json.dumps(campaign)
         self.assertNotIn("private note", encoded)
         self.assertNotIn("hidden agenda", encoded)
