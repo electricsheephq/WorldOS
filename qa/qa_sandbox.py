@@ -151,6 +151,21 @@ def up(run: str, *, campaign: str, engine_port: int, qa_port: int,
     state = rd / "state"
     if _meta_path(run).exists():
         raise SystemExit(f"[sandbox] run '{run}' already provisioned — `down` it first ({rd})")
+
+    # 0) PREFLIGHT the .app before anything is created or spawned. Both of these used to run after the
+    #    engine was already up, so a rejected app still seeded state and left an engine behind that no
+    #    run metadata could clean up (terminate() is non-blocking and `down` needs sandbox.json).
+    pbin = app / "Contents" / "MacOS" / "WorldOSPlayer"
+    if not pbin.exists():
+        raise SystemExit(f"[sandbox] player binary missing: {pbin}")
+    contaminated = _qa_roots_in_app(app)
+    if contaminated:
+        raise SystemExit(
+            f"[sandbox] app CONTAMINATED — QA kit roots baked into the build: {sorted(contaminated)} "
+            f"({app}). A KitRoom_* scene root was saved into the canonical scene and shipped; it renders "
+            f"grey kit masses over every plate (kit-tavern 2026-07-23). Rebuild via BuildMacOSPlayer, "
+            f"which strips them for the build and reports strippedQARoots in build-report.txt.")
+
     state.mkdir(parents=True, exist_ok=True)
 
     # 1) seed the cloned state dir (default: the 3-room registered world + Aldric)
@@ -181,18 +196,7 @@ def up(run: str, *, campaign: str, engine_port: int, qa_port: int,
 
     # 3) a SECOND player instance — direct binary exec (open -n drops env), own QA port.
     #    ⚠ never `osascript quit app` here (kills the OWNER's instance too) — pid-scoped only.
-    pbin = app / "Contents" / "MacOS" / "WorldOSPlayer"
-    if not pbin.exists():
-        engine.terminate()
-        raise SystemExit(f"[sandbox] player binary missing: {pbin}")
-    contaminated = _qa_roots_in_app(app)
-    if contaminated:
-        engine.terminate()
-        raise SystemExit(
-            f"[sandbox] app CONTAMINATED — QA kit roots baked into the build: {sorted(contaminated)} "
-            f"({app}). A KitRoom_* scene root was saved into the canonical scene and shipped; it renders "
-            f"grey kit masses over every plate (kit-tavern 2026-07-23). Rebuild via BuildMacOSPlayer, "
-            f"which strips them for the build and reports strippedQARoots in build-report.txt.")
+    #    (binary presence + contamination were preflighted at step 0, before anything was spawned.)
     penv = dict(os.environ,
                 WORLDOS_ENGINE_BASE_URL=f"http://127.0.0.1:{engine_port}",
                 WORLDOS_CAMPAIGN_ID=campaign,

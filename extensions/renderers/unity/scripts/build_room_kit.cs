@@ -210,19 +210,21 @@ public static class BuildRoomKit
             }
         }
         sb.Append("\n  ]\n}\n");
-        // Assets/StreamingAssets/boxes IS the directory the player build packages (StreamingAssets is copied
-        // verbatim into the .app), so the export lands where a runtime/QA consumer can actually read it —
-        // the project root does not ship anywhere. The "_kit_boxes" suffix keeps a fresh export distinct
-        // from the reviewed "<room>_boxes.json" sidecar already sitting in that directory: an export is a
-        // CANDIDATE, and silently overwriting the sidecar the player consumes is how an unreviewed volume
-        // set reaches a plate. Promotion into extensions/renderers/unity/boxes/ stays a reviewed step.
-        string boxesDir = Path.Combine(Application.dataPath, "StreamingAssets", "boxes");
+        // <projectRoot>/boxes/<roomId>_boxes.json — the directory BuildMacOSPlayer.EnsurePackaged copies
+        // into StreamingAssets/boxes, and the exact name space plates_manifest.json references
+        // ("boxes/tavern_kit_v1_boxes.json"). The project root, where this wrote before, is packaged
+        // nowhere and matches no manifest entry, so a developer following the menu path produced a sidecar
+        // that silently never reached a plate. Writing StreamingAssets/boxes directly would be just as
+        // wrong in the other direction: that directory is a build-generated MIRROR, overwritten from
+        // <projectRoot>/boxes on the next EnsurePackaged. Promotion into the repo
+        // (extensions/renderers/unity/boxes/) stays a reviewed step — the export is a candidate.
+        string boxesDir = Path.Combine(Directory.GetParent(Application.dataPath).FullName, "boxes");
         Directory.CreateDirectory(boxesDir);
-        string outPath = Path.Combine(boxesDir, roomId + "_kit_boxes.json");
+        string outPath = Path.Combine(boxesDir, roomId + "_boxes.json");
         File.WriteAllText(outPath, sb.ToString());
         if (!File.Exists(outPath)) { Debug.LogError($"[KitBoxes] write FAILED: {outPath}"); return; }
-        AssetDatabase.Refresh();
-        Debug.Log($"[KitBoxes] wrote {nBoxes} kit-derived boxes (ortho {ortho:0.####}) -> {outPath}");
+        Debug.Log($"[KitBoxes] wrote {nBoxes} kit-derived boxes (ortho {ortho:0.####}) -> {outPath}\n"
+                  + "[KitBoxes] promote: copy into extensions/renderers/unity/boxes/ and point plates_manifest.json at it.");
     }
 
     [MenuItem("Tools/WorldOS/Kit/Build Room From Kit")]
@@ -1203,10 +1205,26 @@ public static class BuildRoomKit
     static string RoomId(Dictionary<string, object> geo, string geoPath)
     {
         string env = Environment.GetEnvironmentVariable("WORLDOS_KIT_ROOM_ID");
-        if (!string.IsNullOrEmpty(env)) return Sanitize(env);
+        if (!string.IsNullOrEmpty(env)) return DisambiguateRoomId(Sanitize(env));
         string loc = GetStr(geo, "location", null);
-        if (!string.IsNullOrEmpty(loc)) return Sanitize(loc);
-        return Sanitize(Path.GetFileNameWithoutExtension(geoPath).Replace("_geometry", ""));
+        if (!string.IsNullOrEmpty(loc)) return DisambiguateRoomId(Sanitize(loc));
+        return DisambiguateRoomId(Sanitize(Path.GetFileNameWithoutExtension(geoPath).Replace("_geometry", "")));
+    }
+
+    // A room named "Fire"/"TombGlow"/"CoolKey" would build a REAL root called KitRoom_Fire — a name the
+    // build-contamination byte scan (qa/qa_sandbox.py) must treat as a helper light, since bytes cannot
+    // say whether a name was a root or a child. That is a FALSE NEGATIVE on the gate, so make the
+    // collision impossible at the source instead of asking the detector to guess.
+    static string DisambiguateRoomId(string id)
+    {
+        foreach (var helper in new[] { KitHelperFire, KitHelperTombGlow, KitHelperCoolKey })
+            if (("KitRoom_" + id) == helper)
+            {
+                Debug.LogWarning($"[Kit] room id '{id}' collides with the helper object {helper}; using '{id}_room' "
+                                 + "so the build-contamination scan can still tell a shipped kit room from a light.");
+                return id + "_room";
+            }
+        return id;
     }
 
     static string Sanitize(string s)
