@@ -4,345 +4,604 @@
   "checks": {
     "run_infra_valid": {
       "category": "HARNESS_WIRING",
-      "likely_code_locations": ["qa/assert_behavioral.py:307", "qa/lib_beat_driver.sh", "qa/run_duo.sh"],
+      "likely_code_locations": [
+        "qa/assert_behavioral.py:307",
+        "qa/lib_beat_driver.sh",
+        "qa/run_duo.sh"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "A stamped <run>.infra_invalid.json sentinel sits next to run.jsonl (qa/lib_beat_driver.sh worldos_mark_run_infra_invalid, #1285) — the beat driver detected N consecutive DM beat failures mid-run (a quota window / host-session death, the rri-a1-duo/duo2 defect class), which invalidates the run: it measures infra collapse, not the product. FATAL — never cite this transcript as a clean product measurement; re-run instead. Check the sentinel's `reason` / `consecutive_failed_beats` fields, then investigate WHY the DM beats died (auth/timeout/quota) in the beat driver."
     },
     "dm_produced_output": {
       "category": "HARNESS_WIRING",
-      "likely_code_locations": ["qa/run_duo.sh", "qa/lib_beat_driver.sh", "servers/engine/server.py"],
+      "likely_code_locations": [
+        "qa/run_duo.sh",
+        "qa/lib_beat_driver.sh",
+        "servers/engine/server.py"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "The run produced zero DM text and zero tool calls — a dead/blank run. Usually a masked cold-open auth failure (claude -p 401 / apiKeySource:none) or a DM agent that never started. Check the claude login first, then the DM spawn args in run_duo.sh."
     },
     "both_sides_acted": {
       "category": "HARNESS_WIRING",
-      "likely_code_locations": ["qa/run_duo.sh", "qa/lib_beat_driver.sh"],
+      "likely_code_locations": [
+        "qa/run_duo.sh",
+        "qa/lib_beat_driver.sh"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "Only one side took turns in the duo (e.g. 1 player turn, 0 DM turns). The chat-loop wiring stalled — inspect the beat driver's player<->DM relay and the DM turn deadline."
     },
     "player_turns_structured": {
       "category": "HARNESS_WIRING",
-      "likely_code_locations": ["servers/engine/player_server.py", "qa/lib_beat_driver.sh", "qa/run_duo.sh"],
+      "likely_code_locations": [
+        "servers/engine/player_server.py",
+        "qa/lib_beat_driver.sh",
+        "qa/run_duo.sh"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "A player turn arrived as RAW text instead of a [tagged] move ([say]/[do]/[check]/[cast]/[use]/[attack]) — the player bypassed the facade (0-tools fallback). Check the player tool surface in player_server.py and the --permission-mode on the player spawn."
     },
     "player_in_lane": {
       "category": "DM_ADHERENCE",
-      "likely_code_locations": ["servers/engine/player_server.py", "qa/play_player_duo.txt", "qa/lib_beat_driver.sh"],
+      "likely_code_locations": [
+        "servers/engine/player_server.py",
+        "qa/play_player_duo.txt",
+        "qa/lib_beat_driver.sh"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "A legacy (non-facade) player turn looks like over-writing the world / asserting an outcome (DM-voice prose, 'you see…', 'rolls a…'). The structural fix is the constrained facade; tighten the player prompt meanwhile."
     },
     "dm_voices_characters": {
       "category": "DM_ADHERENCE",
-      "likely_code_locations": ["qa/play_dm_duo.txt", "qa/lib_beat_driver.sh", "qa/rubric_tolkien.md"],
+      "likely_code_locations": [
+        "qa/play_dm_duo.txt",
+        "qa/lib_beat_driver.sh",
+        "qa/rubric_tolkien.md"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "Zero quoted dialogue across the whole run with a companion present — a log, not a scene. The DM narrated only atmosphere. Strengthen the DM prompt's dialogue mandate; it is FATAL only when a companion is in the party."
     },
     "narration_no_ooc_leak": {
       "category": "DM_ADHERENCE",
-      "likely_code_locations": ["skills/dungeon-master/SKILL.md", "qa/play_dm_duo.txt", "qa/assert_behavioral.py"],
+      "likely_code_locations": [
+        "skills/dungeon-master/SKILL.md",
+        "qa/play_dm_duo.txt",
+        "qa/assert_behavioral.py"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "Player-facing DM prose leaked OUT-OF-CHARACTER craft-scaffolding / first-person authoring preambles / raw system vocab (e.g. 'Now let me seat <X> as the player character', 'Continuity check — let me correct that') — a felt-quality defect the LLM story scorer blends away. Fix at the source: the DM's FICTION-ONLY voice mandate in skills/dungeon-master/SKILL.md (and the duo DM prompt qa/play_dm_duo.txt). Proportionate severity: 0 leaks pass, 1-2 incidental leaks WARN, >=3 in a substantial run (dm_text>=MIN_BEATS) is a pervasively-broken player surface => RED. If a clean in-fiction beat is mis-flagged, tighten the _NARRATION_LEAK_RE patterns in qa/assert_behavioral.py."
     },
     "dm_beat_honesty": {
       "category": "HARNESS_WIRING",
-      "likely_code_locations": ["qa/lib_beat_driver.sh", "qa/run_duo.sh", "qa/dm_narration_fallback.py"],
+      "likely_code_locations": [
+        "qa/lib_beat_driver.sh",
+        "qa/run_duo.sh",
+        "qa/dm_narration_fallback.py"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "Beats were stamped beat_failed / fallback_recovered (a dead or error-class DM turn whose prose was recovered from the engine log via the #357 fallback). Report-only; investigate WHY the DM turn died (timeout / auth / tool error) in the beat driver."
     },
     "dm_beat_honesty_no_consecutive_collapse": {
       "category": "HARNESS_WIRING",
-      "likely_code_locations": ["qa/assert_behavioral.py:410", "qa/lib_beat_driver.sh", "qa/run_duo.sh", "qa/dm_narration_fallback.py"],
+      "likely_code_locations": [
+        "qa/assert_behavioral.py:410",
+        "qa/lib_beat_driver.sh",
+        "qa/run_duo.sh",
+        "qa/dm_narration_fallback.py"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "N consecutive DM beat-failures (beat_failed=True rows, in order, in $CHAT) crossed the threshold (3) — a run of back-to-back failed beats means the run COLLAPSED ON INFRA (a quota window / host-session death mid-run, the rri-a1-duo/duo2 defect class), not scattered product defects. The chat-log-derived twin of run_infra_valid below; catches runs whose runner predates the #1285 sentinel or doesn't yet wire the abort-and-stamp path (run_party.sh / ui_playtest.sh). FATAL: this transcript is contaminated and must be re-run, not cited as a clean product measurement. Investigate WHY the DM turns died (timeout / auth / quota / tool error) in the beat driver, same as dm_beat_honesty above."
     },
     "player_used_facade": {
       "category": "HARNESS_WIRING",
-      "likely_code_locations": ["servers/engine/player_server.py", "qa/run_duo.sh", "qa/lib_beat_driver.sh"],
+      "likely_code_locations": [
+        "servers/engine/player_server.py",
+        "qa/run_duo.sh",
+        "qa/lib_beat_driver.sh"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "Zero facade moves recorded — the player's tools were blocked or unused (often a missing --permission-mode on the player spawn). Check the player_server.py tool registration and the player spawn args + MOVES log wiring."
     },
     "dm_resolved_player_moves": {
       "category": "DM_ADHERENCE",
-      "likely_code_locations": ["qa/play_dm_duo.txt", "servers/engine/server.py", "qa/lib_beat_driver.sh"],
+      "likely_code_locations": [
+        "qa/play_dm_duo.txt",
+        "servers/engine/server.py",
+        "qa/lib_beat_driver.sh"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "The player declared a [cast]/[attack]/[check]/[save] but the DM made ZERO matching engine calls — the player was ignored while the DM narrated its own story. Reinforce the DM's 'resolve the declared move' instruction; confirm the engine tool exists for that move kind."
     },
     "player_engaged": {
       "category": "HARNESS_WIRING",
-      "likely_code_locations": ["qa/run_duo.sh", "qa/lib_beat_driver.sh", "qa/play_player_duo.txt"],
+      "likely_code_locations": [
+        "qa/run_duo.sh",
+        "qa/lib_beat_driver.sh",
+        "qa/play_player_duo.txt"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "A trivially short session (<3 moves) — possibly the run was cut off, the budget was tiny, or the player quit early. Check the beat budget and player prompt; WARN only."
     },
     "player_probed": {
       "category": "DM_ADHERENCE",
-      "likely_code_locations": ["qa/play_player_duo.txt", "servers/engine/player_server.py"],
+      "likely_code_locations": [
+        "qa/play_player_duo.txt",
+        "servers/engine/player_server.py"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "The AI player asked 0 questions and requested 0 checks across the session — it played along as a passive plot-passenger. Add clarify/request_check guidance to the player prompt; WARN only (agency smell)."
     },
     "combat_not_left_active": {
       "category": "ENGINE_INVARIANT",
-      "likely_code_locations": ["servers/engine/combat.py", "servers/engine/server.py"],
+      "likely_code_locations": [
+        "servers/engine/combat.py",
+        "servers/engine/server.py"
+      ],
       "retest": "bash qa/run_combat_sprint.sh sprint-retest",
       "hint": "combat.active was still True at end-of-run — a finished session should end_combat. Either the DM never called end_combat (DM adherence) or end_combat failed to clear the flag (engine). Check the combat.active write in combat.py end_combat."
     },
     "action_economy_engaged": {
       "category": "ENGINE_INVARIANT",
-      "likely_code_locations": ["servers/engine/combat.py", "servers/engine/server.py"],
+      "likely_code_locations": [
+        "servers/engine/combat.py",
+        "servers/engine/server.py"
+      ],
       "retest": "bash qa/run_combat_sprint.sh sprint-retest",
       "hint": "start_combat fired but the combat block shows no action consumed (action_used / attacks_made all falsy). Check that combat.py records action use; WARN only (snapshot may have reset the field)."
     },
     "round1_turn_skipped": {
       "category": "DM_ADHERENCE",
-      "likely_code_locations": ["qa/play_dm_duo.txt", "qa/rubric_angry_dm.md", "servers/engine/combat.py"],
+      "likely_code_locations": [
+        "qa/play_dm_duo.txt",
+        "qa/rubric_angry_dm.md",
+        "servers/engine/combat.py"
+      ],
       "retest": "bash qa/run_combat_sprint.sh sprint-retest",
       "hint": "start_combat -> next_turn with NO resolving action (attack/cast_spell/saving_throw/use_action) in between — the first combatant's Round-1 turn was advanced without acting. Reinforce 'read turn_brief, resolve the full action (Multiattack = all N), THEN next_turn' in the DM prompt. WARN only."
     },
     "combat_ran_outside_initiative": {
       "category": "DM_ADHERENCE",
-      "likely_code_locations": ["qa/play_dm_duo.txt", "servers/engine/combat.py", "servers/engine/server.py"],
+      "likely_code_locations": [
+        "qa/play_dm_duo.txt",
+        "servers/engine/combat.py",
+        "servers/engine/server.py"
+      ],
       "retest": "bash qa/run_combat_sprint.sh sprint-retest",
       "hint": ">=3 attacks but start_combat never called — a fight ran entirely outside initiative, so turn-order/action-economy gates were inert. The engine surfaces a combat_not_active nudge per out-of-combat attack; reinforce 'call start_combat at the top of any real encounter' in the DM prompt. WARN only."
     },
     "ambush_ran_surprise_gate": {
       "category": "DM_ADHERENCE",
-      "likely_code_locations": ["skills/dungeon-master/reference/combat.md", "servers/engine/server.py"],
+      "likely_code_locations": [
+        "skills/dungeon-master/reference/combat.md",
+        "servers/engine/server.py"
+      ],
       "retest": "bash qa/run_combat_sprint.sh sprint-retest",
       "hint": "DM narration staged an ambush (lunge from the shadows / sprung trap / 'never saw it coming') but start_combat ran with no surprise evaluation — no surpriser_ids and no `surprise` key in the return — so the passive-Perception-vs-Stealth gate was skipped and the ambush had no mechanical effect (#1271). Reinforce 'pass surpriser_ids=[attacker id(s)] for any narrated ambush' in the DM combat runbook; the engine rolls Stealth vs passive Perception and applies SRD-5.2 initiative disadvantage to the surprised set. WARN only."
     },
     "detection_beat_requires_check": {
       "category": "DM_ADHERENCE",
-      "likely_code_locations": ["qa/assert_behavioral.py:1029", "skills/dungeon-master/reference/combat.md"],
+      "likely_code_locations": [
+        "qa/assert_behavioral.py:1029",
+        "skills/dungeon-master/reference/combat.md"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "DM narration plainly staged an NPC noticing/spotting/hearing the party ('the guard's eyes snap toward you', 'she catches a sound') with no preceding Perception/Insight/Investigation skill_check (or a reason-tagged roll) in the SAME beat — DM fiat, not a gated roll (#1287, promoted from the scorer's suggested_fix; same family as ambush_ran_surprise_gate above). Reinforce 'call skill_check before narrating a detection/notice beat' in the DM combat runbook. WARN only — prose alone is a soft signal and a false-fire here should never cap an otherwise-clean run."
     },
     "party_location_coherence": {
       "category": "ENGINE_INVARIANT",
-      "likely_code_locations": ["servers/engine/travel.py", "servers/engine/server.py", "servers/engine/models.py"],
+      "likely_code_locations": [
+        "servers/engine/travel.py",
+        "servers/engine/server.py",
+        "servers/engine/models.py"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "A party member's location_id != current_location_id — party split / stale location. Check the relocate sweep (_move_party_to / travel_to in travel.py) co-locates the whole party. WARN only."
     },
     "duration_expiry": {
       "category": "ENGINE_INVARIANT",
-      "likely_code_locations": ["servers/engine/combat.py", "servers/engine/models.py", "servers/engine/rests.py"],
+      "likely_code_locations": [
+        "servers/engine/combat.py",
+        "servers/engine/models.py",
+        "servers/engine/rests.py"
+      ],
       "retest": "bash qa/run_combat_sprint.sh sprint-retest",
       "hint": "Combat is over but a character still carries a rounds/minutes active_effect — a duration expiry tick was missed. Check the effect-expiry sweep on end_combat / time advance in combat.py / models.py. WARN only."
     },
     "dice_used": {
       "category": "DM_ADHERENCE",
-      "likely_code_locations": ["qa/play_dm_duo.txt", "servers/engine/dice.py", "servers/engine/server.py"],
+      "likely_code_locations": [
+        "qa/play_dm_duo.txt",
+        "servers/engine/dice.py",
+        "servers/engine/server.py"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "A whole session with ZERO dice (roll/attack/saving_throw/social_check/skill_check). The DM resolved everything by fiat. Reinforce 'roll the dice via the engine' in the DM prompt; confirm the roll tools are registered in server.py."
     },
     "combat_resolved": {
       "category": "DM_ADHERENCE",
-      "likely_code_locations": ["qa/play_dm_duo.txt", "servers/engine/combat.py", "servers/engine/server.py"],
+      "likely_code_locations": [
+        "qa/play_dm_duo.txt",
+        "servers/engine/combat.py",
+        "servers/engine/server.py"
+      ],
       "retest": "bash qa/run_combat_sprint.sh sprint-retest",
       "hint": "start_combat fired but no attack/cast_spell/saving_throw resolved the fight (spawn_monster alone is not enough). The DM started a fight and never threw a die. Reinforce combat-resolution in the DM prompt; confirm the resolution tools exist in combat.py."
     },
     "combat_ended": {
       "category": "DM_ADHERENCE",
-      "likely_code_locations": ["qa/play_dm_duo.txt", "servers/engine/combat.py"],
+      "likely_code_locations": [
+        "qa/play_dm_duo.txt",
+        "servers/engine/combat.py"
+      ],
       "retest": "bash qa/run_combat_sprint.sh sprint-retest",
       "hint": "start_combat fired but end_combat never did — combat may be left hanging (could be a run cut off mid-fight, so WARN). Reinforce 'end_combat when the fight concludes' in the DM prompt."
     },
     "xp_awarded": {
       "category": "DM_ADHERENCE",
-      "likely_code_locations": ["qa/play_dm_duo.txt", "servers/engine/combat.py", "servers/engine/server.py"],
+      "likely_code_locations": [
+        "qa/play_dm_duo.txt",
+        "servers/engine/combat.py",
+        "servers/engine/server.py"
+      ],
       "retest": "bash qa/run_combat_sprint.sh sprint-retest",
       "hint": "Combat ran but neither award_xp nor end_combat fired, so no XP for the fight. In xp mode end_combat auto-awards; the DM likely skipped end_combat. Reinforce the end-of-fight close-out in the DM prompt. WARN only."
     },
     "xp_not_orphaned": {
       "category": "ENGINE_INVARIANT",
-      "likely_code_locations": ["servers/engine/combat.py", "servers/engine/encounter.py", "servers/engine/models.py"],
+      "likely_code_locations": [
+        "servers/engine/combat.py",
+        "servers/engine/encounter.py",
+        "servers/engine/models.py"
+      ],
       "retest": "bash qa/run_combat_sprint.sh sprint-retest",
       "hint": "A defeated monster (dead=true) kept xp_value>0 after combat ended — the kill-time XP award never fired or was bypassed, so progression was SILENTLY LOST. This is a state-integrity defect in the engine's kill-time award path (combat.py). FATAL."
     },
     "player_in_party": {
       "category": "ENGINE_INVARIANT",
-      "likely_code_locations": ["servers/engine/server.py", "servers/engine/companion.py", "servers/engine/models.py"],
+      "likely_code_locations": [
+        "servers/engine/server.py",
+        "servers/engine/companion.py",
+        "servers/engine/models.py"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "No kind='player' character in state.party — the PC was never seated, or was dropped. Check the load_canon_character / create_character(kind='player', add_to_party=true) path and the party-membership write in server.py."
     },
     "caster_has_spellbook": {
       "category": "ENGINE_INVARIANT",
-      "likely_code_locations": ["servers/engine/content.py", "servers/engine/spells.py", "servers/engine/models.py"],
+      "likely_code_locations": [
+        "servers/engine/content.py",
+        "servers/engine/spells.py",
+        "servers/engine/models.py"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "A player/companion with truthy spellcasting but EMPTY spells (spells_known/cantrips_known/prepared_spells/cantrips) — the empty-spellbook regression. Check load_canon_character / class-default population in content.py + spells.py. WARN only."
     },
     "quest_objectives_progress": {
       "category": "ENGINE_INVARIANT",
-      "likely_code_locations": ["servers/engine/server.py", "servers/engine/models.py", "servers/engine/questgen.py"],
+      "likely_code_locations": [
+        "servers/engine/server.py",
+        "servers/engine/models.py",
+        "servers/engine/questgen.py"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "A quest status=completed with objectives but EMPTY completed_objectives — the complete_objective write-site was bypassed (DM narrated the goal done without recording it). Check the complete_objective / complete_quest writers in server.py + models.py. WARN only."
     },
     "no_duplicate_companion": {
       "category": "ENGINE_INVARIANT",
-      "likely_code_locations": ["servers/engine/companion.py", "servers/engine/server.py", "servers/engine/models.py"],
+      "likely_code_locations": [
+        "servers/engine/companion.py",
+        "servers/engine/server.py",
+        "servers/engine/models.py"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "Two companions share a name — the engine's dedup guard did not hold. Check the companion-add / recruit path in companion.py + server.py for the duplicate-name guard."
     },
     "world_advanced_time": {
       "category": "ENGINE_INVARIANT",
-      "likely_code_locations": ["servers/engine/campaign_calendar.py", "servers/engine/travel.py", "servers/engine/rests.py"],
+      "likely_code_locations": [
+        "servers/engine/campaign_calendar.py",
+        "servers/engine/travel.py",
+        "servers/engine/rests.py"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "After a substantial session the clock never moved (still day 1, morning) — a frozen scene. Either the DM never called advance_time/travel_to(advance_time=True)/long_rest (DM adherence) or the time write failed (engine). Check campaign_calendar.py + the advance_time write."
     },
     "party_traveled": {
       "category": "ENGINE_INVARIANT",
-      "likely_code_locations": ["servers/engine/travel.py", "servers/engine/server.py", "servers/engine/models.py"],
+      "likely_code_locations": [
+        "servers/engine/travel.py",
+        "servers/engine/server.py",
+        "servers/engine/models.py"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "The party visited <2 locations after a substantial session — it never left the opening scene. Either the DM never called travel_to/add_location(make_current=True) (DM adherence) or the location.visited flag never set (engine). Check travel.py's visited-marking write."
     },
     "structural_completeness": {
       "category": "ENGINE_INVARIANT",
-      "likely_code_locations": ["servers/engine/server.py", "servers/engine/models.py", "servers/engine/companion.py"],
+      "likely_code_locations": [
+        "servers/engine/server.py",
+        "servers/engine/models.py",
+        "servers/engine/companion.py"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "A >=10-beat session with a companion never engaged a core relationship/quest system: either no companion's attitude_value moved off 0 AND no camp/long_rest happened, or an active quest was left open across a >=2-location arc with no quest-resolution call. Either the DM never invoked the relationship/quest tools (record_decision / adjust_attitude / camp_scene / complete_quest evolves_to — DM adherence) or those engine writes never landed (engine). All those tool handlers + the attitude_value/quest-status writes live in server.py (adjust_attitude, record_decision, camp_scene, complete_quest, and the rule-of-three evolution _maybe_schedule_quest_evolution / evolves_to); the field definitions are in models.py; companion.py only surfaces approval CAUSES (approval_tags) for the DM to apply — it never writes state itself. The gate trips at >=10 beats (STRUCTURAL_MIN_BEATS). #1036 scope guard (Option A, mirrors #1030): on an AUTHORED campaign (start_adventure in the tool stream OR a non-empty state[\"scenes\"]) whose only open quest is the hook-seeded arc, the unresolved-arc sub-check (b) is demoted FATAL->WARN — the hook-seeded campaign arc is multi-session by design and authored adventures author no closable sub-quests, so it no longer false-caps a clean authored run to 2.5; the WARN message is still surfaced. STILL FATAL for: any NON-authored run (the original narrated-not-engaged failure), and an authored run that called add_quest and left it unresolved (a real dropped DM-opened thread). Clause (a) approval-frozen is FATAL ALWAYS. Skipped in the combat-sprint lane."
     },
     "flat_arc": {
       "category": "DM_ADHERENCE",
-      "likely_code_locations": ["qa/play_dm_duo.txt", "servers/engine/server.py", "qa/story_readout.py"],
+      "likely_code_locations": [
+        "qa/play_dm_duo.txt",
+        "servers/engine/server.py",
+        "qa/story_readout.py"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "A >=24-beat run (FELT_SHAPE_MIN_BEATS, strictly above the >=10 structural floor) covered 3+ acts but the arc never TURNED — no midpoint reversal AND/OR no late climax landed (a flat fetch-quest shape, not a felt setup->reversal->climax). DM adherence: drive a real midpoint reversal + a late climax (record_decision the turning beat, advance_act / mark_reversal / mark_climax, complete_quest the spine late). The felt_shape fields (reversal/climax/acts_engine_reached/acts_tag_reached) are produced by the acts-engine in server.py (NarrativeArc + advance_act/mark_reversal/mark_climax) and surfaced via qa/story_readout.py's felt_shape_from_state. WARN only (fatal=False); only armed at >=24 beats so shorter runs are unaffected."
     },
     "dm_advanced_time": {
       "category": "DM_ADHERENCE",
-      "likely_code_locations": ["qa/play_dm_duo.txt", "servers/engine/server.py"],
+      "likely_code_locations": [
+        "qa/play_dm_duo.txt",
+        "servers/engine/server.py"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "The DM never issued a time-advance tool across the session — only the harness soft-tick moved the clock, so companion regard / camp / day-gated systems stay starved (#1024 unmasks the frozen-DM the soft-tick hid). DM adherence: call long_rest / advance_time / downtime when a beat should pass time. The time-advance tools live in server.py. WARN only (fatal=False)."
     },
     "world_peopled": {
       "category": "DM_ADHERENCE",
-      "likely_code_locations": ["qa/play_dm_duo.txt", "servers/engine/npc.py", "servers/engine/server.py"],
+      "likely_code_locations": [
+        "qa/play_dm_duo.txt",
+        "servers/engine/npc.py",
+        "servers/engine/server.py"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "<2 NPCs engaged (met) across the session — the world sat in the seeded roster, no new faces. The DM under-populated the scene. Reinforce 'introduce and meet new NPCs' in the DM prompt; confirm the npc.met write in npc.py. WARN only."
     },
     "no_rejected_tool_calls": {
       "category": "HARNESS_WIRING",
-      "likely_code_locations": ["servers/engine/server.py", "servers/engine/models.py", "qa/run_duo.sh"],
+      "likely_code_locations": [
+        "servers/engine/server.py",
+        "servers/engine/models.py",
+        "qa/run_duo.sh"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "A tool was REJECTED with a schema/validation error (extra_forbidden => version skew or a wrong field) in a SYSTEMATIC pattern — classic version-skew between the DM's expected tool schema and the engine's models. De-flaked (#897): FATAL only when the rejection is UNRECOVERED (the same tool was NEVER successfully called) OR REPEATED (the same tool rejected >=2x = real skew). A SINGLE rejection the DM immediately retried correctly is a recovered transient => WARN, not RED (it was false-RED-capping whole runs on one invisible flub). Check the tool param schema in server.py / models.py vs what the DM sent for the named tool(s). FATAL (systematic) / WARN (recovered transient)."
     },
     "engine_guards_hit": {
       "category": "DM_ADHERENCE",
-      "likely_code_locations": ["servers/engine/server.py", "servers/engine/travel.py", "qa/play_dm_duo.txt"],
+      "likely_code_locations": [
+        "servers/engine/server.py",
+        "servers/engine/travel.py",
+        "qa/play_dm_duo.txt"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "Recoverable engine-guard rejections (e.g. travel-graph guards) the DM is expected to retry. Not a bug per se — confirm the DM recovered. Check the guard message in server.py/travel.py and whether the DM re-asked. WARN only."
     },
     "tool_soft_errors": {
       "category": "HARNESS_WIRING",
-      "likely_code_locations": ["servers/engine/server.py", "servers/engine/bestiary.py", "servers/engine/content.py"],
+      "likely_code_locations": [
+        "servers/engine/server.py",
+        "servers/engine/bestiary.py",
+        "servers/engine/content.py"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "A tool returned a dict {'error': ...} with is_error=False (load_canon_character miss, bestiary miss, dead-PC path) — invisible to the strict A8 gate. Recoverable; the DM is told and re-asks. Check the soft-error return site for the named tool. WARN only."
     },
     "end_combat_no_living_hostiles": {
       "category": "ENGINE_INVARIANT",
-      "likely_code_locations": ["servers/engine/combat.py", "servers/engine/server.py"],
+      "likely_code_locations": [
+        "servers/engine/combat.py",
+        "servers/engine/server.py"
+      ],
       "retest": "bash qa/run_combat_sprint.sh sprint-retest",
       "hint": "end_combat was called but a hostile is still alive (current_hp>0, dead=false) with no flee/surrender/retreat recorded — corrupts the save for the next load. The DM should pass end_combat(resolution=...) or the engine should set last_combat_resolution. Check combat.py end_combat. FATAL outside combat-sprint."
     },
     "xp_awarded_on_progression": {
       "category": "ENGINE_INVARIANT",
-      "likely_code_locations": ["servers/engine/combat.py", "servers/engine/encounter.py", "servers/engine/server.py"],
+      "likely_code_locations": [
+        "servers/engine/combat.py",
+        "servers/engine/encounter.py",
+        "servers/engine/server.py"
+      ],
       "retest": "bash qa/run_combat_sprint.sh sprint-retest",
       "hint": "An xp-mode session advanced and crossed a reward-worthy seam (combat completion / completed quest / defeated XP monster) but every living party member is at 0 XP — progression/reward parity regression. Check the XP-award write paths in combat.py / encounter.py. FATAL."
     },
     "xp_progression_scope": {
       "category": "ENGINE_INVARIANT",
-      "likely_code_locations": ["servers/engine/combat.py", "servers/engine/travel.py"],
+      "likely_code_locations": [
+        "servers/engine/combat.py",
+        "servers/engine/travel.py"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "An xp-mode session advanced but crossed NO reward seam (no combat/quest/explicit-reward/defeated-XP monster) — classified as setup/provider-proof scope rather than missing XP. Informational; usually expected for a short setup run. WARN only."
     },
     "companion_location_synced": {
       "category": "ENGINE_INVARIANT",
-      "likely_code_locations": ["servers/engine/travel.py", "servers/engine/companion.py", "servers/engine/server.py"],
+      "likely_code_locations": [
+        "servers/engine/travel.py",
+        "servers/engine/companion.py",
+        "servers/engine/server.py"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "A party/companion (including de-facto companions NOT in state.party[]) is not at current_location_id. Check the _move_party_to co-location sweep in travel.py covers all kind='companion', not just party[] members. WARN only."
     },
     "companion_location_synced_on_travel": {
       "category": "ENGINE_INVARIANT",
-      "likely_code_locations": ["servers/engine/travel.py", "servers/engine/companion.py"],
+      "likely_code_locations": [
+        "servers/engine/travel.py",
+        "servers/engine/companion.py"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "After travel occurred (day>1 or >=2 visited), a companion is still not at the party's current location — the relocate sweep missed a de-facto companion. Same fix as companion_location_synced, scoped to post-travel. Check travel_to / _move_party_to in travel.py. WARN only."
     },
     "companion_xp_synced_on_award": {
       "category": "ENGINE_INVARIANT",
-      "likely_code_locations": ["servers/engine/combat.py", "servers/engine/companion.py", "servers/engine/encounter.py"],
+      "likely_code_locations": [
+        "servers/engine/combat.py",
+        "servers/engine/companion.py",
+        "servers/engine/encounter.py"
+      ],
       "retest": "bash qa/run_combat_sprint.sh sprint-retest",
       "hint": "The PC earned XP but a LIVING co-located companion is still at 0 — the companion was excluded from the party XP split. Check the XP-award split path (combat.py / encounter.py) includes co-located kind='companion'. WARN only."
     },
     "caster_has_signature_proficiency": {
       "category": "ENGINE_INVARIANT",
-      "likely_code_locations": ["servers/engine/content.py", "servers/engine/srd_tables.py", "servers/engine/models.py"],
+      "likely_code_locations": [
+        "servers/engine/content.py",
+        "servers/engine/srd_tables.py",
+        "servers/engine/models.py"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "A leveled caster/martial has a COMPLETELY EMPTY skill_proficiencies list (the load_canon_character gap: it skips _apply_srd_class_defaults). Check the SRD class-default application in content.py + srd_tables.py. WARN only."
     },
     "fighter_second_wind_considered": {
       "category": "DM_ADHERENCE",
-      "likely_code_locations": ["qa/rubric_angry_dm.md", "qa/play_dm_duo.txt", "servers/engine/combat.py"],
+      "likely_code_locations": [
+        "qa/rubric_angry_dm.md",
+        "qa/play_dm_duo.txt",
+        "servers/engine/combat.py"
+      ],
       "retest": "bash qa/run_combat_sprint.sh sprint-retest",
       "hint": "A Fighter took >25% HP but ended with Second Wind unused — a tactical-adherence smell. Reinforce 'use signature class features when warranted' in the DM/angry-DM guidance. WARN only."
     },
     "maneuver_rider_consumed": {
       "category": "DM_ADHERENCE",
-      "likely_code_locations": ["servers/engine/server.py", "qa/rubric_angry_dm.md", "skills/dungeon-master/SKILL.md"],
+      "likely_code_locations": [
+        "servers/engine/server.py",
+        "qa/rubric_angry_dm.md",
+        "skills/dungeon-master/SKILL.md"
+      ],
       "retest": "bash qa/run_combat_sprint.sh sprint-retest",
       "hint": "A maneuver / to-hit rider (Battle Master superiority die, War-Domain Guided Strike) was spent via use_resource but the following attack did not fold the bonus in (the +Nd8 damage or +10 to-hit was dropped). Check the use_resource -> attack pending-bonus fold (server.py) + the DM's two-step maneuver usage. WARN only."
     },
     "guiding_bolt_advantage_consumed": {
       "category": "DM_ADHERENCE",
-      "likely_code_locations": ["servers/engine/server.py", "servers/engine/combat.py", "skills/dungeon-master/SKILL.md"],
+      "likely_code_locations": [
+        "servers/engine/server.py",
+        "servers/engine/combat.py",
+        "skills/dungeon-master/SKILL.md"
+      ],
       "retest": "bash qa/run_combat_sprint.sh sprint-retest",
       "hint": "A Guiding Bolt advantage rider LANDED on a target (attack -> on_hit_effect_applied: ['Guiding Bolt']) but the next attack against that same target did NOT carry advantage_source='Guiding Bolt' — the SRD 'next attack roll against it has Advantage' rider was dropped. The engine auto-grants + consumes it via combat.attack_modifiers + attack() (#194/#1033), so a miss means the engine attack() path was bypassed (the follow-up was narrated, not resolved through the tool) or the marker expired early. Check that the follow-up strike is resolved via attack() against the marked target within the caster's next-turn window. WARN only."
     },
     "unresolved_spell_attack": {
       "category": "DM_ADHERENCE",
-      "likely_code_locations": ["servers/engine/server.py", "skills/dungeon-master/SKILL.md", "qa/rubric_angry_dm.md"],
+      "likely_code_locations": [
+        "servers/engine/server.py",
+        "skills/dungeon-master/SKILL.md",
+        "qa/rubric_angry_dm.md"
+      ],
       "retest": "bash qa/run_combat_sprint.sh sprint-retest",
       "hint": "A DM-resolved attack-roll spell (Guiding Bolt, Fire Bolt cast via cast_spell -> the result carries automated:false + attack_roll:true) leaves its to-hit for the DM to make via attack(). The caster never made a same-turn attack() before the next next_turn, so the spell spent its slot and dealt ZERO (#1270). The engine now lets that resolution attack() through the cast+attack economy gate (Combat.pending_spell_attack), so a miss means the DM narrated the bolt instead of resolving it through attack(). Reinforce 'resolve an attack-roll spell's to-hit via attack(attacker=caster, target=the spell's target) the SAME turn' in the DM/angry-DM guidance. WARN only."
     },
     "multiattack_budget_honored": {
       "category": "DM_ADHERENCE",
-      "likely_code_locations": ["qa/rubric_angry_dm.md", "qa/play_prompt_combat_sprint.txt", "servers/engine/server.py"],
+      "likely_code_locations": [
+        "qa/rubric_angry_dm.md",
+        "qa/play_prompt_combat_sprint.txt",
+        "servers/engine/server.py"
+      ],
       "retest": "bash qa/run_combat_sprint.sh sprint-retest",
       "hint": "A creature with Extra Attack / Multiattack (extra_attacks>0) resolved fewer attacks than its budget across a combat — the Multiattack was likely truncated to a single attack. Reinforce 'resolve ALL Multiattack components under one action' in the DM/angry-DM guidance + check the combat-sprint seed. WARN only."
     },
     "caster_exercised_spellcasting": {
       "category": "DM_ADHERENCE",
-      "likely_code_locations": ["qa/rubric_angry_dm.md", "qa/play_dm_duo.txt", "qa/play_prompt_combat_sprint.txt"],
+      "likely_code_locations": [
+        "qa/rubric_angry_dm.md",
+        "qa/play_dm_duo.txt",
+        "qa/play_prompt_combat_sprint.txt"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "A leveled caster (has spell_slots / spells_known) went a whole multi-beat run without a single cast_spell — a coverage omission (the caster never used magic). Reinforce spell usage in the DM guidance + the seed. WARN only."
     },
     "death_saves_rolled_when_downed": {
       "category": "DM_ADHERENCE",
-      "likely_code_locations": ["qa/rubric_angry_dm.md", "skills/dungeon-master/SKILL.md", "servers/engine/server.py"],
+      "likely_code_locations": [
+        "qa/rubric_angry_dm.md",
+        "skills/dungeon-master/SKILL.md",
+        "servers/engine/server.py"
+      ],
       "retest": "bash qa/run_combat_sprint.sh sprint-retest",
       "hint": "A PC ended at 0 HP, not dead and not stable, with no roll_death_save call — the death-save mechanic was narrated but never rolled. Check the DM's downed-creature handling + the roll_death_save path. WARN only."
     },
     "concentration_dropped_cleanly": {
       "category": "DM_ADHERENCE",
-      "likely_code_locations": ["qa/rubric_angry_dm.md", "skills/dungeon-master/SKILL.md", "servers/engine/server.py"],
+      "likely_code_locations": [
+        "qa/rubric_angry_dm.md",
+        "skills/dungeon-master/SKILL.md",
+        "servers/engine/server.py"
+      ],
       "retest": "bash qa/run_duo.sh duo-retest",
       "hint": "A character ended still concentrating with >1 own concentration effect active and no drop_concentration call — a second concentration spell should have dropped the first. Reinforce concentration management + the drop_concentration tool in the DM guidance. WARN only."
     },
     "signature_feature_exercised": {
       "category": "DM_ADHERENCE",
-      "likely_code_locations": ["qa/play_prompt_combat_sprint.txt", "qa/rubric_angry_dm.md", "servers/engine/combat.py"],
+      "likely_code_locations": [
+        "qa/play_prompt_combat_sprint.txt",
+        "qa/rubric_angry_dm.md",
+        "servers/engine/combat.py"
+      ],
       "retest": "bash qa/run_combat_sprint.sh sprint-retest",
       "hint": "A seeded signature pool (channel_divinity / action_surge / second_wind) was never used the whole session — a coverage omission. The combat seed should exercise it. Check the combat-sprint seed prompt + use_resource path. WARN only."
     },
     "parry_reaction_considered": {
       "category": "DM_ADHERENCE",
-      "likely_code_locations": ["qa/rubric_angry_dm.md", "qa/play_dm_duo.txt", "servers/engine/combat.py"],
+      "likely_code_locations": [
+        "qa/rubric_angry_dm.md",
+        "qa/play_dm_duo.txt",
+        "servers/engine/combat.py"
+      ],
       "retest": "bash qa/run_combat_sprint.sh sprint-retest",
       "hint": "A melee hit landed on a parry-capable monster but no parry/reaction fired all fight — the monster's reaction was never used. Reinforce monster-reaction usage in the DM/angry-DM guidance; confirm the reaction path in combat.py. WARN only."
     },
     "ranged_disadvantage_in_melee": {
       "category": "DM_ADHERENCE",
-      "likely_code_locations": ["qa/rubric_angry_dm.md", "qa/play_dm_duo.txt", "servers/engine/combat.py", "servers/engine/server.py"],
+      "likely_code_locations": [
+        "qa/rubric_angry_dm.md",
+        "qa/play_dm_duo.txt",
+        "servers/engine/combat.py",
+        "servers/engine/server.py"
+      ],
       "retest": "bash qa/run_combat_sprint.sh sprint-retest",
       "hint": "A ranged shot fired in melee (mutual-melee proxy => adjacency) without disadvantage. OFF-grid (theater-of-mind) this is a DM-adherence WARN — reinforce the ranged-in-melee disadvantage rule in the DM/angry-DM guidance; the proxy can mis-fire on a genuine gap. ON a grid (#461 PR-5) the engine AUTO-APPLIES the rule in server.py attack() and surfaces attack_roll.ranged_in_melee_disadvantage; the check reads that field so a grid run passes by construction. WARN only."
+    },
+    "arc_no_reroll_character": {
+      "category": "DM_ADHERENCE",
+      "likely_code_locations": [
+        "qa/run_adventure.sh",
+        "qa/lib_beat_driver.sh",
+        "qa/play_dm_duo.txt"
+      ],
+      "retest": "bash qa/run_adventure.sh arc-retest 20 4.00",
+      "hint": "reroll_character was called during a SEEDED arc run (qa/run_adventure.sh). The seeded PC is the arc's only protagonist; seating a replacement hero abandons it and burns the beats the boss needed. The DM brief's ARC ADDENDUM rule (C) forbids it — including OFFERING the player a new hero. Arc-only (WORLDOS_GATE_ARC)."
+    },
+    "arc_no_add_location": {
+      "category": "DM_ADHERENCE",
+      "likely_code_locations": [
+        "qa/run_adventure.sh",
+        "qa/lib_beat_driver.sh",
+        "qa/play_dm_duo.txt"
+      ],
+      "retest": "bash qa/run_adventure.sh arc-retest 20 4.00",
+      "hint": "add_location was called during a SEEDED arc run. The seeded map is complete (crypt connects DIRECTLY to throne_hall); an invented room takes the boss out of the destination the arc is built around. ARC ADDENDUM rule (D). Arc-only (WORLDOS_GATE_ARC)."
+    },
+    "arc_only_seeded_species": {
+      "category": "DM_ADHERENCE",
+      "likely_code_locations": [
+        "qa/run_adventure.sh",
+        "qa/lib_beat_driver.sh",
+        "qa/play_dm_duo.txt"
+      ],
+      "retest": "bash qa/run_adventure.sh arc-retest 20 4.00",
+      "hint": "spawn_monster minted a species the seed does not contain (compared against the run's own <run>.seed_species.json, written off the fresh seed snapshot). The arc's hostiles are the seeded goblins and their boss; an invented foe is beats the boss never gets. ARC ADDENDUM rule (A). Arc-only (WORLDOS_GATE_ARC)."
+    },
+    "arc_end_combat_live_hostiles": {
+      "category": "DM_ADHERENCE",
+      "likely_code_locations": [
+        "qa/run_adventure.sh",
+        "qa/lib_beat_driver.sh",
+        "qa/play_dm_duo.txt"
+      ],
+      "retest": "bash qa/run_adventure.sh arc-retest 20 4.00",
+      "hint": "end_combat's result carried warning_live_hostiles during a SEEDED arc run — the fight was not over. The survivors stay standing in state and get re-spawned and re-fought later, which is how this arc loses its beat budget. ARC ADDENDUM rule (E). Arc-only (WORLDOS_GATE_ARC); the domain-general sibling is end_combat_no_living_hostiles."
     }
   }
 }
