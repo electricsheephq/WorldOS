@@ -38,6 +38,10 @@ SURFACE TAXONOMY (the crux of the forensics — classify EVERY run precisely)
                            story/mech/angry/behavioral/engagement columns are the per-dimension
                            aggregate (median lenses, green-rate, etc.) and ``notes`` carries the
                            WEAKEST-LINK verdict line (the routing instrument for the next sprint).
+* ``agent_g4``            — the two-pass agent-as-playtester loop from DESIGN-MEMO §1. Its
+                            methodology is ``agent-g4 pass=<1|2|both> build=<sha> lenses=<n>
+                            reproductions=<n>``; P1/P2/P3 counts and route/pass verdicts are kept
+                            in the additive G4 columns below.
 
 USAGE
 -----
@@ -90,7 +94,7 @@ DB_PATH = QA_DIR / "scores.db"
 MD_PATH = QA_DIR / "scores_ledger.md"
 
 # Allowed surface values (validated on insert; the crux of the forensic story).
-SURFACES = ("engine-duo", "GUI-built-app", "GUI-headless-proxy", "smoke-only", "visual", "adventure")
+SURFACES = ("engine-duo", "GUI-built-app", "GUI-headless-proxy", "smoke-only", "visual", "adventure", "agent_g4")
 
 # Column order is the canonical schema. Adding a column is additive: bump this list and
 # _ensure_schema() will ALTER TABLE ADD COLUMN on an existing db (old rows read NULL).
@@ -194,6 +198,16 @@ COLUMNS: tuple[str, ...] = (
                           #       timing_sync, turn_to_face} — the L7 sub-scores (auto-JSON-encoded)
     "motion_reel_ref",    # path/id of the scored motion reel (the qa/motion_reel.py contact-sheet)
     "milestone",          # coarse art-milestone tag, e.g. "M1.0" | "M1.2" (groups rounds by milestone)
+    # --- agent G4 playtester loop (DESIGN-MEMO-2026-09-02 §1; surface="agent_g4") ---
+    "p1_count",           # count of triaged P1 user-truth defects
+    "p2_count",           # count of triaged P2 defects
+    "p3_count",           # count of triaged P3 defects
+    "route_completion",   # 1 when the complete supported route was walked, else 0
+    "pass1_verdict",      # PASS | FAIL for the walkaround/navigation pass
+    "pass2_verdict",      # PASS | FAIL for the live-DM story pass
+    "legibility_median",  # optional per-room legibility median
+    "actor_luminance_floor",  # optional measured actor-luminance floor
+    "frames_per_room",    # optional JSON map of room -> frame count
 )
 
 # Numeric columns get REAL; pass is an INTEGER bool; the rest TEXT.
@@ -212,9 +226,13 @@ _REAL_COLS = {
     "visual_overall",
     # L7 motion lens (0-10 holistic motion score → REAL)
     "motion_overall",
+    # agent G4 optional visual measurements
+    "legibility_median", "actor_luminance_floor",
 }
-_INT_COLS = {"critical_bugs", "pass", "is_canonical_baseline", "acts_reached", "visual_round",
-             "completion_verified", "measured"}
+_INT_COLS = {
+    "critical_bugs", "pass", "is_canonical_baseline", "acts_reached", "visual_round",
+    "completion_verified", "measured", "p1_count", "p2_count", "p3_count", "route_completion",
+}
 
 
 def _coltype(col: str) -> str:
@@ -458,7 +476,7 @@ def add_run(
 
     # JSON-encode structured payloads (per_persona_json, visual_dims_json, and motion_dims_json may
     # be passed as dicts and are auto-encoded to avoid sqlite3.ProgrammingError on non-string values).
-    for _jcol in ("per_persona_json", "visual_dims_json", "motion_dims_json"):
+    for _jcol in ("per_persona_json", "visual_dims_json", "motion_dims_json", "frames_per_room"):
         _jv = fields.get(_jcol)
         if _jv is not None and not isinstance(_jv, str):
             fields[_jcol] = json.dumps(_jv, ensure_ascii=False, sort_keys=True)
