@@ -126,12 +126,16 @@ for pose variety); an absent file leaves every value at today's byte-identical b
 ## Rebuild the current-best (deterministic, LOCAL — the GEX44 box is gone)
 ```bash
 # 1) data pre-flight: repo -> Unity project ROOT (EnsurePackaged's source; NOT Assets/StreamingAssets)
-cp extensions/renderers/unity/plates_manifest.json /Users/m1/worldos-unity/ && cp extensions/renderers/unity/plates/*.png /Users/m1/worldos-unity/plates/ && cp extensions/renderers/unity/boxes/*.json /Users/m1/worldos-unity/boxes/
+cp extensions/renderers/unity/plates_manifest.json /Users/m1/worldos-unity/ && cp extensions/renderers/unity/plates/*.png /Users/m1/worldos-unity/plates/ && cp extensions/renderers/unity/boxes/*.json /Users/m1/worldos-unity/boxes/ && cp extensions/renderers/unity/registry.json extensions/renderers/unity/effects_registry.json /Users/m1/worldos-unity/   # EVERY EnsurePackaged input: manifest, plates, boxes, registry, effects_registry
 # 2) Editor (headed; never -nographics) with the MCP bridge: native unityMCP tools, or the stdio driver
-MCP_BIN=$(ps -o command= -p "$(cat /Users/m1/worldos-unity/Library/MCPForUnity/RunState/mcp_http_8080.pid)" | awk '{print $2}')
+export MCP_BIN=$(ps -o command= -p "$(cat /Users/m1/worldos-unity/Library/MCPForUnity/RunState/mcp_http_8080.pid)" | awk '{print $2}')
 python3 extensions/renderers/unity/tools/mcp_stdio_exec.py call execute_menu_item '{"menu_path":"Tools/WorldOS/Build/macOS Player (Universal)"}'
 # 3) proof: BuildOutput/build-report.txt (result, strippedQARoots, scenesBuilt) · strings level0 | grep -c KitRoom_ == 0 · packaged pins == repo
-# 4) gates on the QA sandbox (windowed player, ports 8866/8972 — never the owner's): walk_test --exhaustive --visual 4, player_cert --live
+# 4) gates on the QA sandbox (windowed player; ports 8866/8972 are the sandbox pair — never the owner's 8776/8981, never 8766):
+uv run --directory servers/engine python "$PWD/qa/qa_sandbox.py" up --run g1 --campaign registered_world_v1 --app BuildOutput/WorldOSPlayer.app --seed-cmd "uv run --directory servers/engine python $PWD/qa/seed_gfx_registered_world.py {state}"
+uv run --directory servers/engine python "$PWD/qa/walk_test.py" --room crypt --exhaustive --visual 4 --engine http://127.0.0.1:8866 --qa http://127.0.0.1:8972 --out qa/evidence/walk-crypt
+uv run --directory servers/engine python "$PWD/qa/player_cert.py" --live --engine http://127.0.0.1:8866 --qa http://127.0.0.1:8972 --campaign registered_world_v1 --app BuildOutput/WorldOSPlayer.app --out qa/evidence/player_cert
+# (full recipe incl. the tavern door crossing + packaged pins: docs/ROOM-PIPELINE-RUNBOOK.md "G1 GATE RECIPE")
 ```
 Historical: the box-era `paint_3d_spike.cs` / `Captures-Durable/m10_spike.png` recipe ran on GEX44 (retired 2026-08-06).
 
