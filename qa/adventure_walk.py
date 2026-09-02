@@ -13,7 +13,9 @@ The route (seed_adventure_demo geometry — camp_clearing is the hub):
   camp_clearing --[8,0]<->[5,0]-- tavern_snug (Keeper Maera)     ... camp -> tavern -> back to camp
   camp_clearing --[0,6]<->[7,0]-- crypt --[15,5]<->[8,11]-- throne_hall (Goblin Boss)
   walk: camp -> tavern (adjacent to Maera) -> camp -> crypt (walk floor) -> throne_hall (approach the
-  Goblin Boss) -> return to camp (throne_hall -> crypt -> camp).
+  Goblin Boss) -> return to camp (throne_hall -> crypt -> camp) -> RETURN TO THE GIVER (camp ->
+  tavern_snug): the §9 reward leg — talk to Maera again and read whether the reward actually landed.
+  The route is DATA (DEFAULT_ROUTE, or --route) so a wider town graph extends it without new code.
 
 REUSE (do not re-invent):
   * qa/walk_test.py  — the door-graph drive machinery (_drive_and_check / _capture_shot / _token_cell /
@@ -50,6 +52,7 @@ sys.path.insert(0, str(HERE))
 
 import walk_test as W  # noqa: E402  — transport + drive machinery + tri-state (reused, not re-invented)
 from journey_eval import _adjacent_walkable  # noqa: E402  — the "stand next to it" cell picker
+from quest_progress import _select_quest  # noqa: E402  — the A-T lane's arc-quest picker (reused)
 
 # Default sandbox endpoints (qa_sandbox.py ENGINE_PORT/QA_PORT). The owner instance is 8766/8971;
 # the sandbox NEVER collides with it, so this eval always targets the disposable stack.
@@ -111,25 +114,68 @@ def room_path(src: str, dst: str) -> list:
     return []
 
 
-def build_route(start: str = "camp_clearing") -> list:
-    """The §4d walked arc as an ordered Stage list: camp -> tavern (Keeper Maera) -> back to camp ->
-    crypt (walk its floor) -> throne_hall (the Goblin Boss) -> return to camp. Each stage carries the
-    door chain (room_path) from the PREVIOUS stage's room, so the drive knows exactly which doors to
-    cross. PURE + deterministic (unit-tested)."""
-    plan = [
-        ("camp_start", "camp_clearing", "start", None),
-        ("to_tavern", "tavern_snug", "approach", "Keeper Maera"),
-        ("back_to_camp", "camp_clearing", "return", None),
-        ("to_crypt", "crypt", "walk", None),
-        ("to_throne", "throne_hall", "approach", "Goblin Boss"),
-        ("return_to_camp", "camp_clearing", "return", None),
-    ]
+# The §9 G3 arc as DATA — (id, room, kind, actor). The closing `return_to_giver` stage is the
+# reward leg (#1709): with the preceding return_to_camp it walks throne_hall -> crypt -> camp ->
+# tavern_snug, so the party ends the walk AT the giver rather than at the campfire. A wider town
+# graph is a DATA change here (or a --route override), never a change to the drive.
+DEFAULT_ROUTE: tuple = (
+    ("camp_start", "camp_clearing", "start", None),
+    ("to_tavern", "tavern_snug", "approach", "Keeper Maera"),
+    ("back_to_camp", "camp_clearing", "return", None),
+    ("to_crypt", "crypt", "walk", None),
+    ("to_throne", "throne_hall", "approach", "Goblin Boss"),
+    ("return_to_camp", "camp_clearing", "return", None),
+    ("return_to_giver", "tavern_snug", "return_to_giver", "Keeper Maera"),
+)
+
+
+def parse_route_spec(spec=None) -> tuple:
+    """Normalise a route SPEC into the (id, room, kind, actor) tuples build_route consumes: None →
+    the §9 DEFAULT_ROUTE; an inline JSON string (or `@path` to a JSON file) → its parsed list; an
+    already-parsed sequence passes through. Entries are [id, room, kind, actor?] or the same fields
+    as an object. PURE."""
+    if spec is None:
+        return DEFAULT_ROUTE
+    if isinstance(spec, str):
+        spec = json.loads(Path(spec[1:]).read_text(encoding="utf-8") if spec.startswith("@") else spec)
+    out: list = []
+    try:
+        for e in spec:
+            if isinstance(e, dict):
+                out.append((e["id"], e["room"], e.get("kind", "walk"), e.get("actor")))
+            else:
+                e = list(e)
+                out.append((e[0], e[1], e[2] if len(e) > 2 else "walk", e[3] if len(e) > 3 else None))
+    except (IndexError, KeyError, TypeError) as exc:
+        raise ValueError(f"invalid route entry: {exc}") from exc
+    if not out:
+        raise ValueError("route override is empty — a walk with no stages proves nothing")
+    ids = [str(e[0]) for e in out]
+    duplicates = sorted({sid for sid in ids if ids.count(sid) > 1})
+    if duplicates:
+        raise ValueError(f"route override has duplicate stage ids {duplicates} — stage ids name "
+                         "evidence files and must be unique")
+    return tuple(out)
+
+
+def build_route(start: str = "camp_clearing", plan: tuple = DEFAULT_ROUTE) -> list:
+    """The §9 walked arc as an ordered Stage list: camp -> tavern (Keeper Maera) -> back to camp ->
+    crypt (walk its floor) -> throne_hall (the Goblin Boss) -> back to camp -> RETURN TO THE GIVER
+    (the reward leg). Each stage carries the door chain (room_path) from the PREVIOUS stage's room,
+    so the drive knows exactly which doors to cross. PURE + deterministic (unit-tested)."""
     route: list = []
     prev = start
     for sid, room, kind, actor in plan:
+        hops = room_path(prev, room)
+        if not hops:
+            # FAIL CLOSED: an empty hop chain means the door graph does not link `room` from `prev`.
+            # Building the stage anyway would let the drive record an arrival it never walked to
+            # (and a --route override could then set route_complete from the wrong room).
+            raise ValueError(f"route stage {sid!r}: {room!r} is not reachable from {prev!r} over the "
+                             f"seeded door graph — a --route override may only name linked rooms")
         route.append(Stage(id=sid, room=room, kind=kind,
                            expected_desc=ROOM_CLASS.get(room, room.replace("_", " ")),
-                           actor=actor, hops=room_path(prev, room)))
+                           actor=actor, hops=hops))
         prev = room
     return route
 
@@ -220,11 +266,184 @@ def classify_walk_verdict(report: dict) -> tuple:
     """Overall (verdict, exit_code): any RED stage → RED/1 (a real walk failure wins even beside harness
     noise); else any ERROR stage or top-level harness_errors → ERROR/2; else GREEN/0."""
     stages = report.get("stages", [])
+    if not stages:
+        return "ERROR", 2   # no stages walked = no evidence; never a vacuous GREEN
     if any(s.get("verdict") == "RED" for s in stages):
         return "RED", 1
     if any(s.get("verdict") == "ERROR" for s in stages) or report.get("harness_errors"):
         return "ERROR", 2
     return "GREEN", 0
+
+
+# ── the §9 REWARD leg (read from get_quests / the A-T lane's quest_trace; PURE) ─────────────────────
+QuestReader = Callable[[], dict]   # () -> {"quests": [...]} (get_quests shape) and/or {"stamps": [...]}
+REWARD_SIGNALS = ("reward_received", "quest_completed")
+
+
+def _reward_objective(objectives) -> Optional[str]:
+    """The outstanding return/reward objective, if the quest still carries one."""
+    return next((str(o) for o in objectives or []
+                 if "return" in str(o).lower() or "reward" in str(o).lower()), None)
+
+
+def _ended_unpaid(status) -> bool:
+    """True when a quest status ENDED the arc WITHOUT paying it out — anything terminal that is not
+    `completed` (failed / abandoned / cancelled). Empty or `active` is not an ending."""
+    v = str(status or "").strip().lower()
+    return bool(v) and v not in ("active", "completed")
+
+
+def classify_reward_leg(data: dict, quest_title: str = "") -> dict:
+    """Tri-state for the reward leg from a get_quests payload and/or quest_trace stamps: a
+    reward_received / quest_completed signal → GREEN; a quest still readable but WITHOUT one → RED
+    plus the outstanding objectives (the arc never paid out); no readable quest state at all →
+    ERROR — never a silent GREEN on missing evidence, per the walk_test tri-state discipline.
+    A quest that ended FAILED/abandoned is NOT a paid reward: only an independent reward_received
+    signal reads GREEN there (see the status branch below)."""
+    quests = data.get("quests") or []
+    quest = _select_quest(quests, quest_title) if quests else None
+    # The trace is the FALLBACK source, never a second opinion: a reused sandbox run keeps its state
+    # dir and the seeder rewrites the campaign WITHOUT clearing quest_trace.json (run_adventure.sh
+    # warns about exactly this). Stamps count ONLY when the live read gave us nothing AND could not
+    # be made — a live read that SUCCEEDED with no quest is missing evidence for THIS campaign, so a
+    # retained stamp from an earlier run must not answer for it.
+    if quest is None and data.get("live_read_ok"):
+        return {"verdict": "ERROR", "signals": [], "quest_status": None, "outstanding_objectives": [],
+                "reason": "live get_quests returned no quest for this campaign — no reward evidence "
+                          "(a retained quest_trace from an earlier run is not evidence for this one)"}
+    stamps = [s for s in (data.get("stamps") or []) if isinstance(s, dict)] if quest is None else []
+    # One normalised view of the arc, from the live quest or (fallback) the trace — quest_progress
+    # refreshes status AND both objective lists on the trace every poll, so the same rules apply to
+    # both sources and no branch has to take a bare terminal stamp on faith.
+    if quest is not None:
+        status = str(quest.get("status") or "active")
+        objectives, done_raw = quest.get("objectives"), quest.get("completed_objectives")
+    else:
+        status = data.get("quest_status")
+        objectives, done_raw = data.get("objectives"), data.get("completed_objectives")
+    done = {str(o).strip().lower() for o in done_raw or []}
+    outstanding = [str(o) for o in objectives or [] if str(o).strip().lower() not in done]
+    unpaid_objective = _reward_objective(outstanding)
+
+    signals = []
+    for s in stamps:
+        name = str(s.get("stage"))
+        if name not in REWARD_SIGNALS:
+            continue
+        sig = str(s.get("signal") or "")
+        # quest_progress stamps quest_completed for ANY non-active status and records WHICH in the
+        # signal ("status:failed"); it also stamps it for a quest the DM ended through
+        # complete_quest/set_quest_status BEFORE the return objective (and deliberately does not
+        # stamp reward_received there). Neither is a paid reward — skip the stamp.
+        if name == "quest_completed" and (unpaid_objective
+                                          or (sig.startswith("status:")
+                                              and _ended_unpaid(sig[len("status:"):]))):
+            continue
+        signals.append(name)
+    if any("return" in o or "reward" in o for o in done):
+        signals.append("reward_received")
+    # A `completed` STATUS certifies the reward only when the return/reward objective is not still
+    # outstanding: the DM can resolve a quest with complete_quest/set_quest_status while that
+    # objective is unmet (qa/test_quest_progress.py covers that state, reward_received absent), and
+    # synthesising a signal there would falsely certify the very leg this checks.
+    if status == "completed" and not unpaid_objective:
+        signals.append("quest_completed")
+    # FAILED / abandoned ENDS the arc without paying it out (the scorecard has runs that fail after
+    # the PC goes down). Drop every arc-end signal — live status or trace status — so ONLY an
+    # independent reward_received can still read GREEN: a dead party never satisfies the reward leg.
+    if _ended_unpaid(status):
+        signals = [s for s in signals if s != "quest_completed"]
+    res = {"verdict": "GREEN", "signals": sorted(set(signals)), "quest_status": status,
+           "outstanding_objectives": outstanding}
+    if signals:
+        return res
+    if quest is None and not stamps and status is None:
+        return {**res, "verdict": "ERROR",
+                "reason": "no readable quest state (get_quests empty / quest_trace absent)"}
+    return {**res, "verdict": "RED", "signals": [],
+            "reason": f"quest is {status or 'active'} with no reward signal after the giver talk; "
+                      f"outstanding: {outstanding or ['(none listed)']}"}
+
+
+GIVER_STAGE = DEFAULT_ROUTE[-1]   # (id, room, kind, actor) — the tracked §9 quest giver
+
+
+def missing_mandatory_legs(plan: tuple) -> list:
+    """The §9 legs a non-partial override still fails to walk, in arc order. Extra stages may be
+    INSERTED (the wider-town-graph use case `--route` exists for), but no mandatory (room, kind) leg
+    may be DROPPED: an override of the giver stage alone would otherwise walk camp->tavern and
+    certify G3 without ever visiting the crypt, the throne hall, or the boss."""
+    # Actor identity is part of a mandatory leg: dropping Keeper Maera or the Goblin Boss skips the
+    # approach and removes the actor-presence VQA assertion while retaining the same room/kind pair.
+    want = [(room, kind, actor) for _sid, room, kind, actor in DEFAULT_ROUTE]
+    i = 0
+    for _sid, room, kind, actor in plan:
+        if i < len(want) and (room, kind, actor) == want[i]:
+            i += 1
+    return [f"{r}:{k}:{a or '-'}" for r, k, a in want[i:]]
+
+
+def assert_route_returns_to_giver(plan: tuple) -> tuple:
+    """A route override must CLOSE on a valid `return_to_giver` stage — the whole point of the §9 G3
+    walk. `any()` would not do: a giver stage followed by further stages leaves the party somewhere
+    else at the end of the walk, and a giver stage with no actor reads the reward without ever
+    approaching the giver. Without this an override walks, scores GREEN/0 and only whispers its
+    incompleteness through `route_complete`, which automation can miss. Partial routes stay drivable
+    behind an explicit --allow-partial-route."""
+    last = plan[-1] if plan else None
+    if last is None or last[2] != "return_to_giver":
+        raise ValueError("route override must END on a `return_to_giver` stage — the §9 G3 walk "
+                         "finishes at the giver (pass --allow-partial-route for a deliberate "
+                         "partial route)")
+    if not last[3]:
+        raise ValueError(f"route stage {last[0]!r}: a `return_to_giver` stage needs an `actor` (the "
+                         "giver to approach) — reading the reward without approaching them proves "
+                         "nothing")
+    if (last[1], last[3]) != (GIVER_STAGE[1], GIVER_STAGE[3]):
+        # ending at SOME actor is not ending at the GIVER: a route closing on the Goblin Boss would
+        # approach him, pass VQA, read an already-paid quest and certify a return that never happened.
+        raise ValueError(f"route stage {last[0]!r}: the closing `return_to_giver` stage must approach "
+                         f"{GIVER_STAGE[3]!r} in {GIVER_STAGE[1]!r} (the tracked §9 giver), not "
+                         f"{last[3]!r} in {last[1]!r}")
+    missing = missing_mandatory_legs(plan)
+    if missing:
+        raise ValueError(f"route override drops mandatory §9 legs {missing} — extra stages may be "
+                         "inserted, but the arc's own legs must all be walked (pass "
+                         "--allow-partial-route for a deliberate partial route)")
+    return plan
+
+
+def read_reward_leg(reader: Optional[QuestReader], quest_title: str = "") -> dict:
+    """Read the quest state through `reader`, then classify. No reader wired, or a reader that RAISES
+    (engine import / RPC unreachable), is HARNESS → ERROR: never a walk RED."""
+    if reader is None:
+        return {"verdict": "ERROR", "signals": [], "quest_status": None,
+                "outstanding_objectives": [], "reason": "no quest reader wired (--state not resolved)"}
+    try:
+        data = reader() or {}
+    except Exception as e:  # noqa: BLE001 — an unreachable quest RPC is harness, not an arc verdict
+        return {"verdict": "ERROR", "signals": [], "quest_status": None,
+                "outstanding_objectives": [], "reason": f"quest read failed: {e}"[:200]}
+    return classify_reward_leg(data, quest_title)
+
+
+def is_route_complete(report: dict) -> bool:
+    """Did the walk actually FINISH the §9 arc? True ONLY when the route carried a return_to_giver
+    stage, the party ARRIVED back at the giver, and its reward leg read GREEN. A walk that stopped
+    at camp, never reached the giver, or could not read the quest is not complete — the G3 row must
+    never read ROUTE-COMPLETE off a walk that stopped short."""
+    stages = report.get("stages") or []
+    if report.get("partial_route"):
+        return False
+    # the FINAL stage, not merely some earlier giver stage: a walk that reached Maera and then
+    # wandered on ends somewhere else, and its later stages may have failed outright.
+    last = stages[-1] if stages else None
+    if not last or last.get("kind") != "return_to_giver":
+        return False
+    return (last.get("verdict") == "GREEN"
+            and bool(last.get("arrived"))
+            and last.get("adjacent") is True
+            and (last.get("reward_leg") or {}).get("verdict") == "GREEN")
 
 
 def init_report(engine: str, qa: str, route: list) -> dict:
@@ -235,7 +454,7 @@ def init_report(engine: str, qa: str, route: list) -> dict:
         "ts": W._utc_now_iso(),
         "engine_url": engine, "qa_url": qa, "campaign": CAMPAIGN,
         "route": [s.id for s in route],
-        "stages": [], "harness_errors": [], "verdict": "PENDING",
+        "stages": [], "harness_errors": [], "verdict": "PENDING", "route_complete": False,
     }
 
 
@@ -353,9 +572,14 @@ def _approach_actor(qa: str, engine: str, actor: str, settle: float, timeout: fl
     if not ok:
         out["dead_clicks"] += 1
     # /talk-equivalent — best-effort; a channel without it just leaves talked=None (proximity recorded).
+    # The player's QA listener answers EVERY path with HTTP 200 and a bare `{"ok": false}` for one it
+    # does not serve (it serves /click,/shot,/health,/debug — no /talk), so a 200 is NOT proof the
+    # verb landed: only an explicit ok:true is. Anything else records proximity only.
     try:
-        W._post(f"{qa}/talk", {"target": actor})
-        out["talked"] = True
+        resp = W._post(f"{qa}/talk", {"target": actor}) or {}
+        out["talked"] = True if resp.get("ok") is True else None
+        if out["talked"] is None:
+            out["talk_error"] = f"channel did not accept /talk: {str(resp)[:100]}"
     except Exception as e:  # noqa: BLE001 — best-effort proximity verb; record why it failed.
         out["talked"] = None
         out["talk_error"] = str(e)[:120]
@@ -363,18 +587,23 @@ def _approach_actor(qa: str, engine: str, actor: str, settle: float, timeout: fl
 
 
 def walk_stage(qa: str, engine: str, stage: Stage, out_dir: Path, scorer: FrameScorer, *,
-               settle: float, timeout: float) -> dict:
+               settle: float, timeout: float, quest_reader: Optional[QuestReader] = None) -> dict:
     """Drive ONE stage: cross the door chain to the stage room, do its per-kind action (walk floor /
     approach actor / establish), capture a frame, score its VQA, and record stuck/dead-click accounting
     + timing + a tri-state verdict. Never raises — records everything so the report is complete."""
     t0 = time.time()
     rec = {"id": stage.id, "room": stage.room, "kind": stage.kind, "actor": stage.actor,
            "attempts": 0, "dead_clicks": 0, "arrived": False, "arrival_room": None, "stuck": False,
-           "adjacent": None, "talked": None, "vqa": None, "harness_errors": [], "verdict": "PENDING"}
+           "adjacent": None, "talked": None, "vqa": None, "reward_leg": None,
+           "harness_errors": [], "verdict": "PENDING"}
 
     # 1) cross the door chain (skip the first hop — it's the room we START in). A drive-error/no-door
     # on any hop stops the chain; `stuck` records that the stage never reached its room within budget.
-    arrival = stage.hops[0] if stage.hops else stage.room
+    # A hop-less stage is UNROUTABLE (build_route rejects these; belt-and-braces for a hand-built
+    # Stage): never let it read as an arrival — record HARNESS and leave `arrived` False.
+    arrival = stage.hops[0] if stage.hops else None
+    if not stage.hops:
+        rec["harness_errors"].append(f"unroutable stage: no door path to {stage.room}")
     for target in stage.hops[1:]:
         cross = _cross_to(qa, engine, target, settle, timeout)
         rec["attempts"] += cross["attempts"]
@@ -404,7 +633,7 @@ def walk_stage(qa: str, engine: str, stage: Stage, out_dir: Path, scorer: FrameS
             # budget), but most-dead means the floor does not walk.
             if wf["attempts"] > 0 and wf["dead_clicks"] * 2 >= wf["attempts"] and not wf["harness_errors"]:
                 rec["action_failed"] = f"walk_floor: {wf['dead_clicks']}/{wf['attempts']} sampled cells dead"
-        elif stage.kind == "approach" and stage.actor:
+        elif stage.kind in ("approach", "return_to_giver") and stage.actor:
             ap = _approach_actor(qa, engine, stage.actor, settle, timeout)
             rec["attempts"] += ap["attempts"]; rec["dead_clicks"] += ap["dead_clicks"]
             rec["adjacent"] = ap["adjacent"]; rec["talked"] = ap["talked"]
@@ -415,6 +644,25 @@ def walk_stage(qa: str, engine: str, stage: Stage, out_dir: Path, scorer: FrameS
             # owns actor-presence there.
             if ap.get("actor_cell") and not ap["adjacent"] and not ap["harness_errors"]:
                 rec["action_failed"] = f"approach {stage.actor}: never reached a cell adjacent to {ap['actor_cell']}"
+        # the §9 REWARD leg: back at the giver, did the quest actually pay out? A RED leg is a real
+        # arc failure (the walk finished but the reward never landed); an UNREADABLE quest is
+        # harness — it must classify ERROR, never a false walk RED.
+        if stage.kind == "return_to_giver":
+            leg = read_reward_leg(quest_reader)
+            # `talked` is the best-effort giver verb: None means the QA channel has no /talk, so the
+            # parley was never driven by THIS harness — the leg still reports the true quest state,
+            # but a reader must not misread its RED as "we talked and the arc refused to pay".
+            leg["talk_landed"] = rec["talked"]
+            rec["reward_leg"] = leg
+            if leg["verdict"] == "RED" and rec["harness_errors"]:
+                # the approach to the giver hit a drive-error: the unpaid quest is downstream of a
+                # HARNESS failure, so it must not be promoted to a clean arc RED (classify_stage_
+                # verdict reads action_failed before harness_errors). The leg stays recorded.
+                leg["blocked_by_harness"] = True
+            elif leg["verdict"] == "RED":
+                rec["action_failed"] = f"reward_leg: {leg.get('reason')}"
+            elif leg["verdict"] == "ERROR":
+                rec["harness_errors"].append(f"reward_leg: {leg.get('reason')}")
 
     # 3) capture a frame + score its VQA (a missing frame is a HARNESS defect, never a silent green).
     shot = W._capture_shot(qa, out_dir, stage.id)
@@ -427,13 +675,19 @@ def walk_stage(qa: str, engine: str, stage: Stage, out_dir: Path, scorer: FrameS
 
 
 def run_walk(engine: str, qa: str, out_dir: Path, scorer: FrameScorer, *,
-             settle: float, timeout: float, start: str = "camp_clearing") -> dict:
-    """Drive the full §4d arc, stage by stage, into a report. The caller decides the exit code."""
-    route = build_route(start)
+             settle: float, timeout: float, start: str = "camp_clearing", route_spec=None,
+             quest_reader: Optional[QuestReader] = None, allow_partial_route: bool = False) -> dict:
+    """Drive the full §9 arc, stage by stage, into a report. The caller decides the exit code."""
+    plan = parse_route_spec(route_spec)
+    if not allow_partial_route:
+        assert_route_returns_to_giver(plan)
+    route = build_route(start, plan)
     report = init_report(engine, qa, route)
+    report["partial_route"] = bool(allow_partial_route)
     out_dir.mkdir(parents=True, exist_ok=True)
     for stage in route:
-        rec = walk_stage(qa, engine, stage, out_dir, scorer, settle=settle, timeout=timeout)
+        rec = walk_stage(qa, engine, stage, out_dir, scorer, settle=settle, timeout=timeout,
+                         quest_reader=quest_reader)
         report["stages"].append(rec)
         report["harness_errors"].extend(rec["harness_errors"])
     report["totals"] = {
@@ -443,6 +697,7 @@ def run_walk(engine: str, qa: str, out_dir: Path, scorer: FrameScorer, *,
         "stuck_stages": sum(1 for s in report["stages"] if s["stuck"]),
         "duration_s": round(sum(s.get("duration_s", 0.0) for s in report["stages"]), 3),
     }
+    report["route_complete"] = is_route_complete(report)
     report["verdict"], _ = classify_walk_verdict(report)
     return report
 
@@ -454,6 +709,63 @@ def _live_scorer(model: str, timeout_s: int) -> FrameScorer:
     return lambda path, questions: _shell_scorer(path, questions, model=model, timeout_s=timeout_s)
 
 
+def _live_quest_reader(state_dir: str, campaign_id: str = CAMPAIGN,
+                       trace_path: Optional[str] = None) -> QuestReader:
+    """The live reward-leg source: the SAME reads the A-T lane uses — quest_progress's in-process
+    engine import (get_quests) against the sandbox state dir, plus the quest_trace.json stamps that
+    lane writes. Read-only (engine stays the sole writer). Raises only when NEITHER source is
+    readable, so read_reward_leg records that as ERROR rather than a false RED."""
+    state_root = Path(state_dir).expanduser().resolve()
+
+    def _read() -> dict:
+        out, errors = {}, []
+        try:
+            # qa/run_adventure.sh writes the A-T trace to qa/transcripts/<run>.quest_trace.json —
+            # NOT under the state dir — so the caller passes it; the state-dir default is only
+            # quest_progress.py's own bare-invocation location.
+            trace = Path(trace_path) if trace_path else Path(state_dir) / "quest_trace.json"
+            if trace.is_file():
+                tr = json.loads(trace.read_text(encoding="utf-8"))
+                trace_campaign = tr.get("campaign_id")
+                if trace_campaign != campaign_id:
+                    raise ValueError(f"trace campaign {trace_campaign!r} does not match "
+                                     f"current campaign {campaign_id!r}")
+                trace_resolved = trace.expanduser().resolve()
+                # A state-local trace is bound by its parent path. run_adventure.sh's external trace
+                # is bound by its canonical pair: qa/transcripts/<run>.quest_trace.json belongs only
+                # to qa/state/<run>. Any other arbitrary file is unrelated fallback evidence.
+                if not trace_resolved.is_relative_to(state_root):
+                    suffix = ".quest_trace.json"
+                    run_id = trace.name[:-len(suffix)] if trace.name.endswith(suffix) else ""
+                    expected_state = (HERE / "state" / run_id).resolve() if run_id else None
+                    if expected_state != state_root:
+                        raise ValueError(f"trace {trace_resolved} is not bound to current state "
+                                         f"{state_root}")
+                # carry quest_status too: when the live get_quests read below fails, the stamps are
+                # the ONLY evidence and a bare quest_completed stamp must not read as a paid reward.
+                out["stamps"] = tr.get("stamps") or []
+                out["trace_provenance"] = {"campaign_id": trace_campaign,
+                                           "path": str(trace_resolved),
+                                           "state_dir": str(state_root)}
+                # status AND both objective lists: the fallback applies the same outstanding-reward
+                # rule as the live read, instead of trusting a bare terminal stamp.
+                for k in ("quest_status", "objectives", "completed_objectives"):
+                    out[k] = tr.get(k)
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"quest_trace:{e}")
+        try:
+            # lazy: importing the engine is a LIVE-path cost the pure tests must never pay
+            from quest_progress import _import_server  # noqa: PLC0415
+            out["quests"] = _import_server(str(state_dir)).get_quests(campaign_id).get("quests") or []
+            out["live_read_ok"] = True   # the live read SUCCEEDED — the trace must not answer for it
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"get_quests:{e}")
+        if not out:
+            raise RuntimeError("; ".join(errors) or f"no quest state under {state_dir}")
+        return out
+    return _read
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -462,36 +774,61 @@ def main(argv=None) -> int:
     ap.add_argument("--run", default=None,
                     help="qa_sandbox run name — read the live endpoints from its sandbox.json if present")
     ap.add_argument("--out", default=str(HERE / "evidence" / "adventure_walk"))
+    ap.add_argument("--route", default=None,
+                    help="route override: inline JSON or @path to a JSON list of [id, room, kind, "
+                         "actor] (default: the §9 arc — DEFAULT_ROUTE)")
+    ap.add_argument("--state", default=None,
+                    help="sandbox state dir for the reward-leg quest read (default: --run's sandbox.json)")
+    ap.add_argument("--allow-partial-route", action="store_true",
+                    help="permit a --route override that does NOT end at the giver (a deliberate "
+                         "partial/debug walk; it can never report route_complete)")
+    ap.add_argument("--quest-trace", default=None,
+                    help="A-T quest_trace.json for the reward-leg FALLBACK read when the live "
+                         "get_quests is down (run_adventure.sh writes qa/transcripts/<run>.quest_trace.json; "
+                         "default: <state>/quest_trace.json)")
     ap.add_argument("--settle", type=float, default=0.6, help="poll interval while a move resolves")
     ap.add_argument("--move-timeout", type=float, default=8.0)
     ap.add_argument("--model", default="sonnet", help="VQA scorer model")
     ap.add_argument("--vqa-timeout", type=int, default=180)
     args = ap.parse_args(argv)
 
-    engine, qa = args.engine, args.qa
+    engine, qa, state = args.engine, args.qa, args.state
     if args.run:
         # Prefer the live endpoints the sandbox actually bound (custom ports don't collide with defaults).
         sb = Path("/tmp/worldos-qa-sandbox") / args.run / "sandbox.json"
         if sb.is_file():
             m = json.loads(sb.read_text())
             engine, qa = m.get("engine", engine), m.get("qa", qa)
+            state = state or m.get("state")
 
     out = Path(args.out)
-    report = run_walk(engine, qa, out, _live_scorer(args.model, args.vqa_timeout),
-                      settle=args.settle, timeout=args.move_timeout)
+    try:
+        report = run_walk(engine, qa, out, _live_scorer(args.model, args.vqa_timeout),
+                          settle=args.settle, timeout=args.move_timeout, route_spec=args.route,
+                          quest_reader=_live_quest_reader(state, trace_path=args.quest_trace)
+                          if state else None,
+                          allow_partial_route=args.allow_partial_route)
+    except (OSError, TypeError, ValueError) as exc:
+        print(f"[adventure_walk] ERROR: invalid route: {exc}", file=sys.stderr)
+        return 2
     out.mkdir(parents=True, exist_ok=True)
     (out / "adventure_walk_report.json").write_text(json.dumps(report, indent=2) + "\n")
 
     verdict, exit_code = classify_walk_verdict(report)
     tot = report["totals"]
-    print(f"\n=== ADVENTURE_WALK — {verdict} ===")
+    short = "" if report["route_complete"] else " · ROUTE-INCOMPLETE (never returned to the giver)"
+    print(f"\n=== ADVENTURE_WALK — {verdict}{short} ===")
     print(f"stages {tot['arrived']}/{tot['stages']} arrived · dead_clicks {tot['dead_clicks']} · "
-          f"stuck {tot['stuck_stages']} · {tot['duration_s']}s")
+          f"stuck {tot['stuck_stages']} · route_complete {report['route_complete']} · {tot['duration_s']}s")
     for s in report["stages"]:
         vqa = s.get("vqa") or {}
         extra = f" defects={vqa.get('defects')}" if vqa.get("defects") else ""
         print(f"  {s['verdict']:5s} {s['id']:16s} room={s['arrival_room'] or '-':13s} "
               f"attempts={s['attempts']} dead={s['dead_clicks']}{extra}")
+    leg = next((s.get("reward_leg") for s in report["stages"] if s.get("kind") == "return_to_giver"), None)
+    if leg:
+        print(f"  reward_leg {leg['verdict']} signals={leg.get('signals')} "
+              f"outstanding={leg.get('outstanding_objectives')}")
     if report["harness_errors"]:
         print(f"HARNESS ({len(report['harness_errors'])}) — NOT a walk verdict:"
               + "".join(f"\n    - {m}" for m in report["harness_errors"][:8]))
