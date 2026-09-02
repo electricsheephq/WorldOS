@@ -1193,10 +1193,19 @@ public class CombatSurfaceClient : MonoBehaviour
         // #1441: rebuild the occupied-cell set (every token's cell) for client-side click pre-validation.
         // #Phase3: also rebuild the foe-cell set so the overlay hover reads red on an attackable cell.
         _occupied.Clear(); _foeCells.Clear(); _foeIds.Clear();
-        // Every present body blocks its cell (a bystander is still standing there), but only a combatant
-        // is an attack target, so the foe sets come from the roster.
-        foreach (var t in cast) if (t != null) _occupied.Add(CellKey(t.x, t.y));
-        foreach (var t in roster) if (t != null && t.team == "foe") { _foeCells.Add(CellKey(t.x, t.y)); _foeId = t.id; _foeX = t.x; _foeY = t.y; if (!string.IsNullOrEmpty(t.id)) _foeIds.Add(t.id); }
+        // Occupancy is the ROSTER's, not the whole stage's (review): the engine derives its blocked set from
+        // `combat.order` alone (servers/engine/server.py _occupied_cells), so a stage-only bystander's cell is
+        // a legal destination — and this set is a UX pre-filter over the engine's truth, never a second rule,
+        // so blocking that cell client-side would FlashReject a move the engine would have accepted. Identical
+        // at rest, where roster IS cast.
+        // Targeting is reset first so it is derived purely from THIS surface: once the last foe leaves the
+        // roster the loop cannot clear a stale id, and a click on the dead foe's old cell fired PostAttack.
+        _foeId = ""; _foeX = -1; _foeY = -1;
+        foreach (var t in roster) if (t != null)
+        {
+            int k = CellKey(t.x, t.y); _occupied.Add(k);
+            if (t.team == "foe") { _foeCells.Add(k); _foeId = t.id; _foeX = t.x; _foeY = t.y; if (!string.IsNullOrEmpty(t.id)) _foeIds.Add(t.id); }
+        }
         var present = new System.Collections.Generic.HashSet<string>();
         foreach (var t in cast)
         {
