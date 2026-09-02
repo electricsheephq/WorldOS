@@ -7,7 +7,7 @@
 # run_adventure's exact per-beat contract (hermetic env, brief + arc addendum, model pin, lean/effort/
 # timeout tiers, transient retry, quest_progress stamping) — the PLAYER is you.
 #
-#   qa/agent_play.sh start  --engine http://127.0.0.1:8876 --state /tmp/worldos-qa-sandbox/play1/state \
+#   qa/agent_play.sh start  --engine http://127.0.0.1:8876 --state /Users/m1/Codex/worldos-qa-sandbox/play1/state \
 #                           --run smoke1 [--campaign adventure_demo_v1] [--dm-model opus] [--beats 20]
 #   qa/agent_play.sh say    --run smoke1 "I look around the crypt and ready my blade."
 #   qa/agent_play.sh serve  --run smoke1 --engine … --state … [--dm-model id] [--max-beats N]
@@ -23,8 +23,9 @@
 #                           or the viewer's `POST http://127.0.0.1:<engine-port>/move` intent, which
 #                           the engine's player facade drains from $WORLDOS_PLAYER_MOVES.
 #   This script NEVER reimplements movement. A normal playthrough is: /click to walk somewhere, then
-#   `say` so the DM narrates what you found there, then /click again — the DM re-grounds on live
-#   engine state (get_state/look_around) every beat, so it always sees where the walk left you.
+#   `serve` also tails $WORLDOS_PLAYER_MOVES, turning each viewer intent into one player line and
+#   one DM beat. Under launchd, `stop` SIGTERMs the recorded serve PID; KeepAlive=false means
+#   launchd does not restart it. The DM re-grounds on live engine state every beat.
 #
 # The play screen updates because every line is appended to the viewer's chat log
 # ($WORLDOS_VIEWER_CHAT = <state>/chat.jsonl, set by qa/qa_sandbox.py) in the viewer's two-sided
@@ -83,6 +84,24 @@ ap_require_session() {
   [ -s "$SESSION" ] || { echo "[agent-play] no session for run '$RUN' ($SESSION) — run \`start\` first." >&2; exit 2; }
 }
 
+ap_line_count() { local p="$1"; [ -f "$p" ] && wc -l < "$p" | tr -d ' ' || echo 0; }
+ap_budget_message() {
+  local used total; used="$(ap_sget beats_used 0)"; total="$(ap_sget beats 20)"
+  echo "beat budget exhausted ($used/$total) — extend with --beats or start a new run"
+}
+ap_budget_available() {
+  local used total; used="$(ap_sget beats_used 0)"; total="$(ap_sget beats 20)"
+  if [ "$total" -gt 0 ] && [ "$used" -ge "$total" ]; then
+    echo "[agent-play] $(ap_budget_message)" >&2
+    return 2
+  fi
+}
+ap_pid_live() {
+  local pid="$1"
+  case "$pid" in ""|*[!0-9]*) return 1 ;; esac
+  kill -0 "$pid" 2>/dev/null
+}
+
 # ── beat wiring (only `start`/`say`/`serve` need it) ─────────────────────────────────────────────
 ap_bind() {
   mkdir -p "$RUN_DIR"
@@ -99,6 +118,11 @@ ap_bind() {
   BUDGET="$(ap_sget budget 4.00)"
   T="$RUN_DIR"                             # adv_dm_turn writes $T/$RUN.dm.*.jsonl (absolute)
   CHAT="$(ap_sget chat_path)"
+  MOVES="$(ap_sget moves_path)"
+  if [ -z "$MOVES" ]; then
+    MOVES="${WORLDOS_PLAYER_MOVES:-$STATE_DIR/player_moves.jsonl}"
+    ap_sset moves_path "$MOVES" move_cursor "$(ap_line_count "$MOVES")" >/dev/null
+  fi
   COMBINED="$T/$RUN.jsonl"
   TRACE="$T/$RUN.quest_trace.json"
   DM_CFG="$RUN_DIR/dm.mcp.json"
@@ -184,7 +208,7 @@ ap_start() {
   [ -n "$STATE_IN" ] || { echo "[agent-play] start needs --state <sandbox state dir>" >&2; exit 2; }
   [ -d "$STATE_IN" ] || { echo "[agent-play] state dir not found: $STATE_IN" >&2; exit 2; }
   mkdir -p "$RUN_DIR"
-  local state cid budget model beats
+  local state cid budget model beats chat_path moves_path chat_cursor move_cursor
   # shellcheck source=lib_beat_driver.sh
   . "$ROOT/qa/lib_beat_driver.sh"
   state="$(cd "$STATE_IN" && pwd)"
@@ -196,13 +220,18 @@ ap_start() {
   # Opus cold-open headroom floor (same rationale as run_adventure/run_duo).
   case "$model" in *opus*) if awk "BEGIN{exit !($budget < 4.0)}"; then budget=4.00; fi ;; esac
   beats="${BEATS_IN:-20}"
+  chat_path="$state/chat.jsonl"
+  moves_path="${WORLDOS_PLAYER_MOVES:-$state/player_moves.jsonl}"
+  chat_cursor="$(ap_line_count "$chat_path")"
+  move_cursor="$(ap_line_count "$moves_path")"
   python3 -c 'import json,os,sys
 p,=sys.argv[1:2]
 json.dump(dict(zip(sys.argv[2::2], sys.argv[3::2])), open(p+".tmp","w"), indent=2)
 os.replace(p+".tmp", p)' "$SESSION" \
     run "$RUN" engine "$ENGINE" state_dir "$state" campaign_id "$cid" \
     quest_title "${WORLDOS_AGENT_PLAY_QUEST:-The Crypt Below}" dm_model "$model" budget "$budget" \
-    beats "$beats" beats_used 0 chat_cursor 0 chat_path "$state/chat.jsonl" \
+    beats "$beats" beats_used 0 chat_cursor "$chat_cursor" chat_path "$chat_path" \
+    move_cursor "$move_cursor" moves_path "$moves_path" serve_pid "" \
     dm_session_id "$(python3 -c 'import uuid;print(uuid.uuid4())')" \
     created "$(date -u +%Y-%m-%dT%H:%M:%SZ)" stopped ""
   ap_bind
@@ -231,8 +260,13 @@ $directive OUTPUT DISCIPLINE — your final reply IS the opening scene: 2nd-pers
 ap_say() {
   ap_require_session
   [ -n "$TEXT" ] || { echo "[agent-play] say needs the player text: qa/agent_play.sh say --run $RUN \"…\"" >&2; exit 2; }
+  ap_budget_available || exit $?
   ap_bind
   chatlog player "$TEXT"                     # the viewer's play screen shows the player line too
+  if ap_pid_live "$(ap_sget serve_pid)"; then
+    echo "[agent-play] queued for serve"
+    return 0
+  fi
   ap_do_beat "$TEXT"; local rc=$?
   # Keep the `serve` cursor past everything we just wrote, so the two entry points can never
   # double-answer the same line.
@@ -246,10 +280,7 @@ ap_do_beat() {
   local ptext="$1" beat used total dsid prog prev_day prev_tod prev_loc runbook director event_adv
   used="$(ap_sget beats_used 0)"; total="$(ap_sget beats 20)"
   beat=$((used + 1))
-  if [ "$total" -gt 0 ] && [ "$beat" -gt "$total" ]; then
-    echo "[agent-play] beat budget exhausted ($used/$total) — raise it with \`start --beats N\` or a new run." >&2
-    return 3
-  fi
+  ap_budget_available || return $?
   dsid="$(ap_sget dm_session_id)"
   prog="$(worldos_read_progress "$STATE_DIR" || true)"
   prev_day="$(printf '%s' "$prog" | cut -f1)"; prev_day="${prev_day:-1}"
@@ -283,52 +314,80 @@ $event_adv"
 # ap_do_beat path `say` uses. The consumed-line cursor is persisted in the session file, so a restart
 # never re-answers a line it already answered.
 AP_SERVE_STOP=0
+ap_serve_cleanup() {
+  [ "$(ap_sget serve_pid)" = "$$" ] && ap_sset serve_pid "" >/dev/null || true
+}
+ap_move_text() {
+  python3 -c 'import json,sys
+try: m=json.loads(sys.stdin.read())
+except Exception: raise SystemExit(1)
+if m.get("role") != "player": raise SystemExit(1)
+kind=str(m.get("kind") or "move")
+if isinstance(m.get("x"), int) and isinstance(m.get("y"), int):
+    print(f"[move] walks to ({m[chr(120)]},{m[chr(121)]})")
+else:
+    detail=next((str(m[k]) for k in ("text","name","target","target_id","skill","weapon") if m.get(k) not in (None,"")), "acts")
+    print(f"[{kind}] {detail}")'
+}
 ap_serve() {
   if [ ! -s "$SESSION" ]; then
     [ -n "$ENGINE" ] && [ -n "$STATE_IN" ] || { echo "[agent-play] serve on a fresh run needs --engine and --state (or run \`start\` first)" >&2; exit 2; }
     ap_start
   fi
   ap_bind
-  local max="${MAX_BEATS_IN:-0}" served=0 cursor lines row role text label
+  local max="${MAX_BEATS_IN:-0}" served=0 cursor lines move_cursor move_lines row role text label source rc=0
   label="$max"; [ "$max" -gt 0 ] || label="unlimited"
   trap 'AP_SERVE_STOP=1' TERM INT
-  ap_sset stopped "" >/dev/null                 # a fresh serve un-stops the run
-  echo "[agent-play] serving run=$RUN chat=$CHAT campaign=$CAMPAIGN_ID dm=$WORLDOS_DM_MODEL max_beats=$label"
+  trap 'ap_serve_cleanup' EXIT
+  ap_sset stopped "" serve_pid "$$" >/dev/null  # a fresh serve un-stops the run and owns its PID
+  echo "[agent-play] serving run=$RUN chat=$CHAT moves=$MOVES campaign=$CAMPAIGN_ID dm=$WORLDOS_DM_MODEL max_beats=$label"
   while [ "$AP_SERVE_STOP" = "0" ]; do
     # `stop --run <name>` stamps the session, which is how another shell asks this loop to exit
     # (SIGTERM is the other way; the LaunchAgent uses that one).
     if [ -n "$(ap_sget stopped)" ]; then echo "[agent-play] session marked stopped — exiting serve"; break; fi
     cursor="$(ap_sget chat_cursor 0)"; cursor="${cursor:-0}"
-    lines=0; [ -f "$CHAT" ] && lines="$(wc -l < "$CHAT" | tr -d ' ')"
-    if [ "${lines:-0}" -le "$cursor" ]; then
+    move_cursor="$(ap_sget move_cursor 0)"; move_cursor="${move_cursor:-0}"
+    lines="$(ap_line_count "$CHAT")"; move_lines="$(ap_line_count "$MOVES")"
+    source=""
+    if [ "${lines:-0}" -gt "$cursor" ]; then
+      source="chat"; row="$(sed -n "$((cursor + 1))p" "$CHAT")"
+      role="$(printf '%s' "$row" | python3 -c 'import json,sys
+try: print((json.loads(sys.stdin.read()) or {}).get("role") or "")
+except Exception: print("")')"
+      if [ "$role" != "player" ]; then ap_sset chat_cursor "$((cursor + 1))" >/dev/null; continue; fi
+      text="$(printf '%s' "$row" | python3 -c 'import json,sys
+try: print((json.loads(sys.stdin.read()) or {}).get("text") or "")
+except Exception: print("")')"
+    elif [ "${move_lines:-0}" -gt "$move_cursor" ]; then
+      source="move"; row="$(sed -n "$((move_cursor + 1))p" "$MOVES")"
+      text="$(printf '%s' "$row" | ap_move_text 2>/dev/null || true)"
+      if [ -z "$text" ]; then ap_sset move_cursor "$((move_cursor + 1))" >/dev/null; continue; fi
+    else
       if [ "$max" -gt 0 ] && [ "$served" -ge "$max" ]; then break; fi
       # --dry-run DRAINS and exits (a test must not idle forever); the real loop idle-polls at 2s.
       if [ "$DRY_RUN" = "1" ]; then break; fi
       sleep 2 || true
       continue
     fi
-    row="$(sed -n "$((cursor + 1))p" "$CHAT")"
-    role="$(printf '%s' "$row" | python3 -c 'import json,sys
-try: print((json.loads(sys.stdin.read()) or {}).get("role") or "")
-except Exception: print("")')"
-    if [ "$role" != "player" ]; then
-      ap_sset chat_cursor "$((cursor + 1))" >/dev/null   # our own dm rows + anything else: skip
-      continue
+    if ! ap_budget_available; then
+      chatlog dm "[system] $(ap_budget_message)" '{"system":true}'
+      rc=2
+      break
     fi
-    text="$(printf '%s' "$row" | python3 -c 'import json,sys
-try: print((json.loads(sys.stdin.read()) or {}).get("text") or "")
-except Exception: print("")')"
-    echo "[agent-play] player line $((cursor + 1)): ${text:0:100}"
+    echo "[agent-play] player $source: ${text:0:100}"
     ap_do_beat "$text" || true
     served=$((served + 1))
     # Advance by exactly ONE row: our own dm reply lands at the END of the file and is skipped by the
     # role check when we reach it. Jumping to the file length here would swallow any player line that
     # queued up BEHIND the one we just answered.
-    ap_sset chat_cursor "$((cursor + 1))" >/dev/null
+    if [ "$source" = "chat" ]; then ap_sset chat_cursor "$((cursor + 1))" >/dev/null
+    else ap_sset move_cursor "$((move_cursor + 1))" >/dev/null; fi
     if [ "$max" -gt 0 ] && [ "$served" -ge "$max" ]; then break; fi
   done
+  ap_serve_cleanup
+  trap - EXIT TERM INT
   echo "[agent-play] serve stopped (beats served: $served)"
-  return 0
+  return "$rc"
 }
 
 ap_status() {
@@ -362,11 +421,43 @@ ap_stop() {
   ap_require_session
   # shellcheck source=lib_beat_driver.sh
   . "$ROOT/qa/lib_beat_driver.sh"
+  local stopped pid i closeout
   STATE_DIR="$(ap_sget state_dir)"
   worldos_stream_tailer_kill_pidfile "$STATE_DIR" 2>/dev/null || true
-  ap_sset stopped "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >/dev/null
+  stopped="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  ap_sset stopped "$stopped" >/dev/null
+  pid="$(ap_sget serve_pid)"
+  if ap_pid_live "$pid"; then
+    kill -TERM "$pid"
+    i=0
+    while ap_pid_live "$pid" && ! ps -o stat= -p "$pid" 2>/dev/null | grep -q Z; do
+      [ "$i" -lt 50 ] || { echo "[agent-play] serve pid $pid did not exit after SIGTERM" >&2; return 1; }
+      sleep 0.1; i=$((i + 1))
+    done
+  fi
+  ap_sset serve_pid "" >/dev/null
+  closeout="$RUN_DIR/closeout.json"
+  python3 - "$SESSION" "$RUN_DIR/$RUN.quest_trace.json" "$RUN_DIR/$RUN.dm.*.jsonl" "$closeout" <<'PY'
+import glob, json, os, sys
+session_path, trace_path, dm_glob, out = sys.argv[1:]
+s = json.load(open(session_path))
+try: trace = json.load(open(trace_path))
+except Exception: trace = {}
+spend = 0.0
+for path in glob.glob(dm_glob):
+    for line in open(path, encoding="utf-8", errors="replace"):
+        try: row = json.loads(line)
+        except Exception: continue
+        if isinstance(row, dict) and row.get("type") == "result": spend += float(row.get("total_cost_usd") or 0)
+payload = {"beats": {"used": int(s.get("beats_used") or 0), "limit": int(s.get("beats") or 0)},
+           "chat_path": s.get("chat_path"), "quest_status": trace.get("quest_status") or s.get("last_quest_status") or "unknown",
+           "spend_usd": round(spend, 4), "stamps": [x.get("stage", "") for x in trace.get("stamps", [])],
+           "stopped_at": s.get("stopped")}
+tmp = out + ".tmp"; json.dump(payload, open(tmp, "w"), indent=2); os.replace(tmp, out)
+PY
+  ap_sset closeout_path "$closeout" >/dev/null
   echo "[agent-play] stopped run=$RUN (artifacts kept in $RUN_DIR; engine + viewer untouched)"
-  echo "[agent-play] a running \`serve\` for this run exits at its next poll (or on SIGTERM)"
+  echo "[agent-play] closeout=$closeout"
 }
 
 case "$SUB" in
