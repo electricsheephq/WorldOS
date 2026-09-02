@@ -523,7 +523,7 @@ took over the developer's only display and the Mac had to be rebooted. Now:
   if it changed AND still holds the exact value this rig writes (`Fullscreen mode`=3, the requested
   `Resolution Width/Height`, `Use Native`=0). The cosmetic `Window Position X/Y`, anything the owner
   wrote last, and any non-integer value are REPORTED and left alone. See `<rundir>/prefs_leak.json`
-  and the `stopped` block in `sandbox.json.stopped`.
+  and the `stopped` block in `sandbox.json.stopped` (or `sandbox.json` if cleanup is incomplete).
 - **Telling them apart today:** window geometry, `lsof -nP -iTCP:8972 -sTCP:LISTEN -t` (owner = 8971),
   and `sandbox.json`. The rig's window TITLE is still `WorldOSPlayer` — the badge is Phase 2,
   `docs/qa/QA-RIG-WINDOW-BADGE.md`.
