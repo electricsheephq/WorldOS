@@ -22,7 +22,10 @@ from pathlib import Path
 VIEWER = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8770"
 CID = sys.argv[2] if len(sys.argv) > 2 else "camp_gfxdemo01"
 CM = "/tmp/gex44-cm.sock"
-BOX = "root@46.4.26.123"
+# The retired address 46.4.26.123 was RELEASED and may already be reassigned to a third party;
+# the WORLDOS_ALLOW_RETIRED_HOST override re-enables the box-era code path but must name its own
+# destination. Empty here on purpose — main() refuses to run without it.
+BOX = os.environ.get("WORLDOS_RETIRED_HOST", "")
 RENDER_SCRIPT = str(Path(__file__).resolve().parents[1] / "extensions/renderers/unity/scripts/paint_combat_v1.cs")
 BOX_CAP = "/home/unity/worldos-unity/Captures-Durable/m1_combat_v1.png"
 OUT_DIR = os.environ.get("WORLDOS_RENDER_OUT", str(Path.home() / "Codex/session-notes/renders"))
@@ -77,6 +80,11 @@ def render(tag: str) -> None:
 def main() -> None:
     if os.environ.get("WORLDOS_ALLOW_RETIRED_HOST", "0") != "1":
         print("GEX44 retired 2026-08-06 — see docs/GEX44-RETIRED.md", file=sys.stderr)
+        raise SystemExit(2)
+    if not BOX:
+        print("WORLDOS_ALLOW_RETIRED_HOST=1 also requires WORLDOS_RETIRED_HOST=user@host "
+              "(46.4.26.123 was released and may be reassigned) — see docs/GEX44-RETIRED.md",
+              file=sys.stderr)
         raise SystemExit(2)
 
     s = surface()

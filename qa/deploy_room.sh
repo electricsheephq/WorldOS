@@ -25,7 +25,9 @@ BOX_NAME="${2:-$(basename "$LOCAL_PLATE")}"
 CAMPAIGN="${3:-}"
 LOC_ID="${4:-}"
 CM="/tmp/gex44-cm.sock"
-BOX="root@46.4.26.123"
+# The retired address 46.4.26.123 was RELEASED and may already be reassigned to a third party.
+# The override re-enables the box-era code path only; it must name its own destination.
+BOX="${WORLDOS_RETIRED_HOST:?WORLDOS_ALLOW_RETIRED_HOST=1 also requires WORLDOS_RETIRED_HOST=user@host (46.4.26.123 was released and may be reassigned) — see docs/GEX44-RETIRED.md}"
 BDIR="/home/unity/worldos-unity/Assets/painterly/backdrops"
 
 [ -f "$LOCAL_PLATE" ] || { echo "no such plate: $LOCAL_PLATE" >&2; exit 1; }

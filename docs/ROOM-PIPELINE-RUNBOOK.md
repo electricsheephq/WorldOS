@@ -439,7 +439,7 @@ keep running that check after every install.)
 mapped prefab (via `effects_registry.json`, abstract `type` → prefab path — single source of truth
 for both the runtime resolver and the build) at the cell's world position, scaled, ParticleSystems
 warmed, parented under `_EffectsRoot`. **Pure presentation — no engine/gameplay contact.** Absent
-`effects`/registry/bundle-prefab ⇒ nothing spawns (byte-identical to the pre-VFX plate). The box
+`effects`/registry/bundle-prefab ⇒ nothing spawns (byte-identical to the pre-VFX plate). The local Unity project
 renders **Built-in RP**; Hovl Shader-Graph particle materials get re-pointed to Legacy Particles at
 runtime (`RepointHovlMaterials`, reuses PR #1515) — a no-op for Synty/GAPH shaders.
 
@@ -449,11 +449,11 @@ is what keeps the renderer a pure consumer (the sole-writer invariant, restated 
 `BuildMacOSPlayer.EnsurePackaged` copies `plates_manifest.json` + every referenced plate PNG +
 `effects_registry.json` into `StreamingAssets/` at build time.
 
-### 10. Player pickup — hot-load for ITERATION, box rebuild for SHIP
+### 10. Player pickup — hot-load for ITERATION, local rebuild for SHIP
 
 **★ Hot-load (empirically confirmed 2026-07-16, dwing gates):** on macOS, `StreamingAssets` is
 plain disk files inside the built .app that Unity reads at RUNTIME — so for ITERATION (sandbox walk
-gates on candidate plates) you do NOT need a box rebuild. Copy the installed app, inject the
+gates on candidate plates) you do NOT need a full rebuild. Copy the installed app, inject the
 candidate artifacts into the COPY, and gate against it:
 
 ```
@@ -465,13 +465,15 @@ WORLDOS_PLAYER_APP=/tmp/WorldOSPlayer_hotload.app qa/qa_sandbox.py up ...
 
 Proof: the dwing gates read `camOrtho 10.5224` (the hot-loaded pin) exactly. Caveats: NEVER edit the
 owner's installed app (copies only — editing breaks the code seal; local non-notarized copies still
-launch); the hot-patch is never the durable state — the repo manifest + a SHIP-time box rebuild must
+launch); the hot-patch is never the durable state — the repo manifest + a SHIP-time local rebuild must
 still land or the next build regresses.
 
-**Box rebuild (ship time only)** — the distributed app's `StreamingAssets` are baked at build:
+**Local rebuild (ship time only)** — the distributed app's `StreamingAssets` are baked at build:
 
 ```
-Tools/WorldOS/Build/macOS Player (Universal)   # Unity Editor menu item, on the box
+Tools/WorldOS/Build/macOS Player (Universal)   # Unity Editor menu item, in the LOCAL project
+# drive it headless: extensions/renderers/unity/tools/mcp_stdio_exec.py call execute_menu_item \
+#   '{"menu_path":"Tools/WorldOS/Build/macOS Player (Universal)"}'
 ```
 
 **★ ALWAYS-INCLUDED SHADERS pre-flight (#1674 — walk-behind silhouette shipped disabled, 2026-07-22):**
@@ -479,7 +481,7 @@ Tools/WorldOS/Build/macOS Player (Universal)   # Unity Editor menu item, on the 
 at runtime via `Shader.Find` and referenced by NO asset, so a player build strips them unless they are in
 Graphics → Always-Included Shaders. `BuildMacOSPlayer.Build()` now bakes both in itself (via
 `EnsureAlwaysIncludedShaders()`, no longer only the manual `Tools/WorldOS/W5b`), and records the resolved
-list on the report's `alwaysIncludedShaders=` line. Run the repo pre-flight BEFORE the box rebuild — it
+list on the report's `alwaysIncludedShaders=` line. Run the repo pre-flight BEFORE the rebuild — it
 FAILS if the build source stops guaranteeing a required shader:
 
 ```
@@ -488,7 +490,8 @@ python3 qa/check_always_included_shaders.py --build-report BuildOutput/build-rep
 ```
 
 Sync the shader files (`extensions/renderers/unity/shaders/ActorSilhouette.shader`,
-`OccluderDepth.shader`) to the box project's `Assets/Shaders/` before the rebuild; then `player_cert`'s
+`OccluderDepth.shader`) to the LOCAL Unity project's `/Users/m1/worldos-unity/Assets/Shaders/` before the
+rebuild; then `player_cert`'s
 silhouette assert flips GREEN and `WORLDOS_SILHOUETTE=0` reproduces the RED as the deliberate-regression proof.
 
 ### 10b. The sandbox hot-load GATE LOOP (the proven per-room iteration cycle, 2026-07-16)

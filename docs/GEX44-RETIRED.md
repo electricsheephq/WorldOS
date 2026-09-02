@@ -23,8 +23,15 @@ carry a one-line retirement banner; no document should instruct an agent to cont
 
 Every remaining runner that would have contacted the box now refuses by default: it prints
 `GEX44 retired 2026-08-06 — see docs/GEX44-RETIRED.md` on stderr and exits **2** unless
-`WORLDOS_ALLOW_RETIRED_HOST=1` is set (forensic/salvage use on a non-GEX44 host only — it is an
-escape hatch, not a supported lane). Guarded today:
+`WORLDOS_ALLOW_RETIRED_HOST=1` is set. It is an escape hatch, not a supported lane.
+
+**The address is gone, not merely unused.** `46.4.26.123` was released and may already be reassigned
+to a third party, so the override must never resurrect it. The four runners that actually opened an
+SSH/rsync connection (`qa/deploy_room.sh`, `qa/gen_dungeon.sh`, `qa/gen_room_from_scene_grid.sh`,
+`qa/drive_gfx_combat.py`) no longer carry a reachable default: with the override set they additionally
+require an explicit `WORLDOS_RETIRED_HOST=user@host` and abort before any network use without it.
+The remaining guarded entrypoints only touch local `/home/unity` paths on the box itself and reach no
+address at all. Guarded today:
 
 - `qa/deploy_room.sh`, `qa/gen_dungeon.sh`, `qa/gen_room_from_scene_grid.sh`,
   `qa/validate_active_room_framing.sh`, `qa/drive_gfx_combat.py`

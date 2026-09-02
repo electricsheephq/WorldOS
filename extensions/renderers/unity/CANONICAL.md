@@ -39,11 +39,18 @@ each unit has its own `scene_grid` (door_cells, #1214) → own greybox → own p
 - **Cross (engine):** `server.cross_door(cid, x, y)` (#1225) — (x,y) is a door cell → travels to the
   connection (delegates to `travel_to`, co-locates the party). INTERNAL verb (not an MCP tool). The
   combat-surface surfaces `doors` (#1224: door_cells × connections) so the renderer/UI can offer to cross.
-- **Render:** swap `_active_combat.txt` to the new unit's plate; the room-agnostic `paint_combat_v1.cs`
-  follows. The viewer re-reads snapshot.json per /combat-surface (NO restart needed). ⚠ HISTORICAL:
-  `qa/deploy_room.sh` is the box-era deploy — it hard-codes `root@46.4.26.123`, `/tmp/gex44-cm.sock` and
-  `/home/unity/worldos-unity` and will contact the retired host; do NOT run it. On the local lane write
-  the plate + `_active_combat.txt` into `/Users/m1/worldos-unity/Assets/painterly/backdrops/` directly.
+- **Render (⚠ BLOCKED on the local lane — see #1770):** the box-era mechanism was: swap
+  `_active_combat.txt` to the new unit's plate and the room-agnostic `paint_combat_v1.cs` follows. That
+  no longer works here. `paint_combat_v1.cs` still reads `_active_combat.txt`, `_active_campaign.txt`,
+  `_location_plates.json`, `registry.json` and its capture dir from ABSOLUTE `/home/unity/worldos-unity/…`
+  paths (`:23`, `:29`, `:38`, `:140`, `:293`, `:402`, `:442`, `:565`), so writing those files under
+  `/Users/m1/worldos-unity/Assets/painterly/backdrops/` selects nothing — the script silently falls back
+  to its defaults. Do NOT document or follow that procedure as if it worked; rooting the script's paths at
+  the Unity project is tracked in **#1770**, and until it lands use the runtime plate-manifest workflow
+  (`docs/ROOM-PIPELINE-RUNBOOK.md` §10/§10b hot-load) instead. The viewer half is unaffected: it re-reads
+  snapshot.json per /combat-surface (NO restart needed). ⚠ HISTORICAL: `qa/deploy_room.sh` is the box-era
+  deploy — it targeted `root@46.4.26.123` / `/tmp/gex44-cm.sock` / `/home/unity/worldos-unity`; it is now
+  guarded (exit 2) and must not be run against the retired address.
 - **PROVEN:** `renders/TRANSITION_stair_to_tomb.png` (same hero crosses crypt stair→tomb) +
   `renders/cc2_nave_combat.png` (live 3D combat in the cathedral nave). Driver `qa/drive_room_transition.py`.
 - **Live machinery:** viewer and Unity run locally on this Mac; drive the headed editor via

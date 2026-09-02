@@ -24,7 +24,10 @@ CID="${2:?campaign_id}"
 STRENGTH="${3:-0.55}"
 STATE_DIR="${4:-/tmp/gfx_dungeon}"
 DRY=""; for a in "$@"; do [ "$a" = "--dry-run" ] && DRY=1; done
-CM="/tmp/gex44-cm.sock"; BOX="root@46.4.26.123"
+CM="/tmp/gex44-cm.sock"
+# The retired address 46.4.26.123 was RELEASED and may already be reassigned to a third party.
+# The override re-enables the box-era code path only; it must name its own destination.
+BOX="${WORLDOS_RETIRED_HOST:?WORLDOS_ALLOW_RETIRED_HOST=1 also requires WORLDOS_RETIRED_HOST=user@host (46.4.26.123 was released and may be reassigned) — see docs/GEX44-RETIRED.md}"
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 GREYBOX="$REPO/extensions/renderers/unity/scripts/build_room_greybox.cs"
 rm -rf "$STATE_DIR"; mkdir -p "$STATE_DIR"
