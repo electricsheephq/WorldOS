@@ -4,7 +4,12 @@
 > a bootstrapping agent reads after OPERATIONS.md. Keep it under a screen. History belongs in
 > git, not here.
 
-_Last updated: 2026-07-21 (UTC) — Jul-16 generator chain merged; Task #76 in flight (wave-1 PRs up)._
+_Last updated: 2026-09-02 (UTC) — **REBOOT after 5 weeks dormant + a machine migration: MEASUREMENTS PENDING.**
+Charter #1702 (`active-sprint`) is the plan of record. Done so far: renderer restored LOCALLY (Unity 6000.5.6f1 on
+the Paris Mac; Stdio MCP bridge; canonical scene decontaminated), #1690 split (#1703 data half MERGED, C# gate half
+in flight), engine static gates green (fast_gate 257 / walk_static). NOT yet re-measured: the §9 G1-G4 table (Track A
+step 6) — until it lands, every row below is 2026-07-21 state. The GEX44 box and the LEXAR drive are GONE; any path
+under `/Volumes/LEXAR` or `/Users/lume` in these docs is historical._
 
 > Depth: `docs/roadmap/PROCEDURAL-SCORECARD.md` (generator-chain narrative) ·
 > `docs/ROOM-PIPELINE-RUNBOOK.md` (11-step room pipeline; §11 walk ship gate) ·
