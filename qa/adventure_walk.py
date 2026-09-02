@@ -740,7 +740,7 @@ def _live_quest_reader(state_dir: str, campaign_id: str = CAMPAIGN,
     state_root = Path(state_dir).expanduser().resolve()
 
     def _read() -> dict:
-        out, errors = {}, []
+        out, errors, trace_error = {}, [], None
         try:
             # qa/run_adventure.sh writes the A-T trace to qa/transcripts/<run>.quest_trace.json —
             # NOT under the state dir — so the caller passes it; the state-dir default is only
@@ -775,7 +775,7 @@ def _live_quest_reader(state_dir: str, campaign_id: str = CAMPAIGN,
                 for k in ("quest_status", "objectives", "completed_objectives"):
                     out[k] = tr.get(k)
         except ValueError as e:
-            raise RuntimeError(f"quest_trace:{e}") from e
+            trace_error = f"quest_trace:{e}"
         except Exception as e:  # noqa: BLE001
             errors.append(f"quest_trace:{e}")
         try:
@@ -785,6 +785,10 @@ def _live_quest_reader(state_dir: str, campaign_id: str = CAMPAIGN,
             out["live_read_ok"] = True   # the live read SUCCEEDED — the trace must not answer for it
         except Exception as e:  # noqa: BLE001
             errors.append(f"get_quests:{e}")
+        # The trace is fallback evidence: a healthy live read wins, but a bad trace must still
+        # fail closed when it is the only source that could answer the reward leg.
+        if trace_error and not out.get("live_read_ok"):
+            raise RuntimeError("; ".join([trace_error, *errors]))
         if not out:
             raise RuntimeError("; ".join(errors) or f"no quest state under {state_dir}")
         return out

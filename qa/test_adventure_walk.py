@@ -757,6 +757,10 @@ def test_external_trace_must_live_in_the_canonical_transcript_directory(monkeypa
     monkeypatch.setattr(Q, "_import_server", lambda _state: (_ for _ in ()).throw(RuntimeError("down")))
     with pytest.raises(RuntimeError, match="canonical transcript directory"):
         A._live_quest_reader(str(state), trace_path=str(wrong))()
+    from types import SimpleNamespace
+    monkeypatch.setattr(Q, "_import_server", lambda _state:
+                        SimpleNamespace(get_quests=lambda _campaign: {"quests": [{"id": "live"}]}))
+    assert A._live_quest_reader(str(state), trace_path=str(wrong))()["live_read_ok"] is True
 
 
 def test_route_entry_types_are_rejected_with_the_offending_entry(capsys, tmp_path):
