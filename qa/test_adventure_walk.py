@@ -403,9 +403,11 @@ def test_route_complete_needs_an_arrived_giver_stage():
     without the leg at all, must read False."""
     assert A.is_route_complete({"stages": [{"kind": "return", "arrived": True}]}) is False
     assert A.is_route_complete({"stages": [
-        {"kind": "return_to_giver", "arrived": False, "reward_leg": {"verdict": "GREEN"}}]}) is False
+        {"kind": "return_to_giver", "verdict": "GREEN", "arrived": False, "adjacent": True,
+         "reward_leg": {"verdict": "GREEN"}}]}) is False
     assert A.is_route_complete({"stages": [
-        {"kind": "return_to_giver", "arrived": True, "reward_leg": {"verdict": "GREEN"}}]}) is True
+        {"kind": "return_to_giver", "verdict": "GREEN", "arrived": True, "adjacent": True,
+         "reward_leg": {"verdict": "GREEN"}}]}) is True
 
 
 # ── review round 1: the fail-closed / never-false-GREEN regressions ─────────────────────────────────
@@ -527,15 +529,18 @@ def test_a_stale_completion_stamp_never_outvotes_a_live_active_quest():
     assert A.classify_reward_leg({"stamps": stale["stamps"]})["verdict"] == "GREEN"
 
 
-def test_live_quest_reader_reads_the_at_runner_trace_path(tmp_path):
-    """run_adventure.sh writes qa/transcripts/<run>.quest_trace.json, NOT <state>/quest_trace.json,
-    so the fallback must accept the path explicitly or it can never find the trace."""
-    trace = tmp_path / "adv1.quest_trace.json"
-    trace.write_text('{"quest_status": "completed", "stamps": [{"stage": "quest_completed", '
+def test_live_quest_reader_reads_a_trace_bound_to_the_current_state(tmp_path):
+    """A state-local trace with the current campaign is valid fallback evidence."""
+    state = tmp_path / "state"
+    state.mkdir()
+    trace = state / "quest_trace.json"
+    trace.write_text('{"campaign_id": "adventure_demo_v1", "quest_status": "completed", '
+                     '"stamps": [{"stage": "quest_completed", '
                      '"signal": "status:completed"}]}')
     # the engine import fails under a bogus state dir → the trace is the only source
-    data = A._live_quest_reader(str(tmp_path / "no-such-state"), trace_path=str(trace))()
+    data = A._live_quest_reader(str(state), trace_path=str(trace))()
     assert data["stamps"] and data["quest_status"] == "completed"
+    assert data["trace_provenance"]["campaign_id"] == A.CAMPAIGN
     assert A.classify_reward_leg(data)["verdict"] == "GREEN"
     # and with NEITHER source readable the leg is ERROR, never a silent GREEN
     reader = A._live_quest_reader(str(tmp_path / "no-such-state"))
@@ -585,7 +590,8 @@ def test_route_must_end_on_a_valid_giver_stage_not_merely_contain_one():
 
 
 def test_route_complete_reads_the_FINAL_stage_only():
-    paid = {"kind": "return_to_giver", "arrived": True, "reward_leg": {"verdict": "GREEN"}}
+    paid = {"kind": "return_to_giver", "verdict": "GREEN", "arrived": True, "adjacent": True,
+            "reward_leg": {"verdict": "GREEN"}}
     assert A.is_route_complete({"stages": [paid]}) is True
     # a paid giver stage that is not last cannot certify a walk that ended elsewhere
     assert A.is_route_complete({"stages": [paid, {"kind": "return", "arrived": True}]}) is False
@@ -660,3 +666,78 @@ def test_a_non_partial_override_may_insert_stages_but_never_drop_a_mandatory_leg
     wider = list(A.DEFAULT_ROUTE)
     wider.insert(3, ("to_shop", "shop", "walk", None))
     assert A.assert_route_returns_to_giver(tuple(wider)) == tuple(wider)
+
+
+# ── final custody delta: every current thread, one batch ───────────────────────────────────────────
+def test_trace_fallback_rejects_an_unrelated_state_or_campaign(monkeypatch, tmp_path):
+    """A completed trace from another run/campaign must never certify the current sandbox walk."""
+    import json
+    import pytest
+    import quest_progress as Q
+
+    monkeypatch.setattr(Q, "_import_server", lambda _state: (_ for _ in ()).throw(RuntimeError("down")))
+    state = tmp_path / "sandbox" / "state"
+    state.mkdir(parents=True)
+    unrelated = tmp_path / "other.quest_trace.json"
+    unrelated.write_text(json.dumps({"campaign_id": A.CAMPAIGN, "quest_status": "completed",
+                                     "stamps": [{"stage": "quest_completed"}]}))
+    with pytest.raises(RuntimeError, match="not bound to current state"):
+        A._live_quest_reader(str(state), trace_path=str(unrelated))()
+
+    local = state / "quest_trace.json"
+    local.write_text(json.dumps({"campaign_id": "another_campaign", "quest_status": "completed",
+                                 "stamps": [{"stage": "quest_completed"}]}))
+    with pytest.raises(RuntimeError, match="does not match current campaign"):
+        A._live_quest_reader(str(state), trace_path=str(local))()
+
+
+def test_mandatory_route_signature_retains_the_approach_actors():
+    """Keeping the room/kind while dropping Maera or the boss must not satisfy the §9 route."""
+    import pytest
+
+    no_boss = list(A.DEFAULT_ROUTE)
+    no_boss[4] = (*no_boss[4][:3], None)
+    assert any("Goblin Boss" in leg for leg in A.missing_mandatory_legs(tuple(no_boss)))
+    with pytest.raises(ValueError, match="mandatory"):
+        A.assert_route_returns_to_giver(tuple(no_boss))
+
+
+def test_route_complete_requires_a_clean_successful_giver_approach():
+    paid = {"kind": "return_to_giver", "arrived": True, "adjacent": True, "verdict": "GREEN",
+            "reward_leg": {"verdict": "GREEN"}}
+    assert A.is_route_complete({"stages": [paid]}) is True
+    assert A.is_route_complete({"stages": [{**paid, "adjacent": False}]}) is False
+    assert A.is_route_complete({"stages": [{**paid, "verdict": "RED",
+                                              "action_failed": "approach failed"}]}) is False
+
+
+def test_invalid_route_spec_is_a_cli_harness_error(capsys, tmp_path):
+    assert A.main(["--route", "[]", "--out", str(tmp_path)]) == 2
+    assert "ERROR: invalid route" in capsys.readouterr().err
+    assert A.main(["--route", "not-json", "--out", str(tmp_path)]) == 2
+    assert "ERROR: invalid route" in capsys.readouterr().err
+
+
+def test_partial_route_never_reports_completion_and_run_walk_validates_by_default(monkeypatch, tmp_path):
+    import pytest
+
+    partial = '[["only", "camp_clearing", "start"]]'
+    fw = _FakeWorld()
+    _wire(monkeypatch, fw)
+    with pytest.raises(ValueError, match="END on a"):
+        A.run_walk("http://e", "http://q", tmp_path, _clean, settle=0.0, timeout=0.2,
+                   route_spec=partial)
+    report = A.run_walk("http://e", "http://q", tmp_path, _clean, settle=0.0, timeout=0.2,
+                        route_spec=partial, allow_partial_route=True)
+    assert report["partial_route"] is True
+    assert report["verdict"] == "GREEN"
+    assert report["route_complete"] is False
+
+
+def test_route_override_rejects_duplicate_stage_ids():
+    import pytest
+
+    with pytest.raises(ValueError, match="duplicate stage ids"):
+        A.parse_route_spec('[['
+                           '"same", "camp_clearing", "start"], '
+                           '["same", "tavern_snug", "approach", "Keeper Maera"]]')

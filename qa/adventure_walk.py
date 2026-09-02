@@ -139,14 +139,22 @@ def parse_route_spec(spec=None) -> tuple:
     if isinstance(spec, str):
         spec = json.loads(Path(spec[1:]).read_text(encoding="utf-8") if spec.startswith("@") else spec)
     out: list = []
-    for e in spec:
-        if isinstance(e, dict):
-            out.append((e["id"], e["room"], e.get("kind", "walk"), e.get("actor")))
-        else:
-            e = list(e)
-            out.append((e[0], e[1], e[2] if len(e) > 2 else "walk", e[3] if len(e) > 3 else None))
+    try:
+        for e in spec:
+            if isinstance(e, dict):
+                out.append((e["id"], e["room"], e.get("kind", "walk"), e.get("actor")))
+            else:
+                e = list(e)
+                out.append((e[0], e[1], e[2] if len(e) > 2 else "walk", e[3] if len(e) > 3 else None))
+    except (IndexError, KeyError, TypeError) as exc:
+        raise ValueError(f"invalid route entry: {exc}") from exc
     if not out:
         raise ValueError("route override is empty — a walk with no stages proves nothing")
+    ids = [str(e[0]) for e in out]
+    duplicates = sorted({sid for sid in ids if ids.count(sid) > 1})
+    if duplicates:
+        raise ValueError(f"route override has duplicate stage ids {duplicates} — stage ids name "
+                         "evidence files and must be unique")
     return tuple(out)
 
 
@@ -365,12 +373,14 @@ def missing_mandatory_legs(plan: tuple) -> list:
     INSERTED (the wider-town-graph use case `--route` exists for), but no mandatory (room, kind) leg
     may be DROPPED: an override of the giver stage alone would otherwise walk camp->tavern and
     certify G3 without ever visiting the crypt, the throne hall, or the boss."""
-    want = [(room, kind) for _sid, room, kind, _a in DEFAULT_ROUTE]
+    # Actor identity is part of a mandatory leg: dropping Keeper Maera or the Goblin Boss skips the
+    # approach and removes the actor-presence VQA assertion while retaining the same room/kind pair.
+    want = [(room, kind, actor) for _sid, room, kind, actor in DEFAULT_ROUTE]
     i = 0
-    for _sid, room, kind, _a in plan:
-        if i < len(want) and (room, kind) == want[i]:
+    for _sid, room, kind, actor in plan:
+        if i < len(want) and (room, kind, actor) == want[i]:
             i += 1
-    return [f"{r}:{k}" for r, k in want[i:]]
+    return [f"{r}:{k}:{a or '-'}" for r, k, a in want[i:]]
 
 
 def assert_route_returns_to_giver(plan: tuple) -> tuple:
@@ -423,12 +433,17 @@ def is_route_complete(report: dict) -> bool:
     at camp, never reached the giver, or could not read the quest is not complete — the G3 row must
     never read ROUTE-COMPLETE off a walk that stopped short."""
     stages = report.get("stages") or []
+    if report.get("partial_route"):
+        return False
     # the FINAL stage, not merely some earlier giver stage: a walk that reached Maera and then
     # wandered on ends somewhere else, and its later stages may have failed outright.
     last = stages[-1] if stages else None
     if not last or last.get("kind") != "return_to_giver":
         return False
-    return bool(last.get("arrived")) and (last.get("reward_leg") or {}).get("verdict") == "GREEN"
+    return (last.get("verdict") == "GREEN"
+            and bool(last.get("arrived"))
+            and last.get("adjacent") is True
+            and (last.get("reward_leg") or {}).get("verdict") == "GREEN")
 
 
 def init_report(engine: str, qa: str, route: list) -> dict:
@@ -661,10 +676,14 @@ def walk_stage(qa: str, engine: str, stage: Stage, out_dir: Path, scorer: FrameS
 
 def run_walk(engine: str, qa: str, out_dir: Path, scorer: FrameScorer, *,
              settle: float, timeout: float, start: str = "camp_clearing", route_spec=None,
-             quest_reader: Optional[QuestReader] = None) -> dict:
+             quest_reader: Optional[QuestReader] = None, allow_partial_route: bool = False) -> dict:
     """Drive the full §9 arc, stage by stage, into a report. The caller decides the exit code."""
-    route = build_route(start, parse_route_spec(route_spec))
+    plan = parse_route_spec(route_spec)
+    if not allow_partial_route:
+        assert_route_returns_to_giver(plan)
+    route = build_route(start, plan)
     report = init_report(engine, qa, route)
+    report["partial_route"] = bool(allow_partial_route)
     out_dir.mkdir(parents=True, exist_ok=True)
     for stage in route:
         rec = walk_stage(qa, engine, stage, out_dir, scorer, settle=settle, timeout=timeout,
@@ -696,6 +715,8 @@ def _live_quest_reader(state_dir: str, campaign_id: str = CAMPAIGN,
     engine import (get_quests) against the sandbox state dir, plus the quest_trace.json stamps that
     lane writes. Read-only (engine stays the sole writer). Raises only when NEITHER source is
     readable, so read_reward_leg records that as ERROR rather than a false RED."""
+    state_root = Path(state_dir).expanduser().resolve()
+
     def _read() -> dict:
         out, errors = {}, []
         try:
@@ -705,9 +726,27 @@ def _live_quest_reader(state_dir: str, campaign_id: str = CAMPAIGN,
             trace = Path(trace_path) if trace_path else Path(state_dir) / "quest_trace.json"
             if trace.is_file():
                 tr = json.loads(trace.read_text(encoding="utf-8"))
+                trace_campaign = tr.get("campaign_id")
+                if trace_campaign != campaign_id:
+                    raise ValueError(f"trace campaign {trace_campaign!r} does not match "
+                                     f"current campaign {campaign_id!r}")
+                trace_resolved = trace.expanduser().resolve()
+                # A state-local trace is bound by its parent path. run_adventure.sh's external trace
+                # is bound by its canonical pair: qa/transcripts/<run>.quest_trace.json belongs only
+                # to qa/state/<run>. Any other arbitrary file is unrelated fallback evidence.
+                if not trace_resolved.is_relative_to(state_root):
+                    suffix = ".quest_trace.json"
+                    run_id = trace.name[:-len(suffix)] if trace.name.endswith(suffix) else ""
+                    expected_state = (HERE / "state" / run_id).resolve() if run_id else None
+                    if expected_state != state_root:
+                        raise ValueError(f"trace {trace_resolved} is not bound to current state "
+                                         f"{state_root}")
                 # carry quest_status too: when the live get_quests read below fails, the stamps are
                 # the ONLY evidence and a bare quest_completed stamp must not read as a paid reward.
                 out["stamps"] = tr.get("stamps") or []
+                out["trace_provenance"] = {"campaign_id": trace_campaign,
+                                           "path": str(trace_resolved),
+                                           "state_dir": str(state_root)}
                 # status AND both objective lists: the fallback applies the same outstanding-reward
                 # rule as the live read, instead of trusting a bare terminal stamp.
                 for k in ("quest_status", "objectives", "completed_objectives"):
@@ -762,15 +801,16 @@ def main(argv=None) -> int:
             engine, qa = m.get("engine", engine), m.get("qa", qa)
             state = state or m.get("state")
 
-    route_spec = parse_route_spec(args.route)
-    if not args.allow_partial_route:
-        assert_route_returns_to_giver(route_spec)
-
     out = Path(args.out)
-    report = run_walk(engine, qa, out, _live_scorer(args.model, args.vqa_timeout),
-                      settle=args.settle, timeout=args.move_timeout, route_spec=route_spec,
-                      quest_reader=_live_quest_reader(state, trace_path=args.quest_trace)
-                      if state else None)
+    try:
+        report = run_walk(engine, qa, out, _live_scorer(args.model, args.vqa_timeout),
+                          settle=args.settle, timeout=args.move_timeout, route_spec=args.route,
+                          quest_reader=_live_quest_reader(state, trace_path=args.quest_trace)
+                          if state else None,
+                          allow_partial_route=args.allow_partial_route)
+    except (OSError, TypeError, ValueError) as exc:
+        print(f"[adventure_walk] ERROR: invalid route: {exc}", file=sys.stderr)
+        return 2
     out.mkdir(parents=True, exist_ok=True)
     (out / "adventure_walk_report.json").write_text(json.dumps(report, indent=2) + "\n")
 
