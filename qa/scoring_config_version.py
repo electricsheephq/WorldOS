@@ -101,6 +101,7 @@ ARTIFACT_CONFIG_FILES: list[str] = [
 ADVENTURE_CONFIG_FILES: list[str] = [
     "adventure_eval_config.json",
     "adventure_eval.py",
+    "quest_progress.py",
 ]
 
 

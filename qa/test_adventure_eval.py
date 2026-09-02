@@ -72,7 +72,8 @@ def _write_run(
     summary = {"behavioral": behavioral, "engagement_pct": engagement_pct, "dead_beats": dead_beats,
                "completion_claimed": completed,
                "completion_verified": completed if completion_verified is None else completion_verified,
-               "completion_truth": completion_truth or [], "measured": measured}
+               "completion_truth": completion_truth or [], "measured": measured,
+               "dm_model_resolved": "claude-opus-4-8" if measured else None}
     Path(f"{prefix}.adventure.json").write_text(json.dumps(summary))
 
     # latency
@@ -150,6 +151,15 @@ def test_unpinned_model_persists_as_unmeasured(tmp_path):
     assert scores_db.fetch_rows(str(db))[0]["measured"] == 0
 
 
+def test_measured_is_recomputed_against_active_model_pin(tmp_path):
+    prefix = _write_run(tmp_path, "old-pin", measured=True)
+    summary_path = Path(f"{prefix}.adventure.json")
+    summary = json.loads(summary_path.read_text())
+    summary["dm_model_resolved"] = "a-previously-measured-model"
+    summary_path.write_text(json.dumps(summary))
+    assert ae.aggregate([prefix])["measured"] is False
+
+
 def test_stuck_detection_dead_beats_and_stage_gap(tmp_path):
     # adv0: clean. adv1: dead beats over threshold. adv2: a big stage gap (2 -> 12) outlier.
     p0 = _write_run(tmp_path, "adv0", dead_beats=0)
@@ -197,7 +207,7 @@ def test_persist_writes_one_adventure_row(tmp_path):
     assert row["surface"] == "adventure"
     # methodology names the budget the row was scored under + the models (aliases + resolved ids)
     assert row["methodology"].startswith("arc-duo N=3 beat_budget=20 ")
-    assert "dm=opus(unresolved)" in row["methodology"]
+    assert "dm=opus(claude-opus-4-8)" in row["methodology"]
     assert row["behavioral"] == "GREEN"
     assert "WEAKEST-LINK:" in row["notes"]
     assert adventure_config_version() in row["notes"]  # av_ ruler stamped in notes
@@ -232,6 +242,7 @@ def test_stages_bound_to_quest_progress():
 def test_adventure_ruler_fences_formulas():
     assert "adventure_eval.py" in ADVENTURE_CONFIG_FILES
     assert "adventure_eval_config.json" in ADVENTURE_CONFIG_FILES
+    assert "quest_progress.py" in ADVENTURE_CONFIG_FILES
 
 
 # ── item 3: stage-gap outlier uses abs() (guards corrupted/partial traces) ───────────────────────

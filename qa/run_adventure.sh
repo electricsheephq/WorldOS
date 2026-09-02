@@ -243,7 +243,10 @@ fi
 if [ "$RESUME_MODE" != "1" ]; then
   adv_clean_stale_artifacts   # fresh run: a rerun of a completed run-id must not inherit stale state
   adv_seed
-  adv_quest_poll 0 >/dev/null  # freeze seeded IDs before the DM can rename/reuse/mint world content
+  if ! adv_quest_poll 0 >/dev/null; then  # freeze IDs before any DM mutation
+    echo "[adventure] could not freeze the seeded world before the DM turn — aborting" >&2
+    exit 1
+  fi
 fi
 
 worldos_isolate_claude_auth
