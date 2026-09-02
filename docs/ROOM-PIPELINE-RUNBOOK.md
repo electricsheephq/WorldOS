@@ -501,6 +501,17 @@ python3 qa/walk_test.py --room <room> --engine http://127.0.0.1:8866 --qa http:/
     --visual 5 --out qa/evidence/walk-<room>
 ```
 
+**★ The rig is WINDOWED and refuses to launch over you (#1672 — incident 2026-09-02).** `up` exits
+**75** with `SANDBOX-DEFERRED (owner active)` if you touched the Mac in the last 120 s
+(`FORCE_PLAYER_QA=1` overrides; `WORLDOS_PLAYER_IDLE_THRESHOLD` retunes). The player launches
+`-screen-fullscreen 0 -screen-width 1280 -screen-height 697`, is watchdogged against fullscreen /
+offscreen from the window server's own bounds, and hands keyboard focus back afterwards. Size knobs:
+`WORLDOS_PLAYER_WIN_W` / `_WIN_H` (fit-clamped; never below the display's aspect, or sample cells
+crop out of the ortho frame). `down` leak-checks and restores the SHARED
+`com.worldos.WorldOSPlayer` plist and writes `<rundir>/prefs_leak.json`; `qa/qa_sandbox.py orphans`
+finds a rig stranded by a crashed run. The rig's window TITLE is still `WorldOSPlayer` until the
+Phase 2 badge lands — `docs/qa/QA-RIG-WINDOW-BADGE.md`.
+
 TRAPS (each cost a real debugging round):
 - **Gate the room the party is IN.** `walk_test --room B` while the fixture spawned the party in
   room A silently measures room A (identical counts, wrong camera). Multi-room fixtures take a

@@ -209,7 +209,31 @@ def orphan_cells(mask: dict, start: tuple) -> list:
     return sorted(set(mask["walkable"]) - bfs_reachable(mask, start))
 
 
-def diff_blobs(img_a, img_b, *, min_area_px: int = 250, thresh: int = 60) -> list:
+def _frame_mean(img) -> float:
+    """Mean RGB level of a captured frame — the black-frame detector for the visual stage."""
+    import numpy as np  # noqa: PLC0415
+
+    return float(np.asarray(img.convert("RGB"), dtype=float).mean())
+
+
+def visual_diff_params(ortho: float, w: int, h: int) -> dict:
+    """Scale the pixel-diff clustering constants to the LIVE window (#1672 windowed sandbox).
+
+    The 60px cluster-merge radius and the 250px min-area were tuned at the fullscreen 2984x1634
+    baseline, where one grid cell is ~126px — 60px is 0.48 cell, comfortably smaller than a hop. At
+    the windowed 1280x697 the same fixed 60px is ~1.1 CELLS: the departure and arrival blobs of a
+    short hop MERGE into one centroid midway between them, so a 3-cell hop measures ~half its true
+    distance and a correct build reads FALSE RED. Both constants are therefore derived from the
+    frame, not hard-coded.
+    """
+    cpx = cell_px(ortho, h)
+    return {"cell_px": round(cpx, 1),
+            "merge_px": max(16, round(0.45 * cpx)),
+            "min_area_px": max(60, round(250 * (w * h) / (2984 * 1634)))}
+
+
+def diff_blobs(img_a, img_b, *, min_area_px: int = 250, thresh: int = 60,
+               merge_px: int = 60) -> list:
     """Cluster the pixel differences between two frames — the moved actor shows up as the two largest
     blobs (departure + arrival). Returns clusters as dicts {cx, cy, bottom: (x,y), area}, area-sorted.
     Pure (arrays in, dicts out) so it is unit-testable with synthetic frames. Animated fire/glow
@@ -225,7 +249,7 @@ def diff_blobs(img_a, img_b, *, min_area_px: int = 250, thresh: int = 60) -> lis
     clusters: list = []
     for x, y in zip(xs.tolist(), ys.tolist()):
         for c in clusters:
-            if abs(x - c["sx"] / c["n"]) < 60 and abs(y - c["sy"] / c["n"]) < 60:
+            if abs(x - c["sx"] / c["n"]) < merge_px and abs(y - c["sy"] / c["n"]) < merge_px:
                 c["sx"] += x; c["sy"] += y; c["n"] += 1
                 if y > c["maxy"]:
                     c["maxy"], c["bxs"] = y, [x]
@@ -601,18 +625,55 @@ def _visual_registration(qa: str, engine: str, mask: dict, ortho: float, cells: 
     except Exception as e:  # noqa: BLE001
         return {"pass": 0, "fail": 0, "cases": [], "window": None, "error": f"health: {e}"}
     res["window"] = [w, h]
-    tol = 1.25 * cell_px(ortho, h)
     cols, rows = mask["cols"], mask["rows"]
 
-    def _proj(cell):
+    def _proj_win(cell):
         wx = (cell[0] - (cols - 1) / 2.0) * 2.0
         wz = ((rows - 1) / 2.0 - cell[1]) * 2.0
         return world_to_window_px(wx, 0.6, wz, ortho, w, h)   # 0.6 up = lower-torso/feet band
 
+    # --- #1672 capture preflight: three ways this stage can silently invent a verdict, each now a
+    # --- NAMED harness error instead of a mysterious per-cell RED. Windowing the sandbox player made
+    # --- all three reachable: a 2x HiDPI backbuffer, a minimized/occluded window, and a window whose
+    # --- aspect crops sample cells out of frame.
+    calib = _capture_shot(qa, out, "vis_calib")
+    if not calib:
+        return {**res, "error": "calibration capture FAILED — /shot returned no usable frame"}
+    with Image.open(calib) as _im:
+        iw, ih = _im.size
+        arr_mean = _frame_mean(_im)
+    if (iw, ih) == (w, h):
+        scale = 1.0
+    elif (iw, ih) == (2 * w, 2 * h):
+        scale = 2.0                        # macRetinaSupport=1 — capture is the backing buffer
+    else:
+        return {**res, "error": f"capture geometry {iw}x{ih} is neither 1x nor 2x the reported "
+                                f"window {w}x{h} — the projection math cannot be calibrated"}
+    res["capture_scale"] = scale
+    if arr_mean < 8:
+        return {**res, "error": "capture is BLACK — the QA window is minimized/offscreen/occluded; "
+                                "ScreenCapture returned no presented frame (mean luminance "
+                                f"{arr_mean:.2f} < 8). Fix the window, do not trust this run."}
+
+    def _proj(cell):
+        px, py = _proj_win(cell)
+        return (px * scale, py * scale)
+
+    outside = [list(c) for c in cells
+               if not (0 <= _proj(c)[0] < iw and 0 <= _proj(c)[1] < ih)]
+    if outside:
+        return {**res, "error": f"cells project OUTSIDE the {iw}x{ih} capture: {outside} — the "
+                                f"window aspect ({w}/{h}) crops them out of the ortho frame; widen "
+                                f"the window (WORLDOS_PLAYER_WIN_W) or reduce the sample set"}
+
+    tol = 1.25 * cell_px(ortho, ih)
+    res["diff_params"] = visual_diff_params(ortho, iw, ih)
+    merge_px, min_area_px = res["diff_params"]["merge_px"], res["diff_params"]["min_area_px"]
+
     # brazier/hearth flame VFX flicker sits ON the fire cell — mask any diff blob within ~1.5 cells of
     # a fire-anchor screen position so it cannot win the nearest-neighbour race against the actor.
     fire_px = [_proj(fc) for fc in fire_cells]
-    fire_radius = 1.5 * cell_px(ortho, h)
+    fire_radius = 1.5 * cell_px(ortho, ih)
     res["fire_cells"] = [list(fc) for fc in sorted(fire_cells)]
 
     prev = _token_cell(_get(f"{engine}/combat-surface"))
@@ -638,13 +699,15 @@ def _visual_registration(qa: str, engine: str, mask: dict, ortho: float, cells: 
         shot_new = _capture_shot(qa, out, f"vis_{i}_c{cell[0]}r{cell[1]}")
         case = {"cell": list(cell), "moved": ok_move, "dist_px": None, "tol_px": round(tol, 1), "ok": False}
         if ok_move and shot_prev and shot_new:
-            raw = diff_blobs(Image.open(shot_prev).convert("RGB"), Image.open(shot_new).convert("RGB"))
+            raw = diff_blobs(Image.open(shot_prev).convert("RGB"), Image.open(shot_new).convert("RGB"),
+                             min_area_px=min_area_px, merge_px=merge_px)
             blobs = mask_fire_blobs(raw, fire_px, fire_radius)   # drop brazier-flicker blobs first
             d_new = nearest_blob_distance(blobs, _proj(cell))    # inf when all blobs were fire-masked
             d_prev = nearest_blob_distance(blobs, _proj(prev)) if prev else 0.0
             case["dist_px"] = round(d_new, 1)
             case["dist_prev_px"] = round(d_prev, 1)
             case["n_blobs"] = len(blobs)
+            case["blob_area_max"] = max((b["area"] for b in blobs), default=0)
             case["n_blobs_masked"] = len(raw) - len(blobs)
             case["ok"] = d_new <= tol
         res["cases"].append(case)

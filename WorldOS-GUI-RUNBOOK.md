@@ -495,6 +495,26 @@ every PR touching `viewer/ | macos/ | skills/ | servers/engine/` → rebuild + R
 any regression (a critical bug, a sub-7 persona, sub-threshold score, image <95%, dead palette)
 reverts the goal to "fix" and outranks new work.
 
+## QA rig vs the owner's game (#1672 — incident 2026-09-02)
+
+`qa/qa_sandbox.py` runs a SECOND instance of the same `.app` with the same bundle id. On 2026-09-02
+it launched with no Unity window args, inherited the shared plist's fullscreen + native resolution,
+took over the developer's only display and the Mac had to be rebooted. Now:
+
+- Every sandbox launch is **windowed** (`-screen-fullscreen 0 -screen-width 1280 -screen-height 697
+  -logFile <rundir>/unity_player.log`) and fitted to the real desktop. Never fullscreen.
+- An **owner-active guard** (ioreg `HIDIdleTime` < 120 s) refuses to launch and exits **75** with
+  `SANDBOX-DEFERRED (owner active)`. Override with `FORCE_PLAYER_QA=1` when you are not at the Mac.
+- A permission-free CGWindowList **watchdog** tears the run down within ~25 s if the window comes up
+  fullscreen or effectively offscreen. `/health` geometry is then asserted (1x or 2x HiDPI).
+- The bundle id is SHARED, so the rig never writes the plist; `down` snapshots → diffs → **restores**
+  `~/Library/Preferences/com.worldos.WorldOSPlayer.plist` and writes `<rundir>/prefs_leak.json`.
+- **Telling them apart today:** window geometry, `lsof -nP -iTCP:8972 -sTCP:LISTEN -t` (owner = 8971),
+  and `sandbox.json`. The rig's window TITLE is still `WorldOSPlayer` — the badge is Phase 2,
+  `docs/qa/QA-RIG-WINDOW-BADGE.md`.
+- Stray rig left by a crashed run: `qa/qa_sandbox.py orphans`. **Never**
+  `osascript -e 'quit app "WorldOSPlayer"'` — that kills the owner's instance too.
+
 ## Hard rules (carried from CLAUDE.md + this session's lessons)
 - Engine (`servers/engine`) = SOLE writer of campaign state. Don't touch wire contracts
   (`worldos-*`/`WORLDOS_*` MCP ids, `dev.worldos.app`); you MAY read `WORLDOS_ART_REPO_ROOT`.

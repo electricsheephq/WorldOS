@@ -428,6 +428,23 @@ class NoHijackLaunchTests(unittest.TestCase):
     def test_player_smoke_is_no_hijack(self):
         self._assert_runner_no_hijack(SMOKE_RUNNER.read_text(encoding="utf-8"))
 
+    def test_qa_sandbox_lane_is_no_hijack(self):
+        """#1672 / incident 2026-09-02: qa/qa_sandbox.py was the ONLY player launch site that skipped
+        the #1456 contract above, so it inherited the SHARED plist's fullscreen+native-resolution
+        state and took over the developer's only display. It is a Python lane, not a shell runner, so
+        it re-implements the same two fences plus a plist leak check — fenced by the same test class
+        as the two shell lanes so the three cannot drift apart again."""
+        src = (ROOT / "qa" / "qa_sandbox.py").read_text(encoding="utf-8")
+        self.assertIn("-screen-fullscreen", src, "sandbox launch must force -screen-fullscreen 0")
+        self.assertIn("-screen-width", src)
+        self.assertIn("-logFile", src)
+        self.assertIn("HIDIdleTime", src, "guard must read console-user idle from ioreg HIDIdleTime")
+        self.assertIn("FORCE_PLAYER_QA", src, "guard must honor a FORCE_PLAYER_QA=1 override")
+        self.assertIn("SANDBOX-DEFERRED (owner active)", src)
+        self.assertIn("os.killpg", src, "teardown is process-GROUP scoped, never terminate()")
+        self.assertIn("_plist_snapshot", src, "the SHARED bundle id needs a plist leak check")
+        self.assertNotIn("activate_current_space_context", src)
+
 
 class PlayerSmokeTests(unittest.TestCase):
     """qa/player_smoke.sh (#1443) — the deterministic, headless-of-agents post-build check."""
