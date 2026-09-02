@@ -150,3 +150,20 @@
 - Rule unchanged: every panel batch carries this control + ≥1 SHIPPED plate as a disguised calibration reference
   (shop_v1 / tavern_snug c3 / kit crypt+tavern); verdicts are blind-adjudicated. player_cert thresholds were calibrated
   on LEXAR-era frames — re-check against this pin before the first post-migration beauty verdict.
+
+### 2026-09-02 — §9 DEMO COMPLETION gates: the honest G1-G4 table (refresh charter #1702, Track A step 6, first pass)
+Builds under test: **b4ee4f2e…** (local Unity 6000.5.6f1, 05:02Z, main 47203674/#1705 head; walk/cert measured on it) and
+**07a997e9…** (06:02Z rebuild after the packaged-data sync; PINS GREEN; re-gate pending). Engine `main` b13fdaab, Unity repo
+b016a7db. Fixtures: `registered_world_v1` (crypt/tavern/throne, no monsters) for the room gates + cert; `adventure_demo_v1`
+for the arc. Evidence root: `session-notes/2026-09-02/worldos-refresh/artifacts/` (owner-reviewed dir).
+
+| Gate | Status today | Measured | Does NOT prove |
+|---|---|---|---|
+| **G1** certified gates on an installed build with build identity | **INTERIM-GREEN on b4ee4f2e; re-gate on 07a997e9 pending** | walk_test crypt (kit v1 plate) GREEN: camera 11.7851 exact · reachable 113/0 · impassable 77/0 · doors 2/0 · path 113/0 · visual 4/0 (6-22 px) · orphans 0 (`walk-crypt-rw/`). walk_test tavern (kit v2 plate) GREEN: 10.5224 · 90/0 · 62/0 · 2/0 · 90/0 · 4/0 (7-25 px) (`walk-tavern/`). player_cert --live: spawn_coherence_open GREEN · silhouette_behind_occluder GREEN (0.274) · silhouette_absent_when_visible GREEN (tint 0.0) · cast_renders_full_figure ERROR = harness (no foe in the fixture). Build identity = INTERIM (build-report + player sha + repo heads in `build_identity_interim.txt`). **Packaged-pin check on b4ee4f2e = RED**: the app carried `tavern_kit_v1` (deleted table) + the pre-kit chunky sidecars because `EnsurePackaged` sources the Unity project ROOT; root synced, rebuilt → **PINS GREEN on 07a997e9** (`pins_rebuild.txt`). | Not an installed OWNER build; the stamp-diff assertion (#1651) is not wired, so identity is provenance-only; walkability is engine-side, so the stale sidecars did not touch walk verdicts but DID drive the cyan actor ghosts seen in frames; roster-complete cert (#1651) absent; the per-room gates were run with the sandbox player fullscreen (rig fix in flight). |
+| **G2** arc-duo text eval, N=3 blind-adjudicated | **N=1 valid, RUNNING toward 3** | `adv_reboot1`: behavioral GREEN (5 WARNs), combat closure asserts PASS (#1645 holds), quest ACTIVE→**FAILED** at beat 14 (PC downed in the crypt fight — a legitimate loss, not a harness fault). `adv_reboot2`: harness abort (expired CLI OAuth) — not a run. `adv_reboot3` running 06:15Z; `adv_reboot4` follows (solo tenant). | No citable verdict below N=3; July's 3/3 completions came from a different DM/engine state — a FAILED run at N=1 is a signal to adjudicate, not a regression claim. |
+| **G3** walked arc over the full route | **NAV-GREEN / VQA-ERROR (first ever run)** | `adventure_walk`: 6/6 stages ARRIVED camp→tavern_snug→camp→crypt→throne_hall→camp, dead clicks 1, stuck 0, 105 s (b4ee4f2e); every stage `vqa_scorer_error` (the scorer is `claude -p`; credential expired at the time — fixed since). | The route ends at camp: the return-to-giver leg (Maera, tavern_snug) is not walked (#1709); VQA unscored; frames were eyeballed by the orchestrator only (kit crypt renders; tavern_snug/crypt showed cyan actor ghosts = chunky-sidecar class, since re-sourced). |
+| **G4** owner playthrough | **PENDING** | No owner install yet; the demo path is a local ad-hoc-signed build (no notarization). Install after the rig fix + re-gates on 07a997e9 + #1677/#1522 client fixes. | — |
+
+Instruments added this pass: packaged-pin check (`step56_measure.sh pins` → repo tool in flight, #1651 family); the adventure-fixture
+crypt gate RED (110/3 · visual 3/1) was fully explained by goblin-occupied cells → walk_test occupied-cell handling filed (#1709 item 6).
+Standing rule: PIXELS BEFORE CREDIT — the 3-tables-vs-4 eyeball is what exposed the stale packaged data under a green build.
