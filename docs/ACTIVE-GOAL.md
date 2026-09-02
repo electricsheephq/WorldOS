@@ -11,7 +11,7 @@
 **Execute PRODUCT-ROADMAP.md's sprints in charter order.** The only finish lines are:
 
 1. **Owner check-in** — a new message from the owner is always a stop-and-respond point.
-2. **DEMO COMPLETION (PRODUCT-ROADMAP §9) — all four gates green as §9 defines them: G1 certified gates on the OWNER-INSTALLED build with build identity, G2 the N≥3 blind-adjudicated text arc, G3 the walked full route in the sandbox player, G4 the agent playthrough (owner at the 80/20 wall)** (the governing milestone since 2026-07-22; charter #1702 as of 2026-09-02), then the first TOWN world (Track C, epic #1640). GA v1.1.0 (milestone #36) remains the Act I terminus AFTER that — not a finish line for the current run.
+2. **DEMO COMPLETION (PRODUCT-ROADMAP §9) — all four gates green as §9 defines them: G1 certified gates on the OWNER-INSTALLED build with build identity, G2 the N≥3 blind-adjudicated text arc, G3 the walked full route in the sandbox player, G4 the agent playthrough (owner at the 80/20 wall)** (the governing milestone since 2026-07-22; charter #1702 as of 2026-09-02), then **World Readiness for "The Crypt Below" as PRODUCT-ROADMAP §9.3 defines DONE for a world**, then the first TOWN world (Track C, epic #1640). GA v1.1.0 (milestone #36) remains the Act I terminus AFTER that — not a finish line for the current run.
 3. **A VERIFIED blocker on ALL parallel lanes simultaneously** — see Blocker Law below.
 
 **Nothing else is "done."** Completing a task list, finishing a PR batch, closing a sprint,
