@@ -103,6 +103,19 @@ function ScreenInventory({ onNavigate, state, setState }) {
   }, [loadSurface]);
 
   const hero = party.find((p) => p.id === activeHero) || party[0] || null;
+  // SAT→7 (drop-confirm on equipped gear): a one-click Drop on WORN gear (body armor especially) is
+  // irreversible with no safety net. This wrapper performs the drop /move unchanged for a LOOSE stash
+  // item (no nag), but gates an EQUIPPED item behind window.confirm (the same pattern as quickload /
+  // seed-reset). Cancel = no-op; confirm = the exact original drop move. Shared by both Drop affordances
+  // (context-menu + detail pane) so they nag identically. Loose inventory is never nagged.
+  const confirmDrop = React.useCallback((item, doDrop) => {
+    if (typeof doDrop !== "function" || !item) return;
+    if (isItemEquipped(item, hero && hero.equipped)) {
+      const ok = window.confirm(dropEquippedConfirmMessage(item.name));
+      if (!ok) return;
+    }
+    doDrop();
+  }, [hero]);
   // RRI-5e98e6f: derive the displayed coin purse from the ONE shared selector + normalizer the
   // Market also uses, so the same character's coins read identically on both screens (no
   // 35-vs-232 divergence). partyPurse resolves the active hero (else party[0]) and zeroes/ints it.
@@ -340,7 +353,7 @@ function ScreenInventory({ onNavigate, state, setState }) {
           stash item missing a stat the granted item didn't persist backfills to the same depth.
           The item's OWN persisted fields win; an unresolved name returns the item untouched. */}
       <Panel framed style={{ padding: 22, overflow: "auto" }}>
-        {selectedItem ? <ItemDetail item={window.enrichWare ? window.enrichWare(selectedItem, catalog) : selectedItem} hero={hero} toast={toast} canAct={canAct} postInvMove={postInvMove} examineSignal={examineNonce} /> : <div className="muted">Select an item.</div>}
+        {selectedItem ? <ItemDetail item={window.enrichWare ? window.enrichWare(selectedItem, catalog) : selectedItem} hero={hero} toast={toast} canAct={canAct} postInvMove={postInvMove} confirmDrop={confirmDrop} examineSignal={examineNonce} /> : <div className="muted">Select an item.</div>}
       </Panel>
 
       {ctxMenu && (
@@ -361,7 +374,7 @@ function ScreenInventory({ onNavigate, state, setState }) {
               : { label: "Hand to a companion (preview)", icon: "→", disabled: true, title: "Display-only — start a live session to act", onClick: () => toast({ kind: "item", title: ctxMenu.item.name + " handed over" }) },
             { divider: true },
             canAct
-              ? { label: "Drop", icon: "▾", tone: "crimson", title: "Relays to the DM via /move — the engine resolves it", onClick: () => postInvMove("do", { text: "I drop the " + ctxMenu.item.name + "." }, { kind: "danger", title: "Dropping " + ctxMenu.item.name, body: "Relayed to the DM — you will not get it back unless you fetch it yourself." }) }
+              ? { label: "Drop", icon: "▾", tone: "crimson", title: "Relays to the DM via /move — the engine resolves it", onClick: () => confirmDrop(ctxMenu.item, () => postInvMove("do", { text: "I drop the " + ctxMenu.item.name + "." }, { kind: "danger", title: "Dropping " + ctxMenu.item.name, body: "Relayed to the DM — you will not get it back unless you fetch it yourself." })) }
               : { label: "Drop (preview)", icon: "▾", tone: "crimson", disabled: true, title: "Display-only — start a live session to act", onClick: () => toast({ kind: "danger", title: "Dropped: " + ctxMenu.item.name, body: "You will not get it back unless you fetch it yourself." }) },
           ]}
         />
@@ -414,6 +427,32 @@ function inferEquipSlotId(name) {
     if (needles.some((n) => low.includes(n))) return slot;
   }
   return ""; // unrecognized — placed into the first free generic cell by assignEquipSlots
+}
+
+// SAT→7 (adversarial minor): is `item` one of the hero's CURRENTLY-EQUIPPED pieces? Equipped gear is
+// hero.equipped (the worn read-model). Stable IDs win when both sides have one, preventing a loose
+// duplicate-name copy from matching the equipped copy. Legacy entries without IDs fall back to an exact
+// name slug. Pure: reads only its args, writes nothing.
+function isItemEquipped(item, equipped) {
+  if (!item || !Array.isArray(equipped)) return false;
+  const itemId = item.id == null ? "" : String(item.id);
+  const target = item.name ? slug(item.name) : "";
+  return equipped.some((e) => {
+    if (!e) return false;
+    const equippedId = e.id == null ? "" : String(e.id);
+    if (itemId && equippedId) return itemId === equippedId;
+    return Boolean(target && e.name && slug(e.name) === target);
+  });
+}
+// The confirm copy for dropping/unequipping a WORN piece — irreversible, body armor especially. One
+// shared string so the context-menu Drop and the detail-pane Drop nag identically. Returns the message;
+// callers gate the actual drop behind `window.confirm(this)` (matching screen-settings/screen-seed).
+function dropEquippedConfirmMessage(name) {
+  return (
+    "Drop " + (name || "this item") + "?\n\n" +
+    "It is CURRENTLY EQUIPPED. Dropping it unequips and discards it — you will not get it back unless " +
+    "you fetch it yourself. This cannot be undone."
+  );
 }
 
 // Build a { slotId: equippedItem } map from hero.equipped. Rings and weapons spill from
@@ -687,7 +726,7 @@ function packContents(item) {
   return out;
 }
 
-function ItemDetail({ item, hero, toast, canAct, postInvMove, examineSignal }) {
+function ItemDetail({ item, hero, toast, canAct, postInvMove, confirmDrop, examineSignal }) {
   // #756: Examine opens a real read-only PANEL (the full description + every resolved
   // stat), not a fleeting toast — the optimizer's "Examine fires a toast ONLY". Local
   // display state; closing returns to the standard inspector. Reset when the item changes.
@@ -853,7 +892,7 @@ function ItemDetail({ item, hero, toast, canAct, postInvMove, examineSignal }) {
         )}
         <BrassButton tone="ghost" size="sm" aria-haspopup="dialog" onClick={() => setExamineOpen(true)}>Examine</BrassButton>
         {canAct ? (
-          <BrassButton tone="ghost" size="sm" title="Relays to the DM via /move — the engine resolves it" onClick={() => postInvMove("do", { text: "I drop the " + item.name + "." }, { kind: "danger", title: "Dropping " + item.name, body: "Relayed to the DM." })}>
+          <BrassButton tone="ghost" size="sm" title="Relays to the DM via /move — the engine resolves it" onClick={() => confirmDrop(item, () => postInvMove("do", { text: "I drop the " + item.name + "." }, { kind: "danger", title: "Dropping " + item.name, body: "Relayed to the DM." }))}>
             Drop
           </BrassButton>
         ) : (
@@ -890,4 +929,4 @@ function itemCategory(item) {
 
 function toRoman(n) { return ["", "I", "II", "III", "IV", "V"][n] || n; }
 
-Object.assign(window, { ScreenInventory, CoinSlot, ItemSlot, ItemDetail, packContents, EQUIP_SLOTS, PaperDoll, EquipSlotCell, inferEquipSlotId, assignEquipSlots, ITEM_TYPES, ITEM_KINDS, itemCategory, toRoman, slug, itemScope, itemStatRows, itemCompareRows });
+Object.assign(window, { ScreenInventory, CoinSlot, ItemSlot, ItemDetail, packContents, EQUIP_SLOTS, PaperDoll, EquipSlotCell, inferEquipSlotId, assignEquipSlots, isItemEquipped, dropEquippedConfirmMessage, ITEM_TYPES, ITEM_KINDS, itemCategory, toRoman, slug, itemScope, itemStatRows, itemCompareRows });
