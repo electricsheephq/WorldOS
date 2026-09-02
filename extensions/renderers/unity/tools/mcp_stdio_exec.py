@@ -119,7 +119,6 @@ def main():
     timeout = float(os.environ.get("MCP_TIMEOUT", "180"))
     deadline = time.time() + timeout  # ONE budget: attach retries + the call
     transport = Transport(os.environ.get("MCP_STDERR", os.devnull))
-    rc = 2
     try:
         init = transport.recv(transport.send("initialize", {
             "protocolVersion": "2025-06-18", "capabilities": {},
