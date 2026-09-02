@@ -323,7 +323,8 @@ def test_visual_registry_bands_are_0_10_scale():
     # 13 frames minus the 4 disclosed-defective bg2ee frames (2026-07-08 panel + 2026-07-09 audit) —
     # the builder owns the exclusion list, so this count can only change with an audited decision.
     assert len(r["controls"]) == 9
-    assert set(r["excluded"]) == set(build_visual_controls._EXCLUDED) and len(r["excluded"]) == 4
+    assert set(r["excluded"]) == set(build_visual_controls._EXCLUDED)
+    assert len(r["excluded"]) == 4
 
 
 def test_committed_visual_registry_matches_builder():
