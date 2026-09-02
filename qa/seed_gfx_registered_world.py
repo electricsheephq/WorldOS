@@ -34,13 +34,17 @@ ROOMS = [
     ("crypt", "crypt_v36_geometry.json",
      [([7, 0], "tavern"), ([15, 5], "throne_hall")]),
     ("tavern", "tavern_v2_geometry.json",
-     [([7, 0], "crypt"), ([13, 5], "shop")]),
+     [([7, 0], "crypt"), ([13, 5], "tavern_snug")]),
     ("throne_hall", "throne_hall_geometry.json",
      [([8, 11], "crypt")]),
+    # 2026-09-02 re-author (qa/reauthor_legacy_room.md): the shop's back-wall cell (6,0) and the
+    # (12,5) seam were retired to WALL — the plate paints ONE opening, the archway, whose only legal
+    # perimeter door is (12,4). A single-door shop cannot be a pass-through, so the spine now runs
+    # crypt <-> tavern <-> tavern_snug <-> shop and the snug's second door (11,4) carries the seam.
     ("shop", "shop_geometry.json",
-     [([6, 0], "tavern"), ([12, 5], "tavern_snug")]),
+     [([12, 4], "tavern_snug")]),
     ("tavern_snug", "tavern_snug_geometry.json",
-     [([5, 0], "shop")]),
+     [([5, 0], "tavern"), ([11, 4], "shop")]),
 ]
 
 

@@ -14,7 +14,7 @@
    ],
    "debug": "cell(4,9) rest=True foe=(1,1)'char_72e22e8268b1' imp=Y occ=n",
    "pass": true,
-   "frame": "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/camp_clearing/felt_4_9.png"
+   "frame": "qa/evidence/legacy-reauthor-20260902/camp_clearing/felt_4_9.png"
   },
   {
    "cell": [
@@ -80,7 +80,7 @@
    ],
    "debug": "cell(11,5) rest=True foe=(1,1)'char_72e22e8268b1' imp=Y occ=n",
    "pass": true,
-   "frame": "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/camp_clearing/felt_11_5.png"
+   "frame": "qa/evidence/legacy-reauthor-20260902/camp_clearing/felt_11_5.png"
   },
   {
    "cell": [
@@ -133,7 +133,7 @@
    ],
    "debug": "cell(2,8) rest=True foe=(1,1)'char_72e22e8268b1' imp=n occ=n",
    "pass": true,
-   "frame": "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/camp_clearing/felt_2_8.png"
+   "frame": "qa/evidence/legacy-reauthor-20260902/camp_clearing/felt_2_8.png"
   },
   {
    "cell": [
@@ -238,7 +238,7 @@
    ],
    "debug": "cell(14,1) rest=True foe=(1,1)'char_72e22e8268b1' imp=n occ=n",
    "pass": true,
-   "frame": "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/camp_clearing/felt_14_1.png"
+   "frame": "qa/evidence/legacy-reauthor-20260902/camp_clearing/felt_14_1.png"
   },
   {
    "cell": [

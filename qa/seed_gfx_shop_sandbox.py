@@ -9,9 +9,10 @@ shop class without touching the owner's campaign:
       --seed-cmd "uv run --directory servers/engine python qa/seed_gfx_shop_sandbox.py {state}"
   qa/walk_test.py --room shop --engine http://127.0.0.1:8866 --qa http://127.0.0.1:8972
 
-Door graph: crypt (7,0) <-> shop (6,0). The shop's second door (12,5) stays a walkable punched cell,
-unwired (the town seam — wired later by generate_town). door_cells[i] <-> connections[i] ORDER is the
-engine cross_door contract (servers/engine/server.py).
+Door graph: crypt (7,0) <-> shop (12,4). The 2026-09-02 re-author retired the shop's back-wall cell
+(6,0) and the (12,5) seam to WALL — the plate paints exactly one opening, the archway, and (12,4) is
+its only legal perimeter door (qa/reauthor_legacy_room.md), so the shop now has a single door.
+door_cells[i] <-> connections[i] ORDER is the engine cross_door contract (servers/engine/server.py).
 """
 from __future__ import annotations
 
@@ -26,7 +27,9 @@ GEO = HERE / "room_geometries"
 
 ROOMS = [
     ("crypt", "crypt_v36_geometry.json", [([7, 0], "shop")]),
-    ("shop", "shop_geometry.json", [([6, 0], "crypt")]),
+    # (6,0) was retired to wall by the 2026-09-02 re-author — the shop's only authored door is the
+    # painted archway's perimeter cell (12,4). See qa/reauthor_legacy_room.md.
+    ("shop", "shop_geometry.json", [([12, 4], "crypt")]),
 ]
 
 

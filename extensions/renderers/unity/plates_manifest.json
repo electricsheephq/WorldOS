@@ -99,12 +99,12 @@
     "yaw": 45
    },
    "boxes": "boxes/shop_v1_boxes.json",
-   "_door_hotspots_comment": "#1585/#1647 PAINTED-DOOR HOTSPOTS (plate-pixel click targets in the 1344x768 registered plate; a click inside a hotspot routes exactly like clicking door_cell -> cross_door). Measured 2026-07-22 by overlaying the contract-camera cell projection (qa/walk_test.world_to_window_px at texW/texH) on shop_v1_registered.png and reading the PAINTED arch centroid off a 50px grid (artifacts/zoom_shop_door12_5.png). door_cell (12,5) projects to px (1037,230) but the painted dark archway opening centroid sits at ~(900,275) \u2014 the ~2-cell #1585 divergence. door_cell (6,0) is occluded by the potion shelf (no visible arch) -> intentionally omitted (TODO, see PR body).",
+   "_door_hotspots_comment": "#1585/#1647 PAINTED-DOOR HOTSPOTS (plate-pixel click targets in the 1344x768 registered plate; a click inside a hotspot routes exactly like clicking door_cell -> cross_door). Measured 2026-07-22 by overlaying the contract-camera cell projection (qa/walk_test.world_to_window_px at texW/texH) on shop_v1_registered.png and reading the PAINTED arch centroid off a 50px grid (artifacts/zoom_shop_door12_5.png). the painted dark archway opening centroid sits at ~(900,275). RETARGETED 2026-09-02 by the legacy re-author (qa/reauthor_legacy_room.md): the shop door moved to the perimeter cell (12,4), whose landing (11,4) is inside the painted arch, while (6,0) and (12,5) became wall. The hotspot PIXEL is unchanged (the arch did not move) but its door_cell must track the live door \u2014 CombatSurfaceClient.TryDoorHotspot only fires for a cell present in _doorTo, so a stale cell draws a glow on the arch that does nothing.",
    "door_hotspots": [
     {
      "door_cell": [
       12,
-      5
+      4
      ],
      "px": [
       900,

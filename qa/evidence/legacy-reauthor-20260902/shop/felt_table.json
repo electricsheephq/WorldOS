@@ -40,7 +40,7 @@
    ],
    "debug": "cell(5,7) rest=True foe=(-1,-1)'' imp=Y occ=n",
    "pass": true,
-   "frame": "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/shop/felt_5_7.png"
+   "frame": "qa/evidence/legacy-reauthor-20260902/shop/felt_5_7.png"
   },
   {
    "cell": [
@@ -145,7 +145,7 @@
    ],
    "debug": "cell(5,3) rest=True foe=(-1,-1)'' imp=n occ=n",
    "pass": true,
-   "frame": "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/shop/felt_5_3.png"
+   "frame": "qa/evidence/legacy-reauthor-20260902/shop/felt_5_3.png"
   },
   {
    "cell": [
@@ -289,7 +289,7 @@
    ],
    "debug": "cell(11,5) rest=True foe=(-1,-1)'' imp=n occ=n",
    "pass": true,
-   "frame": "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/shop/felt_11_5.png"
+   "frame": "qa/evidence/legacy-reauthor-20260902/shop/felt_11_5.png"
   }
  ]
 }

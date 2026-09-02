@@ -64,21 +64,26 @@ def _post(url: str, payload: dict) -> dict:
         return json.loads(fh.read().decode())
 
 
-def verify(surface: dict, dbg: dict, aspect: float) -> dict:
-    """Residual, in cells, between the actor's PREDICTED and REPORTED viewport position."""
+def verify(surface: dict, dbg: dict, aspect: float, ortho: float) -> dict:
+    """Residual, in cells, between the actor's PREDICTED and REPORTED viewport position.
+
+    `ortho` is the ortho the overlay will actually be DRAWN with, not necessarily the live camera's:
+    verifying the live value while drawing a `--ortho` override would hand a wrong projection a GREEN
+    residual, and this check is what licenses editing collision geometry off the overlay.
+    """
     g = surface["grid"]
     tok = next((t for t in (surface.get("stage") or {}).get("tokens", [])
                 if t.get("kind") == "player"), None)
     if tok is None or dbg.get("actorVX") is None:
         return {"ok": False, "reason": "no player token / no actorV on /debug"}
-    ortho = float(dbg["camOrtho"])
     vx, vy = cell_to_viewport(float(tok["x"]), float(tok["y"]),
                               int(g["cols"]), int(g["rows"]), ortho, aspect)
     # one cell of camera-up is 2 world units / (2*ortho) of viewport height
     per_cell = 2.0 / (2.0 * ortho)
     dx = (float(dbg["actorVX"]) - vx) * aspect / per_cell
     dy = (float(dbg["actorVY"]) - vy) / per_cell
-    return {"ok": math.hypot(dx, dy) <= 0.25, "cell": [tok["x"], tok["y"]],
+    return {"ok": math.hypot(dx, dy) <= 0.25, "cell": [tok["x"], tok["y"]], "ortho": ortho,
+            "cam_ortho": dbg.get("camOrtho"),
             "residual_cells": [round(dx, 3), round(dy, 3)],
             "predicted": [round(vx, 5), round(vy, 5)],
             "reported": [dbg["actorVX"], dbg["actorVY"]]}
@@ -150,7 +155,7 @@ def main(argv=None) -> int:
     with Image.open(frame) as im:
         aspect = im.size[0] / im.size[1]
     if args.verify:
-        v = verify(surface, dbg, aspect)
+        v = verify(surface, dbg, aspect, ortho)
         print("[overlay_collision] verify: " + json.dumps(v))
         if not v.get("ok"):
             print("[overlay_collision] RED — the projection does not reproduce the actor's own "

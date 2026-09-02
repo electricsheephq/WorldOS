@@ -14,7 +14,7 @@
    ],
    "debug": "cell(10,6) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=Y occ=n",
    "pass": true,
-   "frame": "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/throne_hall/felt_10_6.png"
+   "frame": "qa/evidence/legacy-reauthor-20260902/throne_hall/felt_10_6.png"
   },
   {
    "cell": [
@@ -54,7 +54,7 @@
    ],
    "debug": "cell(9,5) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=Y occ=n",
    "pass": true,
-   "frame": "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/throne_hall/felt_9_5.png"
+   "frame": "qa/evidence/legacy-reauthor-20260902/throne_hall/felt_9_5.png"
   },
   {
    "cell": [
@@ -172,7 +172,7 @@
    ],
    "debug": "cell(13,8) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=Y occ=n",
    "pass": true,
-   "frame": "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/throne_hall/felt_13_8.png"
+   "frame": "qa/evidence/legacy-reauthor-20260902/throne_hall/felt_13_8.png"
   },
   {
    "cell": [
@@ -264,7 +264,7 @@
    ],
    "debug": "cell(11,5) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=n occ=n",
    "pass": true,
-   "frame": "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/throne_hall/felt_11_5.png"
+   "frame": "qa/evidence/legacy-reauthor-20260902/throne_hall/felt_11_5.png"
   },
   {
    "cell": [
