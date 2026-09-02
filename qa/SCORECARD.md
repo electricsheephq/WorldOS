@@ -180,3 +180,31 @@ Weakest link = **completion** (the fight consumes the budget or stalls). Instrum
 `quest_completed` stamp is emitted with `status:failed` (labeling trap, #1670 family). Root cause under investigation (transcripts);
 charter order to be re-ranked on it. Evidence: `session-notes/2026-09-02/worldos-refresh/artifacts/adventure_eval_n3*.json`,
 `qa/transcripts/adv_reboot{1,3,4}.*`.
+
+### 2026-09-02 — §9 G1 re-measured on the rebuilt app `07a997e9…` through the WINDOWED sandbox (#1717): GREEN gates, PINS GREEN
+Build: Unity 6000.5.6f1 local, 06:02Z, Unity repo b016a7db (project-root data synced), engine main 0c2a0ddf; `qa/packaged_pins.py` GREEN
+(8 rooms + effects_registry, `repo_sha` clean). Sandbox: windowed launcher (1280×700, `AXFullScreen=false`, owner plist restored on
+teardown), fixture `registered_world_v1`, serving pids verified. Instruments: walk_test crypt GREEN — camera 11.7851 exact · reachable
+113/0 · impassable 77/0 · doors 2/0 · path 113/0 · visual 4/0 (`walk-crypt-rw/`); door crypt(7,0)→tavern crossed over the QA channel;
+walk_test tavern (kit v2 plate) GREEN — 10.5224 · 90/0 · 62/0 · 2/0 · 90/0 · 4/0 (`walk-tavern/`); player_cert --live: spawn_coherence_open
+GREEN · silhouette_behind_occluder GREEN (0.2817) · silhouette_absent_when_visible GREEN (tint 0.0 @ open cell) · cast_renders_full_figure
+ERROR (no foe in the fixture — harness, not a verdict). **Eyeball (orchestrator):** tavern frame shows all FOUR tables (the v1/deleted-table
+regression is gone); crypt actor at (7,8) renders normally (the earlier full-cyan ghost was the pre-kit `crypt_v36` sidecar — fixed by the
+kit-derived one); residual: the tavern actor at the west-wall cell beside the barrels still tints — a cell-specific occluder-box question
+(parapet/barrel box at the cutaway wall), filed as an observation. G1 stays INTERIM-GREEN: build identity is provenance-only (#1651), no
+owner install yet, roster-complete cert absent; sha-pinned certs for kit crypt/tavern are the next mint. Evidence root:
+`session-notes/2026-09-02/worldos-refresh/artifacts/` (`pins_rebuild.txt`, `rig/`, `walk-crypt-rw/`, `walk-tavern/`, `player_cert/`).
+
+### 2026-09-02 — G2 correction + root cause (supersedes the numbers in the row above; the FAIL verdict stands)
+The first aggregate (`adv_agg_n3_20260902`) was run with RELATIVE run prefixes from the wrong cwd: `adventure_eval` read nothing and
+reported vacuous `completion 0.00 / stuck 1.00 / lenses n/a` (the adjudicator's "aggregate fields empty" flag was the tell). Re-run with
+ABSOLUTE prefixes → **`adv_agg_n3v2_20260902`**: completion 0.00 · pace 0.00 · stuck 0.33 · engagement 1.00 · story 0.86 (4.3/5) ·
+mechanics 0.73 (3.7) · angrydm 3.6 · behavioral 1.00 (GREEN ×3). Weakest link = completion; **G2 = FAIL** (per-run facts unchanged).
+**Root cause (transcript forensics, `artifacts/at-rootcause/`):** the eval harness is byte-identical to the July 3/3 run; the `opus`
+alias now resolves to `claude-opus-5` (July: `claude-opus-4-8`, CLI 2.1.186→2.1.220, +18 MCP tools). The DM drove 37 resolved `attack`
+calls in reboot4 — combat works — but every 2026-09-02 run INVENTS off-seed foes (hobgoblin lieutenant, zombie, extra goblin) and stages
+a second/third fight at the midpoint reversal, overrunning a knife-edge 15-beat budget (July landed at beat 14 with one beat of slack).
+The `action_economy_engaged` / `combat_not_left_active` WARNs are end-state snapshot artifacts, not the defect. Candidate causes:
+DM-model swap (~65%) vs structural beat budget (~25%); discriminating control run `adv_ctl_o48` (DM pinned to `claude-opus-4-8`, all
+else equal) in flight. Instrument gaps filed on #1709: `adventure_eval` must ERROR on run prefixes that resolve to no files; the
+behavioral checker reads only the last combat snapshot; `quest_completed` is stamped on a FAILED quest.
