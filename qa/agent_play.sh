@@ -292,8 +292,12 @@ ap_serve() {
   local max="${MAX_BEATS_IN:-0}" served=0 cursor lines row role text label
   label="$max"; [ "$max" -gt 0 ] || label="unlimited"
   trap 'AP_SERVE_STOP=1' TERM INT
+  ap_sset stopped "" >/dev/null                 # a fresh serve un-stops the run
   echo "[agent-play] serving run=$RUN chat=$CHAT campaign=$CAMPAIGN_ID dm=$WORLDOS_DM_MODEL max_beats=$label"
   while [ "$AP_SERVE_STOP" = "0" ]; do
+    # `stop --run <name>` stamps the session, which is how another shell asks this loop to exit
+    # (SIGTERM is the other way; the LaunchAgent uses that one).
+    if [ -n "$(ap_sget stopped)" ]; then echo "[agent-play] session marked stopped — exiting serve"; break; fi
     cursor="$(ap_sget chat_cursor 0)"; cursor="${cursor:-0}"
     lines=0; [ -f "$CHAT" ] && lines="$(wc -l < "$CHAT" | tr -d ' ')"
     if [ "${lines:-0}" -le "$cursor" ]; then
@@ -362,6 +366,7 @@ ap_stop() {
   worldos_stream_tailer_kill_pidfile "$STATE_DIR" 2>/dev/null || true
   ap_sset stopped "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >/dev/null
   echo "[agent-play] stopped run=$RUN (artifacts kept in $RUN_DIR; engine + viewer untouched)"
+  echo "[agent-play] a running \`serve\` for this run exits at its next poll (or on SIGTERM)"
 }
 
 case "$SUB" in
