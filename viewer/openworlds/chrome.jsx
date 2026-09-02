@@ -311,6 +311,7 @@ const _PH_SLOT_NAMES = {
 };
 // Aspect ratios are pure art direction and never a subject.
 const _PH_ASPECT_RE = /^\d+\s*[:x×]\s*\d+$/i;
+const _PH_CAPTION_MAX = 40;
 
 // Turn an art brief into a caption a player can read. Segments are the brief's "·" parts: the
 // first recognised SLOT word names the frame, and at most one SHORT (≤2 words) remaining segment
@@ -331,9 +332,17 @@ function phCaption(label) {
   let subject = "";
   for (const part of rest) {
     if (_PH_ASPECT_RE.test(part)) continue;
-    if (part.split(/\s+/).length > 2) continue;
+    // Direction prose ("painted hero scene") is dropped only from a BRIEFED slot. A label with no
+    // slot word is a bare player-facing display name — "Last Light Inn", "Potion of Healing" — and
+    // must survive whole, or the frame goes blank (#1773 review, P2).
+    if (slot && part.split(/\s+/).length > 2) continue;
     subject = part.charAt(0).toUpperCase() + part.slice(1);
     break;
+  }
+  if (subject.length > _PH_CAPTION_MAX) {
+    const head = subject.slice(0, _PH_CAPTION_MAX);
+    const cut = head.lastIndexOf(" ");
+    subject = (cut > 0 ? head.slice(0, cut) : head) + "\u2026";
   }
   if (slot) {
     const full = subject ? `${slot} · ${subject}` : slot;

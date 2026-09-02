@@ -6987,6 +6987,7 @@ def _relative_time_label(ts: float, *, now: float) -> str:
 _RECAP_MAX = 240
 # Session-log kinds whose text is a beat rather than a mechanism dump.
 _RECAP_NARRATION_KINDS = ("narration", "scene", "dm")
+_RECAP_SESSION_SCAN = 8
 
 
 def _recap_snip(text: str) -> str:
@@ -6999,16 +7000,8 @@ def _recap_snip(text: str) -> str:
     return (head[:cut] if cut > 0 else head).rstrip() + "\u2026"
 
 
-def _session_derived_recap(campaign_dir: Path, snapshot: dict) -> str:
-    """The chronicle's OWN last words, read from the session log (#1764).
-
-    The launcher used to print ``snapshot["summary"]``, which for a seeded campaign is the
-    AUTHORING blurb — so a player twelve beats into a crypt read the harness's own wording back.
-    Prefer the tail of the campaign's session log (the same read-only projection the chronicle
-    band uses): the last narration beat, else the last event of any kind. Returns "" when there
-    is no session history at all, which is the caller's signal to fall back to the fixture.
-    """
-    rows = _session_event_tail_from_dir(campaign_dir, snapshot, limit=24)
+def _recap_candidates(rows: list[dict]) -> tuple[str, str]:
+    """(last narration beat, last event of any kind) out of one session's tail."""
     narration = ""
     latest = ""
     for row in rows:
@@ -7023,7 +7016,65 @@ def _session_derived_recap(campaign_dir: Path, snapshot: dict) -> str:
         latest = f"{speaker}: \u201c{snip}\u201d" if kind == "dialogue" and speaker else snip
         if kind in _RECAP_NARRATION_KINDS:
             narration = snip
-    return narration or latest
+    return narration, latest
+
+
+def _campaign_session_ids(campaign_dir: Path, snapshot: dict) -> list[str]:
+    """The campaign's session ids, NEWEST FIRST — declared ones, then orphaned logs on disk.
+
+    Mirrors store.read_all_logs' canonical ordering (session_ids first, then any *.jsonl not
+    named there), reversed: a recap wants the most recent beat, so it walks backwards.
+    """
+    ordered: list[str] = []
+    declared = snapshot.get("session_ids")
+    if isinstance(declared, list):
+        for sid in declared:
+            sid = _safe_session_id(sid)
+            if sid and sid not in ordered:
+                ordered.append(sid)
+    ordered.reverse()
+    try:
+        orphans = sorted(
+            (campaign_dir / "sessions").glob("*.jsonl"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+    except OSError:
+        orphans = []
+    for log in orphans:
+        sid = _safe_session_id(log.stem)
+        if sid and sid not in ordered:
+            ordered.append(sid)
+    return ordered
+
+
+def _session_derived_recap(campaign_dir: Path, snapshot: dict) -> str:
+    """The chronicle's OWN last words, read from the session log (#1764).
+
+    The launcher used to print ``snapshot["summary"]``, which for a seeded campaign is the
+    AUTHORING blurb — so a player twelve beats into a crypt read the harness's own wording back.
+    Prefer the tail of the campaign's session log (the same read-only projection the chronicle
+    band uses): the last narration beat, else the last event of any kind. Returns "" when there
+    is no session history at all, which is the caller's signal to fall back to the fixture.
+
+    #1773 review (P1): under lean / fast-turn play EVERY beat opens a fresh session id, so the
+    active log can hold nothing but its "Session N began" marker while the real last beat sits in
+    an earlier file (store.read_all_logs documents exactly this). Walking only the active session
+    would recap the marker. So when the active session yields no narration, walk the campaign's
+    session history newest-first for one — keeping the active session's own latest row as the
+    last resort.
+    """
+    narration, latest = _recap_candidates(
+        _session_event_tail_from_dir(campaign_dir, snapshot, limit=24))
+    if narration:
+        return narration
+    for sid in _campaign_session_ids(campaign_dir, snapshot)[:_RECAP_SESSION_SCAN]:
+        older, older_latest = _recap_candidates(
+            _session_event_tail_from_dir(campaign_dir, {"active_session_id": sid}, limit=24))
+        if older:
+            return older
+        latest = latest or older_latest
+    return latest
 
 
 def _infer_catalog_provider(state_root: Path, source: str) -> str:

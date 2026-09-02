@@ -139,3 +139,30 @@ def test_1764_brief_survives_as_a_data_attribute_for_generators():
         assert brief in out["props"], (
             f"brief {brief!r} must remain available to generators (data-art-brief); props={out['props']}"
         )
+
+
+# ── #1773 review (P2): a bare display name is not a brief and must not be swallowed ──────────
+
+BARE_DISPLAY_NAMES = ["Last Light Inn", "Potion of Healing", "Aidan", "Keeper Maera"]
+
+
+def test_1773_bare_display_names_are_never_blanked():
+    """`label={selected.name}` / `label={item.name}` carry player-facing names, not art direction.
+
+    The first cut of the de-brief filter dropped any segment longer than two words, so a
+    slot-less label like "Last Light Inn" left the frame with NO caption at all.
+    """
+    rendered = _render_placeholders(BARE_DISPLAY_NAMES)
+    for name, out in zip(BARE_DISPLAY_NAMES, rendered):
+        assert out["caption"] == name, (
+            f"bare display name {name!r} must survive as its own caption; got {out['caption']!r}"
+        )
+
+
+def test_1773_a_long_bare_name_is_bounded_not_dropped():
+    """An unreasonably long name is trimmed to a caption, never blanked."""
+    long_name = "The Hall of the Goblin Boss Beneath the Weeping Stair of Old Kings"
+    out = _render_placeholders([long_name])[0]
+    assert out["caption"], "a long name must still caption the frame"
+    assert len(out["caption"]) <= 42, f"caption not bounded: {out['caption']!r}"
+    assert long_name.startswith(out["caption"].rstrip("\u2026"))
