@@ -471,3 +471,106 @@ def test_select_visual_cells_never_samples_mask_covered_cells():
     assert (1, 1) in picked                                          # far cell always in
     assert (7, 7) in picked                                          # chebyshev-2: measurable top-up
     assert len(picked) == 2                                          # honestly smaller than n=3
+
+
+# --- #1672 windowed sandbox player: the pixel-diff constants must scale with the frame ------------
+# The visual stage was tuned at the fullscreen 2984x1634 baseline. Windowing the QA player to
+# 1280x697 shrinks a grid cell from ~126px to ~54px, and the HARD-CODED 60px cluster-merge radius
+# (walk_test.diff_blobs) becomes ~1.1 CELLS: a short hop's departure and arrival blobs FUSE into one
+# centroid midway between them, the measured distance reads about half the true hop, and a correct
+# build goes FALSE RED. These are the units for that.
+
+def _squares(*xs, y=10, size=12, w=400, h=200):
+    """Two frames differing only by `size`-square blocks at the given x offsets."""
+    import numpy as np
+    a = np.zeros((h, w, 3), dtype=int)
+    b = a.copy()
+    for x in xs:
+        b[y:y + size, x:x + size] = 255
+    return a, b
+
+
+def test_diff_blobs_merge_px_separates_close_blobs():
+    a, b = _squares(10, 60)          # centres 50px apart == ~1 cell at the windowed 1280x697
+    fused = W.diff_blobs(a, b, min_area_px=50, merge_px=60)
+    split = W.diff_blobs(a, b, min_area_px=50, merge_px=24)
+    assert len(fused) == 1, "today's fixed 60px radius fuses a 1-cell hop into a single blob"
+    assert len(split) == 2, "the frame-derived radius keeps departure and arrival apart"
+
+
+def test_diff_blobs_default_merge_px_is_60():
+    """The default is unchanged, so every existing caller/golden is provably unaffected."""
+    import inspect
+    assert inspect.signature(W.diff_blobs).parameters["merge_px"].default == 60
+
+
+def test_visual_diff_params_scale_with_window():
+    big = W.visual_diff_params(13, 2984, 1634)     # the fullscreen baseline
+    small = W.visual_diff_params(13, 1280, 697)    # the windowed sandbox rig
+    assert big["merge_px"] == 57 and big["min_area_px"] == 250
+    assert small["merge_px"] == 24 and small["min_area_px"] == 60   # min_area floors at 60
+    for p in (big, small):
+        assert abs(p["merge_px"] / p["cell_px"] - 0.45) < 0.02
+
+
+# --- #1672: the three ways the visual stage could silently invent a verdict, now NAMED errors -----
+# A windowed player made all three reachable: a 2x HiDPI backbuffer (projection off by 2x), a
+# minimized/occluded window (ScreenCapture hands back a black frame and /shot still returns 200), and
+# a window whose aspect crops sample cells out of the ortho frame. Each used to surface as a
+# mysterious per-cell RED; each must now fail LOUD and never report a pass.
+
+def _png(tmp_path, name, size, fill):
+    from PIL import Image
+    p = tmp_path / name
+    Image.new("RGB", size, fill).save(p)
+    return str(p)
+
+
+def _stub_visual(monkeypatch, shot_path, *, w=1280, h=697):
+    monkeypatch.setattr(W, "_get", lambda url: {"screenW": w, "screenH": h, "ok": True})
+    monkeypatch.setattr(W, "_capture_shot", lambda qa, out, label, timeout=6.0: shot_path)
+    monkeypatch.setattr(W, "_token_cell", lambda surf: (6, 6))
+    monkeypatch.setattr(W, "_drive_and_check",
+                        lambda qa, eng, c, r, s, t, expect_move=True: (True, (c, r), {}))
+    monkeypatch.setattr(W.time, "sleep", lambda *_: None)
+
+
+_MASK13 = {"cols": 13, "rows": 13, "walkable": []}
+
+
+def _run_visual(tmp_path, cells):
+    return W._visual_registration("http://qa", "http://eng", _MASK13, 13.0, cells,
+                                  tmp_path / "out", 0.2, 5.0)
+
+
+def test_visual_guard_rejects_uncalibratable_capture(monkeypatch, tmp_path):
+    _stub_visual(monkeypatch, _png(tmp_path, "odd.png", (1000, 500), (40, 40, 40)))
+    res = _run_visual(tmp_path, [(6, 7)])
+    assert "neither 1x nor 2x" in res["error"] and res["pass"] == 0
+
+
+def test_visual_guard_rejects_black_capture(monkeypatch, tmp_path):
+    _stub_visual(monkeypatch, _png(tmp_path, "black.png", (1280, 697), (0, 0, 0)))
+    res = _run_visual(tmp_path, [(6, 7)])
+    assert "capture is BLACK" in res["error"] and res["pass"] == 0
+
+
+def test_visual_guard_rejects_out_of_frame_cells(monkeypatch, tmp_path):
+    _stub_visual(monkeypatch, _png(tmp_path, "grey.png", (1280, 697), (40, 44, 48)))
+    res = _run_visual(tmp_path, [(6, 7), (60, 6)])
+    assert "project OUTSIDE" in res["error"] and "[60, 6]" in res["error"]
+
+
+def test_visual_guards_pass_a_normal_frame(monkeypatch, tmp_path):
+    _stub_visual(monkeypatch, _png(tmp_path, "ok.png", (1280, 697), (40, 44, 48)))
+    res = _run_visual(tmp_path, [(6, 7)])
+    assert "error" not in res
+    assert res["capture_scale"] == 1.0
+    assert res["diff_params"] == {"cell_px": 53.6, "merge_px": 24, "min_area_px": 60}
+
+
+def test_visual_guard_accepts_2x_hidpi_capture(monkeypatch, tmp_path):
+    _stub_visual(monkeypatch, _png(tmp_path, "hidpi.png", (2560, 1394), (40, 44, 48)))
+    res = _run_visual(tmp_path, [(6, 7)])
+    assert "error" not in res and res["capture_scale"] == 2.0
+    assert res["diff_params"]["merge_px"] == 48        # scales with the backing buffer, not /health
