@@ -434,9 +434,10 @@ def _default_unity_mcp_call(tool: str, params: dict, *, url: str, timeout: float
     ``http://127.0.0.1:8080/mcp``). stdlib-only (``urllib``), no new dependency.
 
     This function performs REAL network I/O and is deliberately never exercised by the test suite
-    (tests inject a stub via ``render_state_via_unity(..., mcp_call=...)``) — this lane has no GEX44
-    box access, so the exact wire round-trip is UNVERIFIED here; live validation queues behind the
-    next box session (see the gex44-unity-host skill)."""
+    (tests inject a stub via ``render_state_via_unity(..., mcp_call=...)``), so the exact wire
+    round-trip is UNVERIFIED here. NOTE: this is an HTTP-only path. GEX44 was retired 2026-08-06
+    (see ``docs/GEX44-RETIRED.md``); the local Unity lane speaks the Stdio bridge
+    (``extensions/renderers/unity/tools/mcp_stdio_exec.py``), which this hook does not yet use."""
     import urllib.error
     import urllib.request
 
@@ -472,10 +473,11 @@ def render_state_via_unity(
     identifying what to capture (the live camera/scene already reflects ``state`` by the time this
     is called; this hook only triggers + fetches the screenshot).
 
-    This is deliberately UNVERIFIED against the live box on this lane (no GEX44 access this pass —
-    see BOX.md's single-tenant claim discipline): the orchestration/parsing here is code-complete
-    and covered by injected-stub unit tests; the real ``:8080/mcp`` round-trip shape queues for
-    validation behind the next box session."""
+    The orchestration/parsing here is code-complete and covered by injected-stub unit tests, but the
+    real ``:8080/mcp`` round-trip shape is UNVERIFIED: GEX44 (which served that endpoint) was retired
+    2026-08-06, and the local lane uses the Stdio bridge instead. Without
+    ``WORLDOS_UNITY_MCP_URL`` this returns ``None`` and the caller records ``no_render``; migrating
+    the hook to ``mcp_stdio_exec.py`` is tracked in ``docs/RUNBOOK-INDEX.md``."""
     call = mcp_call
     if call is None:
         url = os.environ.get(UNITY_MCP_URL_ENV)

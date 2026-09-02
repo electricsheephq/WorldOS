@@ -18,3 +18,21 @@ the owner retired and discarded it on **2026-08-06**. Its SSH paths, `/home/unit
 Dated changelogs, evidence, scorecard rows, decision records, and session narratives retain their
 GEX44 wording as provenance. Live runbooks and skills must point to the local replacements above or
 carry a one-line retirement banner; no document should instruct an agent to contact the retired box.
+
+## Guarded entrypoints (the live runners are disabled)
+
+Every remaining runner that would have contacted the box now refuses by default: it prints
+`GEX44 retired 2026-08-06 — see docs/GEX44-RETIRED.md` on stderr and exits **2** unless
+`WORLDOS_ALLOW_RETIRED_HOST=1` is set (forensic/salvage use on a non-GEX44 host only — it is an
+escape hatch, not a supported lane). Guarded today:
+
+- `qa/deploy_room.sh`, `qa/gen_dungeon.sh`, `qa/gen_room_from_scene_grid.sh`,
+  `qa/validate_active_room_framing.sh`, `qa/drive_gfx_combat.py`
+- `tools/gex44-box/ops/launch_editor.sh`, `tools/gex44-box/ops/setup_depth.sh`,
+  `tools/gex44-box/ops/worldos-unity-save.sh`, `tools/gex44-box/ops/derive_gbuffer.py`
+- `tools/gex44-box/comfyui-detail-finisher/tile_detail.sh`,
+  `tools/gex44-box/display-config/gex44-display-profile`,
+  `tools/gex44-box/display-config/unity-desktop.sh.4k-readable`
+
+Their `docs/RUNBOOK-INDEX.md` rows are marked HISTORICAL and point at the local successor
+(`docs/ROOM-PIPELINE-RUNBOOK.md` → "G1 GATE RECIPE").
