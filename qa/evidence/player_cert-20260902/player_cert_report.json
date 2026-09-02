@@ -1,0 +1,191 @@
+{
+  "schema_version": 1,
+  "suite": "player_cert",
+  "repo_sha": "03acb17b",
+  "manifest_sha256": "0f51fb7ff20b7df588d677ea6e9f7833f7d04864d22454ddd4cc09963c6d0376",
+  "ts": "2026-09-02T07:41:10.774914+00:00",
+  "engine_url": "http://127.0.0.1:8866",
+  "qa_url": "http://127.0.0.1:8972",
+  "campaign": "registered_world_v1",
+  "app_path": "/Users/m1/worldos-unity/BuildOutput/WorldOSPlayer.app",
+  "live": true,
+  "player_build": null,
+  "assertions": [
+    {
+      "id": "spawn_coherence_open",
+      "scope": "engine_state",
+      "needs": [
+        "engine"
+      ],
+      "doc": "Primitive B \u2014 party spawn + arrival cells are prop-clear, BFS-reachable, and (where a coherence report exists) on cells the player sees as open, never `covered` (#1584/#1647).",
+      "verdict": "GREEN",
+      "detail": {
+        "n_tokens": 1,
+        "n_bad": 0
+      },
+      "record": {
+        "tokens": [
+          {
+            "name": "Aldric",
+            "team": "ally",
+            "cell": [
+              6,
+              1
+            ],
+            "prop_clear": true,
+            "reachable": true,
+            "coherence": "open",
+            "coherence_ok": true,
+            "ok": true
+          }
+        ],
+        "anchor": [
+          6,
+          1
+        ],
+        "verdict": "GREEN",
+        "harness_errors": [],
+        "detail": {
+          "n_tokens": 1,
+          "n_bad": 0
+        },
+        "room": "crypt",
+        "coherence_report": true
+      }
+    },
+    {
+      "id": "silhouette_behind_occluder",
+      "scope": "live_party",
+      "needs": [
+        "engine",
+        "player"
+      ],
+      "doc": "Primitive A \u2014 the party actor placed BEHIND a tall occluder still renders its walk-behind silhouette (#1572 per-submesh clone; WORLDOS_SILHOUETTE=0 turns this RED).",
+      "verdict": "GREEN",
+      "detail": "occluder=? h=5.4 behind=[13, 3] head_density=0.2817 min=0.045 head_px=[766, 120]",
+      "record": {
+        "harness_errors": [],
+        "moved": true,
+        "no_occluder": false,
+        "no_behind_cell": false,
+        "room": "crypt",
+        "window": [
+          1280,
+          700
+        ],
+        "cell_source": "calibrated",
+        "occluder": {
+          "name": "?",
+          "kind": "wallright",
+          "height": 5.4,
+          "center": [
+            15.0,
+            0.0,
+            5.0
+          ],
+          "size": [
+            1.4,
+            5.4,
+            2.0
+          ],
+          "cell": [
+            15,
+            3
+          ]
+        },
+        "behind_cell": [
+          13,
+          3
+        ],
+        "start_cell": [
+          6,
+          1
+        ],
+        "head_px": [
+          766,
+          120
+        ],
+        "head_radius_px": 33,
+        "min_density": 0.045,
+        "landed": [
+          13,
+          3
+        ],
+        "frames": {
+          "baseline": "/Users/m1/Codex/session-notes/2026-09-02/worldos-refresh/artifacts/player_cert/shot_sil_baseline.png",
+          "behind": "/Users/m1/Codex/session-notes/2026-09-02/worldos-refresh/artifacts/player_cert/shot_sil_behind.png"
+        },
+        "head_density": 0.2817,
+        "frames_identical": false
+      }
+    },
+    {
+      "id": "silhouette_absent_when_visible",
+      "scope": "live_party",
+      "needs": [
+        "engine",
+        "player"
+      ],
+      "doc": "Primitive A COUNTER-assert \u2014 the party actor on its UNOCCLUDED cell shows NO walk-behind silhouette tint (#1677 ghost-in-the-open: the ZTest-Greater clone tinting the actor against its OWN body depth). A ghost-cyan overlay in the open turns this RED \u2014 the occluder-scoping stencil fix keeps it GREEN.",
+      "verdict": "GREEN",
+      "detail": "open_cell=[6, 1] tint_share=0.0 head_tint_share=0.0 max=0.03 head_px=[388, 225]",
+      "record": {
+        "harness_errors": [],
+        "captured": true,
+        "max_tint_share": 0.03,
+        "room": "crypt",
+        "start_cell": [
+          6,
+          1
+        ],
+        "window": [
+          1280,
+          700
+        ],
+        "head_px": [
+          388,
+          225
+        ],
+        "region": [
+          308,
+          202,
+          468,
+          339
+        ],
+        "frames": {
+          "open": "/Users/m1/Codex/session-notes/2026-09-02/worldos-refresh/artifacts/player_cert/shot_sil_open.png"
+        },
+        "tint_share": 0.0,
+        "head_tint_share": 0.0
+      }
+    },
+    {
+      "id": "cast_renders_full_figure",
+      "scope": "live_party",
+      "needs": [
+        "engine",
+        "player"
+      ],
+      "doc": "Primitive C (#1666) \u2014 every FOE token renders a full BODY figure, not a fragment. A fragment-rendered token (body renderers never initialized; only an accessory mesh drew \u2014 the g5 crypt first-spawn residual) whose projected-figure body extent falls below the floor turns this RED; the bundle/skinning pre-warm + the render-coverage rebind guard keep it GREEN.",
+      "verdict": "ERROR",
+      "detail": null,
+      "record": {
+        "harness_errors": [
+          "no foe token on the surface to measure"
+        ],
+        "captured": false,
+        "min_extent": 0.35,
+        "foes": [],
+        "room": "crypt"
+      }
+    }
+  ],
+  "harness_errors": [
+    "cast_renders_full_figure: no foe token on the surface to measure"
+  ],
+  "verdict": "ERROR",
+  "endpoints": {
+    "engine_up": true,
+    "player_up": true
+  }
+}
