@@ -74,14 +74,36 @@ def _repo_dirty(repo: Path) -> bool | None:
 _MAX_HASH_BYTES = 1 << 30  # 1 GiB — a plate/sidecar is MBs; anything larger is not ours to hash
 
 
+_DIRTY_CACHE: dict[str, bool | None] = {}
+
+
+def _repo_dirty_cached(repo: Path) -> bool | None:
+    key = str(Path(repo).resolve())
+    if key not in _DIRTY_CACHE:
+        _DIRTY_CACHE[key] = _repo_dirty(repo)
+    return _DIRTY_CACHE[key]
+
+
+def _stamp_sha(sha: str | None, dirty: bool | None) -> str | None:
+    """HEAD sha annotated with what the working tree can be attributed to: '-dirty' when renderer data differs
+    from HEAD, '-unverified' when dirtiness could not be determined (git failed/timed out)."""
+    if not sha:
+        return None
+    if dirty is True:
+        return sha + "-dirty"
+    if dirty is None:
+        return sha + "-unverified"
+    return sha
+
+
 def _base_report(app: Path, repo: Path) -> dict[str, Any]:
     return {
         "schema_version": 1,
         "ts": datetime.now(timezone.utc).isoformat(),
         "app": str(app.resolve()),
         "repo": str(repo.resolve()),
-        "repo_sha": (lambda sha, dirty: (sha + "-dirty") if (sha and dirty) else sha)(_repo_sha(repo), _repo_dirty(repo)),
-        "repo_dirty": _repo_dirty(repo),
+        "repo_sha": _stamp_sha(_repo_sha(repo), _repo_dirty_cached(repo)),
+        "repo_dirty": _repo_dirty_cached(repo),
         "rooms_requested": None,
         "rooms": [],
         "verdict": "ERROR",
@@ -219,6 +241,9 @@ def _compare_room(
         reasons.append("MISSING room on packaged side")
     elif not isinstance(source_entry, dict) or not isinstance(packaged_entry, dict):
         reasons.append("invalid room manifest entry")
+    elif not source_entry.get("plate") or not packaged_entry.get("plate"):
+        # CombatSurfaceClient.LoadPlateManifest skips entries without a plate: such a room has NO backdrop at runtime.
+        reasons.append("no plate entry (room would render without a backdrop)")
     else:
         _compare_file("plate", source_entry, packaged_entry, source_root, packaged_root, reasons)
         _compare_file("boxes", source_entry, packaged_entry, source_root, packaged_root, reasons)
@@ -280,6 +305,19 @@ def check(app: Path, repo: Path, rooms: Iterable[str] | str | None = None) -> di
         )
         for room in room_names
     ]
+    # Sibling renderer manifests that EnsurePackaged copies separately must match too.
+    for sibling in ("effects_registry.json",):
+        src, pkg = source_root / sibling, packaged_root / sibling
+        if not src.is_file() and not pkg.is_file():
+            continue
+        reasons: list[str] = []
+        if not src.is_file():
+            reasons.append(f"MISSING {sibling} on source side")
+        elif not pkg.is_file():
+            reasons.append(f"MISSING {sibling} on packaged side")
+        elif _sha256(src) != _sha256(pkg):
+            reasons.append(f"{sibling} differs (sha256)")
+        report["rooms"].append({"room": f"__{sibling}", "status": "GREEN" if not reasons else "RED", "reasons": reasons})
     report["verdict"] = "RED" if any(room["status"] == "RED" for room in report["rooms"]) else "GREEN"
     return report
 

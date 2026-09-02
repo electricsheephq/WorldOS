@@ -428,8 +428,9 @@ the GEX44 box's Unity project (`/home/unity/worldos-unity/`) carries its OWN cop
 files, and `BuildMacOSPlayer.EnsurePackaged` packages the BOX copies verbatim. A lane that deploys
 only its changed `.cs`/shader files ships whatever manifest the box happened to have. Before EVERY
 box `BuildMacOSPlayer`, sync the renderer data files from the repo main being built against:
-`plates_manifest.json`, `effects_registry.json`, `stage.json`, and `plates/*.png` → the box project
-root. The box copy is NEVER the source of truth; the repo is. (Both cycle regressions were caught by
+`plates_manifest.json`, `effects_registry.json`, `stage.json`, `registry.json`, `plates/*.png` AND
+`boxes/*.json` (the occluder sidecars — omitted from this list until 2026-09-02, which is how a build shipped the
+pre-kit chunky sidecars under a green stamp) → the Unity project root. The box copy is NEVER the source of truth; the repo is. (Both cycle regressions were caught by
 the post-install pin check `python3 -c "...print cameraPin per plate..."` on the installed app —
 keep running that check after every install.)
 

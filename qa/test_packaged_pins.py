@@ -191,3 +191,34 @@ def test_symlink_to_device_is_refused_not_hashed(tmp_path):
     payload = json.loads(out.read_text())
     assert payload["verdict"] == "RED"
     assert any("MISSING" in r for r in payload["rooms"][0]["reasons"])
+
+
+def test_room_without_plate_entry_is_red(tmp_path):
+    app, repo = _fixture(tmp_path)
+    for root in (app / "Contents/Resources/Data/StreamingAssets", repo / "extensions/renderers/unity"):
+        m = root / "plates_manifest.json"
+        payload = json.loads(m.read_text())
+        payload["plates"]["ghost"] = {}
+        m.write_text(json.dumps(payload))
+    report = pins.check(app, repo, "ghost")
+    assert report["verdict"] == "RED"
+    assert any("no plate entry" in r for r in report["rooms"][0]["reasons"])
+
+
+def test_effects_registry_parity_is_checked(tmp_path):
+    app, repo = _fixture(tmp_path)
+    (repo / "extensions/renderers/unity/effects_registry.json").write_text('{"fire": 1}')
+    (app / "Contents/Resources/Data/StreamingAssets/effects_registry.json").write_text('{"fire": 2}')
+    report = pins.check(app, repo)
+    assert report["verdict"] == "RED"
+    assert any(r["room"] == "__effects_registry.json" and r["status"] == "RED" for r in report["rooms"])
+
+
+def test_unknown_dirtiness_is_stamped_unverified(tmp_path, monkeypatch):
+    app, repo = _fixture(tmp_path)
+    pins._DIRTY_CACHE.clear()
+    monkeypatch.setattr(pins, "_repo_sha", lambda _r: "abc123")
+    monkeypatch.setattr(pins, "_repo_dirty", lambda _r: None)
+    report = pins.check(app, repo)
+    assert report["repo_sha"] == "abc123-unverified" and report["repo_dirty"] is None
+    pins._DIRTY_CACHE.clear()
