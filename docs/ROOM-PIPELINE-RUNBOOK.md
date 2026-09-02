@@ -237,7 +237,7 @@ IS blocking: the candidate regressing coherence on cells the incumbent passes.
 
 ### 6. Style pass — the reference-images LAW + structure/dimetric locks
 
-**Gemini instruction-edit** (`model_google-gemini-3-1-flash`) over the flux depth-CN base, with two
+**Gemini instruction-edit** (`model_google-gemini-3-1-flash` for paint-first plates; the 3D-first KIT chain uses `model_google-gemini-pro-image-editing` — see MODEL-REGISTRY.md, 2026-09-02 record) over the flux depth-CN base, with two
 mandatory prompt clauses. **★ No single reusable CLI wraps this exact step today — don't confuse it
 with two DIFFERENT, already-wired mechanisms that also touch Gemini:**
 - `generate_room.py --style-pass <json>` is a **z-image + LoRA img2img** pass (model/loras/
