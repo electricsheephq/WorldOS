@@ -140,3 +140,11 @@
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | sweep1 | 2026-05-31 | c6480a3 | ~6.0 | PASS | PASS(5/5) | 6.0 avg / 1 gave-up | 2 critical / console unmeasured | (duo) | (duo) | (pend) | (pend) | unmeasured | true | **INCOMPLETE / PRE-HARDENING, not release evidence.** G3 sat 6.0 + narrative gave-up (LATENCY); G2 optimizer 2 crit (char-sheet depth: spell DC + class features). G1 arc-complete 5/5, native PASS, palette live — Phase-1 GUI fixes verified, but behavioral/UI/image/console denominators were incomplete. |
 | gate-f5500ac-partial | 2026-05-31 | f5500ac | 2.7 | PASS | PASS(1 scored) | 4.0 avg / 0 gave-up (newbie only) | 1 | 4.0 | 2.7 | RED | FAIL | 0% | false | **PARTIAL / HARNESS-CONTAMINATED, not a release verdict.** Only `newbie` wrote `score.json`; veteran/adversarial/narrative/optimizer lacked persona score artifacts after port/backend harness failures. Preserve as takeover evidence, but rerun with hardened RRI before judging release. |
+
+### 2026-09-02 — Panel CONTROL re-pinned IN-REPO (refresh, Track A step 6 prerequisite)
+- The PoE2 two-anchor control formerly lived only at `/Volumes/LEXAR/WorldOS-Unity-spike/refs/…` (drive gone with the
+  2026-08 machine migration). Recovered from the Unity repo's `refs/` and pinned at
+  `qa/refs/poe2_ruins_brazier_integration_01.jpg` — sha256 `69fbb979a00f0d59685847979af74b9fa882a6f7062c96456fe64a479e26e7fb` (855,066 B). PANEL-PROTOCOL.md now points here.
+- Rule unchanged: every panel batch carries this control + ≥1 SHIPPED plate as a disguised calibration reference
+  (shop_v1 / tavern_snug c3 / kit crypt+tavern); verdicts are blind-adjudicated. player_cert thresholds were calibrated
+  on LEXAR-era frames — re-check against this pin before the first post-migration beauty verdict.
