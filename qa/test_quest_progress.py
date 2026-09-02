@@ -137,6 +137,56 @@ def test_full_arc_stamps_all_six_in_order(seeded):
     assert beats == sorted(beats)
 
 
+def test_claimed_completion_is_false_when_seeded_boss_is_alive(seeded):
+    server, state, cid = seeded
+    q = _quest(server, cid)
+    qp.poll(state, cid, beat=0)  # freezes the seeded ids before any objective is ticked
+    for objective in q["objectives"]:
+        server.complete_objective(cid, q["id"], objective)
+    res = qp.poll(state, cid, beat=1)
+    trace = _load(res["trace_path"])
+    assert trace["completion_claimed"] is True
+    assert trace["completion_verified"] is False
+    assert any("objective 3" in reason and "alive" in reason
+               for reason in trace["completion_truth"]), trace["completion_truth"]
+
+
+def test_world_true_completion_verifies_all_seeded_objectives(seeded):
+    server, state, cid = seeded
+    q = _quest(server, cid)
+    baseline = qp.poll(state, cid, beat=0)
+    seed = _load(baseline["trace_path"])["seeded_world"]
+
+    _set_location(server, cid, seed["giver_location_id"])
+    server.complete_objective(cid, q["id"], _obj(server, cid, "Speak with"))
+    qp.poll(state, cid, beat=1)
+
+    c = server._require(cid)
+    for hostile_id in seed["crypt_hostile_ids"]:
+        c.characters[hostile_id].dead = True
+        c.characters[hostile_id].current_hp = 0
+    server.save_campaign(c)
+    _set_location(server, cid, seed["crypt_location_id"])
+    server.complete_objective(cid, q["id"], _obj(server, cid, "Clear the crypt"))
+    qp.poll(state, cid, beat=2)
+
+    c = server._require(cid)
+    c.characters[seed["boss_id"]].dead = True
+    c.characters[seed["boss_id"]].current_hp = 0
+    server.save_campaign(c)
+    _set_location(server, cid, seed["throne_location_id"])
+    server.complete_objective(cid, q["id"], _obj(server, cid, "Slay the goblin boss"))
+    qp.poll(state, cid, beat=3)
+
+    _set_location(server, cid, seed["giver_location_id"])
+    server.complete_objective(cid, q["id"], _obj(server, cid, "Return to Maera"))
+    res = qp.poll(state, cid, beat=4)
+    trace = _load(res["trace_path"])
+    assert trace["completion_claimed"] is True
+    assert trace["completion_verified"] is True
+    assert trace["completion_truth"] == []
+
+
 def test_terminal_signals_are_never_gated(seeded):
     """A real terminal signal (a slain-boss objective) stamps boss_dead even when the intervening
     entered_dungeon location-beat was never independently caught — telemetry must never DROP a real

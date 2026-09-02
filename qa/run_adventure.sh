@@ -243,6 +243,7 @@ fi
 if [ "$RESUME_MODE" != "1" ]; then
   adv_clean_stale_artifacts   # fresh run: a rerun of a completed run-id must not inherit stale state
   adv_seed
+  adv_quest_poll 0 >/dev/null  # freeze seeded IDs before the DM can rename/reuse/mint world content
 fi
 
 worldos_isolate_claude_auth
@@ -503,7 +504,7 @@ done
 
 # WORLDOS_GATE_ARC turns on the seeded-arc lens (the addendum's five rules as hard FAIL rows);
 # WORLDOS_ARC_SEED_SPECIES hands it the species this run was actually SEEDED with.
-WORLDOS_GATE_ARC=1 WORLDOS_ARC_SEED_SPECIES="$SEED_SPECIES" \
+WORLDOS_GATE_ARC=1 WORLDOS_ARC_SEED_SPECIES="$SEED_SPECIES" WORLDOS_ARC_QUEST_TRACE="$TRACE" \
   python3 "$ASSERT_BEHAVIORAL_SCRIPT" "$COMBINED" "$T/$RUN.state.json" "$T/$RUN.chat.jsonl" "$MOVES" | tee "$T/$RUN.gate.txt"; GATE=${PIPESTATUS[0]}
 # ── honest scoring on a RED gate (item 11; mirrors run_duo) ──────────────────────────────────────
 # A structurally broken (gate-RED) run must not persist high lens medians — CAP the three lens files
@@ -548,7 +549,10 @@ if completed_stamp:
     if sig.startswith("status:"): status=sig.split(":",1)[1].strip().lower()
 if not status: status=str(tr.get("quest_status") or "active").strip().lower()
 completed=(status=="completed")   # completion HONESTY — a terminal "failed"/other is NOT a completion
-btc=completed_stamp.get("beat") if (completed and completed_stamp) else None
+completion_claimed=bool(tr.get("completion_claimed", completed))
+completion_verified=bool(tr.get("completion_verified", False))
+completion_truth=list(tr.get("completion_truth") or [])
+btc=completed_stamp.get("beat") if (completion_verified and completed_stamp) else None
 gate_txt=""
 try: gate_txt=Path(gate).read_text()
 except Exception: pass
@@ -563,12 +567,18 @@ else:
 dead=rj(lat).get("failed_beats")
 lb=int(last_beat) if str(last_beat).lstrip("-").isdigit() else None
 session_beats=lb if (lb is not None and lb>=0) else None
+cfg=rj(str(Path(qa_dir)/"adventure_eval_config.json"))
+measured=(resolved.get("dm_model_resolved") == cfg.get("measured_dm_model", "claude-opus-4-8"))
 Path(out).write_text(json.dumps({"run":run,"campaign_id":tr.get("campaign_id"),"quest_status":tr.get("quest_status"),
-  "completed":bool(completed),"beats_to_complete":btc,"last_completed_beat":lb,"session_beats":session_beats,
+  "completed":completion_verified,"completion_claimed":completion_claimed,
+  "completion_verified":completion_verified,"completion_truth":completion_truth,
+  "beats_to_complete":btc,"last_completed_beat":lb,"session_beats":session_beats,
   "dm_model":dm_model or None,"actor_model":actor_model or None,
   "dm_model_resolved":resolved.get("dm_model_resolved"),"player_model_resolved":resolved.get("player_model_resolved"),
+  "measured":measured,
   "dead_beats":dead,"behavioral":behavioral,"stages_reached":[s.get("stage") for s in stamps]},indent=2)+"\n")
-print(f"[adventure] summary: completed={completed} beats_to_complete={btc} behavioral={behavioral} "
+print(f"[adventure] summary: claimed={completion_claimed} verified={completion_verified} "
+      f"beats_to_complete={btc} behavioral={behavioral} measured={measured} "
       f"dm={dm_model}({resolved.get('dm_model_resolved') or 'unresolved'}) "
       f"actor={actor_model}({resolved.get('player_model_resolved') or 'unresolved'})")
 PY

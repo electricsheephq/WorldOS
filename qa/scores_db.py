@@ -118,6 +118,10 @@ COLUMNS: tuple[str, ...] = (
                                # aggregator's OWN hash family (see scoring_config_version.py
                                # ADVENTURE_CONFIG_FILES). Stamped ONLY on surface="adventure" rows;
                                # NULL on every other row (additive, migration-free — mirrors ac_ruler).
+    "completion_claimed",      # raw DM/engine completion stamp rate; never used as completion score
+    "completion_verified",     # 1 only when every run's seeded-world objective checks passed
+    "completion_truth",        # JSON [{run,reasons}] explaining claimed/verified disagreement
+    "measured",                # 1 only for the ruler-pinned resolved DM model
     "rc_label",           # release candidate this run scored, e.g. "v1.0.4-rc1" (NULL = ad-hoc)
     "story_overall",      # Tolkien/story-craft lens (0-5), NULL if not scored
     "mech_overall",       # Mechanical lens (0-5), NULL if not scored
@@ -203,12 +207,14 @@ _REAL_COLS = {
     "duration_wall_s",
     # WS0 engagement coverage fraction (0.0-1.0 → REAL; engagement_inert is TEXT)
     "engagement_pct",
+    "completion_claimed",
     # visual-critic loop (0-10 gap-to-reference score → REAL)
     "visual_overall",
     # L7 motion lens (0-10 holistic motion score → REAL)
     "motion_overall",
 }
-_INT_COLS = {"critical_bugs", "pass", "is_canonical_baseline", "acts_reached", "visual_round"}
+_INT_COLS = {"critical_bugs", "pass", "is_canonical_baseline", "acts_reached", "visual_round",
+             "completion_verified", "measured"}
 
 
 def _coltype(col: str) -> str:

@@ -75,7 +75,7 @@ TODO_REASONS = {
 # baseline session gates (dice_used / player_in_party), so no case here can ISOLATE one arc row.
 # Covered instead by qa/test_arc_gate.py, which drives this same gate CLI over tiny synthetic
 # transcripts with the toggles set and asserts each row is a [FAIL] naming its beat.
-for _arc_check in ("arc_no_reroll_character", "arc_no_add_location",
+for _arc_check in ("arc_objective_completion_truth", "arc_no_reroll_character", "arc_no_add_location", "arc_no_create_character",
                    "arc_only_seeded_species", "arc_end_combat_live_hostiles",
                    "arc_essential_npc_killed", "arc_quest_softlocked_on_dead_npc"):
     TODO_REASONS[_arc_check] = (

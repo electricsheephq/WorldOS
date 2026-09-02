@@ -282,7 +282,16 @@ def read_run(prefix: str, config: dict) -> dict:
     """Read one run's artifacts (by path PREFIX) into a per-run record."""
     summary = _read_json(f"{prefix}.adventure.json")
     trace = _read_json(f"{prefix}.quest_trace.json")
-    completed, beats_to_complete, stamps = _completion_from_trace(trace)
+    claimed_from_status, beats_to_complete, stamps = _completion_from_trace(trace)
+    completion_claimed = bool((trace or {}).get("completion_claimed", claimed_from_status))
+    explicit_verified = (summary or {}).get("completion_verified")
+    if not isinstance(explicit_verified, bool):
+        explicit_verified = (trace or {}).get("completion_verified")
+    completion_verified = bool(explicit_verified) if isinstance(explicit_verified, bool) else False
+    completion_truth = list((summary or {}).get("completion_truth")
+                            or (trace or {}).get("completion_truth") or [])
+    if completion_claimed and not completion_verified and not completion_truth:
+        completion_truth = ["completion truth missing (pre-instrument run)"]
     dead = _dead_beats(prefix, summary)
     gap_outlier = _stage_gap_outlier(stamps, int(config.get("stage_gap_outlier_beats", 5)))
     dead_thr = int(config.get("dead_beat_stuck_threshold", 2))
@@ -291,7 +300,10 @@ def read_run(prefix: str, config: dict) -> dict:
     return {
         "run": Path(prefix).name,
         "prefix": prefix,
-        "completed": completed,
+        "completed": completion_verified,
+        "completion_claimed": completion_claimed,
+        "completion_verified": completion_verified,
+        "completion_truth": completion_truth,
         "beats_to_complete": beats_to_complete,
         "dead_beats": dead,
         "stage_gap_outlier": gap_outlier,
@@ -313,6 +325,7 @@ def read_run(prefix: str, config: dict) -> dict:
         # them at write time); otherwise they are resolved HERE from the run's own transcripts, so a
         # run predating provenance stamping still ledgers a real model id instead of a drifting alias.
         **_resolved_models(prefix, summary),
+        "measured": bool((summary or {}).get("measured", False)),
     }
 
 
@@ -357,7 +370,8 @@ def aggregate(prefixes: list[str], config: Optional[dict] = None) -> dict:
     if n == 0:
         raise ValueError("aggregate() needs at least one run prefix")
 
-    completion_rate = _mean([1.0 if r["completed"] else 0.0 for r in runs]) or 0.0
+    completion_rate = _mean([1.0 if r["completion_verified"] else 0.0 for r in runs]) or 0.0
+    completion_claimed = _mean([1.0 if r["completion_claimed"] else 0.0 for r in runs]) or 0.0
     completed_beats = [r["beats_to_complete"] for r in runs if r["completed"] and r["beats_to_complete"] is not None]
     median_beats_to_complete = _median(completed_beats)
 
@@ -420,6 +434,11 @@ def aggregate(prefixes: list[str], config: Optional[dict] = None) -> dict:
     return {
         "n": n,
         "completion_rate": round(completion_rate, 3),
+        "completion_claimed": round(completion_claimed, 3),
+        "completion_verified": all(r["completion_verified"] for r in runs),
+        "completion_truth": [{"run": r["run"], "reasons": r["completion_truth"]}
+                             for r in runs if r["completion_truth"]],
+        "measured": all(r["measured"] for r in runs),
         "median_beats_to_complete": median_beats_to_complete,
         "median_wall_s": _median([r["wall_s"] for r in runs]),
         "median_s_per_beat": _median([r["s_per_beat"] for r in runs]),
@@ -492,7 +511,8 @@ def persist_row(
     # MISSING evidence (green_rate None -> behavioral None) fails — a citable passing row requires
     # positive gate evidence on every aggregated run.
     pass_bar = float(load_config().get("pass_completion_rate", 0.5))
-    passed = 1 if (agg["completion_rate"] >= pass_bar and behavioral == "GREEN") else 0
+    passed = 1 if (agg["completion_rate"] >= pass_bar and behavioral == "GREEN"
+                   and agg.get("measured") is True) else 0
 
     # Provenance: a CLI override wins, else the model the runs recorded, else a default (+ note).
     defaulted: list[str] = []
@@ -535,6 +555,10 @@ def persist_row(
         "mech_overall": agg["mech_overall"],
         "angrydm_overall": agg["angrydm_overall"],
         "behavioral": behavioral,
+        "completion_claimed": agg["completion_claimed"],
+        "completion_verified": int(agg["completion_verified"]),
+        "completion_truth": json.dumps(agg["completion_truth"], ensure_ascii=False, sort_keys=True),
+        "measured": int(agg["measured"]),
         "engagement_pct": agg["engagement_pct"],
         "s_per_beat": agg["median_s_per_beat"],
         "duration_wall_s": agg["median_wall_s"],

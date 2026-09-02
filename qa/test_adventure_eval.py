@@ -36,6 +36,9 @@ def _write_run(
     dead_beats: int | None = 0,
     wall_s: float | None = 300.0,
     s_per_beat: float | None = 20.0,
+    completion_verified: bool | None = None,
+    completion_truth: list[str] | None = None,
+    measured: bool = True,
 ) -> str:
     """Write one synthetic run's artifacts under tmp/<run_id>.* and return the prefix."""
     prefix = str(tmp / run_id)
@@ -49,6 +52,9 @@ def _write_run(
     trace = {
         "campaign_id": "adventure_demo_v1",
         "quest_status": "completed" if completed else "active",
+        "completion_claimed": completed,
+        "completion_verified": completed if completion_verified is None else completion_verified,
+        "completion_truth": completion_truth or [],
         "stamps": [{"stage": s, "beat": b, "ts": "t", "signal": "objective:x"} for s, b in stages],
     }
     Path(f"{prefix}.quest_trace.json").write_text(json.dumps(trace))
@@ -63,7 +69,10 @@ def _write_run(
         gate = "[PASS] all good\n" if behavioral == "GREEN" else "[FAIL] player_turns_structured\n"
         Path(f"{prefix}.gate.txt").write_text(gate)
 
-    summary = {"behavioral": behavioral, "engagement_pct": engagement_pct, "dead_beats": dead_beats}
+    summary = {"behavioral": behavioral, "engagement_pct": engagement_pct, "dead_beats": dead_beats,
+               "completion_claimed": completed,
+               "completion_verified": completed if completion_verified is None else completion_verified,
+               "completion_truth": completion_truth or [], "measured": measured}
     Path(f"{prefix}.adventure.json").write_text(json.dumps(summary))
 
     # latency
@@ -115,6 +124,32 @@ def test_partial_completion_rate_and_median_beats(tmp_path):
     assert agg["dimensions"]["completion"] < 1.0
 
 
+def test_claimed_boss_completion_does_not_count_without_world_truth(tmp_path):
+    reason = "objective 3 'Slay the goblin boss': seeded boss boss-1 alive at 21/21"
+    prefix = _write_run(tmp_path, "invented", completed=True,
+                        completion_verified=False, completion_truth=[reason])
+    agg = ae.aggregate([prefix])
+    assert agg["completion_claimed"] == 1.0
+    assert agg["completion_rate"] == 0.0
+    assert agg["runs"][0]["completion_verified"] is False
+    db = tmp_path / "scores.db"
+    ae.persist_row(agg, run_id="invented", db_path=str(db))
+    row = scores_db.fetch_rows(str(db))[0]
+    assert row["completion_claimed"] == 1.0
+    assert row["completion_verified"] == 0
+    assert reason in json.loads(row["completion_truth"])[0]["reasons"]
+
+
+def test_unpinned_model_persists_as_unmeasured(tmp_path):
+    prefix = _write_run(tmp_path, "unmeasured", measured=False)
+    agg = ae.aggregate([prefix])
+    db = tmp_path / "scores.db"
+    fields = ae.persist_row(agg, run_id="unmeasured", db_path=str(db))
+    assert fields["measured"] == 0
+    assert fields["pass"] == 0
+    assert scores_db.fetch_rows(str(db))[0]["measured"] == 0
+
+
 def test_stuck_detection_dead_beats_and_stage_gap(tmp_path):
     # adv0: clean. adv1: dead beats over threshold. adv2: a big stage gap (2 -> 12) outlier.
     p0 = _write_run(tmp_path, "adv0", dead_beats=0)
@@ -139,7 +174,9 @@ def test_missing_artifacts_are_tolerated(tmp_path):
         {"quest_status": "completed",
          "stamps": [{"stage": "quest_completed", "beat": 7, "signal": "status:completed"}]}))
     agg = ae.aggregate([prefix])
-    assert agg["completion_rate"] == 1.0
+    assert agg["completion_claimed"] == 1.0
+    assert agg["completion_rate"] == 0.0
+    assert "pre-instrument" in agg["completion_truth"][0]["reasons"][0]
     assert agg["dimensions"]["story"] is None
     assert agg["dimensions"]["mechanics"] is None
     assert agg["dimensions"]["behavioral"] is None
@@ -223,14 +260,15 @@ def test_failed_quest_is_not_a_completion(tmp_path):
     assert per["advfail"]["beats_to_complete"] is None
 
 
-def test_completed_status_signal_counts(tmp_path):
+def test_completed_status_signal_is_claim_only_without_world_truth(tmp_path):
     prefix = str(tmp_path / "advok")
     Path(f"{prefix}.quest_trace.json").write_text(json.dumps({
         "quest_status": "completed",
         "stamps": [{"stage": "quest_completed", "beat": 5, "signal": "status:completed"}]}))
     agg = ae.aggregate([prefix])
-    assert agg["completion_rate"] == 1.0
-    assert agg["median_beats_to_complete"] == 5
+    assert agg["completion_claimed"] == 1.0
+    assert agg["completion_rate"] == 0.0
+    assert agg["median_beats_to_complete"] is None
 
 
 # ── item 17: behavioral GREEN requires POSITIVE evidence, not the absence of [FAIL] ──────────────
