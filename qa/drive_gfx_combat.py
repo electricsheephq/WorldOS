@@ -67,6 +67,7 @@ def render(tag: str) -> None:
     scope = surface().get("combatFrameScope", "")  # the current turn's frame scope (matches what the box renders)
     subprocess.run([UNITY_MCP, "code", "execute", "--no-safety-checks",
                     "-f", RENDER_SCRIPT], capture_output=True, timeout=160)
+    os.makedirs(OUT_DIR, exist_ok=True)
     png = f"{OUT_DIR}/m1_combat_{tag}.png"
     subprocess.run(["scp", "-o", f"ControlPath={CM}", f"{BOX}:{BOX_CAP}", png], capture_output=True, timeout=30)
     deliver(png, scope)  # M-D: also drop it in the viewer's /image cache so the in-app <Img> serves it

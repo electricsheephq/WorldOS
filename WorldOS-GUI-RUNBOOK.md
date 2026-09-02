@@ -308,7 +308,7 @@ release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI s
     --art-root /root/worldos-qa/WorldOS \
     --private-art-mode required \
     --artifact-dir /tmp/worldos-support-vm-preflight-da05101 \
-    --artifact-return-target /Volumes/LEXAR/Codex/worldos-support-vm-rri/da05101-preflight  # (historical path — /Volumes/LEXAR/Codex/worldos-support-vm-rri/da05101-preflight; that machine is gone, see NOW.md)
+    --artifact-return-target /Users/m1/Codex/worldos-support-vm-rri/da05101-preflight
   ```
   The script is read-only with respect to WorldOS state; it writes `support_vm_preflight.json` and
   `support_vm_preflight.md`, redacts secrets, and exits non-zero if same-SHA/origin/tool/auth/private-art
