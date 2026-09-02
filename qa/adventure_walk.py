@@ -292,15 +292,20 @@ def classify_reward_leg(data: dict, quest_title: str = "") -> dict:
     ERROR — never a silent GREEN on missing evidence, per the walk_test tri-state discipline.
     A quest that ended FAILED/abandoned is NOT a paid reward: only an independent reward_received
     signal reads GREEN there (see the status branch below)."""
-    stamps = [s for s in (data.get("stamps") or []) if isinstance(s, dict)]
     quests = data.get("quests") or []
     quest = _select_quest(quests, quest_title) if quests else None
-    signals = []
     # The trace is the FALLBACK source, never a second opinion: a reused sandbox run keeps its state
     # dir and the seeder rewrites the campaign WITHOUT clearing quest_trace.json (run_adventure.sh
-    # warns about exactly this), so a stale quest_completed stamp must never outvote a live ACTIVE
-    # quest. Stamps count only when the live read gave us nothing.
-    for s in (stamps if quest is None else []):
+    # warns about exactly this). Stamps count ONLY when the live read gave us nothing AND could not
+    # be made — a live read that SUCCEEDED with no quest is missing evidence for THIS campaign, so a
+    # retained stamp from an earlier run must not answer for it.
+    if quest is None and data.get("live_read_ok"):
+        return {"verdict": "ERROR", "signals": [], "quest_status": None, "outstanding_objectives": [],
+                "reason": "live get_quests returned no quest for this campaign — no reward evidence "
+                          "(a retained quest_trace from an earlier run is not evidence for this one)"}
+    stamps = [s for s in (data.get("stamps") or []) if isinstance(s, dict)] if quest is None else []
+    signals = []
+    for s in stamps:
         name = str(s.get("stage"))
         if name not in REWARD_SIGNALS:
             continue
@@ -343,13 +348,21 @@ def classify_reward_leg(data: dict, quest_title: str = "") -> dict:
 
 
 def assert_route_returns_to_giver(plan: tuple) -> tuple:
-    """A route override must close on a `return_to_giver` stage — the whole point of the §9 G3 walk.
-    Without this an override of ordinary stages walks, scores GREEN/0 and only whispers its
+    """A route override must CLOSE on a valid `return_to_giver` stage — the whole point of the §9 G3
+    walk. `any()` would not do: a giver stage followed by further stages leaves the party somewhere
+    else at the end of the walk, and a giver stage with no actor reads the reward without ever
+    approaching the giver. Without this an override walks, scores GREEN/0 and only whispers its
     incompleteness through `route_complete`, which automation can miss. Partial routes stay drivable
     behind an explicit --allow-partial-route."""
-    if not any(k == "return_to_giver" for _sid, _room, k, _actor in plan):
-        raise ValueError("route override has no `return_to_giver` stage — the §9 G3 walk must end at "
-                         "the giver (pass --allow-partial-route to drive a deliberate partial route)")
+    last = plan[-1] if plan else None
+    if last is None or last[2] != "return_to_giver":
+        raise ValueError("route override must END on a `return_to_giver` stage — the §9 G3 walk "
+                         "finishes at the giver (pass --allow-partial-route for a deliberate "
+                         "partial route)")
+    if not last[3]:
+        raise ValueError(f"route stage {last[0]!r}: a `return_to_giver` stage needs an `actor` (the "
+                         "giver to approach) — reading the reward without approaching them proves "
+                         "nothing")
     return plan
 
 
@@ -372,10 +385,13 @@ def is_route_complete(report: dict) -> bool:
     stage, the party ARRIVED back at the giver, and its reward leg read GREEN. A walk that stopped
     at camp, never reached the giver, or could not read the quest is not complete — the G3 row must
     never read ROUTE-COMPLETE off a walk that stopped short."""
-    for s in report.get("stages", []):
-        if s.get("kind") == "return_to_giver":
-            return bool(s.get("arrived")) and (s.get("reward_leg") or {}).get("verdict") == "GREEN"
-    return False
+    stages = report.get("stages") or []
+    # the FINAL stage, not merely some earlier giver stage: a walk that reached Maera and then
+    # wandered on ends somewhere else, and its later stages may have failed outright.
+    last = stages[-1] if stages else None
+    if not last or last.get("kind") != "return_to_giver":
+        return False
+    return bool(last.get("arrived")) and (last.get("reward_leg") or {}).get("verdict") == "GREEN"
 
 
 def init_report(engine: str, qa: str, route: list) -> dict:
@@ -586,7 +602,12 @@ def walk_stage(qa: str, engine: str, stage: Stage, out_dir: Path, scorer: FrameS
             # but a reader must not misread its RED as "we talked and the arc refused to pay".
             leg["talk_landed"] = rec["talked"]
             rec["reward_leg"] = leg
-            if leg["verdict"] == "RED":
+            if leg["verdict"] == "RED" and rec["harness_errors"]:
+                # the approach to the giver hit a drive-error: the unpaid quest is downstream of a
+                # HARNESS failure, so it must not be promoted to a clean arc RED (classify_stage_
+                # verdict reads action_failed before harness_errors). The leg stays recorded.
+                leg["blocked_by_harness"] = True
+            elif leg["verdict"] == "RED":
                 rec["action_failed"] = f"reward_leg: {leg.get('reason')}"
             elif leg["verdict"] == "ERROR":
                 rec["harness_errors"].append(f"reward_leg: {leg.get('reason')}")
@@ -657,6 +678,7 @@ def _live_quest_reader(state_dir: str, campaign_id: str = CAMPAIGN,
             # lazy: importing the engine is a LIVE-path cost the pure tests must never pay
             from quest_progress import _import_server  # noqa: PLC0415
             out["quests"] = _import_server(str(state_dir)).get_quests(campaign_id).get("quests") or []
+            out["live_read_ok"] = True   # the live read SUCCEEDED — the trace must not answer for it
         except Exception as e:  # noqa: BLE001
             errors.append(f"get_quests:{e}")
         if not out:

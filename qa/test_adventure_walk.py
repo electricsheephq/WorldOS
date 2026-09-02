@@ -566,3 +566,56 @@ def test_a_route_override_must_close_on_the_giver_unless_explicitly_partial():
     with pytest.raises(ValueError, match="return_to_giver"):
         A.assert_route_returns_to_giver(partial)
     assert A.assert_route_returns_to_giver(A.DEFAULT_ROUTE) == A.DEFAULT_ROUTE
+
+
+# ── review round 5: the giver stage must CLOSE the route, and harness never becomes RED ─────────────
+def test_route_must_end_on_a_valid_giver_stage_not_merely_contain_one():
+    """`any()` would accept a giver stage followed by further stages — the party then ends the walk
+    somewhere else (and those later stages may fail), yet an earlier paid leg would read complete.
+    A giver stage with no actor reads the reward without ever approaching the giver."""
+    import pytest
+    trailing = A.parse_route_spec(
+        '[["giver", "tavern_snug", "return_to_giver", "Keeper Maera"], ["after", "camp_clearing", "return"]]')
+    with pytest.raises(ValueError, match="END on a"):
+        A.assert_route_returns_to_giver(trailing)
+    no_actor = A.parse_route_spec('[["giver", "tavern_snug", "return_to_giver"]]')
+    with pytest.raises(ValueError, match="needs an `actor`"):
+        A.assert_route_returns_to_giver(no_actor)
+    assert A.assert_route_returns_to_giver(A.DEFAULT_ROUTE) == A.DEFAULT_ROUTE
+
+
+def test_route_complete_reads_the_FINAL_stage_only():
+    paid = {"kind": "return_to_giver", "arrived": True, "reward_leg": {"verdict": "GREEN"}}
+    assert A.is_route_complete({"stages": [paid]}) is True
+    # a paid giver stage that is not last cannot certify a walk that ended elsewhere
+    assert A.is_route_complete({"stages": [paid, {"kind": "return", "arrived": True}]}) is False
+    assert A.is_route_complete({"stages": []}) is False
+
+
+def test_a_successful_but_empty_live_read_never_falls_back_to_a_stale_trace():
+    """`get_quests` succeeding with no quest (an unseeded / state-skewed campaign) is MISSING evidence
+    for this campaign — a retained stamp from an earlier run must not answer for it."""
+    stale = {"quests": [], "live_read_ok": True, "stamps": [{"stage": "reward_received"}]}
+    assert A.classify_reward_leg(stale)["verdict"] == "ERROR"
+    # without a successful live read the same stamps ARE the evidence (the documented fallback)
+    assert A.classify_reward_leg({"stamps": [{"stage": "reward_received"}]})["verdict"] == "GREEN"
+
+
+def test_a_harness_failure_in_the_giver_approach_stays_error_not_red(monkeypatch, tmp_path):
+    """If the approach to Maera hits a drive-error the quest is unreadable-by-consequence: the unpaid
+    reward is downstream of a HARNESS failure and must not be promoted to a clean arc RED."""
+    stage = A.Stage(id="return_to_giver", room="tavern_snug", kind="return_to_giver",
+                    expected_desc="tavern", actor="Keeper Maera", hops=["tavern_snug"])
+    # drive the same branch walk_stage takes, via a run over the mocked world
+    fw = _FakeWorld()
+    fw.loc = "tavern_snug"
+    _wire(monkeypatch, fw)
+    def _boom_move(qa, engine, c, r, settle, timeout, expect_move=True):
+        return False, "drive-error:ConnectionError('player down')", []   # walk_test's harness sentinel
+    monkeypatch.setattr(W, "_drive_and_check", _boom_move)
+    out = A.walk_stage("http://q", "http://e", stage, tmp_path, _clean, settle=0.0, timeout=0.2,
+                       quest_reader=lambda: _ACTIVE_QUEST)
+    assert out["harness_errors"] and "action_failed" not in out
+    assert out["reward_leg"]["verdict"] == "RED" and out["reward_leg"]["blocked_by_harness"] is True
+    assert out["verdict"] == "ERROR"          # harness, never a false product RED
+    assert A.is_route_complete({"stages": [out]}) is False
