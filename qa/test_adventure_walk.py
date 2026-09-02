@@ -21,13 +21,42 @@ import walk_test as W  # noqa: E402
 def test_build_route_is_the_section_4d_arc():
     route = A.build_route()
     assert [s.id for s in route] == [
-        "camp_start", "to_tavern", "back_to_camp", "to_crypt", "to_throne", "return_to_camp"]
+        "camp_start", "to_tavern", "back_to_camp", "to_crypt", "to_throne", "return_to_camp",
+        "return_to_giver"]
     assert [s.room for s in route] == [
-        "camp_clearing", "tavern_snug", "camp_clearing", "crypt", "throne_hall", "camp_clearing"]
-    assert [s.kind for s in route] == ["start", "approach", "return", "walk", "approach", "return"]
+        "camp_clearing", "tavern_snug", "camp_clearing", "crypt", "throne_hall", "camp_clearing",
+        "tavern_snug"]
+    assert [s.kind for s in route] == ["start", "approach", "return", "walk", "approach", "return",
+                                       "return_to_giver"]
     # the two approach stages carry the quest-giver + the boss (proximity + actor-visible targets)
     assert route[1].actor == "Keeper Maera" and route[4].actor == "Goblin Boss"
     assert all(s.actor is None for s in (route[0], route[2], route[3], route[5]))
+
+
+# ── the §9 RETURN-FOR-REWARD leg (the G3 route gap, #1709) ──────────────────────────────────────────
+def test_route_data_covers_the_return_leg_to_the_giver():
+    """The walked route must END at the giver: the final leg is throne_hall -> crypt -> camp ->
+    tavern_snug, so the reward-return the §9 arc requires is actually driven."""
+    route = A.build_route()
+    last = route[-1]
+    assert (last.id, last.room, last.kind, last.actor) == (
+        "return_to_giver", "tavern_snug", "return_to_giver", "Keeper Maera")
+    # the closing leg, stitched from the last two stages' door chains, is the full §9 return
+    assert route[-2].hops == ["throne_hall", "crypt", "camp_clearing"]
+    assert last.hops == ["camp_clearing", "tavern_snug"]
+
+
+def test_route_is_data_not_code(tmp_path):
+    """The route is DATA — the §9 default, inline JSON, or a @file — so a wider town graph extends
+    it without touching the drive."""
+    assert A.parse_route_spec(None) == A.DEFAULT_ROUTE
+    assert A.parse_route_spec('[["a", "crypt", "walk"], ["b", "tavern_snug", "approach", "Keeper Maera"]]') == (
+        ("a", "crypt", "walk", None), ("b", "tavern_snug", "approach", "Keeper Maera"))
+    f = tmp_path / "route.json"
+    f.write_text('[{"id": "only", "room": "crypt", "kind": "walk"}]')
+    assert A.parse_route_spec(f"@{f}") == (("only", "crypt", "walk", None),)
+    custom = A.build_route("camp_clearing", A.parse_route_spec('[["only", "crypt", "walk"]]'))
+    assert [s.id for s in custom] == ["only"] and custom[0].hops == ["camp_clearing", "crypt"]
 
 
 def test_every_stage_hop_chain_is_valid_adjacent_door_crosses():
@@ -199,7 +228,8 @@ def _wire(monkeypatch, fw):
 def test_full_walk_happy_path_is_green_and_well_shaped(monkeypatch, tmp_path):
     fw = _FakeWorld()
     _wire(monkeypatch, fw)
-    report = A.run_walk("http://e", "http://q", tmp_path, _clean, settle=0.0, timeout=0.5)
+    report = A.run_walk("http://e", "http://q", tmp_path, _clean, settle=0.0, timeout=0.5,
+                        quest_reader=_paid_reader)
 
     verdict, code = A.classify_walk_verdict(report)
     assert (verdict, code) == ("GREEN", 0)
@@ -207,18 +237,23 @@ def test_full_walk_happy_path_is_green_and_well_shaped(monkeypatch, tmp_path):
     assert report["schema_version"] == 1 and "T" in report["ts"]
     assert report["campaign"] == A.CAMPAIGN
     assert report["route"] == [s.id for s in A.build_route()]
-    assert len(report["stages"]) == 6
+    assert len(report["stages"]) == 7
     tot = report["totals"]
-    assert tot["stages"] == 6 and tot["arrived"] == 6 and tot["stuck_stages"] == 0
+    assert tot["stages"] == 7 and tot["arrived"] == 7 and tot["stuck_stages"] == 0
     assert tot["dead_clicks"] == 0
     for s in report["stages"]:
         assert s["arrived"] and s["verdict"] == "GREEN"
         assert s["arrival_room"] == s["room"]
         assert isinstance(s["duration_s"], float)          # per-stage timing recorded
         assert s["vqa"]["frames_checked"] == 1 and s["vqa"]["passed"]
-    # the two approach stages actually reached their actor + attempted the talk-equivalent
-    approach = [s for s in report["stages"] if s["kind"] == "approach"]
+    # every actor stage (both approaches + the giver return) reached its actor + talked
+    approach = [s for s in report["stages"] if s["kind"] in ("approach", "return_to_giver")]
+    assert len(approach) == 3
     assert all(s["adjacent"] and s["talked"] is True for s in approach)
+    # the walk FINISHED the §9 arc: back at the giver, reward read, route_complete
+    giver = report["stages"][-1]
+    assert giver["room"] == "tavern_snug" and giver["reward_leg"]["verdict"] == "GREEN"
+    assert report["route_complete"] is True
     # the report was persisted-shaped correctly (round-trips through JSON without loss)
     import json
     assert json.loads(json.dumps(report))["verdict"] == "GREEN"
@@ -284,3 +319,85 @@ def test_clean_action_failure_is_red():
            "action_failed": "walk_floor: 2/3 sampled cells dead",
            "vqa": {"frames_checked": 1, "flags": {}, "defects": [], "passed": True}}
     assert A.classify_stage_verdict(rec) == "RED"
+
+
+# ── the §9 REWARD leg verdict (read from get_quests / quest_trace; PURE) ─────────────────────────────
+_ACTIVE_QUEST = {"quests": [{"id": "q1", "title": "Clear the crypt", "status": "active",
+                             "objectives": ["Speak with Keeper Maera", "Clear the crypt",
+                                            "Return to Keeper Maera for the reward"],
+                             "completed_objectives": ["Speak with Keeper Maera", "Clear the crypt"]}]}
+
+
+def _paid_reader():
+    """A quest source where the reward LANDED (the return objective completed)."""
+    q = dict(_ACTIVE_QUEST["quests"][0])
+    q["completed_objectives"] = list(q["objectives"])
+    return {"quests": [q]}
+
+
+def test_reward_leg_green_on_a_completed_return_objective():
+    res = A.classify_reward_leg(_paid_reader())
+    assert res["verdict"] == "GREEN" and "reward_received" in res["signals"]
+
+
+def test_reward_leg_green_on_a_quest_trace_stamp():
+    """The A-T lane's quest_trace stamps are an equally valid source of the reward signal."""
+    res = A.classify_reward_leg({"stamps": [{"stage": "reached_giver"}, {"stage": "quest_completed"}]})
+    assert res["verdict"] == "GREEN" and res["signals"] == ["quest_completed"]
+
+
+def test_reward_leg_red_when_the_quest_never_completes():
+    """A fake engine that never marks the quest complete must yield RED — with the outstanding
+    objective list — NEVER a silent GREEN just because the party stood next to the giver."""
+    res = A.read_reward_leg(lambda: _ACTIVE_QUEST)
+    assert res["verdict"] == "RED" and res["signals"] == []
+    assert res["outstanding_objectives"] == ["Return to Keeper Maera for the reward"]
+    assert res["quest_status"] == "active"
+
+
+def test_reward_leg_rpc_unreachable_is_error_never_red():
+    """HARNESS defects are never arc verdicts: an unreadable RPC (and a missing reader) is ERROR."""
+    def _boom():
+        raise ConnectionError("engine import failed")
+    assert A.read_reward_leg(_boom)["verdict"] == "ERROR"
+    assert A.read_reward_leg(None)["verdict"] == "ERROR"
+    # an empty payload is missing evidence, not proof of a paid reward
+    assert A.classify_reward_leg({})["verdict"] == "ERROR"
+    assert A.classify_reward_leg({"quests": []})["verdict"] == "ERROR"
+
+
+def test_reward_leg_error_classifies_the_stage_error_not_red(monkeypatch, tmp_path):
+    """A giver stage that ARRIVED but could not read the quest is ERROR (harness), never a walk RED,
+    and the route is NOT complete on unread evidence."""
+    fw = _FakeWorld()
+    _wire(monkeypatch, fw)
+    def _boom():
+        raise ConnectionError("engine down")
+    report = A.run_walk("http://e", "http://q", tmp_path, _clean, settle=0.0, timeout=0.5,
+                        quest_reader=_boom)
+    giver = report["stages"][-1]
+    assert giver["arrived"] and giver["reward_leg"]["verdict"] == "ERROR"
+    assert giver["verdict"] == "ERROR"
+    assert report["route_complete"] is False
+    assert A.classify_walk_verdict(report) == ("ERROR", 2)
+
+
+def test_unpaid_reward_makes_the_giver_stage_red_and_the_route_incomplete(monkeypatch, tmp_path):
+    fw = _FakeWorld()
+    _wire(monkeypatch, fw)
+    report = A.run_walk("http://e", "http://q", tmp_path, _clean, settle=0.0, timeout=0.5,
+                        quest_reader=lambda: _ACTIVE_QUEST)
+    giver = report["stages"][-1]
+    assert giver["verdict"] == "RED" and "reward_leg" in giver["action_failed"]
+    assert report["route_complete"] is False
+    assert A.classify_walk_verdict(report) == ("RED", 1)
+
+
+def test_route_complete_needs_an_arrived_giver_stage():
+    """route_complete is not a route-shape claim: a walk that never reached the giver, or a route
+    without the leg at all, must read False."""
+    assert A.is_route_complete({"stages": [{"kind": "return", "arrived": True}]}) is False
+    assert A.is_route_complete({"stages": [
+        {"kind": "return_to_giver", "arrived": False, "reward_leg": {"verdict": "GREEN"}}]}) is False
+    assert A.is_route_complete({"stages": [
+        {"kind": "return_to_giver", "arrived": True, "reward_leg": {"verdict": "GREEN"}}]}) is True
