@@ -248,6 +248,34 @@ def test_classify_verdict_orphans_and_visual_are_walkability():
     assert W.classify_verdict(_base_report(visual={"fail": 1})) == ("RED", 1)
 
 
+def test_run_gate_visual_preflight_error_is_harness_error(monkeypatch, tmp_path):
+    """A capture/preflight fault is ERROR/2, not a vacuous visual RED/1."""
+    monkeypatch.setattr(W, "_room_ortho", lambda room: 1.0)
+    monkeypatch.setattr(W, "_get", lambda url: {"grid": {"sceneId": "room"},
+                                                 "tokens": [{"x": 0, "y": 0}],
+                                                 "doors": []})
+    monkeypatch.setattr(W, "_post", lambda *args, **kwargs: {})
+    monkeypatch.setattr(W, "walkmask_from_surface", lambda surf: {
+        "cols": 3, "rows": 3, "walkable": [(1, 1)], "doors": [], "blocked": []})
+    monkeypatch.setattr(W, "check_camera_pose", lambda *args: [])
+    monkeypatch.setattr(W, "classify_camera_fails", lambda *args: ([], []))
+    monkeypatch.setattr(W, "orphan_cells", lambda *args: [])
+    monkeypatch.setattr(W, "bfs_reachable", lambda *args: {(1, 1)})
+    monkeypatch.setattr(W, "_sample", lambda *args: [])
+    monkeypatch.setattr(W, "_load_room_geometry", lambda room: {})
+    monkeypatch.setattr(W, "fire_anchor_cells", lambda *args: set())
+    monkeypatch.setattr(W, "select_visual_cells", lambda *args: [(1, 1)])
+    monkeypatch.setattr(W, "_visual_registration", lambda *args, **kwargs: {
+        "pass": 0, "fail": 0, "cases": [], "error": "capture preflight failed"})
+    monkeypatch.setattr(W, "_capture_shot", lambda *args, **kwargs: None)
+    monkeypatch.setattr(W, "_drive_and_check", lambda *args, **kwargs: (True, (0, 0), {}))
+    report = W.run_gate("room", "http://engine", "http://qa", stride=1,
+                        out=tmp_path, settle=0, move_timeout=0, visual=1)
+    assert report["visual"]["fail"] == 0
+    assert report["verdict"] == "ERROR"
+    assert report["harness_errors"] == ["visual: capture preflight failed"]
+
+
 def test_is_drive_error_only_matches_the_sentinel():
     """A drive-error string is harness; a settled cell list or a plain None (timeout) is not."""
     assert W.is_drive_error("drive-error:HTTPError") is True

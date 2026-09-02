@@ -198,7 +198,7 @@ def _is_churn(key: str) -> bool:
     return key in CHURN_KEYS or any(key.startswith(pre) for pre in CHURN_PREFIXES)
 
 
-def _plist_snapshot() -> dict:
+def _plist_snapshot() -> dict | None:
     """The WHOLE shared domain as {key: str}, minus the churn keys. READ ONLY.
 
     Whole-domain, not just the Screenmanager keys: the leak CHECK must be able to report any key the
@@ -210,15 +210,15 @@ def _plist_snapshot() -> dict:
         p = subprocess.run(["defaults", "export", PLIST_DOMAIN, "-"],
                            capture_output=True, timeout=15)
     except Exception:  # noqa: BLE001
-        return {}
+        return None
     if p.returncode != 0 or not p.stdout:
-        return {}
+        return None
     try:
         data = plistlib.loads(p.stdout)
     except Exception:  # noqa: BLE001
-        return {}
+        return None
     if not isinstance(data, dict):
-        return {}
+        return None
     return {str(k): str(v) for k, v in sorted(data.items()) if not _is_churn(str(k))}
 
 
@@ -290,17 +290,19 @@ def _plist_restore(diff: dict, *, foreign_alive: bool, rig_values: dict) -> dict
                                       f"({want!r}) — someone else wrote it last")
             continue
         if old is None:
-            subprocess.run(["defaults", "delete", PLIST_DOMAIN, key],
-                           capture_output=True, text=True)
-            report["restored"][key] = None
-            continue
-        if not _INT_RE.fullmatch(str(old)):
-            report["skipped"][key] = (f"snapshot value {old!r} is not an integer — refusing to "
-                                      f"`defaults write -int` it")
-            continue
-        subprocess.run(["defaults", "write", PLIST_DOMAIN, key, "-int", str(old)],
-                       capture_output=True, text=True)
-        report["restored"][key] = old
+            cmd, restored = ["defaults", "delete", PLIST_DOMAIN, key], None
+        else:
+            if not _INT_RE.fullmatch(str(old)):
+                report["skipped"][key] = (f"snapshot value {old!r} is not an integer — refusing to "
+                                          f"`defaults write -int` it")
+                continue
+            cmd, restored = ["defaults", "write", PLIST_DOMAIN, key, "-int", str(old)], old
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode:
+            report["skipped"][key] = (f"`defaults {cmd[1]}` failed (rc={result.returncode}) — "
+                                       "the rig value is STILL in the domain")
+        else:
+            report["restored"][key] = restored
     return report
 
 
@@ -573,6 +575,9 @@ def up(run: str, *, campaign: str, engine_port: int, qa_port: int,
     win_h = int(win_args[win_args.index("-screen-height") + 1])
 
     plist_before = _plist_snapshot()      # SHARED domain — snapshot now, diff + restore in down()
+    if plist_before is None:
+        raise SystemExit("[sandbox] could not snapshot the shared plist — refusing to launch "
+                         "(a failed read must never be restored as an empty domain).")
     front_before = LQW.front_app()        # {"name","pid"}: focus is handed back BY PID, not by name
 
     # 0c) PREFLIGHT the .app, still before anything is created or spawned. Both of these used to run after the
@@ -648,12 +653,22 @@ def up(run: str, *, campaign: str, engine_port: int, qa_port: int,
     # caffeinate is now a SIBLING watcher (`-w <pid>`, exits with the player) in the SAME process
     # group, and -d/-u are gone: -u ASSERTS USER ACTIVITY (wakes and holds the owner's display).
     # -i (idle) + -s (system sleep) still keep App-Nap -> throttled-render -> delayed /shot away.
+    try:
+        owner_active_guard()
+    except SystemExit:
+        _kill_group(engine.pid, "engine", expect_pgid=eng_pgid)
+        raise
     player = subprocess.Popen(argv, env=penv, stdout=ply_log, stderr=subprocess.STDOUT,
                               start_new_session=True)
     player_pgid = os.getpgid(player.pid)
-    caff = subprocess.Popen(["/usr/bin/caffeinate", *CAFFEINATE_FLAGS, "-w", str(player.pid)],
-                            stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
-                            start_new_session=False)
+    try:
+        caff = subprocess.Popen(["/usr/bin/caffeinate", *CAFFEINATE_FLAGS, "-w", str(player.pid)],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
+                                start_new_session=False)
+    except Exception as exc:  # noqa: BLE001
+        caff = None
+        print(f"[sandbox] WARN: caffeinate unavailable ({exc}); continuing without it.",
+              file=sys.stderr)
 
     meta = {"run": run, "campaign": campaign, "state": str(state), "status": "booting",
             "engine": f"http://127.0.0.1:{engine_port}", "qa": f"http://127.0.0.1:{qa_port}",
@@ -661,7 +676,7 @@ def up(run: str, *, campaign: str, engine_port: int, qa_port: int,
             "plist_before": plist_before, "front_before": front_before,
             "pids": {"engine": engine.pid, "player": player.pid},
             "pgids": {"engine": eng_pgid, "player": player_pgid},
-            "caffeinate_pid": caff.pid}
+            "caffeinate_pid": caff.pid if caff else None}
     # ANTI-ORPHAN FENCE: write the metadata BEFORE the readiness wait. Previously it was written
     # after, so a boot timeout raised with nothing on disk and `down` had no pids to kill.
     _meta_path(run).write_text(json.dumps(meta, indent=2) + "\n")
@@ -746,13 +761,16 @@ def down(run: str) -> int:
     # instance writes the domain on quit and cfprefsd caches it, so an earlier diff reads the wrong
     # state and an earlier restore is silently clobbered.
     time.sleep(2.0)
-    before = meta.get("plist_before") or {}
-    after = _plist_snapshot()
-    diff = _plist_diff(before, after)
+    before = meta.get("plist_before")
+    after = _plist_snapshot() if before is not None else None
+    snapshot_ok = before is not None and after is not None
+    diff = _plist_diff(before, after) if snapshot_ok else {}
     foreign = _player_pids() - set(pids.values())
     win = meta.get("win") or []
     rig_values = _rig_written_values(*win[:2]) if len(win) >= 2 else {}
-    report = _plist_restore(diff, foreign_alive=bool(foreign), rig_values=rig_values)
+    report = (_plist_restore(diff, foreign_alive=bool(foreign), rig_values=rig_values)
+              if snapshot_ok else {"restored": {}, "skipped": {},
+                                   "note": "shared plist snapshot unavailable — NOT restored"})
     report.update({"domain": PLIST_DOMAIN, "before": before, "after": after, "changed": diff,
                    "rig_values": rig_values, "foreign_player_pids": sorted(foreign)})
     (_rundir(run) / "prefs_leak.json").write_text(json.dumps(report, indent=2) + "\n")
@@ -768,6 +786,8 @@ def down(run: str) -> int:
                   f"{unrestored} — see {_rundir(run)/'prefs_leak.json'}")
         if report["note"]:
             print(f"[sandbox] {report['note']}", file=sys.stderr)
+    elif report["note"]:
+        print(f"[sandbox] {report['note']}", file=sys.stderr)
     else:
         print("[sandbox] shared plist clean — no non-churn key changed.")
 
@@ -781,7 +801,11 @@ def down(run: str) -> int:
     # the teardown ledger travels WITH the run metadata, not only in prefs_leak.json
     meta["stopped"] = {"plist": report, "orphans": stray["lines"], "leaks": leaks}
     mp.write_text(json.dumps(meta, indent=2) + "\n")
-    mp.rename(mp.with_suffix(".json.stopped"))
+    if leaks or foreign or not snapshot_ok:
+        print("[sandbox] cleanup INCOMPLETE — keeping sandbox.json; re-run `down --run <run>`",
+              file=sys.stderr)
+    else:
+        mp.rename(mp.with_suffix(".json.stopped"))
     print(f"[sandbox] DOWN — state/logs kept at {_rundir(run)} for evidence")
     return 1 if leaks else 0
 
