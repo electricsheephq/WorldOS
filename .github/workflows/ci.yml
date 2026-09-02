@@ -161,6 +161,7 @@ jobs:
             ../../qa/test_fact_fidelity.py \
             ../../qa/test_recap_fidelity.py \
             ../../qa/test_assert_behavioral.py \
+            ../../qa/test_arc_gate.py \
             ../../qa/test_distill.py \
             ../../qa/test_story_readout_coverage.py \
             ../../qa/test_story_readout_outcome.py \
@@ -180,6 +181,10 @@ jobs:
             ../../qa/test_generate_release_notes.py \
             ../../qa/test_combat_smoke.py \
             ../../qa/test_render_recipe.py
+      - name: Arc-mode runbook proof (shell; default-path byte identity)
+        # Not a pytest file, so it needs its own step: this is the ONLY proof that WORLDOS_ARC_MODE
+        # leaves the duo/play runbook strings byte-identical (the run_duo no-drift guarantee).
+        run: bash qa/tests/test_arc_mode_runbook.sh
 
   server-contracts:
     # Phase-1 (DETERMINISTIC-2): deterministic cross-service MCP contract tests

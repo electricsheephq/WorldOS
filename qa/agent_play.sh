@@ -158,6 +158,11 @@ ap_bind() {
   . "$ROOT/qa/lib_beat_driver.sh"
   # shellcheck source=lib_adventure_dm.sh
   . "$ROOT/qa/lib_adventure_dm.sh"
+  # agent_play drives the SAME pre-seeded campaign run_adventure does, and adv_dm_brief hands its DM
+  # the arc addendum verbatim (rules (A)-(F) forbid add_location / create_character / off-seed
+  # spawns). Without the flag the per-beat runbook would keep issuing the duo directives that
+  # RECOMMEND those exact calls, so the DM would be given two contradictory instructions in one turn.
+  export WORLDOS_ARC_MODE=1
   ADV_LOG_TAG="agent-play"
   STATE_DIR="$(ap_sget state_dir)"
   CAMPAIGN_ID="$(ap_sget campaign_id)"

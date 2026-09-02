@@ -76,9 +76,48 @@ PY
 # The DM brief = the shared duo brief + a short ARC ADDENDUM (the ONLY brief-plumbing run_duo
 # exposes is `cat qa/play_dm_duo.txt`; we CONCATENATE the addendum, we do not fork the brief).
 # $1 = campaign id  $2 = quest title ; echoes the brief.
+# ARC MODE brief filter. The shared duo brief obliges the DM to make "new named faces enter and
+# speak" — correct for an emergent duo session, WRONG for a seeded arc: all three failed Opus-5 arc
+# runs opened by minting a camp NPC with a missing brother and walking them into the crypt as a
+# second body to lose, while the passing opus-4-8 control created no opening NPC at all
+# (session-notes 2026-09-02 DM-DEVIATIONS). The edits are EXACT-MATCH and FAIL LOUD: if the shared
+# brief is reworded and a clause stops matching, the run aborts rather than silently shipping the
+# un-suppressed obligation. Heredoc-free (the python is a `-c` argument), so this stays safe inside
+# the $(...) that adv_dm_brief is called in. Echoes the (possibly filtered) brief.
+adv_dm_duo_brief() {
+  local f="$ROOT/qa/play_dm_duo.txt"
+  [ "${WORLDOS_ARC_MODE:-0}" = "1" ] || { cat "$f"; return 0; }
+  python3 -c 'import sys
+src = open(sys.argv[1], encoding="utf-8").read()
+for i in range(2, len(sys.argv), 2):
+    old, new = sys.argv[i], sys.argv[i + 1]
+    if src.count(old) != 1:
+        raise SystemExit("arc-mode brief filter: expected exactly 1 match for [" + old[:48] +
+                         "], found " + str(src.count(old)) +
+                         " -- qa/play_dm_duo.txt was reworded; update adv_dm_duo_brief in qa/lib_adventure_dm.sh")
+    src = src.replace(old, new)
+sys.stdout.write(src)' \
+    "$f" \
+    "the session obligations you OWN (the clock advances; the party travels to ≥2 locations; new named faces enter and speak)" \
+    "the session obligations you OWN (the clock advances; the party travels to ≥2 locations; the cast already on the table speaks)" \
+    "and new named NPCs enter and SPEAK — a whole session spent in the opening location at the opening hour with no new faces is a FAILED session that flips the gate RED" \
+    "and the characters already in the scene SPEAK — a whole session spent in the opening location at the opening hour is a FAILED session that flips the gate RED"
+}
+
+# GATE COVERAGE, kept honest (the brief above must never claim more than qa/assert_behavioral.py
+# actually enforces — a rule advertised as a hard FAIL that no check implements makes prompt
+# compliance, not the instrument, the verdict). Gate rows today:
+#   (A) arc_only_seeded_species   (B) arc_no_create_character (the "never a new creature" half)
+#   (C) arc_no_reroll_character   (D) arc_no_add_location
+#   (E) arc_end_combat_live_hostiles
+#   (F) arc_essential_npc_killed + arc_quest_softlocked_on_dead_npc
+# NOT gated, scorer-judged only: (C)'s "never below 1 HP before the crypt is cleared", (D)'s beat-3 /
+# beat-6 arrival deadlines, (F)'s "be captured, or leave the map". Add a check here before promoting
+# any of those to "hard FAIL" in the brief.
 adv_dm_brief() {
-  local campaign_id="$1" quest_title="$2"
-  printf '%s' "$(cat "$ROOT/qa/play_dm_duo.txt")
+  local campaign_id="$1" quest_title="$2" base
+  base="$(adv_dm_duo_brief)" || return 1
+  printf '%s' "$base
 ARC ADDENDUM (this is a PRE-SEEDED adventure, NOT a world you build): the world already exists in
 engine state as campaign \"$campaign_id\" — do NOT start_world / start_adventure / create the map.
 GROUND on it: call get_state(\"$campaign_id\"), look_around(\"$campaign_id\"), and get_quests(\"$campaign_id\")
@@ -102,6 +141,29 @@ ever reached. COMBAT-CLOSURE DISCIPLINE, non-negotiable and enforced by the QA g
   (3) ADVANCE THE CLOCK after significant beats — a resolved fight, a cleared room, reaching the
       throne hall — via advance_time / long_rest / travel_to(advance_time=True). An arc where the
       clock never moves is a dm_advanced_time WARN.
+THE SEEDED-ARC RULES — all binding. The TOOL-CALL ones are enforced by the QA gate as hard
+FAIL rows that flip the entire run RED and cap its score; the arrival deadlines and the PC
+HP floor are judged by the scorers instead, and are no less binding on you:
+  (A) THE ONLY HOSTILE CREATURES IN THIS WORLD ARE THE SEEDED ONES: three Goblin Warriors in the
+      crypt and the Goblin Boss in the throne hall. Never spawn_monster a species the seed does not
+      contain — no undead, no hobgoblins, no wights, nothing from the bestiary that is not already
+      here. Nothing hostile is on the road, in the camp, or in the tavern; those are safe rooms.
+  (B) THE REVERSAL IS A PRICE, NOT A FIGHT: a betrayal, a lost item, a broken promise, a time cost,
+      a locked way back — never a new fight and never a new creature. It fires only after the crypt
+      is cleared (objective 2) or at the true midpoint, whichever is LATER.
+  (C) NEVER TAKE THE PC BELOW 1 HP BEFORE THE CRYPT IS CLEARED, AND NEVER SEAT A REPLACEMENT PC:
+      no reroll_character, and never offer the player a new hero — not as a table note, not as a
+      kindness. If the PC drops, an NPC stabilises them INSIDE THE SAME BEAT and the scene goes on.
+  (D) REACH KEEPER MAERA BY BEAT 3 AND THE THRONE HALL BY BEAT 6. Do NOT add_location: the crypt
+      connects DIRECTLY to the seeded throne_hall, and the Goblin Boss never leaves that room — do
+      not stage him in the crypt, do not build a second hall for him, travel the party to him.
+  (E) ONE COMBAT AT A TIME. Call end_combat ONLY when the engine reports zero living hostiles — a
+      result carrying warning_live_hostiles means the fight is NOT over: finish it in that beat
+      rather than re-spawning the survivors later.
+  (F) THE QUEST GIVER AND EVERY NPC AN OBJECTIVE NAMES ARE ESSENTIAL: Keeper Maera above all. They
+      cannot die, be captured, or leave the map before the quest resolves, and the reward path back
+      to the giver stays OPEN — killing her strands the last objective and softlocks the arc with
+      the boss already dead. Cost the hero something else.
 Keep the arc MOVING toward the crypt and the boss; the player is here to finish this job, not to
 linger. The player is the seeded PC already in the party — do NOT seat a new character."
 }

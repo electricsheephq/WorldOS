@@ -1321,6 +1321,36 @@ worldos_runbook_for_beat() {
   fi
 }
 
+# ARC MODE only: has the arc passed its SECOND objective (for the seeded fixture, "Clear the crypt
+# of goblins")? Read off the campaign snapshot the harness already keeps, so the reversal latch below
+# can honour "after the crypt is cleared OR the true midpoint, WHICHEVER IS LATER" instead of firing
+# on the beat number alone. Matched BY IDENTITY, never by count: complete_objective accepts
+# objectives in ARBITRARY order, so "2 of 4 done" can mean Maera + the boss with the crypt still
+# contested — the exact premature state this latch exists to prevent. Returns 0 (true) only when the
+# quest's OWN objectives[1] is in its completed list. Fails CLOSED (returns 1) on a
+# missing/unparseable snapshot — an unfired reversal is recoverable, one fired into an uncleared
+# crypt is the failure this whole lane exists to stop.
+# $1 = STATE_DIR
+worldos_arc_second_objective_done() {
+  local snap; snap="$(worldos_snapshot_path "$1")"
+  [ -n "$snap" ] && [ -f "$snap" ] || return 1
+  python3 - "$snap" <<'ARCOBJPY' >/dev/null 2>&1
+import json, sys
+d = json.load(open(sys.argv[1], encoding="utf-8"))
+q = d.get("quests") or {}
+for quest in (q.values() if isinstance(q, dict) else q):
+    if not isinstance(quest, dict):
+        continue
+    objectives = quest.get("objectives") or []
+    if len(objectives) < 2:
+        continue
+    done = {str(o) for o in (quest.get("completed_objectives") or [])}
+    if str(objectives[1]) in done:
+        raise SystemExit(0)
+raise SystemExit(1)
+ARCOBJPY
+}
+
 # The runbook BODY — the moment-specific story directive (the original selector). Kept as an
 # inner helper so worldos_runbook_for_beat can prepend the F04-2 carry-forward block in ONE
 # place that BOTH opener paths (play.sh / play_party.sh) already route through.
@@ -1345,6 +1375,13 @@ _worldos_runbook_body() {
   # 1) Scene-intro: brand-new location this beat (just arrived → not yet "visited"-narrated) or
   #    the very first beat. Open the place FIRST, then hand back the moment.
   if [ "$beat" -le 1 ] || { [ -n "$cur_loc" ] && [ "$cur_loc" != "$prev_loc" ] && [ "$cur_visited" = "0" ]; }; then
+    # ARC MODE (run_adventure): the cast is SEEDED. The default line's "put at least one named face
+    # here who SPEAKS" is what minted the opening grief-NPC in every failed Opus-5 arc run (three of
+    # three), so arc mode voices the seeded cast instead of demanding a new one.
+    if [ "${WORLDOS_ARC_MODE:-0}" = "1" ]; then
+      printf '%s' "RUNBOOK — SCENE-INTRO (a new place, beat $beat): the party has just arrived somewhere new. BEFORE they act, YOU set this scene — look_around / get_scene first, then narrate the place's tone in your own prose (the light, the sound, who is present, what is wrong), generate_image(kind=\"scene\") for it, and give a quoted line to whoever the SEED already put in this room (and to no one else — do not mint a new face to fill the silence; an empty room is allowed to be empty). Then hand back the open moment. Do not wait for the player to author the room."
+      return 0
+    fi
     printf '%s' "RUNBOOK — SCENE-INTRO (a new place, beat $beat): the party has just arrived somewhere new. BEFORE they act, YOU set this scene — look_around / get_scene first, then narrate the place's tone in your own prose (the light, the sound, who is present, what is wrong), generate_image(kind=\"scene\") for it, and put at least one named face here who SPEAKS. Then hand back the open moment. Do not wait for the player to author the room."
     return 0
   fi
@@ -1355,8 +1392,24 @@ _worldos_runbook_body() {
     return 0
   fi
 
-  # 3) Midpoint reversal: at ~beats/2, fire the turn — and make it COST.
-  if [ "$beat" -eq "$mid" ] && [ "$beats" -ge 4 ]; then
+  # 3-arc) ARC MODE (run_adventure) midpoint reversal — a LATCH, not a beat equality. The seeded arc
+  #        answered the default directive with a NEW MONSTER three runs running (a Zombie at beat 5,
+  #        a Hobgoblin at beat 7), burning 4-7 beats before the crypt was even cleared. Here the
+  #        reversal is a PRICE and it fires on the FIRST beat at-or-after the midpoint where
+  #        objective 2 is actually done — i.e. max(midpoint, crypt cleared), which is what "whichever
+  #        is later" means. Issued exactly once (the sentinel), so a beat where the crypt is still
+  #        contested falls through to rising-action instead of a directive that says "wait" and can
+  #        then never be re-offered.
+  if [ "${WORLDOS_ARC_MODE:-0}" = "1" ] && [ "$beats" -ge 4 ] && [ "$beat" -ge "$mid" ] \
+     && [ ! -f "$state_dir/.arc_reversal_issued" ] && worldos_arc_second_objective_done "$state_dir"; then
+    : > "$state_dir/.arc_reversal_issued" 2>/dev/null || true
+    printf '%s' "RUNBOOK — MIDPOINT REVERSAL (beat $beat, the crypt is cleared and the turn is HERE): the reversal is a PRICE, never a new fight or a new creature: a betrayal, a lost item, a broken promise, a time cost, a locked way back — and it fires only after the crypt is cleared (objective 2) or at the true midpoint, whichever is later, which is NOW. Flip the situation and let the cost land on the HERO personally (their own skin, bond, or secret), then keep driving at the throne hall. Do NOT spawn anything to deliver it, and do not smooth it over."
+    return 0
+  fi
+
+  # 3) Midpoint reversal: at ~beats/2, fire the turn — and make it COST. (Arc mode uses the latch
+  #    above instead, so this branch is the duo/play wording only.)
+  if [ "$beat" -eq "$mid" ] && [ "$beats" -ge 4 ] && [ "${WORLDOS_ARC_MODE:-0}" != "1" ]; then
     printf '%s' "RUNBOOK — MIDPOINT REVERSAL (beat $beat ≈ the turn): deliver the REVERSAL now, not merely 'harder'. Flip the situation — the ally is the informant, the prize is already gone, the safe path was the trap, the cost lands on the HERO personally (their own skin, bond, or secret on the line, not abstract world-stakes). Make a real attempt FAIL or a choice exact a price that STICKS and changes the scene. This is the lever the story score keeps docking — do not smooth it over."
     return 0
   fi
@@ -1366,6 +1419,13 @@ _worldos_runbook_body() {
     local why="the party has not moved"
     [ "$visited" -lt 2 ] && why="$why and has visited only $visited location(s)"
     [ "$npcs_met" -lt 1 ] && why="$why and NO new named NPC has entered yet (0 met)"
+    # ARC MODE (run_adventure): the default line names add_location + create_character as the two
+    # ways out of a stall — the exact two calls the arc addendum forbids (and the behavioral gate
+    # now FAILs). Arc mode routes the same "the world must MOVE" pressure onto the SEEDED map.
+    if [ "${WORLDOS_ARC_MODE:-0}" = "1" ]; then
+      printf '%s' "RUNBOOK — TRAVEL / PEOPLING (beat $beat: $why): the world must MOVE, along the map the seed already built. Do it THIS beat through the engine — travel_to along an existing connection (advance_time=True for a real journey), toward the next objective: the tavern for Keeper Maera, then the crypt, then the throne hall. Do NOT add_location and do NOT create_character a new face to fill the room — the seeded cast (Keeper Maera, Merchant Oswin) is who exists. A party frozen in one room is a FAILED session — close that gap by MOVING."
+      return 0
+    fi
     printf '%s' "RUNBOOK — TRAVEL / PEOPLING (beat $beat: $why): the world must MOVE. Pick ONE and do it THIS beat through the engine — either (a) move the party to a NEW place: travel_to along a connection (advance_time=True for a real journey) or add_location(make_current=True), then narrate that new place's tone yourself; OR (b) bring a NEW named NPC on-screen: create_character with a name + a voice + at least one quoted line, mark met=True when the party meets them. A session frozen in one room with no new faces is a FAILED session — close that gap now."
     return 0
   fi

@@ -79,6 +79,16 @@ worldos_apply_glm_profile
 # Lean-per-beat context (default ON, byte-identical to run_duo).
 WORLDOS_LEAN_BEATS="${WORLDOS_LEAN_BEATS:-1}"
 
+# -- ARC MODE (2026-09-02, G2 lever) ------------------------------------------------------------
+# This runner drives a PRE-SEEDED arc: the cast, the map and the foes already exist. Three directives
+# the shared duo path injects every beat pull AGAINST that seed and were measured driving the three
+# failed Opus-5 arc runs -- the SCENE-INTRO "named face who SPEAKS" mandate (which minted an invented
+# grief-NPC on beat 0 in 3/3 runs), the duo brief's "new named faces enter and speak" obligation, and
+# the MIDPOINT REVERSAL line the DM answered with an invented monster. ARC MODE suppresses/rewrites
+# exactly those three. It is scoped to THIS runner: qa/run_duo.sh never sets it, so the duo runbook
+# and the duo brief stay byte-identical.
+export WORLDOS_ARC_MODE=1
+
 # ── HERMETIC SESSIONS (#1656 root cause) ───────────────────────────────────────────────────────────
 # Sets DUO_CFG / DUO_TOK / DUO_ENV / WORLDOS_LEAN_TAIL. The implementation (and the why) lives in
 # qa/lib_adventure_dm.sh, shared with qa/agent_play.sh so the two runners cannot drift.
@@ -139,10 +149,15 @@ adv_clean_stale_artifacts() {
     "$T/$RUN.score.json" "$T/$RUN.tolkien.json" "$T/$RUN.angrydm.json" \
     "$T/$RUN.adventure.json" "$T/$RUN.latency.json" "$T/$RUN.state.json" \
     "$T/$RUN.play.md" "$T/$RUN.md" \
-    "$T/$RUN.quest.log" "$T/$RUN.quest.err" "$T/$RUN.seed.err" \
+    "$T/$RUN.quest.log" "$T/$RUN.quest.err" "$T/$RUN.seed.err" "$T/$RUN.seed_species.json" \
     "$T/$RUN.dm.err" "$T/$RUN.player.err" \
     2>/dev/null || true
   rm -f "$T/$RUN".dm.*.jsonl "$T/$RUN".player.*.jsonl 2>/dev/null || true
+  # The arc midpoint-reversal LATCH (qa/lib_beat_driver.sh) is a once-per-RUN sentinel, not a
+  # once-per-run-ID one: leaving it behind would suppress the reversal on every later fresh run of
+  # this id, so two "identical" ruler runs would follow different directives. The RESUME path never
+  # reaches here, so an actual checkpoint resume still keeps its latch.
+  rm -f "$STATE_DIR/.arc_reversal_issued" 2>/dev/null || true
 }
 
 # ── seed the campaign (fresh run) ───────────────────────────────────────────────────────────────
@@ -157,6 +172,43 @@ adv_seed() {
     exit 1
   fi
   echo "[adventure] seeded $CAMPAIGN_ID into $STATE_DIR ($(printf '%s' "$out" | tail -n1))"
+  adv_write_seed_species
+}
+
+# The SEEDED bestiary species, read off the FRESH seed snapshot (before any DM beat can add to it)
+# and written to <run>.seed_species.json. The arc behavioral gate compares every DM spawn_monster
+# against THIS list, so the allowed cast is derived from the seed rather than hard-coded in the gate:
+# re-seed with different foes and the gate follows. `creature_slug` is the engine's own stable TYPE
+# key ("Goblin Warrior" -> goblin-warrior), which is also what spawn_monster's canonical result name
+# slugifies to -- so the comparison is exact, not a name-substring guess.
+SEED_SPECIES="$ROOT/$T/$RUN.seed_species.json"
+adv_write_seed_species() {
+  # Unlink FIRST: a rerun of the same run-id whose generation then fails must not leave the PREVIOUS
+  # run's manifest on disk — the gate would read a stale species list and return a false verdict
+  # while the warning below claims the spawn rule stood down.
+  rm -f "$SEED_SPECIES" 2>/dev/null || true
+  python3 - "$STATE_DIR" "$SEED_SPECIES" <<'SEEDPY' || echo "[adventure] WARN: could not write the seed-species manifest; the arc spawn gate stands down" >&2
+import glob, json, re, sys
+state_dir, out = sys.argv[1:3]
+species = {}
+for sp in glob.glob(f"{state_dir}/campaigns/*/snapshot.json"):
+    try:
+        d = json.loads(open(sp, encoding="utf-8").read())
+    except Exception:
+        continue
+    for ch in (d.get("characters") or {}).values():
+        if not isinstance(ch, dict) or ch.get("kind") != "monster":
+            continue
+        name = str(ch.get("name") or "")
+        slug = str(ch.get("creature_slug") or "") or re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+        if slug:
+            species.setdefault(slug, name)
+if not species:
+    raise SystemExit("no seeded monsters found in the snapshot")
+json.dump({"species": sorted(species), "names": [species[s] for s in sorted(species)]},
+          open(out, "w", encoding="utf-8"), indent=2)
+print(f"[adventure] seeded species: {', '.join(sorted(species))}")
+SEEDPY
 }
 
 # ── quest telemetry + completion short-circuit (between beats) ───────────────────────────────────
@@ -221,7 +273,9 @@ fi
 
 # The DM brief = the shared duo brief + a short ARC ADDENDUM (the ONLY brief-plumbing run_duo
 # exposes is `cat qa/play_dm_duo.txt`; we CONCATENATE the addendum, we do not fork the brief).
-DM_BRIEF="$(adv_dm_brief "$CAMPAIGN_ID" "$QUEST_TITLE")"
+# Both live in qa/lib_adventure_dm.sh (shared with qa/agent_play.sh), including the ARC MODE
+# rewrite of the duo brief's "new named faces enter and speak" obligation.
+DM_BRIEF="$(adv_dm_brief "$CAMPAIGN_ID" "$QUEST_TITLE")" || exit 2
 PLAYER_BRIEF="$(cat "$PLAYER_PROMPT_FILE")"
 
 COMBINED="$T/$RUN.jsonl"; [ "$RESUME_MODE" = "1" ] || : > "$COMBINED"
@@ -351,6 +405,15 @@ for b in $(seq "$START_BEAT" "$BEATS"); do
   PREV_TOD="$(printf '%s' "$PROG_PRE" | cut -f2)"; PREV_TOD="${PREV_TOD:-morning}"
   PREV_LOC="$(printf '%s' "$PROG_PRE" | cut -f5)"
 
+  # ARC BEAT MARKER: stamp the beat number into the combined DM stream BEFORE this beat's events are
+  # appended, so the arc behavioral gate can attribute an offending tool call to its BEAT rather than
+  # guessing from stream position (retries append extra `system/init` events, so init-counting lies).
+  # An unknown event `type` is ignored by every existing consumer (distill.py dispatches on type and
+  # drops the rest; assert_behavioral's _tally/_tool_events read message.content; model_provenance
+  # regex-scans for a "model" field) — so this is invisible to the transcript, the play log and the
+  # scorers.
+  printf '{"type":"worldos_arc_beat","beat":%s}\n' "$b" >> "$COMBINED"
+
   PMSG="$(player_move 0 "The DM says:
 
 $DMSG
@@ -438,7 +501,10 @@ for _scf in "$T/$RUN.tolkien.json" "$T/$RUN.score.json" "$T/$RUN.angrydm.json"; 
   fi
 done
 
-python3 "$ASSERT_BEHAVIORAL_SCRIPT" "$COMBINED" "$T/$RUN.state.json" "$T/$RUN.chat.jsonl" "$MOVES" | tee "$T/$RUN.gate.txt"; GATE=${PIPESTATUS[0]}
+# WORLDOS_GATE_ARC turns on the seeded-arc lens (the addendum's five rules as hard FAIL rows);
+# WORLDOS_ARC_SEED_SPECIES hands it the species this run was actually SEEDED with.
+WORLDOS_GATE_ARC=1 WORLDOS_ARC_SEED_SPECIES="$SEED_SPECIES" \
+  python3 "$ASSERT_BEHAVIORAL_SCRIPT" "$COMBINED" "$T/$RUN.state.json" "$T/$RUN.chat.jsonl" "$MOVES" | tee "$T/$RUN.gate.txt"; GATE=${PIPESTATUS[0]}
 # ── honest scoring on a RED gate (item 11; mirrors run_duo) ──────────────────────────────────────
 # A structurally broken (gate-RED) run must not persist high lens medians — CAP the three lens files
 # to <= 2.5 / INVALID via the SHARED worldos_cap_score_red helper (qa/lib_beat_driver.sh), annotated

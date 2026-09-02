@@ -292,7 +292,22 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
   (N runs via the run_parallel pattern → completion_rate · beats/wall-time · stuck (dead beats +
   stage-gap outliers) · engagement · 3 lenses · behavioral gate → scores_db surface="adventure"
   + a WEAKEST-LINK verdict line). Ruler: new ac_-family config list per HV1's
-  scoring_config_version rule.
+  scoring_config_version rule. **ARC MODE + addendum v2 (2026-09-02, the G2 completion lever):**
+  the runner sets `WORLDOS_ARC_MODE=1`, which rewrites the three shared duo directives that pull
+  against a PRE-SEEDED world — the SCENE-INTRO "named face who SPEAKS" mandate, the duo brief's
+  "new named faces enter and speak" obligation, and the midpoint reversal (in arc mode the reversal
+  is a PRICE, never a new fight, and waits for objective 2) — and the ARC ADDENDUM adds five
+  seeded-arc rules (seeded hostiles only · reversal-is-a-price · never drop the PC / never reroll ·
+  Maera by beat 3, throne hall by beat 6, no add_location · end_combat only at zero live hostiles ·
+  the quest giver and every objective-named NPC are ESSENTIAL and cannot die before the quest
+  resolves). All six have TEETH: under `WORLDOS_GATE_ARC` the behavioral gate turns
+  `reroll_character`, `add_location`, a `spawn_monster` off the seed's species (read from the run's
+  own seed manifest, never hard-coded), an `end_combat` returning `warning_live_hostiles`, a call
+  that kills an essential NPC (giver_id + objective text, read from the snapshot), and an
+  end-of-run ACTIVE quest with a dead essential NPC (the softlock) into hard FAIL rows naming
+  the beat. run_duo is untouched (it never sets the flag) and the adventure ruler is
+  UNCHANGED at `av_a9536e9af875` — the addendum text is not hashed into it; only
+  adventure_eval_config.json + adventure_eval.py are.
 - **A-G — The walked eval** *(parallel with A-T; absorbs S8's gate)*: `qa/adventure_walk.py`
   drives the SANDBOX player through the arc route on the :8972 channel (walk_test door-graph
   machinery + journey_eval VQA per stage + ui_playtest-style stuck/dead-click accounting), feeding

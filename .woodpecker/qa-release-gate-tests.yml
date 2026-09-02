@@ -54,6 +54,7 @@ steps:
         ../../qa/test_fact_fidelity.py
         ../../qa/test_recap_fidelity.py
         ../../qa/test_assert_behavioral.py
+        ../../qa/test_arc_gate.py
         ../../qa/test_distill.py
         ../../qa/test_story_readout_coverage.py
         ../../qa/test_story_readout_outcome.py
@@ -73,3 +74,6 @@ steps:
         ../../qa/test_generate_release_notes.py
         ../../qa/test_combat_smoke.py
         ../../qa/test_render_recipe.py'
+      # Not a pytest file: the ONLY proof that WORLDOS_ARC_MODE leaves the duo/play runbook strings
+      # byte-identical (the run_duo no-drift guarantee).
+      - bash -lc 'set -euo pipefail; bash qa/tests/test_arc_mode_runbook.sh'

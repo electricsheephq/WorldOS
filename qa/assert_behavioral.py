@@ -228,6 +228,173 @@ def _tool_events(events: list[dict]) -> list[tuple[str, dict, object, bool, str]
     return out
 
 
+# ── SEEDED-ARC LENS helpers (WORLDOS_GATE_ARC; qa/run_adventure.sh) ────────────────────────────
+# The arc runner drives a PRE-SEEDED world (qa/seed_adventure_demo.py): a fixed map, a fixed cast and
+# a fixed bestiary. Its ARC ADDENDUM states five rules; these helpers give the gate the two things it
+# needs to enforce them — WHICH BEAT a tool call belongs to, and WHICH SPECIES the seed contains.
+_ARC_BEAT_EVENT = "worldos_arc_beat"
+_ARC_SLUG_NON_ALNUM = re.compile(r"[^a-z0-9]+")
+
+
+def _arc_slug(name: str) -> str:
+    """The engine's own creature-TYPE key (servers/engine/bestiary.creature_slug): lowercase, runs of
+    non-alphanumerics collapsed to '-', trimmed. "Goblin Warrior" -> "goblin-warrior"."""
+    return _ARC_SLUG_NON_ALNUM.sub("-", str(name or "").lower()).strip("-")
+
+
+def _arc_seeded_species(path: str) -> set[str]:
+    """The slugs of the creatures the run was SEEDED with, from the manifest run_adventure.sh writes
+    off the fresh seed snapshot. Never hard-coded here: re-seed with different foes and the gate
+    follows. An absent/unreadable manifest returns an empty set and the spawn rule stands down (a
+    missing manifest must not manufacture a FAIL)."""
+    if not path:
+        return set()
+    # SHAPE, not just parseability: a truncated/recovered run can leave valid JSON of the wrong shape
+    # ([] or a bare string), and `.get` on that raises AttributeError — which would abort the whole
+    # gate before it printed a verdict, the exact opposite of the stand-down this docstring promises.
+    try:
+        d = json.loads(Path(path).read_text(encoding="utf-8"))
+        if not isinstance(d, dict):
+            return set()
+        # `species` is already the engine's slug list; `names` (display labels like "Goblin Warrior
+        # 1") is only the fallback for a manifest written without it. Non-iterable field => stand down.
+        species, names = d.get("species"), d.get("names")
+        slugs = {_arc_slug(x) for x in species} if isinstance(species, list) else set()
+        if not slugs and isinstance(names, list):
+            slugs = {_arc_slug(x) for x in names}
+    except Exception:
+        return set()
+    return {x for x in slugs if x}
+
+
+def _arc_tool_events(events: list[dict]) -> list[tuple[object, str, dict, object, bool]]:
+    """Ordered (beat, short_name, input, result_obj_or_None, is_error) for the arc lens.
+
+    Same tool_use/tool_result pairing as ``_tool_events``, plus the BEAT: qa/run_adventure.sh stamps
+    ``{"type": "worldos_arc_beat", "beat": n}`` into the combined stream at the top of every beat, so
+    each call is attributed to the beat whose marker most recently preceded its ``tool_use``. Beat is
+    ``None`` before the first marker (the cold-open grounding turn) or in a stream with no markers."""
+    beat: object = None
+    pending: dict[str, tuple[object, str, dict]] = {}
+    out: list[tuple[object, str, dict, object, bool]] = []
+    for ev in events:
+        if ev.get("type") == _ARC_BEAT_EVENT:
+            try:
+                beat = int(ev.get("beat"))
+            except (TypeError, ValueError):
+                # A malformed marker (missing/non-numeric "beat") must not abort the scan or
+                # mis-attribute the calls that follow it: keep the PREVIOUS beat and carry on, so a
+                # corrupt line costs one label rather than the whole lens.
+                pass
+            continue
+        for b in ((ev.get("message", {}) or {}).get("content") or []):
+            if not isinstance(b, dict):
+                continue
+            if b.get("type") == "tool_use":
+                pending[b.get("id")] = (beat, (b.get("name") or "").split("__")[-1], b.get("input") or {})
+            elif b.get("type") == "tool_result":
+                bt, short, inp = pending.pop(b.get("tool_use_id"), (beat, "", {}))
+                c = b.get("content")
+                if isinstance(c, str):
+                    text = c
+                elif isinstance(c, list) and c and isinstance(c[0], dict):
+                    text = c[0].get("text") or ""
+                else:
+                    text = json.dumps(c)
+                try:
+                    obj: object = json.loads(text) if isinstance(text, str) else None
+                except Exception:
+                    obj = None
+                out.append((bt, short, inp, obj, bool(b.get("is_error"))))
+    # A tool_use whose result never arrived (a truncated final beat) still happened — keep it.
+    for bt, short, inp in pending.values():
+        out.append((bt, short, inp, None, False))
+    return out
+
+
+def _arc_iter_dicts(obj: object):
+    """Every dict nested anywhere inside a parsed tool result (results wrap the character record
+    at different depths per tool: attack nests it under `target`, update_character returns it flat)."""
+    if isinstance(obj, dict):
+        yield obj
+        for v in obj.values():
+            yield from _arc_iter_dicts(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            yield from _arc_iter_dicts(v)
+
+
+def _arc_essential_cast(state: dict) -> dict[str, str]:
+    """{character_id: name} for the cast the arc CANNOT lose: every quest's giver, plus any NPC an
+    objective NAMES. Derived from the campaign state (giver_id + the objective strings), never
+    hard-coded — a different seed yields a different essential cast.
+
+    Objective matching is word-boundary on the NPC's name AND on each of its ≥4-letter name words,
+    so "Return to Maera for the reward" binds to the character "Keeper Maera"."""
+    chars = state.get("characters", {}) or {}
+    npcs = {cid: str(ch.get("name") or "") for cid, ch in chars.items()
+            if isinstance(ch, dict) and ch.get("kind") == "npc"}
+    quests = state.get("quests", {}) or {}
+    quest_iter = quests.values() if isinstance(quests, dict) else quests
+    essential: dict[str, str] = {}
+    for q in quest_iter:
+        if not isinstance(q, dict):
+            continue
+        gid = q.get("giver_id")
+        if gid and gid in chars:
+            essential[gid] = str((chars[gid] or {}).get("name") or gid)
+        objectives = " | ".join(str(o) for o in (q.get("objectives") or []))
+        if not objectives:
+            continue
+        for cid, name in npcs.items():
+            if not name:
+                continue
+            needles = [name] + [w for w in re.split(r"\W+", name) if len(w) >= 4]
+            if any(re.search(rf"\b{re.escape(n)}\b", objectives, re.I) for n in needles):
+                essential[cid] = name
+    return essential
+
+
+# The mutations that can END an essential NPC. A read (get_character, find_npcs) never can, so the
+# scan is scoped to writes — a narrow list keeps a busy transcript from false-firing.
+_ARC_LETHAL_TOOLS = (
+    "update_character", "apply_damage", "damage_character", "set_hp", "kill_character",
+    "remove_character", "attack", "cast_spell", "use_action", "remove_combatant",
+)
+
+
+def _arc_death_signal(inp: dict, obj: object, cid: str, name: str) -> str:
+    """A non-empty reason when this call ENDS the character ``cid``/``name`` — either its INPUT
+    declares the death (an update_character patch with dead=true / hp<=0) or its RESULT reports the
+    character at 0 hp / dead. Empty string otherwise (no signal ⇒ never a FAIL)."""
+    patch = inp.get("patch") if isinstance(inp.get("patch"), dict) else inp
+    if isinstance(patch, dict) and json.dumps(inp, default=str).find(cid) >= 0:
+        if patch.get("dead") is True:
+            return "input patch dead=true"
+        for k in ("current_hp", "hp", "new_hp"):
+            v = patch.get(k)
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and v <= 0:
+                return f"input {k}={v}"
+    for m in _arc_iter_dicts(obj):
+        if not (m.get("id") == cid or m.get("character_id") == cid
+                or (name and m.get("name") == name)):
+            continue
+        if m.get("dead") is True:
+            return "result dead=true"
+        # DOWNED IS NOT DEAD — the engine's own predicate (servers/engine/server.py: `ch.dead or
+        # (ch.current_hp <= 0 and not ch.stable)`). A giver dropped to 0 and STABILISED inside the
+        # beat is exactly what clause (C) asks the DM to do; failing that run would punish the fix.
+        v = m.get("current_hp")
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and v <= 0 \
+                and m.get("stable") is not True and m.get("dead") is not False:
+            return "result current_hp=0 (not stabilised)"
+    return ""
+
+
+def _arc_beat_label(beat: object) -> str:
+    return f"beat {beat}" if beat is not None else "beat ?"
+
+
 def _detection_beats_without_check(events: list[dict]) -> list[str]:
     """DM narration text blocks that read like a detection beat (#1287 — same family as the
     ambush/surprise WARN #1271) with NO qualifying Perception/Insight/Investigation tool call
@@ -1707,6 +1874,135 @@ def main() -> int:
             f"{sp} cast by {caster or '?'} returned automated:false but no attack() resolved it")
     if unresolved_spell_atk:
         chk("unresolved_spell_attack", False, "; ".join(unresolved_spell_atk), fatal=False)
+
+    # ── SEEDED-ARC LENS (WORLDOS_GATE_ARC, 2026-09-02 — the G2 completion lever) ────────────────
+    # OFF by default: only qa/run_adventure.sh sets WORLDOS_GATE_ARC, so run_duo/play gates are
+    # untouched. It gives the ARC ADDENDUM's rules TEETH — each of these four deviations was
+    # MEASURED in the three failed Opus-5 arc runs and absent from the passing control, and each is
+    # a hard FAIL (not a WARN) because each one, on its own, cost the arc its completion:
+    #   reroll_character      — the DM offered "roll a new hero" and seated a replacement PC (b20_1)
+    #   add_location          — an invented corridor / a duplicate throne hall the boss then sat in
+    #   non-seeded spawn      — a Zombie / a Hobgoblin / a Wight answering the reversal directive
+    #   false end_combat      — closed with hostiles standing, then the same foes re-fought later
+    if os.environ.get("WORLDOS_GATE_ARC"):
+        arc_events = _arc_tool_events(events)
+
+        rerolls = [_arc_beat_label(bt) for bt, short, _i, _o, err in arc_events
+                   if short == "reroll_character" and not err]
+        if rerolls:
+            chk("arc_no_reroll_character", False,
+                f"reroll_character called at {', '.join(rerolls)} — the seeded PC is the ONLY player "
+                f"character this arc has; seating a replacement hero abandons the run's protagonist "
+                f"and burns the beats the boss needed", fatal=True)
+
+        adds = []
+        for bt, short, inp, _o, err in arc_events:
+            if short != "add_location" or err:
+                continue
+            label = str(inp.get("name") or inp.get("location_id") or "?")
+            adds.append(f"{_arc_beat_label(bt)} \"{label}\"")
+        mints = []
+        for bt, short, inp, _o, err in arc_events:
+            if short != "create_character" or err:
+                continue
+            mints.append(f"{_arc_beat_label(bt)} \"{str(inp.get('name') or '?')}\"")
+        if mints:
+            chk("arc_no_create_character", False,
+                f"create_character called at {'; '.join(mints)} — the arc's cast is SEEDED (Keeper "
+                f"Maera, Merchant Oswin, the party); every failed Opus-5 arc run opened by minting a "
+                f"grief NPC and walking them into the crypt as a second body to lose, which is beats "
+                f"the boss never gets", fatal=True)
+
+        if adds:
+            chk("arc_no_add_location", False,
+                f"add_location called at {'; '.join(adds)} — the seeded map is complete (crypt "
+                f"connects DIRECTLY to throne_hall); an invented room takes the boss out of the "
+                f"destination the arc is built around", fatal=True)
+
+        seeded_species = _arc_seeded_species(os.environ.get("WORLDOS_ARC_SEED_SPECIES", ""))
+        if seeded_species:
+            # spawn_monster's RESULT carries the CANONICAL bestiary name the engine resolved the
+            # request to ("Goblin" -> "Goblin Warrior"), which slugifies to the same key the seed
+            # snapshot records — so this compares resolved TYPE to resolved TYPE, never a substring
+            # ("Hobgoblin Warrior" must not read as on-seed because it contains "goblin"). A spawn
+            # whose result we cannot resolve (error/unparseable) is SKIPPED, never failed.
+            off_seed = []
+            for bt, short, inp, obj, err in arc_events:
+                if short != "spawn_monster" or err or not isinstance(obj, dict) or obj.get("error"):
+                    continue
+                canonical = obj.get("name") or ""
+                slug = _arc_slug(canonical)
+                if slug and slug not in seeded_species:
+                    off_seed.append(f"{_arc_beat_label(bt)} {canonical}")
+            if off_seed:
+                chk("arc_only_seeded_species", False,
+                    f"spawn_monster minted species the seed does not contain: {'; '.join(off_seed)} "
+                    f"(seeded: {', '.join(sorted(seeded_species))}) — the arc's hostiles are the "
+                    f"seeded goblins and their boss; an invented foe is beats the boss never gets",
+                    fatal=True)
+
+        false_ends = []
+        for bt, short, _i, obj, err in arc_events:
+            if short != "end_combat" or err or not isinstance(obj, dict):
+                continue
+            warn = obj.get("warning_live_hostiles")
+            if isinstance(warn, dict):
+                false_ends.append(f"{_arc_beat_label(bt)} ({warn.get('count')} alive"
+                                  + (", resolution declared" if warn.get("resolved") else "") + ")")
+        # (F) THE ESSENTIAL CAST. Measured on the 2026-09-02 pass-2 playthrough: the DM killed
+        # Keeper Maera at beat 15, three beats after the boss died — objective 4 ("Return to Maera
+        # for the reward") became unreachable and the quest ended softlocked-OPEN with 3/4 done.
+        # A quest giver is not a prop the reversal may spend.
+        # Rule (F) binds only UNTIL THE QUEST RESOLVES. Read the unresolved quests off the final
+        # snapshot FIRST and stand the whole essential-cast lens down when there are none: a final
+        # beat that completes the last objective and then kills the giver as part of the resolved
+        # ending broke no rule, and an arc that FINISHED must never be failed for what happened after.
+        _quests = state.get("quests", {}) or {}
+        _q_iter = _quests.values() if isinstance(_quests, dict) else _quests
+        unresolved = [str(q.get("title") or q.get("id") or "?") for q in _q_iter
+                      if isinstance(q, dict) and str(q.get("status") or "").lower() == "active"]
+
+        essential = _arc_essential_cast(state)
+        if essential and unresolved:
+            killed: dict[str, tuple[object, str, str]] = {}   # cid -> (beat, name, reason)
+            for bt, short, inp, obj, err in arc_events:
+                if short not in _ARC_LETHAL_TOOLS or err:
+                    continue
+                for cid, name in essential.items():
+                    if cid in killed:
+                        continue
+                    why = _arc_death_signal(inp, obj, cid, name)
+                    if why:
+                        killed[cid] = (bt, name, f"{short}: {why}")
+            if killed:
+                chk("arc_essential_npc_killed", False,
+                    "; ".join(f"essential NPC {name} killed at {_arc_beat_label(bt)} ({why})"
+                              for bt, name, why in killed.values())
+                    + " — the quest giver and every NPC an objective names must survive until the "
+                      "quest resolves, or the reward path closes and the arc cannot finish",
+                    fatal=True)
+
+            # The SOFTLOCK itself, read off the final snapshot: an unresolved quest plus a dead
+            # essential NPC is an arc that can no longer complete, however it got there. DEAD, not
+            # merely down — the engine's own predicate (server.py: `ch.dead or (ch.current_hp <= 0
+            # and not ch.stable)`); a giver stabilised at 0 HP is recoverable and is NOT a softlock.
+            chars_now = state.get("characters", {}) or {}
+            dead_essential = [n for cid, n in essential.items()
+                              if isinstance(chars_now.get(cid), dict)
+                              and (chars_now[cid].get("dead") is True
+                                   or ((chars_now[cid].get("current_hp") or 0) <= 0
+                                       and chars_now[cid].get("stable") is not True))]
+            if dead_essential:
+                chk("arc_quest_softlocked_on_dead_npc", False,
+                    f"quest(s) {unresolved} are still ACTIVE at the end of the run while essential "
+                    f"NPC(s) {dead_essential} are dead — the remaining objectives can never be "
+                    f"completed; this is a softlock, not an unfinished arc", fatal=True)
+
+        if false_ends:
+            chk("arc_end_combat_live_hostiles", False,
+                f"end_combat returned warning_live_hostiles at {'; '.join(false_ends)} — the fight "
+                f"was not over; the survivors stay standing in state and get re-spawned and "
+                f"re-fought later, which is how this arc loses its beat budget", fatal=True)
 
     fails = [c for c in checks if c[2] and not c[1]]
     warns = [c for c in checks if not c[2] and not c[1]]
