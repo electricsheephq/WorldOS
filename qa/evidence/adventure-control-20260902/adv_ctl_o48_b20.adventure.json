@@ -1,0 +1,21 @@
+{
+  "run": "adv_ctl_o48_b20",
+  "campaign_id": "adventure_demo_v1",
+  "quest_status": "completed",
+  "completed": true,
+  "beats_to_complete": 19,
+  "last_completed_beat": 19,
+  "session_beats": 19,
+  "dm_model": "claude-opus-4-8",
+  "actor_model": "sonnet",
+  "dead_beats": 0,
+  "behavioral": "GREEN",
+  "stages_reached": [
+    "reached_giver",
+    "quest_accepted",
+    "entered_dungeon",
+    "boss_dead",
+    "reward_received",
+    "quest_completed"
+  ]
+}

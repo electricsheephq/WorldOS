@@ -210,9 +210,18 @@ else equal) in flight. Instrument gaps filed on #1709: `adventure_eval` must ERR
 behavioral checker reads only the last combat snapshot; `quest_completed` is stamped on a FAILED quest.
 
 ### 2026-09-02 — RULER CHANGE (predeclared before the re-measurement): arc-duo measured budget 15 → 20 beats
+
 Evidence: `adv_ctl_o48` (DM pinned to `claude-opus-4-8`, 15 beats) removed the invented fights but still ended at `boss_dead@15` with
 42 resolved attacks; `adv_ctl_o48_b20` (same DM, 20 beats) COMPLETED at beat 19 (`boss_dead@15`, `reward_received@19`), behavioral GREEN.
-July's 3/3 landed at beats 13-15 with one beat of slack. Decision: the measured G2 eval runs at 20 beats from now; the bar is unchanged
+July's 3/3 completions landed at beats 14 / 15 / 13 (`live4` / `live5` / `live6`) under the SAME 15-beat budget — 1 / 0 / 2 beats
+of slack, i.e. one of the three finished EXACTLY on the budget with none (the budget was already knife-edge in July, not comfortable).
+Decision: the measured G2 eval runs at 20 beats from now; the bar is unchanged
 (N≥3, completion ≥ 0.67, behavioral GREEN); every row records the DM and player model ids (`opus`/`sonnet` aliases drift — Opus 5 today).
 The N=3 re-run at 20 beats in the shipping configuration (default `opus` alias) is the next G2 measurement; runs before this note
 (`adv_reboot*`) stay recorded at 15 beats.
+Ledger: the two control runs are recorded in `qa/scores_ledger.md` as **`adv_ctl_o48_20260902`** (scored under its OWN 15-beat budget
+via `--beat-budget 15` — completion 0.00, behavioral GREEN, FAIL) and **`adv_ctl_o48_b20_20260902`** (the 20-beat ruler — completion
+1.00 at beat 19, behavioral GREEN, PASS); both rows name the resolved DM id `claude-opus-4-8` and the budget they were scored under in
+their methodology, and their trace/summary evidence is in `qa/evidence/adventure-control-20260902/`.
+The EXECUTABLE ruler now matches this note (#1722 changed only the prose): `qa/adventure_eval_config.json` `beat_budget` = 20 (adventure
+ruler `av_c3f84a148b70` → `av_a9536e9af875`) and `qa/run_adventure.sh` defaults to 20 beats.
