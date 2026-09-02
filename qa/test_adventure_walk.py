@@ -619,3 +619,44 @@ def test_a_harness_failure_in_the_giver_approach_stays_error_not_red(monkeypatch
     assert out["reward_leg"]["verdict"] == "RED" and out["reward_leg"]["blocked_by_harness"] is True
     assert out["verdict"] == "ERROR"          # harness, never a false product RED
     assert A.is_route_complete({"stages": [out]}) is False
+
+
+# ── review round 6: the trace fallback and the override validator close the last GREEN holes ────────
+def test_trace_fallback_applies_the_same_outstanding_reward_rule():
+    """quest_progress stamps `quest_completed` for a quest the DM ended before the return objective
+    (and deliberately does not stamp reward_received). It refreshes `objectives` on the trace, so the
+    fallback applies the SAME rule as the live read instead of trusting the terminal stamp."""
+    qd = _ACTIVE_QUEST["quests"][0]
+    ended_early = {"stamps": [{"stage": "quest_completed", "signal": "status:completed"}],
+                   "quest_status": "completed", "objectives": qd["objectives"],
+                   "completed_objectives": qd["completed_objectives"]}
+    res = A.classify_reward_leg(ended_early)
+    assert res["verdict"] == "RED" and res["signals"] == []
+    assert res["outstanding_objectives"] == ["Return to Keeper Maera for the reward"]
+    # the genuinely paid trace still reads GREEN
+    paid = {**ended_early, "completed_objectives": list(qd["objectives"])}
+    assert A.classify_reward_leg(paid)["verdict"] == "GREEN"
+
+
+def test_a_route_closing_on_the_wrong_actor_is_rejected():
+    """Ending at SOME actor is not ending at the GIVER — a route closing on the Goblin Boss would
+    approach him, pass VQA, read an already-paid quest and certify a return that never happened."""
+    import pytest
+    wrong = A.parse_route_spec(
+        '[["to_throne", "throne_hall", "return_to_giver", "Goblin Boss"]]')
+    with pytest.raises(ValueError, match="tracked"):
+        A.assert_route_returns_to_giver(wrong)
+
+
+def test_a_non_partial_override_may_insert_stages_but_never_drop_a_mandatory_leg():
+    """`--route` exists for a wider town graph: inserting stages is fine, dropping the crypt / throne
+    / boss is not — that would certify G3 off a camp-to-tavern stroll."""
+    import pytest
+    giver_only = A.parse_route_spec('[["only", "tavern_snug", "return_to_giver", "Keeper Maera"]]')
+    with pytest.raises(ValueError, match="mandatory"):
+        A.assert_route_returns_to_giver(giver_only)
+    assert A.missing_mandatory_legs(A.DEFAULT_ROUTE) == []
+    # a SUPERSET (the town-graph case) passes: the arc's own legs are all still walked, in order
+    wider = list(A.DEFAULT_ROUTE)
+    wider.insert(3, ("to_shop", "shop", "walk", None))
+    assert A.assert_route_returns_to_giver(tuple(wider)) == tuple(wider)

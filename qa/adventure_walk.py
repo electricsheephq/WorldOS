@@ -304,6 +304,19 @@ def classify_reward_leg(data: dict, quest_title: str = "") -> dict:
                 "reason": "live get_quests returned no quest for this campaign — no reward evidence "
                           "(a retained quest_trace from an earlier run is not evidence for this one)"}
     stamps = [s for s in (data.get("stamps") or []) if isinstance(s, dict)] if quest is None else []
+    # One normalised view of the arc, from the live quest or (fallback) the trace — quest_progress
+    # refreshes status AND both objective lists on the trace every poll, so the same rules apply to
+    # both sources and no branch has to take a bare terminal stamp on faith.
+    if quest is not None:
+        status = str(quest.get("status") or "active")
+        objectives, done_raw = quest.get("objectives"), quest.get("completed_objectives")
+    else:
+        status = data.get("quest_status")
+        objectives, done_raw = data.get("objectives"), data.get("completed_objectives")
+    done = {str(o).strip().lower() for o in done_raw or []}
+    outstanding = [str(o) for o in objectives or [] if str(o).strip().lower() not in done]
+    unpaid_objective = _reward_objective(outstanding)
+
     signals = []
     for s in stamps:
         name = str(s.get("stage"))
@@ -311,25 +324,22 @@ def classify_reward_leg(data: dict, quest_title: str = "") -> dict:
             continue
         sig = str(s.get("signal") or "")
         # quest_progress stamps quest_completed for ANY non-active status and records WHICH in the
-        # signal ("status:failed"). A failed arc is not a paid reward — skip the stamp.
-        if name == "quest_completed" and sig.startswith("status:") and _ended_unpaid(sig[len("status:"):]):
+        # signal ("status:failed"); it also stamps it for a quest the DM ended through
+        # complete_quest/set_quest_status BEFORE the return objective (and deliberately does not
+        # stamp reward_received there). Neither is a paid reward — skip the stamp.
+        if name == "quest_completed" and (unpaid_objective
+                                          or (sig.startswith("status:")
+                                              and _ended_unpaid(sig[len("status:"):]))):
             continue
         signals.append(name)
-    # the trace's own quest_status is the fallback truth when the live get_quests read is down
-    status, outstanding = data.get("quest_status"), []
-    if quest is not None:
-        status = str(quest.get("status") or "active")
-        done = {str(o).strip().lower() for o in quest.get("completed_objectives") or []}
-        if any("return" in o or "reward" in o for o in done):
-            signals.append("reward_received")
-        outstanding = [str(o) for o in quest.get("objectives") or []
-                       if str(o).strip().lower() not in done]
-        # A `completed` STATUS certifies the reward only when the return/reward objective is not
-        # still outstanding: the DM can resolve a quest with complete_quest/set_quest_status while
-        # that objective is unmet (qa/test_quest_progress.py covers that state, reward_received
-        # absent), and synthesising a signal there would falsely certify the very leg this checks.
-        if status == "completed" and not _reward_objective(outstanding):
-            signals.append("quest_completed")
+    if any("return" in o or "reward" in o for o in done):
+        signals.append("reward_received")
+    # A `completed` STATUS certifies the reward only when the return/reward objective is not still
+    # outstanding: the DM can resolve a quest with complete_quest/set_quest_status while that
+    # objective is unmet (qa/test_quest_progress.py covers that state, reward_received absent), and
+    # synthesising a signal there would falsely certify the very leg this checks.
+    if status == "completed" and not unpaid_objective:
+        signals.append("quest_completed")
     # FAILED / abandoned ENDS the arc without paying it out (the scorecard has runs that fail after
     # the PC goes down). Drop every arc-end signal — live status or trace status — so ONLY an
     # independent reward_received can still read GREEN: a dead party never satisfies the reward leg.
@@ -345,6 +355,22 @@ def classify_reward_leg(data: dict, quest_title: str = "") -> dict:
     return {**res, "verdict": "RED", "signals": [],
             "reason": f"quest is {status or 'active'} with no reward signal after the giver talk; "
                       f"outstanding: {outstanding or ['(none listed)']}"}
+
+
+GIVER_STAGE = DEFAULT_ROUTE[-1]   # (id, room, kind, actor) — the tracked §9 quest giver
+
+
+def missing_mandatory_legs(plan: tuple) -> list:
+    """The §9 legs a non-partial override still fails to walk, in arc order. Extra stages may be
+    INSERTED (the wider-town-graph use case `--route` exists for), but no mandatory (room, kind) leg
+    may be DROPPED: an override of the giver stage alone would otherwise walk camp->tavern and
+    certify G3 without ever visiting the crypt, the throne hall, or the boss."""
+    want = [(room, kind) for _sid, room, kind, _a in DEFAULT_ROUTE]
+    i = 0
+    for _sid, room, kind, _a in plan:
+        if i < len(want) and (room, kind) == want[i]:
+            i += 1
+    return [f"{r}:{k}" for r, k in want[i:]]
 
 
 def assert_route_returns_to_giver(plan: tuple) -> tuple:
@@ -363,6 +389,17 @@ def assert_route_returns_to_giver(plan: tuple) -> tuple:
         raise ValueError(f"route stage {last[0]!r}: a `return_to_giver` stage needs an `actor` (the "
                          "giver to approach) — reading the reward without approaching them proves "
                          "nothing")
+    if (last[1], last[3]) != (GIVER_STAGE[1], GIVER_STAGE[3]):
+        # ending at SOME actor is not ending at the GIVER: a route closing on the Goblin Boss would
+        # approach him, pass VQA, read an already-paid quest and certify a return that never happened.
+        raise ValueError(f"route stage {last[0]!r}: the closing `return_to_giver` stage must approach "
+                         f"{GIVER_STAGE[3]!r} in {GIVER_STAGE[1]!r} (the tracked §9 giver), not "
+                         f"{last[3]!r} in {last[1]!r}")
+    missing = missing_mandatory_legs(plan)
+    if missing:
+        raise ValueError(f"route override drops mandatory §9 legs {missing} — extra stages may be "
+                         "inserted, but the arc's own legs must all be walked (pass "
+                         "--allow-partial-route for a deliberate partial route)")
     return plan
 
 
@@ -671,7 +708,10 @@ def _live_quest_reader(state_dir: str, campaign_id: str = CAMPAIGN,
                 # carry quest_status too: when the live get_quests read below fails, the stamps are
                 # the ONLY evidence and a bare quest_completed stamp must not read as a paid reward.
                 out["stamps"] = tr.get("stamps") or []
-                out["quest_status"] = tr.get("quest_status")
+                # status AND both objective lists: the fallback applies the same outstanding-reward
+                # rule as the live read, instead of trusting a bare terminal stamp.
+                for k in ("quest_status", "objectives", "completed_objectives"):
+                    out[k] = tr.get(k)
         except Exception as e:  # noqa: BLE001
             errors.append(f"quest_trace:{e}")
         try:
