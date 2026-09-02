@@ -32,8 +32,21 @@ def test_a_dm_consumer_agent_is_rendered(tmp_path):
     assert dm["ProgramArguments"][1].endswith("/qa/agent_play.sh")
     assert dm["ProgramArguments"][2] == "serve"
     assert "--engine" in dm["ProgramArguments"] and "http://127.0.0.1:8776" in dm["ProgramArguments"]
+    assert dm["ProgramArguments"][-2:] == ["--campaign", "adventure_demo_v1"]
     # It answers the same move sink the viewer appends say/do/check to.
     assert dm["EnvironmentVariables"]["WORLDOS_PLAYER_MOVES"] == str(tmp_path / "state/player_moves.json")
+    # The run dir holds the durable chat cursor: keep it beside the backed-up state, never
+    # inside the pinned checkout that `refresh --sha` moves out from under it.
+    assert dm["EnvironmentVariables"]["WORLDOS_AGENT_PLAY_ROOT"] == str(tmp_path / "state/agent_play_runs")
+    assert dm["EnvironmentVariables"]["WORLDOS_DM_MODEL"] == "opus"
+
+
+def test_the_viewer_writes_the_exact_chat_file_the_dm_tails(tmp_path):
+    # agent_play.sh serve derives chat_path as "<state_dir>/chat.jsonl". A viewer writing
+    # chat.json would leave the DM tailing a file nobody writes: every owner line unanswered.
+    session, _p, dm = OIP.render_plists(Path("/Users/m1/worldos-owner"), tmp_path / "a.app", tmp_path / "state", Path("/opt/homebrew/bin/uv"))
+    state_dir = Path(dm["ProgramArguments"][dm["ProgramArguments"].index("--state") + 1])
+    assert session["EnvironmentVariables"]["WORLDOS_VIEWER_CHAT"] == str(state_dir / "chat.jsonl")
 
 
 @pytest.mark.parametrize("engine,qa", [(8766, 8981), (8776, 8971)])

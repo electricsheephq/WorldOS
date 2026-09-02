@@ -2,7 +2,12 @@
 
 This kit installs the ad-hoc-signed, unnotarized demo player at `~/Applications/WorldOSPlayer.app`. It serves `adventure_demo_v1` from the one pinned checkout `/Users/m1/worldos-owner`, with engine port 8776 and player QA port 8981. It never uses 8766, 8971, 8866, or 8972.
 
-Three LaunchAgents, not two. `org.worldos.owner-session` is the viewer/engine, `org.worldos.owner-player` is the Unity player, and `org.worldos.owner-dm` runs `qa/agent_play.sh serve` — the DM beat loop. The viewer resolves only grid, doorway, parley-approach and combat intents in process; `say`, `do`, `check` and `save` are appended to `WORLDOS_PLAYER_MOVES` for a DM to answer, so without the third agent the owner's dialogue queues forever and the quest cannot progress. `install` refuses when that script has no `serve` mode.
+Three LaunchAgents, not two. `org.worldos.owner-session` is the viewer/engine, `org.worldos.owner-player` is the Unity player, and `org.worldos.owner-dm` runs `qa/agent_play.sh serve --run owner --engine http://127.0.0.1:8776 --state <state> --campaign adventure_demo_v1` — the DM beat loop. The viewer resolves only grid, doorway, parley-approach and combat intents in process; `say`, `do`, `check` and `save` are appended to `WORLDOS_PLAYER_MOVES` for a DM to answer, so without the third agent the owner's dialogue queues forever and the quest cannot progress. `install` and `refresh` refuse while that script has no `serve` mode.
+
+Two seams that must not drift:
+
+- `agent_play.sh serve` derives its chat path as `<state-dir>/chat.jsonl`, so the session agent sets `WORLDOS_VIEWER_CHAT` to exactly that file. A viewer writing `chat.json` leaves the DM tailing a file nobody writes and every owner line goes unanswered.
+- `WORLDOS_AGENT_PLAY_ROOT` points the run dir at `<state-dir>/agent_play_runs` instead of its `<repo>/qa/agent_play_runs` default. That run dir holds the durable chat cursor, so it belongs beside the state the receipt backs up, not inside the pinned checkout that `refresh --sha` moves.
 
 ## Flow
 

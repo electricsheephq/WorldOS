@@ -11,7 +11,11 @@ from owner_install_verify import check_build_report
 FORBIDDEN = {8766, 8971, 8866, 8972}
 CAMPAIGN = "adventure_demo_v1"
 ART_ROOT = Path("/Users/m1/WorldOS")  # the canonical checkout that owns the private art
+DM_MODEL = "opus"                     # pinned rather than inherited from the login env
 DM_SCRIPT = "qa/agent_play.sh"        # `serve` = one DM beat per queued player line
+# agent_play.sh derives its chat path as "<state_dir>/chat.jsonl", so the viewer MUST write
+# that exact name or the DM tails a file nobody writes and the owner's lines are never answered.
+CHAT_NAME = "chat.jsonl"
 SESSION_LABEL, PLAYER_LABEL, DM_LABEL = (
     "org.worldos.owner-session", "org.worldos.owner-player", "org.worldos.owner-dm")
 
@@ -35,7 +39,7 @@ def render_plists(repo: Path, app: Path, state: Path, uv: Path,
     engine_env = {"PATH": path, "WORLDOS_STATE_DIR": str(state),
                   "WORLDOS_ART_REPO_ROOT": str(art_root),
                   "WORLDOS_PLAYER_MOVES": str(state / "player_moves.json"),
-                  "WORLDOS_VIEWER_CHAT": str(state / "chat.json")}
+                  "WORLDOS_VIEWER_CHAT": str(state / CHAT_NAME)}
     # Only the session runs at load. The player and the DM are started BY the installer
     # after the engine answers /session-surface — a player that boots first self-exits
     # against an unavailable engine (#1612), and launchd gives no ordering of its own.
@@ -54,8 +58,14 @@ def render_plists(repo: Path, app: Path, state: Path, uv: Path,
     # this third agent the owner's dialogue queues forever and the demo cannot progress.
     dm = {**common, "RunAtLoad": False, "Label": DM_LABEL, "WorkingDirectory": str(repo),
           "ProgramArguments": ["/bin/bash", str(repo / DM_SCRIPT), "serve", "--run", "owner",
-                               "--engine", f"http://127.0.0.1:{engine_port}", "--state", str(state)],
-          "EnvironmentVariables": {**engine_env, "WORLDOS_CAMPAIGN_ID": CAMPAIGN}}
+                               "--engine", f"http://127.0.0.1:{engine_port}", "--state", str(state),
+                               "--campaign", CAMPAIGN],
+          # WORLDOS_AGENT_PLAY_ROOT: agent_play.sh defaults its run dir to <repo>/qa/agent_play_runs.
+          # The owner's run holds the durable chat cursor, so it belongs beside the state the receipt
+          # backs up — not inside the pinned checkout that `refresh --sha` moves out from under it.
+          "EnvironmentVariables": {**engine_env, "WORLDOS_CAMPAIGN_ID": CAMPAIGN,
+                                   "WORLDOS_AGENT_PLAY_ROOT": str(state / "agent_play_runs"),
+                                   "WORLDOS_DM_MODEL": DM_MODEL}}
     return session, player, dm
 
 

@@ -20,7 +20,7 @@ await_code(){ local fn=$1 want=$2 secs=$3 what=$4 code='' i; for ((i=0; i<secs; 
 # The two LaunchAgents serve pixels only; `say`/`do`/`check` are appended to the move sink
 # for a DM to answer, so without qa/agent_play.sh serve the demo cannot be played at all.
 require_dm(){ local s="$1/$DM_SCRIPT"
-  if [[ ! -f "$s" ]] || ! grep -q 'serve' "$s"; then die "$s has no 'serve' mode: the owner-dm agent would start nothing and every say/do/check would queue forever"; fi; }
+  if [[ ! -f "$s" ]] || ! grep -qE '(^|[^[:alnum:]_])serve([^[:alnum:]_]|$)' "$s"; then die "$s has no 'serve' mode: the owner-dm agent would start nothing and every say/do/check would queue forever"; fi; }
 
 preflight(){
   local app=$1 out kit room
@@ -87,7 +87,7 @@ start_and_probe(){
   # Unity binds :$QA_PORT only once the player is up; a single curl races normal startup.
   await_code player_code 200 60 "player QA listener never answered /debug on :$QA_PORT within 60s"
   launchctl bootstrap "$domain" "$AGENTS/$DM.plist" 2>/dev/null || true; launchctl kickstart -k "$domain/$DM"
-  tmp=$(mktemp -d); trap 'rm -rf "$tmp"' RETURN
+  tmp=$(mktemp -d); trap 'rm -rf "$tmp"' RETURN EXIT
   curl -fsS --max-time 5 "http://127.0.0.1:$ENGINE_PORT/session-surface" >"$tmp/surface.json"
   curl -fsS --max-time 5 -X POST -H 'Content-Type: application/json' -d '{}' "http://127.0.0.1:$QA_PORT/debug" >"$tmp/debug.json"
   python3 "$ROOT/qa/owner_install_verify.py" consumed --surface "$tmp/surface.json" --debug "$tmp/debug.json" \
@@ -122,21 +122,25 @@ install)
   for L in "$SESSION" "$PLAYER" "$DM"; do install -m 0644 "$RECEIPT/$L.plist" "$AGENTS/$L.plist"; done
   start_and_probe;;
 restore)
-  [[ -d "$APP" && -f "$APP/restore.json" ]] || die "restore needs a receipt dir holding restore.json"
+  RECEIPT=$APP  # `restore` takes the receipt dir in the positional slot, not an app
+  [[ -d "$RECEIPT" && -f "$RECEIPT/restore.json" ]] || die "restore needs a receipt dir holding restore.json"
   stop_agents
-  [[ ! -d "$APP/WorldOSPlayer.app" ]] || { rm -rf "$TARGET_APP"; ditto "$APP/WorldOSPlayer.app" "$TARGET_APP"; }
-  [[ ! -d "$APP/owner_demo" ]] || { rm -rf "$STATE"; ditto "$APP/owner_demo" "$STATE"; }
-  PRIOR_WT=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("prior_worktree_sha") or "")' "$APP/restore.json")
-  [[ -z "$PRIOR_WT" ]] || git -C "$OWNER_REPO" checkout --quiet --detach "$PRIOR_WT"
+  [[ ! -d "$RECEIPT/WorldOSPlayer.app" ]] || { rm -rf "$TARGET_APP"; ditto "$RECEIPT/WorldOSPlayer.app" "$TARGET_APP"; }
+  [[ ! -d "$RECEIPT/owner_demo" ]] || { rm -rf "$STATE"; ditto "$RECEIPT/owner_demo" "$STATE"; }
+  PRIOR_WT=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("prior_worktree_sha") or "")' "$RECEIPT/restore.json")
+  if [[ -n "$PRIOR_WT" ]]; then
+    [[ -e "$OWNER_REPO/.git" ]] || git -C "$CANON" worktree add --detach "$OWNER_REPO" "$PRIOR_WT" >/dev/null
+    git -C "$OWNER_REPO" checkout --quiet --detach "$PRIOR_WT"
+  fi
   # Prefer the plists this receipt REPLACED; fall back to the ones it installed, so a
   # first-ever install still restores to a bootable set rather than to nothing.
   mkdir -p "$AGENTS"
   for L in "$SESSION" "$PLAYER" "$DM"; do
-    if [[ -f "$APP/prior-$L.plist" ]]; then install -m 0644 "$APP/prior-$L.plist" "$AGENTS/$L.plist"
-    elif [[ -f "$APP/$L.plist" ]]; then install -m 0644 "$APP/$L.plist" "$AGENTS/$L.plist"
+    if [[ -f "$RECEIPT/prior-$L.plist" ]]; then install -m 0644 "$RECEIPT/prior-$L.plist" "$AGENTS/$L.plist"
+    elif [[ -f "$RECEIPT/$L.plist" ]]; then install -m 0644 "$RECEIPT/$L.plist" "$AGENTS/$L.plist"
     else die "receipt has no $L.plist to restore"; fi
   done
-  start_and_probe; echo "RESTORED from $APP (worktree ${PRIOR_WT:-unchanged})";;
+  start_and_probe; echo "RESTORED from $RECEIPT (worktree ${PRIOR_WT:-unchanged})";;
 refresh)
   [[ -n "$SHA" ]] || die "refresh requires --sha"; stop_agents; WT=$(resolve_worktree "$SHA"); require_dm "$OWNER_REPO"; if ((RESEED)); then RECEIPT=$(receipt_dir); mkdir -p "$RECEIPT"; [[ ! -d "$STATE" ]] || ditto "$STATE" "$RECEIPT/owner_demo"; echo "Restore state: ditto '$RECEIPT/owner_demo' '$STATE'"; WORLDOS_STATE_DIR="$STATE" uv run --directory "$OWNER_REPO/servers/engine" python "$OWNER_REPO/qa/seed_adventure_demo.py" "$STATE"; fi; start_and_probe; echo "REFRESHED $WT";;
 status) for L in "$SESSION" "$PLAYER" "$DM"; do launchctl print "gui/$(id -u)/$L" || true; done; echo "engine /session-surface $(engine_code)"; echo "player /debug $(player_code)";;
