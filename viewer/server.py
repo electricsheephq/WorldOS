@@ -2191,6 +2191,41 @@ _DEFAULT_GRID_COLS = 16
 _DEFAULT_GRID_ROWS = 10
 
 
+def _board_extents(snapshot: dict) -> tuple[int, int]:
+    """The RENDERED board's (cols, rows) — the single extent authority every projection on this
+    surface must clamp into. Same precedence ``_scene_grid_block`` publishes: the current
+    location's ``scene_grid`` extents, overridden by an explicit combat grid (the tactical board
+    wins), falling back to the legacy 16x10 default. Read-only.
+
+    #1751: the zone-derived token layout used to clamp to a HARDCODED 16x10 regardless of the
+    board it was drawn on, so a 16-column crypt got a token at column 16 — one past the last
+    cell. Deriving the clamp from the same extents the client renders makes that unrepresentable."""
+    cols, rows = _DEFAULT_GRID_COLS, _DEFAULT_GRID_ROWS
+    loc_id = _text(snapshot.get("current_location_id"))
+    locs = snapshot.get("locations")
+    loc = locs.get(loc_id) if isinstance(locs, dict) and loc_id else None
+    sg = loc.get("scene_grid") if isinstance(loc, dict) else None
+    grid = sg.get("grid") if isinstance(sg, dict) else None
+    if isinstance(grid, dict):
+        c, r = grid.get("cols"), grid.get("rows")
+        if isinstance(c, int) and isinstance(r, int) and c > 0 and r > 0:
+            cols, rows = c, r
+    combat = snapshot.get("combat")
+    if isinstance(combat, dict):
+        cgw, cgh = combat.get("grid_width"), combat.get("grid_height")
+        if isinstance(cgw, int) and isinstance(cgh, int) and cgw > 0 and cgh > 0:
+            cols, rows = cgw, cgh
+    return cols, rows
+
+
+def _clamp_to_board(x: object, y: object, extents: tuple[int, int]) -> tuple[int, int]:
+    """Force a derived cell inside the rendered board (#1751). Preserves cell 0."""
+    cols, rows = extents
+    xi = int(_num(x) or 0)
+    yi = int(_num(y) or 0)
+    return max(0, min(cols - 1, xi)), max(0, min(rows - 1, yi))
+
+
 def _scene_grid_block(snapshot: dict, mode: str) -> dict:
     """The combat board's grid extents (A1). When the party's current location carries an
     engine-authored ``scene_grid``, use ITS extents + cells; otherwise fall back to the
@@ -2808,6 +2843,9 @@ def _combat_display_position(
     zones: list[dict],
     zone_offsets: dict[str, int],
     grid_extents: tuple[int, int] | None = None,
+    board_extents: tuple[int, int] | None = None,
+    character: dict | None = None,
+    claimed: set[tuple[int, int]] | None = None,
 ) -> tuple[int, int, str]:
     # Read the engine's authoritative grid coords. Use a None-coalesce (NOT `or`): a cell of 0
     # is a VALID coordinate (origin column/row), and `x or col` would treat 0 as missing and
@@ -2832,13 +2870,37 @@ def _combat_display_position(
             cy = max(0, min(gh - 1, int(y))) if gh > 0 else int(y)
             return cx, cy, "grid"
         return max(1, min(16, int(x))), max(1, min(10, int(y))), "grid"
+    # #1751 STAND WHERE YOU STOOD: the engine has no tactical coords for this combatant (nothing
+    # placed it — start_combat only seeds cells on an explicit seed_from_stage), but it DOES own
+    # where the actor was standing at rest: Character.stage_cell, the exact cell the rest stage
+    # rendered it on a beat ago. Prefer that over a synthesized zone slot, so the token does not
+    # jump across the room the instant initiative is rolled ("the map lies about where I am").
+    # Still a DERIVED hint — the engine wrote stage_cell, the viewer only reads it, and a fight
+    # that later places the combatant for real overrides this on the branch above.
+    if character is not None and board_extents is not None:
+        sc = character.get("stage_cell")
+        if isinstance(sc, (list, tuple)) and len(sc) == 2:
+            sx, sy = _num(sc[0]), _num(sc[1])
+            if sx is not None and sy is not None:
+                cell = _clamp_to_board(sx, sy, board_extents)
+                # never stack two tokens on one cell — a collision falls through to the zone slot
+                if claimed is None or cell not in claimed:
+                    if claimed is not None:
+                        claimed.add(cell)
+                    return (*cell, "stage")
     zone_name = _text(row.get("zone"))
     zone_index = next((i for i, z in enumerate(zones) if z.get("name") == zone_name), idx)
     offset = zone_offsets.get(zone_name, 0)
     zone_offsets[zone_name] = offset + 1
     base_x = 3 + (zone_index % 4) * 4
     base_y = 3 + (zone_index // 4) * 3
-    return max(1, min(16, base_x + offset)), max(1, min(10, base_y + (offset % 2))), "zone"
+    # #1751: clamp the synthesized zone layout into the board the client actually renders. The
+    # old fixed `min(16, ...)` / `min(10, ...)` was a legacy 16x10 assumption AND off by one (a
+    # 16-column board's last cell is 15) — a fourth zone put its second occupant at column 16,
+    # off-grid, which is exactly the cyan-ghost-in-the-east-wall bug. Cell 0 stays reachable.
+    if board_extents is not None:
+        return (*_clamp_to_board(base_x + offset, base_y + (offset % 2), board_extents), "zone")
+    return max(1, min(15, base_x + offset)), max(1, min(9, base_y + (offset % 2))), "zone"
 
 
 def _combat_tokens(snapshot: dict, combat_view: dict) -> tuple[list[dict], list[dict], list[dict], str, str]:
@@ -2858,6 +2920,11 @@ def _combat_tokens(snapshot: dict, combat_view: dict) -> tuple[list[dict], list[
         gh = _num(_combat_blk.get("grid_height"))
         if isinstance(gw, int) and isinstance(gh, int) and gw > 0 and gh > 0:
             grid_extents = (gw, gh)
+    # #1751: the extents the client actually renders — the clamp authority for the zone-derived
+    # layout below, so a synthesized cell can never land outside the board.
+    board_extents = _board_extents(snapshot)
+    # cells already taken by a placed/stage-derived token, so a derived position never stacks.
+    claimed_cells: set[tuple[int, int]] = set()
     tokens: list[dict] = []
     initiative: list[dict] = []
     position_sources: set[str] = set()
@@ -2889,7 +2956,8 @@ def _combat_tokens(snapshot: dict, combat_view: dict) -> tuple[list[dict], list[
             if zone in zone_occupants:
                 zone_occupants[zone].append(cid)
         x, y, source = _combat_display_position(
-            raw, idx=idx, zones=zones, zone_offsets=zone_offsets, grid_extents=grid_extents
+            raw, idx=idx, zones=zones, zone_offsets=zone_offsets, grid_extents=grid_extents,
+            board_extents=board_extents, character=chars.get(cid), claimed=claimed_cells,
         )
         token["x"] = x
         token["y"] = y
@@ -2900,7 +2968,8 @@ def _combat_tokens(snapshot: dict, combat_view: dict) -> tuple[list[dict], list[
         # it must NOT persist x/y as state (the engine would silently overwrite it). The
         # `positionAuthority` flag makes that explicit so no downstream consumer mistakes the
         # hint for truth. ("grid" source = the engine actually supplied coords, a future
-        # capability; "zone"/"theater" = derived.)
+        # capability; "zone"/"theater"/"stage" = derived — "stage" reads the engine's own
+        # rest cell (#1751) but is still a render hint, not tactical truth.)
         token["positionAuthority"] = "engine" if source == "grid" else "derived"
         position_sources.add(source)
 
@@ -3634,7 +3703,26 @@ def _is_dead_or_downed(ch: dict) -> bool:
     return hp is not None and hp <= 0
 
 
-def _scene_stage(snapshot: dict, combat_active: bool) -> dict:
+def _stage_vitals(ch: dict, team: str) -> dict:
+    """#1752 the HUD block on a stage token: ``hp``/``max_hp``/``health``/``hp_known``.
+
+    Reads the engine-owned character sheet. FOE DISCLOSURE mirrors the combat board's ``hpKnown``
+    rule exactly (see ``_combat_tokens``): an enemy's raw numbers are surfaced only when the party
+    has earned them, otherwise ``hp``/``max_hp`` are ``None`` and only the public ``health`` band
+    ("steady"/"wounded"/"bloodied"/"down") ships — so adding a HUD never leaks a monster's sheet."""
+    ch = ch if isinstance(ch, dict) else {}
+    cur = _num(ch.get("current_hp"))
+    mx = _num(ch.get("max_hp"))
+    known = team != "foe" or _combat_public_stat(ch, "hp_known", "known_hp", "player_known_hp")
+    return {
+        "hp": int(cur) if known and cur is not None else None,
+        "max_hp": int(mx) if known and mx is not None else None,
+        "health": _combat_health_label(cur, mx),
+        "hp_known": bool(known),
+    }
+
+
+def _scene_stage(snapshot: dict, combat_active: bool, combat_tokens: list[dict] | None = None) -> dict:
     """W1 (#1318) SCENE-AT-REST projection: an additive ``stage`` block carrying ``mode`` +
     at-rest ``tokens`` so a location renders with its people in it BEFORE combat — the tavern
     shows its innkeeper before anyone draws a sword.
@@ -3651,13 +3739,23 @@ def _scene_stage(snapshot: dict, combat_active: bool) -> dict:
     world shows its cast (the quest giver AND the boss), not just the party. Cells fall back to
     ``zone_anchors`` values, then the party cells, when a bucket is short.
 
-    NO DOUBLE-PAINT: during active combat the authoritative tokens live in the top-level
-    ``tokens`` (the tactical board); ``stage.tokens`` is therefore EMPTY in combat mode so a
-    rest token can never leak onto the combat board. ``mode`` still reports "combat" so a
-    consumer can branch, but only rest mode carries placements."""
+    #1752 THE FIGHT IS ON THE SAME SCREEN: ``stage.tokens`` used to be EMPTY in combat mode (the
+    original "no double-paint" rule) — but the client renders the world FROM the stage, so an
+    empty stage meant it kept the last rest frame and a whole boss fight was invisible: no HP
+    bars, no turn marker, the tokens frozen where they stood before anyone drew a sword. The
+    stage is therefore ALWAYS populated. In combat the resident cast is still projected, but
+    every actor who is IN the fight takes its cell + vitals from the authoritative combat board
+    (``combat_tokens``, the top-level ``tokens``) instead of its rest spawn, and any combatant the
+    rest projection excludes (a downed PC, a foe who walked in from elsewhere) is appended. So
+    there is still exactly ONE placement authority per actor — the tactical board when it has one
+    — and no rest cell can contradict it.
+
+    Every stage token carries ``hp``/``max_hp``/``health``/``hp_known``/``team``/``is_turn`` so a
+    HUD can exist at all (#1752: "nothing tells me I'm dying or what I can do"). Foe HP obeys the
+    SAME disclosure rule the combat board uses (``hpKnown``): a number only when the party has
+    earned it, otherwise ``None`` plus the public ``health`` band. Every x/y is clamped into the
+    rendered board extents, so no stage token can land off-grid (#1751)."""
     mode = "combat" if combat_active else "rest"
-    if combat_active:
-        return {"mode": mode, "tokens": []}
 
     loc_id = _text(snapshot.get("current_location_id"))
     locs = snapshot.get("locations") if isinstance(snapshot.get("locations"), dict) else {}
@@ -3799,6 +3897,11 @@ def _scene_stage(snapshot: dict, combat_active: bool) -> dict:
             # additive marker does. ADDITIVE: a consumer that ignores it reads the token exactly as
             # before.
             "rest_role": rest_role,
+            # #1752 HUD FIELDS: every stage token carries its vitals + turn flag so a client can
+            # draw an HP bar and a turn marker without a second request. At rest nobody has the
+            # turn; in combat the overlay below replaces these from the tactical board.
+            "is_turn": False,
+            **_stage_vitals(ch, _combat_team(kind)),
         })
 
     fb = 0
@@ -3816,6 +3919,65 @@ def _scene_stage(snapshot: dict, combat_active: bool) -> dict:
     for k, cid in enumerate(present_monsters):
         _emit(cid, foe_cells, k, fb, "foe")
         fb += 1
+
+    # #1752 COMBAT OVERLAY — the fight paints onto the SAME stage the walked world uses, so the
+    # client never has to swap render models mid-beat (and never freezes on the last rest frame).
+    # The tactical board is the placement authority for anyone in the fight; the rest projection
+    # only supplies the bystanders (the innkeeper still stands at the hearth while swords are out).
+    if combat_active:
+        board = {t["id"]: t for t in (combat_tokens or [])
+                 if isinstance(t, dict) and _text(t.get("id"))}
+
+        def _combat_fields(ct: dict) -> dict:
+            hp = ct.get("hp") if ct.get("hpKnown") else None
+            mx = ct.get("hpMax") if ct.get("hpKnown") else None
+            return {
+                "x": int(_num(ct.get("x")) or 0),
+                "y": int(_num(ct.get("y")) or 0),
+                # the combat board already declares whether ITS coords are engine truth or a
+                # derived zone hint — carry that verdict through rather than re-asserting one.
+                "positionAuthority": _text(ct.get("positionAuthority"), "derived"),
+                "pose": "down" if (_num(ct.get("hp")) or 1) <= 0 else "idle",
+                "is_turn": bool(ct.get("isCurrent")),
+                "hp": int(hp) if hp is not None else None,
+                "max_hp": int(mx) if mx is not None else None,
+                "health": _text(ct.get("health"), "unknown"),
+                "hp_known": bool(ct.get("hpKnown")),
+            }
+
+        for tok in tokens:
+            ct = board.get(tok["id"])
+            if ct is not None:
+                tok.update(_combat_fields(ct))
+        placed = {tok["id"] for tok in tokens}
+        # Combatants the REST projection legitimately drops — a downed PC (0 HP), a foe who is
+        # not resident at this location — must still be on the board they are fighting on. Dead
+        # characters stay off it (the corpse is the fight's outcome, not a token).
+        for cid, ct in board.items():
+            if cid in placed:
+                continue
+            ch = chars.get(cid) if isinstance(chars.get(cid), dict) else {}
+            if bool(ch.get("dead")):
+                continue
+            team = _text(ct.get("team"), "ally")
+            name = _text(ct.get("name"), cid)
+            tokens.append({
+                "id": cid,
+                "name": name,
+                "initial": _combat_initial(name, cid),
+                "short": f"{_combat_initial(name, cid)} portrait",
+                "team": team,
+                "kind": _text(ch.get("kind")),
+                "rest_role": "foe" if team == "foe" else ("party" if cid in party_set else "npc"),
+                **_combat_fields(ct),
+            })
+
+    # #1751 LAST-LINE CLAMP: no stage token may render outside the board the client draws —
+    # whatever produced the cell (an authored spawn, a walked stage_cell, a zone-derived combat
+    # hint), it is forced in-bounds here so an off-grid token is unrepresentable on this surface.
+    extents = _board_extents(snapshot)
+    for tok in tokens:
+        tok["x"], tok["y"] = _clamp_to_board(tok["x"], tok["y"], extents)
 
     return {"mode": mode, "tokens": tokens}
 
@@ -3915,14 +4077,14 @@ def build_combat_surface(
         # renderer can place invisible depth-only proxies -> a 3D actor moving BEHIND a painted column is
         # correctly hidden by it. READS engine-owned scene_grid.props (occluder=true); [] == none (today).
         "occluders": _combat_occluders(snapshot),
-        # W1 (#1318) SCENE-AT-REST: additive `stage` block — {mode: "rest"|"combat", tokens:[...]}.
-        # In REST mode (no active combat) tokens are a pure deterministic projection of the party +
-        # present NPCs onto scene_grid.spawns cells, so the room renders inhabited before combat. In
-        # COMBAT mode tokens is [] (the authoritative combat tokens are the top-level `tokens`; a
-        # rest token must never leak onto the tactical board). Engine stays sole writer; new key
-        # only — every existing key above/below is byte-unchanged, so combat-mode consumers are
-        # unaffected. See _scene_stage.
-        "stage": _scene_stage(snapshot, combat_active),
+        # W1 (#1318) THE STAGE: `stage` = {mode: "rest"|"combat", tokens:[...]} — the block the
+        # client renders the world from. At REST it is a deterministic projection of the party +
+        # present NPCs + resident live monsters onto scene_grid.spawns cells. In COMBAT (#1752) it
+        # is the SAME cast, with every actor who is in the fight taking its cell + vitals from the
+        # authoritative combat board (`tokens`, passed in below) — it used to be EMPTY in combat,
+        # which froze the rendered frame on the last rest stage for a whole fight. Engine stays
+        # sole writer (every cell is a derived projection). See _scene_stage.
+        "stage": _scene_stage(snapshot, combat_active, tokens),
         "tokens": tokens,
         "initiative": initiative,
         "zones": zones,
