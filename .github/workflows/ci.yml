@@ -29,6 +29,13 @@ jobs:
         run: python3 qa/walk_static.py
       - name: Static walkability units (red-first proofs for the gate itself)
         run: uv run --directory servers/engine --group dev pytest -q -p no:xdist ../../qa/test_walk_static.py
+      - name: Per-object alignment gate units (red-first proofs for qa/object_align_check.py)
+        # The instrument's own failure modes, pinned: a FEATURELESS crop pair correlates to a perfect
+        # dx=dy=0 with a dead peak (a deleted object certified as aligned — the exact class the gate
+        # exists to catch), and objects the gate cannot measure must be counted + named in the verdict
+        # rather than silently exempted. Runs in this lane because the engine dev group already carries
+        # numpy + Pillow; a review on #1690 flagged the instrument shipping with no CI reference at all.
+        run: uv run --directory servers/engine --group dev pytest -q -p no:xdist ../../qa/test_object_align_check.py
       - name: Spawn-placement unit test (#1584/#1651 CI half — choose_spawns places the party on the open-floor
           centroid, never a barrel/corner/door; was ZERO CI references before this)
         run: uv run --directory servers/engine --group dev pytest -q -p no:xdist ../../qa/test_seed_spawns.py
