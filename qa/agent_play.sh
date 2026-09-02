@@ -66,6 +66,7 @@ done
 RUNS_ROOT="${WORLDOS_AGENT_PLAY_ROOT:-qa/agent_play_runs}"   # repo-relative by default; absolute is fine
 case "$RUNS_ROOT" in /*) RUN_DIR="$RUNS_ROOT/$RUN" ;; *) RUN_DIR="$ROOT/$RUNS_ROOT/$RUN" ;; esac
 SESSION="$RUN_DIR/session.json"
+HEARTBEAT="$RUN_DIR/serve.heartbeat"
 
 # ── session file helpers (the durable binding; `say`/`serve`/`status`/`stop` need only --run) ────
 ap_sget() { python3 -c 'import json,sys
@@ -342,6 +343,7 @@ ap_serve() {
   ap_sset stopped "" serve_pid "$$" >/dev/null  # a fresh serve un-stops the run and owns its PID
   echo "[agent-play] serving run=$RUN chat=$CHAT moves=$MOVES campaign=$CAMPAIGN_ID dm=$WORLDOS_DM_MODEL max_beats=$label"
   while [ "$AP_SERVE_STOP" = "0" ]; do
+    touch "$HEARTBEAT"                       # explicit serving-state marker, refreshed every poll
     # `stop --run <name>` stamps the session, which is how another shell asks this loop to exit
     # (SIGTERM is the other way; the LaunchAgent uses that one).
     if [ -n "$(ap_sget stopped)" ]; then echo "[agent-play] session marked stopped — exiting serve"; break; fi
@@ -415,6 +417,7 @@ print(f"{tot:.4f}")' "$RUN_DIR/$RUN.dm.*.jsonl" 2>/dev/null || echo 0)"
   echo "run=$RUN campaign=$cid state=$state"
   echo "beats=$used/$total  quest=${status:-unknown}  stamps=$stamps  spend_usd=$spend"
   echo "chat=$(ap_sget chat_path)  session=$SESSION  stopped=$(ap_sget stopped)"
+  echo "serve_heartbeat=$([ -f "$HEARTBEAT" ] && echo PRESENT || echo MISSING) path=$HEARTBEAT"
 }
 
 ap_stop() {

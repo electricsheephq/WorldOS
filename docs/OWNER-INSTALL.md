@@ -23,15 +23,21 @@ Stopping before any write is load-bearing: a viewer still accepting `POST /move`
 
 1. bootstrap `owner-session`, poll `/session-surface` for 200 (90 s).
 2. kickstart `owner-player`, poll `POST /debug` on 8981 for 200 (60 s) — Unity binds that port only once the player is up, so a single curl races normal startup latency.
-3. kickstart `owner-dm`.
-4. prove the campaign was **consumed**, not merely served: `/session-surface` `campaign_id == adventure_demo_v1`, the player's `surf > 0`, `plateLocMatch == true`, and `camOrtho` equal to that location's `cameraPin.ortho` in `extensions/renderers/unity/plates_manifest.json`.
+3. remove any stale DM heartbeat, kickstart `owner-dm`, and require its new
+   `<state>/agent_play_runs/owner/serve.heartbeat` within 60 s. The serve loop refreshes it every
+   poll; refusal prints the tail of `<state>/owner-dm{,.err}.log` so auth/model-open failures are visible.
+4. prove the campaign was **consumed**, not merely served: after `/debug` first answers, poll for up
+   to 180 s until `surf > 0` and `plateLocMatch == true`, then require `/session-surface`
+   `campaign_id == adventure_demo_v1` and `camOrtho` equal to that location's `cameraPin.ortho` in
+   `extensions/renderers/unity/plates_manifest.json`. The result and elapsed seconds are written to
+   the install ledger.
 
 Refuse-on-red means packaged pins GREEN, zero `KitRoom_` strings in `level0`, FRESH crypt and tavern certifications, and a build identity that is either `--build-sha` or a sibling `build-report.txt` **stamped `result=Succeeded`**. `BuildMacOSPlayer.StampFailedReport` writes a nonempty `result=Failed` report beside a possibly stale app, so nonempty is not identity. Any RED or ERROR exits 1 before a write.
 
 ## Refresh and removal
 
-- `qa/owner_install.sh refresh --sha COMMIT [--reseed]` stops all three agents, verifies the new commit is a fast-forward of the pinned checkout, moves it detached, optionally reseeds, then repeats the ordered start and the consumption proof.
-- `qa/owner_install.sh status` prints each LaunchAgent plus the explicit-port `/session-surface` and `/debug` codes.
+- `qa/owner_install.sh refresh --sha COMMIT [--reseed]` stops all three agents, verifies the new commit is a fast-forward of the pinned checkout, moves it detached, optionally reseeds, then repeats the ordered start and the consumption proof. Every reseed archives the prior `agent_play_runs/owner` directory and `chat.jsonl` with one UTC timestamp before starting a fresh DM context/cursor.
+- `qa/owner_install.sh status` prints each LaunchAgent, the explicit-port `/session-surface` and `/debug` codes, and DM heartbeat presence/path.
 - `qa/owner_install.sh uninstall` removes all three agents/plists but keeps app and state. `--purge` also removes the exact installed app and owner state paths.
 
 ## Rollback
@@ -58,5 +64,6 @@ qa/owner_install.sh restore /Users/m1/Codex/session-notes/<UTC-date>/worldos-ref
 - [ ] T10: a nonempty `build-report.txt` is not a successful build — require `result=Succeeded`.
 - [ ] T11: the session needs `WORLDOS_ART_REPO_ROOT=/Users/m1/WorldOS`; the gitignored `_private` art exists only in the canonical checkout, so the owner worktree as art root reports every image missing.
 - [ ] T12: two agents render pixels but answer nothing — `org.worldos.owner-dm` is what consumes `WORLDOS_PLAYER_MOVES`.
+- [ ] T13: a listening player is not yet a consuming player — allow the first surface up to 180 s, then ledger the final result.
 
 Dry-run proof is `installer-dry-run-verified`: gates, plist rendering, and the named app were checked. It does not prove live install behavior, installed-build G1, or owner-play G4.

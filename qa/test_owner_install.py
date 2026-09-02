@@ -1,4 +1,4 @@
-import json, plistlib, re, subprocess, sys
+import json, plistlib, re, shlex, subprocess, sys
 from pathlib import Path
 import pytest
 
@@ -39,6 +39,8 @@ def test_a_dm_consumer_agent_is_rendered(tmp_path):
     # inside the pinned checkout that `refresh --sha` moves out from under it.
     assert dm["EnvironmentVariables"]["WORLDOS_AGENT_PLAY_ROOT"] == str(tmp_path / "state/agent_play_runs")
     assert dm["EnvironmentVariables"]["WORLDOS_DM_MODEL"] == "opus"
+    assert dm["StandardOutPath"] == str(tmp_path / "state/owner-dm.log")
+    assert dm["StandardErrorPath"] == str(tmp_path / "state/owner-dm.err.log")
 
 
 def test_the_viewer_writes_the_exact_chat_file_the_dm_tails(tmp_path):
@@ -77,8 +79,16 @@ def test_failed_or_unstamped_build_reports_are_refused(report):
 
 
 def test_successful_build_report_is_accepted():
-    fields = OIV.check_build_report("result=Succeeded\ntotalErrors=0\nbuildEndedAt=9/2/2026 10:38:41 AM\n")
+    fields = OIV.check_build_report(
+        "result=Succeeded\ntotalErrors=0\nbuildEndedAt=9/2/2026 10:38:41 AM\n"
+        "alwaysIncludedShaders=WorldOS/OccluderDepth,WorldOS/ActorSilhouette\n")
     assert fields["result"] == "Succeeded" and fields["buildEndedAt"].startswith("9/2/2026")
+
+
+def test_build_report_missing_required_shader_is_refused_with_the_line():
+    line = "alwaysIncludedShaders=WorldOS/OccluderDepth"
+    with pytest.raises(ValueError, match=r"alwaysIncludedShaders=.*ActorSilhouette"):
+        OIV.check_build_report(f"result=Succeeded\n{line}\n")
 
 
 def _debug(**over):
@@ -102,12 +112,97 @@ def test_consumed_proof_refuses_a_player_that_never_applied_the_campaign(surface
     with pytest.raises(ValueError): OIV.check_consumed(surface, debug, MANIFEST)
 
 
-def _fake_app(tmp_path, report="result=Succeeded\n"):
+def _fake_app(tmp_path, report=("result=Succeeded\n"
+                                "alwaysIncludedShaders=WorldOS/OccluderDepth,WorldOS/ActorSilhouette\n")):
     app = tmp_path / "Bad.app"; (app / "Contents/MacOS").mkdir(parents=True); (app / "Contents/Resources/Data").mkdir(parents=True)
     binary = app / "Contents/MacOS/WorldOSPlayer"; binary.write_text("bad"); binary.chmod(0o755)
     (app / "Contents/Resources/Data/level0").write_text("clean")
     if report is not None: (tmp_path / "build-report.txt").write_text(report)
     return app
+
+
+def _owner_shell(tmp_path, body):
+    prefix = Path(SH).read_text().split("\nMODE=", 1)[0].replace(
+        'ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)', f'ROOT={shlex.quote(str(QA.parent))}')
+    return subprocess.run(["/bin/bash", "-c", prefix + "\n" + body], text=True, capture_output=True,
+                          env={"HOME": str(tmp_path / "home"), "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+                               "TMPDIR": str(tmp_path)})
+
+
+def _probe_stubs(work, heartbeat=True):
+    launch = 'mkdir -p "$DM_RUN"; touch "$DM_HEARTBEAT"' if heartbeat else ":"
+    return f'''STATE={shlex.quote(str(work / "state"))}
+DM_RUN="$STATE/agent_play_runs/owner"; DM_HEARTBEAT="$DM_RUN/serve.heartbeat"
+DM_LOG="$STATE/owner-dm.log"; DM_ERR="$STATE/owner-dm.err.log"
+mkdir -p "$STATE"
+launchctl() {{ [[ "$*" != *"$DM"* ]] || {{ {launch}; }}; }}
+await_code() {{ :; }}
+curl() {{ printf '%s\\n' '{{"campaign_id":"adventure_demo_v1","location":{{"id":"camp_clearing"}},"surf":4,"plateLocMatch":true,"camOrtho":13.0}}'; }}
+python3() {{ :; }}
+sleep() {{ :; }}
+mktemp() {{ mkdir -p {shlex.quote(str(work / "probe-tmp"))}; printf '%s\\n' {shlex.quote(str(work / "probe-tmp"))}; }}
+'''
+
+
+def test_start_probe_trap_is_scoped_and_cleans_success_and_failure(tmp_path):
+    success = tmp_path / "success"
+    ok = _owner_shell(tmp_path, _probe_stubs(success) + "start_and_probe\n")
+    assert ok.returncode == 0, ok.stderr
+    assert not (success / "probe-tmp").exists()
+
+    failed = tmp_path / "failed"
+    body = _probe_stubs(failed) + "python3() { return 1; }\nstart_and_probe\n"
+    bad = _owner_shell(tmp_path, body)
+    assert bad.returncode == 1
+    assert not (failed / "probe-tmp").exists()
+
+
+def test_reseed_archives_the_dm_run_and_chat_before_starting_fresh(tmp_path):
+    state = tmp_path / "state"
+    run = state / "agent_play_runs/owner"
+    run.mkdir(parents=True)
+    (run / "session.json").write_text('{"chat_cursor": 9}')
+    (state / "chat.jsonl").write_text('{"role":"player","text":"old"}\n')
+    out = _owner_shell(tmp_path, f"reset_dm_run {shlex.quote(str(state))}\n")
+    assert out.returncode == 0, out.stderr
+    assert not run.exists() and not (state / "chat.jsonl").exists()
+    archived = list((state / "agent_play_runs").glob("owner.archived-*"))
+    assert len(archived) == 1 and (archived[0] / "session.json").is_file()
+    assert len(list(state.glob("chat.archived-*.jsonl"))) == 1
+
+
+def test_missing_dm_heartbeat_refuses_with_last_log_lines(tmp_path):
+    work = tmp_path / "missing-heartbeat"
+    state = work / "state"; state.mkdir(parents=True)
+    (state / "owner-dm.err.log").write_text("auth/model open failed\n")
+    result = _owner_shell(tmp_path, _probe_stubs(work, heartbeat=False) + "start_and_probe\n")
+    assert result.returncode == 1
+    assert "heartbeat" in result.stderr and "auth/model open failed" in result.stderr
+    script = (QA / "agent_play.sh").read_text()
+    assert re.search(r'touch .*HEARTBEAT', script), "serve must touch its heartbeat every poll"
+
+
+def test_consumption_probe_waits_through_initial_zero_and_records_green(tmp_path):
+    work = tmp_path / "consumption"; work.mkdir()
+    ledger = work / "ledger.json"; ledger.write_text('{"gate_results": {}}')
+    count = work / "count"
+    body = f'''OWNER_REPO={shlex.quote(str(QA.parent))}
+curl() {{
+  case "$*" in
+    *session-surface*) printf '%s\\n' '{{"campaign_id":"adventure_demo_v1","location":{{"id":"camp_clearing"}}}}' ;;
+    *) n=0; [[ ! -f {shlex.quote(str(count))} ]] || n=$(<{shlex.quote(str(count))}); n=$((n+1)); printf '%s' "$n" >{shlex.quote(str(count))};
+       if ((n < 3)); then printf '%s\\n' '{{"surf":0,"plateLocMatch":false,"camOrtho":13.0}}';
+       else printf '%s\\n' '{{"surf":4,"plateLocMatch":true,"camOrtho":13.0}}'; fi ;;
+  esac
+}}
+sleep() {{ :; }}
+await_consumed {shlex.quote(str(work / "surface.json"))} {shlex.quote(str(work / "debug.json"))} 180 {shlex.quote(str(ledger))}
+'''
+    out = _owner_shell(tmp_path, body)
+    assert out.returncode == 0, out.stderr
+    assert count.read_text() == "3" and "elapsed=2s" in out.stdout
+    assert json.loads(ledger.read_text())["gate_results"]["consumption"]["result"] == "GREEN"
+    assert re.search(r"await_consumed .* 180", (QA / "owner_install.sh").read_text())
 
 
 def test_preflight_refuses_red_before_writing(tmp_path):
