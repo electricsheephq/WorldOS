@@ -63,7 +63,9 @@ function requireShared(mod) {
     process.env.WORLDOS_NPT_NODE_MODULES,
     path.join(__dirname, "node_modules"),
     path.join(__dirname, "..", "playwright", "node_modules"),
-    "/Users/lume/WorldOS/qa/playwright/node_modules",
+    path.resolve(__dirname, "..", "..", "qa", "playwright", "node_modules"),
+    // canonical local checkout — worktrees have no node_modules of their own
+    "/Users/m1/WorldOS/qa/playwright/node_modules",
   ].filter(Boolean);
   try {
     return require(mod);

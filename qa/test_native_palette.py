@@ -36,7 +36,7 @@ def _node_modules_with_sdk() -> str | None:
     canonical checkout's qa/playwright install)."""
     for base in (NPT / "node_modules",
                  ROOT / "qa" / "playwright" / "node_modules",
-                 Path("/Users/lume/WorldOS/qa/playwright/node_modules")):
+                 Path(__file__).resolve().parents[1] / "qa" / "playwright" / "node_modules"):
         if (base / "@modelcontextprotocol").is_dir():
             return str(base)
     return None

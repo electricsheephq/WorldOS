@@ -2,10 +2,10 @@
 
 ## Codex Desktop Local-Resource Policy
 
-- Treat `/Users/lume/WorldOS` as the canonical local Mac app/private-art checkout for WorldOS GUI and native-app testing.
-- Use `/Volumes/LEXAR/Codex` for Codex artifacts, scratch files, screenshots, reports, and downloaded CI/VM artifacts.
+- Treat `/Users/m1/WorldOS` as the canonical local Mac app/private-art checkout for WorldOS GUI and native-app testing.
+- Use `/Users/m1/Codex` for Codex artifacts, scratch files, screenshots, reports, and downloaded CI/VM artifacts.
 - Use same-disk local worktrees for GUI/native-app edits that must launch against private art. Lexar worktrees are fine for docs, backend-only, and non-GUI slices that do not launch the app against private art.
-- Before running install, build, or test commands, verify `pwd`. If a GUI/native app run is not in `/Users/lume/WorldOS` or a same-disk worktree with `WORLDOS_ART_REPO_ROOT=/Users/lume/WorldOS`, explain why.
+- Before running install, build, or test commands, verify `pwd`. If a GUI/native app run is not in `/Users/m1/WorldOS` or a same-disk worktree with `WORLDOS_ART_REPO_ROOT=/Users/m1/WorldOS`, explain why.
 - Prefer GitHub Actions or the 32GB support VM for heavyweight validation, full suites, matrix tests, long integration tests, and persona sweeps.
 - Run local tests only for fast feedback, local-only reproduction, validating unpushed edits, or Mac-only `.app` proof. Use the narrowest focused command first.
 - Do not launch multiple heavyweight local suites or persona sweeps in parallel on this Mac.
@@ -25,7 +25,7 @@
 - Target VM: owner-provided 32GB support VM, `support-vm-1`.
 - Connection/auth details are operator-only and should stay outside tracked repo docs.
 - Use the support VM for heavy backend/persona sweeps only after Codex CLI credentials/config are intentionally installed and verified there.
-- VM preflight must record VM identity, repo checkout path, branch/SHA, Codex CLI version, auth/profile status, `uv`, Node/npm/Playwright availability, private-art status or explicit backend-only/no-art classification, env vars, budget/concurrency cap, teardown commands, and artifact return path under `/Volumes/LEXAR/Codex`.
+- VM preflight must record VM identity, repo checkout path, branch/SHA, Codex CLI version, auth/profile status, `uv`, Node/npm/Playwright availability, private-art status or explicit backend-only/no-art classification, env vars, budget/concurrency cap, teardown commands, and artifact return path under `/Users/m1/Codex`.
 - The VM cannot prove Mac-only surfaces. `WorldOS.app` build/launch, native #356, and built-app UI play evidence stay on this Mac or macOS CI.
 - VM artifacts can feed RRI only when `run.json`, `score.json`, `session_surface.final.json`, network/image evidence, palette-live evidence, and build SHA are explicit. Otherwise the result remains partial/harness-contaminated.
 

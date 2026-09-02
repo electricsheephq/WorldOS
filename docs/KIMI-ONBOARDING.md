@@ -12,13 +12,13 @@
 
 | Thing | Path / identity | Notes |
 |---|---|---|
-| Canonical checkout | `/Users/lume/WorldOS` | GitHub `electricsheephq/WorldOS`; local branch **`base` tracks `origin/main`**; tip `fd23e972` (dress_focal v2 / #1621, 2026-07-16) |
-| Live worktrees | `/Users/lume/WorldOS-worktrees/` (same dir as lowercase spelling, case-insensitive APFS) | `wt-owner-play` — owner's play copy, branch `main` @ `c8a0b155`, **`.worldos-keep` = never touch**; behind main → `git pull --ff-only origin main` BEFORE any owner reseed (schema-skew class, OPERATIONS.md). `walk-gate-hardening` — clean, @ `92edf8d7`, looks merged; only its owning lane may prune it |
-| Stale clone (trap) | `/Volumes/LEXAR/repos/WorldOS` | Jul-1 clone @ `76439e2`, ~19 days behind. Do not mistake for canonical |
-| Session scratch/evidence | `~/worldos-session-notes` → symlink to `/Volumes/LEXAR/Codex/offloaded-local/2026-07-09/worldos-session-notes` (9.8 GB) | Newest: `walkability-fix-2026-07-16/`, `ship-2026-07-15/` |
-| Unity player install | `/Users/lume/Applications/WorldOSPlayer.app` | Jul 16 12:16 build |
+| Canonical checkout | `/Users/m1/WorldOS` | GitHub `electricsheephq/WorldOS`; local branch **`base` tracks `origin/main`**; tip `fd23e972` (dress_focal v2 / #1621, 2026-07-16) |
+| Live worktrees | `/Users/m1/repos/WorldOS-worktrees/` | `wt-owner-play` — owner's play copy, branch `main` @ `c8a0b155`, **`.worldos-keep` = never touch**; behind main → `git pull --ff-only origin main` BEFORE any owner reseed (schema-skew class, OPERATIONS.md). `walk-gate-hardening` — clean, @ `92edf8d7`, looks merged; only its owning lane may prune it |
+| Stale clone (trap) | `/Volumes/LEXAR/repos/WorldOS` (historical path — /Volumes/LEXAR/repos/WorldOS; that machine is gone, see NOW.md) | Jul-1 clone @ `76439e2`, ~19 days behind. Do not mistake for canonical |
+| Session scratch/evidence | `/Users/m1/Codex/session-notes` | Newest: `walkability-fix-2026-07-16/`, `ship-2026-07-15/` |
+| Unity player install | `/Users/lume/Applications/WorldOSPlayer.app` (historical path — /Users/lume/Applications/WorldOSPlayer.app; that machine is gone, see NOW.md) | Jul 16 12:16 build |
 | Built app | `dist/` — **EMPTY right now** (no `dist/WorldOS.app` exists) | AGENTS.md defines the built app as the product; last app evidence early July |
-| GEX44 backups | `/Volumes/LEXAR/Codex/worldos-unity-backups/` | `worktree-20260716.tgz` confirmed |
+| GEX44 backups | `/Volumes/LEXAR/Codex/worldos-unity-backups/` (historical path — /Volumes/LEXAR/Codex/worldos-unity-backups/; that machine is gone, see NOW.md) | `worktree-20260716.tgz` confirmed |
 
 ## 2. Reading order (doc routing)
 
@@ -73,10 +73,10 @@ The skill surface is live-edited (worldos-dev touched Jul 15, blind-adjudicator 
 
 | Surface | Path | How Kimi uses it |
 |---|---|---|
-| Dev loop (canonical) | `/Users/lume/WorldOS/.claude/skills/worldos-dev/SKILL.md` | Read before any dev loop |
-| Decision apparatus | `/Users/lume/WorldOS/.claude/skills/worldos-decide/SKILL.md` | Read when a decision lacks an eval |
+| Dev loop (canonical) | `/Users/m1/WorldOS/.claude/skills/worldos-dev/SKILL.md` | Read before any dev loop |
+| Decision apparatus | `/Users/m1/WorldOS/.claude/skills/worldos-decide/SKILL.md` | Read when a decision lacks an eval |
 | GEX44/Unity lane | `~/.claude/skills/gex44-unity-host/SKILL.md`, `~/.claude/skills/unity-asset-stack/SKILL.md` | Read before any box op |
-| Visual critic / asset gen | `/Users/lume/WorldOS/.claude/skills/visual-critic/SKILL.md`, `.../asset-gen/SKILL.md` | Read on those lanes |
+| Visual critic / asset gen | `/Users/m1/WorldOS/.claude/skills/visual-critic/SKILL.md`, `.../asset-gen/SKILL.md` | Read on those lanes |
 | Blind adjudicator | `~/.claude/agents/blind-adjudicator.md` | **Port the prompt verbatim** into a Kimi read-only subagent (`plan`/`explore` type) for gate verdicts — self-contained, model-agnostic |
 | Other agent profiles | `~/.claude/agents/{coder,deep-reasoner,fast-worker,codex-worker}.md` | Map frontmatter to Kimi subagent types (`coder`/`plan`/`explore`) |
 | WorldOS memory index | `~/.claude/projects/-Users-lume/memory/worldos-index.md` | Read on any WorldOS resume |
@@ -84,7 +84,7 @@ The skill surface is live-edited (worldos-dev touched Jul 15, blind-adjudicator 
 | Routing ledger | `~/.claude/routing-ledger.jsonl` | **Shared append-only JSONL** — Kimi appends rows (`{"ts","lane","task","outcome","repo","note"}`) so Claude-side sessions see Kimi dispatches |
 | Fable lane table | `~/.claude/CLAUDE.md` | "Fable = orchestrator only, the brain never types" → the Kimi orchestrator inherits that role; cheaper work delegates to subagents |
 
-Do NOT port: Claude hooks, stop-guards, keepalive ticks (Claude-app mechanics; Kimi has its own turn lifecycle). `.mcp.json` (engine/rules/voice stdio servers) is portable in substance — substitute `${CLAUDE_PLUGIN_ROOT}` → `/Users/lume/WorldOS` if ever wired.
+Do NOT port: Claude hooks, stop-guards, keepalive ticks (Claude-app mechanics; Kimi has its own turn lifecycle). `.mcp.json` (engine/rules/voice stdio servers) is portable in substance — substitute `${CLAUDE_PLUGIN_ROOT}` → `/Users/m1/WorldOS` if ever wired.
 
 **Known gap — GitNexus**: this repo's AGENTS.md mandates GitNexus `impact` before edits and `detect_changes` before committing, but Kimi has no `mcp__gitnexus__*` tools. Fallback: the CLI (`node .gitnexus/run.cjs analyze`, index fresh at Jul 16 17:12) + grep — or the owner grants an explicit waiver / wires the MCP.
 
