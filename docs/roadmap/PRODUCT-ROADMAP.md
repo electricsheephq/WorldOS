@@ -385,6 +385,33 @@ wall-clock unchanged · every W sprint: text-tier byte-identity + no new writers
 **Act II sequencing:** NOW: W1 ∥ W2-engine ∥ HV1 ∥ HV2 (schema handshake first) → HV3 →
 HV5-hooks + backdrop cadence → W3 → HV4 (+A/B) → W4 (with S8) → W5 → **T3 gate**.
 
+## 4e. DESIRE INSTRUMENTS + MODEL-SWAP DISCIPLINE (the rung above "completes the arc")
+
+> Decision record: [`docs/decisions/DESIGN-MEMO-2026-09-02.md`](../decisions/DESIGN-MEMO-2026-09-02.md) §3.
+> Today's top rung is completion + behavioral GREEN + panel parity. Nothing measures "want to play".
+
+- **DESIRE — three instruments, cheapest first.**
+  (a) **Voluntary continuation** — blind personas are told the objective is OPTIONAL; measure beats
+  played PAST it and whether they explore. Desire runs must DISABLE the completion short-circuit:
+  `qa/run_adventure.sh` ends the beat loop as soon as the quest leaves `active`, so a
+  **`--no-short-circuit`** continuation flag on the runner is part of the `desire_eval` work item —
+  without it there are no post-objective beats to measure.
+  (b) **Would-play-again / would-share** — two fixed questions, **N ≥ 5 personas**, two-anchored
+  against a scripted CONTROL session.
+  (c) **The owner's felt score** — the rare calibration anchor, never the routine gate.
+  Ships as `qa/desire_eval.py` on the scores_db discipline: predeclared bars, recorded N, control.
+  Machine-checkable metrics and judge-scored subjective metrics stay separate columns, never averaged.
+- **MODEL SWAPS ARE RULER CHANGES.** The `opus` alias moving from opus-4-8 to Opus 5 turned a 3/3
+  into a 0/4 with a byte-identical harness.
+  - Every measured row pins the DM and player **model ids** (landed, #1727) and records N.
+  - A version change counts as an improvement **only when its delta exceeds the standard error of the
+    same metric over N ≥ 3 repeated runs per model** — in score units, not variance (squared units
+    rescale with the ruler). A delta inside that band is noise, not progress.
+  - A model change gets a CONTROL run before it counts.
+- **The engine IS the fact ledger; the arc-mode FAIL rows are its auditor.** reroll / add_location /
+  non-seeded spawn / false `end_combat` (§4d, `WORLDOS_GATE_ARC`) are the drift detector — keep the
+  referee in code, never in prose.
+
 ## 5. The platform track (parallel, after S7)
 1. **#911 multi-agent plugin** — GA slice = docs + Claude lane verified (S10); Codex CLI lane
    next (the cheapest second runtime), then OpenClaw/Hermes post-GA.
@@ -451,6 +478,33 @@ quest_completed — with ZERO user-truth defects. Demo completion proves the sys
   across TWO CONSECUTIVE builds, and then a BLIND agent persona completes the arc. The owner tests only
   at the 80/20 wall (the residual unknown-unknowns absorber).
 
+### G4 — Agent G4 protocol
+
+> Decision record: [`docs/decisions/DESIGN-MEMO-2026-09-02.md`](../decisions/DESIGN-MEMO-2026-09-02.md) §1.
+
+**Two passes per build.** Pass 1 = a walkaround with NO DM (navigation/doors · collision-vs-paint ·
+actors/occlusion · legibility · viewer). Pass 2 = the story against the live DM through the DM-only
+loop (`qa/agent_play.sh`) — the same code path the installed instance's DM agent runs, so a human at
+the viewer and an agent play ONE game.
+
+**Multi-lens, multi-pass, reproduce-before-file.** One pass finds about half the bugs and lenses are
+blind to each other, so every build gets multiple lenses across both passes. Every candidate finding
+is REPRODUCED by a DIFFERENT agent on a FRESH sandbox before it is filed — VLM lenses throw false
+positives on near-contact geometry and partial occlusion, exactly the silhouette/proxy class this
+demo hits. An unreproduced observation is not a defect.
+
+**Defect contract** — every filed defect carries: room · cells · what a player would say · the frame
+the reporter looked at · the `/debug` line · repro · layer (engine grid / seed / sidecar / client
+render / plate / viewer) · severity **P1–P3**.
+
+**Score row** (`qa/SCORECARD.md`, surface `agent_g4`): P1 / P2 / P3 counts, route completion,
+legibility median per room, actor-luminance floor, frames per room. **A build advances only at
+P1 = 0**; two consecutive P1 = 0 builds, then a blind persona completing the arc, close G4.
+
+**The 80/20 wall, defined.** A defect whose fix needs a NEW SUBSYSTEM (> 1 day) or a TASTE FORK with
+two good answers. Only these escalate to the owner, and the escalation carries the frames, what was
+tried, and the options — never raw lens output (testers anchored by AI errors decide worse).
+
 ### 9.1 Demo-critical path (dependency-ordered; ⊘ = independent of the pipeline fork)
 1. ⊘ #1645 combat lifecycle (M) — DM closes fights (action economy, end_combat, XP, time-advance).
 2. ⊘ #1639 cast presence (M) — rest surface emits NPC + live-monster tokens; client renders them.
@@ -484,6 +538,28 @@ quest_completed — with ZERO user-truth defects. Demo completion proves the sys
 - **Rebuild-not-patch** — rooms failing registration/coherence are REGENERATED through the current
   chain, never hand-patched; the cert-required lint (#1644) keeps retired plates unshippable.
 
-### 9.3 Ruler discipline (restated)
+### 9.3 World Readiness — DONE for a world
+
+> Decision record: [`docs/decisions/DESIGN-MEMO-2026-09-02.md`](../decisions/DESIGN-MEMO-2026-09-02.md) §2.
+> §9's four gates define DONE for a BUILD. This defines DONE for a WORLD — the finish line
+> `docs/ACTIVE-GOAL.md` points at.
+
+A world is DONE when, on ONE installed build with recorded identity:
+
+1. **Rooms** — every room in the world graph is walk-certified EXHAUSTIVE and per-object-aligned at
+   the calibrated registration floor.
+2. **Doors** — every door crosses BOTH ways with that room's camera pin.
+3. **Actors** — actors read as lit figures at the luminance floor, with NO silhouette in the open.
+4. **Text arc** — completes ≥ 0.67 VERIFIED at the recorded ruler, with pinned model ids per row.
+5. **Walked arc** — GREEN over the FULL route INCLUDING the return-for-reward leg.
+6. **Agent G4** — zero P1 user-truth defects in TWO CONSECUTIVE builds (protocol above).
+7. **Blind persona** — a persona that never authored the world completes the arc.
+8. **The wall** — the owner's 80/20 wall, if hit, was RESOLVED: an option chosen and its fix landed.
+
+**First world = "The Crypt Below"** (5 rooms: camp_clearing, tavern_snug, shop, crypt, throne_hall).
+**Second = the town** (6–10 rooms, Track C / C1). A world failing any clause is not "mostly done" —
+it is a world with an open clause and a named owner for it.
+
+### 9.4 Ruler discipline (restated)
 Two-anchor calibrated panels; av_ ruler for adventure aggregates; blind adjudication wherever an
 author would judge their own work; honest negatives are progress and get scorecard rows.
