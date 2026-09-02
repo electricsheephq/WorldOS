@@ -124,6 +124,32 @@ ap_kill_tree() {
   for child in $children; do ap_kill_tree "$signal" "$child"; done
   kill -s "$signal" "$pid" 2>/dev/null || true
 }
+ap_tree_identities() {
+  local pid="$1" child children started
+  children="$(pgrep -P "$pid" 2>/dev/null || true)"
+  for child in $children; do ap_tree_identities "$child"; done
+  started="$(ap_pid_lstart "$pid" || true)"
+  [ -n "$started" ] && printf '%s|%s\n' "$pid" "$started"
+}
+ap_identity_live() {
+  local pid="$1" expected="$2" actual
+  ap_pid_live "$pid" || return 1
+  actual="$(ap_pid_lstart "$pid")"
+  [ -n "$actual" ] && [ "$actual" = "$expected" ]
+}
+ap_tree_live() {
+  local identities="$1" pid expected
+  while IFS='|' read -r pid expected; do
+    [ -n "$pid" ] && ap_identity_live "$pid" "$expected" && return 0
+  done <<< "$identities"
+  return 1
+}
+ap_signal_tree() {
+  local signal="$1" identities="$2" pid expected
+  while IFS='|' read -r pid expected; do
+    if [ -n "$pid" ] && ap_identity_live "$pid" "$expected"; then ap_kill_tree "$signal" "$pid"; fi
+  done <<< "$identities"
+}
 
 # ── beat wiring (only `start`/`say`/`serve` need it) ─────────────────────────────────────────────
 ap_bind() {
@@ -257,7 +283,7 @@ os.replace(p+".tmp", p)' "$SESSION" \
     run "$RUN" engine "$ENGINE" state_dir "$state" campaign_id "$cid" \
     quest_title "${WORLDOS_AGENT_PLAY_QUEST:-The Crypt Below}" dm_model "$model" budget "$budget" \
     beats "$beats" beats_used 0 chat_cursor "$chat_cursor" chat_path "$chat_path" \
-    move_cursor "$move_cursor" moves_path "$moves_path" serve_pid "" \
+    move_cursor "$move_cursor" moves_path "$moves_path" serve_pid "" clarifies_used 0 \
     serve_lstart "" \
     dm_session_id "$(python3 -c 'import uuid;print(uuid.uuid4())')" \
     created "$(date -u +%Y-%m-%dT%H:%M:%SZ)" stopped ""
@@ -428,7 +454,7 @@ ap_serve() {
     ap_start
   fi
   ap_bind
-  local max="${MAX_BEATS_IN:-0}" served=0 cursor lines move_cursor move_lines row role text kind move_id label source rc=0 lstart
+  local max="${MAX_BEATS_IN:-0}" served=0 cursor lines move_cursor move_lines row role text kind move_id label source rc=0 lstart clarifies
   label="$max"; [ "$max" -gt 0 ] || label="unlimited"
   trap 'AP_SERVE_STOP=1' TERM INT
   trap 'ap_serve_cleanup' EXIT
@@ -471,7 +497,12 @@ except Exception: print("")')"
       sleep 2 || true
       continue
     fi
-    if [ "$kind" != "clarify" ] && ! ap_budget_available; then
+    clarifies="$(ap_sget clarifies_used 0)"; clarifies="${clarifies:-0}"
+    if [ "$kind" = "clarify" ] && [ "$clarifies" -ge 3 ]; then
+      ap_consume_move "$((move_cursor + 1))" "$row" "$text" "$kind"
+      chatlog dm "[system] you've asked 3 questions this turn — act now; the DM will fill in anything else" '{"system":true}'
+      continue
+    elif [ "$kind" != "clarify" ] && ! ap_budget_available; then
       chatlog dm "[system] $(ap_budget_message)" '{"system":true}'
       rc=2
       break
@@ -479,8 +510,11 @@ except Exception: print("")')"
     echo "[agent-play] player $source: ${text:0:100}"
     if [ "$source" = "chat" ]; then ap_sset chat_cursor "$((cursor + 1))" >/dev/null
     else ap_consume_move "$((move_cursor + 1))" "$row" "$text" "$kind"; fi
+    if [ "$kind" = "clarify" ]; then ap_sset clarifies_used "$((clarifies + 1))" >/dev/null
+    else ap_sset clarifies_used 0 >/dev/null; fi
     if [ "${WORLDOS_AGENT_PLAY_TEST_CRASH_AFTER_CONSUME:-0}" = "1" ]; then kill -KILL "$$"; fi
     if [ "$kind" = "clarify" ]; then ap_do_clarify "$row" || true
+    elif [ "$source" = "chat" ]; then ap_do_beat "$kind" "$text" "" || true; served=$((served + 1))
     else ap_do_beat "$kind" "$text" "$row" || true; served=$((served + 1)); fi
     if [ "$max" -gt 0 ] && [ "$served" -ge "$max" ]; then break; fi
   done
@@ -522,23 +556,25 @@ ap_stop() {
   ap_require_session
   # shellcheck source=lib_beat_driver.sh
   . "$ROOT/qa/lib_beat_driver.sh"
-  local stopped pid i closeout
+  local stopped pid i closeout tree
   STATE_DIR="$(ap_sget state_dir)"
   worldos_stream_tailer_kill_pidfile "$STATE_DIR" 2>/dev/null || true
   stopped="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   ap_sset stopped "$stopped" >/dev/null
   pid="$(ap_sget serve_pid)"
   if ap_serve_owned; then
-    ap_kill_tree TERM "$pid"
+    tree="$(ap_tree_identities "$pid")"
+    ap_signal_tree TERM "$tree"
     i=0
-    while ap_serve_owned; do
-      if [ "$i" -ge 40 ]; then ap_kill_tree KILL "$pid"; fi
+    while ap_tree_live "$tree"; do
+      if [ "$i" -ge 40 ]; then ap_signal_tree KILL "$tree"; fi
       [ "$i" -lt 50 ] || { echo "[agent-play] owned serve pid $pid did not exit" >&2; return 1; }
       sleep 0.1; i=$((i + 1))
     done
   elif [ -n "$pid" ]; then
     echo "[agent-play] stale/unowned serve pid $pid not signaled" >&2
   fi
+  rm -f "$HEARTBEAT" "$STARTING"
   ap_sset serve_pid "" serve_lstart "" >/dev/null
   closeout="$RUN_DIR/closeout.json"
   python3 - "$SESSION" "$RUN_DIR/$RUN.quest_trace.json" "$RUN_DIR/$RUN.dm.*.jsonl" "$closeout" <<'PY'

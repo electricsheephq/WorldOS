@@ -85,7 +85,9 @@ def _pid_live(pid: int) -> bool:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
-    return True
+    stat = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True,
+                          text=True, check=False).stdout.strip()
+    return bool(stat) and "Z" not in stat
 
 
 # ── start: session file + chat.jsonl format + the exact dry-run command ────────────────────────
@@ -216,6 +218,8 @@ def test_serve_answers_each_new_player_line_exactly_once(sandbox):
     assert "beats served: 2" in proc.stdout
     cmds = (sandbox["tmp"] / "runs" / sandbox["run"] / "dryrun_cmds.log").read_text().splitlines()
     assert len(cmds) == 3, cmds   # the cold open + one beat per player line
+    assert "[say] I raise my shield." in cmds[1]
+    assert "[say] I call out to the dark." in cmds[2]
 
     roles = [r["role"] for r in _chat_rows(sandbox["state"])]
     assert roles == ["dm", "player", "player", "dm", "dm"], roles
@@ -327,6 +331,31 @@ def test_clarify_answers_without_spending_a_beat_or_ticking_time(sandbox):
     assert "How far is the door?" in (sandbox["tmp"] / "runs" / sandbox["run"] / "dryrun_cmds.log").read_text()
 
 
+def test_serve_caps_consecutive_clarifications_and_resets_after_an_action(sandbox):
+    assert _start(sandbox).returncode == 0
+    moves = sandbox["state"] / "player_moves.jsonl"
+    intents = [
+        {"role": "player", "kind": "clarify", "text": f"Question {index}?"}
+        for index in range(1, 5)
+    ] + [
+        {"role": "player", "kind": "do", "text": "open the door"},
+        {"role": "player", "kind": "clarify", "text": "What is beyond it?"},
+    ]
+    moves.write_text("".join(json.dumps(intent) + "\n" for intent in intents))
+
+    proc = _run(sandbox["tmp"], "serve", "--run", sandbox["run"],
+                "--max-beats", "2", "--dry-run")
+    assert proc.returncode == 0, proc.stderr
+    cmds = (sandbox["tmp"] / "runs" / sandbox["run"] / "dryrun_cmds.log").read_text().splitlines()
+    assert len(cmds) == 6, cmds  # open + 3 clarifies + one action + reset clarify
+    assert not any("Question 4?" in cmd for cmd in cmds)
+    assert "What is beyond it?" in cmds[-1]
+    assert any(row.get("system") and "questions this turn" in row["text"]
+               for row in _chat_rows(sandbox["state"]))
+    session = json.loads(_session_path(sandbox).read_text())
+    assert session["beats_used"] == "1" and session["clarifies_used"] == "1"
+
+
 def test_serve_surfaces_budget_exhaustion_as_dm_system_row(sandbox):
     assert _start(sandbox).returncode == 0
     _patch_session(sandbox, beats_used="4", beats="4")
@@ -380,12 +409,13 @@ def test_stop_terminates_recorded_serve_and_writes_bounded_closeout(sandbox):
             fake_serve.wait(timeout=5)
 
 
-def test_stop_terminates_an_inflight_serve_process_tree(sandbox):
+def test_stop_terminates_a_term_resistant_dm_orphan_and_clears_heartbeat(sandbox):
     assert _start(sandbox).returncode == 0
     child_file = sandbox["tmp"] / "dm-child.pid"
     fake_serve = subprocess.Popen([
         "bash", "-c",
-        f"trap 'exit 0' TERM; value=$(sh -c 'echo $$ > {child_file}; exec sleep 30'); echo \"$value\"",
+        f"bash -c 'trap \"\" TERM; echo $$ > {child_file}; while :; do sleep 1; done' & "
+        "trap 'exit 0' TERM; wait",
     ])
     try:
         deadline = time.monotonic() + 2
@@ -394,6 +424,8 @@ def test_stop_terminates_an_inflight_serve_process_tree(sandbox):
         assert child_file.exists(), "fake DM child never started"
         child_pid = int(child_file.read_text().strip())
         _patch_session(sandbox, serve_pid=str(fake_serve.pid), serve_lstart=_pid_lstart(fake_serve.pid))
+        heartbeat = sandbox["tmp"] / "runs" / sandbox["run"] / "serve.heartbeat"
+        heartbeat.touch()
         proc = _run(sandbox["tmp"], "stop", "--run", sandbox["run"], timeout=10)
         assert proc.returncode == 0, f"{proc.stderr}\n{proc.stdout}"
         fake_serve.wait(timeout=2)
@@ -401,6 +433,7 @@ def test_stop_terminates_an_inflight_serve_process_tree(sandbox):
         while _pid_live(child_pid) and time.monotonic() < deadline:
             time.sleep(0.02)
         assert not _pid_live(child_pid), f"DM child {child_pid} survived stop"
+        assert not heartbeat.exists(), "forced stop left a stale serving marker"
     finally:
         if fake_serve.poll() is None:
             fake_serve.kill()
