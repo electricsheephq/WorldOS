@@ -200,13 +200,15 @@ Pick by scene kind (PoE2 ref ALWAYS leads; the bracketed cross-check ref is adde
 narrow lens):
 - **tavern / interior**: `poe2_tavern_interior_combat_02` (the bar: warm hearth key, cool room
   ambient at ~3:1, blue-violet shadows, grounded soft contact shadows on plank floor)
-  [+ `bg2ee_temple_combat_lighting_04` for L5 tactical-readability; + `disco_cafeteria_bar_interior_03`
-  for the dark-pocket/mood cross-check].
-- **outdoor / wilderness**: `poe2_cliff_party_brushwork_03` (the bar) [+ `bg2ee_forest_party_tactical_01`
-  for L5 tactical-readability].
+  [+ `disco_cafeteria_bar_interior_03` for the dark-pocket/mood cross-check].
+- **outdoor / wilderness**: `poe2_cliff_party_brushwork_03` (the bar) — no L5 cross-check until a UI-free
+  BG2 frame is re-sourced (see the exclusion note below).
 - **dark zone / cavern / dungeon**: `poe2_market_interior_lighting_04` (the bar: chroma surviving
-  into shadow) [+ `disco_office_interior_lighting_04` for the dark-pocket/mood cross-check;
-  + `bg2ee_cavern_darkzone_lighting_03` for L5 blocked-cells-in-shadow readability].
+  into shadow) [+ `disco_office_interior_lighting_04` for the dark-pocket/mood cross-check].
+- ⛔ **BG2EE frames are EXCLUDED from every panel**: all four (`fortress_02`, `forest_01`, `cavern_03`,
+  `temple_04`) are UI-chrome-contaminated gameplay screenshots (registry `excluded` block; 2026-07-08 panel +
+  2026-07-09 audit) and the builder refuses to register them. Re-source cropped, UI-free BG2 frames before
+  any L5 tactical-readability cross-check returns.
 - **best single light-coherence anchor** (for L3, any scene): `poe2_market_interior_lighting_04`
   (warm-key + cool-fill + colored deferred lights, the PoE2 deferred look).
 These are INTERNAL calibration references only (not redistributed/reproduced/served, never a
