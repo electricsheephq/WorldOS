@@ -6,7 +6,7 @@ This kit installs the ad-hoc-signed, unnotarized demo player at `~/Applications/
 
 1. `qa/owner_install.sh preflight /absolute/WorldOSPlayer.app` runs all refuse-on-red gates without writing.
 2. `qa/owner_install.sh dry-run /absolute/WorldOSPlayer.app --stage /absolute/evidence/stage` writes only two plists plus `install-ledger.json` under the stage directory.
-3. The owner runs `qa/owner_install.sh install /absolute/WorldOSPlayer.app [--sha COMMIT] [--build-sha COMMIT]`. It backs up existing app/state, installs and ad-hoc signs the app, pins `/Users/m1/worldos-owner`, seeds `owner_demo`, installs the two LaunchAgents, starts the session first, waits for `/health` 200, then starts and probes the player. Do not run this from a QA lane.
+3. The owner runs `qa/owner_install.sh install /absolute/WorldOSPlayer.app [--sha COMMIT] [--build-sha COMMIT]`. It backs up existing app/state/plists, stops old agents, installs and ad-hoc signs the app, pins `/Users/m1/worldos-owner`, seeds `owner_demo`, installs the two LaunchAgents, starts the session first, waits for `/health` 200, then starts and probes the player. Do not run this from a QA lane.
 
 Refuse-on-red means packaged pins GREEN, zero `KitRoom_` strings in `level0`, FRESH crypt and tavern certifications, and either sibling `build-report.txt` or `--build-sha`. Any RED or ERROR exits 1 before a write.
 

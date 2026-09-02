@@ -53,13 +53,14 @@ resolve_worktree(){
 
 start_and_probe(){
   local domain code surface debug; domain="gui/$(id -u)"; code=
-  launchctl bootstrap "$domain" "$AGENTS/$SESSION.plist"; launchctl bootstrap "$domain" "$AGENTS/$PLAYER.plist"
+  launchctl bootstrap "$domain" "$AGENTS/$SESSION.plist"
   launchctl kickstart -k "$domain/$SESSION"
   for _ in {1..90}; do code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 1 "http://127.0.0.1:$ENGINE_PORT/health" || true); [[ "$code" == 200 ]] && break; sleep 1; done
   [[ "$code" == 200 ]] || die "engine /health never reached 200"
+  launchctl bootstrap "$domain" "$AGENTS/$PLAYER.plist"
   launchctl kickstart -k "$domain/$PLAYER"
   surface=$(curl -fsS --max-time 5 "http://127.0.0.1:$ENGINE_PORT/combat-surface")
-  python3 -c 'import json,sys; d=json.load(sys.stdin); n=(d.get("location") or {}).get("name"); assert n; print("scene:",n)' <<<"$surface"
+  python3 -c 'import json,sys; d=json.load(sys.stdin); n=(d.get("location") or {}).get("name"); assert d.get("campaign_id")=="adventure_demo_v1" and n; print("scene:",n)' <<<"$surface"
   debug=$(curl -fsS --max-time 5 -X POST -H 'Content-Type: application/json' -d '{}' "http://127.0.0.1:$QA_PORT/debug")
   python3 -c 'import json,sys; d=json.load(sys.stdin); assert "camOrtho" in d; print(json.dumps(d,sort_keys=True))' <<<"$debug"
 }
@@ -76,10 +77,12 @@ install)
   preflight "$APP"; SHA=${SHA:-origin/main}; RECEIPT="/Users/m1/Codex/session-notes/$(date -u +%F)/worldos-refresh/artifacts/owner-install/backup-$(date -u +%Y%m%dT%H%M%SZ)"; mkdir -p "$RECEIPT"; RESTORE="'$ROOT/qa/owner_install.sh' uninstall --purge"
   if [[ -d "$TARGET_APP" ]]; then ditto "$TARGET_APP" "$RECEIPT/WorldOSPlayer.app"; RESTORE+="; ditto '$RECEIPT/WorldOSPlayer.app' '$TARGET_APP'"; fi
   if [[ -d "$STATE" ]]; then ditto "$STATE" "$RECEIPT/owner_demo"; RESTORE+="; ditto '$RECEIPT/owner_demo' '$STATE'"; fi
-  echo "Restore: $RESTORE"
+  if [[ -f "$AGENTS/$SESSION.plist" ]]; then ditto "$AGENTS/$SESSION.plist" "$RECEIPT/$SESSION.plist"; RESTORE+="; install -m 0644 '$RECEIPT/$SESSION.plist' '$AGENTS/$SESSION.plist'"; fi
+  if [[ -f "$AGENTS/$PLAYER.plist" ]]; then ditto "$AGENTS/$PLAYER.plist" "$RECEIPT/$PLAYER.plist"; RESTORE+="; install -m 0644 '$RECEIPT/$PLAYER.plist' '$AGENTS/$PLAYER.plist'"; fi
+  echo "Restore: $RESTORE"; stop_agents
   mkdir -p "$(dirname "$TARGET_APP")"; ditto "$APP" "$TARGET_APP"; xattr -dr com.apple.quarantine "$TARGET_APP"; codesign --force --deep --sign - "$TARGET_APP"; echo "Installed with ad-hoc signing; this demo build is unnotarized (accepted)."
   WT=$(resolve_worktree "$SHA"); WORLDOS_STATE_DIR="$STATE" uv run --directory "$OWNER_REPO/servers/engine" python "$OWNER_REPO/qa/seed_adventure_demo.py" "$STATE"
-  stop_agents; mkdir -p "$AGENTS"; render "$RECEIPT" install "$TARGET_APP" "$WT" "$RECEIPT/install-ledger.json"; install -m 0644 "$RECEIPT/$SESSION.plist" "$AGENTS/$SESSION.plist"; install -m 0644 "$RECEIPT/$PLAYER.plist" "$AGENTS/$PLAYER.plist"; start_and_probe;;
+  mkdir -p "$AGENTS"; render "$RECEIPT" install "$TARGET_APP" "$WT" "$RECEIPT/install-ledger.json"; install -m 0644 "$RECEIPT/$SESSION.plist" "$AGENTS/$SESSION.plist"; install -m 0644 "$RECEIPT/$PLAYER.plist" "$AGENTS/$PLAYER.plist"; start_and_probe;;
 refresh)
   [[ -n "$SHA" ]] || die "refresh requires --sha"; stop_agents; WT=$(resolve_worktree "$SHA"); if ((RESEED)); then RECEIPT="/Users/m1/Codex/session-notes/$(date -u +%F)/worldos-refresh/artifacts/owner-install/backup-$(date -u +%Y%m%dT%H%M%SZ)"; mkdir -p "$RECEIPT"; [[ ! -d "$STATE" ]] || ditto "$STATE" "$RECEIPT/owner_demo"; echo "Restore state: ditto '$RECEIPT/owner_demo' '$STATE'"; WORLDOS_STATE_DIR="$STATE" uv run --directory "$OWNER_REPO/servers/engine" python "$OWNER_REPO/qa/seed_adventure_demo.py" "$STATE"; fi; start_and_probe; echo "REFRESHED $WT";;
 status) launchctl print "gui/$(id -u)/$SESSION" || true; launchctl print "gui/$(id -u)/$PLAYER" || true; curl -sS -o /dev/null -w "engine /health %{http_code}\n" --max-time 2 "http://127.0.0.1:$ENGINE_PORT/health" || true; curl -sS --max-time 2 -X POST -H 'Content-Type: application/json' -d '{}' "http://127.0.0.1:$QA_PORT/debug" || true;;
