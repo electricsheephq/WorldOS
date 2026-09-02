@@ -983,7 +983,9 @@ def test_force_hit_is_dead_code_without_env(tmp_path, monkeypatch):
         if _one_attack(server, store, cid, a, t, force_hit=True)["hit"]
     )
     # vs AC 30 with +0, only natural 20s hit (~5%). NOT ~40. So force_hit is DEAD here.
-    assert hits <= 6, f"force_hit leaked without the env guard: {hits}/40 hits"
+    assert hits <= 12, (  # binomial n=40, p=0.05 (nat-20 only): P(hits > 12) < 1e-7; the forced case is 40/40 — the old cap of 6 failed ~1.2 % of runs
+        f"force_hit leaked without the env guard: {hits}/40 hits"
+    )
 
 
 def test_force_hit_forces_hit_under_guard_without_faking_crits(tmp_path, monkeypatch):
