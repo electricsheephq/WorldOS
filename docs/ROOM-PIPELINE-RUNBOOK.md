@@ -423,6 +423,7 @@ PNGs live under `extensions/renderers/unity/plates/`.
 and adding a `"stage"` key to a plate entry above is a silent no-op.
 
 **★ BOX BUILD PRE-FLIGHT (measured gap — stale manifests shipped in Box Cycles 2 AND 3, 2026-07-15):**
+- The pre-flight sync target is the Unity project ROOT (the `EnsurePackaged` source), never `Assets/StreamingAssets`; verify with `packaged_pins` after every build.
 the GEX44 box's Unity project (`/home/unity/worldos-unity/`) carries its OWN copies of these data
 files, and `BuildMacOSPlayer.EnsurePackaged` packages the BOX copies verbatim. A lane that deploys
 only its changed `.cs`/shader files ships whatever manifest the box happened to have. Before EVERY
