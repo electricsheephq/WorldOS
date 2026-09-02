@@ -1887,6 +1887,17 @@ def main() -> int:
     if os.environ.get("WORLDOS_GATE_ARC"):
         arc_events = _arc_tool_events(events)
 
+        truth_path = os.environ.get("WORLDOS_ARC_QUEST_TRACE", "")
+        try:
+            truth = json.loads(Path(truth_path).read_text(encoding="utf-8")) if truth_path else {}
+        except (OSError, ValueError):
+            truth = {}
+        if truth.get("completion_claimed") is True and truth.get("completion_verified") is not True:
+            reasons = truth.get("completion_truth") or ["seeded-world verification missing"]
+            chk("arc_objective_completion_truth", False,
+                "objective ticked against invented content: " + "; ".join(map(str, reasons)),
+                fatal=True)
+
         rerolls = [_arc_beat_label(bt) for bt, short, _i, _o, err in arc_events
                    if short == "reroll_character" and not err]
         if rerolls:

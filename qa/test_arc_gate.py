@@ -64,7 +64,8 @@ def _clean_events() -> list[dict]:
 
 def _run_gate(tmp_path: Path, events: list[dict], *, arc: bool = True,
               manifest: dict | None = SEED_MANIFEST,
-              state_obj: dict | None = None) -> tuple[int, str]:
+              state_obj: dict | None = None,
+              truth_trace: dict | None = None) -> tuple[int, str]:
     run = tmp_path / "run.jsonl"
     run.write_text("\n".join(json.dumps(e) for e in events) + "\n", encoding="utf-8")
     state = tmp_path / "state.json"
@@ -79,6 +80,10 @@ def _run_gate(tmp_path: Path, events: list[dict], *, arc: bool = True,
             mp = tmp_path / "seed_species.json"
             mp.write_text(json.dumps(manifest), encoding="utf-8")
             env["WORLDOS_ARC_SEED_SPECIES"] = str(mp)
+        if truth_trace is not None:
+            tp = tmp_path / "quest_trace.json"
+            tp.write_text(json.dumps(truth_trace), encoding="utf-8")
+            env["WORLDOS_ARC_QUEST_TRACE"] = str(tp)
     proc = subprocess.run([sys.executable, str(GATE), str(run), str(state)],
                           cwd=str(REPO), env=env, capture_output=True, text=True)
     return proc.returncode, proc.stdout + proc.stderr
@@ -99,6 +104,18 @@ def _arc_fail_rows(out: str) -> list[str]:
 def test_clean_arc_transcript_is_green(tmp_path):
     _rc, out = _run_gate(tmp_path, _clean_events())
     assert not _arc_fail_rows(out), out
+
+
+def test_objective_ticked_against_invented_content_is_a_hard_fail(tmp_path):
+    reason = "objective 3 'Slay the goblin boss': seeded boss boss-1 alive at 21/21"
+    rc, out = _run_gate(tmp_path, _clean_events(), truth_trace={
+        "quest_status": "completed", "completion_claimed": True,
+        "completion_verified": False, "completion_truth": [reason],
+    })
+    assert rc == 1, out
+    rows = [row for row in _arc_fail_rows(out) if "arc_objective_completion_truth" in row]
+    assert rows, out
+    assert f"objective ticked against invented content: {reason}" in rows[0]
 
 
 # ── 1. reroll_character ────────────────────────────────────────────────────────────────────────

@@ -279,6 +279,88 @@ def _stamped_stages(trace: dict) -> set[str]:
     return {str(s.get("stage")) for s in trace.get("stamps") or [] if s.get("stage")}
 
 
+def _seeded_world(server, campaign_id: str, quest: dict) -> dict:
+    """Freeze fixture identities before the DM can rename, reuse, move, or mint content."""
+    c = server._require(campaign_id)
+    giver_id = str(quest.get("giver_id") or "")
+    crypt_id = str(quest.get("location_id") or "")
+    throne_id = next((str(lid) for lid, loc in c.locations.items()
+                      if str(lid) == "throne_hall"
+                      or str(getattr(loc, "name", "")).lower().replace(" ", "_") == "throne_hall"), "")
+    monsters = [(str(cid), ch) for cid, ch in c.characters.items()
+                if str(getattr(ch, "kind", "")) == "monster"]
+    boss_id = next((cid for cid, ch in monsters
+                    if str(getattr(ch, "creature_slug", "")) == "goblin-boss"), "")
+    return {
+        "giver_id": giver_id,
+        "giver_location_id": getattr(c.characters.get(giver_id), "location_id", None),
+        "crypt_location_id": crypt_id,
+        "throne_location_id": throne_id,
+        "crypt_hostile_ids": [cid for cid, ch in monsters
+                              if getattr(ch, "location_id", None) == crypt_id],
+        "boss_id": boss_id,
+    }
+
+
+def _verify_objective(server, campaign_id: str, quest: dict, seed: dict, index: int) -> dict:
+    c = server._require(campaign_id)
+    objective = str((quest.get("objectives") or [])[index - 1])
+    party_loc = getattr(c, "current_location_id", None)
+    giver = c.characters.get(seed.get("giver_id"))
+    giver_alive = giver is not None and not getattr(giver, "dead", False) \
+        and (getattr(giver, "current_hp", 1) or 0) > 0
+    failures: list[str] = []
+    if index == 1:
+        if party_loc != seed.get("giver_location_id"):
+            failures.append(f"party at {party_loc}, not giver location {seed.get('giver_location_id')}")
+        if not giver_alive:
+            failures.append(f"seeded giver {seed.get('giver_id')} is not alive")
+    elif index == 2:
+        for cid in seed.get("crypt_hostile_ids") or []:
+            ch = c.characters.get(cid)
+            if ch is None or (not getattr(ch, "dead", False)
+                              and (getattr(ch, "current_hp", 1) or 0) > 0
+                              and getattr(ch, "location_id", None) is not None):
+                hp = getattr(ch, "current_hp", "missing") if ch is not None else "missing"
+                failures.append(f"seeded crypt hostile {cid} alive at {hp}")
+    elif index == 3:
+        boss = c.characters.get(seed.get("boss_id"))
+        if boss is None or not getattr(boss, "dead", False):
+            hp = getattr(boss, "current_hp", "missing") if boss is not None else "missing"
+            max_hp = getattr(boss, "max_hp", "?") if boss is not None else "?"
+            failures.append(f"seeded boss {seed.get('boss_id')} alive at {hp}/{max_hp}")
+        valid_locs = {seed.get("throne_location_id"), getattr(boss, "location_id", None)} - {None, ""}
+        if party_loc not in valid_locs:
+            failures.append(f"party at {party_loc}, not seeded throne/boss location")
+    elif index == 4:
+        if not giver_alive:
+            failures.append(f"seeded giver {seed.get('giver_id')} is not alive")
+        if party_loc != seed.get("giver_location_id"):
+            failures.append(f"party at {party_loc}, not giver location {seed.get('giver_location_id')}")
+        if str(quest.get("status") or "").lower() != "completed":
+            failures.append(f"engine quest status is {quest.get('status')!r}, not completed")
+    return {"index": index, "objective": objective, "verified": not failures,
+            "reason": f"objective {index} {objective!r}: " + "; ".join(failures) if failures else ""}
+
+
+def _stamp_completion_truth(server, campaign_id: str, quest: dict, trace: dict) -> None:
+    if "seeded_world" not in trace:
+        trace["seeded_world"] = _seeded_world(server, campaign_id, quest)
+    old_done = set(trace.get("completed_objectives") or [])
+    records = {int(r["index"]): r for r in trace.get("objective_truth") or []}
+    for index, objective in enumerate(quest.get("objectives") or [], 1):
+        if objective in (quest.get("completed_objectives") or []) and objective not in old_done:
+            records[index] = _verify_objective(server, campaign_id, quest, trace["seeded_world"], index)
+    trace["objective_truth"] = [records[i] for i in sorted(records)]
+    claimed = str(quest.get("status") or "").lower() == "completed"
+    missing = [i for i in range(1, len(quest.get("objectives") or []) + 1) if i not in records]
+    trace["completion_claimed"] = claimed
+    trace["completion_verified"] = claimed and not missing and all(r["verified"] for r in records.values())
+    trace["completion_truth"] = [r["reason"] for r in records.values() if not r["verified"]]
+    if claimed:
+        trace["completion_truth"] += [f"objective {i}: no world verification recorded" for i in missing]
+
+
 def stamp_beat(
     trace: dict,
     found: dict[str, str],
@@ -370,6 +452,7 @@ def poll(
         except Exception:
             giver_name = ""
 
+    _stamp_completion_truth(server, campaign_id, quest, trace)
     found = detect_stages(server, campaign_id, state_dir, quest=quest, giver_name=giver_name)
     newly = stamp_beat(trace, found, beat=beat, campaign_id=campaign_id, quest=quest)
     save_trace(trace_path, trace)
