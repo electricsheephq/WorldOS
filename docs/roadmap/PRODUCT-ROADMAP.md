@@ -284,7 +284,7 @@ v1.0.7–v1.0.8) and is retitled **"The Table (story/world systems)"**.
   4-objective arc; reward staged; full static stack at seed. Every room class is already
   walk-green certified — composition, zero new geometry.
 - **A-T — The text-arc eval** *(parallel with A-G)*: `qa/run_adventure.sh` (duo-derivative,
-  arc-directed persona, ~15-beat budget, completion short-circuit) + `qa/quest_progress.py`
+  arc-directed persona, **20-beat budget** (raised from 15 on 2026-09-02 — a control run with the July DM model completed at beat 19 while 15 was knife-edge; the bar is unchanged: N≥3, completion ≥ 0.67, behavioral GREEN; DM and player model ids are pinned and recorded per row), completion short-circuit) + `qa/quest_progress.py`
   (per-beat get_quests polling → quest_trace.json: reached_giver / quest_accepted /
   entered_dungeon / boss_dead / reward_received / quest_completed) + `qa/adventure_eval.py`
   (N runs via the run_parallel pattern → completion_rate · beats/wall-time · stuck (dead beats +

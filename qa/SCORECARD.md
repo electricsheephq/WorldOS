@@ -208,3 +208,11 @@ The `action_economy_engaged` / `combat_not_left_active` WARNs are end-state snap
 DM-model swap (~65%) vs structural beat budget (~25%); discriminating control run `adv_ctl_o48` (DM pinned to `claude-opus-4-8`, all
 else equal) in flight. Instrument gaps filed on #1709: `adventure_eval` must ERROR on run prefixes that resolve to no files; the
 behavioral checker reads only the last combat snapshot; `quest_completed` is stamped on a FAILED quest.
+
+### 2026-09-02 — RULER CHANGE (predeclared before the re-measurement): arc-duo measured budget 15 → 20 beats
+Evidence: `adv_ctl_o48` (DM pinned to `claude-opus-4-8`, 15 beats) removed the invented fights but still ended at `boss_dead@15` with
+42 resolved attacks; `adv_ctl_o48_b20` (same DM, 20 beats) COMPLETED at beat 19 (`boss_dead@15`, `reward_received@19`), behavioral GREEN.
+July's 3/3 landed at beats 13-15 with one beat of slack. Decision: the measured G2 eval runs at 20 beats from now; the bar is unchanged
+(N≥3, completion ≥ 0.67, behavioral GREEN); every row records the DM and player model ids (`opus`/`sonnet` aliases drift — Opus 5 today).
+The N=3 re-run at 20 beats in the shipping configuration (default `opus` alias) is the next G2 measurement; runs before this note
+(`adv_reboot*`) stay recorded at 15 beats.
