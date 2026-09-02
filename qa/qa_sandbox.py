@@ -168,8 +168,13 @@ def _qa_roots_in_app(app: Path) -> set:
                                      for m in _QA_ROOT_RE.finditer(buf) if m.end() < len(buf))
                         buf = buf[-_SCAN_OVERLAP:]
                     found.update(m.group().decode("utf-8", "replace") for m in _QA_ROOT_RE.finditer(buf))
-            except OSError:
-                continue
+            except OSError as exc:
+                # An archive we could not open or read cannot yield a clean verdict — fail CLOSED,
+                # exactly like budget exhaustion: a permissions/corruption/I-O failure must never let
+                # `up` accept a build it never actually scanned.
+                raise KitScanIncomplete(
+                    f"[sandbox] contamination scan could not read a level/sharedassets file: {exc} — "
+                    f"the app's kit-root verdict is unknown; fix the file/permissions and re-run `up`.") from exc
     return found - _kit_helper_names()
 
 
