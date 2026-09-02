@@ -11,7 +11,7 @@
 **Execute PRODUCT-ROADMAP.md's sprints in charter order.** The only finish lines are:
 
 1. **Owner check-in** — a new message from the owner is always a stop-and-respond point.
-2. **GA v1.1.0 shipped** — the roadmap's Act I terminus (milestone #36).
+2. **DEMO COMPLETION (PRODUCT-ROADMAP §9) — all four gates G1-G4 measured green on an owner-installed build** (the governing milestone since 2026-07-22; charter #1702 as of 2026-09-02), then the first TOWN world (Track C, epic #1640). GA v1.1.0 (milestone #36) remains the Act I terminus AFTER that — not a finish line for the current run.
 3. **A VERIFIED blocker on ALL parallel lanes simultaneously** — see Blocker Law below.
 
 **Nothing else is "done."** Completing a task list, finishing a PR batch, closing a sprint,
@@ -22,8 +22,7 @@ unexecuted, citing a "box blocker" that was never verified (the box was up the w
 
 ## THE QUEUE
 
-The work queue is the open **`sprint-charter`-labeled issues, in sprint order** — the current head carries the **`active-sprint`** label (exactly one issue; move it at every transition) — (S2, S3, … per
-PRODUCT-ROADMAP.md §Act I; interleaved Act II/box charters ride the same label).
+The work queue is the open **`sprint-charter`-labeled issues, in sprint order** — the current head carries the **`active-sprint`** label (exactly one issue; move it at every transition). **Head as of 2026-09-02: #1702 (the refresh charter toward §9 DEMO COMPLETION; #1386 superseded).** S2 (#1309) / S3 (#1310) queue behind it.
 
 - Closing charter N (with evidence on the issue) **pulls charter N+1**.
 - **If sprint N+1 has no charter yet, WRITING that charter from roadmap §S(N+1) is the next
@@ -31,8 +30,8 @@ PRODUCT-ROADMAP.md §Act I; interleaved Act II/box charters ride the same label)
   QA-economics v2 in OPERATIONS.md.)
 - `[EPIC]` issues named in the ACTIVE charter's ordered list are claimable directly (OPERATIONS
   claim-rule amendment, 2026-07-08).
-- Parallel lanes (box/graphics, harvest-nightly, docs) run alongside the charter spine; an idle
-  lane picks up the charter's next unclaimed issue.
+- Parallel lanes (renderer/graphics — LOCAL Unity on this Mac since 2026-08, the GEX44 box is gone —, harvest-nightly, docs)
+  run alongside the charter spine; an idle lane picks up the charter's next unclaimed issue.
 
 ## BLOCKER LAW
 
@@ -40,9 +39,10 @@ A lane may park **only** with a fresh-probe row in the table below: the exact co
 its output, and a timestamp. "I believe X is down" is not a blocker; a failed probe from today is.
 
 - **Blockers EXPIRE after 12 hours.** Re-probe and re-enter, or unpark and continue.
-- Before writing a row, check the canonical trail first (`~/.claude/CLAUDE.md` WorldOS pointers,
-  `docs/BOX.md`, runbooks) — the 2026-07-08 "box down" blocker was an agent probing wrong IPs
-  for days while the box ran fine at the documented address.
+- Before writing a row, check the canonical trail first (`docs/roadmap/NOW.md`, `docs/RUNBOOK-INDEX.md`,
+  `docs/OPERATIONS.md`, the `~/.claude/CLAUDE.md` WorldOS pointers + `~/.claude/runbooks/worldos-evaos-ops.md`) —
+  the 2026-07-08 "box down" blocker was an agent probing wrong IPs for days while the box ran fine at the
+  documented address, and the 2026-08-06 "credentials lost" report was two remembered paths, not a probe.
 - A blocker on ONE lane never stops the run — move to the next non-blocked queue item.
 
 | Lane | Probe command | Output (trimmed) | Timestamp (UTC) | Expires |
