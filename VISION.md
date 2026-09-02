@@ -291,8 +291,10 @@ walkability and the control-anchored backdrop.
     target, not a demo gate).
   A placeholder demo-cast model that is grounded, lit, and screen-correct PASSES Tier-2 even though
   it is not the final art. That is the point.
-  > **MEASURED 2026-09-02 (#1738):** the shipped build renders actors **under-lit** against the plates,
-  > so the L2/L3/L4 floors above are **aspirational** until an actor-luminance primitive exists.
+  > **MEASURED 2026-09-02 (#1738):** the shipped build renders actors **under-lit** against the plates, so it is
+  > currently **BELOW** the L2/L3/L4 floors. This is a recorded measurement, not a waiver: the ≥ 5.0 floors REMAIN
+  > BINDING and block release until an actor-luminance primitive lands and the build measures back above them
+  > (`docs/roadmap/WORLDOS-GRAPHICS-ROADMAP-POE2.md` M-C keeps the same hard gate).
 - **Binary combat-FUN checklist (the demo must be *playable*, not just pretty):**
   - [ ] A real engine attack drives the render (engine = sole writer; renderer replays `/events`).
   - [ ] The hit shows a VFX (default-on-miss slash/impact is fine) AT the correct engine cell.
@@ -308,16 +310,21 @@ until the polish phase. This is exactly the Pillar-4 reconciliation made measura
 
 ### The Room Readiness Pipeline (how rooms are made — self-verifying, compaction-proof)
 
-A room is authored + verified by ONE resumable command, `qa/room_pipeline.py --room <id>`, that chains
-every gate — the **3D-FIRST KIT CHAIN**: generate-geometry → design-gate → `build_room_kit` (kit
+The doctrine is the **3D-FIRST KIT CHAIN**: generate-geometry → design-gate → `build_room_kit` (kit
 assembly) → seg registration **≥ 99 % on the kit render** → the kit scene's own depth → flux depth-CN
 base → structure-holding edit → global + per-object alignment gates (`qa/styled_align_check.py`,
-`qa/object_align_check.py`) → composite → kit-derived boxes sidecar → **BEAUTY gate** (the blind
-control-anchored panel) → **WALKABILITY gate** (`qa/walk_test.py`) → adopt (`promote.py` + registry) →
-report. `qa/paint_room.py` (the pinned flux-depth-CN → Gemini painter) is the RETIRED paint-first
-painter, kept for legacy rooms only — new and regenerated rooms go through the kit chain.
-Each stage writes durable evidence + a stage marker; the command exits **non-zero unless BOTH the beauty
-panel AND the walk-test are green** — that exit code, not a human "ship it", IS the gate. The pipeline
+`qa/object_align_check.py`) → composite → kit-derived boxes sidecar (ExportBoxes) → **BEAUTY gate** (the
+blind control-anchored panel) → **WALKABILITY gate** (`qa/walk_test.py`) → adopt (`promote.py` +
+registry) → report.
+**Wiring truth (2026-09-02):** the kit chain is run today by its OWN steps — `build_room_kit` in the
+Unity Editor, then `registration_score`/seg, then paint/edit, then `styled_align_check` +
+`object_align_check`, then ExportBoxes. `qa/room_pipeline.py --room <id>` is the resumable orchestrator
+for the paint-first stages; its KIT stage is a QUEUED work item (charter #1702 C2b), so do not read this
+section as "one command already runs the kit chain".
+`qa/paint_room.py` (the pinned flux-depth-CN → Gemini painter) is the RETIRED paint-first painter, kept
+for legacy rooms only — new and regenerated rooms go through the kit chain.
+Each stage writes durable evidence + a stage marker; `room_pipeline.py` exits **non-zero unless BOTH the
+beauty panel AND the walk-test are green** — that exit code, not a human "ship it", IS the gate. The pipeline
 is hand-off-able to a sub-agent or run by the engine itself, which is what makes hands-off iteration
 toward the 20→50→200-room library real. Full runbook: `docs/ROOM-PIPELINE-RUNBOOK.md`; epic #1581.
 

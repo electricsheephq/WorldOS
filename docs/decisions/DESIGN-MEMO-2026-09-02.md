@@ -2,8 +2,8 @@
 
 The owner asked for feedback on the north-star docs "with latest research or findings". This memo makes six proposals. Each names the
 doc it changes, what today's measurement says, the smallest concrete change, and — where it exists — a verified external source
-(every citation was URL-fetched by a skeptic agent on 2026-09-02; the sweep lives in
-`session-notes/2026-09-02/worldos-refresh/artifacts/design-memo/`).
+(every citation was URL-fetched by a skeptic agent on 2026-09-02; the verified sweep — claim, URL and status per source —
+is committed at [`docs/decisions/research/2026-09-02-design-memo-sources.md`](research/2026-09-02-design-memo-sources.md)).
 
 ## 0. Premise check — what two days of measurement say
 - The engine + gate half is strong: every probe click behaved, every door crossed with the right camera pin, walk gates are exhaustive
@@ -43,19 +43,24 @@ A world is DONE when, on ONE installed build with recorded identity: every room 
 per-object-aligned at the calibrated floor · every door crosses both ways with the room's camera pin · actors read as lit figures
 (luminance floor) with no silhouette in the open · the text arc completes ≥ 0.67 at the recorded ruler with pinned model ids · the walked
 arc covers the FULL route incl. the return-for-reward · Agent G4 = zero P1 in two consecutive builds · a blind persona completes the
-arc · the owner's wall was not hit. First world = "The Crypt Below" (6 rooms); second = the town (6-10 rooms, C1).
+arc · the owner's wall, if hit, was resolved (an option chosen and its fix landed). First world = "The Crypt Below"
+(5 rooms: camp_clearing, tavern_snug, shop, crypt, throne_hall); second = the town (6-10 rooms, C1).
 
 ## 3. A rung above "completes the arc" — DESIRE instruments and the model-swap discipline (new §4e)
 - **Desire.** Today's top rung is completion + behavioral GREEN + panel parity. Nothing measures "want to play". Cheapest first:
-  (a) voluntary continuation — blind personas told the objective is optional; measure beats played past it and whether they explore;
+  (a) voluntary continuation — blind personas told the objective is optional; measure beats played past it and whether they explore.
+  Desire runs disable the completion short-circuit: today `qa/run_adventure.sh` ends the beat loop as soon as the quest leaves
+  `active`, so a `--no-short-circuit` continuation flag on the runner is part of the `desire_eval` work item — without it there are no
+  post-objective beats to measure;
   (b) would-play-again / would-share — two fixed questions, N ≥ 5 personas, two-anchored against a scripted control session;
   (c) the owner's felt score as the rare calibration anchor. Ship as `qa/desire_eval.py` on the scores_db discipline (predeclared
   bars, N, control). RPGBench's split — machine-checkable metrics vs LLM-as-judge subjective metrics — is our design already
   [arxiv.org/abs/2502.00595]; the desire rung is the missing judge half.
 - **Model swaps are ruler changes.** The `opus` alias moving from opus-4-8 to Opus 5 turned a 3/3 into a 0/4 with a byte-identical
   harness. Rule: pinned model ids on every measured row (landed, #1727), and a version change counts as an improvement only when its
-  delta exceeds the within-model variance from repeated runs — the Reliable Change Index adapted to LLM evaluation
-  [arxiv.org/pdf/2604.27405]. DM drift is well documented: fact-ledger auditors see 40-68 % fact conflicts over long sessions
+  delta exceeds the within-model SPREAD of the SAME metric — the standard error over N >= 3 repeated runs per model, in score units,
+  not the raw variance (which is in squared score units and rescales with the ruler) — the Reliable Change Index adapted to LLM
+  evaluation [arxiv.org/pdf/2604.27405]. Record N with the row. DM drift is well documented: fact-ledger auditors see 40-68 % fact conflicts over long sessions
   [arxiv.org/html/2608.08160]; adversarial TRPG benches measure ~10 % false-pass rates that vary by setting [arxiv.org/html/2607.02802v1].
   WorldOS's engine IS the fact ledger; the new arc-mode FAIL rows (reroll / add_location / non-seeded spawn / false end_combat) are
   its auditor. Keep the referee in code, not prose (our own spec-amendment cycles plateau after ~3 passes).
