@@ -148,6 +148,10 @@ THE SEEDED-ARC RULES, each one enforced by the QA gate as a hard FAIL:
   (E) ONE COMBAT AT A TIME. Call end_combat ONLY when the engine reports zero living hostiles — a
       result carrying warning_live_hostiles means the fight is NOT over: finish it in that beat
       rather than re-spawning the survivors later.
+  (F) THE QUEST GIVER AND EVERY NPC AN OBJECTIVE NAMES ARE ESSENTIAL: Keeper Maera above all. They
+      cannot die, be captured, or leave the map before the quest resolves, and the reward path back
+      to the giver stays OPEN — killing her strands the last objective and softlocks the arc with
+      the boss already dead. Cost the hero something else.
 Keep the arc MOVING toward the crypt and the boss; the player is here to finish this job, not to
 linger. The player is the seeded PC already in the party — do NOT seat a new character."
 }

@@ -602,6 +602,26 @@
       ],
       "retest": "bash qa/run_adventure.sh arc-retest 20 4.00",
       "hint": "end_combat's result carried warning_live_hostiles during a SEEDED arc run — the fight was not over. The survivors stay standing in state and get re-spawned and re-fought later, which is how this arc loses its beat budget. ARC ADDENDUM rule (E). Arc-only (WORLDOS_GATE_ARC); the domain-general sibling is end_combat_no_living_hostiles."
+    },
+    "arc_essential_npc_killed": {
+      "category": "DM_ADHERENCE",
+      "likely_code_locations": [
+        "qa/lib_adventure_dm.sh",
+        "qa/run_adventure.sh",
+        "qa/play_dm_duo.txt"
+      ],
+      "retest": "bash qa/run_adventure.sh arc-retest 20 4.00",
+      "hint": "The DM ended an ESSENTIAL NPC during a SEEDED arc run — the quest giver, or an NPC an objective names (derived from the snapshot's giver_id + objective text, not hard-coded). Measured 2026-09-02 pass-2: Keeper Maera killed at beat 15, three beats after the boss died, which stranded 'Return to Maera for the reward'. ARC ADDENDUM rule (F): the reward path back to the giver stays open; cost the hero something else. Arc-only (WORLDOS_GATE_ARC)."
+    },
+    "arc_quest_softlocked_on_dead_npc": {
+      "category": "DM_ADHERENCE",
+      "likely_code_locations": [
+        "qa/lib_adventure_dm.sh",
+        "qa/run_adventure.sh",
+        "qa/quest_progress.py"
+      ],
+      "retest": "bash qa/run_adventure.sh arc-retest 20 4.00",
+      "hint": "The run ended with a quest still ACTIVE and an essential NPC dead in the snapshot — the remaining objectives can never be completed. A SOFTLOCK, not merely an unfinished arc; the state-side sibling of arc_essential_npc_killed, so it catches a kill the tool-call scan missed. Arc-only (WORLDOS_GATE_ARC)."
     }
   }
 }

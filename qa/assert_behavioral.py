@@ -303,6 +303,81 @@ def _arc_tool_events(events: list[dict]) -> list[tuple[object, str, dict, object
     return out
 
 
+def _arc_iter_dicts(obj: object):
+    """Every dict nested anywhere inside a parsed tool result (results wrap the character record
+    at different depths per tool: attack nests it under `target`, update_character returns it flat)."""
+    if isinstance(obj, dict):
+        yield obj
+        for v in obj.values():
+            yield from _arc_iter_dicts(v)
+    elif isinstance(obj, list):
+        for v in obj:
+            yield from _arc_iter_dicts(v)
+
+
+def _arc_essential_cast(state: dict) -> dict[str, str]:
+    """{character_id: name} for the cast the arc CANNOT lose: every quest's giver, plus any NPC an
+    objective NAMES. Derived from the campaign state (giver_id + the objective strings), never
+    hard-coded — a different seed yields a different essential cast.
+
+    Objective matching is word-boundary on the NPC's name AND on each of its ≥4-letter name words,
+    so "Return to Maera for the reward" binds to the character "Keeper Maera"."""
+    chars = state.get("characters", {}) or {}
+    npcs = {cid: str(ch.get("name") or "") for cid, ch in chars.items()
+            if isinstance(ch, dict) and ch.get("kind") == "npc"}
+    quests = state.get("quests", {}) or {}
+    quest_iter = quests.values() if isinstance(quests, dict) else quests
+    essential: dict[str, str] = {}
+    for q in quest_iter:
+        if not isinstance(q, dict):
+            continue
+        gid = q.get("giver_id")
+        if gid and gid in chars:
+            essential[gid] = str((chars[gid] or {}).get("name") or gid)
+        objectives = " | ".join(str(o) for o in (q.get("objectives") or []))
+        if not objectives:
+            continue
+        for cid, name in npcs.items():
+            if not name:
+                continue
+            needles = [name] + [w for w in re.split(r"\W+", name) if len(w) >= 4]
+            if any(re.search(rf"\b{re.escape(n)}\b", objectives, re.I) for n in needles):
+                essential[cid] = name
+    return essential
+
+
+# The mutations that can END an essential NPC. A read (get_character, find_npcs) never can, so the
+# scan is scoped to writes — a narrow list keeps a busy transcript from false-firing.
+_ARC_LETHAL_TOOLS = (
+    "update_character", "apply_damage", "damage_character", "set_hp", "kill_character",
+    "remove_character", "attack", "cast_spell", "use_action", "remove_combatant",
+)
+
+
+def _arc_death_signal(inp: dict, obj: object, cid: str, name: str) -> str:
+    """A non-empty reason when this call ENDS the character ``cid``/``name`` — either its INPUT
+    declares the death (an update_character patch with dead=true / hp<=0) or its RESULT reports the
+    character at 0 hp / dead. Empty string otherwise (no signal ⇒ never a FAIL)."""
+    patch = inp.get("patch") if isinstance(inp.get("patch"), dict) else inp
+    if isinstance(patch, dict) and json.dumps(inp, default=str).find(cid) >= 0:
+        if patch.get("dead") is True:
+            return "input patch dead=true"
+        for k in ("current_hp", "hp", "new_hp"):
+            v = patch.get(k)
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and v <= 0:
+                return f"input {k}={v}"
+    for m in _arc_iter_dicts(obj):
+        if not (m.get("id") == cid or m.get("character_id") == cid
+                or (name and m.get("name") == name)):
+            continue
+        if m.get("dead") is True:
+            return "result dead=true"
+        v = m.get("current_hp")
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and v <= 0:
+            return "result current_hp=0"
+    return ""
+
+
 def _arc_beat_label(beat: object) -> str:
     return f"beat {beat}" if beat is not None else "beat ?"
 
@@ -1849,6 +1924,47 @@ def main() -> int:
             if isinstance(warn, dict):
                 false_ends.append(f"{_arc_beat_label(bt)} ({warn.get('count')} alive"
                                   + (", resolution declared" if warn.get("resolved") else "") + ")")
+        # (F) THE ESSENTIAL CAST. Measured on the 2026-09-02 pass-2 playthrough: the DM killed
+        # Keeper Maera at beat 15, three beats after the boss died — objective 4 ("Return to Maera
+        # for the reward") became unreachable and the quest ended softlocked-OPEN with 3/4 done.
+        # A quest giver is not a prop the reversal may spend.
+        essential = _arc_essential_cast(state)
+        if essential:
+            killed: dict[str, tuple[object, str, str]] = {}   # cid -> (beat, name, reason)
+            for bt, short, inp, obj, err in arc_events:
+                if short not in _ARC_LETHAL_TOOLS or err:
+                    continue
+                for cid, name in essential.items():
+                    if cid in killed:
+                        continue
+                    why = _arc_death_signal(inp, obj, cid, name)
+                    if why:
+                        killed[cid] = (bt, name, f"{short}: {why}")
+            if killed:
+                chk("arc_essential_npc_killed", False,
+                    "; ".join(f"essential NPC {name} killed at {_arc_beat_label(bt)} ({why})"
+                              for bt, name, why in killed.values())
+                    + " — the quest giver and every NPC an objective names must survive until the "
+                      "quest resolves, or the reward path closes and the arc cannot finish",
+                    fatal=True)
+
+            # The SOFTLOCK itself, read off the final snapshot: an unresolved quest plus a dead
+            # essential NPC is an arc that can no longer complete, however it got there.
+            chars_now = state.get("characters", {}) or {}
+            dead_essential = [n for cid, n in essential.items()
+                              if isinstance(chars_now.get(cid), dict)
+                              and (chars_now[cid].get("dead") is True
+                                   or (chars_now[cid].get("current_hp") or 0) <= 0)]
+            _quests = state.get("quests", {}) or {}
+            _q_iter = _quests.values() if isinstance(_quests, dict) else _quests
+            unresolved = [str(q.get("title") or q.get("id") or "?") for q in _q_iter
+                          if isinstance(q, dict) and str(q.get("status") or "").lower() == "active"]
+            if dead_essential and unresolved:
+                chk("arc_quest_softlocked_on_dead_npc", False,
+                    f"quest(s) {unresolved} are still ACTIVE at the end of the run while essential "
+                    f"NPC(s) {dead_essential} are dead — the remaining objectives can never be "
+                    f"completed; this is a softlock, not an unfinished arc", fatal=True)
+
         if false_ends:
             chk("arc_end_combat_live_hostiles", False,
                 f"end_combat returned warning_live_hostiles at {'; '.join(false_ends)} — the fight "

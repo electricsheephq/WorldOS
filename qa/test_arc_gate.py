@@ -63,13 +63,15 @@ def _clean_events() -> list[dict]:
 
 
 def _run_gate(tmp_path: Path, events: list[dict], *, arc: bool = True,
-              manifest: dict | None = SEED_MANIFEST) -> tuple[int, str]:
+              manifest: dict | None = SEED_MANIFEST,
+              state_obj: dict | None = None) -> tuple[int, str]:
     run = tmp_path / "run.jsonl"
     run.write_text("\n".join(json.dumps(e) for e in events) + "\n", encoding="utf-8")
     state = tmp_path / "state.json"
     # A minimal snapshot: the pre-existing gates are all null-guarded / scope-guarded on it, so an
     # empty-but-valid state keeps this suite focused on the ARC rows.
-    state.write_text(json.dumps({"characters": {}, "locations": {}, "quests": []}), encoding="utf-8")
+    state.write_text(json.dumps(state_obj or {"characters": {}, "locations": {}, "quests": []}),
+                     encoding="utf-8")
     env = {"PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}
     if arc:
         env["WORLDOS_GATE_ARC"] = "1"
@@ -254,3 +256,101 @@ def test_all_four_rules_fail_together(tmp_path):
     names = {"arc_no_add_location", "arc_only_seeded_species",
              "arc_end_combat_live_hostiles", "arc_no_reroll_character"}
     assert names <= {n for n in names if any(n in r for r in _arc_fail_rows(out))}, out
+
+
+# ── 5. the ESSENTIAL cast (clause F) ───────────────────────────────────────────────────────────
+# The seeded arc, as the snapshot records it: Keeper Maera is the quest giver AND is named by the
+# last objective; Merchant Oswin is an NPC no objective names (so NOT essential).
+MAERA = "char_maera"
+OSWIN = "char_oswin"
+
+
+def _state_with_quest(status: str = "active", maera_dead: bool = False) -> dict:
+    return {
+        "locations": {},
+        "characters": {
+            MAERA: {"kind": "npc", "name": "Keeper Maera",
+                    "dead": maera_dead, "current_hp": 0 if maera_dead else 1},
+            OSWIN: {"kind": "npc", "name": "Merchant Oswin", "dead": False, "current_hp": 1},
+        },
+        "quests": {"q1": {"id": "q1", "title": "The Crypt Below", "status": status,
+                          "giver_id": MAERA,
+                          "objectives": ["Speak with Keeper Maera", "Clear the crypt of goblins",
+                                         "Slay the goblin boss", "Return to Maera for the reward"],
+                          "completed_objectives": []}},
+    }
+
+
+def test_killing_the_quest_giver_fails_with_beat(tmp_path):
+    ev = _clean_events() + [
+        _beat(15), _call("k1", "update_character",
+                         {"character_id": MAERA, "patch": {"dead": True, "current_hp": 0}}),
+        _result("k1", {"id": MAERA, "name": "Keeper Maera", "dead": True, "current_hp": 0}),
+    ]
+    rc, out = _run_gate(tmp_path, ev, state_obj=_state_with_quest("active", maera_dead=True))
+    assert rc == 1, out
+    row = [r for r in _arc_fail_rows(out) if "arc_essential_npc_killed" in r]
+    assert row, out
+    assert "beat 15" in row[0] and "Keeper Maera" in row[0], row[0]
+
+
+def test_killing_the_giver_via_an_attack_result_is_caught(tmp_path):
+    """The DM need not patch her dead — an attack whose RESULT reports her at 0 hp is the same kill."""
+    ev = _clean_events() + [
+        _beat(15), _call("a1", "attack", {"attacker_id": "char_boss", "defender_id": MAERA}),
+        _result("a1", {"hit": True, "target": {"id": MAERA, "name": "Keeper Maera",
+                                               "current_hp": 0, "dead": True}}),
+    ]
+    _rc, out = _run_gate(tmp_path, ev, state_obj=_state_with_quest("active", maera_dead=True))
+    row = [r for r in _arc_fail_rows(out) if "arc_essential_npc_killed" in r]
+    assert row and "beat 15" in row[0], out
+
+
+def test_softlock_row_fires_when_the_quest_is_open_and_the_giver_is_dead(tmp_path):
+    """State-only: however she died, an ACTIVE quest plus a dead giver is an arc that can no longer
+    complete. This is the row that catches a kill the tool-call scan missed."""
+    _rc, out = _run_gate(tmp_path, _clean_events(),
+                         state_obj=_state_with_quest("active", maera_dead=True))
+    row = [r for r in _arc_fail_rows(out) if "arc_quest_softlocked_on_dead_npc" in r]
+    assert row and "The Crypt Below" in row[0], out
+
+
+def test_no_softlock_row_when_the_quest_completed(tmp_path):
+    """A giver who dies AFTER the quest resolves is a legitimate ending, not a softlock."""
+    _rc, out = _run_gate(tmp_path, _clean_events(),
+                         state_obj=_state_with_quest("completed", maera_dead=True))
+    assert not [r for r in _arc_fail_rows(out) if "arc_quest_softlocked_on_dead_npc" in r], out
+
+
+def test_a_non_essential_npc_may_die(tmp_path):
+    """Merchant Oswin is named by no objective and gives no quest — killing him is allowed, and
+    must not fire either row (the rule protects the arc, it does not make NPCs immortal)."""
+    ev = _clean_events() + [
+        _beat(9), _call("k1", "update_character",
+                        {"character_id": OSWIN, "patch": {"dead": True, "current_hp": 0}}),
+        _result("k1", {"id": OSWIN, "name": "Merchant Oswin", "dead": True, "current_hp": 0}),
+    ]
+    _rc, out = _run_gate(tmp_path, ev, state_obj=_state_with_quest("active"))
+    assert not [r for r in _arc_fail_rows(out) if "arc_essential" in r or "softlock" in r], out
+
+
+def test_reading_or_healing_the_giver_is_not_a_kill(tmp_path):
+    ev = _clean_events() + [
+        _beat(4), _call("g1", "get_character", {"character_id": MAERA}),
+        _result("g1", {"id": MAERA, "name": "Keeper Maera", "current_hp": 1, "dead": False}),
+        _call("h1", "update_character", {"character_id": MAERA, "patch": {"current_hp": 6}}),
+        _result("h1", {"id": MAERA, "name": "Keeper Maera", "current_hp": 6, "dead": False}),
+    ]
+    _rc, out = _run_gate(tmp_path, ev, state_obj=_state_with_quest("active"))
+    assert not [r for r in _arc_fail_rows(out) if "arc_essential_npc_killed" in r], out
+
+
+def test_essential_cast_stands_down_without_a_quest(tmp_path):
+    """No quest in the snapshot ⇒ no derivable essential cast ⇒ NO row (never a guessed FAIL)."""
+    ev = _clean_events() + [
+        _beat(15), _call("k1", "update_character",
+                         {"character_id": MAERA, "patch": {"dead": True}}),
+        _result("k1", {"id": MAERA, "dead": True}),
+    ]
+    _rc, out = _run_gate(tmp_path, ev)
+    assert "arc_essential_npc_killed" not in out, out

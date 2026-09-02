@@ -54,6 +54,7 @@ steps:
         ../../qa/test_fact_fidelity.py
         ../../qa/test_recap_fidelity.py
         ../../qa/test_assert_behavioral.py
+        ../../qa/test_arc_gate.py
         ../../qa/test_distill.py
         ../../qa/test_story_readout_coverage.py
         ../../qa/test_story_readout_outcome.py

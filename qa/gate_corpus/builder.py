@@ -76,7 +76,8 @@ TODO_REASONS = {
 # Covered instead by qa/test_arc_gate.py, which drives this same gate CLI over tiny synthetic
 # transcripts with the toggles set and asserts each row is a [FAIL] naming its beat.
 for _arc_check in ("arc_no_reroll_character", "arc_no_add_location",
-                   "arc_only_seeded_species", "arc_end_combat_live_hostiles"):
+                   "arc_only_seeded_species", "arc_end_combat_live_hostiles",
+                   "arc_essential_npc_killed", "arc_quest_softlocked_on_dead_npc"):
     TODO_REASONS[_arc_check] = (
         "seeded-arc lens: opt-in via WORLDOS_GATE_ARC (+ WORLDOS_ARC_SEED_SPECIES for the species "
         "rule) — env toggles and a 5th artifact path that _write_case's 4 positional argv "
