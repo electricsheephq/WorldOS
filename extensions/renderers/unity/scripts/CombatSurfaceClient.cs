@@ -724,14 +724,29 @@ public class CombatSurfaceClient : MonoBehaviour
     // must read as 0/false, never throw inside the poll's apply path.
     static int TkInt(System.Collections.Generic.Dictionary<string, object> tk, string key)
     {
-        if (tk == null || !tk.ContainsKey(key) || tk[key] == null) return 0;
-        try { return System.Convert.ToInt32(tk[key]); } catch { return 0; }
+        object v; if (tk == null || !tk.TryGetValue(key, out v) || v == null) return 0;
+        // Only the conversion failures System.Convert can actually raise on a boxed Json value are
+        // swallowed — anything else is a real bug and must reach the #1777 apply guard's log.
+        try { return System.Convert.ToInt32(v); }
+        catch (System.FormatException) { return 0; }
+        catch (System.InvalidCastException) { return 0; }
+        catch (System.OverflowException) { return 0; }
     }
     static bool TkBool(System.Collections.Generic.Dictionary<string, object> tk, string key)
     {
-        if (tk == null || !tk.ContainsKey(key) || tk[key] == null) return false;
-        if (tk[key] is bool b) return b;
-        try { return System.Convert.ToBoolean(tk[key]); } catch { return false; }
+        object v; if (tk == null || !tk.TryGetValue(key, out v) || v == null) return false;
+        if (v is bool b) return b;
+        try { return System.Convert.ToBoolean(v); }
+        catch (System.FormatException) { return false; }
+        catch (System.InvalidCastException) { return false; }
+        catch (System.OverflowException) { return false; }
+    }
+    // String field reader — one lookup, and a non-string value reads as the fallback (the runtime Json
+    // parser boxes every value, so `as string` on a number would otherwise silently yield null).
+    static string TkStr(System.Collections.Generic.Dictionary<string, object> tk, string key, string fallback)
+    {
+        object v; if (tk == null || !tk.TryGetValue(key, out v)) return fallback;
+        return v as string ?? fallback;
     }
 
     // Populate _impassable + _lastPath from a raw /combat-surface OR /move response JSON (the latter nests
@@ -771,9 +786,10 @@ public class CombatSurfaceClient : MonoBehaviour
             // mover. Only re-derived when the payload actually carries `stage` (every /combat-surface poll
             // does; a walk_to_cell /move response does NOT), so a walk response never clobbers the rest
             // state the last poll established. A combat surface carries mode:"combat" -> _restMode false.
-            if (root.ContainsKey("stage") && root["stage"] is System.Collections.Generic.Dictionary<string, object> stage)
+            object stageObj;
+            if (root.TryGetValue("stage", out stageObj) && stageObj is System.Collections.Generic.Dictionary<string, object> stage)
             {
-                string stageMode = stage.ContainsKey("mode") ? stage["mode"] as string : "";
+                string stageMode = TkStr(stage, "mode", "");
                 _restMode = stageMode == "rest";
                 // #1752: a combat stage is now ALWAYS populated (#1778) and is the authoritative placement +
                 // HUD record — parse it exactly like the rest stage so combat re-places every token from every
@@ -782,17 +798,26 @@ public class CombatSurfaceClient : MonoBehaviour
                 _restMoverId = "";
                 _npcAtCell.Clear();                                            // WALKABLE-SLICE-V1 (item 2): rebuilt from this stage
                 _stageCast.Clear();                                            // Option A: rebuilt from this stage
-                if ((_restMode || _stageCombat) && stage.ContainsKey("tokens") && stage["tokens"] is System.Collections.Generic.List<object> stoks)
+                string pcKindId = "", firstPartyId = "";                       // #1760: PC candidates for this stage
+                object stoksObj;
+                if ((_restMode || _stageCombat) && stage.TryGetValue("tokens", out stoksObj) && stoksObj is System.Collections.Generic.List<object> stoks)
                 {
                     foreach (var e in stoks)
                     {
                         var tk = e as System.Collections.Generic.Dictionary<string, object>; if (tk == null) continue;
-                        string role = tk.ContainsKey("rest_role") ? tk["rest_role"] as string : "";
-                        string id = tk.ContainsKey("id") ? tk["id"] as string : "";
-                        string kind = tk.ContainsKey("kind") ? tk["kind"] as string : "";
-                        // #1760: latch the party PC once — a combat stage still carries kind/rest_role, so the
-                        // marker survives the rest -> combat transition without a second source of truth.
-                        if (string.IsNullOrEmpty(_pcId) && !string.IsNullOrEmpty(id) && (kind == "player" || role == "party")) _pcId = id;
+                        string role = TkStr(tk, "rest_role", "");
+                        string id = TkStr(tk, "id", "");
+                        string kind = TkStr(tk, "kind", "");
+                        // #1760 (review P1): the PC is the token whose KIND is "player" — NOT "the first
+                        // party member". Every recruited companion is emitted with rest_role "party" too
+                        // (viewer/server.py _emit), so a membership test tinted the whole party gold and,
+                        // when a companion preceded the PC in party order, latched onto the companion.
+                        // `kind` is unique and ships on rest AND combat stages, so the marker still survives
+                        // the transition without a second source of truth.
+                        if (kind == "player" && !string.IsNullOrEmpty(id) && string.IsNullOrEmpty(pcKindId)) pcKindId = id;
+                        // Legacy fallback ONLY: a surface that ships no `kind` at all. A token that declares
+                        // some OTHER kind is definitively not the PC and can never win this slot.
+                        else if (string.IsNullOrEmpty(kind) && role == "party" && !string.IsNullOrEmpty(id) && string.IsNullOrEmpty(firstPartyId)) firstPartyId = id;
                         // Option A: render EVERY present stage token (party + npc) as a client actor, through the
                         // same spawn/pose/ground pipeline combat tokens use. Stage tokens carry name/team/kind
                         // (server _emit) so SpawnActor resolves the right model; rest cast are all team "ally".
@@ -800,8 +825,8 @@ public class CombatSurfaceClient : MonoBehaviour
                         {
                             _stageCast.Add(new Tok {
                                 id = id,
-                                name = tk.ContainsKey("name") ? tk["name"] as string : id,
-                                team = tk.ContainsKey("team") ? tk["team"] as string : "ally",
+                                name = TkStr(tk, "name", id),
+                                team = TkStr(tk, "team", "ally"),
                                 kind = kind, restRole = role,
                                 x = System.Convert.ToInt32(tk["x"]), y = System.Convert.ToInt32(tk["y"]),
                                 // A REST stage keeps the pre-#1752 placeholder vitals (hp 1/1, no turn) so the
@@ -811,7 +836,7 @@ public class CombatSurfaceClient : MonoBehaviour
                                 hp = _stageCombat ? TkInt(tk, "hp") : 1,
                                 hpMax = _stageCombat ? TkInt(tk, "max_hp") : 1,
                                 hpKnown = _stageCombat && TkBool(tk, "hp_known"),
-                                health = _stageCombat ? (tk.ContainsKey("health") ? tk["health"] as string : "") : "",
+                                health = _stageCombat ? TkStr(tk, "health", "") : "",
                             });
                         }
                         // The walk-mover + parley-target maps are REST affordances only — a combat stage feeds
@@ -824,6 +849,11 @@ public class CombatSurfaceClient : MonoBehaviour
                         if (role != "party") continue;                        // party tokens walk; npc tokens are talk-targets
                         if (!string.IsNullOrEmpty(id) && string.IsNullOrEmpty(_restMoverId)) _restMoverId = id; // first party token = deterministic lead PC
                     }
+                    // Resolved after the WHOLE stage is read, so party order cannot decide the marker: a
+                    // player-kind token re-asserts the PC on every surface; the legacy id only fills an
+                    // as-yet-unlatched _pcId.
+                    if (!string.IsNullOrEmpty(pcKindId)) _pcId = pcKindId;
+                    else if (string.IsNullOrEmpty(_pcId)) _pcId = firstPartyId;
                 }
             }
             // WALKABLE-SLICE-V1 (item 1): parse the authored doorway cells (server _combat_doors). Guarded on
@@ -1143,10 +1173,30 @@ public class CombatSurfaceClient : MonoBehaviour
         var cast = (_stageCombat && _stageCast.Count > 0) ? _stageCast.ToArray()
                  : (s.tokens.Length > 0 ? s.tokens
                  : (_restMode ? _stageCast.ToArray() : System.Array.Empty<Tok>()));
+        // #1752 (review P1): a COMBAT stage deliberately still carries residents who are NOT in this
+        // fight's order — a live monster sharing the room keeps its rest placement so the room does not
+        // empty out when initiative is rolled (viewer/tests/test_scene_at_rest_stage.py::
+        // test_combat_mode_still_shows_a_resident_monster). Top-level `tokens` IS the order. So: RENDER
+        // the whole stage, but drive the roster — HUD, turn marker, foe targeting — from the order alone.
+        // Before this, a bystander overwrote _foeId and PostAttack sent a target the engine rejects.
+        var roster = cast;
+        if (_stageCombat && s.tokens.Length > 0)
+        {
+            var order = new System.Collections.Generic.HashSet<string>();
+            foreach (var t in s.tokens) if (t != null && !string.IsNullOrEmpty(t.id)) order.Add(t.id);
+            var inFight = new System.Collections.Generic.List<Tok>();
+            foreach (var t in cast) if (t != null && !string.IsNullOrEmpty(t.id) && order.Contains(t.id)) inFight.Add(t);
+            // Empty intersection = a stage/board id mismatch this client cannot reconcile; keep the old
+            // whole-cast behaviour rather than blanking the HUD mid-fight.
+            if (inFight.Count > 0) roster = inFight.ToArray();
+        }
         // #1441: rebuild the occupied-cell set (every token's cell) for client-side click pre-validation.
         // #Phase3: also rebuild the foe-cell set so the overlay hover reads red on an attackable cell.
         _occupied.Clear(); _foeCells.Clear(); _foeIds.Clear();
-        foreach (var t in cast) if (t != null) { int k = CellKey(t.x, t.y); _occupied.Add(k); if (t.team == "foe") { _foeCells.Add(k); if (!string.IsNullOrEmpty(t.id)) _foeIds.Add(t.id); } }
+        // Every present body blocks its cell (a bystander is still standing there), but only a combatant
+        // is an attack target, so the foe sets come from the roster.
+        foreach (var t in cast) if (t != null) _occupied.Add(CellKey(t.x, t.y));
+        foreach (var t in roster) if (t != null && t.team == "foe") { _foeCells.Add(CellKey(t.x, t.y)); _foeId = t.id; _foeX = t.x; _foeY = t.y; if (!string.IsNullOrEmpty(t.id)) _foeIds.Add(t.id); }
         var present = new System.Collections.Generic.HashSet<string>();
         foreach (var t in cast)
         {
@@ -1158,8 +1208,6 @@ public class CombatSurfaceClient : MonoBehaviour
             // #1582: remember the first cast token as the QA channel's actor-of-interest (the party
             // PC in rest mode) so /debug can report its viewport position for the walkability gate.
             if (string.IsNullOrEmpty(_qaActorId) && !string.IsNullOrEmpty(t.id)) _qaActorId = t.id;
-            bool foe = (t.team == "foe");
-            if (foe) { _foeId = t.id; _foeX = t.x; _foeY = t.y; }
             Transform a = FindActor(t.id);
             // #1441: reposition through UpdateActor — grounds+snaps on first sight, GLIDES on a changed
             // engine cell (walk clip + moving rings), no-ops on the same cell. Only engine-confirmed cells.
@@ -1200,7 +1248,7 @@ public class CombatSurfaceClient : MonoBehaviour
         // (the ring already exists per token; only its RGB was hard-coded). UpdateTurnPulse drives alpha +
         // scale only, so the pulse and this tint compose instead of fighting.
         ApplyTokenRings(cast);
-        if (isCombat) ApplyCombat(cast);
+        if (isCombat) ApplyCombat(roster);   // HUD/turn/damage: combatants only
         else { _currentId = ""; _currentName = ""; RestNamePlates(cast); }   // Option A: rest cast — name plates, no HP/turn
         // #Phase3: keep the overlay in sync with the new surface — rebuild the quad pool if the grid
         // extents changed (rest rooms are non-14x11), then repaint per-cell tints for the new occupancy.
@@ -1259,7 +1307,7 @@ public class CombatSurfaceClient : MonoBehaviour
             if (t == null || string.IsNullOrEmpty(t.id)) continue;
             // #1752: hp_known is the disclosure flag the surface ships; a token whose HP the party has not
             // earned still gets its plate, never a bar built from placeholder numbers.
-            if (t.hpMax <= 0 || (t.hpKnown == false && !string.IsNullOrEmpty(t.health)))
+            if (t.hpMax <= 0 || (!t.hpKnown && !string.IsNullOrEmpty(t.health)))
             {
                 // #1482: foes hide their HP (viewer gates hp/hpMax on hp_known — a D&D DM-screen posture), so
                 // they never enter the HP-bar path and never got a name plate — the reason a first-timer took
@@ -3738,7 +3786,7 @@ public class CombatSurfaceClient : MonoBehaviour
             // 0.6379 -> 0.2931 and turned that standing gate RED. The foe read (red pip + foe contact decal)
             // already exists; the PC marker is the only thing #1760 is missing, so only the PC is touched.
             if (t == null || string.IsNullOrEmpty(t.id)) continue;
-            if (!(t.id == _pcId || t.kind == "player" || t.restRole == "party")) continue;
+            if (string.IsNullOrEmpty(_pcId) || t.id != _pcId) continue;   // exactly one gold actor: the PC
             TintDecal("Actor_" + t.id + "_Ring", new Color(1f, 0.86f, 0.30f));
             TintDecal("Actor_" + t.id + "_Pip", new Color(1f, 0.82f, 0.16f));
         }
