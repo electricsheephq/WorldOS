@@ -320,7 +320,11 @@ def test_visual_registry_bands_are_0_10_scale():
     for c in r["controls"].values():
         assert c["band"] == cb.control_band(c["anchor"], noise=1.2, scale_max=10.0)
         assert c["band"][1] <= 10.0 and c["class"] == "room"
-    assert len(r["controls"]) == 12  # 13 frames minus the 1 excluded defective
+    # 13 frames minus the 4 disclosed-defective bg2ee frames (2026-07-08 panel + 2026-07-09 audit) —
+    # the builder owns the exclusion list, so this count can only change with an audited decision.
+    assert len(r["controls"]) == 9
+    assert set(r["excluded"]) == set(build_visual_controls._EXCLUDED)
+    assert len(r["excluded"]) == 4
 
 
 def test_committed_visual_registry_matches_builder():
@@ -332,6 +336,7 @@ def test_committed_visual_registry_matches_builder():
         reg = json.loads(json.dumps(reg))
         for c in reg["controls"].values():
             c.pop("reference_frame_present", None)
+            c.pop("reference_frame", None)  # mount-dependent (WORLDOS_REFS_DIR); identity = file + provenance
         return reg
     assert _strip(committed)["controls"] == _strip(built)["controls"]
 

@@ -32,6 +32,7 @@ read from the pixels), only ``reference_frame_present`` is stamped false for the
 from __future__ import annotations
 
 import argparse
+import os
 import hashlib
 import json
 import sys
@@ -46,7 +47,7 @@ from control_band import control_band  # noqa: E402 — shared with build_artifa
 # The visual-critic reference frames live on the LEXAR spike drive (INTERNAL-only calibration set,
 # never shipped). A control's identity is intrinsic (its anchor/band/provenance), so the registry is
 # built from this manifest even when the drive is unmounted — only presence is probed.
-DEFAULT_REFS_DIR = Path("/Volumes/LEXAR/WorldOS-Unity-spike/refs")
+DEFAULT_REFS_DIR = Path(os.environ.get("WORLDOS_REFS_DIR", "/Users/m1/Codex/worldos-refs"))  # off-repo by design
 IDENTITY_PATH = QA_DIR / "visual_controls_identity.json"
 
 # The 0-10 visual panel scale (vs the 1-5 text rubric) — passed to the SHARED band helper.
@@ -82,16 +83,27 @@ def _frame_hash(filename: str) -> str:
 # The registered visual controls. Each is a REAL shipped plate (game = the painterly bar it exemplifies)
 # with a thematic tag for panel selection. class="room" — the visual class promote.py's gate serves
 # today (a backdrop plate is a room-class artifact); the field mirrors the text registry's per-class key.
-# bg2ee_fortress_party_tactical_02.jpg is intentionally ABSENT (disclosed-defective; see module docstring).
+# Disclosed-DEFECTIVE frames, excluded from the registry with the audit rationale (2026-07-08 panel +
+# the 2026-07-09 plate-style-regression audit). The builder owns this list so regenerating the
+# registry can never re-admit an audited-out control (review round on #1706).
+_EXCLUDED: dict[str, str] = {
+    "bg2ee_fortress_party_tactical_02.jpg":
+        "disclosed-defective control (baked-in UI chrome + wrong scene; 5/5 scorers flagged, scored 2-3/10 for reasons unrelated to painterly craft) \u2014 backdrop-cadence-20260708 market_square panel. A defective plate can never be a registered control.",
+    "bg2ee_forest_party_tactical_01.jpg":
+        "disclosed-defective control (full gameplay screenshot with baked-in UI chrome \u2014 portrait rail, action bar, dialogue text box \u2014 not a UI-free plate crop, violating the calibration protocol's own 'comparable resolution/crop/UI-free' requirement) \u2014 found during the plate-style-regression audit (2026-07-09) camp_clearing_night re-panel: scorer flagged it 1/10 for reasons unrelated to painterly craft. It had been registered as an active control (tag outdoor_forest) despite this defect predating this audit \u2014 removed from `controls` below; a defective plate can never be a registered control.",
+    "bg2ee_cavern_darkzone_lighting_03.jpg":
+        "disclosed-defective control \u2014 SAME defect class, found by direct visual inspection during the plate-style-regression audit (2026-07-09), not by a scorer this round: full gameplay screenshot with baked-in UI chrome (portrait rail, action bar, on-screen quest-text overlay). Never actually used as a panel control yet, so no scorer had flagged it, but it fails the calibration protocol's UI-free requirement on inspection. Removed from `controls` below.",
+    "bg2ee_temple_combat_lighting_04.jpg":
+        "disclosed-defective control \u2014 SAME defect class, found by direct visual inspection during the plate-style-regression audit (2026-07-09): full gameplay screenshot with baked-in UI chrome (portrait rail, action bar, floating combat-log text 'Lizard Man Elite did 10 damage to Gallus'). Removed from `controls` below. NOTE: with this entry, all 4 of the registry's baldurs-gate-2-ee controls (forest, fortress, cavern, temple) are now confirmed UI-chrome-contaminated and excluded \u2014 the whole BG2EE bucket needs re-sourcing (cropped, UI-free frames) before it can serve as a control again; the poe2_* and disco_* buckets were spot-checked (poe2_ruins_brazier_integration_01.jpg confirmed clean) and are not implicated by this finding, but were not exhaustively re-audited.",
+}
+
+# The four _EXCLUDED bg2ee frames are intentionally ABSENT from _FRAMES.
 _FRAMES: list[dict] = [
     {"file": "poe2_ruins_brazier_integration_01.jpg", "game": "pillars-of-eternity-2", "tag": "ruins_warm_key"},
     {"file": "poe2_tavern_interior_combat_02.jpg", "game": "pillars-of-eternity-2", "tag": "tavern_interior"},
     {"file": "poe2_cliff_party_brushwork_03.jpg", "game": "pillars-of-eternity-2", "tag": "outdoor_cliff"},
     {"file": "poe2_market_interior_lighting_04.jpg", "game": "pillars-of-eternity-2", "tag": "market_lit"},
     {"file": "poe2_temple_interior_lighting_05.jpg", "game": "pillars-of-eternity-2", "tag": "temple_cool_key"},
-    {"file": "bg2ee_forest_party_tactical_01.jpg", "game": "baldurs-gate-2-ee", "tag": "outdoor_forest"},
-    {"file": "bg2ee_cavern_darkzone_lighting_03.jpg", "game": "baldurs-gate-2-ee", "tag": "dark_zone"},
-    {"file": "bg2ee_temple_combat_lighting_04.jpg", "game": "baldurs-gate-2-ee", "tag": "combat_lit_interior"},
     {"file": "disco_whirling_plaza_brushwork_01.jpg", "game": "disco-elysium", "tag": "plaza_brushwork"},
     {"file": "disco_village_integration_02.jpg", "game": "disco-elysium", "tag": "outdoor_integration"},
     {"file": "disco_cafeteria_bar_interior_03.jpg", "game": "disco-elysium", "tag": "bar_interior"},
@@ -135,12 +147,7 @@ def build(refs_dir: Path) -> dict:
         "noise_law": NOISE_LAW,
         "scale_max": SCALE_MAX,
         "band_ruler": ruler,
-        "excluded": {
-            "bg2ee_fortress_party_tactical_02.jpg":
-                "disclosed-defective control (baked-in UI chrome + wrong scene; 5/5 scorers flagged, "
-                "scored 2-3/10 for reasons unrelated to painterly craft) — backdrop-cadence-20260708 "
-                "market_square panel. A defective plate can never be a registered control.",
-        },
+        "excluded": dict(_EXCLUDED),
         "controls": controls,
     }
 
