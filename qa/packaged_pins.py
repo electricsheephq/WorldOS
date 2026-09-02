@@ -35,13 +35,53 @@ def _repo_sha(repo: Path) -> str | None:
     return sha if result.returncode == 0 and sha else None
 
 
+def _repo_dirty(repo: Path) -> bool | None:
+    """True when renderer data under the repo differs from HEAD (best effort; None if unknown).
+
+    A file that `git status` lists but whose RAW bytes equal the committed blob is NOT dirty: on this Mac
+    the LFS clean filter marks byte-identical plates as modified (a filter artifact, not a data change)."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo), "status", "--porcelain", "-z", "--", str(_UNITY_RELATIVE)],
+            capture_output=True, text=True, check=False, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    entries = [e for e in result.stdout.split("\0") if e]
+    i = 0
+    while i < len(entries):
+        entry = entries[i]
+        status, path = entry[:2], entry[3:]
+        i += 1
+        if status[0] == "R" or status[1] == "R":
+            i += 1  # rename carries the old path as the next entry
+            return True
+        if status.strip() in ("M",):
+            try:
+                raw = subprocess.run(["git", "-C", str(repo), "hash-object", "--no-filters", "--", path],
+                                     capture_output=True, text=True, check=False, timeout=5).stdout.strip()
+                head = subprocess.run(["git", "-C", str(repo), "rev-parse", f"HEAD:{path}"],
+                                      capture_output=True, text=True, check=False, timeout=5).stdout.strip()
+            except (OSError, subprocess.SubprocessError):
+                return None
+            if raw and head and raw == head:
+                continue  # byte-identical to HEAD: a clean-filter artifact, not a change
+        return True
+    return False
+
+
+_MAX_HASH_BYTES = 1 << 30  # 1 GiB — a plate/sidecar is MBs; anything larger is not ours to hash
+
+
 def _base_report(app: Path, repo: Path) -> dict[str, Any]:
     return {
         "schema_version": 1,
         "ts": datetime.now(timezone.utc).isoformat(),
         "app": str(app.resolve()),
         "repo": str(repo.resolve()),
-        "repo_sha": _repo_sha(repo),
+        "repo_sha": (lambda sha, dirty: (sha + "-dirty") if (sha and dirty) else sha)(_repo_sha(repo), _repo_dirty(repo)),
+        "repo_dirty": _repo_dirty(repo),
         "rooms_requested": None,
         "rooms": [],
         "verdict": "ERROR",
@@ -83,6 +123,13 @@ def _entry_path(root: Path, value: Any) -> Path | None:
 
 
 def _sha256(path: Path) -> str:
+    # Refuse anything that is not a plain, bounded file: a symlink to a device (e.g. /dev/zero) or a socket
+    # would read forever; an oversized target is not renderer data. Raised as OSError -> main() reports ERROR/2.
+    st = path.stat()
+    if not path.is_file():
+        raise OSError(f"refusing to hash a non-regular file: {path}")
+    if st.st_size > _MAX_HASH_BYTES:
+        raise OSError(f"refusing to hash an oversized file ({st.st_size} bytes): {path}")
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
@@ -176,6 +223,13 @@ def _compare_room(
         _compare_file("plate", source_entry, packaged_entry, source_root, packaged_root, reasons)
         _compare_file("boxes", source_entry, packaged_entry, source_root, packaged_root, reasons)
         _compare_camera_pin(source_entry, packaged_entry, reasons)
+        # Every OTHER runtime field the client reads (planeSize, effects, door_hotspots, ...) must match too;
+        # keys starting with "_" are comments/provenance and are not runtime data.
+        for key in sorted(set(source_entry) | set(packaged_entry)):
+            if key in ("plate", "boxes", "cameraPin") or key.startswith("_"):
+                continue
+            if source_entry.get(key, _MISSING) != packaged_entry.get(key, _MISSING):
+                reasons.append(f"manifest field differs: {key}")
     return {"room": room, "status": "GREEN" if not reasons else "RED", "reasons": reasons}
 
 
@@ -254,6 +308,9 @@ def main(argv: list[str] | None = None) -> int:
             suffix = f" — {'; '.join(room['reasons'])}" if room["reasons"] else ""
             print(f"{room['room']}: {room['status']}{suffix}")
         drift = sum(room["status"] == "RED" for room in report["rooms"])
+        if report.get("repo_dirty"):
+            print("WARN: renderer data under the repo has uncommitted changes — repo_sha is stamped -dirty; "
+                  "parity is measured against the WORKING TREE, not that commit", file=sys.stderr)
         print(f"PINS {report['verdict']} ({drift} drift)")
 
     if args.json_path is not None:

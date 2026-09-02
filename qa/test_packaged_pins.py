@@ -156,3 +156,38 @@ def test_json_report_shape(tmp_path):
     assert "repo_sha" in payload
     assert isinstance(payload["rooms"], list)
     assert payload["verdict"] == "GREEN"
+
+
+def test_other_manifest_fields_are_compared(tmp_path):
+    app, repo = _fixture(tmp_path)
+    manifest = app / "Contents/Resources/Data/StreamingAssets/plates_manifest.json"
+    payload = json.loads(manifest.read_text())
+    payload["plates"]["tavern"]["door_hotspots"] = [{"cell": [9, 9]}]
+    manifest.write_text(json.dumps(payload))
+    report = pins.check(app, repo)
+    assert report["verdict"] == "RED"
+    assert any("manifest field differs: door_hotspots" in r for r in report["rooms"][0]["reasons"])
+
+
+def test_dirty_repo_is_recorded_not_misattributed(tmp_path, monkeypatch):
+    app, repo = _fixture(tmp_path)
+    monkeypatch.setattr(pins, "_repo_sha", lambda _r: "abc123")
+    monkeypatch.setattr(pins, "_repo_dirty", lambda _r: True)
+    report = pins.check(app, repo)
+    assert report["verdict"] == "GREEN"
+    assert report["repo_dirty"] is True and report["repo_sha"] == "abc123-dirty"
+
+
+def test_symlink_to_device_is_refused_not_hashed(tmp_path):
+    app, repo = _fixture(tmp_path)
+    manifest = app / "Contents/Resources/Data/StreamingAssets/plates_manifest.json"
+    rel = json.loads(manifest.read_text())["plates"]["tavern"]["plate"]
+    target = app / "Contents/Resources/Data/StreamingAssets" / rel
+    target.unlink()
+    target.symlink_to("/dev/zero")
+    out = tmp_path / "report.json"
+    # a device is not a regular file: the plate is reported MISSING (RED) without ever being read
+    assert pins.main([str(app), "--repo", str(repo), "--json", str(out)]) == 1
+    payload = json.loads(out.read_text())
+    assert payload["verdict"] == "RED"
+    assert any("MISSING" in r for r in payload["rooms"][0]["reasons"])
