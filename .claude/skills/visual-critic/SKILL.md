@@ -109,10 +109,10 @@ RENDER  (Unity CL pipeline: Tools/WorldOS/CL/0 → step-4 Scenario → step-5 as
   │       carry its stats into ④ synthesis alongside the verdict.
   │
   ├─② REFERENCE PICK  choose 2-3 refs/ frames matching scene.kind, **PoE2-first** (PoE2 is the bar;
-  │     a BG2 ref is added ONLY for the tactical-readability cross-check, a Disco ref ONLY for the
-  │     dark-pocket/mood cross-check): tavern→poe2_tavern (+bg2ee_temple for L5, +disco_cafeteria
-  │     for dark-pocket); outdoor→poe2_cliff (+bg2ee_forest for L5); dark→poe2_market
-  │     (+disco_office for mood, +bg2ee_cavern for L5). See refs/INDEX.md "How to use in the critic."
+  │     a Disco ref is added ONLY for the dark-pocket/mood cross-check; NO BG2EE frame — all four are
+  │     excluded as UI-chrome-contaminated, see the reference list below): tavern→poe2_tavern
+  │     (+disco_cafeteria for dark-pocket); outdoor→poe2_cliff; dark→poe2_market (+disco_office for
+  │     mood). See refs/INDEX.md "How to use in the critic."
   │
   ├─③ PANEL  fan out 6-7 LENS SUBAGENTS in parallel (Agent tool, model opus, run_in_background ok;
   │     L7 MOTION runs only when a reel was rendered). Each gets: the render path (L7 gets the reel

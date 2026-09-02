@@ -336,6 +336,7 @@ def test_committed_visual_registry_matches_builder():
         reg = json.loads(json.dumps(reg))
         for c in reg["controls"].values():
             c.pop("reference_frame_present", None)
+            c.pop("reference_frame", None)  # mount-dependent (WORLDOS_REFS_DIR); identity = file + provenance
         return reg
     assert _strip(committed)["controls"] == _strip(built)["controls"]
 
