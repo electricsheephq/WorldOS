@@ -51,7 +51,7 @@ def test_the_viewer_writes_the_exact_chat_file_the_dm_tails(tmp_path):
     line goes unanswered while both halves look correct in isolation.
     """
     script = (QA / "agent_play.sh").read_text()
-    derived = re.search(r'chat_path "\$state/([\w.]+)"', script)
+    derived = re.search(r'chat_path(?:=| )"\$state/([\w.]+)"', script)
     assert derived, "agent_play.sh no longer derives chat_path from the state dir"
     session, _p, dm = OIP.render_plists(Path("/Users/m1/worldos-owner"), tmp_path / "a.app", tmp_path / "state", Path("/opt/homebrew/bin/uv"))
     state_dir = Path(dm["ProgramArguments"][dm["ProgramArguments"].index("--state") + 1])
@@ -193,6 +193,32 @@ def test_missing_dm_heartbeat_refuses_with_last_log_lines(tmp_path):
     assert re.search(r'touch .*HEARTBEAT', script), "serve must touch its heartbeat every poll"
 
 
+def test_cold_open_starting_marker_is_accepted_only_while_dm_job_is_live(tmp_path):
+    work = tmp_path / "cold-open"
+    body = _probe_stubs(work, heartbeat=False) + '''
+DM_STARTING="$DM_RUN/serve.starting"
+mkdir -p "$DM_RUN"; touch "$DM_STARTING"
+launchctl() { echo "state = running"; }
+await_dm 60
+'''
+    result = _owner_shell(tmp_path, body)
+    assert result.returncode == 0, result.stderr
+    assert "cold open still running" in result.stdout
+
+    dead = _owner_shell(tmp_path, _probe_stubs(work, heartbeat=False) + '''
+DM_STARTING="$DM_RUN/serve.starting"; mkdir -p "$DM_RUN"; touch "$DM_STARTING"
+launchctl() { echo "state = exited"; }
+await_dm 60
+''')
+    assert dead.returncode == 1
+
+
+def test_serve_markers_are_removed_when_the_dm_loop_exits():
+    script = (QA / "agent_play.sh").read_text()
+    assert 'STARTING="$RUN_DIR/serve.starting"' in script
+    assert re.search(r"trap '[^']*rm -f[^']*HEARTBEAT[^']*STARTING[^']*' EXIT", script)
+
+
 def test_consumption_probe_waits_through_initial_zero_and_records_green(tmp_path):
     work = tmp_path / "consumption"; work.mkdir()
     ledger = work / "ledger.json"; ledger.write_text('{"gate_results": {}}')
@@ -211,9 +237,32 @@ await_consumed {shlex.quote(str(work / "surface.json"))} {shlex.quote(str(work /
 '''
     out = _owner_shell(tmp_path, body)
     assert out.returncode == 0, out.stderr
-    assert count.read_text() == "3" and "elapsed=2s" in out.stdout
+    assert count.read_text() == "3" and "elapsed=0s" in out.stdout
     assert json.loads(ledger.read_text())["gate_results"]["consumption"]["result"] == "GREEN"
     assert re.search(r"await_consumed .* 180", (QA / "owner_install.sh").read_text())
+
+
+def test_consumption_probe_uses_monotonic_elapsed_time():
+    script = (QA / "owner_install.sh").read_text()
+    assert "time.monotonic" in script
+    assert not re.search(r'ledger_consumption .* "\$i"', script)
+
+
+def test_consumption_success_refuses_if_the_ledger_cannot_be_updated(tmp_path):
+    work = tmp_path / "bad-ledger"; work.mkdir()
+    ledger = work / "ledger.json"; ledger.write_text("not-json")
+    body = f'''OWNER_REPO={shlex.quote(str(QA.parent))}
+curl() {{
+  case "$*" in
+    *session-surface*) printf '%s\n' '{{"campaign_id":"adventure_demo_v1","location":{{"id":"camp_clearing"}}}}' ;;
+    *) printf '%s\n' '{{"surf":4,"plateLocMatch":true,"camOrtho":13.0}}' ;;
+  esac
+}}
+await_consumed {shlex.quote(str(work / "surface.json"))} {shlex.quote(str(work / "debug.json"))} 180 {shlex.quote(str(ledger))}
+'''
+    out = _owner_shell(tmp_path, body)
+    assert out.returncode == 1
+    assert "could not update" in out.stderr
 
 
 def test_preflight_refuses_red_before_writing(tmp_path):

@@ -8,7 +8,7 @@ STATE="$HOME/Library/Application Support/WorldOS/owner_demo"
 AGENTS="$HOME/Library/LaunchAgents"; SESSION=org.worldos.owner-session; PLAYER=org.worldos.owner-player
 DM=org.worldos.owner-dm; DM_SCRIPT=qa/agent_play.sh
 ENGINE_PORT=8776; QA_PORT=8981; BUILD_SHA=; BUILD_REPORT=; SHA=; STAGE=; RESEED=0; PURGE=0
-DM_RUN="$STATE/agent_play_runs/owner"; DM_HEARTBEAT="$DM_RUN/serve.heartbeat"
+DM_RUN="$STATE/agent_play_runs/owner"; DM_HEARTBEAT="$DM_RUN/serve.heartbeat"; DM_STARTING="$DM_RUN/serve.starting"
 DM_LOG="$STATE/owner-dm.log"; DM_ERR="$STATE/owner-dm.err.log"
 START_PROBE_TMP=
 die(){ printf 'OWNER INSTALL REFUSED: %s\n' "$*" >&2; exit 1; }
@@ -29,7 +29,7 @@ ledger_consumption(){
   local ledger=$1 result=$2 elapsed=$3 detail=$4
   [[ -n "$ledger" && -f "$ledger" ]] || return 0
   python3 "$ROOT/qa/owner_install_verify.py" ledger "$ledger" --result "$result" \
-    --elapsed "$elapsed" --detail "$detail" || echo "OWNER INSTALL NOTE: could not update $ledger" >&2
+    --elapsed "$elapsed" --detail "$detail" || { echo "OWNER INSTALL REFUSED: could not update $ledger" >&2; return 1; }
 }
 
 reset_dm_run(){
@@ -47,8 +47,17 @@ reset_dm_run(){
 }
 
 await_dm(){
-  local secs=$1 i log
-  for ((i=0; i<secs; i++)); do [[ -f "$DM_HEARTBEAT" ]] && return 0; sleep 1; done
+  local secs=$1 i log starting=0
+  for ((i=0; i<secs; i++)); do
+    [[ -f "$DM_HEARTBEAT" ]] && return 0
+    [[ ! -f "$DM_STARTING" ]] || starting=1
+    if ((starting && i > 1)) && ! dm_running; then break; fi
+    sleep 1
+  done
+  if ((starting)) && dm_running; then
+    echo "DM cold open still running after ${secs}s; startup marker and LaunchAgent are live."
+    return 0
+  fi
   echo "OWNER INSTALL DM LOG TAIL (heartbeat missing):" >&2
   for log in "$DM_LOG" "$DM_ERR"; do
     [[ ! -f "$log" ]] || { echo "--- ${log##*/} ---" >&2; tail -n 20 "$log" >&2; }
@@ -56,24 +65,31 @@ await_dm(){
   die "DM never reached serving state (no $DM_HEARTBEAT within ${secs}s)"
 }
 
+dm_running(){ launchctl print "gui/$(id -u)/$DM" 2>/dev/null | grep -q 'state = running'; }
+monotonic_seconds(){ python3 -c 'import time; print(int(time.monotonic()))'; }
 await_consumed(){
-  local surface=$1 debug=$2 secs=$3 ledger=${4:-} i msg detail
+  local surface=$1 debug=$2 secs=$3 ledger=${4:-} start now elapsed=0 timeout msg detail
   curl -fsS --max-time 5 "http://127.0.0.1:$ENGINE_PORT/session-surface" >"$surface"
-  for ((i=0; i<=secs; i++)); do
-    curl -fsS --max-time 5 -X POST -H 'Content-Type: application/json' -d '{}' \
+  start=$(monotonic_seconds)
+  while ((elapsed < secs)); do
+    now=$(monotonic_seconds); elapsed=$((now - start)); ((elapsed < secs)) || break
+    timeout=$((secs - elapsed)); ((timeout > 5)) && timeout=5
+    curl -fsS --max-time "$timeout" -X POST -H 'Content-Type: application/json' -d '{}' \
       "http://127.0.0.1:$QA_PORT/debug" >"$debug" 2>/dev/null || printf '{}\n' >"$debug"
+    now=$(monotonic_seconds); elapsed=$((now - start))
     if python3 "$ROOT/qa/owner_install_verify.py" player-ready "$debug" >/dev/null 2>&1; then
       if msg=$(python3 "$ROOT/qa/owner_install_verify.py" consumed --surface "$surface" --debug "$debug" \
           --manifest "$OWNER_REPO/extensions/renderers/unity/plates_manifest.json" 2>&1); then
-        ledger_consumption "$ledger" GREEN "$i" "$msg"
-        printf '%s (elapsed=%ss)\n' "$msg" "$i"; cat "$debug"; echo; return 0
+        ledger_consumption "$ledger" GREEN "$elapsed" "$msg" || die "could not update consumption verdict in $ledger"
+        printf '%s (elapsed=%ss)\n' "$msg" "$elapsed"; cat "$debug"; echo; return 0
       fi
-      ledger_consumption "$ledger" REFUSED "$i" "$msg"; die "$msg"
+      ledger_consumption "$ledger" REFUSED "$elapsed" "$msg" || die "could not update consumption verdict in $ledger"
+      die "$msg"
     fi
-    ((i == secs)) || sleep 1
+    ((elapsed >= secs)) || sleep 1
   done
-  detail=$(cat "$debug"); ledger_consumption "$ledger" REFUSED "$secs" "last /debug: $detail"
-  echo "OWNER INSTALL last /debug after ${secs}s: $detail" >&2
+  detail=$(cat "$debug"); ledger_consumption "$ledger" REFUSED "$elapsed" "last /debug: $detail" || die "could not update consumption verdict in $ledger"
+  echo "OWNER INSTALL last /debug after ${elapsed}s: $detail" >&2
   die "player never reached surf>0 with plateLocMatch=true within ${secs}s"
 }
 
@@ -195,6 +211,6 @@ restore)
   start_and_probe; echo "RESTORED from $RECEIPT (worktree ${PRIOR_WT:-unchanged})";;
 refresh)
   [[ -n "$SHA" ]] || die "refresh requires --sha"; stop_agents; WT=$(resolve_worktree "$SHA"); require_dm "$OWNER_REPO"; if ((RESEED)); then RECEIPT=$(receipt_dir); mkdir -p "$RECEIPT"; [[ ! -d "$STATE" ]] || ditto "$STATE" "$RECEIPT/owner_demo"; echo "Restore state: ditto '$RECEIPT/owner_demo' '$STATE'"; reset_dm_run "$STATE"; WORLDOS_STATE_DIR="$STATE" uv run --directory "$OWNER_REPO/servers/engine" python "$OWNER_REPO/qa/seed_adventure_demo.py" "$STATE"; fi; start_and_probe; echo "REFRESHED $WT";;
-status) for L in "$SESSION" "$PLAYER" "$DM"; do launchctl print "gui/$(id -u)/$L" || true; done; echo "engine /session-surface $(engine_code)"; echo "player /debug $(player_code)"; echo "dm heartbeat $([[ -f "$DM_HEARTBEAT" ]] && echo PRESENT || echo MISSING) ($DM_HEARTBEAT)";;
+status) for L in "$SESSION" "$PLAYER" "$DM"; do launchctl print "gui/$(id -u)/$L" || true; done; echo "engine /session-surface $(engine_code)"; echo "player /debug $(player_code)"; if [[ -f "$DM_HEARTBEAT" ]]; then M=PRESENT; elif [[ -f "$DM_STARTING" ]]; then M=STARTING; else M=MISSING; fi; echo "dm heartbeat $M ($DM_HEARTBEAT)";;
 uninstall) stop_agents; rm -f "$AGENTS/$SESSION.plist" "$AGENTS/$PLAYER.plist" "$AGENTS/$DM.plist"; if ((PURGE)); then rm -rf "$TARGET_APP" "$STATE"; fi; echo "Uninstalled agents; app/state $([[ $PURGE == 1 ]] && echo purged || echo kept).";;
 *) usage;; esac
