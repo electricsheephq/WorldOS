@@ -276,6 +276,9 @@ def _arc_tool_events(events: list[dict]) -> list[tuple[object, str, dict, object
             try:
                 beat = int(ev.get("beat"))
             except (TypeError, ValueError):
+                # A malformed marker (missing/non-numeric "beat") must not abort the scan or
+                # mis-attribute the calls that follow it: keep the PREVIOUS beat and carry on, so a
+                # corrupt line costs one label rather than the whole lens.
                 pass
             continue
         for b in ((ev.get("message", {}) or {}).get("content") or []):

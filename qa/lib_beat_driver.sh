@@ -1321,6 +1321,27 @@ worldos_runbook_for_beat() {
   fi
 }
 
+# ARC MODE only: has the arc passed its SECOND objective (for the seeded fixture, "Clear the crypt
+# of goblins")? Read off the campaign snapshot the harness already keeps, so the reversal latch below
+# can honour "after the crypt is cleared OR the true midpoint, WHICHEVER IS LATER" instead of firing
+# on the beat number alone. Returns 0 (true) when any quest has >= 2 completed objectives. Fails
+# CLOSED (returns 1) on a missing/unparseable snapshot — an unfired reversal is recoverable, one
+# fired into an uncleared crypt is the failure this whole lane exists to stop.
+# $1 = STATE_DIR
+worldos_arc_second_objective_done() {
+  local snap; snap="$(worldos_snapshot_path "$1")"
+  [ -n "$snap" ] && [ -f "$snap" ] || return 1
+  python3 - "$snap" <<'ARCOBJPY' >/dev/null 2>&1
+import json, sys
+d = json.load(open(sys.argv[1], encoding="utf-8"))
+q = d.get("quests") or {}
+for quest in (q.values() if isinstance(q, dict) else q):
+    if isinstance(quest, dict) and len(quest.get("completed_objectives") or []) >= 2:
+        raise SystemExit(0)
+raise SystemExit(1)
+ARCOBJPY
+}
+
 # The runbook BODY — the moment-specific story directive (the original selector). Kept as an
 # inner helper so worldos_runbook_for_beat can prepend the F04-2 carry-forward block in ONE
 # place that BOTH opener paths (play.sh / play_party.sh) already route through.
@@ -1362,15 +1383,24 @@ _worldos_runbook_body() {
     return 0
   fi
 
-  # 3) Midpoint reversal: at ~beats/2, fire the turn — and make it COST.
-  if [ "$beat" -eq "$mid" ] && [ "$beats" -ge 4 ]; then
-    # ARC MODE (run_adventure): the seeded arc answered this directive with a NEW MONSTER three runs
-    # running (a Zombie at beat 5, a Hobgoblin at beat 7), burning 4-7 beats before the crypt was
-    # even cleared. In arc mode the reversal is a PRICE, and it waits for objective 2.
-    if [ "${WORLDOS_ARC_MODE:-0}" = "1" ]; then
-      printf '%s' "RUNBOOK — MIDPOINT REVERSAL (beat $beat ≈ the turn): the reversal is a PRICE, never a new fight or a new creature: a betrayal, a lost item, a broken promise, a time cost, a locked way back — and it fires only after the crypt is cleared (objective 2) or at the true midpoint, whichever is later. Flip the situation and let the cost land on the HERO personally (their own skin, bond, or secret), then keep driving at the throne hall. Do NOT spawn anything to deliver it, and do not smooth it over."
-      return 0
-    fi
+  # 3-arc) ARC MODE (run_adventure) midpoint reversal — a LATCH, not a beat equality. The seeded arc
+  #        answered the default directive with a NEW MONSTER three runs running (a Zombie at beat 5,
+  #        a Hobgoblin at beat 7), burning 4-7 beats before the crypt was even cleared. Here the
+  #        reversal is a PRICE and it fires on the FIRST beat at-or-after the midpoint where
+  #        objective 2 is actually done — i.e. max(midpoint, crypt cleared), which is what "whichever
+  #        is later" means. Issued exactly once (the sentinel), so a beat where the crypt is still
+  #        contested falls through to rising-action instead of a directive that says "wait" and can
+  #        then never be re-offered.
+  if [ "${WORLDOS_ARC_MODE:-0}" = "1" ] && [ "$beats" -ge 4 ] && [ "$beat" -ge "$mid" ] \
+     && [ ! -f "$state_dir/.arc_reversal_issued" ] && worldos_arc_second_objective_done "$state_dir"; then
+    : > "$state_dir/.arc_reversal_issued" 2>/dev/null || true
+    printf '%s' "RUNBOOK — MIDPOINT REVERSAL (beat $beat, the crypt is cleared and the turn is HERE): the reversal is a PRICE, never a new fight or a new creature: a betrayal, a lost item, a broken promise, a time cost, a locked way back — and it fires only after the crypt is cleared (objective 2) or at the true midpoint, whichever is later, which is NOW. Flip the situation and let the cost land on the HERO personally (their own skin, bond, or secret), then keep driving at the throne hall. Do NOT spawn anything to deliver it, and do not smooth it over."
+    return 0
+  fi
+
+  # 3) Midpoint reversal: at ~beats/2, fire the turn — and make it COST. (Arc mode uses the latch
+  #    above instead, so this branch is the duo/play wording only.)
+  if [ "$beat" -eq "$mid" ] && [ "$beats" -ge 4 ] && [ "${WORLDOS_ARC_MODE:-0}" != "1" ]; then
     printf '%s' "RUNBOOK — MIDPOINT REVERSAL (beat $beat ≈ the turn): deliver the REVERSAL now, not merely 'harder'. Flip the situation — the ally is the informant, the prize is already gone, the safe path was the trap, the cost lands on the HERO personally (their own skin, bond, or secret on the line, not abstract world-stakes). Make a real attempt FAIL or a choice exact a price that STICKS and changes the scene. This is the lever the story score keeps docking — do not smooth it over."
     return 0
   fi

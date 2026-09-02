@@ -34,13 +34,13 @@ import artifact_calibration_panel as panel  # noqa: E402
 # would silently re-version every historical engine-duo score. These pin the exact current hashes
 # (origin/main @ the HV1 branch point). If a future edit changes them, this test goes RED and forces a
 # conscious re-baseline (the same discipline test_scores_db_comparability enforces for content edits).
-EXPECTED_SC = "sc_0319fe250104"  # re-baselined 2026-09-02 (arc-addendum-v2): the SEEDED-ARC lens
+EXPECTED_SC = "sc_191aeb7c0450"  # re-baselined 2026-09-02 (arc-addendum-v2): the SEEDED-ARC lens
 # added six FATAL rows to assert_behavioral.py, which is in SCORING_CONFIG_FILES. The rows are
 # OPT-IN (WORLDOS_GATE_ARC, set only by qa/run_adventure.sh), so no engine-duo run's verdict can
 # change — but the gate file's bytes did, and sc_ hashes bytes. A deliberate restamp of an
 # additive, opt-in change, not a ruler recalibration.
 # (prior: sc_38b768e2fd1b — re-baselined #1427: release_readiness.py touched by #1417/#1414)
-EXPECTED_LC = "lc_6cb15ca9262b"  # re-baselined 2026-09-02 with sc_ above: assert_behavioral.py is in
+EXPECTED_LC = "lc_04e90e3b56d3"  # re-baselined 2026-09-02 with sc_ above: assert_behavioral.py is in
 # LENS_CONFIG_FILES too, so the same opt-in-lens byte change moves lc_ by construction.
 # (prior: lc_b031bd9f47e1 — "qa: auto-persist scores rows for the manual-append bucket",
 # commit 9f244613) — that PR only ADDS a new --scores-db CLI arg and an auto-persist call for the

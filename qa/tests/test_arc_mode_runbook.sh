@@ -43,7 +43,23 @@ grep -q 'travel_to along a connection (advance_time=True for a real journey) or 
 # --- (2)(3) ARC MODE: scene-intro + midpoint ---------------------------------------------------
 export WORLDOS_ARC_MODE=1
 A_INTRO="$(_worldos_runbook_body 1 20 "" "$STATE_DIR")"
+# The arc reversal is LATCHED on objective 2, so a snapshot where the crypt is NOT yet cleared must
+# fall through to rising-action (never the "wait for it" directive that could never be re-offered),
+# and the SAME beat with 2 completed objectives must fire it — once.
+A_MID_EARLY="$(_worldos_runbook_body 10 20 "camp" "$STATE_DIR")"
+_arc_snapshot() {  # $1 = number of completed objectives
+  local dir="$STATE_DIR/campaigns/c1"; mkdir -p "$dir"
+  python3 -c 'import json,sys
+n=int(sys.argv[2])
+objs=["Speak with Keeper Maera","Clear the crypt of goblins","Slay the goblin boss","Return to Maera for the reward"]
+json.dump({"quests":{"q1":{"id":"q1","status":"active","objectives":objs,"completed_objectives":objs[:n]}},
+           "characters":{},"locations":{}}, open(sys.argv[1],"w"))' "$dir/snapshot.json" "$1"
+}
+_arc_snapshot 1
+A_MID_UNCLEARED="$(_worldos_runbook_body 10 20 "camp" "$STATE_DIR")"
+_arc_snapshot 2
 A_MID="$(_worldos_runbook_body 10 20 "camp" "$STATE_DIR")"
+A_MID_AGAIN="$(_worldos_runbook_body 11 20 "camp" "$STATE_DIR")"
 has "RUNBOOK — SCENE-INTRO" "$A_INTRO" && ! has "named face here who SPEAKS" "$A_INTRO" \
   && has "do not mint a new face" "$A_INTRO" \
   && pass "arc scene-intro suppresses the named-face mandate" \
@@ -53,6 +69,15 @@ has "the reversal is a PRICE, never a new fight or a new creature" "$A_MID" \
   && has "Do NOT spawn anything" "$A_MID" \
   && pass "arc midpoint reversal is a price, gated on objective 2, spawn-forbidden" \
   || fail "arc midpoint reversal wording wrong: $A_MID"
+! has "MIDPOINT REVERSAL" "$A_MID_EARLY" \
+  && pass "no snapshot ⇒ latch fails CLOSED (no reversal directive)" \
+  || fail "arc reversal fired with no snapshot to prove objective 2: $A_MID_EARLY"
+! has "MIDPOINT REVERSAL" "$A_MID_UNCLEARED" \
+  && pass "crypt not cleared at the midpoint ⇒ falls through, no 'wait for it' directive" \
+  || fail "arc reversal fired before objective 2: $A_MID_UNCLEARED"
+! has "MIDPOINT REVERSAL" "$A_MID_AGAIN" \
+  && pass "arc reversal is issued exactly once (latched)" \
+  || fail "arc reversal re-fired on a later beat: $A_MID_AGAIN"
 
 # --- (4) ARC MODE travel/peopling (branch needs a live campaign to reach; assert the source) ----
 if awk '/ARC MODE \(run_adventure\): the default line names add_location/,/^    fi$/' \

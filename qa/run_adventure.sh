@@ -149,7 +149,7 @@ adv_clean_stale_artifacts() {
     "$T/$RUN.score.json" "$T/$RUN.tolkien.json" "$T/$RUN.angrydm.json" \
     "$T/$RUN.adventure.json" "$T/$RUN.latency.json" "$T/$RUN.state.json" \
     "$T/$RUN.play.md" "$T/$RUN.md" \
-    "$T/$RUN.quest.log" "$T/$RUN.quest.err" "$T/$RUN.seed.err" \
+    "$T/$RUN.quest.log" "$T/$RUN.quest.err" "$T/$RUN.seed.err" "$T/$RUN.seed_species.json" \
     "$T/$RUN.dm.err" "$T/$RUN.player.err" \
     2>/dev/null || true
   rm -f "$T/$RUN".dm.*.jsonl "$T/$RUN".player.*.jsonl 2>/dev/null || true
@@ -178,6 +178,10 @@ adv_seed() {
 # slugifies to -- so the comparison is exact, not a name-substring guess.
 SEED_SPECIES="$ROOT/$T/$RUN.seed_species.json"
 adv_write_seed_species() {
+  # Unlink FIRST: a rerun of the same run-id whose generation then fails must not leave the PREVIOUS
+  # run's manifest on disk — the gate would read a stale species list and return a false verdict
+  # while the warning below claims the spawn rule stood down.
+  rm -f "$SEED_SPECIES" 2>/dev/null || true
   python3 - "$STATE_DIR" "$SEED_SPECIES" <<'SEEDPY' || echo "[adventure] WARN: could not write the seed-species manifest; the arc spawn gate stands down" >&2
 import glob, json, re, sys
 state_dir, out = sys.argv[1:3]
