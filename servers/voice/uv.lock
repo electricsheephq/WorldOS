@@ -2027,7 +2027,7 @@ kokoro = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "mcp", specifier = ">=1.28.1" }]
+requires-dist = [{ name = "mcp", specifier = ">=1.28.1,<2" }]
 
 [package.metadata.requires-dev]
 dev = [

@@ -26,8 +26,9 @@ LOCALLY on `/Users/m1/worldos-unity` (Stdio MCP bridge:
   exists · **G2 FAIL 0/3** at the 15-beat budget (root cause: the `opus` alias now resolves to
   Opus 5, which invents extra fights and overruns a knife-edge budget; the July DM model completes
   at beat 19 under 20) → ruler raised to **20 beats** (#1722, predeclared) and the N=3 re-run at 20
-  is in flight · **G3 NAV-GREEN / VQA-ERROR** (6/6 stages arrived; scorer credential now fixed,
-  re-run pending) · **G4 PENDING** (owner install kit in flight; local ad-hoc-signed build).
+  is in flight · **G3 ROUTE-INCOMPLETE** (the 6 walked stages camp→snug→camp→crypt→throne→camp all ARRIVED, but the
+  binding §9 route also needs the return-for-reward leg back to Keeper Maera — not walked, #1709; VQA scorer
+  credential now fixed, full-route re-run pending) · **G4 PENDING** (owner install kit in flight; local ad-hoc-signed build).
 - **Shipping surface = the 3D-first KIT chain** (crypt kit v1 / tavern kit v2 plates, kit-derived
   sidecars, per-object gate #1703, build contamination gate #1705). Paint-first generation is
   RETIRED for new rooms; legacy rooms (throne/shop/snug/camp) carry the registration debt G1 measures.
@@ -61,7 +62,7 @@ service (Rodin Business), the camp-hub art fork (taste — post frames first).
 - **Port 8766 is the claude-max bridge**, not WorldOS: owner engine 8776 / QA 8981; sandbox
   8866 / 8972; every tool still defaults to 8766/8971 → always pass ports.
 - `BuildMacOSPlayer.EnsurePackaged` sources the Unity project ROOT (not StreamingAssets) →
-  sync data there before a build and run `qa/packaged_pins.py <app> --repo` after.
+  sync data there before a build and run `qa/packaged_pins.py <app> --repo /Users/m1/WorldOS` after (`--repo` takes the repo root).
 - `qa/adventure_eval.py --runs` needs ABSOLUTE prefixes (relative ones aggregate nothing — #1709).
 - Never launch the player outside `qa/qa_sandbox.py` (windowed contract) with the Editor open; one
   heavy Unity process at a time.

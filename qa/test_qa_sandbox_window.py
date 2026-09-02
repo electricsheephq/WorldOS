@@ -219,6 +219,11 @@ def test_plist_snapshot_is_whole_domain_minus_churn(monkeypatch):
     assert _writes(log) == [], "the snapshot is READ-ONLY"
 
 
+def test_plist_snapshot_failure_is_unknown(monkeypatch):
+    monkeypatch.setattr(qa_sandbox.subprocess, "run", lambda *args, **kwargs: _proc(rc=1))
+    assert qa_sandbox._plist_snapshot() is None
+
+
 def test_plist_diff_reports_added_removed_and_changed():
     before = {"a": "1", "gone": "2"}
     after = {"a": "3", "new": "9", "unity.player_session_count": "42"}
@@ -300,6 +305,50 @@ def test_restore_deletes_a_key_that_did_not_exist_before(monkeypatch):
     assert rep["restored"] == {"Screenmanager Resolution Use Native": None}
     assert _writes(log) == [["defaults", "delete", qa_sandbox.PLIST_DOMAIN,
                              "Screenmanager Resolution Use Native"]]
+
+
+def test_restore_does_not_claim_failed_defaults_operations(monkeypatch):
+    log: list = []
+
+    def failed_defaults(cmd, *args, **kwargs):
+        log.append(list(cmd))
+        return _proc(rc=7)
+
+    monkeypatch.setattr(qa_sandbox.subprocess, "run", failed_defaults)
+    diff = {
+        "Screenmanager Resolution Use Native": {"before": None, "after": "0"},
+        "Screenmanager Resolution Width": {"before": "3024", "after": "1280"},
+    }
+    rep = qa_sandbox._plist_restore(diff, foreign_alive=False,
+                                    rig_values=qa_sandbox._rig_written_values(1280, 700))
+    assert rep["restored"] == {}
+    assert set(rep["skipped"]) == set(diff)
+    assert all("failed (rc=7)" in why and "STILL in the domain" in why
+               for why in rep["skipped"].values())
+    assert len(_writes(log)) == 2
+
+
+def test_down_skips_restore_when_plist_snapshot_is_unavailable(monkeypatch, tmp_path):
+    monkeypatch.setattr(qa_sandbox, "ROOT", tmp_path)
+    rd = tmp_path / "r1"
+    rd.mkdir()
+    (rd / "sandbox.json").write_text(json.dumps({
+        "run": "r1", "win": [1280, 700], "pids": {}, "plist_before": None}))
+    monkeypatch.setattr(qa_sandbox, "_plist_snapshot",
+                        lambda: {"Screenmanager Resolution Width": "1280"})
+    monkeypatch.setattr(qa_sandbox, "_player_pids", lambda exe="WorldOSPlayer": set())
+    monkeypatch.setattr(qa_sandbox, "_orphan_report",
+                        lambda **kwargs: {"lines": [], "leaks": [], "port": 8972, "port_pids": []})
+    monkeypatch.setattr(qa_sandbox.time, "sleep", lambda *_: None)
+    log: list = []
+    _fake_defaults(monkeypatch, {}, log)
+
+    assert qa_sandbox.down("r1") == 0
+    assert _writes(log) == [], "an unavailable snapshot must never turn into a delete"
+    report = json.loads((rd / "prefs_leak.json").read_text())
+    assert "unavailable" in report["note"]
+    assert (rd / "sandbox.json").exists()
+    assert not (rd / "sandbox.json.stopped").exists()
 
 
 def test_restore_gating_foreign_player_and_opt_out(monkeypatch):
@@ -594,14 +643,98 @@ def test_down_reports_every_restore_and_skip_in_the_stopped_metadata(monkeypatch
 
     rc = qa_sandbox.down("r1")
     assert rc == 1, "a refused (pid-reused) kill is a leak, not a clean teardown"
-    stopped = json.loads((rd / "sandbox.json.stopped").read_text())["stopped"]
+    assert (rd / "sandbox.json").exists(), "failed teardown keeps metadata retryable"
+    assert not (rd / "sandbox.json.stopped").exists()
+    stopped = json.loads((rd / "sandbox.json").read_text())["stopped"]
     assert stopped["plist"]["restored"] == {"Screenmanager Fullscreen mode": "1"}
     assert set(stopped["plist"]["skipped"]) == {"Screenmanager Window Position Y", "SomeOwnerSetting"}
     assert any("pid reused" in leak for leak in stopped["leaks"])
     assert _writes(log) == [["defaults", "write", qa_sandbox.PLIST_DOMAIN,
                              "Screenmanager Fullscreen mode", "-int", "1"]]
-    out = capsys.readouterr().out
+    captured = capsys.readouterr()
+    out = captured.out
     assert "RESTORED" in out and "LEFT AS-IS" in out and "NOT restored" in out
+    assert "cleanup INCOMPLETE" in captured.err
+
+
+def test_caffeinate_failure_keeps_sandbox_launchable(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(qa_sandbox, "ROOT", tmp_path)
+    monkeypatch.setattr(qa_sandbox, "owner_active_guard", lambda: None)
+    monkeypatch.setattr(qa_sandbox, "_player_windowed_args", lambda *_: [
+        "-screen-fullscreen", "0", "-screen-width", "1280", "-screen-height", "700"])
+    monkeypatch.setattr(qa_sandbox, "_plist_snapshot", lambda: {})
+    monkeypatch.setattr(LQW, "front_app", lambda: None)
+    monkeypatch.setattr(LQW, "wait_for_window", lambda *args, **kwargs: True)
+    monkeypatch.setattr(LQW, "restore_front", lambda *args: False)
+    monkeypatch.setattr(qa_sandbox, "_qa_roots_in_app", lambda app: set())
+    monkeypatch.setattr(qa_sandbox, "_wait", lambda *args, **kwargs: True)
+    monkeypatch.setattr(qa_sandbox, "_assert_windowed", lambda *args, **kwargs: (1280, 700))
+    app = tmp_path / "WorldOSPlayer.app" / "Contents" / "MacOS"
+    app.mkdir(parents=True)
+    (app / "WorldOSPlayer").write_text("")
+    calls: list = []
+
+    class Proc:
+        def __init__(self, pid):
+            self.pid = pid
+
+    def fake_popen(cmd, *args, **kwargs):
+        calls.append(list(cmd))
+        if cmd[0] == "/usr/bin/caffeinate":
+            raise OSError("caffeinate unavailable")
+        return Proc(100 if "server.py" in str(cmd) else 200)
+
+    monkeypatch.setattr(qa_sandbox.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(qa_sandbox.subprocess, "run", lambda *args, **kwargs: _proc())
+    monkeypatch.setattr(qa_sandbox.os, "getpgid", lambda pid: pid)
+    meta = qa_sandbox.up("r1", campaign="room", engine_port=8866, qa_port=8972,
+                         seed_cmd="seed {state}", app=app.parent.parent)
+    assert meta["caffeinate_pid"] is None
+    assert len(calls) == 3
+    assert "caffeinate unavailable" in capsys.readouterr().err
+
+
+def test_owner_guard_rechecked_before_player_spawn(monkeypatch, tmp_path):
+    monkeypatch.setattr(qa_sandbox, "ROOT", tmp_path)
+    calls = {"guard": 0, "popen": [], "killed": []}
+
+    def guard():
+        calls["guard"] += 1
+        if calls["guard"] == 2:
+            raise SystemExit(qa_sandbox.OWNER_ACTIVE_RC)
+
+    monkeypatch.setattr(qa_sandbox, "owner_active_guard", guard)
+    monkeypatch.setattr(qa_sandbox, "_player_windowed_args", lambda *_: [
+        "-screen-fullscreen", "0", "-screen-width", "1280", "-screen-height", "700"])
+    monkeypatch.setattr(qa_sandbox, "_plist_snapshot", lambda: {})
+    monkeypatch.setattr(LQW, "front_app", lambda: None)
+    monkeypatch.setattr(qa_sandbox, "_qa_roots_in_app", lambda app: set())
+    monkeypatch.setattr(qa_sandbox, "_wait", lambda *args, **kwargs: True)
+    app = tmp_path / "WorldOSPlayer.app" / "Contents" / "MacOS"
+    app.mkdir(parents=True)
+    (app / "WorldOSPlayer").write_text("")
+
+    class Proc:
+        def __init__(self, pid):
+            self.pid = pid
+
+    def fake_popen(cmd, *args, **kwargs):
+        calls["popen"].append(list(cmd))
+        return Proc(100)
+
+    monkeypatch.setattr(qa_sandbox.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(qa_sandbox.subprocess, "run", lambda *args, **kwargs: _proc())
+    monkeypatch.setattr(qa_sandbox.os, "getpgid", lambda pid: pid)
+    monkeypatch.setattr(qa_sandbox, "_kill_group",
+                        lambda pid, label="", expect_pgid=None:
+                        calls["killed"].append((pid, label, expect_pgid)) or "")
+    with pytest.raises(SystemExit) as ei:
+        qa_sandbox.up("r1", campaign="room", engine_port=8866, qa_port=8972,
+                      seed_cmd="seed {state}", app=app.parent.parent)
+    assert ei.value.code == qa_sandbox.OWNER_ACTIVE_RC
+    assert calls["guard"] == 2
+    assert len(calls["popen"]) == 1, "the second owner check must precede player/caffeinate Popen"
+    assert calls["killed"] == [(100, "engine", 100)]
 
 
 # ── Phase 2 (C# badge) — RED until the Editor rebuild lands ───────────────────────────────────────

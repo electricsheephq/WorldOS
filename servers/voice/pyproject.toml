@@ -4,7 +4,7 @@ version = "0.0.1"
 description = "WorldOS voice MCP: swappable text-to-speech (Kokoro local default; ElevenLabs optional)."
 requires-python = ">=3.11,<3.13"
 dependencies = [
-  "mcp>=1.28.1",
+  "mcp>=1.28.1,<2",
 ]
 
 [dependency-groups]
