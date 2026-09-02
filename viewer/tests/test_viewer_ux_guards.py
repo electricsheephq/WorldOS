@@ -90,7 +90,7 @@ def test_roll_attaches_latest_narrative_context_when_no_intent():
     # No typed intent -> bind the roll to the latest scene line so it is NOT contextless.
     assert "(in response to: The guard eyes you warily, hand on his hilt.)" in r["move"]["text"]
     assert r["move"]["text"].startswith("I roll a d20")
-    assert r["echo"] == "rolls a d20"
+    assert r["echo"] == "rolls a d20 (in response to: The guard eyes you warily, hand on his hilt.)"
 
 
 def test_roll_whitespace_intent_falls_through_to_context():
@@ -139,6 +139,12 @@ def test_equipped_match_is_slug_tolerant_but_strict():
     assert _is_equipped({"name": "Studded Leather +1"}, [{"name": "Studded Leather"}]) is False
 
 
+def test_duplicate_item_names_use_stable_ids_before_name_fallback():
+    equipped = [{"id": "equipped-sword", "name": "Longsword"}]
+    assert _is_equipped({"id": "loose-sword", "name": "Longsword"}, equipped) is False
+    assert _is_equipped({"id": "equipped-sword", "name": "Longsword"}, equipped) is True
+
+
 def test_loose_inventory_item_is_not_flagged():
     equipped = [{"name": "Studded Leather"}, {"name": "Longsword"}]
     # A potion / a stash blade the hero is NOT wearing must never trigger the confirm nag.
@@ -163,3 +169,9 @@ def test_drop_confirm_message_names_the_item_and_warns_irreversible():
     assert "Studded Leather" in msg
     assert "EQUIPPED" in msg
     assert "cannot be undone" in msg
+
+
+def test_both_drop_affordances_use_the_shared_confirm_wrapper():
+    source = SCREEN_INVENTORY.read_text()
+    assert source.count("confirmDrop(") == 2
+    assert source.count("window.confirm(dropEquippedConfirmMessage") == 1

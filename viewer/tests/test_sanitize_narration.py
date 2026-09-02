@@ -373,7 +373,7 @@ class SanitizeNarrationTests(unittest.TestCase):
         # ("lands at 18." / "lands at 18;"). A roll total never reads "lands at 18 men" — when the
         # integer is followed by a WORD it is an in-world QUANTITY (men, gold, wagons, pounds, votes,
         # bells), genuine fiction that must survive verbatim. The verb-only guard wrongly ate the WHOLE
-        # line on these; the clause-terminal requirement (followed by [.;,!?] or end-of-string) spares
+        # line on these; the clause-terminal requirement (followed by [.;!?] or end-of-string) spares
         # them while STILL stripping the real header (verified in test_strips_dice_result_summary_header).
         legit = {
             "falls_12_men": "The line falls at 12 men, and still the orcs come.",
@@ -382,6 +382,16 @@ class SanitizeNarrationTests(unittest.TestCase):
             "comes_in_40_pounds": "The hauled net comes in at 40 pounds of silver carp.",
             "resolves_9_votes": "The council resolves at 9 votes to 4.",
             "clears_6_bells": "The fog clears at 6 bells, grey and cold.",
+        }
+        out = self._sanitize_many(legit)
+        for key, original in legit.items():
+            with self.subTest(case=key):
+                self.assertEqual(out[key], original)
+
+    def test_roll_verb_with_comma_after_number_survives_verbatim(self):
+        legit = {
+            "thousands": "The dragon lands at 12,000 feet from you, wings beating hard.",
+            "continued_prose": "The arrow lands at 12, then skips across the flagstones.",
         }
         out = self._sanitize_many(legit)
         for key, original in legit.items():

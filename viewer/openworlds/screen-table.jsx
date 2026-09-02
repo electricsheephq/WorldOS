@@ -149,12 +149,12 @@ const _STAGE_DIRECTION = new RegExp(
 // CRITICAL refinement (the false-positive the verb anchor alone did NOT catch): the integer must be a
 // roll TOTAL, which always ends the clause — a check result is "lands at 18." / "lands at 18;", NEVER
 // "lands at 18 men". So the bare "at <N>" is only a roll summary when <N> is CLAUSE-TERMINAL: immediately
-// followed by clause-ending punctuation ([.;,!?]) or end-of-string (the "; <thing> at <M>" chained-
+// followed by clause-ending punctuation ([.;!?]) or end-of-string (the "; <thing> at <M>" chained-
 // continuation case is just a ';'-terminal primary). When <N> is followed by a WORD/noun it is an in-world
 // quantity — "the line falls at 12 men", "settles at 5 gold", "comes in at 40 pounds", "clears at 6 bells"
 // — genuine fiction that MUST survive verbatim. `_ROLL_VERB_AT_N` is the shared, clause-terminal core.
 const _ROLL_VERB_AT_N =
-  "\\b(?:lands?|comes?(?:\\s+in)?|falls?|settles?|resolves?|clears?)\\s+(?:in\\s+)?at\\s+\\d+(?=[.;,!?]|\\s*$)";
+  "\\b(?:lands?|comes?(?:\\s+in)?|falls?|settles?|resolves?|clears?)\\s+(?:in\\s+)?at\\s+\\d+(?=[.;!?]|\\s*$)";
 const _ROLL_RESULT_SUMMARY = new RegExp(_ROLL_VERB_AT_N, "i");
 // The FULL roll-summary HEADER LINE — the verb-anchored primary PLUS any "; <thing> at <N>" continuations
 // chained onto it ("The intimidation lands at 18; the quiet interpose at 16."). This is matched at the LINE
@@ -168,7 +168,7 @@ const _ROLL_RESULT_SUMMARY = new RegExp(_ROLL_VERB_AT_N, "i");
 const _ROLL_SUMMARY_HEADER_LINE = new RegExp(
   "^\\s*[^.!?]*?" +
     _ROLL_VERB_AT_N +
-    "(?:[^.!?]*?\\bat\\s+\\d+(?=[.;,!?]|\\s*$))*" +
+    "(?:[^.!?]*?\\bat\\s+\\d+(?=[.;!?]|\\s*$))*" +
     "\\s*[.!?]?\\s*(?:-{3,}|\\*{3,}|_{3,}|—{2,})?\\s*$",
   "i",
 );
@@ -349,7 +349,11 @@ function composeRollMove(sides, intent, context) {
     : ctx
       ? `I roll a d${n} (in response to: ${ctx})`
       : `I roll a d${n}`;
-  const echo = want ? `rolls a d${n} to ${want}` : `rolls a d${n}`;
+  const echo = want
+    ? `rolls a d${n} to ${want}`
+    : ctx
+      ? `rolls a d${n} (in response to: ${ctx})`
+      : `rolls a d${n}`;
   return { move: { kind: "check", name: `d${n}`, text }, echo };
 }
 if (typeof window !== "undefined") {
