@@ -167,3 +167,17 @@ for the arc. Evidence root: `session-notes/2026-09-02/worldos-refresh/artifacts/
 Instruments added this pass: packaged-pin check (`step56_measure.sh pins` → repo tool in flight, #1651 family); the adventure-fixture
 crypt gate RED (110/3 · visual 3/1) was fully explained by goblin-occupied cells → walk_test occupied-cell handling filed (#1709 item 6).
 Standing rule: PIXELS BEFORE CREDIT — the 3-tables-vs-4 eyeball is what exposed the stale packaged data under a green build.
+
+### 2026-09-02 — §9 G1 re-measured on the rebuilt app `07a997e9…` through the WINDOWED sandbox (#1717): GREEN gates, PINS GREEN
+Build: Unity 6000.5.6f1 local, 06:02Z, Unity repo b016a7db (project-root data synced), engine main 0c2a0ddf; `qa/packaged_pins.py` GREEN
+(8 rooms + effects_registry, `repo_sha` clean). Sandbox: windowed launcher (1280×700, `AXFullScreen=false`, owner plist restored on
+teardown), fixture `registered_world_v1`, serving pids verified. Instruments: walk_test crypt GREEN — camera 11.7851 exact · reachable
+113/0 · impassable 77/0 · doors 2/0 · path 113/0 · visual 4/0 (`walk-crypt-rw/`); door crypt(7,0)→tavern crossed over the QA channel;
+walk_test tavern (kit v2 plate) GREEN — 10.5224 · 90/0 · 62/0 · 2/0 · 90/0 · 4/0 (`walk-tavern/`); player_cert --live: spawn_coherence_open
+GREEN · silhouette_behind_occluder GREEN (0.2817) · silhouette_absent_when_visible GREEN (tint 0.0 @ open cell) · cast_renders_full_figure
+ERROR (no foe in the fixture — harness, not a verdict). **Eyeball (orchestrator):** tavern frame shows all FOUR tables (the v1/deleted-table
+regression is gone); crypt actor at (7,8) renders normally (the earlier full-cyan ghost was the pre-kit `crypt_v36` sidecar — fixed by the
+kit-derived one); residual: the tavern actor at the west-wall cell beside the barrels still tints — a cell-specific occluder-box question
+(parapet/barrel box at the cutaway wall), filed as an observation. G1 stays INTERIM-GREEN: build identity is provenance-only (#1651), no
+owner install yet, roster-complete cert absent; sha-pinned certs for kit crypt/tavern are the next mint. Evidence root:
+`session-notes/2026-09-02/worldos-refresh/artifacts/` (`pins_rebuild.txt`, `rig/`, `walk-crypt-rw/`, `walk-tavern/`, `player_cert/`).
