@@ -1,4 +1,4 @@
-# GEX44 box — connection, claim discipline, and live facts
+# GEX44 box (HISTORICAL — retired 2026-08-06; the renderer runs locally, see docs/GEX44-RETIRED.md) — connection, claim discipline, and facts as they were
 
 > **GEX44 retired 2026-08-06 — see `docs/roadmap/NOW.md`; do not run the historical procedures below.**
 > Local equivalent: Unity 6000.5.6f1 at `/Users/m1/worldos-unity` via
