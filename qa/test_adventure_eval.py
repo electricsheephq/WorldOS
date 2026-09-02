@@ -433,6 +433,11 @@ def test_executable_beat_budget_is_twenty():
     assert ae.load_config()["beat_budget"] == 20
 
 
+def test_executable_completion_rate_matches_g2_bar():
+    """PRODUCT-ROADMAP §§4d/9.3 and the SCORECARD set G2 completion at 0.67."""
+    assert ae.load_config()["pass_completion_rate"] == 0.67
+
+
 def test_beat_budget_override_scores_pace_under_its_own_budget(tmp_path):
     """A control run that really ran at 15 beats is scored under 15, and the row SAYS so."""
     p = _write_run(tmp_path, "ctl", completed=True, complete_beat=15)
