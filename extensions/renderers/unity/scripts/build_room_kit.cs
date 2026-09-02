@@ -135,6 +135,98 @@ public static class BuildRoomKit
     // ════════════════════════════════════════════════════════════════════════════════════════════════
     //  BUILD
     // ════════════════════════════════════════════════════════════════════════════════════════════════
+    // QA-CONTRACT (single source of truth). Helper CHILD objects the rig creates UNDER the KitRoom_<roomId>
+    // root. They share the KitRoom_ prefix but are never roots, so a build-contamination scan that matches
+    // ONLY these has found the light rig, not a kit room shipped inside the player. qa/qa_sandbox.py parses
+    // these exact `KitHelper* = "KitRoom_..."` declarations (_kit_helper_names), so its allowlist cannot
+    // drift from the names actually created below — do not inline these literals at the call sites.
+    internal const string KitHelperFire = "KitRoom_Fire";
+    internal const string KitHelperTombGlow = "KitRoom_TombGlow";
+    internal const string KitHelperCoolKey = "KitRoom_CoolKey";
+
+    // Occluder-sidecar export DERIVED from the built kit scene: per-mass true renderer bounds instead of
+    // hand-authored chunky volumes. The felt-truth failure this kills (owner playtest 2026-07-23): the
+    // authored tavern sidecar carried 5.0u camera-side walls where the paint shows 0.55u cutaway parapets
+    // and square slabs around round tables, so the walk-behind silhouette fired far outside every painted
+    // object and legal moves read as walking through furniture. The kit scene IS the plate's geometry
+    // (seg-gate + alignment certified), so bounds measured off the placed objects match the paint by
+    // construction. Requires BuildRoom to have run for the same geometry this editor session.
+    [MenuItem("Tools/WorldOS/Kit/Export Kit Boxes")]
+    public static void ExportBoxes()
+    {
+        string geoPath = GeoPath();
+        if (!File.Exists(geoPath)) { Debug.LogError($"[KitBoxes] no geometry json: {geoPath}"); return; }
+        var geo = MiniJson.Parse(File.ReadAllText(geoPath)) as Dictionary<string, object>;
+        if (geo == null) { Debug.LogError("[KitBoxes] geometry parse failed"); return; }
+        int cols = GetInt(geo, "cols", 14), rows = GetInt(geo, "rows", 11);
+        bool camFit = GetBool(geo, "camera_fit");
+        string roomId = RoomId(geo, geoPath);
+
+        var root = GameObject.Find("KitRoom_" + roomId);
+        if (root == null) { Debug.LogError($"[KitBoxes] KitRoom_{roomId} not in scene — run Build Room From Kit first."); return; }
+
+        // the CONTRACT ortho (same math as SetupContractCamera at the 1344x768 contract aspect)
+        float aspect = 1344f / 768f, FILL = 0.96f, ortho = 13f;
+        if (camFit)
+        {
+            Quaternion crot = Quaternion.Euler(30f, 45f, 0f);
+            Vector3 rightAx = crot * Vector3.right, upAx = crot * Vector3.up;
+            float maxR = 0f, maxU = 0f, hx = (cols / 2f) * CELL, hz = (rows / 2f) * CELL;
+            foreach (var sgn in new[] { new Vector2(1, 1), new Vector2(1, -1), new Vector2(-1, 1), new Vector2(-1, -1) })
+            {
+                Vector3 corner = new Vector3(hx * sgn.x, 0f, hz * sgn.y);
+                maxR = Mathf.Max(maxR, Mathf.Abs(Vector3.Dot(corner, rightAx)));
+                maxU = Mathf.Max(maxU, Mathf.Abs(Vector3.Dot(corner, upAx)));
+            }
+            ortho = Mathf.Max(maxR / (aspect * FILL), maxU / FILL);
+        }
+
+        var inv = System.Globalization.CultureInfo.InvariantCulture;
+        var sb = new System.Text.StringBuilder();
+        sb.Append("{\n  \"version\": 1,\n");
+        sb.Append(string.Format(inv, "  \"ortho\": {0:0.####},\n", ortho));
+        sb.Append(string.Format(inv, "  \"cols\": {0}, \"rows\": {1},\n", cols, rows));
+        sb.Append("  \"provenance\": \"kit-derived (build_room_kit ExportBoxes): per-mass renderer bounds of KitRoom_" + roomId + "\",\n");
+        sb.Append("  \"boxes\": [\n");
+        int nBoxes = 0;
+        foreach (var groupName in new[] { "Walls", "Props", "Impassable" })
+        {
+            var group = root.transform.Find(groupName);
+            if (group == null) continue;
+            foreach (Transform child in group)
+            {
+                var rends = child.GetComponentsInChildren<Renderer>(false);
+                if (rends.Length == 0) continue;
+                Bounds b = rends[0].bounds;
+                for (int i = 1; i < rends.Length; i++) b.Encapsulate(rends[i].bounds);
+                if (b.size.y < 0.15f) continue;                       // flat decals never occlude
+                string kind = child.name.ToLowerInvariant();
+                int cut = kind.IndexOf('_'); if (cut > 0) kind = kind.Substring(0, cut);
+                if (nBoxes > 0) sb.Append(",\n");
+                sb.Append(string.Format(inv,
+                    "    {{\"kind\": \"{0}\", \"size\": [{1:0.###}, {2:0.###}, {3:0.###}], \"center\": [{4:0.###}, {5:0.###}, {6:0.###}]}}",
+                    kind, b.size.x, b.size.y, b.size.z, b.center.x, b.center.y, b.center.z));
+                nBoxes++;
+            }
+        }
+        sb.Append("\n  ]\n}\n");
+        // <projectRoot>/boxes/<roomId>_boxes.json — the directory BuildMacOSPlayer.EnsurePackaged copies
+        // into StreamingAssets/boxes, and the exact name space plates_manifest.json references
+        // ("boxes/tavern_kit_v1_boxes.json"). The project root, where this wrote before, is packaged
+        // nowhere and matches no manifest entry, so a developer following the menu path produced a sidecar
+        // that silently never reached a plate. Writing StreamingAssets/boxes directly would be just as
+        // wrong in the other direction: that directory is a build-generated MIRROR, overwritten from
+        // <projectRoot>/boxes on the next EnsurePackaged. Promotion into the repo
+        // (extensions/renderers/unity/boxes/) stays a reviewed step — the export is a candidate.
+        string boxesDir = Path.Combine(Directory.GetParent(Application.dataPath).FullName, "boxes");
+        Directory.CreateDirectory(boxesDir);
+        string outPath = Path.Combine(boxesDir, roomId + "_boxes.json");
+        File.WriteAllText(outPath, sb.ToString());
+        if (!File.Exists(outPath)) { Debug.LogError($"[KitBoxes] write FAILED: {outPath}"); return; }
+        Debug.Log($"[KitBoxes] wrote {nBoxes} kit-derived boxes (ortho {ortho:0.####}) -> {outPath}\n"
+                  + "[KitBoxes] promote: copy into extensions/renderers/unity/boxes/ and point plates_manifest.json at it.");
+    }
+
     [MenuItem("Tools/WorldOS/Kit/Build Room From Kit")]
     public static void BuildRoom()
     {
@@ -479,20 +571,20 @@ public static class BuildRoomKit
         var lightParent = Child(root, "Lights");
         foreach (var bp in braziers)
         {
-            var g = new GameObject("KitRoom_Fire"); g.transform.SetParent(lightParent.transform, true);
+            var g = new GameObject(KitHelperFire); g.transform.SetParent(lightParent.transform, true);
             var L = g.AddComponent<Light>(); L.type = LightType.Point;
             L.color = new Color(1.0f, 0.62f, 0.28f); L.range = 10f; L.intensity = 3.2f;   // r3 warm fire pool
             L.shadows = LightShadows.None; g.transform.position = bp;
         }
         if (haveSarcGlow)   // r3: subtle warm rim over the tomb — the painted crypt's centre glow
         {
-            var g = new GameObject("KitRoom_TombGlow"); g.transform.SetParent(lightParent.transform, true);
+            var g = new GameObject(KitHelperTombGlow); g.transform.SetParent(lightParent.transform, true);
             var L = g.AddComponent<Light>(); L.type = LightType.Point;
             L.color = new Color(1.0f, 0.66f, 0.34f); L.range = 7f; L.intensity = 1.4f;     // low warm centre rim
             L.shadows = LightShadows.None; g.transform.position = sarcGlowPos;
         }
         {
-            var g = new GameObject("KitRoom_CoolKey"); g.transform.SetParent(lightParent.transform, true);
+            var g = new GameObject(KitHelperCoolKey); g.transform.SetParent(lightParent.transform, true);
             var L = g.AddComponent<Light>(); L.type = LightType.Directional;
             L.color = new Color(0.65f, 0.72f, 0.90f); L.intensity = 0.7f;                  // r3 cool directional key
             L.shadows = LightShadows.Soft; L.shadowStrength = 0.6f;
@@ -1113,10 +1205,26 @@ public static class BuildRoomKit
     static string RoomId(Dictionary<string, object> geo, string geoPath)
     {
         string env = Environment.GetEnvironmentVariable("WORLDOS_KIT_ROOM_ID");
-        if (!string.IsNullOrEmpty(env)) return Sanitize(env);
+        if (!string.IsNullOrEmpty(env)) return DisambiguateRoomId(Sanitize(env));
         string loc = GetStr(geo, "location", null);
-        if (!string.IsNullOrEmpty(loc)) return Sanitize(loc);
-        return Sanitize(Path.GetFileNameWithoutExtension(geoPath).Replace("_geometry", ""));
+        if (!string.IsNullOrEmpty(loc)) return DisambiguateRoomId(Sanitize(loc));
+        return DisambiguateRoomId(Sanitize(Path.GetFileNameWithoutExtension(geoPath).Replace("_geometry", "")));
+    }
+
+    // A room named "Fire"/"TombGlow"/"CoolKey" would build a REAL root called KitRoom_Fire — a name the
+    // build-contamination byte scan (qa/qa_sandbox.py) must treat as a helper light, since bytes cannot
+    // say whether a name was a root or a child. That is a FALSE NEGATIVE on the gate, so make the
+    // collision impossible at the source instead of asking the detector to guess.
+    static string DisambiguateRoomId(string id)
+    {
+        foreach (var helper in new[] { KitHelperFire, KitHelperTombGlow, KitHelperCoolKey })
+            if (("KitRoom_" + id) == helper)
+            {
+                Debug.LogWarning($"[Kit] room id '{id}' collides with the helper object {helper}; using '{id}_room' "
+                                 + "so the build-contamination scan can still tell a shipped kit room from a light.");
+                return id + "_room";
+            }
+        return id;
     }
 
     static string Sanitize(string s)

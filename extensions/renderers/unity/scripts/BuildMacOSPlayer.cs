@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
 using UnityEditor.Build.Reporting;
+using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.SceneManagement;
 
 /// <summary>
 /// W5a (#1322) — macOS standalone PLAYER build, batch-mode-free (the box forbids `-batchmode`,
@@ -34,6 +36,7 @@ public static class BuildMacOSPlayer
     const string SceneToBuild = "Assets/Scenes/M1CombatV1_canonical.unity";
     const string OutputDir = "BuildOutput";
     const string AppName = "WorldOSPlayer.app";
+    const string ReportFileName = "build-report.txt";
 
     // #1436 (W5c Unit 1) packaging: the standalone player cannot AssetDatabase.Load an Assets/ path at
     // runtime, so the registry-referenced actor assets + the registry manifest must be packaged into the
@@ -188,6 +191,12 @@ public static class BuildMacOSPlayer
         // player can runtime-spawn actors for any campaign (not just the baked scene's cast).
         EnsurePackaged();
 
+        // Kit rooms (build_room_kit.cs) are QA constructions; a capture flow that saved the scene while one
+        // existed shipped it inside the player, drawing grey kit masses over every plate. Strip them for
+        // THIS BUILD ONLY — buildScenePath is redirected to a temp copy, never the tracked scene.
+        string buildScenePath = SceneToBuild;
+        string[] strippedQARoots = StripQAConstructions(ref buildScenePath);
+
         // --- Player identity (was DefaultCompany/WorldOS-Unity-spike) ---
         PlayerSettings.companyName = "worldos";
         PlayerSettings.productName = "WorldOSPlayer";
@@ -235,7 +244,7 @@ public static class BuildMacOSPlayer
 
         var options = new BuildPlayerOptions
         {
-            scenes = new[] { SceneToBuild },
+            scenes = new[] { buildScenePath },
             locationPathName = appPath,
             target = BuildTarget.StandaloneOSX,
             targetGroup = BuildTargetGroup.Standalone,
@@ -243,10 +252,12 @@ public static class BuildMacOSPlayer
         };
 
         Debug.Log("[BuildMacOSPlayer] Starting build -> " + appPath + " (arch=" + archResult + ")");
-        BuildReport report = BuildPipeline.BuildPlayer(options);
+        BuildReport report;
+        try { report = BuildPipeline.BuildPlayer(options); }
+        finally { if (buildScenePath != SceneToBuild) AssetDatabase.DeleteAsset(buildScenePath); }
         var s = report.summary;
 
-        string reportPath = Path.Combine(outDir, "build-report.txt");
+        string reportPath = Path.Combine(outDir, ReportFileName);
         File.WriteAllText(reportPath,
             "result=" + s.result + "\n" +
             "totalErrors=" + s.totalErrors + "\n" +
@@ -259,11 +270,124 @@ public static class BuildMacOSPlayer
             "platform=" + s.platform + "\n" +
             "architecture=" + archResult + "\n" +
             "alwaysIncludedShaders=" + string.Join(",", includedShaders) + "\n" +
+            "strippedQARoots=" + (strippedQARoots.Length == 0 ? "(none)" : string.Join(",", strippedQARoots)) + "\n" +
             "scenesBuilt=" + string.Join(",", options.scenes) + "\n");
 
         Debug.Log("[BuildMacOSPlayer] DONE result=" + s.result + " errors=" + s.totalErrors
             + " warnings=" + s.totalWarnings + " size=" + s.totalSize + " time=" + s.totalTime
             + " report=" + reportPath);
+    }
+
+    // QA-construction roots that must NEVER ship inside a player build. build_room_kit.cs assembles kit
+    // rooms as "KitRoom_<roomId>" roots in whatever scene is open; a capture/lighting flow that saved the
+    // scene mid-session baked them in, and the built player then rendered grey kit masses (fallback boxes,
+    // brazier plinths, parapets) in front of every plate. Measured three times (kit-crypt cleankit trap ×2,
+    // kit-tavern 2026-07-23 — the withheld tavern install). qa/qa_sandbox.py is the independent detector.
+    //
+    // The strip is a BUILD-LOCAL transform, never an edit of the tracked scene. Saving the canonical scene
+    // as a build side effect is exactly the bug this gate exists to prevent, so it must not be the fix for
+    // it: the scene is snapshotted to a temp scene asset (SaveScene saveAsCopy — the editor's own scene is
+    // neither dirtied nor reloaded, so unsaved in-editor work survives untouched), the KitRoom_* roots are
+    // destroyed in THAT copy, and BuildPlayerOptions.scenes points at the copy for this build only.
+    const string QARootPrefix = "KitRoom_";
+    const string StripScenePath = "Assets/Scenes/__BuildStripped_QARoots.unity";
+
+    // Returns the stripped root names (empty = nothing to strip) and, when a strip happened, redirects
+    // buildScenePath at the temp scene. A strip that cannot be completed FAILS the build (FailBuild) —
+    // a silent failure here would ship the contamination under a green build stamp.
+    static string[] StripQAConstructions(ref string buildScenePath)
+    {
+        var active = EditorSceneManager.GetActiveScene();
+        Scene src;
+        string restorePath = null;
+        if (active.IsValid() && active.path == SceneToBuild)
+        {
+            src = active;
+        }
+        else
+        {
+            // OpenScene(Single) DISCARDS unsaved changes in EVERY loaded scene, not just the active one —
+            // an additively-loaded scene with unsaved work is unloaded just as silently. Check them all
+            // and refuse loudly rather than throwing editor work away; a save prompt is not an option
+            // here, because this MenuItem runs in a headed-but-remotely-driven editor where a modal
+            // deadlocks the session (BOX.md #1196).
+            for (int i = 0; i < SceneManager.sceneCount; i++)
+            {
+                var loaded = SceneManager.GetSceneAt(i);
+                if (!loaded.IsValid() || (!loaded.isDirty && !string.IsNullOrEmpty(loaded.path))) continue;
+                FailBuild("refusing to build: the loaded scene '"
+                    + (string.IsNullOrEmpty(loaded.path) ? "Untitled" : loaded.path)
+                    + "' has UNSAVED changes and this build must open " + SceneToBuild
+                    + " in Single mode, which would discard them. Save or discard those changes, then rebuild.");
+            }
+            restorePath = active.IsValid() ? active.path : null;
+            src = EditorSceneManager.OpenScene(SceneToBuild, OpenSceneMode.Single);
+        }
+
+        var qaRoots = new List<string>();
+        foreach (var go in src.GetRootGameObjects())
+            if (go != null && go.name.StartsWith(QARootPrefix, StringComparison.Ordinal)) qaRoots.Add(go.name);
+
+        // Route through the copy whenever the built content could differ from the scene asset on disk —
+        // i.e. there is something to strip, or the open scene has unsaved edits. Otherwise build the
+        // canonical path directly (the long-standing, well-exercised path).
+        if (qaRoots.Count > 0 || src.isDirty)
+        {
+            if (!EditorSceneManager.SaveScene(src, StripScenePath, true) || !File.Exists(StripScenePath))
+                FailBuild("QA-root strip FAILED: could not write the temp build scene " + StripScenePath
+                    + " (roots found: " + string.Join(",", qaRoots.ToArray())
+                    + "). Refusing to ship a build that would contain them.");
+            AssetDatabase.Refresh();
+
+            var tmp = EditorSceneManager.OpenScene(StripScenePath, OpenSceneMode.Additive);
+            int destroyed = 0;
+            foreach (var go in tmp.GetRootGameObjects())
+                if (go != null && go.name.StartsWith(QARootPrefix, StringComparison.Ordinal))
+                { UnityEngine.Object.DestroyImmediate(go); destroyed++; }
+            bool saved = EditorSceneManager.SaveScene(tmp);
+            EditorSceneManager.CloseScene(tmp, true);
+            if (!saved || destroyed != qaRoots.Count)
+                FailBuild("QA-root strip FAILED: saved=" + saved + " destroyed=" + destroyed + "/" + qaRoots.Count
+                    + " in " + StripScenePath + ". Refusing to ship a build that would contain "
+                    + string.Join(",", qaRoots.ToArray()) + ".");
+
+            buildScenePath = StripScenePath;
+            if (qaRoots.Count > 0)
+                Debug.LogWarning("[BuildMacOSPlayer] stripped QA construction roots for THIS BUILD ONLY ("
+                    + SceneToBuild + " on disk is unchanged): " + string.Join(",", qaRoots.ToArray()));
+        }
+
+        // Put the editor back on whatever scene it was showing (only reachable when it was clean).
+        if (!string.IsNullOrEmpty(restorePath) && restorePath != SceneToBuild && File.Exists(restorePath))
+            EditorSceneManager.OpenScene(restorePath, OpenSceneMode.Single);
+        return qaRoots.ToArray();
+    }
+
+    // A precondition failure must be LOUD and must not leave a green-looking artifact behind: stamp the
+    // build report red before throwing, so a consumer reading build-report.txt (qa_sandbox, the runbooks)
+    // cannot mistake the previous run's stamp beside a stale .app for a successful build.
+    static void FailBuild(string reason)
+    {
+        StampFailedReport(reason);
+        Debug.LogError("[BuildMacOSPlayer] " + reason);
+        throw new Exception("[BuildMacOSPlayer] " + reason);
+    }
+
+    // Best effort, and deliberately narrow: a report the build could not write must never become the
+    // exception the caller sees in place of `reason`, so the two failure modes that actually occur here
+    // (a read-only/locked BuildOutput, a full disk) are swallowed with a log. Anything else is a real
+    // bug and is allowed to surface — the build still fails, which is the invariant that matters.
+    static void StampFailedReport(string reason)
+    {
+        try
+        {
+            string outDir = Path.Combine(Directory.GetParent(Application.dataPath).FullName, OutputDir);
+            Directory.CreateDirectory(outDir);
+            File.WriteAllText(Path.Combine(outDir, ReportFileName),
+                "result=Failed\ntotalErrors=1\nfailedPrecondition=" + reason + "\n");
+        }
+        catch (UnauthorizedAccessException e) { Debug.LogError("[BuildMacOSPlayer] could not write failure report: " + e.Message); }
+        catch (IOException e) { Debug.LogError("[BuildMacOSPlayer] could not write failure report: " + e.Message); }
     }
 
     // #1674: shaders CombatSurfaceClient resolves at runtime via Shader.Find and that NO asset references, so
