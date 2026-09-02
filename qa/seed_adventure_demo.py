@@ -7,12 +7,16 @@ build_grid_from_geometry + full static gate the dwing fixture uses (qa/seed_gfx_
 
   camp_clearing (hub, party start)
      |  door [8,0] <-> tavern_snug [5,0]  (Keeper Maera, the quest giver)
-     |                    tavern_snug [11,4] <-> shop [6,0]  (Merchant Oswin)
+     |                    tavern_snug [11,4] <-> shop [12,4]  (Merchant Oswin)
      |  door [0,6] <-> crypt [7,0]         (2-3 goblins — the dungeon)
                           crypt [15,5]  <-> throne_hall [8,11]  (the Goblin Boss)
 
-Declared-but-unwired seams (painted doorways parked as future exits, in ALLOWED_UNWIRED): the shop's
-town door (12,5) and the throne hall's side passage (15,6).
+No declared-but-unwired seams remain (ALLOWED_UNWIRED is empty): the throne hall's side passage (15,6)
+opened onto the painted arcade wall and was retired to wall on 2026-09-02, and the shop's seam moved
+from the back-wall cell (6,0) to (12,4) the same day
+(qa/reauthor_legacy_room.md): the shop plate paints a shelf unit across (6,0)'s landing and its ONLY
+painted opening is the archway beside (12,5), so (6,0) was retired to plain wall rather than left as a
+door into a bookshelf.
 
 camp_clearing has no authored doorway in the certified greybox (an outdoor clearing), so this fixture
 carries its own qa/room_geometries/camp_clearing_geometry.json — the true-greybox camp plus the two
@@ -44,13 +48,14 @@ GEO = HERE / "room_geometries"
 ROOMS = [
     ("camp_clearing", "camp_clearing_geometry.json", [([8, 0], "tavern_snug"), ([0, 6], "crypt")]),
     ("tavern_snug", "tavern_snug_geometry.json", [([5, 0], "camp_clearing"), ([11, 4], "shop")]),
-    ("shop", "shop_geometry.json", [([6, 0], "tavern_snug")]),
+    ("shop", "shop_geometry.json", [([12, 4], "tavern_snug")]),
     ("crypt", "crypt_v36_geometry.json", [([7, 0], "camp_clearing"), ([15, 5], "throne_hall")]),
     ("throne_hall", "throne_hall_geometry.json", [([8, 11], "crypt")]),
 ]
-# Authored doorways deliberately left unwired (future seams): the shop's town door + the hall's side
-# passage. Every OTHER authored door is wired, so no plate paints an arch that does nothing.
-ALLOWED_UNWIRED = {("shop", (12, 5)), ("throne_hall", (15, 6))}
+# Every authored door is wired (qa/reauthor_legacy_room.md, 2026-09-02): the two cells that used to sit
+# here — the shop's back-wall (6,0) and the hall's side passage (15,6) — were retired to WALL because
+# neither plate paints an opening there, so no plate paints an arch that does nothing.
+ALLOWED_UNWIRED: set = set()
 
 # The dungeon cast (crypt) and the boss room (throne_hall). SRD names: "Goblin" -> Goblin Warrior.
 N_GOBLINS = 3

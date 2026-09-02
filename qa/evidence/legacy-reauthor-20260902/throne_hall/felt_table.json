@@ -1,0 +1,387 @@
+{
+ "room": "throne_hall",
+ "all_pass": true,
+ "rows": [
+  {
+   "cell": [
+    10,
+    6
+   ],
+   "expect": "refuse",
+   "landed": [
+    7,
+    10
+   ],
+   "debug": "cell(10,6) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=Y occ=n",
+   "pass": true,
+   "frame": "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/throne_hall/felt_10_6.png"
+  },
+  {
+   "cell": [
+    11,
+    6
+   ],
+   "expect": "refuse",
+   "landed": [
+    7,
+    10
+   ],
+   "debug": "cell(11,6) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    10,
+    7
+   ],
+   "expect": "refuse",
+   "landed": [
+    7,
+    10
+   ],
+   "debug": "cell(10,7) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    9,
+    5
+   ],
+   "expect": "refuse",
+   "landed": [
+    7,
+    10
+   ],
+   "debug": "cell(9,5) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=Y occ=n",
+   "pass": true,
+   "frame": "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/throne_hall/felt_9_5.png"
+  },
+  {
+   "cell": [
+    9,
+    9
+   ],
+   "expect": "refuse",
+   "landed": [
+    7,
+    10
+   ],
+   "debug": "cell(9,9) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    5,
+    8
+   ],
+   "expect": "refuse",
+   "landed": [
+    7,
+    10
+   ],
+   "debug": "cell(5,8) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    7,
+    3
+   ],
+   "expect": "refuse",
+   "landed": [
+    7,
+    10
+   ],
+   "debug": "cell(7,3) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    7,
+    1
+   ],
+   "expect": "refuse",
+   "landed": [
+    7,
+    10
+   ],
+   "debug": "cell(7,1) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    9,
+    2
+   ],
+   "expect": "refuse",
+   "landed": [
+    7,
+    10
+   ],
+   "debug": "cell(9,2) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    11,
+    8
+   ],
+   "expect": "refuse",
+   "landed": [
+    7,
+    10
+   ],
+   "debug": "cell(11,8) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    11,
+    10
+   ],
+   "expect": "refuse",
+   "landed": [
+    7,
+    10
+   ],
+   "debug": "cell(11,10) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    12,
+    8
+   ],
+   "expect": "refuse",
+   "landed": [
+    7,
+    10
+   ],
+   "debug": "cell(12,8) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    13,
+    8
+   ],
+   "expect": "refuse",
+   "landed": [
+    7,
+    10
+   ],
+   "debug": "cell(13,8) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=Y occ=n",
+   "pass": true,
+   "frame": "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/throne_hall/felt_13_8.png"
+  },
+  {
+   "cell": [
+    14,
+    9
+   ],
+   "expect": "refuse",
+   "landed": [
+    7,
+    10
+   ],
+   "debug": "cell(14,9) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    12,
+    9
+   ],
+   "expect": "refuse",
+   "landed": [
+    7,
+    10
+   ],
+   "debug": "cell(12,9) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    13,
+    10
+   ],
+   "expect": "refuse",
+   "landed": [
+    7,
+    10
+   ],
+   "debug": "cell(13,10) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    15,
+    6
+   ],
+   "expect": "refuse",
+   "landed": [
+    7,
+    10
+   ],
+   "debug": "cell(15,6) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    2,
+    3
+   ],
+   "expect": "refuse",
+   "landed": [
+    7,
+    10
+   ],
+   "debug": "cell(2,3) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=Y occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    11,
+    4
+   ],
+   "expect": "accept",
+   "landed": [
+    11,
+    4
+   ],
+   "debug": "cell(11,4) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=n occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    11,
+    5
+   ],
+   "expect": "accept",
+   "landed": [
+    11,
+    5
+   ],
+   "debug": "cell(11,5) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=n occ=n",
+   "pass": true,
+   "frame": "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/throne_hall/felt_11_5.png"
+  },
+  {
+   "cell": [
+    4,
+    4
+   ],
+   "expect": "accept",
+   "landed": [
+    4,
+    4
+   ],
+   "debug": "cell(4,4) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=n occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    4,
+    5
+   ],
+   "expect": "accept",
+   "landed": [
+    4,
+    5
+   ],
+   "debug": "cell(4,5) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=n occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    4,
+    8
+   ],
+   "expect": "accept",
+   "landed": [
+    4,
+    8
+   ],
+   "debug": "cell(4,8) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=n occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    4,
+    9
+   ],
+   "expect": "accept",
+   "landed": [
+    4,
+    9
+   ],
+   "debug": "cell(4,9) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=n occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    7,
+    4
+   ],
+   "expect": "accept",
+   "landed": [
+    7,
+    4
+   ],
+   "debug": "cell(7,4) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=n occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    8,
+    4
+   ],
+   "expect": "accept",
+   "landed": [
+    8,
+    4
+   ],
+   "debug": "cell(8,4) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=n occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    5,
+    2
+   ],
+   "expect": "accept",
+   "landed": [
+    5,
+    2
+   ],
+   "debug": "cell(5,2) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=n occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    10,
+    2
+   ],
+   "expect": "accept",
+   "landed": [
+    10,
+    2
+   ],
+   "debug": "cell(10,2) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=n occ=n",
+   "pass": true
+  },
+  {
+   "cell": [
+    8,
+    10
+   ],
+   "expect": "accept",
+   "landed": [
+    8,
+    10
+   ],
+   "debug": "cell(8,10) rest=True foe=(5,5)'char_6dae5bd5c1eb' imp=n occ=n",
+   "pass": true
+  }
+ ]
+}

@@ -79,8 +79,11 @@ def test_derive_room_walkable_blocked_doors(geo):
 def test_derive_room_matches_real_shop_geometry():
     m = P.derive_room(json.loads((_GEO_DIR / "shop_geometry.json").read_text()))
     assert m.cols == 13 and m.rows == 10
-    assert len(m.walkable) == 65                    # the measured shop walkable count
-    assert (6, 0) in m.doors and (12, 5) in m.doors
+    # the measured shop walkable count after the 2026-09-02 re-author (qa/reauthor_legacy_room.md):
+    # the counter/shelves/bench/table footprints moved onto their painted masses and the east arcade
+    # band became wall, and (6,0) was retired to wall — the shop now has ONE door, the painted archway.
+    assert len(m.walkable) == 52
+    assert m.doors == {(12, 4)}
 
 
 def test_spawns_are_walkable_and_present(geo):

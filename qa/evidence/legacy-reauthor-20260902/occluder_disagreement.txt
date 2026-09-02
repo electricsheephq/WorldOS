@@ -1,0 +1,26 @@
+Occluder sidecars vs the RE-AUTHORED grid (2026-09-02, qa/reauthor_legacy_room.md).
+Sidecar regeneration needs the Unity Editor's ExportBoxes — a SEPARATE lane. This file is the handoff.
+Cells derived by projecting each sidecar box (world-space centre/size, kind != floor) back onto the grid
+with the contract map cell->world (greybox_render_headless.cell_to_world).
+
+camp_clearing: NO occluder sidecar in the manifest — the runtime uses footprint proxies for all 43 blocked cells; nothing to re-export.
+
+tavern_snug (boxes/tavern_snug_v1_boxes.json)
+  blocked-without-occluder 17: [(1, 1), (1, 4), (1, 5), (2, 1), (2, 4), (2, 5), (3, 1), (4, 3), (4, 4), (5, 4), (7, 1), (7, 3), (7, 4), (7, 5), (9, 7), (9, 8), (10, 8)]
+  occluder-over-open-floor 21: [(3, 3), (3, 4), (3, 5), (3, 6), (4, 2), (4, 6), (5, 0), (5, 2), (5, 5), (5, 6), (6, 2), (7, 6), (7, 7), (8, 2), (8, 4), (8, 5), (8, 6), (8, 7), (10, 2), (10, 3), (11, 4)]
+
+shop (boxes/shop_v1_boxes.json)
+  blocked-without-occluder 32: [(1, 1), (1, 2), (1, 7), (1, 8), (2, 2), (2, 4), (2, 8), (3, 2), (3, 4), (4, 4), (5, 4), (5, 7), (6, 1), (6, 4), (7, 1), (7, 4), (8, 1), (8, 2), (8, 4), (8, 8), (9, 1), (9, 2), (9, 4), (9, 8), (10, 2), (10, 6), (10, 8), (11, 2), (11, 3), (11, 5), (11, 6), (11, 8)]
+  occluder-over-open-floor 19: [(2, 1), (2, 6), (2, 7), (3, 1), (3, 6), (3, 7), (4, 1), (5, 3), (5, 5), (6, 3), (6, 5), (7, 3), (7, 6), (7, 7), (8, 3), (8, 6), (8, 7), (9, 3), (12, 4)]
+
+throne_hall (boxes/throne_hall_v1_boxes.json)
+  blocked-without-occluder 42: [(5, 8), (6, 8), (7, 3), (9, 5), (9, 9), (10, 6), (10, 7), (11, 1), (11, 2), (11, 3), (11, 6), (11, 7), (11, 10), (12, 1), (12, 2), (12, 3), (12, 4), (12, 5), (12, 6), (12, 7), (12, 8), (12, 9), (12, 10), (13, 1), (13, 2), (13, 4), (13, 5), (13, 6), (13, 7), (13, 8), (13, 9), (13, 10), (14, 1), (14, 2), (14, 3), (14, 4), (14, 5), (14, 6), (14, 7), (14, 8), (14, 9), (14, 10)]
+  occluder-over-open-floor 11: [(4, 4), (4, 5), (4, 8), (4, 9), (5, 2), (7, 4), (8, 4), (8, 11), (10, 2), (11, 4), (11, 5)]
+
+crypt (boxes/crypt_kit_v1_boxes.json)
+  blocked-without-occluder 0: []
+  occluder-over-open-floor 0: []
+
+Known consequence already measured: crypt (13,7) — the hero stands on legitimate flagstone BEHIND the
+carved sarcophagus and draws THROUGH it because the sidecar does not mask him. That is this lane, not
+geometry: blocking open floor to hide a missing occluder re-creates the phantom-blocker class.

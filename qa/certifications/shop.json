@@ -31,7 +31,7 @@
   "artifacts": {
     "plate_sha256": "fa6d79814f32484f587f1e661ff1958b935e1e0edcd5f072f7f4ab29ed908c37",
     "boxes_sha256": "23120009cd1f61a795d0c4a80842cc8c610fca0e2ac51afba2298704fbd65f29",
-    "geometry_sha256": "eeefbf60031f015f7eb6c07f32a2048d426254786baf4bd1cf85399f98bafe78"
+    "geometry_sha256": "994a93365103486d2e92dbd4b983c9c967b1ceb369762dba0523a1dad22dfc5c"
   },
-  "walk_report": "qa/evidence/walk-shop-recert/shop/walk_report.json"
+  "walk_report": "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/shop/shop/walk_report.json"
 }

@@ -753,8 +753,18 @@ def run_gate(room: str, engine: str, qa: str, *, stride: int, out: Path,
         report["orphans"] = [list(c) for c in orphan_cells(mask, start)]
     reachable_set = bfs_reachable(mask, start) if start else set(mask["walkable"])
 
+    # A cell another token STANDS on is walkable geometry the engine still refuses to move onto
+    # (occupancy, not collision) — clicking it fails the reachable assert for a reason the room is not
+    # guilty of. Skip those cells and record them, so an NPC staged mid-room can never fake a RED.
+    occupied = set()
+    for tok in (surf.get("tokens") or (surf.get("stage") or {}).get("tokens") or []):
+        cell = (tok.get("x"), tok.get("y"))
+        if cell != start and None not in cell:
+            occupied.add((int(cell[0]), int(cell[1])))
+    report["occupied_skipped"] = sorted([list(c) for c in occupied & reachable_set])
     interior = [(c, r) for (c, r) in reachable_set
-                if 0 < c < mask["cols"] - 1 and 0 < r < mask["rows"] - 1]
+                if 0 < c < mask["cols"] - 1 and 0 < r < mask["rows"] - 1
+                and (c, r) not in occupied]
     interior.sort()
     doors = sorted(mask["doors"])
     blocked = sorted(mask["blocked"])

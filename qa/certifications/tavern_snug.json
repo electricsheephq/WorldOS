@@ -17,7 +17,7 @@
   "artifacts": {
     "plate_sha256": "cd6235125a56c029987282849b227edd8f754bdd7bc3fac94f71293349c6e792",
     "boxes_sha256": "2d0120fa2970547d6b21d84d8323d720a500ab09f5d36a130948e85802337f68",
-    "geometry_sha256": "4f6b0b05c8dfd583a1815ca9df341eb2307c9387dcb8df31df267e290d519a68"
+    "geometry_sha256": "e623503f044f8bc990e370ea6d75ab220d83e1020b193c4eb34c1cdf698e853b"
   },
-  "walk_report": "qa/evidence/walk-snug/tavern_snug/walk_report.json"
+  "walk_report": "/Users/m1/worldos-wt-reauthor/qa/evidence/legacy-reauthor-20260902/tavern_snug/tavern_snug/walk_report.json"
 }
