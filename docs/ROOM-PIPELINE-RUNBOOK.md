@@ -590,6 +590,46 @@ cosmetic, so a door "misalignment" is a label/arrival-cell fix, never a collisio
 | `docs/research/2026-07-10-stage-tech-research.md` | REJECTED-APPROACHES register cross-linked from the plate recipe decision |
 | `docs/RUNBOOK-INDEX.md` | The run-type registry — every run in this pipeline has a row (runner, tier, evidence, scores surface) |
 
+## ★ G1 GATE RECIPE — the exact commands the 2026-09-02 measurement used (copy verbatim; boot-exam gap)
+
+The §9 G1 row is only citable when it was produced by THIS recipe (exhaustive walk + visual registration + live cert +
+packaged pins) on a build whose identity is recorded. Every path is ABSOLUTE and every port is explicit — the tools'
+built-in defaults (`8766`/`8971`) point at the claude-max bridge on the Paris Mac, never at WorldOS.
+
+```bash
+WOS=/Users/m1/WorldOS; APP=/Users/m1/worldos-unity/BuildOutput/WorldOSPlayer.app
+ENGINE=http://127.0.0.1:8866; QA=http://127.0.0.1:8972          # sandbox pair; owner instance = 8776/8981
+PY="uv run --directory $WOS/servers/engine python"                # relative qa/ paths resolve INSIDE servers/engine → absolute only
+# 0. build identity (the "build sha" in SCORECARD rows = the player BINARY sha256 prefix; unity repo head + engine main are recorded beside it)
+shasum -a 256 "$APP/Contents/MacOS/WorldOSPlayer" | cut -c1-8; git -C /Users/m1/worldos-unity rev-parse --short HEAD; git -C $WOS rev-parse --short main
+strings "$(find "$APP/Contents/Resources/Data" -name level0 | head -1)" | grep -c KitRoom_   # must be 0 (contamination gate)
+$PY $WOS/qa/packaged_pins.py "$APP" --repo                          # packaged plate/boxes/manifest per room == repo → GREEN required
+# 1. the registered-world fixture (party seeded IN the crypt; no monsters) — the kit rooms live only here
+$PY $WOS/qa/qa_sandbox.py up --run g1 --campaign registered_world_v1 --app "$APP" \
+  --seed-cmd "uv run --directory $WOS/servers/engine python $WOS/qa/seed_gfx_registered_world.py {state}"
+# 2. exhaustive walk gate, crypt (every reachable + impassable cell; 4 pixel-diff registration samples)
+$PY $WOS/qa/walk_test.py --room crypt --exhaustive --visual 4 --engine $ENGINE --qa $QA --out <evidence>/walk-crypt
+# 3. cross to the tavern over the QA channel (crypt door cell (7,0)), confirm the live scene, gate it the same way
+curl -s -X POST -H 'Content-Type: application/json' -d '{"c":7,"r":0}' $QA/click; sleep 8
+curl -s $ENGINE/combat-surface | python3 -c "import sys,json; print(json.load(sys.stdin)['grid']['sceneId'])"   # must name the tavern
+$PY $WOS/qa/walk_test.py --room tavern --exhaustive --visual 4 --engine $ENGINE --qa $QA --out <evidence>/walk-tavern
+# 4. live cert slice (primitives are crypt-seeded → click back through (7,0) first if the party is in the tavern)
+$PY $WOS/qa/player_cert.py --live --engine $ENGINE --qa $QA --campaign registered_world_v1 --app "$APP" --out <evidence>/player_cert
+$PY $WOS/qa/qa_sandbox.py down --run g1
+```
+
+Reading the verdicts: `walk_test` exit 0 GREEN / 1 RED / 2 ERROR (a harness fault is never a room verdict); the G1 row records
+`reachable n/0 · impassable n/0 · doors n/0 · path n/0 · visual 4/0 · camera <ortho> exact`. `player_cert` on this fixture reports
+`cast_renders_full_figure = ERROR` (no foe seeded) — that is the harness, not the build. Then EYEBALL the final frames (the 3-vs-4
+tables catch of 2026-09-02 was pixels, not a gate) and mint certs: `qa/room_pipeline.write_certification` → `qa/certifications/<room>.json`.
+
+**Pre-build data sync (the EnsurePackaged trap):** `BuildMacOSPlayer.EnsurePackaged` copies the Unity PROJECT ROOT's data into
+StreamingAssets at build time — sync the repo's `extensions/renderers/unity/{plates/,boxes/,plates_manifest.json,registry.json,effects_registry.json}`
+to `/Users/m1/worldos-unity/{plates/,boxes/,plates_manifest.json,registry.json,effects_registry.json}` (NOT to
+`Assets/StreamingAssets/`, which the build overwrites), then build via the Stdio bridge
+(`extensions/renderers/unity/tools/mcp_stdio_exec.py call execute_menu_item '{"menu_path":"Tools/WorldOS/Build/macOS Player (Universal)"}'`)
+and re-run step 0. Never launch the player outside `qa_sandbox.py` (windowed contract) with the Editor open.
+
 ## Standing instruments that validate a room after it ships
 
 See `docs/OPERATIONS.md` "Journey-eval + the coherence gate — standing instruments" — the coherence
