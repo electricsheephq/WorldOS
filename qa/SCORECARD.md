@@ -167,3 +167,17 @@ for the arc. Evidence root: `session-notes/2026-09-02/worldos-refresh/artifacts/
 Instruments added this pass: packaged-pin check (`step56_measure.sh pins` → repo tool in flight, #1651 family); the adventure-fixture
 crypt gate RED (110/3 · visual 3/1) was fully explained by goblin-occupied cells → walk_test occupied-cell handling filed (#1709 item 6).
 Standing rule: PIXELS BEFORE CREDIT — the 3-tables-vs-4 eyeball is what exposed the stale packaged data under a green build.
+
+### 2026-09-02 — G2 correction + root cause (supersedes the numbers in the row above; the FAIL verdict stands)
+The first aggregate (`adv_agg_n3_20260902`) was run with RELATIVE run prefixes from the wrong cwd: `adventure_eval` read nothing and
+reported vacuous `completion 0.00 / stuck 1.00 / lenses n/a` (the adjudicator's "aggregate fields empty" flag was the tell). Re-run with
+ABSOLUTE prefixes → **`adv_agg_n3v2_20260902`**: completion 0.00 · pace 0.00 · stuck 0.33 · engagement 1.00 · story 0.86 (4.3/5) ·
+mechanics 0.73 (3.7) · angrydm 3.6 · behavioral 1.00 (GREEN ×3). Weakest link = completion; **G2 = FAIL** (per-run facts unchanged).
+**Root cause (transcript forensics, `artifacts/at-rootcause/`):** the eval harness is byte-identical to the July 3/3 run; the `opus`
+alias now resolves to `claude-opus-5` (July: `claude-opus-4-8`, CLI 2.1.186→2.1.220, +18 MCP tools). The DM drove 37 resolved `attack`
+calls in reboot4 — combat works — but every 2026-09-02 run INVENTS off-seed foes (hobgoblin lieutenant, zombie, extra goblin) and stages
+a second/third fight at the midpoint reversal, overrunning a knife-edge 15-beat budget (July landed at beat 14 with one beat of slack).
+The `action_economy_engaged` / `combat_not_left_active` WARNs are end-state snapshot artifacts, not the defect. Candidate causes:
+DM-model swap (~65%) vs structural beat budget (~25%); discriminating control run `adv_ctl_o48` (DM pinned to `claude-opus-4-8`, all
+else equal) in flight. Instrument gaps filed on #1709: `adventure_eval` must ERROR on run prefixes that resolve to no files; the
+behavioral checker reads only the last combat snapshot; `quest_completed` is stamped on a FAILED quest.
