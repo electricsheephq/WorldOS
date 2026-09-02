@@ -2,9 +2,12 @@
 
 The surface gains an additive `stage` = {mode, tokens}. In REST mode (no active combat) the
 tokens are a pure deterministic projection of the party + present NPCs onto scene_grid.spawns
-cells; in COMBAT mode the block is {mode:"combat", tokens:[]} so a rest token never leaks onto
-the tactical board. Engine stays sole writer; the block is a NEW key only, so every existing
-consumer of the combat surface is byte-unchanged.
+cells; in COMBAT mode (#1752) the SAME cast is projected, but every actor in the fight takes its
+cell + vitals from the authoritative top-level `tokens` — so there is exactly one placement
+authority per actor and no rest cell can contradict the tactical board. (The block used to be
+EMPTY in combat, which froze the rendered frame on the last rest stage for an entire fight.)
+Engine stays sole writer; the block is a NEW key only, so every existing consumer of the combat
+surface is byte-unchanged.
 
 Invariants asserted here:
   * TEXT-TIER BYTE-IDENTITY — deleting `stage` yields EXACTLY today's payload (same keys, same
@@ -225,14 +228,26 @@ class SceneAtRestProjectionTests(unittest.TestCase):
         # No token landed on the blocked bar anchor (3,2).
         self.assertNotIn((3, 2), placed)
 
-    def test_combat_mode_carries_no_stage_tokens(self):
-        """No double-paint: under active combat the authoritative tokens are the top-level
-        `tokens`; the stage block reports combat mode but places nothing."""
+    def test_combat_mode_paints_the_fight_onto_the_stage(self):
+        """#1752 (supersedes the original empty-in-combat rule): the stage is what the client
+        RENDERS, so an empty stage in combat froze the frame on the last rest projection for a
+        whole fight. In combat the stage carries the combatant, positioned + vitalled from the
+        authoritative top-level `tokens` — one placement authority, no double-paint."""
         surface = _surface(_combat_snapshot())
         self.assertEqual(surface["stage"]["mode"], "combat")
-        self.assertEqual(surface["stage"]["tokens"], [])
-        # ...while the combat board itself still has its tokens (unchanged path).
-        self.assertTrue(surface["tokens"])
+        by_id = {t["id"]: t for t in surface["stage"]["tokens"]}
+        self.assertIn("pc_hero", by_id)
+        board = {t["id"]: t for t in surface["tokens"]}
+        self.assertEqual(
+            (by_id["pc_hero"]["x"], by_id["pc_hero"]["y"]),
+            (board["pc_hero"]["x"], board["pc_hero"]["y"]),
+            "a combatant's stage cell must come from the tactical board, not its rest spawn",
+        )
+        self.assertTrue(by_id["pc_hero"]["is_turn"])
+        # A bystander who is NOT in the fight keeps its rest placement — the innkeeper does not
+        # vanish from the room because swords came out.
+        self.assertIn("npc_keeper", by_id)
+        self.assertEqual((by_id["npc_keeper"]["x"], by_id["npc_keeper"]["y"]), (3, 3))
 
     def test_projection_is_deterministic(self):
         a = _surface(_rest_snapshot())["stage"]
@@ -358,15 +373,18 @@ class SceneAtRestLiveMonsterTests(unittest.TestCase):
         # rest_role "foe" — NOT "npc", so the client's click-to-TALK path never fires on a monster.
         self.assertEqual(by_id["mon_boss"]["rest_role"], "foe")
 
-    def test_combat_mode_carries_no_monster_tokens(self):
-        """Combat-inertness: with a live monster present but combat ACTIVE, the stage block is
-        empty (the authoritative tokens are the top-level combat board) — the #1639 addition
-        cannot double-emit onto the combat surface."""
+    def test_combat_mode_still_shows_a_resident_monster(self):
+        """#1752: a live monster in the room stays on the stage while a fight runs. It is not in
+        THIS fight's order, so it keeps its rest placement (foe lane) — the room does not empty
+        out the moment initiative is rolled."""
         snap = _combat_snapshot()
         snap["characters"]["mon_boss"] = self._monster("loc1")
         surface = _surface(snap)
         self.assertEqual(surface["stage"]["mode"], "combat")
-        self.assertEqual(surface["stage"]["tokens"], [])
+        by_id = {t["id"]: t for t in surface["stage"]["tokens"]}
+        self.assertIn("mon_boss", by_id)
+        self.assertEqual(by_id["mon_boss"]["rest_role"], "foe")
+        self.assertFalse(by_id["mon_boss"]["is_turn"])
         self.assertTrue(surface["tokens"])  # the combat board itself is unchanged
 
     def test_monster_present_surface_is_still_stage_only_new_key(self):
