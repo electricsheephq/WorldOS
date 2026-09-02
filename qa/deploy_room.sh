@@ -15,6 +15,11 @@
 # Pre-req: the GEX44 ControlMaster at /tmp/gex44-cm.sock (gex44-unity-host skill).
 set -euo pipefail
 
+if [ "${WORLDOS_ALLOW_RETIRED_HOST:-0}" != "1" ]; then
+  echo "GEX44 retired 2026-08-06 — see docs/GEX44-RETIRED.md" >&2
+  exit 2
+fi
+
 LOCAL_PLATE="${1:?usage: deploy_room.sh <local_plate.png> [box_plate_name.png] [campaign_id]}"
 BOX_NAME="${2:-$(basename "$LOCAL_PLATE")}"
 CAMPAIGN="${3:-}"

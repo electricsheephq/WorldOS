@@ -29,7 +29,7 @@
 5. **`docs/roadmap/PROCEDURAL-SCORECARD.md` (Jul 16) — the freshest narrative truth** for the generator chain; narrates the tip events (dress_focal v2/#1618, the wing hardening, the dwing-wing 0-adopted close-out).
 6. `docs/ROOM-PIPELINE-RUNBOOK.md` (Jul 16) — the 11-step room pipeline; §10b sandbox hot-load gate loop; §11 walkability ship gate (BOTH beauty panel AND `qa/walk_test.py` GREEN to ship).
 7. `qa/PANEL-PROTOCOL.md` (Jul 16) — the versioned blind-panel ruler; nobody freehands the ruler; author never renders own verdict.
-8. Active sprint charter: GitHub issue **#1386** (Act II close-out, Rendered Felt) — box claim queue lives in its comments.
+8. Active sprint charter: GitHub issue **#1702** (DEMO COMPLETION, then the town) — local Editor locking and the sandbox owner-active guard live in `docs/OPERATIONS.md`.
 9. `docs/roadmap/NOW.md` — **refreshed to the 2026-07-20 truth in PR #1624** (the Jul-9 staleness is resolved); it is again the you-are-here surface. Keep it current per its session-close contract (update at every session close / charter transition).
 10. Live plan (Claude-side but plain markdown): `~/.claude/plans/bubbly-cooking-stallman.md` — read **lines 596–668 first** (final log + queue); the CURRENT STATE block at 669+ is an older anchor.
 
@@ -42,12 +42,12 @@
 - **Open PRs that matter**: #1617 (Unity persistence runbook — its OPERATIONS.md sections are NOT in base yet), #1498 (outdoor LoRA, blocked on Scenario train-model quota — owner decision), #1298 (day-plate selection, intentionally unmerged pending owner), #1012 draft (slab tiering, A/B-gated), #1622 (dependabot).
 - **GEX44**: **RETIRED 2026-08-06 — the box was thrown away and is not a lane** (the 2026-07-20 "reachable, up 19 days, near-idle" reading is dead history; its LFS/autosave-cron save story died with it). Unity now runs locally — see §5. **GitHub LFS push is still blocked on a paid data pack (~$5/mo owner billing decision)**; local commits + the `/Users/m1/Codex/worldos-unity-mirror` mirror are the save story meanwhile.
 
-## 4. The next-cycle packet (Task #76 — the staged opener)
+## 4. Historical next-cycle packet (Task #76 — superseded staged opener)
 
 Source: `~/.claude/tasks/237280f0-e8fe-4529-bb6e-72957d537c61/76.json` (status: pending) + GitHub issues #1618/#1619/#1620 + plan STATE block. All paths verified to exist.
 
 1. **Regen** the wing with dress_focal v2 via `tools/generate_town.py` (staged on main @ `fd23e972`).
-2. **Local Unity render ×3** per ROOM-PIPELINE-RUNBOOK §3 (greybox render — the shaded base + optional depth/normal sidecars) via `extensions/renderers/unity/tools/mcp_stdio_exec.py`; batch the #1616 T-pose registry-sync + player rebuild into the same local build; use the Unity menu build command and commit the source changes here.
+2. **Local Unity G1 gate recipe (successor to this packet)** — use `docs/ROOM-PIPELINE-RUNBOOK.md` → **“G1 GATE RECIPE”** verbatim: sync the project-root plates/boxes/manifest, build through `extensions/renderers/unity/tools/mcp_stdio_exec.py call execute_menu_item '{"menu_path":"Tools/WorldOS/Build/macOS Player (Universal)"}'`, then run the explicit-port `qa/qa_sandbox.py` + exhaustive `qa/walk_test.py` checks. The old section-3 greybox pointer is historical; the Stdio bridge and G1 recipe are the current local path.
 3. **Paint** via `qa/paint_room.py --boxes` (err_cells hard gate auto-warps via the similarity fit).
 4. **Hot-load sandbox gates** per runbook §10b (fire-masked, tri-state; cycle `current_room` per room).
 5. **Blind-adjudicated verdicts** per `qa/PANEL-PROTOCOL.md` — panels via `qa/panel_workflow.mjs` with `CAL_shipped_shop` calibration reference.
@@ -95,13 +95,13 @@ Shared surfaces that make either side's work visible to the other:
 3. **Scores ledger** — every scored run to `qa/scores_db.py` with provider/methodology stamps.
 4. **POINTER step** — update the lane's charter/issue + `docs/roadmap/NOW.md` at session close (NOW.md refreshed in #1624; the POINTER step keeps it current).
 5. **Universal Run Contract** — HEALTH → EVIDENCE → SCORE → VERDICT → POINTER, every run type.
-6. **Box claim queue** — charter #1386 comments, regardless of which agent drives.
+6. **Local Editor lock** — one headed Unity Editor on this Mac; `qa/qa_sandbox.py` owns the player and enforces the owner-active guard (see `docs/OPERATIONS.md`).
 
 ## 8. Where Kimi can add value now (ordered, cheapest-first)
 
 1. **Doc-hygiene PR — DONE (this file + NOW.md + RUNBOOK-INDEX land via #1624)** (zero CU, zero box): refreshed `docs/roadmap/NOW.md` to the 2026-07-20 truth + added RUNBOOK-INDEX rows for the `qa/walk_test.py` / `tools/generate_town.py` chain. Pure repo loop.
 2. **#1619 render_recipe** (zero CU): the code half that kills recipe-authoring bugs — the previous session recommended landing it BEFORE the repaint. **Update: render_recipe PR #1626 opened, in review.**
-3. **Task #76 next cycle** (CU refilled; box claim via #1386): the full regen → render → paint → gate → adjudicate loop, §4 above. **Update: stage 1 regen opened as PR #1625.**
+3. **Task #76 historical packet** (no box claim): the successor local G1 recipe and its explicit Stdio/sandbox commands are in §4 above. **Update: stage 1 regen opened as PR #1625.**
 4. **#1620 experience gates** and the open companions of #1618.
 5. Later/larger: a valid 5-persona RRI sweep to replace the contaminated f5500ac row; dist/WorldOS.app rebuild; towns beyond the 4-room proof (exteriors/streetscape generator is the known gap; TILED-SPACE-SPIKE ruling says towns = layout problem).
 
@@ -111,4 +111,4 @@ Shared surfaces that make either side's work visible to the other:
 2. GitHub LFS data pack for the box repo (~$5/mo) — buy, or keep tarball-only saves?
 3. GitNexus — **RESOLVED 2026-07-20: the MCP is wired for Kimi** (impact/detect_changes live from the canonical checkout; index rebuild to the tip runs detached).
 4. PR this onboarding doc (+ NOW.md refresh) through the normal loop? — **RESOLVED: landed via #1624.**
-5. Green-light to claim the box on #1386 and start Task #76 — **GRANTED 2026-07-21** (CU refilled; reviews + merge first).
+5. Green-light to claim the box on #1386 and start Task #76 — **RETIRED/NOT APPLICABLE** after GEX44 was discarded; use the local Unity lane instead.

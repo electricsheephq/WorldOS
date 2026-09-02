@@ -41,8 +41,9 @@ worktree off main → implement ADDITIVELY (honor every VISION invariant) → re
 tests (`uv run --directory servers/engine python -m pytest <files> -q -p no:xdist`) +
 `qa/fast_gate.sh` → push + PR (HEREDOC body) → review-gated merge (CI green + review threads
 resolved; validate bot findings against source before acting — they are hypotheses) → prune.
-Full detail: the `worldos-dev` skill / `WorldOS-RUNBOOK.md`. Heavy QA runs on the support VM
-(`WorldOS-GUI-RUNBOOK.md`); box/Unity work follows `extensions/renderers/unity/CANONICAL.md`
+Full detail: the `worldos-dev` skill / `WorldOS-RUNBOOK.md`. Heavy QA runs LOCALLY on this machine
+(14 cores / 64 GB, per the 2026-08-03 test policy — the support VM is no longer required); see
+`WorldOS-GUI-RUNBOOK.md`. Unity work follows `extensions/renderers/unity/CANONICAL.md`
 (read it FIRST — canonical state lives there) + the GUI runbook's box discipline.
 
 **Delegation notes:** agents working in the canonical checkout (not a worktree) MUST `git checkout
@@ -222,11 +223,22 @@ operating rule for anything visual and owner-bound, not just that one panel type
 
 ## Local Unity lane (GEX44 retired 2026-08-06)
 
-GEX44 is gone: do not claim, SSH, rsync, build, capture, or save on it. Unity work runs at
+**RETIRED 2026-08-06 — GEX44 is gone.** Do not claim, SSH, rsync, build, capture, or save on
+`46.4.26.123`, `/home/unity`, or the old `gex44-unity-host` tooling. Unity work runs locally at
 `/Users/m1/worldos-unity` (Unity 6000.5.6f1; mirror `/Users/m1/Codex/worldos-unity-mirror`) via
 `extensions/renderers/unity/tools/mcp_stdio_exec.py`; build with `execute_menu_item "Tools/WorldOS/Build/macOS Player (Universal)"`,
 capture with `manage_camera`, and run isolated QA on 8866/8972 via `qa/qa_sandbox.py`.
-The old claim queue and `worldos-unity-save.sh` cron are retired; commit source here and mirror assets locally.
+
+**Local is primary:** this Mac (14 cores / 64 GB) owns Unity and heavy QA; `support-vm-1` is a
+customer box and is not the default heavy-sweep host. Single-tenant discipline is now local:
+
+- Before opening a headed Editor, run `pgrep -f 'Unity.app/Contents/MacOS/Unity'`. If it returns a
+  PID, reuse or coordinate with that one Editor; never launch a second process.
+- Keep one Editor build/capture operation in flight at a time. `qa/qa_sandbox.py up` owns the player
+  and enforces its owner-active guard (`SANDBOX-DEFERRED (owner active)`, exit 75; the explicit
+  `FORCE_PLAYER_QA=1` override is for unattended operation only).
+- The former box claim queue, Built-in-RP note, and `worldos-unity-save.sh` cron are historical
+  context only; commit source here and mirror assets locally.
 
 ## Journey-eval + the coherence gate — standing instruments (not one-off checks)
 

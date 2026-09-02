@@ -75,6 +75,10 @@ def render(tag: str) -> None:
 
 
 def main() -> None:
+    if os.environ.get("WORLDOS_ALLOW_RETIRED_HOST", "0") != "1":
+        print("GEX44 retired 2026-08-06 — see docs/GEX44-RETIRED.md", file=sys.stderr)
+        raise SystemExit(2)
+
     s = surface()
     hero = next(t for t in s["tokens"] if t["team"] == "ally")
     gob = next(t for t in s["tokens"] if t["team"] == "foe")

@@ -3,6 +3,10 @@
 # Runs a tiled, structure-locked SDXL + Tile-ControlNet img2img detail pass
 # through the local ComfyUI HTTP API (127.0.0.1:8188) and writes the result to <out.png>.
 set -euo pipefail
+if [ "${WORLDOS_ALLOW_RETIRED_HOST:-0}" != "1" ]; then
+  echo "GEX44 retired 2026-08-06 — see docs/GEX44-RETIRED.md" >&2
+  exit 2
+fi
 
 IN="${1:?usage: tile_detail.sh <in.png> <out.png> <denoise>}"
 OUT="${2:?usage: tile_detail.sh <in.png> <out.png> <denoise>}"

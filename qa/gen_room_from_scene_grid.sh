@@ -14,6 +14,11 @@
 # the GEX44 ControlMaster at /tmp/gex44-cm.sock (gex44-unity-host skill); ~/.worldos/scenario.key.
 set -euo pipefail
 
+if [ "${WORLDOS_ALLOW_RETIRED_HOST:-0}" != "1" ]; then
+  echo "GEX44 retired 2026-08-06 — see docs/GEX44-RETIRED.md" >&2
+  exit 2
+fi
+
 CID="${1:?usage: gen_room_from_scene_grid.sh <campaign_id> <room_type> [strength] [state_dir]}"
 ROOM="${2:?room_type (crypt|tavern|church|...)}"
 STRENGTH="${3:-0.55}"   # default: structure-faithful (interior props stay on-cell). ~0.7 = more painterly.

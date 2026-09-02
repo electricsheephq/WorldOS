@@ -5,6 +5,11 @@
 #   worldos-unity-save.sh          -> commit-if-dirty only (frequent)
 #   worldos-unity-save.sh --push   -> commit + best-effort LFS push (daily)
 set -uo pipefail
+if [ "${WORLDOS_ALLOW_RETIRED_HOST:-0}" != "1" ]; then
+  echo "GEX44 retired 2026-08-06 — see docs/GEX44-RETIRED.md" >&2
+  exit 2
+fi
+
 export HOME=/home/unity
 cd /home/unity/worldos-unity || exit 1
 LOG=/home/unity/worldos-autosave.log
