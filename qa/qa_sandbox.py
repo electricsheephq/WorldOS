@@ -34,6 +34,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shlex
 import signal
 import subprocess
@@ -79,6 +80,71 @@ def _meta_path(run: str) -> Path:
     return _rundir(run) / "sandbox.json"
 
 
+# ── QA kit-scene contamination detector ────────────────────────────────────────────────────────────
+# build_room_kit.cs assembles kit rooms as "KitRoom_<roomId>" roots in whatever scene is open; a capture
+# flow that SAVED the scene baked them into the next build, and the player then drew grey kit masses in
+# front of every plate (kit-tavern 2026-07-23). BuildMacOSPlayer now strips them at build time; this is
+# the independent check that a given .app is actually clean before a sweep trusts it.
+_QA_ROOT_RE = re.compile(rb"KitRoom_[A-Za-z0-9_]+")
+
+# Unity may serialize a scene's objects into level*, into the shared-asset archives, or into the raw
+# resource streams beside them. A level-only scan (the first cut of this check) therefore reads CLEAN on
+# a contaminated app whose objects landed in sharedassets — so scan all three.
+_SCAN_GLOBS = ("level*", "sharedassets*", "*.resS")
+_SCAN_CHUNK = 8 << 20        # bounded: stream in 8 MiB chunks (a .resS is routinely GB-scale) ...
+_SCAN_BUDGET = 4 << 30       # ... and stop after 4 GiB total so a pathological build can't hang the gate
+
+# Helper CHILD objects the kit rig creates UNDER a KitRoom_<roomId> root (brazier fires, tomb glow, cool
+# key light). They carry the KitRoom_ prefix but are never roots, so a scan that matches ONLY these has
+# found the rig's lights, not a kit room shipped inside the player. The names are PARSED from the C# that
+# creates them, so the allowlist cannot drift from the names actually emitted; the tuple below is only the
+# fallback for a checkout without the renderer extension, and qa/test_qa_sandbox_kit_roots.py asserts the
+# two agree.
+_KIT_BUILDER_CS = REPO / "extensions/renderers/unity/scripts/build_room_kit.cs"
+_KIT_HELPER_FALLBACK = ("KitRoom_Fire", "KitRoom_TombGlow", "KitRoom_CoolKey")
+_KIT_HELPER_RE = re.compile(r'KitHelper\w+\s*=\s*"(KitRoom_[A-Za-z0-9_]+)"')
+
+
+def _kit_helper_names(source: Path = _KIT_BUILDER_CS) -> frozenset:
+    """Helper child-object names, read from build_room_kit.cs's `KitHelper*` constants."""
+    try:
+        names = _KIT_HELPER_RE.findall(source.read_text())
+    except OSError:
+        names = []
+    return frozenset(names or _KIT_HELPER_FALLBACK)
+
+
+def _qa_roots_in_app(app: Path) -> set:
+    """Names of QA kit-scene ROOTS (KitRoom_*) baked into the app's serialized data.
+
+    Unity stores GameObject names as plain bytes, so a byte scan is a reliable, dependency-free
+    detector (the same check as `strings level0 | grep KitRoom_`). Helper children are subtracted:
+    a helper-only match is the light rig, not contamination.
+    """
+    found: set = set()
+    data_dir = app / "Contents" / "Resources" / "Data"
+    scanned: set = set()
+    budget = _SCAN_BUDGET
+    for pattern in _SCAN_GLOBS:
+        for f in sorted(data_dir.glob(pattern)):
+            if f.name in scanned or not f.is_file():
+                continue
+            scanned.add(f.name)
+            try:
+                with f.open("rb") as fh:
+                    tail = b""
+                    while budget > 0:
+                        chunk = fh.read(min(_SCAN_CHUNK, budget))
+                        if not chunk:
+                            break
+                        budget -= len(chunk)
+                        found.update(m.decode() for m in _QA_ROOT_RE.findall(tail + chunk))
+                        tail = chunk[-64:]      # overlap: a name split across chunks still matches
+            except OSError:
+                continue
+    return found - _kit_helper_names()
+
+
 def up(run: str, *, campaign: str, engine_port: int, qa_port: int,
        seed_cmd: str, app: Path) -> dict:
     rd = _rundir(run)
@@ -119,6 +185,14 @@ def up(run: str, *, campaign: str, engine_port: int, qa_port: int,
     if not pbin.exists():
         engine.terminate()
         raise SystemExit(f"[sandbox] player binary missing: {pbin}")
+    contaminated = _qa_roots_in_app(app)
+    if contaminated:
+        engine.terminate()
+        raise SystemExit(
+            f"[sandbox] app CONTAMINATED — QA kit roots baked into the build: {sorted(contaminated)} "
+            f"({app}). A KitRoom_* scene root was saved into the canonical scene and shipped; it renders "
+            f"grey kit masses over every plate (kit-tavern 2026-07-23). Rebuild via BuildMacOSPlayer, "
+            f"which strips them for the build and reports strippedQARoots in build-report.txt.")
     penv = dict(os.environ,
                 WORLDOS_ENGINE_BASE_URL=f"http://127.0.0.1:{engine_port}",
                 WORLDOS_CAMPAIGN_ID=campaign,
