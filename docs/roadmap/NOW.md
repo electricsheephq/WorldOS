@@ -8,8 +8,9 @@ _Last updated: 2026-09-02 (UTC) — **REBOOT after 5 weeks dormant + a machine m
 Charter #1702 (`active-sprint`) is the plan of record. Done so far: renderer restored LOCALLY (Unity 6000.5.6f1 on
 the Paris Mac; Stdio MCP bridge; canonical scene decontaminated), #1690 split (#1703 data half MERGED, C# gate half
 in flight), engine static gates green (fast_gate 257 / walk_static). NOT yet re-measured: the §9 G1-G4 table (Track A
-step 6) — until it lands, every row below is 2026-07-21 state. The GEX44 box and the LEXAR drive are GONE; any path
-under `/Volumes/LEXAR` or `/Users/lume` in these docs is historical._
+step 6) — until it lands, every row below is 2026-07-21 state. The GEX44 box and the LEXAR drive are GONE; the
+canonical local checkout is now `/Users/m1/WorldOS` (path sweep in #1708) and any remaining `/Volumes/LEXAR` or
+`/Users/lume` path in these docs is historical._
 
 > Depth: `docs/roadmap/PROCEDURAL-SCORECARD.md` (generator-chain narrative) ·
 > `docs/ROOM-PIPELINE-RUNBOOK.md` (11-step room pipeline; §11 walk ship gate) ·
