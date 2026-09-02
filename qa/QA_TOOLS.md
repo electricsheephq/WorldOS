@@ -5,15 +5,15 @@ This is the command map for agents. It does not replace the release truth in
 
 Default local paths:
 
-- App/private-art checkout: `/Users/lume/WorldOS`.
-- Evidence root: `/Volumes/LEXAR/Codex`.
+- App/private-art checkout: `/Users/m1/WorldOS`.
+- Evidence root: `/Users/m1/Codex`.
 - Heavy persona/backend sweeps: GitHub CI or the owner-provided support VM after explicit preflight.
 
 ## Fast GUI And Native App Gates
 
 | Tool | Use it for | Writes / reads | Do not use when |
 |---|---|---|---|
-| `qa/app_handoff_gate.py` | The current fastest handoff gate: web scripted smoke, built `dist/WorldOS.app` scripted smoke, short built-app Codex playtest, and bounded hook checks on one SHA | `/Volumes/LEXAR/Codex/worldos-agent-grade-app-testability/<run-id>/handoff.json` plus gate evidence bundles | You need the final release verdict; run RRI instead |
+| `qa/app_handoff_gate.py` | The current fastest handoff gate: web scripted smoke, built `dist/WorldOS.app` scripted smoke, short built-app Codex playtest, and bounded hook checks on one SHA | `/Users/m1/Codex/worldos-agent-grade-app-testability/<run-id>/handoff.json` plus gate evidence bundles | You need the final release verdict; run RRI instead |
 | `qa/app_smoke_scripted.py` | Deterministic multi-beat scripted smoke against the web/viewer harness | Screenshots, app-status snapshots, moves, `smoke.json` | You need real-provider behavior or native shell proof |
 | `qa/ui_playtest_app.sh` | Built-app/native harness with native Part A+B evidence and stable failure buckets | Native app run dir, app-status snapshots, screenshots, move/chat artifacts | You only need a quick static or web smoke |
 | `qa/export_app_evidence.py` | Normalize a live app or run dir into a reviewable evidence bundle | `manifest.json`, status/session snapshots, screenshots, traces, logs | You are trying to prove behavior without first running a gate |
@@ -23,12 +23,12 @@ Default local paths:
 Copy-paste fast handoff command:
 
 ```bash
-cd /Users/lume/WorldOS
+cd /Users/m1/WorldOS
 python3 qa/app_handoff_gate.py \
   --web-beats 5 \
   --built-beats 5 \
   --codex-moves 1 \
-  --art-root /Users/lume/WorldOS \
+  --art-root /Users/m1/WorldOS \
   --scripted-budget 1.00 \
   --codex-budget 3.00 \
   --timeout 90 \

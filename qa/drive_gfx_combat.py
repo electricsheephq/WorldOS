@@ -17,14 +17,17 @@ import shutil
 import subprocess
 import sys
 import urllib.request
+from pathlib import Path
 
 VIEWER = sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:8770"
 CID = sys.argv[2] if len(sys.argv) > 2 else "camp_gfxdemo01"
 CM = "/tmp/gex44-cm.sock"
 BOX = "root@46.4.26.123"
-RENDER_SCRIPT = "/Users/lume/WorldOS/extensions/renderers/unity/scripts/paint_combat_v1.cs"
+RENDER_SCRIPT = str(Path(__file__).resolve().parents[1] / "extensions/renderers/unity/scripts/paint_combat_v1.cs")
 BOX_CAP = "/home/unity/worldos-unity/Captures-Durable/m1_combat_v1.png"
-OUT_DIR = "/Users/lume/worldos-session-notes/renders"
+OUT_DIR = os.environ.get("WORLDOS_RENDER_OUT", str(Path.home() / "Codex/session-notes/renders"))
+# The box-era CLI is superseded by extensions/renderers/unity/tools/mcp_stdio_exec.py.
+UNITY_MCP = shutil.which("unity-mcp") or str(Path.home() / ".local/bin/unity-mcp")
 # M-D: deliver each frame into the viewer's /image cache so the in-app <Img> backdrop serves it.
 STATE_DIR = os.environ.get("WORLDOS_STATE_DIR", "/tmp/gfx_state")
 
@@ -62,7 +65,7 @@ def post_move(move: dict) -> dict:
 
 def render(tag: str) -> None:
     scope = surface().get("combatFrameScope", "")  # the current turn's frame scope (matches what the box renders)
-    subprocess.run(["/Users/lume/.local/bin/unity-mcp", "code", "execute", "--no-safety-checks",
+    subprocess.run([UNITY_MCP, "code", "execute", "--no-safety-checks",
                     "-f", RENDER_SCRIPT], capture_output=True, timeout=160)
     png = f"{OUT_DIR}/m1_combat_{tag}.png"
     subprocess.run(["scp", "-o", f"ControlPath={CM}", f"{BOX}:{BOX_CAP}", png], capture_output=True, timeout=30)

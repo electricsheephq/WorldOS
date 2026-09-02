@@ -288,11 +288,11 @@ python3 extensions/renderers/godot/tools/pack_sheet.py --frames <dir>/frames \
   checking the error is *"export template not found"* (preset OK) vs *"no preset named X"* (preset wrong).
   Committed presets are Web (single-threaded) + Linux; #1058 adds macOS.
 - **GDScript coroutines must be awaited** — you can't "start all then await"; sequential `await` per surface is correct.
-- **Multi-session repo.** Other agents share `/Users/lume/WorldOS`. Always work in a **worktree off
+- **Multi-session repo.** Other agents share `/Users/m1/WorldOS`. Always work in a **worktree off
   `origin/main`**; never branch-flip the shared checkout. Merges can hit a transient "base branch was
   modified" race → retry.
 - **Godot 4.4+ writes `.gd.uid` files** — commit them. Gitignore `.godot/`, `*.import`, export outputs.
-- **After a merge batch**, refresh GitNexus once: `gitnexus analyze /Users/lume/WorldOS --name worldos --embeddings --index-only`.
+- **After a merge batch**, refresh GitNexus once: `gitnexus analyze /Users/m1/WorldOS --name worldos --embeddings --index-only`.
 
 <a name="backlog"></a>
 ## 9. The historical issue backlog (reference only until #1165 resolves)

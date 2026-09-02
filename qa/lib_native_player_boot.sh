@@ -9,10 +9,11 @@
 # --- locate the installed MCP SDK (worktrees have no node_modules — accept an explicit override
 # or the canonical checkout's qa/playwright install). $PW_DIR must be set by the caller. -----------
 find_sdk_node_modules() {
-  local c
+  local c script_root
+  script_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
   for c in "${WORLDOS_NPT_NODE_MODULES:-}" \
            "${PW_DIR:-}/node_modules" \
-           "/Users/lume/WorldOS/qa/playwright/node_modules"; do
+           "${script_root}/qa/playwright/node_modules"; do
     [ -n "$c" ] && [ -d "$c/@modelcontextprotocol" ] && { echo "$c"; return 0; }
   done
   return 1

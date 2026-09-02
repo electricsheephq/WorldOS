@@ -21,7 +21,7 @@
 **Preflight (do this before any command below):** read `docs/OPERATIONS.md` first — it's the
 general cold-start bootstrap (worktree discipline, box claim etiquette, the Universal Run Contract)
 this page specializes for room authoring. Verify `pwd` before running anything: you should be inside
-a real checkout of this repo (`/Users/lume/WorldOS` or an approved same-disk worktree per
+a real checkout of this repo (`/Users/m1/WorldOS` or an approved same-disk worktree per
 OPERATIONS.md's worktree-discipline section) — never a bare scratch directory. Any step below that
 touches the live Unity project (step 9's `plates_manifest.json`, step 10's player rebuild) requires
 the canonical checkout or box path named in that step; don't improvise a different location.
