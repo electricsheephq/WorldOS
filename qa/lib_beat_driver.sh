@@ -1324,9 +1324,12 @@ worldos_runbook_for_beat() {
 # ARC MODE only: has the arc passed its SECOND objective (for the seeded fixture, "Clear the crypt
 # of goblins")? Read off the campaign snapshot the harness already keeps, so the reversal latch below
 # can honour "after the crypt is cleared OR the true midpoint, WHICHEVER IS LATER" instead of firing
-# on the beat number alone. Returns 0 (true) when any quest has >= 2 completed objectives. Fails
-# CLOSED (returns 1) on a missing/unparseable snapshot — an unfired reversal is recoverable, one
-# fired into an uncleared crypt is the failure this whole lane exists to stop.
+# on the beat number alone. Matched BY IDENTITY, never by count: complete_objective accepts
+# objectives in ARBITRARY order, so "2 of 4 done" can mean Maera + the boss with the crypt still
+# contested — the exact premature state this latch exists to prevent. Returns 0 (true) only when the
+# quest's OWN objectives[1] is in its completed list. Fails CLOSED (returns 1) on a
+# missing/unparseable snapshot — an unfired reversal is recoverable, one fired into an uncleared
+# crypt is the failure this whole lane exists to stop.
 # $1 = STATE_DIR
 worldos_arc_second_objective_done() {
   local snap; snap="$(worldos_snapshot_path "$1")"
@@ -1336,7 +1339,13 @@ import json, sys
 d = json.load(open(sys.argv[1], encoding="utf-8"))
 q = d.get("quests") or {}
 for quest in (q.values() if isinstance(q, dict) else q):
-    if isinstance(quest, dict) and len(quest.get("completed_objectives") or []) >= 2:
+    if not isinstance(quest, dict):
+        continue
+    objectives = quest.get("objectives") or []
+    if len(objectives) < 2:
+        continue
+    done = {str(o) for o in (quest.get("completed_objectives") or [])}
+    if str(objectives[1]) in done:
         raise SystemExit(0)
 raise SystemExit(1)
 ARCOBJPY

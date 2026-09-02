@@ -249,15 +249,21 @@ def _arc_seeded_species(path: str) -> set[str]:
     missing manifest must not manufacture a FAIL)."""
     if not path:
         return set()
+    # SHAPE, not just parseability: a truncated/recovered run can leave valid JSON of the wrong shape
+    # ([] or a bare string), and `.get` on that raises AttributeError — which would abort the whole
+    # gate before it printed a verdict, the exact opposite of the stand-down this docstring promises.
     try:
         d = json.loads(Path(path).read_text(encoding="utf-8"))
+        if not isinstance(d, dict):
+            return set()
+        # `species` is already the engine's slug list; `names` (display labels like "Goblin Warrior
+        # 1") is only the fallback for a manifest written without it. Non-iterable field => stand down.
+        species, names = d.get("species"), d.get("names")
+        slugs = {_arc_slug(x) for x in species} if isinstance(species, list) else set()
+        if not slugs and isinstance(names, list):
+            slugs = {_arc_slug(x) for x in names}
     except Exception:
         return set()
-    # `species` is already the engine's slug list; `names` (display labels like "Goblin Warrior 1")
-    # is only the fallback for a manifest written without it.
-    slugs = {_arc_slug(x) for x in (d.get("species") or [])}
-    if not slugs:
-        slugs = {_arc_slug(x) for x in (d.get("names") or [])}
     return {x for x in slugs if x}
 
 
@@ -375,9 +381,13 @@ def _arc_death_signal(inp: dict, obj: object, cid: str, name: str) -> str:
             continue
         if m.get("dead") is True:
             return "result dead=true"
+        # DOWNED IS NOT DEAD — the engine's own predicate (servers/engine/server.py: `ch.dead or
+        # (ch.current_hp <= 0 and not ch.stable)`). A giver dropped to 0 and STABILISED inside the
+        # beat is exactly what clause (C) asks the DM to do; failing that run would punish the fix.
         v = m.get("current_hp")
-        if isinstance(v, (int, float)) and not isinstance(v, bool) and v <= 0:
-            return "result current_hp=0"
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and v <= 0 \
+                and m.get("stable") is not True and m.get("dead") is not False:
+            return "result current_hp=0 (not stabilised)"
     return ""
 
 
@@ -1891,6 +1901,18 @@ def main() -> int:
                 continue
             label = str(inp.get("name") or inp.get("location_id") or "?")
             adds.append(f"{_arc_beat_label(bt)} \"{label}\"")
+        mints = []
+        for bt, short, inp, _o, err in arc_events:
+            if short != "create_character" or err:
+                continue
+            mints.append(f"{_arc_beat_label(bt)} \"{str(inp.get('name') or '?')}\"")
+        if mints:
+            chk("arc_no_create_character", False,
+                f"create_character called at {'; '.join(mints)} — the arc's cast is SEEDED (Keeper "
+                f"Maera, Merchant Oswin, the party); every failed Opus-5 arc run opened by minting a "
+                f"grief NPC and walking them into the crypt as a second body to lose, which is beats "
+                f"the boss never gets", fatal=True)
+
         if adds:
             chk("arc_no_add_location", False,
                 f"add_location called at {'; '.join(adds)} — the seeded map is complete (crypt "
@@ -1931,8 +1953,17 @@ def main() -> int:
         # Keeper Maera at beat 15, three beats after the boss died — objective 4 ("Return to Maera
         # for the reward") became unreachable and the quest ended softlocked-OPEN with 3/4 done.
         # A quest giver is not a prop the reversal may spend.
+        # Rule (F) binds only UNTIL THE QUEST RESOLVES. Read the unresolved quests off the final
+        # snapshot FIRST and stand the whole essential-cast lens down when there are none: a final
+        # beat that completes the last objective and then kills the giver as part of the resolved
+        # ending broke no rule, and an arc that FINISHED must never be failed for what happened after.
+        _quests = state.get("quests", {}) or {}
+        _q_iter = _quests.values() if isinstance(_quests, dict) else _quests
+        unresolved = [str(q.get("title") or q.get("id") or "?") for q in _q_iter
+                      if isinstance(q, dict) and str(q.get("status") or "").lower() == "active"]
+
         essential = _arc_essential_cast(state)
-        if essential:
+        if essential and unresolved:
             killed: dict[str, tuple[object, str, str]] = {}   # cid -> (beat, name, reason)
             for bt, short, inp, obj, err in arc_events:
                 if short not in _ARC_LETHAL_TOOLS or err:
@@ -1952,17 +1983,16 @@ def main() -> int:
                     fatal=True)
 
             # The SOFTLOCK itself, read off the final snapshot: an unresolved quest plus a dead
-            # essential NPC is an arc that can no longer complete, however it got there.
+            # essential NPC is an arc that can no longer complete, however it got there. DEAD, not
+            # merely down — the engine's own predicate (server.py: `ch.dead or (ch.current_hp <= 0
+            # and not ch.stable)`); a giver stabilised at 0 HP is recoverable and is NOT a softlock.
             chars_now = state.get("characters", {}) or {}
             dead_essential = [n for cid, n in essential.items()
                               if isinstance(chars_now.get(cid), dict)
                               and (chars_now[cid].get("dead") is True
-                                   or (chars_now[cid].get("current_hp") or 0) <= 0)]
-            _quests = state.get("quests", {}) or {}
-            _q_iter = _quests.values() if isinstance(_quests, dict) else _quests
-            unresolved = [str(q.get("title") or q.get("id") or "?") for q in _q_iter
-                          if isinstance(q, dict) and str(q.get("status") or "").lower() == "active"]
-            if dead_essential and unresolved:
+                                   or ((chars_now[cid].get("current_hp") or 0) <= 0
+                                       and chars_now[cid].get("stable") is not True))]
+            if dead_essential:
                 chk("arc_quest_softlocked_on_dead_npc", False,
                     f"quest(s) {unresolved} are still ACTIVE at the end of the run while essential "
                     f"NPC(s) {dead_essential} are dead — the remaining objectives can never be "

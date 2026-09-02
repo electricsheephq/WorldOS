@@ -104,6 +104,16 @@ sys.stdout.write(src)' \
     "and the characters already in the scene SPEAK — a whole session spent in the opening location at the opening hour is a FAILED session that flips the gate RED"
 }
 
+# GATE COVERAGE, kept honest (the brief above must never claim more than qa/assert_behavioral.py
+# actually enforces — a rule advertised as a hard FAIL that no check implements makes prompt
+# compliance, not the instrument, the verdict). Gate rows today:
+#   (A) arc_only_seeded_species   (B) arc_no_create_character (the "never a new creature" half)
+#   (C) arc_no_reroll_character   (D) arc_no_add_location
+#   (E) arc_end_combat_live_hostiles
+#   (F) arc_essential_npc_killed + arc_quest_softlocked_on_dead_npc
+# NOT gated, scorer-judged only: (C)'s "never below 1 HP before the crypt is cleared", (D)'s beat-3 /
+# beat-6 arrival deadlines, (F)'s "be captured, or leave the map". Add a check here before promoting
+# any of those to "hard FAIL" in the brief.
 adv_dm_brief() {
   local campaign_id="$1" quest_title="$2" base
   base="$(adv_dm_duo_brief)" || return 1
@@ -131,7 +141,9 @@ ever reached. COMBAT-CLOSURE DISCIPLINE, non-negotiable and enforced by the QA g
   (3) ADVANCE THE CLOCK after significant beats — a resolved fight, a cleared room, reaching the
       throne hall — via advance_time / long_rest / travel_to(advance_time=True). An arc where the
       clock never moves is a dm_advanced_time WARN.
-THE SEEDED-ARC RULES, each one enforced by the QA gate as a hard FAIL:
+THE SEEDED-ARC RULES — all binding. The TOOL-CALL ones are enforced by the QA gate as hard
+FAIL rows that flip the entire run RED and cap its score; the arrival deadlines and the PC
+HP floor are judged by the scorers instead, and are no less binding on you:
   (A) THE ONLY HOSTILE CREATURES IN THIS WORLD ARE THE SEEDED ONES: three Goblin Warriors in the
       crypt and the Goblin Boss in the throne hall. Never spawn_monster a species the seed does not
       contain — no undead, no hobgoblins, no wights, nothing from the bestiary that is not already

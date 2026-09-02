@@ -354,3 +354,91 @@ def test_essential_cast_stands_down_without_a_quest(tmp_path):
     ]
     _rc, out = _run_gate(tmp_path, ev)
     assert "arc_essential_npc_killed" not in out, out
+
+
+# ── 6. bot-round hardening (PR #1766) ──────────────────────────────────────────────────────────
+def test_killing_the_giver_after_the_quest_resolved_is_not_a_kill_row(tmp_path):
+    """Clause (F) binds only UNTIL the quest resolves. A final beat that completes the last
+    objective and then kills the giver as part of the resolved ending broke no rule — an arc that
+    FINISHED must never be failed for what happened after it finished."""
+    ev = _clean_events() + [
+        _beat(20), _call("k1", "update_character",
+                         {"character_id": MAERA, "patch": {"dead": True, "current_hp": 0}}),
+        _result("k1", {"id": MAERA, "name": "Keeper Maera", "dead": True, "current_hp": 0}),
+    ]
+    _rc, out = _run_gate(tmp_path, ev, state_obj=_state_with_quest("completed", maera_dead=True))
+    assert not [r for r in _arc_fail_rows(out) if "arc_essential" in r or "softlock" in r], out
+
+
+def test_a_stabilised_giver_is_downed_not_dead(tmp_path):
+    """The engine explicitly permits an NPC at 0 HP to be stable and healed (server.py: `ch.dead or
+    (ch.current_hp <= 0 and not ch.stable)`), and clause (C) asks the DM to stabilise INSIDE the
+    beat. A recoverable run must not be score-capped as a softlock."""
+    state = _state_with_quest("active")
+    state["characters"][MAERA] = {"kind": "npc", "name": "Keeper Maera",
+                                  "dead": False, "current_hp": 0, "stable": True}
+    ev = _clean_events() + [
+        _beat(9), _call("a1", "attack", {"attacker_id": "char_boss", "defender_id": MAERA}),
+        _result("a1", {"hit": True, "target": {"id": MAERA, "name": "Keeper Maera",
+                                               "current_hp": 0, "dead": False, "stable": True}}),
+    ]
+    _rc, out = _run_gate(tmp_path, ev, state_obj=state)
+    assert not [r for r in _arc_fail_rows(out) if "arc_essential" in r or "softlock" in r], out
+
+
+def test_an_unstabilised_giver_at_zero_hp_still_softlocks(tmp_path):
+    """The other side of the same coin: down and NOT stable, with the quest still open, is the
+    softlock the row exists for — the downed/dead split must not become a hole."""
+    state = _state_with_quest("active")
+    state["characters"][MAERA] = {"kind": "npc", "name": "Keeper Maera",
+                                  "dead": False, "current_hp": 0, "stable": False}
+    _rc, out = _run_gate(tmp_path, _clean_events(), state_obj=state)
+    assert [r for r in _arc_fail_rows(out) if "arc_quest_softlocked_on_dead_npc" in r], out
+
+
+def test_create_character_fails_with_beat(tmp_path):
+    """The arc runbook names create_character a forbidden call; give the claim teeth. This is the
+    opening grief-NPC that all three failed Opus-5 arc runs minted."""
+    ev = _clean_events() + [
+        _beat(2), _call("c1", "create_character", {"name": "TomTom the grieving brother"}),
+        _result("c1", {"id": "char_tom", "name": "TomTom the grieving brother"}),
+    ]
+    rc, out = _run_gate(tmp_path, ev)
+    assert rc == 1, out
+    row = [r for r in _arc_fail_rows(out) if "arc_no_create_character" in r]
+    assert row and 'beat 2 "TomTom the grieving brother"' in row[0], out
+
+
+def test_create_character_is_green_without_arc_mode(tmp_path):
+    """The lens is opt-in: run_duo/play mint NPCs by design and must stay unaffected."""
+    ev = _clean_events() + [
+        _beat(2), _call("c1", "create_character", {"name": "TomTom"}),
+        _result("c1", {"id": "char_tom", "name": "TomTom"}),
+    ]
+    _rc, out = _run_gate(tmp_path, ev, arc=False)
+    assert not _arc_fail_rows(out), out
+    assert "arc_no_create_character" not in out
+
+
+def test_a_failed_create_character_is_not_a_fail(tmp_path):
+    ev = _clean_events() + [
+        _beat(2), _call("c1", "create_character", {"name": "TomTom"}),
+        _result("c1", {"error": "guard: seeded arc"}, is_error=True),
+    ]
+    _rc, out = _run_gate(tmp_path, ev)
+    assert not _arc_fail_rows(out), out
+    assert "arc_no_create_character" not in out
+
+
+def test_a_wrong_shaped_manifest_stands_the_spawn_rule_down(tmp_path):
+    """A truncated/recovered run can leave valid JSON of the WRONG shape. That must stand the spawn
+    rule down exactly as an unreadable manifest does — never abort the gate before its verdict."""
+    ev = _clean_events() + [
+        _beat(5), _call("s1", "spawn_monster", {"name": "Wight"}),
+        _result("s1", {"spawned": [{"id": "c9"}], "name": "Wight"}),
+    ]
+    for shape in ([], "goblin-warrior", 7):
+        _rc, out = _run_gate(tmp_path, ev, manifest=shape)
+        assert "behavioral assertions" in out, (shape, out)   # a verdict was printed at all
+        assert not _arc_fail_rows(out), (shape, out)
+        assert "arc_only_seeded_species" not in out, (shape, out)

@@ -47,17 +47,21 @@ A_INTRO="$(_worldos_runbook_body 1 20 "" "$STATE_DIR")"
 # fall through to rising-action (never the "wait for it" directive that could never be re-offered),
 # and the SAME beat with 2 completed objectives must fire it — once.
 A_MID_EARLY="$(_worldos_runbook_body 10 20 "camp" "$STATE_DIR")"
-_arc_snapshot() {  # $1 = number of completed objectives
+_arc_snapshot() {  # $1 = comma-separated INDICES (0-based) of the completed objectives
   local dir="$STATE_DIR/campaigns/c1"; mkdir -p "$dir"
   python3 -c 'import json,sys
-n=int(sys.argv[2])
 objs=["Speak with Keeper Maera","Clear the crypt of goblins","Slay the goblin boss","Return to Maera for the reward"]
-json.dump({"quests":{"q1":{"id":"q1","status":"active","objectives":objs,"completed_objectives":objs[:n]}},
+done=[objs[int(i)] for i in sys.argv[2].split(",") if i != ""]
+json.dump({"quests":{"q1":{"id":"q1","status":"active","objectives":objs,"completed_objectives":done}},
            "characters":{},"locations":{}}, open(sys.argv[1],"w"))' "$dir/snapshot.json" "$1"
 }
-_arc_snapshot 1
+_arc_snapshot 0
 A_MID_UNCLEARED="$(_worldos_runbook_body 10 20 "camp" "$STATE_DIR")"
-_arc_snapshot 2
+# complete_objective takes objectives in ARBITRARY order: Maera + the boss is TWO done with the
+# crypt still contested. A count-based latch fires here — the exact premature state it must prevent.
+_arc_snapshot 0,2
+A_MID_OUT_OF_ORDER="$(_worldos_runbook_body 10 20 "camp" "$STATE_DIR")"
+_arc_snapshot 0,1
 A_MID="$(_worldos_runbook_body 10 20 "camp" "$STATE_DIR")"
 A_MID_AGAIN="$(_worldos_runbook_body 11 20 "camp" "$STATE_DIR")"
 has "RUNBOOK — SCENE-INTRO" "$A_INTRO" && ! has "named face here who SPEAKS" "$A_INTRO" \
@@ -75,6 +79,9 @@ has "the reversal is a PRICE, never a new fight or a new creature" "$A_MID" \
 ! has "MIDPOINT REVERSAL" "$A_MID_UNCLEARED" \
   && pass "crypt not cleared at the midpoint ⇒ falls through, no 'wait for it' directive" \
   || fail "arc reversal fired before objective 2: $A_MID_UNCLEARED"
+! has "MIDPOINT REVERSAL" "$A_MID_OUT_OF_ORDER" \
+  && pass "two objectives done OUT OF ORDER (crypt uncleared) ⇒ still no reversal" \
+  || fail "arc reversal fired on objective COUNT, not on the crypt: $A_MID_OUT_OF_ORDER"
 ! has "MIDPOINT REVERSAL" "$A_MID_AGAIN" \
   && pass "arc reversal is issued exactly once (latched)" \
   || fail "arc reversal re-fired on a later beat: $A_MID_AGAIN"
@@ -90,6 +97,16 @@ fi
 # --- run_adventure sets the flag; run_duo must NOT --------------------------------------------
 grep -q '^export WORLDOS_ARC_MODE=1' "$ROOT/qa/run_adventure.sh" \
   && pass "run_adventure.sh sets WORLDOS_ARC_MODE" || fail "run_adventure.sh does not set WORLDOS_ARC_MODE"
+# agent_play drives the SAME seeded campaign through adv_dm_brief, so it must get the same rewrites
+# — otherwise its DM is handed the arc addendum and a runbook that recommends the calls it forbids.
+grep -q 'export WORLDOS_ARC_MODE=1' "$ROOT/qa/agent_play.sh" \
+  && pass "agent_play.sh sets WORLDOS_ARC_MODE (same seeded arc)" \
+  || fail "agent_play.sh drives the seeded arc without WORLDOS_ARC_MODE — contradictory directives"
+# The latch is a once-per-RUN sentinel: a fresh rerun of a completed run-id must clear it, or two
+# "identical" ruler runs follow different directives.
+grep -q 'rm -f "$STATE_DIR/.arc_reversal_issued"' "$ROOT/qa/run_adventure.sh" \
+  && pass "fresh-run cleanup clears the reversal latch" \
+  || fail "run_adventure.sh never clears .arc_reversal_issued — a rerun would skip the reversal"
 if grep -q 'WORLDOS_ARC_MODE' "$ROOT/qa/run_duo.sh" "$ROOT/qa/run_duo_openclaw.sh" 2>/dev/null; then
   fail "a run_duo runner references WORLDOS_ARC_MODE — the duo lane must be untouched"
 else

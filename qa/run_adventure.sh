@@ -153,6 +153,11 @@ adv_clean_stale_artifacts() {
     "$T/$RUN.dm.err" "$T/$RUN.player.err" \
     2>/dev/null || true
   rm -f "$T/$RUN".dm.*.jsonl "$T/$RUN".player.*.jsonl 2>/dev/null || true
+  # The arc midpoint-reversal LATCH (qa/lib_beat_driver.sh) is a once-per-RUN sentinel, not a
+  # once-per-run-ID one: leaving it behind would suppress the reversal on every later fresh run of
+  # this id, so two "identical" ruler runs would follow different directives. The RESUME path never
+  # reaches here, so an actual checkpoint resume still keeps its latch.
+  rm -f "$STATE_DIR/.arc_reversal_issued" 2>/dev/null || true
 }
 
 # ── seed the campaign (fresh run) ───────────────────────────────────────────────────────────────

@@ -583,6 +583,16 @@
       "retest": "bash qa/run_adventure.sh arc-retest 20 4.00",
       "hint": "add_location was called during a SEEDED arc run. The seeded map is complete (crypt connects DIRECTLY to throne_hall); an invented room takes the boss out of the destination the arc is built around. ARC ADDENDUM rule (D). Arc-only (WORLDOS_GATE_ARC)."
     },
+    "arc_no_create_character": {
+      "category": "DM_ADHERENCE",
+      "likely_code_locations": [
+        "qa/run_adventure.sh",
+        "qa/lib_beat_driver.sh",
+        "qa/lib_adventure_dm.sh"
+      ],
+      "retest": "bash qa/run_adventure.sh arc-retest 20 4.00",
+      "hint": "create_character was called during a SEEDED arc run. The cast is seeded (Keeper Maera, Merchant Oswin, the party); every failed Opus-5 arc run opened by minting a grief NPC and walking them into the crypt as a second body to lose, which is beats the boss never gets. ARC ADDENDUM rule (B)/(D). Arc-only (WORLDOS_GATE_ARC)."
+    },
     "arc_only_seeded_species": {
       "category": "DM_ADHERENCE",
       "likely_code_locations": [
