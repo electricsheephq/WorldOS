@@ -1,8 +1,9 @@
 # GEX44 box — connection, claim discipline, and live facts
 
-> Read this alongside `CANONICAL.md` (canonical render state) before any box op. `CANONICAL.md` is
-> the "what's the current-best render" doc; this file is the "how do I reach/claim/drive the box"
-> doc.
+> **GEX44 retired 2026-08-06 — see `docs/roadmap/NOW.md`; do not run the historical procedures below.**
+> Local equivalent: Unity 6000.5.6f1 at `/Users/m1/worldos-unity` via
+> `extensions/renderers/unity/tools/mcp_stdio_exec.py`; build with the WorldOS macOS menu command,
+> capture with `manage_camera`, QA via `qa/qa_sandbox.py` (8866/8972; owner 8776/8981).
 
 ## Connection
 
@@ -13,7 +14,7 @@
   `/tmp/gex44-cm.sock`) rather than repeated fresh connections. NEVER hammer retries — that is what
   trips the rate limit in the first place.
 
-## Live-claim rule (box is single-tenant)
+## Historical live-claim rule (retired)
 
 - Before any box op: **comment on the ACTIVE sprint-charter issue** naming the op you're about to
   run + a start timestamp. Check for an unreleased claim first — an unreleased/stale claim means
@@ -24,7 +25,7 @@
 - **Restore box state after your op** (active plate / active scene) so the next claimant starts
   from a known state.
 
-## Facts (current as of 2026-07-08)
+## Historical facts (as of 2026-07-08)
 
 - **Unity MCP on :8080 now exposes 29 tools with NO `execute_code`.** To run arbitrary editor code,
   use `create_script` with a `MenuItem` wrapper: create the script → `refresh_unity` +
@@ -38,13 +39,13 @@
   `loc-lower-city`) — a **hash** id (`loc_<hex>`) renders a bare grid, not the intended plate. Check
   the location's id shape before assuming a missing-art bug.
 
-## Procedure pointer
+## Historical procedure pointer
 
 For the full drive loop (bring-up, liveness preflight, the unity-mcp raw drive loop, full-res
 capture, non-black gate), use the `gex44-unity-host` skill. This file is the durable
 connection/claim/facts reference the skill and any cold agent should read first.
 
-## Bridge re-arm (session dropped) — PROVEN recovery, no VNC
+## Historical bridge re-arm (session dropped) — PROVEN recovery, no VNC
 Symptom: MCP calls return `no_unity_session` while the editor process is alive and
 `curl 127.0.0.1:8080/mcp` returns 406 (server healthy). The editor↔server SESSION dropped.
 Fix (headless, over SSH as the `unity` user on DISPLAY=:0):

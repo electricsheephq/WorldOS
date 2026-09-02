@@ -29,12 +29,13 @@
 - The VM cannot prove Mac-only surfaces. `WorldOS.app` build/launch, native #356, and built-app UI play evidence stay on this Mac or macOS CI.
 - VM artifacts can feed RRI only when `run.json`, `score.json`, `session_surface.final.json`, network/image evidence, palette-live evidence, and build SHA are explicit. Otherwise the result remains partial/harness-contaminated.
 
-## GEX44 GPU host (evaos-gpu-gex44-1)
+## Unity / GPU host status (GEX44 retired)
 
-- Internal GPU compute host `evaos-gpu-gex44-1` (Hetzner GEX44, RTX 4000 SFF Ada / 64 GB / Ubuntu 24.04) — NOT a customer VM. Supabase source of truth is `fleet_nodes` with `role = gpu_compute`; do not create or use a `gpu_vms` inventory table for this host.
-- Operator access is operator-only (outside tracked docs): key `~/.openclaw/secrets/evaos-gpu-gex44-1-key`, connection refs in `~/.openclaw/secrets/gex44.env`.
-- **Provisioning is COMPLETE** (verified on-box: the heavy part-B sweep lane, CUDA/local-AI, and the Unity 6000.5.1f1 + Unity-MCP render loop are all proven). GEX44 is now the **preferred** heavy-sweep + Unity/visual-renderer host (the 32 GB support VM is the fallback). Operational details + the connect/capture recipes live in `WorldOS-GUI-RUNBOOK.md` → "GPU-VM lane".
-- No customer data, no customer-VM bootstrap, no live Eva/customer runtime use on this host.
+GEX44 was retired 2026-08-06; do not SSH, rsync, build, capture, or save against `46.4.26.123`,
+`/home/unity`, or the retired `gex44-unity-host` tooling. Unity 6000.5.6f1 runs at
+`/Users/m1/worldos-unity` (mirror `/Users/m1/Codex/worldos-unity-mirror`) via
+`extensions/renderers/unity/tools/mcp_stdio_exec.py`; build with the WorldOS macOS menu command and run
+QA through `qa/qa_sandbox.py`. Heavy backend/persona sweeps use `support-vm-1`.
 
 ## Shared Owned-Repo Policy
 

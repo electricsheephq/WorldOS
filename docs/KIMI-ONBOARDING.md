@@ -47,7 +47,7 @@
 Source: `~/.claude/tasks/237280f0-e8fe-4529-bb6e-72957d537c61/76.json` (status: pending) + GitHub issues #1618/#1619/#1620 + plan STATE block. All paths verified to exist.
 
 1. **Regen** the wing with dress_focal v2 via `tools/generate_town.py` (staged on main @ `fd23e972`).
-2. **Box render ×3** per ROOM-PIPELINE-RUNBOOK §3 (greybox render — the shaded base + optional depth/normal sidecars) + `~/.claude/skills/gex44-unity-host/SKILL.md`; batch the #1616 T-pose registry-sync + player rebuild into the same box build; end the box session with `/home/unity/worldos-unity-save.sh`.
+2. **Local Unity render ×3** per ROOM-PIPELINE-RUNBOOK §3 (greybox render — the shaded base + optional depth/normal sidecars) via `extensions/renderers/unity/tools/mcp_stdio_exec.py`; batch the #1616 T-pose registry-sync + player rebuild into the same local build; use the Unity menu build command and commit the source changes here.
 3. **Paint** via `qa/paint_room.py --boxes` (err_cells hard gate auto-warps via the similarity fit).
 4. **Hot-load sandbox gates** per runbook §10b (fire-masked, tri-state; cycle `current_room` per room).
 5. **Blind-adjudicated verdicts** per `qa/PANEL-PROTOCOL.md` — panels via `qa/panel_workflow.mjs` with `CAL_shipped_shop` calibration reference.
@@ -56,16 +56,15 @@ Source: `~/.claude/tasks/237280f0-e8fe-4529-bb6e-72957d537c61/76.json` (status: 
 - Companions: **#1619 render_recipe** (zero-CU code; consider landing BEFORE the repaint — it kills recipe-authoring bugs) and **#1620** experience gates.
 - **Budget gate**: the cycle costs ~140 Scenario CU; ~160 CU remained as of 2026-07-16 19:00 local with a measured 2/6 bug-fix-repaint base rate → the previous orchestrator deliberately handed off rather than strand it mid-budget. **Update 2026-07-20: Scenario CU refilled (5k+) — the "needs fresh budget" blocker is cleared; still confirm the balance before starting step 3.**
 
-## 5. GEX44 access (probed working 2026-07-20)
+## 5. GEX44 retired / local Unity lane
 
-- Secrets (never print values): `~/.openclaw/secrets/evaos-gpu-gex44-1-key`, `~/.openclaw/secrets/gex44.env` (defines `GEX44_SSH_HOST/USER/PORT/KEY`, `GEX44_UNITY_*` etc.). Endpoint (from tracked docs): `root@46.4.26.123`. Moonlight/WireGuard configs also in that dir for display.
-- **All box access multiplexes over ONE ControlMaster** at `/tmp/gex44-cm.sock` (rapid separate ssh trips trip fail2ban and kill the master for ~10–17 min — batch box checks into one ssh):
-  `ssh -i ~/.openclaw/secrets/evaos-gpu-gex44-1-key -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.openclaw/support/known_hosts -o ConnectTimeout=15 -o ServerAliveInterval=30 -M -S /tmp/gex44-cm.sock -f -N root@46.4.26.123`
-- Tunnels: Unity-MCP `ssh -N -L 8080:127.0.0.1:8080 …`; reverse combat-surface `-R 8765:127.0.0.1:8770` via the master; NoMachine desktop `-L 4000`.
-- On box: Unity `6000.5.1f1` project `/home/unity/worldos-unity` (drive as user `unity`, **Built-in Render Pipeline — not URP**); Unity-MCP on localhost `:8080` (~42 tools, `execute_code` needs `action:"execute"` + `safety_checks:false`); ComfyUI finisher `:8188`; render scripts versioned in repo at `extensions/renderers/unity/scripts/` (deploy to box, never author box-only).
-- **Discipline**: single-tenant — claim by commenting on charter #1386 BEFORE any box op; repo-side work first; `chown -R unity:unity` touched files → ctrl+r → restore the scene you found → **save** (`sudo -u unity /home/unity/worldos-unity-save.sh --push` if anything scene/asset/build changed) → comment release. One bounded MCP op at a time; never `pkill -9`; never touch Mac:8765 (Eva's bridge; WorldOS uses 8770).
-- Box-drive recipe pattern: `qa/evidence/dungen-spike/BOX-DRIVE-RECIPE.md`.
-- Fallback: 32 GB `support-vm-1` (`root@178.104.123.213`, key `~/.openclaw/secrets/cloud-deploy-key`), preflight via `python3 qa/support_vm_preflight.py`; cannot prove Mac-only surfaces.
+- **GEX44 was retired 2026-08-06.** Do not use its endpoint, `/home/unity`, ControlMaster,
+  `gex44-unity-host`, or `worldos-unity-save.sh` references.
+- Use local Unity 6000.5.6f1 at `/Users/m1/worldos-unity` (mirror `/Users/m1/Codex/worldos-unity-mirror`)
+  through `extensions/renderers/unity/tools/mcp_stdio_exec.py`; build with
+  `execute_menu_item "Tools/WorldOS/Build/macOS Player (Universal)"`,
+  capture with `manage_camera`, and run QA via `qa/qa_sandbox.py` (8866/8972; owner 8776/8981).
+- Commit renderer source here; `support-vm-1` is only the heavy-backend-sweep fallback.
 
 ## 6. Skills & agent profiles — porting decision (read-on-demand, NO symlinks/copies)
 
@@ -75,7 +74,7 @@ The skill surface is live-edited (worldos-dev touched Jul 15, blind-adjudicator 
 |---|---|---|
 | Dev loop (canonical) | `/Users/m1/WorldOS/.claude/skills/worldos-dev/SKILL.md` | Read before any dev loop |
 | Decision apparatus | `/Users/m1/WorldOS/.claude/skills/worldos-decide/SKILL.md` | Read when a decision lacks an eval |
-| GEX44/Unity lane | `~/.claude/skills/gex44-unity-host/SKILL.md`, `~/.claude/skills/unity-asset-stack/SKILL.md` | Read before any box op |
+| Local Unity lane | `extensions/renderers/unity/CANONICAL.md`, `extensions/renderers/unity/tools/mcp_stdio_exec.py` | Read before local Unity work |
 | Visual critic / asset gen | `/Users/m1/WorldOS/.claude/skills/visual-critic/SKILL.md`, `.../asset-gen/SKILL.md` | Read on those lanes |
 | Blind adjudicator | `~/.claude/agents/blind-adjudicator.md` | **Port the prompt verbatim** into a Kimi read-only subagent (`plan`/`explore` type) for gate verdicts — self-contained, model-agnostic |
 | Other agent profiles | `~/.claude/agents/{coder,deep-reasoner,fast-worker,codex-worker}.md` | Map frontmatter to Kimi subagent types (`coder`/`plan`/`explore`) |

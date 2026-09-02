@@ -54,7 +54,8 @@ this numbered tree IS the router. The 2D-image-gen router that DOES exist is `se
 
 The shipping in-repo renderer is **Godot 2D** (it BAKES a GLB to 8-facing sprite PNGs via
 `bake_sprites.py` → `pack_sheet.py`; that path is **reference/quarantined** and does NOT use rig
-or animation data). The **live lane is Unity-direct 3D actors** on the GEX44 box (PoE2 pivot, M1.0)
+or animation data). The **live lane is Unity-direct 3D actors** in the local Unity project
+(`/Users/m1/worldos-unity`, PoE2 pivot, M1.0)
 — that is what rig+animate feeds. Two load-bearing import facts (verified 2026-06-28):
 
 - **Import the rigged FBX as `animationType = Generic`, NOT Humanoid.** Tripo/Meshy bone names don't

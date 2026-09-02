@@ -279,9 +279,9 @@ release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI s
 
 ## Support VM lane (heavy sweeps, not Mac-only app truth)
 
-> **Successor host:** the GPU box **GEX44 `evaos-gpu-gex44-1`** (see `## GPU-VM lane` below) now runs this
-> same heavy part-B sweep AND a Unity/visual renderer the 32 GB VM could not host — prefer it for new heavy
-> sweeps. This section stays as the reference for the lane mechanics + a fallback host.
+> **Successor host:** the local Mac Unity lane (see `## Local Unity lane` below) owns Unity/visual rendering.
+> The 32 GB support VM remains the fallback for heavy part-B sweeps; this section is the reference for
+> that lane's mechanics.
 
 - Target: owner-provided **32GB support VM** (`support-vm-1`); connection: `root@178.104.123.213`,
   key `~/.openclaw/secrets/cloud-deploy-key`, repo `/root/worldos-qa/WorldOS`. Further connection/auth
@@ -358,12 +358,22 @@ release truth still requires `qa/ui_playtest_app.sh` Part A+B and the full RRI s
   stays the quality bar** for the release RRI. Full strategy + the cap-rate finding:
   `docs/MODEL-TIERING-STRATEGY.md`.
 
-## GPU-VM lane (evaos-gpu-gex44-1) — heavy part-B sweep + Unity/visual renderer
+## Local Unity lane (GEX44 retired 2026-08-06)
+
+GEX44 is gone. Do not SSH, rsync, build, capture, or save against `46.4.26.123`, `/home/unity`, or
+the retired `gex44-unity-host` skill. Use local Unity 6000.5.6f1 at `/Users/m1/worldos-unity`
+(`/Users/m1/Codex/worldos-unity-mirror`) via `extensions/renderers/unity/tools/mcp_stdio_exec.py`.
+Build with `execute_menu_item "Tools/WorldOS/Build/macOS Player (Universal)"`; capture with `manage_camera`;
+run QA via `qa/qa_sandbox.py` (8866/8972; owner 8776/8981). Keep source authoritative here.
+
+## Historical GEX44 GPU-VM lane (retired — do not follow)
+
+> **GEX44 retired 2026-08-06 — see `docs/roadmap/NOW.md`; local equivalent: the Local Unity lane above.**
+> The dated procedures below are retained only as historical context and evidence provenance.
 
 The **Hetzner GEX44 GPU dedicated server** (`evaos-gpu-gex44-1`, provisioned 2026-06-25; RTX 4000 SFF Ada /
-64 GB / Ubuntu 24.04) is the **successor heavy-QA host** to the `## Support VM lane` above. It runs the same
-part-B 5-persona sweep AND hosts a Unity 6 / Unity-MCP renderer the 32 GB support VM could not. Prefer it for
-new heavy sweeps; the Support VM lane stays documented as the lane-mechanics reference + a fallback host.
+64 GB / Ubuntu 24.04) was the former heavy-QA and Unity render host. This dated record is retained for
+evidence provenance only; use the Local Unity lane and `support-vm-1` above for current work.
 **Connection/auth details live in `~/.openclaw/secrets/gex44.env` (operator-only)** — never put the endpoint,
 SSH key, or the VNC password in this tracked doc (same convention as the Support VM lane).
 

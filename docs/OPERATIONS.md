@@ -220,24 +220,13 @@ verdict enough to post it as "ready." This is the same discipline the felt-rest 
 already states for panel composition (`qa/felt_rest_panel.md`) — restated here as a general
 operating rule for anything visual and owner-bound, not just that one panel type.
 
-## Box claim-queue etiquette (single-tenant GEX44)
+## Local Unity lane (GEX44 retired 2026-08-06)
 
-The GEX44 Unity box is **single-tenant** — one lane's box op at a time. The live pattern (see the
-active sprint charter, e.g. #1386 "Rules of engagement"): **claim by commenting on the owning
-tracker issue before any box op; release (comment) when done.** Concretely:
-- **Poll boundedly, repo-side-first.** Do repo-side work (author geometry, derive manifests, write
-  the plate-loop config, stage panels) BEFORE requesting the box, so the box session is
-  near-mechanical when it starts (see `qa/evidence/dungen-spike/BOX-DRIVE-RECIPE.md` for the
-  pattern: "repo-side is DONE + green; this is the ready-to-run box phase"). Don't idle-poll for
-  the box to free up — do the next repo-side unit of work instead, and check back when you need it.
-- **Claim, do the bounded op, restore, release.** On the box: `chown -R unity:unity` any files you
-  touched, `ctrl+r` (refresh Unity), restore the scene you found, THEN comment release on the
-  claiming issue. Restoring state is part of the op, not optional cleanup.
-- **The Built-in-RP note:** the box's Unity project is **Built-in Render Pipeline, not URP.**
-  Shader/material work that assumes URP (Shader Graph particle materials, certain post-effects)
-  needs a repoint step for this box (e.g. `RepointHovlMaterials`, PR #1515/#1525) — check the
-  pipeline before importing or wiring any new asset pack; the `unity-asset-stack` skill states this
-  per-pack.
+GEX44 is gone: do not claim, SSH, rsync, build, capture, or save on it. Unity work runs at
+`/Users/m1/worldos-unity` (Unity 6000.5.6f1; mirror `/Users/m1/Codex/worldos-unity-mirror`) via
+`extensions/renderers/unity/tools/mcp_stdio_exec.py`; build with `execute_menu_item "Tools/WorldOS/Build/macOS Player (Universal)"`,
+capture with `manage_camera`, and run isolated QA on 8866/8972 via `qa/qa_sandbox.py`.
+The old claim queue and `worldos-unity-save.sh` cron are retired; commit source here and mirror assets locally.
 
 ## Journey-eval + the coherence gate — standing instruments (not one-off checks)
 

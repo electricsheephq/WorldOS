@@ -43,9 +43,9 @@ each unit has its own `scene_grid` (door_cells, #1214) → own greybox → own p
   `paint_combat_v1.cs` follows. The viewer re-reads snapshot.json per /combat-surface (NO restart needed).
 - **PROVEN:** `renders/TRANSITION_stair_to_tomb.png` (same hero crosses crypt stair→tomb) +
   `renders/cc2_nave_combat.png` (live 3D combat in the cathedral nave). Driver `qa/drive_room_transition.py`.
-- **Live machinery:** viewer on Mac:8770 (state dir) + reverse tunnel box:8765→Mac:8770
-  (`ssh -O forward -R 8765:127.0.0.1:8770`); NEVER touch Mac:8765 (Eva's bridge). Run Scenario paints
-  SEQUENTIALLY (concurrent paints collide → silent no-output).
+- **Live machinery:** viewer and Unity run locally on this Mac; drive the headed editor via
+  `extensions/renderers/unity/tools/mcp_stdio_exec.py`. NEVER touch Mac:8765 (Eva's bridge). Run
+  Scenario paints SEQUENTIALLY (concurrent paints collide → silent no-output).
 - **Open (next):** the in-app UI "cross" button (a post-combat cross_door intent + jsx affordance) is the
   player-triggered completion — needs its own resolution lane (cross_door is post-combat, not a combat turn).
 
@@ -144,8 +144,8 @@ Historical: the box-era `paint_3d_spike.cs` / `Captures-Durable/m10_spike.png` r
    is committed here in `extensions/renderers/unity/scripts/`.
 2. **Capture + score:** durable PNG in `Captures-Durable/` + logged to `qa/scores_db.py` (surface=visual, milestone).
 3. **Register:** update THIS file — add the new current-best row, mark the superseded one DEPRECATED.
-4. **Save off-box:** commit to the WorldOS repo (version control) + periodic box tarball
-   (`worldos-unity-SAVE-<date>.tgz`, excl. Library/Temp).
+4. **Save locally:** commit to the WorldOS repo (version control) + mirror required Unity assets under
+   `/Users/m1/Codex/worldos-unity-mirror` (exclude Library/Temp).
 5. **On RESUME:** read THIS file FIRST. Never infer "current" from a recent capture PNG.
 
 ## Build-script inventory (`extensions/renderers/unity/scripts/`)

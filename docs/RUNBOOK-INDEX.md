@@ -70,6 +70,6 @@
    silently dropped a non-rest panel's per-lens scores; fixed to pass through arbitrary dims for a
    non-`rest:` scene. `motion_reel.py`'s Unity-capture hook is now wired against the documented
    `manage_camera` pattern (env-gated on `WORLDOS_UNITY_MCP_URL`, mockable via `mcp_call=`) but its
-   live `:8080/mcp` round-trip is UNVERIFIED on this lane (no GEX44 box access) — validation queues
-   behind the next box session. Still open: the engine-fetch half of motion_reel (TODO hook,
-   separate scope) and the stale `--layered` naming.
+   live Stdio MCP round-trip is the local capture path; validate it before citing live frames. Still
+   open: the engine-fetch half of motion_reel (TODO hook, separate scope) and the stale `--layered`
+   naming.
