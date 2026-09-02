@@ -378,8 +378,16 @@ public class CombatSurfaceClient : MonoBehaviour
     // lockstep with the proxies themselves, so the two can never disagree about what exists.
     readonly System.Collections.Generic.List<Renderer> _occRends = new System.Collections.Generic.List<Renderer>();
     readonly System.Collections.Generic.List<Vector4> _occFoot = new System.Collections.Generic.List<Vector4>();
+    // #1736 review: each proxy's UNDERSIDE y. XZ containment alone is a 2D test, and every sidecar ships
+    // volumes an actor walks UNDER rather than stands inside — throne/snug/shop door0_arch bottoms at 3.55
+    // and door0_lintel at 4.68, col_*_collar at 6.85, all above a 3.2-tall char. Suppressing those on XZ
+    // alone would drop a real arch/lintel occluder for the WHOLE party whenever anyone crossed the doorway.
+    readonly System.Collections.Generic.List<float> _occBotY = new System.Collections.Generic.List<float>();
     // #1736: live actor transforms, cached by FindActor so the per-frame gating never runs GameObject.Find.
     readonly System.Collections.Generic.Dictionary<string, Transform> _actorTf = new System.Collections.Generic.Dictionary<string, Transform>();
+    // #1736 review: this actor's SCALED body height (the #1441 named ActorHeight*, after the #1665 monster
+    // cap), so the vertical half of the containment test uses the actor's real extent, not one constant.
+    readonly System.Collections.Generic.Dictionary<string, float> _bodyHOf = new System.Collections.Generic.Dictionary<string, float>();
     string _occSigBuilt = "\0";      // signature of the last-BUILT proxies (sentinel => first build runs)
 
     // WALKABLE-SLICE-V1 (item 6) RUNTIME PLATE REGISTRY (W5e; docs/roadmap/W5E-PLATE-REGISTRY-DECISION.md):
@@ -812,7 +820,7 @@ public class CombatSurfaceClient : MonoBehaviour
         // Despawn cleanly: dropping the whole container takes every Occluder_* box with it (deterministic;
         // the boxes are never in _spawned, so the actor despawn path never touches them and vice-versa).
         if (_occRoot != null) { Destroy(_occRoot); _occRoot = null; }
-        _occRends.Clear(); _occFoot.Clear();   // #1736: the footprint table dies with the proxies it describes
+        _occRends.Clear(); _occFoot.Clear(); _occBotY.Clear();   // #1736: the tables die with the proxies they describe
         // UNIFY-THE-FRAMES: the plate-box sidecar takes priority BEFORE the legacy empty-set early-out —
         // a room can have zero legacy occluder props yet a full box sidecar (walls always ship in it);
         // gating the sidecar behind _occRaw would silently drop every wall volume (codex review, #1575).
@@ -847,7 +855,7 @@ public class CombatSurfaceClient : MonoBehaviour
                 bxr.sharedMaterial = mat;
                 bxr.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 bxr.receiveShadows = false;
-                RegisterOccluderFootprint(bxr, b[0], b[2], b[3], b[5]);   // #1736
+                RegisterOccluderFootprint(bxr, b[0], b[2], b[3], b[5], b[1] - Mathf.Abs(b[4]) * 0.5f);   // #1736
                 bn++;
             }
             Debug.Log("[CSC] occluders: " + bn + " UNIFIED plate-box volumes (loc=" + _occLocId + ")");
@@ -892,7 +900,7 @@ public class CombatSurfaceClient : MonoBehaviour
                 br.sharedMaterial = mat;
                 br.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 br.receiveShadows = false;
-                RegisterOccluderFootprint(br, wp.x, wp.z, halfXZ * 2f, halfXZ * 2f);   // #1736
+                RegisterOccluderFootprint(br, wp.x, wp.z, halfXZ * 2f, halfXZ * 2f, 0f);   // #1736 (footprint boxes sit ON the floor)
                 occN++;
             }
         }
@@ -901,11 +909,12 @@ public class CombatSurfaceClient : MonoBehaviour
 
     // #1736: record one proxy's world-space XZ footprint alongside its renderer (both proxy paths feed this,
     // so the sidecar and the legacy footprint rooms gate identically).
-    void RegisterOccluderFootprint(Renderer r, float cx, float cz, float sx, float sz)
+    void RegisterOccluderFootprint(Renderer r, float cx, float cz, float sx, float sz, float botY)
     {
         _occRends.Add(r);
         _occFoot.Add(new Vector4(cx - Mathf.Abs(sx) * 0.5f, cz - Mathf.Abs(sz) * 0.5f,
                                  cx + Mathf.Abs(sx) * 0.5f, cz + Mathf.Abs(sz) * 0.5f));
+        _occBotY.Add(botY);
     }
 
     // #1736 PROXY-GHOST RULE (containment). A proxy may only silhouette an actor when it is genuinely
@@ -917,6 +926,10 @@ public class CombatSurfaceClient : MonoBehaviour
     // box's front face, so the depth test is right and the tint is still wrong (the camp footprint boxes,
     // the crypt door landing, the throne arrival cell). A proxy an actor is standing in can never
     // legitimately hide that actor, so it is suppressed for as long as it is occupied.
+    // Containment is tested in 3D, not just XZ (codex review): a proxy whose UNDERSIDE clears the actor's
+    // head is one the actor walks UNDER — every sidecar arch (bottom 3.55), lintel (4.68) and pillar collar
+    // (6.85) clears a 3.2-tall char — and suppressing those on an XZ hit alone would drop a real occluder
+    // for the whole party the moment anyone crossed a doorway.
     // Suppression is global for that proxy rather than per actor: scoping one proxy to one actor would mean
     // re-rendering the proxy set once per actor. Containment is a safe global trigger — a genuine pillar or
     // wall has impassable footprint cells, so no actor can stand in one and cancel it for the party (a
@@ -931,11 +944,16 @@ public class CombatSurfaceClient : MonoBehaviour
         for (int i = 0; i < _occRends.Count; i++)
         {
             var r = _occRends[i]; if (r == null) continue;
-            var f = _occFoot[i];
+            var f = _occFoot[i]; float botY = _occBotY[i];
             bool occupied = false;
             foreach (var kv in _actorTf)
             {
                 var t = kv.Value; if (t == null) continue;
+                // A proxy whose UNDERSIDE clears this actor's head is one the actor walks UNDER, not one it
+                // stands inside: it can still legitimately hide OTHER actors, so it must stay live. Unknown
+                // height falls back to the tallest class, i.e. suppress-more (the pre-review behaviour).
+                float bodyH = _bodyHOf.TryGetValue(kv.Key, out var bh) ? bh : ActorHeightFoe;
+                if (botY >= t.position.y + bodyH) continue;
                 if (InFoot(t.position, f)) { occupied = true; break; }
                 if (_cellOf.TryGetValue(kv.Key, out var cell) && cell != null && cell.Length >= 2
                     && InFoot(CellToWorld(cell[0], cell[1]), f)) { occupied = true; break; }
@@ -1984,6 +2002,7 @@ public class CombatSurfaceClient : MonoBehaviour
         // (so the first poll doesn't spuriously glide a just-spawned actor already on its engine cell) and the
         // head-top offset for the HP/name plate (height is the scale target; +margin clears the silhouette).
         _topOf[id] = height + 1.4f;
+        _bodyHOf[id] = height;      // #1736 review: the vertical half of the proxy containment test
         _cellOf[id] = new[] { cx, cy };
         Debug.Log("[CSC] spawned " + nm + " model=" + fbx + " x" + sc.ToString("F2") + " @cell(" + cx + "," + cy + ") rends=" + rends.Length);
         // #1665 residual-float re-snap: the ctrl-driven humanoid idle graph (and the avatar retarget) resolves
@@ -2060,7 +2079,7 @@ public class CombatSurfaceClient : MonoBehaviour
             if (g != null) Object.Destroy(g);
         }
         _spawned.Remove(id);
-        _actorTf.Remove(id);   // #1736: drop the cached transform with the object it pointed at
+        _actorTf.Remove(id); _bodyHOf.Remove(id);   // #1736: drop the cached transform/height with the object
         // #1441: tear down any in-flight glide + per-actor state so a re-spawn starts clean.
         if (_glide.TryGetValue(id, out var co) && co != null) StopCoroutine(co);
         KillWalkGraph(id);   // the stopped glide can't destroy its own graph (#1451-review P2)
