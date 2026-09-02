@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from dataclasses import dataclass, field
@@ -138,16 +139,32 @@ def parse_route_spec(spec=None) -> tuple:
         return DEFAULT_ROUTE
     if isinstance(spec, str):
         spec = json.loads(Path(spec[1:]).read_text(encoding="utf-8") if spec.startswith("@") else spec)
+    if not isinstance(spec, (list, tuple)):
+        raise ValueError(f"invalid route: expected a list of entries, got {spec!r}")
     out: list = []
-    try:
-        for e in spec:
-            if isinstance(e, dict):
-                out.append((e["id"], e["room"], e.get("kind", "walk"), e.get("actor")))
+    for raw in spec:
+        try:
+            if isinstance(raw, dict):
+                sid, room = raw["id"], raw["room"]
+                kind, actor = raw.get("kind", "walk"), raw.get("actor")
+            elif isinstance(raw, (list, tuple)):
+                if len(raw) not in (3, 4):
+                    raise ValueError("expected 3 or 4 fields: id, room, kind, actor?")
+                sid, room, kind = raw[:3]
+                actor = raw[3] if len(raw) == 4 else None
             else:
-                e = list(e)
-                out.append((e[0], e[1], e[2] if len(e) > 2 else "walk", e[3] if len(e) > 3 else None))
-    except (IndexError, KeyError, TypeError) as exc:
-        raise ValueError(f"invalid route entry: {exc}") from exc
+                raise ValueError("expected an object or array")
+            if not isinstance(sid, str) or not sid:
+                raise ValueError("id must be a non-empty string")
+            if not isinstance(room, str) or not room:
+                raise ValueError("room must be a non-empty string")
+            if not isinstance(kind, str) or not kind:
+                raise ValueError("kind must be a non-empty string")
+            if actor is not None and (not isinstance(actor, str) or not actor):
+                raise ValueError("actor must be a non-empty string or null")
+            out.append((sid, room, kind, actor))
+        except (IndexError, KeyError, TypeError, ValueError) as exc:
+            raise ValueError(f"invalid route entry {raw!r}: {exc}") from exc
     if not out:
         raise ValueError("route override is empty — a walk with no stages proves nothing")
     ids = [str(e[0]) for e in out]
@@ -709,6 +726,11 @@ def _live_scorer(model: str, timeout_s: int) -> FrameScorer:
     return lambda path, questions: _shell_scorer(path, questions, model=model, timeout_s=timeout_s)
 
 
+def _canonical_trace_dir() -> Path:
+    configured = Path(os.environ.get("WORLDOS_TRANSCRIPTS_DIR", "qa/transcripts")).expanduser()
+    return (configured if configured.is_absolute() else HERE.parent / configured).resolve()
+
+
 def _live_quest_reader(state_dir: str, campaign_id: str = CAMPAIGN,
                        trace_path: Optional[str] = None) -> QuestReader:
     """The live reward-leg source: the SAME reads the A-T lane uses — quest_progress's in-process
@@ -738,9 +760,10 @@ def _live_quest_reader(state_dir: str, campaign_id: str = CAMPAIGN,
                     suffix = ".quest_trace.json"
                     run_id = trace.name[:-len(suffix)] if trace.name.endswith(suffix) else ""
                     expected_state = (HERE / "state" / run_id).resolve() if run_id else None
-                    if expected_state != state_root:
+                    expected_dir = _canonical_trace_dir()
+                    if expected_state != state_root or trace_resolved.parent != expected_dir:
                         raise ValueError(f"trace {trace_resolved} is not bound to current state "
-                                         f"{state_root}")
+                                         f"{state_root} or canonical transcript directory {expected_dir}")
                 # carry quest_status too: when the live get_quests read below fails, the stamps are
                 # the ONLY evidence and a bare quest_completed stamp must not read as a paid reward.
                 out["stamps"] = tr.get("stamps") or []
@@ -751,6 +774,8 @@ def _live_quest_reader(state_dir: str, campaign_id: str = CAMPAIGN,
                 # rule as the live read, instead of trusting a bare terminal stamp.
                 for k in ("quest_status", "objectives", "completed_objectives"):
                     out[k] = tr.get(k)
+        except ValueError as e:
+            raise RuntimeError(f"quest_trace:{e}") from e
         except Exception as e:  # noqa: BLE001
             errors.append(f"quest_trace:{e}")
         try:

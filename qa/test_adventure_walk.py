@@ -741,3 +741,29 @@ def test_route_override_rejects_duplicate_stage_ids():
         A.parse_route_spec('[['
                            '"same", "camp_clearing", "start"], '
                            '["same", "tavern_snug", "approach", "Keeper Maera"]]')
+
+
+def test_external_trace_must_live_in_the_canonical_transcript_directory(monkeypatch, tmp_path):
+    """A same-basename trace outside the resolved transcript directory is not this run's evidence."""
+    import json
+    import pytest
+    import quest_progress as Q
+
+    state = (A.HERE / "state" / "g3-provenance").resolve()
+    wrong = tmp_path / "elsewhere" / "g3-provenance.quest_trace.json"
+    wrong.parent.mkdir(parents=True)
+    wrong.write_text(json.dumps({"campaign_id": A.CAMPAIGN,
+                                 "stamps": [{"stage": "reward_received"}]}))
+    monkeypatch.setattr(Q, "_import_server", lambda _state: (_ for _ in ()).throw(RuntimeError("down")))
+    with pytest.raises(RuntimeError, match="canonical transcript directory"):
+        A._live_quest_reader(str(state), trace_path=str(wrong))()
+
+
+def test_route_entry_types_are_rejected_with_the_offending_entry(capsys, tmp_path):
+    import pytest
+
+    bad = '[[17, "camp_clearing", "start"]]'
+    with pytest.raises(ValueError, match=r"invalid route entry.*17"):
+        A.parse_route_spec(bad)
+    assert A.main(["--route", bad, "--out", str(tmp_path)]) == 2
+    assert "17" in capsys.readouterr().err
