@@ -85,14 +85,23 @@ def _meta_path(run: str) -> Path:
 # flow that SAVED the scene baked them into the next build, and the player then drew grey kit masses in
 # front of every plate (kit-tavern 2026-07-23). BuildMacOSPlayer now strips them at build time; this is
 # the independent check that a given .app is actually clean before a sweep trusts it.
-_QA_ROOT_RE = re.compile(rb"KitRoom_[A-Za-z0-9_]+")
+# The name grammar must match every id BuildRoomKit.Sanitize can emit: it keeps char.IsLetterOrDigit
+# (Unicode, hence the UTF-8 high bytes), '_' and '-'. A narrower class does not merely miss a root, it
+# TRUNCATES one — "KitRoom_Fire-qa" would match as "KitRoom_Fire", get subtracted as a helper light, and
+# the contaminated app would pass.
+_QA_ROOT_RE = re.compile(rb"KitRoom_[A-Za-z0-9_\-\x80-\xff]+")
 
 # Unity may serialize a scene's objects into level*, into the shared-asset archives, or into the raw
 # resource streams beside them. A level-only scan (the first cut of this check) therefore reads CLEAN on
 # a contaminated app whose objects landed in sharedassets — so scan all three.
 _SCAN_GLOBS = ("level*", "sharedassets*", "*.resS")
 _SCAN_CHUNK = 8 << 20        # bounded: stream in 8 MiB chunks (a .resS is routinely GB-scale) ...
-_SCAN_BUDGET = 4 << 30       # ... and stop after 4 GiB total so a pathological build can't hang the gate
+_SCAN_OVERLAP = 512          # carried between chunks so a name straddling a boundary is seen whole
+_SCAN_BUDGET = 16 << 30      # ... under a total budget so a pathological build can't hang the gate
+
+
+class KitScanIncomplete(RuntimeError):
+    """The contamination scan could not read every byte it needed — verdict unknown, NOT clean."""
 
 # Helper CHILD objects the kit rig creates UNDER a KitRoom_<roomId> root (brazier fires, tomb glow, cool
 # key light). They carry the KitRoom_ prefix but are never roots, so a scan that matches ONLY these has
@@ -102,7 +111,7 @@ _SCAN_BUDGET = 4 << 30       # ... and stop after 4 GiB total so a pathological 
 # two agree.
 _KIT_BUILDER_CS = REPO / "extensions/renderers/unity/scripts/build_room_kit.cs"
 _KIT_HELPER_FALLBACK = ("KitRoom_Fire", "KitRoom_TombGlow", "KitRoom_CoolKey")
-_KIT_HELPER_RE = re.compile(r'KitHelper\w+\s*=\s*"(KitRoom_[A-Za-z0-9_]+)"')
+_KIT_HELPER_RE = re.compile(r'KitHelper\w+\s*=\s*"(KitRoom_[A-Za-z0-9_\-]+)"')
 
 
 def _kit_helper_names(source: Path = _KIT_BUILDER_CS) -> frozenset:
@@ -120,6 +129,9 @@ def _qa_roots_in_app(app: Path) -> set:
     Unity stores GameObject names as plain bytes, so a byte scan is a reliable, dependency-free
     detector (the same check as `strings level0 | grep KitRoom_`). Helper children are subtracted:
     a helper-only match is the light rig, not contamination.
+
+    Raises KitScanIncomplete if the byte budget runs out before every file is read — an unscanned
+    tail must never read as clean, or an oversized build silently invalidates the sweep evidence.
     """
     found: set = set()
     data_dir = app / "Contents" / "Resources" / "Data"
@@ -132,14 +144,30 @@ def _qa_roots_in_app(app: Path) -> set:
             scanned.add(f.name)
             try:
                 with f.open("rb") as fh:
-                    tail = b""
-                    while budget > 0:
+                    buf = b""
+                    while True:
+                        if budget <= 0:
+                            # Budget gone. Only an actual unread remainder is a problem — a file that
+                            # ended exactly on the budget was fully scanned.
+                            if not fh.read(1):
+                                break
+                            raise KitScanIncomplete(
+                                f"[sandbox] contamination scan hit its {_SCAN_BUDGET} byte budget inside "
+                                f"{f.name}; the rest of {app} is UNSCANNED, so this build's kit-root "
+                                f"verdict is unknown — raise _SCAN_BUDGET or shrink the build, but do "
+                                f"not treat this as clean.")
                         chunk = fh.read(min(_SCAN_CHUNK, budget))
                         if not chunk:
                             break
                         budget -= len(chunk)
-                        found.update(m.decode() for m in _QA_ROOT_RE.findall(tail + chunk))
-                        tail = chunk[-64:]      # overlap: a name split across chunks still matches
+                        buf += chunk
+                        # A match touching the end of a non-final buffer may be TRUNCATED, and a truncated
+                        # name can land exactly on a helper ("KitRoom_Fire" out of "KitRoom_Firepit"). Drop
+                        # it here; the overlap carried forward re-finds it whole on the next pass.
+                        found.update(m.group().decode("utf-8", "replace")
+                                     for m in _QA_ROOT_RE.finditer(buf) if m.end() < len(buf))
+                        buf = buf[-_SCAN_OVERLAP:]
+                    found.update(m.group().decode("utf-8", "replace") for m in _QA_ROOT_RE.finditer(buf))
             except OSError:
                 continue
     return found - _kit_helper_names()

@@ -68,10 +68,42 @@ def test_name_split_across_chunk_boundary_still_matches(tmp_path, monkeypatch):
     assert qa_sandbox._qa_roots_in_app(app) == {"KitRoom_bosshall"}
 
 
-def test_scan_is_bounded_by_the_byte_budget(tmp_path, monkeypatch):
-    """A pathological build must not hang the gate: past the budget the scan stops reading."""
+def test_budget_exhaustion_fails_closed(tmp_path, monkeypatch):
+    """A pathological build must not hang the gate — but an unscanned tail must never read as CLEAN."""
     monkeypatch.setattr(qa_sandbox, "_SCAN_BUDGET", 16)
     app = _app(tmp_path, {"level0": b"\x00" * 4096 + b"KitRoom_crypt"})
+    with pytest.raises(qa_sandbox.KitScanIncomplete):
+        qa_sandbox._qa_roots_in_app(app)
+
+
+def test_budget_landing_exactly_on_eof_is_not_an_error(tmp_path, monkeypatch):
+    """A file that ended exactly on the budget was fully scanned — do not cry incomplete."""
+    blob = _lvl("KitRoom_crypt")
+    monkeypatch.setattr(qa_sandbox, "_SCAN_BUDGET", len(blob))
+    app = _app(tmp_path, {"level0": blob})
+    assert qa_sandbox._qa_roots_in_app(app) == {"KitRoom_crypt"}
+
+
+@pytest.mark.parametrize("root", ["KitRoom_Fire-qa", "KitRoom_crypt-v2", "KitRoom_Firepit"])
+def test_root_names_are_not_truncated_onto_a_helper_name(tmp_path, root):
+    """RED pre-fix: the `[A-Za-z0-9_]+` class stopped at '-', so KitRoom_Fire-qa matched as
+    KitRoom_Fire and was then subtracted as a helper light — a contaminated app passing clean."""
+    app = _app(tmp_path, {"level0": _lvl(root)})
+    assert qa_sandbox._qa_roots_in_app(app) == {root}
+
+
+def test_unicode_room_ids_are_matched(tmp_path):
+    """Sanitize keeps char.IsLetterOrDigit, which is Unicode — the byte scan must follow."""
+    app = _app(tmp_path, {"level0": b"\x00\x10" + "KitRoom_église".encode() + b"\x00m_Name\x00"})
+    assert qa_sandbox._qa_roots_in_app(app) == {"KitRoom_église"}
+
+
+def test_helper_name_straddling_a_chunk_boundary_is_not_a_false_positive(tmp_path, monkeypatch):
+    """A match touching the end of a non-final buffer may be truncated, and a truncated name can land
+    exactly on a helper. Accepting it reported a clean app as contaminated (as `KitRoom_F`)."""
+    monkeypatch.setattr(qa_sandbox, "_SCAN_CHUNK", 32)
+    monkeypatch.setattr(qa_sandbox, "_SCAN_OVERLAP", 64)
+    app = _app(tmp_path, {"level0": b"\x00" * 23 + b"KitRoom_Fire" + b"\x00" * 40})
     assert qa_sandbox._qa_roots_in_app(app) == set()
 
 

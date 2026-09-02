@@ -306,14 +306,20 @@ public static class BuildMacOSPlayer
         }
         else
         {
-            // OpenScene(Single) DISCARDS unsaved changes in the open scene. Refuse loudly rather than
-            // throwing editor work away; a save prompt is not an option here, because this MenuItem runs
-            // in a headed-but-remotely-driven editor where a modal deadlocks the session (BOX.md #1196).
-            if (active.IsValid() && (active.isDirty || string.IsNullOrEmpty(active.path)))
-                FailBuild("refusing to build: the open scene '"
-                    + (string.IsNullOrEmpty(active.path) ? "Untitled" : active.path)
+            // OpenScene(Single) DISCARDS unsaved changes in EVERY loaded scene, not just the active one —
+            // an additively-loaded scene with unsaved work is unloaded just as silently. Check them all
+            // and refuse loudly rather than throwing editor work away; a save prompt is not an option
+            // here, because this MenuItem runs in a headed-but-remotely-driven editor where a modal
+            // deadlocks the session (BOX.md #1196).
+            for (int i = 0; i < SceneManager.sceneCount; i++)
+            {
+                var loaded = SceneManager.GetSceneAt(i);
+                if (!loaded.IsValid() || (!loaded.isDirty && !string.IsNullOrEmpty(loaded.path))) continue;
+                FailBuild("refusing to build: the loaded scene '"
+                    + (string.IsNullOrEmpty(loaded.path) ? "Untitled" : loaded.path)
                     + "' has UNSAVED changes and this build must open " + SceneToBuild
-                    + ". Save or discard those changes, then rebuild.");
+                    + " in Single mode, which would discard them. Save or discard those changes, then rebuild.");
+            }
             restorePath = active.IsValid() ? active.path : null;
             src = EditorSceneManager.OpenScene(SceneToBuild, OpenSceneMode.Single);
         }
