@@ -1,6 +1,6 @@
 {
   "_doc": "The ADVENTURE-eval ruler (A-series A-T). This file is the SOLE content that fences what an adventure aggregate score MEANS: the per-dimension weakest-link thresholds + the named next-lever each weakest dimension routes to. Hashed by scoring_config_version.adventure_config_version() into an av_ family (its OWN hash namespace, per HV1's rule) — NEVER folded into SCORING_CONFIG_FILES, which would silently re-version the sc_/lc_ engine-duo rulers. Edit this and every FUTURE adventure aggregate re-versions on its own axis; the engine-duo + artifact trends stay byte-identical.",
-  "beat_budget": 15,
+  "beat_budget": 20,
   "stage_gap_outlier_beats": 5,
   "dead_beat_stuck_threshold": 2,
   "pass_completion_rate": 0.5,

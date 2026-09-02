@@ -9,7 +9,7 @@
 #     the 4-objective quest "The Crypt Below"). The campaign id is FIXED: adventure_demo_v1.
 #   * the player pursues that ONE quest to COMPLETION (qa/play_player_adventure.txt) — speak to
 #     Maera, travel to the crypt, clear the goblins, slay the boss, return for the reward.
-#   * the run is arc-directed with a ~15-beat budget and a COMPLETION SHORT-CIRCUIT: after each
+#   * the run is arc-directed with a ~20-beat budget and a COMPLETION SHORT-CIRCUIT: after each
 #     beat qa/quest_progress.py stamps the arc stages into <run>.quest_trace.json and reports the
 #     quest status; the moment the quest leaves "active" the loop stops (a completed loop needs no
 #     filler beats). qa/adventure_eval.py aggregates N such runs.
@@ -17,7 +17,7 @@
 # Usage:   qa/run_adventure.sh <run-id> [beats] [budget] [player-persona]
 #          qa/run_adventure.sh --help
 #          qa/run_adventure.sh <run-id> --dry-run   # seed + wire + poll, NO claude (smoke path)
-# Example: qa/run_adventure.sh adv1 15 4.00 qa/play_player_adventure.txt
+# Example: qa/run_adventure.sh adv1 20 4.00 qa/play_player_adventure.txt
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"; cd "$ROOT" || exit 1
 
@@ -34,7 +34,7 @@ esac
 . "$ROOT/qa/lib_beat_driver.sh"
 
 RUN="$1"; shift
-BEATS="15"; BUDGET="4.00"; PLAYER_PROMPT_FILE="qa/play_player_adventure.txt"; DRY_RUN=0
+BEATS="20"; BUDGET="4.00"; PLAYER_PROMPT_FILE="qa/play_player_adventure.txt"; DRY_RUN=0
 # Positional [beats] [budget] [persona] with a --dry-run/-n flag accepted anywhere.
 _pos=()
 for a in "$@"; do
@@ -160,7 +160,7 @@ adv_clean_stale_artifacts() {
     "$T/$RUN.quest.log" "$T/$RUN.quest.err" "$T/$RUN.seed.err" \
     "$T/$RUN.dm.err" "$T/$RUN.player.err" \
     2>/dev/null || true
-  rm -f "$T/$RUN".dm.*.jsonl 2>/dev/null || true
+  rm -f "$T/$RUN".dm.*.jsonl "$T/$RUN".player.*.jsonl 2>/dev/null || true
 }
 
 # ── seed the campaign (fresh run) ───────────────────────────────────────────────────────────────
@@ -364,9 +364,13 @@ turn() {  # $1=role $2=sid $3=first? $4=msg ; echoes the reply text (mirrors run
     if [ "$rc" -ne 0 ] && ! worldos_dm_result_is_error "$out"; then worldos_report_attempt_failure "$out" "$rc"; fi
     worldos_dm_final_text "$out" "$STATE_DIR" "$rc"
   else
+    # The player's result envelope is TEE'd before jq: it carries the CONCRETE model the API served,
+    # which qa/model_provenance.py reads back (the `sonnet` alias drifts — recording only the alias is
+    # what made the 2026-09-02 model swap invisible). jq still consumes the same bytes on stdout.
     "${DUO_ENV[@]}" claude -p "$msg" "${resume[@]}" --mcp-config "$PLAYER_CFG" --strict-mcp-config \
       --model "$WORLDOS_ACTOR_MODEL" --permission-mode bypassPermissions --max-budget-usd "$BUDGET" \
-      --output-format json 2>> "$T/$RUN.player.err" | jq -r '.result // ""' 2>/dev/null
+      --output-format json 2>> "$T/$RUN.player.err" \
+      | tee "$T/$RUN.player.$(date +%s%N).jsonl" | jq -r '.result // ""' 2>/dev/null
   fi
 }
 
@@ -575,14 +579,22 @@ LATENCY_JSON="$T/$RUN.latency.json"
 python3 qa/latency_rollup.py --dir "$T" --run "$RUN" --tooltiming "$TOOLTIMING_PATH" --out "$LATENCY_JSON" >/dev/null 2>&1 || true
 
 # ── the per-run adventure summary (self-describing; adventure_eval also falls back to raw files) ─
-# Carries the resolved DM/actor MODELS (item 6 provenance) + session_beats (item 4 engagement) so the
-# aggregator reads provenance/beats from the summary rather than guessing. Completion + behavioral use
+# Carries the requested DM/actor MODELS (item 6 provenance), the CONCRETE model ids resolved from the
+# run's own transcripts (dm_model_resolved / player_model_resolved — the alias `opus`/`sonnet` drifts,
+# and only the resolved id says which model produced this row), + session_beats (item 4 engagement) so
+# the aggregator reads provenance/beats from the summary rather than guessing. Completion + behavioral use
 # the SAME honest semantics as adventure_eval (items 5 + 17): only a "completed" terminal status is a
 # completion; GREEN requires the assert_behavioral success marker, not the mere absence of [FAIL].
-python3 - "$T/$RUN.adventure.json" "$TRACE" "$T/$RUN.gate.txt" "$RUN" "$LAST_COMPLETED_BEAT" "$LATENCY_JSON" "$WORLDOS_DM_MODEL" "$WORLDOS_ACTOR_MODEL" <<'PY'
+python3 - "$T/$RUN.adventure.json" "$TRACE" "$T/$RUN.gate.txt" "$RUN" "$LAST_COMPLETED_BEAT" "$LATENCY_JSON" "$WORLDOS_DM_MODEL" "$WORLDOS_ACTOR_MODEL" "$ROOT/qa" "$T/$RUN" <<'PY'
 import json,sys
 from pathlib import Path
-out,trace,gate,run,last_beat,lat,dm_model,actor_model = sys.argv[1:9]
+out,trace,gate,run,last_beat,lat,dm_model,actor_model,qa_dir,prefix = sys.argv[1:11]
+sys.path.insert(0, qa_dir)
+try:
+    from model_provenance import resolve_models   # concrete ids from this run's own transcripts
+    resolved = resolve_models(prefix)
+except Exception:
+    resolved = {"dm_model_resolved": None, "player_model_resolved": None}
 def rj(p):
     try: return json.loads(Path(p).read_text())
     except Exception: return {}
@@ -613,8 +625,11 @@ session_beats=lb if (lb is not None and lb>=0) else None
 Path(out).write_text(json.dumps({"run":run,"campaign_id":tr.get("campaign_id"),"quest_status":tr.get("quest_status"),
   "completed":bool(completed),"beats_to_complete":btc,"last_completed_beat":lb,"session_beats":session_beats,
   "dm_model":dm_model or None,"actor_model":actor_model or None,
+  "dm_model_resolved":resolved.get("dm_model_resolved"),"player_model_resolved":resolved.get("player_model_resolved"),
   "dead_beats":dead,"behavioral":behavioral,"stages_reached":[s.get("stage") for s in stamps]},indent=2)+"\n")
-print(f"[adventure] summary: completed={completed} beats_to_complete={btc} behavioral={behavioral} dm={dm_model} actor={actor_model}")
+print(f"[adventure] summary: completed={completed} beats_to_complete={btc} behavioral={behavioral} "
+      f"dm={dm_model}({resolved.get('dm_model_resolved') or 'unresolved'}) "
+      f"actor={actor_model}({resolved.get('player_model_resolved') or 'unresolved'})")
 PY
 
 # Item 16: surface a run-level telemetry-health summary if any quest poll failed its contract.

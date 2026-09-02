@@ -26,13 +26,21 @@ weakest-link pick):
 PERSISTED VERDICT (persist_row → one ``surface="adventure"`` scores_db row):
   behavioral — "GREEN" iff green_rate == 1.0, "RED" iff green_rate == 0.0, "MIXED" for a split
                run set (0 < green_rate < 1), None iff no run carried gate evidence.
-  passed     — 1 iff completion_rate >= pass_completion_rate AND green_rate is not None AND
-               green_rate >= 0.5. So a RED aggregate (green_rate == 0) fails, and MISSING
-               behavioral evidence (green_rate is None) ALSO fails — a citable passing row
-               requires gate evidence.
+  passed     — 1 iff completion_rate >= pass_completion_rate AND behavioral == "GREEN". The gate
+               is a WEAKEST-LINK gate, so only a FULLY green run set passes: a RED aggregate fails,
+               a MIXED set fails (a structural break on any run is not a passing measurement — the
+               old ``green_rate >= 0.5`` bar let a 1-of-2-broken set through), and MISSING
+               behavioral evidence (green_rate is None) fails too — a citable passing row requires
+               positive gate evidence on every run.
   provenance — the persisted dm_model/actor_model are the models the runs RECORDED (read from
                each run summary); a --dm-model/--actor-model CLI override wins; a default is used
                only when nothing is recorded, annotated ``provenance:defaulted(...)`` in the notes.
+               The methodology string additionally carries the CONCRETE model ids RESOLVED from the
+               runs' own transcripts (qa/model_provenance.py) — the `opus`/`sonnet` aliases drift
+               (July's `opus` = claude-opus-4-8, 2026-09-02's = claude-opus-5), so the alias alone
+               cannot answer "which model produced this row?" — plus the beat_budget the row was
+               scored under (the ruler default, or a ``--beat-budget`` override for a run measured
+               at its own budget, e.g. a 15-beat control row under the 20-beat ruler).
 
 Per-run inputs, read from ``<prefix>.<suffix>`` (all optional; a missing file degrades that run's
 contribution to None, never an error):
@@ -301,7 +309,29 @@ def read_run(prefix: str, config: dict) -> dict:
         # a CLI override, else these recorded values, else a default (annotated in the row notes).
         "dm_model": (summary or {}).get("dm_model") or None,
         "actor_model": (summary or {}).get("actor_model") or None,
+        # The CONCRETE ids. The summary wins when the run recorded them (run_adventure.sh resolves
+        # them at write time); otherwise they are resolved HERE from the run's own transcripts, so a
+        # run predating provenance stamping still ledgers a real model id instead of a drifting alias.
+        **_resolved_models(prefix, summary),
     }
+
+
+def _resolved_models(prefix: str, summary: Optional[dict]) -> dict:
+    """``dm_model_resolved`` / ``player_model_resolved`` for one run: the summary's recorded values
+    when present, else re-resolved from the run's ``claude -p`` transcripts. None when neither
+    exists — never the alias (an alias presented as a resolved id is a false provenance claim)."""
+    out = {
+        "dm_model_resolved": (summary or {}).get("dm_model_resolved") or None,
+        "player_model_resolved": (summary or {}).get("player_model_resolved") or None,
+    }
+    if out["dm_model_resolved"] and out["player_model_resolved"]:
+        return out
+    try:
+        from model_provenance import resolve_models  # noqa: PLC0415
+        scanned = resolve_models(prefix)
+    except Exception:
+        return out
+    return {k: (out[k] or scanned.get(k) or None) for k in out}
 
 
 def _median(xs: list[Optional[float]]) -> Optional[float]:
@@ -321,7 +351,7 @@ def _clamp01(v: float) -> float:
 def aggregate(prefixes: list[str], config: Optional[dict] = None) -> dict:
     """Aggregate N run prefixes into per-dimension scores + a weakest-link verdict."""
     config = config or load_config()
-    beat_budget = float(config.get("beat_budget", 15))
+    beat_budget = float(config.get("beat_budget", 20))
     runs = [read_run(p, config) for p in prefixes]
     n = len(runs)
     if n == 0:
@@ -375,6 +405,10 @@ def aggregate(prefixes: list[str], config: Optional[dict] = None) -> dict:
     # reflects what actually drove the launched runs, not a hardcoded guess.
     dm_model_recorded = next((r["dm_model"] for r in runs if r.get("dm_model")), None)
     actor_model_recorded = next((r["actor_model"] for r in runs if r.get("actor_model")), None)
+    # The CONCRETE ids read back from the runs' transcripts (or their summaries). Reported alongside
+    # the aliases so the persisted row names the model that actually played, not a drifting label.
+    dm_model_resolved = next((r["dm_model_resolved"] for r in runs if r.get("dm_model_resolved")), None)
+    player_model_resolved = next((r["player_model_resolved"] for r in runs if r.get("player_model_resolved")), None)
 
     weakest, weakest_score, lever = _weakest_link(dims, config)
     verdict = (
@@ -401,6 +435,11 @@ def aggregate(prefixes: list[str], config: Optional[dict] = None) -> dict:
         "verdict": verdict,
         "dm_model_recorded": dm_model_recorded,
         "actor_model_recorded": actor_model_recorded,
+        "dm_model_resolved": dm_model_resolved,
+        "player_model_resolved": player_model_resolved,
+        # The budget these dimensions were scored under (the ruler default unless overridden) — the
+        # pace dimension is meaningless without it, and a control run scored at ITS budget must say so.
+        "beat_budget": beat_budget,
         "runs": runs,
     }
 
@@ -446,12 +485,14 @@ def persist_row(
         behavioral = "RED"
     else:
         behavioral = "MIXED"
-    # Pass (settled): completion above the bar AND POSITIVE gate evidence at >= 0.5 green. A RED
-    # aggregate fails; MISSING behavioral evidence (green_rate None) also fails — a citable passing
-    # row requires gate evidence.
+    # Pass (settled, #1722 follow-up): completion above the bar AND behavioral == "GREEN" — i.e. a
+    # FULLY green run set. The behavioral gate is deterministic and weakest-link: one structurally
+    # broken run means the measurement is broken, so a MIXED set can no longer pass (the previous
+    # ``green_rate >= 0.5`` bar let a 1-of-2-RED set through as pass=1). A RED aggregate fails and
+    # MISSING evidence (green_rate None -> behavioral None) fails — a citable passing row requires
+    # positive gate evidence on every aggregated run.
     pass_bar = float(load_config().get("pass_completion_rate", 0.5))
-    passed = 1 if (agg["completion_rate"] >= pass_bar
-                  and green_rate is not None and green_rate >= 0.5) else 0
+    passed = 1 if (agg["completion_rate"] >= pass_bar and behavioral == "GREEN") else 0
 
     # Provenance: a CLI override wins, else the model the runs recorded, else a default (+ note).
     defaulted: list[str] = []
@@ -463,6 +504,18 @@ def persist_row(
     if not resolved_actor:
         resolved_actor = "sonnet"
         defaulted.append("actor")
+
+    # Methodology carries the two facts a bare "arc-duo N=k" hides: the beat budget the row was
+    # scored under (a 15-beat control row and a 20-beat ruler row are NOT the same measurement), and
+    # the CONCRETE model ids resolved from the runs' transcripts. ``unresolved`` is recorded
+    # honestly rather than back-filled from the alias.
+    budget_txt = agg.get("beat_budget")
+    budget_txt = int(budget_txt) if isinstance(budget_txt, (int, float)) else budget_txt
+    methodology = (
+        f"arc-duo N={n} beat_budget={budget_txt} "
+        f"dm={resolved_dm}({agg.get('dm_model_resolved') or 'unresolved'}) "
+        f"player={resolved_actor}({agg.get('player_model_resolved') or 'unresolved'})"
+    )
 
     av = adventure_config_version()
     notes = (
@@ -477,7 +530,7 @@ def persist_row(
         "build_sha": build_sha or None,
         "dm_model": resolved_dm,
         "actor_model": resolved_actor,
-        "methodology": f"arc-duo N={n}",
+        "methodology": methodology,
         "story_overall": agg["story_overall"],
         "mech_overall": agg["mech_overall"],
         "angrydm_overall": agg["angrydm_overall"],
@@ -566,11 +619,18 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--db", default="", help="override scores.db path (testing only)")
     ap.add_argument("--build-sha", default="")
     ap.add_argument("--source-path", default="")
+    # --beat-budget: score THIS aggregate under a budget other than the ruler's. The ruler's
+    # beat_budget is what the CURRENT measured configuration runs at; a historical/control run that
+    # actually ran at a different budget must be scored under ITS OWN budget or its pace dimension is
+    # a fiction (e.g. the 15-beat adv_ctl_o48 control under today's 20-beat ruler). The budget used is
+    # recorded in the row's methodology, so the two are never silently conflated.
+    ap.add_argument("--beat-budget", type=int, default=0,
+                    help="score under this beat budget instead of the ruler's (recorded in methodology)")
     ap.add_argument("--dm-model", default="", help="override the persisted DM model (else the runs' recorded value)")
     ap.add_argument("--actor-model", default="", help="override the persisted actor model (else the runs' recorded value)")
     # --launch: the REAL run path (spends LLM budget). Left out of the tested surface on purpose.
     ap.add_argument("--launch", type=int, default=0, help="launch N run_adventure.sh runs first")
-    ap.add_argument("--beats", type=int, default=int(load_config().get("beat_budget", 15)))
+    ap.add_argument("--beats", type=int, default=int(load_config().get("beat_budget", 20)))
     ap.add_argument("--budget", default="4.00")
     ap.add_argument("--persona", default="qa/play_player_adventure.txt")
     ap.add_argument("--stamp", default="adv")
@@ -592,9 +652,14 @@ def main(argv: list[str]) -> int:
     else:
         prefixes = _resolve_prefixes(args)
 
-    agg = aggregate(prefixes)
+    config = load_config()
+    if args.beat_budget:
+        config = {**config, "beat_budget": args.beat_budget}
+    agg = aggregate(prefixes, config)
     print(f"[adventure_eval] N={agg['n']} completion={agg['completion_rate']:.2f} "
-          f"median_beats={agg['median_beats_to_complete']} stuck_rate={agg['stuck_rate']:.2f}")
+          f"median_beats={agg['median_beats_to_complete']} stuck_rate={agg['stuck_rate']:.2f} "
+          f"beat_budget={int(agg['beat_budget'])}"
+          f"{' (override)' if args.beat_budget else ''}")
     for dim, val in agg["dimensions"].items():
         print(f"  {dim:12s} {'n/a' if val is None else f'{val:.2f}'}")
     print(agg["verdict"])

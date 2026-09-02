@@ -158,7 +158,9 @@ def test_persist_writes_one_adventure_row(tmp_path):
     row = rows[0]
     assert row["run_id"] == "adv-agg-test"
     assert row["surface"] == "adventure"
-    assert row["methodology"] == "arc-duo N=3"
+    # methodology names the budget the row was scored under + the models (aliases + resolved ids)
+    assert row["methodology"].startswith("arc-duo N=3 beat_budget=20 ")
+    assert "dm=opus(unresolved)" in row["methodology"]
     assert row["behavioral"] == "GREEN"
     assert "WEAKEST-LINK:" in row["notes"]
     assert adventure_config_version() in row["notes"]  # av_ ruler stamped in notes
@@ -265,7 +267,9 @@ def test_persist_mixed_behavioral(tmp_path):
     assert fields["behavioral"] == "MIXED"
     row = scores_db.fetch_rows(str(db))[0]
     assert row["behavioral"] == "MIXED"
-    assert row["pass"] == 1  # green_rate 0.5 >= 0.5 and completion 1.0 >= bar
+    # #1722 follow-up: a MIXED run set can NEVER pass, however high completion is — the behavioral
+    # gate is weakest-link, so one structurally broken run breaks the measurement.
+    assert row["pass"] == 0
 
 
 def test_persist_missing_behavioral_fails_pass(tmp_path):
@@ -345,3 +349,108 @@ def test_validate_launched_run(tmp_path):
     Path(f"{prefix}.adventure.json").write_text(json.dumps({"contaminated": True, "contaminated_reason": "quota"}))
     ok, reason = ae._validate_launched_run(prefix, 0)
     assert not ok and "contaminated" in reason
+
+
+# ── #1722 follow-up: pass=1 requires behavioral == "GREEN" (not merely >= 0.5 green) ─────────────
+
+def test_pass_requires_behavioral_green(tmp_path):
+    db = tmp_path / "scores.db"
+
+    # 3 GREEN runs at full completion -> the only shape that passes.
+    green = [_write_run(tmp_path, f"g{i}", behavioral="GREEN") for i in range(3)]
+    fields = ae.persist_row(ae.aggregate(green), run_id="adv-green", db_path=str(db))
+    assert fields["behavioral"] == "GREEN" and fields["pass"] == 1
+
+    # 2 GREEN + 1 RED = green_rate 0.667 (over the OLD 0.5 bar) at completion 1.0 -> still fails.
+    mixed_hi = [_write_run(tmp_path, f"m{i}", behavioral="GREEN") for i in range(2)]
+    mixed_hi.append(_write_run(tmp_path, "m2", behavioral="RED"))
+    agg = ae.aggregate(mixed_hi)
+    assert agg["completion_rate"] == 1.0 and agg["green_rate"] > 0.5
+    fields = ae.persist_row(agg, run_id="adv-mixed-hi", db_path=str(db))
+    assert fields["behavioral"] == "MIXED" and fields["pass"] == 0
+
+    # An all-RED set fails, and a set with no gate evidence at all fails.
+    red = [_write_run(tmp_path, "r0", behavioral="RED")]
+    assert ae.persist_row(ae.aggregate(red), run_id="adv-red2", db_path=str(db))["pass"] == 0
+    none = [_write_run(tmp_path, "n0", behavioral=None)]
+    assert ae.persist_row(ae.aggregate(none), run_id="adv-none", db_path=str(db))["pass"] == 0
+
+
+# ── #1722 follow-up: the EXECUTABLE ruler is the predeclared 20-beat budget ──────────────────────
+
+def test_executable_beat_budget_is_twenty():
+    """The ruler CHANGE predeclared in qa/SCORECARD.md (15 -> 20 beats) must be the number the code
+    actually scores with — a doc-only ruler change is the failure this asserts against."""
+    assert ae.load_config()["beat_budget"] == 20
+
+
+def test_beat_budget_override_scores_pace_under_its_own_budget(tmp_path):
+    """A control run that really ran at 15 beats is scored under 15, and the row SAYS so."""
+    p = _write_run(tmp_path, "ctl", completed=True, complete_beat=15)
+    ruler = ae.aggregate([p])                                    # 20-beat ruler
+    own = ae.aggregate([p], {**ae.load_config(), "beat_budget": 15})
+    assert ruler["beat_budget"] == 20 and own["beat_budget"] == 15
+    # pace = 1 - beats/budget: 0.25 at the 20-beat ruler, 0.0 at its own 15-beat budget.
+    assert abs(ruler["dimensions"]["pace"] - 0.25) < 0.01
+    assert own["dimensions"]["pace"] == 0.0
+    db = tmp_path / "scores.db"
+    fields = ae.persist_row(own, run_id="adv-ctl15", db_path=str(db))
+    assert "beat_budget=15" in fields["methodology"]
+
+
+# ── item 4 follow-up: CONCRETE model ids resolved from the run's own transcripts ─────────────────
+
+def _write_transcript(prefix: str, suffix: str, model: str) -> None:
+    """A tiny synthetic `claude -p` transcript carrying the model the API served."""
+    Path(f"{prefix}.{suffix}").write_text(
+        json.dumps({"type": "system", "model": model}) + "\n"
+        + json.dumps({"type": "assistant", "message": {"model": model, "content": []}}) + "\n")
+
+
+def test_model_provenance_resolves_concrete_ids(tmp_path):
+    import model_provenance as mp  # noqa: PLC0415
+    prefix = str(tmp_path / "advm")
+    _write_transcript(prefix, "dm.1788335024806928000.jsonl", "claude-opus-4-8")
+    _write_transcript(prefix, "player.1788335024900000000.jsonl", "claude-sonnet-4-6")
+    assert mp.resolve_models(prefix) == {
+        "dm_model_resolved": "claude-opus-4-8",
+        "player_model_resolved": "claude-sonnet-4-6",
+    }
+    # No transcripts at all -> None, never an alias dressed up as a resolved id.
+    assert mp.resolve_models(str(tmp_path / "nothing")) == {
+        "dm_model_resolved": None, "player_model_resolved": None}
+
+
+def test_resolved_models_reach_the_persisted_row(tmp_path):
+    # A run whose summary carries only the ALIASES; the concrete ids come from the transcripts.
+    p = _write_run(tmp_path, "advr")
+    s = json.loads(Path(f"{p}.adventure.json").read_text())
+    s["dm_model"], s["actor_model"] = "opus", "sonnet"
+    Path(f"{p}.adventure.json").write_text(json.dumps(s))
+    _write_transcript(p, "dm.1788335024806928000.jsonl", "claude-opus-4-8")
+    _write_transcript(p, "player.1788335024900000000.jsonl", "claude-sonnet-4-6")
+
+    agg = ae.aggregate([p])
+    assert agg["dm_model_resolved"] == "claude-opus-4-8"
+    assert agg["player_model_resolved"] == "claude-sonnet-4-6"
+    db = tmp_path / "scores.db"
+    fields = ae.persist_row(agg, run_id="adv-resolved", db_path=str(db))
+    # The alias stays in its own column; the resolved id rides in the methodology provenance.
+    assert fields["dm_model"] == "opus" and fields["actor_model"] == "sonnet"
+    assert "dm=opus(claude-opus-4-8)" in fields["methodology"]
+    assert "player=sonnet(claude-sonnet-4-6)" in fields["methodology"]
+    row = scores_db.fetch_rows(str(db))[0]
+    assert "claude-opus-4-8" in row["methodology"]
+
+
+def test_summary_recorded_resolution_wins_over_a_rescan(tmp_path):
+    # A run that recorded its resolved ids keeps them even when a transcript says otherwise (the
+    # summary is what the run ITSELF observed at launch time).
+    p = _write_run(tmp_path, "advs")
+    s = json.loads(Path(f"{p}.adventure.json").read_text())
+    s["dm_model_resolved"], s["player_model_resolved"] = "claude-opus-5", "claude-sonnet-5"
+    Path(f"{p}.adventure.json").write_text(json.dumps(s))
+    _write_transcript(p, "dm.1788335024806928000.jsonl", "claude-opus-4-8")
+    agg = ae.aggregate([p])
+    assert agg["dm_model_resolved"] == "claude-opus-5"
+    assert agg["player_model_resolved"] == "claude-sonnet-5"
