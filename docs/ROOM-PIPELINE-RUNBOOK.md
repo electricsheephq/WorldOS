@@ -603,7 +603,7 @@ PY="uv run --directory $WOS/servers/engine python"                # relative qa/
 # 0. build identity (the "build sha" in SCORECARD rows = the player BINARY sha256 prefix; unity repo head + engine main are recorded beside it)
 shasum -a 256 "$APP/Contents/MacOS/WorldOSPlayer" | cut -c1-8; git -C /Users/m1/worldos-unity rev-parse --short HEAD; git -C $WOS rev-parse --short main
 strings "$(find "$APP/Contents/Resources/Data" -name level0 | head -1)" | grep -c KitRoom_   # must be 0 (contamination gate)
-$PY $WOS/qa/packaged_pins.py "$APP" --repo                          # packaged plate/boxes/manifest per room == repo → GREEN required
+$PY $WOS/qa/packaged_pins.py "$APP" --repo "$WOS"                   # packaged plate/boxes/manifest per room == repo root → GREEN required
 # 1. the registered-world fixture (party seeded IN the crypt; no monsters) — the kit rooms live only here
 $PY $WOS/qa/qa_sandbox.py up --run g1 --campaign registered_world_v1 --app "$APP" \
   --seed-cmd "uv run --directory $WOS/servers/engine python $WOS/qa/seed_gfx_registered_world.py {state}"
