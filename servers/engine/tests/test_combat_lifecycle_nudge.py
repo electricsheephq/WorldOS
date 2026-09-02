@@ -184,7 +184,7 @@ def test_next_turn_streak_ticks_through_the_pc_skip_path(_state):
     assert reloaded.combat.no_hostile_turns == 1
 
 
-def test_killing_blow_return_carries_the_nudge(_state):
+def test_killing_blow_return_carries_the_nudge(_state, monkeypatch):
     # codex #1654 round: attack() returns its own dict (no combat view) — the closure advisory
     # must ride the killing blow's OWN return, not just the next view read.
     living = _monster(name="Last Goblin", dead=False)
@@ -193,6 +193,13 @@ def test_killing_blow_return_carries_the_nudge(_state):
     ch = c.characters[living_id]
     ch.current_hp = 1
     pc_id = c.combat.order[1].character_id
+    # attack() still rolls the d20 under a +100 bonus and a natural 1 auto-misses (≈1 run in 20
+    # left the goblin alive → no nudge → CI flake, 2026-09-02). Pin the HIT through the
+    # double-guarded test toggle (WORLDOS_COMBAT_TEST=1 AND sandbox campaign) so the killing
+    # blow is deterministic; the nudge logic under test is unchanged.
+    monkeypatch.setenv("WORLDOS_COMBAT_TEST", "1")
+    c.is_sandbox = True
+    c.house_rules.force_hit = True
     store.save_campaign(c)
     result = server.attack(c.id, attacker_id=pc_id, target_id=living_id,
                            attack_bonus=100, damage_dice="1d1+100", damage_type="slashing")
