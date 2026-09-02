@@ -272,6 +272,12 @@ QuestReader = Callable[[], dict]   # () -> {"quests": [...]} (get_quests shape) 
 REWARD_SIGNALS = ("reward_received", "quest_completed")
 
 
+def _reward_objective(objectives) -> Optional[str]:
+    """The outstanding return/reward objective, if the quest still carries one."""
+    return next((str(o) for o in objectives or []
+                 if "return" in str(o).lower() or "reward" in str(o).lower()), None)
+
+
 def _ended_unpaid(status) -> bool:
     """True when a quest status ENDED the arc WITHOUT paying it out — anything terminal that is not
     `completed` (failed / abandoned / cancelled). Empty or `active` is not an ending."""
@@ -311,10 +317,14 @@ def classify_reward_leg(data: dict, quest_title: str = "") -> dict:
         done = {str(o).strip().lower() for o in quest.get("completed_objectives") or []}
         if any("return" in o or "reward" in o for o in done):
             signals.append("reward_received")
-        if status == "completed":
-            signals.append("quest_completed")
         outstanding = [str(o) for o in quest.get("objectives") or []
                        if str(o).strip().lower() not in done]
+        # A `completed` STATUS certifies the reward only when the return/reward objective is not
+        # still outstanding: the DM can resolve a quest with complete_quest/set_quest_status while
+        # that objective is unmet (qa/test_quest_progress.py covers that state, reward_received
+        # absent), and synthesising a signal there would falsely certify the very leg this checks.
+        if status == "completed" and not _reward_objective(outstanding):
+            signals.append("quest_completed")
     # FAILED / abandoned ENDS the arc without paying it out (the scorecard has runs that fail after
     # the PC goes down). Drop every arc-end signal — live status or trace status — so ONLY an
     # independent reward_received can still read GREEN: a dead party never satisfies the reward leg.
@@ -330,6 +340,17 @@ def classify_reward_leg(data: dict, quest_title: str = "") -> dict:
     return {**res, "verdict": "RED", "signals": [],
             "reason": f"quest is {status or 'active'} with no reward signal after the giver talk; "
                       f"outstanding: {outstanding or ['(none listed)']}"}
+
+
+def assert_route_returns_to_giver(plan: tuple) -> tuple:
+    """A route override must close on a `return_to_giver` stage — the whole point of the §9 G3 walk.
+    Without this an override of ordinary stages walks, scores GREEN/0 and only whispers its
+    incompleteness through `route_complete`, which automation can miss. Partial routes stay drivable
+    behind an explicit --allow-partial-route."""
+    if not any(k == "return_to_giver" for _sid, _room, k, _actor in plan):
+        raise ValueError("route override has no `return_to_giver` stage — the §9 G3 walk must end at "
+                         "the giver (pass --allow-partial-route to drive a deliberate partial route)")
+    return plan
 
 
 def read_reward_leg(reader: Optional[QuestReader], quest_title: str = "") -> dict:
@@ -657,6 +678,9 @@ def main(argv=None) -> int:
                          "actor] (default: the §9 arc — DEFAULT_ROUTE)")
     ap.add_argument("--state", default=None,
                     help="sandbox state dir for the reward-leg quest read (default: --run's sandbox.json)")
+    ap.add_argument("--allow-partial-route", action="store_true",
+                    help="permit a --route override that does NOT end at the giver (a deliberate "
+                         "partial/debug walk; it can never report route_complete)")
     ap.add_argument("--quest-trace", default=None,
                     help="A-T quest_trace.json for the reward-leg FALLBACK read when the live "
                          "get_quests is down (run_adventure.sh writes qa/transcripts/<run>.quest_trace.json; "
@@ -676,9 +700,13 @@ def main(argv=None) -> int:
             engine, qa = m.get("engine", engine), m.get("qa", qa)
             state = state or m.get("state")
 
+    route_spec = parse_route_spec(args.route)
+    if not args.allow_partial_route:
+        assert_route_returns_to_giver(route_spec)
+
     out = Path(args.out)
     report = run_walk(engine, qa, out, _live_scorer(args.model, args.vqa_timeout),
-                      settle=args.settle, timeout=args.move_timeout, route_spec=args.route,
+                      settle=args.settle, timeout=args.move_timeout, route_spec=route_spec,
                       quest_reader=_live_quest_reader(state, trace_path=args.quest_trace)
                       if state else None)
     out.mkdir(parents=True, exist_ok=True)

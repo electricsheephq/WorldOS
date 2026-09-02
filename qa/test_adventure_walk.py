@@ -449,10 +449,14 @@ def test_a_failed_quest_is_never_a_green_reward_leg():
     assert A.classify_reward_leg(paid_but_failed)["verdict"] == "GREEN"
 
 
-def test_completed_status_alone_is_a_green_reward_leg():
-    completed = {"quests": [{**_ACTIVE_QUEST["quests"][0], "status": "completed"}]}
-    res = A.classify_reward_leg(completed)
-    assert res["verdict"] == "GREEN" and res["signals"] == ["quest_completed"]
+def test_completed_status_is_green_once_nothing_is_outstanding():
+    """A `completed` status certifies the leg when the quest carries no unmet return/reward objective
+    (the stricter outstanding-objective rule lives in
+    test_completed_status_with_an_outstanding_return_objective_is_not_green)."""
+    q = {**_ACTIVE_QUEST["quests"][0], "status": "completed",
+         "completed_objectives": list(_ACTIVE_QUEST["quests"][0]["objectives"])}
+    res = A.classify_reward_leg({"quests": [q]})
+    assert res["verdict"] == "GREEN" and res["signals"] == ["quest_completed", "reward_received"]
 
 
 def test_reward_leg_records_whether_the_giver_talk_landed(monkeypatch, tmp_path):
@@ -536,3 +540,29 @@ def test_live_quest_reader_reads_the_at_runner_trace_path(tmp_path):
     # and with NEITHER source readable the leg is ERROR, never a silent GREEN
     reader = A._live_quest_reader(str(tmp_path / "no-such-state"))
     assert A.read_reward_leg(reader)["verdict"] == "ERROR"
+
+
+# ── review round 4: no false certification of the reward leg ────────────────────────────────────────
+def test_completed_status_with_an_outstanding_return_objective_is_not_green():
+    """The DM can resolve a quest via complete_quest/set_quest_status while the return objective is
+    still unmet (qa/test_quest_progress.py covers that state). A bare `completed` status must not
+    certify the reward leg it is supposed to be checking."""
+    unpaid = {"quests": [{**_ACTIVE_QUEST["quests"][0], "status": "completed"}]}
+    res = A.classify_reward_leg(unpaid)
+    assert res["verdict"] == "RED" and res["signals"] == []
+    assert res["outstanding_objectives"] == ["Return to Keeper Maera for the reward"]
+    # a completed quest with NOTHING outstanding still reads GREEN off the status alone
+    clean = {"quests": [{**_ACTIVE_QUEST["quests"][0], "status": "completed",
+                         "completed_objectives": list(_ACTIVE_QUEST["quests"][0]["objectives"])}]}
+    assert A.classify_reward_leg(clean)["verdict"] == "GREEN"
+
+
+def test_a_route_override_must_close_on_the_giver_unless_explicitly_partial():
+    """An override of ordinary stages walks, scores GREEN/0, and only whispers its incompleteness
+    through route_complete — automation can miss that. Fail closed instead, with an explicit
+    opt-out for a deliberate partial walk."""
+    import pytest
+    partial = A.parse_route_spec('[["only", "crypt", "walk"]]')
+    with pytest.raises(ValueError, match="return_to_giver"):
+        A.assert_route_returns_to_giver(partial)
+    assert A.assert_route_returns_to_giver(A.DEFAULT_ROUTE) == A.DEFAULT_ROUTE
