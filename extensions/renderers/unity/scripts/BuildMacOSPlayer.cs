@@ -36,6 +36,7 @@ public static class BuildMacOSPlayer
     const string SceneToBuild = "Assets/Scenes/M1CombatV1_canonical.unity";
     const string OutputDir = "BuildOutput";
     const string AppName = "WorldOSPlayer.app";
+    const string ReportFileName = "build-report.txt";
 
     // #1436 (W5c Unit 1) packaging: the standalone player cannot AssetDatabase.Load an Assets/ path at
     // runtime, so the registry-referenced actor assets + the registry manifest must be packaged into the
@@ -256,7 +257,7 @@ public static class BuildMacOSPlayer
         finally { if (buildScenePath != SceneToBuild) AssetDatabase.DeleteAsset(buildScenePath); }
         var s = report.summary;
 
-        string reportPath = Path.Combine(outDir, "build-report.txt");
+        string reportPath = Path.Combine(outDir, ReportFileName);
         File.WriteAllText(reportPath,
             "result=" + s.result + "\n" +
             "totalErrors=" + s.totalErrors + "\n" +
@@ -361,16 +362,26 @@ public static class BuildMacOSPlayer
     // cannot mistake the previous run's stamp beside a stale .app for a successful build.
     static void FailBuild(string reason)
     {
+        StampFailedReport(reason);
+        Debug.LogError("[BuildMacOSPlayer] " + reason);
+        throw new Exception("[BuildMacOSPlayer] " + reason);
+    }
+
+    // Best effort, and deliberately narrow: a report the build could not write must never become the
+    // exception the caller sees in place of `reason`, so the two failure modes that actually occur here
+    // (a read-only/locked BuildOutput, a full disk) are swallowed with a log. Anything else is a real
+    // bug and is allowed to surface — the build still fails, which is the invariant that matters.
+    static void StampFailedReport(string reason)
+    {
         try
         {
             string outDir = Path.Combine(Directory.GetParent(Application.dataPath).FullName, OutputDir);
             Directory.CreateDirectory(outDir);
-            File.WriteAllText(Path.Combine(outDir, "build-report.txt"),
+            File.WriteAllText(Path.Combine(outDir, ReportFileName),
                 "result=Failed\ntotalErrors=1\nfailedPrecondition=" + reason + "\n");
         }
-        catch (Exception e) { Debug.LogError("[BuildMacOSPlayer] could not write failure report: " + e.Message); }
-        Debug.LogError("[BuildMacOSPlayer] " + reason);
-        throw new Exception("[BuildMacOSPlayer] " + reason);
+        catch (UnauthorizedAccessException e) { Debug.LogError("[BuildMacOSPlayer] could not write failure report: " + e.Message); }
+        catch (IOException e) { Debug.LogError("[BuildMacOSPlayer] could not write failure report: " + e.Message); }
     }
 
     // #1674: shaders CombatSurfaceClient resolves at runtime via Shader.Find and that NO asset references, so
