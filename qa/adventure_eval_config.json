@@ -3,7 +3,7 @@
   "beat_budget": 20,
   "stage_gap_outlier_beats": 5,
   "dead_beat_stuck_threshold": 2,
-  "pass_completion_rate": 0.5,
+  "pass_completion_rate": 0.67,
   "measured_dm_model": "claude-opus-4-8",
   "dimensions": {
     "completion": {"lever": "arc-completion: tighten the DM arc addendum, verify the giver->crypt->boss->return seam is unblocked, or raise the beat budget"},
