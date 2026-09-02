@@ -285,13 +285,77 @@ function Pill({ children, tone, dot }) {
   return <span className={`pill ${tone || ""} ${dot ? "dot" : ""}`}>{children}</span>;
 }
 
-function Placeholder({ label, w, h, framed, style, children, className }) {
+// #1764: `label` is authored as an ART-DIRECTION BRIEF for the image generator ("cover
+// illustration · 16:9 · painted hero scene") and doubles as the <img> alt text — and it was ALSO
+// printed verbatim inside the empty frame, so a player with no cached art read the generator's
+// notes as UI copy ("There's a note where the picture should be. It says cover illustration, 16
+// by 9, painted hero scene."). Split the two uses: the brief stays on the element as
+// `data-art-brief` (generators and QA read it there, and <Img> still passes it as alt), while the
+// VISIBLE fallback becomes a short neutral SLOT NAME — "Cover art", "Scene art · Crypt". The
+// placeholder mechanism itself is correct design and is untouched.
+const _PH_SLOT_NAMES = {
+  "cover illustration": "Cover art",
+  "illustration": "Cover art",
+  "cover": "Cover art",
+  "vignette": "Scene art",
+  "scene": "Scene art",
+  "chronicle": "Scene art",
+  "backdrop": "Scene art",
+  "sketch": "Sketch",
+  "portrait": "Portrait",
+  "plate": "Plate",
+  "token": "Token",
+  "icon": "Icon",
+  "map": "Map",
+  "seal": "Seal",
+};
+// Aspect ratios are pure art direction and never a subject.
+const _PH_ASPECT_RE = /^\d+\s*[:x×]\s*\d+$/i;
+
+// Turn an art brief into a caption a player can read. Segments are the brief's "·" parts: the
+// first recognised SLOT word names the frame, and at most one SHORT (≤2 words) remaining segment
+// survives as the subject — a longer segment is direction prose ("painted hero scene"), not a
+// name, and is dropped rather than shown.
+function phCaption(label) {
+  const parts = String(label == null ? "" : label)
+    .split("·")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (!parts.length) return "";
+  let slot = "";
+  const rest = [];
+  for (const part of parts) {
+    if (!slot && _PH_SLOT_NAMES[part.toLowerCase()]) { slot = _PH_SLOT_NAMES[part.toLowerCase()]; continue; }
+    rest.push(part);
+  }
+  let subject = "";
+  for (const part of rest) {
+    if (_PH_ASPECT_RE.test(part)) continue;
+    if (part.split(/\s+/).length > 2) continue;
+    subject = part.charAt(0).toUpperCase() + part.slice(1);
+    break;
+  }
+  if (slot) {
+    const full = subject ? `${slot} · ${subject}` : slot;
+    // A caption that merely replays a multi-part brief has not de-briefed anything — the frame
+    // would still read as the generator's note. Keep the slot name alone in that case.
+    if (parts.length > 1 && full.toLowerCase() === String(label).trim().toLowerCase()) return slot;
+    return full;
+  }
+  // No slot word — a bare display name ("Longsword", "Aidan · full art"): show the name alone.
+  return subject;
+}
+
+function Placeholder({ label, caption, w, h, framed, style, children, className }) {
+  const brief = label == null ? "" : String(label);
+  const text = caption != null ? caption : phCaption(brief);
   return (
     <div
       className={`placeholder ${framed ? "framed" : ""} ${className || ""}`}
       style={{ width: w, height: h, ...(style || {}) }}
+      data-art-brief={brief || undefined}
     >
-      {children || <span className="ph-label">{label}</span>}
+      {children || (text ? <span className="ph-label">{text}</span> : null)}
     </div>
   );
 }
@@ -626,5 +690,5 @@ function TitleBar({ campaign, location, day, capability, nativeStatus }) {
 Object.assign(window, {
   NAV_GROUPS, NAV_BOTTOM, ALL_NAV, getGroupForScreen, getDefaultScreen,
   Glyph, CornerOrnament, Divider, SectionTitle, Pill,
-  Placeholder, Img, IconPlate, BrassButton, Panel, NavRail, TabBar, CapabilityBadge, TitleBar,
+  Placeholder, phCaption, Img, IconPlate, BrassButton, Panel, NavRail, TabBar, CapabilityBadge, TitleBar,
 });

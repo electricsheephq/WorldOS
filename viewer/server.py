@@ -6982,6 +6982,50 @@ def _relative_time_label(ts: float, *, now: float) -> str:
     return time.strftime("%Y-%m-%d", time.localtime(ts))
 
 
+# #1764: how much of the last beat the launcher's "Where last we stood" card carries. A recap is a
+# reminder, not the chronicle — the full beat is one click away on the table's history band.
+_RECAP_MAX = 240
+# Session-log kinds whose text is a beat rather than a mechanism dump.
+_RECAP_NARRATION_KINDS = ("narration", "scene", "dm")
+
+
+def _recap_snip(text: str) -> str:
+    """One short, player-facing snip of a beat, always cut on a word boundary."""
+    flat = " ".join(str(text or "").split())
+    if len(flat) <= _RECAP_MAX:
+        return flat
+    head = flat[:_RECAP_MAX]
+    cut = head.rfind(" ")
+    return (head[:cut] if cut > 0 else head).rstrip() + "\u2026"
+
+
+def _session_derived_recap(campaign_dir: Path, snapshot: dict) -> str:
+    """The chronicle's OWN last words, read from the session log (#1764).
+
+    The launcher used to print ``snapshot["summary"]``, which for a seeded campaign is the
+    AUTHORING blurb — so a player twelve beats into a crypt read the harness's own wording back.
+    Prefer the tail of the campaign's session log (the same read-only projection the chronicle
+    band uses): the last narration beat, else the last event of any kind. Returns "" when there
+    is no session history at all, which is the caller's signal to fall back to the fixture.
+    """
+    rows = _session_event_tail_from_dir(campaign_dir, snapshot, limit=24)
+    narration = ""
+    latest = ""
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        kind = _text(row.get("kind") or row.get("type"), "narration").lower()
+        text = _text(row.get("text") or row.get("detail") or row.get("summary"))
+        if not text:
+            continue
+        snip = _recap_snip(text)
+        speaker = _text(row.get("speaker") or row.get("label") or row.get("who"))
+        latest = f"{speaker}: \u201c{snip}\u201d" if kind == "dialogue" and speaker else snip
+        if kind in _RECAP_NARRATION_KINDS:
+            narration = snip
+    return narration or latest
+
+
 def _infer_catalog_provider(state_root: Path, source: str) -> str:
     if source == "qa":
         return "QA"
@@ -7028,14 +7072,24 @@ def build_openworlds_campaign_summary(
     source_label = "QA run" if source == "qa" else "Play save"
     where = location or world
     subtitle = f"{source_label} · {where}" if where else source_label
-    recap = _text(snapshot.get("summary"))
-    if not recap:
-        if active_quests:
-            recap = f"{active_quests} active quest{'s' if active_quests != 1 else ''} remain in motion."
-        elif location:
-            recap = f"The party is gathered near {location}."
-        else:
-            recap = "This chronicle is ready to continue."
+    # #1764: "Where last we stood" is a SESSION recap. Prefer what the party actually did; the
+    # seed's `summary` is authoring copy and is shown only for a chronicle nobody has played yet.
+    sessions = _session_count(campaign_dir)
+    recap = _session_derived_recap(campaign_dir, snapshot)
+    if recap or sessions:
+        recap_source = "session"
+        if not recap:
+            # Played, but the tail carried no projectable prose — still never the seed blurb.
+            if active_quests:
+                recap = f"{active_quests} active quest{'s' if active_quests != 1 else ''} remain in motion."
+            elif location:
+                recap = f"The party is gathered near {location}."
+            else:
+                recap = "This chronicle is ready to continue."
+    else:
+        recap_source = "fixture"
+        recap = _text(snapshot.get("summary")) or "This chronicle has not been opened yet."
+    recap_label = "Where last we stood" if recap_source == "session" else "New campaign"
 
     resume_url = f"/openworlds/?campaign={quote(campaign_id)}" if can_resume else ""
     legacy_dashboard_url = f"/dashboard?campaign={quote(campaign_id)}" if can_resume else ""
@@ -7051,7 +7105,7 @@ def build_openworlds_campaign_summary(
         "chapter": str(snapshot.get("day") or "I"),
         "lastPlayed": _relative_time_label(last_played, now=now),
         "last_played": last_played,
-        "sessions": _session_count(campaign_dir),
+        "sessions": sessions,
         "region": location or world,
         "day": day,
         "world": world,
@@ -7072,6 +7126,8 @@ def build_openworlds_campaign_summary(
         "legacyDashboardUrl": legacy_dashboard_url,
         "monitorUrl": "/monitor",
         "recap": recap,
+        "recapSource": recap_source,
+        "recapLabel": recap_label,
     }
 
 

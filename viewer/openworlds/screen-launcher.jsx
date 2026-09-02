@@ -354,7 +354,7 @@ function ScreenLauncher({ onNavigate, state, setState, preferredProvider = "" })
                   </div>
 
                   {/* Recap with side sketch */}
-                  <SectionTitle ordinal="·">Where last we stood</SectionTitle>
+                  <SectionTitle ordinal="·">{c.recapLabel || "Where last we stood"}</SectionTitle>
                   <div style={{ display: "grid", gridTemplateColumns: "100px 1fr", gap: 14, alignItems: "start" }}>
                     <div style={{ transform: "rotate(-2deg)" }}>
                       <Img scope={c.imageScope || ""} label="sketch · last scene" w={100} h={120} framed fit="cover" />
