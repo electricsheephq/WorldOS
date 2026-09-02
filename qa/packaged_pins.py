@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 from datetime import datetime, timezone
 import hashlib
+import os
 import json
 from pathlib import Path
 import subprocess
@@ -39,7 +40,9 @@ def _base_report(app: Path, repo: Path) -> dict[str, Any]:
         "schema_version": 1,
         "ts": datetime.now(timezone.utc).isoformat(),
         "app": str(app.resolve()),
+        "repo": str(repo.resolve()),
         "repo_sha": _repo_sha(repo),
+        "rooms_requested": None,
         "rooms": [],
         "verdict": "ERROR",
     }
@@ -71,11 +74,11 @@ def _normalise_rooms(rooms: Iterable[str] | str | None) -> set[str] | None:
 def _entry_path(root: Path, value: Any) -> Path | None:
     if not isinstance(value, str) or not value:
         return None
-    candidate = (root / value).resolve()
-    try:
-        candidate.relative_to(root.resolve())
-    except ValueError:
-        return None
+    candidate = root / value
+    norm = os.path.normpath(str(candidate))
+    root_norm = os.path.normpath(str(root))
+    if norm != root_norm and not norm.startswith(root_norm + os.sep):
+        return None  # escapes the packaged/repo root
     return candidate
 
 
@@ -204,9 +207,15 @@ def check(app: Path, repo: Path, rooms: Iterable[str] | str | None = None) -> di
     selected = _normalise_rooms(rooms)
     room_names = sorted(set(source_rooms) | set(packaged_rooms))
     if selected is not None:
+        unknown = sorted(selected - set(room_names))
+        if unknown:
+            return _error(app, repo, f"unknown room(s) requested: {', '.join(unknown)}")
         room_names = [room for room in room_names if room in selected]
+    if not room_names:
+        return _error(app, repo, "no rooms to check (empty selection, or neither manifest lists a plate)")
 
     report = _base_report(app, repo)
+    report["rooms_requested"] = sorted(selected) if selected is not None else None
     report["rooms"] = [
         _compare_room(
             room,
@@ -234,7 +243,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--rooms", help="comma-separated room keys to check")
     args = parser.parse_args(argv)
 
-    report = check(args.app, args.repo, args.rooms)
+    try:
+        report = check(args.app, args.repo, args.rooms)
+    except Exception as exc:  # a harness defect is never a verdict
+        report = _error(args.app, args.repo, f"unexpected: {type(exc).__name__}: {exc}")
     if report["verdict"] == "ERROR":
         print(f"PINS ERROR ({report.get('error', 'unknown error')})")
     else:

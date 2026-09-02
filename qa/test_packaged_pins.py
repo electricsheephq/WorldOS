@@ -1,6 +1,7 @@
 """Red-first tests for the packaged plate/boxes/camera pin parity check."""
 
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -108,7 +109,29 @@ def test_camera_pin_ortho_differs_is_red(tmp_path):
 
 def test_non_app_path_is_error(tmp_path):
     app, repo = _fixture(tmp_path)
-    assert pins.main([str(app.with_name("WorldOSPlayer")), "--repo", str(repo)]) == 2
+    # a REAL directory with a valid StreamingAssets tree but no .app suffix: only the suffix guard can fire
+    bare = app.with_name("WorldOSPlayer")
+    shutil.copytree(app, bare)
+    assert pins.main([str(bare), "--repo", str(repo)]) == 2
+
+
+def test_unknown_or_empty_rooms_is_error_not_green(tmp_path):
+    app, repo = _fixture(tmp_path)
+    assert pins.check(app, repo, "no_such_room")["verdict"] == "ERROR"
+    assert pins.check(app, repo, [])["verdict"] == "ERROR"
+    assert pins.main([str(app), "--repo", str(repo), "--rooms", "typo"]) == 2
+
+
+def test_io_failure_inside_check_is_error_and_report_written(tmp_path, monkeypatch):
+    app, repo = _fixture(tmp_path)
+    def boom(_path):
+        raise PermissionError("simulated unreadable archive")
+    monkeypatch.setattr(pins, "_sha256", boom)
+    out = tmp_path / "report.json"
+    assert pins.main([str(app), "--repo", str(repo), "--json", str(out)]) == 2
+    payload = json.loads(out.read_text())
+    assert payload["verdict"] == "ERROR" and "PermissionError" in payload["error"]
+    assert payload["repo"] == str(repo.resolve())
 
 
 def test_rooms_filter_is_honoured(tmp_path):
