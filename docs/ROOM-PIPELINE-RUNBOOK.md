@@ -423,12 +423,14 @@ PNGs live under `extensions/renderers/unity/plates/`.
 and adding a `"stage"` key to a plate entry above is a silent no-op.
 
 **★ BOX BUILD PRE-FLIGHT (measured gap — stale manifests shipped in Box Cycles 2 AND 3, 2026-07-15):**
+- The pre-flight sync target is the Unity project ROOT (the `EnsurePackaged` source), never `Assets/StreamingAssets`; verify with `packaged_pins` after every build.
 the GEX44 box's Unity project (`/home/unity/worldos-unity/`) carries its OWN copies of these data
 files, and `BuildMacOSPlayer.EnsurePackaged` packages the BOX copies verbatim. A lane that deploys
 only its changed `.cs`/shader files ships whatever manifest the box happened to have. Before EVERY
 box `BuildMacOSPlayer`, sync the renderer data files from the repo main being built against:
-`plates_manifest.json`, `effects_registry.json`, `stage.json`, and `plates/*.png` → the box project
-root. The box copy is NEVER the source of truth; the repo is. (Both cycle regressions were caught by
+`plates_manifest.json`, `effects_registry.json`, `stage.json`, `registry.json`, `plates/*.png` AND
+`boxes/*.json` (the occluder sidecars — omitted from this list until 2026-09-02, which is how a build shipped the
+pre-kit chunky sidecars under a green stamp) → the Unity project root. The box copy is NEVER the source of truth; the repo is. (Both cycle regressions were caught by
 the post-install pin check `python3 -c "...print cameraPin per plate..."` on the installed app —
 keep running that check after every install.)
 
