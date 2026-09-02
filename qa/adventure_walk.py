@@ -287,8 +287,14 @@ def classify_reward_leg(data: dict, quest_title: str = "") -> dict:
     A quest that ended FAILED/abandoned is NOT a paid reward: only an independent reward_received
     signal reads GREEN there (see the status branch below)."""
     stamps = [s for s in (data.get("stamps") or []) if isinstance(s, dict)]
+    quests = data.get("quests") or []
+    quest = _select_quest(quests, quest_title) if quests else None
     signals = []
-    for s in stamps:
+    # The trace is the FALLBACK source, never a second opinion: a reused sandbox run keeps its state
+    # dir and the seeder rewrites the campaign WITHOUT clearing quest_trace.json (run_adventure.sh
+    # warns about exactly this), so a stale quest_completed stamp must never outvote a live ACTIVE
+    # quest. Stamps count only when the live read gave us nothing.
+    for s in (stamps if quest is None else []):
         name = str(s.get("stage"))
         if name not in REWARD_SIGNALS:
             continue
@@ -298,8 +304,6 @@ def classify_reward_leg(data: dict, quest_title: str = "") -> dict:
         if name == "quest_completed" and sig.startswith("status:") and _ended_unpaid(sig[len("status:"):]):
             continue
         signals.append(name)
-    quests = data.get("quests") or []
-    quest = _select_quest(quests, quest_title) if quests else None
     # the trace's own quest_status is the fallback truth when the live get_quests read is down
     status, outstanding = data.get("quest_status"), []
     if quest is not None:
@@ -607,7 +611,8 @@ def _live_scorer(model: str, timeout_s: int) -> FrameScorer:
     return lambda path, questions: _shell_scorer(path, questions, model=model, timeout_s=timeout_s)
 
 
-def _live_quest_reader(state_dir: str, campaign_id: str = CAMPAIGN) -> QuestReader:
+def _live_quest_reader(state_dir: str, campaign_id: str = CAMPAIGN,
+                       trace_path: Optional[str] = None) -> QuestReader:
     """The live reward-leg source: the SAME reads the A-T lane uses — quest_progress's in-process
     engine import (get_quests) against the sandbox state dir, plus the quest_trace.json stamps that
     lane writes. Read-only (engine stays the sole writer). Raises only when NEITHER source is
@@ -615,7 +620,10 @@ def _live_quest_reader(state_dir: str, campaign_id: str = CAMPAIGN) -> QuestRead
     def _read() -> dict:
         out, errors = {}, []
         try:
-            trace = Path(state_dir) / "quest_trace.json"
+            # qa/run_adventure.sh writes the A-T trace to qa/transcripts/<run>.quest_trace.json —
+            # NOT under the state dir — so the caller passes it; the state-dir default is only
+            # quest_progress.py's own bare-invocation location.
+            trace = Path(trace_path) if trace_path else Path(state_dir) / "quest_trace.json"
             if trace.is_file():
                 tr = json.loads(trace.read_text(encoding="utf-8"))
                 # carry quest_status too: when the live get_quests read below fails, the stamps are
@@ -649,6 +657,10 @@ def main(argv=None) -> int:
                          "actor] (default: the §9 arc — DEFAULT_ROUTE)")
     ap.add_argument("--state", default=None,
                     help="sandbox state dir for the reward-leg quest read (default: --run's sandbox.json)")
+    ap.add_argument("--quest-trace", default=None,
+                    help="A-T quest_trace.json for the reward-leg FALLBACK read when the live "
+                         "get_quests is down (run_adventure.sh writes qa/transcripts/<run>.quest_trace.json; "
+                         "default: <state>/quest_trace.json)")
     ap.add_argument("--settle", type=float, default=0.6, help="poll interval while a move resolves")
     ap.add_argument("--move-timeout", type=float, default=8.0)
     ap.add_argument("--model", default="sonnet", help="VQA scorer model")
@@ -667,7 +679,8 @@ def main(argv=None) -> int:
     out = Path(args.out)
     report = run_walk(engine, qa, out, _live_scorer(args.model, args.vqa_timeout),
                       settle=args.settle, timeout=args.move_timeout, route_spec=args.route,
-                      quest_reader=_live_quest_reader(state) if state else None)
+                      quest_reader=_live_quest_reader(state, trace_path=args.quest_trace)
+                      if state else None)
     out.mkdir(parents=True, exist_ok=True)
     (out / "adventure_walk_report.json").write_text(json.dumps(report, indent=2) + "\n")
 

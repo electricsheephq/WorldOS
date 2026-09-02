@@ -507,3 +507,32 @@ def test_an_empty_route_is_never_a_vacuous_green(tmp_path):
     with pytest.raises(ValueError, match="empty"):
         A.parse_route_spec("[]")
     assert A.classify_walk_verdict({"stages": [], "harness_errors": []}) == ("ERROR", 2)
+
+
+# ── review round 3: the trace is a FALLBACK, never a second opinion ─────────────────────────────────
+def test_a_stale_completion_stamp_never_outvotes_a_live_active_quest():
+    """A reused sandbox run keeps its state dir and the seeder rewrites the campaign without clearing
+    quest_trace.json, so a STALE quest_completed stamp can sit beside a freshly ACTIVE quest. The
+    live read must win — otherwise route_complete goes true on last run's reward."""
+    stale = {**_ACTIVE_QUEST, "stamps": [{"stage": "quest_completed", "signal": "status:completed"},
+                                         {"stage": "reward_received"}]}
+    res = A.classify_reward_leg(stale)
+    assert res["verdict"] == "RED" and res["signals"] == []
+    assert res["outstanding_objectives"] == ["Return to Keeper Maera for the reward"]
+    # with NO live quest the same stamps are the only evidence, and still count
+    assert A.classify_reward_leg({"stamps": stale["stamps"]})["verdict"] == "GREEN"
+
+
+def test_live_quest_reader_reads_the_at_runner_trace_path(tmp_path):
+    """run_adventure.sh writes qa/transcripts/<run>.quest_trace.json, NOT <state>/quest_trace.json,
+    so the fallback must accept the path explicitly or it can never find the trace."""
+    trace = tmp_path / "adv1.quest_trace.json"
+    trace.write_text('{"quest_status": "completed", "stamps": [{"stage": "quest_completed", '
+                     '"signal": "status:completed"}]}')
+    # the engine import fails under a bogus state dir → the trace is the only source
+    data = A._live_quest_reader(str(tmp_path / "no-such-state"), trace_path=str(trace))()
+    assert data["stamps"] and data["quest_status"] == "completed"
+    assert A.classify_reward_leg(data)["verdict"] == "GREEN"
+    # and with NEITHER source readable the leg is ERROR, never a silent GREEN
+    reader = A._live_quest_reader(str(tmp_path / "no-such-state"))
+    assert A.read_reward_leg(reader)["verdict"] == "ERROR"
