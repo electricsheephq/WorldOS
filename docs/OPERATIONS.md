@@ -41,8 +41,9 @@ worktree off main → implement ADDITIVELY (honor every VISION invariant) → re
 tests (`uv run --directory servers/engine python -m pytest <files> -q -p no:xdist`) +
 `qa/fast_gate.sh` → push + PR (HEREDOC body) → review-gated merge (CI green + review threads
 resolved; validate bot findings against source before acting — they are hypotheses) → prune.
-Full detail: the `worldos-dev` skill / `WorldOS-RUNBOOK.md`. Heavy QA runs on the support VM
-(`WorldOS-GUI-RUNBOOK.md`); box/Unity work follows `extensions/renderers/unity/CANONICAL.md`
+Full detail: the `worldos-dev` skill / `WorldOS-RUNBOOK.md`. Heavy QA runs LOCALLY on this machine
+(14 cores / 64 GB, per the 2026-08-03 test policy — the support VM is no longer required); see
+`WorldOS-GUI-RUNBOOK.md`. Unity work follows `extensions/renderers/unity/CANONICAL.md`
 (read it FIRST — canonical state lives there) + the GUI runbook's box discipline.
 
 **Delegation notes:** agents working in the canonical checkout (not a worktree) MUST `git checkout
@@ -221,6 +222,10 @@ already states for panel composition (`qa/felt_rest_panel.md`) — restated here
 operating rule for anything visual and owner-bound, not just that one panel type.
 
 ## Box claim-queue etiquette (single-tenant GEX44)
+
+**RETIRED 2026-08-06 — the renderer is local; single-tenant discipline now applies to the ONE Unity
+Editor process on this Mac (one heavy Unity process at a time; `qa_sandbox` owns the player).** The
+box-era text below is kept as the history of that discipline.
 
 The GEX44 Unity box is **single-tenant** — one lane's box op at a time. The live pattern (see the
 active sprint charter, e.g. #1386 "Rules of engagement"): **claim by commenting on the owning
