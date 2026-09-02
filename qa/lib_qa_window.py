@@ -336,7 +336,7 @@ def front_app():
     try:
         p = subprocess.run(
             ["/usr/bin/osascript", "-e",
-             'tell application "System Events" to tell (first application process whose '
+             'tell application "System Events" to tell (first application process whose ' +
              'frontmost is true) to get {name, unix id}'],
             capture_output=True, text=True, timeout=10)
     except Exception:  # noqa: BLE001

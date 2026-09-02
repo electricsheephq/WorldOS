@@ -494,8 +494,9 @@ def test_wait_runs_the_watchdog_every_poll(monkeypatch):
     polls: list = []
     monkeypatch.setattr(qa_sandbox, "_http_ok", lambda *a, **k: bool(polls) and len(polls) >= 2)
     monkeypatch.setattr(qa_sandbox.time, "sleep", lambda *_: None)
-    assert qa_sandbox._wait("x", "http://x", post=True, timeout_s=5,
-                            on_poll=lambda: polls.append(1)) is True
+    waited = qa_sandbox._wait("x", "http://x", post=True, timeout_s=5,
+                              on_poll=lambda: polls.append(1))
+    assert waited is True
     assert len(polls) >= 2
 
 
