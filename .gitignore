@@ -24,6 +24,9 @@
 # player smoke (#1443): qa/player_smoke.sh run artifacts (screenshots + smoke_result.json) — same
 # regenerable-and-bulky rationale as ui_playtest_runs/ above; the runner + driver ARE committed.
 /qa/player_smoke_runs/
+# agent-play (qa/agent_play.sh) per-run artifacts: session.json, DM stream-json, quest trace,
+# dry-run command log. Regenerable + LLM-run output — same rationale as the smoke/playtest dirs.
+/qa/agent_play_runs/
 /qa/playwright/node_modules
 /qa/playwright/_*.js
 # The on-demand findings ledger (qa/collect_findings.py output) — a regenerable digest of
