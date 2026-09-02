@@ -180,7 +180,7 @@ to a sidecar JSON next to the capture. Run:
 
 ```bash
 python qa/visual_pregate.py --render /tmp/scene-r2.png \
-  --scenegrid /Volumes/LEXAR/WorldOS-Unity-spike/fixtures/tavern.scenegrid.json \
+  --scenegrid /Users/m1/worldos-unity/fixtures/tavern.scenegrid.json \
   --actors @/tmp/scene-r2.actors.json --json     # exit 2 == FLAG (CRITICAL/HIGH fired)
 ```
 
@@ -195,7 +195,7 @@ reproducible; treat it as a CI-style gate, not a hint.
 The critic does NOT score against a remembered look. It scores the GAP to 2-3 SPECIFIC reference
 frames it is shown alongside the render, with **PoE2 as the bar** and BG2/Disco only as the narrow
 cross-checks (see the §★ art-direction bar at the top). References live at
-`/Volumes/LEXAR/WorldOS-Unity-spike/refs/` (13 calibration frames, see `refs/INDEX.md`).
+`/Users/m1/Codex/worldos-refs/` (13 calibration frames, see `refs/INDEX.md`).
 Pick by scene kind (PoE2 ref ALWAYS leads; the bracketed cross-check ref is added only for its
 narrow lens):
 - **tavern / interior**: `poe2_tavern_interior_combat_02` (the bar: warm hearth key, cool room
@@ -428,7 +428,7 @@ Filler-first: ONE hero + ONE monster animating well before any roster.
 - **gen-scene**: author/lay-out an iso scene (`*.scenegrid.json`) → painterly plate (the CL
   pipeline step-4 Scenario canny) → place a probe actor → pre-gate + panel → iterate.
 - **assemble-encounter**: scene + hero + monster + the engine combat grid → render a beat →
-  full panel → iterate. (The CL pipeline at `/Volumes/LEXAR/WorldOS-Unity-spike/CLOSED-LOOP-PIPELINE.md`
+  full panel → iterate. (The CL pipeline at `/Users/m1/worldos-unity/CLOSED-LOOP-PIPELINE.md`
   is the canonical Unity render path; step-6 there IS this critic gate.)
 
 ## Anti-patterns
@@ -445,8 +445,8 @@ Filler-first: ONE hero + ONE monster animating well before any roster.
   (G1-G4) is the only single-run hard gate.
 
 ## Cross-refs
-- References + per-dimension map: `/Volumes/LEXAR/WorldOS-Unity-spike/refs/INDEX.md`.
-- Render pipeline: `/Volumes/LEXAR/WorldOS-Unity-spike/CLOSED-LOOP-PIPELINE.md` (the CL menu + Scenario step).
+- References + per-dimension map: `/Users/m1/Codex/worldos-refs/INDEX.md`.
+- Render pipeline: `/Users/m1/worldos-unity/CLOSED-LOOP-PIPELINE.md` (the CL menu + Scenario step).
 - `qa/visual_pregate.py` (deterministic gates G1–G5; G5 = motion-liveness), `qa/motion_reel.py`
   (build the L7 motion reel contact-sheet + JSON sidecar — MODE A engine-state reel / MODE B
   timeline reel), `qa/visual_regression.py` (worse-vs-baseline, still + motion arms),

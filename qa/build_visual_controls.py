@@ -46,7 +46,7 @@ from control_band import control_band  # noqa: E402 — shared with build_artifa
 # The visual-critic reference frames live on the LEXAR spike drive (INTERNAL-only calibration set,
 # never shipped). A control's identity is intrinsic (its anchor/band/provenance), so the registry is
 # built from this manifest even when the drive is unmounted — only presence is probed.
-DEFAULT_REFS_DIR = Path("/Volumes/LEXAR/WorldOS-Unity-spike/refs")
+DEFAULT_REFS_DIR = Path("/Users/m1/Codex/worldos-refs")
 IDENTITY_PATH = QA_DIR / "visual_controls_identity.json"
 
 # The 0-10 visual panel scale (vs the 1-5 text rubric) — passed to the SHARED band helper.
